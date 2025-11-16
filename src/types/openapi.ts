@@ -51,5 +51,10 @@ export interface SchemaInfo {
   properties?: Record<string, SchemaInfo>;
   required?: string[];
   default?: unknown;
+  ref?: string;
+  circular?: boolean;
+  allOf?: SchemaInfo[];
+  anyOf?: SchemaInfo[];
+  oneOf?: SchemaInfo[];
 }
 

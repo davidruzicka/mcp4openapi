@@ -75,6 +75,149 @@ describe('OpenAPIParser', () => {
   });
 });
 
+describe('OpenAPIParser - schema resolution', () => {
+  const baseSpec = {
+    openapi: '3.0.0',
+    info: { title: 'Test API', version: '1.0.0' },
+    paths: {},
+    components: {
+      schemas: {
+        Category: {
+          type: 'object',
+          properties: {
+            name: { type: 'string' },
+          },
+          required: ['name'],
+        },
+        Pet: {
+          type: 'object',
+          properties: {
+            id: { type: 'integer', format: 'int64' },
+            category: { $ref: '#/components/schemas/Category' },
+          },
+          required: ['id'],
+        },
+        PetList: {
+          type: 'array',
+          items: { $ref: '#/components/schemas/Pet' },
+        },
+        PetStatus: {
+          allOf: [
+            { $ref: '#/components/schemas/Pet' },
+            {
+              type: 'object',
+              properties: {
+                status: {
+                  type: 'string',
+                  enum: ['available', 'sold'],
+                },
+              },
+              required: ['status'],
+            },
+          ],
+        },
+        Node: {
+          type: 'object',
+          properties: {
+            value: { type: 'string' },
+            next: { $ref: '#/components/schemas/Node' },
+          },
+        },
+        Base: {
+          type: 'object',
+          properties: {
+            code: { type: 'string' },
+          },
+          required: ['code'],
+        },
+        BaseAlias: { $ref: '#/components/schemas/Base' },
+        ExtendedBase: {
+          allOf: [
+            { $ref: '#/components/schemas/BaseAlias' },
+            {
+              type: 'object',
+              properties: {
+                code: { type: 'string', format: 'uuid' },
+              },
+            },
+          ],
+        },
+      },
+    },
+  } as const;
+
+  it('resolves nested referenced schemas', () => {
+    const parser = new OpenAPIParser();
+    (parser as any).spec = JSON.parse(JSON.stringify(baseSpec));
+
+    const resolved = (parser as any).resolveSchema('#/components/schemas/PetList');
+
+    expect(resolved?.type).toBe('array');
+    expect(resolved?.items?.ref).toBe('#/components/schemas/Pet');
+    expect(resolved?.items?.properties?.category?.ref).toBe('#/components/schemas/Category');
+    expect(resolved?.items?.properties?.category?.properties?.name?.type).toBe('string');
+  });
+
+  it('merges composed schemas', () => {
+    const parser = new OpenAPIParser();
+    (parser as any).spec = JSON.parse(JSON.stringify(baseSpec));
+
+    const resolved = (parser as any).resolveSchema('#/components/schemas/PetStatus');
+
+    expect(resolved?.properties?.id?.type).toBe('integer');
+    expect(resolved?.properties?.status?.enum).toEqual(['available', 'sold']);
+    expect(resolved?.required).toEqual(expect.arrayContaining(['id', 'status']));
+    expect(resolved?.allOf?.length).toBe(2);
+  });
+
+  it('detects circular references', () => {
+    const parser = new OpenAPIParser();
+    (parser as any).spec = JSON.parse(JSON.stringify(baseSpec));
+
+    const resolved = (parser as any).resolveSchema('#/components/schemas/Node');
+
+    expect(resolved?.properties?.next?.ref).toBe('#/components/schemas/Node');
+    expect(resolved?.properties?.next?.circular).toBe(true);
+  });
+
+  it('does not mutate cached schemas when merging compositions', () => {
+    const parser = new OpenAPIParser();
+    (parser as any).spec = JSON.parse(JSON.stringify(baseSpec));
+
+    const extended = (parser as any).resolveSchema('#/components/schemas/ExtendedBase');
+    expect(extended?.properties?.code?.format).toBe('uuid');
+
+    const base = (parser as any).resolveSchema('#/components/schemas/Base');
+    expect(base?.properties?.code?.format).toBeUndefined();
+    expect(base?.properties?.code?.type).toBe('string');
+  });
+
+  it('returns fresh clones for cached schemas', () => {
+    const parser = new OpenAPIParser();
+    (parser as any).spec = JSON.parse(JSON.stringify(baseSpec));
+
+    const first = (parser as any).resolveSchema('#/components/schemas/Pet');
+    expect(first).toBeDefined();
+    if (!first?.properties?.id) {
+      throw new Error('Expected id property to be present');
+    }
+    first.properties.id.type = 'string';
+
+    const second = (parser as any).resolveSchema('#/components/schemas/Pet');
+    expect(second).toBeDefined();
+    expect(second).not.toBe(first);
+    expect(second?.properties?.id?.type).toBe('integer');
+  });
+
+  it('returns undefined for unknown references', () => {
+    const parser = new OpenAPIParser();
+    (parser as any).spec = JSON.parse(JSON.stringify(baseSpec));
+
+    const resolved = (parser as any).resolveSchema('#/components/schemas/Missing');
+    expect(resolved).toBeUndefined();
+  });
+});
+
 describe('OpenAPIParser - Security Schemes', () => {
   it('should parse bearer token auth', async () => {
     const parser = new OpenAPIParser();
