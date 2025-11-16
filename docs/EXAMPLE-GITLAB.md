@@ -17,39 +17,16 @@ Visit https://gitlab.com/-/user_settings/personal_access_tokens and create a tok
 
 ### 2. Configure Environment
 
-**Option A: Using .env file**
+Reuse the [README Quick Start](../README.md#quick-start) instructions to load the GitLab specification and profile. Substitute:
 
-```bash
-cp .env.example .env
-# Edit .env and set:
-#OPENAPI_SPEC_PATH=profiles/examples/gitlab/openapi.yaml
-#MCP_PROFILE_PATH=profiles/examples/gitlab/developer-profile.json
-#API_TOKEN=your_gitlab_token_here
-#API_BASE_URL=https://gitlab.com/api/v4
-```
-
-**Option B: Using environment variables**
-
-```bash
-export OPENAPI_SPEC_PATH=profiles/examples/gitlab/openapi.yaml
-export MCP_PROFILE_PATH=profiles/examples/gitlab/developer-profile.json
-export API_TOKEN=your_gitlab_token_here
-export API_BASE_URL=https://gitlab.com/api/v4
-```
+- `OPENAPI_SPEC_PATH=profiles/examples/gitlab/openapi.yaml`
+- `MCP_PROFILE_PATH=profiles/examples/gitlab/developer-profile.json`
+- `API_TOKEN=<your GitLab token>`
+- `API_BASE_URL=https://gitlab.com/api/v4`
 
 ### 3. Run
 
-```bash
-npm install
-npm run build
-npm start
-```
-
-Or with `npx`:
-
-```bash
-npx mcp4openapi
-```
+Follow the [standard launch steps](../README.md#quick-start) (`npm start` or `npx mcp4openapi`) after installing dependencies.
 
 ## Available Tools
 

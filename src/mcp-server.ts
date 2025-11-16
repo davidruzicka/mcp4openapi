@@ -183,11 +183,11 @@ export class MCPServer {
     // For stdio transport, create client with env token
     // For HTTP transport, clients are created per-session with user's token
     const baseUrl = this.getBaseUrl();
-    const authConfig = this.getPrimaryAuthConfig();
-    const hasAuth = !!authConfig;
-    const envToken = hasAuth && authConfig.value_from_env ? process.env[authConfig.value_from_env] : undefined;
+    const envAuthConfig = this.getEnvBackedAuthConfig();
+    const envVarName = envAuthConfig?.value_from_env;
+    const envToken = envVarName ? process.env[envVarName] : undefined;
 
-    if (hasAuth && envToken) {
+    if (envAuthConfig && envToken) {
       // Token available in env - create global client (stdio transport)
       const httpClient = this.httpClientFactory.createGlobalClient({
         profile: this.profile,
@@ -292,6 +292,14 @@ export class MCPServer {
   }
 
   /**
+   * Get highest priority auth configuration that reads token from environment
+   */
+  private getEnvBackedAuthConfig(): AuthInterceptor | undefined {
+    const configs = this.getAuthConfigs();
+    return configs.find(config => config.type !== 'oauth' && !!config.value_from_env);
+  }
+
+  /**
    * Get OAuth configuration from auth configs (if any)
    */
   private getOAuthConfig(): OAuthConfig | undefined {
@@ -309,8 +317,8 @@ export class MCPServer {
       if (!this.httpClientFactory.hasGlobalClient()) {
         const hasHttpTransport = !!this.httpTransport;
         const transport = hasHttpTransport ? 'http' : 'stdio';
-        const authConfig = this.getPrimaryAuthConfig();
-        const envVarName = authConfig?.value_from_env || 'API_TOKEN';
+        const envAuthConfig = this.getEnvBackedAuthConfig();
+        const envVarName = envAuthConfig?.value_from_env || 'API_TOKEN';
         const hasEnvToken = !!process.env[envVarName];
 
         throw new ConfigurationError(

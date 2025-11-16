@@ -53,6 +53,91 @@ describe('ProfileLoader', () => {
     }).rejects.toThrow();
   });
 
+  describe('auth interceptor validation', () => {
+    it('should accept array-form auth interceptors', async () => {
+      const loader = new ProfileLoader();
+
+      const profileJson = JSON.stringify({
+        profile_name: 'test-profile',
+        interceptors: {
+          auth: [
+            {
+              type: 'bearer',
+              value_from_env: 'FIRST_TOKEN',
+            },
+            {
+              type: 'custom-header',
+              header_name: 'X-Secondary-Token',
+              value_from_env: 'SECOND_TOKEN',
+            },
+          ],
+        },
+        tools: [
+          {
+            name: 'array_auth_tool',
+            description: 'Tool using array-form auth interceptors',
+            parameters: {
+              action: {
+                type: 'string',
+                description: 'Action selector',
+                enum: ['list'],
+              },
+            },
+            operations: {
+              list: 'getListOperation',
+            },
+          },
+        ],
+      });
+
+      const fs = await import('fs/promises');
+      const tmpPath = '/tmp/array-auth-profile.json';
+      await fs.writeFile(tmpPath, profileJson);
+
+      const profile = await loader.load(tmpPath);
+      expect(Array.isArray(profile.interceptors?.auth)).toBe(true);
+      expect((profile.interceptors?.auth as unknown[]).length).toBe(2);
+    });
+
+    it('should reject array-form auth interceptors with invalid entry', async () => {
+      const loader = new ProfileLoader();
+
+      const profileJson = JSON.stringify({
+        profile_name: 'test-profile',
+        interceptors: {
+          auth: [
+            {
+              type: 'custom-header',
+              value_from_env: 'MISSING_HEADER_NAME',
+            },
+          ],
+        },
+        tools: [
+          {
+            name: 'invalid_array_auth_tool',
+            description: 'Tool with invalid array-form auth interceptor',
+            parameters: {
+              action: {
+                type: 'string',
+                description: 'Action selector',
+                enum: ['list'],
+              },
+            },
+            operations: {
+              list: 'getListOperation',
+            },
+          },
+        ],
+      });
+
+      const fs = await import('fs/promises');
+      const tmpPath = '/tmp/invalid-array-auth-profile.json';
+      await fs.writeFile(tmpPath, profileJson);
+
+      await expect(loader.load(tmpPath)).rejects.toThrow('custom-header requires header_name');
+    });
+  });
+
   describe('Composite steps DAG validation', () => {
     it('should accept valid composite steps without dependencies', async () => {
       const loader = new ProfileLoader();

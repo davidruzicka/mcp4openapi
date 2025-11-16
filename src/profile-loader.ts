@@ -16,6 +16,7 @@
 import fs from 'fs/promises';
 import type { Profile } from './types/profile.js';
 import { ValidationError, ConfigurationError } from './errors.js';
+import { ZodError } from 'zod';
 import { profileSchema, authInterceptorSchema } from './generated-schemas.js';
 import type { OpenAPIParser } from './openapi-parser.js';
 import type { OperationInfo, SchemaInfo } from './types/openapi.js';
@@ -42,12 +43,36 @@ const enhancedAuthInterceptorSchema = authInterceptorSchema.refine(
 
 // Override the auth schema in the profile schema tree
 // Note: This is a workaround since we can't easily modify the generated schema
-const enhancedProfileSchema = profileSchema.transform((data) => {
-  // Custom validation for auth interceptor if present
-  if (data.interceptors?.auth) {
-    enhancedAuthInterceptorSchema.parse(data.interceptors.auth);
+const enhancedProfileSchema = profileSchema.superRefine((data, ctx) => {
+  const auth = data.interceptors?.auth;
+  if (!auth) {
+    return;
   }
-  return data;
+
+  const reportIssues = (error: ZodError, basePath: (string | number)[]) => {
+    for (const issue of error.issues) {
+      const { path, ...rest } = issue;
+      ctx.addIssue({
+        ...rest,
+        path: [...basePath, ...path],
+      });
+    }
+  };
+
+  const validateAuth = (value: unknown, path: (string | number)[]) => {
+    const result = enhancedAuthInterceptorSchema.safeParse(value);
+    if (!result.success) {
+      reportIssues(result.error, path);
+    }
+  };
+
+  if (Array.isArray(auth)) {
+    auth.forEach((entry, index) => {
+      validateAuth(entry, ['interceptors', 'auth', index]);
+    });
+  } else {
+    validateAuth(auth, ['interceptors', 'auth']);
+  }
 });
 
 export class ProfileLoader {
