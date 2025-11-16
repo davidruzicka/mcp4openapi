@@ -8,7 +8,7 @@
  * and resumability for reliable communication over HTTP.
  */
 
-import express, { Request, Response, NextFunction } from 'express';
+import express, { Request, Response, NextFunction, RequestHandler } from 'express';
 import type { Server } from 'http';
 import crypto from 'crypto';
 import rateLimit from 'express-rate-limit';
@@ -241,8 +241,52 @@ export class HttpTransport {
   }
 
   /**
+   * Create configured rate limiter or a passthrough handler when disabled
+   *
+   * Why: Both MCP and metrics endpoints share the same rate limiting setup logic.
+   * Centralizing it keeps behaviour consistent and avoids drifting configuration.
+   */
+  private createRateLimiter(options: {
+    enabled: boolean;
+    windowMs: number;
+    maxRequests: number;
+    logMessage: string;
+    responseMessage?: string;
+  }): RequestHandler {
+    if (!options.enabled) {
+      return (_req: Request, _res: Response, next: NextFunction) => next();
+    }
+
+    const message = options.responseMessage ??
+      `Rate limit exceeded. Max ${options.maxRequests} requests per ${options.windowMs / 1000} seconds.`;
+
+    return rateLimit({
+      windowMs: options.windowMs,
+      max: options.maxRequests,
+      standardHeaders: true, // Return rate limit info in `RateLimit-*` headers
+      legacyHeaders: false, // Disable deprecated `X-RateLimit-*` headers
+      handler: (req: Request, res: Response) => {
+        this.logger.warn(options.logMessage, {
+          ip: req.ip,
+          path: req.path,
+          method: req.method,
+        });
+
+        res.status(429).json({
+          error: 'Too Many Requests',
+          message,
+        });
+      },
+    });
+  }
+
+  private formatRateLimitMessage(scope: string, maxRequests: number, windowMs: number): string {
+    return `Rate limit exceeded for ${scope}. Max ${maxRequests} requests per ${windowMs / 1000} seconds.`;
+  }
+
+  /**
    * Setup MCP endpoint routes
-   * 
+   *
    * Why: Single endpoint for POST (client→server) and GET (SSE stream)
    */
   private setupRoutes(): void {
@@ -298,41 +342,21 @@ export class HttpTransport {
     }
 
     // Rate limiter for MCP/SSE endpoints (100 req/min by default)
-    const mcpRateLimiter = rateLimitEnabled ? rateLimit({
+    const mcpRateLimiter = this.createRateLimiter({
+      enabled: rateLimitEnabled,
       windowMs,
-      max: maxRequests,
-      standardHeaders: true, // Return rate limit info in `RateLimit-*` headers
-      legacyHeaders: false, // Disable `X-RateLimit-*` headers
-      handler: (req: Request, res: Response) => {
-        this.logger.warn('Rate limit exceeded', {
-          ip: req.ip,
-          path: req.path,
-          method: req.method,
-        });
-        res.status(429).json({
-          error: 'Too Many Requests',
-          message: `Rate limit exceeded. Max ${maxRequests} requests per ${windowMs / 1000} seconds.`,
-        });
-      },
-    }) : (req: Request, res: Response, next: NextFunction) => next();
+      maxRequests,
+      logMessage: 'Rate limit exceeded',
+    });
 
     // Rate limiter for metrics endpoint (10 req/min by default)
-    const metricsRateLimiter = rateLimitEnabled ? rateLimit({
+    const metricsRateLimiter = this.createRateLimiter({
+      enabled: rateLimitEnabled,
       windowMs,
-      max: metricsMaxRequests,
-      standardHeaders: true,
-      legacyHeaders: false,
-      handler: (req: Request, res: Response) => {
-        this.logger.warn('Rate limit exceeded for metrics', {
-          ip: req.ip,
-          path: req.path,
-        });
-        res.status(429).json({
-          error: 'Too Many Requests',
-          message: `Rate limit exceeded for metrics. Max ${metricsMaxRequests} requests per ${windowMs / 1000} seconds.`,
-        });
-      },
-    }) : (req: Request, res: Response, next: NextFunction) => next();
+      maxRequests: metricsMaxRequests,
+      logMessage: 'Rate limit exceeded for metrics',
+      responseMessage: this.formatRateLimitMessage('metrics', metricsMaxRequests, windowMs),
+    });
 
     // Main MCP endpoint - POST for sending messages
     this.app.post('/mcp', mcpRateLimiter, this.handlePost.bind(this));

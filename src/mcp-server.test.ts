@@ -18,9 +18,18 @@ import {
 
 describe('MCPServer', () => {
   let server: MCPServer;
+  const originalApiToken = process.env.API_TOKEN;
 
   beforeEach(() => {
     server = new MCPServer();
+  });
+
+  afterEach(() => {
+    if (originalApiToken === undefined) {
+      delete process.env.API_TOKEN;
+    } else {
+      process.env.API_TOKEN = originalApiToken;
+    }
   });
 
   describe('initialize without profile', () => {
@@ -61,6 +70,34 @@ describe('MCPServer', () => {
       await server.initialize(specPath, profilePath);
 
       expect(server['profile']!.tools.length).toBeGreaterThan(0);
+    });
+
+    it('should create global client when OAuth is higher priority than env auth', async () => {
+      const specPath = path.join(process.cwd(), 'profiles/gitlab/openapi.yaml');
+      const profilePath = path.join(process.cwd(), 'profiles/gitlab/developer-profile.json');
+
+      process.env.API_TOKEN = 'test-token';
+
+      await server.initialize(specPath, profilePath);
+
+      const hasGlobalClient = (server as any).httpClientFactory.hasGlobalClient();
+      expect(hasGlobalClient).toBe(true);
+    });
+
+    it('should report missing env token when OAuth is primary and env auth has no token', async () => {
+      const specPath = path.join(process.cwd(), 'profiles/gitlab/openapi.yaml');
+      const profilePath = path.join(process.cwd(), 'profiles/gitlab/developer-profile.json');
+
+      delete process.env.API_TOKEN;
+
+      await server.initialize(specPath, profilePath);
+
+      const hasGlobalClient = (server as any).httpClientFactory.hasGlobalClient();
+      expect(hasGlobalClient).toBe(false);
+
+      expect(() => (server as any).getHttpClientForSession()).toThrowError(
+        /HasEnvToken\(API_TOKEN\): false/
+      );
     });
   });
 
