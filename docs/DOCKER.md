@@ -70,102 +70,14 @@ docker run -d \
 
 ### 4. Connect to the Server
 
-**Configuration File Locations:**
+Reuse the IDE configuration examples from the README instead of maintaining duplicates here:
 
-- **Cursor:** `.cursor/mcp.json` (project) or default `~/.cursor/mcp.json` (global, various platform-dependent location based on current Cursor profile; use `⚙` → `Tools & MCP` → `New MCP Server`)
-- **VS Code + Copilot:** `.vscode/mcp.json` (project) or `~/.config/Code/User/mcp.json` (global, platform-dependent; use `Ctrl+Shift+P` → `MCP: Open User Configuration`)
-- **JetBrains IDEs + Copilot:** `.idea/mcp.json` (project) or `~/.config/github-copilot/intellij/mcp.json` (global, platform-dependent; use GitHub Copilot icon bottom right → `Edit Setting...` → `Model Context Protocol (MCP)` → `Configure`)
-- **Claude Code:** `.claude/mcp.json` (project) or `~/.claude/mcp.json` (global, platform-dependent)
+- [Configuration file locations and VS Code prompt setup](../README.md#option-a-npx)
+- [Cursor remote connection using `mcp-remote`](../README.md#option-a-npx)
+- [Claude Code CLI registration](../README.md#option-a-npx)
+- [JetBrains IDE authorization prompt](../README.md#option-a-npx)
 
-**VS Code + Copilot example:**
-
-```json
-{
-    "inputs": [
-        {
-            "type": "promptString",
-            "id": "api_token",
-            "description": "API Authorization Token",
-            "password": true
-        }
-    ],
-    "servers": {
-        "mcp4openapi": {
-            "url": "https://mcp-server.example.com/mcp",
-            "headers": {
-                "Authorization": "Bearer ${input:api_token}"
-            }
-        }
-    }
-}
-```
-
-_`inputs` section prompts you for the token when the server starts, so environment variables are not needed._
-
-_⚠️ **Important:** VSCode uses Node.js for remote MCP connections. If your MCP server uses self-signed certificates, you need to configure Node.js to trust them (see [Custom CA Certificates](#custom-ca-certificates) section below)._
-
-**Cursor example:**
-
-```json
-{
-    "mcpServers": {
-        "mcp4openapi": {
-            "command": "npx",
-            "args": [
-                "mcp-remote",
-                "https://mcp-server.example.com/mcp",
-                "--header",
-                "Authorization: Bearer ${env:API_TOKEN}"
-            ],
-            "env": {
-                "API_TOKEN": "${env:API_TOKEN}"
-            }
-        }
-    }
-}
-```
-
-#### ⚠️ Prerequisites
-
-- You need `npx` NPM package to be installed.
-
-- Remote MCP server connections in Cursor run in a sandbox that doesn't have access to environment variables. The `mcp-remote` command reads environment variables from `~/.env.mcp` file. Make sure to set your tokens there:
-
-```bash
-# ~/.env.mcp
-API_TOKEN=your_api_token_here
-```
-
-**Claude Code example:**
-
-```bash
-claude mcp add --transport http mcp4openapi \
-  https://mcp-server.example.com/mcp \
-  --header "Authorization: Bearer ${API_TOKEN}"
-# expects API_TOKEN environment variable to be set
-```
-
-**JetBrains IDEs + Copilot example:**
-
-```json
-{
-    "servers": {
-        "mcp4openapi": {
-            "url": "https://mcp-server.example.com/mcp",
-            "requestInit": {
-                "headers": {
-                    "Authorization": "Bearer {$input:api_token}"
-                    // click on ⚠️ to enter token in IDE dialog
-                }
-            }
-        }
-    }
-}
-```
-
-_`{$input:api_token}` prompts you for the token after you click on ⚠️ next to the `Authorization` header input field._
-
-_⚠️ **Important:** JetBrains IDEs use Node.js for remote MCP connections. If your MCP server uses self-signed certificates, you need to configure Node.js to trust them (see [Custom CA Certificates](#custom-ca-certificates) section below)._
+Those snippets include token-prompt configuration and certificate guidance that apply to Docker deployments unchanged.
 
 ### 5. Verify
 
@@ -416,69 +328,7 @@ spec:
 
 ## Custom CA Certificates
 
-VS Code and JetBrains IDEs use Node.js for remote MCP connections, which has a fixed list of certificate authorities. If your MCP server uses self-signed certificates, you need to configure Node.js to trust them.
-
-### Linux
-
-**Option 1: Disable certificate validation (test only)**
-
-```bash
-export NODE_TLS_REJECT_UNAUTHORIZED=0
-# Persist for current user
-echo 'export NODE_TLS_REJECT_UNAUTHORIZED=0' >> $HOME/.profile
-```
-
-**Option 2: Add custom CA to Node.js**
-
-```bash
-export NODE_EXTRA_CA_CERTS=$HOME/ca-bundle.pem
-# Persist for current user
-echo 'export NODE_EXTRA_CA_CERTS="$HOME/ca-bundle.pem"' >> $HOME/.profile
-```
-
-### Windows (PowerShell)
-
-**Option 1: Disable certificate validation (test only)**
-
-```powershell
-# Session only
-$env:NODE_TLS_REJECT_UNAUTHORIZED = "0"
-# Persist for current user
-setx NODE_TLS_REJECT_UNAUTHORIZED 0
-```
-
-**Option 2: Add custom CA to Node.js**
-
-```powershell
-# Session only
-$env:NODE_EXTRA_CA_CERTS = "$env:USERPROFILE\ca-bundle.pem"
-# Persist for current user
-setx NODE_EXTRA_CA_CERTS "%USERPROFILE%\ca-bundle.pem"
-```
-
-### macOS (zsh/bash)
-
-**Option 1: Disable certificate validation (test only)**
-
-```bash
-# Session only
-export NODE_TLS_REJECT_UNAUTHORIZED=0
-# Persist for current user (zsh)
-echo 'export NODE_TLS_REJECT_UNAUTHORIZED=0' >> $HOME/.zshrc
-# or for bash
-echo 'export NODE_TLS_REJECT_UNAUTHORIZED=0' >> $HOME/.bash_profile
-```
-
-**Option 2: Add custom CA to Node.js**
-
-```bash
-# Session only
-export NODE_EXTRA_CA_CERTS="$HOME/ca-bundle.pem"
-# Persist for current user (zsh)
-echo 'export NODE_EXTRA_CA_CERTS="$HOME/ca-bundle.pem"' >> $HOME/.zshrc
-# or for bash
-echo 'export NODE_EXTRA_CA_CERTS="$HOME/ca-bundle.pem"' >> $HOME/.bash_profile
-```
+Follow the consolidated guidance in the [README](../README.md#custom-ca-certificates) for Linux, Windows, and macOS trust store configuration. The steps are identical for Docker deployments.
 
 ## Troubleshooting
 
@@ -537,7 +387,7 @@ deploy:
 **Common connection issues:**
 - **Connection refused:** Check if MCP server is running and accessible
 - **Authentication failed:** Verify token is correct and has required permissions
-- **Certificate errors:** Configure Node.js to trust custom CA certificates (see [Custom CA Certificates](#custom-ca-certificates) above)
+- **Certificate errors:** Configure Node.js to trust custom CA certificates (see [README guidance](../README.md#custom-ca-certificates))
 
 ## Development
 
