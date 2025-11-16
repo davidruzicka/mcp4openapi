@@ -14,6 +14,7 @@ import type { OpenAPIIndex, OperationInfo, ParameterInfo, PathInfo, RequestBodyI
 export class OpenAPIParser {
   private spec?: OpenAPIV3.Document;
   private index?: OpenAPIIndex;
+  private schemaCache = new Map<string, SchemaInfo>();
 
   async load(specPath: string): Promise<void> {
     const content = await fs.readFile(specPath, 'utf-8');
@@ -25,6 +26,7 @@ export class OpenAPIParser {
       this.spec = JSON.parse(content) as OpenAPIV3.Document;
     }
 
+    this.schemaCache.clear();
     this.buildIndex();
   }
 
@@ -37,6 +39,7 @@ export class OpenAPIParser {
   private buildIndex(): void {
     if (!this.spec) throw new ConfigurationError('OpenAPI spec not loaded. Call loadSpec() first.');
 
+    this.schemaCache.clear();
     const operations = new Map<string, OperationInfo>();
     const paths = new Map<string, PathInfo>();
 
@@ -145,9 +148,16 @@ export class OpenAPIParser {
     };
   }
 
-  private extractSchema(schema: OpenAPIV3.SchemaObject | OpenAPIV3.ReferenceObject | undefined): SchemaInfo {
+  private extractSchema(
+    schema: OpenAPIV3.SchemaObject | OpenAPIV3.ReferenceObject | undefined,
+    visited = new Set<string>()
+  ): SchemaInfo {
     if (!schema) return {};
-    if ('$ref' in schema) return { type: 'object' }; // Simplified: don't resolve refs
+
+    if ('$ref' in schema) {
+      const resolved = this.resolveSchema(schema.$ref, visited);
+      return resolved ?? { ref: schema.$ref };
+    }
 
     const result: SchemaInfo = {
       type: schema.type as string | undefined,
@@ -156,19 +166,149 @@ export class OpenAPIParser {
       default: schema.default,
     };
 
-    if (schema.type === 'array' && schema.items && !('$ref' in schema.items)) {
-      result.items = this.extractSchema(schema.items);
+    if (schema.allOf && schema.allOf.length > 0) {
+      result.allOf = schema.allOf.map(subSchema => this.extractSchema(subSchema, new Set(visited)));
+      for (const sub of result.allOf) {
+        this.mergeSchemaInfo(result, sub);
+      }
+    }
+
+    if (schema.anyOf && schema.anyOf.length > 0) {
+      result.anyOf = schema.anyOf.map(subSchema => this.extractSchema(subSchema, new Set(visited)));
+      for (const sub of result.anyOf) {
+        this.mergeSchemaInfo(result, sub);
+      }
+    }
+
+    if (schema.oneOf && schema.oneOf.length > 0) {
+      result.oneOf = schema.oneOf.map(subSchema => this.extractSchema(subSchema, new Set(visited)));
+      for (const sub of result.oneOf) {
+        this.mergeSchemaInfo(result, sub);
+      }
+    }
+
+    if (schema.type === 'array' && schema.items) {
+      result.items = this.extractSchema(schema.items, new Set(visited));
     }
 
     if (schema.type === 'object' && schema.properties) {
       result.properties = {};
       for (const [key, propSchema] of Object.entries(schema.properties)) {
-        result.properties[key] = this.extractSchema(propSchema);
+        result.properties[key] = this.extractSchema(propSchema, new Set(visited));
       }
       result.required = schema.required;
     }
 
     return result;
+  }
+
+  private resolveSchema(ref: string, visited = new Set<string>()): SchemaInfo | undefined {
+    if (!this.spec) return undefined;
+
+    const refPath = ref.replace(/^#\//, '');
+    if (visited.has(refPath)) {
+      return { ref, circular: true };
+    }
+
+    const cached = this.schemaCache.get(refPath);
+    if (cached) {
+      return this.cloneSchemaInfo(cached);
+    }
+
+    const segments = refPath.split('/');
+    let current: unknown = this.spec as unknown;
+    for (const segment of segments) {
+      if (typeof current !== 'object' || current === null) {
+        current = undefined;
+        break;
+      }
+      current = (current as Record<string, unknown>)[segment];
+    }
+
+    if (!current) return undefined;
+
+    visited.add(refPath);
+    let resolved: SchemaInfo | undefined;
+    if (typeof current === 'object' && current !== null && '$ref' in (current as Record<string, unknown>)) {
+      resolved = this.resolveSchema((current as OpenAPIV3.ReferenceObject).$ref, new Set(visited));
+    } else {
+      resolved = this.extractSchema(current as OpenAPIV3.SchemaObject, new Set(visited));
+    }
+    visited.delete(refPath);
+
+    if (!resolved) return undefined;
+
+    const canonical = this.cloneSchemaInfo({ ...resolved, ref });
+    this.schemaCache.set(refPath, canonical);
+    return this.cloneSchemaInfo(canonical);
+  }
+
+  private mergeSchemaInfo(target: SchemaInfo, source: SchemaInfo): void {
+    if (!target.type && source.type) target.type = source.type;
+    if (!target.format && source.format) target.format = source.format;
+    if (!target.enum && source.enum) target.enum = source.enum;
+    if (target.default === undefined && source.default !== undefined) target.default = source.default;
+
+    if (source.required) {
+      target.required = Array.from(new Set([...(target.required ?? []), ...source.required]));
+    }
+
+    if (source.properties) {
+      target.properties = target.properties ?? {};
+      for (const [key, value] of Object.entries(source.properties)) {
+        if (target.properties[key]) {
+          if (target.properties[key] !== value) {
+            this.mergeSchemaInfo(target.properties[key], value);
+          }
+        } else {
+          target.properties[key] = value;
+        }
+      }
+    }
+
+    if (source.items) {
+      target.items = target.items ?? source.items;
+    }
+  }
+
+  private cloneSchemaInfo(schema: SchemaInfo): SchemaInfo {
+    const cloned: SchemaInfo = {
+      type: schema.type,
+      format: schema.format,
+      enum: schema.enum ? [...schema.enum] : undefined,
+      default: schema.default,
+      ref: schema.ref,
+      circular: schema.circular,
+    };
+
+    if (schema.required) {
+      cloned.required = [...schema.required];
+    }
+
+    if (schema.items) {
+      cloned.items = this.cloneSchemaInfo(schema.items);
+    }
+
+    if (schema.properties) {
+      cloned.properties = {};
+      for (const [key, value] of Object.entries(schema.properties)) {
+        cloned.properties[key] = this.cloneSchemaInfo(value);
+      }
+    }
+
+    if (schema.allOf) {
+      cloned.allOf = schema.allOf.map(member => this.cloneSchemaInfo(member));
+    }
+
+    if (schema.anyOf) {
+      cloned.anyOf = schema.anyOf.map(member => this.cloneSchemaInfo(member));
+    }
+
+    if (schema.oneOf) {
+      cloned.oneOf = schema.oneOf.map(member => this.cloneSchemaInfo(member));
+    }
+
+    return cloned;
   }
 
   getOperation(operationId: string): OperationInfo | undefined {
