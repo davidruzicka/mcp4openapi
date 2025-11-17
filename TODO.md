@@ -11,11 +11,10 @@
 - [P2: Maintenance and Code Quality](#p2-maintenance-and-code-quality)
   - [2. Validate Operations Against OpenAPI Spec in ProfileLoader](#2-validate-operations-against-openapi-spec-in-profileloader)
 - [P3: Nice-to-Have](#p3-nice-to-have)
-  - [3. Token Validation on Initialization (HTTP Transport)](#3-token-validation-on-initialization-http-transport)
-  - [4. Export Profile Command](#4-export-profile-command)
-  - [5. OpenAPI Operation Filter for Default Profile](#5-openapi-operation-filter-for-default-profile)
-  - [6. Response Caching](#6-response-caching)
-  - [7. Request Deduplication](#7-request-deduplication)
+  - [3. Export Profile Command](#3-export-profile-command)
+  - [4. OpenAPI Operation Filter for Default Profile](#4-openapi-operation-filter-for-default-profile)
+  - [5. Response Caching](#5-response-caching)
+  - [6. Request Deduplication](#6-request-deduplication)
 
 ## P1: Correctness and Core Features
 
@@ -63,105 +62,7 @@
 
 ## P3: Nice-to-Have
 
-### 3. Token Validation on Initialization (HTTP Transport)
-**Current**: Auth token validation happens only at first tool call, not during MCP initialization. User gets successful `initialize` response even with invalid/missing token, then fails on first tool use.
-
-**Goal**: Allow optional token validation during initialization for better UX and immediate feedback.
-
-**Implementation Options**:
-
-**Phase 1: Warning on missing token (5 minutes)**
-```typescript
-// In http-transport.ts after createSession()
-if (isInitialization && !authToken && this.requiresAuth()) {
-  this.logger.warn(
-    'Session created without auth token. First tool call will fail if auth required.',
-    { sessionId: newSessionId }
-  );
-}
-```
-
-**Phase 2: Profile-based validation with probe endpoint (2-3 hours)**
-Add to profile schema:
-```json
-{
-  "interceptors": {
-    "auth": {
-      "type": "bearer",
-      "value_from_env": "API_TOKEN",
-      "validate_on_init": {
-        "enabled": true,
-        "probe_operation": "getCurrentUser",
-        "required": true,
-        "timeout_ms": 5000
-      }
-    }
-  }
-}
-```
-
-Validation logic:
-- If `validate_on_init.enabled`, call probe_operation after session creation
-- If probe fails and `required: true`, delete session and return error
-- If probe fails and `required: false`, log warning and continue
-- If no `probe_operation` specified, skip validation (just log warning)
-
-**Phase 3: Auto-detect probe endpoint on profile export (2-3 hours)**
-
-Detection strategy:
-1. **Active probing** (if `--detect-probe` flag):
-   - Find GET endpoints without required parameters
-   - Test each endpoint WITHOUT auth token (in priority order)
-   - First endpoint returning 401/403 = requires auth = ideal probe candidate
-   - Optionally test WITH token to verify it works (200 OK)
-   - Report confidence level (high/medium/low)
-   - Parallel testing of top 5 candidates for speed
-   - 5s timeout per endpoint, maximum 10 endpoints tested
-
-2. **Heuristic fallback** (if no `--detect-probe` or probing fails):
-   - Priority: `/user`, `/me`, `getCurrentUser` operations
-   - Exclude public metadata: `/version`, `/health`, `/metadata`, `/info`
-   - Prefer shallow paths (less nested = more generic)
-   - Document as "best guess" with low confidence
-
-3. **Generated profile**:
-   - Include `validate_on_init` with detected endpoint (disabled by default)
-   - Add comment with detection method, confidence level, and reasoning
-   - Warn if confidence is low
-
-CLI examples:
-```bash
-# Auto-detect with active probing (makes HTTP requests!)
-mcp4openapi export-profile --openapi-spec api.yaml --detect-probe --base-url https://api.example.com
-
-# Verify probe works with token
-mcp4openapi export-profile --openapi-spec api.yaml --detect-probe --base-url https://api.example.com --test-token "$API_TOKEN"
-
-# Skip detection (faster, uses heuristics only)
-mcp4openapi export-profile --openapi-spec api.yaml
-```
-
-**Benefits**:
-- ✅ Opt-in (no performance impact by default)
-- ✅ Immediate feedback on invalid token
-- ✅ Better UX for HTTP transport multi-user scenarios
-- ✅ Flexible configuration per API
-
-**Files to modify**:
-- `src/types/profile.ts` - add `validate_on_init` to auth config
-- `src/http-transport.ts` - implement validation logic (Phase 1 & 2)
-- `src/profile-loader.ts` - validation for new schema fields
-- `src/cli-export.ts` - probe endpoint auto-detection (Phase 3)
-- `scripts/generate-schemas.js` - regenerate schemas
-- `docs/HTTP-TRANSPORT.md` - document token validation options
-
-**Estimated effort**: 
-- Phase 1: 5 minutes
-- Phase 2: 2-3 hours
-- Phase 3: 2-3 hours (only in export command, includes active probing implementation)
-- Total: 4-6 hours
-
-### 4. Export Profile Command
+### 3. Export Profile Command
 **Goal**: Allow exporting auto-generated profile to file/stdout instead of using it directly.
 
 **Use cases**:
@@ -200,9 +101,9 @@ mcp4openapi export-profile --openapi-spec-path=api.yaml
 
 **Estimated effort**: 1-2 hours (mostly CLI parsing and formatting)
 
-**Note**: Auto-detection of probe endpoint (Phase 3 from item #3) will be implemented here in the export command to suggest `validate_on_init.probe_operation` in generated profiles.
+**Note**: This command could include auto-detection of probe endpoints for token validation in future versions.
 
-### 5. OpenAPI Operation Filter for Default Profile
+### 4. OpenAPI Operation Filter for Default Profile
 **Current**: Without profile, all OpenAPI operations generate tools. Complex APIs may produce 100+ tools with parameter inflation warnings.
 
 **Goal**: Allow filtering operations when auto-generating default profile.
@@ -263,7 +164,7 @@ export DEFAULT_PROFILE_EXCLUDE_TAGS="admin,system"
 - Tag-based: 1-2 hours
 - Total (all three): 3-4 hours
 
-### 6. Response Caching
+### 5. Response Caching
 Add optional caching layer for idempotent GET requests:
 ```json
 {
@@ -279,7 +180,7 @@ Add optional caching layer for idempotent GET requests:
 
 **Estimated effort**: 3-4 hours
 
-### 7. Request Deduplication
+### 6. Request Deduplication
 Prevent multiple identical in-flight requests (thundering herd):
 - Hash request (method + URL + body)
 - If same request is pending, await existing promise
