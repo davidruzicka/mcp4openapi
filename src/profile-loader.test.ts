@@ -53,6 +53,39 @@ describe('ProfileLoader', () => {
     }).rejects.toThrow();
   });
 
+  it('should reject non-object JSON (array)', async () => {
+    const loader = new ProfileLoader();
+
+    // Create JSON array instead of object
+    const arrayJson = JSON.stringify([
+      {
+        profile_name: 'test',
+        tools: []
+      }
+    ]);
+
+    await expect(async () => {
+      const fs = await import('fs/promises');
+      const tmpPath = '/tmp/array-profile.json';
+      await fs.writeFile(tmpPath, arrayJson);
+      await loader.load(tmpPath);
+    }).rejects.toThrow();
+  });
+
+  it('should reject non-object JSON (string)', async () => {
+    const loader = new ProfileLoader();
+
+    // Create JSON string instead of object
+    const stringJson = JSON.stringify('not an object');
+
+    await expect(async () => {
+      const fs = await import('fs/promises');
+      const tmpPath = '/tmp/string-profile.json';
+      await fs.writeFile(tmpPath, stringJson);
+      await loader.load(tmpPath);
+    }).rejects.toThrow();
+  });
+
   describe('auth interceptor validation', () => {
     it('should accept array-form auth interceptors', async () => {
       const loader = new ProfileLoader();

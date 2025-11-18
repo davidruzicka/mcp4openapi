@@ -41,45 +41,14 @@ const enhancedAuthInterceptorSchema = authInterceptorSchema.refine(
   }
 );
 
-// Override the auth schema in the profile schema tree
-// Note: This is a workaround since we can't easily modify the generated schema
-const enhancedProfileSchema = profileSchema.superRefine((data, ctx) => {
-  const auth = data.interceptors?.auth;
-  if (!auth) {
-    return;
-  }
-
-  const reportIssues = (error: ZodError, basePath: (string | number)[]) => {
-    for (const issue of error.issues) {
-      const { path, ...rest } = issue;
-      ctx.addIssue({
-        ...rest,
-        path: [...basePath, ...path],
-      });
-    }
-  };
-
-  const validateAuth = (value: unknown, path: (string | number)[]) => {
-    const result = enhancedAuthInterceptorSchema.safeParse(value);
-    if (!result.success) {
-      reportIssues(result.error, path);
-    }
-  };
-
-  if (Array.isArray(auth)) {
-    auth.forEach((entry, index) => {
-      validateAuth(entry, ['interceptors', 'auth', index]);
-    });
-  } else {
-    validateAuth(auth, ['interceptors', 'auth']);
-  }
-});
+// Use the basic profile schema - auth validation moved to validateLogic
+const enhancedProfileSchema = profileSchema;
 
 export class ProfileLoader {
   async load(profilePath: string): Promise<Profile> {
     const content = await fs.readFile(profilePath, 'utf-8');
     const json = JSON.parse(content);
-    
+
     // Validate with Zod - throws detailed error if invalid
     const profile = enhancedProfileSchema.parse(json) as Profile;
     
@@ -95,6 +64,27 @@ export class ProfileLoader {
    * "if composite=true then steps must exist"). Fail fast with clear messages.
    */
   private validateLogic(profile: Profile): void {
+    // Validate auth interceptors
+    const auth = profile.interceptors?.auth;
+    if (auth) {
+      const validateAuthEntry = (entry: unknown, index?: number) => {
+        const result = enhancedAuthInterceptorSchema.safeParse(entry);
+        if (!result.success) {
+          const path = index !== undefined ? `interceptors.auth[${index}]` : 'interceptors.auth';
+          throw new ValidationError(
+            `Invalid auth interceptor at ${path}: ${result.error.issues.map(i => i.message).join(', ')}`,
+            { path, issues: result.error.issues }
+          );
+        }
+      };
+
+      if (Array.isArray(auth)) {
+        auth.forEach((entry, index) => validateAuthEntry(entry, index));
+      } else {
+        validateAuthEntry(auth);
+      }
+    }
+
     for (const tool of profile.tools) {
       // Composite tools must have steps
       if (tool.composite && (!tool.steps || tool.steps.length === 0)) {
