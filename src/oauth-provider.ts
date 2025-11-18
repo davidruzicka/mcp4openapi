@@ -106,6 +106,18 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
     return this._clientsStore;
   }
 
+  get authorizationEndpoint(): string {
+    return this.config.authorization_endpoint;
+  }
+
+  get redirectUri(): string | undefined {
+    return this.config.redirect_uri;
+  }
+
+  get scopes(): string[] {
+    return this.config.scopes;
+  }
+
   /**
    * Resolve environment variable references in OAuth config
    * 
