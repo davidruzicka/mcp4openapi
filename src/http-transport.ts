@@ -295,12 +295,12 @@ export class HttpTransport {
     // OAuth 2.0 routes (if configured)
     if (this.oauthProvider) {
       const serverUrl = new URL(`http://${this.config.host}:${this.config.port}/mcp`);
-      const issuerUrl = new URL(this.config.oauthConfig!.authorization_endpoint).origin;
-      
+      const issuerUrl = new URL(this.oauthProvider.authorizationEndpoint).origin;
+
       // Build redirect URI
-      const redirectUri = this.config.oauthConfig!.redirect_uri || 
+      const redirectUri = this.oauthProvider.redirectUri ||
         `http://${this.config.host}:${this.config.port}/oauth/callback`;
-      
+
       this.logger.info('Setting up OAuth routes', {
         serverUrl: serverUrl.toString(),
         issuerUrl,
@@ -319,7 +319,7 @@ export class HttpTransport {
         provider: this.oauthProvider,
         issuerUrl: new URL(issuerUrl),
         baseUrl: serverUrl,
-        scopesSupported: this.config.oauthConfig!.scopes,
+        scopesSupported: this.oauthProvider.scopes,
         resourceServerUrl: serverUrl,
         resourceName: 'MCP Server',
       }));
