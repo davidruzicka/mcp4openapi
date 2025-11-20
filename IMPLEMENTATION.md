@@ -189,7 +189,7 @@
 - Origin validation (DNS rebinding protection)
 - CIDR/wildcard support for corporate networks
 
-**Configured via**: `MCP_TRANSPORT=stdio|http`
+**Configured via**: `MCP4_TRANSPORT=stdio|http`
 
 ## File Structure
 
@@ -296,7 +296,7 @@ docs/
 - `Logger` interface with `ConsoleLogger` and `JsonLogger`
 - Log levels: DEBUG, INFO, WARN, ERROR, SILENT
 - Structured logging with context
-- Environment-driven configuration (`LOG_LEVEL`, `LOG_FORMAT`)
+- Environment-driven configuration (`MCP4_LOG_LEVEL`, `MCP4_LOG_FORMAT`)
 - **Profile-aware token redaction**: Automatically redacts auth tokens (bearer/query/custom-header) based on profile configuration
 
 **2. Configuration Over Hard-coding**
@@ -342,8 +342,8 @@ docs/
 - API calls (total, duration, errors, by operation/status)
 
 **Features**:
-- Configurable enable/disable (`METRICS_ENABLED`)
-- Custom metrics path (`METRICS_PATH`)
+- Configurable enable/disable (`MCP4_METRICS_ENABLED`)
+- Custom metrics path (`MCP4_METRICS_PATH`)
 - Path normalization (prevents high cardinality)
 - Status grouping (2xx, 4xx, 5xx)
 - Prometheus-compatible format

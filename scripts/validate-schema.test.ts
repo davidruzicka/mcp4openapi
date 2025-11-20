@@ -12,7 +12,7 @@ import path from 'path';
 
 describe('profile-schema.json', () => {
   let profileSchema: any;
-  let ajv: Ajv.default;
+  let ajv: Ajv;
 
   beforeAll(async () => {
     // Load the schema
@@ -21,8 +21,8 @@ describe('profile-schema.json', () => {
     profileSchema = JSON.parse(content);
 
     // Create Ajv instance
-    ajv = new Ajv.default({ strict: true, allErrors: true });
-    addFormats.default(ajv);
+    ajv = new Ajv({ strict: true, allErrors: true });
+    addFormats(ajv);
   });
 
   it('should be valid JSON', () => {
@@ -298,10 +298,10 @@ describe('profile-schema.json', () => {
         auth: {
           type: 'oauth',
           oauth_config: {
-            authorization_endpoint: '${env:GITLAB_OAUTH_AUTHORIZATION_URL}',
-            token_endpoint: '${env:GITLAB_OAUTH_TOKEN_URL}',
-            client_id: '${env:GITLAB_OAUTH_CLIENT_ID}',
-            client_secret: '${env:GITLAB_OAUTH_CLIENT_SECRET}',
+            authorization_endpoint: '${env:MCP4_OAUTH_AUTHORIZATION_URL}',
+            token_endpoint: '${env:MCP4_OAUTH_TOKEN_URL}',
+            client_id: '${env:MCP4_OAUTH_CLIENT_ID}',
+            client_secret: '${env:MCP4_OAUTH_CLIENT_SECRET}',
             scopes: ['api', 'read_user'],
             redirect_uri: 'http://localhost:3003/oauth/callback',
           },

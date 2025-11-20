@@ -14,29 +14,29 @@ services:
       - ./profiles:/app/profiles:ro
     environment:
       # Required
-      - OPENAPI_SPEC_PATH=/app/profiles/gitlab/openapi.yaml
-      - MCP_PROFILE_PATH=/app/profiles/gitlab/developer-profile.json
-      - API_TOKEN=${API_TOKEN}
-      - API_BASE_URL=${API_BASE_URL:-https://gitlab.com/api/v4}
+      - MCP4_OPENAPI_SPEC_PATH=/app/profiles/gitlab/openapi.yaml
+      - MCP4_PROFILE_PATH=/app/profiles/gitlab/developer-profile.json
+      - MCP4_API_TOKEN=${MCP4_API_TOKEN}
+      - MCP4_API_BASE_URL=${MCP4_API_BASE_URL:-https://gitlab.com/api/v4}
       
       # Transport
-      - MCP_TRANSPORT=http
-      - MCP_HOST=0.0.0.0
-      - MCP_PORT=3003
+      - MCP4_TRANSPORT=http
+      - MCP4_HOST=0.0.0.0
+      - MCP4_PORT=3003
       
       # Logging
-      - LOG_LEVEL=${LOG_LEVEL:-info}
-      - LOG_FORMAT=${LOG_FORMAT:-json}
+      - MCP4_LOG_LEVEL=${MCP4_LOG_LEVEL:-info}
+      - MCP4_LOG_FORMAT=${MCP4_LOG_FORMAT:-json}
       
       # HTTP Transport (optional)
-      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:*}
-      - SESSION_TIMEOUT_MS=${SESSION_TIMEOUT_MS:-1800000}
-      - HEARTBEAT_ENABLED=${HEARTBEAT_ENABLED:-false}
-      - HEARTBEAT_INTERVAL_MS=${HEARTBEAT_INTERVAL_MS:-30000}
+      - MCP4_ALLOWED_ORIGINS=${MCP4_ALLOWED_ORIGINS:-http://localhost:*}
+      - MCP4_SESSION_TIMEOUT_MS=${MCP4_SESSION_TIMEOUT_MS:-1800000}
+      - MCP4_HEARTBEAT_ENABLED=${MCP4_HEARTBEAT_ENABLED:-false}
+      - MCP4_HEARTBEAT_INTERVAL_MS=${MCP4_HEARTBEAT_INTERVAL_MS:-30000}
       
       # Metrics (optional)
-      - METRICS_ENABLED=${METRICS_ENABLED:-false}
-      - METRICS_PATH=${METRICS_PATH:-/metrics}
+      - MCP4_METRICS_ENABLED=${MCP4_METRICS_ENABLED:-false}
+      - MCP4_METRICS_PATH=${MCP4_METRICS_PATH:-/metrics}
     
     restart: unless-stopped
     

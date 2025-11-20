@@ -9,10 +9,10 @@ import path from 'path';
 describe('ProfileLoader', () => {
   it('should load valid GitLab profile', async () => {
     const loader = new ProfileLoader();
-    const profilePath = path.join(process.cwd(), 'profiles/gitlab/developer-profile.json');
-    
+    const profilePath = path.join(process.cwd(), 'profiles/gitlab/developer-profile-bearer.json');
+
     const profile = await loader.load(profilePath);
-    
+
     expect(profile.profile_name).toBe('gitlab-developer');
     expect(profile.tools.length).toBeGreaterThan(0);
     expect(profile.interceptors).toBeDefined();
@@ -20,11 +20,11 @@ describe('ProfileLoader', () => {
 
   it('should validate required_for references', async () => {
     const loader = new ProfileLoader();
-    const profilePath = path.join(process.cwd(), 'profiles/gitlab/developer-profile.json');
-    
+    const profilePath = path.join(process.cwd(), 'profiles/gitlab/developer-profile-bearer.json');
+
     const profile = await loader.load(profilePath);
     const badgeTool = profile.tools.find(t => t.name === 'manage_project_badges');
-    
+
     expect(badgeTool).toBeDefined();
     expect(badgeTool?.parameters.badge_id.required_for).toContain('get');
     expect(badgeTool?.parameters.link_url.required_for).toContain('create');
@@ -347,7 +347,7 @@ describe('ProfileLoader', () => {
     // GitLab spec has security defined
     expect(profile.interceptors).toBeDefined();
     expect(profile.interceptors?.auth).toBeDefined();
-    expect(profile.interceptors?.auth?.value_from_env).toBe('API_TOKEN');
+    expect(profile.interceptors?.auth?.value_from_env).toBe('MCP4_API_TOKEN');
   });
 
   it('should create default profile with bearer auth for bearer security scheme', async () => {
@@ -382,7 +382,7 @@ describe('ProfileLoader', () => {
     
     expect(profile.interceptors?.auth).toEqual({
       type: 'bearer',
-      value_from_env: 'API_TOKEN',
+      value_from_env: 'MCP4_API_TOKEN',
     });
   });
 
@@ -420,7 +420,7 @@ describe('ProfileLoader', () => {
     expect(profile.interceptors?.auth).toEqual({
       type: 'custom-header',
       header_name: 'X-API-Key',
-      value_from_env: 'API_TOKEN',
+      value_from_env: 'MCP4_API_TOKEN',
     });
   });
 
@@ -458,7 +458,7 @@ describe('ProfileLoader', () => {
     expect(profile.interceptors?.auth).toEqual({
       type: 'query',
       query_param: 'api_key',
-      value_from_env: 'API_TOKEN',
+      value_from_env: 'MCP4_API_TOKEN',
     });
   });
 
@@ -514,8 +514,8 @@ describe('ProfileLoader', () => {
     };
     (parser as any).buildIndex();
     
-    const oldEnvVar = process.env.AUTH_ENV_VAR;
-    process.env.AUTH_ENV_VAR = 'MY_CUSTOM_TOKEN';
+    const oldEnvVar = process.env.MCP4_AUTH_ENV_VAR;
+    process.env.MCP4_AUTH_ENV_VAR = 'MY_CUSTOM_TOKEN';
     
     try {
       const profile = ProfileLoader.createDefaultProfile('test-api', parser);
@@ -523,9 +523,9 @@ describe('ProfileLoader', () => {
       expect(profile.interceptors?.auth?.value_from_env).toBe('MY_CUSTOM_TOKEN');
     } finally {
       if (oldEnvVar !== undefined) {
-        process.env.AUTH_ENV_VAR = oldEnvVar;
+        process.env.MCP4_AUTH_ENV_VAR = oldEnvVar;
       } else {
-        delete process.env.AUTH_ENV_VAR;
+        delete process.env.MCP4_AUTH_ENV_VAR;
       }
     }
   });
@@ -550,23 +550,23 @@ describe('ProfileLoader', () => {
       };
       (parser as any).buildIndex();
       
-      const oldForce = process.env.AUTH_FORCE;
-      const oldType = process.env.AUTH_TYPE;
-      process.env.AUTH_FORCE = 'true';
-      process.env.AUTH_TYPE = 'bearer';
+      const oldForce = process.env.MCP4_AUTH_FORCE;
+      const oldType = process.env.MCP4_AUTH_TYPE;
+      process.env.MCP4_AUTH_FORCE = 'true';
+      process.env.MCP4_AUTH_TYPE = 'bearer';
       
       try {
         const profile = ProfileLoader.createDefaultProfile('test-api', parser);
         
         expect(profile.interceptors?.auth).toEqual({
           type: 'bearer',
-          value_from_env: 'API_TOKEN',
+          value_from_env: 'MCP4_API_TOKEN',
         });
       } finally {
-        if (oldForce !== undefined) process.env.AUTH_FORCE = oldForce;
-        else delete process.env.AUTH_FORCE;
-        if (oldType !== undefined) process.env.AUTH_TYPE = oldType;
-        else delete process.env.AUTH_TYPE;
+        if (oldForce !== undefined) process.env.MCP4_AUTH_FORCE = oldForce;
+        else delete process.env.MCP4_AUTH_FORCE;
+        if (oldType !== undefined) process.env.MCP4_AUTH_TYPE = oldType;
+        else delete process.env.MCP4_AUTH_TYPE;
       }
     });
 
@@ -588,12 +588,12 @@ describe('ProfileLoader', () => {
       };
       (parser as any).buildIndex();
       
-      const oldForce = process.env.AUTH_FORCE;
-      const oldType = process.env.AUTH_TYPE;
-      const oldParam = process.env.AUTH_QUERY_PARAM;
-      process.env.AUTH_FORCE = 'true';
-      process.env.AUTH_TYPE = 'query';
-      process.env.AUTH_QUERY_PARAM = 'api_key';
+      const oldForce = process.env.MCP4_AUTH_FORCE;
+      const oldType = process.env.MCP4_AUTH_TYPE;
+      const oldParam = process.env.MCP4_AUTH_QUERY_PARAM;
+      process.env.MCP4_AUTH_FORCE = 'true';
+      process.env.MCP4_AUTH_TYPE = 'query';
+      process.env.MCP4_AUTH_QUERY_PARAM = 'api_key';
       
       try {
         const profile = ProfileLoader.createDefaultProfile('test-api', parser);
@@ -601,15 +601,15 @@ describe('ProfileLoader', () => {
         expect(profile.interceptors?.auth).toEqual({
           type: 'query',
           query_param: 'api_key',
-          value_from_env: 'API_TOKEN',
+          value_from_env: 'MCP4_API_TOKEN',
         });
       } finally {
-        if (oldForce !== undefined) process.env.AUTH_FORCE = oldForce;
-        else delete process.env.AUTH_FORCE;
-        if (oldType !== undefined) process.env.AUTH_TYPE = oldType;
-        else delete process.env.AUTH_TYPE;
-        if (oldParam !== undefined) process.env.AUTH_QUERY_PARAM = oldParam;
-        else delete process.env.AUTH_QUERY_PARAM;
+        if (oldForce !== undefined) process.env.MCP4_AUTH_FORCE = oldForce;
+        else delete process.env.MCP4_AUTH_FORCE;
+        if (oldType !== undefined) process.env.MCP4_AUTH_TYPE = oldType;
+        else delete process.env.MCP4_AUTH_TYPE;
+        if (oldParam !== undefined) process.env.MCP4_AUTH_QUERY_PARAM = oldParam;
+        else delete process.env.MCP4_AUTH_QUERY_PARAM;
       }
     });
 
@@ -631,12 +631,12 @@ describe('ProfileLoader', () => {
       };
       (parser as any).buildIndex();
       
-      const oldForce = process.env.AUTH_FORCE;
-      const oldType = process.env.AUTH_TYPE;
-      const oldHeader = process.env.AUTH_HEADER_NAME;
-      process.env.AUTH_FORCE = 'true';
-      process.env.AUTH_TYPE = 'custom-header';
-      process.env.AUTH_HEADER_NAME = 'X-Custom-Auth';
+      const oldForce = process.env.MCP4_AUTH_FORCE;
+      const oldType = process.env.MCP4_AUTH_TYPE;
+      const oldHeader = process.env.MCP4_AUTH_HEADER_NAME;
+      process.env.MCP4_AUTH_FORCE = 'true';
+      process.env.MCP4_AUTH_TYPE = 'custom-header';
+      process.env.MCP4_AUTH_HEADER_NAME = 'X-Custom-Auth';
       
       try {
         const profile = ProfileLoader.createDefaultProfile('test-api', parser);
@@ -644,15 +644,15 @@ describe('ProfileLoader', () => {
         expect(profile.interceptors?.auth).toEqual({
           type: 'custom-header',
           header_name: 'X-Custom-Auth',
-          value_from_env: 'API_TOKEN',
+          value_from_env: 'MCP4_API_TOKEN',
         });
       } finally {
-        if (oldForce !== undefined) process.env.AUTH_FORCE = oldForce;
-        else delete process.env.AUTH_FORCE;
-        if (oldType !== undefined) process.env.AUTH_TYPE = oldType;
-        else delete process.env.AUTH_TYPE;
-        if (oldHeader !== undefined) process.env.AUTH_HEADER_NAME = oldHeader;
-        else delete process.env.AUTH_HEADER_NAME;
+        if (oldForce !== undefined) process.env.MCP4_AUTH_FORCE = oldForce;
+        else delete process.env.MCP4_AUTH_FORCE;
+        if (oldType !== undefined) process.env.MCP4_AUTH_TYPE = oldType;
+        else delete process.env.MCP4_AUTH_TYPE;
+        if (oldHeader !== undefined) process.env.MCP4_AUTH_HEADER_NAME = oldHeader;
+        else delete process.env.MCP4_AUTH_HEADER_NAME;
       }
     });
 
@@ -674,23 +674,23 @@ describe('ProfileLoader', () => {
       };
       (parser as any).buildIndex();
       
-      const oldForce = process.env.AUTH_FORCE;
-      const oldType = process.env.AUTH_TYPE;
-      const oldParam = process.env.AUTH_QUERY_PARAM;
-      process.env.AUTH_FORCE = 'true';
-      process.env.AUTH_TYPE = 'query';
-      delete process.env.AUTH_QUERY_PARAM;
+      const oldForce = process.env.MCP4_AUTH_FORCE;
+      const oldType = process.env.MCP4_AUTH_TYPE;
+      const oldParam = process.env.MCP4_AUTH_QUERY_PARAM;
+      process.env.MCP4_AUTH_FORCE = 'true';
+      process.env.MCP4_AUTH_TYPE = 'query';
+      delete process.env.MCP4_AUTH_QUERY_PARAM;
       
       try {
         expect(() => ProfileLoader.createDefaultProfile('test-api', parser))
-          .toThrow('AUTH_QUERY_PARAM is required when AUTH_TYPE=query');
+          .toThrow('MCP4_AUTH_QUERY_PARAM is required when MCP4_AUTH_TYPE=query');
       } finally {
-        if (oldForce !== undefined) process.env.AUTH_FORCE = oldForce;
-        else delete process.env.AUTH_FORCE;
-        if (oldType !== undefined) process.env.AUTH_TYPE = oldType;
-        else delete process.env.AUTH_TYPE;
-        if (oldParam !== undefined) process.env.AUTH_QUERY_PARAM = oldParam;
-        else delete process.env.AUTH_QUERY_PARAM;
+        if (oldForce !== undefined) process.env.MCP4_AUTH_FORCE = oldForce;
+        else delete process.env.MCP4_AUTH_FORCE;
+        if (oldType !== undefined) process.env.MCP4_AUTH_TYPE = oldType;
+        else delete process.env.MCP4_AUTH_TYPE;
+        if (oldParam !== undefined) process.env.MCP4_AUTH_QUERY_PARAM = oldParam;
+        else delete process.env.MCP4_AUTH_QUERY_PARAM;
       }
     });
 
@@ -712,23 +712,23 @@ describe('ProfileLoader', () => {
       };
       (parser as any).buildIndex();
       
-      const oldForce = process.env.AUTH_FORCE;
-      const oldType = process.env.AUTH_TYPE;
-      const oldHeader = process.env.AUTH_HEADER_NAME;
-      process.env.AUTH_FORCE = 'true';
-      process.env.AUTH_TYPE = 'custom-header';
-      delete process.env.AUTH_HEADER_NAME;
+      const oldForce = process.env.MCP4_AUTH_FORCE;
+      const oldType = process.env.MCP4_AUTH_TYPE;
+      const oldHeader = process.env.MCP4_AUTH_HEADER_NAME;
+      process.env.MCP4_AUTH_FORCE = 'true';
+      process.env.MCP4_AUTH_TYPE = 'custom-header';
+      delete process.env.MCP4_AUTH_HEADER_NAME;
       
       try {
         expect(() => ProfileLoader.createDefaultProfile('test-api', parser))
-          .toThrow('AUTH_HEADER_NAME is required when AUTH_TYPE=custom-header');
+          .toThrow('MCP4_AUTH_HEADER_NAME is required when MCP4_AUTH_TYPE=custom-header');
       } finally {
-        if (oldForce !== undefined) process.env.AUTH_FORCE = oldForce;
-        else delete process.env.AUTH_FORCE;
-        if (oldType !== undefined) process.env.AUTH_TYPE = oldType;
-        else delete process.env.AUTH_TYPE;
-        if (oldHeader !== undefined) process.env.AUTH_HEADER_NAME = oldHeader;
-        else delete process.env.AUTH_HEADER_NAME;
+        if (oldForce !== undefined) process.env.MCP4_AUTH_FORCE = oldForce;
+        else delete process.env.MCP4_AUTH_FORCE;
+        if (oldType !== undefined) process.env.MCP4_AUTH_TYPE = oldType;
+        else delete process.env.MCP4_AUTH_TYPE;
+        if (oldHeader !== undefined) process.env.MCP4_AUTH_HEADER_NAME = oldHeader;
+        else delete process.env.MCP4_AUTH_HEADER_NAME;
       }
     });
 
@@ -750,19 +750,19 @@ describe('ProfileLoader', () => {
       };
       (parser as any).buildIndex();
       
-      const oldForce = process.env.AUTH_FORCE;
-      const oldType = process.env.AUTH_TYPE;
-      process.env.AUTH_FORCE = 'true';
-      process.env.AUTH_TYPE = 'invalid-type';
+      const oldForce = process.env.MCP4_AUTH_FORCE;
+      const oldType = process.env.MCP4_AUTH_TYPE;
+      process.env.MCP4_AUTH_FORCE = 'true';
+      process.env.MCP4_AUTH_TYPE = 'invalid-type';
       
       try {
         expect(() => ProfileLoader.createDefaultProfile('test-api', parser))
-          .toThrow('Invalid AUTH_TYPE: invalid-type');
+          .toThrow('Invalid MCP4_AUTH_TYPE: invalid-type');
       } finally {
-        if (oldForce !== undefined) process.env.AUTH_FORCE = oldForce;
-        else delete process.env.AUTH_FORCE;
-        if (oldType !== undefined) process.env.AUTH_TYPE = oldType;
-        else delete process.env.AUTH_TYPE;
+        if (oldForce !== undefined) process.env.MCP4_AUTH_FORCE = oldForce;
+        else delete process.env.MCP4_AUTH_FORCE;
+        if (oldType !== undefined) process.env.MCP4_AUTH_TYPE = oldType;
+        else delete process.env.MCP4_AUTH_TYPE;
       }
     });
 
@@ -794,12 +794,12 @@ describe('ProfileLoader', () => {
       };
       (parser as any).buildIndex();
       
-      const oldForce = process.env.AUTH_FORCE;
-      const oldType = process.env.AUTH_TYPE;
-      const oldHeader = process.env.AUTH_HEADER_NAME;
-      process.env.AUTH_FORCE = 'true';
-      process.env.AUTH_TYPE = 'custom-header';
-      process.env.AUTH_HEADER_NAME = 'X-Custom';
+      const oldForce = process.env.MCP4_AUTH_FORCE;
+      const oldType = process.env.MCP4_AUTH_TYPE;
+      const oldHeader = process.env.MCP4_AUTH_HEADER_NAME;
+      process.env.MCP4_AUTH_FORCE = 'true';
+      process.env.MCP4_AUTH_TYPE = 'custom-header';
+      process.env.MCP4_AUTH_HEADER_NAME = 'X-Custom';
       
       try {
         const profile = ProfileLoader.createDefaultProfile('test-api', parser);
@@ -807,15 +807,15 @@ describe('ProfileLoader', () => {
         // Should use OpenAPI security (bearer), not force config (custom-header)
         expect(profile.interceptors?.auth).toEqual({
           type: 'bearer',
-          value_from_env: 'API_TOKEN',
+          value_from_env: 'MCP4_API_TOKEN',
         });
       } finally {
-        if (oldForce !== undefined) process.env.AUTH_FORCE = oldForce;
-        else delete process.env.AUTH_FORCE;
-        if (oldType !== undefined) process.env.AUTH_TYPE = oldType;
-        else delete process.env.AUTH_TYPE;
-        if (oldHeader !== undefined) process.env.AUTH_HEADER_NAME = oldHeader;
-        else delete process.env.AUTH_HEADER_NAME;
+        if (oldForce !== undefined) process.env.MCP4_AUTH_FORCE = oldForce;
+        else delete process.env.MCP4_AUTH_FORCE;
+        if (oldType !== undefined) process.env.MCP4_AUTH_TYPE = oldType;
+        else delete process.env.MCP4_AUTH_TYPE;
+        if (oldHeader !== undefined) process.env.MCP4_AUTH_HEADER_NAME = oldHeader;
+        else delete process.env.MCP4_AUTH_HEADER_NAME;
       }
     });
   });
@@ -825,13 +825,13 @@ describe('ProfileLoader', () => {
     await parser.load('profiles/gitlab/openapi.yaml');
     
     // Set env vars for shortening
-    const oldStrategy = process.env.MCP_TOOLNAME_STRATEGY;
-    const oldWarn = process.env.MCP_TOOLNAME_WARN_ONLY;
-    const oldMax = process.env.MCP_TOOLNAME_MAX;
+    const oldStrategy = process.env.MCP4_TOOLNAME_STRATEGY;
+    const oldWarn = process.env.MCP4_TOOLNAME_WARN_ONLY;
+    const oldMax = process.env.MCP4_TOOLNAME_MAX;
     
-    process.env.MCP_TOOLNAME_STRATEGY = 'hash';
-    process.env.MCP_TOOLNAME_WARN_ONLY = 'false';
-    process.env.MCP_TOOLNAME_MAX = '30';
+    process.env.MCP4_TOOLNAME_STRATEGY = 'hash';
+    process.env.MCP4_TOOLNAME_WARN_ONLY = 'false';
+    process.env.MCP4_TOOLNAME_MAX = '30';
     
     try {
       const profile = ProfileLoader.createDefaultProfile('my-api', parser);
@@ -846,12 +846,12 @@ describe('ProfileLoader', () => {
       expect(hasShortNames).toBe(true);
     } finally {
       // Restore env vars
-      if (oldStrategy !== undefined) process.env.MCP_TOOLNAME_STRATEGY = oldStrategy;
-      else delete process.env.MCP_TOOLNAME_STRATEGY;
-      if (oldWarn !== undefined) process.env.MCP_TOOLNAME_WARN_ONLY = oldWarn;
-      else delete process.env.MCP_TOOLNAME_WARN_ONLY;
-      if (oldMax !== undefined) process.env.MCP_TOOLNAME_MAX = oldMax;
-      else delete process.env.MCP_TOOLNAME_MAX;
+      if (oldStrategy !== undefined) process.env.MCP4_TOOLNAME_STRATEGY = oldStrategy;
+      else delete process.env.MCP4_TOOLNAME_STRATEGY;
+      if (oldWarn !== undefined) process.env.MCP4_TOOLNAME_WARN_ONLY = oldWarn;
+      else delete process.env.MCP4_TOOLNAME_WARN_ONLY;
+      if (oldMax !== undefined) process.env.MCP4_TOOLNAME_MAX = oldMax;
+      else delete process.env.MCP4_TOOLNAME_MAX;
     }
   });
 

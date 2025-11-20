@@ -19,8 +19,8 @@ describe('Integration Tests', () => {
     startMockServer();
 
     // Initialize MCP server with test environment
-    process.env.API_TOKEN = 'test-token';
-    process.env.API_BASE_URL = 'https://gitlab.com/api/v4';
+    process.env.MCP4_API_TOKEN = 'test-token';
+    process.env.MCP4_API_BASE_URL = 'https://gitlab.com/api/v4';
 
     server = new MCPServer();
     const specPath = path.join(process.cwd(), 'profiles/gitlab/openapi.yaml');

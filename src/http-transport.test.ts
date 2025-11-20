@@ -8,7 +8,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import request from 'supertest';
 import type { Express } from 'express';
 import { HttpTransport } from './http-transport.js';
-import { ConsoleLogger } from './logger.js';
+import { ConsoleLogger, LogLevel } from './logger.js';
 
 describe('HttpTransport', () => {
   let transport: HttpTransport;
@@ -41,7 +41,7 @@ describe('HttpTransport', () => {
 
       const response = await request(app)
         .post('/mcp')
-        .set('Accept', 'application/json')
+        .set('Accept', 'application/json, text/event-stream')
         .set('Host', 'localhost')
         .send({ jsonrpc: '2.0', id: 1, method: 'initialize' });
 
@@ -53,7 +53,7 @@ describe('HttpTransport', () => {
 
       const response = await request(app)
         .post('/mcp')
-        .set('Accept', 'application/json')
+        .set('Accept', 'application/json, text/event-stream')
         .set('Host', '127.0.0.1')
         .send({ jsonrpc: '2.0', id: 1, method: 'initialize' });
 
@@ -65,7 +65,7 @@ describe('HttpTransport', () => {
       // For other hostnames, Origin validation applies
       const response = await request(app)
         .post('/mcp')
-        .set('Accept', 'application/json')
+        .set('Accept', 'application/json, text/event-stream')
         .set('Origin', 'https://evil.com')
         .set('Host', 'example.com')
         .send({ jsonrpc: '2.0', id: 1, method: 'initialize' });
@@ -108,7 +108,7 @@ describe('HttpTransport', () => {
     it('should accept exact hostname match', async () => {
       const response = await request(customApp)
         .post('/mcp')
-        .set('Accept', 'application/json')
+        .set('Accept', 'application/json, text/event-stream')
         .set('Origin', 'https://example.com')
         .set('Host', 'api.test.com')
         .send({ jsonrpc: '2.0', id: 1, method: 'initialize' });
@@ -119,7 +119,7 @@ describe('HttpTransport', () => {
     it('should accept wildcard subdomain match', async () => {
       const response = await request(customApp)
         .post('/mcp')
-        .set('Accept', 'application/json')
+        .set('Accept', 'application/json, text/event-stream')
         .set('Origin', 'https://api.company.com')
         .set('Host', 'api.test.com')
         .send({ jsonrpc: '2.0', id: 1, method: 'initialize' });
@@ -130,7 +130,7 @@ describe('HttpTransport', () => {
     it('should accept another wildcard subdomain match', async () => {
       const response = await request(customApp)
         .post('/mcp')
-        .set('Accept', 'application/json')
+        .set('Accept', 'application/json, text/event-stream')
         .set('Origin', 'https://web.company.com')
         .set('Host', 'api.test.com')
         .send({ jsonrpc: '2.0', id: 1, method: 'initialize' });
@@ -141,7 +141,7 @@ describe('HttpTransport', () => {
     it('should accept IP in /24 CIDR range', async () => {
       const response = await request(customApp)
         .post('/mcp')
-        .set('Accept', 'application/json')
+        .set('Accept', 'application/json, text/event-stream')
         .set('Origin', 'http://192.168.1.100')
         .set('Host', 'api.test.com')
         .send({ jsonrpc: '2.0', id: 1, method: 'initialize' });
@@ -152,7 +152,7 @@ describe('HttpTransport', () => {
     it('should accept IP in /8 CIDR range', async () => {
       const response = await request(customApp)
         .post('/mcp')
-        .set('Accept', 'application/json')
+        .set('Accept', 'application/json, text/event-stream')
         .set('Origin', 'http://10.50.100.200')
         .set('Host', 'api.test.com')
         .send({ jsonrpc: '2.0', id: 1, method: 'initialize' });
@@ -163,7 +163,7 @@ describe('HttpTransport', () => {
     it('should reject IP outside CIDR range', async () => {
       const response = await request(customApp)
         .post('/mcp')
-        .set('Accept', 'application/json')
+        .set('Accept', 'application/json, text/event-stream')
         .set('Origin', 'http://192.168.2.1')
         .set('Host', 'api.test.com')
         .send({ jsonrpc: '2.0', id: 1, method: 'initialize' });
@@ -174,7 +174,7 @@ describe('HttpTransport', () => {
     it('should reject non-matching hostname', async () => {
       const response = await request(customApp)
         .post('/mcp')
-        .set('Accept', 'application/json')
+        .set('Accept', 'application/json, text/event-stream')
         .set('Origin', 'https://evil.com')
         .set('Host', 'api.test.com')
         .send({ jsonrpc: '2.0', id: 1, method: 'initialize' });
@@ -185,7 +185,7 @@ describe('HttpTransport', () => {
     it('should reject non-matching wildcard', async () => {
       const response = await request(customApp)
         .post('/mcp')
-        .set('Accept', 'application/json')
+        .set('Accept', 'application/json, text/event-stream')
         .set('Origin', 'https://other.com')
         .set('Host', 'api.test.com')
         .send({ jsonrpc: '2.0', id: 1, method: 'initialize' });
@@ -203,7 +203,7 @@ describe('HttpTransport', () => {
 
       const response = await request(app)
         .post('/mcp')
-        .set('Accept', 'application/json')
+        .set('Accept', 'application/json, text/event-stream')
         .send({
           jsonrpc: '2.0',
           id: 1,
@@ -224,6 +224,7 @@ describe('HttpTransport', () => {
 
       const response = await request(app)
         .post('/mcp')
+        .set('Accept', 'application/json, text/event-stream')
         .set('Accept', 'text/event-stream')
         .send({
           jsonrpc: '2.0',
@@ -246,7 +247,7 @@ describe('HttpTransport', () => {
 
       const response = await request(app)
         .post('/mcp')
-        .set('Accept', 'application/json')
+        .set('Accept', 'application/json, text/event-stream')
         .send({
           jsonrpc: '2.0',
           id: 2,
@@ -263,7 +264,7 @@ describe('HttpTransport', () => {
 
       const response = await request(app)
         .post('/mcp')
-        .set('Accept', 'application/json')
+        .set('Accept', 'application/json, text/event-stream')
         .set('Mcp-Session-Id', 'invalid-session-id')
         .send({
           jsonrpc: '2.0',
@@ -282,7 +283,7 @@ describe('HttpTransport', () => {
       // First initialize to get session
       const initResponse = await request(app)
         .post('/mcp')
-        .set('Accept', 'application/json')
+        .set('Accept', 'application/json, text/event-stream')
         .send({
           jsonrpc: '2.0',
           id: 1,
@@ -294,7 +295,7 @@ describe('HttpTransport', () => {
       // Then make request with session
       const response = await request(app)
         .post('/mcp')
-        .set('Accept', 'application/json')
+        .set('Accept', 'application/json, text/event-stream')
         .set('Mcp-Session-Id', sessionId)
         .send({
           jsonrpc: '2.0',
@@ -314,7 +315,7 @@ describe('HttpTransport', () => {
       // Initialize first
       const initResponse = await request(app)
         .post('/mcp')
-        .set('Accept', 'application/json')
+        .set('Accept', 'application/json, text/event-stream')
         .send({
           jsonrpc: '2.0',
           id: 1,
@@ -326,7 +327,7 @@ describe('HttpTransport', () => {
       // Send notification (no id field = notification)
       const response = await request(app)
         .post('/mcp')
-        .set('Accept', 'application/json')
+        .set('Accept', 'application/json, text/event-stream')
         .set('Mcp-Session-Id', sessionId)
         .send({
           jsonrpc: '2.0',
@@ -340,12 +341,13 @@ describe('HttpTransport', () => {
   });
 
   describe('POST - Accept Header Validation', () => {
-    it('should require Accept header with application/json or text/event-stream', async () => {
+    it('should reject requests with invalid Accept headers', async () => {
       transport.setMessageHandler(async (msg) => ({ result: 'ok' }));
 
       const response = await request(app)
         .post('/mcp')
-        .set('Accept', 'text/html')
+        .set('Accept', 'application/json, text/event-stream')
+        .set('Accept', 'text/html')  // Missing required application/json and text/event-stream
         .send({
           jsonrpc: '2.0',
           id: 1,
@@ -354,6 +356,39 @@ describe('HttpTransport', () => {
 
       expect(response.status).toBe(406);
       expect(response.body).toHaveProperty('error', 'Not Acceptable');
+    });
+
+    it('should accept requests without Accept header for backward compatibility', async () => {
+      transport.setMessageHandler(async (msg) => ({ result: 'ok' }));
+
+      const response = await request(app)
+        .post('/mcp')
+        .set('Accept', 'application/json, text/event-stream')
+        .send({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'initialize',
+        });
+
+      expect(response.status).toBe(200);
+      expect(response.body).toHaveProperty('result', 'ok');
+    });
+
+    it('should accept requests with valid Accept headers', async () => {
+      transport.setMessageHandler(async (msg) => ({ result: 'ok' }));
+
+      const response = await request(app)
+        .post('/mcp')
+        .set('Accept', 'application/json, text/event-stream')
+        .set('Accept', 'application/json, text/event-stream')
+        .send({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'initialize',
+        });
+
+      expect(response.status).toBe(200);
+      expect(response.body).toHaveProperty('result', 'ok');
     });
   });
 
@@ -382,7 +417,6 @@ describe('HttpTransport', () => {
     it('should require text/event-stream Accept header', async () => {
       const response = await request(app)
         .get('/mcp')
-        .set('Accept', 'application/json')
         .set('Mcp-Session-Id', 'some-session');
 
       expect(response.status).toBe(405);
@@ -430,7 +464,7 @@ describe('HttpTransport', () => {
       // Create session
       const initResponse = await request(app)
         .post('/mcp')
-        .set('Accept', 'application/json')
+        .set('Accept', 'application/json, text/event-stream')
         .send({
           jsonrpc: '2.0',
           id: 1,
@@ -453,7 +487,7 @@ describe('HttpTransport', () => {
       // Create session
       const initResponse = await request(app)
         .post('/mcp')
-        .set('Accept', 'application/json')
+        .set('Accept', 'application/json, text/event-stream')
         .send({
           jsonrpc: '2.0',
           id: 1,
@@ -472,7 +506,7 @@ describe('HttpTransport', () => {
       // Verify session is gone
       const testResponse = await request(app)
         .post('/mcp')
-        .set('Accept', 'application/json')
+        .set('Accept', 'application/json, text/event-stream')
         .set('Mcp-Session-Id', sessionId)
         .send({
           jsonrpc: '2.0',
@@ -518,7 +552,7 @@ describe('HttpTransport', () => {
 
       const response = await request(app)
         .post('/mcp')
-        .set('Accept', 'application/json')
+        .set('Accept', 'application/json, text/event-stream')
         .send({
           jsonrpc: '2.0',
           id: 1,
@@ -540,7 +574,7 @@ describe('HttpTransport', () => {
       // Initialize first
       const initResponse = await request(app)
         .post('/mcp')
-        .set('Accept', 'application/json')
+        .set('Accept', 'application/json, text/event-stream')
         .send({
           jsonrpc: '2.0',
           id: 1,
@@ -552,7 +586,7 @@ describe('HttpTransport', () => {
       // Send batch
       const response = await request(app)
         .post('/mcp')
-        .set('Accept', 'application/json')
+        .set('Accept', 'application/json, text/event-stream')
         .set('Mcp-Session-Id', sessionId)
         .send([
           { jsonrpc: '2.0', id: 2, method: 'tools/list' },
@@ -572,7 +606,7 @@ describe('HttpTransport', () => {
 
       const response = await request(app)
         .post('/mcp')
-        .set('Accept', 'application/json')
+        .set('Accept', 'application/json, text/event-stream')
         .send({
           jsonrpc: '2.0',
           id: 1,
@@ -587,7 +621,7 @@ describe('HttpTransport', () => {
     it('should handle missing message handler', async () => {
       const response = await request(app)
         .post('/mcp')
-        .set('Accept', 'application/json')
+        .set('Accept', 'application/json, text/event-stream')
         .send({
           jsonrpc: '2.0',
           id: 1,
@@ -605,7 +639,7 @@ describe('HttpTransport', () => {
       // Create session
       const initResponse = await request(app)
         .post('/mcp')
-        .set('Accept', 'application/json')
+        .set('Accept', 'application/json, text/event-stream')
         .send({
           jsonrpc: '2.0',
           id: 1,
@@ -632,7 +666,7 @@ describe('HttpTransport', () => {
       // Create session
       const initResponse = await request(app)
         .post('/mcp')
-        .set('Accept', 'application/json')
+        .set('Accept', 'application/json, text/event-stream')
         .send({
           jsonrpc: '2.0',
           id: 1,
@@ -649,7 +683,7 @@ describe('HttpTransport', () => {
       // Make another request
       await request(app)
         .post('/mcp')
-        .set('Accept', 'application/json')
+        .set('Accept', 'application/json, text/event-stream')
         .set('Mcp-Session-Id', sessionId)
         .send({
           jsonrpc: '2.0',
@@ -690,7 +724,7 @@ describe('HttpTransport', () => {
       // Make some requests to generate metrics
       await request(metricsApp)
         .post('/mcp')
-        .set('Accept', 'application/json')
+        .set('Accept', 'application/json, text/event-stream')
         .set('Host', 'localhost')
         .send({ jsonrpc: '2.0', id: 1, method: 'initialize' });
 
@@ -733,7 +767,7 @@ describe('HttpTransport', () => {
       // Create session
       await request(metricsApp)
         .post('/mcp')
-        .set('Accept', 'application/json')
+        .set('Accept', 'application/json, text/event-stream')
         .set('Host', 'localhost')
         .send({ jsonrpc: '2.0', id: 1, method: 'initialize' });
 
@@ -745,7 +779,7 @@ describe('HttpTransport', () => {
       // Extract session ID
       const initResponse = await request(metricsApp)
         .post('/mcp')
-        .set('Accept', 'application/json')
+        .set('Accept', 'application/json, text/event-stream')
         .set('Host', 'localhost')
         .send({ jsonrpc: '2.0', id: 2, method: 'initialize' });
 

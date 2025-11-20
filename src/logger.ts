@@ -25,7 +25,7 @@ export interface Logger {
 }
 
 /**
- * Default logger - writes to stderr, respects LOG_LEVEL env var
+ * Default logger - writes to stderr, respects MCP4_LOG_LEVEL env var
  * 
  * Security: Redacts auth tokens based on profile configuration
  */
@@ -38,7 +38,7 @@ export class ConsoleLogger implements Logger {
       this.level = level;
     } else {
       // Parse from env
-      const envLevel = process.env.LOG_LEVEL?.toUpperCase();
+      const envLevel = process.env.MCP4_LOG_LEVEL?.toUpperCase();
       this.level = envLevel && envLevel in LogLevel
         ? LogLevel[envLevel as keyof typeof LogLevel]
         : LogLevel.INFO;
@@ -201,7 +201,7 @@ export class JsonLogger implements Logger {
     if (level !== undefined) {
       this.level = level;
     } else {
-      const envLevel = process.env.LOG_LEVEL?.toUpperCase();
+      const envLevel = process.env.MCP4_LOG_LEVEL?.toUpperCase();
       this.level = envLevel && envLevel in LogLevel
         ? LogLevel[envLevel as keyof typeof LogLevel]
         : LogLevel.INFO;

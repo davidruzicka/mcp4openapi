@@ -15,7 +15,7 @@ describe('ConsoleLogger', () => {
 
   afterEach(() => {
     consoleErrorSpy.mockRestore();
-    delete process.env.LOG_LEVEL;
+    delete process.env.MCP4_LOG_LEVEL;
   });
 
   it('logs info messages at INFO level', () => {
@@ -53,8 +53,8 @@ describe('ConsoleLogger', () => {
     );
   });
 
-  it('respects LOG_LEVEL env var', () => {
-    process.env.LOG_LEVEL = 'WARN';
+  it('respects MCP4_LOG_LEVEL env var', () => {
+    process.env.MCP4_LOG_LEVEL = 'WARN';
     const logger = new ConsoleLogger();
     
     logger.info('info message');
@@ -87,7 +87,7 @@ describe('JsonLogger', () => {
 
   afterEach(() => {
     consoleErrorSpy.mockRestore();
-    delete process.env.LOG_LEVEL;
+    delete process.env.MCP4_LOG_LEVEL;
   });
 
   it('outputs valid JSON', () => {
@@ -150,7 +150,7 @@ describe('Token Redaction', () => {
     it('should redact Authorization header in ConsoleLogger', () => {
       const authConfig: AuthInterceptor = {
         type: 'bearer',
-        value_from_env: 'API_TOKEN'
+        value_from_env: 'MCP4_API_TOKEN'
       };
       
       const logger = new ConsoleLogger(LogLevel.INFO, authConfig);
@@ -169,7 +169,7 @@ describe('Token Redaction', () => {
     it('should redact authorization header (lowercase) in JsonLogger', () => {
       const authConfig: AuthInterceptor = {
         type: 'bearer',
-        value_from_env: 'API_TOKEN'
+        value_from_env: 'MCP4_API_TOKEN'
       };
       
       const logger = new JsonLogger(LogLevel.INFO, authConfig);
@@ -188,7 +188,7 @@ describe('Token Redaction', () => {
       const authConfig: AuthInterceptor = {
         type: 'query',
         query_param: 'api_key',
-        value_from_env: 'API_TOKEN'
+        value_from_env: 'MCP4_API_TOKEN'
       };
       
       const logger = new ConsoleLogger(LogLevel.INFO, authConfig);
@@ -206,7 +206,7 @@ describe('Token Redaction', () => {
       const authConfig: AuthInterceptor = {
         type: 'query',
         query_param: 'api_key',
-        value_from_env: 'API_TOKEN'
+        value_from_env: 'MCP4_API_TOKEN'
       };
       
       const logger = new JsonLogger(LogLevel.INFO, authConfig);
@@ -224,7 +224,7 @@ describe('Token Redaction', () => {
       const authConfig: AuthInterceptor = {
         type: 'query',
         query_param: 'token',
-        value_from_env: 'API_TOKEN'
+        value_from_env: 'MCP4_API_TOKEN'
       };
       
       const logger = new ConsoleLogger(LogLevel.INFO, authConfig);
@@ -243,7 +243,7 @@ describe('Token Redaction', () => {
       const authConfig: AuthInterceptor = {
         type: 'custom-header',
         header_name: 'X-API-Key',
-        value_from_env: 'API_TOKEN'
+        value_from_env: 'MCP4_API_TOKEN'
       };
       
       const logger = new ConsoleLogger(LogLevel.INFO, authConfig);
@@ -269,7 +269,7 @@ describe('Token Redaction', () => {
       const authConfig: AuthInterceptor = {
         type: 'custom-header',
         header_name: 'X-API-Key',
-        value_from_env: 'API_TOKEN'
+        value_from_env: 'MCP4_API_TOKEN'
       };
       
       const logger = new JsonLogger(LogLevel.INFO, authConfig);

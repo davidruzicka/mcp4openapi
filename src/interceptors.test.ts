@@ -22,12 +22,12 @@ describe('HttpClient - Auth Interceptors', () => {
   });
 
   it('should add Bearer token for bearer auth type', async () => {
-    process.env.API_TOKEN = 'test-bearer-token';
+    process.env.MCP4_API_TOKEN = 'test-bearer-token';
 
     const config: InterceptorConfig = {
       auth: {
         type: 'bearer',
-        value_from_env: 'API_TOKEN',
+        value_from_env: 'MCP4_API_TOKEN',
       },
     };
 
@@ -68,13 +68,13 @@ describe('HttpClient - Auth Interceptors', () => {
   });
 
   it('should add query param for query auth type', async () => {
-    process.env.API_TOKEN = 'test-query-token';
+    process.env.MCP4_API_TOKEN = 'test-query-token';
 
     const config: InterceptorConfig = {
       auth: {
         type: 'query',
         query_param: 'api_key',
-        value_from_env: 'API_TOKEN',
+        value_from_env: 'MCP4_API_TOKEN',
       },
     };
 
@@ -429,12 +429,12 @@ describe('HttpClient - Retry Logic', () => {
 
 describe('HttpClient - Array Serialization', () => {
   beforeEach(() => {
-    process.env.API_TOKEN = 'test-token';
+    process.env.MCP4_API_TOKEN = 'test-token';
   });
 
   it('should serialize arrays with brackets format', async () => {
     const config: InterceptorConfig = {
-      auth: { type: 'bearer', value_from_env: 'API_TOKEN' },
+      auth: { type: 'bearer', value_from_env: 'MCP4_API_TOKEN' },
       array_format: 'brackets',
     };
 
@@ -457,7 +457,7 @@ describe('HttpClient - Array Serialization', () => {
 
   it('should serialize arrays with comma format', async () => {
     const config: InterceptorConfig = {
-      auth: { type: 'bearer', value_from_env: 'API_TOKEN' },
+      auth: { type: 'bearer', value_from_env: 'MCP4_API_TOKEN' },
       array_format: 'comma',
     };
 
@@ -483,7 +483,7 @@ describe('HttpClient - Structured Error Handling', () => {
 
   beforeEach(() => {
     process.env = { ...originalEnv };
-    process.env.API_TOKEN = 'test-token';
+    process.env.MCP4_API_TOKEN = 'test-token';
   });
 
   afterEach(() => {
@@ -492,7 +492,7 @@ describe('HttpClient - Structured Error Handling', () => {
 
   it('should throw AuthenticationError on 401 status', async () => {
     const config: InterceptorConfig = {
-      auth: { type: 'bearer', value_from_env: 'API_TOKEN' },
+      auth: { type: 'bearer', value_from_env: 'MCP4_API_TOKEN' },
     };
 
     const client = createTestHttpClient('https://api.example.com', config);
@@ -521,7 +521,7 @@ describe('HttpClient - Structured Error Handling', () => {
 
   it('should throw AuthorizationError on 403 status', async () => {
     const config: InterceptorConfig = {
-      auth: { type: 'bearer', value_from_env: 'API_TOKEN' },
+      auth: { type: 'bearer', value_from_env: 'MCP4_API_TOKEN' },
     };
 
     const client = createTestHttpClient('https://api.example.com', config);
@@ -547,7 +547,7 @@ describe('HttpClient - Structured Error Handling', () => {
 
   it('should throw RateLimitError on 429 status', async () => {
     const config: InterceptorConfig = {
-      auth: { type: 'bearer', value_from_env: 'API_TOKEN' },
+      auth: { type: 'bearer', value_from_env: 'MCP4_API_TOKEN' },
     };
 
     const client = createTestHttpClient('https://api.example.com', config);
@@ -576,7 +576,7 @@ describe('HttpClient - Structured Error Handling', () => {
 
   it('should throw NetworkError on 404 status', async () => {
     const config: InterceptorConfig = {
-      auth: { type: 'bearer', value_from_env: 'API_TOKEN' },
+      auth: { type: 'bearer', value_from_env: 'MCP4_API_TOKEN' },
     };
 
     const client = createTestHttpClient('https://api.example.com', config);
@@ -602,7 +602,7 @@ describe('HttpClient - Structured Error Handling', () => {
 
   it('should throw NetworkError on 500 status with body included', async () => {
     const config: InterceptorConfig = {
-      auth: { type: 'bearer', value_from_env: 'API_TOKEN' },
+      auth: { type: 'bearer', value_from_env: 'MCP4_API_TOKEN' },
     };
 
     const client = createTestHttpClient('https://api.example.com', config);
@@ -629,7 +629,7 @@ describe('HttpClient - Structured Error Handling', () => {
 
   it('should extract error_description from response body', async () => {
     const config: InterceptorConfig = {
-      auth: { type: 'bearer', value_from_env: 'API_TOKEN' },
+      auth: { type: 'bearer', value_from_env: 'MCP4_API_TOKEN' },
     };
 
     const client = createTestHttpClient('https://api.example.com', config);
@@ -654,7 +654,7 @@ describe('HttpClient - Structured Error Handling', () => {
 
   it('should extract error field from response body', async () => {
     const config: InterceptorConfig = {
-      auth: { type: 'bearer', value_from_env: 'API_TOKEN' },
+      auth: { type: 'bearer', value_from_env: 'MCP4_API_TOKEN' },
     };
 
     const client = createTestHttpClient('https://api.example.com', config);
@@ -676,7 +676,7 @@ describe('HttpClient - Structured Error Handling', () => {
 
   it('should extract message field from response body', async () => {
     const config: InterceptorConfig = {
-      auth: { type: 'bearer', value_from_env: 'API_TOKEN' },
+      auth: { type: 'bearer', value_from_env: 'MCP4_API_TOKEN' },
     };
 
     const client = createTestHttpClient('https://api.example.com', config);

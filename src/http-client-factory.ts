@@ -152,7 +152,7 @@ export class HttpClientFactory {
       const authConfigRaw = config.profile.interceptors.auth;
       const authConfigs = Array.isArray(authConfigRaw) ? authConfigRaw : [authConfigRaw];
       const nonOAuthConfig = authConfigs.find(c => c.type !== 'oauth');
-      const envVar = nonOAuthConfig?.value_from_env || 'API_TOKEN';
+      const envVar = nonOAuthConfig?.value_from_env || 'MCP4_API_TOKEN';
       throw new AuthenticationError(
         `No auth token available. Expected token in Authorization header or ${envVar} env var`,
         { envVar }

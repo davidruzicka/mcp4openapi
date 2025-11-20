@@ -18,7 +18,7 @@ import {
 
 describe('MCPServer', () => {
   let server: MCPServer;
-  const originalApiToken = process.env.API_TOKEN;
+  const originalApiToken = process.env.MCP4_API_TOKEN;
 
   beforeEach(() => {
     server = new MCPServer();
@@ -26,9 +26,9 @@ describe('MCPServer', () => {
 
   afterEach(() => {
     if (originalApiToken === undefined) {
-      delete process.env.API_TOKEN;
+      delete process.env.MCP4_API_TOKEN;
     } else {
-      process.env.API_TOKEN = originalApiToken;
+      process.env.MCP4_API_TOKEN = originalApiToken;
     }
   });
 
@@ -76,7 +76,7 @@ describe('MCPServer', () => {
       const specPath = path.join(process.cwd(), 'profiles/gitlab/openapi.yaml');
       const profilePath = path.join(process.cwd(), 'profiles/gitlab/developer-profile.json');
 
-      process.env.API_TOKEN = 'test-token';
+      process.env.MCP4_API_TOKEN = 'test-token';
 
       await server.initialize(specPath, profilePath);
 
@@ -88,7 +88,7 @@ describe('MCPServer', () => {
       const specPath = path.join(process.cwd(), 'profiles/gitlab/openapi.yaml');
       const profilePath = path.join(process.cwd(), 'profiles/gitlab/developer-profile.json');
 
-      delete process.env.API_TOKEN;
+      delete process.env.MCP4_API_TOKEN;
 
       await server.initialize(specPath, profilePath);
 
@@ -96,7 +96,7 @@ describe('MCPServer', () => {
       expect(hasGlobalClient).toBe(false);
 
       expect(() => (server as any).getHttpClientForSession()).toThrowError(
-        /HasEnvToken\(API_TOKEN\): false/
+        /HasEnvToken\(MCP4_API_TOKEN\): false/
       );
     });
   });
@@ -189,7 +189,7 @@ describe('MCPServer', () => {
   });
 
   describe('security warnings', () => {
-    it('should warn when binding non-localhost with empty ALLOWED_ORIGINS', async () => {
+    it('should warn when binding non-localhost with empty MCP4_ALLOWED_ORIGINS', async () => {
       const messages: string[] = [];
       const testLogger: any = {
         debug: () => {},
@@ -200,14 +200,14 @@ describe('MCPServer', () => {
 
       const serverWithLogger = new MCPServer(testLogger);
 
-      const prev = process.env.ALLOWED_ORIGINS;
-      delete process.env.ALLOWED_ORIGINS;
+      const prev = process.env.MCP4_ALLOWED_ORIGINS;
+      delete process.env.MCP4_ALLOWED_ORIGINS;
       try {
         await serverWithLogger.runHttp('0.0.0.0', 0);
-        expect(messages.find(m => m.includes('ALLOWED_ORIGINS'))).toBeDefined();
+        expect(messages.find(m => m.includes('MCP4_ALLOWED_ORIGINS'))).toBeDefined();
       } finally {
         await serverWithLogger.stop();
-        process.env.ALLOWED_ORIGINS = prev;
+        process.env.MCP4_ALLOWED_ORIGINS = prev;
       }
     });
   });

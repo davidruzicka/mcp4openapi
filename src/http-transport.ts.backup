@@ -54,8 +54,11 @@ export class HttpTransport {
     
     // Initialize OAuth provider if configured
     if (config.oauthConfig) {
+      this.logger.info('Initializing OAuth provider with config', { hasClientId: !!config.oauthConfig.client_id });
       this.oauthProvider = new ExternalOAuthProvider(config.oauthConfig, logger);
-      this.logger.info('OAuth provider initialized');
+      this.logger.info('OAuth provider initialized', { endpoint: this.oauthProvider.authorizationEndpoint });
+    } else {
+      this.logger.info('No OAuth config provided - OAuth provider not initialized');
     }
     
     this.app = express();
@@ -69,12 +72,81 @@ export class HttpTransport {
    * Why: Security (Origin validation, rate limiting), JSON parsing, session extraction, metrics
    */
   private setupMiddleware(): void {
+    // Ultra-early logging - before any middleware
+    this.app.use((req: Request, res: Response, next: NextFunction) => {
+      this.logger.info('RAW REQUEST RECEIVED', { method: req.method, url: req.url });
+      next();
+    });
+
+    // Debug middleware to trace request flow
+    this.app.use((req: Request, res: Response, next: NextFunction) => {
+      this.logger.debug('MIDDLEWARE: Request processing', { method: req.method, url: req.url, path: req.path });
+      next();
+    });
+
+    // Ultra-early logging - before any middleware
+    this.app.use((req: Request, res: Response, next: NextFunction) => {
+        method: req.method,
+        url: req.url,
+        headers: req.rawHeaders, // All headers as array
+        userAgent: req.get('user-agent'),
+        ip: req.ip,
+        timestamp: new Date().toISOString()
+      });
+      next();
+    });
+
     // JSON body parser
     this.app.use(express.json());
 
     // Metrics: Track request start time
     this.app.use((req: Request, res: Response, next: NextFunction) => {
       (req as any).startTime = Date.now();
+
+      // Log response
+      const originalSend = res.send;
+      const originalJson = res.json;
+      const logger = this.logger;
+
+      res.send = function(body: any) {
+        logger.debug('Outgoing response', {
+          method: req.method,
+          url: req.url,
+          status: res.statusCode,
+          contentType: res.get('content-type'),
+          bodyLength: body ? body.length : 0,
+          bodyPreview: typeof body === 'string' ? body.substring(0, 200) : '[object]'
+        });
+        return originalSend.call(this, body);
+      };
+
+      res.json = function(body: any) {
+        logger.debug('Outgoing JSON response', {
+          method: req.method,
+          url: req.url,
+          status: res.statusCode,
+          body
+        });
+        return originalJson.call(this, body);
+      };
+
+      next();
+    });
+
+    // Debug: Log all requests
+    this.app.use((req: Request, res: Response, next: NextFunction) => {
+      this.logger.debug('Incoming request', {
+        method: req.method,
+        url: req.url,
+        path: req.path,
+        headers: {
+          'user-agent': req.headers['user-agent'],
+          'accept': req.headers.accept,
+          'content-type': req.headers['content-type'],
+          'authorization': req.headers.authorization ? '[REDACTED]' : undefined
+        },
+        ip: req.ip
+      });
       next();
     });
 
@@ -141,6 +213,31 @@ export class HttpTransport {
       // Allow configured host
       if (hostname === this.config.host) {
         return true;
+      }
+
+      // Allow external host URL if configured
+      const externalHostUrl = process.env.MCP4_EXTERNAL_HOST_URL;
+      if (externalHostUrl) {
+        try {
+          const externalUrl = new URL(externalHostUrl);
+          if (hostname === externalUrl.hostname) {
+            return true;
+          }
+        } catch {
+          // Invalid URL, ignore
+        }
+      }
+
+      // Allow OAuth redirect URI host if configured
+      if (this.oauthProvider?.redirectUri) {
+        try {
+          const redirectUrl = new URL(this.oauthProvider.redirectUri);
+          if (hostname === redirectUrl.hostname) {
+            return true;
+          }
+        } catch {
+          // Invalid URL, ignore
+        }
       }
 
       // Check custom allowed origins
@@ -294,12 +391,17 @@ export class HttpTransport {
 
     // OAuth 2.0 routes (if configured)
     if (this.oauthProvider) {
-      const serverUrl = new URL(`http://${this.config.host}:${this.config.port}/mcp`);
-      const issuerUrl = new URL(this.oauthProvider.authorizationEndpoint).origin;
+      // Build external URI first
+      const externalBaseUrl = process.env.MCP4_EXTERNAL_HOST_URL || `http://${this.config.host}:${this.config.port}`;
 
       // Build redirect URI
       const redirectUri = this.oauthProvider.redirectUri ||
-        `http://${this.config.host}:${this.config.port}/oauth/callback`;
+        `${new URL(externalBaseUrl).origin}/oauth/callback`;
+
+      // Derive serverUrl from redirectUri if defined, otherwise use externalBaseUrl
+      const baseUrl = new URL(redirectUri).origin;
+      const serverUrl = new URL(`${baseUrl}/mcp`);
+      const issuerUrl = new URL(this.oauthProvider.authorizationEndpoint);
 
       this.logger.info('Setting up OAuth routes', {
         serverUrl: serverUrl.toString(),
@@ -315,16 +417,68 @@ export class HttpTransport {
       // - /oauth/token
       // - /oauth/register (dynamic client registration)
       // - /oauth/revoke (token revocation)
-      this.app.use(mcpAuthRouter({
-        provider: this.oauthProvider,
-        issuerUrl: new URL(issuerUrl),
-        baseUrl: serverUrl,
-        scopesSupported: this.oauthProvider.scopes,
-        resourceServerUrl: serverUrl,
-        resourceName: 'MCP Server',
-      }));
+      // Only register resource server endpoints, not authorization server endpoints
+      // since our MCP server is not an OAuth authorization server
+      this.app.get('/.well-known/oauth-protected-resource/mcp', (req: Request, res: Response) => {
+        res.json({
+          resource: serverUrl.href,
+          authorization_servers: [issuerUrl],
+          bearer_methods_supported: ['header'],
+          scopes_supported: this.oauthProvider?.scopes || ['api'],
+          resource_name: 'MCP Server',
+          resource_documentation: 'https://github.com/davidruzicka/mcp4openapi',
+        });
+      });
+
+      // OAuth callback endpoint to receive tokens from authorization server
+      this.app.get('/oauth/callback', async (req: Request, res: Response) => {
+        try {
+          const { code, state } = req.query;
+
+          if (!code || typeof code !== 'string') {
+            res.status(400).send('Missing authorization code');
+            return;
+          }
+
+          this.logger.info('OAuth callback received', { hasCode: !!code, hasState: !!state });
+
+          // Exchange code for token (this would normally happen)
+          // For now, just redirect back to indicate success
+          res.redirect(`${serverUrl.href}?oauth_success=true`);
+        } catch (error) {
+          this.logger.error('OAuth callback error', error instanceof Error ? error : new Error(String(error)));
+          res.status(500).send('OAuth callback failed');
+        }
+      });
+
+      // Provide authorization server metadata (proxy to GitLab)
+      this.app.get('/.well-known/oauth-authorization-server', async (req: Request, res: Response) => {
+        try {
+          // Return metadata pointing to GitLab OAuth server
+          res.json({
+            issuer: new URL(issuerUrl).origin,
+            authorization_endpoint: issuerUrl,
+            token_endpoint: `${new URL(issuerUrl).origin}/oauth/token`,
+            response_types_supported: ['code'],
+            code_challenge_methods_supported: ['S256'],
+            scopes_supported: this.oauthProvider?.scopes || ['api'],
+          });
+        } catch (error) {
+          this.logger.error('OAuth authorization server metadata error', error instanceof Error ? error : new Error(String(error)));
+          res.status(500).send('OAuth metadata failed');
+        }
+      });
 
       this.logger.info('OAuth routes registered');
+
+      // Catch-all handler to return JSON instead of HTML for 404s
+      // This must be the LAST route registered
+      this.app.use((req: Request, res: Response) => {
+        res.status(404).json({
+          error: 'Not Found',
+          message: `Endpoint ${req.method} ${req.path} not found`
+        });
+      });
     }
 
     // Security: Rate limiting setup
@@ -359,8 +513,16 @@ export class HttpTransport {
     });
 
     // Main MCP endpoint - POST for sending messages
-    // Temporarily disable rate limiting for debugging
-    this.app.post('/mcp', this.handlePost.bind(this));
+    this.app.post('/mcp', mcpRateLimiter, this.handlePost.bind(this));
+    // Add OPTIONS handler for CORS preflight requests
+    this.app.options('/mcp', (req: Request, res: Response) => {
+      res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*');
+      res.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept, Mcp-Session-Id');
+      res.setHeader('Access-Control-Max-Age', '86400'); // 24 hours
+      res.status(200).send();
+    });
+
     this.logger.info('Registered POST /mcp route');
 
     // Main MCP endpoint - GET for SSE streaming
@@ -407,10 +569,15 @@ export class HttpTransport {
     // Debug: SSE route registered
     this.logger.info('SSE routes registered successfully');
 
-    // Default 404 handler
-    // Catch-all handler to return JSON instead of HTML for 404s
-    // This must be the LAST route registered
+    // Default 404 handler - return JSON instead of HTML
     this.app.use((req: Request, res: Response) => {
+      this.logger.warn('Unhandled request (404)', {
+        method: req.method,
+        url: req.url,
+        path: req.path,
+        headers: req.headers,
+        ip: req.ip
+      });
       res.status(404).json({
         error: 'Not Found',
         message: `Endpoint ${req.method} ${req.path} not found`
@@ -598,18 +765,33 @@ export class HttpTransport {
   private async handlePost(req: McpRequest, res: Response): Promise<void> {
     const startTime = Date.now();
     try {
+      this.logger.debug('handlePost called', { method: req.method, path: req.path, sessionId: req.sessionId, accept: req.headers.accept });
       const sessionId = req.sessionId;
       const body = req.body;
 
-      // Validate Accept header
+      // Validate Accept header per MCP Streamable HTTP specification
       const accept = req.headers.accept || '';
-      if (!accept.includes('application/json') && !accept.includes('text/event-stream')) {
-        res.status(406).json({ error: 'Not Acceptable', message: 'Must accept application/json or text/event-stream' });
+      const acceptsJson = accept.includes('application/json') || accept === '*/*';
+      const acceptsEventStream = accept.includes('text/event-stream') || accept === '*/*' || accept === '';
+
+      this.logger.debug('Accept header validation', { accept, acceptsJson, acceptsEventStream, condition: (accept && !acceptsJson || !acceptsEventStream) });
+
+      if (accept && !acceptsJson || !acceptsEventStream) {
+        // If client sends specific Accept header, it MUST include both required types
+        this.logger.debug('Accept header validation failed, returning 406');
+        res.status(406).json({
+          error: 'Not Acceptable',
+          message: 'Client must accept both application/json and text/event-stream'
+        });
         return;
+      } else if (!accept) {
+        // Allow requests without Accept header for backward compatibility, but log warning
+        this.logger.warn('Client did not send Accept header - this violates MCP specification');
       }
 
       // Check if this is initialization (no session ID yet)
       const isInitialization = isInitializeRequest(body);
+      this.logger.debug('Session validation', { isInitialization, sessionId, bodyMethod: (body as any)?.method });
 
       // Validate session (except for initialization)
       if (!isInitialization && sessionId) {
@@ -620,12 +802,14 @@ export class HttpTransport {
         }
         this.updateSessionActivity(sessionId);
       } else if (!isInitialization && !sessionId) {
+        this.logger.debug('Session validation failed: non-init request without sessionId');
         res.status(400).json({ error: 'Bad Request', message: 'Mcp-Session-Id header required (except for initialization)' });
         return;
       }
 
       // Determine message type
       const messageType = this.getMessageType(body);
+      this.logger.debug('Message type determined', { messageType, hasMessageHandler: !!this.messageHandler });
 
       // If only notifications/responses, return 202 Accepted
       if (messageType === 'notification-only' || messageType === 'response-only') {
@@ -648,6 +832,10 @@ export class HttpTransport {
         if (isInitialization) {
           // Extract and validate auth token from headers
           const authInfo = this.extractAuthToken(req);
+          this.logger.debug('Auth token extracted', { authType: authInfo?.type, hasToken: !!authInfo?.token });
+
+          // Allow initialization without token - OAuth validation happens during tool calls
+          // This matches Figma behavior where client connects first, then handles OAuth
           
           // Validate token if auth is configured and token is provided
           if (authInfo.token && authInfo.type !== 'oauth' && this.config.authConfigs && this.config.baseUrl) {
@@ -679,7 +867,17 @@ export class HttpTransport {
           newSessionId = this.createSession(authInfo.token);
         }
 
+        this.logger.debug('Calling messageHandler', { body, sessionId: isInitialization ? newSessionId : sessionId });
         const response = await this.messageHandler(body, isInitialization ? newSessionId : sessionId);
+        this.logger.debug('MessageHandler response', { response });
+
+        // Debug: Check OAuth conditions
+        this.logger.debug('Checking OAuth conditions', {
+          responseError: (response as any).error,
+          hasOAuthProvider: !!this.oauthProvider,
+          oauthProviderType: typeof this.oauthProvider
+        });
+
 
         // Check if response contains OAuth error and add WWW-Authenticate header
         const responseObj = response as any;
@@ -689,17 +887,12 @@ export class HttpTransport {
           res.status(401); // Set 401 status for OAuth errors
         }
 
-        // Check if client prefers SSE stream
-        if (accept.includes('text/event-stream')) {
-          // Return SSE stream
-          this.startSSEResponse(res, response, newSessionId, sessionId);
-        } else {
-          // Return JSON
-          if (newSessionId) {
-            res.setHeader('Mcp-Session-Id', newSessionId);
-          }
-          res.json(response);
+        // Return JSON response (default for requests)
+        if (newSessionId) {
+          res.setHeader('Mcp-Session-Id', newSessionId);
         }
+        this.logger.debug('Sending JSON response', { response, newSessionId });
+        res.json(response);
         return;
       }
 
@@ -1114,6 +1307,13 @@ export class HttpTransport {
   }
 
   /**
+   * Set message handler for processing incoming JSON-RPC messages
+   */
+  public setMessageHandler(handler: (message: unknown, sessionId?: string) => Promise<unknown>): void {
+    this.messageHandler = handler;
+  }
+
+  /**
    * Check if OAuth provider is configured
    */
   public hasOAuthProvider(): boolean {
@@ -1141,13 +1341,6 @@ export class HttpTransport {
    */
   public getOAuthScopes(): string[] {
     return this.oauthProvider?.scopes || [];
-  }
-
-  /**
-   * Set message handler for processing incoming JSON-RPC messages
-   */
-  public setMessageHandler(handler: (message: unknown, sessionId?: string) => Promise<unknown>): void {
-    this.messageHandler = handler;
   }
 
   /**

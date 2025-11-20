@@ -15,7 +15,7 @@ docker build -t mcp4openapi .
 **Single-user mode** (simple, one token for all):
 ```bash
 cp .env.docker.example .env.docker
-# Edit .env.docker with API_TOKEN
+# Edit .env.docker with MCP4_API_TOKEN
 ```
 
 **Multi-user mode** (each user sends own token):
@@ -34,7 +34,7 @@ docker-compose --env-file .env.docker up -d
 
 Multi-user mode:
 ```bash
-# Edit docker-compose.yml to remove API_TOKEN
+# Edit docker-compose.yml to remove MCP4_API_TOKEN
 docker-compose up -d
 ```
 
@@ -46,10 +46,10 @@ docker run -d \
   --name mcp-server \
   -p 3003:3003 \
   -v $(pwd)/profiles:/app/profiles:ro \
-  -e OPENAPI_SPEC_PATH=/app/profiles/gitlab/openapi.yaml \
-  -e MCP_PROFILE_PATH=/app/profiles/gitlab/developer-profile.json \
-  -e API_TOKEN=your_token \
-  -e API_BASE_URL=https://gitlab.com/api/v4 \
+  -e MCP4_OPENAPI_SPEC_PATH=/app/profiles/gitlab/openapi.yaml \
+  -e MCP4_PROFILE_PATH=/app/profiles/gitlab/developer-profile.json \
+  -e MCP4_API_TOKEN=your_token \
+  -e MCP4_API_BASE_URL=https://gitlab.com/api/v4 \
   mcp4openapi:latest
 ```
 
@@ -59,11 +59,11 @@ docker run -d \
   --name mcp-server \
   -p 3003:3003 \
   -v $(pwd)/profiles:/app/profiles:ro \
-  -e OPENAPI_SPEC_PATH=/app/profiles/gitlab/openapi.yaml \
-  -e MCP_PROFILE_PATH=/app/profiles/gitlab/developer-profile.json \
-  -e API_BASE_URL=https://gitlab.com/api/v4 \
-  -e MCP_TRANSPORT=http \
-  -e MCP_HOST=0.0.0.0 \
+  -e MCP4_OPENAPI_SPEC_PATH=/app/profiles/gitlab/openapi.yaml \
+  -e MCP4_PROFILE_PATH=/app/profiles/gitlab/developer-profile.json \
+  -e MCP4_API_BASE_URL=https://gitlab.com/api/v4 \
+  -e MCP4_TRANSPORT=http \
+  -e MCP4_HOST=0.0.0.0 \
   mcp4openapi:latest
 # Clients send: Authorization: Bearer <user_token>
 ```
@@ -134,10 +134,10 @@ USER mcp
 **Option 1: Docker secrets** (Docker Swarm)
 ```yaml
 secrets:
-  - api_token
+  - MCP4_API_TOKEN
 
 secrets:
-  api_token:
+  MCP4_API_TOKEN:
     external: true
 ```
 
@@ -149,7 +149,7 @@ docker run --env-file .env.docker ...
 **Option 3: Kubernetes secrets**
 ```yaml
 env:
-  - name: API_TOKEN
+  - name: MCP4_API_TOKEN
     valueFrom:
       secretKeyRef:
         name: mcp-secrets
@@ -193,7 +193,7 @@ docker-compose logs -f mcp-server | jq .
 **Switching to Console logs**:
 ```yaml
 environment:
-  - LOG_FORMAT=console
+  - MCP4_LOG_FORMAT=console
 ```
 
 ### Metrics
@@ -201,7 +201,7 @@ environment:
 Enable Prometheus metrics:
 ```yaml
 environment:
-  - METRICS_ENABLED=true
+  - MCP4_METRICS_ENABLED=true
 ```
 
 Access metrics:
@@ -246,8 +246,8 @@ server {
 Enable heartbeat for reverse proxies:
 ```yaml
 environment:
-  - HEARTBEAT_ENABLED=true
-  - HEARTBEAT_INTERVAL_MS=30000
+  - MCP4_HEARTBEAT_ENABLED=true
+  - MCP4_HEARTBEAT_INTERVAL_MS=30000
 ```
 
 ### 2. Docker Swarm
@@ -286,15 +286,15 @@ spec:
         - containerPort: 3003
           protocol: TCP
         env:
-        - name: HEARTBEAT_ENABLED
+        - name: MCP4_HEARTBEAT_ENABLED
           value: "true"
-        - name: API_BASE_URL
+        - name: MCP4_API_BASE_URL
           value: https://your-api-instance/api/v4
-        - name: OPENAPI_SPEC_PATH
+        - name: MCP4_OPENAPI_SPEC_PATH
           value: /app/profiles/your-openapi-spec.yaml
-        - name: MCP_PROFILE_PATH
+        - name: MCP4_PROFILE_PATH
           value: /app/profiles/your-mcp-profile.json
-        - name: METRICS_ENABLED
+        - name: MCP4_METRICS_ENABLED
           value: "true"
         # uncomment in case of self-signed CAs
         #- name: NODE_EXTRA_CA_CERTS
@@ -340,8 +340,8 @@ docker-compose logs mcp4openapi
 ```
 
 **Common issues**:
-- Missing `API_TOKEN` environment variable
-- Invalid `OPENAPI_SPEC_PATH` or `MCP_PROFILE_PATH`
+- Missing `MCP4_API_TOKEN` environment variable
+- Invalid `MCP4_OPENAPI_SPEC_PATH` or `MCP4_PROFILE_PATH`
 - Profiles directory not mounted
 
 ### Permission denied
@@ -421,10 +421,10 @@ docker buildx build \
 docker run -d \
   -p 3003:3003 \
   -v path/to/profiles:/app/profiles:ro \
-  -e OPENAPI_SPEC_PATH=/app/profiles/gitlab/openapi.yaml \
-  -e MCP_PROFILE_PATH=/app/profiles/gitlab/developer-profile.json \
-  -e API_TOKEN=$API_TOKEN \
-  -e API_BASE_URL=$API_BASE_URL \
+  -e MCP4_OPENAPI_SPEC_PATH=/app/profiles/gitlab/openapi.yaml \
+  -e MCP4_PROFILE_PATH=/app/profiles/gitlab/developer-profile.json \
+  -e MCP4_API_TOKEN=$MCP4_API_TOKEN \
+  -e MCP4_API_BASE_URL=$MCP4_API_BASE_URL \
   mcp4openapi
 ```
 

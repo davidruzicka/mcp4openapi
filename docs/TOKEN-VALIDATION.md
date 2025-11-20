@@ -29,12 +29,12 @@ Add `validation_endpoint` to your auth configuration:
   "interceptors": {
     "auth": {
       "type": "bearer",
-      "value_from_env": "API_TOKEN",
+      "value_from_env": "MCP4_API_TOKEN",
       "validation_endpoint": "/api/v4/personal_access_tokens/self",
       "validation_timeout_ms": 3000
     },
     "base_url": {
-      "value_from_env": "API_BASE_URL",
+      "value_from_env": "MCP4_API_BASE_URL",
       "default": "https://gitlab.com/api/v4"
     }
   }
@@ -44,10 +44,10 @@ Add `validation_endpoint` to your auth configuration:
 **Environment variables:**
 ```bash
 # Token for authentication
-export API_TOKEN=glpat-xxxxxxxxxxxx
+export MCP4_API_TOKEN=glpat-xxxxxxxxxxxx
 
 # GitLab instance URL (optional, defaults to gitlab.com)
-export API_BASE_URL=https://gitlab.example.com/api/v4
+export MCP4_API_BASE_URL=https://gitlab.example.com/api/v4
 ```
 
 ### Multi-Auth with Validation
@@ -64,12 +64,12 @@ export API_BASE_URL=https://gitlab.example.com/api/v4
       {
         "type": "bearer",
         "priority": 1,
-        "value_from_env": "API_TOKEN",
+        "value_from_env": "MCP4_API_TOKEN",
         "validation_endpoint": "/api/v4/personal_access_tokens/sel"
       }
     ],
     "base_url": {
-      "value_from_env": "API_BASE_URL",
+      "value_from_env": "MCP4_API_BASE_URL",
       "default": "https://gitlab.com/api/v4"
     }
   }
@@ -79,17 +79,17 @@ export API_BASE_URL=https://gitlab.example.com/api/v4
 **Environment variables:**
 ```bash
 # OAuth credentials (for interactive users)
-export GITLAB_OAUTH_AUTHORIZATION_URL=https://gitlab.example.com/oauth/authorize
-export GITLAB_OAUTH_TOKEN_URL=https://gitlab.example.com/oauth/token
-export GITLAB_OAUTH_CLIENT_ID=xxx
-export GITLAB_OAUTH_CLIENT_SECRET=yyy
-export GITLAB_OAUTH_REDIRECT_URI=https://mcp-gitlab.example.com/oauth/callback
+export MCP4_OAUTH_AUTHORIZATION_URL=https://gitlab.example.com/oauth/authorize
+export MCP4_OAUTH_TOKEN_URL=https://gitlab.example.com/oauth/token
+export MCP4_OAUTH_CLIENT_ID=xxx
+export MCP4_OAUTH_CLIENT_SECRET=yyy
+export MCP4_OAUTH_REDIRECT_URI=https://mcp-gitlab.example.com/oauth/callback
 
 # Bearer token (for CI/CD)
-export API_TOKEN=glpat-xxxxxxxxxxxx
+export MCP4_API_TOKEN=glpat-xxxxxxxxxxxx
 
 # GitLab instance URL
-export API_BASE_URL=https://gitlab.example.com/api/v4
+export MCP4_API_BASE_URL=https://gitlab.example.com/api/v4
 ```
 
 **How it works:**

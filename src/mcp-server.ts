@@ -211,7 +211,7 @@ export class MCPServer {
    * Why: Prevents sensitive tokens from appearing in logs
    */
   private createLoggerWithAuth(authConfig: AuthInterceptor): Logger {
-    const logFormat = process.env.LOG_FORMAT || 'console';
+    const logFormat = process.env.MCP4_LOG_FORMAT || 'console';
     const logLevel = this.logger instanceof ConsoleLogger || this.logger instanceof JsonLogger
       ? (this.logger as any).level
       : undefined;
@@ -225,9 +225,9 @@ export class MCPServer {
    * Check tool name lengths and warn if needed
    */
   private checkToolNameLengths(): void {
-    const maxLength = parseInt(process.env.MCP_TOOLNAME_MAX || '45', 10);
-    const strategy = (process.env.MCP_TOOLNAME_STRATEGY || 'none').toLowerCase() as NamingStrategy;
-    const warnOnly = (process.env.MCP_TOOLNAME_WARN_ONLY || 'true').toLowerCase() === 'true';
+    const maxLength = parseInt(process.env.MCP4_TOOLNAME_MAX || '45', 10);
+    const strategy = (process.env.MCP4_TOOLNAME_STRATEGY || 'none').toLowerCase() as NamingStrategy;
+    const warnOnly = (process.env.MCP4_TOOLNAME_WARN_ONLY || 'true').toLowerCase() === 'true';
     
     // Only warn if strategy is 'none' or warn-only mode is enabled
     if (strategy !== NamingStrategy.None && !warnOnly) {
@@ -245,10 +245,10 @@ export class MCPServer {
     
     const warningOptions: NameWarningOptions = {
       maxLength,
-      similarTopN: parseInt(process.env.MCP_TOOLNAME_SIMILAR_TOP || '3', 10),
-      similarityThreshold: parseFloat(process.env.MCP_TOOLNAME_SIMILARITY_THRESHOLD || '0.75'),
-      minParts: parseInt(process.env.MCP_TOOLNAME_MIN_PARTS || '3', 10),
-      minLength: parseInt(process.env.MCP_TOOLNAME_MIN_LENGTH || '20', 10),
+      similarTopN: parseInt(process.env.MCP4_TOOLNAME_SIMILAR_TOP || '3', 10),
+      similarityThreshold: parseFloat(process.env.MCP4_TOOLNAME_SIMILARITY_THRESHOLD || '0.75'),
+      minParts: parseInt(process.env.MCP4_TOOLNAME_MIN_PARTS || '3', 10),
+      minLength: parseInt(process.env.MCP4_TOOLNAME_MIN_LENGTH || '20', 10),
     };
     
     generateNameWarnings(opsForNaming, warningOptions, this.logger);
@@ -318,7 +318,7 @@ export class MCPServer {
         const hasHttpTransport = !!this.httpTransport;
         const transport = hasHttpTransport ? 'http' : 'stdio';
         const envAuthConfig = this.getEnvBackedAuthConfig();
-        const envVarName = envAuthConfig?.value_from_env || 'API_TOKEN';
+        const envVarName = envAuthConfig?.value_from_env || 'MCP4_API_TOKEN';
         const hasEnvToken = !!process.env[envVarName];
 
         throw new ConfigurationError(
@@ -681,31 +681,31 @@ export class MCPServer {
     const config = {
       host,
       port,
-      sessionTimeoutMs: parseInt(process.env.SESSION_TIMEOUT_MS || '1800000', 10),
-      heartbeatEnabled: process.env.HEARTBEAT_ENABLED === 'true',
-      heartbeatIntervalMs: parseInt(process.env.HEARTBEAT_INTERVAL_MS || '30000', 10),
-      metricsEnabled: process.env.METRICS_ENABLED === 'true',
-      metricsPath: process.env.METRICS_PATH || '/metrics',
-      allowedOrigins: process.env.ALLOWED_ORIGINS
-        ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim())
+      sessionTimeoutMs: parseInt(process.env.MCP4_SESSION_TIMEOUT_MS || '1800000', 10),
+      heartbeatEnabled: process.env.MCP4_HEARTBEAT_ENABLED === 'true',
+      heartbeatIntervalMs: parseInt(process.env.MCP4_HEARTBEAT_INTERVAL_MS || '30000', 10),
+      metricsEnabled: process.env.MCP4_METRICS_ENABLED === 'true',
+      metricsPath: process.env.MCP4_METRICS_PATH || '/metrics',
+      allowedOrigins: process.env.MCP4_ALLOWED_ORIGINS
+        ? process.env.MCP4_ALLOWED_ORIGINS.split(',').map(o => o.trim())
         : undefined,
-      rateLimitEnabled: process.env.HTTP_RATE_LIMIT_ENABLED !== 'false', // default: true
-      rateLimitWindowMs: parseInt(process.env.HTTP_RATE_LIMIT_WINDOW_MS || '60000', 10),
-      rateLimitMaxRequests: parseInt(process.env.HTTP_RATE_LIMIT_MAX_REQUESTS || '100', 10),
-      rateLimitMetricsMax: parseInt(process.env.HTTP_RATE_LIMIT_METRICS_MAX || '10', 10),
-      maxTokenLength: process.env.TOKEN_MAX_LENGTH
-        ? parseInt(process.env.TOKEN_MAX_LENGTH, 10)
+      rateLimitEnabled: process.env.MCP4_HTTP_RATE_LIMIT_ENABLED !== 'false', // default: true
+      rateLimitWindowMs: parseInt(process.env.MCP4_HTTP_RATE_LIMIT_WINDOW_MS || '60000', 10),
+      rateLimitMaxRequests: parseInt(process.env.MCP4_HTTP_RATE_LIMIT_MAX_REQUESTS || '100', 10),
+      rateLimitMetricsMax: parseInt(process.env.MCP4_HTTP_RATE_LIMIT_METRICS_MAX || '10', 10),
+      maxTokenLength: process.env.MCP4_TOKEN_MAX_LENGTH
+        ? parseInt(process.env.MCP4_TOKEN_MAX_LENGTH, 10)
         : undefined, // Uses default from http-transport.ts if undefined
       oauthConfig, // Pass OAuth config if available
       baseUrl, // Pass base URL for token validation
       authConfigs, // Pass auth configs for token validation
     };
 
-    // Warn if binding to non-localhost without explicit ALLOWED_ORIGINS
+    // Warn if binding to non-localhost without explicit MCP4_ALLOWED_ORIGINS
     const isLocalhost = host === 'localhost' || host === '127.0.0.1' || host === '::1';
     const hasAllowedOrigins = Array.isArray(config.allowedOrigins) && config.allowedOrigins.length > 0;
     if (!isLocalhost && !hasAllowedOrigins) {
-      this.logger.warn('Binding to non-localhost with empty ALLOWED_ORIGINS. Set ALLOWED_ORIGINS or bind to localhost.');
+      this.logger.warn('Binding to non-localhost with empty MCP4_ALLOWED_ORIGINS. Set MCP4_ALLOWED_ORIGINS or bind to localhost.');
     }
 
     this.httpTransport = new HttpTransport(config, this.logger);
@@ -743,7 +743,7 @@ export class MCPServer {
 
     // Handle other JSON-RPC requests
     // (tools/list, prompts/list, etc.)
-    return this.handleOtherRequest(message);
+    return this.handleOtherRequest(message, sessionId);
   }
 
 
@@ -760,6 +760,9 @@ export class MCPServer {
         tools: {},
       },
     };
+
+    // OAuth capability is communicated via 401 responses with WWW-Authenticate header
+    // as per MCP Authorization specification
 
     // Include sessionId if available (for HTTP transport)
     if (sessionId) {
@@ -778,6 +781,29 @@ export class MCPServer {
     const params = req.params as Record<string, unknown>;
     const toolName = params.name as string;
     const args = params.arguments as Record<string, unknown>;
+
+    // Check OAuth authentication for tool operations
+    if (this.httpTransport && this.httpTransport.hasOAuthProvider()) {
+      const authToken = this.getAuthTokenFromSession(sessionId || '');
+      if (!authToken) {
+        // Return OAuth required error with WWW-Authenticate header
+        // This should trigger the OAuth flow in the client
+        const errorResponse = {
+          jsonrpc: '2.0',
+          id: req.id,
+          error: {
+            code: -32001, // Application error
+            message: 'Authentication required. Please authorize via OAuth.',
+            data: {
+              oauth_required: true,
+              resource_metadata: `${this.httpTransport.getServerUrl()}/.well-known/oauth-protected-resource/mcp`,
+              scope: 'api'
+            }
+          }
+        };
+        return errorResponse;
+      }
+    }
 
     try {
       // Find tool definition
@@ -860,15 +886,38 @@ export class MCPServer {
     }
   }
 
-  private handleOtherRequest(message: unknown): unknown {
+  private handleOtherRequest(message: unknown, sessionId?: string): unknown {
     const req = message as Record<string, unknown>;
-    
+
+    // Check OAuth authentication for other operations (like tools/list)
+    if (this.httpTransport && this.httpTransport.hasOAuthProvider()) {
+      const authToken = this.getAuthTokenFromSession(sessionId || '');
+      if (!authToken) {
+        // Return OAuth required error with WWW-Authenticate header
+        // This should trigger the OAuth flow in the client
+        const errorResponse = {
+          jsonrpc: '2.0',
+          id: req.id,
+          error: {
+            code: -32001, // Application error
+            message: 'Authentication required. Please authorize via OAuth.',
+            data: {
+              oauth_required: true,
+              resource_metadata: `${this.httpTransport.getServerUrl()}/.well-known/oauth-protected-resource/mcp`,
+              scope: 'api'
+            }
+          }
+        };
+        return errorResponse;
+      }
+    }
+
     // Handle tools/list
     if (req.method === 'tools/list') {
       const tools = this.profile?.tools.map(toolDef =>
         this.toolGenerator!.generateTool(toolDef)
       ) || [];
-      
+
       return {
         jsonrpc: '2.0',
         id: req.id,

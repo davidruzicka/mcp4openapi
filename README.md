@@ -90,16 +90,16 @@ Use VS Code dialog to enter access token (recommended for security):
             "command": "npx",
             "args": ["mcp4openapi"],
             "env": {
-                "OPENAPI_SPEC_PATH": "path/to/openapi.yaml",
-                "API_TOKEN": "${input:api_token}",
-                "API_BASE_URL": "https://api.example.com",
-                "MCP_PROFILE_PATH": "path/to/mcp-profile.json" //optional
+                "MCP4_OPENAPI_SPEC_PATH": "path/to/openapi.yaml",
+                "MCP4_API_TOKEN": "${input:MCP4_API_TOKEN}",
+                "MCP4_API_BASE_URL": "https://api.example.com",
+                "MCP4_PROFILE_PATH": "path/to/mcp-profile.json" //optional
             }
         },
         "inputs": [
             {
                 "type": "promptString",
-                "id": "api_token",
+                "id": "MCP4_API_TOKEN",
                 "description": "API Authorization Token",
                 "password": true
             }
@@ -119,10 +119,10 @@ _`inputs` section prompts you for the token when the server starts, so environme
             "command": "npx",
             "args": ["mcp4openapi"],
             "env": {
-                "OPENAPI_SPEC_PATH": "path/to/openapi.yaml",
-                "API_TOKEN": "${env:API_TOKEN}",
-                "API_BASE_URL": "https://api.example.com",
-                "MCP_PROFILE_PATH": "path/to/mcp-profile.json" //optional
+                "MCP4_OPENAPI_SPEC_PATH": "path/to/openapi.yaml",
+                "MCP4_API_TOKEN": "${env:MCP4_API_TOKEN}",
+                "MCP4_API_BASE_URL": "https://api.example.com",
+                "MCP4_PROFILE_PATH": "path/to/mcp-profile.json" //optional
             }
         }
     }
@@ -137,19 +137,19 @@ _`inputs` section prompts you for the token when the server starts, so environme
 
 ```bash
 # ~/.env.mcp
-API_TOKEN=your_api_token_here
+MCP4_API_TOKEN=your_api_token_here
 ```
 
 **Claude Code example:**
 
 ```bash
 claude mcp add --transport stdio mcp4openapi \
-  --env API_TOKEN="${API_TOKEN}" \
-  --env OPENAPI_SPEC_PATH=path/to/openapi.yaml \
-  --env API_BASE_URL=https://api.example.com \
-  --env MCP_PROFILE_PATH=path/to/mcp-profile.json \
+  --env MCP4_API_TOKEN="${MCP4_API_TOKEN}" \
+  --env MCP4_OPENAPI_SPEC_PATH=path/to/openapi.yaml \
+  --env MCP4_API_BASE_URL=https://api.example.com \
+  --env MCP4_PROFILE_PATH=path/to/mcp-profile.json \
   -- npx mcp4openapi
-# expects API_TOKEN environment variable to be set
+# expects MCP4_API_TOKEN environment variable to be set
 ```
 
 **JetBrains IDEs + Copilot example:**
@@ -161,10 +161,10 @@ claude mcp add --transport stdio mcp4openapi \
             "command": "npx",
             "args": ["mcp4openapi"],
             "env": {
-                "OPENAPI_SPEC_PATH": "path/to/openapi.yaml",
-                "API_TOKEN": "<api_token>",  // doesn't accept ${API_TOKEN} environment variable
-                "API_BASE_URL": "https://api.example.com",
-                "MCP_PROFILE_PATH": "path/to/mcp-profile.json" //optional
+                "MCP4_OPENAPI_SPEC_PATH": "path/to/openapi.yaml",
+                "MCP4_API_TOKEN": "<MCP4_API_TOKEN>",  // doesn't accept ${MCP4_API_TOKEN} environment variable
+                "MCP4_API_BASE_URL": "https://api.example.com",
+                "MCP4_PROFILE_PATH": "path/to/mcp-profile.json" //optional
             }
         }
     }
@@ -271,21 +271,21 @@ echo 'export NODE_EXTRA_CA_CERTS="$HOME/ca-bundle.pem"' >> $HOME/.bash_profile
 ## Environment Variables
 
 ### Required
-- `OPENAPI_SPEC_PATH`: Path to OpenAPI spec (YAML/JSON)
-- `API_TOKEN`: API token (default env var name; customizable via `AUTH_ENV_VAR`)
+- `MCP4_OPENAPI_SPEC_PATH`: Path to OpenAPI spec (YAML/JSON)
+- `MCP4_API_TOKEN`: API token (default env var name; customizable via `MCP4_AUTH_ENV_VAR`)
   - **Required for stdio** mode with authenticated APIs
   - **Optional for HTTP** mode with per-session tokens
   - When using no profile mode, auth type is auto-detected from OpenAPI `security` schemes
 
 ### Optional - Core
-- `MCP_PROFILE_PATH`: Profile JSON path (default: auto-generate tools from OpenAPI spec; warning logged if tool exceeds 60 parameters)
-- `MCP_TRANSPORT`: `stdio` (default) or `http`
-- `API_BASE_URL`: Override OpenAPI server URL
+- `MCP4_PROFILE_PATH`: Profile JSON path (default: auto-generate tools from OpenAPI spec; warning logged if tool exceeds 60 parameters)
+- `MCP4_TRANSPORT`: `stdio` (default) or `http`
+- `MCP4_API_BASE_URL`: Override OpenAPI server URL
 
 ### Optional - Authentication (No-Profile Mode)
 When running without a profile, authentication is automatically configured from OpenAPI spec's `security` schemes:
 
-- `AUTH_ENV_VAR`: Environment variable name for auth token (default: `API_TOKEN`)
+- `MCP4_AUTH_ENV_VAR`: Environment variable name for auth token (default: `MCP4_API_TOKEN`)
 
 **Supported OpenAPI Security Types:**
 - **Bearer Token** (`http` with `scheme: bearer`): Uses `Authorization: Bearer <token>` header
@@ -296,36 +296,36 @@ When running without a profile, authentication is automatically configured from 
 
 **Example**: Use custom env var for GitLab token:
 ```bash
-export API_TOKEN=glpat-xxxxxxxxxxxx
-export API_BASE_URL=https://gitlab.example.com/api/v4
-export OPENAPI_SPEC_PATH=path/to/openapi.yaml
-export MCP_PROFILE_PATH=profiles/gitlab/developer-profile.json
+export MCP4_API_TOKEN=glpat-xxxxxxxxxxxx
+export MCP4_API_BASE_URL=https://gitlab.example.com/api/v4
+export MCP4_OPENAPI_SPEC_PATH=path/to/openapi.yaml
+export MCP4_PROFILE_PATH=profiles/gitlab/developer-profile.json
 npm start
 ```
 
 #### Force Authentication Override
 For APIs with incomplete OpenAPI specs (missing `security` definition but requiring authentication):
 
-- `AUTH_FORCE`: Enable force auth override (`true|false`, default: `false`)
-- `AUTH_TYPE`: Authentication type: `bearer|query|custom-header` (default: `bearer`)
-- `AUTH_HEADER_NAME`: Custom header name (required when `AUTH_TYPE=custom-header`)
-- `AUTH_QUERY_PARAM`: Query parameter name (required when `AUTH_TYPE=query`)
+- `MCP4_AUTH_FORCE`: Enable force auth override (`true|false`, default: `false`)
+- `MCP4_AUTH_TYPE`: Authentication type: `bearer|query|custom-header` (default: `bearer`)
+- `MCP4_AUTH_HEADER_NAME`: Custom header name (required when `MCP4_AUTH_TYPE=custom-header`)
+- `MCP4_AUTH_QUERY_PARAM`: Query parameter name (required when `MCP4_AUTH_TYPE=query`)
 
 **Example**: Force bearer authentication for incomplete spec:
 ```bash
-export AUTH_FORCE=true
-export AUTH_TYPE=bearer
-export API_TOKEN=your_token_here
-export OPENAPI_SPEC_PATH=./incomplete-spec.yaml
+export MCP4_AUTH_FORCE=true
+export MCP4_AUTH_TYPE=bearer
+export MCP4_API_TOKEN=your_token_here
+export MCP4_OPENAPI_SPEC_PATH=./incomplete-spec.yaml
 npm start
 ```
 
 **Example**: Force custom header authentication:
 ```bash
-export AUTH_FORCE=true
-export AUTH_TYPE=custom-header
-export AUTH_HEADER_NAME=X-API-Key
-export API_TOKEN=your_api_key_here
+export MCP4_AUTH_FORCE=true
+export MCP4_AUTH_TYPE=custom-header
+export MCP4_AUTH_HEADER_NAME=X-API-Key
+export MCP4_API_TOKEN=your_api_key_here
 npm start
 ```
 
@@ -334,21 +334,21 @@ npm start
 ### Optional - Tool Name Shortening
 When generating tools from OpenAPI without a profile, long operation IDs may exceed limits. Configure automatic shortening:
 
-- `MCP_TOOLNAME_MAX`: Maximum tool name length (default: `45`)
-- `MCP_TOOLNAME_STRATEGY`: Shortening strategy: `none|balanced|iterative|hash|auto` (default: `none`)
+- `MCP4_TOOLNAME_MAX`: Maximum tool name length (default: `45`)
+- `MCP4_TOOLNAME_STRATEGY`: Shortening strategy: `none|balanced|iterative|hash|auto` (default: `none`)
   - `none`: No shortening, only warnings
   - `balanced`: Add parts by importance until unique & meaningful (recommended)
   - `iterative`: Progressively remove noise until under limit (conservative)
   - `hash`: Use verb + resource + hash for guaranteed uniqueness
   - `auto`: Try strategies in order: balanced → iterative → hash
-- `MCP_TOOLNAME_WARN_ONLY`: Only warn, don't shorten: `true|false` (default: `true`)
-- `MCP_TOOLNAME_MIN_PARTS`: Minimum parts for balanced strategy (default: `3`)
-- `MCP_TOOLNAME_MIN_LENGTH`: Minimum length in chars for balanced strategy (default: `20`)
+- `MCP4_TOOLNAME_WARN_ONLY`: Only warn, don't shorten: `true|false` (default: `true`)
+- `MCP4_TOOLNAME_MIN_PARTS`: Minimum parts for balanced strategy (default: `3`)
+- `MCP4_TOOLNAME_MIN_LENGTH`: Minimum length in chars for balanced strategy (default: `20`)
 
 **Example**: Apply balanced shortening (recommended):
 ```bash
-export MCP_TOOLNAME_STRATEGY=balanced
-export MCP_TOOLNAME_WARN_ONLY=false
+export MCP4_TOOLNAME_STRATEGY=balanced
+export MCP4_TOOLNAME_WARN_ONLY=false
 ```
 
 **Result** for balanced strategy:
@@ -361,38 +361,38 @@ deleteApiV4ProjectsIdAlertManagementAlertsAlertIidMetricImagesMetricImageId
 
 **Example**: Apply iterative shortening with 30 char limit:
 ```bash
-export MCP_TOOLNAME_STRATEGY=iterative
-export MCP_TOOLNAME_WARN_ONLY=false
-export MCP_TOOLNAME_MAX=30
+export MCP4_TOOLNAME_STRATEGY=iterative
+export MCP4_TOOLNAME_WARN_ONLY=false
+export MCP4_TOOLNAME_MAX=30
 ```
 
 ### Optional - HTTP Transport
-- `MCP_HOST`: Bind address (default: `127.0.0.1`; warning logged if non-localhost with empty `ALLOWED_ORIGINS`)
-- `MCP_PORT`: Port (default: `3003`)
-- `ALLOWED_ORIGINS`: Comma-separated origins (default: empty; supports exact, wildcard `*.domain.com`, CIDR `192.168.1.0/24`)
-- `SESSION_TIMEOUT_MS`: Session timeout (default: `1800000` = 30min)
-- `HEARTBEAT_ENABLED`: SSE heartbeat (default: `false`)
-- `HEARTBEAT_INTERVAL_MS`: Heartbeat interval (default: `30000` = 30s)
-- `TOKEN_MAX_LENGTH`: Maximum token length in characters (default: `1000`)
+- `MCP4_HOST`: Bind address (default: `127.0.0.1`; warning logged if non-localhost with empty `MCP4_ALLOWED_ORIGINS`)
+- `MCP4_PORT`: Port (default: `3003`)
+- `MCP4_ALLOWED_ORIGINS`: Comma-separated origins (default: empty; supports exact, wildcard `*.domain.com`, CIDR `192.168.1.0/24`)
+- `MCP4_SESSION_TIMEOUT_MS`: Session timeout (default: `1800000` = 30min)
+- `MCP4_HEARTBEAT_ENABLED`: SSE heartbeat (default: `false`)
+- `MCP4_HEARTBEAT_INTERVAL_MS`: Heartbeat interval (default: `30000` = 30s)
+- `MCP4_TOKEN_MAX_LENGTH`: Maximum token length in characters (default: `1000`)
 
 #### HTTP Rate Limiting (Security)
 Protect against DoS attacks by limiting request rates per endpoint:
 
-- `HTTP_RATE_LIMIT_ENABLED`: Enable rate limiting (`true|false`, default: `true`)
-- `HTTP_RATE_LIMIT_WINDOW_MS`: Rate limit window in milliseconds (default: `60000` = 1 minute)
-- `HTTP_RATE_LIMIT_MAX_REQUESTS`: Max requests per window for `/mcp`, `/sse`, `/health` (default: `100`)
-- `HTTP_RATE_LIMIT_METRICS_MAX`: Max requests per window for `/metrics` (default: `10`)
+- `MCP4_HTTP_RATE_LIMIT_ENABLED`: Enable rate limiting (`true|false`, default: `true`)
+- `MCP4_HTTP_RATE_LIMIT_WINDOW_MS`: Rate limit window in milliseconds (default: `60000` = 1 minute)
+- `MCP4_HTTP_RATE_LIMIT_MAX_REQUESTS`: Max requests per window for `/mcp`, `/sse`, `/health` (default: `100`)
+- `MCP4_HTTP_RATE_LIMIT_METRICS_MAX`: Max requests per window for `/metrics` (default: `10`)
 
 **Example**: Enable rate limiting with custom limits:
 ```bash
-export HTTP_RATE_LIMIT_ENABLED=true
-export HTTP_RATE_LIMIT_MAX_REQUESTS=200    # 200 req/min for MCP endpoints
-export HTTP_RATE_LIMIT_METRICS_MAX=20      # 20 req/min for metrics
+export MCP4_HTTP_RATE_LIMIT_ENABLED=true
+export MCP4_HTTP_RATE_LIMIT_MAX_REQUESTS=200    # 200 req/min for MCP endpoints
+export MCP4_HTTP_RATE_LIMIT_METRICS_MAX=20      # 20 req/min for metrics
 ```
 
 **Example**: Disable rate limiting (not recommended for production):
 ```bash
-export HTTP_RATE_LIMIT_ENABLED=false
+export MCP4_HTTP_RATE_LIMIT_ENABLED=false
 ```
 
 **Response when rate limit exceeded**:
@@ -405,10 +405,10 @@ export HTTP_RATE_LIMIT_ENABLED=false
 HTTP status: `429 Too Many Requests` with `RateLimit-*` headers.
 
 ### Optional - Observability
-- `LOG_LEVEL`: `debug`, `info` (default), `warn`, `error`
-- `LOG_FORMAT`: `console` (default) or `json`
-- `METRICS_ENABLED`: Enable Prometheus metrics (default: `false`)
-- `METRICS_PATH`: Metrics endpoint (default: `/metrics`)
+- `MCP4_LOG_LEVEL`: `debug`, `info` (default), `warn`, `error`
+- `MCP4_LOG_FORMAT`: `console` (default) or `json`
+- `MCP4_METRICS_ENABLED`: Enable Prometheus metrics (default: `false`)
+- `MCP4_METRICS_PATH`: Metrics endpoint (default: `/metrics`)
 
 **Security Note**: 
 - Sensitive auth tokens are automatically redacted from logs based on your profile's auth configuration (bearer, query, or custom-header)
