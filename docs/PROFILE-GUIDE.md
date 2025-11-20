@@ -31,8 +31,8 @@ This guide explains how to create custom MCP tool profiles for any OpenAPI-compl
 5. **Test with real API**:
    ```bash
    npm run build
-   export OPENAPI_SPEC_PATH=./path/to/openapi.yaml
-   export MCP_PROFILE_PATH=./profiles/<my-api-name>-profile.json
+   export MCP4_OPENAPI_SPEC_PATH=./path/to/openapi.yaml
+   export MCP4_PROFILE_PATH=./profiles/<my-api-name>-profile.json
    npm start
    ```
 
@@ -254,7 +254,7 @@ Parameters that control tool behavior but aren't sent to the API:
   "interceptors": {
     "auth": {
       "type": "bearer",
-      "value_from_env": "API_TOKEN"
+      "value_from_env": "MCP4_API_TOKEN"
     }
   }
 }
@@ -295,7 +295,7 @@ Adds: `?api_key=<token>` to URL
 ```json
 {
   "base_url": {
-    "value_from_env": "API_BASE_URL",
+    "value_from_env": "MCP4_API_BASE_URL",
     "default": "https://api.example.com/v1"
   }
 }
@@ -535,8 +535,8 @@ npm run validate -- profiles/my-profile.json openapi.yaml
 
 # Test with actual API
 npm run build
-export MCP_PROFILE_PATH=./profiles/my-profile.json
-export OPENAPI_SPEC_PATH=./openapi.yaml
+export MCP4_PROFILE_PATH=./profiles/my-profile.json
+export MCP4_OPENAPI_SPEC_PATH=./openapi.yaml
 npm start
 ```
 

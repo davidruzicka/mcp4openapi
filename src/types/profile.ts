@@ -149,7 +149,7 @@ export interface OAuthConfig {
   
   /**
    * Redirect URI for OAuth callback
-   * Defaults to: http://{MCP_HOST}:{MCP_PORT}/oauth/callback
+   * Defaults to: http://{MCP4_HOST}:{MCP4_PORT}/oauth/callback
    * 
    * Must match URI registered with OAuth provider
    */

@@ -18,18 +18,18 @@ Multi-auth allows a single MCP server to support multiple authentication methods
         "type": "oauth",
         "priority": 0,
         "oauth_config": {
-          "authorization_endpoint": "https://gitlab.seznam.net/oauth/authorize",
-          "token_endpoint": "https://gitlab.seznam.net/oauth/token",
-          "client_id": "${env:GITLAB_OAUTH_CLIENT_ID}",
-          "client_secret": "${env:GITLAB_OAUTH_CLIENT_SECRET}",
+          "authorization_endpoint": "https://www.gitlab.com/oauth/authorize",
+          "token_endpoint": "https://www.gitlab.com/oauth/token",
+          "client_id": "${env:MCP4_OAUTH_CLIENT_ID}",
+          "client_secret": "${env:MCP4_OAUTH_CLIENT_SECRET}",
           "scopes": ["api", "read_repository"],
-          "redirect_uri": "${env:GITLAB_OAUTH_REDIRECT_URI}"
+          "redirect_uri": "${env:MCP4_OAUTH_REDIRECT_URI}"
         }
       },
       {
         "type": "bearer",
         "priority": 1,
-        "value_from_env": "API_TOKEN"
+        "value_from_env": "MCP4_API_TOKEN"
       }
     ]
   }
@@ -54,8 +54,8 @@ Multi-auth allows a single MCP server to support multiple authentication methods
 # .gitlab-ci.yml
 test:
   script:
-    - export API_TOKEN=$CI_JOB_TOKEN
-    - curl -H "Authorization: Bearer $API_TOKEN" \
+    - export MCP4_API_TOKEN=$CI_JOB_TOKEN
+    - curl -H "Authorization: Bearer $MCP4_API_TOKEN" \
            https://mcp-gitlab.ai.iszn.cz/mcp
 ```
 
@@ -80,7 +80,7 @@ test:
       {
         "type": "bearer",
         "priority": 1,
-        "value_from_env": "API_TOKEN"
+        "value_from_env": "MCP4_API_TOKEN"
       }
     ]
   }
@@ -192,7 +192,7 @@ HTTP Transport checks for tokens in this order:
   "interceptors": {
     "auth": {
       "type": "bearer",
-      "value_from_env": "API_TOKEN"
+      "value_from_env": "MCP4_API_TOKEN"
     }
   }
 }
@@ -207,7 +207,7 @@ This is equivalent to:
       {
         "type": "bearer",
         "priority": 0,
-        "value_from_env": "API_TOKEN"
+        "value_from_env": "MCP4_API_TOKEN"
       }
     ]
   }
@@ -234,14 +234,14 @@ This is equivalent to:
 
 ```bash
 # OAuth (for interactive users)
-GITLAB_OAUTH_CLIENT_ID=your-client-id
-GITLAB_OAUTH_CLIENT_SECRET=your-secret
+MCP4_OAUTH_CLIENT_ID=your-client-id
+MCP4_OAUTH_CLIENT_SECRET=your-secret
 
 # Bearer (for CI/CD)
-API_TOKEN=glpat-xxxxxxxxxxxx
+MCP4_API_TOKEN=glpat-xxxxxxxxxxxx
 
 # GitLab instance URL
-API_BASE_URL=https://gitlab.example.com/api/v4
+MCP4_API_BASE_URL=https://gitlab.example.com/api/v4
 ```
 
 ### 3. Token Rotation
@@ -257,20 +257,20 @@ API_BASE_URL=https://gitlab.example.com/api/v4
 
 ```bash
 # 1. Start server with multi-auth profile
-export GITLAB_OAUTH_AUTHORIZATION_URL=https://gitlab.example.com/oauth/authorize
-export GITLAB_OAUTH_TOKEN_URL=https://gitlab.example.com/oauth/token
-export GITLAB_OAUTH_CLIENT_ID=xxx
-export GITLAB_OAUTH_CLIENT_SECRET=yyy
-export GITLAB_OAUTH_REDIRECT_URI=https://mcp-gitlab.example.com/oauth/callback
-export API_TOKEN=zzz
-export API_BASE_URL=https://gitlab.example.com/api/v4
+export MCP4_OAUTH_AUTHORIZATION_URL=https://gitlab.example.com/oauth/authorize
+export MCP4_OAUTH_TOKEN_URL=https://gitlab.example.com/oauth/token
+export MCP4_OAUTH_CLIENT_ID=xxx
+export MCP4_OAUTH_CLIENT_SECRET=yyy
+export MCP4_OAUTH_REDIRECT_URI=https://mcp-gitlab.example.com/oauth/callback
+export MCP4_API_BASE_URL=https://gitlab.example.com/api/v4
+export MCP4_OAUTH_REDIRECT_URI=https://<your-mcp-server-host>/oauth/callback
 npm start
 
 # 2. Configure Cursor
 {
   "mcpServers": {
     "gitlab": {
-      "url": "http://localhost:3003/mcp"
+      "url": "http://<your-mcp-server-host>/mcp"
     }
   }
 }
@@ -282,7 +282,7 @@ npm start
 
 ```bash
 # Without OAuth session, use Bearer token
-curl -H "Authorization: Bearer $API_TOKEN" \
+curl -H "Authorization: Bearer $MCP4_API_TOKEN" \
      -H "Content-Type: application/json" \
      -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' \
      http://localhost:3003/mcp
@@ -301,7 +301,7 @@ curl -H "Content-Type: application/json" \
 # OAuth should take precedence
 
 curl -H "Mcp-Session-Id: <session-id>" \
-     -H "Authorization: Bearer $API_TOKEN" \
+     -H "Authorization: Bearer $MCP4_API_TOKEN" \
      -H "Content-Type: application/json" \
      -d '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}' \
      http://localhost:3003/mcp
@@ -328,8 +328,8 @@ grep -i "oauth" server.log
 # "OAuth routes registered"
 
 # If missing, verify:
-echo $GITLAB_OAUTH_CLIENT_ID
-echo $GITLAB_OAUTH_CLIENT_SECRET
+echo $MCP4_OAUTH_CLIENT_ID
+echo $MCP4_OAUTH_CLIENT_SECRET
 ```
 
 ### Issue: CI/CD pipeline fails with 401
@@ -339,11 +339,11 @@ echo $GITLAB_OAUTH_CLIENT_SECRET
 **Solution**:
 ```bash
 # Verify token in environment
-echo $API_TOKEN
+echo $MCP4_API_TOKEN
 
 # Test token manually
-curl -H "Authorization: Bearer $API_TOKEN" \
-     https://gitlab.seznam.net/api/v4/user
+curl -H "Authorization: Bearer $MCP4_API_TOKEN" \
+     https://www.gitlab.com/api/v4/user
 ```
 
 ### Issue: "Connect" button not showing in Cursor
@@ -392,18 +392,18 @@ spec:
       - name: mcp-server
         env:
         # OAuth for users
-        - name: GITLAB_OAUTH_CLIENT_ID
+        - name: MCP4_OAUTH_CLIENT_ID
           valueFrom:
             secretKeyRef:
               name: mcp-gitlab-auth
               key: oauth-client-id
-        - name: GITLAB_OAUTH_CLIENT_SECRET
+        - name: MCP4_OAUTH_CLIENT_SECRET
           valueFrom:
             secretKeyRef:
               name: mcp-gitlab-auth
               key: oauth-client-secret
         # Bearer for CI/CD
-        - name: API_TOKEN
+        - name: MCP4_API_TOKEN
           valueFrom:
             secretKeyRef:
               name: mcp-gitlab-auth

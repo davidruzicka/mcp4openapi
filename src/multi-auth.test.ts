@@ -17,7 +17,7 @@ describe('Multi-Auth Support', () => {
       const config: InterceptorConfig = {
         auth: {
           type: 'bearer',
-          value_from_env: 'API_TOKEN',
+          value_from_env: 'MCP4_API_TOKEN',
         },
       };
 
@@ -41,7 +41,7 @@ describe('Multi-Auth Support', () => {
           {
             type: 'bearer',
             priority: 1,
-            value_from_env: 'API_TOKEN',
+            value_from_env: 'MCP4_API_TOKEN',
           },
         ],
       };
@@ -65,7 +65,7 @@ describe('Multi-Auth Support', () => {
         {
           type: 'bearer',
           priority: 1,
-          value_from_env: 'API_TOKEN',
+          value_from_env: 'MCP4_API_TOKEN',
         },
       ];
 
@@ -109,7 +109,7 @@ describe('Multi-Auth Support', () => {
     it('should default priority to 0 if not specified', () => {
       const config: AuthInterceptor = {
         type: 'bearer',
-        value_from_env: 'API_TOKEN',
+        value_from_env: 'MCP4_API_TOKEN',
       };
 
       const priority = config.priority || 0;
@@ -147,8 +147,8 @@ describe('Multi-Auth Support', () => {
             type: 'oauth',
             priority: 0,
             oauth_config: {
-              authorization_endpoint: 'https://gitlab.seznam.net/oauth/authorize',
-              token_endpoint: 'https://gitlab.seznam.net/oauth/token',
+              authorization_endpoint: 'https://www.gitlab.com/oauth/authorize',
+              token_endpoint: 'https://www.gitlab.com/oauth/token',
               scopes: ['api'],
             },
           },
@@ -186,12 +186,12 @@ describe('Multi-Auth Support', () => {
     it('should require value_from_env for bearer', () => {
       const config: AuthInterceptor = {
         type: 'bearer',
-        value_from_env: 'API_TOKEN',
+        value_from_env: 'MCP4_API_TOKEN',
       };
 
       expect(config.type).toBe('bearer');
       expect(config.value_from_env).toBeDefined();
-      expect(config.value_from_env).toBe('API_TOKEN');
+      expect(config.value_from_env).toBe('MCP4_API_TOKEN');
     });
   });
 
@@ -203,8 +203,8 @@ describe('Multi-Auth Support', () => {
             type: 'oauth',
             priority: 0,
             oauth_config: {
-              authorization_endpoint: 'https://gitlab.seznam.net/oauth/authorize',
-              token_endpoint: 'https://gitlab.seznam.net/oauth/token',
+              authorization_endpoint: 'https://www.gitlab.com/oauth/authorize',
+              token_endpoint: 'https://www.gitlab.com/oauth/token',
               client_id: 'client-id',
               client_secret: 'client-secret',
               scopes: ['api', 'read_repository'],
@@ -247,7 +247,7 @@ describe('Multi-Auth Support', () => {
           {
             type: 'bearer',
             priority: 1,
-            value_from_env: 'API_TOKEN',
+            value_from_env: 'MCP4_API_TOKEN',
           },
         ],
       };

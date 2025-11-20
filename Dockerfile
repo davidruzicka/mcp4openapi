@@ -53,11 +53,11 @@ USER 1000:1000
 
 # Default environment variables
 ENV NODE_ENV=production \
-    LOG_LEVEL=info \
-    LOG_FORMAT=json \
-    MCP_TRANSPORT=http \
-    MCP_HOST=0.0.0.0 \
-    MCP_PORT=3003
+    MCP4_LOG_LEVEL=info \
+    MCP4_LOG_FORMAT=json \
+    MCP4_TRANSPORT=http \
+    MCP4_HOST=0.0.0.0 \
+    MCP4_PORT=3003
 
 # Expose HTTP port
 EXPOSE 3003

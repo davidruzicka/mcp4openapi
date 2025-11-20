@@ -19,10 +19,10 @@ Visit https://gitlab.com/-/user_settings/personal_access_tokens and create a tok
 
 Reuse the [README Quick Start](../README.md#quick-start) instructions to load the GitLab specification and profile. Substitute:
 
-- `OPENAPI_SPEC_PATH=profiles/examples/gitlab/openapi.yaml`
-- `MCP_PROFILE_PATH=profiles/examples/gitlab/developer-profile.json`
-- `API_TOKEN=<your GitLab token>`
-- `API_BASE_URL=https://gitlab.com/api/v4`
+- `MCP4_OPENAPI_SPEC_PATH=profiles/examples/gitlab/openapi.yaml`
+- `MCP4_PROFILE_PATH=profiles/examples/gitlab/developer-profile.json`
+- `MCP4_API_TOKEN=<your GitLab token>`
+- `MCP4_API_BASE_URL=https://gitlab.com/api/v4`
 
 ### 3. Run
 
@@ -227,8 +227,8 @@ The `gitlab-developer.json` profile includes:
 
 ### Interceptors
 
-- **Auth**: Bearer token configurable via `API_TOKEN` environment variable
-- **Base URL**: Configurable via `API_BASE_URL` (default: `https://gitlab.com/api/v4`)
+- **Auth**: Bearer token configurable via `MCP4_API_TOKEN` environment variable
+- **Base URL**: Configurable via `MCP4_API_BASE_URL` (default: `https://gitlab.com/api/v4`)
 - **Rate Limit**: 600 requests/minute global, with overrides for destructive operations
 - **Retry**: 3 attempts with exponential backoff [1s, 2s, 4s]
 - **Retry Status Codes**: 429, 502, 503, 504
@@ -277,10 +277,10 @@ Add to your `mcp.json`:
       "command": "node",
       "args": ["/path/to/mcp4openapi/dist/index.js"],
       "env": {
-        "OPENAPI_SPEC_PATH": "/path/to/profiles/examples/gitlab/openapi.yaml",
-        "MCP_PROFILE_PATH": "/path/to/profiles/examples/gitlab/developer-profile.json",
-        "API_TOKEN": "glpat-xxxxxxxxxxxxxxxxxxxx",
-        "API_BASE_URL": "https://gitlab.com/api/v4"
+        "MCP4_OPENAPI_SPEC_PATH": "/path/to/profiles/examples/gitlab/openapi.yaml",
+        "MCP4_PROFILE_PATH": "/path/to/profiles/examples/gitlab/developer-profile.json",
+        "MCP4_API_TOKEN": "glpat-xxxxxxxxxxxxxxxxxxxx",
+        "MCP4_API_BASE_URL": "https://gitlab.com/api/v4"
       }
     }
   }
@@ -424,7 +424,7 @@ Access levels:
 
 Verify your token (`read_user` right is required):
 ```bash
-curl -H "Authorization: Bearer $API_TOKEN" https://gitlab.com/api/v4/user
+curl -H "Authorization: Bearer $MCP4_API_TOKEN" https://gitlab.com/api/v4/user
 ```
 
 ### Rate Limiting
@@ -444,7 +444,7 @@ If hitting rate limits, adjust in profile:
 
 Ensure API is accessible and use correct base URL:
 ```bash
-export API_BASE_URL=https://gitlab.yourcompany.com/api/v4
+export MCP4_API_BASE_URL=https://gitlab.yourcompany.com/api/v4
 ```
 
 ## Creating Custom Profiles

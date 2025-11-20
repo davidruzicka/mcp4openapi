@@ -28,7 +28,7 @@ OAuth 2.0 support enables browser-based authentication flow instead of manually 
    - **Name**: `MCP Server` (or any name)
    - **Redirect URI**: `http://<mcp-server-url:port>/oauth/callback`
      - Must match `redirect_uri` in your profile
-     - Port must match `MCP_PORT` environment variable
+     - Port must match `MCP4_PORT` environment variable
    - **Scopes**: Select required permissions:
      - `api` - Full API access
      - `read_user` - Read user profile
@@ -36,32 +36,33 @@ OAuth 2.0 support enables browser-based authentication flow instead of manually 
 5. Click **Save application**
 6. **Copy** the generated **Application ID** and **Secret**
 
-### 2. Configure Environment Variables
+### 2. Configure Environment Variables (GitLab Example)
 
-Create or edit `~/.env.mcp` (for Cursor remote) or set in your shell:
+Create or edit `~/.env.mcp` for Cursor with mcp-remote or set in your shell:
 
 ```bash
 # OAuth Configuration
-GITLAB_OAUTH_AUTHORIZATION_URL=https://www.gitlab.com/oauth/authorize
-GITLAB_OAUTH_TOKEN_URL=https://www.gitlab.com/oauth/token
-GITLAB_OAUTH_CLIENT_ID=your_application_id_here
-GITLAB_OAUTH_CLIENT_SECRET=your_secret_here
-GITLAB_OAUTH_REDIRECT_URI=http://<mcp-server-url>:<mcp-server-port>/oauth/callback
+MCP4_OAUTH_AUTHORIZATION_URL=https://www.gitlab.com/oauth/authorize
+MCP4_OAUTH_TOKEN_URL=https://www.gitlab.com/oauth/token
+MCP4_OAUTH_CLIENT_ID=your_application_id_here
+MCP4_OAUTH_CLIENT_SECRET=your_secret_here
+MCP4_OAUTH_REDIRECT_URI=http://<mcp-server-url>:<mcp-server-port>/oauth/callback
+# MCP4_EXTERNAL_HOST_URL=<schema>://<external-hostname[:port]>  # Optional: external base URL for OAuth discovery when MCP4_OAUTH_REDIRECT_URI is not set
 
 # API Configuration
-API_BASE_URL=https://www.gitlab.com/api/v4
+MCP4_API_BASE_URL=https://www.gitlab.com/api/v4
 
 # Transport Configuration
-MCP_TRANSPORT=http
-MCP_HOST=<mcp-server-url>
-MCP_PORT=<mcp-server-port>
+MCP4_TRANSPORT=http
+MCP4_HOST=<mcp-server-url>
+MCP4_PORT=<mcp-server-port>
 ```
 
 **Security Note**: Never commit `client_secret` to version control. Use environment variables or secret management tools.
 
 ### 3. Create OAuth Profile
 
-Use the example profile `profiles/gitlab/oauth-profile.json`:
+Use the example profile `profiles/gitlab/developer-profile.json`:
 
 ```json
 {
@@ -89,12 +90,12 @@ Use the example profile `profiles/gitlab/oauth-profile.json`:
     "auth": {
       "type": "oauth",
       "oauth_config": {
-        "authorization_endpoint": "${env:GITLAB_OAUTH_AUTHORIZATION_URL}",
-        "token_endpoint": "${env:GITLAB_OAUTH_TOKEN_URL}",
-        "client_id": "${env:GITLAB_OAUTH_CLIENT_ID}",
-        "client_secret": "${env:GITLAB_OAUTH_CLIENT_SECRET}",
+        "authorization_endpoint": "${env:MCP4_OAUTH_AUTHORIZATION_URL}",
+        "token_endpoint": "${env:MCP4_OAUTH_TOKEN_URL}",
+        "client_id": "${env:MCP4_OAUTH_CLIENT_ID}",
+        "client_secret": "${env:MCP4_OAUTH_CLIENT_SECRET}",
         "scopes": ["api", "read_repository"],
-        "redirect_uri": "${env:GITLAB_OAUTH_REDIRECT_URI}"
+        "redirect_uri": "${env:MCP4_OAUTH_REDIRECT_URI}"
       }
     }
   }
@@ -112,17 +113,17 @@ Use the example profile `profiles/gitlab/oauth-profile.json`:
       "command": "npx",
       "args": ["mcp4openapi"],
       "env": {
-        "OPENAPI_SPEC_PATH": "profiles/gitlab/openapi.yaml",
-        "MCP_PROFILE_PATH": "profiles/gitlab/oauth-profile.json",
-        "MCP_TRANSPORT": "http",
-        "MCP_HOST": "<mcp-server-url>",
-        "MCP_PORT": "<mcp-server-port>",
-        "API_BASE_URL": "${env:API_BASE_URL}",
-        "GITLAB_OAUTH_AUTHORIZATION_URL": "${env:GITLAB_OAUTH_AUTHORIZATION_URL}",
-        "GITLAB_OAUTH_TOKEN_URL": "${env:GITLAB_OAUTH_TOKEN_URL}",
-        "GITLAB_OAUTH_CLIENT_ID": "${env:GITLAB_OAUTH_CLIENT_ID}",
-        "GITLAB_OAUTH_CLIENT_SECRET": "${env:GITLAB_OAUTH_CLIENT_SECRET}",
-        "GITLAB_OAUTH_REDIRECT_URI": "${env:GITLAB_OAUTH_REDIRECT_URI}"
+        "MCP4_OPENAPI_SPEC_PATH": "profiles/gitlab/openapi.yaml",
+        "MCP4_PROFILE_PATH": "profiles/gitlab/developer-profile.json",
+        "MCP4_TRANSPORT": "http",
+        "MCP4_HOST": "<mcp-server-url>",
+        "MCP4_PORT": "<mcp-server-port>",
+        "MCP4_API_BASE_URL": "${env:MCP4_API_BASE_URL}",
+        "MCP4_OAUTH_AUTHORIZATION_URL": "${env:MCP4_OAUTH_AUTHORIZATION_URL}",
+        "MCP4_OAUTH_TOKEN_URL": "${env:MCP4_OAUTH_TOKEN_URL}",
+        "MCP4_OAUTH_CLIENT_ID": "${env:MCP4_OAUTH_CLIENT_ID}",
+        "MCP4_OAUTH_CLIENT_SECRET": "${env:MCP4_OAUTH_CLIENT_SECRET}",
+        "MCP4_OAUTH_REDIRECT_URI": "${env:MCP4_OAUTH_REDIRECT_URI}"
       }
     }
   }
@@ -141,7 +142,7 @@ The server will log:
 ```
 OAuth provider initialized
 OAuth routes registered
-MCP server running on HTTP localhost:3003
+MCP server running on HTTP <mcp-server-url>:<mcp-server-port>
 ```
 
 ### 6. Connect from Client
@@ -150,7 +151,7 @@ MCP server running on HTTP localhost:3003
 2. Click **"Connect"** or attempt to use a tool
 3. Your browser will open to GitLab authorization page
 4. Click **"Authorize"** to grant permissions
-5. Browser will redirect back to `http://<mcp-server-url:port>/oauth/callback`
+5. Browser will redirect back to `http://<mcp-server-url:port>/oauth/callback` or (`${MCP4_EXTERNAL_HOST_URL}/oauth/callback`)
 6. Connection established! You can now use MCP tools
 
 ## OAuth Endpoints
@@ -186,7 +187,7 @@ If you need a different callback URL:
   "auth": {
     "type": "oauth",
     "oauth_config": {
-      "redirect_uri": "http://<mcp-server-url:port>/callback",
+      "redirect_uri": "<schema>://<mcp-server-url:port>/callback",
       ...
     }
   }
@@ -243,7 +244,7 @@ See [GitLab OAuth documentation](https://docs.gitlab.com/ee/api/oauth2.html) for
 **Fix**:
 1. Check `redirect_uri` in your profile
 2. Ensure it matches exactly in GitLab application settings
-3. Port must match `MCP_PORT` environment variable
+3. Port must match `MCP4_PORT` environment variable
 
 ### "Client authentication failed"
 
@@ -277,7 +278,7 @@ See [GitLab OAuth documentation](https://docs.gitlab.com/ee/api/oauth2.html) for
 
 **Cause**: Trying to use OAuth in stdio transport mode.
 
-**Fix**: OAuth only works in HTTP transport. Set `MCP_TRANSPORT=http` in environment.
+**Fix**: OAuth only works in HTTP transport. Set `MCP4_TRANSPORT=http` in environment.
 
 ## Security Best Practices
 
@@ -314,7 +315,7 @@ For production deployments:
 Prevent CSRF attacks:
 
 ```bash
-export ALLOWED_ORIGINS="https://cursor.com,https://your-client.com"
+export MCP4_ALLOWED_ORIGINS="https://cursor.com,https://your-client.com"
 ```
 
 ### 5. Enable Rate Limiting

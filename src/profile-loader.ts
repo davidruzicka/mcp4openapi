@@ -303,17 +303,17 @@ export class ProfileLoader {
    * Auth Strategy:
    * 1. Parse security scheme from OpenAPI spec
    * 2. If found, generate auth interceptor
-   * 3. Fallback to bearer token from API_TOKEN env var
+   * 3. Fallback to bearer token from MCP4_API_TOKEN env var
    */
   static createDefaultProfile(profileName: string, parser: OpenAPIParser): Profile {
     const operations = parser.getAllOperations();
     
     // Get configuration for name shortening
-    const maxLength = parseInt(process.env.MCP_TOOLNAME_MAX || '45', 10);
-    const strategyStr = (process.env.MCP_TOOLNAME_STRATEGY || 'none').toLowerCase();
-    const warnOnly = (process.env.MCP_TOOLNAME_WARN_ONLY || 'true').toLowerCase() === 'true';
-    const minParts = parseInt(process.env.MCP_TOOLNAME_MIN_PARTS || '3', 10);
-    const minLength = parseInt(process.env.MCP_TOOLNAME_MIN_LENGTH || '20', 10);
+    const maxLength = parseInt(process.env.MCP4_TOOLNAME_MAX || '45', 10);
+    const strategyStr = (process.env.MCP4_TOOLNAME_STRATEGY || 'none').toLowerCase();
+    const warnOnly = (process.env.MCP4_TOOLNAME_WARN_ONLY || 'true').toLowerCase() === 'true';
+    const minParts = parseInt(process.env.MCP4_TOOLNAME_MIN_PARTS || '3', 10);
+    const minLength = parseInt(process.env.MCP4_TOOLNAME_MIN_LENGTH || '20', 10);
     
     const strategy = Object.values(NamingStrategy).includes(strategyStr as NamingStrategy)
       ? (strategyStr as NamingStrategy)
@@ -357,7 +357,7 @@ export class ProfileLoader {
    * 1. Parse security scheme from OpenAPI spec
    * 2. If not found, check for force auth override via env vars
    * 3. Map to profile auth interceptor format
-   * 4. Use env var name from AUTH_ENV_VAR or default to API_TOKEN
+   * 4. Use env var name from AUTH_ENV_VAR or default to MCP4_API_TOKEN
    * 
    * Returns empty object if no security scheme found (public API) and no force override
    */
@@ -365,21 +365,21 @@ export class ProfileLoader {
     const securityScheme = parser.getSecurityScheme();
     
     // Check for force auth override (for APIs with incomplete OpenAPI spec)
-    const forceAuth = process.env.AUTH_FORCE === 'true';
-    
+    const forceAuth = process.env.MCP4_AUTH_FORCE === 'true';
+
     if (!securityScheme && !forceAuth) {
       return {}; // Public API, no auth required
     }
 
     // Get env var name from environment or use default
-    const envVarName = process.env.AUTH_ENV_VAR || 'API_TOKEN';
+    const envVarName = process.env.MCP4_AUTH_ENV_VAR || 'MCP4_API_TOKEN';
 
     const interceptors: import('./types/profile.js').InterceptorConfig = {};
 
     // If force auth is enabled, use env config instead of OpenAPI spec
     if (forceAuth && !securityScheme) {
-      const authType = (process.env.AUTH_TYPE || 'bearer').toLowerCase();
-      
+      const authType = (process.env.MCP4_AUTH_TYPE || 'bearer').toLowerCase();
+
       switch (authType) {
         case 'bearer':
           interceptors.auth = {
@@ -387,12 +387,12 @@ export class ProfileLoader {
             value_from_env: envVarName,
           };
           break;
-        
+
         case 'query':
-          const queryParam = process.env.AUTH_QUERY_PARAM;
+          const queryParam = process.env.MCP4_AUTH_QUERY_PARAM;
           if (!queryParam) {
             throw new ConfigurationError(
-              'AUTH_QUERY_PARAM is required when AUTH_TYPE=query',
+              'MCP4_AUTH_QUERY_PARAM is required when MCP4_AUTH_TYPE=query',
               { authType }
             );
           }
@@ -402,12 +402,12 @@ export class ProfileLoader {
             value_from_env: envVarName,
           };
           break;
-        
+
         case 'custom-header':
-          const headerName = process.env.AUTH_HEADER_NAME;
+          const headerName = process.env.MCP4_AUTH_HEADER_NAME;
           if (!headerName) {
             throw new ConfigurationError(
-              'AUTH_HEADER_NAME is required when AUTH_TYPE=custom-header',
+              'MCP4_AUTH_HEADER_NAME is required when MCP4_AUTH_TYPE=custom-header',
               { authType }
             );
           }
@@ -420,7 +420,7 @@ export class ProfileLoader {
         
         default:
           throw new ConfigurationError(
-            `Invalid AUTH_TYPE: ${authType}. Must be one of: bearer, query, custom-header`,
+            `Invalid MCP4_AUTH_TYPE: ${authType}. Must be one of: bearer, query, custom-header`,
             { authType }
           );
       }

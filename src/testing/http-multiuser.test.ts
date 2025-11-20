@@ -1,8 +1,8 @@
 /**
- * Integration test for HTTP transport in multi-user mode (no API_TOKEN in env)
+ * Integration test for HTTP transport in multi-user mode (no MCP4_API_TOKEN in env)
  * 
  * Tests that:
- * 1. Server can start without API_TOKEN env var
+ * 1. Server can start without MCP4_API_TOKEN env var
  * 2. Clients can send tokens in Authorization header
  * 3. Each session uses its own token
  */
@@ -13,16 +13,16 @@ import { ConsoleLogger } from '../logger.js';
 import request from 'supertest';
 import type { Express } from 'express';
 
-describe('HTTP Multi-User Mode (No API_TOKEN)', () => {
+describe('HTTP Multi-User Mode (No MCP4_API_TOKEN)', () => {
   let httpTransport: HttpTransport;
   let app: Express;
   
   // Save original env
-  const originalApiToken = process.env.API_TOKEN;
+  const originalApiToken = process.env.MCP4_API_TOKEN;
   
   beforeAll(() => {
-    // IMPORTANT: Remove API_TOKEN from env to test multi-user mode
-    delete process.env.API_TOKEN;
+    // IMPORTANT: Remove MCP4_API_TOKEN from env to test multi-user mode
+    delete process.env.MCP4_API_TOKEN;
     
     const logger = new ConsoleLogger('error'); // Quiet during tests
     
@@ -90,15 +90,15 @@ describe('HTTP Multi-User Mode (No API_TOKEN)', () => {
   afterAll(() => {
     // Restore original env
     if (originalApiToken) {
-      process.env.API_TOKEN = originalApiToken;
+      process.env.MCP4_API_TOKEN = originalApiToken;
     } else {
-      delete process.env.API_TOKEN;
+      delete process.env.MCP4_API_TOKEN;
     }
   });
   
   describe('Server Initialization', () => {
-    it('should start successfully without API_TOKEN env var', async () => {
-      expect(process.env.API_TOKEN).toBeUndefined();
+    it('should start successfully without MCP4_API_TOKEN env var', async () => {
+      expect(process.env.MCP4_API_TOKEN).toBeUndefined();
       expect(app).toBeDefined();
       
       // Health check should work

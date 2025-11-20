@@ -5,7 +5,7 @@ Kompletní návod pro nasazení MCP serveru s OAuth 2.0 autentizací do Kubernet
 ## Přehled
 
 - **MCP Server**: `https://mcp-gitlab.ai.iszn.cz/mcp`
-- **GitLab Instance**: `https://gitlab.seznam.net/`
+- **GitLab Instance**: `https://www.gitlab.com/`
 - **OAuth Flow**: Browser-based authorization pro každého uživatele
 - **Transport**: HTTP (OAuth vyžaduje HTTP endpoints)
 
@@ -34,7 +34,7 @@ Kompletní návod pro nasazení MCP serveru s OAuth 2.0 autentizací do Kubernet
                    v
 ┌─────────────────────────────────────────────┐
 │  GitLab OAuth Provider                      │
-│  https://gitlab.seznam.net/oauth/*          │
+│  https://www.gitlab.com/oauth/*          │
 └─────────────────────────────────────────────┘
 ```
 
@@ -42,7 +42,7 @@ Kompletní návod pro nasazení MCP serveru s OAuth 2.0 autentizací do Kubernet
 
 **Pro administrátora GitLabu:**
 
-1. Přihlaste se na `https://gitlab.seznam.net/`
+1. Přihlaste se na `https://www.gitlab.com/`
 2. **Admin Area** → **Applications** (nebo pro skupinu: **Group Settings** → **Applications**)
 3. **Add new application**:
    ```
@@ -86,12 +86,12 @@ metadata:
   namespace: mcp-gitlab
 type: Opaque
 stringData:
-  GITLAB_OAUTH_CLIENT_ID: "your_application_id_here"
-  GITLAB_OAUTH_CLIENT_SECRET: "your_secret_here"
-  GITLAB_OAUTH_AUTHORIZATION_URL: "https://gitlab.seznam.net/oauth/authorize"
-  GITLAB_OAUTH_TOKEN_URL: "https://gitlab.seznam.net/oauth/token"
-  GITLAB_OAUTH_REDIRECT_URI: "https://mcp-gitlab.ai.iszn.cz/oauth/callback"
-  API_BASE_URL: "https://gitlab.seznam.net/api/v4"
+  MCP4_OAUTH_CLIENT_ID: "your_application_id_here"
+  MCP4_OAUTH_CLIENT_SECRET: "your_secret_here"
+  MCP4_OAUTH_AUTHORIZATION_URL: "https://www.gitlab.com/oauth/authorize"
+  MCP4_OAUTH_TOKEN_URL: "https://www.gitlab.com/oauth/token"
+  MCP4_OAUTH_REDIRECT_URI: "https://mcp-gitlab.ai.iszn.cz/oauth/callback"
+  MCP4_API_BASE_URL: "https://www.gitlab.com/api/v4"
 ```
 
 ⚠️ **Bezpečnost**: Necommituj secret do gitu! Použij:
@@ -174,17 +174,17 @@ data:
         "auth": {
           "type": "oauth",
           "oauth_config": {
-            "authorization_endpoint": "${env:GITLAB_OAUTH_AUTHORIZATION_URL}",
-            "token_endpoint": "${env:GITLAB_OAUTH_TOKEN_URL}",
-            "client_id": "${env:GITLAB_OAUTH_CLIENT_ID}",
-            "client_secret": "${env:GITLAB_OAUTH_CLIENT_SECRET}",
+            "authorization_endpoint": "${env:MCP4_OAUTH_AUTHORIZATION_URL}",
+            "token_endpoint": "${env:MCP4_OAUTH_TOKEN_URL}",
+            "client_id": "${env:MCP4_OAUTH_CLIENT_ID}",
+            "client_secret": "${env:MCP4_OAUTH_CLIENT_SECRET}",
             "scopes": ["api", "read_user"],
-            "redirect_uri": "${env:GITLAB_OAUTH_REDIRECT_URI}"
+            "redirect_uri": "${env:MCP4_OAUTH_REDIRECT_URI}"
           }
         },
         "base_url": {
-          "value_from_env": "API_BASE_URL",
-          "default": "https://gitlab.seznam.net/api/v4"
+          "value_from_env": "MCP4_API_BASE_URL",
+          "default": "https://www.gitlab.com/api/v4"
         },
         "rate_limit": {
           "max_requests_per_minute": 600
@@ -199,7 +199,7 @@ data:
     }
   openapi.yaml: |
     # Include GitLab OpenAPI spec here or mount from another source
-    # Pro produkci doporučuji stáhnout z https://gitlab.seznam.net/-/api/openapi.yaml
+    # Pro produkci doporučuji stáhnout z https://www.gitlab.com/-/api/openapi.yaml
 ```
 
 ⚠️ **OpenAPI Spec**: Pokud je velká, použij separate ConfigMap nebo volume mount ze shared storage.
@@ -231,67 +231,67 @@ spec:
           name: http
         env:
         # Transport configuration
-        - name: MCP_TRANSPORT
+        - name: MCP4_TRANSPORT
           value: "http"
-        - name: MCP_HOST
+        - name: MCP4_HOST
           value: "0.0.0.0"  # Bind na všechny interfaces v kontejneru
-        - name: MCP_PORT
+        - name: MCP4_PORT
           value: "3003"
         
         # OAuth credentials (from Secret)
-        - name: GITLAB_OAUTH_CLIENT_ID
+        - name: MCP4_OAUTH_CLIENT_ID
           valueFrom:
             secretKeyRef:
               name: mcp-gitlab-oauth
-              key: GITLAB_OAUTH_CLIENT_ID
-        - name: GITLAB_OAUTH_CLIENT_SECRET
+              key: MCP4_OAUTH_CLIENT_ID
+        - name: MCP4_OAUTH_CLIENT_SECRET
           valueFrom:
             secretKeyRef:
               name: mcp-gitlab-oauth
-              key: GITLAB_OAUTH_CLIENT_SECRET
-        - name: GITLAB_OAUTH_AUTHORIZATION_URL
+              key: MCP4_OAUTH_CLIENT_SECRET
+        - name: MCP4_OAUTH_AUTHORIZATION_URL
           valueFrom:
             secretKeyRef:
               name: mcp-gitlab-oauth
-              key: GITLAB_OAUTH_AUTHORIZATION_URL
-        - name: GITLAB_OAUTH_TOKEN_URL
+              key: MCP4_OAUTH_AUTHORIZATION_URL
+        - name: MCP4_OAUTH_TOKEN_URL
           valueFrom:
             secretKeyRef:
               name: mcp-gitlab-oauth
-              key: GITLAB_OAUTH_TOKEN_URL
-        - name: GITLAB_OAUTH_REDIRECT_URI
+              key: MCP4_OAUTH_TOKEN_URL
+        - name: MCP4_OAUTH_REDIRECT_URI
           valueFrom:
             secretKeyRef:
               name: mcp-gitlab-oauth
-              key: GITLAB_OAUTH_REDIRECT_URI
-        - name: API_BASE_URL
+              key: MCP4_OAUTH_REDIRECT_URI
+        - name: MCP4_API_BASE_URL
           valueFrom:
             secretKeyRef:
               name: mcp-gitlab-oauth
-              key: API_BASE_URL
+              key: MCP4_API_BASE_URL
         
         # Profile configuration
-        - name: MCP_PROFILE_PATH
+        - name: MCP4_PROFILE_PATH
           value: "/config/oauth-profile.json"
-        - name: OPENAPI_SPEC_PATH
+        - name: MCP4_OPENAPI_SPEC_PATH
           value: "/config/openapi.yaml"
         
         # Security & Performance
-        - name: ALLOWED_ORIGINS
+        - name: MCP4_ALLOWED_ORIGINS
           value: "https://mcp-gitlab.ai.iszn.cz"
         - name: HTTP_RATE_LIMIT_ENABLED
           value: "true"
         - name: HTTP_RATE_LIMIT_MAX_REQUESTS
           value: "200"  # Pro více uživatelů
-        - name: SESSION_TIMEOUT_MS
+        - name: MCP4_SESSION_TIMEOUT_MS
           value: "3600000"  # 1 hodina
         
         # Logging & Metrics
-        - name: LOG_LEVEL
+        - name: MCP4_LOG_LEVEL
           value: "info"
-        - name: LOG_FORMAT
+        - name: MCP4_LOG_FORMAT
           value: "json"
-        - name: METRICS_ENABLED
+        - name: MCP4_METRICS_ENABLED
           value: "true"
         
         volumeMounts:
@@ -517,7 +517,7 @@ V `.vscode/mcp.json` nebo `~/.config/Code/User/mcp.json`:
 2. V MCP section uvidí "gitlab-production" server
 3. **Zobrazí se tlačítko "Connect"** (Cursor detekuje OAuth automaticky)
 4. Uživatel klikne → otevře se browser na `https://mcp-gitlab.ai.iszn.cz/oauth/authorize`
-5. Server přesměruje na: `https://gitlab.seznam.net/oauth/authorize?...`
+5. Server přesměruje na: `https://www.gitlab.com/oauth/authorize?...`
 6. Uživatel se přihlásí do GitLabu a klikne "Authorize"
 7. GitLab přesměruje zpět na: `https://mcp-gitlab.ai.iszn.cz/oauth/authorize?code=...`
 8. MCP server vymění code za access token
@@ -575,15 +575,15 @@ curl https://mcp-gitlab.ai.iszn.cz/health
 
 1. **"Redirect URI mismatch"**
    - Zkontroluj, že v GitLab aplikaci je: `https://mcp-gitlab.ai.iszn.cz/oauth/callback`
-   - Zkontroluj v profile: `"redirect_uri": "${env:GITLAB_OAUTH_REDIRECT_URI}"`
-   - Zkontroluj env var: `export GITLAB_OAUTH_REDIRECT_URI=https://mcp-gitlab.ai.iszn.cz/oauth/callback`
+   - Zkontroluj v profile: `"redirect_uri": "${env:MCP4_OAUTH_REDIRECT_URI}"`
+   - Zkontroluj env var: `export MCP4_OAUTH_REDIRECT_URI=https://mcp-gitlab.ai.iszn.cz/oauth/callback`
 
 2. **"Client authentication failed"**
    - Ověř CLIENT_ID a CLIENT_SECRET v secretu
    - Check logs: `kubectl logs deployment/mcp-gitlab`
 
 3. **CORS errors**
-   - Zkontroluj `ALLOWED_ORIGINS` v deployment
+   - Zkontroluj `MCP4_ALLOWED_ORIGINS` v deployment
    - Zkontroluj ingress annotations
 
 4. **SSL/TLS issues**
@@ -594,7 +594,7 @@ curl https://mcp-gitlab.ai.iszn.cz/health
 
 - [ ] **OAuth Credentials** v Kubernetes Secretu (ne v kódu)
 - [ ] **TLS/HTTPS** aktivní (cert-manager)
-- [ ] **ALLOWED_ORIGINS** nakonfigurován
+- [ ] **MCP4_ALLOWED_ORIGINS** nakonfigurován
 - [ ] **Rate limiting** aktivní
 - [ ] **Pod security context** (non-root user)
 - [ ] **Resource limits** nastaveny

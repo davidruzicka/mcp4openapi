@@ -269,7 +269,7 @@
           "type": "string",
           "description": "Environment variable name containing the auth token (required for bearer, query, custom-header)",
           "pattern": "^[A-Z][A-Z0-9_]*$",
-          "examples": ["API_TOKEN", "GITLAB_TOKEN"]
+          "examples": ["MCP4_API_TOKEN", "GITLAB_TOKEN"]
         },
         "header_name": {
           "type": "string",
@@ -363,22 +363,22 @@
         "authorization_endpoint": {
           "type": "string",
           "description": "OAuth 2.0 authorization endpoint (supports ${env:VAR} syntax)",
-          "examples": ["https://gitlab.seznam.net/oauth/authorize", "${env:OAUTH_AUTHORIZATION_URL}"]
+          "examples": ["https://www.gitlab.com/oauth/authorize", "${env:OAUTH_AUTHORIZATION_URL}"]
         },
         "token_endpoint": {
           "type": "string",
           "description": "OAuth 2.0 token endpoint (supports ${env:VAR} syntax)",
-          "examples": ["https://gitlab.seznam.net/oauth/token", "${env:OAUTH_TOKEN_URL}"]
+          "examples": ["https://www.gitlab.com/oauth/token", "${env:OAUTH_TOKEN_URL}"]
         },
         "client_id": {
           "type": "string",
           "description": "Pre-registered OAuth client ID (supports ${env:VAR} syntax). Optional for dynamic registration.",
-          "examples": ["${env:GITLAB_OAUTH_CLIENT_ID}"]
+          "examples": ["${env:MCP4_OAUTH_CLIENT_ID}"]
         },
         "client_secret": {
           "type": "string",
           "description": "Pre-registered OAuth client secret (supports ${env:VAR} syntax). Optional for public clients.",
-          "examples": ["${env:GITLAB_OAUTH_CLIENT_SECRET}"]
+          "examples": ["${env:MCP4_OAUTH_CLIENT_SECRET}"]
         },
         "scopes": {
           "type": "array",
@@ -390,23 +390,23 @@
         },
         "redirect_uri": {
           "type": "string",
-          "description": "OAuth callback URI. Defaults to http://{MCP_HOST}:{MCP_PORT}/oauth/callback",
-          "examples": ["http://localhost:3003/oauth/callback"]
+          "description": "OAuth callback URI. Defaults to http://{MCP4_HOST}:{MCP4_PORT}/oauth/callback",
+          "examples": ["https://<your-mcp-server-host>/oauth/callback"]
         },
         "registration_endpoint": {
           "type": "string",
           "description": "Client registration endpoint for dynamic registration (RFC 7591)",
-          "examples": ["https://gitlab.seznam.net/oauth/register"]
+          "examples": ["https://www.gitlab.com/oauth/register"]
         },
         "introspection_endpoint": {
           "type": "string",
           "description": "Token introspection endpoint (RFC 7662)",
-          "examples": ["https://gitlab.seznam.net/oauth/introspect"]
+          "examples": ["https://www.gitlab.com/oauth/introspect"]
         },
         "revocation_endpoint": {
           "type": "string",
           "description": "Token revocation endpoint (RFC 7009)",
-          "examples": ["https://gitlab.seznam.net/oauth/revoke"]
+          "examples": ["https://www.gitlab.com/oauth/revoke"]
         }
       }
     },
@@ -418,13 +418,13 @@
           "type": "string",
           "description": "Environment variable name containing the base URL",
           "pattern": "^[A-Z][A-Z0-9_]*$",
-          "examples": ["API_BASE_URL"]
+          "examples": ["MCP4_API_BASE_URL"]
         },
         "default": {
           "type": "string",
           "format": "uri",
           "description": "Default base URL if environment variable is not set",
-          "examples": ["https://gitlab.com/api/v4"]
+          "examples": ["https://www.gitlab.com/api/v4"]
         }
       }
     },

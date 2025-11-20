@@ -24,11 +24,11 @@ Best for: Testing, development, single-user servers
 
 ```bash
 # Set environment
-export MCP_TRANSPORT=http
-export MCP_HOST=127.0.0.1  # localhost only (secure default)
-export MCP_PORT=3003
-export API_TOKEN=your_token
-export API_BASE_URL=https://api.example.com
+export MCP4_TRANSPORT=http
+export MCP4_HOST=127.0.0.1  # localhost only (secure default)
+export MCP4_PORT=3003
+export MCP4_API_TOKEN=your_token
+export MCP4_API_BASE_URL=https://api.example.com
 
 # Start server
 npm start
@@ -39,7 +39,7 @@ Server will log:
 {"timestamp":"...","level":"info","message":"HTTP transport started","host":"127.0.0.1","port":3003}
 ```
 
-**All clients share the same API_TOKEN from environment.**
+**All clients share the same MCP4_API_TOKEN from environment.**
 
 ### Multi-User Mode (Remote Access)
 
@@ -47,25 +47,25 @@ Best for: Production, multiple users with different tokens
 
 ```bash
 # Allow network access
-export MCP_TRANSPORT=http
-export MCP_HOST=0.0.0.0
-export MCP_PORT=3003
-export API_BASE_URL=https://api.example.com
-# Note: No API_TOKEN in environment
+export MCP4_TRANSPORT=http
+export MCP4_HOST=0.0.0.0
+export MCP4_PORT=3003
+export MCP4_API_BASE_URL=https://api.example.com
+# Note: No MCP4_API_TOKEN in environment
 
 # Configure allowed origins (for corporate networks)
-export ALLOWED_ORIGINS="example.com,*.company.com,192.168.1.0/24,10.0.0.0/8"
+export MCP4_ALLOWED_ORIGINS="example.com,*.company.com,192.168.1.0/24,10.0.0.0/8"
 
 # Optional: Enable heartbeat for proxy keepalive
-export HEARTBEAT_ENABLED=true
-export HEARTBEAT_INTERVAL_MS=30000  # 30 seconds
+export MCP4_HEARTBEAT_ENABLED=true
+export MCP4_HEARTBEAT_INTERVAL_MS=30000  # 30 seconds
 
 npm start
 ```
 
 **Each client sends their own token in `Authorization: Bearer <token>` header during initialization.**
 
-**Security Warning**: When binding to `0.0.0.0`, ensure firewall protection, configure `ALLOWED_ORIGINS`, and use HTTPS reverse proxy. Server will log warning if `ALLOWED_ORIGINS` is not configured.
+**Security Warning**: When binding to `0.0.0.0`, ensure firewall protection, configure `MCP4_ALLOWED_ORIGINS`, and use HTTPS reverse proxy. Server will log warning if `MCP4_ALLOWED_ORIGINS` is not configured.
 
 ## MCP Protocol Compliance
 
@@ -322,15 +322,15 @@ curl -X DELETE http://localhost:3003/sse \
 
 1. **Created**: On initialization (POST with `method: "initialize"`)
 2. **Active**: Session ID in `Mcp-Session-Id` header
-3. **Expired**: After `SESSION_TIMEOUT_MS` of inactivity (default: 30 minutes)
+3. **Expired**: After `MCP4_SESSION_TIMEOUT_MS` of inactivity (default: 30 minutes)
 4. **Terminated**: Explicit DELETE or server shutdown
 
 ### Session Timeout
 
 ```bash
-export SESSION_TIMEOUT_MS=1800000  # 30 minutes (default)
-export SESSION_TIMEOUT_MS=3600000  # 1 hour
-export SESSION_TIMEOUT_MS=600000   # 10 minutes
+export MCP4_SESSION_TIMEOUT_MS=1800000  # 30 minutes (default)
+export MCP4_SESSION_TIMEOUT_MS=3600000  # 1 hour
+export MCP4_SESSION_TIMEOUT_MS=600000   # 10 minutes
 ```
 
 **Behavior**:
@@ -383,8 +383,8 @@ Server replays events with `id > 1234567890123`.
 Keep SSE connections alive through reverse proxies.
 
 ```bash
-export HEARTBEAT_ENABLED=true
-export HEARTBEAT_INTERVAL_MS=30000  # 30 seconds
+export MCP4_HEARTBEAT_ENABLED=true
+export MCP4_HEARTBEAT_INTERVAL_MS=30000  # 30 seconds
 ```
 
 **Why**: Proxies (nginx, cloudflare) timeout idle connections
@@ -399,49 +399,49 @@ export HEARTBEAT_INTERVAL_MS=30000  # 30 seconds
 
 **Behavior**:
 - Validates `Origin` header for non-localhost requests
-- Always allows: `localhost`, `127.0.0.1`, configured `MCP_HOST`
-- Additionally allows: Origins in `ALLOWED_ORIGINS` (if configured)
+- Always allows: `localhost`, `127.0.0.1`, configured `MCP4_HOST`
+- Additionally allows: Origins in `MCP4_ALLOWED_ORIGINS` (if configured)
 - Rejects: Other origins with **HTTP 403**
 
 **Default Configuration**:
-- `ALLOWED_ORIGINS` is empty by default
+- `MCP4_ALLOWED_ORIGINS` is empty by default
 - Server binds to `localhost` (127.0.0.1) by default
-- **Warning logged** if binding to non-localhost with empty `ALLOWED_ORIGINS`
+- **Warning logged** if binding to non-localhost with empty `MCP4_ALLOWED_ORIGINS`
 
 **Supported Formats**:
 
 ```bash
 # Exact hostname
-export ALLOWED_ORIGINS="example.com,api.example.com"
+export MCP4_ALLOWED_ORIGINS="example.com,api.example.com"
 
 # Wildcard subdomain (*.domain.com)
-export ALLOWED_ORIGINS="*.company.com"  # Matches: api.company.com, web.company.com
+export MCP4_ALLOWED_ORIGINS="*.company.com"  # Matches: api.company.com, web.company.com
 
 # IPv4 CIDR range (for corporate networks)
-export ALLOWED_ORIGINS="192.168.1.0/24"  # Matches: 192.168.1.1 - 192.168.1.254
-export ALLOWED_ORIGINS="10.0.0.0/8"      # Matches: 10.0.0.0 - 10.255.255.255
+export MCP4_ALLOWED_ORIGINS="192.168.1.0/24"  # Matches: 192.168.1.1 - 192.168.1.254
+export MCP4_ALLOWED_ORIGINS="10.0.0.0/8"      # Matches: 10.0.0.0 - 10.255.255.255
 
 # Combination (comma-separated)
-export ALLOWED_ORIGINS="example.com,*.company.com,192.168.1.0/24,10.0.0.0/8"
+export MCP4_ALLOWED_ORIGINS="example.com,*.company.com,192.168.1.0/24,10.0.0.0/8"
 ```
 
 **Examples**:
 
 ```bash
 # Allow specific subdomain
-ALLOWED_ORIGINS="api.company.com"
+MCP4_ALLOWED_ORIGINS="api.company.com"
 
 # Allow all company subdomains
-ALLOWED_ORIGINS="*.company.com"
+MCP4_ALLOWED_ORIGINS="*.company.com"
 
 # Allow branch offices (private networks)
-ALLOWED_ORIGINS="192.168.1.0/24,192.168.2.0/24,192.168.3.0/24"
+MCP4_ALLOWED_ORIGINS="192.168.1.0/24,192.168.2.0/24,192.168.3.0/24"
 
 # Allow entire corporate /8 network
-ALLOWED_ORIGINS="10.0.0.0/8"
+MCP4_ALLOWED_ORIGINS="10.0.0.0/8"
 
 # Mixed: public domains + private networks
-ALLOWED_ORIGINS="example.com,*.company.com,192.168.0.0/16,10.0.0.0/8"
+MCP4_ALLOWED_ORIGINS="example.com,*.company.com,192.168.0.0/16,10.0.0.0/8"
 ```
 
 **Skip**: Requests to `localhost` hostname always allowed without additional configuration
@@ -451,13 +451,13 @@ ALLOWED_ORIGINS="example.com,*.company.com,192.168.0.0/16,10.0.0.0/8"
 **Default**: Server binds to `127.0.0.1` (localhost only)
 
 ```bash
-export MCP_HOST=127.0.0.1  # Secure (default)
-export MCP_HOST=0.0.0.0    # Network access (use with caution!)
+export MCP4_HOST=127.0.0.1  # Secure (default)
+export MCP4_HOST=0.0.0.0    # Network access (use with caution!)
 ```
 
-**Security Warning**: When binding to non-localhost address without `ALLOWED_ORIGINS` configured, server logs warning. Always set `ALLOWED_ORIGINS` when exposing server to network or bind to `localhost`.
+**Security Warning**: When binding to non-localhost address without `MCP4_ALLOWED_ORIGINS` configured, server logs warning. Always set `MCP4_ALLOWED_ORIGINS` when exposing server to network or bind to `localhost`.
 
-**Default `ALLOWED_ORIGINS`**: Empty (no origins allowed except localhost).
+**Default `MCP4_ALLOWED_ORIGINS`**: Empty (no origins allowed except localhost).
 
 ### Best Practices
 
@@ -505,7 +505,7 @@ server {
 
 **Enable heartbeat** to prevent proxy timeouts:
 ```bash
-export HEARTBEAT_ENABLED=true
+export MCP4_HEARTBEAT_ENABLED=true
 ```
 
 ## Troubleshooting
@@ -513,14 +513,14 @@ export HEARTBEAT_ENABLED=true
 ### Session not found (404)
 
 **Cause**: Session expired or never initialized
-**Solution**: Initialize first, check `SESSION_TIMEOUT_MS`
+**Solution**: Initialize first, check `MCP4_SESSION_TIMEOUT_MS`
 
 ```bash
 # Check timeout
-echo $SESSION_TIMEOUT_MS
+echo $MCP4_SESSION_TIMEOUT_MS
 
 # Increase if needed
-export SESSION_TIMEOUT_MS=3600000  # 1 hour
+export MCP4_SESSION_TIMEOUT_MS=3600000  # 1 hour
 ```
 
 ### Origin not allowed (403)
@@ -539,8 +539,8 @@ export SESSION_TIMEOUT_MS=3600000  # 1 hour
 **Solution**: Enable heartbeat
 
 ```bash
-export HEARTBEAT_ENABLED=true
-export HEARTBEAT_INTERVAL_MS=30000
+export MCP4_HEARTBEAT_ENABLED=true
+export MCP4_HEARTBEAT_INTERVAL_MS=30000
 ```
 
 ### Server not accessible remotely
@@ -549,7 +549,7 @@ export HEARTBEAT_INTERVAL_MS=30000
 **Solution**: Bind to network interface
 
 ```bash
-export MCP_HOST=0.0.0.0  # or specific IP
+export MCP4_HOST=0.0.0.0  # or specific IP
 ```
 
 **Warning**: Ensure firewall protection!
@@ -561,8 +561,8 @@ export MCP_HOST=0.0.0.0  # or specific IP
 **Enable metrics** for production observability:
 
 ```bash
-export METRICS_ENABLED=true
-export METRICS_PATH=/metrics  # Optional, default: /metrics
+export MCP4_METRICS_ENABLED=true
+export MCP4_METRICS_PATH=/metrics  # Optional, default: /metrics
 npm start
 ```
 
@@ -600,8 +600,8 @@ mcp_api_call_errors_total{operation,error_type}
 scrape_configs:
   - job_name: 'mcp-server'
     static_configs:
-      - targets: ['localhost:3003']
-    metrics_path: '/metrics'
+      - targets: ['<your-mcp-server-host>']
+    MCP4_METRICS_PATH: '/metrics'
     scrape_interval: 15s
 ```
 
@@ -632,13 +632,13 @@ Monitor `sessions` count to detect leaks or issues.
 
 **JSON format** (for log aggregation):
 ```bash
-export LOG_FORMAT=json
+export MCP4_LOG_FORMAT=json
 npm start
 ```
 
 **Console format** (for debugging):
 ```bash
-export LOG_FORMAT=console
+export MCP4_LOG_FORMAT=console
 npm start
 ```
 

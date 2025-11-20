@@ -89,7 +89,7 @@ describe('Token Validation Integration', () => {
       {
         type: 'bearer',
         priority: 0,
-        value_from_env: 'API_TOKEN',
+        value_from_env: 'MCP4_API_TOKEN',
         validation_endpoint: '/api/v4/personal_access_tokens/self',
       },
     ];
@@ -292,7 +292,7 @@ describe('Token Validation Integration', () => {
       const shortTimeoutAuthConfigs: AuthInterceptor[] = [
         {
           type: 'bearer',
-          value_from_env: 'API_TOKEN',
+          value_from_env: 'MCP4_API_TOKEN',
           validation_endpoint: '/api/v4/slow-endpoint', // Non-existent = timeout
           validation_timeout_ms: 100, // Very short
         },
@@ -357,7 +357,7 @@ describe('Token Validation Integration', () => {
       const noValidationAuthConfigs: AuthInterceptor[] = [
         {
           type: 'bearer',
-          value_from_env: 'API_TOKEN',
+          value_from_env: 'MCP4_API_TOKEN',
           // No validation_endpoint
         },
       ];

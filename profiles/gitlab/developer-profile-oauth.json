@@ -567,11 +567,26 @@
 
   "interceptors": {
     "array_format": "brackets",
-    "auth": {
-      "type": "bearer",
-      "value_from_env": "MCP4_API_TOKEN",
-      "validation_endpoint": "/api/v4/personal_access_tokens/self"
-    },
+    "auth": [
+      {
+        "type": "oauth",
+        "priority": 0,
+        "oauth_config": {
+          "authorization_endpoint": "${env:MCP4_OAUTH_AUTHORIZATION_URL}",
+          "token_endpoint": "${env:MCP4_OAUTH_TOKEN_URL}",
+          "client_id": "${env:MCP4_OAUTH_CLIENT_ID}",
+          "client_secret": "${env:MCP4_OAUTH_CLIENT_SECRET}",
+          "scopes": ["api", "read_repository"],
+          "redirect_uri": "${env:MCP4_OAUTH_REDIRECT_URI}"
+        }
+      },
+      {
+        "type": "bearer",
+        "priority": 1,
+        "value_from_env": "MCP4_API_TOKEN",
+        "validation_endpoint": "/api/v4/personal_access_tokens/self"
+      }
+    ],
     "base_url": {
       "value_from_env": "MCP4_API_BASE_URL",
       "default": "https://gitlab.com/api/v4"
