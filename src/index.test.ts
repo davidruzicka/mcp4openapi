@@ -3,6 +3,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { OAUTH_PATHS } from '../src/constants.js';
 
 describe('OAuth Autodiscovery', () => {
   const originalEnv = process.env;
@@ -118,16 +119,20 @@ describe('OAuth Autodiscovery', () => {
   describe('Well-known endpoint format', () => {
     it('should construct correct metadata URL', () => {
       const issuer = 'https://www.gitlab.com';
-      const metadataUrl = `${issuer}/.well-known/oauth-authorization-server`;
+      // Use URL constructor to properly handle trailing slashes (same as in fetchOAuthMetadata)
+      const metadataUrl = new URL(OAUTH_PATHS.WELL_KNOWN_AUTHORIZATION_SERVER, issuer).toString();
       
       expect(metadataUrl).toBe('https://www.gitlab.com/.well-known/oauth-authorization-server');
     });
 
-    it('should handle issuer with trailing slash', () => {
+    it('should handle issuer with trailing slash without double slashes', () => {
       const issuer = 'https://www.gitlab.com/';
-      const metadataUrl = `${issuer}.well-known/oauth-authorization-server`;
+      // Use URL constructor to properly handle trailing slashes (same as in fetchOAuthMetadata)
+      const metadataUrl = new URL(OAUTH_PATHS.WELL_KNOWN_AUTHORIZATION_SERVER, issuer).toString();
       
+      // Should NOT have double slashes
       expect(metadataUrl).toBe('https://www.gitlab.com/.well-known/oauth-authorization-server');
+      expect(metadataUrl).not.toContain('//.well-known');
     });
   });
 });

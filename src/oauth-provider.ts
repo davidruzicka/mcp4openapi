@@ -28,6 +28,7 @@ import type {
 import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
 import type { OAuthConfig } from './types/profile.js';
 import type { Logger } from './logger.js';
+import { OAUTH_PATHS } from './constants.js';
 
 /**
  * In-memory store for OAuth client registrations
@@ -200,7 +201,8 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
    */
   private async fetchOAuthMetadata(issuerUrl: string): Promise<{ authorization_endpoint: string; token_endpoint: string } | null> {
     try {
-      const metadataUrl = `${issuerUrl}/.well-known/oauth-authorization-server`;
+      // Use URL constructor to properly handle trailing slashes
+      const metadataUrl = new URL(OAUTH_PATHS.WELL_KNOWN_AUTHORIZATION_SERVER, issuerUrl).toString();
       const response = await fetch(metadataUrl, {
         headers: { 'Accept': 'application/json' },
         signal: AbortSignal.timeout(5000), // 5 second timeout
