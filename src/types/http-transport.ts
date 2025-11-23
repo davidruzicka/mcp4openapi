@@ -47,6 +47,10 @@ export interface HttpTransportConfig {
   oauthConfig?: OAuthConfig; // OAuth 2.0 configuration (optional)
   baseUrl?: string; // Base URL for API (for token validation)
   authConfigs?: AuthInterceptor[]; // Auth configurations (for token validation)
+  resourceName?: string; // OAuth resource name (from OpenAPI info.title or profile override)
+  resourceDocumentation?: string; // OAuth resource documentation URL (from OpenAPI externalDocs.url or profile override)
+  sslCertFile?: string; // Path to SSL certificate file
+  sslKeyFile?: string; // Path to SSL key file
 }
 
 export interface McpRequest extends ExpressRequest {

@@ -5,19 +5,16 @@
  * OAuth 2.0 authorization servers (e.g., GitLab, GitHub, etc.)
  * 
  * Architecture:
- * - This server acts as an OAuth client, not an authorization server
- * - Redirects authorization requests to external OAuth provider
- * - Proxies token exchange to external token endpoint
- * - Validates tokens via introspection or JWT validation
- * 
- * Supports:
- * - Authorization Code Flow with PKCE (RFC 7636)
- * - Static client registration (pre-configured client_id/secret)
- * - Dynamic client registration (RFC 7591) - future enhancement
+ * - This server acts as an OAuth client to the external provider (Proxy/Gateway)
+ * - Implements "Callback Mode":
+ *   1. Client -> MCP (Authorize) -> MCP redirects to Provider (with MCP callback URL)
+ *   2. Provider -> MCP (Callback) -> MCP exchanges code for tokens
+ *   3. MCP redirects to Client (with Internal Code)
+ *   4. Client -> MCP (Token) -> MCP returns stored tokens
  */
 
 import { randomUUID } from 'node:crypto';
-import { Response } from 'express';
+import { Request, Response } from 'express';
 import type {
   OAuthServerProvider,
   AuthorizationParams,
@@ -34,9 +31,6 @@ import type { Logger } from './logger.js';
 
 /**
  * In-memory store for OAuth client registrations
- * 
- * Note: This is a simple implementation for demonstration.
- * Production deployments should use persistent storage (database/Redis)
  */
 export class InMemoryClientsStore implements OAuthRegisteredClientsStore {
   private clients = new Map<string, OAuthClientInformationFull>();
@@ -52,12 +46,24 @@ export class InMemoryClientsStore implements OAuthRegisteredClientsStore {
 }
 
 /**
- * Data stored for each authorization code
+ * State preserved across the redirect to external provider
+ */
+interface AuthorizationState {
+  clientRedirectUri: string;
+  codeChallenge: string;
+  originalState?: string;
+  clientId: string;
+  scopes?: string[];
+}
+
+/**
+ * Data stored for each internal authorization code
  */
 interface AuthorizationCodeData {
   client: OAuthClientInformationFull;
   params: AuthorizationParams;
   createdAt: number;
+  tokens?: OAuthTokens; // Stored external tokens
 }
 
 /**
@@ -73,18 +79,19 @@ interface AccessTokenData {
 
 /**
  * OAuth Provider Adapter for external OAuth servers
- * 
- * Acts as a proxy between MCP SDK OAuth flow and external OAuth provider
  */
 export class ExternalOAuthProvider implements OAuthServerProvider {
   private config: OAuthConfig;
   private logger: Logger;
   private _clientsStore: InMemoryClientsStore;
   
-  // In-memory storage for authorization codes and tokens
-  // Note: In production, use persistent storage with expiration
+  // In-memory storage
   private authorizationCodes = new Map<string, AuthorizationCodeData>();
   private accessTokens = new Map<string, AccessTokenData>();
+  private stateStore = new Map<string, AuthorizationState>();
+
+  private endpointsInitialized: boolean = false;
+  private initializationPromise: Promise<void> | null = null;
 
   constructor(config: OAuthConfig, logger: Logger) {
     this.config = config;
@@ -94,12 +101,80 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
     // Resolve environment variables in OAuth config
     this.config = this.resolveEnvVars(config);
     
-    this.logger.info('ExternalOAuthProvider initialized', {
-      authEndpoint: this.config.authorization_endpoint,
-      tokenEndpoint: this.config.token_endpoint,
-      hasClientId: !!this.config.client_id,
-      scopes: this.config.scopes,
-    });
+    // Pre-register mcp-proxy-client for VS Code compatibility
+    // VS Code doesn't call /oauth/register endpoint before calling /oauth/authorize
+    // This client has empty redirect_uris, allowing any redirect URI (validated at runtime)
+    const proxyClient: OAuthClientInformationFull = {
+      client_id: 'mcp-proxy-client',
+      client_secret: 'mcp-proxy-secret',
+      redirect_uris: [], // Empty = allow any redirect URI
+      grant_types: ['authorization_code', 'refresh_token'],
+      response_types: ['code'],
+      scope: this.config.scopes ? this.config.scopes.join(' ') : '',
+    };
+    this._clientsStore.registerClient(proxyClient);
+    this.logger.info('Pre-registered mcp-proxy-client for VS Code compatibility');
+  }
+
+  /**
+   * Lazy initialization of OAuth endpoints (async)
+   */
+  private async ensureEndpointsInitialized(): Promise<void> {
+    if (this.endpointsInitialized) {
+      return;
+    }
+
+    // Prevent concurrent initializations
+    if (this.initializationPromise) {
+      return this.initializationPromise;
+    }
+
+    this.initializationPromise = (async () => {
+      // Derive endpoints from issuer if needed
+      this.config = await this.deriveEndpointsFromIssuer(this.config);
+      
+      // Validate that we have required endpoints
+      if (!this.config.authorization_endpoint || !this.config.token_endpoint) {
+        throw new Error('OAuth config must provide either issuer OR both authorization_endpoint and token_endpoint');
+      }
+      
+      // Register default client if configured
+      if (this.config.client_id) {
+        // Allow localhost and configured redirect_uri for default client
+        const allowedUris: string[] = [];
+        if (this.config.redirect_uri) {
+          allowedUris.push(this.config.redirect_uri);
+        }
+        // Also allow common localhost patterns for development/testing
+        allowedUris.push('http://localhost:3003/oauth/callback');
+        allowedUris.push('http://127.0.0.1:3003/oauth/callback');
+        
+        const defaultClient: OAuthClientInformationFull = {
+          client_id: this.config.client_id,
+          client_secret: this.config.client_secret,
+          redirect_uris: allowedUris,
+          grant_types: ['authorization_code', 'refresh_token'],
+          response_types: ['code'],
+          scope: this.config.scopes ? this.config.scopes.join(' ') : '',
+        };
+        this._clientsStore.registerClient(defaultClient);
+        this.logger.info('Registered default OAuth client', { 
+          clientId: this.config.client_id,
+          redirectUris: allowedUris 
+        });
+      }
+      
+      this.logger.info('ExternalOAuthProvider initialized', {
+        authEndpoint: this.config.authorization_endpoint,
+        tokenEndpoint: this.config.token_endpoint,
+        hasClientId: !!this.config.client_id,
+        scopes: this.config.scopes || [],
+      });
+
+      this.endpointsInitialized = true;
+    })();
+
+    return this.initializationPromise;
   }
 
   get clientsStore(): OAuthRegisteredClientsStore {
@@ -107,7 +182,8 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
   }
 
   get authorizationEndpoint(): string {
-    return this.config.authorization_endpoint;
+    // After initialization, authorization_endpoint is guaranteed to be defined
+    return this.config.authorization_endpoint!;
   }
 
   get redirectUri(): string | undefined {
@@ -115,13 +191,37 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
   }
 
   get scopes(): string[] {
-    return this.config.scopes;
+    return this.config.scopes || [];
+  }
+
+  /**
+   * Fetch OAuth Authorization Server Metadata (RFC 8414)
+   */
+  private async fetchOAuthMetadata(issuerUrl: string): Promise<{ authorization_endpoint: string; token_endpoint: string } | null> {
+    try {
+      const metadataUrl = `${issuerUrl}/.well-known/oauth-authorization-server`;
+      const response = await fetch(metadataUrl, {
+        headers: { 'Accept': 'application/json' },
+        signal: AbortSignal.timeout(5000), // 5 second timeout
+      });
+      
+      if (!response.ok) {
+        return null;
+      }
+      
+      const metadata = await response.json() as any;
+      return {
+        authorization_endpoint: metadata.authorization_endpoint,
+        token_endpoint: metadata.token_endpoint,
+      };
+    } catch (error) {
+      this.logger.debug('OAuth metadata fetch failed', { issuerUrl, error });
+      return null;
+    }
   }
 
   /**
    * Resolve environment variable references in OAuth config
-   * 
-   * Supports: "${env:VARIABLE_NAME}" syntax
    */
   private resolveEnvVars(config: OAuthConfig): OAuthConfig {
     const resolve = (value: string | undefined): string | undefined => {
@@ -141,6 +241,7 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
 
     return {
       ...config,
+      issuer: resolve(config.issuer),
       authorization_endpoint: resolve(config.authorization_endpoint) || config.authorization_endpoint,
       token_endpoint: resolve(config.token_endpoint) || config.token_endpoint,
       client_id: resolve(config.client_id),
@@ -153,37 +254,69 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
   }
 
   /**
-   * Begin authorization flow by redirecting to external OAuth provider
-   * 
-   * Flow:
-   * 1. Store authorization params with a code
-   * 2. Build authorization URL for external provider
-   * 3. Redirect user's browser to external provider
-   * 4. External provider will redirect back to our callback with code
+   * Derive OAuth endpoints from issuer if needed
+   */
+  private async deriveEndpointsFromIssuer(config: OAuthConfig): Promise<OAuthConfig> {
+    // If both endpoints are explicitly provided, no need to derive
+    if (config.authorization_endpoint && config.token_endpoint) {
+      return config;
+    }
+
+    // If issuer is not provided, we can't derive
+    if (!config.issuer) {
+      if (!config.authorization_endpoint || !config.token_endpoint) {
+        throw new Error('OAuth config must provide either issuer OR both authorization_endpoint and token_endpoint');
+      }
+      return config;
+    }
+
+    const issuer = config.issuer;
+    this.logger.info('Deriving OAuth endpoints from issuer', { issuer });
+
+    // Try to fetch OAuth metadata
+    const metadata = await this.fetchOAuthMetadata(issuer);
+    
+    if (metadata) {
+      this.logger.info('Successfully discovered OAuth endpoints', {
+        authorization_endpoint: metadata.authorization_endpoint,
+        token_endpoint: metadata.token_endpoint,
+      });
+      return {
+        ...config,
+        authorization_endpoint: config.authorization_endpoint || metadata.authorization_endpoint,
+        token_endpoint: config.token_endpoint || metadata.token_endpoint,
+      };
+    }
+
+    // Fallback to standard OAuth paths
+    this.logger.info('OAuth metadata fetch failed, using standard OAuth paths', { issuer });
+    return {
+      ...config,
+      authorization_endpoint: config.authorization_endpoint || `${issuer}/oauth/authorize`,
+      token_endpoint: config.token_endpoint || `${issuer}/oauth/token`,
+    };
+  }
+
+  /**
+   * Begin authorization flow
+   * Stores state and redirects to External Provider with MCP Callback URI
    */
   async authorize(
     client: OAuthClientInformationFull,
     params: AuthorizationParams,
     res: Response
   ): Promise<void> {
+    await this.ensureEndpointsInitialized();
+    
     this.logger.info('Starting OAuth authorization', {
       clientId: client.client_id,
       scopes: params.scopes,
       redirectUri: params.redirectUri,
-    });
-
-    // Generate authorization code for our internal tracking
-    const code = randomUUID();
-    
-    // Store authorization data
-    this.authorizationCodes.set(code, {
-      client,
-      params,
-      createdAt: Date.now(),
+      registeredUris: client.redirect_uris,
     });
 
     // Validate redirect URI
-    if (!client.redirect_uris.includes(params.redirectUri)) {
+    if (client.redirect_uris && client.redirect_uris.length > 0 && !client.redirect_uris.includes(params.redirectUri)) {
       this.logger.error('Invalid redirect URI', undefined, {
         providedUri: params.redirectUri,
         registeredUris: client.redirect_uris,
@@ -191,38 +324,133 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
       throw new Error('Unregistered redirect_uri');
     }
 
-    // Build authorization URL for external OAuth provider
-    const authUrl = new URL(this.config.authorization_endpoint);
+    const stateToken = randomUUID();
     
-    // Use configured client_id or the MCP client's ID
+    this.stateStore.set(stateToken, {
+      clientRedirectUri: params.redirectUri,
+      codeChallenge: params.codeChallenge,
+      originalState: params.state,
+      clientId: client.client_id,
+      scopes: params.scopes,
+    });
+
+    const authUrl = new URL(this.config.authorization_endpoint!);
     const clientId = this.config.client_id || client.client_id;
     
-    authUrl.searchParams.set('client_id', clientId);
-    authUrl.searchParams.set('redirect_uri', params.redirectUri);
-    authUrl.searchParams.set('response_type', 'code');
-    authUrl.searchParams.set('code_challenge', params.codeChallenge);
-    authUrl.searchParams.set('code_challenge_method', 'S256');
-    
-    if (params.state) {
-      authUrl.searchParams.set('state', params.state);
+    if (!this.config.redirect_uri) {
+      throw new Error('MCP4_OAUTH_REDIRECT_URI must be configured');
     }
-    
+    const callbackUri = this.config.redirect_uri;
+
+    authUrl.searchParams.set('client_id', clientId);
+    authUrl.searchParams.set('redirect_uri', callbackUri);
+    authUrl.searchParams.set('response_type', 'code');
+    authUrl.searchParams.set('state', stateToken);
+
     if (params.scopes && params.scopes.length > 0) {
       authUrl.searchParams.set('scope', params.scopes.join(' '));
-    } else if (this.config.scopes.length > 0) {
+    } else if (this.config.scopes && this.config.scopes.length > 0) {
       authUrl.searchParams.set('scope', this.config.scopes.join(' '));
     }
 
+    // NOTE: Do NOT forward PKCE parameters to external provider
+    // The MCP server acts as an OAuth proxy with client_secret (confidential client)
+    // PKCE is used only between Cursor <-> MCP, not between MCP <-> External Provider
+    // If we forwarded code_challenge, we would need code_verifier which only Cursor has
+
     this.logger.info('Redirecting to external OAuth provider', {
-      authUrl: authUrl.toString().replace(/code_challenge=[^&]+/, 'code_challenge=***'),
+      authUrl: authUrl.toString(),
+      callbackUri,
+      stateToken,
+      hasClientSecret: !!this.config.client_secret,
     });
 
-    // Redirect to external OAuth provider
     res.redirect(authUrl.toString());
   }
 
   /**
-   * Get code challenge for authorization code
+   * Handle callback from External Provider
+   * Exchanges code for tokens and redirects to Client with Internal Code
+   */
+  async handleCallback(req: Request, res: Response): Promise<void> {
+    await this.ensureEndpointsInitialized();
+    
+    const { code, state, error } = req.query;
+
+    if (error) {
+        this.logger.error('OAuth callback error', undefined, { error, state });
+        res.status(400).send(`Authorization failed: ${error}`);
+        return;
+    }
+
+    if (!code || typeof code !== 'string') {
+        res.status(400).send('Missing authorization code');
+        return;
+    }
+
+    if (!state || typeof state !== 'string') {
+        res.status(400).send('Missing state parameter');
+        return;
+    }
+
+    const storedState = this.stateStore.get(state);
+    if (!storedState) {
+        res.status(400).send('Invalid or expired state');
+        return;
+    }
+
+    // Clean up state
+    this.stateStore.delete(state);
+
+    try {
+        // Exchange External Code for Tokens
+        const tokens = await this.exchangeCodeWithProvider(
+            code, 
+            undefined,
+            this.config.redirect_uri!
+        );
+
+        // Generate Internal Code
+        const internalCode = randomUUID();
+
+        // Store Internal Code -> Tokens mapping
+        const client = await this._clientsStore.getClient(storedState.clientId);
+        if (!client) throw new Error('Client not found');
+
+        this.authorizationCodes.set(internalCode, {
+            client,
+            params: {
+                redirectUri: storedState.clientRedirectUri,
+                codeChallenge: storedState.codeChallenge,
+                scopes: storedState.scopes || [],
+                state: storedState.originalState
+            },
+            createdAt: Date.now(),
+            tokens
+        });
+
+        // Redirect to Client
+        const clientUrl = new URL(storedState.clientRedirectUri);
+        clientUrl.searchParams.set('code', internalCode);
+        if (storedState.originalState) {
+            clientUrl.searchParams.set('state', storedState.originalState);
+        }
+
+        this.logger.info('Redirecting to client with internal code', {
+            clientUrl: clientUrl.toString(),
+            internalCode
+        });
+
+        res.redirect(clientUrl.toString());
+
+    } catch (err) {
+        this.logger.error('Callback handling failed', err as Error);
+        res.status(500).send('Internal Server Error during token exchange');
+    }
+  }
+
+  /**
+   * Get code challenge for authorization code (Internal)
    */
   async challengeForAuthorizationCode(
     client: OAuthClientInformationFull,
@@ -242,12 +470,7 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
   }
 
   /**
-   * Exchange authorization code for access token
-   * 
-   * Flow:
-   * 1. Validate authorization code
-   * 2. Exchange code with external OAuth provider
-   * 3. Store and return access token
+   * Exchange authorization code for access token (Internal)
    */
   async exchangeAuthorizationCode(
     client: OAuthClientInformationFull,
@@ -256,9 +479,10 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
     redirectUri?: string,
     resource?: URL
   ): Promise<OAuthTokens> {
-    this.logger.info('Exchanging authorization code', {
+    await this.ensureEndpointsInitialized();
+    
+    this.logger.info('Exchanging internal authorization code', {
       clientId: client.client_id,
-      hasCodeVerifier: !!codeVerifier,
     });
 
     const codeData = this.authorizationCodes.get(authorizationCode);
@@ -271,42 +495,27 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
       throw new Error('Authorization code was not issued to this client');
     }
 
-    // Check code expiration (5 minutes)
-    const codeAge = Date.now() - codeData.createdAt;
-    if (codeAge > 5 * 60 * 1000) {
-      this.authorizationCodes.delete(authorizationCode);
-      throw new Error('Authorization code expired');
+    if (!codeData.tokens) {
+        throw new Error('No tokens associated with this code');
     }
 
     // Delete authorization code (single use)
     this.authorizationCodes.delete(authorizationCode);
 
-    // Exchange code with external OAuth provider
-    const tokenResponse = await this.exchangeCodeWithProvider(
-      authorizationCode,
-      codeVerifier,
-      redirectUri || codeData.params.redirectUri
-    );
-
-    // Store access token
+    // Store access token for validation
     const tokenData: AccessTokenData = {
-      token: tokenResponse.access_token,
+      token: codeData.tokens.access_token,
       clientId: client.client_id,
-      scopes: codeData.params.scopes || this.config.scopes,
-      expiresAt: tokenResponse.expires_in 
-        ? Date.now() + tokenResponse.expires_in * 1000 
+      scopes: codeData.params.scopes || this.config.scopes || [],
+      expiresAt: codeData.tokens.expires_in 
+        ? Date.now() + codeData.tokens.expires_in * 1000 
         : undefined,
       resource,
     };
     
-    this.accessTokens.set(tokenResponse.access_token, tokenData);
+    this.accessTokens.set(codeData.tokens.access_token, tokenData);
 
-    this.logger.info('Token exchange successful', {
-      clientId: client.client_id,
-      expiresIn: tokenResponse.expires_in,
-    });
-
-    return tokenResponse;
+    return codeData.tokens;
   }
 
   /**
@@ -317,7 +526,7 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
     codeVerifier: string | undefined,
     redirectUri: string
   ): Promise<OAuthTokens> {
-    const tokenUrl = this.config.token_endpoint;
+    const tokenUrl = this.config.token_endpoint!;
     
     const body = new URLSearchParams({
       grant_type: 'authorization_code',
@@ -329,7 +538,6 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
       body.set('code_verifier', codeVerifier);
     }
 
-    // Add client credentials if configured
     if (this.config.client_id) {
       body.set('client_id', this.config.client_id);
     }
@@ -363,18 +571,17 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
     return tokenResponse;
   }
 
-  /**
-   * Exchange refresh token for new access token
-   */
   async exchangeRefreshToken(
     client: OAuthClientInformationFull,
     refreshToken: string,
     scopes?: string[],
     resource?: URL
   ): Promise<OAuthTokens> {
+    await this.ensureEndpointsInitialized();
+    
     this.logger.info('Exchanging refresh token', { clientId: client.client_id });
 
-    const tokenUrl = this.config.token_endpoint;
+    const tokenUrl = this.config.token_endpoint!;
     
     const body = new URLSearchParams({
       grant_type: 'refresh_token',
@@ -413,11 +620,10 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
 
     const tokenResponse = await response.json() as OAuthTokens;
 
-    // Update stored token data
     const tokenData: AccessTokenData = {
       token: tokenResponse.access_token,
       clientId: client.client_id,
-      scopes: scopes || this.config.scopes,
+      scopes: scopes || this.config.scopes || [],
       expiresAt: tokenResponse.expires_in 
         ? Date.now() + tokenResponse.expires_in * 1000 
         : undefined,
@@ -429,27 +635,16 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
     return tokenResponse;
   }
 
-  /**
-   * Verify access token
-   * 
-   * Strategy:
-   * 1. Check in-memory cache first
-   * 2. If introspection endpoint configured, use it
-   * 3. Otherwise, assume token is valid if in cache
-   */
   async verifyAccessToken(token: string): Promise<AuthInfo> {
     const tokenData = this.accessTokens.get(token);
     
     if (!tokenData) {
-      // Token not in our cache - try introspection if available
       if (this.config.introspection_endpoint) {
         return await this.introspectToken(token);
       }
-      
       throw new Error('Invalid or expired token');
     }
 
-    // Check expiration
     if (tokenData.expiresAt && tokenData.expiresAt < Date.now()) {
       this.accessTokens.delete(token);
       throw new Error('Token expired');
@@ -464,9 +659,6 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
     };
   }
 
-  /**
-   * Introspect token with external OAuth provider
-   */
   private async introspectToken(token: string): Promise<AuthInfo> {
     const introspectionUrl = this.config.introspection_endpoint;
     
@@ -474,11 +666,8 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
       throw new Error('Introspection endpoint not configured');
     }
 
-    this.logger.debug('Introspecting token', { introspectionUrl });
-
     const body = new URLSearchParams({ token });
 
-    // Add client credentials if configured
     if (this.config.client_id) {
       body.set('client_id', this.config.client_id);
     }
@@ -521,35 +710,20 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
     };
   }
 
-  /**
-   * Revoke token
-   */
   async revokeToken(
     client: OAuthClientInformationFull,
     request: OAuthTokenRevocationRequest
   ): Promise<void> {
     this.logger.info('Revoking token', { clientId: client.client_id });
-
-    // Remove from local cache
     this.accessTokens.delete(request.token);
-
-    // Revoke with external provider if endpoint configured
     if (this.config.revocation_endpoint) {
       await this.revokeTokenWithProvider(request.token);
     }
   }
 
-  /**
-   * Revoke token with external OAuth provider
-   */
   private async revokeTokenWithProvider(token: string): Promise<void> {
     const revocationUrl = this.config.revocation_endpoint;
-    
-    if (!revocationUrl) {
-      return; // No revocation endpoint configured
-    }
-
-    this.logger.debug('Revoking token with external provider', { revocationUrl });
+    if (!revocationUrl) return;
 
     const body = new URLSearchParams({ token });
 
@@ -571,8 +745,6 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
 
     if (!response.ok) {
       this.logger.warn('Token revocation failed', { status: response.status });
-      // Don't throw - revocation is best-effort
     }
   }
 }
-

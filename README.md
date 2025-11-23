@@ -367,42 +367,55 @@ export MCP4_TOOLNAME_MAX=30
 ```
 
 ### Optional - HTTP Transport
-- `MCP4_HOST`: Bind address (default: `127.0.0.1`; warning logged if non-localhost with empty `MCP4_ALLOWED_ORIGINS`)
+- `MCP4_HOST`: Bind address (default: `127.0.0.1`)
 - `MCP4_PORT`: Port (default: `3003`)
-- `MCP4_ALLOWED_ORIGINS`: Comma-separated origins (default: empty; supports exact, wildcard `*.domain.com`, CIDR `192.168.1.0/24`)
+- `MCP4_ALLOWED_ORIGINS`: Comma-separated origins (supports exact, wildcard `*.domain.com`, CIDR `192.168.1.0/24`)
 - `MCP4_SESSION_TIMEOUT_MS`: Session timeout (default: `1800000` = 30min)
-- `MCP4_HEARTBEAT_ENABLED`: SSE heartbeat (default: `false`)
-- `MCP4_HEARTBEAT_INTERVAL_MS`: Heartbeat interval (default: `30000` = 30s)
+- `MCP4_HEARTBEAT_ENABLED`, `MCP4_HEARTBEAT_INTERVAL_MS`: SSE heartbeat settings
 - `MCP4_TOKEN_MAX_LENGTH`: Maximum token length in characters (default: `1000`)
 
+See [docs/HTTP-TRANSPORT.md](./docs/HTTP-TRANSPORT.md) for detailed HTTP transport configuration.
+
+#### SSL/TLS Configuration
+
+- `MCP4_SSL_CERT_FILE`, `MCP4_SSL_KEY_FILE`: SSL certificate and key (PEM format)
+
+**When both are set, server automatically starts in HTTPS mode.**
+
+See [docs/OAUTH.md](./docs/OAUTH.md#ssltls-support) for SSL configuration with OAuth.
+
+#### OAuth 2.0 Configuration
+
+**✨ NEW: Automatic autodiscovery** - Just provide credentials and API base URL:
+```bash
+export MCP4_API_BASE_URL=https://www.gitlab.com/api/v4
+export MCP4_OAUTH_CLIENT_ID=your_client_id
+export MCP4_OAUTH_CLIENT_SECRET=your_client_secret
+export MCP4_OAUTH_REDIRECT_URI=https://localhost:3003/oauth/callback
+# OAuth endpoints are automatically discovered from base URL
+```
+
+**Configuration priority:**
+1. **Explicit URLs**: `MCP4_OAUTH_AUTHORIZATION_URL`, `MCP4_OAUTH_TOKEN_URL` (highest priority)
+2. **Explicit issuer**: `MCP4_OAUTH_ISSUER` (auto-derives standard OAuth paths)
+3. **Autodiscovery**: From `MCP4_API_BASE_URL` (fetches RFC 8414 metadata or uses standard paths)
+
+**Environment variables:**
+- `MCP4_OAUTH_CLIENT_ID`, `MCP4_OAUTH_CLIENT_SECRET`: OAuth client credentials (required)
+- `MCP4_OAUTH_REDIRECT_URI`: OAuth redirect URI (required, must match registered URI)
+- `MCP4_OAUTH_ISSUER`: OAuth provider issuer URL (optional, auto-derives endpoints)
+- `MCP4_OAUTH_AUTHORIZATION_URL`, `MCP4_OAUTH_TOKEN_URL`: OAuth endpoints (optional, for non-standard paths)
+
+See [docs/OAUTH.md](./docs/OAUTH.md) for complete setup guide including OAuth application registration, SSL configuration, and troubleshooting.
+
 #### HTTP Rate Limiting (Security)
-Protect against DoS attacks by limiting request rates per endpoint:
 
-- `MCP4_HTTP_RATE_LIMIT_ENABLED`: Enable rate limiting (`true|false`, default: `true`)
-- `MCP4_HTTP_RATE_LIMIT_WINDOW_MS`: Rate limit window in milliseconds (default: `60000` = 1 minute)
-- `MCP4_HTTP_RATE_LIMIT_MAX_REQUESTS`: Max requests per window for `/mcp`, `/sse`, `/health` (default: `100`)
-- `MCP4_HTTP_RATE_LIMIT_METRICS_MAX`: Max requests per window for `/metrics` (default: `10`)
+- `MCP4_HTTP_RATE_LIMIT_ENABLED`: Enable rate limiting (default: `true`)
+- `MCP4_HTTP_RATE_LIMIT_WINDOW_MS`: Rate limit window (default: `60000` = 1 minute)
+- `MCP4_HTTP_RATE_LIMIT_MAX_REQUESTS`: Max requests for MCP endpoints (default: `100`)
+- `MCP4_HTTP_RATE_LIMIT_METRICS_MAX`: Max requests for `/metrics` (default: `10`)
 
-**Example**: Enable rate limiting with custom limits:
-```bash
-export MCP4_HTTP_RATE_LIMIT_ENABLED=true
-export MCP4_HTTP_RATE_LIMIT_MAX_REQUESTS=200    # 200 req/min for MCP endpoints
-export MCP4_HTTP_RATE_LIMIT_METRICS_MAX=20      # 20 req/min for metrics
-```
-
-**Example**: Disable rate limiting (not recommended for production):
-```bash
-export MCP4_HTTP_RATE_LIMIT_ENABLED=false
-```
-
-**Response when rate limit exceeded**:
-```json
-{
-  "error": "Too Many Requests",
-  "message": "Rate limit exceeded. Max 100 requests per 60 seconds."
-}
-```
-HTTP status: `429 Too Many Requests` with `RateLimit-*` headers.
+**Default**: 100 requests/minute for MCP endpoints, 10 requests/minute for metrics. Returns `429 Too Many Requests` when exceeded.
 
 ### Optional - Observability
 - `MCP4_LOG_LEVEL`: `debug`, `info` (default), `warn`, `error`

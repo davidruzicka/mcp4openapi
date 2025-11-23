@@ -570,7 +570,7 @@
     "auth": {
       "type": "bearer",
       "value_from_env": "MCP4_API_TOKEN",
-      "validation_endpoint": "/api/v4/personal_access_tokens/self"
+      "validation_endpoint": "personal_access_tokens/self"
     },
     "base_url": {
       "value_from_env": "MCP4_API_BASE_URL",

@@ -40,14 +40,15 @@ OAuth 2.0 support enables browser-based authentication flow instead of manually 
 
 Create or edit `~/.env.mcp` for Cursor with mcp-remote or set in your shell:
 
+#### ✨ **NEW: Automatic Autodiscovery (Simplest)**
+
+If you provide OAuth credentials + API base URL, the server will automatically discover OAuth endpoints:
+
 ```bash
-# OAuth Configuration
-MCP4_OAUTH_AUTHORIZATION_URL=https://www.gitlab.com/oauth/authorize
-MCP4_OAUTH_TOKEN_URL=https://www.gitlab.com/oauth/token
+# Minimal OAuth Configuration (autodiscovery enabled)
 MCP4_OAUTH_CLIENT_ID=your_application_id_here
 MCP4_OAUTH_CLIENT_SECRET=your_secret_here
 MCP4_OAUTH_REDIRECT_URI=http://<mcp-server-url>:<mcp-server-port>/oauth/callback
-# MCP4_EXTERNAL_HOST_URL=<schema>://<external-hostname[:port]>  # Optional: external base URL for OAuth discovery when MCP4_OAUTH_REDIRECT_URI is not set
 
 # API Configuration
 MCP4_API_BASE_URL=https://www.gitlab.com/api/v4
@@ -58,7 +59,55 @@ MCP4_HOST=<mcp-server-url>
 MCP4_PORT=<mcp-server-port>
 ```
 
-**Security Note**: Never commit `client_secret` to version control. Use environment variables or secret management tools.
+**How autodiscovery works:**
+1. Derives issuer from `MCP4_API_BASE_URL` → `https://www.gitlab.com`
+2. Fetches `https://www.gitlab.com/.well-known/oauth-authorization-server` (RFC 8414)
+3. Extracts `authorization_endpoint` and `token_endpoint` from metadata
+4. Falls back to standard `/oauth/authorize` and `/oauth/token` if metadata unavailable
+
+**Supported by**: GitLab, GitHub, Keycloak, and any OAuth 2.0 provider with RFC 8414 metadata.
+
+#### Recommended: Simple Configuration with Issuer URL
+
+```bash
+# OAuth Configuration
+MCP4_OAUTH_ISSUER=https://www.gitlab.com
+MCP4_OAUTH_CLIENT_ID=your_application_id_here
+MCP4_OAUTH_CLIENT_SECRET=your_secret_here
+MCP4_OAUTH_REDIRECT_URI=http://<mcp-server-url>:<mcp-server-port>/oauth/callback
+
+# API Configuration
+MCP4_API_BASE_URL=https://www.gitlab.com/api/v4
+
+# Transport Configuration
+MCP4_TRANSPORT=http
+MCP4_HOST=<mcp-server-url>
+MCP4_PORT=<mcp-server-port>
+```
+
+**Why use `MCP4_OAUTH_ISSUER`?**
+- Automatically derives `MCP4_OAUTH_AUTHORIZATION_URL` = `{issuer}/oauth/authorize`
+- Automatically derives `MCP4_OAUTH_TOKEN_URL` = `{issuer}/oauth/token`
+- Less configuration, fewer errors
+
+#### Advanced: Explicit URL Configuration
+
+For providers with non-standard OAuth paths:
+
+```bash
+MCP4_OAUTH_AUTHORIZATION_URL=https://custom.example.com/auth/oauth2/authorize
+MCP4_OAUTH_TOKEN_URL=https://custom.example.com/auth/oauth2/token
+MCP4_OAUTH_CLIENT_ID=your_application_id_here
+MCP4_OAUTH_CLIENT_SECRET=your_secret_here
+MCP4_OAUTH_REDIRECT_URI=http://<mcp-server-url>:<mcp-server-port>/oauth/callback
+```
+
+**Configuration Priority:**
+1. **Explicit URLs** (`MCP4_OAUTH_AUTHORIZATION_URL`, `MCP4_OAUTH_TOKEN_URL`) - highest priority
+2. **Explicit Issuer** (`MCP4_OAUTH_ISSUER`) - derives standard paths
+3. **Autodiscovery** (from `MCP4_API_BASE_URL`) - fetches metadata or uses standard paths
+
+**Complete environment variable reference**: See [env.example](../env.example#L109-L131) for all OAuth configuration options.
 
 ### 3. Create OAuth Profile
 
@@ -151,7 +200,7 @@ MCP server running on HTTP <mcp-server-url>:<mcp-server-port>
 2. Click **"Connect"** or attempt to use a tool
 3. Your browser will open to GitLab authorization page
 4. Click **"Authorize"** to grant permissions
-5. Browser will redirect back to `http://<mcp-server-url:port>/oauth/callback` or (`${MCP4_EXTERNAL_HOST_URL}/oauth/callback`)
+5. Browser will redirect back to `redirect_uri`
 6. Connection established! You can now use MCP tools
 
 ## OAuth Endpoints
@@ -177,6 +226,53 @@ When OAuth is enabled, the following endpoints are available:
 - **`DELETE /mcp`** - Session termination
 
 ## Advanced Configuration
+
+### Custom Resource Metadata
+
+Override OAuth 2.0 Protected Resource metadata in your profile to provide custom name and documentation URL for the API:
+
+```json
+{
+  "profile_name": "gitlab-production",
+  "description": "GitLab API with OAuth 2.0 for production",
+  "resource_name": "GitLab Production API",
+  "resource_documentation": "https://docs.gitlab.com/ee/api/",
+  "tools": [
+    // ... your tools
+  ]
+}
+```
+
+**Defaults:**
+- `resource_name`: Uses OpenAPI `info.title`, falls back to `"MCP Server"` if not available
+- `resource_documentation`: Uses OpenAPI `externalDocs.url`, omitted if not available
+- `scopes_supported`: Uses OAuth `scopes` from profile auth config, omitted if empty
+
+These fields are optional and will be exposed in the `/.well-known/oauth-protected-resource/mcp` endpoint, helping OAuth clients display meaningful information about the protected resource.
+
+### SSL/TLS Support
+
+For production deployments or when OAuth clients require HTTPS endpoints, you can enable SSL/TLS by providing certificate and key files:
+
+```bash
+# SSL Configuration
+MCP4_SSL_CERT_FILE=/path/to/certificate.pem
+MCP4_SSL_KEY_FILE=/path/to/private-key.pem
+```
+
+When both environment variables are set, the server automatically starts in HTTPS mode instead of HTTP. Update your redirect URI to use `https://` scheme:
+
+```bash
+MCP4_OAUTH_REDIRECT_URI=https://<mcp-server-url>:<mcp-server-port>/oauth/callback
+```
+
+**Certificate Requirements:**
+- PEM format for both certificate and key
+- Certificate must be valid and trusted by OAuth clients
+- For development: self-signed certificates work but may require client configuration
+- For production: use certificates from trusted CA (e.g., Let's Encrypt)
+
+**Security Note**: Protect your private key file with appropriate file permissions (e.g., `chmod 600 private-key.pem`).
 
 ### Custom Redirect URI
 

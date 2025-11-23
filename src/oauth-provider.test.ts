@@ -139,11 +139,10 @@ describe('ExternalOAuthProvider', () => {
       expect(mockRes.redirect).toHaveBeenCalledWith(
         expect.stringContaining('redirect_uri=')
       );
+      // Note: code_challenge is NOT forwarded to external OAuth provider
+      // because MCP server acts as a confidential client with client_secret
       expect(mockRes.redirect).toHaveBeenCalledWith(
-        expect.stringContaining('code_challenge=test-challenge')
-      );
-      expect(mockRes.redirect).toHaveBeenCalledWith(
-        expect.stringContaining('state=test-state')
+        expect.stringContaining('state=')
       );
     });
 

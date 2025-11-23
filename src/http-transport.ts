@@ -10,6 +10,8 @@
 
 import express, { Request, Response, NextFunction, RequestHandler } from 'express';
 import type { Server } from 'http';
+import https from 'https';
+import fs from 'fs';
 import crypto from 'crypto';
 import rateLimit from 'express-rate-limit';
 import { mcpAuthRouter } from '@modelcontextprotocol/sdk/server/auth/router.js';
@@ -25,13 +27,14 @@ import { isInitializeRequest } from './jsonrpc-validator.js';
 import { MetricsCollector } from './metrics.js';
 import { ExternalOAuthProvider } from './oauth-provider.js';
 import type { AuthInterceptor } from './types/profile.js';
+import { HTTP_STATUS, MIME_TYPES, OAUTH_PATHS, TIMEOUTS } from './constants.js';
 
 // Default maximum token length (1000 characters)
 const DEFAULT_MAX_TOKEN_LENGTH = 1000;
 
 export class HttpTransport {
   private app: express.Application;
-  private server: Server | null = null;
+  private server: Server | https.Server | null = null;
   private sessions: Map<string, SessionData> = new Map();
   private config: HttpTransportConfig;
   private logger: Logger;
@@ -54,8 +57,11 @@ export class HttpTransport {
     
     // Initialize OAuth provider if configured
     if (config.oauthConfig) {
+      this.logger.info('Initializing OAuth provider with config', { hasClientId: !!config.oauthConfig.client_id });
       this.oauthProvider = new ExternalOAuthProvider(config.oauthConfig, logger);
-      this.logger.info('OAuth provider initialized');
+      this.logger.info('OAuth provider initialized', { endpoint: this.oauthProvider.authorizationEndpoint });
+    } else {
+      this.logger.info('No OAuth config provided - OAuth provider not initialized');
     }
     
     this.app = express();
@@ -69,12 +75,82 @@ export class HttpTransport {
    * Why: Security (Origin validation, rate limiting), JSON parsing, session extraction, metrics
    */
   private setupMiddleware(): void {
+    // Ultra-early logging - before any middleware
+    this.app.use((req: Request, res: Response, next: NextFunction) => {
+      this.logger.info('RAW REQUEST RECEIVED', { method: req.method, url: req.url });
+      next();
+    });
+
+    // Debug middleware to trace request flow
+    this.app.use((req: Request, res: Response, next: NextFunction) => {
+      this.logger.debug('MIDDLEWARE: Request processing', { method: req.method, url: req.url, path: req.path });
+      next();
+    });
+
+    // Ultra-early logging - before any middleware
+    this.app.use((req: Request, res: Response, next: NextFunction) => {
+      this.logger.debug('RAW REQUEST RECEIVED', {
+        method: req.method,
+        url: req.url,
+        headers: req.rawHeaders, // All headers as array
+        userAgent: req.get('user-agent'),
+        ip: req.ip,
+        timestamp: new Date().toISOString()
+      });
+      next();
+    });
+
     // JSON body parser
     this.app.use(express.json());
 
     // Metrics: Track request start time
     this.app.use((req: Request, res: Response, next: NextFunction) => {
       (req as any).startTime = Date.now();
+
+      // Log response
+      const originalSend = res.send;
+      const originalJson = res.json;
+      const logger = this.logger;
+
+      res.send = function(body: any) {
+        logger.debug('Outgoing response', {
+          method: req.method,
+          url: req.url,
+          status: res.statusCode,
+          contentType: res.get('content-type'),
+          bodyLength: body ? body.length : 0,
+          bodyPreview: typeof body === 'string' ? body.substring(0, 200) : '[object]'
+        });
+        return originalSend.call(this, body);
+      };
+
+      res.json = function(body: any) {
+        logger.debug('Outgoing JSON response', {
+          method: req.method,
+          url: req.url,
+          status: res.statusCode,
+          body
+        });
+        return originalJson.call(this, body);
+      };
+
+      next();
+    });
+
+    // Debug: Log all requests
+    this.app.use((req: Request, res: Response, next: NextFunction) => {
+      this.logger.debug('Incoming request', {
+        method: req.method,
+        url: req.url,
+        path: req.path,
+        headers: {
+          'user-agent': req.headers['user-agent'],
+          'accept': req.headers.accept,
+          'content-type': req.headers['content-type'],
+          'authorization': req.headers.authorization ? '[REDACTED]' : undefined
+        },
+        ip: req.ip
+      });
       next();
     });
 
@@ -96,7 +172,7 @@ export class HttpTransport {
       // Validate Origin header for non-localhost
       if (origin && !this.isAllowedOrigin(origin)) {
         this.logger.warn('Rejected request from disallowed origin', { origin, ip: req.ip });
-        return res.status(403).json({
+        return res.status(HTTP_STATUS.FORBIDDEN).json({
           error: 'Forbidden',
           message: 'Origin not allowed'
         });
@@ -141,6 +217,18 @@ export class HttpTransport {
       // Allow configured host
       if (hostname === this.config.host) {
         return true;
+      }
+
+      // Allow OAuth redirect URI host if configured
+      if (this.oauthProvider?.redirectUri) {
+        try {
+          const redirectUrl = new URL(this.oauthProvider.redirectUri);
+          if (hostname === redirectUrl.hostname) {
+            return true;
+          }
+        } catch {
+          // Invalid URL, ignore
+        }
       }
 
       // Check custom allowed origins
@@ -272,7 +360,7 @@ export class HttpTransport {
           method: req.method,
         });
 
-        res.status(429).json({
+        res.status(HTTP_STATUS.TOO_MANY_REQUESTS).json({
           error: 'Too Many Requests',
           message,
         });
@@ -294,16 +382,37 @@ export class HttpTransport {
 
     // OAuth 2.0 routes (if configured)
     if (this.oauthProvider) {
-      const serverUrl = new URL(`http://${this.config.host}:${this.config.port}/mcp`);
-      const issuerUrl = new URL(this.oauthProvider.authorizationEndpoint).origin;
-
       // Build redirect URI
       const redirectUri = this.oauthProvider.redirectUri ||
         `http://${this.config.host}:${this.config.port}/oauth/callback`;
 
+      // Derive serverUrl from redirectUri
+      const baseUrl = new URL(redirectUri).origin;
+      const serverUrl = new URL(`${baseUrl}/mcp`);
+      // issuerUrl should be the base URL of the authorization server (e.g. https://gitlab.com),
+      // NOT the authorization endpoint (e.g. https://gitlab.com/oauth/authorize)
+      // We try to derive it from authorizationEndpoint if not explicitly configured
+      // Note: authorizationEndpoint might not be ready yet (async initialization),
+      // so we use serverUrl.origin as fallback
+      let issuerUrl: URL;
+      try {
+         const authEndpoint = this.oauthProvider.authorizationEndpoint;
+         if (authEndpoint) {
+           // Try to extract base URL from auth endpoint
+           const authUrl = new URL(authEndpoint);
+           issuerUrl = new URL(authUrl.origin);
+         } else {
+           // Fallback: use server origin (will be updated after async init)
+           issuerUrl = new URL(serverUrl.origin);
+         }
+      } catch (e) {
+         // Fallback: use server origin
+         issuerUrl = new URL(serverUrl.origin);
+      }
+
       this.logger.info('Setting up OAuth routes', {
         serverUrl: serverUrl.toString(),
-        issuerUrl,
+        issuerUrl: issuerUrl.toString(),
         redirectUri,
       });
 
@@ -315,21 +424,261 @@ export class HttpTransport {
       // - /oauth/token
       // - /oauth/register (dynamic client registration)
       // - /oauth/revoke (token revocation)
-      this.app.use(mcpAuthRouter({
-        provider: this.oauthProvider,
-        issuerUrl: new URL(issuerUrl),
-        baseUrl: serverUrl,
-        scopesSupported: this.oauthProvider.scopes,
-        resourceServerUrl: serverUrl,
-        resourceName: 'MCP Server',
-      }));
+      // Only register resource server endpoints, not authorization server endpoints
+      // since our MCP server is not an OAuth authorization server
+      this.app.get(OAUTH_PATHS.WELL_KNOWN_PROTECTED_RESOURCE, (req: Request, res: Response) => {
+        // Build metadata object with only defined fields (RFC 8707)
+        const metadata: any = {
+          resource: serverUrl.href,
+          authorization_servers: [serverUrl.origin], // We are the authorization server (proxy)
+          bearer_methods_supported: ['header'],
+        };
+        
+        // Optional: scopes_supported (only if scopes are defined)
+        if (this.oauthProvider?.scopes && this.oauthProvider.scopes.length > 0) {
+          metadata.scopes_supported = this.oauthProvider.scopes;
+        }
+        
+        // Optional: resource_name (from config, already has fallback in mcp-server.ts)
+        if (this.config.resourceName) {
+          metadata.resource_name = this.config.resourceName;
+        }
+        
+        // Optional: resource_documentation (from config, may be undefined)
+        if (this.config.resourceDocumentation) {
+          metadata.resource_documentation = this.config.resourceDocumentation;
+        }
+        
+        res.json(metadata);
+      });
+
+      // Authorization endpoint
+      // Initiates the OAuth flow by redirecting the user to the external provider
+      this.app.get(OAUTH_PATHS.AUTHORIZE, async (req: Request, res: Response) => {
+        try {
+          const { response_type, client_id, redirect_uri, scope, state, code_challenge, code_challenge_method } = req.query;
+
+          if (!client_id || typeof client_id !== 'string') {
+            res.status(HTTP_STATUS.BAD_REQUEST).send('Missing client_id');
+            return;
+          }
+
+          if (!redirect_uri || typeof redirect_uri !== 'string') {
+            res.status(HTTP_STATUS.BAD_REQUEST).send('Missing redirect_uri');
+            return;
+          }
+
+          if (this.oauthProvider) {
+             // Find the client to validate configuration
+             const client = await this.oauthProvider.clientsStore.getClient(client_id);
+             if (!client) {
+                 res.status(HTTP_STATUS.BAD_REQUEST).send('Invalid client_id');
+                 return;
+             }
+
+             // Prepare parameters for provider authorization
+             const scopeStr = (scope as string || '').trim();
+             const params = {
+                 responseType: response_type as string || 'code',
+                 clientId: client_id,
+                 redirectUri: redirect_uri,
+                 scope: scopeStr ? scopeStr.split(' ') : [],
+                 state: state as string,
+                 codeChallenge: code_challenge as string,
+                 codeChallengeMethod: code_challenge_method as string,
+                 scopes: scopeStr ? scopeStr.split(' ') : [],
+             };
+
+             // Call provider authorize method which handles the redirect logic
+             await this.oauthProvider.authorize(client, params, res);
+          } else {
+             res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).send('OAuth provider not initialized');
+          }
+        } catch (error) {
+          this.logger.error('OAuth authorize error', error instanceof Error ? error : new Error(String(error)));
+          res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).send('OAuth authorization failed');
+        }
+      });
+
+      // Token endpoint
+      // Exchanges authorization code or refresh token for access token
+      this.app.post(OAUTH_PATHS.TOKEN, express.urlencoded({ extended: false }), async (req: Request, res: Response) => {
+        try {
+          const { grant_type, code, redirect_uri, client_id, code_verifier, refresh_token } = req.body;
+
+          this.logger.debug('OAuth token request', {
+            grant_type,
+            client_id,
+            has_code: !!code,
+            has_code_verifier: !!code_verifier,
+            redirect_uri,
+          });
+
+          if (grant_type === 'authorization_code') {
+            // Authorization Code Flow
+            if (!code) {
+               res.status(HTTP_STATUS.BAD_REQUEST).json({ error: 'invalid_request', error_description: 'Missing code' });
+               return;
+            }
+
+            if (this.oauthProvider) {
+               const client = await this.oauthProvider.clientsStore.getClient(client_id);
+               if (!client) {
+                   res.status(HTTP_STATUS.BAD_REQUEST).json({ error: 'invalid_client' });
+                   return;
+               }
+
+               const tokens = await this.oauthProvider.exchangeAuthorizationCode(
+                   client,
+                   code,
+                   code_verifier,
+                   redirect_uri
+               );
+
+               res.json(tokens);
+            } else {
+               res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ error: 'server_error', error_description: 'OAuth provider not initialized' });
+            }
+          } else if (grant_type === 'refresh_token') {
+            // Refresh Token Flow
+            if (!refresh_token) {
+               res.status(HTTP_STATUS.BAD_REQUEST).json({ error: 'invalid_request', error_description: 'Missing refresh_token' });
+               return;
+            }
+
+            if (this.oauthProvider) {
+               const client = await this.oauthProvider.clientsStore.getClient(client_id);
+               if (!client) {
+                   res.status(HTTP_STATUS.BAD_REQUEST).json({ error: 'invalid_client' });
+                   return;
+               }
+
+               const tokens = await this.oauthProvider.exchangeRefreshToken(
+                   client,
+                   refresh_token
+               );
+
+               res.json(tokens);
+            } else {
+               res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ error: 'server_error', error_description: 'OAuth provider not initialized' });
+            }
+          } else {
+             this.logger.warn('Unsupported grant type', { grant_type, expected: 'authorization_code or refresh_token' });
+             res.status(HTTP_STATUS.BAD_REQUEST).json({ error: 'unsupported_grant_type' });
+             return;
+          }
+        } catch (error) {
+          this.logger.error('OAuth token exchange error', error instanceof Error ? error : new Error(String(error)));
+          res.status(HTTP_STATUS.BAD_REQUEST).json({ error: 'invalid_grant', error_description: String(error) });
+        }
+      });
+
+      // OAuth callback endpoint to receive tokens from authorization server
+      this.app.get(OAUTH_PATHS.CALLBACK, async (req: Request, res: Response) => {
+        try {
+          const { code, state, error, error_description } = req.query;
+
+          this.logger.info('OAuth callback received', { 
+            hasCode: !!code, 
+            hasState: !!state,
+            error: error,
+            errorDescription: error_description
+          });
+
+          if (error) {
+             res.status(HTTP_STATUS.BAD_REQUEST).send(`OAuth Error: ${error_description || error}`);
+             return;
+          }
+
+          if (!code || typeof code !== 'string') {
+            res.status(HTTP_STATUS.BAD_REQUEST).send('Missing authorization code');
+            return;
+          }
+
+          // Delegate to OAuth provider to handle token exchange and redirect back to client (Cursor)
+          if (this.oauthProvider) {
+             await this.oauthProvider.handleCallback(req, res);
+          } else {
+             res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).send('OAuth provider not initialized');
+          }
+        } catch (error) {
+          this.logger.error('OAuth callback error', error instanceof Error ? error : new Error(String(error)));
+          if (!res.headersSent) {
+            res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).send('OAuth callback failed');
+          }
+        }
+      });
+
+      // Provide authorization server metadata
+      // We advertise the MCP server itself as the authorization server (Proxy Mode)
+      // This allows us to handle the redirect dance between Cursor -> MCP -> GitLab -> MCP -> Cursor
+      this.app.get(OAUTH_PATHS.WELL_KNOWN_AUTHORIZATION_SERVER, async (req: Request, res: Response) => {
+        try {
+          res.json({
+            issuer: serverUrl.origin, // We are the issuer for the client
+            authorization_endpoint: new URL(OAUTH_PATHS.AUTHORIZE, serverUrl.origin).href,
+            token_endpoint: new URL(OAUTH_PATHS.TOKEN, serverUrl.origin).href,
+            registration_endpoint: new URL(OAUTH_PATHS.REGISTER, serverUrl.origin).href,
+            response_types_supported: ['code'],
+            code_challenge_methods_supported: ['S256'],
+            grant_types_supported: ['authorization_code', 'refresh_token'],
+            scopes_supported: this.oauthProvider?.scopes || ['api'],
+          });
+        } catch (error) {
+          this.logger.error('OAuth authorization server metadata error', error instanceof Error ? error : new Error(String(error)));
+          res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).send('OAuth metadata failed');
+        }
+      });
+
+      // Dynamic Client Registration endpoint
+      // Cursor requires this to register itself with a redirect URI
+      this.app.post(OAUTH_PATHS.REGISTER, express.json(), async (req: Request, res: Response) => {
+         try {
+            const { redirect_uris } = req.body;
+            this.logger.info('Dynamic client registration request', { redirect_uris });
+            
+            // We don't actually strictly enforce registration in this proxy mode,
+            // but we return a valid client configuration to satisfy the client.
+            // We use a static client ID for the internal mapping.
+            const clientId = 'mcp-proxy-client';
+            const clientSecret = 'mcp-proxy-secret';
+            
+            // Register this client in our internal store so authorize requests pass validation
+            if (this.oauthProvider) {
+                const client = {
+                    client_id: clientId,
+                    client_secret: clientSecret,
+                    redirect_uris: redirect_uris || [],
+                    grant_types: ['authorization_code', 'refresh_token'],
+                    response_types: ['code'],
+                    scope: (this.oauthProvider.scopes || []).join(' '),
+                };
+                // We need to cast to any because registerClient might not be exposed on the interface
+                // but we know ExternalOAuthProvider uses InMemoryClientsStore
+                await (this.oauthProvider.clientsStore as any).registerClient(client);
+            }
+
+            res.status(HTTP_STATUS.CREATED).json({
+                client_id: clientId,
+                client_secret: clientSecret,
+                redirect_uris: redirect_uris,
+                grant_types: ['authorization_code', 'refresh_token'],
+                response_types: ['code'],
+                scope: (this.oauthProvider?.scopes || []).join(' '),
+                token_endpoint_auth_method: 'client_secret_post'
+            });
+         } catch (error) {
+            this.logger.error('Client registration failed', error instanceof Error ? error : new Error(String(error)));
+            res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ error: 'server_error', error_description: 'Registration failed' });
+         }
+      });
 
       this.logger.info('OAuth routes registered');
     }
 
     // Security: Rate limiting setup
     const rateLimitEnabled = this.config.rateLimitEnabled !== false; // default: true
-    const windowMs = this.config.rateLimitWindowMs || 60000; // 1 minute
+    const windowMs = this.config.rateLimitWindowMs || TIMEOUTS.RATE_LIMIT_WINDOW_MS;
     const maxRequests = this.config.rateLimitMaxRequests || 100; // 100 req/min
     const metricsMaxRequests = this.config.rateLimitMetricsMax || 10; // 10 req/min for metrics
 
@@ -359,8 +708,16 @@ export class HttpTransport {
     });
 
     // Main MCP endpoint - POST for sending messages
-    // Temporarily disable rate limiting for debugging
-    this.app.post('/mcp', this.handlePost.bind(this));
+    this.app.post('/mcp', mcpRateLimiter, this.handlePost.bind(this));
+    // Add OPTIONS handler for CORS preflight requests
+    this.app.options('/mcp', (req: Request, res: Response) => {
+      res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*');
+      res.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept, Mcp-Session-Id');
+      res.setHeader('Access-Control-Max-Age', '86400'); // 24 hours
+      res.status(HTTP_STATUS.OK).send();
+    });
+
     this.logger.info('Registered POST /mcp route');
 
     // Main MCP endpoint - GET for SSE streaming
@@ -407,11 +764,17 @@ export class HttpTransport {
     // Debug: SSE route registered
     this.logger.info('SSE routes registered successfully');
 
-    // Default 404 handler
-    // Catch-all handler to return JSON instead of HTML for 404s
-    // This must be the LAST route registered
+    // Default 404 handler - MUST be last route registered
+    // This will catch all unmatched requests
     this.app.use((req: Request, res: Response) => {
-      res.status(404).json({
+      this.logger.warn('Unhandled request (404)', {
+        method: req.method,
+        url: req.url,
+        path: req.path,
+        headers: req.headers,
+        ip: req.ip
+      });
+      res.status(HTTP_STATUS.NOT_FOUND).json({
         error: 'Not Found',
         message: `Endpoint ${req.method} ${req.path} not found`
       });
@@ -428,7 +791,7 @@ export class HttpTransport {
     
     try {
       if (!this.metrics) {
-        res.status(404).json({ error: 'Not Found', message: 'Metrics disabled' });
+        res.status(HTTP_STATUS.NOT_FOUND).json({ error: 'Not Found', message: 'Metrics disabled' });
         return;
       }
       
@@ -439,7 +802,7 @@ export class HttpTransport {
       // Don't record metrics call in metrics (avoid recursion)
     } catch (error) {
       this.logger.error('Metrics endpoint error', error as Error);
-      res.status(500).json({ error: 'Internal Server Error', message: (error as Error).message });
+      res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ error: 'Internal Server Error', message: (error as Error).message });
     }
   }
 
@@ -449,6 +812,28 @@ export class HttpTransport {
    * Supports all auth types: bearer, query, custom-header
    * Returns true if token is valid, false otherwise
    */
+  /**
+   * Builds a URL by intelligently combining base URL and endpoint
+   * Handles absolute URLs, absolute paths, and relative paths correctly
+   */
+  private buildUrl(endpoint: string, baseUrl: string): URL {
+    // If endpoint is already an absolute URL, use it as-is
+    if (endpoint.startsWith('http://') || endpoint.startsWith('https://')) {
+      return new URL(endpoint);
+    }
+
+    // If endpoint is an absolute path (starts with /), combine with origin of baseUrl
+    if (endpoint.startsWith('/')) {
+      const baseUrlObj = new URL(baseUrl);
+      return new URL(endpoint, baseUrlObj.origin);
+    }
+
+    // Otherwise, treat as relative path and append to baseUrl
+    // Ensure baseUrl ends with '/' for proper URL construction
+    const normalizedBaseUrl = baseUrl.endsWith('/') ? baseUrl : baseUrl + '/';
+    return new URL(endpoint, normalizedBaseUrl);
+  }
+
   private async validateAuthToken(
     authConfig: AuthInterceptor,
     token: string,
@@ -458,13 +843,15 @@ export class HttpTransport {
       return true; // Skip validation if not configured
     }
 
-    const url = new URL(authConfig.validation_endpoint, baseUrl);
+    const url = this.buildUrl(authConfig.validation_endpoint, baseUrl);
     const headers: Record<string, string> = {};
     const method = authConfig.validation_method || 'GET';
     const timeout = authConfig.validation_timeout_ms || 5000;
+    const urlString = url.toString();
 
     // Apply auth based on type
     switch (authConfig.type) {
+      case 'oauth':
       case 'bearer':
         headers['Authorization'] = `Bearer ${token}`;
         break;
@@ -484,7 +871,7 @@ export class HttpTransport {
 
     try {
       this.logger.debug('Validating auth token', {
-        endpoint: authConfig.validation_endpoint,
+        endpoint: urlString,
         method,
         authType: authConfig.type,
       });
@@ -598,48 +985,72 @@ export class HttpTransport {
   private async handlePost(req: McpRequest, res: Response): Promise<void> {
     const startTime = Date.now();
     try {
+      this.logger.debug('handlePost called', { method: req.method, path: req.path, sessionId: req.sessionId, accept: req.headers.accept });
       const sessionId = req.sessionId;
       const body = req.body;
 
-      // Validate Accept header
+      // Validate Accept header per MCP Streamable HTTP specification
       const accept = req.headers.accept || '';
-      if (!accept.includes('application/json') && !accept.includes('text/event-stream')) {
-        res.status(406).json({ error: 'Not Acceptable', message: 'Must accept application/json or text/event-stream' });
+
+      // POST requests can return either JSON or SSE, so must accept both if specified
+      // GET requests return SSE, so must accept text/event-stream
+      const acceptsJson = accept.includes(MIME_TYPES.JSON) || accept === '*/*' || accept === '';
+      const acceptsEventStream = accept.includes(MIME_TYPES.EVENT_STREAM) || accept === '*/*' || accept === '';
+
+      if (req.method === 'GET' && accept && !acceptsEventStream) {
+        this.logger.debug('Accept header validation failed for GET, returning 406');
+        res.status(HTTP_STATUS.NOT_ACCEPTABLE).json({
+          error: 'Not Acceptable',
+          message: `GET requests must accept ${MIME_TYPES.EVENT_STREAM}`
+        });
+        return;
+      }
+
+      // For POST, be more flexible - allow if client accepts either JSON or SSE
+      if (req.method === 'POST' && accept && !acceptsJson && !acceptsEventStream) {
+        this.logger.debug('Accept header validation failed for POST, returning 406');
+        res.status(HTTP_STATUS.NOT_ACCEPTABLE).json({
+          error: 'Not Acceptable',
+          message: `POST requests must accept ${MIME_TYPES.JSON} or ${MIME_TYPES.EVENT_STREAM}`
+        });
         return;
       }
 
       // Check if this is initialization (no session ID yet)
       const isInitialization = isInitializeRequest(body);
+      this.logger.debug('Session validation', { isInitialization, sessionId, bodyMethod: (body as any)?.method });
 
       // Validate session (except for initialization)
       if (!isInitialization && sessionId) {
         const session = this.sessions.get(sessionId);
         if (!session) {
-          res.status(404).json({ error: 'Not Found', message: 'Session not found or expired' });
+          res.status(HTTP_STATUS.NOT_FOUND).json({ error: 'Not Found', message: 'Session not found or expired' });
           return;
         }
         this.updateSessionActivity(sessionId);
       } else if (!isInitialization && !sessionId) {
-        res.status(400).json({ error: 'Bad Request', message: 'Mcp-Session-Id header required (except for initialization)' });
+        this.logger.debug('Session validation failed: non-init request without sessionId');
+        res.status(HTTP_STATUS.BAD_REQUEST).json({ error: 'Bad Request', message: 'Mcp-Session-Id header required (except for initialization)' });
         return;
       }
 
       // Determine message type
       const messageType = this.getMessageType(body);
+      this.logger.debug('Message type determined', { messageType, hasMessageHandler: !!this.messageHandler });
 
       // If only notifications/responses, return 202 Accepted
       if (messageType === 'notification-only' || messageType === 'response-only') {
         if (this.messageHandler) {
           await this.messageHandler(body);
         }
-        res.status(202).send();
+        res.status(HTTP_STATUS.ACCEPTED).send();
         return;
       }
 
       // If contains requests, process and return response
       if (messageType === 'request') {
         if (!this.messageHandler) {
-          res.status(500).json({ error: 'Internal Server Error', message: 'Message handler not configured' });
+          res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ error: 'Internal Server Error', message: 'Message handler not configured' });
           return;
         }
 
@@ -648,14 +1059,35 @@ export class HttpTransport {
         if (isInitialization) {
           // Extract and validate auth token from headers
           const authInfo = this.extractAuthToken(req);
+          this.logger.debug('Auth token extracted', { authType: authInfo?.type, hasToken: !!authInfo?.token });
+
+          // If OAuth is configured, require authentication for initialization
+          // This ensures clients like Cursor properly handle OAuth flow
+          if (this.oauthProvider && !authInfo.token) {
+            this.logger.debug('OAuth configured but no token provided, triggering OAuth flow');
+            const resourceMetadataUrl = new URL(OAUTH_PATHS.WELL_KNOWN_PROTECTED_RESOURCE, this.getServerUrl()).href;
+            res.setHeader('WWW-Authenticate', `Bearer resource_metadata="${resourceMetadataUrl}", scope="${this.oauthProvider.scopes.join(' ')}"`);
+            res.status(HTTP_STATUS.UNAUTHORIZED).json({
+              error: 'Unauthorized',
+              message: 'Authentication required for OAuth'
+            });
+            return;
+          }
+
+          // Allow initialization without token for non-OAuth scenarios
           
           // Validate token if auth is configured and token is provided
-          if (authInfo.token && authInfo.type !== 'oauth' && this.config.authConfigs && this.config.baseUrl) {
-            const authConfig = this.config.authConfigs.find(c => c.type === authInfo.type);
+          if (authInfo && authInfo.token && this.config.authConfigs && this.config.baseUrl) {
+            // Find matching auth config based on priority (authConfigs is sorted)
+            // For 'bearer' token type, 'oauth' config is also a match
+            const authConfig = this.config.authConfigs.find(c => 
+                c.type === authInfo.type || 
+                (authInfo.type === 'bearer' && c.type === 'oauth')
+            );
             
             if (authConfig && authConfig.validation_endpoint) {
               this.logger.info('Validating auth token during initialization', {
-                authType: authInfo.type,
+                authType: authConfig.type, // Use config type for logging
                 endpoint: authConfig.validation_endpoint,
               });
               
@@ -665,7 +1097,7 @@ export class HttpTransport {
                 this.logger.warn('Auth token validation failed during initialization', {
                   authType: authInfo.type,
                 });
-                res.status(401).json({
+                res.status(HTTP_STATUS.UNAUTHORIZED).json({
                   error: 'Unauthorized',
                   message: 'Invalid or expired authentication token'
                 });
@@ -679,31 +1111,46 @@ export class HttpTransport {
           newSessionId = this.createSession(authInfo.token);
         }
 
+        this.logger.debug('Calling messageHandler', { body, sessionId: isInitialization ? newSessionId : sessionId });
         const response = await this.messageHandler(body, isInitialization ? newSessionId : sessionId);
+        this.logger.debug('MessageHandler response', { response });
+
+        // Debug: Check OAuth conditions
+        this.logger.debug('Checking OAuth conditions', {
+          responseError: (response as any).error,
+          hasOAuthProvider: !!this.oauthProvider,
+          oauthProviderType: typeof this.oauthProvider
+        });
+
 
         // Check if response contains OAuth error and add WWW-Authenticate header
         const responseObj = response as any;
         if (responseObj.error && responseObj.error.data && responseObj.error.data.oauth_required) {
-          const resourceMetadataUrl = `${this.getServerUrl()}/.well-known/oauth-protected-resource/mcp`;
+          const resourceMetadataUrl = new URL(OAUTH_PATHS.WELL_KNOWN_PROTECTED_RESOURCE, this.getServerUrl()).href;
           res.setHeader('WWW-Authenticate', `Bearer resource_metadata="${resourceMetadataUrl}", scope="api"`);
-          res.status(401); // Set 401 status for OAuth errors
+          res.status(HTTP_STATUS.UNAUTHORIZED); // Set 401 status for OAuth errors
         }
 
-        // Check if client prefers SSE stream
-        if (accept.includes('text/event-stream')) {
-          // Return SSE stream
+        // Decide response format based on Accept header
+        const accept = req.headers.accept || '';
+        const wantsOnlySSE = accept.trim() === MIME_TYPES.EVENT_STREAM;
+
+        if (wantsOnlySSE) {
+          // Return SSE response only when client explicitly wants text/event-stream only
+          this.logger.debug('Sending SSE response', { response, newSessionId });
           this.startSSEResponse(res, response, newSessionId, sessionId);
         } else {
-          // Return JSON
+          // Return JSON response (default for requests)
           if (newSessionId) {
             res.setHeader('Mcp-Session-Id', newSessionId);
           }
+          this.logger.debug('Sending JSON response', { response, newSessionId });
           res.json(response);
         }
         return;
       }
 
-      res.status(400).json({ error: 'Bad Request', message: 'Invalid message type' });
+      res.status(HTTP_STATUS.BAD_REQUEST).json({ error: 'Bad Request', message: 'Invalid message type' });
     } catch (error) {
       this.logger.error('POST request error', error as Error);
       const status = 500;
@@ -736,20 +1183,20 @@ export class HttpTransport {
 
       // Validate Accept header
       const accept = req.headers.accept || '';
-      if (!accept.includes('text/event-stream')) {
-        res.status(405).json({ error: 'Method Not Allowed', message: 'Must accept text/event-stream' });
+      if (!accept.includes(MIME_TYPES.EVENT_STREAM)) {
+        res.status(HTTP_STATUS.METHOD_NOT_ALLOWED).json({ error: 'Method Not Allowed', message: `Must accept ${MIME_TYPES.EVENT_STREAM}` });
         return;
       }
 
       // Validate session
       if (!sessionId) {
-        res.status(400).json({ error: 'Bad Request', message: 'Mcp-Session-Id header required' });
+        res.status(HTTP_STATUS.BAD_REQUEST).json({ error: 'Bad Request', message: 'Mcp-Session-Id header required' });
         return;
       }
 
       const session = this.sessions.get(sessionId);
       if (!session) {
-        res.status(404).json({ error: 'Not Found', message: 'Session not found or expired' });
+        res.status(HTTP_STATUS.NOT_FOUND).json({ error: 'Not Found', message: 'Session not found or expired' });
         return;
       }
 
@@ -829,7 +1276,7 @@ export class HttpTransport {
     newSessionId: string | undefined,
     sessionId: string | undefined
   ): void {
-    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Content-Type', MIME_TYPES.EVENT_STREAM);
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
 
@@ -852,7 +1299,7 @@ export class HttpTransport {
    * Why: Allows server to send requests/notifications to client
    */
   private startSSEStream(res: Response, sessionId: string, lastEventId?: string): void {
-    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Content-Type', MIME_TYPES.EVENT_STREAM);
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
 
@@ -1114,6 +1561,13 @@ export class HttpTransport {
   }
 
   /**
+   * Set message handler for processing incoming JSON-RPC messages
+   */
+  public setMessageHandler(handler: (message: unknown, sessionId?: string) => Promise<unknown>): void {
+    this.messageHandler = handler;
+  }
+
+  /**
    * Check if OAuth provider is configured
    */
   public hasOAuthProvider(): boolean {
@@ -1124,6 +1578,19 @@ export class HttpTransport {
    * Get server URL
    */
   public getServerUrl(): string {
+    // Prefer base URL derived from OAuth redirect URI if available
+    // This ensures consistency with the public address used for OAuth callbacks
+    if (this.oauthProvider?.redirectUri) {
+        try {
+            return new URL(this.oauthProvider.redirectUri).origin;
+        } catch (e) {
+            // Ignore invalid URL format
+        }
+    }
+
+    // Fallback to configured host/port
+    // If configured with 0.0.0.0, this will return http://0.0.0.0:port
+    // which is usually fine for internal communication but not for external clients
     const protocol = this.config.host.includes('://') ? '' : 'http://';
     const host = this.config.host.includes('://') ? this.config.host : this.config.host;
     return `${protocol}${host}:${this.config.port}`;
@@ -1144,34 +1611,69 @@ export class HttpTransport {
   }
 
   /**
-   * Set message handler for processing incoming JSON-RPC messages
-   */
-  public setMessageHandler(handler: (message: unknown, sessionId?: string) => Promise<unknown>): void {
-    this.messageHandler = handler;
-  }
-
-  /**
    * Start HTTP server
    */
   public async start(): Promise<void> {
     return new Promise((resolve, reject) => {
       try {
-        this.server = this.app.listen(this.config.port, this.config.host, () => {
-          this.logger.info('HTTP transport started', {
-            host: this.config.host,
-            port: this.config.port,
-            heartbeat: this.config.heartbeatEnabled,
-            metrics: this.config.metricsEnabled,
+        // Check for SSL configuration from environment variables
+        const sslCertFile = process.env.MCP4_SSL_CERT_FILE;
+        const sslKeyFile = process.env.MCP4_SSL_KEY_FILE;
+        
+        if (sslCertFile && sslKeyFile) {
+          // Start HTTPS server
+          this.logger.info('SSL configuration detected, starting HTTPS server', {
+            certFile: sslCertFile,
+            keyFile: sslKeyFile,
           });
+          
+          try {
+            const httpsOptions = {
+              cert: fs.readFileSync(sslCertFile),
+              key: fs.readFileSync(sslKeyFile),
+            };
+            
+            this.server = https.createServer(httpsOptions, this.app);
+            this.server.listen(this.config.port, this.config.host, () => {
+              this.logger.info('HTTPS transport started', {
+                host: this.config.host,
+                port: this.config.port,
+                heartbeat: this.config.heartbeatEnabled,
+                metrics: this.config.metricsEnabled,
+              });
 
-          // Start session cleanup interval
-          this.cleanupInterval = setInterval(
-            () => this.cleanupExpiredSessions(),
-            60000 // Check every minute
-          );
+              // Start session cleanup interval
+              this.cleanupInterval = setInterval(
+                () => this.cleanupExpiredSessions(),
+                TIMEOUTS.CLEANUP_INTERVAL_MS
+              );
 
-          resolve();
-        });
+              resolve();
+            });
+          } catch (sslError) {
+            this.logger.error('Failed to start HTTPS server', sslError instanceof Error ? sslError : new Error(String(sslError)));
+            reject(sslError);
+            return;
+          }
+        } else {
+          // Start HTTP server
+          this.server = this.app.listen(this.config.port, this.config.host, () => {
+            this.logger.info('HTTP transport started', {
+              host: this.config.host,
+              port: this.config.port,
+              heartbeat: this.config.heartbeatEnabled,
+              metrics: this.config.metricsEnabled,
+            });
+
+            // Start session cleanup interval
+            this.cleanupInterval = setInterval(
+              () => this.cleanupExpiredSessions(),
+              TIMEOUTS.CLEANUP_INTERVAL_MS
+            );
+
+            resolve();
+          });
+        }
 
         this.server.on('error', reject);
       } catch (error) {
