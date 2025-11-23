@@ -80,27 +80,14 @@ export class HttpTransport {
    * Why: Security (Origin validation, rate limiting), JSON parsing, session extraction, metrics
    */
   private setupMiddleware(): void {
-    // Ultra-early logging - before any middleware
+    // Request logging (before any middleware)
     this.app.use((req: Request, res: Response, next: NextFunction) => {
-      this.logger.info('RAW REQUEST RECEIVED', { method: req.method, url: req.url });
-      next();
-    });
-
-    // Debug middleware to trace request flow
-    this.app.use((req: Request, res: Response, next: NextFunction) => {
-      this.logger.debug('MIDDLEWARE: Request processing', { method: req.method, url: req.url, path: req.path });
-      next();
-    });
-
-    // Ultra-early logging - before any middleware
-    this.app.use((req: Request, res: Response, next: NextFunction) => {
-      this.logger.debug('RAW REQUEST RECEIVED', {
+      this.logger.debug('Request received', {
         method: req.method,
         url: req.url,
-        headers: req.rawHeaders, // All headers as array
+        path: req.path,
         userAgent: req.get('user-agent'),
         ip: req.ip,
-        timestamp: new Date().toISOString()
       });
       next();
     });
