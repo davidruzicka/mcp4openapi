@@ -20,21 +20,21 @@ describe('OAuth Autodiscovery', () => {
   describe('deriveIssuerFromBaseUrl', () => {
     it('should extract origin from API base URL', () => {
       // This function is not exported, so we test it indirectly through the main flow
-      const baseUrl = 'https://gitlab.seznam.net/api/v4';
+      const baseUrl = 'https://www.gitlab.com/api/v4';
       const url = new URL(baseUrl);
-      expect(url.origin).toBe('https://gitlab.seznam.net');
+      expect(url.origin).toBe('https://www.gitlab.com');
     });
 
     it('should handle URLs without paths', () => {
-      const baseUrl = 'https://gitlab.seznam.net';
+      const baseUrl = 'https://www.gitlab.com';
       const url = new URL(baseUrl);
-      expect(url.origin).toBe('https://gitlab.seznam.net');
+      expect(url.origin).toBe('https://www.gitlab.com');
     });
 
     it('should handle URLs with ports', () => {
-      const baseUrl = 'https://gitlab.example.com:8443/api/v4';
+      const baseUrl = 'https://www.gitlab.com:8443/api/v4';
       const url = new URL(baseUrl);
-      expect(url.origin).toBe('https://gitlab.example.com:8443');
+      expect(url.origin).toBe('https://www.gitlab.com:8443');
     });
   });
 
@@ -45,7 +45,7 @@ describe('OAuth Autodiscovery', () => {
       process.env.MCP4_OAUTH_REDIRECT_URI = 'http://localhost:3003/oauth/callback';
       process.env.MCP4_OAUTH_AUTHORIZATION_URL = 'https://explicit.example.com/oauth/authorize';
       process.env.MCP4_OAUTH_TOKEN_URL = 'https://explicit.example.com/oauth/token';
-      process.env.MCP4_API_BASE_URL = 'https://gitlab.seznam.net/api/v4';
+      process.env.MCP4_API_BASE_URL = 'https://www.gitlab.com/api/v4';
 
       // The autodiscovery logic should not run because explicit URLs are set
       // This is validated by the fact that the explicit URLs remain unchanged
@@ -57,7 +57,7 @@ describe('OAuth Autodiscovery', () => {
       process.env.MCP4_OAUTH_CLIENT_ID = 'client123';
       process.env.MCP4_OAUTH_CLIENT_SECRET = 'secret456';
       process.env.MCP4_OAUTH_REDIRECT_URI = 'http://localhost:3003/oauth/callback';
-      process.env.MCP4_OAUTH_ISSUER = 'https://gitlab.seznam.net';
+      process.env.MCP4_OAUTH_ISSUER = 'https://www.gitlab.com';
       delete process.env.MCP4_OAUTH_AUTHORIZATION_URL;
       delete process.env.MCP4_OAUTH_TOKEN_URL;
 
@@ -66,15 +66,15 @@ describe('OAuth Autodiscovery', () => {
       const expectedAuthUrl = `${issuer}/oauth/authorize`;
       const expectedTokenUrl = `${issuer}/oauth/token`;
 
-      expect(expectedAuthUrl).toBe('https://gitlab.seznam.net/oauth/authorize');
-      expect(expectedTokenUrl).toBe('https://gitlab.seznam.net/oauth/token');
+      expect(expectedAuthUrl).toBe('https://www.gitlab.com/oauth/authorize');
+      expect(expectedTokenUrl).toBe('https://www.gitlab.com/oauth/token');
     });
 
     it('should derive issuer from API base URL if no explicit issuer', () => {
       process.env.MCP4_OAUTH_CLIENT_ID = 'client123';
       process.env.MCP4_OAUTH_CLIENT_SECRET = 'secret456';
       process.env.MCP4_OAUTH_REDIRECT_URI = 'http://localhost:3003/oauth/callback';
-      process.env.MCP4_API_BASE_URL = 'https://gitlab.seznam.net/api/v4';
+      process.env.MCP4_API_BASE_URL = 'https://www.gitlab.com/api/v4';
       delete process.env.MCP4_OAUTH_ISSUER;
       delete process.env.MCP4_OAUTH_AUTHORIZATION_URL;
       delete process.env.MCP4_OAUTH_TOKEN_URL;
@@ -83,7 +83,7 @@ describe('OAuth Autodiscovery', () => {
       const baseUrl = process.env.MCP4_API_BASE_URL;
       const derivedIssuer = new URL(baseUrl!).origin;
 
-      expect(derivedIssuer).toBe('https://gitlab.seznam.net');
+      expect(derivedIssuer).toBe('https://www.gitlab.com');
     });
   });
 
@@ -117,28 +117,17 @@ describe('OAuth Autodiscovery', () => {
 
   describe('Well-known endpoint format', () => {
     it('should construct correct metadata URL', () => {
-      const issuer = 'https://gitlab.seznam.net';
+      const issuer = 'https://www.gitlab.com';
       const metadataUrl = `${issuer}/.well-known/oauth-authorization-server`;
       
-      expect(metadataUrl).toBe('https://gitlab.seznam.net/.well-known/oauth-authorization-server');
+      expect(metadataUrl).toBe('https://www.gitlab.com/.well-known/oauth-authorization-server');
     });
 
     it('should handle issuer with trailing slash', () => {
-      const issuer = 'https://gitlab.seznam.net/';
+      const issuer = 'https://www.gitlab.com/';
       const metadataUrl = `${issuer}.well-known/oauth-authorization-server`;
       
-      expect(metadataUrl).toBe('https://gitlab.seznam.net/.well-known/oauth-authorization-server');
-    });
-  });
-
-  describe('Fallback behavior', () => {
-    it('should use standard OAuth paths as fallback', () => {
-      const issuer = 'https://gitlab.seznam.net';
-      const fallbackAuthUrl = `${issuer}/oauth/authorize`;
-      const fallbackTokenUrl = `${issuer}/oauth/token`;
-
-      expect(fallbackAuthUrl).toBe('https://gitlab.seznam.net/oauth/authorize');
-      expect(fallbackTokenUrl).toBe('https://gitlab.seznam.net/oauth/token');
+      expect(metadataUrl).toBe('https://www.gitlab.com/.well-known/oauth-authorization-server');
     });
   });
 });

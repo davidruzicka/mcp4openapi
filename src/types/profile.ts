@@ -115,7 +115,7 @@ export interface AuthInterceptor {
 export interface OAuthConfig {
   /**
    * OAuth 2.0 issuer URL (RFC 8414)
-   * e.g., "https://gitlab.example.com"
+   * e.g., "https://www.gitlab.com"
    * 
    * When provided, authorization_endpoint and token_endpoint are auto-derived:
    * - Tries fetching /.well-known/oauth-authorization-server
@@ -129,7 +129,7 @@ export interface OAuthConfig {
   
   /**
    * OAuth 2.0 authorization endpoint
-   * e.g., "https://gitlab.example.com/oauth/authorize"
+   * e.g., "https://www.gitlab.com/oauth/authorize"
    * 
    * Optional if issuer is provided.
    * Can reference environment variables: "${env:OAUTH_AUTHORIZATION_URL}"
@@ -138,7 +138,7 @@ export interface OAuthConfig {
   
   /**
    * OAuth 2.0 token endpoint
-   * e.g., "https://gitlab.example.com/oauth/token"
+   * e.g., "https://www.gitlab.com/oauth/token"
    * 
    * Optional if issuer is provided.
    * Can reference environment variables: "${env:OAUTH_TOKEN_URL}"
@@ -178,7 +178,7 @@ export interface OAuthConfig {
   
   /**
    * Optional: Client registration endpoint for dynamic registration (RFC 7591)
-   * e.g., "https://gitlab.example.com/oauth/register"
+   * e.g., "https://www.gitlab.com/oauth/register"
    * 
    * If provided and client_id is not set, will attempt dynamic client registration
    */
@@ -186,7 +186,7 @@ export interface OAuthConfig {
   
   /**
    * Optional: Token introspection endpoint (RFC 7662)
-   * e.g., "https://gitlab.example.com/oauth/introspect"
+   * e.g., "https://www.gitlab.com/oauth/introspect"
    * 
    * Used for token validation
    */
@@ -194,7 +194,7 @@ export interface OAuthConfig {
   
   /**
    * Optional: Token revocation endpoint (RFC 7009)
-   * e.g., "https://gitlab.example.com/oauth/revoke"
+   * e.g., "https://www.gitlab.com/oauth/revoke"
    */
   revocation_endpoint?: string;
 }
