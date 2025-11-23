@@ -38,7 +38,7 @@ async function fetchOAuthMetadata(issuerUrl: string): Promise<{ authorization_en
 
 /**
  * Derive OAuth issuer from API base URL
- * Example: https://gitlab.seznam.net/api/v4 -> https://gitlab.seznam.net
+ * Example: https://www.gitlab.com/api/v4 -> https://www.gitlab.com
  */
 function deriveIssuerFromBaseUrl(baseUrl: string): string | null {
   try {
