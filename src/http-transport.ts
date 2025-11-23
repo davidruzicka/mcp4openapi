@@ -59,7 +59,12 @@ export class HttpTransport {
     if (config.oauthConfig) {
       this.logger.info('Initializing OAuth provider with config', { hasClientId: !!config.oauthConfig.client_id });
       this.oauthProvider = new ExternalOAuthProvider(config.oauthConfig, logger);
-      this.logger.info('OAuth provider initialized', { endpoint: this.oauthProvider.authorizationEndpoint });
+      // Note: authorizationEndpoint may be undefined at this point if config uses issuer-based discovery
+      // It will be resolved lazily on first OAuth operation (authorize/token)
+      this.logger.info('OAuth provider initialized', { 
+        endpoint: this.oauthProvider.authorizationEndpoint || '(to be derived from issuer)',
+        hasIssuer: !!config.oauthConfig.issuer,
+      });
     } else {
       this.logger.info('No OAuth config provided - OAuth provider not initialized');
     }

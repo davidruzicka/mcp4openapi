@@ -64,12 +64,10 @@ describe('ExternalOAuthProvider', () => {
     it('should initialize with config', () => {
       provider = new ExternalOAuthProvider(config, mockLogger);
       expect(provider).toBeDefined();
+      // Constructor only logs mcp-proxy-client registration
+      // Full initialization happens lazily in ensureEndpointsInitialized()
       expect(mockLogger.info).toHaveBeenCalledWith(
-        'ExternalOAuthProvider initialized',
-        expect.objectContaining({
-          authEndpoint: config.authorization_endpoint,
-          tokenEndpoint: config.token_endpoint,
-        })
+        'Pre-registered mcp-proxy-client for VS Code compatibility'
       );
     });
 
@@ -81,12 +79,8 @@ describe('ExternalOAuthProvider', () => {
       };
 
       provider = new ExternalOAuthProvider(envConfig, mockLogger);
-      expect(mockLogger.info).toHaveBeenCalledWith(
-        'ExternalOAuthProvider initialized',
-        expect.objectContaining({
-          authEndpoint: 'https://resolved.example.com/authorize',
-        })
-      );
+      // Verify environment variable was resolved by checking the endpoint
+      expect(provider.authorizationEndpoint).toBe('https://resolved.example.com/authorize');
 
       delete process.env.TEST_AUTH_URL;
     });
@@ -100,6 +94,35 @@ describe('ExternalOAuthProvider', () => {
       expect(() => {
         new ExternalOAuthProvider(envConfig, mockLogger);
       }).toThrow('Environment variable MISSING_VAR not found');
+    });
+
+    it('should log initialization message after lazy initialization', async () => {
+      provider = new ExternalOAuthProvider(config, mockLogger);
+      
+      // Mock the authorize method to trigger lazy initialization
+      const mockRes = { redirect: vi.fn() };
+      const client: OAuthClientInformationFull = {
+        client_id: 'test-client',
+        redirect_uris: ['http://localhost:3003/oauth/callback'],
+        grant_types: ['authorization_code'],
+        response_types: ['code'],
+      };
+      const params = {
+        redirectUri: 'http://localhost:3003/oauth/callback',
+        codeChallenge: 'test-challenge',
+        scopes: ['api'],
+      };
+
+      await provider.authorize(client, params, mockRes as any);
+
+      // After lazy initialization, should see the full initialization log
+      expect(mockLogger.info).toHaveBeenCalledWith(
+        'ExternalOAuthProvider initialized',
+        expect.objectContaining({
+          authEndpoint: config.authorization_endpoint,
+          tokenEndpoint: config.token_endpoint,
+        })
+      );
     });
   });
 

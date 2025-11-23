@@ -181,9 +181,10 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
     return this._clientsStore;
   }
 
-  get authorizationEndpoint(): string {
-    // After initialization, authorization_endpoint is guaranteed to be defined
-    return this.config.authorization_endpoint!;
+  get authorizationEndpoint(): string | undefined {
+    // May be undefined before ensureEndpointsInitialized() is called
+    // when OAuth config provides issuer instead of explicit endpoints
+    return this.config.authorization_endpoint;
   }
 
   get redirectUri(): string | undefined {
