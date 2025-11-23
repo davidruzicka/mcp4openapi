@@ -324,6 +324,24 @@ export class OpenAPIParser {
     return servers?.[0]?.url || '';
   }
 
+  /**
+   * Get resource metadata from OpenAPI spec
+   * 
+   * Why: Used for OAuth 2.0 Protected Resource Metadata (RFC 8707)
+   * to provide human-readable name and documentation URL for the API.
+   * 
+   * Returns undefined for fields not present in spec.
+   */
+  getResourceMetadata(): { 
+    name?: string;           // From info.title
+    documentation?: string;  // From externalDocs.url
+  } {
+    return {
+      name: this.spec?.info?.title,
+      documentation: this.spec?.externalDocs?.url
+    };
+  }
+
   getAllOperations(): OperationInfo[] {
     return Array.from(this.index?.operations.values() || []);
   }

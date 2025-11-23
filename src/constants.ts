@@ -24,15 +24,57 @@ export const TIME = {
  */
 export const HTTP_STATUS = {
   OK: 200,
+  CREATED: 201,
+  ACCEPTED: 202,
+  FOUND: 302,
   MULTIPLE_CHOICES: 300,
   BAD_REQUEST: 400,
   UNAUTHORIZED: 401,
   FORBIDDEN: 403,
   NOT_FOUND: 404,
+  METHOD_NOT_ALLOWED: 405,
+  NOT_ACCEPTABLE: 406,
   TOO_MANY_REQUESTS: 429,
   INTERNAL_SERVER_ERROR: 500,
   BAD_GATEWAY: 502,
   SERVICE_UNAVAILABLE: 503,
   GATEWAY_TIMEOUT: 504,
+} as const;
+
+/**
+ * MIME type constants
+ * 
+ * Why: Prevents typos in content-type headers and ensures consistency.
+ */
+export const MIME_TYPES = {
+  JSON: 'application/json',
+  EVENT_STREAM: 'text/event-stream',
+  FORM_URLENCODED: 'application/x-www-form-urlencoded',
+} as const;
+
+/**
+ * OAuth and Well-Known URL paths
+ * 
+ * Why: Centralized OAuth-related paths for consistency and easy updates.
+ */
+export const OAUTH_PATHS = {
+  AUTHORIZE: '/oauth/authorize',
+  TOKEN: '/oauth/token',
+  CALLBACK: '/oauth/callback',
+  REGISTER: '/oauth/register',
+  WELL_KNOWN_AUTHORIZATION_SERVER: '/.well-known/oauth-authorization-server',
+  WELL_KNOWN_PROTECTED_RESOURCE: '/.well-known/oauth-protected-resource/mcp',
+} as const;
+
+/**
+ * Default timeout and interval values (in milliseconds)
+ * 
+ * Why: Centralized timing configuration for sessions, heartbeats, and cleanup.
+ */
+export const TIMEOUTS = {
+  SESSION_TIMEOUT_MS: 30 * TIME.MS_PER_MINUTE,  // 30 minutes
+  HEARTBEAT_INTERVAL_MS: 30 * TIME.MS_PER_SECOND, // 30 seconds
+  RATE_LIMIT_WINDOW_MS: TIME.MS_PER_MINUTE,     // 1 minute
+  CLEANUP_INTERVAL_MS: TIME.MS_PER_MINUTE,      // 1 minute
 } as const;
 

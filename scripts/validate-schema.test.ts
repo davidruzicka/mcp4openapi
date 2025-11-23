@@ -203,8 +203,10 @@ describe('profile-schema.json', () => {
     expect(validate.errors).toBeDefined();
   });
 
-  it('should reject OAuth config without required fields', () => {
-    const invalidOAuthConfig = {
+  it('should allow OAuth config with only authorization_endpoint (runtime validates issuer or both endpoints)', () => {
+    // Note: JSON Schema doesn't enforce "issuer OR (authorization_endpoint AND token_endpoint)"
+    // This is validated at runtime by oauth-provider.ts
+    const partialOAuthConfig = {
       profile_name: 'test-oauth',
       tools: [
         {
@@ -219,17 +221,54 @@ describe('profile-schema.json', () => {
           type: 'oauth',
           oauth_config: {
             authorization_endpoint: 'https://oauth.example.com/authorize',
-            // Missing token_endpoint and scopes
+            // Missing token_endpoint - will be caught at runtime, not schema validation
           },
         },
       },
     };
 
     const validate = ajv.compile(profileSchema);
-    const valid = validate(invalidOAuthConfig);
+    const valid = validate(partialOAuthConfig);
 
-    expect(valid).toBe(false);
-    expect(validate.errors).toBeDefined();
+    // Schema validation passes (all fields are optional)
+    // Runtime validation in oauth-provider.ts will enforce the requirement
+    expect(valid).toBe(true);
+  });
+
+  it('should allow OAuth config without scopes', () => {
+    const validOAuthWithoutScopes = {
+      profile_name: 'test-oauth',
+      tools: [
+        {
+          name: 'test_tool',
+          description: 'Test tool for OAuth validation',
+          operations: { list: 'listOp' },
+          parameters: {},
+        },
+      ],
+      interceptors: {
+        auth: {
+          type: 'oauth',
+          oauth_config: {
+            authorization_endpoint: 'https://oauth.example.com/authorize',
+            token_endpoint: 'https://oauth.example.com/token',
+            client_id: '${env:CLIENT_ID}',
+            client_secret: '${env:CLIENT_SECRET}',
+            // No scopes - should be valid
+            redirect_uri: 'http://localhost:3003/oauth/callback',
+          },
+        },
+      },
+    };
+
+    const validate = ajv.compile(profileSchema);
+    const valid = validate(validOAuthWithoutScopes);
+
+    if (!valid) {
+      console.log('Validation errors:', validate.errors);
+    }
+
+    expect(valid).toBe(true);
   });
 
   it('should allow optional OAuth config fields', () => {

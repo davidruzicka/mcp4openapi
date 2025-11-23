@@ -571,9 +571,9 @@
       {
         "type": "oauth",
         "priority": 0,
+        "validation_endpoint": "user",
         "oauth_config": {
-          "authorization_endpoint": "${env:MCP4_OAUTH_AUTHORIZATION_URL}",
-          "token_endpoint": "${env:MCP4_OAUTH_TOKEN_URL}",
+          "issuer": "${env:MCP4_OAUTH_ISSUER}",
           "client_id": "${env:MCP4_OAUTH_CLIENT_ID}",
           "client_secret": "${env:MCP4_OAUTH_CLIENT_SECRET}",
           "scopes": ["api", "read_repository"],
@@ -584,7 +584,7 @@
         "type": "bearer",
         "priority": 1,
         "value_from_env": "MCP4_API_TOKEN",
-        "validation_endpoint": "/api/v4/personal_access_tokens/self"
+        "validation_endpoint": "personal_access_tokens/self"
       }
     ],
     "base_url": {

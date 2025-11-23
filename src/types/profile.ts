@@ -12,6 +12,10 @@ export interface Profile {
   tools: ToolDefinition[];
   interceptors?: InterceptorConfig;
   parameter_aliases?: Record<string, string[]>; // e.g., {"id": ["resource_id", "project_id"]}
+  
+  // OAuth resource metadata (optional overrides)
+  resource_name?: string;           // OAuth resource name (overrides OpenAPI info.title)
+  resource_documentation?: string;  // OAuth resource documentation URL (overrides OpenAPI externalDocs.url)
 }
 
 export interface ToolDefinition {
@@ -110,20 +114,36 @@ export interface AuthInterceptor {
  */
 export interface OAuthConfig {
   /**
+   * OAuth 2.0 issuer URL (RFC 8414)
+   * e.g., "https://gitlab.example.com"
+   * 
+   * When provided, authorization_endpoint and token_endpoint are auto-derived:
+   * - Tries fetching /.well-known/oauth-authorization-server
+   * - Falls back to standard paths: /oauth/authorize and /oauth/token
+   * 
+   * Can reference environment variables: "${env:OAUTH_ISSUER}"
+   * 
+   * Priority: If both issuer and explicit endpoints are provided, explicit endpoints take precedence.
+   */
+  issuer?: string;
+  
+  /**
    * OAuth 2.0 authorization endpoint
    * e.g., "https://gitlab.example.com/oauth/authorize"
    * 
+   * Optional if issuer is provided.
    * Can reference environment variables: "${env:OAUTH_AUTHORIZATION_URL}"
    */
-  authorization_endpoint: string;
+  authorization_endpoint?: string;
   
   /**
    * OAuth 2.0 token endpoint
    * e.g., "https://gitlab.example.com/oauth/token"
    * 
+   * Optional if issuer is provided.
    * Can reference environment variables: "${env:OAUTH_TOKEN_URL}"
    */
-  token_endpoint: string;
+  token_endpoint?: string;
   
   /**
    * Pre-registered OAuth client ID (for static client registration)
@@ -144,8 +164,9 @@ export interface OAuthConfig {
   /**
    * OAuth 2.0 scopes to request
    * e.g., ["api", "read_user", "write_repository"]
+   * Optional - if not provided, no scopes will be requested (some APIs don't require scopes)
    */
-  scopes: string[];
+  scopes?: string[];
   
   /**
    * Redirect URI for OAuth callback
