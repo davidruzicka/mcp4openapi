@@ -133,15 +133,10 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
     }
 
     this.initializationPromise = (async () => {
-      // Derive endpoints from issuer if needed
-      this.config = await this.deriveEndpointsFromIssuer(this.config);
-      
-      // Validate that we have required endpoints
-      if (!this.config.authorization_endpoint || !this.config.token_endpoint) {
-        throw new Error('OAuth config must provide either issuer OR both authorization_endpoint and token_endpoint');
-      }
-      
-      // Register default client if configured
+      // Register default client BEFORE deriving endpoints
+      // This ensures the client is available immediately, even if endpoint derivation fails
+      // The client_id from config should be registered as soon as possible to avoid
+      // race conditions where /oauth/authorize is called before initialization completes
       if (this.config.client_id) {
         // Allow localhost and configured redirect_uri for default client
         const allowedUris: string[] = [];
@@ -165,6 +160,14 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
           clientId: this.config.client_id,
           redirectUris: allowedUris 
         });
+      }
+      
+      // Derive endpoints from issuer if needed
+      this.config = await this.deriveEndpointsFromIssuer(this.config);
+      
+      // Validate that we have required endpoints
+      if (!this.config.authorization_endpoint || !this.config.token_endpoint) {
+        throw new Error('OAuth config must provide either issuer OR both authorization_endpoint and token_endpoint');
       }
       
       this.logger.info('ExternalOAuthProvider initialized', {
