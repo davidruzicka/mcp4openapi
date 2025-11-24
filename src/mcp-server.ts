@@ -27,7 +27,7 @@ import {
   generateCorrelationId,
   isMCPError
 } from './errors.js';
-import { TIMEOUTS } from './constants.js';
+import { TIMEOUTS, OAUTH_RATE_LIMIT } from './constants.js';
 import { InterceptorChain, HttpClient } from './interceptors.js';
 import { HttpClientFactory } from './http-client-factory.js';
 import { SchemaValidator } from './schema-validator.js';
@@ -679,6 +679,10 @@ export class MCPServer {
     const authConfigs = this.getAuthConfigs();
     const baseUrl = this.getBaseUrl();
     
+    // Extract OAuth rate limit from profile (if configured)
+    const oauthAuthConfig = authConfigs.find(c => c.type === 'oauth');
+    const oauthRateLimit = oauthAuthConfig?.oauth_rate_limit;
+    
     // Extract resource metadata from OpenAPI spec or profile
     const resourceMetadata = this.parser.getResourceMetadata();
     
@@ -697,6 +701,11 @@ export class MCPServer {
       rateLimitWindowMs: parseInt(process.env.MCP4_HTTP_RATE_LIMIT_WINDOW_MS || String(TIMEOUTS.RATE_LIMIT_WINDOW_MS), 10),
       rateLimitMaxRequests: parseInt(process.env.MCP4_HTTP_RATE_LIMIT_MAX_REQUESTS || '100', 10),
       rateLimitMetricsMax: parseInt(process.env.MCP4_HTTP_RATE_LIMIT_METRICS_MAX || '10', 10),
+      // OAuth rate limiting (priority: profile > env vars > defaults)
+      rateLimitOAuthMax: oauthRateLimit?.max_requests 
+        || parseInt(process.env.MCP4_OAUTH_RATE_LIMIT_MAX || String(OAUTH_RATE_LIMIT.MAX_REQUESTS), 10),
+      rateLimitOAuthWindowMs: oauthRateLimit?.window_ms 
+        || parseInt(process.env.MCP4_OAUTH_RATE_LIMIT_WINDOW_MS || String(OAUTH_RATE_LIMIT.WINDOW_MS), 10),
       maxTokenLength: process.env.MCP4_TOKEN_MAX_LENGTH
         ? parseInt(process.env.MCP4_TOKEN_MAX_LENGTH, 10)
         : undefined, // Uses default from http-transport.ts if undefined

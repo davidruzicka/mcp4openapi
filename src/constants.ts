@@ -78,3 +78,14 @@ export const TIMEOUTS = {
   CLEANUP_INTERVAL_MS: TIME.MS_PER_MINUTE,      // 1 minute
 } as const;
 
+/**
+ * OAuth rate limiting defaults
+ * 
+ * Why: Centralized OAuth rate limiting configuration to prevent duplication
+ * and ensure consistency across mcp-server.ts and http-transport.ts
+ */
+export const OAUTH_RATE_LIMIT = {
+  MAX_REQUESTS: 10,                              // Max OAuth requests per window
+  WINDOW_MS: 10 * TIME.MS_PER_MINUTE,            // 10 minutes window
+} as const;
+

@@ -27,7 +27,7 @@ import { isInitializeRequest } from './jsonrpc-validator.js';
 import { MetricsCollector } from './metrics.js';
 import { ExternalOAuthProvider } from './oauth-provider.js';
 import type { AuthInterceptor } from './types/profile.js';
-import { HTTP_STATUS, MIME_TYPES, OAUTH_PATHS, TIMEOUTS } from './constants.js';
+import { HTTP_STATUS, MIME_TYPES, OAUTH_PATHS, TIMEOUTS, OAUTH_RATE_LIMIT } from './constants.js';
 import { escapeHtmlSafe } from './validation-utils.js';
 
 // Default maximum token length (1000 characters)
@@ -378,12 +378,15 @@ export class HttpTransport {
     
     // Rate limiter for OAuth endpoints (stricter limits for security)
     // OAuth endpoints are sensitive and should have lower limits than general API
+    // Configuration priority: profile > env vars > defaults
+    const oauthWindowMs = this.config.rateLimitOAuthWindowMs || OAUTH_RATE_LIMIT.WINDOW_MS;
+    const oauthMaxRequests = this.config.rateLimitOAuthMax || OAUTH_RATE_LIMIT.MAX_REQUESTS;
     const oauthRateLimiter = this.createRateLimiter({
       enabled: rateLimitEnabled,
-      windowMs: 15 * 60 * 1000, // 15 minutes window
-      maxRequests: 10, // Max 10 requests per 15 minutes
+      windowMs: oauthWindowMs,
+      maxRequests: oauthMaxRequests,
       logMessage: 'Rate limit exceeded for OAuth',
-      responseMessage: 'Too many OAuth requests. Please try again later.',
+      responseMessage: `Too many OAuth requests. Limit: ${oauthMaxRequests} requests per ${Math.round(oauthWindowMs / 60000)} minutes. Please try again later.`,
     });
 
     // OAuth 2.0 routes (if configured)

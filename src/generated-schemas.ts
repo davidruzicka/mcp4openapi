@@ -70,6 +70,10 @@ export const authInterceptorSchema = z.object({
     query_param: z.string().optional(),
     value_from_env: z.string().optional(),
     oauth_config: oAuthConfigSchema.optional(),
+    oauth_rate_limit: z.object({
+        max_requests: z.number(),
+        window_ms: z.number()
+    }).optional(),
     validation_endpoint: z.string().optional(),
     validation_method: z.union([z.literal("GET"), z.literal("HEAD")]).optional(),
     validation_timeout_ms: z.number().optional()

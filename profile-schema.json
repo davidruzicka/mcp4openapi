@@ -294,6 +294,25 @@
         },
         "oauth_config": {
           "$ref": "#/definitions/OAuthConfig"
+        },
+        "oauth_rate_limit": {
+          "type": "object",
+          "description": "OAuth rate limiting configuration. Overrides default OAuth rate limits (10 requests per 15 minutes).",
+          "properties": {
+            "max_requests": {
+              "type": "number",
+              "description": "Maximum number of OAuth requests allowed per window",
+              "minimum": 1,
+              "examples": [10, 20, 50]
+            },
+            "window_ms": {
+              "type": "number",
+              "description": "Rate limit window in milliseconds",
+              "minimum": 1000,
+              "examples": [900000, 1800000, 3600000]
+            }
+          },
+          "required": ["max_requests", "window_ms"]
         }
       },
       "allOf": [
@@ -361,6 +380,23 @@
             "properties": {
               "oauth_config": {
                 "$ref": "#/definitions/OAuthConfig"
+              },
+              "oauth_rate_limit": {
+                "type": "object",
+                "description": "OAuth rate limiting configuration. Overrides default OAuth rate limits (10 requests per 15 minutes).",
+                "properties": {
+                  "max_requests": {
+                    "type": "number",
+                    "description": "Maximum number of OAuth requests allowed per window",
+                    "minimum": 1
+                  },
+                  "window_ms": {
+                    "type": "number",
+                    "description": "Rate limit window in milliseconds",
+                    "minimum": 1000
+                  }
+                },
+                "required": ["max_requests", "window_ms"]
               }
             }
           }
@@ -374,17 +410,17 @@
         "issuer": {
           "type": "string",
           "description": "OAuth 2.0 issuer URL (RFC 8414). When provided, authorization_endpoint and token_endpoint are auto-derived via /.well-known/oauth-authorization-server or standard paths. Supports ${env:VAR} syntax.",
-          "examples": ["https://www.gitlab.com", "${env:MCP4_OAUTH_ISSUER}"]
+          "examples": ["https://gitlab.example.com", "${env:MCP4_OAUTH_ISSUER}"]
         },
         "authorization_endpoint": {
           "type": "string",
           "description": "OAuth 2.0 authorization endpoint. Optional if issuer is provided. Supports ${env:VAR} syntax.",
-          "examples": ["https://www.gitlab.com/oauth/authorize", "${env:OAUTH_AUTHORIZATION_URL}"]
+          "examples": ["https://gitlab.example.com/oauth/authorize", "${env:OAUTH_AUTHORIZATION_URL}"]
         },
         "token_endpoint": {
           "type": "string",
           "description": "OAuth 2.0 token endpoint. Optional if issuer is provided. Supports ${env:VAR} syntax.",
-          "examples": ["https://www.gitlab.com/oauth/token", "${env:OAUTH_TOKEN_URL}"]
+          "examples": ["https://gitlab.example.com/oauth/token", "${env:OAUTH_TOKEN_URL}"]
         },
         "client_id": {
           "type": "string",
@@ -412,17 +448,17 @@
         "registration_endpoint": {
           "type": "string",
           "description": "Client registration endpoint for dynamic registration (RFC 7591)",
-          "examples": ["https://www.gitlab.com/oauth/register"]
+          "examples": ["https://gitlab.example.com/oauth/register"]
         },
         "introspection_endpoint": {
           "type": "string",
           "description": "Token introspection endpoint (RFC 7662)",
-          "examples": ["https://www.gitlab.com/oauth/introspect"]
+          "examples": ["https://gitlab.example.com/oauth/introspect"]
         },
         "revocation_endpoint": {
           "type": "string",
           "description": "Token revocation endpoint (RFC 7009)",
-          "examples": ["https://www.gitlab.com/oauth/revoke"]
+          "examples": ["https://gitlab.example.com/oauth/revoke"]
         }
       }
     },

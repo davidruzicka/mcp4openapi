@@ -250,6 +250,41 @@ Override OAuth 2.0 Protected Resource metadata in your profile to provide custom
 
 These fields are optional and will be exposed in the `/.well-known/oauth-protected-resource/mcp` endpoint, helping OAuth clients display meaningful information about the protected resource.
 
+### OAuth Rate Limiting Configuration
+
+You can configure OAuth rate limiting directly in your profile file:
+
+```json
+{
+  "profile_name": "gitlab-production",
+  "interceptors": {
+    "auth": {
+      "type": "oauth",
+      "oauth_config": {
+        "issuer": "${env:MCP4_OAUTH_ISSUER}",
+        "client_id": "${env:MCP4_OAUTH_CLIENT_ID}",
+        "client_secret": "${env:MCP4_OAUTH_CLIENT_SECRET}",
+        "scopes": ["api", "read_repository"]
+      },
+      "oauth_rate_limit": {
+        "max_requests": 20,
+        "window_ms": 900000
+      }
+    }
+  }
+}
+```
+
+**Configuration Priority**:
+1. Profile `oauth_rate_limit` (highest priority)
+2. Environment variables (`MCP4_OAUTH_RATE_LIMIT_MAX`, `MCP4_OAUTH_RATE_LIMIT_WINDOW_MS`)
+3. Defaults (10 requests per 10 minutes per IP)
+
+**Recommendations**:
+- **Development**: 10-20 requests per minute per IP
+- **Production**: 10-15 requests per 10 minutes per IP (stricter for security)
+- **High-traffic**: Adjust based on your OAuth provider's rate limits
+
 ### SSL/TLS Support
 
 For production deployments or when OAuth clients require HTTPS endpoints, you can enable SSL/TLS by providing certificate and key files:
@@ -414,13 +449,28 @@ Prevent CSRF attacks:
 export MCP4_ALLOWED_ORIGINS="https://cursor.com,https://your-client.com"
 ```
 
-### 5. Enable Rate Limiting
+### 5. Configure Rate Limiting
 
-Rate limiting is enabled by default. Adjust if needed:
+Rate limiting is enabled by default. OAuth endpoints have stricter limits for security:
 
+**General HTTP Rate Limiting:**
 ```bash
-export HTTP_RATE_LIMIT_ENABLED=true
-export HTTP_RATE_LIMIT_MAX_REQUESTS=100  # requests per minute
+export MCP4_HTTP_RATE_LIMIT_ENABLED=true
+export MCP4_HTTP_RATE_LIMIT_MAX_REQUESTS=100  # requests per minute
+export MCP4_HTTP_RATE_LIMIT_WINDOW_MS=60000   # 1 minute window
+```
+
+**OAuth Rate Limiting** (stricter limits for `/oauth/authorize`, `/oauth/token`, `/oauth/callback`):
+```bash
+export MCP4_OAUTH_RATE_LIMIT_MAX=10           # Max OAuth requests per window (default: 10)
+export MCP4_OAUTH_RATE_LIMIT_WINDOW_MS=600000  # OAuth rate limit window (default: 10 minutes)
+```
+
+**Configuration Priority**: Profile > Environment variables > Defaults
+
+**Defaults**:
+- General endpoints: 100 requests/minute
+- OAuth endpoints: 10 requests/10 minutes
 ```
 
 ## Comparison: OAuth vs Static Token
