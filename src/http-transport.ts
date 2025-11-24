@@ -28,6 +28,7 @@ import { MetricsCollector } from './metrics.js';
 import { ExternalOAuthProvider } from './oauth-provider.js';
 import type { AuthInterceptor } from './types/profile.js';
 import { HTTP_STATUS, MIME_TYPES, OAUTH_PATHS, TIMEOUTS } from './constants.js';
+import { escapeHtmlSafe } from './validation-utils.js';
 
 // Default maximum token length (1000 characters)
 const DEFAULT_MAX_TOKEN_LENGTH = 1000;
@@ -372,6 +373,19 @@ export class HttpTransport {
   private setupRoutes(): void {
     this.logger.info('Setting up HTTP routes');
 
+    // Security: Rate limiting setup (needed for OAuth routes)
+    const rateLimitEnabled = this.config.rateLimitEnabled !== false; // default: true
+    
+    // Rate limiter for OAuth endpoints (stricter limits for security)
+    // OAuth endpoints are sensitive and should have lower limits than general API
+    const oauthRateLimiter = this.createRateLimiter({
+      enabled: rateLimitEnabled,
+      windowMs: 15 * 60 * 1000, // 15 minutes window
+      maxRequests: 10, // Max 10 requests per 15 minutes
+      logMessage: 'Rate limit exceeded for OAuth',
+      responseMessage: 'Too many OAuth requests. Please try again later.',
+    });
+
     // OAuth 2.0 routes (if configured)
     if (this.oauthProvider) {
       // Build redirect URI
@@ -418,7 +432,7 @@ export class HttpTransport {
       // - /oauth/revoke (token revocation)
       // Only register resource server endpoints, not authorization server endpoints
       // since our MCP server is not an OAuth authorization server
-      this.app.get(OAUTH_PATHS.WELL_KNOWN_PROTECTED_RESOURCE, (req: Request, res: Response) => {
+      this.app.get(OAUTH_PATHS.WELL_KNOWN_PROTECTED_RESOURCE, oauthRateLimiter, (req: Request, res: Response) => {
         // Build metadata object with only defined fields (RFC 8707)
         const metadata: any = {
           resource: serverUrl.href,
@@ -446,7 +460,7 @@ export class HttpTransport {
 
       // Authorization endpoint
       // Initiates the OAuth flow by redirecting the user to the external provider
-      this.app.get(OAUTH_PATHS.AUTHORIZE, async (req: Request, res: Response) => {
+      this.app.get(OAUTH_PATHS.AUTHORIZE, oauthRateLimiter, async (req: Request, res: Response) => {
         try {
           const { response_type, client_id, redirect_uri, scope, state, code_challenge, code_challenge_method } = req.query;
 
@@ -461,6 +475,10 @@ export class HttpTransport {
           }
 
           if (this.oauthProvider) {
+             // Ensure provider is initialized before client validation
+             // This registers configured client_id if present
+             await this.oauthProvider.ensureEndpointsInitialized();
+             
              // Find the client to validate configuration
              const client = await this.oauthProvider.clientsStore.getClient(client_id);
              if (!client) {
@@ -494,7 +512,7 @@ export class HttpTransport {
 
       // Token endpoint
       // Exchanges authorization code or refresh token for access token
-      this.app.post(OAUTH_PATHS.TOKEN, express.urlencoded({ extended: false }), async (req: Request, res: Response) => {
+      this.app.post(OAUTH_PATHS.TOKEN, oauthRateLimiter, express.urlencoded({ extended: false }), async (req: Request, res: Response) => {
         try {
           const { grant_type, code, redirect_uri, client_id, code_verifier, refresh_token } = req.body;
 
@@ -514,6 +532,9 @@ export class HttpTransport {
             }
 
             if (this.oauthProvider) {
+               // Ensure provider is initialized before client validation
+               await this.oauthProvider.ensureEndpointsInitialized();
+               
                const client = await this.oauthProvider.clientsStore.getClient(client_id);
                if (!client) {
                    res.status(HTTP_STATUS.BAD_REQUEST).json({ error: 'invalid_client' });
@@ -539,6 +560,9 @@ export class HttpTransport {
             }
 
             if (this.oauthProvider) {
+               // Ensure provider is initialized before client validation
+               await this.oauthProvider.ensureEndpointsInitialized();
+               
                const client = await this.oauthProvider.clientsStore.getClient(client_id);
                if (!client) {
                    res.status(HTTP_STATUS.BAD_REQUEST).json({ error: 'invalid_client' });
@@ -566,7 +590,7 @@ export class HttpTransport {
       });
 
       // OAuth callback endpoint to receive tokens from authorization server
-      this.app.get(OAUTH_PATHS.CALLBACK, async (req: Request, res: Response) => {
+      this.app.get(OAUTH_PATHS.CALLBACK, oauthRateLimiter, async (req: Request, res: Response) => {
         try {
           const { code, state, error, error_description } = req.query;
 
@@ -578,7 +602,14 @@ export class HttpTransport {
           });
 
           if (error) {
-             res.status(HTTP_STATUS.BAD_REQUEST).send(`OAuth Error: ${error_description || error}`);
+             // Sanitize error messages to prevent XSS
+             const safeError = escapeHtmlSafe(error as string);
+             const safeErrorDesc = escapeHtmlSafe(error_description as string);
+             
+             res.status(HTTP_STATUS.BAD_REQUEST).json({ 
+               error: safeError,
+               error_description: safeErrorDesc || safeError
+             });
              return;
           }
 
@@ -668,9 +699,8 @@ export class HttpTransport {
       this.logger.info('OAuth routes registered');
     }
 
-    // Security: Rate limiting setup
-    const rateLimitEnabled = this.config.rateLimitEnabled !== false; // default: true
-    const windowMs = this.config.rateLimitWindowMs || TIMEOUTS.RATE_LIMIT_WINDOW_MS;
+      // Security: Rate limiting setup (for MCP endpoints)
+      const windowMs = this.config.rateLimitWindowMs || TIMEOUTS.RATE_LIMIT_WINDOW_MS;
     const maxRequests = this.config.rateLimitMaxRequests || 100; // 100 req/min
     const metricsMaxRequests = this.config.rateLimitMetricsMax || 10; // 10 req/min for metrics
 
