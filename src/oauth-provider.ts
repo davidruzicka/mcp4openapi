@@ -13,7 +13,7 @@
  *   4. Client -> MCP (Token) -> MCP returns stored tokens
  */
 
-import { randomUUID } from 'node:crypto';
+import { randomUUID, createHash } from 'node:crypto';
 import { Request, Response } from 'express';
 import type {
   OAuthServerProvider,
@@ -29,6 +29,7 @@ import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
 import type { OAuthConfig } from './types/profile.js';
 import type { Logger } from './logger.js';
 import { OAUTH_PATHS } from './constants.js';
+import { escapeHtmlSafe } from './validation-utils.js';
 
 /**
  * In-memory store for OAuth client registrations
@@ -119,8 +120,9 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
 
   /**
    * Lazy initialization of OAuth endpoints (async)
+   * Public method to allow HttpTransport to ensure initialization before client validation
    */
-  private async ensureEndpointsInitialized(): Promise<void> {
+  public async ensureEndpointsInitialized(): Promise<void> {
     if (this.endpointsInitialized) {
       return;
     }
@@ -382,7 +384,14 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
 
     if (error) {
         this.logger.error('OAuth callback error', undefined, { error, state });
-        res.status(400).send(`Authorization failed: ${error}`);
+        
+        // Sanitize error messages to prevent XSS
+        const safeError = escapeHtmlSafe(error as string);
+        res.status(400);
+        res.json({ 
+          error: safeError,
+          error_description: `Authorization failed: ${safeError}`
+        });
         return;
     }
 
@@ -496,6 +505,27 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
     
     if (codeData.client.client_id !== client.client_id) {
       throw new Error('Authorization code was not issued to this client');
+    }
+
+    // Validate expiration (5 minutes)
+    const codeAge = Date.now() - codeData.createdAt;
+    const EXPIRATION_MS = 5 * 60 * 1000; // 5 minutes
+    if (codeAge > EXPIRATION_MS) {
+      this.authorizationCodes.delete(authorizationCode);
+      throw new Error('Authorization code expired');
+    }
+
+    // Validate PKCE if code challenge was provided
+    if (codeData.params.codeChallenge) {
+      if (!codeVerifier) {
+        throw new Error('code_verifier is required for PKCE');
+      }
+      
+      // Verify code challenge (S256 method)
+      const hash = createHash('sha256').update(codeVerifier).digest('base64url');
+      if (hash !== codeData.params.codeChallenge) {
+        throw new Error('Invalid code_verifier');
+      }
     }
 
     if (!codeData.tokens) {

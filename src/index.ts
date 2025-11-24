@@ -75,13 +75,17 @@ async function main() {
       const derivedIssuer = deriveIssuerFromBaseUrl(process.env.MCP4_API_BASE_URL);
       if (derivedIssuer) {
         issuer = derivedIssuer;
-        console.log(`[OAuth Autodiscovery] Derived issuer from MCP4_API_BASE_URL: ${issuer}`);
+        // Log origin only, not full URL to avoid logging sensitive paths
+        const issuerOrigin = new URL(derivedIssuer).origin;
+        console.log(`[OAuth Autodiscovery] Derived issuer from MCP4_API_BASE_URL: ${issuerOrigin}`);
       }
     }
     
     if (issuer) {
       // Try to fetch OAuth metadata
-      console.log(`[OAuth Autodiscovery] Fetching metadata from ${issuer}/.well-known/oauth-authorization-server`);
+      // Log origin only, not full URL to avoid logging sensitive paths
+      const issuerOrigin = new URL(issuer).origin;
+      console.log(`[OAuth Autodiscovery] Fetching metadata from ${issuerOrigin}/.well-known/oauth-authorization-server`);
       const metadata = await fetchOAuthMetadata(issuer);
       
       if (metadata) {
