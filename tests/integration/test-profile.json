@@ -1,0 +1,27 @@
+{
+  "profile_name": "test-oauth",
+  "description": "Test profile for OAuth integration",
+  "tools": [
+    {
+      "name": "hello",
+      "description": "Say hello",
+      "operations": {
+        "list": "getHello"
+      },
+      "parameters": {}
+    }
+  ],
+  "interceptors": {
+    "auth": {
+      "type": "oauth",
+      "oauth_config": {
+        "authorization_endpoint": "${env:MCP4_OAUTH_AUTHORIZATION_URL}",
+        "token_endpoint": "${env:MCP4_OAUTH_TOKEN_URL}",
+        "client_id": "${env:MCP4_OAUTH_CLIENT_ID}",
+        "client_secret": "${env:MCP4_OAUTH_CLIENT_SECRET}",
+        "scopes": ["api"],
+        "redirect_uri": "${env:MCP4_OAUTH_REDIRECT_URI}"
+      }
+    }
+  }
+}

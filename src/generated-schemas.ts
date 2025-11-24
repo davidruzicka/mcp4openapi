@@ -39,11 +39,12 @@ export const retryConfigSchema = z.object({
 });
 
 export const oAuthConfigSchema = z.object({
-    authorization_endpoint: z.string(),
-    token_endpoint: z.string(),
+    issuer: z.string().optional(),
+    authorization_endpoint: z.string().optional(),
+    token_endpoint: z.string().optional(),
     client_id: z.string().optional(),
     client_secret: z.string().optional(),
-    scopes: z.array(z.string()),
+    scopes: z.array(z.string()).optional(),
     redirect_uri: z.string().optional(),
     registration_endpoint: z.string().optional(),
     introspection_endpoint: z.string().optional(),
@@ -69,6 +70,10 @@ export const authInterceptorSchema = z.object({
     query_param: z.string().optional(),
     value_from_env: z.string().optional(),
     oauth_config: oAuthConfigSchema.optional(),
+    oauth_rate_limit: z.object({
+        max_requests: z.number(),
+        window_ms: z.number()
+    }).optional(),
     validation_endpoint: z.string().optional(),
     validation_method: z.union([z.literal("GET"), z.literal("HEAD")]).optional(),
     validation_timeout_ms: z.number().optional()
@@ -87,5 +92,7 @@ export const profileSchema = z.object({
     description: z.string().optional(),
     tools: z.array(toolDefinitionSchema),
     interceptors: interceptorConfigSchema.optional(),
-    parameter_aliases: z.record(z.string(), z.array(z.string())).optional()
+    parameter_aliases: z.record(z.string(), z.array(z.string())).optional(),
+    resource_name: z.string().optional(),
+    resource_documentation: z.string().optional()
 });

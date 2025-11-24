@@ -78,11 +78,11 @@ Check example profiles in [profiles/](https://github.com/davidruzicka/mcp4openap
 
 No installation required.
 
-**VS Code + Copilot example:**
-
+#### VS Code + Copilot example:
 
 Use VS Code dialog to enter access token (recommended for security):
 
+Access Token (Bearer) example:
 ```json
 {
     "servers": {
@@ -110,7 +110,7 @@ Use VS Code dialog to enter access token (recommended for security):
 
 _`inputs` section prompts you for the token when the server starts, so environment variables are not needed._
 
-**Cursor example:**
+#### Cursor example:
 
 ```json
 {
@@ -129,18 +129,11 @@ _`inputs` section prompts you for the token when the server starts, so environme
 }
 ```
 
-#### ⚠️ Prerequisites
+##### ⚠️ Prerequisites
 
-- You need `npx` NPM package to be installed.
+- `MCP4_API_TOKEN` with access token (Bearer) must be set.
 
-- Remote MCP server connections in Cursor run in a sandbox that doesn't have access to environment variables. The `mcp-remote` command reads environment variables from `~/.env.mcp` file. Make sure to set your tokens there:
-
-```bash
-# ~/.env.mcp
-MCP4_API_TOKEN=your_api_token_here
-```
-
-**Claude Code example:**
+#### Claude Code example:
 
 ```bash
 claude mcp add --transport stdio mcp4openapi \
@@ -149,10 +142,13 @@ claude mcp add --transport stdio mcp4openapi \
   --env MCP4_API_BASE_URL=https://api.example.com \
   --env MCP4_PROFILE_PATH=path/to/mcp-profile.json \
   -- npx mcp4openapi
-# expects MCP4_API_TOKEN environment variable to be set
 ```
 
-**JetBrains IDEs + Copilot example:**
+##### ⚠️ Prerequisites
+
+- `MCP4_API_TOKEN` with access token (Bearer) must be set.
+
+#### JetBrains IDEs + Copilot example:
 
 ```json
 {
@@ -162,7 +158,7 @@ claude mcp add --transport stdio mcp4openapi \
             "args": ["mcp4openapi"],
             "env": {
                 "MCP4_OPENAPI_SPEC_PATH": "path/to/openapi.yaml",
-                "MCP4_API_TOKEN": "<MCP4_API_TOKEN>",  // doesn't accept ${MCP4_API_TOKEN} environment variable
+                "MCP4_API_TOKEN": "${input:api_token}",
                 "MCP4_API_BASE_URL": "https://api.example.com",
                 "MCP4_PROFILE_PATH": "path/to/mcp-profile.json" //optional
             }
@@ -170,6 +166,10 @@ claude mcp add --transport stdio mcp4openapi \
     }
 }
 ```
+
+##### Note
+
+- JetBrains IDEs show ⚠️ right next to `${input:api_token}` to indicate that you need to enter the token manually in the IDE dialog.
 
 ### Option B: Docker
 
@@ -191,7 +191,7 @@ npm run build
 
 **3. Configure:**
 ```bash
-cp .env.example .env
+cp env.example .env
 # Edit .env with your settings
 ```
 
@@ -274,8 +274,8 @@ echo 'export NODE_EXTRA_CA_CERTS="$HOME/ca-bundle.pem"' >> $HOME/.bash_profile
 - `MCP4_OPENAPI_SPEC_PATH`: Path to OpenAPI spec (YAML/JSON)
 - `MCP4_API_TOKEN`: API token (default env var name; customizable via `MCP4_AUTH_ENV_VAR`)
   - **Required for stdio** mode with authenticated APIs
-  - **Optional for HTTP** mode with per-session tokens
-  - When using no profile mode, auth type is auto-detected from OpenAPI `security` schemes
+  - **Optional for HTTP** mode with per-session tokens sent in HTTP headers
+  - When using no profile mode, auth type is auto-detected from OpenAPI `security` schemes if present
 
 ### Optional - Core
 - `MCP4_PROFILE_PATH`: Profile JSON path (default: auto-generate tools from OpenAPI spec; warning logged if tool exceeds 60 parameters)
@@ -291,14 +291,14 @@ When running without a profile, authentication is automatically configured from 
 - **Bearer Token** (`http` with `scheme: bearer`): Uses `Authorization: Bearer <token>` header
 - **API Key in Header** (`apiKey` with `in: header`): Uses custom header (e.g., `X-API-Key: <token>`)
 - **API Key in Query** (`apiKey` with `in: query`): Adds token to query string (e.g., `?api_key=<token>`)
-- **OAuth2/OpenID Connect**: Mapped to bearer token authentication
+- **OAuth2/OpenID Connect**: Mapped to bearer token authentication (profile mode only)
 - **Public APIs**: No authentication if OpenAPI spec has no `security` defined
 
-**Example**: Use custom env var for GitLab token:
+**Example**: Use custom env var for GitLab own instance token:
 ```bash
 export MCP4_API_TOKEN=glpat-xxxxxxxxxxxx
 export MCP4_API_BASE_URL=https://gitlab.example.com/api/v4
-export MCP4_OPENAPI_SPEC_PATH=path/to/openapi.yaml
+export MCP4_OPENAPI_SPEC_PATH=profiles/gitlab/openapi.yaml
 export MCP4_PROFILE_PATH=profiles/gitlab/developer-profile.json
 npm start
 ```
@@ -359,7 +359,7 @@ deleteApiV4ProjectsIdAlertManagementAlertsAlertIidMetricImagesMetricImageId
     → delete_alert_management_image (26 chars)
 ```
 
-**Example**: Apply iterative shortening with 30 char limit:
+**Example 2**: Apply iterative shortening with 30 char limit:
 ```bash
 export MCP4_TOOLNAME_STRATEGY=iterative
 export MCP4_TOOLNAME_WARN_ONLY=false
@@ -367,42 +367,66 @@ export MCP4_TOOLNAME_MAX=30
 ```
 
 ### Optional - HTTP Transport
-- `MCP4_HOST`: Bind address (default: `127.0.0.1`; warning logged if non-localhost with empty `MCP4_ALLOWED_ORIGINS`)
+- `MCP4_HOST`: Bind address (default: `127.0.0.1`)
 - `MCP4_PORT`: Port (default: `3003`)
-- `MCP4_ALLOWED_ORIGINS`: Comma-separated origins (default: empty; supports exact, wildcard `*.domain.com`, CIDR `192.168.1.0/24`)
+- `MCP4_ALLOWED_ORIGINS`: Comma-separated origins (supports exact, wildcard `*.domain.com`, CIDR `192.168.1.0/24`)
 - `MCP4_SESSION_TIMEOUT_MS`: Session timeout (default: `1800000` = 30min)
-- `MCP4_HEARTBEAT_ENABLED`: SSE heartbeat (default: `false`)
-- `MCP4_HEARTBEAT_INTERVAL_MS`: Heartbeat interval (default: `30000` = 30s)
+- `MCP4_HEARTBEAT_ENABLED`, `MCP4_HEARTBEAT_INTERVAL_MS`: SSE heartbeat settings
 - `MCP4_TOKEN_MAX_LENGTH`: Maximum token length in characters (default: `1000`)
 
+See [docs/HTTP-TRANSPORT.md](./docs/HTTP-TRANSPORT.md) for detailed HTTP transport configuration.
+
+#### SSL/TLS Configuration
+
+- `MCP4_SSL_CERT_FILE`, `MCP4_SSL_KEY_FILE`: SSL certificate and key (PEM format)
+
+**When both are set, server automatically starts in HTTPS mode.**
+
+See [docs/OAUTH.md](./docs/OAUTH.md#ssltls-support) for SSL configuration with OAuth.
+
+#### OAuth 2.0 Configuration
+
+**Autodiscovery** - Just provide DCR (Dynamic Client Registration) credentials, API base URL and OAuth callback:
+```bash
+export MCP4_API_BASE_URL=https://www.gitlab.com/api/v4
+export MCP4_OAUTH_CLIENT_ID=your_dcr_client_id
+export MCP4_OAUTH_CLIENT_SECRET=your_dcr_client_secret
+export MCP4_OAUTH_REDIRECT_URI=http://mcp.local:3003/oauth/callback
+# OAuth endpoints are automatically discovered from API base URL
+```
+**Note**: DCR and OAuth callback must be registered with the OAuth provider.
+
+**Configuration priority:**
+1. **Explicit URLs**: `MCP4_OAUTH_AUTHORIZATION_URL`, `MCP4_OAUTH_TOKEN_URL` (highest priority)
+2. **Explicit issuer**: `MCP4_OAUTH_ISSUER` (auto-derives standard OAuth paths)
+3. **Autodiscovery**: From `MCP4_API_BASE_URL` (fetches RFC 8414 metadata or uses standard paths)
+
+**Environment variables:**
+- `MCP4_OAUTH_CLIENT_ID`, `MCP4_OAUTH_CLIENT_SECRET`: OAuth client credentials (required)
+- `MCP4_OAUTH_REDIRECT_URI`: OAuth redirect URI (required, must match registered URI)
+- `MCP4_OAUTH_ISSUER`: OAuth provider issuer URL (optional, auto-derives endpoints)
+- `MCP4_OAUTH_AUTHORIZATION_URL`, `MCP4_OAUTH_TOKEN_URL`: OAuth endpoints (optional, for non-standard paths)
+
+See [docs/OAUTH.md](./docs/OAUTH.md) for complete setup guide including OAuth application registration, SSL configuration, and troubleshooting.
+
 #### HTTP Rate Limiting (Security)
-Protect against DoS attacks by limiting request rates per endpoint:
 
-- `MCP4_HTTP_RATE_LIMIT_ENABLED`: Enable rate limiting (`true|false`, default: `true`)
-- `MCP4_HTTP_RATE_LIMIT_WINDOW_MS`: Rate limit window in milliseconds (default: `60000` = 1 minute)
-- `MCP4_HTTP_RATE_LIMIT_MAX_REQUESTS`: Max requests per window for `/mcp`, `/sse`, `/health` (default: `100`)
-- `MCP4_HTTP_RATE_LIMIT_METRICS_MAX`: Max requests per window for `/metrics` (default: `10`)
+- `MCP4_HTTP_RATE_LIMIT_ENABLED`: Enable rate limiting (default: `true`)
+- `MCP4_HTTP_RATE_LIMIT_WINDOW_MS`: Rate limit window (default: `60000` = 1 minute)
+- `MCP4_HTTP_RATE_LIMIT_MAX_REQUESTS`: Max requests for MCP endpoints (default: `100`)
+- `MCP4_HTTP_RATE_LIMIT_METRICS_MAX`: Max requests for `/metrics` (default: `10`)
 
-**Example**: Enable rate limiting with custom limits:
-```bash
-export MCP4_HTTP_RATE_LIMIT_ENABLED=true
-export MCP4_HTTP_RATE_LIMIT_MAX_REQUESTS=200    # 200 req/min for MCP endpoints
-export MCP4_HTTP_RATE_LIMIT_METRICS_MAX=20      # 20 req/min for metrics
-```
+**OAuth Rate Limiting** (stricter limits for OAuth endpoints):
+- `MCP4_OAUTH_RATE_LIMIT_MAX`: Max OAuth requests per window (default: `10`)
+- `MCP4_OAUTH_RATE_LIMIT_WINDOW_MS`: OAuth rate limit window (default: `600000` = 10 minutes)
 
-**Example**: Disable rate limiting (not recommended for production):
-```bash
-export MCP4_HTTP_RATE_LIMIT_ENABLED=false
-```
+**Configuration Priority**: Profile > Environment variables > Defaults
 
-**Response when rate limit exceeded**:
-```json
-{
-  "error": "Too Many Requests",
-  "message": "Rate limit exceeded. Max 100 requests per 60 seconds."
-}
-```
-HTTP status: `429 Too Many Requests` with `RateLimit-*` headers.
+**Defaults**: 
+- 100 requests/minute for MCP endpoints, 10 requests/minute for metrics
+- 10 requests/10 minutes for OAuth endpoints (`/oauth/authorize`, `/oauth/token`, `/oauth/callback`)
+
+Returns `429 Too Many Requests` when exceeded.
 
 ### Optional - Observability
 - `MCP4_LOG_LEVEL`: `debug`, `info` (default), `warn`, `error`

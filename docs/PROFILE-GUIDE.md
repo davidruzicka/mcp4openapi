@@ -44,6 +44,8 @@ This guide explains how to create custom MCP tool profiles for any OpenAPI-compl
   "profile_name": "unique-name",
   "description": "What this profile provides",
   "parameter_aliases": { ... },
+  "resource_name": "My API",
+  "resource_documentation": "https://docs.example.com/api",
   "tools": [ ... ],
   "interceptors": { ... }
 }
@@ -55,8 +57,21 @@ This guide explains how to create custom MCP tool profiles for any OpenAPI-compl
 - **`profile_name`** (required): Unique identifier (lowercase, underscores)
 - **`description`** (optional): Human-readable description
 - **`parameter_aliases`** (optional): Map parameter names to common aliases
+- **`resource_name`** (optional): OAuth 2.0 resource name (overrides OpenAPI `info.title`, defaults to `"MCP Server"`)
+- **`resource_documentation`** (optional): OAuth 2.0 resource documentation URL (overrides OpenAPI `externalDocs.url`)
 - **`tools`** (required): Array of tool definitions
 - **`interceptors`** (optional): Auth, rate limiting, retry configuration
+
+#### OAuth Resource Metadata
+
+The `resource_name` and `resource_documentation` fields are used in OAuth 2.0 Protected Resource Metadata (RFC 8707) when HTTP transport with OAuth is enabled:
+
+- **`resource_name`**: Human-readable name of the API displayed to OAuth clients (e.g., "GitLab Production API")
+  - Priority: Profile > OpenAPI `info.title` > `"MCP Server"` (fallback)
+- **`resource_documentation`**: URL to API documentation for OAuth clients (e.g., "https://docs.gitlab.com/ee/api/")
+  - Priority: Profile > OpenAPI `externalDocs.url` > omitted if not available
+
+These fields are exposed in the `/.well-known/oauth-protected-resource/mcp` endpoint and help OAuth clients (like Cursor) display meaningful information about the protected resource. See [OAuth Configuration Guide](./OAUTH.md) for details.
 
 ## Tool Types
 
