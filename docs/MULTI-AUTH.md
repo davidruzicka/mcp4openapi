@@ -18,11 +18,9 @@ Multi-auth allows a single MCP server to support multiple authentication methods
         "type": "oauth",
         "priority": 0,
         "oauth_config": {
-          "authorization_endpoint": "https://www.gitlab.com/oauth/authorize",
-          "token_endpoint": "https://www.gitlab.com/oauth/token",
+          "issuer": "https://gitlab.example.com",
           "client_id": "${env:MCP4_OAUTH_CLIENT_ID}",
           "client_secret": "${env:MCP4_OAUTH_CLIENT_SECRET}",
-          "scopes": ["api", "read_repository"],
           "redirect_uri": "${env:MCP4_OAUTH_REDIRECT_URI}"
         }
       },
@@ -39,7 +37,7 @@ Multi-auth allows a single MCP server to support multiple authentication methods
 **How it works**:
 
 1. **Interactive users** (Cursor/VS Code):
-   - Server detects OAuth session (via `mcp-session-id` header)
+   - Server detects OAuth session
    - Uses OAuth token from session
    - If no session → displays "Connect" button
 
@@ -47,17 +45,6 @@ Multi-auth allows a single MCP server to support multiple authentication methods
    - Send `Authorization: Bearer <CI_TOKEN>` header
    - Server uses Bearer token
    - No browser flow required
-
-**Example CI/CD Usage**:
-
-```yaml
-# .gitlab-ci.yml
-test:
-  script:
-    - export MCP4_API_TOKEN=$CI_JOB_TOKEN
-    - curl -H "Authorization: Bearer $MCP4_API_TOKEN" \
-           https://mcp-gitlab.ai.iszn.cz/mcp
-```
 
 ---
 
@@ -132,7 +119,7 @@ test:
 
 HTTP Transport checks for tokens in this order:
 
-1. **OAuth Session** (via `mcp-session-id` header)
+1. **OAuth Session**
    - Highest priority for active user sessions
    - If session exists and has token → use it
 
@@ -183,9 +170,7 @@ HTTP Transport checks for tokens in this order:
 
 ---
 
-## Backward Compatibility
-
-### Single Auth Config (Still Supported)
+## Single Auth Config Support
 
 ```json
 {
@@ -343,7 +328,7 @@ echo $MCP4_API_TOKEN
 
 # Test token manually
 curl -H "Authorization: Bearer $MCP4_API_TOKEN" \
-     https://www.gitlab.com/api/v4/user
+     https://www.gitlab.com/api/v4/personal_access_tokens/self
 ```
 
 ### Issue: "Connect" button not showing in Cursor
@@ -378,8 +363,6 @@ metadata:
 data:
   oauth-client-id: <base64>
   oauth-client-secret: <base64>
-  ci-api-token: <base64>
-
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -402,12 +385,7 @@ spec:
             secretKeyRef:
               name: mcp-gitlab-auth
               key: oauth-client-secret
-        # Bearer for CI/CD
-        - name: MCP4_API_TOKEN
-          valueFrom:
-            secretKeyRef:
-              name: mcp-gitlab-auth
-              key: ci-api-token
+        # Bearer token sent in Authorization header from client
 ```
 
 ---

@@ -27,6 +27,7 @@ import {
   generateCorrelationId,
   isMCPError
 } from './errors.js';
+import { TIMEOUTS, OAUTH_RATE_LIMIT } from './constants.js';
 import { InterceptorChain, HttpClient } from './interceptors.js';
 import { HttpClientFactory } from './http-client-factory.js';
 import { SchemaValidator } from './schema-validator.js';
@@ -678,27 +679,44 @@ export class MCPServer {
     const authConfigs = this.getAuthConfigs();
     const baseUrl = this.getBaseUrl();
     
+    // Extract OAuth rate limit from profile (if configured)
+    const oauthAuthConfig = authConfigs.find(c => c.type === 'oauth');
+    const oauthRateLimit = oauthAuthConfig?.oauth_rate_limit;
+    
+    // Extract resource metadata from OpenAPI spec or profile
+    const resourceMetadata = this.parser.getResourceMetadata();
+    
     const config = {
       host,
       port,
-      sessionTimeoutMs: parseInt(process.env.MCP4_SESSION_TIMEOUT_MS || '1800000', 10),
+      sessionTimeoutMs: parseInt(process.env.MCP4_SESSION_TIMEOUT_MS || String(TIMEOUTS.SESSION_TIMEOUT_MS), 10),
       heartbeatEnabled: process.env.MCP4_HEARTBEAT_ENABLED === 'true',
-      heartbeatIntervalMs: parseInt(process.env.MCP4_HEARTBEAT_INTERVAL_MS || '30000', 10),
+      heartbeatIntervalMs: parseInt(process.env.MCP4_HEARTBEAT_INTERVAL_MS || String(TIMEOUTS.HEARTBEAT_INTERVAL_MS), 10),
       metricsEnabled: process.env.MCP4_METRICS_ENABLED === 'true',
       metricsPath: process.env.MCP4_METRICS_PATH || '/metrics',
       allowedOrigins: process.env.MCP4_ALLOWED_ORIGINS
         ? process.env.MCP4_ALLOWED_ORIGINS.split(',').map(o => o.trim())
         : undefined,
       rateLimitEnabled: process.env.MCP4_HTTP_RATE_LIMIT_ENABLED !== 'false', // default: true
-      rateLimitWindowMs: parseInt(process.env.MCP4_HTTP_RATE_LIMIT_WINDOW_MS || '60000', 10),
+      rateLimitWindowMs: parseInt(process.env.MCP4_HTTP_RATE_LIMIT_WINDOW_MS || String(TIMEOUTS.RATE_LIMIT_WINDOW_MS), 10),
       rateLimitMaxRequests: parseInt(process.env.MCP4_HTTP_RATE_LIMIT_MAX_REQUESTS || '100', 10),
       rateLimitMetricsMax: parseInt(process.env.MCP4_HTTP_RATE_LIMIT_METRICS_MAX || '10', 10),
+      // OAuth rate limiting (priority: profile > env vars > defaults)
+      rateLimitOAuthMax: oauthRateLimit?.max_requests 
+        || parseInt(process.env.MCP4_OAUTH_RATE_LIMIT_MAX || String(OAUTH_RATE_LIMIT.MAX_REQUESTS), 10),
+      rateLimitOAuthWindowMs: oauthRateLimit?.window_ms 
+        || parseInt(process.env.MCP4_OAUTH_RATE_LIMIT_WINDOW_MS || String(OAUTH_RATE_LIMIT.WINDOW_MS), 10),
       maxTokenLength: process.env.MCP4_TOKEN_MAX_LENGTH
         ? parseInt(process.env.MCP4_TOKEN_MAX_LENGTH, 10)
         : undefined, // Uses default from http-transport.ts if undefined
       oauthConfig, // Pass OAuth config if available
       baseUrl, // Pass base URL for token validation
       authConfigs, // Pass auth configs for token validation
+      // OAuth resource metadata (priority: profile > OpenAPI > fallback)
+      resourceName: this.profile?.resource_name || resourceMetadata.name || 'MCP Server',
+      resourceDocumentation: this.profile?.resource_documentation || resourceMetadata.documentation,
+      sslCertFile: process.env.MCP4_SSL_CERT_FILE,
+      sslKeyFile: process.env.MCP4_SSL_KEY_FILE,
     };
 
     // Warn if binding to non-localhost without explicit MCP4_ALLOWED_ORIGINS

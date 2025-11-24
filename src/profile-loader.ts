@@ -76,6 +76,22 @@ export class ProfileLoader {
             { path, issues: result.error.issues }
           );
         }
+
+        // Additional OAuth validation: must have issuer OR both endpoints
+        const authEntry = entry as any;
+        if (authEntry.type === 'oauth' && authEntry.oauth_config) {
+          const config = authEntry.oauth_config;
+          const hasIssuer = !!config.issuer;
+          const hasEndpoints = !!config.authorization_endpoint && !!config.token_endpoint;
+          
+          if (!hasIssuer && !hasEndpoints) {
+            const path = index !== undefined ? `interceptors.auth[${index}].oauth_config` : 'interceptors.auth.oauth_config';
+            throw new ValidationError(
+              `OAuth config at ${path} must provide either 'issuer' OR both 'authorization_endpoint' and 'token_endpoint'`,
+              { path, hasIssuer, hasEndpoints }
+            );
+          }
+        }
       };
 
       if (Array.isArray(auth)) {

@@ -12,6 +12,10 @@ export interface Profile {
   tools: ToolDefinition[];
   interceptors?: InterceptorConfig;
   parameter_aliases?: Record<string, string[]>; // e.g., {"id": ["resource_id", "project_id"]}
+  
+  // OAuth resource metadata (optional overrides)
+  resource_name?: string;           // OAuth resource name (overrides OpenAPI info.title)
+  resource_documentation?: string;  // OAuth resource documentation URL (overrides OpenAPI externalDocs.url)
 }
 
 export interface ToolDefinition {
@@ -92,6 +96,13 @@ export interface AuthInterceptor {
   // For oauth type
   oauth_config?: OAuthConfig;
   
+  // OAuth rate limiting (only for oauth type)
+  // Overrides default OAuth rate limits (10 requests per 10 minutes)
+  oauth_rate_limit?: {
+    max_requests: number;  // Max requests per window (default: 10)
+    window_ms: number;     // Window in milliseconds (default: 10 * 60 * 1000 = 10 minutes)
+  };
+  
   // Optional token validation
   validation_endpoint?: string;  // API endpoint to verify token (e.g., "/api/v4/user")
   validation_method?: 'GET' | 'HEAD';  // HTTP method for validation (default: GET)
@@ -110,20 +121,36 @@ export interface AuthInterceptor {
  */
 export interface OAuthConfig {
   /**
-   * OAuth 2.0 authorization endpoint
-   * e.g., "https://gitlab.example.com/oauth/authorize"
+   * OAuth 2.0 issuer URL (RFC 8414)
+   * e.g., "https://www.gitlab.com"
    * 
+   * When provided, authorization_endpoint and token_endpoint are auto-derived:
+   * - Tries fetching /.well-known/oauth-authorization-server
+   * - Falls back to standard paths: /oauth/authorize and /oauth/token
+   * 
+   * Can reference environment variables: "${env:OAUTH_ISSUER}"
+   * 
+   * Priority: If both issuer and explicit endpoints are provided, explicit endpoints take precedence.
+   */
+  issuer?: string;
+  
+  /**
+   * OAuth 2.0 authorization endpoint
+   * e.g., "https://www.gitlab.com/oauth/authorize"
+   * 
+   * Optional if issuer is provided.
    * Can reference environment variables: "${env:OAUTH_AUTHORIZATION_URL}"
    */
-  authorization_endpoint: string;
+  authorization_endpoint?: string;
   
   /**
    * OAuth 2.0 token endpoint
-   * e.g., "https://gitlab.example.com/oauth/token"
+   * e.g., "https://www.gitlab.com/oauth/token"
    * 
+   * Optional if issuer is provided.
    * Can reference environment variables: "${env:OAUTH_TOKEN_URL}"
    */
-  token_endpoint: string;
+  token_endpoint?: string;
   
   /**
    * Pre-registered OAuth client ID (for static client registration)
@@ -144,8 +171,9 @@ export interface OAuthConfig {
   /**
    * OAuth 2.0 scopes to request
    * e.g., ["api", "read_user", "write_repository"]
+   * Optional - if not provided, no scopes will be requested (some APIs don't require scopes)
    */
-  scopes: string[];
+  scopes?: string[];
   
   /**
    * Redirect URI for OAuth callback
@@ -157,7 +185,7 @@ export interface OAuthConfig {
   
   /**
    * Optional: Client registration endpoint for dynamic registration (RFC 7591)
-   * e.g., "https://gitlab.example.com/oauth/register"
+   * e.g., "https://www.gitlab.com/oauth/register"
    * 
    * If provided and client_id is not set, will attempt dynamic client registration
    */
@@ -165,7 +193,7 @@ export interface OAuthConfig {
   
   /**
    * Optional: Token introspection endpoint (RFC 7662)
-   * e.g., "https://gitlab.example.com/oauth/introspect"
+   * e.g., "https://www.gitlab.com/oauth/introspect"
    * 
    * Used for token validation
    */
@@ -173,7 +201,7 @@ export interface OAuthConfig {
   
   /**
    * Optional: Token revocation endpoint (RFC 7009)
-   * e.g., "https://gitlab.example.com/oauth/revoke"
+   * e.g., "https://www.gitlab.com/oauth/revoke"
    */
   revocation_endpoint?: string;
 }
