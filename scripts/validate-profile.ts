@@ -10,9 +10,9 @@
 import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { ProfileLoader } from '../dist/profile-loader.js';
-import { OpenAPIParser } from '../dist/openapi-parser.js';
-import { ToolGenerator } from '../dist/tool-generator.js';
+import { ProfileLoader } from '../src/profile-loader.js';
+import { OpenAPIParser } from '../src/openapi-parser.js';
+import { ToolGenerator } from '../src/tool-generator.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
