@@ -3282,6 +3282,228 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/API_Error'
+  /projects/{id}/merge_requests/{merge_request_iid}/notes:
+    get:
+      tags:
+        - merge_requests
+      summary: List merge request notes
+      description: Get all notes (comments) for a merge request
+      operationId: getApiV4ProjectsIdMergeRequestsMergeRequestIidNotes
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The ID or URL-encoded path of the project
+          schema:
+            type: string
+        - name: merge_request_iid
+          in: path
+          required: true
+          description: The internal ID of the merge request
+          schema:
+            type: integer
+        - name: page
+          in: query
+          description: Page number
+          schema:
+            type: integer
+            default: 1
+        - name: per_page
+          in: query
+          description: Number of items per page
+          schema:
+            type: integer
+            default: 20
+        - name: sort
+          in: query
+          description: Return notes sorted in created order
+          schema:
+            type: string
+            enum: [asc, desc]
+            default: desc
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/API_Entities_Note'
+        '404':
+          description: Merge request not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/API_Error'
+    post:
+      tags:
+        - merge_requests
+      summary: Create new merge request note
+      description: Create a new note (comment) on a merge request
+      operationId: postApiV4ProjectsIdMergeRequestsMergeRequestIidNotes
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The ID or URL-encoded path of the project
+          schema:
+            type: string
+        - name: merge_request_iid
+          in: path
+          required: true
+          description: The internal ID of the merge request
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - body
+              properties:
+                body:
+                  type: string
+                  description: The content of the note
+                  minLength: 1
+                  example: "This looks good to me!"
+                confidential:
+                  type: boolean
+                  description: Whether the note should be confidential
+                  default: false
+                  example: false
+      responses:
+        '201':
+          description: Note created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/API_Entities_Note'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/API_Error'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/API_Error'
+        '404':
+          description: Merge request not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/API_Error'
+  /projects/{id}/merge_requests/{merge_request_iid}/notes/{note_id}:
+    put:
+      tags:
+        - merge_requests
+      summary: Update merge request note
+      description: Update an existing note (comment) on a merge request
+      operationId: putApiV4ProjectsIdMergeRequestsMergeRequestIidNotesNoteId
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The ID or URL-encoded path of the project
+          schema:
+            type: string
+        - name: merge_request_iid
+          in: path
+          required: true
+          description: The internal ID of the merge request
+          schema:
+            type: integer
+        - name: note_id
+          in: path
+          required: true
+          description: The ID of the note
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - body
+              properties:
+                body:
+                  type: string
+                  description: The updated content of the note
+                  minLength: 1
+                  example: "Updated comment text"
+      responses:
+        '200':
+          description: Note updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/API_Entities_Note'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/API_Error'
+        '403':
+          description: Forbidden - only the author can update the note
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/API_Error'
+        '404':
+          description: Merge request or note not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/API_Error'
+    delete:
+      tags:
+        - merge_requests
+      summary: Delete merge request note
+      description: Delete a note (comment) from a merge request
+      operationId: deleteApiV4ProjectsIdMergeRequestsMergeRequestIidNotesNoteId
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The ID or URL-encoded path of the project
+          schema:
+            type: string
+        - name: merge_request_iid
+          in: path
+          required: true
+          description: The internal ID of the merge request
+          schema:
+            type: integer
+        - name: note_id
+          in: path
+          required: true
+          description: The ID of the note
+          schema:
+            type: integer
+      responses:
+        '204':
+          description: Note deleted successfully
+        '403':
+          description: Forbidden - only the author or project maintainer can delete the note
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/API_Error'
+        '404':
+          description: Merge request or note not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/API_Error'
   /projects/{id}/issues:
     get:
       tags:
@@ -4355,6 +4577,38 @@ components:
         author:
           $ref: '#/components/schemas/API_Entities_UserBasic'
       description: Basic issue information
+    API_Entities_Note:
+      type: object
+      properties:
+        id:
+          type: integer
+        type:
+          type: string
+        body:
+          type: string
+        attachment:
+          type: string
+        author:
+          $ref: '#/components/schemas/API_Entities_UserBasic'
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        system:
+          type: boolean
+        noteable_id:
+          type: integer
+        noteable_type:
+          type: string
+        noteable_iid:
+          type: integer
+        resolvable:
+          type: boolean
+        confidential:
+          type: boolean
+      description: Note (comment) information
   securitySchemes:
     ApiKeyAuth:
       type: apiKey
