@@ -10,7 +10,8 @@
     "user_id": ["user_id"],
     "job_id": ["job_id"],
     "merge_request_iid": ["iid", "mr_iid"],
-    "issue_iid": ["iid"]
+    "issue_iid": ["iid"],
+    "note_id": ["comment_id"]
   },
   
   "tools": [
@@ -87,7 +88,7 @@
         },
         "project_id": {
           "type": "string",
-          "description": "Project ID (numeric like '123' or URL-encoded path like 'group%2Fproject')",
+          "description": "Project ID (numeric like '123' or URL-encoded path like 'group%2Fproject' - DO NOT use plain slash 'group/project'!).",
           "required_for": ["get"],
           "example": "123"
         },
@@ -139,7 +140,7 @@
         },
         "project_id": {
           "type": "string",
-          "description": "Project ID (numeric like '123' or URL-encoded path like 'group%2Fproject')",
+          "description": "Project ID (numeric like '123' or URL-encoded path like 'group%2Fproject' - DO NOT use plain slash 'group/project'!).",
           "required": true,
           "example": "123"
         },
@@ -257,6 +258,76 @@
     },
 
     {
+      "name": "manage_merge_request_notes",
+      "description": "Work with merge request notes (comments). Actions: 'list' (all notes for an MR), 'create' (add new note), 'update' (edit existing note), 'delete' (remove note). Use 'list' to see all comments on a merge request, 'create' to add feedback.",
+      "metadata_params": ["action", "project_id", "merge_request_iid", "note_id"],
+      "operations": {
+        "list": "getApiV4ProjectsIdMergeRequestsMergeRequestIidNotes",
+        "create": "postApiV4ProjectsIdMergeRequestsMergeRequestIidNotes",
+        "update": "putApiV4ProjectsIdMergeRequestsMergeRequestIidNotesNoteId",
+        "delete": "deleteApiV4ProjectsIdMergeRequestsMergeRequestIidNotesNoteId"
+      },
+      "response_fields": {
+        "list": ["id", "body", "author", "created_at", "updated_at", "system", "confidential"],
+        "create": ["id", "body", "author", "created_at", "system", "confidential"],
+        "update": ["id", "body", "author", "created_at", "updated_at", "system", "confidential"]
+      },
+      "parameters": {
+        "action": {
+          "type": "string",
+          "enum": ["list", "create", "update", "delete"],
+          "description": "Action to perform",
+          "required": true
+        },
+        "project_id": {
+          "type": "string",
+          "description": "Project ID (numeric like '123' or URL-encoded path like 'group%2Fproject' - DO NOT use plain slash 'group/project'!).",
+          "required": true,
+          "example": "123"
+        },
+        "merge_request_iid": {
+          "type": "integer",
+          "description": "The internal ID of the merge request",
+          "required": true
+        },
+        "note_id": {
+          "type": "integer",
+          "description": "The ID of the note",
+          "required_for": ["update", "delete"]
+        },
+        "body": {
+          "type": "string",
+          "description": "The content of the note",
+          "required_for": ["create", "update"],
+          "minLength": 1,
+          "example": "This looks good to me!"
+        },
+        "confidential": {
+          "type": "boolean",
+          "description": "Whether the note should be confidential",
+          "default": false,
+          "example": false
+        },
+        "page": {
+          "type": "integer",
+          "description": "Page number for pagination",
+          "default": 1
+        },
+        "per_page": {
+          "type": "integer",
+          "description": "Items per page (recommended max 100)",
+          "default": 20
+        },
+        "sort": {
+          "type": "string",
+          "enum": ["asc", "desc"],
+          "description": "Return notes sorted in created order",
+          "default": "desc"
+        }
+      }
+    },
+
+    {
       "name": "manage_issues",
       "description": "Work with issues. Actions: 'list' (all issues in project), 'get' (single issue details), 'create' (create new issue), 'delete' (delete issue - admins only). Use 'list' to see all issues, filter by state (opened, closed, all).",
       "metadata_params": ["action", "project_id", "issue_iid"],
@@ -279,7 +350,7 @@
         },
         "project_id": {
           "type": "string",
-          "description": "Project ID (numeric like '123' or URL-encoded path like 'group%2Fproject')",
+          "description": "Project ID (numeric like '123' or URL-encoded path like 'group%2Fproject' - DO NOT use plain slash 'group/project'!).",
           "required": true,
           "example": "123"
         },
@@ -373,7 +444,7 @@
       "parameters": {
         "project_id": {
           "type": "string",
-          "description": "Project ID (numeric like '123' or URL-encoded path like 'group%2Fproject')",
+          "description": "Project ID (numeric like '123' or URL-encoded path like 'group%2Fproject' - DO NOT use plain slash 'group/project'!).",
           "required": true,
           "example": "123"
         },
@@ -430,7 +501,7 @@
       "parameters": {
         "project_id": {
           "type": "string",
-          "description": "Project ID (numeric like '123' or URL-encoded path like 'group%2Fproject')",
+          "description": "Project ID (numeric like '123' or URL-encoded path like 'group%2Fproject' - DO NOT use plain slash 'group/project'!).",
           "required": true,
           "example": "123"
         },
@@ -492,7 +563,7 @@
         },
         "resource_id": {
           "type": "string",
-          "description": "Project ID (numeric like '123' or URL-encoded path like 'group%2Fproject') or Group ID (numeric or short name like 'ai-adoption')",
+          "description": "Project ID (numeric like '123' or URL-encoded path like 'group%2Fproject') or Group ID (numeric or short name like 'ai-adoption'). Note: For project paths, use URL-encoded format (e.g., 'group%2Fproject'), not plain slash (e.g., 'group/project').",
           "required": true,
           "example": "ai-adoption"
         },
@@ -524,7 +595,7 @@
       "parameters": {
         "project_id": {
           "type": "string",
-          "description": "Project ID (numeric like '123' or URL-encoded path like 'group%2Fproject')",
+          "description": "Project ID (numeric like '123' or URL-encoded path like 'group%2Fproject' - DO NOT use plain slash 'group/project'!).",
           "required": true,
           "example": "123"
         },
@@ -546,7 +617,7 @@
       "parameters": {
         "project_id": {
           "type": "string",
-          "description": "Project ID (numeric like '123' or URL-encoded path like 'group%2Fproject')",
+          "description": "Project ID (numeric like '123' or URL-encoded path like 'group%2Fproject' - DO NOT use plain slash 'group/project'!).",
           "required": true,
           "example": "123"
         },
@@ -605,6 +676,15 @@
         },
         "deleteApiV4ProjectsIdMergeRequestsMergeRequestIid": {
           "max_requests_per_minute": 5
+        },
+        "postApiV4ProjectsIdMergeRequestsMergeRequestIidNotes": {
+          "max_requests_per_minute": 30
+        },
+        "putApiV4ProjectsIdMergeRequestsMergeRequestIidNotesNoteId": {
+          "max_requests_per_minute": 30
+        },
+        "deleteApiV4ProjectsIdMergeRequestsMergeRequestIidNotesNoteId": {
+          "max_requests_per_minute": 10
         }
       }
     },
