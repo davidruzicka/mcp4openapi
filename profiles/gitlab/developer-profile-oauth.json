@@ -88,7 +88,7 @@
         },
         "project_id": {
           "type": "string",
-          "description": "Project ID (numeric like '123' or URL-encoded path like 'group%2Fproject' - DO NOT use plain slash 'group/project'!).",
+          "description": "Project ID. Use numeric ID (e.g. '123') or URL-encoded path (e.g. 'group%2Fproject').",
           "required_for": ["get"],
           "example": "123"
         },
@@ -149,7 +149,7 @@
         },
         "project_id": {
           "type": "string",
-          "description": "Project ID (numeric like '123' or URL-encoded path like 'group%2Fproject' - DO NOT use plain slash 'group/project'!).",
+          "description": "Project ID. Use numeric ID (e.g. '123') or URL-encoded path (e.g. 'group%2Fproject').",
           "required": true,
           "example": "123"
         },
@@ -322,7 +322,7 @@
       "parameters": {
         "project_id": {
           "type": "string",
-          "description": "Project ID (numeric like '123' or URL-encoded path like 'group%2Fproject' - DO NOT use plain slash 'group/project'!).",
+          "description": "Project ID. Use numeric ID (e.g. '123') or URL-encoded path (e.g. 'group%2Fproject').",
           "required": true,
           "example": "123"
         },
@@ -373,7 +373,7 @@
         },
         "project_id": {
           "type": "string",
-          "description": "Project ID (numeric like '123' or URL-encoded path like 'group%2Fproject' - DO NOT use plain slash 'group/project'!).",
+          "description": "Project ID. Use numeric ID (e.g. '123') or URL-encoded path (e.g. 'group%2Fproject').",
           "required": true,
           "example": "123"
         },
@@ -467,7 +467,7 @@
       "parameters": {
         "project_id": {
           "type": "string",
-          "description": "Project ID (numeric like '123' or URL-encoded path like 'group%2Fproject' - DO NOT use plain slash 'group/project'!).",
+          "description": "Project ID. Use numeric ID (e.g. '123') or URL-encoded path (e.g. 'group%2Fproject').",
           "required": true,
           "example": "123"
         },
@@ -524,7 +524,7 @@
       "parameters": {
         "project_id": {
           "type": "string",
-          "description": "Project ID (numeric like '123' or URL-encoded path like 'group%2Fproject' - DO NOT use plain slash 'group/project'!).",
+          "description": "Project ID. Use numeric ID (e.g. '123') or URL-encoded path (e.g. 'group%2Fproject').",
           "required": true,
           "example": "123"
         },
@@ -586,7 +586,7 @@
         },
         "resource_id": {
           "type": "string",
-          "description": "Project ID (numeric like '123' or URL-encoded path like 'group%2Fproject') or Group ID (numeric or short name like 'ai-adoption'). Note: For project paths, use URL-encoded format (e.g., 'group%2Fproject'), not plain slash (e.g., 'group/project').",
+          "description": "Project ID (numeric like '123' or URL-encoded path like 'group%2Fproject') or Group ID (numeric or short name like 'ai-adoption'). Note: For project paths, use URL-encoded format (e.g., 'group%2Fproject').",
           "required": true,
           "example": "ai-adoption"
         },
@@ -618,7 +618,7 @@
       "parameters": {
         "project_id": {
           "type": "string",
-          "description": "Project ID (numeric like '123' or URL-encoded path like 'group%2Fproject' - DO NOT use plain slash 'group/project'!).",
+          "description": "Project ID. Use numeric ID (e.g. '123') or URL-encoded path (e.g. 'group%2Fproject').",
           "required": true,
           "example": "123"
         },
@@ -640,7 +640,7 @@
       "parameters": {
         "project_id": {
           "type": "string",
-          "description": "Project ID (numeric like '123' or URL-encoded path like 'group%2Fproject' - DO NOT use plain slash 'group/project'!).",
+          "description": "Project ID. Use numeric ID (e.g. '123') or URL-encoded path (e.g. 'group%2Fproject').",
           "required": true,
           "example": "123"
         },
