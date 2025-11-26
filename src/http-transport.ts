@@ -1762,7 +1762,7 @@ export class HttpTransport {
       }
 
       if (!client) {
-        this.logger.error('Cannot refresh token: OAuth client not found', {
+        this.logger.error('Cannot refresh token: OAuth client not found', undefined, {
           sessionId,
           oauthClientId: session.oauthClientId,
         });
