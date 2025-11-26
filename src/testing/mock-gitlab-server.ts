@@ -42,6 +42,24 @@ function extractIidFromUrl(url: string): number | null {
 }
 
 /**
+ * Extract merge request IID from notes URL
+ * URL format: /projects/{project}/merge_requests/{iid}/notes
+ */
+function extractMrIidFromNotesUrl(url: string): number | null {
+  // Remove query parameters for matching
+  const urlWithoutQuery = url.split('?')[0];
+  const match = urlWithoutQuery.match(/\/merge_requests\/(\d+)\/notes/);
+  if (!match) {
+    return null;
+  }
+  const iid = parseInt(match[1], 10);
+  if (isNaN(iid) || iid < 1 || iid > 2147483647) {
+    return null;
+  }
+  return iid;
+}
+
+/**
  * Mock GitLab API endpoints
  * 
  * Why ordered by resource: Mirrors actual GitLab API structure for maintainability
@@ -273,7 +291,106 @@ export const handlers = [
     );
   }),
 
-  // Merge Requests
+  // Merge Request Notes (MUST be before generic merge_requests/* handlers)
+  // Why order matters: MSW matches first handler that fits, more specific patterns must come first
+  http.get(`${BASE_URL}/projects/*/merge_requests/*/notes`, ({ request }) => {
+    // Try multiple parsing strategies for URL-encoded paths
+    let mergeRequestIid = extractMrIidFromNotesUrl(request.url);
+    if (mergeRequestIid === null) {
+      // Try with URL-decoded path
+      const decodedUrl = decodeURIComponent(request.url);
+      mergeRequestIid = extractMrIidFromNotesUrl(decodedUrl);
+    }
+    if (mergeRequestIid === null) {
+      // Try alternative pattern matching
+      const altMatch = request.url.match(/merge_requests[\/%2F](\d+)[\/%2F]notes/);
+      if (altMatch) {
+        mergeRequestIid = parseInt(altMatch[1], 10);
+      }
+    }
+    if (mergeRequestIid === null || isNaN(mergeRequestIid)) {
+      return HttpResponse.json({ error: 'Invalid merge request IID' }, { status: 400 });
+    }
+    if (mergeRequestIid === 1) {
+      return HttpResponse.json(fixtures.mockNotesList);
+    }
+    return HttpResponse.json({ message: 'Not Found' }, { status: 404 });
+  }),
+
+  http.post(`${BASE_URL}/projects/*/merge_requests/*/notes`, async ({ request }) => {
+    let mergeRequestIid = extractMrIidFromNotesUrl(request.url);
+    if (mergeRequestIid === null) {
+      const decodedUrl = decodeURIComponent(request.url);
+      mergeRequestIid = extractMrIidFromNotesUrl(decodedUrl);
+    }
+    if (mergeRequestIid === null) {
+      const altMatch = request.url.match(/merge_requests[\/%2F](\d+)[\/%2F]notes/);
+      if (altMatch) {
+        mergeRequestIid = parseInt(altMatch[1], 10);
+      }
+    }
+    if (mergeRequestIid === null || isNaN(mergeRequestIid)) {
+      return HttpResponse.json({ error: 'Invalid merge request IID' }, { status: 400 });
+    }
+    const body = await request.json() as Record<string, unknown>;
+    if (!body.body) {
+      return HttpResponse.json({ error: 'body is required' }, { status: 400 });
+    }
+    const createdNote = {
+      ...fixtures.mockNote,
+      id: 3,
+      body: body.body as string,
+      confidential: body.confidential || false,
+      created_at: new Date().toISOString(),
+    };
+    return HttpResponse.json(createdNote, { status: 201 });
+  }),
+
+  http.put(`${BASE_URL}/projects/*/merge_requests/*/notes/*`, async ({ request }) => {
+    // Parse note ID from URL - handle both /notes/1 and /notes/1?params
+    const urlWithoutQuery = request.url.split('?')[0];
+    const urlParts = urlWithoutQuery.split('/notes/');
+    if (urlParts.length < 2) {
+      return HttpResponse.json({ error: 'Invalid note ID' }, { status: 400 });
+    }
+    const noteIdStr = urlParts[1].split('?')[0].split('/')[0];
+    const noteId = parseInt(noteIdStr, 10);
+    if (isNaN(noteId)) {
+      return HttpResponse.json({ error: 'Invalid note ID' }, { status: 400 });
+    }
+    if (noteId === 1) {
+      const body = await request.json() as Record<string, unknown>;
+      if (!body.body) {
+        return HttpResponse.json({ error: 'body is required' }, { status: 400 });
+      }
+      const updatedNote = {
+        ...fixtures.mockNote,
+        id: noteId,
+        body: body.body as string,
+        confidential: body.confidential !== undefined ? body.confidential : fixtures.mockNote.confidential,
+        updated_at: new Date().toISOString(),
+      };
+      return HttpResponse.json(updatedNote, { status: 200 });
+    }
+    return HttpResponse.json({ message: 'Not Found' }, { status: 404 });
+  }),
+
+  http.delete(`${BASE_URL}/projects/*/merge_requests/*/notes/*`, ({ request }) => {
+    const urlParts = request.url.split('/notes/');
+    if (urlParts.length < 2) {
+      return HttpResponse.json({ error: 'Invalid note ID' }, { status: 400 });
+    }
+    const noteId = parseInt(urlParts[1], 10);
+    if (isNaN(noteId)) {
+      return HttpResponse.json({ error: 'Invalid note ID' }, { status: 400 });
+    }
+    if (noteId === 1) {
+      return new HttpResponse(null, { status: 204 });
+    }
+    return HttpResponse.json({ message: 'Not Found' }, { status: 404 });
+  }),
+
+  // Merge Requests (generic handlers after more specific /notes handlers)
   http.get(`${BASE_URL}/projects/*/merge_requests`, ({ request, params }) => {
     const { page } = parsePaginationParams(request);
 
@@ -318,6 +435,25 @@ export const handlers = [
     };
 
     return HttpResponse.json(createdMR, { status: 201 });
+  }),
+
+  http.put(`${BASE_URL}/projects/*/merge_requests/*`, async ({ request }) => {
+    const mergeRequestIid = extractIidFromUrl(request.url);
+    if (mergeRequestIid === null) {
+      return HttpResponse.json({ error: 'Invalid merge request IID' }, { status: 400 });
+    }
+    if (mergeRequestIid === 1) {
+      const body = await request.json() as Record<string, unknown>;
+      const updatedMR = {
+        ...fixtures.mockMergeRequest,
+        title: body.title || fixtures.mockMergeRequest.title,
+        description: body.description !== undefined ? body.description : fixtures.mockMergeRequest.description,
+        state: body.state_event === 'close' ? 'closed' : fixtures.mockMergeRequest.state,
+        updated_at: new Date().toISOString(),
+      };
+      return HttpResponse.json(updatedMR, { status: 200 });
+    }
+    return HttpResponse.json({ message: 'Not Found' }, { status: 404 });
   }),
 
   http.delete(`${BASE_URL}/projects/*/merge_requests/*`, ({ request }) => {

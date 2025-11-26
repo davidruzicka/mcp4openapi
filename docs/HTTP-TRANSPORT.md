@@ -338,6 +338,33 @@ export MCP4_SESSION_TIMEOUT_MS=600000   # 10 minutes
 - Expired sessions automatically cleaned up (every 1 minute)
 - Expired session requests return **HTTP 404**
 
+**OAuth Sessions**:
+
+OAuth sessions with refresh tokens have extended timeouts to avoid forcing users to re-authenticate after periods of inactivity:
+
+- **Default OAuth session timeout**: 24 hours (configurable via `MCP4_OAUTH_SESSION_TIMEOUT_MS`)
+- **Unlimited timeout**: Set `MCP4_OAUTH_SESSION_TIMEOUT_MS=0` to never expire OAuth sessions
+- **Automatic token refresh**: Access tokens are automatically refreshed before expiration (60 seconds before by default, configurable via `MCP4_OAUTH_REFRESH_THRESHOLD_MS`)
+
+**Why extended timeout for OAuth?**
+
+- OAuth access tokens are short-lived (15-60 minutes) for security
+- Refresh tokens allow automatic renewal without user intervention
+- Extended session timeout prevents unnecessary re-authentication after idle periods
+- Users don't need to restart MCP in their IDE when tokens expire
+
+**Configuration**:
+```bash
+# OAuth session timeout: 24 hours (default)
+export MCP4_OAUTH_SESSION_TIMEOUT_MS=86400000
+
+# Unlimited OAuth session timeout (never expire)
+export MCP4_OAUTH_SESSION_TIMEOUT_MS=0
+
+# Refresh token 60 seconds before expiration (default)
+export MCP4_OAUTH_REFRESH_THRESHOLD_MS=60000
+```
+
 ### Session Storage
 
 Sessions store:

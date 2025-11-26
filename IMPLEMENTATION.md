@@ -183,7 +183,9 @@
 - POST `/mcp` - client→server messages (JSON-RPC)
 - GET `/mcp` - server→client messages (SSE stream)
 - DELETE `/mcp` - session termination
-- Session management with UUID, 30min timeout default
+- Session management with UUID, 30min timeout default (OAuth sessions: 24h default)
+- **OAuth session auto-refresh**: `HttpTransport` stores refresh tokens in `SessionData` and automatically refreshes expired access tokens via `ensureValidSessionToken()` before outbound API calls
+- OAuth sessions have extended timeout policy (24h default, configurable) vs static token sessions (30min)
 - SSE resumability via `Last-Event-ID`
 - Optional heartbeat for reverse proxy keepalive
 - Origin validation (DNS rebinding protection)

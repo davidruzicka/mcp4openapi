@@ -220,3 +220,31 @@ export const mockIssuesList = [
   },
 ];
 
+export const mockNote = {
+  id: 1,
+  body: 'This looks good to me!',
+  author: {
+    id: 1,
+    username: 'john_doe',
+    name: 'John Doe',
+    avatar_url: 'https://www.gravatar.com/avatar/johndoe',
+  },
+  created_at: '2017-07-26T11:08:53+02:00',
+  updated_at: '2017-07-26T11:08:53+02:00',
+  system: false,
+  noteable_id: 1,
+  noteable_type: 'MergeRequest',
+  confidential: false,
+};
+
+export const mockNotesList = [
+  mockNote,
+  {
+    ...mockNote,
+    id: 2,
+    body: 'I have some concerns about this approach.',
+    created_at: '2017-07-27T10:08:53+02:00',
+    updated_at: '2017-07-27T10:08:53+02:00',
+  },
+];
+

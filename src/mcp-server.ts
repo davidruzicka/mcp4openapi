@@ -194,10 +194,10 @@ export class MCPServer {
         profile: this.profile,
         baseUrl,
       });
-      this.compositeExecutor = new CompositeExecutor(this.parser, httpClient);
+      this.compositeExecutor = new CompositeExecutor(this.parser, httpClient, this.profile.parameter_aliases);
     } else {
       // No env token or no auth - will use per-session clients (HTTP transport)
-      this.compositeExecutor = new CompositeExecutor(this.parser);
+      this.compositeExecutor = new CompositeExecutor(this.parser, undefined, this.profile.parameter_aliases);
     }
     
     this.logger.info('MCP server initialized', {
@@ -312,7 +312,7 @@ export class MCPServer {
   /**
    * Get or create HTTP client for session
    */
-  private getHttpClientForSession(sessionId?: string): HttpClient {
+  private async getHttpClientForSession(sessionId?: string): Promise<HttpClient> {
     if (!sessionId) {
       // Fallback to global client for stdio transport
       if (!this.httpClientFactory.hasGlobalClient()) {
@@ -340,8 +340,8 @@ export class MCPServer {
       throw new ConfigurationError('Profile not initialized. Call initialize() first.');
     }
 
-    // Get auth token from session
-    const authToken = this.getAuthTokenFromSession(sessionId);
+    // Get auth token from session (ensures token is valid/refreshed)
+    const authToken = await this.getAuthTokenFromSession(sessionId);
 
     // Create or get session client using factory
     return this.httpClientFactory.getOrCreateSessionClient(sessionId, {
@@ -353,10 +353,18 @@ export class MCPServer {
 
   /**
    * Get auth token from HTTP transport session
+   * Ensures token is valid (refreshes if expired) before returning
    */
-  private getAuthTokenFromSession(sessionId: string): string | undefined {
+  private async getAuthTokenFromSession(sessionId: string): Promise<string | undefined> {
     if (!this.httpTransport) {
       return undefined;
+    }
+
+    // Ensure token is valid (refresh if expired)
+    const isValid = await this.httpTransport.ensureValidSessionToken(sessionId);
+    if (!isValid) {
+      this.logger.warn('Session token validation/refresh failed', { sessionId });
+      // Still return token if available - let the API call fail with proper error
     }
 
     // Use public API instead of type casting
@@ -531,7 +539,7 @@ export class MCPServer {
     }
 
     // Execute with session-specific client
-    const httpClient = this.getHttpClientForSession(sessionId);
+    const httpClient = await this.getHttpClientForSession(sessionId);
     const response = await httpClient.request(operation.method, path, {
       params: queryParams,
       body,
@@ -761,7 +769,7 @@ export class MCPServer {
 
     // Handle other JSON-RPC requests
     // (tools/list, prompts/list, etc.)
-    return this.handleOtherRequest(message, sessionId);
+    return await this.handleOtherRequest(message, sessionId);
   }
 
 
@@ -800,10 +808,10 @@ export class MCPServer {
     const toolName = params.name as string;
     const args = params.arguments as Record<string, unknown>;
 
-    // Check OAuth authentication for tool operations
-    if (this.httpTransport && this.httpTransport.hasOAuthProvider()) {
-      const authToken = this.getAuthTokenFromSession(sessionId || '');
-      if (!authToken) {
+      // Check OAuth authentication for tool operations
+      if (this.httpTransport && this.httpTransport.hasOAuthProvider()) {
+        const authToken = await this.getAuthTokenFromSession(sessionId || '');
+        if (!authToken) {
         // Return OAuth required error with WWW-Authenticate header
         // This should trigger the OAuth flow in the client
         const errorResponse = {
@@ -833,7 +841,7 @@ export class MCPServer {
       // Execute tool (reuse existing execution logic)
       let result;
       if (toolDef.composite && toolDef.steps) {
-        const httpClient = this.getHttpClientForSession(sessionId);
+        const httpClient = await this.getHttpClientForSession(sessionId);
         const compositeResult = await this.compositeExecutor!.execute(
           toolDef.steps,
           args,
@@ -904,12 +912,12 @@ export class MCPServer {
     }
   }
 
-  private handleOtherRequest(message: unknown, sessionId?: string): unknown {
+  private async handleOtherRequest(message: unknown, sessionId?: string): Promise<unknown> {
     const req = message as Record<string, unknown>;
 
     // Check OAuth authentication for other operations (like tools/list)
     if (this.httpTransport && this.httpTransport.hasOAuthProvider()) {
-      const authToken = this.getAuthTokenFromSession(sessionId || '');
+      const authToken = await this.getAuthTokenFromSession(sessionId || '');
       if (!authToken) {
         // Return OAuth required error with WWW-Authenticate header
         // This should trigger the OAuth flow in the client

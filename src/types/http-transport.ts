@@ -14,6 +14,10 @@ export interface SessionData {
   lastActivityAt: number;
   sseStreams: Map<string, SSEStreamState>;
   authToken?: string;
+  refreshToken?: string; // OAuth refresh token for automatic token renewal
+  accessTokenExpiresAt?: number; // Access token expiration timestamp in ms
+  scopes?: string[]; // OAuth scopes for debugging/validation
+  oauthClientId?: string; // OAuth client ID for debugging/validation
 }
 
 export interface SSEStreamState {
@@ -53,6 +57,8 @@ export interface HttpTransportConfig {
   resourceDocumentation?: string; // OAuth resource documentation URL (from OpenAPI externalDocs.url or profile override)
   sslCertFile?: string; // Path to SSL certificate file
   sslKeyFile?: string; // Path to SSL key file
+  oauthSessionTimeoutMs?: number; // OAuth session timeout in ms (default: 24 hours, 0 = unlimited)
+  oauthRefreshThresholdMs?: number; // Refresh token threshold in ms before expiration (default: 60 seconds)
 }
 
 export interface McpRequest extends ExpressRequest {
