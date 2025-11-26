@@ -356,6 +356,12 @@ export class MCPServer {
    * Ensures token is valid (refreshes if expired) before returning
    */
   private async getAuthTokenFromSession(sessionId: string): Promise<string | undefined> {
+    // Early return if sessionId is missing/empty
+    // Prevents misleading warn logs with empty sessionId
+    if (!sessionId) {
+      return undefined;
+    }
+
     if (!this.httpTransport) {
       return undefined;
     }
@@ -560,6 +566,17 @@ export class MCPServer {
   }
 
   /**
+   * Encode path segment if it contains special characters (like slashes)
+   * 
+   * Why: GitLab and other APIs require path parameters (like project paths) 
+   * to be URL-encoded when used in URL path.
+   */
+  private encodePathSegment(value: unknown): string {
+    const val = String(value);
+    return val.includes('/') ? encodeURIComponent(val) : val;
+  }
+
+  /**
    * Resolve path parameters using profile aliases
    * 
    * Why aliases: Different tools may use different parameter names for same path param.
@@ -571,14 +588,14 @@ export class MCPServer {
     return template.replace(/\{(\w+)\}/g, (_, key) => {
       // Try direct match first
       if (args[key] !== undefined) {
-        return String(args[key]);
+        return this.encodePathSegment(args[key]);
       }
 
       // Try aliases from profile
       const possibleAliases = aliases[key] || [];
       for (const alias of possibleAliases) {
         if (args[alias] !== undefined) {
-          return String(args[alias]);
+          return this.encodePathSegment(args[alias]);
         }
       }
 
