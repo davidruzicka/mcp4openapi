@@ -299,4 +299,26 @@ describe('MCPServer', () => {
       expect(formatted).not.toContain('Some internal error');
     });
   });
+
+  describe('session token validation with empty sessionId', () => {
+    it('should not log warning when sessionId is empty', async () => {
+      const warns: string[] = [];
+      const testLogger: any = {
+        debug: () => {},
+        info: () => {},
+        warn: (msg: string) => { warns.push(msg); },
+        error: () => {},
+      };
+
+      const serverWithLogger = new MCPServer(testLogger);
+      await serverWithLogger.runHttp('127.0.0.1', 0);
+      try {
+        const token = await (serverWithLogger as any).getAuthTokenFromSession('');
+        expect(token).toBeUndefined();
+        expect(warns.find(m => m.includes('Session token validation/refresh failed'))).toBeUndefined();
+      } finally {
+        await serverWithLogger.stop();
+      }
+    });
+  });
 });
