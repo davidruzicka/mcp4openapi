@@ -28,7 +28,8 @@ export interface StepError {
 export class CompositeExecutor {
   constructor(
     private parser: OpenAPIParser,
-    private httpClient?: HttpClient
+    private httpClient?: HttpClient,
+    private parameterAliases: Record<string, string[]> = {}
   ) {}
 
   /**
@@ -163,14 +164,27 @@ export class CompositeExecutor {
    * Resolve path template with actual values
    * 
    * Example: "/projects/{id}" + {id: "123"} => "/projects/123"
+   * Supports parameter_aliases: {project_id: "123"} can map to {id} if configured
    */
   private resolvePath(template: string, args: Record<string, unknown>): string {
     return template.replace(/\{(\w+)\}/g, (_, key) => {
-      const value = args[key];
-      if (value === undefined) {
-        throw new Error(`Missing path parameter: ${key}`);
+      // Try direct match first
+      if (args[key] !== undefined) {
+        return String(args[key]);
       }
-      return String(value);
+
+      // Try aliases from profile
+      const possibleAliases = this.parameterAliases[key] || [];
+      for (const alias of possibleAliases) {
+        if (args[alias] !== undefined) {
+          return String(args[alias]);
+        }
+      }
+
+      throw new Error(
+        `Missing path parameter: ${key}` +
+        (possibleAliases.length > 0 ? `. Tried aliases: ${possibleAliases.join(', ')}` : '')
+      );
     });
   }
 

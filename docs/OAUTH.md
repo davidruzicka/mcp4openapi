@@ -473,13 +473,47 @@ export MCP4_OAUTH_RATE_LIMIT_WINDOW_MS=600000  # OAuth rate limit window (defaul
 - OAuth endpoints: 10 requests/10 minutes
 ```
 
+## Token Lifetime & Auto-Refresh
+
+OAuth access tokens are short-lived (typically 15-60 minutes) for security reasons. The MCP server automatically handles token refresh using refresh tokens, so you don't need to manually restart MCP in your IDE when tokens expire.
+
+**How it works:**
+
+1. **Initial OAuth Flow**: When you authorize via OAuth, the server receives both an access token and a refresh token
+2. **Token Storage**: The refresh token is securely stored in the session (not exposed to the client)
+3. **Automatic Refresh**: Before making API calls, the server checks if the access token is expired or about to expire
+4. **Transparent Renewal**: If needed, the server automatically exchanges the refresh token for a new access token
+5. **Extended Session Lifetime**: OAuth sessions with refresh tokens have extended timeouts (24 hours by default) to avoid forcing re-authentication after periods of inactivity
+
+**Benefits:**
+
+- **No manual intervention**: Tokens refresh automatically without user action
+- **No IDE restarts**: MCP remains functional even after token expiration
+- **Better security**: Short-lived access tokens with long-lived refresh tokens
+- **Seamless experience**: Users don't see authentication errors or need to re-authorize frequently
+
+**Configuration:**
+
+You can configure the refresh threshold and session timeout via environment variables:
+
+```bash
+# Refresh token 60 seconds before expiration (default)
+MCP4_OAUTH_REFRESH_THRESHOLD_MS=60000
+
+# OAuth session timeout: 24 hours (default), 0 = unlimited
+MCP4_OAUTH_SESSION_TIMEOUT_MS=86400000
+```
+
+**Note**: If a refresh token is revoked or invalid, you'll need to re-authorize via OAuth flow. This is rare and typically only happens when you explicitly revoke access in your OAuth provider's settings.
+
 ## Comparison: OAuth vs Static Token
 
 | Feature | Static Token | OAuth |
 |---------|-------------|-------|
 | Setup Complexity | Low (copy/paste) | Medium (OAuth app registration) |
 | User Experience | Manual token management | Browser-based authorization |
-| Token Expiration | Manual refresh | Automatic refresh |
+| Token Expiration | Manual refresh required | **Automatic refresh** |
+| Session Lifetime | 30 minutes inactivity | **24 hours (configurable)** |
 | Revocation | Revoke in GitLab | Revoke via API or GitLab |
 | Security | Token in env var | Token managed by OAuth provider |
 | Transport Support | stdio + HTTP | **HTTP only** |

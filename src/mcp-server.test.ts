@@ -95,7 +95,7 @@ describe('MCPServer', () => {
       const hasGlobalClient = (server as any).httpClientFactory.hasGlobalClient();
       expect(hasGlobalClient).toBe(false);
 
-      expect(() => (server as any).getHttpClientForSession()).toThrowError(
+      await expect((server as any).getHttpClientForSession()).rejects.toThrow(
         /HasEnvToken\(MCP4_API_TOKEN\): false/
       );
     });

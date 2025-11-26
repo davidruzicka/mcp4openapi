@@ -3248,6 +3248,134 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/API_Entities_MergeRequestBasic'
+    put:
+      tags:
+        - merge_requests
+      summary: Update merge request
+      description: Update an existing merge request
+      operationId: putApiV4ProjectsIdMergeRequestsMergeRequestIid
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The ID or URL-encoded path of the project
+          schema:
+            type: string
+        - name: merge_request_iid
+          in: path
+          required: true
+          description: The internal ID of the merge request
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title:
+                  type: string
+                  description: The title of the merge request
+                  minLength: 1
+                  maxLength: 255
+                  example: "Implement new feature"
+                description:
+                  type: string
+                  description: The description of the merge request (max 1MB)
+                  maxLength: 1048576
+                  example: "This implements the new feature requested by the team."
+                assignee_id:
+                  type: integer
+                  description: The ID of the user to assign the merge request to
+                  minimum: 1
+                  maximum: 2147483647
+                  example: 123
+                assignee_ids:
+                  type: array
+                  items:
+                    type: integer
+                    minimum: 1
+                    maximum: 2147483647
+                  description: The IDs of the users to assign the merge request to
+                  example: [123, 456]
+                reviewer_ids:
+                  type: array
+                  items:
+                    type: integer
+                    minimum: 1
+                    maximum: 2147483647
+                  description: The IDs of the users to review the merge request
+                  example: [789, 101]
+                labels:
+                  type: string
+                  description: Labels to be added to the merge request (comma-separated)
+                  example: "bug,feature,frontend"
+                milestone_id:
+                  type: integer
+                  description: The ID of the milestone to assign the merge request to
+                  minimum: 1
+                  maximum: 2147483647
+                  example: 42
+                state_event:
+                  type: string
+                  description: New state for the merge request
+                  enum: [close, reopen]
+                  example: "close"
+                target_branch:
+                  type: string
+                  description: The target branch name
+                  example: "main"
+                remove_source_branch:
+                  type: boolean
+                  description: Remove the source branch when the merge request is accepted
+                  default: false
+                  example: true
+                squash:
+                  type: boolean
+                  description: Squash commits when merge request is accepted
+                  default: false
+                  example: true
+                discussion_locked:
+                  type: boolean
+                  description: Whether the merge request discussion is locked
+                  default: false
+                  example: false
+                allow_collaboration:
+                  type: boolean
+                  description: Allow commits from the target branch to be pushed to the source branch
+                  default: false
+                  example: true
+                allow_maintainer_to_push:
+                  type: boolean
+                  description: Allow maintainers to push to the source branch
+                  default: false
+                  example: true
+      responses:
+        '200':
+          description: Merge request updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/API_Entities_MergeRequestBasic'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/API_Error'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/API_Error'
+        '404':
+          description: Merge request not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/API_Error'
     delete:
       tags:
         - merge_requests

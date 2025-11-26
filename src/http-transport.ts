@@ -29,6 +29,7 @@ import { ExternalOAuthProvider } from './oauth-provider.js';
 import type { AuthInterceptor } from './types/profile.js';
 import { HTTP_STATUS, MIME_TYPES, OAUTH_PATHS, TIMEOUTS, OAUTH_RATE_LIMIT } from './constants.js';
 import { escapeHtmlSafe } from './validation-utils.js';
+import type { OAuthTokens } from '@modelcontextprotocol/sdk/shared/auth.js';
 
 // Default maximum token length (1000 characters)
 const DEFAULT_MAX_TOKEN_LENGTH = 1000;
@@ -43,6 +44,9 @@ export class HttpTransport {
   private cleanupInterval: NodeJS.Timeout | null = null;
   private messageHandler: ((message: unknown, sessionId?: string) => Promise<unknown>) | null = null;
   private oauthProvider: ExternalOAuthProvider | null = null;
+  // Map access_token -> { refreshToken, expiresAt, clientId, scopes }
+  // Used to bridge /oauth/token endpoint (where we see OAuthTokens) and session initialization (where we only see access token)
+  private oauthTokensByAccessToken: Map<string, { refreshToken?: string; expiresAt?: number; clientId: string; scopes: string[] }> = new Map();
 
   constructor(config: HttpTransportConfig, logger: Logger) {
     this.config = config;
@@ -551,6 +555,9 @@ export class HttpTransport {
                    redirect_uri
                );
 
+               // Store OAuth tokens for later session initialization
+               this.storeOAuthTokens(tokens, client.client_id, client.scope?.split(' ') || []);
+
                res.json(tokens);
             } else {
                res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ error: 'server_error', error_description: 'OAuth provider not initialized' });
@@ -576,6 +583,11 @@ export class HttpTransport {
                    client,
                    refresh_token
                );
+
+               // Store OAuth tokens for later session initialization
+               // Note: When refreshing, the old access token should be invalidated
+               // but we don't track it here - the new token replaces it in the map
+               this.storeOAuthTokens(tokens, client.client_id, client.scope?.split(' ') || []);
 
                res.json(tokens);
             } else {
@@ -1133,7 +1145,32 @@ export class HttpTransport {
             }
           }
           
-          newSessionId = this.createSession(authInfo.token);
+          // Look up OAuth tokens if this is an OAuth token
+          let refreshToken: string | undefined;
+          let accessTokenExpiresAt: number | undefined;
+          let scopes: string[] | undefined;
+          let oauthClientId: string | undefined;
+          
+          if (authInfo.token && (authInfo.type === 'oauth' || authInfo.type === 'bearer')) {
+            const tokenData = this.oauthTokensByAccessToken.get(authInfo.token);
+            if (tokenData) {
+              refreshToken = tokenData.refreshToken;
+              accessTokenExpiresAt = tokenData.expiresAt;
+              scopes = tokenData.scopes;
+              oauthClientId = tokenData.clientId;
+              this.logger.debug('Found OAuth token data for session', {
+                hasRefreshToken: !!refreshToken,
+                hasExpiration: !!accessTokenExpiresAt,
+                scopesCount: scopes.length,
+              });
+            } else {
+              this.logger.debug('No OAuth token data found in map (may be non-OAuth bearer token)', {
+                tokenPrefix: authInfo.token.substring(0, 10),
+              });
+            }
+          }
+          
+          newSessionId = this.createSession(authInfo.token, refreshToken, accessTokenExpiresAt, scopes, oauthClientId);
         }
 
         this.logger.debug('Calling messageHandler', { body, sessionId: isInitialization ? newSessionId : sessionId });
@@ -1451,7 +1488,7 @@ export class HttpTransport {
    *
    * Why: Stateful sessions for MCP protocol
    */
-  private createSession(authToken?: string): string {
+  private createSession(authToken?: string, refreshToken?: string, accessTokenExpiresAt?: number, scopes?: string[], oauthClientId?: string): string {
     // Validate token if provided (defense in depth)
     if (authToken) {
       this.validateToken(authToken, 'Session auth token');
@@ -1464,9 +1501,18 @@ export class HttpTransport {
       lastActivityAt: Date.now(),
       sseStreams: new Map(),
       authToken,
+      refreshToken,
+      accessTokenExpiresAt,
+      scopes,
+      oauthClientId,
     };
     this.sessions.set(sessionId, session);
-    this.logger.info('Session created', { sessionId, hasAuthToken: !!authToken });
+    this.logger.info('Session created', { 
+      sessionId, 
+      hasAuthToken: !!authToken,
+      hasRefreshToken: !!refreshToken,
+      hasExpiration: !!accessTokenExpiresAt,
+    });
 
     // Record metrics
     if (this.metrics) {
@@ -1509,6 +1555,11 @@ export class HttpTransport {
       }
       session.sseStreams.clear();
       
+      // Clean up OAuth token from map if present
+      if (session.authToken) {
+        this.oauthTokensByAccessToken.delete(session.authToken);
+      }
+      
       this.sessions.delete(sessionId);
       this.logger.info('Session destroyed', { sessionId });
       
@@ -1550,18 +1601,67 @@ export class HttpTransport {
   }
 
   /**
+   * Store OAuth tokens in internal map for later session initialization
+   * 
+   * Why: Bridge between /oauth/token endpoint (where we see OAuthTokens) 
+   * and session initialization (where we only see access token in Authorization header)
+   */
+  private storeOAuthTokens(tokens: OAuthTokens, clientId: string, scopes: string[]): void {
+    if (!tokens.access_token) {
+      this.logger.warn('OAuth tokens missing access_token, skipping storage');
+      return;
+    }
+
+    const expiresAt = tokens.expires_in 
+      ? Date.now() + tokens.expires_in * 1000 
+      : undefined;
+
+    this.oauthTokensByAccessToken.set(tokens.access_token, {
+      refreshToken: tokens.refresh_token,
+      expiresAt,
+      clientId,
+      scopes,
+    });
+
+    this.logger.debug('Stored OAuth tokens', {
+      hasRefreshToken: !!tokens.refresh_token,
+      expiresAt,
+      clientId,
+      scopesCount: scopes.length,
+    });
+  }
+
+  /**
    * Cleanup expired sessions
    * 
    * Why: Prevent memory leaks, enforce session timeout
+   * 
+   * OAuth sessions with refresh tokens have extended or unlimited timeout
+   * to avoid forcing users to re-authenticate after periods of inactivity
    */
   private cleanupExpiredSessions(): void {
     const now = Date.now();
     const expiredSessions: string[] = [];
+    
+    // Default OAuth session timeout: 24 hours (or configurable)
+    const oauthSessionTimeoutMs = this.config.oauthSessionTimeoutMs 
+      ?? (24 * 60 * 60 * 1000); // 24 hours default
 
     for (const [sessionId, session] of this.sessions) {
       const age = now - session.lastActivityAt;
-      if (age > this.config.sessionTimeoutMs) {
-        expiredSessions.push(sessionId);
+      
+      // OAuth sessions with refresh tokens: use extended timeout or never expire
+      if (session.refreshToken) {
+        // If oauthSessionTimeoutMs is 0 or negative, never expire OAuth sessions
+        if (oauthSessionTimeoutMs > 0 && age > oauthSessionTimeoutMs) {
+          expiredSessions.push(sessionId);
+        }
+        // Otherwise, keep the session alive (unlimited timeout)
+      } else {
+        // Non-OAuth sessions: use standard timeout
+        if (age > this.config.sessionTimeoutMs) {
+          expiredSessions.push(sessionId);
+        }
       }
     }
 
@@ -1583,6 +1683,125 @@ export class HttpTransport {
   public getSessionToken(sessionId: string): string | undefined {
     const session = this.sessions.get(sessionId);
     return session?.authToken;
+  }
+
+  /**
+   * Ensure session has a valid access token, refreshing if necessary
+   * 
+   * Why: Transparently refresh expired OAuth tokens before making API calls
+   * Returns true if token is valid (or was successfully refreshed), false otherwise
+   */
+  public async ensureValidSessionToken(sessionId: string): Promise<boolean> {
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+      return false;
+    }
+
+    // If no expiration info, assume token is valid (non-OAuth scenarios)
+    if (!session.accessTokenExpiresAt) {
+      return true;
+    }
+
+    const now = Date.now();
+    const refreshThresholdMs = this.config.oauthRefreshThresholdMs ?? (60 * 1000); // Default: 60 seconds before expiration
+    const timeUntilExpiration = session.accessTokenExpiresAt - now;
+
+    // If token is expired or about to expire, refresh it
+    if (timeUntilExpiration <= refreshThresholdMs) {
+      this.logger.debug('Access token expired or expiring soon, refreshing', {
+        sessionId,
+        expiresAt: new Date(session.accessTokenExpiresAt).toISOString(),
+        timeUntilExpiration,
+      });
+      return await this.refreshAccessToken(sessionId);
+    }
+
+    return true;
+  }
+
+  /**
+   * Refresh access token using refresh token
+   * 
+   * Why: Automatically renew expired OAuth access tokens without user intervention
+   * Returns true on success, false on failure
+   */
+  private async refreshAccessToken(sessionId: string): Promise<boolean> {
+    const session = this.sessions.get(sessionId);
+    if (!session || !session.refreshToken || !this.oauthProvider) {
+      this.logger.warn('Cannot refresh token: missing session, refreshToken, or OAuth provider', {
+        sessionId,
+        hasSession: !!session,
+        hasRefreshToken: !!session?.refreshToken,
+        hasOAuthProvider: !!this.oauthProvider,
+      });
+      return false;
+    }
+
+    try {
+      // Get client from OAuth provider
+      // Try to find client by clientId stored in session, or use default client
+      let client;
+      if (session.oauthClientId) {
+        await this.oauthProvider.ensureEndpointsInitialized();
+        client = await this.oauthProvider.clientsStore.getClient(session.oauthClientId);
+      }
+
+      // Fallback to default client from config if session client not found
+      if (!client && this.oauthProvider) {
+        await this.oauthProvider.ensureEndpointsInitialized();
+        // Try common client IDs
+        const defaultClientIds = ['mcp-proxy-client'];
+        if (this.config.oauthConfig?.client_id) {
+          defaultClientIds.unshift(this.config.oauthConfig.client_id);
+        }
+        
+        for (const clientId of defaultClientIds) {
+          client = await this.oauthProvider.clientsStore.getClient(clientId);
+          if (client) break;
+        }
+      }
+
+      if (!client) {
+        this.logger.error('Cannot refresh token: OAuth client not found', {
+          sessionId,
+          oauthClientId: session.oauthClientId,
+        });
+        return false;
+      }
+
+      // Exchange refresh token for new tokens
+      const tokens = await this.oauthProvider.exchangeRefreshToken(
+        client,
+        session.refreshToken,
+        session.scopes
+      );
+
+      // Update session with new tokens
+      const oldAccessToken = session.authToken;
+      session.authToken = tokens.access_token;
+      session.refreshToken = tokens.refresh_token || session.refreshToken; // Keep old refresh token if new one not provided
+      session.accessTokenExpiresAt = tokens.expires_in 
+        ? Date.now() + tokens.expires_in * 1000 
+        : undefined;
+
+      // Update token map: remove old token, add new one
+      if (oldAccessToken) {
+        this.oauthTokensByAccessToken.delete(oldAccessToken);
+      }
+      this.storeOAuthTokens(tokens, client.client_id, session.scopes || []);
+
+      this.logger.info('Access token refreshed successfully', {
+        sessionId,
+        newExpiresAt: session.accessTokenExpiresAt ? new Date(session.accessTokenExpiresAt).toISOString() : undefined,
+      });
+
+      return true;
+    } catch (error) {
+      this.logger.error('Token refresh failed', error instanceof Error ? error : new Error(String(error)), {
+        sessionId,
+      });
+      return false;
+    }
   }
 
   /**

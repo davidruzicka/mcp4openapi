@@ -119,22 +119,31 @@
 
     {
       "name": "manage_merge_requests",
-      "description": "Work with merge requests. Actions: 'list' (all MRs in project), 'get' (single MR details), 'create' (create new MR), 'delete' (delete MR - admins only). Use 'list' to see all merge requests, filter by state (opened, closed, merged, all).",
-      "metadata_params": ["action", "project_id", "merge_request_iid"],
+      "description": "Work with merge requests. Actions: 'list' (all MRs in project), 'get' (single MR details), 'create' (create new MR), 'update' (update MR), 'delete' (delete MR - admins only), 'list_notes' (get all comments), 'create_note' (add comment), 'update_note' (edit comment), 'delete_note' (remove comment). Use 'list' to see all merge requests, filter by state (opened, closed, merged, all).",
+      "metadata_params": ["action", "project_id", "merge_request_iid", "note_id"],
       "operations": {
         "list": "getApiV4ProjectsIdMergeRequests",
         "get": "getApiV4ProjectsIdMergeRequestsMergeRequestIid",
         "create": "postApiV4ProjectsIdMergeRequests",
-        "delete": "deleteApiV4ProjectsIdMergeRequestsMergeRequestIid"
+        "update": "putApiV4ProjectsIdMergeRequestsMergeRequestIid",
+        "delete": "deleteApiV4ProjectsIdMergeRequestsMergeRequestIid",
+        "list_notes": "getApiV4ProjectsIdMergeRequestsMergeRequestIidNotes",
+        "create_note": "postApiV4ProjectsIdMergeRequestsMergeRequestIidNotes",
+        "update_note": "putApiV4ProjectsIdMergeRequestsMergeRequestIidNotesNoteId",
+        "delete_note": "deleteApiV4ProjectsIdMergeRequestsMergeRequestIidNotesNoteId"
       },
       "response_fields": {
         "list": ["id", "iid", "title", "description", "state", "web_url", "author", "created_at", "updated_at"],
-        "create": ["id", "iid", "title", "description", "state", "web_url", "author", "created_at"]
+        "create": ["id", "iid", "title", "description", "state", "web_url", "author", "created_at"],
+        "update": ["id", "iid", "title", "description", "state", "web_url", "author", "created_at", "updated_at"],
+        "list_notes": ["id", "body", "author", "created_at", "updated_at", "system", "confidential"],
+        "create_note": ["id", "body", "author", "created_at", "system", "confidential"],
+        "update_note": ["id", "body", "author", "created_at", "updated_at", "system", "confidential"]
       },
       "parameters": {
         "action": {
           "type": "string",
-          "enum": ["list", "get", "create", "delete"],
+          "enum": ["list", "get", "create", "update", "delete", "list_notes", "create_note", "update_note", "delete_note"],
           "description": "Action to perform",
           "required": true
         },
@@ -147,7 +156,7 @@
         "merge_request_iid": {
           "type": "integer",
           "description": "The internal ID of the merge request",
-          "required_for": ["get"]
+          "required_for": ["get", "update", "delete", "list_notes", "create_note", "update_note", "delete_note"]
         },
         "source_branch": {
           "type": "string",
@@ -157,24 +166,24 @@
         },
         "target_branch": {
           "type": "string",
-          "description": "The target branch name (required for create)",
+          "description": "The target branch name (required for create, optional for update)",
           "required_for": ["create"],
           "example": "main"
         },
         "title": {
           "type": "string",
-          "description": "The title of the merge request (required for create)",
+          "description": "The title of the merge request (required for create, optional for update)",
           "required_for": ["create"],
           "example": "Implement new feature"
         },
         "description": {
           "type": "string",
-          "description": "The description of the merge request (optional for create)",
+          "description": "The description of the merge request (optional for create and update)",
           "example": "This implements the new feature requested by the team."
         },
         "assignee_id": {
           "type": "integer",
-          "description": "The ID of the user to assign the merge request to (optional for create)",
+          "description": "The ID of the user to assign the merge request to (optional for create and update)",
           "example": 123
         },
         "assignee_ids": {
@@ -182,7 +191,7 @@
           "items": {
             "type": "integer"
           },
-          "description": "The IDs of the users to assign the merge request to (optional for create)",
+          "description": "The IDs of the users to assign the merge request to (optional for create and update)",
           "example": [123, 456]
         },
         "reviewer_ids": {
@@ -190,17 +199,17 @@
           "items": {
             "type": "integer"
           },
-          "description": "The IDs of the users to review the merge request (optional for create)",
+          "description": "The IDs of the users to review the merge request (optional for create and update)",
           "example": [789, 101]
         },
         "labels": {
           "type": "string",
-          "description": "Labels to be added to the merge request (comma-separated, optional for create)",
+          "description": "Labels to be added to the merge request (comma-separated, optional for create and update)",
           "example": "bug,feature,frontend"
         },
         "milestone_id": {
           "type": "integer",
-          "description": "The ID of the milestone to assign the merge request to (optional for create)",
+          "description": "The ID of the milestone to assign the merge request to (optional for create and update)",
           "example": 42
         },
         "allow_collaboration": {
@@ -228,7 +237,7 @@
         },
         "remove_source_branch": {
           "type": "boolean",
-          "description": "Remove the source branch when the merge request is accepted (optional for create)",
+          "description": "Remove the source branch when the merge request is accepted (optional for create and update)",
           "default": false,
           "example": true
         },
@@ -253,32 +262,64 @@
           "type": "integer",
           "description": "Items per page (recommended max 100)",
           "default": 20
+        },
+        "note_id": {
+          "type": "integer",
+          "description": "The ID of the note",
+          "required_for": ["update_note", "delete_note"]
+        },
+        "body": {
+          "type": "string",
+          "description": "The content of the note",
+          "required_for": ["create_note", "update_note"],
+          "minLength": 1,
+          "example": "This looks good to me!"
+        },
+        "confidential": {
+          "type": "boolean",
+          "description": "Whether the note should be confidential",
+          "default": false,
+          "example": false
+        },
+        "sort": {
+          "type": "string",
+          "enum": ["asc", "desc"],
+          "description": "Return notes sorted in created order",
+          "default": "desc"
+        },
+        "state_event": {
+          "type": "string",
+          "enum": ["close", "reopen"],
+          "description": "New state for the merge request (for update action)",
+          "example": "close"
+        },
+        "discussion_locked": {
+          "type": "boolean",
+          "description": "Whether the merge request discussion is locked (for update action)",
+          "default": false,
+          "example": false
         }
       }
     },
 
     {
-      "name": "manage_merge_request_notes",
-      "description": "Work with merge request notes (comments). Actions: 'list' (all notes for an MR), 'create' (add new note), 'update' (edit existing note), 'delete' (remove note). Use 'list' to see all comments on a merge request, 'create' to add feedback.",
-      "metadata_params": ["action", "project_id", "merge_request_iid", "note_id"],
-      "operations": {
-        "list": "getApiV4ProjectsIdMergeRequestsMergeRequestIidNotes",
-        "create": "postApiV4ProjectsIdMergeRequestsMergeRequestIidNotes",
-        "update": "putApiV4ProjectsIdMergeRequestsMergeRequestIidNotesNoteId",
-        "delete": "deleteApiV4ProjectsIdMergeRequestsMergeRequestIidNotesNoteId"
-      },
-      "response_fields": {
-        "list": ["id", "body", "author", "created_at", "updated_at", "system", "confidential"],
-        "create": ["id", "body", "author", "created_at", "system", "confidential"],
-        "update": ["id", "body", "author", "created_at", "updated_at", "system", "confidential"]
-      },
-      "parameters": {
-        "action": {
-          "type": "string",
-          "enum": ["list", "create", "update", "delete"],
-          "description": "Action to perform",
-          "required": true
+      "name": "get_merge_request_with_details",
+      "description": "Get merge request with all notes (comments) in a single call. Fetches MR details and all associated notes to reduce API roundtrips.",
+      "composite": true,
+      "partial_results": true,
+      "metadata_params": ["project_id", "merge_request_iid"],
+      "steps": [
+        {
+          "call": "GET /projects/{id}/merge_requests/{merge_request_iid}",
+          "store_as": "merge_request"
         },
+        {
+          "call": "GET /projects/{id}/merge_requests/{merge_request_iid}/notes",
+          "store_as": "merge_request.notes",
+          "depends_on": ["merge_request"]
+        }
+      ],
+      "parameters": {
         "project_id": {
           "type": "string",
           "description": "Project ID (numeric like '123' or URL-encoded path like 'group%2Fproject' - DO NOT use plain slash 'group/project'!).",
@@ -290,39 +331,21 @@
           "description": "The internal ID of the merge request",
           "required": true
         },
-        "note_id": {
-          "type": "integer",
-          "description": "The ID of the note",
-          "required_for": ["update", "delete"]
-        },
-        "body": {
-          "type": "string",
-          "description": "The content of the note",
-          "required_for": ["create", "update"],
-          "minLength": 1,
-          "example": "This looks good to me!"
-        },
-        "confidential": {
-          "type": "boolean",
-          "description": "Whether the note should be confidential",
-          "default": false,
-          "example": false
-        },
-        "page": {
-          "type": "integer",
-          "description": "Page number for pagination",
-          "default": 1
-        },
-        "per_page": {
-          "type": "integer",
-          "description": "Items per page (recommended max 100)",
-          "default": 20
-        },
         "sort": {
           "type": "string",
           "enum": ["asc", "desc"],
           "description": "Return notes sorted in created order",
           "default": "desc"
+        },
+        "page": {
+          "type": "integer",
+          "description": "Page number for notes pagination",
+          "default": 1
+        },
+        "per_page": {
+          "type": "integer",
+          "description": "Number of notes per page",
+          "default": 20
         }
       }
     },

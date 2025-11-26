@@ -164,6 +164,7 @@ Chains multiple API calls and returns aggregated results.
 - `partial_results: true`: Can return partial data even if some steps fail
 - `steps`: Array of API calls with result storage paths
 - `store_as`: JSON path where to store result (e.g., `issue.comments`)
+- **Parameter aliases**: Composite tools automatically use `parameter_aliases` from profile to map parameters in `call` steps. For example, if your tool accepts `project_id` but the OpenAPI path uses `{id}`, the alias mapping will resolve it correctly.
 
 ## Parameters
 
@@ -369,6 +370,8 @@ Map OpenAPI parameter names to common aliases:
 ```
 
 **Why**: OpenAPI specs often use generic names like `id` in paths. Aliases help map user-provided parameters correctly.
+
+**Note**: Parameter aliases work for both simple tools and composite tools. In composite tools, when a `call` step uses a path parameter like `{id}`, the system will automatically try aliases (e.g., `project_id`) if the direct parameter name is not found in the tool arguments.
 
 ## Best Practices
 

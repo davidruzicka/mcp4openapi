@@ -9,7 +9,7 @@ import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest';
 import path from 'path';
 import { MCPServer } from '../mcp-server.js';
 import { startMockServer, resetMockServer, stopMockServer } from './mock-gitlab-server.js';
-import type { Badge, Branch, AccessRequest, Job, MergeRequest } from './test-types.js';
+import type { Badge, Branch, AccessRequest, Job, MergeRequest, CompositeResult } from './test-types.js';
 
 describe('Integration Tests', () => {
   let server: MCPServer;
@@ -382,6 +382,26 @@ describe('Integration Tests', () => {
       expect(mergeRequest.created_at).toBeDefined();
     });
 
+    it('should update merge request', async () => {
+      const result = await server['executeSimpleTool'](
+        server['profile']!.tools.find(t => t.name === 'manage_merge_requests')!,
+        {
+          project_id: 'my-org/my-project',
+          action: 'update',
+          merge_request_iid: 1,
+          title: 'Updated merge request title',
+          description: 'Updated description',
+        }
+      );
+
+      expect(result).toBeDefined();
+      const mergeRequest = result as MergeRequest;
+      expect(mergeRequest.iid).toBe(1);
+      expect(mergeRequest.title).toBe('Updated merge request title');
+      expect(mergeRequest.description).toBe('Updated description');
+      expect(mergeRequest.updated_at).toBeDefined();
+    });
+
     it('should delete merge request', async () => {
       const result = await server['executeSimpleTool'](
         server['profile']!.tools.find(t => t.name === 'manage_merge_requests')!,
@@ -394,6 +414,123 @@ describe('Integration Tests', () => {
 
       // 204 No Content returns empty body
       expect(result).toBeDefined();
+    });
+
+    it('should list merge request notes', async () => {
+      const result = await server['executeSimpleTool'](
+        server['profile']!.tools.find(t => t.name === 'manage_merge_requests')!,
+        {
+          project_id: 'my-org/my-project',
+          action: 'list_notes',
+          merge_request_iid: 1,
+        }
+      );
+
+      expect(result).toBeDefined();
+      const notes = result as Array<Record<string, unknown>>;
+      expect(Array.isArray(notes)).toBe(true);
+      expect(notes.length).toBeGreaterThan(0);
+      expect(notes[0].body).toBeDefined();
+      expect(notes[0].author).toBeDefined();
+    });
+
+    it('should create merge request note', async () => {
+      const result = await server['executeSimpleTool'](
+        server['profile']!.tools.find(t => t.name === 'manage_merge_requests')!,
+        {
+          project_id: 'my-org/my-project',
+          action: 'create_note',
+          merge_request_iid: 1,
+          body: 'This is a test comment',
+        }
+      );
+
+      expect(result).toBeDefined();
+      const note = result as Record<string, unknown>;
+      expect(note.id).toBe(3);
+      expect(note.body).toBe('This is a test comment');
+      expect(note.author).toBeDefined();
+      expect(note.created_at).toBeDefined();
+    });
+
+    it('should update merge request note', async () => {
+      const result = await server['executeSimpleTool'](
+        server['profile']!.tools.find(t => t.name === 'manage_merge_requests')!,
+        {
+          project_id: 'my-org/my-project',
+          action: 'update_note',
+          merge_request_iid: 1,
+          note_id: 1,
+          body: 'Updated comment text',
+        }
+      );
+
+      expect(result).toBeDefined();
+      const note = result as Record<string, unknown>;
+      expect(note.id).toBe(1);
+      expect(note.body).toBe('Updated comment text');
+      expect(note.updated_at).toBeDefined();
+    });
+
+    it('should delete merge request note', async () => {
+      const result = await server['executeSimpleTool'](
+        server['profile']!.tools.find(t => t.name === 'manage_merge_requests')!,
+        {
+          project_id: 'my-org/my-project',
+          action: 'delete_note',
+          merge_request_iid: 1,
+          note_id: 1,
+        }
+      );
+
+      // 204 No Content returns empty body
+      expect(result).toBeDefined();
+    });
+  });
+
+  describe('get_merge_request_with_details', () => {
+    it('should get merge request with notes', async () => {
+      const tool = server['profile']!.tools.find(t => t.name === 'get_merge_request_with_details')!;
+      expect(tool).toBeDefined();
+      expect(tool.composite).toBe(true);
+
+      const result = await server['handleToolCall'](
+        {
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'tools/call',
+          params: {
+            name: 'get_merge_request_with_details',
+            arguments: {
+              project_id: 'my-org/my-project',
+              merge_request_iid: 1,
+            },
+          },
+        },
+        'test-session'
+      );
+
+      expect(result).toBeDefined();
+      const response = result as { result: { content: Array<{ type: string; text: string }> } };
+      expect(response.result).toBeDefined();
+      expect(response.result.content).toBeDefined();
+      expect(response.result.content.length).toBeGreaterThan(0);
+
+      const resultData = JSON.parse(response.result.content[0].text) as CompositeResult;
+      expect(resultData.data).toBeDefined();
+      expect(resultData.data.merge_request).toBeDefined();
+      expect((resultData.data.merge_request as Record<string, unknown>).notes).toBeDefined();
+      expect(resultData.completed_steps).toBe(2);
+      expect(resultData.total_steps).toBe(2);
+      expect(resultData.success).toBe(true);
+
+      const mergeRequest = resultData.data.merge_request as MergeRequest;
+      expect(mergeRequest.iid).toBe(1);
+      expect(mergeRequest.title).toBeDefined();
+
+      const notes = (resultData.data.merge_request as Record<string, unknown>).notes as Array<Record<string, unknown>>;
+      expect(Array.isArray(notes)).toBe(true);
+      expect(notes.length).toBeGreaterThan(0);
     });
   });
 
