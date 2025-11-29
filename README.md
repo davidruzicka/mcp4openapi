@@ -1,5 +1,8 @@
 # MCP from OpenAPI
 
+[![CI](https://github.com/davidruzicka/mcp4openapi/actions/workflows/ci.yml/badge.svg)](https://github.com/davidruzicka/mcp4openapi/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/davidruzicka/mcp4openapi/graph/badge.svg)](https://codecov.io/gh/davidruzicka/mcp4openapi)
+
 Universal MCP server that generates tools from any OpenAPI specification.
 
 ## Why This Project?
