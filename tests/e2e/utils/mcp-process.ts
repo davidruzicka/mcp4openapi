@@ -70,6 +70,7 @@ export class McpProcess extends EventEmitter {
   private isReady = false;
   private readyPromise: Promise<void> | null = null;
   private readyResolve: (() => void) | null = null;
+  private httpSessionId: string | null = null;
 
   constructor(config: McpProcessConfig) {
     super();
@@ -357,6 +358,7 @@ export class McpProcess extends EventEmitter {
 
   /**
    * Initialize MCP session (required for both transports)
+   * For HTTP transport, stores session ID for subsequent calls
    */
   async initialize(): Promise<JsonRpcResponse> {
     const params = {
@@ -371,7 +373,31 @@ export class McpProcess extends EventEmitter {
     if (this.config.transport === 'stdio') {
       return this.sendStdio('initialize', params);
     } else {
-      return this.sendHttpJsonRpc('initialize', params);
+      // For HTTP, we need to capture the session ID from the response
+      const id = ++this.messageId;
+      const request: JsonRpcRequest = {
+        jsonrpc: '2.0',
+        id,
+        method: 'initialize',
+        params,
+      };
+
+      const response = await this.sendHttp('/mcp', {
+        method: 'POST',
+        body: request,
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error: ${response.status} ${response.statusText}`);
+      }
+
+      // Store session ID for subsequent requests
+      const sessionId = response.headers.get('Mcp-Session-Id');
+      if (sessionId) {
+        this.httpSessionId = sessionId;
+      }
+
+      return response.json() as Promise<JsonRpcResponse>;
     }
   }
 
@@ -382,7 +408,7 @@ export class McpProcess extends EventEmitter {
     if (this.config.transport === 'stdio') {
       return this.sendStdio('tools/list', {});
     } else {
-      return this.sendHttpJsonRpc('tools/list', {}, sessionId);
+      return this.sendHttpJsonRpc('tools/list', {}, sessionId || this.httpSessionId || undefined);
     }
   }
 
@@ -399,7 +425,7 @@ export class McpProcess extends EventEmitter {
     if (this.config.transport === 'stdio') {
       return this.sendStdio('tools/call', params);
     } else {
-      return this.sendHttpJsonRpc('tools/call', params, sessionId);
+      return this.sendHttpJsonRpc('tools/call', params, sessionId || this.httpSessionId || undefined);
     }
   }
 

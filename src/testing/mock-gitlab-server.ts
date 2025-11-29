@@ -169,6 +169,84 @@ export function createOAuthHandlers(config: OAuthConfig = DEFAULT_OAUTH_CONFIG):
  */
 export function createGitLabHandlers(baseUrl: string = DEFAULT_BASE_URL): RequestHandler[] {
   return [
+    // Groups
+    http.get(`${baseUrl}/groups`, ({ request }) => {
+      const { page } = parsePaginationParams(request);
+      const search = parseSearchParam(request);
+      
+      let groups = fixtures.mockGroupsList;
+      if (search) {
+        groups = groups.filter(g => 
+          g.name.toLowerCase().includes(search.toLowerCase()) ||
+          g.path.toLowerCase().includes(search.toLowerCase())
+        );
+      }
+      if (page > 1) {
+        return HttpResponse.json([]);
+      }
+      return HttpResponse.json(groups);
+    }),
+
+    http.get(`${baseUrl}/groups/:id`, ({ params }) => {
+      const groupId = params.id as string;
+      if (groupId === '36173' || groupId === 'davidruzicka') {
+        return HttpResponse.json(fixtures.mockGroup);
+      }
+      return HttpResponse.json({ message: 'Group Not Found' }, { status: 404 });
+    }),
+
+    http.get(`${baseUrl}/groups/:id/projects`, ({ request, params }) => {
+      const groupId = params.id as string;
+      const { page } = parsePaginationParams(request);
+      
+      if (groupId === '36173' || groupId === 'davidruzicka') {
+        if (page > 1) {
+          return HttpResponse.json([]);
+        }
+        return HttpResponse.json(fixtures.mockProjectsList);
+      }
+      return HttpResponse.json({ message: 'Group Not Found' }, { status: 404 });
+    }),
+
+    http.get(`${baseUrl}/groups/:id/subgroups`, ({ request, params }) => {
+      const groupId = params.id as string;
+      const { page } = parsePaginationParams(request);
+      
+      if (groupId === '36173' || groupId === 'davidruzicka') {
+        if (page > 1) {
+          return HttpResponse.json([]);
+        }
+        return HttpResponse.json(fixtures.mockSubgroupsList);
+      }
+      return HttpResponse.json({ message: 'Group Not Found' }, { status: 404 });
+    }),
+
+    // Projects
+    http.get(`${baseUrl}/projects`, ({ request }) => {
+      const { page } = parsePaginationParams(request);
+      const search = parseSearchParam(request);
+      
+      let projects = fixtures.mockProjectsList;
+      if (search) {
+        projects = projects.filter(p => 
+          p.name.toLowerCase().includes(search.toLowerCase()) ||
+          p.description?.toLowerCase().includes(search.toLowerCase())
+        );
+      }
+      if (page > 1) {
+        return HttpResponse.json([]);
+      }
+      return HttpResponse.json(projects);
+    }),
+
+    http.get(`${baseUrl}/projects/:id`, ({ params }) => {
+      const projectId = params.id as string;
+      if (projectId === '12345' || projectId === 'davidruzicka%2Fmcp4openapi') {
+        return HttpResponse.json(fixtures.mockProject);
+      }
+      return HttpResponse.json({ message: 'Project Not Found' }, { status: 404 });
+    }),
+
     // Project Badges
     http.get(`${baseUrl}/projects/*/badges`, ({ request }) => {
       const { page } = parsePaginationParams(request);
