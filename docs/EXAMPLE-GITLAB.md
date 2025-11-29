@@ -48,7 +48,7 @@ Example - get group details:
 ```json
 {
   "action": "get",
-  "group_id": "ai-adoption"
+  "group_id": "davidruzicka"
 }
 ```
 
@@ -180,7 +180,7 @@ Example - approve access request:
 ```json
 {
   "resource_type": "group",
-  "resource_id": "ai-adoption",
+  "resource_id": "davidruzicka",
   "action": "approve",
   "user_id": 456,
   "access_level": 30
@@ -403,7 +403,7 @@ Protect main branch:
   "tool": "manage_access_requests",
   "arguments": {
     "resource_type": "group",
-    "resource_id": "ai-adoption",
+    "resource_id": "davidruzicka",
     "action": "approve",
     "user_id": 456,
     "access_level": 30
