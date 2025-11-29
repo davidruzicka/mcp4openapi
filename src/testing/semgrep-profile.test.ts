@@ -12,15 +12,15 @@ import { ProfileLoader } from '../profile-loader.js';
 import { OpenAPIParser } from '../openapi-parser.js';
 import { ToolGenerator } from '../tool-generator.js';
 
-const PROFILE_PATH = path.join(process.cwd(), 'profiles/semgrep/developer-profile.json');
-const SPEC_PATH = path.join(process.cwd(), 'profiles/semgrep/public_v1.openapi.yaml');
+const PROFILE_PATH = path.join(process.cwd(), 'profiles/semgrep/profile.json');
+const SPEC_PATH = path.join(process.cwd(), 'profiles/semgrep/openapi.yaml');
 
 describe('Semgrep Profile Validation', () => {
   it('should load profile successfully', async () => {
     const loader = new ProfileLoader();
     const profile = await loader.load(PROFILE_PATH);
     
-    expect(profile.profile_name).toBe('semgrep-developer');
+    expect(profile.profile_name).toBe('semgrep');
     expect(profile.tools.length).toBeGreaterThan(0);
     expect(profile.interceptors).toBeDefined();
   });
