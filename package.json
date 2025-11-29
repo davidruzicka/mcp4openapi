@@ -26,6 +26,7 @@
     "test:e2e": "npm run build && vitest run --config vitest.e2e.config.ts",
     "test:all": "npm run test:unit && npm run test:e2e",
     "test:ui": "vitest --ui",
+    "coverage": "vitest run --coverage",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src --ext .ts",
     "generate-schemas": "node scripts/generate-schemas.js",
