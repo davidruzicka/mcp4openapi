@@ -1,0 +1,661 @@
+{
+  "$schema": "../../profile-schema.json",
+  "profile_name": "semgrep",
+  "description": "MCP tools for Semgrep security platform workflows. Reduces 20 API operations to 10 MCP tools.",
+  
+  "parameter_aliases": {
+    "deploymentId": ["deployment_id"],
+    "deploymentSlug": ["deployment_slug", "deployment"],
+    "projectName": ["project_name", "project"],
+    "repositoryId": ["repository_id", "repo_id"],
+    "policyId": ["policy_id"],
+    "scanId": ["scan_id"],
+    "taskToken": ["task_token"],
+    "externalTicketId": ["ticket_id", "external_ticket_id"]
+  },
+  
+  "tools": [
+    {
+      "name": "get_deployment",
+      "description": "Get deployment information including both numeric ID and slug. Call this first to obtain identifiers needed for other operations. Returns deployment ID (numeric, for scans/policies/secrets/dependencies) and slug (string, for projects/findings/triage/tickets).",
+      "composite": true,
+      "steps": [
+        {
+          "call": "GET /api/v1/deployments",
+          "store_as": "deployment"
+        }
+      ],
+      "response_fields": {
+        "deployment": ["id", "slug", "name", "findings"]
+      },
+      "parameters": {}
+    },
+    
+    {
+      "name": "manage_projects",
+      "description": "Work with Semgrep projects (repositories). Actions: 'list' (all projects), 'get' (project details), 'update' (modify tags/branch/scan config), 'delete' (remove project and findings), 'add_tags', 'remove_tags', 'toggle_managed_scan' (enable/disable managed scans).",
+      "metadata_params": ["action", "deploymentSlug", "projectName"],
+      "operations": {
+        "list": "ProjectsService_ListProjects",
+        "get": "ProjectsService_GetProject",
+        "update": "ProjectsService_UpdateProject",
+        "delete": "ProjectsService_DeleteProject",
+        "add_tags": "ProjectsService_AddProjectTags",
+        "remove_tags": "ProjectsService_DeleteProjectTags",
+        "toggle_managed_scan": "ProjectsService_ToggleProjectManagedScan"
+      },
+      "response_fields": {
+        "list": ["id", "name", "url", "default_branch", "primary_branch", "tags", "latest_scan_at", "created_at"],
+        "get": ["id", "name", "url", "default_branch", "primary_branch", "tags", "latest_scan_at", "managed_scan_config"],
+        "update": ["id", "name", "tags", "primary_branch", "managed_scan_config"],
+        "add_tags": ["id", "name", "tags"],
+        "remove_tags": ["id", "name", "tags"],
+        "toggle_managed_scan": ["id", "name", "managed_scan_config"]
+      },
+      "parameters": {
+        "action": {
+          "type": "string",
+          "enum": ["list", "get", "update", "delete", "add_tags", "remove_tags", "toggle_managed_scan"],
+          "description": "Action to perform",
+          "required": true
+        },
+        "deploymentSlug": {
+          "type": "string",
+          "description": "Deployment slug (e.g., 'your-deployment'). Get from get_deployment tool.",
+          "required": true,
+          "example": "your-deployment"
+        },
+        "projectName": {
+          "type": "string",
+          "description": "Project name (e.g., 'organization/repo')",
+          "required_for": ["get", "update", "delete", "add_tags", "remove_tags", "toggle_managed_scan"],
+          "example": "organization/project"
+        },
+        "tags": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Tags to add or remove",
+          "required_for": ["add_tags", "remove_tags"]
+        },
+        "primary_branch": {
+          "type": "string",
+          "description": "Primary branch (e.g., 'refs/heads/develop'). Use 'None' to follow default branch.",
+          "example": "refs/heads/develop"
+        },
+        "managed_scan_config.diff_scan.enabled": {
+          "type": "boolean",
+          "description": "Enable diff-aware scans (for update action)"
+        },
+        "managed_scan_config.full_scan.enabled": {
+          "type": "boolean",
+          "description": "Enable weekly full scans (for update action)"
+        },
+        "diff_scan.enabled": {
+          "type": "boolean",
+          "description": "Enable diff-aware scans (for toggle_managed_scan action)"
+        },
+        "full_scan.enabled": {
+          "type": "boolean",
+          "description": "Enable weekly full scans (for toggle_managed_scan action)"
+        },
+        "page": {
+          "type": "integer",
+          "description": "Page number (0-indexed)",
+          "default": 0
+        },
+        "page_size": {
+          "type": "integer",
+          "description": "Items per page (default 100)",
+          "default": 100
+        }
+      }
+    },
+    
+    {
+      "name": "manage_findings",
+      "description": "List code (SAST) or supply chain (SCA) security findings. Filter by severity, status, repository, rules, confidence, autotriage verdict, and more. Returns paginated results.",
+      "metadata_params": ["deploymentSlug"],
+      "operations": {
+        "list": "FindingsService_ListFindings"
+      },
+      "response_fields": {
+        "list": ["id", "severity", "status", "state", "triage_state", "rule", "repository", "location", "created_at", "relevant_since", "assistant"]
+      },
+      "parameters": {
+        "deploymentSlug": {
+          "type": "string",
+          "description": "Deployment slug. Get from get_deployment tool.",
+          "required": true,
+          "example": "your-deployment"
+        },
+        "issue_type": {
+          "type": "string",
+          "enum": ["sast", "sca"],
+          "description": "Type of findings: 'sast' (Code) or 'sca' (Supply Chain)",
+          "default": "sast"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["open", "fixed", "ignored", "reviewing", "fixing"],
+          "description": "Filter by finding status"
+        },
+        "severities": {
+          "type": "array",
+          "items": { "type": "string", "enum": ["low", "medium", "high", "critical"] },
+          "description": "Filter by severities"
+        },
+        "repos": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Filter by repository names (e.g., ['myorg/repo1'])"
+        },
+        "repository_ids": {
+          "type": "array",
+          "items": { "type": "integer" },
+          "description": "Filter by repository IDs"
+        },
+        "rules": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Filter by rule names"
+        },
+        "categories": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Filter by categories (security, correctness, etc.)"
+        },
+        "confidence": {
+          "type": "string",
+          "enum": ["low", "medium", "high"],
+          "description": "Filter by confidence level"
+        },
+        "autotriage_verdict": {
+          "type": "string",
+          "enum": ["true_positive", "false_positive"],
+          "description": "Filter by Semgrep Assistant autotriage verdict"
+        },
+        "component_tags": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Filter by component tags (e.g., 'user authentication', 'user data')"
+        },
+        "triage_reasons": {
+          "type": "array",
+          "items": { "type": "string", "enum": ["acceptable_risk", "false_positive", "no_time", "no_triage_reason"] },
+          "description": "Filter by triage reasons (when status=ignored)"
+        },
+        "policies": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Filter by policy modes: 'rule-board-audit' (Monitor), 'rule-board-pr-comments' (Comment), 'rule-board-block' (Block)"
+        },
+        "ref": {
+          "type": "string",
+          "description": "Filter by branch ref (e.g., 'refs/pull/1234/merge')"
+        },
+        "exposures": {
+          "type": "array",
+          "items": { "type": "string", "enum": ["reachable", "always_reachable", "conditionally_reachable", "unreachable", "unknown"] },
+          "description": "SCA only: filter by reachability"
+        },
+        "transitivities": {
+          "type": "array",
+          "items": { "type": "string", "enum": ["direct", "transitive", "unknown"] },
+          "description": "SCA only: filter by dependency transitivity"
+        },
+        "is_malicious": {
+          "type": "boolean",
+          "description": "SCA only: filter by malicious dependencies"
+        },
+        "since": {
+          "type": "number",
+          "description": "Epoch timestamp in seconds - return findings after this time"
+        },
+        "page": {
+          "type": "integer",
+          "description": "Page number (0-indexed)",
+          "default": 0
+        },
+        "page_size": {
+          "type": "integer",
+          "description": "Items per page (100-3000)",
+          "default": 100,
+          "minimum": 100,
+          "maximum": 3000
+        },
+        "dedup": {
+          "type": "boolean",
+          "description": "Deduplicate findings across branches. Set true to match UI counts.",
+          "default": false
+        }
+      }
+    },
+    
+    {
+      "name": "manage_secrets",
+      "description": "List secrets findings detected by Semgrep. Filter by validation state, status, severity, and repository.",
+      "metadata_params": ["deploymentId"],
+      "operations": {
+        "list": "SecretsService_ListSecretsPath"
+      },
+      "parameters": {
+        "deploymentId": {
+          "type": "string",
+          "description": "Deployment ID (numeric). Get from get_deployment tool.",
+          "required": true,
+          "example": "123"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["FINDING_STATUS_UNSPECIFIED", "FINDING_STATUS_OPEN", "FINDING_STATUS_IGNORED", "FINDING_STATUS_FIXED", "FINDING_STATUS_REMOVED"],
+          "description": "Filter by status",
+          "default": "FINDING_STATUS_UNSPECIFIED"
+        },
+        "validationState": {
+          "type": "array",
+          "items": { 
+            "type": "string", 
+            "enum": ["VALIDATION_STATE_UNSPECIFIED", "VALIDATION_STATE_CONFIRMED_VALID", "VALIDATION_STATE_CONFIRMED_INVALID", "VALIDATION_STATE_VALIDATION_ERROR", "VALIDATION_STATE_NO_VALIDATOR"] 
+          },
+          "description": "Filter by validation state"
+        },
+        "severity": {
+          "type": "array",
+          "items": { "type": "string", "enum": ["SEVERITY_UNSPECIFIED", "SEVERITY_HIGH", "SEVERITY_MEDIUM", "SEVERITY_LOW", "SEVERITY_CRITICAL"] },
+          "description": "Filter by severity"
+        },
+        "repo": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Filter by repositories"
+        },
+        "since": {
+          "type": "string",
+          "description": "Filter findings since this timestamp (ISO 8601)",
+          "format": "date-time"
+        },
+        "cursor": {
+          "type": "string",
+          "description": "Pagination cursor from previous response"
+        },
+        "limit": {
+          "type": "integer",
+          "description": "Page size"
+        }
+      }
+    },
+    
+    {
+      "name": "manage_scans",
+      "description": "Search and get details for Semgrep scans. Actions: 'search' (list scans with filters, last 30 days), 'get' (single scan details including deployment, repository, commit info).",
+      "metadata_params": ["action", "deploymentId", "scanId"],
+      "operations": {
+        "search": "ScansService_SearchScans",
+        "get": "ScansService_GetScan"
+      },
+      "parameters": {
+        "action": {
+          "type": "string",
+          "enum": ["search", "get"],
+          "description": "Action to perform",
+          "required": true
+        },
+        "deploymentId": {
+          "type": "string",
+          "description": "Deployment ID (numeric). Get from get_deployment tool.",
+          "required": true,
+          "example": "123"
+        },
+        "scanId": {
+          "type": "string",
+          "description": "Scan ID (numeric)",
+          "required_for": ["get"],
+          "example": "456"
+        },
+        "repository_id": {
+          "type": "integer",
+          "description": "Filter by repository ID (for search)"
+        },
+        "branch": {
+          "type": "string",
+          "description": "Filter by branch (for search)"
+        }
+      }
+    },
+    
+    {
+      "name": "manage_policies",
+      "description": "Work with security policies. Actions: 'list' (all policies), 'list_rules' (rules in a policy with pagination), 'update' (change rule mode: Monitor/Comment/Block/Disabled).",
+      "metadata_params": ["action", "deploymentId", "policyId"],
+      "operations": {
+        "list": "PoliciesService_ListPolicies",
+        "list_rules": "PoliciesService_ListPolicyRules",
+        "update": "PoliciesService_UpdatePolicy"
+      },
+      "parameters": {
+        "action": {
+          "type": "string",
+          "enum": ["list", "list_rules", "update"],
+          "description": "Action to perform",
+          "required": true
+        },
+        "deploymentId": {
+          "type": "string",
+          "description": "Deployment ID (numeric). Get from get_deployment tool.",
+          "required": true,
+          "example": "123"
+        },
+        "policyId": {
+          "type": "string",
+          "description": "Policy ID (numeric)",
+          "required_for": ["list_rules", "update"],
+          "example": "456"
+        },
+        "rulePath": {
+          "type": "string",
+          "description": "Full rule path for update (e.g., 'python.rule.1')"
+        },
+        "policyMode": {
+          "type": "string",
+          "enum": ["MODE_MONITOR", "MODE_COMMENT", "MODE_BLOCK", "MODE_DISABLED"],
+          "description": "New mode for the rule: Monitor (silently report), Comment (PR comments, no block), Block (PR comments + block), Disabled"
+        },
+        "cursor": {
+          "type": "string",
+          "description": "Pagination cursor"
+        },
+        "limit": {
+          "type": "integer",
+          "description": "Page size (default 500, max 2000)"
+        }
+      }
+    },
+    
+    {
+      "name": "manage_dependencies",
+      "description": "Work with supply chain dependencies. Actions: 'list' (all dependencies), 'list_repositories' (repos with dependencies), 'list_lockfiles' (lockfiles in a repo). Filter by ecosystem, name, transitivity, license.",
+      "metadata_params": ["action", "deploymentId", "repositoryId"],
+      "operations": {
+        "list": "SupplyChainService_ListDependencies",
+        "list_repositories": "SupplyChainService_ListRepositoriesForDependencies",
+        "list_lockfiles": "SupplyChainService_ListLockfilesForDependencies"
+      },
+      "parameters": {
+        "action": {
+          "type": "string",
+          "enum": ["list", "list_repositories", "list_lockfiles"],
+          "description": "Action to perform",
+          "required": true
+        },
+        "deploymentId": {
+          "type": "string",
+          "description": "Deployment ID (numeric). Get from get_deployment tool.",
+          "required": true,
+          "example": "123"
+        },
+        "repositoryId": {
+          "type": "string",
+          "description": "Repository ID (for list_lockfiles)",
+          "required_for": ["list_lockfiles"]
+        },
+        "cursor": {
+          "type": "string",
+          "description": "Pagination cursor"
+        },
+        "pageSize": {
+          "type": "integer",
+          "description": "Items per page (default 1000 for list, 5 for others)"
+        }
+      }
+    },
+    
+    {
+      "name": "manage_sbom",
+      "description": "Export SBOM (Software Bill of Materials). Actions: 'create' (start async export job, returns task_token), 'get' (check status - PENDING/RUNNING/COMPLETED/FAILED, get download URL when complete).",
+      "metadata_params": ["action", "deploymentId"],
+      "operations": {
+        "create": "SupplyChainService_CreateSbomExport",
+        "get": "SupplyChainService_GetSbomExport"
+      },
+      "parameters": {
+        "action": {
+          "type": "string",
+          "enum": ["create", "get"],
+          "description": "Action to perform",
+          "required": true
+        },
+        "deploymentId": {
+          "type": "string",
+          "description": "Deployment ID (numeric). Get from get_deployment tool.",
+          "required": true,
+          "example": "123"
+        },
+        "taskToken": {
+          "type": "string",
+          "description": "Task token from create response",
+          "required_for": ["get"]
+        },
+        "repositoryId": {
+          "type": "string",
+          "description": "Repository ID for SBOM export",
+          "required_for": ["create"]
+        },
+        "ref": {
+          "type": "string",
+          "description": "Branch to export SBOM for (e.g., 'refs/heads/main')"
+        }
+      }
+    },
+    
+    {
+      "name": "triage_findings",
+      "description": "Bulk triage security findings. Set triage state (ignored, reviewing, fixing, reopened), add notes, and filter by various criteria. Either provide issue_ids or filter parameters.",
+      "metadata_params": ["deploymentSlug"],
+      "operations": {
+        "bulk": "TriageService_BulkTriage"
+      },
+      "parameters": {
+        "deploymentSlug": {
+          "type": "string",
+          "description": "Deployment slug. Get from get_deployment tool.",
+          "required": true
+        },
+        "issue_type": {
+          "type": "string",
+          "enum": ["sast", "sca", "secrets"],
+          "description": "Type of findings to triage",
+          "required": true
+        },
+        "issue_ids": {
+          "type": "array",
+          "items": { "type": "integer" },
+          "description": "Specific issue IDs to triage (alternative to filters)"
+        },
+        "new_triage_state": {
+          "type": "string",
+          "enum": ["ignored", "reviewing", "fixing", "reopened"],
+          "description": "New triage state"
+        },
+        "new_triage_reason": {
+          "type": "string",
+          "enum": ["acceptable_risk", "false_positive", "no_time", "no_triage_reason"],
+          "description": "Reason for ignoring (requires new_triage_state=ignored)"
+        },
+        "new_note": {
+          "type": "string",
+          "description": "Note to attach to triaged findings"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["open", "fixed", "ignored", "reviewing", "fixing"],
+          "description": "Filter by current status"
+        },
+        "severities": {
+          "type": "array",
+          "items": { "type": "string", "enum": ["low", "medium", "high", "critical"] },
+          "description": "Filter by severities"
+        },
+        "repos": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Filter by repositories"
+        },
+        "rules": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Filter by rules"
+        },
+        "categories": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Filter by categories"
+        },
+        "confidence": {
+          "type": "string",
+          "enum": ["low", "medium", "high"],
+          "description": "Filter by confidence"
+        },
+        "autotriage_verdict": {
+          "type": "string",
+          "enum": ["true_positive", "false_positive"],
+          "description": "Filter by autotriage verdict"
+        },
+        "exposures": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "SCA: filter by reachability"
+        },
+        "transitivities": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "SCA: filter by transitivity"
+        },
+        "include_historical": {
+          "type": "boolean",
+          "description": "Secrets: include historical findings",
+          "default": true
+        },
+        "limit": {
+          "type": "integer",
+          "description": "Max issues to triage (default 3000, max 3000)",
+          "default": 3000,
+          "maximum": 3000
+        }
+      }
+    },
+    
+    {
+      "name": "manage_tickets",
+      "description": "Create and manage Jira tickets for findings. Actions: 'create' (create tickets for findings by ID or filters, groups by repo+rule by default), 'delete' (unlink a ticket).",
+      "metadata_params": ["action", "deploymentSlug", "deploymentId"],
+      "operations": {
+        "create": "TicketingService_CreateTicket",
+        "delete": "TicketingService_DeleteTicket"
+      },
+      "parameters": {
+        "action": {
+          "type": "string",
+          "enum": ["create", "delete"],
+          "description": "Action to perform",
+          "required": true
+        },
+        "deploymentSlug": {
+          "type": "string",
+          "description": "Deployment slug (for create). Get from get_deployment tool.",
+          "required_for": ["create"]
+        },
+        "deploymentId": {
+          "type": "string",
+          "description": "Deployment ID numeric (for delete). Get from get_deployment tool.",
+          "required_for": ["delete"]
+        },
+        "externalTicketId": {
+          "type": "integer",
+          "description": "External ticket ID to unlink",
+          "required_for": ["delete"]
+        },
+        "issue_type": {
+          "type": "string",
+          "enum": ["sast", "sca", "secrets"],
+          "description": "Type of findings for tickets",
+          "required_for": ["create"]
+        },
+        "issue_ids": {
+          "type": "array",
+          "items": { "type": "integer" },
+          "description": "Issue IDs to create tickets for"
+        },
+        "jira_project_id": {
+          "type": "string",
+          "description": "Jira project ID (numeric) to override default project"
+        },
+        "group_issues": {
+          "type": "boolean",
+          "description": "Group findings from same rule/repo into one ticket (up to 50)",
+          "default": true
+        },
+        "repos": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Filter by repositories"
+        },
+        "rules": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Filter by rules"
+        },
+        "severities": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Filter by severities"
+        },
+        "status": {
+          "type": "string",
+          "description": "Filter by status"
+        },
+        "limit": {
+          "type": "integer",
+          "description": "Max tickets to create (default 20, max 20)",
+          "default": 20,
+          "maximum": 20
+        }
+      }
+    }
+  ],
+  
+  "interceptors": {
+    "auth": {
+      "type": "bearer",
+      "value_from_env": "MCP4_API_TOKEN"
+    },
+    "base_url": {
+      "value_from_env": "MCP4_API_BASE_URL",
+      "default": "https://semgrep.dev"
+    },
+    "rate_limit": {
+      "max_requests_per_minute": 600,
+      "overrides": {
+        "TriageService_BulkTriage": {
+          "max_requests_per_minute": 10
+        },
+        "TicketingService_CreateTicket": {
+          "max_requests_per_minute": 10
+        },
+        "TicketingService_DeleteTicket": {
+          "max_requests_per_minute": 10
+        },
+        "ProjectsService_DeleteProject": {
+          "max_requests_per_minute": 5
+        },
+        "SupplyChainService_CreateSbomExport": {
+          "max_requests_per_minute": 10
+        }
+      }
+    },
+    "retry": {
+      "max_attempts": 3,
+      "backoff_ms": [1000, 2000, 4000],
+      "retry_on_status": [429, 502, 503, 504]
+    }
+  }
+}
