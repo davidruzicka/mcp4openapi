@@ -248,3 +248,127 @@ export const mockNotesList = [
   },
 ];
 
+export const mockGroup = {
+  id: 36173,
+  web_url: 'https://gitlab.com/groups/davidruzicka',
+  name: 'AI Adoption',
+  path: 'davidruzicka',
+  full_name: 'AI Adoption',
+  full_path: 'davidruzicka',
+  description: 'Group for AI adoption projects',
+  visibility: 'private',
+  share_with_group_lock: false,
+  require_two_factor_authentication: false,
+  two_factor_grace_period: 48,
+  project_creation_level: 'developer',
+  auto_devops_enabled: null,
+  subgroup_creation_level: 'maintainer',
+  emails_disabled: false,
+  mentions_disabled: false,
+  lfs_enabled: true,
+  default_branch_protection: 2,
+  avatar_url: null,
+  request_access_enabled: true,
+  parent_id: null,
+  created_at: '2020-01-15T10:00:00.000Z',
+};
+
+export const mockGroupsList = [
+  mockGroup,
+  {
+    id: 36174,
+    web_url: 'https://gitlab.com/groups/devops',
+    name: 'DevOps',
+    path: 'devops',
+    full_name: 'DevOps',
+    full_path: 'devops',
+    description: 'DevOps tools and automation',
+    visibility: 'internal',
+    parent_id: null,
+    created_at: '2020-02-20T10:00:00.000Z',
+  },
+];
+
+export const mockSubgroup = {
+  id: 36175,
+  web_url: 'https://gitlab.com/groups/davidruzicka/llm-projects',
+  name: 'LLM Projects',
+  path: 'llm-projects',
+  full_name: 'AI Adoption / LLM Projects',
+  full_path: 'davidruzicka/llm-projects',
+  description: 'Large Language Model projects',
+  visibility: 'private',
+  parent_id: 36173,
+  created_at: '2021-03-10T10:00:00.000Z',
+};
+
+export const mockSubgroupsList = [
+  mockSubgroup,
+  {
+    id: 36176,
+    web_url: 'https://gitlab.com/groups/davidruzicka/cv-projects',
+    name: 'CV Projects',
+    path: 'cv-projects',
+    full_name: 'AI Adoption / CV Projects',
+    full_path: 'davidruzicka/cv-projects',
+    description: 'Computer Vision projects',
+    visibility: 'private',
+    parent_id: 36173,
+    created_at: '2021-04-15T10:00:00.000Z',
+  },
+];
+
+export const mockProject = {
+  id: 12345,
+  name: 'mcp4openapi',
+  path: 'mcp4openapi',
+  path_with_namespace: 'davidruzicka/mcp4openapi',
+  description: 'MCP server for OpenAPI specifications',
+  visibility: 'private',
+  web_url: 'https://gitlab.com/davidruzicka/mcp4openapi',
+  created_at: '2023-06-01T10:00:00.000Z',
+  last_activity_at: '2024-11-28T15:30:00.000Z',
+  star_count: 42,
+  forks_count: 5,
+  avatar_url: null,
+  namespace: {
+    id: 36173,
+    name: 'AI Adoption',
+    path: 'davidruzicka',
+    kind: 'group',
+    full_path: 'davidruzicka',
+  },
+  default_branch: 'main',
+  archived: false,
+  empty_repo: false,
+  ssh_url_to_repo: 'git@gitlab.com:davidruzicka/mcp4openapi.git',
+  http_url_to_repo: 'https://gitlab.com/davidruzicka/mcp4openapi.git',
+};
+
+export const mockProjectsList = [
+  mockProject,
+  {
+    id: 12346,
+    name: 'openapi-generator',
+    path: 'openapi-generator',
+    path_with_namespace: 'davidruzicka/openapi-generator',
+    description: 'OpenAPI schema generator',
+    visibility: 'internal',
+    web_url: 'https://gitlab.com/davidruzicka/openapi-generator',
+    created_at: '2023-07-15T10:00:00.000Z',
+    last_activity_at: '2024-11-25T12:00:00.000Z',
+    star_count: 18,
+    forks_count: 2,
+    avatar_url: null,
+    namespace: {
+      id: 36173,
+      name: 'AI Adoption',
+      path: 'davidruzicka',
+      kind: 'group',
+      full_path: 'davidruzicka',
+    },
+    default_branch: 'main',
+    archived: false,
+  },
+];
+

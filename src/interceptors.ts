@@ -9,6 +9,31 @@ import type { InterceptorConfig } from './types/profile.js';
 import { TIME, HTTP_STATUS } from './constants.js';
 import { AuthenticationError, AuthorizationError, NetworkError, RateLimitError } from './errors.js';
 
+/** Property names that must never be used as dynamic object keys */
+const FORBIDDEN_PROPERTY_NAMES = new Set([
+  '__proto__',
+  'constructor',
+  'prototype',
+  '__defineGetter__',
+  '__defineSetter__',
+  '__lookupGetter__',
+  '__lookupSetter__',
+  'hasOwnProperty',
+  'isPrototypeOf',
+  'propertyIsEnumerable',
+  'toLocaleString',
+  'toString',
+  'valueOf',
+]);
+
+/**
+ * Validates that a property name is safe to use as dynamic object key.
+ * Prevents prototype pollution attacks.
+ */
+function isSafePropertyName(name: string): boolean {
+  return !FORBIDDEN_PROPERTY_NAMES.has(name);
+}
+
 export interface RequestContext {
   method: string;
   url: string;
@@ -102,6 +127,9 @@ export class InterceptorChain {
         url.searchParams.set(authConfig.query_param, token);
         ctx.url = url.toString();
       } else if (authConfig.type === 'custom-header' && authConfig.header_name) {
+        if (!isSafePropertyName(authConfig.header_name)) {
+          throw new Error(`Invalid header name: ${authConfig.header_name}`);
+        }
         ctx.headers[authConfig.header_name] = token;
       }
 
