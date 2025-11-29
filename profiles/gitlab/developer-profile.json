@@ -39,9 +39,9 @@
         },
         "group_id": {
           "type": "string",
-          "description": "Group ID (numeric like '36173' or short name like 'ai-adoption')",
+          "description": "Group ID (numeric like '36173' or short name like 'davidruzicka')",
           "required_for": ["get", "list_projects", "list_subgroups"],
-          "example": "ai-adoption"
+          "example": "davidruzicka"
         },
         "page": {
           "type": "integer",
@@ -586,9 +586,9 @@
         },
         "resource_id": {
           "type": "string",
-          "description": "Project ID (numeric like '123' or URL-encoded path like 'group%2Fproject') or Group ID (numeric or short name like 'ai-adoption'). Note: For project paths, use URL-encoded format (e.g., 'group%2Fproject').",
+          "description": "Project ID (numeric like '123' or URL-encoded path like 'group%2Fproject') or Group ID (numeric or short name like 'davidruzicka'). Note: For project paths, use URL-encoded format (e.g., 'group%2Fproject').",
           "required": true,
-          "example": "ai-adoption"
+          "example": "davidruzicka"
         },
         "action": {
           "type": "string",

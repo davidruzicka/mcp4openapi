@@ -5,18 +5,38 @@
  * Tests actual HTTP flow, parameter handling, error scenarios.
  */
 
-import { http, HttpResponse } from 'msw';
-import { setupServer } from 'msw/node';
+import { http, HttpResponse, RequestHandler } from 'msw';
+import { setupServer, SetupServerApi } from 'msw/node';
 import * as fixtures from './fixtures.js';
 import {
   parsePaginationParams,
   parseSearchParam,
   parseBranchParams,
   parseScopeParam,
-  applyPagination
 } from './mock-utils.js';
 
-const BASE_URL = 'https://gitlab.com/api/v4';
+/** Default BASE_URL for GitLab API (used by MSW interceptor) */
+export const DEFAULT_BASE_URL = 'https://gitlab.com/api/v4';
+
+/** OAuth mock configuration */
+export interface OAuthConfig {
+  /** OAuth server base URL (e.g., http://localhost:4000) */
+  oauthBaseUrl: string;
+  /** Access token returned by token endpoint */
+  accessToken?: string;
+  /** Refresh token returned by token endpoint */
+  refreshToken?: string;
+  /** Token expiry in seconds */
+  expiresIn?: number;
+}
+
+/** Default OAuth config */
+const DEFAULT_OAUTH_CONFIG: OAuthConfig = {
+  oauthBaseUrl: 'http://localhost:4000',
+  accessToken: 'mock-access-token-12345',
+  refreshToken: 'mock-refresh-token-67890',
+  expiresIn: 3600,
+};
 
 /**
  * Helper: Extract and validate IID from URL
@@ -28,7 +48,6 @@ function extractIidFromUrl(url: string): number | null {
   const parts = url.split('/');
   const iidStr = parts[parts.length - 1];
   
-  // Validate it's a positive integer
   if (!iidStr || !/^\d+$/.test(iidStr)) {
     return null;
   }
@@ -46,7 +65,6 @@ function extractIidFromUrl(url: string): number | null {
  * URL format: /projects/{project}/merge_requests/{iid}/notes
  */
 function extractMrIidFromNotesUrl(url: string): number | null {
-  // Remove query parameters for matching
   const urlWithoutQuery = url.split('?')[0];
   const match = urlWithoutQuery.match(/\/merge_requests\/(\d+)\/notes/);
   if (!match) {
@@ -60,521 +78,678 @@ function extractMrIidFromNotesUrl(url: string): number | null {
 }
 
 /**
- * Mock GitLab API endpoints
- * 
- * Why ordered by resource: Mirrors actual GitLab API structure for maintainability
- * Why wildcard patterns: GitLab accepts URL-encoded paths like my-org/my-project
+ * Create OAuth handlers for mock OAuth server
  */
-export const handlers = [
-  // Project Badges
-  http.get(`${BASE_URL}/projects/*/badges`, ({ request, params }) => {
-    const { page } = parsePaginationParams(request);
+export function createOAuthHandlers(config: OAuthConfig = DEFAULT_OAUTH_CONFIG): RequestHandler[] {
+  const { oauthBaseUrl, accessToken, refreshToken, expiresIn } = { ...DEFAULT_OAUTH_CONFIG, ...config };
+  
+  return [
+    // OAuth Discovery endpoint
+    http.get(`${oauthBaseUrl}/.well-known/oauth-authorization-server`, () => {
+      return HttpResponse.json({
+        issuer: oauthBaseUrl,
+        authorization_endpoint: `${oauthBaseUrl}/oauth/authorize`,
+        token_endpoint: `${oauthBaseUrl}/oauth/token`,
+        response_types_supported: ['code'],
+        grant_types_supported: ['authorization_code', 'refresh_token'],
+        code_challenge_methods_supported: ['S256'],
+      });
+    }),
 
-    // Simple pagination
-    if (page === 1) {
-      return HttpResponse.json(fixtures.mockBadgesList);
-    }
-    return HttpResponse.json([]);
-  }),
+    // OAuth Authorization endpoint - redirects with code
+    http.get(`${oauthBaseUrl}/oauth/authorize`, ({ request }) => {
+      const url = new URL(request.url);
+      const redirectUri = url.searchParams.get('redirect_uri');
+      const state = url.searchParams.get('state');
 
-  http.get(`${BASE_URL}/projects/*/badges/*`, ({ request }) => {
-    const badgeId = extractIidFromUrl(request.url);
-    if (badgeId === null) {
-      return HttpResponse.json({ error: 'Invalid badge ID' }, { status: 400 });
-    }
-    if (badgeId === 1) {
-      return HttpResponse.json(fixtures.mockBadge);
-    }
-    return HttpResponse.json({ message: 'Not Found' }, { status: 404 });
-  }),
+      if (!redirectUri) {
+        return HttpResponse.json({ error: 'missing_redirect_uri' }, { status: 400 });
+      }
 
-  http.post(`${BASE_URL}/projects/*/badges`, async ({ request }) => {
-    const body = await request.json() as Record<string, unknown>;
-    
-    if (!body.link_url || !body.image_url) {
-      return HttpResponse.json(
-        { error: 'link_url and image_url are required' },
-        { status: 400 }
-      );
-    }
+      const code = 'mock-code-' + Math.random().toString(36).substring(7);
+      const redirectUrl = new URL(redirectUri);
+      redirectUrl.searchParams.set('code', code);
+      if (state) {
+        redirectUrl.searchParams.set('state', state);
+      }
 
-    return HttpResponse.json({
-      ...fixtures.mockBadge,
-      id: 3,
-      name: body.name || 'New Badge',
-      link_url: body.link_url,
-      image_url: body.image_url,
-    }, { status: 201 });
-  }),
+      return new HttpResponse(null, {
+        status: 302,
+        headers: { Location: redirectUrl.toString() },
+      });
+    }),
 
-  http.put(`${BASE_URL}/projects/*/badges/*`, async ({ request }) => {
-    const badgeId = extractIidFromUrl(request.url);
-    if (badgeId === null) {
-      return HttpResponse.json({ error: 'Invalid badge ID' }, { status: 400 });
-    }
-    const body = await request.json() as Record<string, unknown>;
+    // OAuth Token endpoint
+    http.post(`${oauthBaseUrl}/oauth/token`, async ({ request }) => {
+      const contentType = request.headers.get('content-type') || '';
+      let params: Record<string, string>;
+      
+      if (contentType.includes('application/json')) {
+        params = await request.json() as Record<string, string>;
+      } else {
+        const body = await request.text();
+        params = Object.fromEntries(new URLSearchParams(body));
+      }
 
-    if (badgeId === 1) {
+      const grantType = params.grant_type;
+
+      if (grantType === 'authorization_code') {
+        if (!params.code) {
+          return HttpResponse.json({ error: 'invalid_grant' }, { status: 400 });
+        }
+        return HttpResponse.json({
+          access_token: accessToken,
+          refresh_token: refreshToken,
+          token_type: 'Bearer',
+          expires_in: expiresIn,
+          scope: 'api',
+        });
+      }
+
+      if (grantType === 'refresh_token') {
+        if (!params.refresh_token) {
+          return HttpResponse.json({ error: 'invalid_grant' }, { status: 400 });
+        }
+        return HttpResponse.json({
+          access_token: `${accessToken}-refreshed`,
+          refresh_token: `${refreshToken}-new`,
+          token_type: 'Bearer',
+          expires_in: expiresIn,
+          scope: 'api',
+        });
+      }
+
+      return HttpResponse.json({ error: 'unsupported_grant_type' }, { status: 400 });
+    }),
+  ];
+}
+
+/**
+ * Create GitLab API handlers with configurable base URL
+ */
+export function createGitLabHandlers(baseUrl: string = DEFAULT_BASE_URL): RequestHandler[] {
+  return [
+    // Groups
+    http.get(`${baseUrl}/groups`, ({ request }) => {
+      const { page } = parsePaginationParams(request);
+      const search = parseSearchParam(request);
+      
+      let groups = fixtures.mockGroupsList;
+      if (search) {
+        groups = groups.filter(g => 
+          g.name.toLowerCase().includes(search.toLowerCase()) ||
+          g.path.toLowerCase().includes(search.toLowerCase())
+        );
+      }
+      if (page > 1) {
+        return HttpResponse.json([]);
+      }
+      return HttpResponse.json(groups);
+    }),
+
+    http.get(`${baseUrl}/groups/:id`, ({ params }) => {
+      const groupId = params.id as string;
+      if (groupId === '36173' || groupId === 'davidruzicka') {
+        return HttpResponse.json(fixtures.mockGroup);
+      }
+      return HttpResponse.json({ message: 'Group Not Found' }, { status: 404 });
+    }),
+
+    http.get(`${baseUrl}/groups/:id/projects`, ({ request, params }) => {
+      const groupId = params.id as string;
+      const { page } = parsePaginationParams(request);
+      
+      if (groupId === '36173' || groupId === 'davidruzicka') {
+        if (page > 1) {
+          return HttpResponse.json([]);
+        }
+        return HttpResponse.json(fixtures.mockProjectsList);
+      }
+      return HttpResponse.json({ message: 'Group Not Found' }, { status: 404 });
+    }),
+
+    http.get(`${baseUrl}/groups/:id/subgroups`, ({ request, params }) => {
+      const groupId = params.id as string;
+      const { page } = parsePaginationParams(request);
+      
+      if (groupId === '36173' || groupId === 'davidruzicka') {
+        if (page > 1) {
+          return HttpResponse.json([]);
+        }
+        return HttpResponse.json(fixtures.mockSubgroupsList);
+      }
+      return HttpResponse.json({ message: 'Group Not Found' }, { status: 404 });
+    }),
+
+    // Projects
+    http.get(`${baseUrl}/projects`, ({ request }) => {
+      const { page } = parsePaginationParams(request);
+      const search = parseSearchParam(request);
+      
+      let projects = fixtures.mockProjectsList;
+      if (search) {
+        projects = projects.filter(p => 
+          p.name.toLowerCase().includes(search.toLowerCase()) ||
+          p.description?.toLowerCase().includes(search.toLowerCase())
+        );
+      }
+      if (page > 1) {
+        return HttpResponse.json([]);
+      }
+      return HttpResponse.json(projects);
+    }),
+
+    http.get(`${baseUrl}/projects/:id`, ({ params }) => {
+      const projectId = params.id as string;
+      if (projectId === '12345' || projectId === 'davidruzicka%2Fmcp4openapi') {
+        return HttpResponse.json(fixtures.mockProject);
+      }
+      return HttpResponse.json({ message: 'Project Not Found' }, { status: 404 });
+    }),
+
+    // Project Badges
+    http.get(`${baseUrl}/projects/*/badges`, ({ request }) => {
+      const { page } = parsePaginationParams(request);
+      if (page === 1) {
+        return HttpResponse.json(fixtures.mockBadgesList);
+      }
+      return HttpResponse.json([]);
+    }),
+
+    http.get(`${baseUrl}/projects/*/badges/*`, ({ request }) => {
+      const badgeId = extractIidFromUrl(request.url);
+      if (badgeId === null) {
+        return HttpResponse.json({ error: 'Invalid badge ID' }, { status: 400 });
+      }
+      if (badgeId === 1) {
+        return HttpResponse.json(fixtures.mockBadge);
+      }
+      return HttpResponse.json({ message: 'Not Found' }, { status: 404 });
+    }),
+
+    http.post(`${baseUrl}/projects/*/badges`, async ({ request }) => {
+      const body = await request.json() as Record<string, unknown>;
+      
+      if (!body.link_url || !body.image_url) {
+        return HttpResponse.json(
+          { error: 'link_url and image_url are required' },
+          { status: 400 }
+        );
+      }
+
       return HttpResponse.json({
         ...fixtures.mockBadge,
-        name: body.name || fixtures.mockBadge.name,
-        link_url: body.link_url || fixtures.mockBadge.link_url,
-        image_url: body.image_url || fixtures.mockBadge.image_url,
+        id: 3,
+        name: body.name || 'New Badge',
+        link_url: body.link_url,
+        image_url: body.image_url,
+      }, { status: 201 });
+    }),
+
+    http.put(`${baseUrl}/projects/*/badges/*`, async ({ request }) => {
+      const badgeId = extractIidFromUrl(request.url);
+      if (badgeId === null) {
+        return HttpResponse.json({ error: 'Invalid badge ID' }, { status: 400 });
+      }
+      const body = await request.json() as Record<string, unknown>;
+
+      if (badgeId === 1) {
+        return HttpResponse.json({
+          ...fixtures.mockBadge,
+          name: body.name || fixtures.mockBadge.name,
+          link_url: body.link_url || fixtures.mockBadge.link_url,
+          image_url: body.image_url || fixtures.mockBadge.image_url,
+        });
+      }
+      return HttpResponse.json({ message: 'Not Found' }, { status: 404 });
+    }),
+
+    http.delete(`${baseUrl}/projects/*/badges/*`, ({ request }) => {
+      const badgeId = extractIidFromUrl(request.url);
+      if (badgeId === null) {
+        return HttpResponse.json({ error: 'Invalid badge ID' }, { status: 400 });
+      }
+      if (badgeId === 1) {
+        return new HttpResponse(null, { status: 204 });
+      }
+      return HttpResponse.json({ message: 'Not Found' }, { status: 404 });
+    }),
+
+    // Group Badges
+    http.get(`${baseUrl}/groups/*/badges`, () => {
+      return HttpResponse.json(fixtures.mockBadgesList);
+    }),
+
+    http.post(`${baseUrl}/groups/*/badges`, async ({ request }) => {
+      const body = await request.json() as Record<string, unknown>;
+      return HttpResponse.json({
+        ...fixtures.mockBadge,
+        id: 4,
+        kind: 'group',
+        name: body.name || 'Group Badge',
+      }, { status: 201 });
+    }),
+
+    // Branches
+    http.get(`${baseUrl}/projects/*/repository/branches`, ({ request }) => {
+      const search = parseSearchParam(request);
+
+      if (search) {
+        return HttpResponse.json(
+          fixtures.mockBranchesList.filter(b => b.name.includes(search))
+        );
+      }
+      return HttpResponse.json(fixtures.mockBranchesList);
+    }),
+
+    http.get(`${baseUrl}/projects/*/repository/branches/*`, ({ request }) => {
+      const branch = decodeURIComponent(request.url.split('/').pop() || '');
+      const found = fixtures.mockBranchesList.find(b => b.name === branch);
+      
+      if (found) {
+        return HttpResponse.json(found);
+      }
+      return HttpResponse.json({ message: 'Branch Not Found' }, { status: 404 });
+    }),
+
+    http.post(`${baseUrl}/projects/*/repository/branches`, async ({ request }) => {
+      const { branch, ref } = parseBranchParams(request);
+
+      if (!branch || !ref) {
+        return HttpResponse.json(
+          { error: 'branch and ref parameters are required' },
+          { status: 400 }
+        );
+      }
+
+      return HttpResponse.json({
+        name: branch,
+        commit: fixtures.mockBranch.commit,
+        merged: false,
+        protected: false,
+        default: false,
+      }, { status: 201 });
+    }),
+
+    http.delete(`${baseUrl}/projects/*/repository/branches/*`, ({ request }) => {
+      const branch = decodeURIComponent(request.url.split('/').pop() || '');
+      if (branch !== 'main') {
+        return new HttpResponse(null, { status: 204 });
+      }
+      return HttpResponse.json(
+        { message: 'Cannot delete default branch' },
+        { status: 403 }
+      );
+    }),
+
+    http.put(`${baseUrl}/projects/*/repository/branches/*/protect`, ({ request }) => {
+      const parts = request.url.split('/');
+      const branch = decodeURIComponent(parts[parts.length - 2]);
+      return HttpResponse.json({
+        ...fixtures.mockBranch,
+        name: branch,
+        protected: true,
       });
-    }
-    return HttpResponse.json({ message: 'Not Found' }, { status: 404 });
-  }),
+    }),
 
-  http.delete(`${BASE_URL}/projects/*/badges/*`, ({ request }) => {
-    const badgeId = extractIidFromUrl(request.url);
-    if (badgeId === null) {
-      return HttpResponse.json({ error: 'Invalid badge ID' }, { status: 400 });
-    }
-    if (badgeId === 1) {
+    http.put(`${baseUrl}/projects/*/repository/branches/*/unprotect`, ({ request }) => {
+      const parts = request.url.split('/');
+      const branch = decodeURIComponent(parts[parts.length - 2]);
+      return HttpResponse.json({
+        ...fixtures.mockBranch,
+        name: branch,
+        protected: false,
+      });
+    }),
+
+    // Access Requests
+    http.get(`${baseUrl}/projects/*/access_requests`, () => {
+      return HttpResponse.json(fixtures.mockAccessRequestsList);
+    }),
+
+    http.get(`${baseUrl}/groups/*/access_requests`, () => {
+      return HttpResponse.json(fixtures.mockAccessRequestsList);
+    }),
+
+    http.post(`${baseUrl}/projects/*/access_requests`, () => {
+      return HttpResponse.json(fixtures.mockAccessRequest, { status: 201 });
+    }),
+
+    http.put(`${baseUrl}/projects/*/access_requests/*/approve`, async ({ request }) => {
+      const body = await request.json() as Record<string, unknown>;
+      const parts = request.url.split('/');
+      const userId = parseInt(parts[parts.length - 2], 10);
+
+      return HttpResponse.json({
+        ...fixtures.mockAccessRequest,
+        id: userId,
+        access_level: body.access_level || 30,
+      });
+    }),
+
+    http.delete(`${baseUrl}/projects/*/access_requests/*`, () => {
       return new HttpResponse(null, { status: 204 });
-    }
-    return HttpResponse.json({ message: 'Not Found' }, { status: 404 });
-  }),
+    }),
 
-  // Group Badges (similar structure)
-  http.get(`${BASE_URL}/groups/*/badges`, () => {
-    return HttpResponse.json(fixtures.mockBadgesList);
-  }),
+    // Jobs
+    http.get(`${baseUrl}/projects/*/jobs`, ({ request }) => {
+      const scope = parseScopeParam(request);
 
-  http.post(`${BASE_URL}/groups/*/badges`, async ({ request }) => {
-    const body = await request.json() as Record<string, unknown>;
-    return HttpResponse.json({
-      ...fixtures.mockBadge,
-      id: 4,
-      kind: 'group',
-      name: body.name || 'Group Badge',
-    }, { status: 201 });
-  }),
-
-  // Branches
-  http.get(`${BASE_URL}/projects/*/repository/branches`, ({ request }) => {
-    const search = parseSearchParam(request);
-
-    if (search) {
-      return HttpResponse.json(
-        fixtures.mockBranchesList.filter(b => b.name.includes(search))
-      );
-    }
-    return HttpResponse.json(fixtures.mockBranchesList);
-  }),
-
-  http.get(`${BASE_URL}/projects/*/repository/branches/*`, ({ request }) => {
-    const branch = decodeURIComponent(request.url.split('/').pop() || '');
-    const found = fixtures.mockBranchesList.find(b => b.name === branch);
-    
-    if (found) {
-      return HttpResponse.json(found);
-    }
-    return HttpResponse.json({ message: 'Branch Not Found' }, { status: 404 });
-  }),
-
-  http.post(`${BASE_URL}/projects/*/repository/branches`, async ({ request }) => {
-    const { branch, ref } = parseBranchParams(request);
-
-    if (!branch || !ref) {
-      return HttpResponse.json(
-        { error: 'branch and ref parameters are required' },
-        { status: 400 }
-      );
-    }
-
-    return HttpResponse.json({
-      name: branch,
-      commit: fixtures.mockBranch.commit,
-      merged: false,
-      protected: false,
-      default: false,
-    }, { status: 201 });
-  }),
-
-  http.delete(`${BASE_URL}/projects/*/repository/branches/*`, ({ request }) => {
-    const branch = decodeURIComponent(request.url.split('/').pop() || '');
-    if (branch !== 'main') {
-      return new HttpResponse(null, { status: 204 });
-    }
-    return HttpResponse.json(
-      { message: 'Cannot delete default branch' },
-      { status: 403 }
-    );
-  }),
-
-  http.put(`${BASE_URL}/projects/*/repository/branches/*/protect`, ({ request }) => {
-    const parts = request.url.split('/');
-    const branch = decodeURIComponent(parts[parts.length - 2]); // second-to-last part
-    return HttpResponse.json({
-      ...fixtures.mockBranch,
-      name: branch,
-      protected: true,
-    });
-  }),
-
-  http.put(`${BASE_URL}/projects/*/repository/branches/*/unprotect`, ({ request }) => {
-    const parts = request.url.split('/');
-    const branch = decodeURIComponent(parts[parts.length - 2]); // second-to-last part
-    return HttpResponse.json({
-      ...fixtures.mockBranch,
-      name: branch,
-      protected: false,
-    });
-  }),
-
-  // Access Requests
-  http.get(`${BASE_URL}/projects/*/access_requests`, () => {
-    return HttpResponse.json(fixtures.mockAccessRequestsList);
-  }),
-
-  http.get(`${BASE_URL}/groups/*/access_requests`, () => {
-    return HttpResponse.json(fixtures.mockAccessRequestsList);
-  }),
-
-  http.post(`${BASE_URL}/projects/*/access_requests`, () => {
-    return HttpResponse.json(fixtures.mockAccessRequest, { status: 201 });
-  }),
-
-  http.put(`${BASE_URL}/projects/*/access_requests/*/approve`, async ({ request }) => {
-    const body = await request.json() as Record<string, unknown>;
-    const parts = request.url.split('/');
-    const userId = parseInt(parts[parts.length - 2], 10); // second-to-last part
-
-    return HttpResponse.json({
-      ...fixtures.mockAccessRequest,
-      id: userId,
-      access_level: body.access_level || 30,
-    });
-  }),
-
-  http.delete(`${BASE_URL}/projects/*/access_requests/*`, () => {
-    return new HttpResponse(null, { status: 204 });
-  }),
-
-  // Jobs
-  http.get(`${BASE_URL}/projects/*/jobs`, ({ request }) => {
-    const scope = parseScopeParam(request);
-
-    if (scope.length > 0 && scope.includes('failed')) {
-      return HttpResponse.json(fixtures.mockJobsList.filter(j => j.status === 'failed'));
-    }
-    return HttpResponse.json(fixtures.mockJobsList);
-  }),
-
-  http.get(`${BASE_URL}/projects/*/jobs/*`, ({ request }) => {
-    const jobId = extractIidFromUrl(request.url);
-    if (jobId === null) {
-      return HttpResponse.json({ error: 'Invalid job ID' }, { status: 400 });
-    }
-    if (jobId === 1234) {
-      return HttpResponse.json(fixtures.mockJob);
-    }
-    return HttpResponse.json({ message: 'Not Found' }, { status: 404 });
-  }),
-
-  http.post(`${BASE_URL}/projects/*/jobs/*/play`, ({ request }) => {
-    const parts = request.url.split('/');
-    const jobId = parseInt(parts[parts.length - 2], 10); // second-to-last part
-    return HttpResponse.json({
-      ...fixtures.mockJob,
-      id: jobId,
-      status: 'pending',
-    });
-  }),
-
-  // Rate limiting simulation
-  http.get(`${BASE_URL}/rate-limit-test`, () => {
-    return HttpResponse.json(
-      { message: 'Rate limit exceeded' },
-      { status: 429, headers: { 'Retry-After': '60' } }
-    );
-  }),
-
-  // Merge Request Notes (MUST be before generic merge_requests/* handlers)
-  // Why order matters: MSW matches first handler that fits, more specific patterns must come first
-  http.get(`${BASE_URL}/projects/*/merge_requests/*/notes`, ({ request }) => {
-    // Try multiple parsing strategies for URL-encoded paths
-    let mergeRequestIid = extractMrIidFromNotesUrl(request.url);
-    if (mergeRequestIid === null) {
-      // Try with URL-decoded path
-      const decodedUrl = decodeURIComponent(request.url);
-      mergeRequestIid = extractMrIidFromNotesUrl(decodedUrl);
-    }
-    if (mergeRequestIid === null) {
-      // Try alternative pattern matching
-      const altMatch = request.url.match(/merge_requests[\/%2F](\d+)[\/%2F]notes/);
-      if (altMatch) {
-        mergeRequestIid = parseInt(altMatch[1], 10);
+      if (scope.length > 0 && scope.includes('failed')) {
+        return HttpResponse.json(fixtures.mockJobsList.filter(j => j.status === 'failed'));
       }
-    }
-    if (mergeRequestIid === null || isNaN(mergeRequestIid)) {
-      return HttpResponse.json({ error: 'Invalid merge request IID' }, { status: 400 });
-    }
-    if (mergeRequestIid === 1) {
-      return HttpResponse.json(fixtures.mockNotesList);
-    }
-    return HttpResponse.json({ message: 'Not Found' }, { status: 404 });
-  }),
+      return HttpResponse.json(fixtures.mockJobsList);
+    }),
 
-  http.post(`${BASE_URL}/projects/*/merge_requests/*/notes`, async ({ request }) => {
-    let mergeRequestIid = extractMrIidFromNotesUrl(request.url);
-    if (mergeRequestIid === null) {
-      const decodedUrl = decodeURIComponent(request.url);
-      mergeRequestIid = extractMrIidFromNotesUrl(decodedUrl);
-    }
-    if (mergeRequestIid === null) {
-      const altMatch = request.url.match(/merge_requests[\/%2F](\d+)[\/%2F]notes/);
-      if (altMatch) {
-        mergeRequestIid = parseInt(altMatch[1], 10);
+    http.get(`${baseUrl}/projects/*/jobs/*`, ({ request }) => {
+      const jobId = extractIidFromUrl(request.url);
+      if (jobId === null) {
+        return HttpResponse.json({ error: 'Invalid job ID' }, { status: 400 });
       }
-    }
-    if (mergeRequestIid === null || isNaN(mergeRequestIid)) {
-      return HttpResponse.json({ error: 'Invalid merge request IID' }, { status: 400 });
-    }
-    const body = await request.json() as Record<string, unknown>;
-    if (!body.body) {
-      return HttpResponse.json({ error: 'body is required' }, { status: 400 });
-    }
-    const createdNote = {
-      ...fixtures.mockNote,
-      id: 3,
-      body: body.body as string,
-      confidential: body.confidential || false,
-      created_at: new Date().toISOString(),
-    };
-    return HttpResponse.json(createdNote, { status: 201 });
-  }),
+      if (jobId === 1234) {
+        return HttpResponse.json(fixtures.mockJob);
+      }
+      return HttpResponse.json({ message: 'Not Found' }, { status: 404 });
+    }),
 
-  http.put(`${BASE_URL}/projects/*/merge_requests/*/notes/*`, async ({ request }) => {
-    // Parse note ID from URL - handle both /notes/1 and /notes/1?params
-    const urlWithoutQuery = request.url.split('?')[0];
-    const urlParts = urlWithoutQuery.split('/notes/');
-    if (urlParts.length < 2) {
-      return HttpResponse.json({ error: 'Invalid note ID' }, { status: 400 });
-    }
-    const noteIdStr = urlParts[1].split('?')[0].split('/')[0];
-    const noteId = parseInt(noteIdStr, 10);
-    if (isNaN(noteId)) {
-      return HttpResponse.json({ error: 'Invalid note ID' }, { status: 400 });
-    }
-    if (noteId === 1) {
+    http.post(`${baseUrl}/projects/*/jobs/*/play`, ({ request }) => {
+      const parts = request.url.split('/');
+      const jobId = parseInt(parts[parts.length - 2], 10);
+      return HttpResponse.json({
+        ...fixtures.mockJob,
+        id: jobId,
+        status: 'pending',
+      });
+    }),
+
+    // Rate limiting simulation
+    http.get(`${baseUrl}/rate-limit-test`, () => {
+      return HttpResponse.json(
+        { message: 'Rate limit exceeded' },
+        { status: 429, headers: { 'Retry-After': '60' } }
+      );
+    }),
+
+    // Merge Request Notes (MUST be before generic merge_requests/* handlers)
+    http.get(`${baseUrl}/projects/*/merge_requests/*/notes`, ({ request }) => {
+      let mergeRequestIid = extractMrIidFromNotesUrl(request.url);
+      if (mergeRequestIid === null) {
+        const decodedUrl = decodeURIComponent(request.url);
+        mergeRequestIid = extractMrIidFromNotesUrl(decodedUrl);
+      }
+      if (mergeRequestIid === null) {
+        const altMatch = request.url.match(/merge_requests[\/%2F](\d+)[\/%2F]notes/);
+        if (altMatch) {
+          mergeRequestIid = parseInt(altMatch[1], 10);
+        }
+      }
+      if (mergeRequestIid === null || isNaN(mergeRequestIid)) {
+        return HttpResponse.json({ error: 'Invalid merge request IID' }, { status: 400 });
+      }
+      if (mergeRequestIid === 1) {
+        return HttpResponse.json(fixtures.mockNotesList);
+      }
+      return HttpResponse.json({ message: 'Not Found' }, { status: 404 });
+    }),
+
+    http.post(`${baseUrl}/projects/*/merge_requests/*/notes`, async ({ request }) => {
+      let mergeRequestIid = extractMrIidFromNotesUrl(request.url);
+      if (mergeRequestIid === null) {
+        const decodedUrl = decodeURIComponent(request.url);
+        mergeRequestIid = extractMrIidFromNotesUrl(decodedUrl);
+      }
+      if (mergeRequestIid === null) {
+        const altMatch = request.url.match(/merge_requests[\/%2F](\d+)[\/%2F]notes/);
+        if (altMatch) {
+          mergeRequestIid = parseInt(altMatch[1], 10);
+        }
+      }
+      if (mergeRequestIid === null || isNaN(mergeRequestIid)) {
+        return HttpResponse.json({ error: 'Invalid merge request IID' }, { status: 400 });
+      }
       const body = await request.json() as Record<string, unknown>;
       if (!body.body) {
         return HttpResponse.json({ error: 'body is required' }, { status: 400 });
       }
-      const updatedNote = {
+      const createdNote = {
         ...fixtures.mockNote,
-        id: noteId,
+        id: 3,
         body: body.body as string,
-        confidential: body.confidential !== undefined ? body.confidential : fixtures.mockNote.confidential,
-        updated_at: new Date().toISOString(),
+        confidential: body.confidential || false,
+        created_at: new Date().toISOString(),
       };
-      return HttpResponse.json(updatedNote, { status: 200 });
-    }
-    return HttpResponse.json({ message: 'Not Found' }, { status: 404 });
-  }),
+      return HttpResponse.json(createdNote, { status: 201 });
+    }),
 
-  http.delete(`${BASE_URL}/projects/*/merge_requests/*/notes/*`, ({ request }) => {
-    const urlParts = request.url.split('/notes/');
-    if (urlParts.length < 2) {
-      return HttpResponse.json({ error: 'Invalid note ID' }, { status: 400 });
-    }
-    const noteId = parseInt(urlParts[1], 10);
-    if (isNaN(noteId)) {
-      return HttpResponse.json({ error: 'Invalid note ID' }, { status: 400 });
-    }
-    if (noteId === 1) {
-      return new HttpResponse(null, { status: 204 });
-    }
-    return HttpResponse.json({ message: 'Not Found' }, { status: 404 });
-  }),
+    http.put(`${baseUrl}/projects/*/merge_requests/*/notes/*`, async ({ request }) => {
+      const urlWithoutQuery = request.url.split('?')[0];
+      const urlParts = urlWithoutQuery.split('/notes/');
+      if (urlParts.length < 2) {
+        return HttpResponse.json({ error: 'Invalid note ID' }, { status: 400 });
+      }
+      const noteIdStr = urlParts[1].split('?')[0].split('/')[0];
+      const noteId = parseInt(noteIdStr, 10);
+      if (isNaN(noteId)) {
+        return HttpResponse.json({ error: 'Invalid note ID' }, { status: 400 });
+      }
+      if (noteId === 1) {
+        const body = await request.json() as Record<string, unknown>;
+        if (!body.body) {
+          return HttpResponse.json({ error: 'body is required' }, { status: 400 });
+        }
+        const updatedNote = {
+          ...fixtures.mockNote,
+          id: noteId,
+          body: body.body as string,
+          confidential: body.confidential !== undefined ? body.confidential : fixtures.mockNote.confidential,
+          updated_at: new Date().toISOString(),
+        };
+        return HttpResponse.json(updatedNote, { status: 200 });
+      }
+      return HttpResponse.json({ message: 'Not Found' }, { status: 404 });
+    }),
 
-  // Merge Requests (generic handlers after more specific /notes handlers)
-  http.get(`${BASE_URL}/projects/*/merge_requests`, ({ request, params }) => {
-    const { page } = parsePaginationParams(request);
+    http.delete(`${baseUrl}/projects/*/merge_requests/*/notes/*`, ({ request }) => {
+      const urlParts = request.url.split('/notes/');
+      if (urlParts.length < 2) {
+        return HttpResponse.json({ error: 'Invalid note ID' }, { status: 400 });
+      }
+      const noteId = parseInt(urlParts[1], 10);
+      if (isNaN(noteId)) {
+        return HttpResponse.json({ error: 'Invalid note ID' }, { status: 400 });
+      }
+      if (noteId === 1) {
+        return new HttpResponse(null, { status: 204 });
+      }
+      return HttpResponse.json({ message: 'Not Found' }, { status: 404 });
+    }),
 
-    // Simple pagination
-    if (page === 1) {
-      return HttpResponse.json(fixtures.mockMergeRequestsList);
-    }
-    return HttpResponse.json([]);
-  }),
+    // Merge Requests (generic handlers after more specific /notes handlers)
+    http.get(`${baseUrl}/projects/*/merge_requests`, ({ request }) => {
+      const { page } = parsePaginationParams(request);
+      if (page === 1) {
+        return HttpResponse.json(fixtures.mockMergeRequestsList);
+      }
+      return HttpResponse.json([]);
+    }),
 
-  http.get(`${BASE_URL}/projects/*/merge_requests/*`, ({ request }) => {
-    const mergeRequestIid = extractIidFromUrl(request.url);
-    if (mergeRequestIid === null) {
-      return HttpResponse.json({ error: 'Invalid merge request IID' }, { status: 400 });
-    }
-    if (mergeRequestIid === 1) {
-      return HttpResponse.json(fixtures.mockMergeRequest);
-    }
-    return HttpResponse.json({ message: 'Not Found' }, { status: 404 });
-  }),
+    http.get(`${baseUrl}/projects/*/merge_requests/*`, ({ request }) => {
+      const mergeRequestIid = extractIidFromUrl(request.url);
+      if (mergeRequestIid === null) {
+        return HttpResponse.json({ error: 'Invalid merge request IID' }, { status: 400 });
+      }
+      if (mergeRequestIid === 1) {
+        return HttpResponse.json(fixtures.mockMergeRequest);
+      }
+      return HttpResponse.json({ message: 'Not Found' }, { status: 404 });
+    }),
 
-  http.post(`${BASE_URL}/projects/*/merge_requests`, async ({ request }) => {
-    const body = await request.json() as Record<string, unknown>;
-
-    if (!body.source_branch || !body.target_branch || !body.title) {
-      return HttpResponse.json(
-        { error: 'source_branch, target_branch, and title are required' },
-        { status: 400 }
-      );
-    }
-
-    // Return created merge request
-    const createdMR = {
-      ...fixtures.mockMergeRequest,
-      iid: 3,
-      id: 3,
-      title: body.title,
-      source_branch: body.source_branch,
-      target_branch: body.target_branch,
-      description: body.description,
-      web_url: 'https://gitlab.com/my-org/my-project/-/merge_requests/3',
-    };
-
-    return HttpResponse.json(createdMR, { status: 201 });
-  }),
-
-  http.put(`${BASE_URL}/projects/*/merge_requests/*`, async ({ request }) => {
-    const mergeRequestIid = extractIidFromUrl(request.url);
-    if (mergeRequestIid === null) {
-      return HttpResponse.json({ error: 'Invalid merge request IID' }, { status: 400 });
-    }
-    if (mergeRequestIid === 1) {
+    http.post(`${baseUrl}/projects/*/merge_requests`, async ({ request }) => {
       const body = await request.json() as Record<string, unknown>;
-      const updatedMR = {
+
+      if (!body.source_branch || !body.target_branch || !body.title) {
+        return HttpResponse.json(
+          { error: 'source_branch, target_branch, and title are required' },
+          { status: 400 }
+        );
+      }
+
+      const createdMR = {
         ...fixtures.mockMergeRequest,
-        title: body.title || fixtures.mockMergeRequest.title,
-        description: body.description !== undefined ? body.description : fixtures.mockMergeRequest.description,
-        state: body.state_event === 'close' ? 'closed' : fixtures.mockMergeRequest.state,
-        updated_at: new Date().toISOString(),
+        iid: 3,
+        id: 3,
+        title: body.title,
+        source_branch: body.source_branch,
+        target_branch: body.target_branch,
+        description: body.description,
+        web_url: 'https://gitlab.com/my-org/my-project/-/merge_requests/3',
       };
-      return HttpResponse.json(updatedMR, { status: 200 });
-    }
-    return HttpResponse.json({ message: 'Not Found' }, { status: 404 });
-  }),
 
-  http.delete(`${BASE_URL}/projects/*/merge_requests/*`, ({ request }) => {
-    // Check for forbidden project
-    if (request.url.includes('/forbidden-project/')) {
+      return HttpResponse.json(createdMR, { status: 201 });
+    }),
+
+    http.put(`${baseUrl}/projects/*/merge_requests/*`, async ({ request }) => {
+      const mergeRequestIid = extractIidFromUrl(request.url);
+      if (mergeRequestIid === null) {
+        return HttpResponse.json({ error: 'Invalid merge request IID' }, { status: 400 });
+      }
+      if (mergeRequestIid === 1) {
+        const body = await request.json() as Record<string, unknown>;
+        const updatedMR = {
+          ...fixtures.mockMergeRequest,
+          title: body.title || fixtures.mockMergeRequest.title,
+          description: body.description !== undefined ? body.description : fixtures.mockMergeRequest.description,
+          state: body.state_event === 'close' ? 'closed' : fixtures.mockMergeRequest.state,
+          updated_at: new Date().toISOString(),
+        };
+        return HttpResponse.json(updatedMR, { status: 200 });
+      }
+      return HttpResponse.json({ message: 'Not Found' }, { status: 404 });
+    }),
+
+    http.delete(`${baseUrl}/projects/*/merge_requests/*`, ({ request }) => {
+      if (request.url.includes('/forbidden-project/')) {
+        return HttpResponse.json(
+          { message: 'Forbidden', error: 'You do not have permission to delete this merge request' },
+          { status: 403 }
+        );
+      }
+      
+      const mergeRequestIid = extractIidFromUrl(request.url);
+      if (mergeRequestIid === null) {
+        return HttpResponse.json({ error: 'Invalid merge request IID' }, { status: 400 });
+      }
+      if (mergeRequestIid === 1) {
+        return new HttpResponse(null, { status: 204 });
+      }
+      return HttpResponse.json({ message: 'Not Found' }, { status: 404 });
+    }),
+
+    // Issues
+    http.get(`${baseUrl}/projects/*/issues`, ({ request }) => {
+      const { page } = parsePaginationParams(request);
+      if (page === 1) {
+        return HttpResponse.json(fixtures.mockIssuesList);
+      }
+      return HttpResponse.json([]);
+    }),
+
+    http.get(`${baseUrl}/projects/*/issues/*`, ({ request }) => {
+      const issueIid = extractIidFromUrl(request.url);
+      if (issueIid === null) {
+        return HttpResponse.json({ error: 'Invalid issue IID' }, { status: 400 });
+      }
+      if (issueIid === 1) {
+        return HttpResponse.json(fixtures.mockIssue);
+      }
+      return HttpResponse.json({ message: 'Not Found' }, { status: 404 });
+    }),
+
+    http.post(`${baseUrl}/projects/*/issues`, async ({ request }) => {
+      const body = await request.json() as Record<string, unknown>;
+
+      if (!body.title) {
+        return HttpResponse.json({ error: 'title is required' }, { status: 400 });
+      }
+
+      const createdIssue = {
+        ...fixtures.mockIssue,
+        iid: 3,
+        id: 3,
+        title: body.title as string,
+        description: (body.description as string) || '',
+        state: 'opened',
+        web_url: 'https://gitlab.com/my-org/my-project/-/issues/3',
+        created_at: new Date().toISOString(),
+      };
+
+      return HttpResponse.json(createdIssue, { status: 201 });
+    }),
+
+    http.delete(`${baseUrl}/projects/*/issues/*`, ({ request }) => {
+      if (request.url.includes('/forbidden-project/')) {
+        return HttpResponse.json(
+          { message: 'Forbidden', error: 'You do not have permission to delete this issue' },
+          { status: 403 }
+        );
+      }
+      
+      const issueIid = extractIidFromUrl(request.url);
+      if (issueIid === null) {
+        return HttpResponse.json({ error: 'Invalid issue IID' }, { status: 400 });
+      }
+      if (issueIid === 1) {
+        return new HttpResponse(null, { status: 204 });
+      }
+      return HttpResponse.json({ message: 'Not Found' }, { status: 404 });
+    }),
+
+    // Server error simulation
+    http.get(`${baseUrl}/server-error-test`, () => {
       return HttpResponse.json(
-        { message: 'Forbidden', error: 'You do not have permission to delete this merge request' },
-        { status: 403 }
+        { message: 'Internal Server Error' },
+        { status: 503 }
       );
-    }
-    
-    const mergeRequestIid = extractIidFromUrl(request.url);
-    if (mergeRequestIid === null) {
-      return HttpResponse.json({ error: 'Invalid merge request IID' }, { status: 400 });
-    }
-    if (mergeRequestIid === 1) {
-      return new HttpResponse(null, { status: 204 });
-    }
-    return HttpResponse.json({ message: 'Not Found' }, { status: 404 });
-  }),
-
-  // Issues
-  http.get(`${BASE_URL}/projects/*/issues`, ({ request }) => {
-    const { page } = parsePaginationParams(request);
-
-    // Simple pagination
-    if (page === 1) {
-      return HttpResponse.json(fixtures.mockIssuesList);
-    }
-    return HttpResponse.json([]);
-  }),
-
-  http.get(`${BASE_URL}/projects/*/issues/*`, ({ request }) => {
-    const issueIid = extractIidFromUrl(request.url);
-    if (issueIid === null) {
-      return HttpResponse.json({ error: 'Invalid issue IID' }, { status: 400 });
-    }
-    if (issueIid === 1) {
-      return HttpResponse.json(fixtures.mockIssue);
-    }
-    return HttpResponse.json({ message: 'Not Found' }, { status: 404 });
-  }),
-
-  http.post(`${BASE_URL}/projects/*/issues`, async ({ request }) => {
-    const body = await request.json() as Record<string, unknown>;
-
-    // Validate required fields
-    if (!body.title) {
-      return HttpResponse.json({ error: 'title is required' }, { status: 400 });
-    }
-
-    // Return created issue
-    const createdIssue = {
-      ...fixtures.mockIssue,
-      iid: 3,
-      id: 3,
-      title: body.title as string,
-      description: (body.description as string) || '',
-      state: 'opened',
-      web_url: 'https://gitlab.com/my-org/my-project/-/issues/3',
-      created_at: new Date().toISOString(),
-    };
-
-    return HttpResponse.json(createdIssue, { status: 201 });
-  }),
-
-  http.delete(`${BASE_URL}/projects/*/issues/*`, ({ request }) => {
-    // Check for forbidden project
-    if (request.url.includes('/forbidden-project/')) {
-      return HttpResponse.json(
-        { message: 'Forbidden', error: 'You do not have permission to delete this issue' },
-        { status: 403 }
-      );
-    }
-    
-    const issueIid = extractIidFromUrl(request.url);
-    if (issueIid === null) {
-      return HttpResponse.json({ error: 'Invalid issue IID' }, { status: 400 });
-    }
-    if (issueIid === 1) {
-      return new HttpResponse(null, { status: 204 });
-    }
-    return HttpResponse.json({ message: 'Not Found' }, { status: 404 });
-  }),
-
-  // Server error simulation
-  http.get(`${BASE_URL}/server-error-test`, () => {
-    return HttpResponse.json(
-      { message: 'Internal Server Error' },
-      { status: 503 }
-    );
-  }),
-];
+    }),
+  ];
+}
 
 /**
- * Create and configure mock server
- * 
- * Why setupServer: MSW's node integration for testing environments
+ * Create all handlers (GitLab API + OAuth) with configurable URLs
  */
-export const mockServer = setupServer(...handlers);
+export function createAllHandlers(
+  gitlabBaseUrl: string = DEFAULT_BASE_URL,
+  oauthConfig?: OAuthConfig
+): RequestHandler[] {
+  const gitlabHandlers = createGitLabHandlers(gitlabBaseUrl);
+  const oauthHandlers = oauthConfig ? createOAuthHandlers(oauthConfig) : [];
+  return [...oauthHandlers, ...gitlabHandlers];
+}
 
-/**
- * Helper: start server before tests
- */
-export function startMockServer() {
+// Legacy exports for backward compatibility with existing unit tests
+export const handlers: RequestHandler[] = createGitLabHandlers(DEFAULT_BASE_URL);
+export const mockServer: SetupServerApi = setupServer(...handlers);
+
+export function startMockServer(): void {
   mockServer.listen({ onUnhandledRequest: 'error' });
 }
 
-/**
- * Helper: reset handlers between tests
- * 
- * Why: Prevents test pollution from runtime handler modifications
- */
-export function resetMockServer() {
+export function resetMockServer(): void {
   mockServer.resetHandlers();
 }
 
-/**
- * Helper: stop server after tests
- */
-export function stopMockServer() {
+export function stopMockServer(): void {
   mockServer.close();
+}
+
+/**
+ * Create a new MSW server instance with custom handlers
+ */
+export function createMockServer(
+  gitlabBaseUrl: string = DEFAULT_BASE_URL,
+  oauthConfig?: OAuthConfig
+): SetupServerApi {
+  const allHandlers = createAllHandlers(gitlabBaseUrl, oauthConfig);
+  return setupServer(...allHandlers);
 }
 

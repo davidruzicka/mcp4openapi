@@ -67,6 +67,54 @@ describe('HttpClient - Auth Interceptors', () => {
     expect(capturedHeaders['X-API-Key']).toBe('test-api-key');
   });
 
+  it('should reject prototype pollution attempts in custom header name', async () => {
+    process.env.API_KEY = 'test-api-key';
+
+    const config: InterceptorConfig = {
+      auth: {
+        type: 'custom-header',
+        header_name: '__proto__',
+        value_from_env: 'API_KEY',
+      },
+    };
+
+    const interceptors = new InterceptorChain(config);
+    const client = new HttpClient('https://api.example.com', interceptors);
+
+    global.fetch = async () => {
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    };
+
+    await expect(client.request('GET', '/test')).rejects.toThrow('Invalid header name: __proto__');
+  });
+
+  it('should reject constructor pollution attempts in custom header name', async () => {
+    process.env.API_KEY = 'test-api-key';
+
+    const config: InterceptorConfig = {
+      auth: {
+        type: 'custom-header',
+        header_name: 'constructor',
+        value_from_env: 'API_KEY',
+      },
+    };
+
+    const interceptors = new InterceptorChain(config);
+    const client = new HttpClient('https://api.example.com', interceptors);
+
+    global.fetch = async () => {
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    };
+
+    await expect(client.request('GET', '/test')).rejects.toThrow('Invalid header name: constructor');
+  });
+
   it('should add query param for query auth type', async () => {
     process.env.MCP4_API_TOKEN = 'test-query-token';
 

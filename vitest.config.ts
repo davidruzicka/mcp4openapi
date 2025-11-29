@@ -4,10 +4,11 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
+    include: ['src/**/*.test.ts', 'scripts/**/*.test.ts'],
+    exclude: ['tests/e2e/**'],
     testTimeout: 30000, // 30s max per test
     hookTimeout: 10000, // 10s max for beforeEach/afterEach
     teardownTimeout: 5000, // 5s max for cleanup
-    forceExit: true, // Force exit after tests complete (prevents zombie processes)
     pool: 'threads',
     poolOptions: {
       threads: {
