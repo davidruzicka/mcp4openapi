@@ -99,9 +99,8 @@ describe('HTTP Transport Multi-Auth Integration', () => {
     });
   });
 
-  afterAll(() => {
-    // HttpTransport doesn't have a close() method
-    // Sessions and cleanup are handled automatically
+  afterAll(async () => {
+    await transport.stop();
   });
 
   describe('OAuth Routes Available', () => {
