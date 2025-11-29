@@ -87,7 +87,8 @@ describe('HTTP Multi-User Mode (No MCP4_API_TOKEN)', () => {
     });
   });
   
-  afterAll(() => {
+  afterAll(async () => {
+    await httpTransport.stop();
     // Restore original env
     if (originalApiToken) {
       process.env.MCP4_API_TOKEN = originalApiToken;
