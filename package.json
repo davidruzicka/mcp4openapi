@@ -22,6 +22,9 @@
     "dev": "tsc --watch",
     "start": "node dist/src/index.js",
     "test": "npm run typecheck && vitest run",
+    "test:unit": "vitest run --config vitest.config.ts",
+    "test:e2e": "npm run build && vitest run --config vitest.e2e.config.ts",
+    "test:all": "npm run test:unit && npm run test:e2e",
     "test:ui": "vitest --ui",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src --ext .ts",
@@ -63,6 +66,7 @@
     "zod": "^3.24.1"
   },
   "devDependencies": {
+    "@mswjs/http-middleware": "^0.10.3",
     "@types/escape-html": "^1.0.4",
     "@types/express": "^5.0.3",
     "@types/node": "^22.10.2",
