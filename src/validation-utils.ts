@@ -41,6 +41,64 @@ export function escapeRegExp(str: string): string {
 }
 
 /**
+ * Redact specific header from headers object (case-insensitive)
+ */
+export function redactHeader(
+  headers: unknown,
+  headerName: string
+): Record<string, unknown> {
+  if (!headers || typeof headers !== 'object') return {};
+  
+  const redacted = { ...(headers as Record<string, unknown>) };
+  
+  for (const key of Object.keys(redacted)) {
+    if (key.toLowerCase() === headerName.toLowerCase()) {
+      redacted[key] = '[REDACTED]';
+    }
+  }
+  
+  return redacted;
+}
+
+/**
+ * Redact query parameter from URL string
+ */
+export function redactQueryParam(
+  url: string | undefined,
+  paramName: string
+): string {
+  if (!url) return '';
+  
+  try {
+    const urlObj = new URL(url);
+    if (urlObj.searchParams.has(paramName)) {
+      urlObj.searchParams.set(paramName, '[REDACTED]');
+    }
+    return urlObj.toString();
+  } catch {
+    const regex = new RegExp(`([?&]${escapeRegExp(paramName)}=)[^&]+`, 'gi');
+    return url.replace(regex, `$1[REDACTED]`);
+  }
+}
+
+/**
+ * Redact parameter from params object
+ */
+export function redactParam(
+  params: unknown,
+  paramName: string
+): Record<string, unknown> {
+  if (!params || typeof params !== 'object') return {};
+  
+  const redacted = { ...(params as Record<string, unknown>) };
+  if (paramName in redacted) {
+    redacted[paramName] = '[REDACTED]';
+  }
+  
+  return redacted;
+}
+
+/**
  * Validates if a string is a valid email address
  */
 export function isEmail(value: string): boolean {
