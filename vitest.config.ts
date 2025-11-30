@@ -20,5 +20,9 @@ export default defineConfig({
       provider: 'v8',
       reporter: ['text', 'json', 'html'],
     },
+    reporters: ['default', 'junit'],
+    outputFile: {
+      junit: './junit.xml',
+    },
   },
 });
