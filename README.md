@@ -2,6 +2,8 @@
 
 [![CI](https://github.com/davidruzicka/mcp4openapi/actions/workflows/ci.yml/badge.svg)](https://github.com/davidruzicka/mcp4openapi/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/davidruzicka/mcp4openapi/graph/badge.svg)](https://codecov.io/gh/davidruzicka/mcp4openapi)
+[![npm](https://img.shields.io/npm/v/mcp4openapi)](https://www.npmjs.com/package/mcp4openapi)
+[![Docker Hub](https://img.shields.io/docker/v/mcp4openapi/mcp4openapi?label=docker)](https://hub.docker.com/r/mcp4openapi/mcp4openapi)
 
 Universal MCP server that generates tools from any OpenAPI specification.
 
