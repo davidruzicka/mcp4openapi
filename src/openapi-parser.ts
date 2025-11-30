@@ -18,10 +18,62 @@ export class OpenAPIParser {
   private schemaCache = new Map<string, SchemaInfo>();
 
   async load(specPath: string): Promise<void> {
-    const content = await fs.readFile(specPath, 'utf-8');
+    let content: string;
+    let contentType: string | null = null;
+
+    // Detect if specPath is a URL using URL parser
+    let isUrl = false;
+    try {
+      const url = new URL(specPath);
+      isUrl = url.protocol === 'http:' || url.protocol === 'https:';
+    } catch {
+      // Not a valid URL, treat as file path
+      isUrl = false;
+    }
+
+    if (isUrl) {
+      // Load from HTTP/HTTPS URL
+      try {
+        const response = await fetch(specPath, {
+          signal: AbortSignal.timeout(30000), // 30 second timeout
+          headers: {
+            'Accept': 'application/json, application/yaml, text/yaml, application/x-yaml, */*',
+          },
+        });
+
+        if (!response.ok) {
+          throw new ConfigurationError(
+            `Failed to load OpenAPI spec from URL: ${specPath}. HTTP ${response.status}: ${response.statusText}`
+          );
+        }
+
+        content = await response.text();
+        contentType = response.headers.get('content-type');
+      } catch (error) {
+        if (error instanceof Error) {
+          if (error.name === 'AbortError' || error.name === 'TimeoutError') {
+            throw new ConfigurationError(
+              `Timeout while loading OpenAPI spec from URL: ${specPath}. Request exceeded 30 seconds.`
+            );
+          }
+          if (error instanceof ConfigurationError) {
+            throw error;
+          }
+          throw new ConfigurationError(
+            `Failed to load OpenAPI spec from URL: ${specPath}. ${error.message}`
+          );
+        }
+        throw error;
+      }
+    } else {
+      // Load from local file
+      content = await fs.readFile(specPath, 'utf-8');
+    }
+
+    // Determine format: Content-Type > URL extension > JSON/YAML fallback
+    const isYaml = this.detectYamlFormat(specPath, contentType, content);
     
-    // Parse YAML or JSON based on extension
-    if (specPath.endsWith('.yaml') || specPath.endsWith('.yml')) {
+    if (isYaml) {
       this.spec = parseYaml(content) as OpenAPIV3.Document;
     } else {
       this.spec = JSON.parse(content) as OpenAPIV3.Document;
@@ -29,6 +81,42 @@ export class OpenAPIParser {
 
     this.schemaCache.clear();
     this.buildIndex();
+  }
+
+  /**
+   * Detect if content is YAML format
+   * Priority: Content-Type header > URL extension > JSON/YAML fallback
+   */
+  private detectYamlFormat(specPath: string, contentType: string | null, content: string): boolean {
+    // 1. Check Content-Type header (for HTTP requests)
+    if (contentType) {
+      const normalizedContentType = contentType.toLowerCase().split(';')[0].trim();
+      if (normalizedContentType === 'application/yaml' || 
+          normalizedContentType === 'text/yaml' ||
+          normalizedContentType === 'application/x-yaml' ||
+          normalizedContentType === 'text/x-yaml') {
+        return true;
+      }
+      if (normalizedContentType === 'application/json') {
+        return false;
+      }
+    }
+
+    // 2. Check URL extension
+    if (specPath.endsWith('.yaml') || specPath.endsWith('.yml')) {
+      return true;
+    }
+    if (specPath.endsWith('.json')) {
+      return false;
+    }
+
+    // 3. Fallback: Try to parse as JSON, if it fails, assume YAML
+    try {
+      JSON.parse(content);
+      return false; // Valid JSON
+    } catch {
+      return true; // Not valid JSON, assume YAML
+    }
   }
 
   /**

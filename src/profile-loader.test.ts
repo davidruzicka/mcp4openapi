@@ -347,7 +347,8 @@ describe('ProfileLoader', () => {
     // GitLab spec has security defined
     expect(profile.interceptors).toBeDefined();
     expect(profile.interceptors?.auth).toBeDefined();
-    expect(profile.interceptors?.auth?.value_from_env).toBe('MCP4_API_TOKEN');
+    const authConfig = Array.isArray(profile.interceptors?.auth) ? profile.interceptors.auth[0] : profile.interceptors?.auth;
+    expect(authConfig?.value_from_env).toBe('MCP4_API_TOKEN');
   });
 
   it('should create default profile with bearer auth for bearer security scheme', async () => {
@@ -520,7 +521,8 @@ describe('ProfileLoader', () => {
     try {
       const profile = ProfileLoader.createDefaultProfile('test-api', parser);
       
-      expect(profile.interceptors?.auth?.value_from_env).toBe('MY_CUSTOM_TOKEN');
+      const authConfig = Array.isArray(profile.interceptors?.auth) ? profile.interceptors.auth[0] : profile.interceptors?.auth;
+      expect(authConfig?.value_from_env).toBe('MY_CUSTOM_TOKEN');
     } finally {
       if (oldEnvVar !== undefined) {
         process.env.MCP4_AUTH_ENV_VAR = oldEnvVar;
@@ -528,6 +530,79 @@ describe('ProfileLoader', () => {
         delete process.env.MCP4_AUTH_ENV_VAR;
       }
     }
+  });
+
+  it('should use bearer auth for apiKey in Authorization header', async () => {
+    const parser = new (await import('./openapi-parser.js')).OpenAPIParser();
+    
+    (parser as any).spec = {
+      openapi: '3.0.0',
+      info: { title: 'Test API', version: '1.0' },
+      security: [{ apiKeyAuth: [] }],
+      components: {
+        securitySchemes: {
+          apiKeyAuth: {
+            type: 'apiKey',
+            name: 'Authorization',
+            in: 'header',
+          },
+        },
+      },
+      paths: {
+        '/test': {
+          get: {
+            operationId: 'getTest',
+            summary: 'Get test',
+            responses: { '200': { description: 'OK' } },
+          },
+        },
+      },
+    };
+    (parser as any).buildIndex();
+    
+    const profile = ProfileLoader.createDefaultProfile('test-api', parser);
+    
+    expect(profile.interceptors?.auth).toEqual({
+      type: 'bearer',
+      value_from_env: 'MCP4_API_TOKEN',
+    });
+  });
+
+  it('should default to bearer auth for unknown security type', async () => {
+    const parser = new (await import('./openapi-parser.js')).OpenAPIParser();
+    
+    (parser as any).spec = {
+      openapi: '3.0.0',
+      info: { title: 'Test API', version: '1.0' },
+      security: [{ unknownAuth: [] }],
+      components: {
+        securitySchemes: {
+          unknownAuth: {
+            type: 'unknownType',
+          },
+        },
+      },
+      paths: {
+        '/test': {
+          get: {
+            operationId: 'getTest',
+            summary: 'Get test',
+            responses: { '200': { description: 'OK' } },
+          },
+        },
+      },
+    };
+    (parser as any).buildIndex();
+    
+    // Mock getSecurityScheme to return unknown type (normally filtered by parser)
+    (parser as any).getSecurityScheme = () => ({ type: 'someUnknownType' });
+    
+    const profile = ProfileLoader.createDefaultProfile('test-api', parser);
+    
+    expect(profile.interceptors?.auth).toEqual({
+      type: 'bearer',
+      value_from_env: 'MCP4_API_TOKEN',
+    });
   });
 
   describe('Force authentication override', () => {
@@ -1029,6 +1104,42 @@ describe('ProfileLoader', () => {
     });
   });
 
+  describe('OAuth config validation in array auth', () => {
+    it('should validate OAuth config in array auth entries', async () => {
+      const loader = new ProfileLoader();
+
+      const invalidOAuthArrayJson = JSON.stringify({
+        profile_name: 'test',
+        base_url: 'https://api.example.com',
+        interceptors: {
+          auth: [
+            {
+              type: 'oauth',
+              oauth_config: {
+                client_id: 'test',
+                // missing both issuer AND endpoints - should fail
+              }
+            }
+          ]
+        },
+        tools: [{
+          name: 'test_tool',
+          description: 'Test tool',
+          operations: { 'list': 'getTest' },
+          parameters: {}
+        }]
+      });
+
+      const fs = await import('fs/promises');
+      const tmpPath = '/tmp/invalid-oauth-array-profile.json';
+      await fs.writeFile(tmpPath, invalidOAuthArrayJson);
+
+      await expect(loader.load(tmpPath)).rejects.toThrow(
+        "OAuth config at interceptors.auth[0].oauth_config must provide either 'issuer' OR both 'authorization_endpoint' and 'token_endpoint'"
+      );
+    });
+  });
+
   it('should warn when generated tool exceeds 60 parameters', async () => {
     const warnSpy = (await import('vitest')).vi.spyOn(console, 'warn').mockImplementation(() => {});
 
@@ -1060,6 +1171,118 @@ describe('ProfileLoader', () => {
     expect(warnSpy.mock.calls[0][0]).toContain('>60');
 
     warnSpy.mockRestore();
+  });
+
+  describe('mapOpenAPIType', () => {
+    it('should map number type correctly', async () => {
+      const fakeParser: any = {
+        getAllOperations: () => [{
+          operationId: 'op_number',
+          method: 'get',
+          path: '/test',
+          parameters: [{
+            name: 'price',
+            in: 'query',
+            required: false,
+            schema: { type: 'number' },
+            description: 'Price',
+          }],
+          summary: 'Test',
+        }],
+        getSecurityScheme: () => undefined,
+      };
+
+      const profile = ProfileLoader.createDefaultProfile('test', fakeParser);
+      expect(profile.tools[0].parameters.price.type).toBe('number');
+    });
+
+    it('should map boolean type correctly', async () => {
+      const fakeParser: any = {
+        getAllOperations: () => [{
+          operationId: 'op_boolean',
+          method: 'get',
+          path: '/test',
+          parameters: [{
+            name: 'active',
+            in: 'query',
+            required: false,
+            schema: { type: 'boolean' },
+            description: 'Is active',
+          }],
+          summary: 'Test',
+        }],
+        getSecurityScheme: () => undefined,
+      };
+
+      const profile = ProfileLoader.createDefaultProfile('test', fakeParser);
+      expect(profile.tools[0].parameters.active.type).toBe('boolean');
+    });
+
+    it('should map array type correctly', async () => {
+      const fakeParser: any = {
+        getAllOperations: () => [{
+          operationId: 'op_array',
+          method: 'get',
+          path: '/test',
+          parameters: [{
+            name: 'tags',
+            in: 'query',
+            required: false,
+            schema: { type: 'array', items: { type: 'string' } },
+            description: 'Tags',
+          }],
+          summary: 'Test',
+        }],
+        getSecurityScheme: () => undefined,
+      };
+
+      const profile = ProfileLoader.createDefaultProfile('test', fakeParser);
+      expect(profile.tools[0].parameters.tags.type).toBe('array');
+    });
+
+    it('should map object type correctly', async () => {
+      const fakeParser: any = {
+        getAllOperations: () => [{
+          operationId: 'op_object',
+          method: 'post',
+          path: '/test',
+          parameters: [{
+            name: 'metadata',
+            in: 'body',
+            required: false,
+            schema: { type: 'object' },
+            description: 'Metadata object',
+          }],
+          summary: 'Test',
+        }],
+        getSecurityScheme: () => undefined,
+      };
+
+      const profile = ProfileLoader.createDefaultProfile('test', fakeParser);
+      expect(profile.tools[0].parameters.metadata.type).toBe('object');
+    });
+
+    it('should fallback to string for unknown types', async () => {
+      const fakeParser: any = {
+        getAllOperations: () => [{
+          operationId: 'op_unknown',
+          method: 'get',
+          path: '/test',
+          parameters: [{
+            name: 'weird',
+            in: 'query',
+            required: false,
+            schema: { type: 'unknownType' },
+            description: 'Unknown type param',
+          }],
+          summary: 'Test',
+        }],
+        getSecurityScheme: () => undefined,
+      };
+
+      const profile = ProfileLoader.createDefaultProfile('test', fakeParser);
+      expect(profile.tools[0].parameters.weird.type).toBe('string');
+    });
   });
 });
 

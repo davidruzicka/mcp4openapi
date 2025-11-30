@@ -269,5 +269,58 @@ describe('SchemaValidator', () => {
     expect(invalidResult.valid).toBe(false);
     expect(invalidResult.errors![0].message).toContain('URI format');
   });
-});
 
+  it('validates null value against non-null schema', () => {
+    const operation: OperationInfo = {
+      operationId: 'test',
+      method: 'POST',
+      path: '/test',
+      parameters: [],
+      requestBody: {
+        required: true,
+        content: {
+          'application/json': {
+            schema: {
+              type: 'object',
+              properties: {
+                name: { type: 'string' },
+              },
+              required: ['name'],
+            },
+          },
+        },
+      },
+    };
+
+    const result = validator.validateRequestBody(operation, { name: null });
+    expect(result.valid).toBe(false);
+    expect(result.errors![0].message).toContain('Expected string');
+  });
+
+  it('validates undefined value against required field', () => {
+    const operation: OperationInfo = {
+      operationId: 'test',
+      method: 'POST',
+      path: '/test',
+      parameters: [],
+      requestBody: {
+        required: true,
+        content: {
+          'application/json': {
+            schema: {
+              type: 'object',
+              properties: {
+                name: { type: 'string' },
+              },
+              required: ['name'],
+            },
+          },
+        },
+      },
+    };
+
+    const result = validator.validateRequestBody(operation, {});
+    expect(result.valid).toBe(false);
+    expect(result.errors![0].message).toContain('Required');
+  });
+});

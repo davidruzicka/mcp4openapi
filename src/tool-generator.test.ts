@@ -26,7 +26,8 @@ describe('ToolGenerator', () => {
 
   it('should generate MCP tool from profile definition', () => {
     const toolDef = profile.tools.find(t => t.name === 'manage_project_badges');
-    const tool = generator.generateTool(toolDef);
+    expect(toolDef).toBeDefined();
+    const tool = generator.generateTool(toolDef!);
     
     expect(tool.name).toBe('manage_project_badges');
     expect(tool.description).toBeDefined();
@@ -37,7 +38,8 @@ describe('ToolGenerator', () => {
 
   it('should generate JSON schema with required fields', () => {
     const toolDef = profile.tools.find(t => t.name === 'manage_project_badges');
-    const tool = generator.generateTool(toolDef);
+    expect(toolDef).toBeDefined();
+    const tool = generator.generateTool(toolDef!);
     
     expect(tool.inputSchema.required).toContain('project_id');
     expect(tool.inputSchema.required).toContain('action');
@@ -45,26 +47,29 @@ describe('ToolGenerator', () => {
 
   it('should include enum values in schema', () => {
     const toolDef = profile.tools.find(t => t.name === 'manage_project_badges');
-    const tool = generator.generateTool(toolDef);
+    expect(toolDef).toBeDefined();
+    const tool = generator.generateTool(toolDef!);
     
-    const actionProperty = tool.inputSchema.properties?.action;
-    expect(actionProperty.enum).toContain('list');
-    expect(actionProperty.enum).toContain('create');
+    const actionProperty = tool.inputSchema.properties?.action as { enum?: string[] };
+    expect(actionProperty?.enum).toContain('list');
+    expect(actionProperty?.enum).toContain('create');
   });
 
   it('should validate required parameters', () => {
     const toolDef = profile.tools.find(t => t.name === 'manage_project_badges');
+    expect(toolDef).toBeDefined();
     
     expect(() => {
-      generator.validateArguments(toolDef, { action: 'list' });
+      generator.validateArguments(toolDef!, { action: 'list' });
     }).toThrow(/project_id/);
   });
 
   it('should validate conditional requirements', () => {
     const toolDef = profile.tools.find(t => t.name === 'manage_project_badges');
+    expect(toolDef).toBeDefined();
     
     expect(() => {
-      generator.validateArguments(toolDef, {
+      generator.validateArguments(toolDef!, {
         project_id: '123',
         action: 'create'
       });
@@ -73,13 +78,14 @@ describe('ToolGenerator', () => {
 
   it('should map action to operation ID', () => {
     const toolDef = profile.tools.find(t => t.name === 'manage_project_badges');
+    expect(toolDef).toBeDefined();
     
-    const listOp = generator.mapActionToOperation(toolDef, {
+    const listOp = generator.mapActionToOperation(toolDef!, {
       action: 'list'
     });
     expect(listOp).toBe('getApiV4ProjectsIdBadges');
     
-    const createOp = generator.mapActionToOperation(toolDef, {
+    const createOp = generator.mapActionToOperation(toolDef!, {
       action: 'create'
     });
     expect(createOp).toBe('postApiV4ProjectsIdBadges');
@@ -87,18 +93,31 @@ describe('ToolGenerator', () => {
 
   it('should handle resource_type discrimination', () => {
     const toolDef = profile.tools.find(t => t.name === 'manage_access_requests');
+    expect(toolDef).toBeDefined();
     
-    const projectOp = generator.mapActionToOperation(toolDef, {
+    const projectOp = generator.mapActionToOperation(toolDef!, {
       action: 'list',
       resource_type: 'project'
     });
     expect(projectOp).toBe('getApiV4ProjectsIdAccessRequests');
     
-    const groupOp = generator.mapActionToOperation(toolDef, {
+    const groupOp = generator.mapActionToOperation(toolDef!, {
       action: 'list',
       resource_type: 'group'
     });
     expect(groupOp).toBe('getApiV4GroupsIdAccessRequests');
+  });
+
+  it('should reject invalid enum value', () => {
+    const toolDef = profile.tools.find(t => t.name === 'manage_project_badges');
+    expect(toolDef).toBeDefined();
+    
+    expect(() => {
+      generator.validateArguments(toolDef!, {
+        project_id: '123',
+        action: 'invalid_action'
+      });
+    }).toThrow(/Invalid value for action/);
   });
 });
 
