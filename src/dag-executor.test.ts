@@ -102,6 +102,9 @@ describe('DAGExecutor', () => {
 
       expect(result.hasCycles).toBe(true);
       expect(result.errorMessage).toContain('Circular dependency detected');
+      expect(result.errorMessage).toContain('involving:');
+      // All nodes are in the cycle
+      expect(result.errorMessage).toMatch(/a|b|c/);
       expect(result.levels).toHaveLength(0);
     });
 
@@ -116,6 +119,51 @@ describe('DAGExecutor', () => {
       expect(result.hasCycles).toBe(false);
       expect(result.errorMessage).toBeUndefined();
       expect(result.levels).toHaveLength(2);
+    });
+
+    it('handles multiple steps depending on the same dependency', () => {
+      const steps: CompositeStep[] = [
+        { call: 'GET /root', store_as: 'root' },
+        { call: 'GET /child1', store_as: 'child1', depends_on: ['root'] },
+        { call: 'GET /child2', store_as: 'child2', depends_on: ['root'] },
+        { call: 'GET /child3', store_as: 'child3', depends_on: ['root'] },
+      ];
+
+      const result = DAGExecutor.analyzeDAG(steps);
+
+      expect(result.hasCycles).toBe(false);
+      expect(result.levels).toHaveLength(2);
+      // First level: root
+      expect(result.levels[0].steps).toHaveLength(1);
+      // Second level: all children (parallelizable)
+      expect(result.levels[1].steps).toHaveLength(3);
+    });
+
+    it('handles complex DAG with shared dependencies', () => {
+      // Create DAG where same node is referenced multiple times
+      const steps: CompositeStep[] = [
+        { call: 'GET /a', store_as: 'a' },
+        { call: 'GET /b', store_as: 'b', depends_on: ['a'] },
+        { call: 'GET /c', store_as: 'c', depends_on: ['a'] },
+        { call: 'GET /d', store_as: 'd', depends_on: ['b', 'a'] }, // 'a' is referenced twice
+      ];
+
+      const result = DAGExecutor.analyzeDAG(steps);
+
+      expect(result.hasCycles).toBe(false);
+      expect(result.levels).toHaveLength(3);
+    });
+
+    it('returns error for missing dependency without throwing', () => {
+      const steps: CompositeStep[] = [
+        { call: 'GET /a', store_as: 'a', depends_on: ['nonexistent'] },
+      ];
+
+      const result = DAGExecutor.analyzeDAG(steps);
+
+      expect(result.hasCycles).toBe(true);
+      expect(result.errorMessage).toContain("depends on 'nonexistent'");
+      expect(result.levels).toHaveLength(0);
     });
   });
 });

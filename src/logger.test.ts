@@ -66,6 +66,29 @@ describe('ConsoleLogger', () => {
     );
   });
 
+  it('defaults to INFO for invalid MCP4_LOG_LEVEL', () => {
+    process.env.MCP4_LOG_LEVEL = 'INVALID';
+    const logger = new ConsoleLogger();
+    
+    logger.debug('debug message');
+    expect(consoleErrorSpy).not.toHaveBeenCalled();
+
+    logger.info('info message');
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      expect.stringMatching(/INFO: info message/)
+    );
+  });
+
+  it('respects DEBUG env level', () => {
+    process.env.MCP4_LOG_LEVEL = 'DEBUG';
+    const logger = new ConsoleLogger();
+    
+    logger.debug('debug message');
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      expect.stringMatching(/DEBUG: debug message/)
+    );
+  });
+
   it('silences all logs at SILENT level', () => {
     const logger = new ConsoleLogger(LogLevel.SILENT);
     
@@ -96,7 +119,7 @@ describe('JsonLogger', () => {
 
     expect(consoleErrorSpy).toHaveBeenCalledOnce();
     const output = consoleErrorSpy.mock.calls[0][0];
-    const parsed = JSON.parse(output);
+    const parsed = JSON.parse(output as string);
 
     expect(parsed).toMatchObject({
       level: 'info',
@@ -112,7 +135,7 @@ describe('JsonLogger', () => {
     logger.error('operation failed', error, { context: 'test' });
 
     const output = consoleErrorSpy.mock.calls[0][0];
-    const parsed = JSON.parse(output);
+    const parsed = JSON.parse(output as string);
 
     expect(parsed).toMatchObject({
       level: 'error',
@@ -132,6 +155,34 @@ describe('JsonLogger', () => {
 
     logger.warn('warn');
     expect(consoleErrorSpy).toHaveBeenCalledOnce();
+  });
+
+  it('outputs debug messages at DEBUG level', () => {
+    const logger = new JsonLogger(LogLevel.DEBUG);
+    logger.debug('debug message', { key: 'value' });
+
+    expect(consoleErrorSpy).toHaveBeenCalledOnce();
+    const output = consoleErrorSpy.mock.calls[0][0];
+    const parsed = JSON.parse(output as string);
+
+    expect(parsed).toMatchObject({
+      level: 'debug',
+      message: 'debug message',
+      key: 'value',
+    });
+  });
+
+  it('uses MCP4_LOG_LEVEL env var for default level', () => {
+    process.env.MCP4_LOG_LEVEL = 'DEBUG';
+    const logger = new JsonLogger();
+    logger.debug('debug via env');
+
+    expect(consoleErrorSpy).toHaveBeenCalledOnce();
+    const output = consoleErrorSpy.mock.calls[0][0];
+    const parsed = JSON.parse(output as string);
+
+    expect(parsed.level).toBe('debug');
+    expect(parsed.message).toBe('debug via env');
   });
 });
 
@@ -215,7 +266,7 @@ describe('Token Redaction', () => {
       });
       
       const call = consoleErrorSpy.mock.calls[0][0];
-      const parsed = JSON.parse(call);
+      const parsed = JSON.parse(call as string);
       expect(parsed.params.api_key).toBe('[REDACTED]');
       expect(parsed.params.page).toBe(1);
     });

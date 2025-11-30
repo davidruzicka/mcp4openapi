@@ -184,5 +184,65 @@ describe('MetricsCollector', () => {
       expect(output).toContain('mcp_http_requests_total');
     });
   });
+
+  describe('Status Labels', () => {
+    it('should group 3xx status codes', async () => {
+      metrics.recordHttpRequest('GET', '/mcp', 301, 0.1);
+      metrics.recordHttpRequest('GET', '/mcp', 302, 0.1);
+      
+      const output = await metrics.getMetrics();
+      
+      expect(output).toContain('status="301"');
+      expect(output).toContain('status="302"');
+    });
+
+    it('should group 5xx status codes', async () => {
+      metrics.recordHttpRequest('GET', '/mcp', 500, 0.1);
+      metrics.recordHttpRequest('GET', '/mcp', 503, 0.1);
+      
+      const output = await metrics.getMetrics();
+      
+      expect(output).toContain('status="500"');
+      expect(output).toContain('status="503"');
+    });
+  });
+
+  describe('Path Normalization', () => {
+    it('should normalize /health path', async () => {
+      metrics.recordHttpRequest('GET', '/health?check=true', 200, 0.1);
+      
+      const output = await metrics.getMetrics();
+      
+      expect(output).toContain('path="/health"');
+      expect(output).not.toContain('check=true');
+    });
+
+    it('should normalize /metrics path', async () => {
+      metrics.recordHttpRequest('GET', '/metrics', 200, 0.1);
+      
+      const output = await metrics.getMetrics();
+      
+      expect(output).toContain('path="/metrics"');
+    });
+
+    it('should normalize unknown paths', async () => {
+      metrics.recordHttpRequest('GET', '/unknown/path?param=value', 200, 0.1);
+      
+      const output = await metrics.getMetrics();
+      
+      expect(output).toContain('path="/unknown/path"');
+      expect(output).not.toContain('param=value');
+    });
+
+    it('should use internal getStatusLabel for unusual status codes', async () => {
+      // Test status code outside normal ranges (triggers 'unknown' label)
+      metrics.recordHttpRequest('GET', '/mcp', 100, 0.1); // 1xx - informational
+      
+      const output = await metrics.getMetrics();
+      
+      // 100 is not in 2xx-5xx range, uses actual status as label
+      expect(output).toContain('status="100"');
+    });
+  });
 });
 

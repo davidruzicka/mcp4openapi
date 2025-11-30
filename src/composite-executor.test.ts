@@ -27,7 +27,7 @@ describe('CompositeExecutor', () => {
           },
         },
       })),
-    } as unknown as InterceptorConfig;
+    } as unknown as OpenAPIParser;
 
     // Mock HTTP client
     httpClient = {
@@ -36,7 +36,7 @@ describe('CompositeExecutor', () => {
         headers: {},
         body: { id: 123, name: 'test' },
       })),
-    } as unknown as InterceptorConfig;
+    } as unknown as HttpClient;
 
     executor = new CompositeExecutor(parser, httpClient);
   });
@@ -310,5 +310,166 @@ describe('CompositeExecutor', () => {
       expect(callOrder).toEqual([1, 2, 3]);
     });
   });
-});
 
+  describe('storeAtPath edge cases', () => {
+    it('throws for unsafe property name in path (prototype)', async () => {
+      httpClient.request = vi.fn(async () => ({
+        status: 200,
+        headers: {},
+        body: { id: 1 },
+      }));
+
+      const steps: CompositeStep[] = [
+        { call: 'GET /projects/1', store_as: '__proto__.polluted' },
+      ];
+
+      await expect(executor.execute(steps, {})).rejects.toThrow('Invalid property name in path: __proto__');
+    });
+
+    it('throws for unsafe property name in final key (constructor)', async () => {
+      httpClient.request = vi.fn(async () => ({
+        status: 200,
+        headers: {},
+        body: { id: 1 },
+      }));
+
+      const steps: CompositeStep[] = [
+        { call: 'GET /projects/1', store_as: 'safe.constructor' },
+      ];
+
+      await expect(executor.execute(steps, {})).rejects.toThrow('Invalid property name in path: constructor');
+    });
+  });
+
+  describe('extractQueryParams', () => {
+    it('passes array query params as string arrays', async () => {
+      let capturedParams: Record<string, string | string[]> = {};
+      
+      // Create parser with query parameter
+      const parserWithQuery = {
+        getPath: vi.fn(() => ({
+          path: '/test',
+          operations: {
+            get: {
+              operationId: 'getTest',
+              method: 'GET',
+              path: '/test',
+              parameters: [
+                { name: 'tags', in: 'query', schema: { type: 'array' } },
+                { name: 'filter', in: 'query', schema: { type: 'string' } },
+              ],
+            },
+          },
+        })),
+      } as unknown as OpenAPIParser;
+
+      // Capture query params
+      const clientWithCapture: HttpClient = {
+        request: vi.fn(async (_method, _path, options) => {
+          capturedParams = options?.params || {};
+          return { status: 200, headers: {}, body: {} };
+        }),
+      } as unknown as HttpClient;
+
+      const exec = new CompositeExecutor(parserWithQuery, clientWithCapture);
+      const steps: CompositeStep[] = [
+        { call: 'GET /test', store_as: 'result' },
+      ];
+
+      await exec.execute(steps, { tags: ['a', 'b', 'c'], filter: 'active' });
+
+      expect(capturedParams.tags).toEqual(['a', 'b', 'c']);
+      expect(capturedParams.filter).toBe('active');
+    });
+  });
+
+  describe('error handling', () => {
+    it('should throw error when path parameter is missing', async () => {
+      const parserWithPathParam: OpenAPIParser = {
+        getPath: vi.fn(() => ({
+          path: '/projects/{id}',
+          operations: {
+            get: {
+              operationId: 'getProject',
+              method: 'GET',
+              path: '/projects/{id}',
+              parameters: [],
+            },
+          },
+        })),
+      } as unknown as OpenAPIParser;
+
+      const exec = new CompositeExecutor(parserWithPathParam, httpClient);
+      const steps: CompositeStep[] = [
+        { call: 'GET /projects/{id}', store_as: 'project' },
+      ];
+
+      // Execute without providing 'id' parameter - should throw
+      await expect(exec.execute(steps, {}, false)).rejects.toThrow('Missing path parameter');
+    });
+
+    it('should throw error when HTTP client is not provided', async () => {
+      // Create executor without HTTP client
+      const exec = new CompositeExecutor(parser, null as unknown as HttpClient);
+      const steps: CompositeStep[] = [
+        { call: 'GET /projects/1', store_as: 'project' },
+      ];
+
+      // Should throw when httpClient is null
+      await expect(exec.execute(steps, {}, false)).rejects.toThrow('HTTP client not provided');
+    });
+
+    it('should collect errors with partial_results enabled', async () => {
+      const parserWithPathParam: OpenAPIParser = {
+        getPath: vi.fn(() => ({
+          path: '/projects/{id}',
+          operations: {
+            get: {
+              operationId: 'getProject',
+              method: 'GET',
+              path: '/projects/{id}',
+              parameters: [],
+            },
+          },
+        })),
+      } as unknown as OpenAPIParser;
+
+      const exec = new CompositeExecutor(parserWithPathParam, httpClient);
+      const steps: CompositeStep[] = [
+        { call: 'GET /projects/{id}', store_as: 'project' },
+      ];
+
+      // Execute with partial_results=true - should collect errors instead of throwing
+      const result = await exec.execute(steps, {}, true);
+
+      expect(result.errors).toBeDefined();
+      expect(result.errors!.length).toBeGreaterThan(0);
+      expect(result.errors![0].error).toContain('Missing path parameter');
+    });
+
+    it('should throw error when operation not found for call', async () => {
+      // Parser that returns path but no operation for the method
+      const parserWithNoOp: OpenAPIParser = {
+        getPath: vi.fn(() => ({
+          path: '/projects/1',
+          operations: {
+            // Only POST is defined, not GET
+            post: {
+              operationId: 'createProject',
+              method: 'POST',
+              path: '/projects/1',
+              parameters: [],
+            },
+          },
+        })),
+      } as unknown as OpenAPIParser;
+
+      const exec = new CompositeExecutor(parserWithNoOp, httpClient);
+      const steps: CompositeStep[] = [
+        { call: 'GET /projects/1', store_as: 'project' },
+      ];
+
+      await expect(exec.execute(steps, {}, false)).rejects.toThrow('Operation not found');
+    });
+  });
+});
