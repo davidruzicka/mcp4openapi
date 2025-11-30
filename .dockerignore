@@ -11,6 +11,7 @@ dist/
 # Tests
 src/**/*.test.ts
 src/testing/
+junit.xml
 
 # Scripts (CLI tools, not needed in container)
 scripts/

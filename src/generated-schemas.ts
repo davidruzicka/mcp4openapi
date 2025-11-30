@@ -48,7 +48,8 @@ export const oAuthConfigSchema = z.object({
     redirect_uri: z.string().optional(),
     registration_endpoint: z.string().optional(),
     introspection_endpoint: z.string().optional(),
-    revocation_endpoint: z.string().optional()
+    revocation_endpoint: z.string().optional(),
+    allowed_redirect_hosts: z.array(z.string()).optional()
 });
 
 export const toolDefinitionSchema = z.object({

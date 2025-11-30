@@ -8,6 +8,7 @@
  */
 
 import type { AuthInterceptor } from './types/profile.js';
+import { escapeRegExp, redactHeader, redactQueryParam, redactParam } from './validation-utils.js';
 
 export enum LogLevel {
   DEBUG = 0,
@@ -94,14 +95,12 @@ export class ConsoleLogger implements Logger {
     
     switch (this.authConfig.type) {
       case 'bearer':
-        // Redact standard Authorization header
-        redacted.headers = this.redactHeader(redacted.headers, 'authorization');
+        redacted.headers = redactHeader(redacted.headers, 'authorization');
         break;
         
       case 'custom-header':
-        // Redact custom header (e.g., X-API-Key)
         if (this.authConfig.header_name) {
-          redacted.headers = this.redactHeader(
+          redacted.headers = redactHeader(
             redacted.headers,
             this.authConfig.header_name.toLowerCase()
           );
@@ -109,78 +108,17 @@ export class ConsoleLogger implements Logger {
         break;
         
       case 'query':
-        // Redact query parameter (e.g., ?api_key=secret)
         if (this.authConfig.query_param) {
-          redacted.url = this.redactQueryParam(
+          redacted.url = redactQueryParam(
             redacted.url as string | undefined,
             this.authConfig.query_param
           );
-          redacted.params = this.redactParam(
+          redacted.params = redactParam(
             redacted.params,
             this.authConfig.query_param
           );
         }
         break;
-    }
-    
-    return redacted;
-  }
-
-  /**
-   * Redact specific header (case-insensitive)
-   */
-  private redactHeader(
-    headers: unknown,
-    headerName: string
-  ): Record<string, unknown> {
-    if (!headers || typeof headers !== 'object') return {};
-    
-    const redacted = { ...(headers as Record<string, unknown>) };
-    
-    // Case-insensitive header matching
-    for (const key of Object.keys(redacted)) {
-      if (key.toLowerCase() === headerName.toLowerCase()) {
-        redacted[key] = '[REDACTED]';
-      }
-    }
-    
-    return redacted;
-  }
-
-  /**
-   * Redact query parameter from URL string
-   */
-  private redactQueryParam(
-    url: string | undefined,
-    paramName: string
-  ): string {
-    if (!url) return '';
-    
-    try {
-      const urlObj = new URL(url);
-      if (urlObj.searchParams.has(paramName)) {
-        urlObj.searchParams.set(paramName, '[REDACTED]');
-      }
-      return urlObj.toString();
-    } catch {
-      // Fallback: simple string replace for relative URLs
-      const regex = new RegExp(`([?&]${paramName}=)[^&]+`, 'gi');
-      return url.replace(regex, `$1[REDACTED]`);
-    }
-  }
-
-  /**
-   * Redact parameter from params object
-   */
-  private redactParam(
-    params: unknown,
-    paramName: string
-  ): Record<string, unknown> {
-    if (!params || typeof params !== 'object') return {};
-    
-    const redacted = { ...(params as Record<string, unknown>) };
-    if (paramName in redacted) {
-      redacted[paramName] = '[REDACTED]';
     }
     
     return redacted;
@@ -260,12 +198,12 @@ export class JsonLogger implements Logger {
     
     switch (this.authConfig.type) {
       case 'bearer':
-        redacted.headers = this.redactHeader(redacted.headers, 'authorization');
+        redacted.headers = redactHeader(redacted.headers, 'authorization');
         break;
         
       case 'custom-header':
         if (this.authConfig.header_name) {
-          redacted.headers = this.redactHeader(
+          redacted.headers = redactHeader(
             redacted.headers,
             this.authConfig.header_name.toLowerCase()
           );
@@ -274,65 +212,16 @@ export class JsonLogger implements Logger {
         
       case 'query':
         if (this.authConfig.query_param) {
-          redacted.url = this.redactQueryParam(
+          redacted.url = redactQueryParam(
             redacted.url as string | undefined,
             this.authConfig.query_param
           );
-          redacted.params = this.redactParam(
+          redacted.params = redactParam(
             redacted.params,
             this.authConfig.query_param
           );
         }
         break;
-    }
-    
-    return redacted;
-  }
-
-  private redactHeader(
-    headers: unknown,
-    headerName: string
-  ): Record<string, unknown> {
-    if (!headers || typeof headers !== 'object') return {};
-    
-    const redacted = { ...(headers as Record<string, unknown>) };
-    
-    for (const key of Object.keys(redacted)) {
-      if (key.toLowerCase() === headerName.toLowerCase()) {
-        redacted[key] = '[REDACTED]';
-      }
-    }
-    
-    return redacted;
-  }
-
-  private redactQueryParam(
-    url: string | undefined,
-    paramName: string
-  ): string {
-    if (!url) return '';
-    
-    try {
-      const urlObj = new URL(url);
-      if (urlObj.searchParams.has(paramName)) {
-        urlObj.searchParams.set(paramName, '[REDACTED]');
-      }
-      return urlObj.toString();
-    } catch {
-      const regex = new RegExp(`([?&]${paramName}=)[^&]+`, 'gi');
-      return url.replace(regex, `$1[REDACTED]`);
-    }
-  }
-
-  private redactParam(
-    params: unknown,
-    paramName: string
-  ): Record<string, unknown> {
-    if (!params || typeof params !== 'object') return {};
-    
-    const redacted = { ...(params as Record<string, unknown>) };
-    if (paramName in redacted) {
-      redacted[paramName] = '[REDACTED]';
     }
     
     return redacted;

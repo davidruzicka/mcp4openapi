@@ -7,6 +7,12 @@ services:
       dockerfile: Dockerfile
     image: mcp4openapi:latest
     container_name: mcp4openapi
+    # Security hardening
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:size=64M
     ports:
       - "3003:3003"
     volumes:
