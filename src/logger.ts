@@ -8,6 +8,7 @@
  */
 
 import type { AuthInterceptor } from './types/profile.js';
+import { escapeRegExp } from './validation-utils.js';
 
 export enum LogLevel {
   DEBUG = 0,
@@ -164,7 +165,7 @@ export class ConsoleLogger implements Logger {
       return urlObj.toString();
     } catch {
       // Fallback: simple string replace for relative URLs
-      const regex = new RegExp(`([?&]${paramName}=)[^&]+`, 'gi');
+      const regex = new RegExp(`([?&]${escapeRegExp(paramName)}=)[^&]+`, 'gi');
       return url.replace(regex, `$1[REDACTED]`);
     }
   }
@@ -319,7 +320,7 @@ export class JsonLogger implements Logger {
       }
       return urlObj.toString();
     } catch {
-      const regex = new RegExp(`([?&]${paramName}=)[^&]+`, 'gi');
+      const regex = new RegExp(`([?&]${escapeRegExp(paramName)}=)[^&]+`, 'gi');
       return url.replace(regex, `$1[REDACTED]`);
     }
   }

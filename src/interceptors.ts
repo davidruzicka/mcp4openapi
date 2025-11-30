@@ -8,31 +8,7 @@
 import type { InterceptorConfig } from './types/profile.js';
 import { TIME, HTTP_STATUS } from './constants.js';
 import { AuthenticationError, AuthorizationError, NetworkError, RateLimitError } from './errors.js';
-
-/** Property names that must never be used as dynamic object keys */
-const FORBIDDEN_PROPERTY_NAMES = new Set([
-  '__proto__',
-  'constructor',
-  'prototype',
-  '__defineGetter__',
-  '__defineSetter__',
-  '__lookupGetter__',
-  '__lookupSetter__',
-  'hasOwnProperty',
-  'isPrototypeOf',
-  'propertyIsEnumerable',
-  'toLocaleString',
-  'toString',
-  'valueOf',
-]);
-
-/**
- * Validates that a property name is safe to use as dynamic object key.
- * Prevents prototype pollution attacks.
- */
-function isSafePropertyName(name: string): boolean {
-  return !FORBIDDEN_PROPERTY_NAMES.has(name);
-}
+import { isSafePropertyName } from './validation-utils.js';
 
 export interface RequestContext {
   method: string;
