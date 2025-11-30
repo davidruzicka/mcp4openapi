@@ -306,6 +306,40 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
   }
 
   /**
+   * Check if redirect URI host is allowed
+   * Prevents open redirect vulnerabilities (CWE-601)
+   */
+  private isAllowedRedirectHost(redirectUri: string): boolean {
+    try {
+      const url = new URL(redirectUri);
+      const hostname = url.hostname;
+      
+      // Default to localhost only if not configured
+      const allowedHosts = this.config.allowed_redirect_hosts || ['localhost', '127.0.0.1'];
+      
+      for (const allowed of allowedHosts) {
+        // Exact match
+        if (hostname === allowed) {
+          return true;
+        }
+        
+        // Wildcard subdomain match (*.example.com)
+        if (allowed.startsWith('*.')) {
+          const domain = allowed.slice(2);
+          if (hostname === domain || hostname.endsWith('.' + domain)) {
+            return true;
+          }
+        }
+      }
+      
+      return false;
+    } catch {
+      // Invalid URL
+      return false;
+    }
+  }
+
+  /**
    * Begin authorization flow
    * Stores state and redirects to External Provider with MCP Callback URI
    */
@@ -330,6 +364,15 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
         registeredUris: client.redirect_uris,
       });
       throw new Error('Unregistered redirect_uri');
+    }
+
+    // Validate redirect host against allowlist to prevent open redirect
+    if (!this.isAllowedRedirectHost(params.redirectUri)) {
+      this.logger.error('Redirect URI host not allowed', undefined, {
+        providedUri: params.redirectUri,
+        allowedHosts: this.config.allowed_redirect_hosts || ['localhost', '127.0.0.1'],
+      });
+      throw new Error('Redirect URI host not allowed');
     }
 
     const stateToken = randomUUID();

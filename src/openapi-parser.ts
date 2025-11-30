@@ -9,6 +9,7 @@ import fs from 'fs/promises';
 import { parse as parseYaml } from 'yaml';
 import type { OpenAPIV3 } from 'openapi-types';
 import { ConfigurationError } from './errors.js';
+import { isSafePropertyName } from './validation-utils.js';
 import type { OpenAPIIndex, OperationInfo, ParameterInfo, PathInfo, RequestBodyInfo, SchemaInfo } from './types/openapi.js';
 
 export class OpenAPIParser {
@@ -219,6 +220,11 @@ export class OpenAPIParser {
     let current: unknown = this.spec as unknown;
     for (const segment of segments) {
       if (typeof current !== 'object' || current === null) {
+        current = undefined;
+        break;
+      }
+      // Prevent prototype pollution via malicious $ref paths
+      if (!isSafePropertyName(segment)) {
         current = undefined;
         break;
       }
