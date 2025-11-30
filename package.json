@@ -1,6 +1,6 @@
 {
   "name": "mcp4openapi",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Universal MCP server that generates tools from any OpenAPI specification",
   "type": "module",
   "main": "dist/src/index.js",
