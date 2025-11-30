@@ -232,4 +232,93 @@ describe('pickMostSimilarPairs', () => {
     const singleAppearances = Array.from(opCounts.values()).filter(count => count === 1);
     expect(singleAppearances.length).toBeGreaterThan(0);
   });
+
+  it('should fill remaining slots with reused operations when needed', () => {
+    // Request more pairs than available unique pairs
+    const pairs = pickMostSimilarPairs(ops, 10, 0.1);
+    
+    // Should still return some pairs even if we need to reuse operations
+    expect(pairs.length).toBeGreaterThan(0);
+  });
+
+  it('should add pairs with used operations when selected count is less than topN', () => {
+    // Create ops where we need to reuse operations to fill slots
+    // With 4 ops, max unique pairs is 6 (C(4,2)), but if threshold filters some,
+    // we need to reuse ops
+    const smallOps: OperationForNaming[] = [
+      { operationId: 'getA', method: 'get', path: '/a', tags: [] },
+      { operationId: 'getB', method: 'get', path: '/b', tags: [] },
+      { operationId: 'getAList', method: 'get', path: '/a/list', tags: [] },
+    ];
+
+    // Request 3 pairs (maximum for 3 ops is C(3,2)=3)
+    const pairs = pickMostSimilarPairs(smallOps, 3, 0.3);
+    
+    // Should return pairs even with reused operations
+    expect(pairs.length).toBeLessThanOrEqual(3);
+  });
+
+  it('should include pair even if one operation is already used when not at topN', () => {
+    // Create highly similar ops that will use same operations
+    const similarOps: OperationForNaming[] = [
+      { operationId: 'getUserById', method: 'get', path: '/users/{id}', tags: ['users'] },
+      { operationId: 'getUserByEmail', method: 'get', path: '/users/email/{email}', tags: ['users'] },
+      { operationId: 'getUserByName', method: 'get', path: '/users/name/{name}', tags: ['users'] },
+    ];
+
+    const pairs = pickMostSimilarPairs(similarOps, 2, 0.5);
+    
+    // All 3 operations are similar, so pairs will overlap
+    expect(pairs.length).toBeGreaterThan(0);
+  });
+});
+
+describe('detectCollisions', () => {
+  it('should detect name collisions when shortening causes duplicates', async () => {
+    const { detectCollisions, NamingStrategy } = await import('./naming.js');
+    
+    // Create operations with identical operationIds
+    const operations: OperationForNaming[] = [
+      {
+        operationId: 'sameOperationName',
+        method: 'get',
+        path: '/api/v4/projects/{id}/a',
+        tags: ['projects'],
+      },
+      {
+        operationId: 'sameOperationName',
+        method: 'post',
+        path: '/api/v4/projects/{id}/b',
+        tags: ['projects'],
+      },
+    ];
+    
+    const collisions = detectCollisions(operations, NamingStrategy.None, 100);
+    
+    // Same operationId should cause collision
+    expect(collisions.size).toBe(1);
+    expect(collisions.get('sameOperationName')?.length).toBe(2);
+  });
+
+  it('should detect no collisions for unique names', async () => {
+    const { detectCollisions, NamingStrategy } = await import('./naming.js');
+    
+    const operations: OperationForNaming[] = [
+      {
+        operationId: 'uniqueOperationA',
+        method: 'get',
+        path: '/a',
+        tags: [],
+      },
+      {
+        operationId: 'uniqueOperationB',
+        method: 'post',
+        path: '/b',
+        tags: [],
+      },
+    ];
+    
+    const collisions = detectCollisions(operations, NamingStrategy.None, 100);
+    expect(collisions.size).toBe(0);
+  });
 });

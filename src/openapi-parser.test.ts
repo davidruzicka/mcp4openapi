@@ -2,8 +2,9 @@
  * Tests for OpenAPI parser
  */
 
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from 'vitest';
 import { OpenAPIParser } from './openapi-parser.js';
+import { ConfigurationError } from './errors.js';
 import path from 'path';
 
 describe('OpenAPIParser', () => {
@@ -349,6 +350,291 @@ describe('OpenAPIParser - Security Schemes', () => {
       type: 'bearer',
       scheme: 'bearer',
     });
+  });
+
+  it('should clone schema with anyOf', async () => {
+    const parser = new OpenAPIParser();
+    
+    const schema = {
+      type: 'object',
+      anyOf: [
+        { type: 'string' },
+        { type: 'number' }
+      ]
+    };
+    
+    const cloned = (parser as any).cloneSchemaInfo(schema);
+    expect(cloned.anyOf).toHaveLength(2);
+    expect(cloned.anyOf[0].type).toBe('string');
+  });
+
+  it('should clone schema with oneOf', async () => {
+    const parser = new OpenAPIParser();
+    
+    const schema = {
+      type: 'object',
+      oneOf: [
+        { type: 'boolean' },
+        { type: 'null' }
+      ]
+    };
+    
+    const cloned = (parser as any).cloneSchemaInfo(schema);
+    expect(cloned.oneOf).toHaveLength(2);
+    expect(cloned.oneOf[0].type).toBe('boolean');
+  });
+});
+
+describe('OpenAPIParser - HTTP URL loading', () => {
+  let originalFetch: typeof fetch;
+
+  beforeEach(() => {
+    originalFetch = global.fetch;
+  });
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+    vi.restoreAllMocks();
+  });
+
+  it('should load OpenAPI spec from HTTP URL with YAML Content-Type', async () => {
+    const yamlContent = `openapi: 3.0.0
+info:
+  title: Test API
+  version: 1.0.0
+paths:
+  /test:
+    get:
+      operationId: getTest
+      responses:
+        '200':
+          description: Success`;
+
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      text: async () => yamlContent,
+      headers: new Headers({
+        'content-type': 'application/yaml',
+      }),
+    } as Response);
+
+    const parser = new OpenAPIParser();
+    await parser.load('http://example.com/openapi.yaml');
+
+    expect(parser.getOperation('getTest')).toBeDefined();
+    expect(parser.getOperation('getTest')?.method).toBe('GET');
+    expect(global.fetch).toHaveBeenCalledWith(
+      'http://example.com/openapi.yaml',
+      expect.objectContaining({
+        signal: expect.any(AbortSignal),
+        headers: expect.objectContaining({
+          'Accept': 'application/json, application/yaml, text/yaml, application/x-yaml, */*',
+        }),
+      })
+    );
+  });
+
+  it('should load OpenAPI spec from HTTPS URL with JSON Content-Type', async () => {
+    const jsonContent = JSON.stringify({
+      openapi: '3.0.0',
+      info: {
+        title: 'Test API',
+        version: '1.0.0',
+      },
+      paths: {
+        '/test': {
+          get: {
+            operationId: 'getTest',
+            responses: {
+              '200': {
+                description: 'Success',
+              },
+            },
+          },
+        },
+      },
+    });
+
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      text: async () => jsonContent,
+      headers: new Headers({
+        'content-type': 'application/json',
+      }),
+    } as Response);
+
+    const parser = new OpenAPIParser();
+    await parser.load('https://example.com/openapi.json');
+
+    expect(parser.getOperation('getTest')).toBeDefined();
+    expect(parser.getOperation('getTest')?.method).toBe('GET');
+  });
+
+  it('should detect YAML format from URL extension when Content-Type is missing', async () => {
+    const yamlContent = `openapi: 3.0.0
+info:
+  title: Test API
+  version: 1.0.0
+paths: {}`;
+
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      text: async () => yamlContent,
+      headers: new Headers({}),
+    } as Response);
+
+    const parser = new OpenAPIParser();
+    await parser.load('https://example.com/spec.yaml');
+
+    expect(parser.getBaseUrl()).toBeDefined();
+  });
+
+  it('should detect JSON format from URL extension when Content-Type is missing', async () => {
+    const jsonContent = JSON.stringify({
+      openapi: '3.0.0',
+      info: { title: 'Test API', version: '1.0.0' },
+      paths: {},
+    });
+
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      text: async () => jsonContent,
+      headers: new Headers({}),
+    } as Response);
+
+    const parser = new OpenAPIParser();
+    await parser.load('https://example.com/spec.json');
+
+    expect(parser.getBaseUrl()).toBeDefined();
+  });
+
+  it('should fallback to JSON/YAML detection when Content-Type and extension are missing', async () => {
+    const jsonContent = JSON.stringify({
+      openapi: '3.0.0',
+      info: { title: 'Test API', version: '1.0.0' },
+      paths: {},
+    });
+
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      text: async () => jsonContent,
+      headers: new Headers({}),
+    } as Response);
+
+    const parser = new OpenAPIParser();
+    await parser.load('https://example.com/spec');
+
+    expect(parser.getBaseUrl()).toBeDefined();
+  });
+
+  it('should throw ConfigurationError on HTTP 404', async () => {
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 404,
+      statusText: 'Not Found',
+      text: async () => 'Not Found',
+      headers: new Headers({}),
+    } as Response);
+
+    const parser = new OpenAPIParser();
+    await expect(parser.load('https://example.com/missing.yaml')).rejects.toThrow(ConfigurationError);
+    await expect(parser.load('https://example.com/missing.yaml')).rejects.toThrow(
+      'Failed to load OpenAPI spec from URL'
+    );
+  });
+
+  it('should throw ConfigurationError on HTTP 500', async () => {
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 500,
+      statusText: 'Internal Server Error',
+      text: async () => 'Server Error',
+      headers: new Headers({}),
+    } as Response);
+
+    const parser = new OpenAPIParser();
+    await expect(parser.load('https://example.com/error.yaml')).rejects.toThrow(ConfigurationError);
+    await expect(parser.load('https://example.com/error.yaml')).rejects.toThrow('HTTP 500');
+  });
+
+  it('should throw ConfigurationError on timeout', async () => {
+    const abortError = new Error('The operation was aborted');
+    abortError.name = 'AbortError';
+
+    global.fetch = vi.fn().mockRejectedValue(abortError);
+
+    const parser = new OpenAPIParser();
+    await expect(parser.load('https://example.com/slow.yaml')).rejects.toThrow(ConfigurationError);
+    await expect(parser.load('https://example.com/slow.yaml')).rejects.toThrow('Timeout');
+  });
+
+  it('should throw ConfigurationError on network error', async () => {
+    const networkError = new Error('Network request failed');
+    networkError.name = 'TypeError';
+
+    global.fetch = vi.fn().mockRejectedValue(networkError);
+
+    const parser = new OpenAPIParser();
+    await expect(parser.load('https://example.com/unreachable.yaml')).rejects.toThrow(ConfigurationError);
+    await expect(parser.load('https://example.com/unreachable.yaml')).rejects.toThrow(
+      'Failed to load OpenAPI spec from URL'
+    );
+  });
+
+  it('should still load from local file path', async () => {
+    // Mock fetch to verify it's not called for local files
+    const fetchSpy = vi.spyOn(global, 'fetch');
+    
+    const parser = new OpenAPIParser();
+    const specPath = path.join(process.cwd(), 'profiles/gitlab/openapi.yaml');
+    await parser.load(specPath);
+
+    expect(parser.getOperation('getApiV4ProjectsIdBadges')).toBeDefined();
+    expect(fetchSpy).not.toHaveBeenCalled();
+    
+    fetchSpy.mockRestore();
+  });
+
+  it('should handle various YAML Content-Type headers', async () => {
+    const yamlContent = `openapi: 3.0.0
+info:
+  title: Test API
+  version: 1.0.0
+paths: {}`;
+
+    const contentTypes = [
+      'application/yaml',
+      'text/yaml',
+      'application/x-yaml',
+      'text/x-yaml',
+      'application/yaml; charset=utf-8',
+    ];
+
+    for (const contentType of contentTypes) {
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        text: async () => yamlContent,
+        headers: new Headers({
+          'content-type': contentType,
+        }),
+      } as Response);
+
+      const parser = new OpenAPIParser();
+      await parser.load('https://example.com/spec');
+      expect(parser.getBaseUrl()).toBeDefined();
+    }
   });
 });
 
