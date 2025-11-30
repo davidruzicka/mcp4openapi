@@ -748,7 +748,14 @@ export class HttpTransport {
     this.app.post('/mcp', mcpRateLimiter, this.handlePost.bind(this));
     // Add OPTIONS handler for CORS preflight requests
     this.app.options('/mcp', (req: Request, res: Response) => {
-      res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*');
+      const origin = req.headers.origin;
+      // Validate origin against allowlist to prevent CORS misconfiguration
+      if (origin && this.isAllowedOrigin(origin)) {
+        res.setHeader('Access-Control-Allow-Origin', origin);
+      } else {
+        // Reject unknown origins - don't reflect user input
+        res.setHeader('Access-Control-Allow-Origin', 'null');
+      }
       res.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
       res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept, Mcp-Session-Id');
       res.setHeader('Access-Control-Max-Age', '86400'); // 24 hours

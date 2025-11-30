@@ -10,6 +10,7 @@ import type { HttpClient } from './interceptors.js';
 import type { OperationInfo } from './types/openapi.js';
 import { OpenAPIParser } from './openapi-parser.js';
 import { DAGExecutor, type ExecutionLevel } from './dag-executor.js';
+import { isSafePropertyName } from './validation-utils.js';
 
 export interface CompositeResult {
   data: Record<string, unknown>;
@@ -226,6 +227,12 @@ export class CompositeExecutor {
 
     for (let i = 0; i < parts.length - 1; i++) {
       const part = parts[i];
+      
+      // Prevent prototype pollution
+      if (!isSafePropertyName(part)) {
+        throw new Error(`Invalid property name in path: ${part}`);
+      }
+      
       const existing = current[part];
       
       // Validate we can navigate through this path
@@ -242,7 +249,11 @@ export class CompositeExecutor {
       current = current[part] as Record<string, unknown>;
     }
 
-    current[parts[parts.length - 1]] = value;
+    const finalKey = parts[parts.length - 1];
+    if (!isSafePropertyName(finalKey)) {
+      throw new Error(`Invalid property name in path: ${finalKey}`);
+    }
+    current[finalKey] = value;
   }
 }
 

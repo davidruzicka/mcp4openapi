@@ -310,6 +310,37 @@ export class MCPServer {
   }
 
   /**
+   * Extract hostnames from origin patterns for OAuth redirect validation
+   * e.g., "http://localhost:*,https://app.example.com" -> ["localhost", "app.example.com"]
+   */
+  private extractHostsFromOrigins(origins: string): string[] {
+    const hosts: string[] = [];
+    for (const origin of origins.split(',')) {
+      const trimmed = origin.trim();
+      try {
+        // Handle wildcard ports: http://localhost:* -> localhost
+        const normalized = trimmed.replace(/:\*$/, ':80');
+        const url = new URL(normalized);
+        // Preserve wildcards in hostname
+        if (trimmed.includes('*.')) {
+          const match = trimmed.match(/\*\.[^:/]+/);
+          if (match) {
+            hosts.push(match[0]);
+          }
+        } else {
+          hosts.push(url.hostname);
+        }
+      } catch {
+        // If not a URL, treat as hostname/pattern directly
+        if (trimmed && !trimmed.includes(' ')) {
+          hosts.push(trimmed);
+        }
+      }
+    }
+    return [...new Set(hosts)]; // Dedupe
+  }
+
+  /**
    * Get or create HTTP client for session
    */
   private async getHttpClientForSession(sessionId?: string): Promise<HttpClient> {
@@ -734,7 +765,14 @@ export class MCPServer {
       maxTokenLength: process.env.MCP4_TOKEN_MAX_LENGTH
         ? parseInt(process.env.MCP4_TOKEN_MAX_LENGTH, 10)
         : undefined, // Uses default from http-transport.ts if undefined
-      oauthConfig, // Pass OAuth config if available
+      // Pass OAuth config with allowed_redirect_hosts derived from MCP4_ALLOWED_ORIGINS
+      oauthConfig: oauthConfig ? {
+        ...oauthConfig,
+        allowed_redirect_hosts: oauthConfig.allowed_redirect_hosts 
+          || (process.env.MCP4_ALLOWED_ORIGINS
+            ? this.extractHostsFromOrigins(process.env.MCP4_ALLOWED_ORIGINS)
+            : undefined),
+      } : undefined,
       baseUrl, // Pass base URL for token validation
       authConfigs, // Pass auth configs for token validation
       // OAuth resource metadata (priority: profile > OpenAPI > fallback)

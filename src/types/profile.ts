@@ -204,6 +204,17 @@ export interface OAuthConfig {
    * e.g., "https://www.gitlab.com/oauth/revoke"
    */
   revocation_endpoint?: string;
+
+  /**
+   * Optional: Allowed redirect hosts for OAuth callbacks
+   * Used to prevent open redirect vulnerabilities
+   * 
+   * Supports wildcards: "*.example.com" matches any subdomain
+   * Defaults to ["localhost", "127.0.0.1"] for security
+   * 
+   * Can reference MCP4_ALLOWED_ORIGINS environment variable
+   */
+  allowed_redirect_hosts?: string[];
 }
 
 export interface BaseUrlConfig {
