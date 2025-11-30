@@ -821,5 +821,613 @@ describe('HttpTransport', () => {
       await customTransport.stop();
     });
   });
-});
 
+  describe('OAuth Token Endpoint', () => {
+    let oauthTransport: HttpTransport;
+    let oauthApp: any;
+
+    beforeEach(async () => {
+      const oauthConfig = {
+        host: '127.0.0.1',
+        port: 0,
+        sessionTimeoutMs: 1800000,
+        heartbeatEnabled: false,
+        heartbeatIntervalMs: 30000,
+        metricsEnabled: false,
+        metricsPath: '/metrics',
+        oauthConfig: {
+          issuer: 'https://auth.example.com',
+          client_id: 'test-client',
+          client_secret: 'test-secret',
+          scopes: ['read', 'write'],
+        },
+      };
+
+      oauthTransport = new HttpTransport(oauthConfig, logger);
+      oauthApp = (oauthTransport as any).app;
+    });
+
+    afterEach(async () => {
+      await oauthTransport.stop();
+    });
+
+    it('should reject token request without grant_type', async () => {
+      const response = await request(oauthApp)
+        .post('/oauth/token')
+        .send({});
+
+      expect(response.status).toBe(400);
+    });
+
+    it('should reject authorization_code grant without code', async () => {
+      const response = await request(oauthApp)
+        .post('/oauth/token')
+        .send({ grant_type: 'authorization_code', client_id: 'test' });
+
+      expect(response.status).toBe(400);
+      expect(response.body.error).toBe('invalid_request');
+    });
+
+    it('should reject refresh_token grant without refresh_token', async () => {
+      const response = await request(oauthApp)
+        .post('/oauth/token')
+        .send({ grant_type: 'refresh_token', client_id: 'test' });
+
+      expect(response.status).toBe(400);
+      expect(response.body.error).toBe('invalid_request');
+    });
+
+    it('should reject unsupported grant type', async () => {
+      const response = await request(oauthApp)
+        .post('/oauth/token')
+        .send({ grant_type: 'password', client_id: 'test' });
+
+      expect(response.status).toBe(400);
+      expect(response.body.error).toBe('unsupported_grant_type');
+    });
+  });
+
+  describe('OAuth Callback Endpoint', () => {
+    let oauthTransport: HttpTransport;
+    let oauthApp: any;
+
+    beforeEach(async () => {
+      const oauthConfig = {
+        host: '127.0.0.1',
+        port: 0,
+        sessionTimeoutMs: 1800000,
+        heartbeatEnabled: false,
+        heartbeatIntervalMs: 30000,
+        metricsEnabled: false,
+        metricsPath: '/metrics',
+        oauthConfig: {
+          issuer: 'https://auth.example.com',
+          client_id: 'test-client',
+          client_secret: 'test-secret',
+          scopes: ['read', 'write'],
+        },
+      };
+
+      oauthTransport = new HttpTransport(oauthConfig, logger);
+      oauthApp = (oauthTransport as any).app;
+    });
+
+    afterEach(async () => {
+      await oauthTransport.stop();
+    });
+
+    it('should reject callback without code', async () => {
+      const response = await request(oauthApp)
+        .get('/oauth/callback');
+
+      expect(response.status).toBe(400);
+    });
+
+    it('should handle error in callback', async () => {
+      const response = await request(oauthApp)
+        .get('/oauth/callback')
+        .query({ error: 'access_denied', error_description: 'User denied' });
+
+      expect(response.status).toBe(400);
+      expect(response.body.error).toBe('access_denied');
+    });
+
+    it('should handle exception during OAuth callback', async () => {
+      // Mock the oauthProvider to throw an error during handleCallback
+      (oauthTransport as any).oauthProvider = {
+        handleCallback: async () => {
+          throw new Error('Token exchange failed');
+        }
+      };
+
+      const response = await request(oauthApp)
+        .get('/oauth/callback')
+        .query({ code: 'test-code' });
+
+      expect(response.status).toBe(500);
+      expect(response.text).toBe('OAuth callback failed');
+    });
+  });
+
+  describe('OAuth Authorize Endpoint', () => {
+    let oauthTransport: HttpTransport;
+    let oauthApp: any;
+
+    beforeEach(async () => {
+      const oauthConfig = {
+        host: '127.0.0.1',
+        port: 0,
+        sessionTimeoutMs: 1800000,
+        heartbeatEnabled: false,
+        heartbeatIntervalMs: 30000,
+        metricsEnabled: false,
+        metricsPath: '/metrics',
+        oauthConfig: {
+          issuer: 'https://auth.example.com',
+          client_id: 'test-client',
+          client_secret: 'test-secret',
+          scopes: ['read', 'write'],
+        },
+      };
+
+      oauthTransport = new HttpTransport(oauthConfig, logger);
+      oauthApp = (oauthTransport as any).app;
+    });
+
+    afterEach(async () => {
+      await oauthTransport.stop();
+    });
+
+    it('should reject authorize request without client_id', async () => {
+      const response = await request(oauthApp)
+        .get('/oauth/authorize')
+        .query({ response_type: 'code' });
+
+      // Returns 400 with error in body or text
+      expect(response.status).toBe(400);
+    });
+
+    it('should reject authorize request without response_type', async () => {
+      const response = await request(oauthApp)
+        .get('/oauth/authorize')
+        .query({ client_id: 'test-client' });
+
+      expect(response.status).toBe(400);
+    });
+  });
+
+  describe('OAuth Well-Known Endpoint', () => {
+    let oauthTransport: HttpTransport;
+    let oauthApp: any;
+
+    beforeEach(async () => {
+      const oauthConfig = {
+        host: '127.0.0.1',
+        port: 0,
+        sessionTimeoutMs: 1800000,
+        heartbeatEnabled: false,
+        heartbeatIntervalMs: 30000,
+        metricsEnabled: false,
+        metricsPath: '/metrics',
+        oauthConfig: {
+          issuer: 'https://auth.example.com',
+          client_id: 'test-client',
+          client_secret: 'test-secret',
+          scopes: ['read', 'write'],
+        },
+        resourceName: 'Test MCP Server',
+        resourceDocumentation: 'https://docs.example.com',
+      };
+
+      oauthTransport = new HttpTransport(oauthConfig, logger);
+      oauthApp = (oauthTransport as any).app;
+    });
+
+    afterEach(async () => {
+      await oauthTransport.stop();
+    });
+
+    it('should return protected resource metadata', async () => {
+      const response = await request(oauthApp)
+        .get('/.well-known/oauth-protected-resource/mcp');
+
+      expect(response.status).toBe(200);
+      expect(response.body.resource).toBeDefined();
+      expect(response.body.bearer_methods_supported).toContain('header');
+      expect(response.body.resource_name).toBe('Test MCP Server');
+      expect(response.body.resource_documentation).toBe('https://docs.example.com');
+    });
+
+    it('should return authorization server metadata', async () => {
+      const response = await request(oauthApp)
+        .get('/.well-known/oauth-authorization-server');
+
+      expect(response.status).toBe(200);
+      expect(response.body.issuer).toBeDefined();
+      expect(response.body.authorization_endpoint).toBeDefined();
+      expect(response.body.token_endpoint).toBeDefined();
+      expect(response.body.response_types_supported).toContain('code');
+      expect(response.body.code_challenge_methods_supported).toContain('S256');
+    });
+
+    it('should handle dynamic client registration', async () => {
+      const response = await request(oauthApp)
+        .post('/oauth/register')
+        .send({ redirect_uris: ['http://localhost:8080/callback'] });
+
+      expect(response.status).toBe(201);
+      expect(response.body.client_id).toBeDefined();
+    });
+  });
+
+  describe('OAuth Disabled', () => {
+    it('should return 404 for OAuth endpoints when OAuth is not configured', async () => {
+      const noOAuthConfig = {
+        host: '127.0.0.1',
+        port: 0,
+        sessionTimeoutMs: 1800000,
+        heartbeatEnabled: false,
+        heartbeatIntervalMs: 30000,
+        metricsEnabled: false,
+        metricsPath: '/metrics',
+        // No oauthConfig
+      };
+
+      const noOAuthTransport = new HttpTransport(noOAuthConfig, logger);
+      const noOAuthApp = (noOAuthTransport as any).app;
+
+      // OAuth endpoints should not exist
+      const authorizeResponse = await request(noOAuthApp).get('/oauth/authorize');
+      expect(authorizeResponse.status).toBe(404);
+
+      const tokenResponse = await request(noOAuthApp).post('/oauth/token');
+      expect(tokenResponse.status).toBe(404);
+
+      await noOAuthTransport.stop();
+    });
+  });
+
+  describe('Token Length Validation', () => {
+    it('should accept tokens within max length', async () => {
+      const configWithMaxLength = {
+        host: '127.0.0.1',
+        port: 0,
+        sessionTimeoutMs: 1800000,
+        heartbeatEnabled: false,
+        heartbeatIntervalMs: 30000,
+        metricsEnabled: false,
+        metricsPath: '/metrics',
+        maxTokenLength: 500,
+      };
+
+      const tokenTransport = new HttpTransport(configWithMaxLength, logger);
+      const tokenApp = (tokenTransport as any).app;
+      tokenTransport.setMessageHandler(async (msg) => ({ result: 'ok' }));
+
+      // Token within limit
+      const validToken = 'Bearer ' + 'a'.repeat(400);
+      const response = await request(tokenApp)
+        .post('/mcp')
+        .set('Accept', 'application/json, text/event-stream')
+        .set('Authorization', validToken)
+        .set('Host', 'localhost')
+        .send({ jsonrpc: '2.0', id: 1, method: 'initialize' });
+
+      expect(response.status).not.toBe(400);
+
+      await tokenTransport.stop();
+    });
+  });
+
+  describe('Session Cleanup Callback', () => {
+    it('should call onSessionDestroyed callback when session is destroyed', async () => {
+      const destroyedSessions: string[] = [];
+      
+      transport.onSessionDestroyed((sessionId) => {
+        destroyedSessions.push(sessionId);
+      });
+
+      transport.setMessageHandler(async (msg) => ({ result: 'ok' }));
+
+      // Create session
+      const initResponse = await request(app)
+        .post('/mcp')
+        .set('Accept', 'application/json, text/event-stream')
+        .set('Host', 'localhost')
+        .send({ jsonrpc: '2.0', id: 1, method: 'initialize' });
+
+      const sessionId = initResponse.headers['mcp-session-id'];
+      expect(sessionId).toBeDefined();
+
+      // Delete session
+      await request(app)
+        .delete('/mcp')
+        .set('Mcp-Session-Id', sessionId)
+        .set('Host', 'localhost');
+
+      // Callback should have been called
+      expect(destroyedSessions).toContain(sessionId);
+    });
+  });
+
+  describe('MCP-Session-Id header validation', () => {
+    it('should return error for invalid session ID format in tool call', async () => {
+      transport.setMessageHandler(async (msg) => ({ result: 'ok' }));
+
+      const response = await request(app)
+        .post('/mcp')
+        .set('Accept', 'application/json')
+        .set('Mcp-Session-Id', 'invalid-session-that-does-not-exist')
+        .set('Host', 'localhost')
+        .send({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'test' } });
+
+      // Should get session not found or bad request
+      expect([400, 404]).toContain(response.status);
+    });
+  });
+
+  describe('Content-Type handling', () => {
+    it('should handle requests without Content-Type header', async () => {
+      transport.setMessageHandler(async (msg) => ({ result: 'ok' }));
+
+      // This may fail at JSON parsing level but shouldn't crash
+      const response = await request(app)
+        .post('/mcp')
+        .set('Accept', 'application/json')
+        .set('Host', 'localhost')
+        .type('')
+        .send('{}');
+
+      // Should not be a server error
+      expect(response.status).toBeLessThan(500);
+    });
+  });
+
+  describe('Server URL getter', () => {
+    it('should return server URL when started', async () => {
+      await transport.start();
+      const serverUrl = transport.getServerUrl();
+      expect(serverUrl).toContain('http://');
+      expect(serverUrl).toContain('127.0.0.1');
+    });
+  });
+
+  describe('hasOAuthProvider', () => {
+    it('should return false when OAuth is not configured', () => {
+      expect(transport.hasOAuthProvider()).toBe(false);
+    });
+
+    it('should return true when OAuth is configured', () => {
+      const oauthConfig = {
+        host: '127.0.0.1',
+        port: 0,
+        sessionTimeoutMs: 1800000,
+        heartbeatEnabled: false,
+        heartbeatIntervalMs: 30000,
+        metricsEnabled: false,
+        metricsPath: '/metrics',
+        oauthConfig: {
+          authorization_endpoint: 'https://example.com/oauth/authorize',
+          token_endpoint: 'https://example.com/oauth/token',
+          client_id: 'test-client',
+          client_secret: 'test-secret',
+        },
+      };
+
+      const oauthTransport = new HttpTransport(oauthConfig, logger);
+      expect(oauthTransport.hasOAuthProvider()).toBe(true);
+      oauthTransport.stop();
+    });
+  });
+
+  describe('getOAuthAuthorizationUrl', () => {
+    it('should return empty string when OAuth is not configured', () => {
+      expect(transport.getOAuthAuthorizationUrl()).toBe('');
+    });
+
+    it('should return authorization URL when OAuth is configured', () => {
+      const oauthConfig = {
+        host: '127.0.0.1',
+        port: 0,
+        sessionTimeoutMs: 1800000,
+        heartbeatEnabled: false,
+        heartbeatIntervalMs: 30000,
+        metricsEnabled: false,
+        metricsPath: '/metrics',
+        oauthConfig: {
+          authorization_endpoint: 'https://example.com/oauth/authorize',
+          token_endpoint: 'https://example.com/oauth/token',
+          client_id: 'test-client',
+          client_secret: 'test-secret',
+        },
+      };
+
+      const oauthTransport = new HttpTransport(oauthConfig, logger);
+      expect(oauthTransport.getOAuthAuthorizationUrl()).toBe('https://example.com/oauth/authorize');
+      oauthTransport.stop();
+    });
+  });
+
+  describe('getOAuthScopes', () => {
+    it('should return empty array when OAuth is not configured', () => {
+      expect(transport.getOAuthScopes()).toEqual([]);
+    });
+
+    it('should return scopes when OAuth is configured with scopes', () => {
+      const oauthConfig = {
+        host: '127.0.0.1',
+        port: 0,
+        sessionTimeoutMs: 1800000,
+        heartbeatEnabled: false,
+        heartbeatIntervalMs: 30000,
+        metricsEnabled: false,
+        metricsPath: '/metrics',
+        oauthConfig: {
+          authorization_endpoint: 'https://example.com/oauth/authorize',
+          token_endpoint: 'https://example.com/oauth/token',
+          client_id: 'test-client',
+          client_secret: 'test-secret',
+          scopes: ['api', 'read_user'],
+        },
+      };
+
+      const oauthTransport = new HttpTransport(oauthConfig, logger);
+      expect(oauthTransport.getOAuthScopes()).toEqual(['api', 'read_user']);
+      oauthTransport.stop();
+    });
+  });
+
+  describe('Session token retrieval', () => {
+    it('should return undefined for non-existent session', () => {
+      expect(transport.getSessionToken('non-existent')).toBeUndefined();
+    });
+  });
+
+  describe('destroySession', () => {
+    it('should handle destroying non-existent session gracefully', () => {
+      // Should not throw
+      expect(() => (transport as any).destroySession('non-existent-session')).not.toThrow();
+    });
+  });
+
+  describe('ensureValidSessionToken', () => {
+    it('should return false for non-existent session', async () => {
+      const result = await transport.ensureValidSessionToken('non-existent-session');
+      expect(result).toBe(false);
+    });
+
+    it('should return true for session without expiration info', async () => {
+      // Create a session
+      transport.setMessageHandler(async (msg) => ({
+        jsonrpc: '2.0',
+        id: 1,
+        result: { protocolVersion: '2025-03-26', capabilities: {}, serverInfo: { name: 'test', version: '1.0' } },
+      }));
+
+      const initResponse = await request(app)
+        .post('/mcp')
+        .set('Accept', 'application/json')
+        .set('Host', 'localhost')
+        .send({ jsonrpc: '2.0', id: 1, method: 'initialize' });
+
+      const sessionId = initResponse.headers['mcp-session-id'];
+      expect(sessionId).toBeDefined();
+
+      // Token without expiration should be considered valid
+      const result = await transport.ensureValidSessionToken(sessionId);
+      expect(result).toBe(true);
+    });
+  });
+
+  describe('cleanupExpiredSessions', () => {
+    it('should not throw when no sessions to clean', () => {
+      expect(() => (transport as any).cleanupExpiredSessions()).not.toThrow();
+    });
+  });
+
+  describe('refreshAccessToken', () => {
+    it('should return false when session does not exist', async () => {
+      const result = await (transport as any).refreshAccessToken('non-existent');
+      expect(result).toBe(false);
+    });
+
+    it('should return false when session has no refresh token', async () => {
+      // Create session without refresh token
+      const sessionId = (transport as any).createSession('access-token');
+      const result = await (transport as any).refreshAccessToken(sessionId);
+      expect(result).toBe(false);
+    });
+
+    it('should return false when OAuth provider is not configured', async () => {
+      // Create session with refresh token but no OAuth provider
+      const sessionId = (transport as any).createSession('access-token', 'refresh-token');
+      const result = await (transport as any).refreshAccessToken(sessionId);
+      expect(result).toBe(false);
+    });
+  });
+
+  describe('storeOAuthTokens', () => {
+    it('should store tokens with expiration', () => {
+      const tokens = {
+        access_token: 'test-access-token',
+        refresh_token: 'test-refresh-token',
+        expires_in: 3600
+      };
+      
+      (transport as any).storeOAuthTokens(tokens, 'client-id', ['read', 'write']);
+      
+      const stored = (transport as any).oauthTokensByAccessToken.get('test-access-token');
+      expect(stored).toBeDefined();
+      expect(stored.refreshToken).toBe('test-refresh-token');
+      expect(stored.clientId).toBe('client-id');
+      expect(stored.scopes).toEqual(['read', 'write']);
+      expect(stored.expiresAt).toBeGreaterThan(Date.now());
+    });
+
+    it('should store tokens without expiration', () => {
+      const tokens = {
+        access_token: 'test-access-token-2'
+      };
+      
+      (transport as any).storeOAuthTokens(tokens, 'client-id', []);
+      
+      const stored = (transport as any).oauthTokensByAccessToken.get('test-access-token-2');
+      expect(stored).toBeDefined();
+      expect(stored.refreshToken).toBeUndefined();
+      expect(stored.expiresAt).toBeUndefined();
+    });
+  });
+
+  describe('getSessionToken', () => {
+    it('should return token for existing session', () => {
+      const sessionId = (transport as any).createSession('my-auth-token');
+      const token = transport.getSessionToken(sessionId);
+      expect(token).toBe('my-auth-token');
+    });
+  });
+
+  describe('isAllowedOrigin with OAuth redirect URI', () => {
+    let oauthTransport: HttpTransport;
+    let oauthApp: Express;
+
+    beforeEach(async () => {
+      const oauthConfig = {
+        host: '127.0.0.1',
+        port: 0,
+        sessionTimeoutMs: 1800000,
+        heartbeatEnabled: false,
+        heartbeatIntervalMs: 30000,
+        metricsEnabled: false,
+        metricsPath: '/metrics',
+      };
+
+      oauthTransport = new HttpTransport(oauthConfig, logger);
+      oauthApp = (oauthTransport as any).app;
+    });
+
+    afterEach(async () => {
+      await oauthTransport.stop();
+    });
+
+    it('should allow origin matching OAuth redirect URI host', async () => {
+      // Mock OAuth provider with redirect URI
+      (oauthTransport as any).oauthProvider = {
+        redirectUri: 'http://myapp.example.com:3000/callback',
+      };
+
+      const isAllowed = (oauthTransport as any).isAllowedOrigin('http://myapp.example.com:3000');
+      expect(isAllowed).toBe(true);
+    });
+
+    it('should handle invalid OAuth redirect URI gracefully', async () => {
+      // Mock OAuth provider with invalid redirect URI
+      (oauthTransport as any).oauthProvider = {
+        redirectUri: 'not-a-valid-url',
+      };
+
+      // Should not throw and should fall back to other checks
+      const isAllowed = (oauthTransport as any).isAllowedOrigin('http://localhost:3000');
+      expect(isAllowed).toBe(true); // localhost always allowed
+    });
+  });
+});

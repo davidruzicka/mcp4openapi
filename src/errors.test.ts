@@ -3,7 +3,111 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { generateCorrelationId } from './errors.js';
+import { 
+  generateCorrelationId, 
+  isMCPError, 
+  getErrorDetails,
+  MCPError,
+  ValidationError,
+  OperationNotFoundError,
+  ParameterError,
+  AuthenticationError,
+  AuthorizationError,
+  RateLimitError,
+  NetworkError,
+  ConfigurationError,
+  SessionError
+} from './errors.js';
+
+describe('Error Classes', () => {
+  describe('MCPError', () => {
+    it('should create error with code and details', () => {
+      const error = new MCPError('test message', 'TEST_CODE', { key: 'value' });
+      expect(error.message).toBe('test message');
+      expect(error.code).toBe('TEST_CODE');
+      expect(error.details).toEqual({ key: 'value' });
+      expect(error.name).toBe('MCPError');
+    });
+  });
+
+  describe('ParameterError', () => {
+    it('should format message with param name and reason', () => {
+      const error = new ParameterError('userId', 'must be a positive integer');
+      expect(error.message).toBe("Invalid parameter 'userId': must be a positive integer");
+      expect(error.code).toBe('PARAMETER_ERROR');
+      expect(error.details).toEqual({ paramName: 'userId', reason: 'must be a positive integer' });
+      expect(error.name).toBe('ParameterError');
+    });
+  });
+
+  describe('SessionError', () => {
+    it('should include sessionId in details when provided', () => {
+      const error = new SessionError('Session expired', 'abc-123');
+      expect(error.message).toBe('Session expired');
+      expect(error.code).toBe('SESSION_ERROR');
+      expect(error.details).toEqual({ sessionId: 'abc-123' });
+      expect(error.name).toBe('SessionError');
+    });
+
+    it('should work without sessionId', () => {
+      const error = new SessionError('No active session');
+      expect(error.message).toBe('No active session');
+      expect(error.details).toBeUndefined();
+    });
+  });
+});
+
+describe('isMCPError', () => {
+  it('should return true for MCPError instances', () => {
+    expect(isMCPError(new MCPError('test', 'CODE'))).toBe(true);
+    expect(isMCPError(new ValidationError('test'))).toBe(true);
+    expect(isMCPError(new OperationNotFoundError('op1'))).toBe(true);
+    expect(isMCPError(new ParameterError('param', 'reason'))).toBe(true);
+    expect(isMCPError(new AuthenticationError())).toBe(true);
+    expect(isMCPError(new AuthorizationError())).toBe(true);
+    expect(isMCPError(new RateLimitError('limit exceeded'))).toBe(true);
+    expect(isMCPError(new NetworkError('network failed'))).toBe(true);
+    expect(isMCPError(new ConfigurationError('bad config'))).toBe(true);
+    expect(isMCPError(new SessionError('session issue'))).toBe(true);
+  });
+
+  it('should return false for non-MCPError', () => {
+    expect(isMCPError(new Error('plain error'))).toBe(false);
+    expect(isMCPError('string error')).toBe(false);
+    expect(isMCPError(null)).toBe(false);
+    expect(isMCPError(undefined)).toBe(false);
+    expect(isMCPError({ message: 'object' })).toBe(false);
+  });
+});
+
+describe('getErrorDetails', () => {
+  it('should extract details from MCPError', () => {
+    const error = new ConfigurationError('missing config', { configKey: 'API_KEY' });
+    const details = getErrorDetails(error);
+    
+    expect(details.name).toBe('ConfigurationError');
+    expect(details.code).toBe('CONFIGURATION_ERROR');
+    expect(details.message).toBe('missing config');
+    expect(details.details).toEqual({ configKey: 'API_KEY' });
+    expect(details.stack).toBeDefined();
+  });
+
+  it('should extract details from plain Error', () => {
+    const error = new Error('plain error');
+    const details = getErrorDetails(error);
+    
+    expect(details.name).toBe('Error');
+    expect(details.message).toBe('plain error');
+    expect(details.stack).toBeDefined();
+    expect(details.code).toBeUndefined();
+  });
+
+  it('should handle non-error values', () => {
+    expect(getErrorDetails('string error')).toEqual({ message: 'string error' });
+    expect(getErrorDetails(42)).toEqual({ message: '42' });
+    expect(getErrorDetails(null)).toEqual({ message: 'null' });
+  });
+});
 
 describe('generateCorrelationId', () => {
   it('should generate a valid UUID v4 format', () => {

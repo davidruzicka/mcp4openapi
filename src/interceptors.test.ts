@@ -158,6 +158,20 @@ describe('HttpClient - Auth Interceptors', () => {
     );
   });
 
+  it('should throw error for OAuth auth type', () => {
+    const config: InterceptorConfig = {
+      auth: {
+        type: 'oauth',
+        issuer: 'https://auth.example.com',
+        client_id: 'test-client',
+      } as any,
+    };
+
+    expect(() => new InterceptorChain(config)).toThrow(
+      'Only OAuth authentication configured. OAuth requires HTTP transport for the authorization flow'
+    );
+  });
+
   it('should work without auth if not configured', async () => {
     const config: InterceptorConfig = {};
 
@@ -223,17 +237,17 @@ describe('HttpClient - Rate Limiting', () => {
 
     // První 2 requesty by měly projít okamžitě
     await interceptors.execute(
-      { method: 'GET', url: 'http://example.com', operationId: 'unknownOp' },
+      { method: 'GET', url: 'http://example.com', headers: {}, operationId: 'unknownOp' },
       async () => ({ status: 200, headers: {}, body: 'ok' })
     );
     await interceptors.execute(
-      { method: 'GET', url: 'http://example.com', operationId: 'unknownOp' },
+      { method: 'GET', url: 'http://example.com', headers: {}, operationId: 'unknownOp' },
       async () => ({ status: 200, headers: {}, body: 'ok' })
     );
 
     // Třetí request by měl čekat (2 req/min = 30s na token)
     const thirdRequest = interceptors.execute(
-      { method: 'GET', url: 'http://example.com', operationId: 'unknownOp' },
+      { method: 'GET', url: 'http://example.com', headers: {}, operationId: 'unknownOp' },
       async () => ({ status: 200, headers: {}, body: 'ok' })
     );
 
@@ -267,17 +281,17 @@ describe('HttpClient - Rate Limiting', () => {
     // Test search operation (2 req/min)
     // První 2 requesty projdou okamžitě
     await interceptors.execute(
-      { method: 'GET', url: 'http://example.com', operationId: 'searchOp' },
+      { method: 'GET', url: 'http://example.com', headers: {}, operationId: 'searchOp' },
       async () => ({ status: 200, headers: {}, body: 'ok' })
     );
     await interceptors.execute(
-      { method: 'GET', url: 'http://example.com', operationId: 'searchOp' },
+      { method: 'GET', url: 'http://example.com', headers: {}, operationId: 'searchOp' },
       async () => ({ status: 200, headers: {}, body: 'ok' })
     );
 
     // Třetí request by měl čekat
     const searchRequest = interceptors.execute(
-      { method: 'GET', url: 'http://example.com', operationId: 'searchOp' },
+      { method: 'GET', url: 'http://example.com', headers: {}, operationId: 'searchOp' },
       async () => ({ status: 200, headers: {}, body: 'ok' })
     );
 
@@ -292,13 +306,13 @@ describe('HttpClient - Rate Limiting', () => {
     // Test create operation (1 req/min)
     // První request projde okamžitě
     await interceptors.execute(
-      { method: 'GET', url: 'http://example.com', operationId: 'createOp' },
+      { method: 'GET', url: 'http://example.com', headers: {}, operationId: 'createOp' },
       async () => ({ status: 200, headers: {}, body: 'ok' })
     );
 
     // Druhý request by měl čekat 60s
     const createRequest = interceptors.execute(
-      { method: 'GET', url: 'http://example.com', operationId: 'createOp' },
+      { method: 'GET', url: 'http://example.com', headers: {}, operationId: 'createOp' },
       async () => ({ status: 200, headers: {}, body: 'ok' })
     );
 
@@ -326,14 +340,14 @@ describe('HttpClient - Rate Limiting', () => {
     // Test global limit (4 req/min) - první 4 projdou okamžitě
     for (let i = 0; i < 4; i++) {
       await interceptors.execute(
-        { method: 'GET', url: 'http://example.com', operationId: 'normalOp' },
+        { method: 'GET', url: 'http://example.com', headers: {}, operationId: 'normalOp' },
         async () => ({ status: 200, headers: {}, body: 'ok' })
       );
     }
 
     // Pátý request by měl čekat (4 req/min = 15s na token)
     const fifthRequest = interceptors.execute(
-      { method: 'GET', url: 'http://example.com', operationId: 'normalOp' },
+      { method: 'GET', url: 'http://example.com', headers: {}, operationId: 'normalOp' },
       async () => ({ status: 200, headers: {}, body: 'ok' })
     );
 
@@ -361,7 +375,7 @@ describe('HttpClient - Rate Limiting', () => {
 
     // Fast operation should complete quickly (just 1 request, no rate limiting)
     const fastRequest = interceptors.execute(
-      { method: 'GET', url: 'http://example.com', operationId: 'fastOp' },
+      { method: 'GET', url: 'http://example.com', headers: {}, operationId: 'fastOp' },
       async () => ({ status: 200, headers: {}, body: 'ok' })
     );
 
@@ -375,13 +389,13 @@ describe('HttpClient - Rate Limiting', () => {
     // Slow operation should be rate limited
     // První request projde okamžitě
     await interceptors.execute(
-      { method: 'GET', url: 'http://example.com', operationId: 'slowOp' },
+      { method: 'GET', url: 'http://example.com', headers: {}, operationId: 'slowOp' },
       async () => ({ status: 200, headers: {}, body: 'ok' })
     );
 
     // Druhý request by měl čekat 60s
     const slowRequest = interceptors.execute(
-      { method: 'GET', url: 'http://example.com', operationId: 'slowOp' },
+      { method: 'GET', url: 'http://example.com', headers: {}, operationId: 'slowOp' },
       async () => ({ status: 200, headers: {}, body: 'ok' })
     );
 
@@ -406,14 +420,14 @@ describe('HttpClient - Rate Limiting', () => {
     // První 3 requesty projdou okamžitě
     for (let i = 0; i < 3; i++) {
       await interceptors.execute(
-        { method: 'GET', url: 'http://example.com', operationId: 'anyOp' },
+        { method: 'GET', url: 'http://example.com', headers: {}, operationId: 'anyOp' },
         async () => ({ status: 200, headers: {}, body: 'ok' })
       );
     }
 
     // Čtvrtý request by měl čekat (3 req/min = 20s na token)
     const fourthRequest = interceptors.execute(
-      { method: 'GET', url: 'http://example.com', operationId: 'anyOp' },
+      { method: 'GET', url: 'http://example.com', headers: {}, operationId: 'anyOp' },
       async () => ({ status: 200, headers: {}, body: 'ok' })
     );
 
@@ -523,6 +537,53 @@ describe('HttpClient - Array Serialization', () => {
     });
 
     expect(decodeURIComponent(capturedUrl)).toContain('scope=a,b,c');
+  });
+
+  it('should serialize arrays with indices format', async () => {
+    const config: InterceptorConfig = {
+      auth: { type: 'bearer', value_from_env: 'MCP4_API_TOKEN' },
+      array_format: 'indices',
+    };
+
+    const interceptors = new InterceptorChain(config);
+    const client = new HttpClient('https://api.example.com', interceptors);
+
+    let capturedUrl = '';
+    global.fetch = async (url: RequestInfo | URL) => {
+      capturedUrl = url.toString();
+      return new Response(JSON.stringify({ ok: true }), { status: 200 });
+    };
+
+    await client.request('GET', '/test', {
+      params: { items: ['x', 'y'] },
+    });
+
+    expect(decodeURIComponent(capturedUrl)).toContain('items[0]=x');
+    expect(decodeURIComponent(capturedUrl)).toContain('items[1]=y');
+  });
+
+  it('should serialize arrays with repeat format', async () => {
+    const config: InterceptorConfig = {
+      auth: { type: 'bearer', value_from_env: 'MCP4_API_TOKEN' },
+      array_format: 'repeat',
+    };
+
+    const interceptors = new InterceptorChain(config);
+    const client = new HttpClient('https://api.example.com', interceptors);
+
+    let capturedUrl = '';
+    global.fetch = async (url: RequestInfo | URL) => {
+      capturedUrl = url.toString();
+      return new Response(JSON.stringify({ ok: true }), { status: 200 });
+    };
+
+    await client.request('GET', '/test', {
+      params: { tag: ['a', 'b'] },
+    });
+
+    // 'repeat' format: tag=a&tag=b
+    const url = new URL(capturedUrl);
+    expect(url.searchParams.getAll('tag')).toEqual(['a', 'b']);
   });
 });
 
@@ -742,6 +803,28 @@ describe('HttpClient - Structured Error Handling', () => {
     await expect(client.request('GET', '/test'))
       .rejects
       .toThrow('Validation failed');
+  });
+
+  it('should use plain text body as error message', async () => {
+    const config: InterceptorConfig = {
+      auth: { type: 'bearer', value_from_env: 'MCP4_API_TOKEN' },
+    };
+
+    const client = createTestHttpClient('https://api.example.com', config);
+
+    global.fetch = async () => {
+      return new Response(
+        'Plain text error message',
+        {
+          status: 500,
+          headers: { 'Content-Type': 'text/plain' },
+        }
+      );
+    };
+
+    await expect(client.request('GET', '/test'))
+      .rejects
+      .toThrow('Plain text error message');
   });
 });
 

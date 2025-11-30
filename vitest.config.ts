@@ -19,6 +19,26 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'html'],
+      exclude: [
+        // Default excludes
+        'node_modules/**',
+        'dist/**',
+        'coverage/**',
+        '**/*.test.ts',
+        '**/*.d.ts',
+        // Type definitions only
+        'src/types/**',
+        // Export module only
+        'src/lib.ts',
+        // CLI entry point (tested indirectly via integration tests)
+        'src/index.ts',
+        // Scripts (not part of runtime code)
+        'scripts/**',
+        // Test utilities
+        'src/testing/**',
+        // E2E test utilities
+        'tests/**',
+      ],
     },
     reporters: ['default', 'junit'],
     outputFile: {

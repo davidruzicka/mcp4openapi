@@ -75,7 +75,7 @@ export class InterceptorChain {
     const authConfig = sortedConfigs.find(c => c.type !== 'oauth');
     
     if (!authConfig) {
-      throw new Error('No non-OAuth authentication configured for InterceptorChain. OAuth requires HTTP transport.');
+      throw new Error('Only OAuth authentication configured. OAuth requires HTTP transport for the authorization flow (redirects, callbacks). Add a token-based auth config or use HTTP transport.');
     }
     
     if (authConfig.type === 'oauth') {
