@@ -115,6 +115,28 @@ All standard environment variables are supported.
 
 ## Security
 
+### Container Hardening
+
+The default `docker-compose.yml` includes security hardening options:
+
+```yaml
+services:
+  mcp-server:
+    # Read-only root filesystem
+    read_only: true
+    # Prevent privilege escalation
+    security_opt:
+      - no-new-privileges:true
+    # Ephemeral writable space for temp files
+    tmpfs:
+      - /tmp:size=64M
+```
+
+**Why these settings?**
+- **`read_only: true`**: Prevents attackers from modifying container filesystem
+- **`no-new-privileges:true`**: Blocks setuid binaries and capability escalation
+- **`tmpfs`**: Provides limited writable space that's cleared on restart
+
 ### Non-root User
 
 Container runs as user `mcp` (UID 1000, GID 1000):

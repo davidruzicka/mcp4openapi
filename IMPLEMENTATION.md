@@ -210,7 +210,7 @@ src/
 ├── http-transport.ts    - HTTP Streamable transport (787 lines)
 ├── http-client-factory.ts - HTTP client management & session handling
 ├── jsonrpc-validator.ts - JSON-RPC message validation utilities
-├── validation-utils.ts  - Common validation functions (email, URI)
+├── validation-utils.ts  - Security utilities (prototype pollution, regex escape, redaction)
 ├── metrics.ts           - Prometheus metrics collector (264 lines)
 ├── logger.ts            - Pluggable logger (console/JSON)
 ├── constants.ts         - Time & HTTP status constants
@@ -238,21 +238,22 @@ docs/
 └── PROFILE-GUIDE.md     - Profile creation guide (622 lines)
 ```
 
-## Test Coverage (261 tests, 100% passing)
+## Test Coverage (455+ tests, 100% passing)
 
-### **Unit Tests** (123 tests):
+### **Unit Tests**:
 - **OpenAPI Parser** (8 tests) - spec parsing, $ref resolution
 - **Profile Loader** (9 tests) - validation, logic checks, operation keys validation
 - **Tool Generator** (7 tests) - MCP tool generation, JSON schema
 - **Interceptors** (10 tests) - auth, rate-limit, retry, array serialization
-- **Composite Executor** (6 tests) - multi-step execution, partial results
+- **Composite Executor** (11 tests) - multi-step execution, partial results, **prototype pollution protection**
 - **Schema Validator** (9 tests) - request body validation
 - **Logger** (17 tests) - console/JSON output, log levels, **profile-aware token redaction** (bearer/query/custom-header)
 - **HTTP Transport** (35 tests) - POST/GET/DELETE, sessions, SSE, origin validation, CIDR
 - **Metrics** (16 tests) - HTTP, sessions, tools, API calls
 - **HTTP Client Factory** (13 tests) - client creation, session management
-- **JSON-RPC Validator** (5 tests) - message type validation
-- **Validation Utils** (2 tests) - email and URI validation
+- **JSON-RPC Validator** (18 tests) - message type validation
+- **Validation Utils** (4 tests) - email, URI, **prototype pollution prevention**, **regex escaping**
+- **OAuth Provider** (16 tests) - OAuth flow, **redirect URI validation**
 
 ### **Integration Tests** (30 tests):
 - **GitLab API** (21 tests) - badges, branches, access requests, jobs
@@ -316,6 +317,30 @@ docs/
 - Type checking, required fields, enum values, nested objects, arrays
 - Format validation (email, URI)
 - Clear error messages with JSONPath
+
+### Security Hardening (Complete)
+
+**Prototype Pollution Protection**
+- `isSafePropertyName()` blocks dangerous property names (`__proto__`, `constructor`, etc.)
+- Applied in: `interceptors.ts`, `composite-executor.ts`, `openapi-parser.ts`
+
+**ReDoS Prevention**
+- `escapeRegExp()` escapes special regex characters in user input
+- Applied in: `logger.ts` for query parameter redaction
+
+**OAuth Redirect Validation**
+- `isAllowedRedirectHost()` validates redirect URIs against `MCP4_ALLOWED_ORIGINS`
+- Supports wildcard patterns (`*.example.com`)
+- Applied in: `oauth-provider.ts`
+
+**CORS Hardening**
+- Origin header validated against allowlist (not reflected)
+- Applied in: `http-transport.ts`
+
+**Docker Hardening**
+- `read_only: true` - read-only root filesystem
+- `no-new-privileges:true` - prevent privilege escalation
+- `tmpfs: /tmp:size=64M` - ephemeral writable space
 
 ### HTTP Transport (Complete)
 

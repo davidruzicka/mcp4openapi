@@ -443,11 +443,22 @@ For production deployments:
 
 ### 4. Configure Allowed Origins
 
-Prevent CSRF attacks:
+Prevent CSRF attacks and open redirect vulnerabilities:
 
 ```bash
 export MCP4_ALLOWED_ORIGINS="https://cursor.com,https://your-client.com"
 ```
+
+**OAuth Redirect URI Validation**: When OAuth is enabled, redirect URIs are validated against `MCP4_ALLOWED_ORIGINS`. The redirect host must match one of:
+- Exact hostname (e.g., `example.com`)
+- Wildcard pattern (e.g., `*.company.com` matches `app.company.com`)
+- `localhost` or `127.0.0.1` (always allowed for local development)
+
+**Example**: If `MCP4_ALLOWED_ORIGINS=https://app.example.com,*.company.com`, valid redirect URIs include:
+- `http://localhost:3003/oauth/callback` ✅ (localhost always allowed)
+- `https://app.example.com/oauth/callback` ✅ (exact match)
+- `https://dev.company.com/oauth/callback` ✅ (wildcard match)
+- `https://evil.com/oauth/callback` ❌ (rejected - not in allowlist)
 
 ### 5. Configure Rate Limiting
 
