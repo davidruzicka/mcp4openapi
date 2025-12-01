@@ -996,6 +996,12 @@ export class HttpTransport {
     // 2. Check Authorization: Bearer header
     const authHeader = req.headers.authorization;
     if (authHeader) {
+      // Defense against ReDoS: Check length before regex
+      const maxHeaderLength = (this.config.maxTokenLength ?? DEFAULT_MAX_TOKEN_LENGTH) + 10; // Bearer + spaces + margin
+      if (authHeader.length > maxHeaderLength) {
+        throw new Error(`Authorization header too long (max ${maxHeaderLength} characters)`);
+      }
+      
       // Relaxed Bearer token format validation - allow flexible whitespace
       // Trim whitespace to handle client variations (IntelliJ, VSCode, etc.)
       const trimmed = authHeader.trim();
