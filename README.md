@@ -276,7 +276,7 @@ echo 'export NODE_EXTRA_CA_CERTS="$HOME/ca-bundle.pem"' >> $HOME/.bash_profile
 ## Environment Variables
 
 ### Required
-- `MCP4_OPENAPI_SPEC_PATH`: Path to OpenAPI spec (YAML/JSON)
+- `MCP4_OPENAPI_SPEC_PATH`: Path or URL to OpenAPI spec (YAML/JSON, supports local files and HTTP/HTTPS URLs)
 - `MCP4_API_TOKEN`: API token (default env var name; customizable via `MCP4_AUTH_ENV_VAR`)
   - **Required for stdio** mode with authenticated APIs
   - **Optional for HTTP** mode with per-session tokens sent in HTTP headers
