@@ -651,7 +651,7 @@ components:
             type: string
           type: array
       required:
-      - deployment_slug
+      - deploymentSlug
       - issue_type
       title: Bulk Triage Request
       type: object

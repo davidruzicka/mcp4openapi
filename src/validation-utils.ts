@@ -68,6 +68,10 @@ export function redactQueryParam(
   paramName: string
 ): string {
   if (!url) return '';
+  // Enforce safe paramName (alphanumeric, underscore, dash) length <= 64
+  if (!/^[A-Za-z0-9_-]{1,64}$/.test(paramName)) {
+    return url; // Unsafe param name; return original unmodified
+  }
   
   try {
     const urlObj = new URL(url);
@@ -76,8 +80,24 @@ export function redactQueryParam(
     }
     return urlObj.toString();
   } catch {
-    const regex = new RegExp(`([?&]${escapeRegExp(paramName)}=)[^&]+`, 'gi');
-    return url.replace(regex, `$1[REDACTED]`);
+    // Fallback: manual parsing without dynamic RegExp to avoid ReDoS concerns
+    // Split on '?' then process query string key-value pairs
+    const qIndex = url.indexOf('?');
+    if (qIndex === -1) return url;
+    const base = url.substring(0, qIndex);
+    const query = url.substring(qIndex + 1);
+    const parts = query.split('&');
+    const redactedParts = parts.map(part => {
+      const eqIndex = part.indexOf('=');
+      if (eqIndex === -1) return part; // skip malformed segment
+      const key = part.substring(0, eqIndex);
+      if (key === paramName) {
+        // Encode [REDACTED] for consistency with URLSearchParams behavior
+        return key + '=%5BREDACTED%5D';
+      }
+      return part;
+    });
+    return base + '?' + redactedParts.join('&');
   }
 }
 

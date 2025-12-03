@@ -34,6 +34,7 @@ npm start              # Runs built server (needs MCP4_* env vars)
 
 - Unit tests: `src/*.test.ts` (co-located with source)
 - Integration tests: `src/testing/*.test.ts`
+- End-to-end tests: `tests/e2e/`
 - Mock server: `src/testing/mock-gitlab-server.ts` uses MSW
 - Fixtures: `src/testing/fixtures.ts`
 

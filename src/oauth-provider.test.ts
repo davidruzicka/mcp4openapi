@@ -731,6 +731,57 @@ describe('ExternalOAuthProvider', () => {
       expect(mockRes.status).toHaveBeenCalledWith(400);
       expect(mockRes.send).toHaveBeenCalledWith('Invalid or expired state');
     });
+
+    it('should return 400 when stored redirect host is disallowed during callback', async () => {
+      const configWithAllowedHosts = {
+        ...config,
+        allowed_redirect_hosts: ['localhost'],
+      };
+      provider = new ExternalOAuthProvider(configWithAllowedHosts, mockLogger);
+
+      const client: OAuthClientInformationFull = {
+        client_id: 'client-123',
+        redirect_uris: ['http://localhost:3003/callback'],
+        grant_types: ['authorization_code'],
+        response_types: ['code'],
+      };
+      (provider as any)._clientsStore.registerClient(client);
+
+      // Insert tampered state referencing disallowed host
+      (provider as any).stateStore.set('state123', {
+        clientRedirectUri: 'http://evil.com/callback',
+        codeChallenge: 'challenge',
+        originalState: 'orig',
+        clientId: client.client_id,
+        scopes: ['api'],
+      });
+
+      // Stub token exchange
+      (provider as any).exchangeCodeWithProvider = vi.fn().mockResolvedValue({
+        access_token: 'at',
+        refresh_token: 'rt',
+        expires_in: 3600,
+        token_type: 'Bearer',
+      });
+
+      const mockReq = {
+        query: {
+          code: 'auth-code',
+          state: 'state123',
+        },
+      } as any;
+      const mockRes = {
+        status: vi.fn().mockReturnThis(),
+        send: vi.fn(),
+        redirect: vi.fn(),
+      } as any;
+
+      await provider.handleCallback(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(400);
+      expect(mockRes.send).toHaveBeenCalledWith('Redirect URI host not allowed');
+      expect(mockRes.redirect).not.toHaveBeenCalled();
+    });
   });
 
   describe('verifyAccessToken', () => {

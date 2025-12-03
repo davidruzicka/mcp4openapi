@@ -5,13 +5,12 @@
   
   "parameter_aliases": {
     "deploymentId": ["deployment_id"],
-    "deploymentSlug": ["deployment_slug", "deployment"],
     "projectName": ["project_name", "project"],
     "repositoryId": ["repository_id", "repo_id"],
     "policyId": ["policy_id"],
     "scanId": ["scan_id"],
     "taskToken": ["task_token"],
-    "externalTicketId": ["ticket_id", "external_ticket_id"]
+    "externalTicketId": ["external_ticket_id", "ticket_id"]
   },
   
   "tools": [
@@ -34,7 +33,7 @@
     {
       "name": "manage_projects",
       "description": "Work with Semgrep projects (repositories). Actions: 'list' (all projects), 'get' (project details), 'update' (modify tags/branch/scan config), 'delete' (remove project and findings), 'add_tags', 'remove_tags', 'toggle_managed_scan' (enable/disable managed scans).",
-      "metadata_params": ["action", "deploymentSlug", "projectName"],
+      "metadata_params": ["action", "deploymentSlug", "project_name"],
       "operations": {
         "list": "ProjectsService_ListProjects",
         "get": "ProjectsService_GetProject",
@@ -45,7 +44,7 @@
         "toggle_managed_scan": "ProjectsService_ToggleProjectManagedScan"
       },
       "response_fields": {
-        "list": ["id", "name", "url", "default_branch", "primary_branch", "tags", "latest_scan_at", "created_at"],
+        "list": ["projects"],
         "get": ["id", "name", "url", "default_branch", "primary_branch", "tags", "latest_scan_at", "managed_scan_config"],
         "update": ["id", "name", "tags", "primary_branch", "managed_scan_config"],
         "add_tags": ["id", "name", "tags"],
@@ -65,7 +64,7 @@
           "required": true,
           "example": "your-deployment"
         },
-        "projectName": {
+        "project_name": {
           "type": "string",
           "description": "Project name (e.g., 'organization/repo')",
           "required_for": ["get", "update", "delete", "add_tags", "remove_tags", "toggle_managed_scan"],
@@ -450,7 +449,6 @@
     {
       "name": "triage_findings",
       "description": "Bulk triage security findings. Set triage state (ignored, reviewing, fixing, reopened), add notes, and filter by various criteria. Either provide issue_ids or filter parameters.",
-      "metadata_params": ["deploymentSlug"],
       "operations": {
         "bulk": "TriageService_BulkTriage"
       },
@@ -547,7 +545,7 @@
     {
       "name": "manage_tickets",
       "description": "Create and manage Jira tickets for findings. Actions: 'create' (create tickets for findings by ID or filters, groups by repo+rule by default), 'delete' (unlink a ticket).",
-      "metadata_params": ["action", "deploymentSlug", "deploymentId"],
+      "metadata_params": ["action", "deploymentSlug", "deployment_id"],
       "operations": {
         "create": "TicketingService_CreateTicket",
         "delete": "TicketingService_DeleteTicket"
@@ -564,7 +562,7 @@
           "description": "Deployment slug (for create). Get from get_deployment tool.",
           "required_for": ["create"]
         },
-        "deploymentId": {
+        "deployment_id": {
           "type": "string",
           "description": "Deployment ID numeric (for delete). Get from get_deployment tool.",
           "required_for": ["delete"]
