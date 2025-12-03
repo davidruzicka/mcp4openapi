@@ -62,11 +62,20 @@ describe('Validation Utils', () => {
       expect(redactQueryParam(undefined, 'token')).toBe('');
     });
 
-    it('should use regex fallback for invalid URL', () => {
+    it('should fallback to manual parsing for invalid URL', () => {
       const invalidUrl = '/api?token=secret&other=value';
       const redacted = redactQueryParam(invalidUrl, 'token');
-      expect(redacted).toContain('token=[REDACTED]');
-      expect(redacted).toContain('other=value');
+      expect(redacted).toBe('/api?token=%5BREDACTED%5D&other=value');
+    });
+
+    it('should leave URL unchanged when no query string present', () => {
+      const url = 'https://example.com/path';
+      expect(redactQueryParam(url, 'token')).toBe(url);
+    });
+
+    it('should return original for unsafe param name', () => {
+      const url = 'https://example.com/api?token=secret';
+      expect(redactQueryParam(url, 'token!')).toBe(url);
     });
   });
 

@@ -284,7 +284,7 @@ describe('Token Redaction', () => {
       });
       
       const call = consoleErrorSpy.mock.calls[0][0];
-      expect(call).toContain('token=[REDACTED]');
+      expect(call).toContain('token=%5BREDACTED%5D');
       expect(call).not.toContain('secret');
     });
   });

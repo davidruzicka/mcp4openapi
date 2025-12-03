@@ -171,9 +171,11 @@ describe('Semgrep Profile Validation', () => {
     const profile = await loader.load(PROFILE_PATH);
     
     expect(profile.parameter_aliases).toBeDefined();
+    // Keys must be path parameter names (camelCase from OpenAPI), values are snake_case aliases
     expect(profile.parameter_aliases?.deploymentId).toBeDefined();
-    expect(profile.parameter_aliases?.deploymentSlug).toBeDefined();
+    expect(profile.parameter_aliases?.deploymentId).toContain('deployment_id');
     expect(profile.parameter_aliases?.projectName).toBeDefined();
+    expect(profile.parameter_aliases?.projectName).toContain('project_name');
   });
 
   it('should have response_fields for verbosity reduction', async () => {
