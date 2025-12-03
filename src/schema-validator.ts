@@ -70,7 +70,10 @@ export class SchemaValidator {
     // Type validation
     if (schema.type) {
       const actualType = Array.isArray(data) ? 'array' : typeof data;
-      if (actualType !== schema.type) {
+      // OpenAPI 'integer' is a subtype of 'number' with format constraint
+      const expectedType = schema.type === 'integer' ? 'number' : schema.type;
+      
+      if (actualType !== expectedType) {
         errors.push({
           path: path || '(root)',
           message: `Expected ${schema.type}, got ${actualType}`,
@@ -78,6 +81,18 @@ export class SchemaValidator {
           value: data,
         });
         return; // Stop validation if type is wrong
+      }
+      
+      // Additional integer validation: check it's actually an integer
+      if (schema.type === 'integer' && typeof data === 'number') {
+        if (!Number.isInteger(data)) {
+          errors.push({
+            path: path || '(root)',
+            message: `Expected integer, got number`,
+            schema,
+            value: data,
+          });
+        }
       }
     }
 

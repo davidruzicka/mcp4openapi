@@ -4,6 +4,7 @@
 [![codecov](https://codecov.io/gh/davidruzicka/mcp4openapi/graph/badge.svg)](https://codecov.io/gh/davidruzicka/mcp4openapi)
 [![npm](https://img.shields.io/npm/v/mcp4openapi)](https://www.npmjs.com/package/mcp4openapi)
 [![Docker Hub](https://img.shields.io/docker/v/mcp4openapi/mcp4openapi?label=docker)](https://hub.docker.com/r/mcp4openapi/mcp4openapi)
+<a href="/LICENSE.md" alt="license MIT"><svg xmlns="http://www.w3.org/2000/svg" width="78" height="20" role="img" aria-label="license: MIT"><title>license: MIT</title><linearGradient id="s" x2="0" y2="100%"><stop offset="0" stop-color="#bbb" stop-opacity=".1"/><stop offset="1" stop-opacity=".1"/></linearGradient><clipPath id="r"><rect width="78" height="20" rx="3" fill="#fff"/></clipPath><g clip-path="url(#r)"><rect width="47" height="20" fill="#555"/><rect x="47" width="31" height="20" fill="#4c1"/><rect width="78" height="20" fill="url(#s)"/></g><g fill="#fff" text-anchor="middle" font-family="Verdana,Geneva,DejaVu Sans,sans-serif" text-rendering="geometricPrecision" font-size="110"><text aria-hidden="true" x="245" y="150" fill="#010101" fill-opacity=".3" transform="scale(.1)" textLength="370">license</text><text x="245" y="140" transform="scale(.1)" fill="#fff" textLength="370">license</text><text aria-hidden="true" x="615" y="150" fill="#010101" fill-opacity=".3" transform="scale(.1)" textLength="210">MIT</text><text x="615" y="140" transform="scale(.1)" fill="#fff" textLength="210">MIT</text></g></svg></a>
 
 Universal MCP server that generates tools from any OpenAPI specification.
 
@@ -56,6 +57,11 @@ More about profiles: [docs/PROFILE-GUIDE.md](https://github.com/davidruzicka/mcp
 - **OAuth 2.0**: Browser-based authentication flow for HTTP transport (see [docs/OAUTH.md](./docs/OAUTH.md))
 - **Multi-Auth**: Support multiple auth methods (OAuth + Bearer) with priority-based fallback (see [docs/MULTI-AUTH.md](./docs/MULTI-AUTH.md))
 - **Observability**: Structured logging (console/JSON) with profile-aware token redaction, Prometheus metrics
+
+## Security Note
+
+- DNS rebinding protection: when binding to localhost (`127.0.0.1`/`::1`), the HTTP transport enforces Host header validation and returns `403 { "error": "Forbidden" }` on mismatch. This mitigates browser-based DNS rebinding attacks against local development servers.
+- For remote deployments, bind to an explicit interface or place the server behind a reverse proxy that enforces strict Host checks and origin allowlists.
 
 Check example profiles in [profiles/](https://github.com/davidruzicka/mcp4openapi/tree/main/profiles).
 

@@ -73,6 +73,16 @@ describe('HttpTransport', () => {
       expect(response.status).toBe(403);
       expect(response.body).toHaveProperty('error', 'Forbidden');
     });
+
+    it('should reject disallowed origin in CORS preflight', async () => {
+      const response = await request(app)
+        .options('/mcp')
+        .set('Origin', 'https://evil.com')
+        .set('Host', 'example.com');
+      expect(response.status).toBe(403);
+      expect(response.headers['access-control-allow-origin']).toBeUndefined();
+      expect(response.body).toHaveProperty('error', 'Forbidden');
+    });
   });
 
   describe('Security - Custom Allowed Origins', () => {
@@ -114,6 +124,18 @@ describe('HttpTransport', () => {
         .send({ jsonrpc: '2.0', id: 1, method: 'initialize' });
 
       expect(response.status).toBe(200);
+    });
+
+    it('should allow CORS preflight for allowed origin', async () => {
+      const response = await request(customApp)
+        .options('/mcp')
+        .set('Origin', 'https://example.com')
+        .set('Host', 'api.test.com');
+      expect(response.status).toBe(200);
+      expect(response.headers['access-control-allow-origin']).toBe('https://example.com');
+      expect(response.headers['access-control-allow-methods']).toContain('POST');
+      expect(response.headers['access-control-allow-headers']).toContain('Content-Type');
+      expect(response.headers['access-control-allow-credentials']).toBe('false');
     });
 
     it('should accept wildcard subdomain match', async () => {
@@ -180,6 +202,12 @@ describe('HttpTransport', () => {
         .send({ jsonrpc: '2.0', id: 1, method: 'initialize' });
 
       expect(response.status).toBe(403);
+    });
+
+    it('should have frozen config object (immutability)', async () => {
+      // Access private config via cast
+      const cfg = (customTransport as any).config;
+      expect(Object.isFrozen(cfg)).toBe(true);
     });
 
     it('should reject non-matching wildcard', async () => {
