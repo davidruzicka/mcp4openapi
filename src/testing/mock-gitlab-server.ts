@@ -38,6 +38,14 @@ const DEFAULT_OAUTH_CONFIG: OAuthConfig = {
   expiresIn: 3600,
 };
 
+type BranchFixture = (typeof fixtures.mockBranchesList)[number];
+type BranchState = BranchFixture & {
+  developers_can_push?: boolean;
+  developers_can_merge?: boolean;
+  can_push?: boolean;
+  web_url?: string;
+};
+
 /**
  * Helper: Extract and validate IID from URL
  * 
@@ -75,6 +83,15 @@ function extractMrIidFromNotesUrl(url: string): number | null {
     return null;
   }
   return iid;
+}
+
+function extractBranchNameFromUrl(url: string): string | null {
+  const pathWithoutQuery = url.split('?')[0];
+  const match = pathWithoutQuery.match(/\/repository\/branches\/([^\/]+)/);
+  if (!match) {
+    return null;
+  }
+  return decodeURIComponent(match[1]);
 }
 
 /**
@@ -168,6 +185,20 @@ export function createOAuthHandlers(config: OAuthConfig = DEFAULT_OAUTH_CONFIG):
  * Create GitLab API handlers with configurable base URL
  */
 export function createGitLabHandlers(baseUrl: string = DEFAULT_BASE_URL): RequestHandler[] {
+  const branchStates = new Map<string, BranchState>(
+    fixtures.mockBranchesList.map((branch) => [
+      branch.name,
+      structuredClone(branch) as BranchState,
+    ])
+  );
+
+  const findBranch = (name: string | null): BranchState | undefined => {
+    if (!name) return undefined;
+    return branchStates.get(name);
+  };
+
+  const listBranches = (): BranchState[] => Array.from(branchStates.values());
+
   return [
     // Groups
     http.get(`${baseUrl}/groups`, ({ request }) => {
@@ -333,21 +364,31 @@ export function createGitLabHandlers(baseUrl: string = DEFAULT_BASE_URL): Reques
     // Branches
     http.get(`${baseUrl}/projects/*/repository/branches`, ({ request }) => {
       const search = parseSearchParam(request);
+      let branches = listBranches();
 
       if (search) {
-        return HttpResponse.json(
-          fixtures.mockBranchesList.filter(b => b.name.includes(search))
-        );
+        branches = branches.filter((b) => b.name.includes(search));
       }
-      return HttpResponse.json(fixtures.mockBranchesList);
+      return HttpResponse.json(branches);
+    }),
+
+    http.head(`${baseUrl}/projects/*/repository/branches/*`, ({ request }) => {
+      const branchName = extractBranchNameFromUrl(request.url);
+      const branch = findBranch(branchName);
+
+      if (!branch) {
+        return HttpResponse.json({ message: 'Branch Not Found' }, { status: 404 });
+      }
+
+      return HttpResponse.json({ exists: true });
     }),
 
     http.get(`${baseUrl}/projects/*/repository/branches/*`, ({ request }) => {
-      const branch = decodeURIComponent(request.url.split('/').pop() || '');
-      const found = fixtures.mockBranchesList.find(b => b.name === branch);
+      const branchName = extractBranchNameFromUrl(request.url);
+      const branch = findBranch(branchName);
       
-      if (found) {
-        return HttpResponse.json(found);
+      if (branch) {
+        return HttpResponse.json(branch);
       }
       return HttpResponse.json({ message: 'Branch Not Found' }, { status: 404 });
     }),
@@ -362,44 +403,85 @@ export function createGitLabHandlers(baseUrl: string = DEFAULT_BASE_URL): Reques
         );
       }
 
-      return HttpResponse.json({
+      const baseCommit = structuredClone(fixtures.mockBranch.commit) as Record<string, unknown>;
+      const newBranch: BranchState = {
         name: branch,
-        commit: fixtures.mockBranch.commit,
+        commit: {
+          ...baseCommit,
+          id: `${branch}-${Date.now()}`,
+          short_id: `${branch.substring(0, 7)}-new`
+        },
         merged: false,
         protected: false,
         default: false,
-      }, { status: 201 });
+        can_push: true,
+        web_url: `https://gitlab.com/my-org/my-project/-/tree/${encodeURIComponent(branch)}`,
+      } as BranchState;
+
+      branchStates.set(branch, newBranch);
+
+      return HttpResponse.json(newBranch, { status: 201 });
     }),
 
     http.delete(`${baseUrl}/projects/*/repository/branches/*`, ({ request }) => {
-      const branch = decodeURIComponent(request.url.split('/').pop() || '');
-      if (branch !== 'main') {
-        return new HttpResponse(null, { status: 204 });
+      const branchName = extractBranchNameFromUrl(request.url);
+      const branch = findBranch(branchName);
+
+      if (!branch) {
+        return HttpResponse.json({ message: 'Branch Not Found' }, { status: 404 });
       }
-      return HttpResponse.json(
-        { message: 'Cannot delete default branch' },
-        { status: 403 }
-      );
+
+      if (branch.default) {
+        return HttpResponse.json(
+          { message: 'Cannot delete default branch' },
+          { status: 403 }
+        );
+      }
+
+      branchStates.delete(branchName!);
+      return new HttpResponse(null, { status: 204 });
     }),
 
-    http.put(`${baseUrl}/projects/*/repository/branches/*/protect`, ({ request }) => {
-      const parts = request.url.split('/');
-      const branch = decodeURIComponent(parts[parts.length - 2]);
-      return HttpResponse.json({
-        ...fixtures.mockBranch,
-        name: branch,
-        protected: true,
-      });
+    http.put(`${baseUrl}/projects/*/repository/branches/*/protect`, async ({ request }) => {
+      const branchName = extractBranchNameFromUrl(request.url);
+      const branch = findBranch(branchName);
+
+      if (!branch) {
+        return HttpResponse.json({ message: 'Branch Not Found' }, { status: 404 });
+      }
+
+      const body = await request.json() as Record<string, unknown>;
+      branch.protected = true;
+      if (typeof body.developers_can_push === 'boolean') {
+        branch.developers_can_push = body.developers_can_push;
+      }
+      if (typeof body.developers_can_merge === 'boolean') {
+        branch.developers_can_merge = body.developers_can_merge;
+      }
+      branchStates.set(branchName!, branch);
+
+      return HttpResponse.json(branch);
     }),
 
-    http.put(`${baseUrl}/projects/*/repository/branches/*/unprotect`, ({ request }) => {
-      const parts = request.url.split('/');
-      const branch = decodeURIComponent(parts[parts.length - 2]);
-      return HttpResponse.json({
-        ...fixtures.mockBranch,
-        name: branch,
-        protected: false,
-      });
+    http.put(`${baseUrl}/projects/*/repository/branches/*/unprotect`, async ({ request }) => {
+      const branchName = extractBranchNameFromUrl(request.url);
+      const branch = findBranch(branchName);
+
+      if (!branch) {
+        return HttpResponse.json({ message: 'Branch Not Found' }, { status: 404 });
+      }
+
+      const body = await request.json() as Record<string, unknown>;
+      branch.protected = false;
+      if (typeof body.developers_can_push === 'boolean') {
+        branch.developers_can_push = body.developers_can_push;
+      }
+      if (typeof body.developers_can_merge === 'boolean') {
+        branch.developers_can_merge = body.developers_can_merge;
+      }
+      branchStates.set(branchName!, branch);
+
+      return HttpResponse.json(branch);
     }),
 
     // Access Requests

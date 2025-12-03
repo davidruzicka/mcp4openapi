@@ -51,6 +51,8 @@ function validateToolResponse(response: JsonRpcResponse, operation: ToolOperatio
   } else if (operation.action === 'delete') {
     // Delete operations may return empty or success message
     expect(responseData === null || typeof responseData === 'object').toBe(true);
+  } else if (['protect', 'unprotect', 'exists'].includes(operation.action)) {
+    expect(typeof responseData).toBe('object');
   }
 }
 
@@ -161,26 +163,17 @@ describe('Tools Coverage E2E', () => {
 
   // Generate tests for each tool
   for (const [toolName, toolOps] of operationsByTool) {
+    const hasStandardOps = toolOps.some(op => !op.isComposite);
+    if (!hasStandardOps) {
+      continue;
+    }
     describe(toolName, () => {
       for (const operation of toolOps) {
-        // Skip composite tools for now (require special handling)
+        // Skip composite tools from auto-generated coverage; they have dedicated tests below
         if (operation.isComposite) {
-          it.skip(`${operation.action} (composite - needs separate test)`, () => {});
           continue;
         }
         
-        // Skip operations that need special mock setup
-        const skipOperations = [
-          'exists',      // HEAD request, special handling
-          'protect',     // needs branch setup
-          'unprotect',   // needs branch setup
-        ];
-        
-        if (skipOperations.includes(operation.action)) {
-          it.skip(`${operation.action} (needs special mock setup)`, () => {});
-          continue;
-        }
-
         it(`${operation.action} returns valid response`, async () => {
           const params = adjustParamsForMock(operation);
           
@@ -253,10 +246,20 @@ describe('Composite Tools E2E', () => {
     const text = result.content[0].text!;
     const data = JSON.parse(text);
     
-    // Composite result should include data with at least one step result
-    // The structure depends on implementation - check we have something
+    // Validate composite structure
     expect(data).toBeDefined();
     expect(typeof data).toBe('object');
+    expect((data as any).data).toBeDefined();
+    const compositeData = (data as any).data;
+    expect(compositeData.merge_request).toBeDefined();
+    const mr = compositeData.merge_request;
+    expect(mr.iid).toBe(1);
+    expect(Array.isArray(mr.notes)).toBe(true);
+    expect(mr.notes.length).toBeGreaterThan(0);
+    const note = mr.notes[0];
+    expect(note).toHaveProperty('id');
+    expect(note).toHaveProperty('body');
+    expect(note).toHaveProperty('author');
   }, 15000);
 });
 

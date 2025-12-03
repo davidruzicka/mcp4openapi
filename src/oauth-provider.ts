@@ -487,8 +487,35 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
             tokens
         });
 
+        // Re-validate redirect URI host + registration before redirect (defense-in-depth)
+        if (!this.isAllowedRedirectHost(storedState.clientRedirectUri)) {
+            this.logger.error('Redirect URI host not allowed (callback)', undefined, {
+                storedUri: storedState.clientRedirectUri,
+                allowedHosts: this.config.allowed_redirect_hosts || ['localhost', '127.0.0.1'],
+            });
+            res.status(400).send('Redirect URI host not allowed');
+            return;
+        }
+        if (client.redirect_uris && client.redirect_uris.length > 0 && !client.redirect_uris.includes(storedState.clientRedirectUri)) {
+            this.logger.error('Stored redirect URI no longer registered', undefined, {
+                storedUri: storedState.clientRedirectUri,
+                registeredUris: client.redirect_uris,
+            });
+            res.status(400).send('Unregistered redirect_uri');
+            return;
+        }
+
         // Redirect to Client
-        const clientUrl = new URL(storedState.clientRedirectUri);
+        let clientUrl: URL;
+        try {
+            clientUrl = new URL(storedState.clientRedirectUri);
+            if (clientUrl.protocol !== 'http:' && clientUrl.protocol !== 'https:') {
+                throw new Error('Invalid protocol');
+            }
+        } catch {
+            res.status(400).send('Invalid redirect URI');
+            return;
+        }
         clientUrl.searchParams.set('code', internalCode);
         if (storedState.originalState) {
             clientUrl.searchParams.set('state', storedState.originalState);

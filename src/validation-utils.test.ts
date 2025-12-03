@@ -1,5 +1,14 @@
 import { describe, it, expect } from 'vitest';
-import { isEmail, isUri, redactHeader, redactQueryParam, redactParam } from './validation-utils.js';
+import { 
+  isEmail, 
+  isUri, 
+  redactHeader, 
+  redactQueryParam, 
+  redactParam,
+  isSafePropertyName,
+  escapeRegExp,
+  escapeHtmlSafe
+} from './validation-utils.js';
 
 describe('Validation Utils', () => {
   describe('isEmail', () => {
@@ -62,11 +71,20 @@ describe('Validation Utils', () => {
       expect(redactQueryParam(undefined, 'token')).toBe('');
     });
 
-    it('should use regex fallback for invalid URL', () => {
+    it('should fallback to manual parsing for invalid URL', () => {
       const invalidUrl = '/api?token=secret&other=value';
       const redacted = redactQueryParam(invalidUrl, 'token');
-      expect(redacted).toContain('token=[REDACTED]');
-      expect(redacted).toContain('other=value');
+      expect(redacted).toBe('/api?token=%5BREDACTED%5D&other=value');
+    });
+
+    it('should leave URL unchanged when no query string present', () => {
+      const url = 'https://example.com/path';
+      expect(redactQueryParam(url, 'token')).toBe(url);
+    });
+
+    it('should return original for unsafe param name', () => {
+      const url = 'https://example.com/api?token=secret';
+      expect(redactQueryParam(url, 'token!')).toBe(url);
     });
   });
 
@@ -81,6 +99,57 @@ describe('Validation Utils', () => {
     it('should return empty object for non-object params', () => {
       const redacted = redactParam('string', 'param');
       expect(redacted).toEqual({});
+    });
+  });
+
+  describe('isSafePropertyName', () => {
+    it('should allow safe property names', () => {
+      expect(isSafePropertyName('name')).toBe(true);
+      expect(isSafePropertyName('id')).toBe(true);
+      expect(isSafePropertyName('user_id')).toBe(true);
+      expect(isSafePropertyName('customProperty')).toBe(true);
+    });
+
+    it('should reject dangerous property names', () => {
+      expect(isSafePropertyName('__proto__')).toBe(false);
+      expect(isSafePropertyName('constructor')).toBe(false);
+      expect(isSafePropertyName('prototype')).toBe(false);
+      expect(isSafePropertyName('hasOwnProperty')).toBe(false);
+      expect(isSafePropertyName('toString')).toBe(false);
+      expect(isSafePropertyName('valueOf')).toBe(false);
+    });
+  });
+
+  describe('escapeRegExp', () => {
+    it('should escape special regex characters', () => {
+      expect(escapeRegExp('hello.world')).toBe('hello\\.world');
+      expect(escapeRegExp('test*')).toBe('test\\*');
+      expect(escapeRegExp('[a-z]+')).toBe('\\[a-z\\]\\+');
+      expect(escapeRegExp('(abc)')).toBe('\\(abc\\)');
+      expect(escapeRegExp('$^')).toBe('\\$\\^');
+    });
+
+    it('should return same string if no special characters', () => {
+      expect(escapeRegExp('hello')).toBe('hello');
+      expect(escapeRegExp('test123')).toBe('test123');
+    });
+  });
+
+  describe('escapeHtmlSafe', () => {
+    it('should escape HTML special characters', () => {
+      expect(escapeHtmlSafe('<script>alert("xss")</script>')).toBe('&lt;script&gt;alert(&quot;xss&quot;)&lt;/script&gt;');
+      expect(escapeHtmlSafe('a & b')).toBe('a &amp; b');
+      expect(escapeHtmlSafe("it's")).toBe('it&#39;s');
+    });
+
+    it('should return empty string for falsy values', () => {
+      expect(escapeHtmlSafe(undefined)).toBe('');
+      expect(escapeHtmlSafe(null)).toBe('');
+      expect(escapeHtmlSafe('')).toBe('');
+    });
+
+    it('should handle normal text', () => {
+      expect(escapeHtmlSafe('hello world')).toBe('hello world');
     });
   });
 });

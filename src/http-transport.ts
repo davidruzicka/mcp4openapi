@@ -49,7 +49,8 @@ export class HttpTransport {
   private oauthTokensByAccessToken: Map<string, { refreshToken?: string; expiresAt?: number; clientId: string; scopes: string[] }> = new Map();
 
   constructor(config: HttpTransportConfig, logger: Logger) {
-    this.config = config;
+    // Freeze config to prevent runtime mutation of security-critical settings (allowedOrigins, rate limits, etc.)
+    this.config = Object.freeze({ ...config });
     this.logger = logger;
     
     // Initialize metrics if enabled
@@ -94,6 +95,27 @@ export class HttpTransport {
         userAgent: req.get('user-agent'),
         ip: req.ip,
       });
+      next();
+    });
+
+    // DNS rebinding protection when binding to localhost
+    // Deny requests with mismatched Host headers to prevent DNS rebinding attacks
+    // Applies when server host is localhost/127.0.0.1, regardless of auth configuration
+    this.app.use((req: Request, res: Response, next: NextFunction) => {
+      const hostCfg = this.config.host?.toLowerCase();
+      if (hostCfg === 'localhost' || hostCfg === '127.0.0.1') {
+        const hostHeader = (req.headers['host'] || '').toString().toLowerCase();
+        const expectedHosts = new Set(['localhost', '127.0.0.1']);
+        const headerHostOnly = hostHeader.split(':')[0];
+        if (!expectedHosts.has(headerHostOnly)) {
+          this.logger.warn('DNS rebinding protection: invalid Host header', {
+            hostHeader,
+            expected: Array.from(expectedHosts),
+          });
+          res.status(403).json({ error: 'Forbidden' });
+          return;
+        }
+      }
       next();
     });
 
@@ -746,20 +768,21 @@ export class HttpTransport {
 
     // Main MCP endpoint - POST for sending messages
     this.app.post('/mcp', mcpRateLimiter, this.handlePost.bind(this));
-    // Add OPTIONS handler for CORS preflight requests
+    // CORS preflight handler
     this.app.options('/mcp', (req: Request, res: Response) => {
       const origin = req.headers.origin;
-      // Validate origin against allowlist to prevent CORS misconfiguration
+      // Only send CORS headers for explicitly allowed origins; otherwise reject
       if (origin && this.isAllowedOrigin(origin)) {
         res.setHeader('Access-Control-Allow-Origin', origin);
-      } else {
-        // Reject unknown origins - don't reflect user input
-        res.setHeader('Access-Control-Allow-Origin', 'null');
+        res.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept, Mcp-Session-Id');
+        // We do not allow credentials; prevents cookie-based attacks by default
+        res.setHeader('Access-Control-Allow-Credentials', 'false');
+        res.setHeader('Access-Control-Max-Age', '86400'); // 24 hours cache
+        return res.status(HTTP_STATUS.OK).send();
       }
-      res.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
-      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept, Mcp-Session-Id');
-      res.setHeader('Access-Control-Max-Age', '86400'); // 24 hours
-      res.status(HTTP_STATUS.OK).send();
+      // Disallowed origin: do not echo origin or emit permissive headers
+      res.status(HTTP_STATUS.FORBIDDEN).json({ error: 'Forbidden', message: 'Origin not allowed' });
     });
 
     this.logger.info('Registered POST /mcp route');

@@ -671,7 +671,7 @@ export class MCPServer {
    * 
    * Why: For create/update operations, collect non-metadata fields into body.
    * Metadata (action, resource_type, etc.) are not sent to API.
-   * Path/query parameters are also excluded from body.
+   * Path/query parameters are excluded from body UNLESS they're also in request body schema.
    * 
    * Uses metadata_params from tool definition, defaults to ['action', 'resource_type']
    */
@@ -692,11 +692,31 @@ export class MCPServer {
       }
     }
     
+    // Get body schema properties to check if path/query params should also be in body
+    const bodySchemaProps = new Set<string>();
+    if (operation.requestBody?.content) {
+      // Check all content types (typically application/json)
+      for (const mediaType of Object.values(operation.requestBody.content)) {
+        if (mediaType.schema?.properties) {
+          for (const propName of Object.keys(mediaType.schema.properties)) {
+            bodySchemaProps.add(propName);
+          }
+        }
+      }
+    }
+    
     const body: Record<string, unknown> = {};
     let hasBody = false;
 
     for (const [key, value] of Object.entries(args)) {
-      if (!metadata.has(key) && !pathOrQuery.has(key) && value !== undefined) {
+      // Include field if:
+      // - Not metadata
+      // - Not in path/query OR is in path/query but also required in body schema
+      // - Value is defined
+      const isPathOrQuery = pathOrQuery.has(key);
+      const isInBodySchema = bodySchemaProps.has(key);
+      
+      if (!metadata.has(key) && (!isPathOrQuery || isInBodySchema) && value !== undefined) {
         body[key] = value;
         hasBody = true;
       }
