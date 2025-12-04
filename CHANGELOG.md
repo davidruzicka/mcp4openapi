@@ -7,19 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.4] - 2025-12-04
+
 ### Added
 - Automated publishing to npmjs.org and GitHub Packages on tag
+- Release process documentation (docs/RELEASING.md)
+- End-to-end (E2E) test job in CI workflow
+- Multi-auth configuration with priority-based fallback in PROFILE-GUIDE.md
+- OAuth rate limiting configuration in PROFILE-GUIDE.md
+- Token validation configuration (validation_endpoint) in PROFILE-GUIDE.md
 
 ### Changed
 - CI workflow now requires all tests (unit + e2e) to pass before publishing
 - Improved test coverage for `validation-utils.ts` and `oauth-provider.ts`
 - Docker images are now built for both amd64 and arm64 architectures
+- Updated documentation to clarify validation_endpoint is relative to base URL
 
 ### Fixed
-- Implement DNS rebinding protection and few minor security fixes
+- DNS rebinding protection and minor security fixes
 - Profile validation fixes
 - TypeScript error in oauth-provider.test.ts (clientsStore possibly undefined)
 - Documentation and comments for OIDC and publishing steps
+- Fixed broken DEPLOYMENT-K8S-OAUTH.md reference in README
 
 ## [0.2.3] - 2025-12-01
 
@@ -78,7 +87,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Schema validation for request bodies
 - Structured logging (console/JSON)
 
-[Unreleased]: https://github.com/davidruzicka/mcp4openapi/compare/v0.2.3...HEAD
+[Unreleased]: https://github.com/davidruzicka/mcp4openapi/compare/v0.2.4...HEAD
+[0.2.4]: https://github.com/davidruzicka/mcp4openapi/compare/v0.2.3...v0.2.4
 [0.2.3]: https://github.com/davidruzicka/mcp4openapi/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/davidruzicka/mcp4openapi/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/davidruzicka/mcp4openapi/compare/v0.2.0...v0.2.1
