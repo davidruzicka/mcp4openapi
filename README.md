@@ -516,8 +516,8 @@ npm test
 - **[docs/HTTP-TRANSPORT.md](./docs/HTTP-TRANSPORT.md)** - HTTP transport setup and usage
 - **[docs/OAUTH.md](./docs/OAUTH.md)** - OAuth 2.0 authentication setup guide
 - **[docs/MULTI-AUTH.md](./docs/MULTI-AUTH.md)** - Multi-auth support: OAuth + Bearer tokens
-- **[docs/DEPLOYMENT-K8S-OAUTH.md](./docs/DEPLOYMENT-K8S-OAUTH.md)** - Production deployment: Kubernetes + OAuth
-- **[docs/DOCKER.md](./docs/DOCKER.md)** - Docker deployment guide
+- **[docs/DOCKER.md](./docs/DOCKER.md)** - Docker deployment guide (includes Kubernetes example)
+- **[docs/RELEASING.md](./docs/RELEASING.md)** - Release process and CI/CD automation (for maintainers)
 - **`profiles/`** - Example profiles for OpenAPI specs
 - **`profile-schema.json`** - JSON Schema for IDE autocomplete
 
