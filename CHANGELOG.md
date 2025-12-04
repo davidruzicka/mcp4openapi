@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- Automated publishing to npmjs.org and GitHub Packages on tag
+
+### Changed
+- CI workflow now requires all tests (unit + e2e) to pass before publishing
+- Improved test coverage for `validation-utils.ts` and `oauth-provider.ts`
+- Docker images are now built for both amd64 and arm64 architectures
+
+### Fixed
+- Implement DNS rebinding protection and few minor security fixes
+- Profile validation fixes
+- TypeScript error in oauth-provider.test.ts (clientsStore possibly undefined)
+- Documentation and comments for OIDC and publishing steps
+
 ## [0.2.3] - 2025-12-01
 
 ### Added
