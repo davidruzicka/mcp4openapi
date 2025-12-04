@@ -97,6 +97,8 @@ jobs:
         run: npm run build
 
       - name: Publish to npmjs
+        # OIDC Trusted Publisher is enabled, no NPM_TOKEN needed
+        # See: https://docs.npmjs.com/generating-provenance-statements#publishing-with-github-actions
         run: npm publish --provenance --access public
 
       - name: Setup Node.js for GitHub Packages
