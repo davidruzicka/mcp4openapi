@@ -121,6 +121,10 @@ See [`IMPLEMENTATION.md`](./IMPLEMENTATION.md) for detailed architecture and des
 7. Push to your fork
 8. Open a Pull Request
 
+## Release Process
+
+For maintainers releasing new versions, see [`docs/RELEASING.md`](./docs/RELEASING.md).
+
 ## Documentation
 
 When adding features:

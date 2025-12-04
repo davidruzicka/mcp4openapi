@@ -270,13 +270,22 @@ Parameters that control tool behavior but aren't sent to the API:
   "interceptors": {
     "auth": {
       "type": "bearer",
-      "value_from_env": "MCP4_API_TOKEN"
+      "value_from_env": "MCP4_API_TOKEN",
+      "validation_endpoint": "/api/v4/user"
     }
   }
 }
 ```
 
 Adds: `Authorization: Bearer <token>`
+
+**Optional token validation**:
+- `validation_endpoint`: API endpoint to verify token (relative to base URL, e.g., `user` or `personal_access_tokens/self`)
+- `validation_method`: HTTP method for validation (`GET` or `HEAD`, default: `GET`)
+- `validation_timeout_ms`: Timeout in milliseconds (default: `5000`)
+- Validates token during initialization to fail fast with invalid tokens
+- Improves UX by rejecting bad tokens immediately, not after first tool call
+- **Note**: Endpoint is relative to `base_url` from interceptors or `MCP4_API_BASE_URL` environment variable
 
 #### Custom Header
 
@@ -299,12 +308,68 @@ Adds: `X-API-Key: <token>`
   "auth": {
     "type": "query",
     "query_param": "api_key",
-    "value_from_env": "API_KEY"
+    "value_from_env": "API_KEY",
+    "validation_endpoint": "status"
   }
 }
 ```
 
 Adds: `?api_key=<token>` to URL
+
+#### Multi-Auth with Priority
+
+Support multiple authentication methods with fallback:
+
+```json
+{
+  "auth": [
+    {
+      "type": "oauth",
+      "priority": 0,
+      "oauth_config": { ... }
+    },
+    {
+      "type": "bearer",
+      "priority": 1,
+      "value_from_env": "MCP4_API_TOKEN",
+      "validation_endpoint": "user"
+    }
+  ]
+}
+```
+
+- **Priority**: Lower value = higher priority (default: `0`)
+- **Fallback**: First successful authentication is used
+- **Use case**: Try OAuth first, fall back to static token
+- See [Multi-Auth Guide](./MULTI-AUTH.md) for details
+
+#### OAuth 2.0 Authentication
+
+Browser-based authentication with PKCE flow (HTTP transport only):
+
+```json
+{
+  "auth": {
+    "type": "oauth",
+    "oauth_config": {
+      "issuer": "https://www.gitlab.com",
+      "client_id": "${env:OAUTH_CLIENT_ID}",
+      "client_secret": "${env:OAUTH_CLIENT_SECRET}",
+      "scopes": ["api", "read_user"],
+      "redirect_uri": "http://localhost:3003/oauth/callback"
+    },
+    "oauth_rate_limit": {
+      "max_requests": 20,
+      "window_ms": 600000
+    }
+  }
+}
+```
+
+- **Autodiscovery**: `issuer` auto-derives authorization/token endpoints (RFC 8414)
+- **Rate limiting**: Custom rate limits for OAuth endpoints (default: 10 requests per 10 minutes)
+- **Scopes**: Optional, API-specific permissions
+- See [OAuth Guide](./OAUTH.md) for complete setup
 
 ### Base URL
 
@@ -683,6 +748,35 @@ it('should reject unauthorized delete (403)', async () => {
 });
 ```
 
+### Token Validation
+
+Enable token validation to fail fast with invalid credentials:
+
+```json
+{
+  "interceptors": {
+    "auth": {
+      "type": "bearer",
+      "value_from_env": "MCP4_API_TOKEN",
+      "validation_endpoint": "personal_access_tokens/self",
+      "validation_method": "GET",
+      "validation_timeout_ms": 5000
+    }
+  }
+}
+```
+
+**Benefits**:
+- Rejects invalid tokens immediately during server startup
+- Better error messages (invalid token vs API error)
+- Prevents wasted API calls with bad credentials
+- Improves developer experience
+
+**Validation endpoint examples** (relative to base URL):
+- GitLab (base: `https://gitlab.com/api/v4`): `personal_access_tokens/self` or `user`
+- GitHub (base: `https://api.github.com`): `user`
+- Generic: Any endpoint that returns 401/403 for invalid tokens
+
 ### Security Checklist
 
 Before deploying your profile:
@@ -694,6 +788,7 @@ Before deploying your profile:
 - [ ] **URL parsing**: Robust against path traversal
 - [ ] **Error messages**: Don't leak sensitive information
 - [ ] **API tokens**: Stored in environment variables, not code
+- [ ] **Token validation**: Enable `validation_endpoint` to fail fast
 - [ ] **HTTPS only**: `base_url` uses `https://`
 
 ## Common Patterns
