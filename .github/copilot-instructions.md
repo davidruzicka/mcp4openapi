@@ -21,6 +21,10 @@ When modifying profile structure (`src/types/profile.ts`):
 
 ⚠️ Zod strips unknown properties silently - missing field in generated schema = feature broken at runtime.
 
+## Environment Setup
+
+**Required Node.js version**: current v24 LTS. Do NOT downgrade.
+
 ## Development Commands
 
 ```bash

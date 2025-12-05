@@ -106,7 +106,6 @@ jobs:
         with:
           node-version: '24'
           registry-url: 'https://npm.pkg.github.com'
-          scope: '@${{ github.repository_owner }}'
 
       - name: Publish to GitHub Packages
         run: npm publish --access public
