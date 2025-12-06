@@ -106,6 +106,7 @@ export class InterceptorChain {
         if (!isSafePropertyName(authConfig.header_name)) {
           throw new Error(`Invalid header name: ${authConfig.header_name}`);
         }
+        // nosemgrep: javascript.express.security.audit.remote-property-injection.remote-property-injection
         ctx.headers[authConfig.header_name] = token;
       }
 

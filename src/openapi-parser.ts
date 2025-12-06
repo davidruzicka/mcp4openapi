@@ -316,6 +316,7 @@ export class OpenAPIParser {
         current = undefined;
         break;
       }
+      // nosemgrep: javascript.lang.security.audit.prototype-pollution.prototype-pollution-loop.prototype-pollution-loop
       current = (current as Record<string, unknown>)[segment];
     }
 

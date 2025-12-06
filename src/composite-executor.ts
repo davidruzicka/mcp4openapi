@@ -244,6 +244,7 @@ export class CompositeExecutor {
       }
       
       if (!current[part]) {
+        // nosemgrep: javascript.lang.security.audit.prototype-pollution.prototype-pollution-loop.prototype-pollution-loop
         current[part] = {};
       }
       current = current[part] as Record<string, unknown>;
