@@ -7,43 +7,16 @@
 ## Contents
 
 - [P1: Correctness and Core Features](#p1-correctness-and-core-features)
-  - [1. Schema $ref Resolution](#1-schema-ref-resolution)
-- [P2: Maintenance and Code Quality](#p2-maintenance-and-code-quality)
-  - [2. Validate Operations Against OpenAPI Spec in ProfileLoader](#2-validate-operations-against-openapi-spec-in-profileloader)
-- [P3: Nice-to-Have](#p3-nice-to-have)
-  - [3. Export Profile Command](#3-export-profile-command)
-  - [4. OpenAPI Operation Filter for Default Profile](#4-openapi-operation-filter-for-default-profile)
-  - [5. Response Caching](#5-response-caching)
-  - [6. Request Deduplication](#6-request-deduplication)
+  - [1. Validate Operations Against OpenAPI Spec in ProfileLoader](#1-validate-operations-against-openapi-spec-in-profileloader)
+- [P2: Nice-to-Have](#p2-nice-to-have)
+  - [2. Export Profile Command](#2-export-profile-command)
+  - [3. OpenAPI Operation Filter for Default Profile](#3-openapi-operation-filter-for-default-profile)
+  - [4. Response Caching](#4-response-caching)
+  - [5. Request Deduplication](#5-request-deduplication)
 
 ## P1: Correctness and Core Features
 
-### 1. Schema $ref Resolution
-**Current**: `extractSchema()` returns `{ type: 'object' }` for all `$ref` schemas, losing type information.
-
-**Goal**: Fully resolve schema references for accurate type information and validation.
-
-**Impact**: 
-- ✅ Better validation (required fields, enums, formats)
-- ✅ More accurate auto-generated tool parameters
-- ✅ Improved LLM understanding of API structure
-- ⚠️ Slightly slower parsing (negligible - happens once at startup)
-
-**Implementation**:
-- Add `resolveSchema(ref: string): SchemaInfo` similar to `resolveParameter()`
-- Recursively resolve nested `$ref`s
-- Cache resolved schemas to avoid circular references
-- Handle `allOf`, `oneOf`, `anyOf` compositions
-
-**Files to modify**:
-- `src/openapi-parser.ts` - implement `resolveSchema()`
-- Add circular reference detection (Set of visited refs)
-
-**Estimated effort**: 3-4 hours
-
-## P2: Maintenance and Code Quality
-
-### 2. Validate Operations Against OpenAPI Spec in ProfileLoader
+### 1. Validate Operations Against OpenAPI Spec in ProfileLoader
 **Current**: Profile validation only checks internal consistency (operation keys match action enum). Validation against actual OpenAPI spec operations happens only in `scripts/validate-profile.ts`, not at runtime in `ProfileLoader`.
 
 **Goal**: Catch invalid operationIds at profile load time, not at first tool execution.
@@ -60,9 +33,9 @@
 
 **Estimated effort**: 1-2 hours
 
-## P3: Nice-to-Have
+## P2: Nice-to-Have
 
-### 3. Export Profile Command
+### 2. Export Profile Command
 **Goal**: Allow exporting auto-generated profile to file/stdout instead of using it directly.
 
 **Use cases**:
@@ -103,7 +76,7 @@ mcp4openapi export-profile --openapi-spec-path=api.yaml
 
 **Note**: This command could include auto-detection of probe endpoints for token validation in future versions.
 
-### 4. OpenAPI Operation Filter for Default Profile
+### 3. OpenAPI Operation Filter for Default Profile
 **Current**: Without profile, all OpenAPI operations generate tools. Complex APIs may produce 100+ tools with parameter inflation warnings.
 
 **Goal**: Allow filtering operations when auto-generating default profile.
@@ -158,13 +131,13 @@ export DEFAULT_PROFILE_EXCLUDE_TAGS="admin,system"
 - `src/profile-loader.ts` - filter operations in `createDefaultProfile()`
 - `README.md` - document env variables
 
-**Estimated effort**: 
+**Estimated effort**:
 - Whitelist: 1 hour
 - Regex: 1 hour
 - Tag-based: 1-2 hours
 - Total (all three): 3-4 hours
 
-### 5. Response Caching
+### 4. Response Caching
 Add optional caching layer for idempotent GET requests:
 ```json
 {
@@ -180,7 +153,7 @@ Add optional caching layer for idempotent GET requests:
 
 **Estimated effort**: 3-4 hours
 
-### 6. Request Deduplication
+### 5. Request Deduplication
 Prevent multiple identical in-flight requests (thundering herd):
 - Hash request (method + URL + body)
 - If same request is pending, await existing promise
