@@ -773,6 +773,7 @@ export class HttpTransport {
       const origin = req.headers.origin;
       // Only send CORS headers for explicitly allowed origins; otherwise reject
       if (origin && this.isAllowedOrigin(origin)) {
+        // nosemgrep: javascript.express.security.cors-misconfiguration.cors-misconfiguration
         res.setHeader('Access-Control-Allow-Origin', origin);
         res.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
         res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept, Mcp-Session-Id');
