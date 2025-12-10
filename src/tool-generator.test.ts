@@ -185,5 +185,142 @@ describe('ToolGenerator', () => {
     // MCP SDK will reject this, so we should catch it in validation
     expect(tagsProperty.items).toBeUndefined();
   });
+
+  describe('buildFormDataBody', () => {
+    it('should build FormData from base64 content with provided values', () => {
+      // Use actual base64 encoding to ensure non-empty string
+      const textContent = 'test file content';
+      const base64Content = btoa(textContent);
+      expect(base64Content).toBeTruthy(); // Ensure base64Content is not empty
+      
+      const args = {
+        base64Content,
+        fileName: 'test.txt',
+        mimeType: 'text/plain'
+      };
+
+      const formData = generator.buildFormDataBody(args);
+      expect(formData).toBeInstanceOf(FormData);
+      
+      // Verify append was called by checking FormData entries
+      const entries = Array.from(formData.entries());
+      expect(entries.length).toBeGreaterThan(0);
+      expect(entries[0][0]).toBe('files[0]');
+    });
+
+    it('should use default fileName when not provided', () => {
+      const textContent = 'test content';
+      const base64Content = btoa(textContent);
+      const args = { base64Content };
+
+      const formData = generator.buildFormDataBody(args);
+      expect(formData).toBeInstanceOf(FormData);
+      
+      const entries = Array.from(formData.entries());
+      expect(entries.length).toBeGreaterThan(0);
+    });
+
+    it('should use default mimeType when not provided', () => {
+      const textContent = 'binary data';
+      const base64Content = btoa(textContent);
+      const args = {
+        base64Content,
+        fileName: 'data.bin'
+      };
+
+      const formData = generator.buildFormDataBody(args);
+      expect(formData).toBeInstanceOf(FormData);
+      
+      const entries = Array.from(formData.entries());
+      expect(entries.length).toBeGreaterThan(0);
+    });
+
+    it('should use custom fieldName parameter', () => {
+      const textContent = 'file content';
+      const base64Content = btoa(textContent);
+      const args = {
+        base64Content,
+        fileName: 'upload.pdf'
+      };
+
+      const formData = generator.buildFormDataBody(args, 'document');
+      expect(formData).toBeInstanceOf(FormData);
+      
+      const entries = Array.from(formData.entries());
+      expect(entries[0][0]).toBe('document');
+    });
+
+    it('should handle empty base64Content gracefully', () => {
+      const args = { base64Content: '' };
+      const formData = generator.buildFormDataBody(args);
+      expect(formData).toBeInstanceOf(FormData);
+      
+      // Empty base64Content should result in empty FormData
+      const entries = Array.from(formData.entries());
+      expect(entries.length).toBe(0);
+    });
+
+    it('should handle missing base64Content', () => {
+      const args = { fileName: 'test.txt' };
+      const formData = generator.buildFormDataBody(args);
+      expect(formData).toBeInstanceOf(FormData);
+      
+      // No base64Content means FormData stays empty
+      const entries = Array.from(formData.entries());
+      expect(entries.length).toBe(0);
+    });
+
+    it('should build FormData with binary content (non-ASCII)', () => {
+      // Create base64 content with binary data (e.g., image data)
+      const binaryData = new Uint8Array([0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46]);
+      let binary = '';
+      for (let i = 0; i < binaryData.length; i++) {
+        binary += String.fromCharCode(binaryData[i]);
+      }
+      const base64Content = btoa(binary);
+      
+      const args = {
+        base64Content,
+        fileName: 'image.jpg',
+        mimeType: 'image/jpeg'
+      };
+
+      const formData = generator.buildFormDataBody(args);
+      expect(formData).toBeInstanceOf(FormData);
+      
+      const entries = Array.from(formData.entries());
+      expect(entries.length).toBeGreaterThan(0);
+      const [fieldName, file] = entries[0];
+      expect(fieldName).toBe('files[0]');
+      if (file instanceof File) {
+        expect(file.type).toBe('image/jpeg');
+        expect(file.name).toBe('image.jpg');
+      }
+    });
+
+    it('should handle multipart operation detection', () => {
+      const toolDef = profile.tools.find(t => t.name === 'manage_project_badges');
+      expect(toolDef).toBeDefined();
+
+      const mapOp = generator.mapActionToOperation(toolDef!, {
+        action: 'list'
+      });
+      
+      const isMultipart = generator.isMultipartOperation(mapOp!);
+      expect(typeof isMultipart).toBe('boolean');
+    });
+
+    it('should return false for non-multipart operations', () => {
+      const toolDef = profile.tools.find(t => t.name === 'manage_project_badges');
+      expect(toolDef).toBeDefined();
+
+      const mapOp = generator.mapActionToOperation(toolDef!, {
+        action: 'list'
+      });
+      
+      const isMultipart = generator.isMultipartOperation(mapOp!);
+      expect(isMultipart).toBe(false);
+    });
+  });
 });
 

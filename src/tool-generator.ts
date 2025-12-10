@@ -122,12 +122,12 @@ export class ToolGenerator {
   }
 
   /**
-   * Map tool action to OpenAPI operation ID
+   * Get operation definition (string or ProxyDownloadOperation) for action
    * 
-   * Why: Single tool with 'action' parameter maps to multiple operations.
-   * Example: manage_badges + action=create => postApiV4ProjectsIdBadges
+   * Why: Tools can have string operationIds OR proxy_download configs.
+   * This returns the raw definition before extracting operationId.
    */
-  mapActionToOperation(toolDef: ToolDefinition, args: Record<string, unknown>): string | undefined {
+  getOperationDefinition(toolDef: ToolDefinition, args: Record<string, unknown>) {
     if (!toolDef.operations) return undefined;
 
     const action = args['action'] as string | undefined;
@@ -135,11 +135,7 @@ export class ToolGenerator {
     if (!action) {
       // If single operation, use it directly
       const operations = Object.values(toolDef.operations);
-      if (operations.length === 1) {
-        const op = operations[0];
-        return typeof op === 'string' ? op : undefined;
-      }
-      return undefined;
+      return operations.length === 1 ? operations[0] : undefined;
     }
 
     // For resource_type discrimination (e.g., project vs group)
@@ -149,12 +145,23 @@ export class ToolGenerator {
       // Try resource-specific operation first
       const key = `${action}_${resourceType}`;
       if (toolDef.operations[key]) {
-        const op = toolDef.operations[key];
-        return typeof op === 'string' ? op : undefined;
+        return toolDef.operations[key];
       }
     }
 
-    const op = toolDef.operations[action];
+    return toolDef.operations[action];
+  }
+
+  /**
+   * Map tool action to OpenAPI operation ID
+   * 
+   * Why: Single tool with 'action' parameter maps to multiple operations.
+   * Example: manage_badges + action=create => postApiV4ProjectsIdBadges
+   * 
+   * Note: Returns undefined for ProxyDownloadOperation (not a direct operationId)
+   */
+  mapActionToOperation(toolDef: ToolDefinition, args: Record<string, unknown>): string | undefined {
+    const op = this.getOperationDefinition(toolDef, args);
     return typeof op === 'string' ? op : undefined;
   }
 
