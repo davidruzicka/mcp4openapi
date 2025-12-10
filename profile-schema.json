@@ -109,9 +109,14 @@
             }
           ]
         },
+        "send_response_fields_as_param": {
+          "type": "boolean",
+          "description": "If true, send response_fields as 'fields' query parameter (e.g. for YouTrack)",
+          "default": false
+        },
         "steps": {
           "type": "array",
-          "description": "Sequence of API calls to execute (for composite tools)",
+          "description": "Steps for composite tool execution",
           "items": {
             "$ref": "#/definitions/CompositeStep"
           }

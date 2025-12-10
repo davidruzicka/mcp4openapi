@@ -26,7 +26,8 @@
     {
       "name": "retrieve_content",
       "description": "Read-only access to YouTrack entities (issues, projects, users, tags, articles, agiles, sprints, etc.). Actions: 'list_issues', 'get_issue', 'list_issue_comments', 'get_issue_comment', 'list_issue_attachments', 'get_issue_attachment', 'list_issue_tags', 'list_issue_links', 'get_issue_link', 'list_linked_issues', 'list_projects', 'get_project', 'list_workitems', 'list_articles', 'get_article', 'list_article_comments', 'list_article_attachments', 'list_tags', 'get_tag', 'list_saved_queries', 'list_agiles', 'get_agile', 'list_sprints', 'list_users', 'get_user', 'list_groups'.",
-      "metadata_params": ["action", "id", "issueCommentId", "issueAttachmentId", "agile_id", "sprintId", "articleCommentId", "articleAttachmentId", "tagId"],
+      "metadata_params": ["action", "id", "issueCommentId", "issueAttachmentId", "agile_id", "sprintId", "articleCommentId", "articleAttachmentId", "tagId", "fields"],
+      "send_response_fields_as_param": true,
       "operations": {
         "list_issues": "get_/issues",
         "get_issue": "get_/issues/{id}",
@@ -58,15 +59,15 @@
       "response_fields": {
         "list_issues": ["id", "idReadable", "summary", "resolved", "customFields"],
         "get_issue": ["id", "idReadable", "summary", "description", "customFields", "resolved"],
-        "list_issue_comments": ["id", "text", "author", "created"],
-        "get_issue_comment": ["id", "text", "author", "created", "updated"],
+        "list_issue_comments": ["id", "text", "author(login)", "created"],
+        "get_issue_comment": ["id", "text", "author(id,login)", "created", "updated"],
         "list_issue_attachments": ["id", "name", "mimeType", "size"],
         "get_issue_attachment": ["id", "name", "mimeType", "size", "url", "base64Content"],
         "list_projects": ["id", "shortName", "name", "description"],
         "get_project": ["id", "shortName", "name", "description", "customFields"],
         "list_articles": ["id", "title", "summary", "resolved"],
         "get_article": ["id", "title", "summary", "content"],
-        "list_article_comments": ["id", "text", "author", "created"],
+        "list_article_comments": ["id", "text", "author(login)", "created"],
         "list_article_attachments": ["id", "name", "mimeType", "size"],
         "list_issue_tags": ["id", "name", "owner"],
         "list_issue_links": ["id", "direction", "linkType"],

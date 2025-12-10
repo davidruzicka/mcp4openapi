@@ -37,6 +37,9 @@ export interface ToolDefinition {
   
   // Response field filtering (reduces verbosity for list operations)
   response_fields?: Record<string, string[]>; // e.g., {"list": ["id", "name", "path"]}
+  
+  // Whether to send response_fields as 'fields' query parameter (e.g. for YouTrack)
+  send_response_fields_as_param?: boolean;
 }
 
 export interface ParameterDefinition {
