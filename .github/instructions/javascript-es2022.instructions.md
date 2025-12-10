@@ -16,6 +16,25 @@ applyTo: '**/*.js, **/*.mjs, **/*.cjs'
 - Never use `null`, always use `undefined` for optional values
 - Prefer functions over classes
 
+## Naming & Style
+
+- Use PascalCase for classes, interfaces, enums, and type aliases; camelCase for everything else.
+- Exception: snake_case is permitted for DTOs, API contracts, and configuration files where external formats dictate it.
+- Skip interface prefixes like `I`; rely on descriptive names.
+- Name things for their behavior or domain meaning, not implementation:
+  - Good:
+  ```javascript
+  const context = defaultContext || new DescriptionDictionary();
+  context.complete = false;
+  return Promise.resolve(context);
+  ```
+  - Bad:
+  ```javascript
+  const dict = defaultContext || new DescriptionDictionary();
+  dict.complete = false;
+  return Promise.resolve(dict);
+  ```
+
 ## Testing
 - Use Vitest for testing
 - Write tests for all new features and bug fixes

@@ -489,9 +489,9 @@
           "description": "Filter by current status"
         },
         "severities": {
-          "type": "array",
-          "items": { "type": "string", "enum": ["low", "medium", "high", "critical"] },
-          "description": "Filter by severities"
+          "type": "string",
+          "enum": ["low", "medium", "high", "critical"],
+          "description": "Filter by severity"
         },
         "repos": {
           "type": "array",

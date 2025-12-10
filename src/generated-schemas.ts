@@ -16,9 +16,21 @@ export const parameterDefinitionSchema = z.object({
     items: z.object({
         type: z.string()
     }).optional(),
+    properties: z.record(z.string(), z.unknown()).optional(),
     default: z.unknown().optional(),
     example: z.unknown().optional()
 });
+
+export const proxyDownloadOperationSchema = z.object({
+    type: z.literal("proxy_download"),
+    metadata_endpoint: z.string(),
+    url_field: z.string().optional(),
+    max_size_bytes: z.number().optional(),
+    timeout_ms: z.number().optional(),
+    allowed_mime_types: z.array(z.string()).optional()
+});
+
+export const operationDefinitionSchema = z.union([z.string(), proxyDownloadOperationSchema]);
 
 export const baseUrlConfigSchema = z.object({
     value_from_env: z.string(),
@@ -55,7 +67,7 @@ export const oAuthConfigSchema = z.object({
 export const toolDefinitionSchema = z.object({
     name: z.string(),
     description: z.string(),
-    operations: z.union([z.record(z.string(), z.string()), z.record(z.string(), z.string())]).optional(),
+    operations: z.record(z.string(), operationDefinitionSchema).optional(),
     composite: z.boolean().optional(),
     steps: z.array(compositeStepSchema).optional(),
     partial_results: z.boolean().optional(),

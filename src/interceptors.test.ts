@@ -828,3 +828,113 @@ describe('HttpClient - Structured Error Handling', () => {
   });
 });
 
+describe('HttpClient - Multipart Support', () => {
+  beforeEach(() => {
+    process.env.MCP4_API_TOKEN = 'test-token';
+  });
+
+  it('should not stringify FormData body', async () => {
+    const config: InterceptorConfig = {
+      auth: { type: 'bearer', value_from_env: 'MCP4_API_TOKEN' },
+    };
+
+    const client = createTestHttpClient('https://api.example.com', config);
+
+    const formData = new FormData();
+    formData.append('file', new Blob(['test content']), 'test.txt');
+
+    const mockFetch = vi.fn().mockResolvedValue({
+      status: 200,
+      headers: new Headers({ 'content-type': 'application/json' }),
+      json: () => Promise.resolve({ id: '123', name: 'test.txt' }),
+      text: () => Promise.resolve(''),
+    });
+
+    global.fetch = mockFetch;
+
+    await client.request('POST', '/upload', { body: formData });
+
+    const [, options] = mockFetch.mock.calls[0] as [string, RequestInit];
+    expect(options.body).toBeInstanceOf(FormData);
+    expect(options.headers).not.toHaveProperty('Content-Type');
+  });
+
+  it('should stringify JSON body', async () => {
+    const config: InterceptorConfig = {
+      auth: { type: 'bearer', value_from_env: 'MCP4_API_TOKEN' },
+    };
+
+    const client = createTestHttpClient('https://api.example.com', config);
+
+    const jsonBody = { name: 'test', value: 123 };
+
+    const mockFetch = vi.fn().mockResolvedValue({
+      status: 200,
+      headers: new Headers({ 'content-type': 'application/json' }),
+      json: () => Promise.resolve({ id: '123' }),
+      text: () => Promise.resolve(''),
+    });
+
+    global.fetch = mockFetch;
+
+    await client.request('POST', '/create', { body: jsonBody });
+
+    const [, options] = mockFetch.mock.calls[0] as [string, RequestInit];
+    expect(options.body).toBe(JSON.stringify(jsonBody));
+    expect(options.headers).toHaveProperty('Content-Type', 'application/json');
+  });
+
+  it('should handle Blob body as binary', async () => {
+    const config: InterceptorConfig = {
+      auth: { type: 'bearer', value_from_env: 'MCP4_API_TOKEN' },
+    };
+
+    const client = createTestHttpClient('https://api.example.com', config);
+
+    const blob = new Blob(['binary content'], { type: 'application/octet-stream' });
+
+    const mockFetch = vi.fn().mockResolvedValue({
+      status: 200,
+      headers: new Headers({ 'content-type': 'application/json' }),
+      json: () => Promise.resolve({ status: 'ok' }),
+      text: () => Promise.resolve(''),
+    });
+
+    global.fetch = mockFetch;
+
+    await client.request('POST', '/binary', { body: blob });
+
+    const [, options] = mockFetch.mock.calls[0] as [string, RequestInit];
+    expect(options.body).toBe(blob);
+  });
+
+  it('should preserve custom Content-Type for binary data', async () => {
+    const config: InterceptorConfig = {
+      auth: { type: 'bearer', value_from_env: 'MCP4_API_TOKEN' },
+    };
+
+    const client = createTestHttpClient('https://api.example.com', config);
+
+    const blob = new Blob(['pdf content'], { type: 'application/pdf' });
+
+    const mockFetch = vi.fn().mockResolvedValue({
+      status: 200,
+      headers: new Headers({ 'content-type': 'application/json' }),
+      json: () => Promise.resolve({ status: 'ok' }),
+      text: () => Promise.resolve(''),
+    });
+
+    global.fetch = mockFetch;
+
+    await client.request('POST', '/pdf', 
+      { 
+        body: blob,
+        headers: { 'Content-Type': 'application/pdf' }
+      }
+    );
+
+    const [, options] = mockFetch.mock.calls[0] as [string, RequestInit];
+    expect(options.headers).toHaveProperty('Content-Type', 'application/pdf');
+  });
+});
+
