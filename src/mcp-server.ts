@@ -66,8 +66,11 @@ export class MCPServer {
 
     const filtered: Record<string, unknown> = {};
     for (const field of fields) {
-      if (field in data) {
-        filtered[field] = (data as Record<string, unknown>)[field];
+      // Handle YouTrack-style fields: "author(id,login)" -> "author"
+      const baseFieldName = field.split('(')[0];
+      
+      if (baseFieldName in data) {
+        filtered[baseFieldName] = (data as Record<string, unknown>)[baseFieldName];
       }
     }
     return filtered;
@@ -586,6 +589,14 @@ export class MCPServer {
 
     // Execute with session-specific client
     const httpClient = await this.getHttpClientForSession(sessionId);
+    
+    // Set fields parameter if response_fields are configured for this action AND enabled
+    const action = args.action as string | undefined;
+    if (toolDef.send_response_fields_as_param && toolDef.response_fields && action && toolDef.response_fields[action]) {
+      const fields = toolDef.response_fields[action];
+      queryParams.fields = fields.join(',');
+    }
+    
     const response = await httpClient.request(operation.method, path, {
       params: queryParams,
       body,

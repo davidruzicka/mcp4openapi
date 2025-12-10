@@ -74,7 +74,8 @@ export const toolDefinitionSchema = z.object({
     partial_results: z.boolean().optional(),
     parameters: z.record(z.string(), parameterDefinitionSchema),
     metadata_params: z.array(z.string()).optional(),
-    response_fields: z.record(z.string(), z.array(z.string())).optional()
+    response_fields: z.record(z.string(), z.array(z.string())).optional(),
+    send_response_fields_as_param: z.boolean().optional()
 });
 
 export const authInterceptorSchema = z.object({
