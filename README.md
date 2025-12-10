@@ -1,4 +1,4 @@
-# MCP from OpenAPI
+# MCP for OpenAPI
 
 [![CI](https://github.com/davidruzicka/mcp4openapi/actions/workflows/ci.yml/badge.svg)](https://github.com/davidruzicka/mcp4openapi/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/davidruzicka/mcp4openapi/graph/badge.svg)](https://codecov.io/gh/davidruzicka/mcp4openapi)
@@ -56,6 +56,7 @@ More about profiles: [docs/PROFILE-GUIDE.md](https://github.com/davidruzicka/mcp
 - **Composite Actions**: Chain API calls into workflows in profiles
 - **OAuth 2.0**: Browser-based authentication flow for HTTP transport (see [docs/OAUTH.md](./docs/OAUTH.md))
 - **Multi-Auth**: Support multiple auth methods (OAuth + Bearer) with priority-based fallback (see [docs/MULTI-AUTH.md](./docs/MULTI-AUTH.md))
+- **Multipart uploads**: HttpClient handles `multipart/form-data` (file attachments and mixed fields)
 - **Observability**: Structured logging (console/JSON) with profile-aware token redaction, Prometheus metrics
 
 ## Security Note
@@ -519,6 +520,7 @@ npm test
 - **[docs/DOCKER.md](./docs/DOCKER.md)** - Docker deployment guide (includes Kubernetes example)
 - **[docs/RELEASING.md](./docs/RELEASING.md)** - Release process and CI/CD automation (for maintainers)
 - **`profiles/`** - Example profiles for OpenAPI specs
+- **`profiles/youtrack/`** - YouTrack profile + bundled OpenAPI spec (ready-to-use MCP tools)
 - **`profile-schema.json`** - JSON Schema for IDE autocomplete
 
 ## Project Status

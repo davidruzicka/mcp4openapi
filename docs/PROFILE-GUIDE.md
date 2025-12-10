@@ -189,6 +189,8 @@ Chains multiple API calls and returns aggregated results.
 - `array`: List of values
 - `object`: Nested structure
 
+Array a object parametry se nyní validují i na úrovni generovaného JSON Schématu: `validate-profile` zkontroluje `items`/`properties` a vygenerované schéma zohlední požadovaná pole i vnořené struktury. Díky tomu IDE lépe napovídá a klienti mají přesnější kontrakty.
+
 ### Advanced Features
 
 #### Conditional Requirements
