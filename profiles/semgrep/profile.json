@@ -5,6 +5,7 @@
   
   "parameter_aliases": {
     "deploymentId": ["deployment_id"],
+    "deploymentSlug": ["deployment_slug"],
     "projectName": ["project_name", "project"],
     "repositoryId": ["repository_id", "repo_id"],
     "policyId": ["policy_id"],
@@ -16,7 +17,7 @@
   "tools": [
     {
       "name": "get_deployment",
-      "description": "Get deployment information including both numeric ID and slug. Call this first to obtain identifiers needed for other operations. Returns deployment ID (numeric, for scans/policies/secrets/dependencies) and slug (string, for projects/findings/triage/tickets).",
+      "description": "Get deployment information including both numeric ID and slug. Call this first to obtain identifiers needed for other operations. Returns deployment slug (string, for all operations) and ID (numeric, for reference).",
       "composite": true,
       "steps": [
         {
@@ -233,16 +234,16 @@
     {
       "name": "manage_secrets",
       "description": "List secrets findings detected by Semgrep. Filter by validation state, status, severity, and repository.",
-      "metadata_params": ["deploymentId"],
+      "metadata_params": ["deploymentSlug"],
       "operations": {
         "list": "SecretsService_ListSecretsPath"
       },
       "parameters": {
-        "deploymentId": {
+        "deploymentSlug": {
           "type": "string",
-          "description": "Deployment ID (numeric). Get from get_deployment tool.",
+          "description": "Deployment slug (string). Get from get_deployment tool. Required for all operations.",
           "required": true,
-          "example": "123"
+          "example": "your-deployment"
         },
         "status": {
           "type": "string",
@@ -287,7 +288,7 @@
     {
       "name": "manage_scans",
       "description": "Search and get details for Semgrep scans. Actions: 'search' (list scans with filters, last 30 days), 'get' (single scan details including deployment, repository, commit info).",
-      "metadata_params": ["action", "deploymentId", "scanId"],
+      "metadata_params": ["action", "deploymentSlug", "scanId"],
       "operations": {
         "search": "ScansService_SearchScans",
         "get": "ScansService_GetScan"
@@ -299,11 +300,11 @@
           "description": "Action to perform",
           "required": true
         },
-        "deploymentId": {
+        "deploymentSlug": {
           "type": "string",
-          "description": "Deployment ID (numeric). Get from get_deployment tool.",
+          "description": "Deployment slug (string). Get from get_deployment tool. Required for all operations.",
           "required": true,
-          "example": "123"
+          "example": "your-deployment"
         },
         "scanId": {
           "type": "string",
@@ -325,7 +326,7 @@
     {
       "name": "manage_policies",
       "description": "Work with security policies. Actions: 'list' (all policies), 'list_rules' (rules in a policy with pagination), 'update' (change rule mode: Monitor/Comment/Block/Disabled).",
-      "metadata_params": ["action", "deploymentId", "policyId"],
+      "metadata_params": ["action", "deploymentSlug", "policyId"],
       "operations": {
         "list": "PoliciesService_ListPolicies",
         "list_rules": "PoliciesService_ListPolicyRules",
@@ -338,11 +339,11 @@
           "description": "Action to perform",
           "required": true
         },
-        "deploymentId": {
+        "deploymentSlug": {
           "type": "string",
-          "description": "Deployment ID (numeric). Get from get_deployment tool.",
+          "description": "Deployment slug (string). Get from get_deployment tool. Required for all operations.",
           "required": true,
-          "example": "123"
+          "example": "your-deployment"
         },
         "policyId": {
           "type": "string",
@@ -373,7 +374,7 @@
     {
       "name": "manage_dependencies",
       "description": "Work with supply chain dependencies. Actions: 'list' (all dependencies), 'list_repositories' (repos with dependencies), 'list_lockfiles' (lockfiles in a repo). Filter by ecosystem, name, transitivity, license.",
-      "metadata_params": ["action", "deploymentId", "repositoryId"],
+      "metadata_params": ["action", "deploymentSlug", "repositoryId"],
       "operations": {
         "list": "SupplyChainService_ListDependencies",
         "list_repositories": "SupplyChainService_ListRepositoriesForDependencies",
@@ -386,11 +387,11 @@
           "description": "Action to perform",
           "required": true
         },
-        "deploymentId": {
+        "deploymentSlug": {
           "type": "string",
-          "description": "Deployment ID (numeric). Get from get_deployment tool.",
+          "description": "Deployment slug (string). Get from get_deployment tool. Required for all operations.",
           "required": true,
-          "example": "123"
+          "example": "your-deployment"
         },
         "repositoryId": {
           "type": "string",
@@ -411,7 +412,7 @@
     {
       "name": "manage_sbom",
       "description": "Export SBOM (Software Bill of Materials). Actions: 'create' (start async export job, returns task_token), 'get' (check status - PENDING/RUNNING/COMPLETED/FAILED, get download URL when complete).",
-      "metadata_params": ["action", "deploymentId"],
+      "metadata_params": ["action", "deploymentSlug"],
       "operations": {
         "create": "SupplyChainService_CreateSbomExport",
         "get": "SupplyChainService_GetSbomExport"
@@ -423,11 +424,11 @@
           "description": "Action to perform",
           "required": true
         },
-        "deploymentId": {
+        "deploymentSlug": {
           "type": "string",
-          "description": "Deployment ID (numeric). Get from get_deployment tool.",
+          "description": "Deployment slug (string). Get from get_deployment tool. Required for all operations.",
           "required": true,
-          "example": "123"
+          "example": "your-deployment"
         },
         "taskToken": {
           "type": "string",
