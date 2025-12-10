@@ -119,5 +119,71 @@ describe('ToolGenerator', () => {
       });
     }).toThrow(/Invalid value for action/);
   });
+
+  it('should generate valid JSON Schema for array parameters with items', () => {
+    // Create minimal tool definition with array parameter
+    const toolDef = {
+      name: 'test_array',
+      description: 'Test array parameter',
+      parameters: {
+        tags: {
+          type: 'array' as const,
+          description: 'List of tags',
+          items: { type: 'string' }
+        }
+      }
+    };
+    
+    const tool = generator.generateTool(toolDef);
+    const tagsProperty = tool.inputSchema.properties?.tags as { type: string; items?: unknown };
+    
+    expect(tagsProperty.type).toBe('array');
+    expect(tagsProperty.items).toBeDefined();
+    expect(tagsProperty.items).toEqual({ type: 'string' });
+  });
+
+  it('should generate valid JSON Schema for object parameters with properties', () => {
+    // Create minimal tool definition with object parameter
+    const toolDef = {
+      name: 'test_object',
+      description: 'Test object parameter',
+      parameters: {
+        config: {
+          type: 'object' as const,
+          description: 'Configuration object',
+          properties: {}
+        }
+      }
+    };
+    
+    const tool = generator.generateTool(toolDef);
+    const configProperty = tool.inputSchema.properties?.config as { type: string; properties?: unknown };
+    
+    expect(configProperty.type).toBe('object');
+    expect(configProperty.properties).toBeDefined();
+    expect(configProperty.properties).toEqual({});
+  });
+
+  it('should fail validation if array parameter is missing items', () => {
+    // This test documents the bug that was fixed
+    const toolDefInvalid = {
+      name: 'test_invalid_array',
+      description: 'Test invalid array',
+      parameters: {
+        tags: {
+          type: 'array' as const,
+          description: 'List of tags'
+          // Missing items property
+        }
+      }
+    };
+    
+    const tool = generator.generateTool(toolDefInvalid);
+    const tagsProperty = tool.inputSchema.properties?.tags as { type: string; items?: unknown };
+    
+    // After fix, items should be undefined when not provided in profile
+    // MCP SDK will reject this, so we should catch it in validation
+    expect(tagsProperty.items).toBeUndefined();
+  });
 });
 

@@ -198,6 +198,11 @@
             }
           }
         },
+        "properties": {
+          "type": "object",
+          "description": "Properties schema for object parameters (empty {} = free-form object)",
+          "additionalProperties": true
+        },
         "default": {
           "description": "Default value if not provided"
         },

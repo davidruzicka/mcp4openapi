@@ -321,7 +321,20 @@ export class HttpClient {
       };
 
       if (ctx.method !== 'GET' && ctx.method !== 'HEAD' && ctx.body) {
-        fetchOptions.body = JSON.stringify(ctx.body);
+        if (ctx.body instanceof FormData) {
+          // FormData: let fetch set Content-Type with boundary automatically
+          delete ctx.headers['Content-Type'];
+          fetchOptions.body = ctx.body;
+        } else if (ctx.body instanceof Blob || ctx.body instanceof ArrayBuffer) {
+          // Binary data: keep existing Content-Type or use octet-stream
+          if (!ctx.headers['Content-Type']) {
+            ctx.headers['Content-Type'] = 'application/octet-stream';
+          }
+          fetchOptions.body = ctx.body;
+        } else {
+          // JSON (default)
+          fetchOptions.body = JSON.stringify(ctx.body);
+        }
       }
 
       const response = await fetch(ctx.url, fetchOptions);
