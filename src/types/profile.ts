@@ -81,6 +81,19 @@ export interface ProxyDownloadOperation {
   
   /** Optional MIME type whitelist (e.g., ['image/*', 'application/pdf']) */
   allowed_mime_types?: string[];
+  
+  /**
+   * Skip authentication for download URL (default: false)
+   * 
+   * Set to true for pre-signed URLs or public download links that don't need auth.
+   * Metadata endpoint still uses normal authentication, only the file download is unauthenticated.
+   * 
+   * Example use cases:
+   * - AWS S3 pre-signed URLs (https://bucket.s3.amazonaws.com/file?X-Amz-Signature=...)
+   * - Azure Blob Storage SAS tokens (https://storage.blob.core.windows.net/container/file?sv=...)
+   * - Temporary download URLs with embedded tokens
+   */
+  skip_auth?: boolean;
 }
 
 /**

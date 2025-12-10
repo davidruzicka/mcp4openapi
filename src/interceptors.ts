@@ -24,6 +24,11 @@ export interface ResponseContext {
   body: unknown;
 }
 
+export interface AuthCredentials {
+  headers: Record<string, string>;
+  queryParams?: { key: string; value: string };
+}
+
 export type InterceptorFn = (
   ctx: RequestContext,
   next: () => Promise<ResponseContext>
@@ -240,6 +245,67 @@ export class InterceptorChain {
 
     return next();
   }
+
+  /**
+   * Extract auth credentials (headers + query params) without making a request
+   * 
+   * Why separate: ProxyDownloadExecutor needs auth for direct fetch calls,
+   * but can't use InterceptorChain (fetch doesn't go through chain).
+   * This extracts the same credentials the chain would apply.
+   * 
+   * Returns:
+   * - Bearer auth: { headers: { Authorization: 'Bearer token' }, queryParams: undefined }
+   * - Custom-header auth: { headers: { 'X-API-Key': 'token' }, queryParams: undefined }
+   * - Query auth: { headers: {}, queryParams: { key: 'api_key', value: 'token' } }
+   * - No auth: { headers: {}, queryParams: undefined }
+   */
+  getAuthCredentials(): AuthCredentials {
+    if (!this.config.auth) {
+      return { headers: {} };
+    }
+
+    const authConfigRaw = this.config.auth;
+    
+    // Handle multi-auth: get primary non-OAuth config
+    const authConfigs = Array.isArray(authConfigRaw) ? authConfigRaw : [authConfigRaw];
+    const sortedConfigs = authConfigs.sort((a, b) => (a.priority || 0) - (b.priority || 0));
+    
+    // Find first non-OAuth config (OAuth handled separately in HTTP transport)
+    const authConfig = sortedConfigs.find(c => c.type !== 'oauth');
+    
+    if (!authConfig || authConfig.type === 'oauth') {
+      return { headers: {} };
+    }
+
+    const envVarName = authConfig.value_from_env;
+    if (!envVarName) {
+      return { headers: {} };
+    }
+    
+    // Use session token first, then environment variable
+    const token = this.authToken || process.env[envVarName];
+    if (!token) {
+      return { headers: {} };
+    }
+
+    const credentials: AuthCredentials = { headers: {} };
+
+    if (authConfig.type === 'bearer') {
+      credentials.headers['Authorization'] = `Bearer ${token}`;
+    } else if (authConfig.type === 'custom-header' && authConfig.header_name) {
+      if (!isSafePropertyName(authConfig.header_name)) {
+        return { headers: {} }; // Skip unsafe header name
+      }
+      credentials.headers[authConfig.header_name] = token;
+    } else if (authConfig.type === 'query' && authConfig.query_param) {
+      credentials.queryParams = {
+        key: authConfig.query_param,
+        value: token
+      };
+    }
+
+    return credentials;
+  }
 }
 
 /**
@@ -250,6 +316,14 @@ export class HttpClient {
     private baseUrl: string,
     private interceptors: InterceptorChain
   ) {}
+
+  /**
+   * Get auth credentials (headers and query params) for direct HTTP calls
+   * Used by ProxyDownloadExecutor for authenticated file downloads
+   */
+  getAuthCredentials(): AuthCredentials {
+    return this.interceptors.getAuthCredentials();
+  }
 
   /**
    * Serialize parameters including arrays

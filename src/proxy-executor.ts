@@ -7,7 +7,7 @@
  */
 
 import type { ProxyDownloadOperation } from './types/profile.js';
-import type { ResponseContext } from './interceptors.js';
+import type { ResponseContext, AuthCredentials } from './interceptors.js';
 import { NetworkError, ValidationError } from './errors.js';
 
 export interface HttpClient {
@@ -49,12 +49,12 @@ export class ProxyDownloadExecutor {
    * 
    * @param operation Proxy download configuration
    * @param path API path with substituted parameters
-   * @param authHeaders Auth headers to use for download
+   * @param authCredentials Auth credentials (headers + query params) for download
    */
   async execute(
     operation: ProxyDownloadOperation,
     path: string,
-    authHeaders: Record<string, string>
+    authCredentials: AuthCredentials
   ): Promise<ProxyDownloadResult> {
     const maxSize = operation.max_size_bytes ?? DEFAULT_MAX_SIZE;
     const timeout = operation.timeout_ms ?? DEFAULT_TIMEOUT;
@@ -91,11 +91,13 @@ export class ProxyDownloadExecutor {
     }
 
     // Step 5: Download binary content
+    const skipAuth = operation.skip_auth ?? false;
     const { content, size } = await this.downloadWithAuth(
       url,
-      authHeaders,
+      authCredentials,
       maxSize,
-      timeout
+      timeout,
+      skipAuth
     );
 
     return {
@@ -139,19 +141,36 @@ export class ProxyDownloadExecutor {
 
   /**
    * Download binary content and return base64
+   * 
+   * @param skipAuth If true, download URL is fetched without authentication headers/params
+   *                 Metadata endpoint still requires auth, only the final download is unauthenticated
    */
   private async downloadWithAuth(
     url: string,
-    authHeaders: Record<string, string>,
+    authCredentials: AuthCredentials,
     maxSize: number,
-    timeout: number
+    timeout: number,
+    skipAuth: boolean = false
   ): Promise<{ content: string; size: number }> {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeout);
 
     try {
-      const response = await fetch(url, {
-        headers: authHeaders,
+      // Build download URL, adding query auth param if needed (and not skipping auth)
+      let downloadUrl = url;
+      if (!skipAuth && authCredentials.queryParams) {
+        const urlObj = new URL(url);
+        const { key, value } = authCredentials.queryParams;
+        
+        // Only add if not already present (URL may have pre-signed token)
+        if (!urlObj.searchParams.has(key)) {
+          urlObj.searchParams.set(key, value);
+          downloadUrl = urlObj.toString();
+        }
+      }
+
+      const response = await fetch(downloadUrl, {
+        headers: skipAuth ? {} : authCredentials.headers,
         signal: controller.signal,
       });
 
