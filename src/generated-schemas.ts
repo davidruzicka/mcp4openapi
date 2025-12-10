@@ -27,7 +27,8 @@ export const proxyDownloadOperationSchema = z.object({
     url_field: z.string().optional(),
     max_size_bytes: z.number().optional(),
     timeout_ms: z.number().optional(),
-    allowed_mime_types: z.array(z.string()).optional()
+    allowed_mime_types: z.array(z.string()).optional(),
+    skip_auth: z.boolean().optional()
 });
 
 export const operationDefinitionSchema = z.union([z.string(), proxyDownloadOperationSchema]);
