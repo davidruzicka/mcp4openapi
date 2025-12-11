@@ -317,9 +317,26 @@ describe('ToolGenerator', () => {
       const mapOp = generator.mapActionToOperation(toolDef!, {
         action: 'list'
       });
-      
+
       const isMultipart = generator.isMultipartOperation(mapOp!);
       expect(isMultipart).toBe(false);
+    });
+
+    it('should return true for multipart operations', () => {
+      const stubParser: any = {
+        getOperation: () => ({
+          requestBody: {
+            content: {
+              'multipart/form-data': {
+                schema: { type: 'object' }
+              }
+            }
+          }
+        })
+      };
+
+      const multipartGenerator = new ToolGenerator(stubParser);
+      expect(multipartGenerator.isMultipartOperation('uploadOp')).toBe(true);
     });
   });
 });
