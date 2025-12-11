@@ -54,7 +54,8 @@ describe('YouTrack Integration Tests', () => {
     const profilePath = path.resolve(process.cwd(), 'profiles/youtrack/profile.json');
     const openApiPath = path.resolve(process.cwd(), 'profiles/youtrack/openapi.json');
     
-    // Set env var for token
+    // Set env vars for base URL and token
+    process.env.MCP4_API_BASE_URL = 'http://youtrack.test/api';
     process.env.MCP4_API_TOKEN = 'test-token';
     
     mcpServer = new MCPServer();
@@ -63,6 +64,7 @@ describe('YouTrack Integration Tests', () => {
 
   afterAll(() => {
     server.close();
+    delete process.env.MCP4_API_BASE_URL;
     delete process.env.MCP4_API_TOKEN;
   });
 
