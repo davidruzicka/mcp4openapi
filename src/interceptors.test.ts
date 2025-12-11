@@ -185,6 +185,21 @@ describe('HttpClient - Auth Interceptors', () => {
   });
 });
 
+describe('HttpClient - accessors', () => {
+  it('should expose baseUrl and interceptor config for diagnostics', () => {
+    const config: InterceptorConfig = {
+      array_format: 'indices',
+      rate_limit: { max_requests_per_minute: 60 },
+    };
+
+    const chain = new InterceptorChain(config);
+    const client = new HttpClient('https://example.test', chain);
+
+    expect(client.getBaseUrl()).toBe('https://example.test');
+    expect(client.getInterceptorsConfig()).toEqual(config);
+  });
+});
+
 describe('InterceptorChain - getAuthCredentials', () => {
   const originalEnv = { ...process.env };
 
