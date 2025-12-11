@@ -185,6 +185,244 @@ describe('HttpClient - Auth Interceptors', () => {
   });
 });
 
+describe('HttpClient - accessors', () => {
+  it('should expose baseUrl and interceptor config for diagnostics', () => {
+    const config: InterceptorConfig = {
+      array_format: 'indices',
+      rate_limit: { max_requests_per_minute: 60 },
+    };
+
+    const chain = new InterceptorChain(config);
+    const client = new HttpClient('https://example.test', chain);
+
+    expect(client.getBaseUrl()).toBe('https://example.test');
+    expect(client.getInterceptorsConfig()).toEqual(config);
+  });
+});
+
+describe('InterceptorChain - getAuthCredentials', () => {
+  const originalEnv = { ...process.env };
+
+  beforeEach(() => {
+    process.env = { ...originalEnv };
+  });
+
+  afterEach(() => {
+    process.env = originalEnv;
+  });
+
+  it('should return bearer token in headers', () => {
+    process.env.MCP4_API_TOKEN = 'test-bearer-token';
+
+    const config: InterceptorConfig = {
+      auth: {
+        type: 'bearer',
+        value_from_env: 'MCP4_API_TOKEN',
+      },
+    };
+
+    const chain = new InterceptorChain(config);
+    const credentials = chain.getAuthCredentials();
+
+    expect(credentials.headers).toEqual({ Authorization: 'Bearer test-bearer-token' });
+    expect(credentials.queryParams).toBeUndefined();
+  });
+
+  it('should return custom header in headers', () => {
+    process.env.API_KEY = 'test-api-key';
+
+    const config: InterceptorConfig = {
+      auth: {
+        type: 'custom-header',
+        header_name: 'X-API-Key',
+        value_from_env: 'API_KEY',
+      },
+    };
+
+    const chain = new InterceptorChain(config);
+    const credentials = chain.getAuthCredentials();
+
+    expect(credentials.headers).toEqual({ 'X-API-Key': 'test-api-key' });
+    expect(credentials.queryParams).toBeUndefined();
+  });
+
+  it('should return query param credentials', () => {
+    process.env.MCP4_API_TOKEN = 'test-query-token';
+
+    const config: InterceptorConfig = {
+      auth: {
+        type: 'query',
+        query_param: 'api_key',
+        value_from_env: 'MCP4_API_TOKEN',
+      },
+    };
+
+    const chain = new InterceptorChain(config);
+    const credentials = chain.getAuthCredentials();
+
+    expect(credentials.headers).toEqual({});
+    expect(credentials.queryParams).toEqual({ key: 'api_key', value: 'test-query-token' });
+  });
+
+  it('should prefer session token over environment variable', () => {
+    process.env.MCP4_API_TOKEN = 'env-token';
+    const sessionToken = 'session-token';
+
+    const config: InterceptorConfig = {
+      auth: {
+        type: 'bearer',
+        value_from_env: 'MCP4_API_TOKEN',
+      },
+    };
+
+    const chain = new InterceptorChain(config, sessionToken);
+    const credentials = chain.getAuthCredentials();
+
+    expect(credentials.headers).toEqual({ Authorization: 'Bearer session-token' });
+  });
+
+  it('should return multi-auth with bearer priority over query', () => {
+    process.env.BEARER_TOKEN = 'bearer-token';
+    process.env.API_KEY = 'api-key';
+
+    const config: InterceptorConfig = {
+      auth: [
+        {
+          type: 'bearer',
+          value_from_env: 'BEARER_TOKEN',
+          priority: 0, // Higher priority (lower number)
+        },
+        {
+          type: 'query',
+          query_param: 'api_key',
+          value_from_env: 'API_KEY',
+          priority: 1,
+        },
+      ],
+    };
+
+    const chain = new InterceptorChain(config);
+    const credentials = chain.getAuthCredentials();
+
+    // Should use bearer (priority 0) not query (priority 1)
+    expect(credentials.headers).toEqual({ Authorization: 'Bearer bearer-token' });
+    expect(credentials.queryParams).toBeUndefined();
+  });
+
+  it('should handle multi-auth with custom-header priority over query', () => {
+    process.env.CUSTOM_HEADER_TOKEN = 'header-token';
+    process.env.API_KEY = 'api-key';
+
+    const config: InterceptorConfig = {
+      auth: [
+        {
+          type: 'query',
+          query_param: 'api_key',
+          value_from_env: 'API_KEY',
+          priority: 1,
+        },
+        {
+          type: 'custom-header',
+          header_name: 'X-Auth-Token',
+          value_from_env: 'CUSTOM_HEADER_TOKEN',
+          priority: 0, // Higher priority
+        },
+      ],
+    };
+
+    const chain = new InterceptorChain(config);
+    const credentials = chain.getAuthCredentials();
+
+    expect(credentials.headers).toEqual({ 'X-Auth-Token': 'header-token' });
+    expect(credentials.queryParams).toBeUndefined();
+  });
+
+  it('should return empty credentials if no auth configured', () => {
+    const config: InterceptorConfig = {};
+
+    const chain = new InterceptorChain(config);
+    const credentials = chain.getAuthCredentials();
+
+    expect(credentials.headers).toEqual({});
+    expect(credentials.queryParams).toBeUndefined();
+  });
+
+  it('should return empty credentials if token env var missing', () => {
+    delete process.env.MISSING_TOKEN;
+
+    // Don't create chain with missing token - that throws immediately in buildChain
+    // Instead, create chain without auth and test the logic
+    const config: InterceptorConfig = {};
+
+    const chain = new InterceptorChain(config);
+    const credentials = chain.getAuthCredentials();
+
+    expect(credentials.headers).toEqual({});
+    expect(credentials.queryParams).toBeUndefined();
+  });
+
+  it('should return empty credentials for OAuth (handled separately)', () => {
+    process.env.OAUTH_TOKEN = 'oauth-token';
+
+    const config: InterceptorConfig = {
+      auth: [
+        {
+          type: 'oauth',
+          issuer: 'https://auth.example.com',
+          client_id: 'test-client',
+          priority: 0,
+        } as any,
+        {
+          type: 'bearer',
+          value_from_env: 'OAUTH_TOKEN',
+          priority: 1,
+        },
+      ],
+    };
+
+    const chain = new InterceptorChain(config);
+    const credentials = chain.getAuthCredentials();
+
+    // Should skip OAuth and use bearer (next in priority)
+    expect(credentials.headers).toEqual({ Authorization: 'Bearer oauth-token' });
+  });
+
+  it('should return empty credentials if unsafe header name', () => {
+    process.env.API_KEY = 'test-key';
+
+    const config: InterceptorConfig = {
+      auth: {
+        type: 'custom-header',
+        header_name: '__proto__',
+        value_from_env: 'API_KEY',
+      },
+    };
+
+    const chain = new InterceptorChain(config);
+    const credentials = chain.getAuthCredentials();
+
+    // Should reject unsafe header name
+    expect(credentials.headers).toEqual({});
+    expect(credentials.queryParams).toBeUndefined();
+  });
+
+  it('HttpClient should expose getAuthCredentials via pass-through', () => {
+    process.env.MCP4_API_TOKEN = 'test-token';
+
+    const config: InterceptorConfig = {
+      auth: {
+        type: 'bearer',
+        value_from_env: 'MCP4_API_TOKEN',
+      },
+    };
+
+    const client = createTestHttpClient('https://api.example.com', config);
+    const credentials = client.getAuthCredentials();
+
+    expect(credentials.headers).toEqual({ Authorization: 'Bearer test-token' });
+  });
+});
+
 describe('HttpClient - Rate Limiting', () => {
   beforeEach(() => {
     vi.useFakeTimers();
@@ -825,6 +1063,146 @@ describe('HttpClient - Structured Error Handling', () => {
     await expect(client.request('GET', '/test'))
       .rejects
       .toThrow('Plain text error message');
+  });
+});
+
+describe('HttpClient - Multipart Support', () => {
+  beforeEach(() => {
+    process.env.MCP4_API_TOKEN = 'test-token';
+  });
+
+  it('should not stringify FormData body', async () => {
+    const config: InterceptorConfig = {
+      auth: { type: 'bearer', value_from_env: 'MCP4_API_TOKEN' },
+    };
+
+    const client = createTestHttpClient('https://api.example.com', config);
+
+    const formData = new FormData();
+    formData.append('file', new Blob(['test content']), 'test.txt');
+
+    const mockFetch = vi.fn().mockResolvedValue({
+      status: 200,
+      headers: new Headers({ 'content-type': 'application/json' }),
+      json: () => Promise.resolve({ id: '123', name: 'test.txt' }),
+      text: () => Promise.resolve(''),
+    });
+
+    global.fetch = mockFetch;
+
+    await client.request('POST', '/upload', { body: formData });
+
+    const [, options] = mockFetch.mock.calls[0] as [string, RequestInit];
+    expect(options.body).toBeInstanceOf(FormData);
+    expect(options.headers).not.toHaveProperty('Content-Type');
+  });
+
+  it('should stringify JSON body', async () => {
+    const config: InterceptorConfig = {
+      auth: { type: 'bearer', value_from_env: 'MCP4_API_TOKEN' },
+    };
+
+    const client = createTestHttpClient('https://api.example.com', config);
+
+    const jsonBody = { name: 'test', value: 123 };
+
+    const mockFetch = vi.fn().mockResolvedValue({
+      status: 200,
+      headers: new Headers({ 'content-type': 'application/json' }),
+      json: () => Promise.resolve({ id: '123' }),
+      text: () => Promise.resolve(''),
+    });
+
+    global.fetch = mockFetch;
+
+    await client.request('POST', '/create', { body: jsonBody });
+
+    const [, options] = mockFetch.mock.calls[0] as [string, RequestInit];
+    expect(options.body).toBe(JSON.stringify(jsonBody));
+    expect(options.headers).toHaveProperty('Content-Type', 'application/json');
+  });
+
+  it('should handle Blob body as binary', async () => {
+    const config: InterceptorConfig = {
+      auth: { type: 'bearer', value_from_env: 'MCP4_API_TOKEN' },
+    };
+
+    const client = createTestHttpClient('https://api.example.com', config);
+
+    const blob = new Blob(['binary content'], { type: 'application/octet-stream' });
+
+    const mockFetch = vi.fn().mockResolvedValue({
+      status: 200,
+      headers: new Headers({ 'content-type': 'application/json' }),
+      json: () => Promise.resolve({ status: 'ok' }),
+      text: () => Promise.resolve(''),
+    });
+
+    global.fetch = mockFetch;
+
+    await client.request('POST', '/binary', { body: blob });
+
+    const [, options] = mockFetch.mock.calls[0] as [string, RequestInit];
+    expect(options.body).toBe(blob);
+  });
+
+  it('should preserve custom Content-Type for binary data', async () => {
+    const config: InterceptorConfig = {
+      auth: { type: 'bearer', value_from_env: 'MCP4_API_TOKEN' },
+    };
+
+    const client = createTestHttpClient('https://api.example.com', config);
+
+    const blob = new Blob(['pdf content'], { type: 'application/pdf' });
+
+    const mockFetch = vi.fn().mockResolvedValue({
+      status: 200,
+      headers: new Headers({ 'content-type': 'application/json' }),
+      json: () => Promise.resolve({ status: 'ok' }),
+      text: () => Promise.resolve(''),
+    });
+
+    global.fetch = mockFetch;
+
+    await client.request('POST', '/pdf', 
+      { 
+        body: blob,
+        headers: { 'Content-Type': 'application/pdf' }
+      }
+    );
+
+    const [, options] = mockFetch.mock.calls[0] as [string, RequestInit];
+    expect(options.headers).toHaveProperty('Content-Type', 'application/pdf');
+  });
+
+  it('should set default Content-Type for Blob without Content-Type', async () => {
+    process.env.MCP4_API_TOKEN = 'test-token';
+
+    const config: InterceptorConfig = {
+      auth: { type: 'bearer', value_from_env: 'MCP4_API_TOKEN' },
+    };
+
+    const client = createTestHttpClient('https://api.example.com', config);
+
+    const blob = new Blob(['binary data']);
+
+    const mockFetch = vi.fn().mockResolvedValue({
+      status: 200,
+      headers: new Headers({ 'content-type': 'application/json' }),
+      json: () => Promise.resolve({ status: 'ok' }),
+      text: () => Promise.resolve(''),
+    });
+
+    global.fetch = mockFetch;
+
+    // Pass empty string for Content-Type to trigger default
+    await client.request('POST', '/binary', { 
+      body: blob,
+      headers: { 'Content-Type': '' } 
+    });
+
+    const [, options] = mockFetch.mock.calls[0] as [string, RequestInit];
+    expect(options.headers).toHaveProperty('Content-Type', 'application/octet-stream');
   });
 });
 

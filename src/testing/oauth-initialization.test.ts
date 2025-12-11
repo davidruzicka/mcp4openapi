@@ -7,8 +7,8 @@
 
 import { describe, it, expect } from 'vitest';
 import { ExternalOAuthProvider } from '../oauth-provider.js';
+import { ConsoleLogger, LogLevel } from '../logger.js';
 import type { OAuthConfig } from '../types/profile.js';
-import { ConsoleLogger } from '../logger.js';
 
 describe('OAuth Provider Initialization', () => {
   it('should return undefined for authorizationEndpoint before async initialization (with issuer)', async () => {
@@ -21,10 +21,7 @@ describe('OAuth Provider Initialization', () => {
       scopes: ['api'],
     };
 
-    const logger = new ConsoleLogger({
-      serviceName: 'test',
-      minLevel: 'error',
-    });
+    const logger = new ConsoleLogger(LogLevel.ERROR);
 
     const provider = new ExternalOAuthProvider(config, logger);
     
@@ -46,10 +43,7 @@ describe('OAuth Provider Initialization', () => {
       scopes: ['api'],
     };
 
-    const logger = new ConsoleLogger({
-      serviceName: 'test',
-      minLevel: 'error',
-    });
+    const logger = new ConsoleLogger(LogLevel.ERROR);
 
     const provider = new ExternalOAuthProvider(config, logger);
     

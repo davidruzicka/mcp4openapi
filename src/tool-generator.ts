@@ -79,6 +79,11 @@ export class ToolGenerator {
       schema.items = { type: param.items.type };
     }
 
+    if (param.type === 'object') {
+      // Always include properties for object type (empty {} = free-form object)
+      schema.properties = param.properties || {};
+    }
+
     return schema;
   }
 
@@ -117,12 +122,12 @@ export class ToolGenerator {
   }
 
   /**
-   * Map tool action to OpenAPI operation ID
+   * Get operation definition (string or ProxyDownloadOperation) for action
    * 
-   * Why: Single tool with 'action' parameter maps to multiple operations.
-   * Example: manage_badges + action=create => postApiV4ProjectsIdBadges
+   * Why: Tools can have string operationIds OR proxy_download configs.
+   * This returns the raw definition before extracting operationId.
    */
-  mapActionToOperation(toolDef: ToolDefinition, args: Record<string, unknown>): string | undefined {
+  getOperationDefinition(toolDef: ToolDefinition, args: Record<string, unknown>) {
     if (!toolDef.operations) return undefined;
 
     const action = args['action'] as string | undefined;
@@ -145,6 +150,58 @@ export class ToolGenerator {
     }
 
     return toolDef.operations[action];
+  }
+
+  /**
+   * Map tool action to OpenAPI operation ID
+   * 
+   * Why: Single tool with 'action' parameter maps to multiple operations.
+   * Example: manage_badges + action=create => postApiV4ProjectsIdBadges
+   * 
+   * Note: Returns undefined for ProxyDownloadOperation (not a direct operationId)
+   */
+  mapActionToOperation(toolDef: ToolDefinition, args: Record<string, unknown>): string | undefined {
+    const op = this.getOperationDefinition(toolDef, args);
+    return typeof op === 'string' ? op : undefined;
+  }
+
+  /**
+   * Check if operation requires multipart/form-data
+   * 
+   * Why: Some operations (file uploads) need FormData instead of JSON body.
+   * Detected from OpenAPI requestBody.content['multipart/form-data'].
+   */
+  isMultipartOperation(operationId: string): boolean {
+    const operation = this.parser.getOperation(operationId);
+    if (!operation?.requestBody?.content) return false;
+    return 'multipart/form-data' in operation.requestBody.content;
+  }
+
+  /**
+   * Build FormData body for file upload
+   * 
+   * @param args Tool arguments including base64Content or filePath
+   * @param fileFieldName Field name in FormData (default: 'files[0]')
+   */
+  buildFormDataBody(args: Record<string, unknown>, fileFieldName = 'files[0]'): FormData {
+    const formData = new FormData();
+    
+    const base64Content = args['base64Content'] as string | undefined;
+    const fileName = (args['fileName'] as string) || 'upload';
+    const mimeType = (args['mimeType'] as string) || 'application/octet-stream';
+    
+    if (base64Content) {
+      // Convert base64 to Blob
+      const binaryString = atob(base64Content);
+      const bytes = new Uint8Array(binaryString.length);
+      for (let i = 0; i < binaryString.length; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+      }
+      const blob = new Blob([bytes], { type: mimeType });
+      formData.append(fileFieldName, blob, fileName);
+    }
+    
+    return formData;
   }
 }
 

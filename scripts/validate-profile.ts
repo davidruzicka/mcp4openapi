@@ -156,8 +156,12 @@ async function validateProfile(
 
         for (const tool of profile.tools) {
           if (tool.operations) {
-            for (const [action, operationId] of Object.entries(tool.operations)) {
+            for (const [action, operationDef] of Object.entries(tool.operations)) {
               operationCount++;
+              
+              // Handle both string and ProxyDownloadOperation
+              const operationId = typeof operationDef === 'string' ? operationDef : operationDef.metadata_endpoint;
+              
               try {
                 parser.getOperation(operationId);
               } catch {

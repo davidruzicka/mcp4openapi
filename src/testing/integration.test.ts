@@ -9,7 +9,7 @@ import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest';
 import path from 'path';
 import { MCPServer } from '../mcp-server.js';
 import { startMockServer, resetMockServer, stopMockServer } from './mock-gitlab-server.js';
-import type { Badge, Branch, AccessRequest, Job, MergeRequest, CompositeResult } from './test-types.js';
+import type { Badge, Branch, AccessRequest, Job, MergeRequest, Issue, CompositeResult } from './test-types.js';
 
 describe('Integration Tests', () => {
   let server: MCPServer;
@@ -522,7 +522,7 @@ describe('Integration Tests', () => {
       expect((resultData.data.merge_request as Record<string, unknown>).notes).toBeDefined();
       expect(resultData.completed_steps).toBe(2);
       expect(resultData.total_steps).toBe(2);
-      expect(resultData.success).toBe(true);
+      expect(resultData.errors).toBeUndefined();
 
       const mergeRequest = resultData.data.merge_request as MergeRequest;
       expect(mergeRequest.iid).toBe(1);

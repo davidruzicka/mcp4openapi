@@ -23,7 +23,7 @@ export interface ToolDefinition {
   description: string;
   
   // Simple tools: direct mapping to single or multiple operations
-  operations?: Record<string, string> | { [key: string]: string };
+  operations?: Record<string, OperationDefinition>;
   
   // Composite tools: chain multiple API calls
   composite?: boolean;
@@ -37,6 +37,9 @@ export interface ToolDefinition {
   
   // Response field filtering (reduces verbosity for list operations)
   response_fields?: Record<string, string[]>; // e.g., {"list": ["id", "name", "path"]}
+  
+  // Whether to send response_fields as 'fields' query parameter (e.g. for YouTrack)
+  send_response_fields_as_param?: boolean;
 }
 
 export interface ParameterDefinition {
@@ -46,6 +49,7 @@ export interface ParameterDefinition {
   required_for?: string[]; // Which actions require this parameter
   enum?: string[];
   items?: { type: string };
+  properties?: Record<string, unknown>; // For object type (empty {} = free-form object)
   default?: unknown;
   example?: unknown;
 }
@@ -55,6 +59,50 @@ export interface CompositeStep {
   store_as: string; // JSONPath-like: "merge_request", "merge_request.comments"
   depends_on?: string[]; // Optional dependencies on other steps' store_as values
 }
+
+/**
+ * Proxy download operation configuration
+ * 
+ * Why: Some APIs return file URLs that require authentication.
+ * LLM cannot fetch these directly, so we proxy the download.
+ */
+export interface ProxyDownloadOperation {
+  /** Must be 'proxy_download' */
+  type: 'proxy_download';
+  
+  /** OpenAPI operation ID to fetch metadata (e.g., 'get_/issues/{id}/attachments/{attachmentId}') */
+  metadata_endpoint: string;
+  
+  /** JSON path to URL field in metadata response (default: 'url') */
+  url_field?: string;
+  
+  /** Maximum file size in bytes (default: 10MB = 10485760) */
+  max_size_bytes?: number;
+  
+  /** Timeout for download in milliseconds (default: 30000) */
+  timeout_ms?: number;
+  
+  /** Optional MIME type whitelist (e.g., ['image/*', 'application/pdf']) */
+  allowed_mime_types?: string[];
+  
+  /**
+   * Skip authentication for download URL (default: false)
+   * 
+   * Set to true for pre-signed URLs or public download links that don't need auth.
+   * Metadata endpoint still uses normal authentication, only the file download is unauthenticated.
+   * 
+   * Example use cases:
+   * - AWS S3 pre-signed URLs (https://bucket.s3.amazonaws.com/file?X-Amz-Signature=...)
+   * - Azure Blob Storage SAS tokens (https://storage.blob.core.windows.net/container/file?sv=...)
+   * - Temporary download URLs with embedded tokens
+   */
+  skip_auth?: boolean;
+}
+
+/**
+ * Extended operation definition supporting proxy_download
+ */
+export type OperationDefinition = string | ProxyDownloadOperation;
 
 export interface InterceptorConfig {
   auth?: AuthInterceptor | AuthInterceptor[]; // Single or multiple auth methods

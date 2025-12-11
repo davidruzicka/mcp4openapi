@@ -16,6 +16,7 @@ import { OpenAPIParser } from './openapi-parser.js';
 import { ProfileLoader } from './profile-loader.js';
 import { ToolGenerator } from './tool-generator.js';
 import { CompositeExecutor } from './composite-executor.js';
+import { ProxyDownloadExecutor } from './proxy-executor.js';
 import { 
   ConfigurationError, 
   OperationNotFoundError, 
@@ -31,7 +32,7 @@ import { TIMEOUTS, OAUTH_RATE_LIMIT } from './constants.js';
 import { InterceptorChain, HttpClient } from './interceptors.js';
 import { HttpClientFactory } from './http-client-factory.js';
 import { SchemaValidator } from './schema-validator.js';
-import type { Profile, ToolDefinition, AuthInterceptor, OAuthConfig } from './types/profile.js';
+import type { Profile, ToolDefinition, AuthInterceptor, OAuthConfig, ProxyDownloadOperation } from './types/profile.js';
 import type { Logger } from './logger.js';
 import { ConsoleLogger, JsonLogger } from './logger.js';
 import type { OperationInfo } from './types/openapi.js';
@@ -65,8 +66,11 @@ export class MCPServer {
 
     const filtered: Record<string, unknown> = {};
     for (const field of fields) {
-      if (field in data) {
-        filtered[field] = (data as Record<string, unknown>)[field];
+      // Handle YouTrack-style fields: "author(id,login)" -> "author"
+      const baseFieldName = field.split('(')[0];
+      
+      if (baseFieldName in data) {
+        filtered[baseFieldName] = (data as Record<string, unknown>)[baseFieldName];
       }
     }
     return filtered;
@@ -528,9 +532,10 @@ export class MCPServer {
       sessionId
     });
 
-    const operationId = this.toolGenerator.mapActionToOperation(toolDef, args);
+    // Get operation definition (can be string or ProxyDownloadOperation)
+    const operationDef = this.toolGenerator.getOperationDefinition(toolDef, args);
     
-    if (!operationId) {
+    if (!operationDef) {
       throw new ValidationError(
         `Could not map tool action to operation`,
         {
@@ -542,6 +547,13 @@ export class MCPServer {
       );
     }
 
+    // Check if this is a proxy download operation
+    if (typeof operationDef === 'object' && operationDef.type === 'proxy_download') {
+      return this.executeProxyDownload(operationDef, args, sessionId);
+    }
+
+    // Regular string operation
+    const operationId = operationDef as string;
     const operation = this.parser.getOperation(operationId);
     if (!operation) {
       throw new OperationNotFoundError(operationId);
@@ -577,6 +589,14 @@ export class MCPServer {
 
     // Execute with session-specific client
     const httpClient = await this.getHttpClientForSession(sessionId);
+    
+    // Set fields parameter if response_fields are configured for this action AND enabled
+    const action = args.action as string | undefined;
+    if (toolDef.send_response_fields_as_param && toolDef.response_fields && action && toolDef.response_fields[action]) {
+      const fields = toolDef.response_fields[action];
+      queryParams.fields = fields.join(',');
+    }
+    
     const response = await httpClient.request(operation.method, path, {
       params: queryParams,
       body,
@@ -592,6 +612,49 @@ export class MCPServer {
         result = this.filterFields(result, fields);
       }
     }
+
+    return result;
+  }
+
+  /**
+   * Execute proxy download operation
+   * 
+   * Why: Some APIs return authenticated URLs that LLMs cannot fetch directly.
+   * This proxies the download through the MCP server.
+   */
+  private async executeProxyDownload(
+    operation: ProxyDownloadOperation,
+    args: Record<string, unknown>,
+    sessionId?: string
+  ): Promise<unknown> {
+    this.logger.debug('Executing proxy download', {
+      metadataEndpoint: operation.metadata_endpoint,
+      urlField: operation.url_field,
+      sessionId
+    });
+
+    // Get the metadata operation to build the path
+    const metadataOp = this.parser.getOperation(operation.metadata_endpoint);
+    if (!metadataOp) {
+      throw new OperationNotFoundError(operation.metadata_endpoint);
+    }
+
+    // Build path for metadata endpoint
+    const path = this.resolvePath(metadataOp.path, args);
+    
+    // Get auth credentials for download
+    const httpClient = await this.getHttpClientForSession(sessionId);
+    const authCredentials = httpClient.getAuthCredentials();
+
+    // Execute proxy download
+    const proxyExecutor = new ProxyDownloadExecutor(httpClient);
+    const result = await proxyExecutor.execute(operation, path, authCredentials);
+
+    this.logger.debug('Proxy download completed', {
+      fileName: result.fileName,
+      mimeType: result.mimeType,
+      size: result.size
+    });
 
     return result;
   }
@@ -649,16 +712,30 @@ export class MCPServer {
     args: Record<string, unknown>
   ): Record<string, string | string[]> {
     const params: Record<string, string | string[]> = {};
+    const aliases = this.profile?.parameter_aliases || {};
 
     for (const param of operation.parameters) {
-      if (param.in === 'query' && args[param.name] !== undefined) {
-        const value = args[param.name];
-        
-        // Pass arrays as-is, HttpClient will serialize based on array_format
-        if (Array.isArray(value)) {
-          params[param.name] = value.map(String);
-        } else {
-          params[param.name] = String(value);
+      if (param.in === 'query') {
+        let value = args[param.name];
+
+        // If not found by direct name, check aliases
+        if (value === undefined) {
+          const possibleAliases = aliases[param.name] || [];
+          for (const alias of possibleAliases) {
+            if (args[alias] !== undefined) {
+              value = args[alias];
+              break;
+            }
+          }
+        }
+
+        if (value !== undefined) {
+          // Pass arrays as-is, HttpClient will serialize based on array_format
+          if (Array.isArray(value)) {
+            params[param.name] = value.map(String);
+          } else {
+            params[param.name] = String(value);
+          }
         }
       }
     }

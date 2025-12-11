@@ -67,11 +67,36 @@ export interface MergeRequest {
   updated_at: string;
 }
 
+export interface Issue {
+  id: number;
+  iid: number;
+  project_id: number;
+  title: string;
+  description: string;
+  state: string;
+  created_at: string;
+  updated_at: string;
+  closed_at: null;
+  closed_by: null;
+  labels: string[];
+  milestone: null;
+  assignees: any[];
+  author: {
+    id: number;
+    username: string;
+    name: string;
+    avatar_url: string;
+  };
+  web_url: string;
+  confidential: boolean;
+  discussion_locked: boolean;
+}
+
 export interface CompositeResult {
   data: Record<string, unknown>;
   completed_steps: number;
   total_steps: number;
-  errors?: Array<{ step: string; error: string }>;
+  errors?: Array<{ step_index: number; step_call: string; error: string }>;
 }
 
 export type McpToolResult =
