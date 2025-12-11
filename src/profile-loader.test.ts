@@ -1284,5 +1284,95 @@ describe('ProfileLoader', () => {
       expect(profile.tools[0].parameters.weird.type).toBe('string');
     });
   });
+
+  describe('JSON Schema validation', () => {
+    it('should reject array parameter without items', async () => {
+      const loader = new ProfileLoader();
+
+      const invalidProfile = JSON.stringify({
+        profile_name: 'test-invalid-array',
+        tools: [
+          {
+            name: 'test_tool',
+            description: 'Test tool with invalid array',
+            operations: { test: 'op_test' },
+            parameters: {
+              tags: {
+                type: 'array',
+                description: 'List of tags'
+                // Missing items property - should fail
+              }
+            }
+          }
+        ]
+      });
+
+      await expect(async () => {
+        const fs = await import('fs/promises');
+        const tmpPath = '/tmp/invalid-array-profile.json';
+        await fs.writeFile(tmpPath, invalidProfile);
+        await loader.load(tmpPath);
+      }).rejects.toThrow(/missing required 'items'/);
+    });
+
+    it('should reject object parameter without properties', async () => {
+      const loader = new ProfileLoader();
+
+      const invalidProfile = JSON.stringify({
+        profile_name: 'test-invalid-object',
+        tools: [
+          {
+            name: 'test_tool',
+            description: 'Test tool with invalid object',
+            operations: { test: 'op_test' },
+            parameters: {
+              config: {
+                type: 'object',
+                description: 'Configuration object'
+                // Missing properties - should fail
+              }
+            }
+          }
+        ]
+      });
+
+      await expect(async () => {
+        const fs = await import('fs/promises');
+        const tmpPath = '/tmp/invalid-object-profile.json';
+        await fs.writeFile(tmpPath, invalidProfile);
+        await loader.load(tmpPath);
+      }).rejects.toThrow(/missing 'properties'/);
+    });
+
+    it('should accept object parameter with empty properties', async () => {
+      const loader = new ProfileLoader();
+
+      const validProfile = JSON.stringify({
+        profile_name: 'test-valid-object',
+        tools: [
+          {
+            name: 'test_tool',
+            description: 'Test tool with valid object',
+            operations: { test: 'op_test' },
+            parameters: {
+              config: {
+                type: 'object',
+                description: 'Free-form configuration object',
+                properties: {} // Empty properties = free-form object
+              }
+            }
+          }
+        ]
+      });
+
+      const fs = await import('fs/promises');
+      const tmpPath = '/tmp/valid-object-profile.json';
+      await fs.writeFile(tmpPath, validProfile);
+      
+      const profile = await loader.load(tmpPath);
+      expect(profile.tools[0].parameters.config.type).toBe('object');
+      expect(profile.tools[0].parameters.config.properties).toEqual({});
+    });
+  });
 });
 

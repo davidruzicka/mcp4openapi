@@ -1,0 +1,567 @@
+{
+  "$schema": "../../profile-schema.json",
+  "profile_name": "youtrack-optimized",
+  "description": "YouTrack issue tracker — 6 tools with granular permission control",
+
+  "parameter_aliases": {
+    "id": ["issue_id", "project_id", "article_id", "agile_id", "user_id", "tag_id"],
+    "issueCommentId": ["comment_id"],
+    "issueAttachmentId": ["attachment_id"],
+    "issueWorkItemId": ["workitem_id"],
+    "issueLinkId": ["link_id"],
+    "sprintId": ["sprint_id"],
+    "articleCommentId": ["article_comment_id"],
+    "articleAttachmentId": ["article_attachment_id"],
+    "tagId": ["tag_id"],
+    "$skip": ["skip"],
+    "$top": ["top"]
+  },
+
+  "interceptors": {
+    "base_url": {
+      "value_from_env": "MCP4_API_BASE_URL"
+    },
+    "auth": {
+      "type": "bearer",
+      "value_from_env": "MCP4_API_TOKEN"
+    }
+  },
+
+  "tools": [
+    {
+      "name": "retrieve_content",
+      "description": "Read-only access to YouTrack entities (issues, projects, users, tags, articles, agiles, sprints, etc.). Actions: 'list_issues', 'get_issue', 'list_issue_comments', 'get_issue_comment', 'list_issue_attachments', 'get_issue_attachment', 'download_issue_attachment', 'list_issue_tags', 'list_issue_links', 'get_issue_link', 'list_linked_issues', 'list_projects', 'get_project', 'list_workitems', 'list_articles', 'get_article', 'list_article_comments', 'list_article_attachments', 'get_article_attachment', 'download_article_attachment', 'list_tags', 'get_tag', 'list_saved_queries', 'list_agiles', 'get_agile', 'list_sprints', 'list_users', 'get_user', 'list_groups'.",
+      "metadata_params": ["action", "id", "issueCommentId", "issueAttachmentId", "agile_id", "sprintId", "articleCommentId", "articleAttachmentId", "tagId", "fields"],
+      "send_response_fields_as_param": true,
+      "operations": {
+        "list_issues": "get_/issues",
+        "get_issue": "get_/issues/{id}",
+        "list_issue_comments": "get_/issues/{id}/comments",
+        "get_issue_comment": "get_/issues/{id}/comments/{issueCommentId}",
+        "list_issue_attachments": "get_/issues/{id}/attachments",
+        "get_issue_attachment": "get_/issues/{id}/attachments/{issueAttachmentId}",
+        "download_issue_attachment": {
+          "type": "proxy_download",
+          "metadata_endpoint": "get_/issues/{id}/attachments/{issueAttachmentId}",
+          "url_field": "url",
+          "skip_auth": true,
+          "max_size_bytes": 10485760
+        },
+        "list_issue_tags": "get_/issues/{id}/tags",
+        "list_issue_links": "get_/issues/{id}/links",
+        "get_issue_link": "get_/issues/{id}/links/{issueLinkId}",
+        "list_linked_issues": "get_/issues/{id}/links/{issueLinkId}/issues",
+        "list_projects": "get_/admin/projects",
+        "get_project": "get_/admin/projects/{id}",
+        "list_workitems": "get_/workItems",
+        "list_articles": "get_/articles",
+        "get_article": "get_/articles/{id}",
+        "list_article_comments": "get_/articles/{id}/comments",
+        "list_article_attachments": "get_/articles/{id}/attachments",
+        "get_article_attachment": "get_/articles/{id}/attachments/{articleAttachmentId}",
+        "download_article_attachment": {
+          "type": "proxy_download",
+          "metadata_endpoint": "get_/articles/{id}/attachments/{articleAttachmentId}",
+          "url_field": "url",
+          "skip_auth": true,
+          "max_size_bytes": 10485760
+        },
+        "list_tags": "get_/tags",
+        "get_tag": "get_/tags/{id}",
+        "list_saved_queries": "get_/savedQueries",
+        "list_agiles": "get_/agiles",
+        "get_agile": "get_/agiles/{id}",
+        "list_sprints": "get_/agiles/{id}/sprints",
+        "list_users": "get_/users",
+        "get_user": "get_/users/{id}",
+        "list_groups": "get_/groups"
+      },
+      "response_fields": {
+        "list_issues": ["id", "idReadable", "summary", "description", "resolved", "customFields(id,name,value(id,name))"],
+        "get_issue": ["id", "idReadable", "summary", "description", "resolved", "customFields(id,name,value(id,name))", "comments(id,text,author(id,login),created,attachments(id,name,url))", "attachments(id,name,mimeType,size,url)"],
+        "list_issue_comments": ["id", "text", "author(login)", "created", "attachments(id,name,url)"],
+        "get_issue_comment": ["id", "text", "author(id,login)", "created", "updated", "attachments(id,name,mimeType,size,url)"],
+        "list_issue_attachments": ["id", "name", "mimeType", "size"],
+        "get_issue_attachment": ["id", "name", "mimeType", "size", "url", "base64Content"],
+        "list_projects": ["id", "shortName", "name", "description"],
+        "get_project": ["id", "shortName", "name", "description", "customFields"],
+        "list_articles": ["id", "title", "summary", "resolved"],
+        "get_article": ["id", "title", "summary", "content", "attachments(id,name,mimeType,size,url)", "comments(id,text,author(id,login),created,attachments(id,name,url))"],
+        "list_article_comments": ["id", "text", "author(login)", "created", "attachments(id,name,url)"],
+        "list_article_attachments": ["id", "name", "mimeType", "size"],
+        "get_article_attachment": ["id", "name", "mimeType", "size", "url", "base64Content"],
+        "list_issue_tags": ["id", "name", "owner"],
+        "list_issue_links": ["id", "direction", "linkType"],
+        "get_issue_link": ["id", "direction", "linkType"],
+        "list_linked_issues": ["id", "idReadable", "summary"],
+        "list_workitems": ["id", "duration", "date", "author", "text"],
+        "list_saved_queries": ["id", "name", "query", "owner"],
+        "list_tags": ["id", "name", "color"],
+        "get_tag": ["id", "name", "color", "usages"],
+        "list_agiles": ["id", "name", "status"],
+        "get_agile": ["id", "name", "status", "sprints"],
+        "list_sprints": ["id", "name", "goal", "state"],
+        "list_users": ["id", "login", "fullName", "email"],
+        "get_user": ["id", "login", "fullName", "email", "isReporter"],
+        "list_groups": ["id", "name", "allUsersGroup"]
+      },
+      "parameters": {
+        "action": {
+          "type": "string",
+          "enum": ["list_issues", "get_issue", "list_issue_comments", "get_issue_comment", "list_issue_attachments", "get_issue_attachment", "download_issue_attachment", "list_issue_tags", "list_issue_links", "get_issue_link", "list_linked_issues", "list_projects", "get_project", "list_workitems", "list_articles", "get_article", "list_article_comments", "list_article_attachments", "get_article_attachment", "download_article_attachment", "list_tags", "get_tag", "list_saved_queries", "list_agiles", "get_agile", "list_sprints", "list_users", "get_user", "list_groups"],
+          "description": "Action to perform",
+          "required": true
+        },
+        "id": {
+          "type": "string",
+          "description": "Entity ID (issue ID like 'PROJ-123', project shortName, article ID, agile ID, user login, tag ID, etc.)",
+          "required_for": ["get_issue", "list_issue_comments", "get_issue_comment", "list_issue_attachments", "get_issue_attachment", "download_issue_attachment", "list_issue_tags", "list_issue_links", "get_issue_link", "list_linked_issues", "get_project", "get_article", "list_article_comments", "list_article_attachments", "get_article_attachment", "download_article_attachment", "get_tag", "get_agile", "list_sprints", "get_user"]
+        },
+        "issueCommentId": {
+          "type": "string",
+          "description": "Comment ID within an issue",
+          "required_for": ["get_issue_comment"]
+        },
+        "issueAttachmentId": {
+          "type": "string",
+          "description": "Attachment ID within an issue",
+          "required_for": ["get_issue_attachment", "download_issue_attachment"]
+        },
+        "issueLinkId": {
+          "type": "string",
+          "description": "Link ID within an issue",
+          "required_for": ["get_issue_link", "list_linked_issues"]
+        },
+        "agile_id": {
+          "type": "string",
+          "description": "Agile board ID",
+          "required_for": ["list_sprints"]
+        },
+        "sprintId": {
+          "type": "string",
+          "description": "Sprint ID",
+          "required_for": []
+        },
+        "articleCommentId": {
+          "type": "string",
+          "description": "Comment ID within an article",
+          "required_for": []
+        },
+        "articleAttachmentId": {
+          "type": "string",
+          "description": "Attachment ID within an article",
+          "required_for": ["get_article_attachment", "download_article_attachment"]
+        },
+        "fields": {
+          "type": "string",
+          "description": "YouTrack fields query (e.g., 'id,summary,description,customFields'). Specify exact fields to return for better performance."
+        },
+        "query": {
+          "type": "string",
+          "description": "YouTrack search query (e.g., 'project: PROJ state: Open', 'text ~ bug'). For details, see YouTrack documentation on search and command attributes."
+        },
+        "skip": {
+          "type": "integer",
+          "description": "Number of items to skip (pagination)"
+        },
+        "top": {
+          "type": "integer",
+          "description": "Maximum items to return (pagination, max 100)"
+        }
+      }
+    },
+
+    {
+      "name": "retrieve_history",
+      "description": "Read-only access to activity logs and audit trails. Actions: 'list_activities', 'get_activity', 'list_activities_page', 'list_issue_activities'. Separated from content retrieval for granular permission control.",
+      "metadata_params": ["action", "id"],
+      "operations": {
+        "list_activities": "get_/activities",
+        "get_activity": "get_/activities/{id}",
+        "list_activities_page": "get_/activitiesPage",
+        "list_issue_activities": "get_/issues/{id}/activities"
+      },
+      "response_fields": {
+        "list_activities": ["id", "timestamp", "author", "category", "target"],
+        "get_activity": ["id", "timestamp", "author", "category", "field", "target", "added", "removed"],
+        "list_activities_page": ["id", "timestamp", "author", "category"],
+        "list_issue_activities": ["id", "timestamp", "author", "category", "field", "added", "removed"]
+      },
+      "parameters": {
+        "action": {
+          "type": "string",
+          "enum": ["list_activities", "get_activity", "list_activities_page", "list_issue_activities"],
+          "description": "Action to perform",
+          "required": true
+        },
+        "id": {
+          "type": "string",
+          "description": "Activity or issue ID",
+          "required_for": ["get_activity", "list_issue_activities"]
+        },
+        "categories": {
+          "type": "string",
+          "description": "Filter by activity categories (comma-separated)"
+        },
+        "reverse": {
+          "type": "boolean",
+          "description": "Sort newest to oldest (default: false for oldest first)"
+        },
+        "start": {
+          "type": "string",
+          "description": "Start timestamp in milliseconds (unix timestamp UTC)"
+        },
+        "end": {
+          "type": "string",
+          "description": "End timestamp in milliseconds (unix timestamp UTC)"
+        },
+        "author": {
+          "type": "string",
+          "description": "Filter by author (database ID, login, Hub ID, or 'me')"
+        },
+        "issueQuery": {
+          "type": "string",
+          "description": "Issue search query to filter activities"
+        },
+        "fields": {
+          "type": "string",
+          "description": "YouTrack fields query"
+        },
+        "skip": {
+          "type": "integer",
+          "description": "Number of items to skip (pagination)"
+        },
+        "top": {
+          "type": "integer",
+          "description": "Maximum items to return (pagination)"
+        }
+      }
+    },
+
+    {
+      "name": "create_content",
+      "description": "Create new entities in YouTrack. Actions: 'create_issue', 'create_issue_comment', 'create_article_comment', 'log_time', 'add_issue_tag', 'add_article_tag', 'create_tag', 'add_issue_link', 'upload_issue_attachment', 'upload_article_attachment'. Use for creating issues, adding comments, logging time, tagging, and uploading files.",
+      "metadata_params": ["action", "id", "issueCommentId", "issueAttachmentId", "articleCommentId", "articleAttachmentId"],
+      "operations": {
+        "create_issue": "post_/issues",
+        "create_issue_comment": "post_/issues/{id}/comments",
+        "create_article_comment": "post_/articles/{id}/comments",
+        "log_time": "post_/issues/{id}/timeTracking/workItems",
+        "add_issue_tag": "post_/issues/{id}/tags",
+        "add_article_tag": "post_/articles/{id}/tags",
+        "create_tag": "post_/tags",
+        "add_issue_link": "post_/issues/{id}/links/{issueLinkId}/issues",
+        "upload_issue_attachment": "post_/issues/{id}/attachments",
+        "upload_article_attachment": "post_/articles/{id}/attachments"
+      },
+      "response_fields": {
+        "create_issue": ["id", "idReadable", "summary"],
+        "create_issue_comment": ["id", "text", "author", "created"],
+        "create_article_comment": ["id", "text", "author", "created"],
+        "log_time": ["id", "duration"],
+        "add_issue_tag": ["id", "name"],
+        "add_article_tag": ["id", "name"],
+        "create_tag": ["id", "name", "color"],
+        "add_issue_link": ["id"],
+        "upload_issue_attachment": ["id", "name"],
+        "upload_article_attachment": ["id", "name"]
+      },
+      "parameters": {
+        "action": {
+          "type": "string",
+          "enum": ["create_issue", "create_issue_comment", "create_article_comment", "log_time", "add_issue_tag", "add_article_tag", "create_tag", "add_issue_link", "upload_issue_attachment", "upload_article_attachment"],
+          "description": "Action to perform",
+          "required": true
+        },
+        "id": {
+          "type": "string",
+          "description": "Issue or article ID",
+          "required_for": ["create_issue_comment", "create_article_comment", "log_time", "add_issue_tag", "add_article_tag", "add_issue_link", "upload_issue_attachment", "upload_article_attachment"]
+        },
+        "issueLinkId": {
+          "type": "string",
+          "description": "Link type ID (for add_issue_link)",
+          "required_for": ["add_issue_link"]
+        },
+        "summary": {
+          "type": "string",
+          "description": "Issue summary/title (for create_issue)",
+          "required_for": ["create_issue"]
+        },
+        "description": {
+          "type": "string",
+          "description": "Issue description (for create_issue)"
+        },
+        "project": {
+          "type": "object",
+          "description": "Project reference object with 'id' or 'shortName' (for create_issue). Example: {\"shortName\": \"PROJ\"}",
+          "required_for": ["create_issue"],
+          "properties": {}
+        },
+        "text": {
+          "type": "string",
+          "description": "Comment text",
+          "required_for": ["create_issue_comment", "create_article_comment"]
+        },
+        "duration": {
+          "type": "string",
+          "description": "Duration in minutes or YouTrack duration format (e.g., '1h 30m')",
+          "required_for": ["log_time"]
+        },
+        "date": {
+          "type": "string",
+          "description": "Work item date (ISO 8601 format)",
+          "required_for": ["log_time"]
+        },
+        "tag": {
+          "type": "object",
+          "description": "Tag reference object with 'id'. Example: {\"id\": \"tag-123\"}",
+          "required_for": ["add_issue_tag", "add_article_tag"],
+          "properties": {}
+        },
+        "name": {
+          "type": "string",
+          "description": "Tag name (for create_tag)",
+          "required_for": ["create_tag"]
+        },
+        "color": {
+          "type": "string",
+          "description": "Tag color in hex format (e.g., '#FF0000')",
+          "required_for": []
+        },
+        "issues": {
+          "type": "array",
+          "description": "Array of issue IDs to link (for add_issue_link)",
+          "required_for": ["add_issue_link"],
+          "items": {
+            "type": "string"
+          }
+        },
+        "fileName": {
+          "type": "string",
+          "description": "Attachment filename (for upload_issue_attachment, upload_article_attachment)",
+          "required_for": ["upload_issue_attachment", "upload_article_attachment"]
+        },
+        "base64Content": {
+          "type": "string",
+          "description": "Base64-encoded file content (for upload_issue_attachment, upload_article_attachment)",
+          "required_for": ["upload_issue_attachment", "upload_article_attachment"]
+        },
+        "mimeType": {
+          "type": "string",
+          "description": "MIME type of the file",
+          "required_for": []
+        },
+        "customFields": {
+          "type": "object",
+          "description": "Custom fields array or object (for create_issue). Example: [{\"name\": \"Priority\", \"value\": {\"name\": \"High\"}}]",
+          "properties": {}
+        }
+      }
+    },
+
+    {
+      "name": "update_content",
+      "description": "Modify existing entities in YouTrack. Actions: 'update_issue', 'update_issue_comment', 'update_article_comment', 'update_work_item', 'update_issue_attachment', 'update_tag'. Use for editing issues, comments, time tracking entries, and tags.",
+      "metadata_params": ["action", "id", "issueCommentId", "issueAttachmentId", "issueWorkItemId", "articleCommentId"],
+      "operations": {
+        "update_issue": "post_/issues/{id}",
+        "update_issue_comment": "post_/issues/{id}/comments/{issueCommentId}",
+        "update_article_comment": "post_/articles/{id}/comments/{articleCommentId}",
+        "update_work_item": "post_/issues/{id}/timeTracking/workItems/{issueWorkItemId}",
+        "update_issue_attachment": "post_/issues/{id}/attachments/{issueAttachmentId}",
+        "update_tag": "post_/tags/{id}"
+      },
+      "response_fields": {
+        "update_issue": ["id", "idReadable", "summary", "updated"],
+        "update_issue_comment": ["id", "text", "updated"],
+        "update_article_comment": ["id", "text", "updated"],
+        "update_work_item": ["id", "duration", "updated"],
+        "update_issue_attachment": ["id", "name", "updated"],
+        "update_tag": ["id", "name", "updated"]
+      },
+      "parameters": {
+        "action": {
+          "type": "string",
+          "enum": ["update_issue", "update_issue_comment", "update_article_comment", "update_work_item", "update_issue_attachment", "update_tag"],
+          "description": "Action to perform",
+          "required": true
+        },
+        "id": {
+          "type": "string",
+          "description": "Entity ID to update (issue, article, or tag ID)",
+          "required_for": ["update_issue", "update_issue_comment", "update_article_comment", "update_work_item", "update_issue_attachment", "update_tag"]
+        },
+        "issueCommentId": {
+          "type": "string",
+          "description": "Comment ID to update",
+          "required_for": ["update_issue_comment"]
+        },
+        "articleCommentId": {
+          "type": "string",
+          "description": "Article comment ID to update",
+          "required_for": ["update_article_comment"]
+        },
+        "issueAttachmentId": {
+          "type": "string",
+          "description": "Attachment ID to update",
+          "required_for": ["update_issue_attachment"]
+        },
+        "issueWorkItemId": {
+          "type": "string",
+          "description": "Work item ID to update",
+          "required_for": ["update_work_item"]
+        },
+        "summary": {
+          "type": "string",
+          "description": "Issue summary (for update_issue)"
+        },
+        "description": {
+          "type": "string",
+          "description": "Issue description (for update_issue)"
+        },
+        "text": {
+          "type": "string",
+          "description": "Comment text",
+          "required_for": ["update_issue_comment", "update_article_comment"]
+        },
+        "duration": {
+          "type": "string",
+          "description": "Duration in minutes or YouTrack format (for update_work_item)",
+          "required_for": ["update_work_item"]
+        },
+        "date": {
+          "type": "string",
+          "description": "Work item date (ISO 8601 format, for update_work_item)"
+        },
+        "name": {
+          "type": "string",
+          "description": "Tag name or attachment name",
+          "required_for": ["update_tag", "update_issue_attachment"]
+        },
+        "color": {
+          "type": "string",
+          "description": "Tag color in hex format (for update_tag)"
+        },
+        "customFields": {
+          "type": "object",
+          "description": "Custom fields to update (for update_issue)",
+          "properties": {}
+        }
+      }
+    },
+
+    {
+      "name": "delete_content",
+      "description": "Remove entities from YouTrack. Actions: 'delete_issue', 'delete_issue_comment', 'delete_article_comment', 'delete_work_item', 'delete_issue_attachment', 'delete_article_attachment', 'remove_issue_tag', 'remove_article_tag', 'delete_tag', 'remove_issue_link'. Use with caution as deletions may be irreversible.",
+      "metadata_params": ["action", "id", "issueCommentId", "issueAttachmentId", "issueWorkItemId", "issueLinkId", "articleCommentId", "articleAttachmentId", "tagId"],
+      "operations": {
+        "delete_issue": "delete_/issues/{id}",
+        "delete_issue_comment": "delete_/issues/{id}/comments/{issueCommentId}",
+        "delete_article_comment": "delete_/articles/{id}/comments/{articleCommentId}",
+        "delete_work_item": "delete_/issues/{id}/timeTracking/workItems/{issueWorkItemId}",
+        "delete_issue_attachment": "delete_/issues/{id}/attachments/{issueAttachmentId}",
+        "delete_article_attachment": "delete_/articles/{id}/attachments/{articleAttachmentId}",
+        "remove_issue_tag": "delete_/issues/{id}/tags/{tagId}",
+        "remove_article_tag": "delete_/articles/{id}/tags/{tagId}",
+        "delete_tag": "delete_/tags/{id}",
+        "remove_issue_link": "delete_/issues/{id}/links/{issueLinkId}/issues/{issueId}"
+      },
+      "response_fields": {},
+      "parameters": {
+        "action": {
+          "type": "string",
+          "enum": ["delete_issue", "delete_issue_comment", "delete_article_comment", "delete_work_item", "delete_issue_attachment", "delete_article_attachment", "remove_issue_tag", "remove_article_tag", "delete_tag", "remove_issue_link"],
+          "description": "Action to perform",
+          "required": true
+        },
+        "id": {
+          "type": "string",
+          "description": "Primary entity ID (issue, article, or tag)",
+          "required_for": ["delete_issue", "delete_issue_comment", "delete_article_comment", "delete_work_item", "delete_issue_attachment", "delete_article_attachment", "remove_issue_tag", "remove_article_tag", "delete_tag", "remove_issue_link"]
+        },
+        "issueCommentId": {
+          "type": "string",
+          "description": "Comment ID to delete",
+          "required_for": ["delete_issue_comment"]
+        },
+        "articleCommentId": {
+          "type": "string",
+          "description": "Article comment ID to delete",
+          "required_for": ["delete_article_comment"]
+        },
+        "issueAttachmentId": {
+          "type": "string",
+          "description": "Attachment ID to delete",
+          "required_for": ["delete_issue_attachment"]
+        },
+        "articleAttachmentId": {
+          "type": "string",
+          "description": "Article attachment ID to delete",
+          "required_for": ["delete_article_attachment"]
+        },
+        "issueWorkItemId": {
+          "type": "string",
+          "description": "Work item ID to delete",
+          "required_for": ["delete_work_item"]
+        },
+        "tagId": {
+          "type": "string",
+          "description": "Tag ID to remove/delete",
+          "required_for": ["remove_issue_tag", "remove_article_tag", "delete_tag"]
+        },
+        "issueLinkId": {
+          "type": "string",
+          "description": "Link type ID",
+          "required_for": ["remove_issue_link"]
+        },
+        "issueId": {
+          "type": "string",
+          "description": "Issue ID to unlink (for remove_issue_link)",
+          "required_for": ["remove_issue_link"]
+        }
+      }
+    },
+
+    {
+      "name": "run_commands",
+      "description": "Execute YouTrack command language for bulk/batch operations on issues. Actions: 'execute_command', 'assist_command'. Commands allow modifying multiple issues at once using YouTrack's powerful command syntax. Use with caution for bulk updates.",
+      "metadata_params": ["action"],
+      "operations": {
+        "execute_command": "post_/commands",
+        "assist_command": "post_/commands/assist"
+      },
+      "response_fields": {
+        "execute_command": ["id", "error"],
+        "assist_command": ["commands", "error"]
+      },
+      "parameters": {
+        "action": {
+          "type": "string",
+          "enum": ["execute_command", "assist_command"],
+          "description": "Action to perform",
+          "required": true
+        },
+        "query": {
+          "type": "string",
+          "description": "Issue query to select issues (e.g., 'project: PROJ state: Open')",
+          "required_for": ["execute_command"]
+        },
+        "command": {
+          "type": "string",
+          "description": "YouTrack command to execute (e.g., 'state: Open', 'priority: Critical'). For details on command syntax, see YouTrack documentation.",
+          "required_for": ["execute_command"]
+        },
+        "text": {
+          "type": "string",
+          "description": "Text to analyze for command suggestions (for assist_command)",
+          "required_for": ["assist_command"]
+        },
+        "fields": {
+          "type": "string",
+          "description": "YouTrack fields query for response"
+        }
+      }
+    }
+  ]
+}

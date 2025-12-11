@@ -33,11 +33,23 @@ applyTo: '**/*.ts'
 - Use PascalCase for classes, interfaces, enums, and type aliases; camelCase for everything else.
 - Exception: snake_case is permitted for DTOs, API contracts, and configuration files where external formats dictate it.
 - Skip interface prefixes like `I`; rely on descriptive names.
-- Name things for their behavior or domain meaning, not implementation.
+- Name things for their behavior or domain meaning, not implementation:
+  - Good:
+  ```typescript
+  const context = defaultContext || new DescriptionDictionary();
+  context.complete = false;
+  return Promise.resolve(context);
+  ```
+  - Bad:
+  ```typescript
+  const dict = defaultContext || new DescriptionDictionary();
+  dict.complete = false;
+  return Promise.resolve(dict);
+  ```
 
 ## Formatting & Style
 
-- Run the repository's lint/format scripts (e.g., `npm run lint`) before submitting.
+- Run the repository's lint/format scripts (e.g., `npm run lint`) before submitting, if defined.
 - Match the project's indentation, quote style, and trailing comma rules.
 - Keep functions focused; extract helpers when logic branches grow.
 - Favor immutable data and pure functions when practical.
