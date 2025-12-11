@@ -18,6 +18,9 @@
   },
 
   "interceptors": {
+    "base_url": {
+      "value_from_env": "MCP4_API_BASE_URL"
+    },
     "auth": {
       "type": "bearer",
       "value_from_env": "MCP4_API_TOKEN"

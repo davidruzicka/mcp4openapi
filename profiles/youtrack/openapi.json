@@ -9,9 +9,6 @@
     },
     "version" : "2025.3"
   },
-  "servers" : [ {
-    "url" : "https://davidruzicka.youtrack.cloud:443/api"
-  } ],
   "security" : [ {
     "permanentToken" : [ ]
   } ],
