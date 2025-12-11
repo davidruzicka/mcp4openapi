@@ -712,16 +712,30 @@ export class MCPServer {
     args: Record<string, unknown>
   ): Record<string, string | string[]> {
     const params: Record<string, string | string[]> = {};
+    const aliases = this.profile?.parameter_aliases || {};
 
     for (const param of operation.parameters) {
-      if (param.in === 'query' && args[param.name] !== undefined) {
-        const value = args[param.name];
-        
-        // Pass arrays as-is, HttpClient will serialize based on array_format
-        if (Array.isArray(value)) {
-          params[param.name] = value.map(String);
-        } else {
-          params[param.name] = String(value);
+      if (param.in === 'query') {
+        let value = args[param.name];
+
+        // If not found by direct name, check aliases
+        if (value === undefined) {
+          const possibleAliases = aliases[param.name] || [];
+          for (const alias of possibleAliases) {
+            if (args[alias] !== undefined) {
+              value = args[alias];
+              break;
+            }
+          }
+        }
+
+        if (value !== undefined) {
+          // Pass arrays as-is, HttpClient will serialize based on array_format
+          if (Array.isArray(value)) {
+            params[param.name] = value.map(String);
+          } else {
+            params[param.name] = String(value);
+          }
         }
       }
     }

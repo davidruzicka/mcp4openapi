@@ -12,7 +12,9 @@
     "sprintId": ["sprint_id"],
     "articleCommentId": ["article_comment_id"],
     "articleAttachmentId": ["article_attachment_id"],
-    "tagId": ["tag_id"]
+    "tagId": ["tag_id"],
+    "$skip": ["skip"],
+    "$top": ["top"]
   },
 
   "interceptors": {
@@ -155,11 +157,11 @@
           "type": "string",
           "description": "YouTrack search query (e.g., 'project: PROJ state: Open', 'text ~ bug'). For details, see YouTrack documentation on search and command attributes."
         },
-        "$skip": {
+        "skip": {
           "type": "integer",
           "description": "Number of items to skip (pagination)"
         },
-        "$top": {
+        "top": {
           "type": "integer",
           "description": "Maximum items to return (pagination, max 100)"
         }
@@ -222,11 +224,11 @@
           "type": "string",
           "description": "YouTrack fields query"
         },
-        "$skip": {
+        "skip": {
           "type": "integer",
           "description": "Number of items to skip (pagination)"
         },
-        "$top": {
+        "top": {
           "type": "integer",
           "description": "Maximum items to return (pagination)"
         }
