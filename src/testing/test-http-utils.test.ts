@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
   createTestHttpClient,
   setupFetchMock,
@@ -17,7 +17,9 @@ vi.mock('../interceptors.js', () => ({
   HttpClient: vi.fn().mockImplementation((baseUrl, interceptors) => ({
     baseUrl,
     interceptors,
-    request: vi.fn().mockImplementation(async (method, path, options = {}) => {
+    getBaseUrl: () => baseUrl,
+    getInterceptorsConfig: () => interceptors.config,
+    request: vi.fn().mockImplementation(async (method: string, path: string, options: RequestInit = {}) => {
       const url = `${baseUrl}${path}`;
       const init: RequestInit = {
         method,
@@ -42,16 +44,16 @@ describe('Test HTTP Utils', () => {
   describe('createTestHttpClient', () => {
     it('should create client with default parameters', () => {
       const client = createTestHttpClient();
-      expect(client.baseUrl).toBe('https://api.example.com');
-      expect(client.interceptors.config).toEqual({});
+      expect(client.getBaseUrl()).toBe('https://api.example.com');
+      expect(client.getInterceptorsConfig()).toEqual({});
     });
 
     it('should create client with custom parameters', () => {
       const config = { auth: { type: 'bearer' as const, value_from_env: 'TOKEN' } };
       const client = createTestHttpClient('https://custom.com', config);
 
-      expect(client.baseUrl).toBe('https://custom.com');
-      expect(client.interceptors.config).toBe(config);
+      expect(client.getBaseUrl()).toBe('https://custom.com');
+      expect(client.getInterceptorsConfig()).toBe(config);
     });
   });
 
@@ -139,7 +141,7 @@ describe('Test HTTP Utils', () => {
 
     it('should create client and setup mock', () => {
       const client = helper.getClient();
-      expect(client.baseUrl).toBe('https://api.example.com');
+      expect(client.getBaseUrl()).toBe('https://api.example.com');
     });
 
     it('should capture headers', async () => {

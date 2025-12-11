@@ -312,10 +312,30 @@ export class InterceptorChain {
  * HTTP client with interceptor support
  */
 export class HttpClient {
+  private baseUrl: string;
+  private interceptors: InterceptorChain;
+
   constructor(
-    private baseUrl: string,
-    private interceptors: InterceptorChain
-  ) {}
+    baseUrl: string,
+    interceptors: InterceptorChain
+  ) {
+    this.baseUrl = baseUrl;
+    this.interceptors = interceptors;
+  }
+
+  /**
+   * Get base URL (for testing)
+   */
+  getBaseUrl(): string {
+    return this.baseUrl;
+  }
+
+  /**
+   * Get interceptors config (for testing)
+   */
+  getInterceptorsConfig(): InterceptorConfig {
+    return this.interceptors.config;
+  }
 
   /**
    * Get auth credentials (headers and query params) for direct HTTP calls

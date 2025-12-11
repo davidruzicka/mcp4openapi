@@ -13,7 +13,8 @@
     "resolveJsonModule": true,
     "declaration": true,
     "declarationMap": true,
-    "sourceMap": true
+    "sourceMap": true,
+    "useDefineForClassFields": false
   },
   "include": ["src/**/*", "scripts/**/*"],
   "exclude": ["node_modules", "dist", "**/*.test.ts"]

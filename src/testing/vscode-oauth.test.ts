@@ -10,7 +10,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { ExternalOAuthProvider } from '../oauth-provider.js';
 import type { OAuthConfig } from '../types/profile.js';
-import { ConsoleLogger } from '../logger.js';
+import { ConsoleLogger, LogLevel } from '../logger.js';
 
 describe('VS Code OAuth Flow', () => {
   let provider: ExternalOAuthProvider;
@@ -25,10 +25,7 @@ describe('VS Code OAuth Flow', () => {
       scopes: ['api', 'read_repository'],
     };
 
-    const logger = new ConsoleLogger({
-      serviceName: 'test',
-      minLevel: 'error',
-    });
+    const logger = new ConsoleLogger(LogLevel.ERROR);
 
     provider = new ExternalOAuthProvider(config, logger);
     

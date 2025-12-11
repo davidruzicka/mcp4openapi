@@ -16,8 +16,10 @@ index.ts (CLI) → MCPServer → OpenAPIParser → ProfileLoader → ToolGenerat
 When modifying profile structure (`src/types/profile.ts`):
 1. **Edit** `src/types/profile.ts` (source of truth)
 2. **Run** `npm run generate-schemas` (auto-generates Zod in `src/generated-schemas.ts`)
-3. **Update** `profile-schema.json` manually (for IDE autocomplete)
+3. **⚠️ CRITICAL: Update** `profile-schema.json` manually (for IDE autocomplete)
 4. **Test** with `npm test`
+
+⚠️ **MANDATORY**: Without updating `profile-schema.json`, VS Code will show validation errors even though runtime validation passes!
 
 ⚠️ Zod strips unknown properties silently - missing field in generated schema = feature broken at runtime.
 
@@ -77,6 +79,6 @@ See `README.md` for full list.
 ## PR Checklist
 
 - [ ] `npm test` passes
-- [ ] Schema changes: ran `npm run generate-schemas` and updated `profile-schema.json`
+- [ ] Schema changes: ran `npm run generate-schemas` and **manually updated** `profile-schema.json` (required for VS Code validation)
 - [ ] Updated `IMPLEMENTATION.md` for architectural changes
 - [ ] Removed completed items from `TODO.md`
