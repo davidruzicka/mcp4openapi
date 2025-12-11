@@ -5,6 +5,7 @@ import { HttpClient } from '../interceptors.js';
 import { OpenAPIParser } from '../openapi-parser.js';
 import { ProfileLoader } from '../profile-loader.js';
 import { ToolGenerator } from '../tool-generator.js';
+import { ValidationError } from '../errors.js';
 import path from 'path';
 import type { Profile } from '../types/profile.js';
 
@@ -164,5 +165,224 @@ describe('Parameter Mapping Integration', () => {
     expect(options.params).toBeDefined();
     expect(options.params['$skip']).toBe('10');
     expect(options.params['$top']).toBe('5');
+  });
+
+  it('should prefer first available alias when multiple aliases are provided', async () => {
+    const profile: Profile = {
+      profile_name: 'test-profile',
+      parameter_aliases: {
+        id: ['issue_id', 'project_id']
+      },
+      tools: [
+        {
+          name: 'get_issue',
+          description: 'Get issue by id',
+          operations: {
+            get: 'getIssue'
+          },
+          parameters: {
+            action: { type: 'string', description: 'Action' },
+            id: { type: 'string', description: 'Id' }
+          }
+        }
+      ]
+    };
+
+    const parser = new OpenAPIParser();
+    vi.spyOn(parser, 'getOperation').mockReturnValue({
+      operationId: 'getIssue',
+      method: 'get',
+      path: '/issues/{id}',
+      parameters: [
+        { name: 'id', in: 'path', schema: { type: 'string' } }
+      ],
+      responses: {},
+    } as any);
+
+    const loader = new ProfileLoader();
+    vi.spyOn(loader, 'load').mockResolvedValue(profile);
+
+    const generator = new ToolGenerator(parser);
+    mockLogger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    server = new MCPServer(mockLogger as any);
+    (server as any).parser = parser;
+    (server as any).profile = profile;
+    (server as any).toolGenerator = generator;
+
+    vi.spyOn(server as any, 'getHttpClientForSession').mockResolvedValue(new HttpClient('http://test', {} as any));
+
+    await (server as any).executeSimpleTool(
+      profile.tools[0],
+      {
+        action: 'get',
+        issue_id: 'ISS-1',
+        project_id: 'SHOULD-NOT-BE-USED'
+      }
+    );
+
+    const [_, url] = requestSpy.mock.calls[0];
+    expect(url).toContain('/issues/ISS-1');
+    expect(url).not.toContain('SHOULD-NOT-BE-USED');
+  });
+
+  it('should serialize array query params provided through aliases', async () => {
+    const profile: Profile = {
+      profile_name: 'test-profile',
+      parameter_aliases: {
+        fields: ['field_list']
+      },
+      tools: [
+        {
+          name: 'list_items',
+          description: 'List items with fields',
+          operations: {
+            list: 'listItems'
+          },
+          parameters: {
+            action: { type: 'string', description: 'Action' },
+            fields: { type: 'array', description: 'Fields' }
+          }
+        }
+      ]
+    };
+
+    const parser = new OpenAPIParser();
+    vi.spyOn(parser, 'getOperation').mockReturnValue({
+      operationId: 'listItems',
+      method: 'get',
+      path: '/items',
+      parameters: [
+        { name: 'fields', in: 'query', schema: { type: 'array', items: { type: 'string' } } }
+      ],
+      responses: {},
+    } as any);
+
+    const loader = new ProfileLoader();
+    vi.spyOn(loader, 'load').mockResolvedValue(profile);
+
+    const generator = new ToolGenerator(parser);
+    mockLogger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    server = new MCPServer(mockLogger as any);
+    (server as any).parser = parser;
+    (server as any).profile = profile;
+    (server as any).toolGenerator = generator;
+
+    vi.spyOn(server as any, 'getHttpClientForSession').mockResolvedValue(new HttpClient('http://test', {} as any));
+
+    await (server as any).executeSimpleTool(
+      profile.tools[0],
+      {
+        action: 'list',
+        field_list: ['id', 'name']
+      }
+    );
+
+    const [, , options] = requestSpy.mock.calls[0];
+    expect(options.params.fields).toEqual(['id', 'name']);
+  });
+
+  it('should surface validation error when neither parameter nor aliases are provided', async () => {
+    const profile: Profile = {
+      profile_name: 'test-profile',
+      parameter_aliases: {
+        id: ['issue_id']
+      },
+      tools: [
+        {
+          name: 'get_issue',
+          description: 'Get issue by id',
+          operations: {
+            get: 'getIssue'
+          },
+          parameters: {
+            action: { type: 'string', description: 'Action' },
+            id: { type: 'string', description: 'Id' }
+          }
+        }
+      ]
+    };
+
+    const parser = new OpenAPIParser();
+    vi.spyOn(parser, 'getOperation').mockReturnValue({
+      operationId: 'getIssue',
+      method: 'get',
+      path: '/issues/{id}',
+      parameters: [
+        { name: 'id', in: 'path', schema: { type: 'string' } }
+      ],
+      responses: {},
+    } as any);
+
+    const loader = new ProfileLoader();
+    vi.spyOn(loader, 'load').mockResolvedValue(profile);
+
+    const generator = new ToolGenerator(parser);
+    mockLogger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    server = new MCPServer(mockLogger as any);
+    (server as any).parser = parser;
+    (server as any).profile = profile;
+    (server as any).toolGenerator = generator;
+
+    vi.spyOn(server as any, 'getHttpClientForSession').mockResolvedValue(new HttpClient('http://test', {} as any));
+
+    await expect(
+      (server as any).executeSimpleTool(profile.tools[0], { action: 'get' })
+    ).rejects.toBeInstanceOf(ValidationError);
+  });
+
+  it('should allow direct parameter usage when aliases list is empty', async () => {
+    const profile: Profile = {
+      profile_name: 'test-profile',
+      parameter_aliases: {
+        top: []
+      },
+      tools: [
+        {
+          name: 'list_items',
+          description: 'List items',
+          operations: {
+            list: 'listItems'
+          },
+          parameters: {
+            action: { type: 'string', description: 'Action' },
+            top: { type: 'integer', description: 'Top' }
+          }
+        }
+      ]
+    };
+
+    const parser = new OpenAPIParser();
+    vi.spyOn(parser, 'getOperation').mockReturnValue({
+      operationId: 'listItems',
+      method: 'get',
+      path: '/items',
+      parameters: [
+        { name: 'top', in: 'query', schema: { type: 'integer' } }
+      ],
+      responses: {},
+    } as any);
+
+    const loader = new ProfileLoader();
+    vi.spyOn(loader, 'load').mockResolvedValue(profile);
+
+    const generator = new ToolGenerator(parser);
+    mockLogger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    server = new MCPServer(mockLogger as any);
+    (server as any).parser = parser;
+    (server as any).profile = profile;
+    (server as any).toolGenerator = generator;
+
+    vi.spyOn(server as any, 'getHttpClientForSession').mockResolvedValue(new HttpClient('http://test', {} as any));
+
+    await (server as any).executeSimpleTool(
+      profile.tools[0],
+      {
+        action: 'list',
+        top: 25
+      }
+    );
+
+    const [, , options] = requestSpy.mock.calls[0];
+    expect(options.params.top).toBe('25');
   });
 });

@@ -11,9 +11,11 @@ export interface ToolOperation {
   toolName: string;
   action: string;
   operationId: string;
+  operationDef: string | Record<string, unknown>;
   requiredParams: Record<string, unknown>;
   description: string;
   isComposite: boolean;
+  isProxyDownload?: boolean;
 }
 
 interface ProfileTool {
@@ -81,8 +83,8 @@ function getParamValue(
   }
   
   // Specific param name mappings for GitLab mock data
-  const knownValues: Record<string, unknown> = {
-    project_id: '12345',
+    const knownValues: Record<string, unknown> = {
+      project_id: '12345',
     group_id: 'davidruzicka',
     resource_id: 'davidruzicka',
     resource_type: 'project',
@@ -92,7 +94,22 @@ function getParamValue(
     job_id: 1234,
     note_id: 1,
     user_id: 1,
-    branch: 'main',
+    id: 'YT-123',
+    issueCommentId: 'c-1',
+    issueAttachmentId: 'att-1',
+    issueWorkItemId: 'work-1',
+    issueLinkId: 'link-1',
+    issueId: 'YT-124',
+    articleCommentId: 'ac-1',
+    articleAttachmentId: 'aat-1',
+    agile_id: 'agile-1',
+    sprintId: 'sprint-1',
+      tagId: 'tag-1',
+      sprint_id: 'sprint-1',
+      article_id: 'article-1',
+      duration: { minutes: 30 },
+      date: 1700000000000,
+      branch: 'main',
     ref: 'main',
     title: 'Test title',
     body: 'Test comment body',
@@ -116,6 +133,8 @@ function getParamValue(
       return false;
     case 'array':
       return [];
+    case 'object':
+      return {};
     default:
       return 'test-value';
   }
@@ -138,20 +157,27 @@ export function loadProfileOperations(profilePath: string): ToolOperation[] {
         toolName: tool.name,
         action: 'composite',
         operationId: `${tool.name}_composite`,
+        operationDef: tool.steps || [],
         requiredParams: getRequiredParams(tool, 'composite'),
         description: tool.description || '',
         isComposite: true,
       });
     } else if (tool.operations) {
       // Standard tool with multiple operations
-      for (const [action, operationId] of Object.entries(tool.operations)) {
+      for (const [action, operationConfig] of Object.entries(tool.operations)) {
+        const operationId = typeof operationConfig === 'string'
+          ? operationConfig
+          : (operationConfig as Record<string, unknown>).type?.toString() || 'complex_operation';
+
         operations.push({
           toolName: tool.name,
           action,
           operationId,
+          operationDef: operationConfig as any,
           requiredParams: getRequiredParams(tool, action),
           description: tool.description || '',
           isComposite: false,
+          isProxyDownload: typeof operationConfig === 'object' && (operationConfig as any).type === 'proxy_download',
         });
       }
     }
