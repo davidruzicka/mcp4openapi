@@ -11,8 +11,13 @@ import fs from 'fs/promises';
 import { ProfileLoader } from '../profile-loader.js';
 import { OpenAPIParser } from '../openapi-parser.js';
 import { ToolGenerator } from '../tool-generator.js';
+import type { OperationDefinition } from '../types/profile.js';
 
 const PROFILE_PATH = path.join(process.cwd(), 'profiles/semgrep/profile.json');
+
+function getOperationId(op: OperationDefinition): string {
+  return typeof op === 'string' ? op : op.metadata_endpoint;
+}
 const SPEC_PATH = path.join(process.cwd(), 'profiles/semgrep/openapi.yaml');
 
 describe('Semgrep Profile Validation', () => {
@@ -77,9 +82,9 @@ describe('Semgrep Profile Validation', () => {
       if (tool.operations) {
         for (const [action, operationId] of Object.entries(tool.operations)) {
           try {
-            parser.getOperation(operationId);
+            parser.getOperation(getOperationId(operationId));
           } catch {
-            missingOps.push(`${tool.name}.${action} → ${operationId}`);
+            missingOps.push(`${tool.name}.${action} → ${getOperationId(operationId)}`);
           }
         }
       }
@@ -213,7 +218,7 @@ describe('Semgrep Profile Validation', () => {
     const allOperationIds: string[] = [];
     for (const tool of profile.tools) {
       if (tool.operations) {
-        allOperationIds.push(...Object.values(tool.operations));
+        allOperationIds.push(...Object.values(tool.operations).map(getOperationId));
       }
     }
     

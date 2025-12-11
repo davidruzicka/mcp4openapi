@@ -8,7 +8,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import request from 'supertest';
 import { HttpTransport } from '../http-transport.js';
-import { ConsoleLogger } from '../logger.js';
+import { ConsoleLogger, LogLevel } from '../logger.js';
 import type { Express } from 'express';
 import type { OAuthConfig } from '../types/profile.js';
 import { ExternalOAuthProvider } from '../oauth-provider.js';
@@ -42,7 +42,7 @@ describe('OAuth Security Issues - Proof Tests', () => {
       rateLimitMaxRequests: 100,
     };
 
-    const logger = new ConsoleLogger({ minLevel: 'error' });
+    const logger = new ConsoleLogger(LogLevel.ERROR);
     transport = new HttpTransport(config, logger);
     app = (transport as any).app;
   });

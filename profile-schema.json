@@ -142,7 +142,18 @@
           "required": ["operations"],
           "properties": {
             "operations": {
-              "type": "object"
+              "type": "object",
+              "additionalProperties": {
+                "oneOf": [
+                  {
+                    "type": "string",
+                    "description": "OpenAPI operation ID"
+                  },
+                  {
+                    "$ref": "#/definitions/ProxyDownloadOperation"
+                  }
+                ]
+              }
             }
           }
         },
@@ -533,6 +544,49 @@
           },
           "minItems": 1,
           "examples": [[429, 502, 503, 504]]
+        }
+      }
+    },
+    "ProxyDownloadOperation": {
+      "type": "object",
+      "required": ["type", "metadata_endpoint"],
+      "properties": {
+        "type": {
+          "const": "proxy_download",
+          "description": "Must be 'proxy_download'"
+        },
+        "metadata_endpoint": {
+          "type": "string",
+          "description": "OpenAPI operation ID to fetch metadata (e.g., 'get_/issues/{id}/attachments/{attachmentId}')"
+        },
+        "url_field": {
+          "type": "string",
+          "description": "JSON path to URL field in metadata response",
+          "default": "url"
+        },
+        "max_size_bytes": {
+          "type": "number",
+          "description": "Maximum file size in bytes",
+          "default": 10485760,
+          "minimum": 1
+        },
+        "timeout_ms": {
+          "type": "number",
+          "description": "Timeout for download in milliseconds",
+          "default": 30000,
+          "minimum": 1000
+        },
+        "allowed_mime_types": {
+          "type": "array",
+          "description": "Optional MIME type whitelist (e.g., ['image/*', 'application/pdf'])",
+          "items": {
+            "type": "string"
+          }
+        },
+        "skip_auth": {
+          "type": "boolean",
+          "description": "Skip authentication for download URL (default: false). Set to true for pre-signed URLs.",
+          "default": false
         }
       }
     }

@@ -25,7 +25,7 @@
   "tools": [
     {
       "name": "retrieve_content",
-      "description": "Read-only access to YouTrack entities (issues, projects, users, tags, articles, agiles, sprints, etc.). Actions: 'list_issues', 'get_issue', 'list_issue_comments', 'get_issue_comment', 'list_issue_attachments', 'get_issue_attachment', 'list_issue_tags', 'list_issue_links', 'get_issue_link', 'list_linked_issues', 'list_projects', 'get_project', 'list_workitems', 'list_articles', 'get_article', 'list_article_comments', 'list_article_attachments', 'list_tags', 'get_tag', 'list_saved_queries', 'list_agiles', 'get_agile', 'list_sprints', 'list_users', 'get_user', 'list_groups'.",
+      "description": "Read-only access to YouTrack entities (issues, projects, users, tags, articles, agiles, sprints, etc.). Actions: 'list_issues', 'get_issue', 'list_issue_comments', 'get_issue_comment', 'list_issue_attachments', 'get_issue_attachment', 'download_issue_attachment', 'list_issue_tags', 'list_issue_links', 'get_issue_link', 'list_linked_issues', 'list_projects', 'get_project', 'list_workitems', 'list_articles', 'get_article', 'list_article_comments', 'list_article_attachments', 'get_article_attachment', 'download_article_attachment', 'list_tags', 'get_tag', 'list_saved_queries', 'list_agiles', 'get_agile', 'list_sprints', 'list_users', 'get_user', 'list_groups'.",
       "metadata_params": ["action", "id", "issueCommentId", "issueAttachmentId", "agile_id", "sprintId", "articleCommentId", "articleAttachmentId", "tagId", "fields"],
       "send_response_fields_as_param": true,
       "operations": {
@@ -35,6 +35,13 @@
         "get_issue_comment": "get_/issues/{id}/comments/{issueCommentId}",
         "list_issue_attachments": "get_/issues/{id}/attachments",
         "get_issue_attachment": "get_/issues/{id}/attachments/{issueAttachmentId}",
+        "download_issue_attachment": {
+          "type": "proxy_download",
+          "metadata_endpoint": "get_/issues/{id}/attachments/{issueAttachmentId}",
+          "url_field": "url",
+          "skip_auth": true,
+          "max_size_bytes": 10485760
+        },
         "list_issue_tags": "get_/issues/{id}/tags",
         "list_issue_links": "get_/issues/{id}/links",
         "get_issue_link": "get_/issues/{id}/links/{issueLinkId}",
@@ -46,6 +53,14 @@
         "get_article": "get_/articles/{id}",
         "list_article_comments": "get_/articles/{id}/comments",
         "list_article_attachments": "get_/articles/{id}/attachments",
+        "get_article_attachment": "get_/articles/{id}/attachments/{articleAttachmentId}",
+        "download_article_attachment": {
+          "type": "proxy_download",
+          "metadata_endpoint": "get_/articles/{id}/attachments/{articleAttachmentId}",
+          "url_field": "url",
+          "skip_auth": true,
+          "max_size_bytes": 10485760
+        },
         "list_tags": "get_/tags",
         "get_tag": "get_/tags/{id}",
         "list_saved_queries": "get_/savedQueries",
@@ -57,7 +72,7 @@
         "list_groups": "get_/groups"
       },
       "response_fields": {
-        "list_issues": ["id", "idReadable", "summary", "resolved", "customFields"],
+        "list_issues": ["id", "idReadable", "summary", "description", "resolved", "customFields(id,name,value(id,name))"],
         "get_issue": ["id", "idReadable", "summary", "description", "resolved", "customFields(id,name,value(id,name))", "comments(id,text,author(id,login),created,attachments(id,name,url))", "attachments(id,name,mimeType,size,url)"],
         "list_issue_comments": ["id", "text", "author(login)", "created", "attachments(id,name,url)"],
         "get_issue_comment": ["id", "text", "author(id,login)", "created", "updated", "attachments(id,name,mimeType,size,url)"],
@@ -69,6 +84,7 @@
         "get_article": ["id", "title", "summary", "content", "attachments(id,name,mimeType,size,url)", "comments(id,text,author(id,login),created,attachments(id,name,url))"],
         "list_article_comments": ["id", "text", "author(login)", "created", "attachments(id,name,url)"],
         "list_article_attachments": ["id", "name", "mimeType", "size"],
+        "get_article_attachment": ["id", "name", "mimeType", "size", "url", "base64Content"],
         "list_issue_tags": ["id", "name", "owner"],
         "list_issue_links": ["id", "direction", "linkType"],
         "get_issue_link": ["id", "direction", "linkType"],
@@ -87,14 +103,14 @@
       "parameters": {
         "action": {
           "type": "string",
-          "enum": ["list_issues", "get_issue", "list_issue_comments", "get_issue_comment", "list_issue_attachments", "get_issue_attachment", "list_issue_tags", "list_issue_links", "get_issue_link", "list_linked_issues", "list_projects", "get_project", "list_workitems", "list_articles", "get_article", "list_article_comments", "list_article_attachments", "list_tags", "get_tag", "list_saved_queries", "list_agiles", "get_agile", "list_sprints", "list_users", "get_user", "list_groups"],
+          "enum": ["list_issues", "get_issue", "list_issue_comments", "get_issue_comment", "list_issue_attachments", "get_issue_attachment", "download_issue_attachment", "list_issue_tags", "list_issue_links", "get_issue_link", "list_linked_issues", "list_projects", "get_project", "list_workitems", "list_articles", "get_article", "list_article_comments", "list_article_attachments", "get_article_attachment", "download_article_attachment", "list_tags", "get_tag", "list_saved_queries", "list_agiles", "get_agile", "list_sprints", "list_users", "get_user", "list_groups"],
           "description": "Action to perform",
           "required": true
         },
         "id": {
           "type": "string",
           "description": "Entity ID (issue ID like 'PROJ-123', project shortName, article ID, agile ID, user login, tag ID, etc.)",
-          "required_for": ["get_issue", "list_issue_comments", "get_issue_comment", "list_issue_attachments", "get_issue_attachment", "list_issue_tags", "list_issue_links", "get_issue_link", "list_linked_issues", "get_project", "get_article", "list_article_comments", "list_article_attachments", "get_tag", "get_agile", "list_sprints", "get_user"]
+          "required_for": ["get_issue", "list_issue_comments", "get_issue_comment", "list_issue_attachments", "get_issue_attachment", "download_issue_attachment", "list_issue_tags", "list_issue_links", "get_issue_link", "list_linked_issues", "get_project", "get_article", "list_article_comments", "list_article_attachments", "get_article_attachment", "download_article_attachment", "get_tag", "get_agile", "list_sprints", "get_user"]
         },
         "issueCommentId": {
           "type": "string",
@@ -104,7 +120,7 @@
         "issueAttachmentId": {
           "type": "string",
           "description": "Attachment ID within an issue",
-          "required_for": ["get_issue_attachment"]
+          "required_for": ["get_issue_attachment", "download_issue_attachment"]
         },
         "issueLinkId": {
           "type": "string",
@@ -129,7 +145,7 @@
         "articleAttachmentId": {
           "type": "string",
           "description": "Attachment ID within an article",
-          "required_for": []
+          "required_for": ["get_article_attachment", "download_article_attachment"]
         },
         "fields": {
           "type": "string",
