@@ -4,7 +4,7 @@
  * Why: Test server initialization, tool listing, and behavior without profile.
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import path from 'path';
 import { MCPServer } from './mcp-server.js';
 import { ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
@@ -417,6 +417,78 @@ describe('MCPServer', () => {
         await serverWithLogger.stop();
         process.env.MCP4_ALLOWED_ORIGINS = prev;
       }
+    });
+  });
+
+  describe('runHttp configuration', () => {
+    const originalEnv = { ...process.env };
+
+    afterEach(() => {
+      process.env = { ...originalEnv };
+      vi.resetModules();
+      vi.clearAllMocks();
+    });
+
+    it('should derive OAuth redirect hosts and token limits from environment', async () => {
+      const capturedConfigs: any[] = [];
+
+      vi.doMock('./http-transport.js', () => {
+        return {
+          HttpTransport: class {
+            constructor(config: any) {
+              capturedConfigs.push(config);
+            }
+            setMessageHandler() {}
+            onSessionDestroyed() {}
+            async start() {}
+            async stop() {}
+            hasOAuthProvider() { return false; }
+            getSessionToken() { return undefined; }
+            ensureValidSessionToken() { return Promise.resolve(true); }
+          }
+        };
+      });
+
+      const { MCPServer: MockedMCPServer } = await import('./mcp-server.js');
+      const serverWithMock = new MockedMCPServer({
+        info: () => {},
+        warn: () => {},
+        error: () => {},
+        debug: () => {},
+      } as any);
+
+      (serverWithMock as any).parser = {
+        getBaseUrl: () => 'https://api.test',
+        getResourceMetadata: () => ({ name: 'Test', documentation: 'Docs' })
+      };
+
+      (serverWithMock as any).profile = {
+        profile_name: 'test',
+        description: 'test profile',
+        tools: [],
+        interceptors: {
+          auth: [{
+            type: 'oauth',
+            priority: 1,
+            oauth_config: {
+              issuer: 'https://issuer.test',
+              client_id: 'client-id',
+              redirect_uri: 'https://app.test/callback'
+            }
+          }]
+        }
+      };
+
+      process.env.MCP4_ALLOWED_ORIGINS = 'https://*.allowed.test';
+      process.env.MCP4_TOKEN_MAX_LENGTH = '2048';
+
+      await serverWithMock.runHttp('127.0.0.1', 0);
+      await serverWithMock.stop();
+
+      expect(capturedConfigs).toHaveLength(1);
+      const config = capturedConfigs[0];
+      expect(config.maxTokenLength).toBe(2048);
+      expect(config.oauthConfig?.allowed_redirect_hosts).toEqual(['*.allowed.test']);
     });
   });
 
