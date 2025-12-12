@@ -56,7 +56,7 @@ export class ProxyDownloadExecutor {
     path: string,
     authCredentials: AuthCredentials
   ): Promise<ProxyDownloadResult> {
-    const maxSize = operation.max_size_bytes ?? DEFAULT_MAX_SIZE;
+    const maxSize = this.resolveMaxSize(operation);
     const timeout = operation.timeout_ms ?? DEFAULT_TIMEOUT;
     const urlField = operation.url_field ?? 'url';
 
@@ -107,6 +107,31 @@ export class ProxyDownloadExecutor {
       size,
       fileName: metadata['name'] as string | undefined,
     };
+  }
+
+  private resolveMaxSize(operation: ProxyDownloadOperation): number {
+    const envKeys = [operation.max_size_bytes_from_env, 'MCP4_PROXY_MAX_BYTES'].filter(
+      Boolean
+    ) as string[];
+
+    for (const key of envKeys) {
+      const rawValue = process.env[key];
+      if (rawValue !== undefined) {
+        const parsed = Number(rawValue);
+        if (!Number.isInteger(parsed) || parsed <= 0) {
+          throw new ValidationError(
+            `Invalid max size from env ${key}: expected positive integer, got '${rawValue}'`
+          );
+        }
+        return parsed;
+      }
+    }
+
+    if (operation.max_size_bytes !== undefined) {
+      return operation.max_size_bytes;
+    }
+
+    return DEFAULT_MAX_SIZE;
   }
 
   /**
