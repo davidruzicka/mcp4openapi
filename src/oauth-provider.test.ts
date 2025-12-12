@@ -140,6 +140,8 @@ describe('ExternalOAuthProvider', () => {
 
         expect(derived.authorization_endpoint).toBe('https://custom.example.com/auth');
         expect(derived.token_endpoint).toBe('https://custom.example.com/token');
+        expect(config.authorization_endpoint).toBe('https://oauth.example.com/authorize');
+        expect(config.token_endpoint).toBe('https://oauth.example.com/token');
         expect(mockLogger.info).not.toHaveBeenCalledWith('Deriving OAuth endpoints from issuer', expect.anything());
       });
     });
@@ -147,6 +149,12 @@ describe('ExternalOAuthProvider', () => {
     describe('resolveEnvVars', () => {
       beforeEach(() => {
         provider = new ExternalOAuthProvider(config, mockLogger);
+      });
+
+      afterEach(() => {
+        delete process.env.TEST_AUTH_URL;
+        delete process.env.TEST_TOKEN_URL;
+        delete process.env.TEST_ISSUER;
       });
 
       it('substitutes environment variables when present', () => {
@@ -164,10 +172,6 @@ describe('ExternalOAuthProvider', () => {
         expect(resolved.authorization_endpoint).toBe('https://env-auth.example.com');
         expect(resolved.token_endpoint).toBe('https://env-token.example.com');
         expect(resolved.issuer).toBe('https://env-issuer.example.com');
-
-        delete process.env.TEST_AUTH_URL;
-        delete process.env.TEST_TOKEN_URL;
-        delete process.env.TEST_ISSUER;
       });
 
       it('throws when referenced environment variable is missing', () => {
