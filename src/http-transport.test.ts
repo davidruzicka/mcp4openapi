@@ -88,6 +88,22 @@ describe('HttpTransport', () => {
       );
     });
 
+    it('should reject non-127.0.0.1 loopback variants with warning', async () => {
+      const response = await request(localApp)
+        .get('/metrics')
+        .set('Host', '127.0.0.2:5678');
+
+      expect(response.status).toBe(403);
+      expect(response.body).toEqual({ error: 'Forbidden' });
+      expect(testLogger.warn).toHaveBeenCalledWith(
+        'DNS rebinding protection: invalid Host header',
+        expect.objectContaining({
+          hostHeader: '127.0.0.2:5678',
+          expected: expect.arrayContaining(['localhost', '127.0.0.1']),
+        })
+      );
+    });
+
     it('should allow localhost Host header and preserve responses/logs', async () => {
       const healthResponse = await request(localApp)
         .get('/health')
