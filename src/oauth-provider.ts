@@ -508,10 +508,8 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
         // Redirect to Client
         let clientUrl: URL;
         try {
+            // Allow custom schemes (e.g., vscode://, cursor://) as long as the host was validated above
             clientUrl = new URL(storedState.clientRedirectUri);
-            if (clientUrl.protocol !== 'http:' && clientUrl.protocol !== 'https:') {
-                throw new Error('Invalid protocol');
-            }
         } catch {
             res.status(400).send('Invalid redirect URI');
             return;

@@ -325,7 +325,7 @@ If you need a different callback URL:
 }
 ```
 
-**Important**: Update redirect URI in GitLab application settings to match.
+**Important**: Update redirect URI in GitLab application settings to match. Native-app schemes (`cursor://…`, `vscode://…`) are supported - just add their host to `allowed_redirect_hosts` (or `MCP4_ALLOWED_ORIGINS`) so validation passes.
 
 ### Additional OAuth Endpoints
 
