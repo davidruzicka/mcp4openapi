@@ -577,6 +577,31 @@ describe('ExternalOAuthProvider', () => {
       expect((provider as any).isAllowedRedirectHost('http://example.com/callback')).toBe(true);
     });
 
+    it('should allow IPv4 exact and CIDR patterns', () => {
+      const configWithCidrs = {
+        ...config,
+        allowed_redirect_hosts: ['10.0.0.0/8', '192.168.1.50'],
+      };
+      provider = new ExternalOAuthProvider(configWithCidrs, mockLogger);
+
+      expect((provider as any).isAllowedRedirectHost('http://10.12.0.5/callback')).toBe(true);
+      expect((provider as any).isAllowedRedirectHost('http://10.255.255.255/callback')).toBe(true);
+      expect((provider as any).isAllowedRedirectHost('http://192.168.1.50/callback')).toBe(true);
+      expect((provider as any).isAllowedRedirectHost('http://192.168.2.10/callback')).toBe(false);
+    });
+
+    it('should allow IPv6 exact and CIDR patterns', () => {
+      const configWithIpv6 = {
+        ...config,
+        allowed_redirect_hosts: ['[::1]', '2001:db8::/32'],
+      };
+      provider = new ExternalOAuthProvider(configWithIpv6, mockLogger);
+
+      expect((provider as any).isAllowedRedirectHost('http://[::1]/callback')).toBe(true);
+      expect((provider as any).isAllowedRedirectHost('http://[2001:db8:abcd::123]/callback')).toBe(true);
+      expect((provider as any).isAllowedRedirectHost('http://[2001:dead::1]/callback')).toBe(false);
+    });
+
     it('should reject non-allowed hosts', () => {
       const configWithAllowed = {
         ...config,

@@ -103,6 +103,8 @@ describe('HttpTransport', () => {
           '*.company.com',
           '192.168.1.0/24',
           '10.0.0.0/8',
+          '2001:db8::/32',
+          'fe80::1',
         ],
       };
 
@@ -180,6 +182,39 @@ describe('HttpTransport', () => {
         .send({ jsonrpc: '2.0', id: 1, method: 'initialize' });
 
       expect(response.status).toBe(200);
+    });
+
+    it('should accept IPv6 exact host', async () => {
+      const response = await request(customApp)
+        .post('/mcp')
+        .set('Accept', 'application/json, text/event-stream')
+        .set('Origin', 'http://[fe80::1]')
+        .set('Host', 'api.test.com')
+        .send({ jsonrpc: '2.0', id: 1, method: 'initialize' });
+
+      expect(response.status).toBe(200);
+    });
+
+    it('should accept IPv6 CIDR range', async () => {
+      const response = await request(customApp)
+        .post('/mcp')
+        .set('Accept', 'application/json, text/event-stream')
+        .set('Origin', 'http://[2001:db8:abcd::123]')
+        .set('Host', 'api.test.com')
+        .send({ jsonrpc: '2.0', id: 1, method: 'initialize' });
+
+      expect(response.status).toBe(200);
+    });
+
+    it('should reject IPv6 outside CIDR range', async () => {
+      const response = await request(customApp)
+        .post('/mcp')
+        .set('Accept', 'application/json, text/event-stream')
+        .set('Origin', 'http://[2001:dead::1]')
+        .set('Host', 'api.test.com')
+        .send({ jsonrpc: '2.0', id: 1, method: 'initialize' });
+
+      expect(response.status).toBe(403);
     });
 
     it('should reject IP outside CIDR range', async () => {
