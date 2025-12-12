@@ -406,6 +406,77 @@ describe('HttpTransport', () => {
     });
   });
 
+  describe('IP parsing and CIDR matching', () => {
+    let ipTransport: HttpTransport;
+    let ipLogger: Logger;
+
+    beforeEach(() => {
+      ipLogger = {
+        debug: vi.fn(),
+        info: vi.fn(),
+        warn: vi.fn(),
+        error: vi.fn(),
+      };
+
+      ipTransport = new HttpTransport({
+        host: '127.0.0.1',
+        port: 0,
+        sessionTimeoutMs: 1800000,
+        heartbeatEnabled: false,
+        heartbeatIntervalMs: 30000,
+        metricsEnabled: false,
+        metricsPath: '/metrics',
+      }, ipLogger);
+    });
+
+    afterEach(async () => {
+      await ipTransport.stop();
+    });
+
+    it('rejects IPv4 CIDR ranges with invalid mask bits', () => {
+      const result = (ipTransport as any).matchCIDR('192.168.1.10', '192.168.1.0/40');
+
+      expect(result).toBe(false);
+      expect(ipLogger.warn).toHaveBeenCalledWith('Invalid CIDR mask bits', { cidr: '192.168.1.0/40' });
+    });
+
+    it('rejects IPv6 CIDR ranges with invalid mask bits', () => {
+      (ipLogger.warn as ReturnType<typeof vi.fn>).mockReset();
+
+      const result = (ipTransport as any).matchCIDR('2001:db8::1', '2001:db8::/129');
+
+      expect(result).toBe(false);
+      expect(ipLogger.warn).toHaveBeenCalledWith('Invalid IPv6 CIDR mask bits', { cidr: '2001:db8::/129' });
+    });
+
+    it('rejects CIDR when IP version does not match range', () => {
+      (ipLogger.warn as ReturnType<typeof vi.fn>).mockReset();
+
+      const result = (ipTransport as any).matchCIDR('10.0.0.1', '2001:db8::/32');
+
+      expect(result).toBe(false);
+      expect(ipLogger.warn).not.toHaveBeenCalled();
+    });
+
+    it('rejects IPv4 addresses with octets out of range', () => {
+      const ipv4Value = (ipTransport as any).ipv4ToInt('256.0.0.1');
+
+      expect(ipv4Value).toBeNull();
+    });
+
+    it('rejects malformed IPv6 addresses with multiple compression markers', () => {
+      const ipv6Value = (ipTransport as any).ipv6ToBigInt('2001::db8::1');
+
+      expect(ipv6Value).toBeNull();
+    });
+
+    it('parses IPv4-mapped IPv6 addresses into the correct bigint', () => {
+      const ipv6Value = (ipTransport as any).ipv6ToBigInt('::ffff:192.168.0.1');
+
+      expect(ipv6Value).toBe(281473913978881n);
+    });
+  });
+
   describe('POST - Initialize Request', () => {
     it('should create session on initialization', async () => {
       transport.setMessageHandler(async (msg) => ({
