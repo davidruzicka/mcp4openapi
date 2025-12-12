@@ -21,6 +21,8 @@ export default defineConfig({
       reporter: ['text', 'json', 'html'],
       exclude: [
         // Default excludes
+        'vitest.config.ts',
+        'vitest.e2e.config.ts',
         'node_modules/**',
         'dist/**',
         'coverage/**',
