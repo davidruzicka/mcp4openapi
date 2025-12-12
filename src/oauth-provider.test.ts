@@ -782,6 +782,56 @@ describe('ExternalOAuthProvider', () => {
       expect(mockRes.send).toHaveBeenCalledWith('Redirect URI host not allowed');
       expect(mockRes.redirect).not.toHaveBeenCalled();
     });
+
+    it('should allow registered custom scheme redirect URIs when host is allowed', async () => {
+      const configWithAllowedHosts = {
+        ...config,
+        allowed_redirect_hosts: ['anysphere.cursor-mcp'],
+      };
+      provider = new ExternalOAuthProvider(configWithAllowedHosts, mockLogger);
+
+      const client: OAuthClientInformationFull = {
+        client_id: 'client-123',
+        redirect_uris: ['cursor://anysphere.cursor-mcp/oauth/callback'],
+        grant_types: ['authorization_code'],
+        response_types: ['code'],
+      };
+      (provider as any)._clientsStore.registerClient(client);
+
+      (provider as any).stateStore.set('state123', {
+        clientRedirectUri: 'cursor://anysphere.cursor-mcp/oauth/callback',
+        codeChallenge: 'challenge',
+        originalState: 'orig',
+        clientId: client.client_id,
+        scopes: ['api'],
+      });
+
+      (provider as any).exchangeCodeWithProvider = vi.fn().mockResolvedValue({
+        access_token: 'at',
+        refresh_token: 'rt',
+        expires_in: 3600,
+        token_type: 'Bearer',
+      });
+
+      const mockReq = {
+        query: {
+          code: 'auth-code',
+          state: 'state123',
+        },
+      } as any;
+      const mockRes = {
+        status: vi.fn().mockReturnThis(),
+        send: vi.fn(),
+        redirect: vi.fn(),
+      } as any;
+
+      await provider.handleCallback(mockReq, mockRes);
+
+      expect(mockRes.redirect).toHaveBeenCalledWith(
+        expect.stringContaining('cursor://anysphere.cursor-mcp/oauth/callback?code=')
+      );
+      expect(mockRes.status).not.toHaveBeenCalledWith(400);
+    });
   });
 
   describe('verifyAccessToken', () => {

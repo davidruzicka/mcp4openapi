@@ -143,7 +143,7 @@ npm start              # run server
 - **Hard-coding API assumptions** - all customization via profiles
 - **Skipping schema sync** - always run `npm run generate-schemas` after type changes
 - **Ignoring Zod strict mode** - unknown properties are silently removed
-- **Leaving completed items in `TODO.md`** - remove items immediately after implementation
+- **Never use the Unicode em dash (`—`) or en dash (`–`)** - always use ASCII hyphen-minus (`-`) in documentation or code comments
 
 ## Critical Gotchas
 

@@ -5,9 +5,10 @@
  * and token refresh functionality.
  */
 
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest';
 import * as path from 'path';
-import { startStandaloneMockServer, MockServerInstance } from './utils/mock-server.js';
+import { startStandaloneMockServer, MockServerInstance, getAvailablePort } from './utils/mock-server.js';
+import { McpProcess } from './utils/mcp-process.js';
 
 describe('E2E: OAuth 2.0 authentication', () => {
   let mockServer: MockServerInstance;
@@ -128,4 +129,89 @@ describe('E2E: OAuth 2.0 authentication', () => {
     expect(location).toContain('code=');
     expect(location).toContain('state=test-state');
   }, 10000);
+
+  describe('custom scheme redirect', () => {
+    let mcp: McpProcess | undefined;
+    let httpPort: number;
+
+    const cursorRedirectUri = 'cursor://anysphere.cursor-mcp/oauth/callback';
+    const clientState = 'custom-state-123';
+
+    beforeAll(async () => {
+      httpPort = await getAvailablePort();
+    }, 15000);
+
+    afterEach(async () => {
+      await mcp?.stop();
+      mcp = undefined;
+    });
+
+    it('should redirect callback to registered custom scheme client', async () => {
+      const redirectUri = `http://127.0.0.1:${httpPort}/oauth/callback`;
+
+      mcp = new McpProcess({
+        transport: 'http',
+        openapiSpecPath,
+        profilePath,
+        apiBaseUrl: mockServer.gitlabApiUrl,
+        httpPort,
+        oauth: {
+          clientId: 'test-client-id',
+          clientSecret: 'test-client-secret',
+          redirectUri,
+          authorizationEndpoint: `${mockServer.oauthUrl}/oauth/authorize`,
+          tokenEndpoint: `${mockServer.oauthUrl}/oauth/token`,
+        },
+        env: {
+          MCP4_OAUTH_ISSUER: mockServer.oauthUrl,
+          MCP4_ALLOWED_ORIGINS: 'anysphere.cursor-mcp',
+          MCP4_LOG_LEVEL: 'ERROR',
+        },
+      });
+
+      await mcp.start();
+
+      const registration = await fetch(`http://127.0.0.1:${httpPort}/oauth/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ redirect_uris: [cursorRedirectUri] }),
+      });
+
+      expect(registration.status).toBe(201);
+      const { client_id: clientId } = await registration.json() as { client_id: string };
+
+      const authorizeResponse = await fetch(
+        `http://127.0.0.1:${httpPort}/oauth/authorize?` +
+        `response_type=code&client_id=${clientId}` +
+        `&redirect_uri=${encodeURIComponent(cursorRedirectUri)}` +
+        `&code_challenge=test-challenge&code_challenge_method=S256` +
+        `&scope=api&state=${clientState}`,
+        { redirect: 'manual' }
+      );
+
+      expect(authorizeResponse.status).toBe(302);
+      const providerLocation = authorizeResponse.headers.get('location');
+      expect(providerLocation).toBeTruthy();
+
+      const providerUrl = new URL(providerLocation!);
+      const stateToken = providerUrl.searchParams.get('state');
+      expect(stateToken).toBeTruthy();
+
+      const providerRedirect = await fetch(providerUrl, { redirect: 'manual' });
+      expect(providerRedirect.status).toBe(302);
+      const callbackLocation = providerRedirect.headers.get('location');
+      expect(callbackLocation).toBeTruthy();
+
+      const callbackResponse = await fetch(callbackLocation!, { redirect: 'manual' });
+      expect(callbackResponse.status).toBe(302);
+      const finalLocation = callbackResponse.headers.get('location');
+      expect(finalLocation).toBeTruthy();
+
+      const finalUrl = new URL(finalLocation!);
+      expect(finalUrl.protocol).toBe('cursor:');
+      expect(finalUrl.host).toBe('anysphere.cursor-mcp');
+      expect(finalUrl.searchParams.get('state')).toBe(clientState);
+      expect(finalUrl.searchParams.get('code')).toBeTruthy();
+    }, 20000);
+  });
 });
