@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { ProxyDownloadExecutor } from './proxy-executor.js';
+import { ValidationError } from './errors.js';
 import type { ProxyDownloadOperation } from './types/profile.js';
 import type { AuthCredentials } from './interceptors.js';
 
@@ -857,6 +858,110 @@ describe('ProxyDownloadExecutor - skip_auth option', () => {
     ).rejects.toThrow(
       "MIME type 'application/x-msdownload' not in whitelist: image/jpeg, image/png, application/pdf"
     );
+  });
+});
+
+describe('ProxyDownloadExecutor - env overrides', () => {
+  const mockHttpClient = { request: vi.fn() };
+  let originalFetch: typeof fetch;
+  const originalEnv = { ...process.env };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    originalFetch = global.fetch;
+  });
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+    process.env = { ...originalEnv };
+  });
+
+  it('should honor env override when enforcing size', async () => {
+    process.env.MCP4_PROXY_MAX_BYTES = '2048';
+
+    mockHttpClient.request.mockResolvedValue({
+      status: 200,
+      headers: {},
+      body: {
+        url: 'https://example.com/file',
+        mimeType: 'application/octet-stream',
+      },
+    });
+
+    const oversizedBuffer = new ArrayBuffer(4096);
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      headers: new Headers({ 'content-length': '4096' }),
+      arrayBuffer: () => Promise.resolve(oversizedBuffer),
+    });
+
+    const executor = new ProxyDownloadExecutor(mockHttpClient as any);
+    const operation: ProxyDownloadOperation = {
+      type: 'proxy_download',
+      metadata_endpoint: 'get_/file',
+      url_field: 'url',
+      max_size_bytes_from_env: 'MCP4_PROXY_MAX_BYTES',
+    };
+
+    await expect(
+      executor.execute(operation, '/file', { headers: {} })
+    ).rejects.toBeInstanceOf(ValidationError);
+  });
+
+  it('should throw ValidationError for invalid env override value', async () => {
+    process.env.MCP4_PROXY_MAX_BYTES = 'abc';
+
+    mockHttpClient.request.mockResolvedValue({
+      status: 200,
+      headers: {},
+      body: {
+        url: 'https://example.com/file',
+        mimeType: 'application/octet-stream',
+      },
+    });
+
+    const executor = new ProxyDownloadExecutor(mockHttpClient as any);
+    const operation: ProxyDownloadOperation = {
+      type: 'proxy_download',
+      metadata_endpoint: 'get_/file',
+      url_field: 'url',
+    };
+
+    await expect(
+      executor.execute(operation, '/file', { headers: {} })
+    ).rejects.toBeInstanceOf(ValidationError);
+  });
+
+  it('should fall back to operation max_size_bytes when env override is absent', async () => {
+    delete process.env.MCP4_PROXY_MAX_BYTES;
+
+    mockHttpClient.request.mockResolvedValue({
+      status: 200,
+      headers: {},
+      body: {
+        url: 'https://example.com/file',
+        mimeType: 'application/octet-stream',
+      },
+    });
+
+    const oversizedBuffer = new ArrayBuffer(8192);
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      headers: new Headers({}),
+      arrayBuffer: () => Promise.resolve(oversizedBuffer),
+    });
+
+    const executor = new ProxyDownloadExecutor(mockHttpClient as any);
+    const operation: ProxyDownloadOperation = {
+      type: 'proxy_download',
+      metadata_endpoint: 'get_/file',
+      url_field: 'url',
+      max_size_bytes: 4096,
+    };
+
+    await expect(
+      executor.execute(operation, '/file', { headers: {} })
+    ).rejects.toThrow('exceeds maximum');
   });
 });
 

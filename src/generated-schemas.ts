@@ -26,6 +26,7 @@ export const proxyDownloadOperationSchema = z.object({
     metadata_endpoint: z.string(),
     url_field: z.string().optional(),
     max_size_bytes: z.number().optional(),
+    max_size_bytes_from_env: z.string().optional(),
     timeout_ms: z.number().optional(),
     allowed_mime_types: z.array(z.string()).optional(),
     skip_auth: z.boolean().optional()
