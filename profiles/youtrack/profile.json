@@ -44,8 +44,7 @@
           "type": "proxy_download",
           "metadata_endpoint": "get_/issues/{id}/attachments/{issueAttachmentId}",
           "url_field": "url",
-          "skip_auth": true,
-          "max_size_bytes": 10485760
+          "skip_auth": true
         },
         "list_issue_tags": "get_/issues/{id}/tags",
         "list_issue_links": "get_/issues/{id}/links",
@@ -63,8 +62,7 @@
           "type": "proxy_download",
           "metadata_endpoint": "get_/articles/{id}/attachments/{articleAttachmentId}",
           "url_field": "url",
-          "skip_auth": true,
-          "max_size_bytes": 10485760
+          "skip_auth": true
         },
         "list_tags": "get_/tags",
         "get_tag": "get_/tags/{id}",

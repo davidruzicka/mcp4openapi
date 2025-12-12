@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Documented proxy download size override precedence and profile configuration.
+
 ## [0.2.4] - 2025-12-04
 
 ### Added

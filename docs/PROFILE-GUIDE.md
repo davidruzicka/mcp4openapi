@@ -166,6 +166,43 @@ Chains multiple API calls and returns aggregated results.
 - `store_as`: JSON path where to store result (e.g., `issue.comments`)
 - **Parameter aliases**: Composite tools automatically use `parameter_aliases` from profile to map parameters in `call` steps. For example, if your tool accepts `project_id` but the OpenAPI path uses `{id}`, the alias mapping will resolve it correctly.
 
+### 3. Proxy download tool
+
+Use `proxy_download` operations when an API returns a URL for binary content that still requires authentication (e.g., attachment downloads). The server fetches metadata, validates limits, downloads the file, and returns base64 content.
+
+**Example: proxying an attachment download**
+
+```json
+{
+  "name": "download_issue_attachment",
+  "description": "Download an issue attachment with validation",
+  "operations": {
+    "download_issue_attachment": {
+      "type": "proxy_download",
+      "metadata_endpoint": "get_/issues/{id}/attachments/{attachmentId}",
+      "url_field": "url",
+      "skip_auth": true,
+      "max_size_bytes": 10485760,
+      "max_size_bytes_from_env": "MYAPP_PROXY_MAX_BYTES"
+    }
+  }
+}
+```
+
+**Key fields**
+
+- `metadata_endpoint` (required): Operation ID that returns the URL to download.
+- `url_field` (optional): Dot-notation path to the URL inside the metadata response (default: `"url"`).
+- `max_size_bytes` (optional): Download size limit in bytes (default: 10 MB).
+- `max_size_bytes_from_env` (optional): Environment variable name that overrides `max_size_bytes` (e.g., `CUSTOM_PROXY_MAX_BYTES`).
+- `timeout_ms` (optional): Download timeout in milliseconds (default: 30000).
+- `allowed_mime_types` (optional): Whitelist of allowed MIME types (supports wildcards such as `image/*`).
+- `skip_auth` (optional): When `true`, skips auth for the final download URL (useful for pre-signed links).
+
+**Download size precedence**
+
+`max_size_bytes_from_env` → `MCP4_PROXY_MAX_BYTES` → `max_size_bytes` → default (10 MB). Invalid env values raise a `ValidationError`.
+
 ## Parameters
 
 ### Basic Parameter
