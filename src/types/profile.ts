@@ -78,6 +78,9 @@ export interface ProxyDownloadOperation {
   
   /** Maximum file size in bytes (default: 10MB = 10485760) */
   max_size_bytes?: number;
+
+  /** Optional environment variable that overrides max_size_bytes (e.g., 'CUSTOM_PROXY_MAX_BYTES') */
+  max_size_bytes_from_env?: string;
   
   /** Timeout for download in milliseconds (default: 30000) */
   timeout_ms?: number;

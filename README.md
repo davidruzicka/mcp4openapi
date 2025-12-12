@@ -343,6 +343,17 @@ npm start
 
 **Note**: If OpenAPI spec has `security` defined, it takes precedence over force auth settings.
 
+### Optional - Proxy download size limits
+- `MCP4_PROXY_MAX_BYTES`: Global override for proxy download size limit (bytes). Must be a positive integer.
+- Profile-specific env vars can take precedence when defined by the profile via `max_size_bytes_from_env` on a `proxy_download` operation.
+
+**Precedence**: profile-specific env override → `MCP4_PROXY_MAX_BYTES` → profile `max_size_bytes` → built-in default (10MB).
+
+**Example**: Cap proxy downloads to 2MB globally
+```bash
+export MCP4_PROXY_MAX_BYTES=2097152
+```
+
 ### Optional - Tool Name Shortening
 When generating tools from OpenAPI without a profile, long operation IDs may exceed limits. Configure automatic shortening:
 
