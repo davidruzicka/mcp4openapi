@@ -71,6 +71,115 @@ describe('ExternalOAuthProvider', () => {
       );
     });
 
+    describe('deriveEndpointsFromIssuer', () => {
+      const issuer = 'https://issuer.example.com';
+
+      beforeEach(() => {
+        provider = new ExternalOAuthProvider(config, mockLogger);
+      });
+
+      afterEach(() => {
+        vi.restoreAllMocks();
+        delete (global as any).fetch;
+      });
+
+      it('returns metadata endpoints when discovery succeeds', async () => {
+        const metadata = {
+          authorization_endpoint: 'https://issuer.example.com/authz',
+          token_endpoint: 'https://issuer.example.com/token',
+        };
+        global.fetch = vi.fn().mockResolvedValue({
+          ok: true,
+          json: async () => metadata,
+        });
+
+        const derived = await (provider as any).deriveEndpointsFromIssuer({
+          issuer,
+        });
+
+        expect(derived.authorization_endpoint).toBe(metadata.authorization_endpoint);
+        expect(derived.token_endpoint).toBe(metadata.token_endpoint);
+        expect(mockLogger.info).toHaveBeenCalledWith('Deriving OAuth endpoints from issuer', { issuer });
+        expect(mockLogger.info).toHaveBeenCalledWith('Successfully discovered OAuth endpoints', metadata);
+      });
+
+      it('falls back to standard paths when metadata response is not ok', async () => {
+        global.fetch = vi.fn().mockResolvedValue({ ok: false });
+
+        const derived = await (provider as any).deriveEndpointsFromIssuer({
+          issuer,
+        });
+
+        expect(derived.authorization_endpoint).toBe(`${issuer}/oauth/authorize`);
+        expect(derived.token_endpoint).toBe(`${issuer}/oauth/token`);
+        expect(mockLogger.info).toHaveBeenCalledWith('OAuth metadata fetch failed, using standard OAuth paths', { issuer });
+      });
+
+      it('logs discovery failures and uses standard paths when metadata fetch throws', async () => {
+        global.fetch = vi.fn().mockRejectedValue(new Error('network down'));
+
+        const derived = await (provider as any).deriveEndpointsFromIssuer({
+          issuer,
+        });
+
+        expect(derived.authorization_endpoint).toBe(`${issuer}/oauth/authorize`);
+        expect(derived.token_endpoint).toBe(`${issuer}/oauth/token`);
+        expect(mockLogger.debug).toHaveBeenCalledWith(
+          'OAuth metadata fetch failed',
+          expect.objectContaining({ issuerUrl: issuer, error: expect.any(Error) })
+        );
+        expect(mockLogger.info).toHaveBeenCalledWith('OAuth metadata fetch failed, using standard OAuth paths', { issuer });
+      });
+
+      it('keeps explicit endpoints when provided', async () => {
+        const derived = await (provider as any).deriveEndpointsFromIssuer({
+          issuer,
+          authorization_endpoint: 'https://custom.example.com/auth',
+          token_endpoint: 'https://custom.example.com/token',
+        });
+
+        expect(derived.authorization_endpoint).toBe('https://custom.example.com/auth');
+        expect(derived.token_endpoint).toBe('https://custom.example.com/token');
+        expect(mockLogger.info).not.toHaveBeenCalledWith('Deriving OAuth endpoints from issuer', expect.anything());
+      });
+    });
+
+    describe('resolveEnvVars', () => {
+      beforeEach(() => {
+        provider = new ExternalOAuthProvider(config, mockLogger);
+      });
+
+      it('substitutes environment variables when present', () => {
+        process.env.TEST_AUTH_URL = 'https://env-auth.example.com';
+        process.env.TEST_TOKEN_URL = 'https://env-token.example.com';
+        process.env.TEST_ISSUER = 'https://env-issuer.example.com';
+
+        const resolved = (provider as any).resolveEnvVars({
+          ...config,
+          issuer: '${env:TEST_ISSUER}',
+          authorization_endpoint: '${env:TEST_AUTH_URL}',
+          token_endpoint: '${env:TEST_TOKEN_URL}',
+        });
+
+        expect(resolved.authorization_endpoint).toBe('https://env-auth.example.com');
+        expect(resolved.token_endpoint).toBe('https://env-token.example.com');
+        expect(resolved.issuer).toBe('https://env-issuer.example.com');
+
+        delete process.env.TEST_AUTH_URL;
+        delete process.env.TEST_TOKEN_URL;
+        delete process.env.TEST_ISSUER;
+      });
+
+      it('throws when referenced environment variable is missing', () => {
+        expect(() => {
+          (provider as any).resolveEnvVars({
+            ...config,
+            authorization_endpoint: '${env:DOES_NOT_EXIST}',
+          });
+        }).toThrow('Environment variable DOES_NOT_EXIST not found');
+      });
+    });
+
     it('should resolve environment variables', () => {
       process.env.TEST_AUTH_URL = 'https://resolved.example.com/authorize';
       const envConfig: OAuthConfig = {
