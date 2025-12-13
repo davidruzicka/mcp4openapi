@@ -71,6 +71,58 @@ describe('ExternalOAuthProvider', () => {
       );
     });
 
+    describe('host allowlist matching', () => {
+      beforeEach(() => {
+        provider = new ExternalOAuthProvider(config, mockLogger);
+      });
+
+      it('matches wildcard subdomains and base domain', () => {
+        const matcher = (provider as any).matchRedirectHost.bind(provider);
+
+        expect(matcher('app.example.com', '*.example.com')).toBe(true);
+        expect(matcher('example.com', '*.example.com')).toBe(true);
+        expect(matcher('evil.com', '*.example.com')).toBe(false);
+      });
+
+      it('validates IPv4 and IPv6 CIDR ranges', () => {
+        const matcher = (provider as any).matchCIDR.bind(provider);
+
+        expect(matcher('192.168.1.5', '192.168.1.0/24')).toBe(true);
+        expect(matcher('10.0.0.1', '192.168.1.0/24')).toBe(false);
+        expect(matcher('2001:db8::1', '2001:db8::/32')).toBe(true);
+      });
+
+      it('rejects invalid CIDR masks with warnings', () => {
+        const matcher = (provider as any).matchCIDR.bind(provider);
+
+        expect(matcher('192.168.1.1', '192.168.1.0/99')).toBe(false);
+        expect(mockLogger.warn).toHaveBeenCalledWith(
+          'Invalid IPv4 CIDR mask bits for redirect host allowlist',
+          { cidr: '192.168.1.0/99' }
+        );
+      });
+
+      it('converts IPv4 to integer and validates octets', () => {
+        const toInt = (provider as any).ipv4ToInt.bind(provider);
+
+        expect(toInt('192.168.1.1')).toBe(3232235777);
+        expect(toInt('999.1.1.1')).toBeNull();
+        expect(toInt('10.0.0')).toBeNull();
+      });
+
+      it('handles IPv4-mapped IPv6 addresses', () => {
+        const toBigInt = (provider as any).ipv6ToBigInt.bind(provider);
+
+        const mapped = toBigInt('::ffff:192.168.0.1');
+        const canonical = toBigInt('0:0:0:0:0:ffff:c0a8:1');
+        const invalid = toBigInt('::ffff:999.1.1.1');
+
+        expect(mapped).toBeDefined();
+        expect(mapped).toEqual(canonical);
+        expect(invalid).toBeNull();
+      });
+    });
+
     describe('deriveEndpointsFromIssuer', () => {
       const issuer = 'https://issuer.example.com';
 
