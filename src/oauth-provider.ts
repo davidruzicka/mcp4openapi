@@ -14,6 +14,7 @@
  */
 
 import { randomUUID, createHash } from 'node:crypto';
+import { isIP } from 'node:net';
 import { Request, Response } from 'express';
 import type {
   OAuthServerProvider,
@@ -318,17 +319,8 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
       const allowedHosts = this.config.allowed_redirect_hosts || ['localhost', '127.0.0.1'];
       
       for (const allowed of allowedHosts) {
-        // Exact match
-        if (hostname === allowed) {
+        if (this.matchRedirectHost(hostname, allowed)) {
           return true;
-        }
-        
-        // Wildcard subdomain match (*.example.com)
-        if (allowed.startsWith('*.')) {
-          const domain = allowed.slice(2);
-          if (hostname === domain || hostname.endsWith('.' + domain)) {
-            return true;
-          }
         }
       }
       
@@ -337,6 +329,204 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
       // Invalid URL
       return false;
     }
+  }
+
+  /**
+   * Match hostname against allowlist entry
+   *
+   * Supports:
+   * - Exact hostnames
+   * - Wildcard subdomains (*.example.com)
+   * - IPv4 exact matches
+   * - IPv4 CIDR ranges (e.g., 10.0.0.0/8)
+   * - IPv6 exact matches
+   * - IPv6 CIDR ranges (e.g., 2001:db8::/32)
+   */
+  private matchRedirectHost(hostname: string, pattern: string): boolean {
+    const normalizedHost = this.stripIpv6Brackets(hostname);
+    const normalizedPattern = this.stripIpv6Brackets(pattern);
+
+    if (normalizedHost === normalizedPattern) {
+      return true;
+    }
+
+    if (normalizedPattern.startsWith('*.')) {
+      const domain = normalizedPattern.slice(2);
+      return normalizedHost === domain || normalizedHost.endsWith('.' + domain);
+    }
+
+    if (normalizedPattern.includes('/')) {
+      return this.matchCIDR(normalizedHost, normalizedPattern);
+    }
+
+    return false;
+  }
+
+  /**
+   * Check if IP address is within CIDR range
+   *
+   * Example: '192.168.1.50' matches '192.168.1.0/24'
+   *          '2001:db8::1' matches '2001:db8::/32'
+   */
+  private matchCIDR(ip: string, cidr: string): boolean {
+    const [rawRange, bits] = cidr.split('/');
+    const range = this.stripIpv6Brackets(rawRange);
+    const maskBits = parseInt(bits, 10);
+
+    if (isNaN(maskBits)) {
+      return false;
+    }
+
+    const ipVersion = isIP(ip);
+    const rangeVersion = isIP(range);
+    if (ipVersion === 0 || rangeVersion === 0 || ipVersion !== rangeVersion) {
+      return false;
+    }
+
+    if (ipVersion === 4) {
+      if (maskBits < 0 || maskBits > 32) {
+        this.logger.warn('Invalid IPv4 CIDR mask bits for redirect host allowlist', { cidr });
+        return false;
+      }
+      const ipInt = this.ipv4ToInt(ip);
+      const rangeInt = this.ipv4ToInt(range);
+
+      if (ipInt === null || rangeInt === null) {
+        return false;
+      }
+
+      const mask = (0xFFFFFFFF << (32 - maskBits)) >>> 0;
+      return (ipInt & mask) === (rangeInt & mask);
+    }
+
+    if (maskBits < 0 || maskBits > 128) {
+      this.logger.warn('Invalid IPv6 CIDR mask bits for redirect host allowlist', { cidr });
+      return false;
+    }
+
+    const ipInt = this.ipv6ToBigInt(ip);
+    const rangeInt = this.ipv6ToBigInt(range);
+
+    if (ipInt === null || rangeInt === null) {
+      return false;
+    }
+
+    const mask = this.ipv6Mask(maskBits);
+    return (ipInt & mask) === (rangeInt & mask);
+  }
+
+  /**
+   * Convert IPv4 address to 32-bit integer
+   */
+  private ipv4ToInt(ip: string): number | null {
+    const parts = ip.split('.');
+
+    if (parts.length !== 4) {
+      return null;
+    }
+
+    let result = 0;
+    for (let i = 0; i < 4; i++) {
+      const octet = parseInt(parts[i], 10);
+      if (isNaN(octet) || octet < 0 || octet > 255) {
+        return null;
+      }
+      result = (result << 8) | octet;
+    }
+
+    return result >>> 0;
+  }
+
+  /**
+   * Convert IPv6 address to 128-bit BigInt
+   */
+  private ipv6ToBigInt(ip: string): bigint | null {
+    const cleaned = this.stripIpv6Brackets(ip);
+
+    // Handle IPv4-mapped IPv6 (e.g., ::ffff:192.168.0.1)
+    let ipv4Tail: number | null = null;
+    let base = cleaned;
+    if (cleaned.includes('.')) {
+      const lastColon = cleaned.lastIndexOf(':');
+      if (lastColon === -1) return null;
+      const ipv4Part = cleaned.slice(lastColon + 1);
+      ipv4Tail = this.ipv4ToInt(ipv4Part);
+      if (ipv4Tail === null) return null;
+      base = cleaned.slice(0, lastColon);
+    }
+
+    const parts = base.split('::');
+    if (parts.length > 2) {
+      return null;
+    }
+
+    const head = parts[0] ? parts[0].split(':') : [];
+    const tail = parts.length === 2 && parts[1] ? parts[1].split(':') : [];
+
+    if (head.some(p => p === '') || tail.some(p => p === '')) {
+      return null;
+    }
+
+    const totalSegmentsNeeded = 8 - (ipv4Tail !== null ? 2 : 0);
+    let segments: number[] = [];
+
+    const parseHextets = (items: string[]): number[] | null => {
+      const result: number[] = [];
+      for (const part of items) {
+        const num = parseInt(part || '0', 16);
+        if (isNaN(num) || num < 0 || num > 0xFFFF) {
+          return null;
+        }
+        result.push(num);
+      }
+      return result;
+    };
+
+    const headVals = parseHextets(head);
+    const tailVals = parseHextets(tail);
+    if (!headVals || !tailVals) {
+      return null;
+    }
+
+    const missing = totalSegmentsNeeded - (headVals.length + tailVals.length);
+    if (missing < 0) {
+      return null;
+    }
+
+    segments = [...headVals, ...Array(missing).fill(0), ...tailVals];
+
+    if (segments.length !== totalSegmentsNeeded) {
+      return null;
+    }
+
+    if (ipv4Tail !== null) {
+      const high = (ipv4Tail >>> 16) & 0xFFFF;
+      const low = ipv4Tail & 0xFFFF;
+      segments.push(high, low);
+    }
+
+    if (segments.length !== 8) {
+      return null;
+    }
+
+    let value = 0n;
+    for (const part of segments) {
+      value = (value << 16n) + BigInt(part);
+    }
+
+    return value;
+  }
+
+  private ipv6Mask(maskBits: number): bigint {
+    if (maskBits === 0) {
+      return 0n;
+    }
+    const ones = (1n << BigInt(maskBits)) - 1n;
+    return BigInt.asUintN(128, ones << BigInt(128 - maskBits));
+  }
+
+  private stripIpv6Brackets(value: string): string {
+    return value.replace(/^\[/, '').replace(/\]$/, '');
   }
 
   /**

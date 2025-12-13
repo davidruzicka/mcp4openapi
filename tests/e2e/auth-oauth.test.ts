@@ -15,7 +15,7 @@ describe('E2E: OAuth 2.0 authentication', () => {
 
   const openapiSpecPath = path.resolve(process.cwd(), 'profiles/gitlab/openapi.yaml');
   // Use regular profile - OAuth profile requires actual OAuth config
-  const profilePath = path.resolve(process.cwd(), 'profiles/gitlab/developer-profile.json');
+  const profilePath = path.resolve(process.cwd(), 'profiles/gitlab/developer-profile-oauth.json');
 
   beforeAll(async () => {
     mockServer = await startStandaloneMockServer({

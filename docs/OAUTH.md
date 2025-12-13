@@ -327,6 +327,8 @@ If you need a different callback URL:
 
 **Important**: Update redirect URI in GitLab application settings to match. Native-app schemes (`cursor://…`, `vscode://…`) are supported - just add their host to `allowed_redirect_hosts` (or `MCP4_ALLOWED_ORIGINS`) so validation passes.
 
+Allowed redirect hosts accept exact hostnames, wildcard subdomains (`*.example.com`), IPv4 addresses, IPv4 CIDR ranges (e.g., `10.0.0.0/8`), and IPv6 addresses/CIDR ranges (e.g., `2001:db8::/32`) so you can allow whole internal networks without listing individual machines.
+
 ### Additional OAuth Endpoints
 
 Optional endpoints for advanced features:

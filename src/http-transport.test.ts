@@ -4,11 +4,11 @@
  * Tests MCP Specification 2025-03-26 Streamable HTTP transport
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import request from 'supertest';
 import type { Express } from 'express';
 import { HttpTransport } from './http-transport.js';
-import { ConsoleLogger, LogLevel } from './logger.js';
+import { ConsoleLogger, LogLevel, type Logger } from './logger.js';
 
 describe('HttpTransport', () => {
   let transport: HttpTransport;
@@ -33,6 +33,155 @@ describe('HttpTransport', () => {
 
   afterEach(async () => {
     await transport.stop();
+  });
+
+  describe('DNS rebinding protection with localhost host config', () => {
+    let localTransport: HttpTransport;
+    let localApp: Express;
+    let testLogger: Logger;
+
+    beforeEach(async () => {
+      testLogger = {
+        debug: vi.fn(),
+        info: vi.fn(),
+        warn: vi.fn(),
+        error: vi.fn(),
+      };
+
+      localTransport = new HttpTransport({
+        host: 'localhost',
+        port: 0,
+        sessionTimeoutMs: 1800000,
+        heartbeatEnabled: false,
+        heartbeatIntervalMs: 30000,
+        metricsEnabled: true,
+        metricsPath: '/metrics',
+      }, testLogger);
+
+      // Override metrics to make responses deterministic for assertions
+      (localTransport as any).metrics = {
+        getMetrics: vi.fn().mockResolvedValue('metric-output'),
+        recordHttpRequest: vi.fn(),
+      };
+
+      localApp = (localTransport as any).app;
+      localTransport.setMessageHandler(async () => ({ result: 'ok' }));
+    });
+
+    afterEach(async () => {
+      await localTransport.stop();
+    });
+
+    it('should reject mismatched Host header and emit warning', async () => {
+      const response = await request(localApp)
+        .get('/health')
+        .set('Host', 'malicious.example.com');
+
+      expect(response.status).toBe(403);
+      expect(response.body).toEqual({ error: 'Forbidden' });
+      expect(testLogger.warn).toHaveBeenCalledWith(
+        'DNS rebinding protection: invalid Host header',
+        expect.objectContaining({
+          hostHeader: 'malicious.example.com',
+          expected: expect.arrayContaining(['localhost', '127.0.0.1']),
+        })
+      );
+    });
+
+    it('should reject non-127.0.0.1 loopback variants with warning', async () => {
+      const response = await request(localApp)
+        .get('/metrics')
+        .set('Host', '127.0.0.2:5678');
+
+      expect(response.status).toBe(403);
+      expect(response.body).toEqual({ error: 'Forbidden' });
+      expect(testLogger.warn).toHaveBeenCalledWith(
+        'DNS rebinding protection: invalid Host header',
+        expect.objectContaining({
+          hostHeader: '127.0.0.2:5678',
+          expected: expect.arrayContaining(['localhost', '127.0.0.1']),
+        })
+      );
+    });
+
+    it('should allow localhost Host header and preserve responses/logs', async () => {
+      const healthResponse = await request(localApp)
+        .get('/health')
+        .set('Host', 'localhost');
+
+      expect(healthResponse.status).toBe(200);
+      expect(healthResponse.body).toMatchObject({ status: 'ok' });
+      expect(testLogger.warn).not.toHaveBeenCalledWith(
+        'DNS rebinding protection: invalid Host header',
+        expect.anything()
+      );
+      expect(testLogger.debug).toHaveBeenCalledWith(
+        'Outgoing JSON response',
+        expect.objectContaining({
+          method: 'GET',
+          url: '/health',
+          status: 200,
+          body: expect.objectContaining({ status: 'ok' }),
+        })
+      );
+
+      const metricsResponse = await request(localApp)
+        .get('/metrics')
+        .set('Host', 'localhost');
+
+      expect(metricsResponse.status).toBe(200);
+      expect(metricsResponse.text).toBe('metric-output');
+      expect(testLogger.debug).toHaveBeenCalledWith(
+        'Outgoing response',
+        expect.objectContaining({
+          method: 'GET',
+          url: '/metrics',
+          status: 200,
+          bodyPreview: expect.stringContaining('metric-output'),
+        })
+      );
+    });
+
+    it('should allow loopback IP Host header with port and retain logging', async () => {
+      const healthResponse = await request(localApp)
+        .get('/health')
+        .set('Host', '127.0.0.1:1234');
+
+      expect(healthResponse.status).toBe(200);
+      expect(healthResponse.body).toMatchObject({ status: 'ok' });
+
+      expect(testLogger.warn).not.toHaveBeenCalledWith(
+        'DNS rebinding protection: invalid Host header',
+        expect.anything()
+      );
+      expect(testLogger.warn).not.toHaveBeenCalled();
+
+      const metricsResponse = await request(localApp)
+        .get('/metrics')
+        .set('Host', '127.0.0.1:1234');
+
+      expect(metricsResponse.status).toBe(200);
+      expect(metricsResponse.text).toBe('metric-output');
+
+      expect(testLogger.debug).toHaveBeenCalledWith(
+        'Outgoing JSON response',
+        expect.objectContaining({
+          method: 'GET',
+          url: '/health',
+          status: 200,
+          body: expect.objectContaining({ status: 'ok' }),
+        })
+      );
+      expect(testLogger.debug).toHaveBeenCalledWith(
+        'Outgoing response',
+        expect.objectContaining({
+          method: 'GET',
+          url: '/metrics',
+          status: 200,
+          bodyPreview: expect.stringContaining('metric-output'),
+        })
+      );
+    });
   });
 
   describe('Security - Origin Validation', () => {
@@ -103,6 +252,8 @@ describe('HttpTransport', () => {
           '*.company.com',
           '192.168.1.0/24',
           '10.0.0.0/8',
+          '2001:db8::/32',
+          'fe80::1',
         ],
       };
 
@@ -182,6 +333,39 @@ describe('HttpTransport', () => {
       expect(response.status).toBe(200);
     });
 
+    it('should accept IPv6 exact host', async () => {
+      const response = await request(customApp)
+        .post('/mcp')
+        .set('Accept', 'application/json, text/event-stream')
+        .set('Origin', 'http://[fe80::1]')
+        .set('Host', 'api.test.com')
+        .send({ jsonrpc: '2.0', id: 1, method: 'initialize' });
+
+      expect(response.status).toBe(200);
+    });
+
+    it('should accept IPv6 CIDR range', async () => {
+      const response = await request(customApp)
+        .post('/mcp')
+        .set('Accept', 'application/json, text/event-stream')
+        .set('Origin', 'http://[2001:db8:abcd::123]')
+        .set('Host', 'api.test.com')
+        .send({ jsonrpc: '2.0', id: 1, method: 'initialize' });
+
+      expect(response.status).toBe(200);
+    });
+
+    it('should reject IPv6 outside CIDR range', async () => {
+      const response = await request(customApp)
+        .post('/mcp')
+        .set('Accept', 'application/json, text/event-stream')
+        .set('Origin', 'http://[2001:dead::1]')
+        .set('Host', 'api.test.com')
+        .send({ jsonrpc: '2.0', id: 1, method: 'initialize' });
+
+      expect(response.status).toBe(403);
+    });
+
     it('should reject IP outside CIDR range', async () => {
       const response = await request(customApp)
         .post('/mcp')
@@ -219,6 +403,77 @@ describe('HttpTransport', () => {
         .send({ jsonrpc: '2.0', id: 1, method: 'initialize' });
 
       expect(response.status).toBe(403);
+    });
+  });
+
+  describe('IP parsing and CIDR matching', () => {
+    let ipTransport: HttpTransport;
+    let ipLogger: Logger;
+
+    beforeEach(() => {
+      ipLogger = {
+        debug: vi.fn(),
+        info: vi.fn(),
+        warn: vi.fn(),
+        error: vi.fn(),
+      };
+
+      ipTransport = new HttpTransport({
+        host: '127.0.0.1',
+        port: 0,
+        sessionTimeoutMs: 1800000,
+        heartbeatEnabled: false,
+        heartbeatIntervalMs: 30000,
+        metricsEnabled: false,
+        metricsPath: '/metrics',
+      }, ipLogger);
+    });
+
+    afterEach(async () => {
+      await ipTransport.stop();
+    });
+
+    it('rejects IPv4 CIDR ranges with invalid mask bits', () => {
+      const result = (ipTransport as any).matchCIDR('192.168.1.10', '192.168.1.0/40');
+
+      expect(result).toBe(false);
+      expect(ipLogger.warn).toHaveBeenCalledWith('Invalid CIDR mask bits', { cidr: '192.168.1.0/40' });
+    });
+
+    it('rejects IPv6 CIDR ranges with invalid mask bits', () => {
+      (ipLogger.warn as ReturnType<typeof vi.fn>).mockReset();
+
+      const result = (ipTransport as any).matchCIDR('2001:db8::1', '2001:db8::/129');
+
+      expect(result).toBe(false);
+      expect(ipLogger.warn).toHaveBeenCalledWith('Invalid IPv6 CIDR mask bits', { cidr: '2001:db8::/129' });
+    });
+
+    it('rejects CIDR when IP version does not match range', () => {
+      (ipLogger.warn as ReturnType<typeof vi.fn>).mockReset();
+
+      const result = (ipTransport as any).matchCIDR('10.0.0.1', '2001:db8::/32');
+
+      expect(result).toBe(false);
+      expect(ipLogger.warn).not.toHaveBeenCalled();
+    });
+
+    it('rejects IPv4 addresses with octets out of range', () => {
+      const ipv4Value = (ipTransport as any).ipv4ToInt('256.0.0.1');
+
+      expect(ipv4Value).toBeNull();
+    });
+
+    it('rejects malformed IPv6 addresses with multiple compression markers', () => {
+      const ipv6Value = (ipTransport as any).ipv6ToBigInt('2001::db8::1');
+
+      expect(ipv6Value).toBeNull();
+    });
+
+    it('parses IPv4-mapped IPv6 addresses into the correct bigint', () => {
+      const ipv6Value = (ipTransport as any).ipv6ToBigInt('::ffff:192.168.0.1');
+
+      expect(ipv6Value).toBe(281473913978881n);
     });
   });
 
