@@ -102,6 +102,24 @@ describe('ExternalOAuthProvider', () => {
         );
       });
 
+      it('rejects CIDR ranges with mismatched versions or non-numeric masks', () => {
+        const matcher = (provider as any).matchCIDR.bind(provider);
+
+        expect(matcher('192.168.1.1', '2001:db8::/32')).toBe(false);
+        expect(matcher('::1', '10.0.0.0/8')).toBe(false);
+        expect(matcher('10.0.0.1', '10.0.0.0/not-a-number')).toBe(false);
+      });
+
+      it('logs warning for invalid IPv6 CIDR mask bits', () => {
+        const matcher = (provider as any).matchCIDR.bind(provider);
+
+        expect(matcher('2001:db8::1', '2001:db8::/200')).toBe(false);
+        expect(mockLogger.warn).toHaveBeenCalledWith(
+          'Invalid IPv6 CIDR mask bits for redirect host allowlist',
+          { cidr: '2001:db8::/200' }
+        );
+      });
+
       it('converts IPv4 to integer and validates octets', () => {
         const toInt = (provider as any).ipv4ToInt.bind(provider);
 
