@@ -54,7 +54,7 @@ export MCP4_API_BASE_URL=https://api.example.com
 # Note: No MCP4_API_TOKEN in environment
 
 # Configure allowed origins (for corporate networks)
-export MCP4_ALLOWED_ORIGINS="example.com,*.company.com,192.168.1.0/24,10.0.0.0/8"
+export MCP4_ALLOWED_ORIGINS="example.com,*.company.com,192.168.1.0/24,10.0.0.0/8,2001:db8::/32"
 
 # Optional: Enable heartbeat for proxy keepalive
 export MCP4_HEARTBEAT_ENABLED=true
@@ -447,9 +447,11 @@ export MCP4_ALLOWED_ORIGINS="*.company.com"  # Matches: api.company.com, web.com
 # IPv4 CIDR range (for corporate networks)
 export MCP4_ALLOWED_ORIGINS="192.168.1.0/24"  # Matches: 192.168.1.1 - 192.168.1.254
 export MCP4_ALLOWED_ORIGINS="10.0.0.0/8"      # Matches: 10.0.0.0 - 10.255.255.255
+# IPv6 CIDR range
+export MCP4_ALLOWED_ORIGINS="2001:db8::/32"   # Matches: 2001:db8:: - 2001:db8:ffff:ffff:ffff:ffff:ffff:ffff
 
 # Combination (comma-separated)
-export MCP4_ALLOWED_ORIGINS="example.com,*.company.com,192.168.1.0/24,10.0.0.0/8"
+export MCP4_ALLOWED_ORIGINS="example.com,*.company.com,192.168.1.0/24,10.0.0.0/8,2001:db8::/32"
 ```
 
 **Examples**:
@@ -467,8 +469,11 @@ MCP4_ALLOWED_ORIGINS="192.168.1.0/24,192.168.2.0/24,192.168.3.0/24"
 # Allow entire corporate /8 network
 MCP4_ALLOWED_ORIGINS="10.0.0.0/8"
 
+# Allow IPv6 segment
+MCP4_ALLOWED_ORIGINS="2001:db8::/32"
+
 # Mixed: public domains + private networks
-MCP4_ALLOWED_ORIGINS="example.com,*.company.com,192.168.0.0/16,10.0.0.0/8"
+MCP4_ALLOWED_ORIGINS="example.com,*.company.com,192.168.0.0/16,10.0.0.0/8,2001:db8::/32"
 ```
 
 **Skip**: Requests to `localhost` hostname always allowed without additional configuration
@@ -796,4 +801,3 @@ See [EXAMPLE-GITLAB.md](../EXAMPLE-GITLAB.md) for complete curl-based examples w
 - [README.md](../README.md) - Project overview
 - [PROFILE-GUIDE.md](./PROFILE-GUIDE.md) - Creating profiles
 - [MCP Specification](https://modelcontextprotocol.io/specification/2025-03-26/basic/transports) - Official spec
-
