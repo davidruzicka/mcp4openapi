@@ -635,6 +635,59 @@ describe('MCPServer', () => {
     });
   });
 
+  describe('executeProxyDownload', () => {
+    let localServer: MCPServer;
+
+    beforeEach(() => {
+      localServer = new MCPServer();
+    });
+
+    it('should throw OperationNotFoundError when metadata endpoint is missing', async () => {
+      (localServer as any).parser = {
+        getOperation: vi.fn(() => undefined),
+      };
+
+      await expect(
+        (localServer as any).executeProxyDownload(
+          { type: 'proxy_download', metadata_endpoint: 'missing-meta' },
+          {},
+          undefined
+        )
+      ).rejects.toBeInstanceOf(OperationNotFoundError);
+    });
+
+    it('should throw OperationNotFoundError when download endpoint is missing', async () => {
+      const metadataOp = {
+        operationId: 'meta-op',
+        method: 'GET',
+        path: '/projects/{id}/jobs/{job_id}',
+        parameters: [],
+      };
+
+      (localServer as any).parser = {
+        getOperation: vi.fn((operationId: string) => {
+          if (operationId === 'meta-op') {
+            return metadataOp;
+          }
+          return undefined;
+        }),
+      };
+      (localServer as any).resolvePath = vi.fn(() => '/projects/1/jobs/2');
+
+      await expect(
+        (localServer as any).executeProxyDownload(
+          {
+            type: 'proxy_download',
+            metadata_endpoint: 'meta-op',
+            download_endpoint: 'missing-download',
+          },
+          { project_id: 'my-org/my-project', job_id: 2 },
+          undefined
+        )
+      ).rejects.toBeInstanceOf(OperationNotFoundError);
+    });
+  });
+
   describe('handleOtherRequest', () => {
     let server: MCPServer;
 

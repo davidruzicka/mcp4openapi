@@ -11,7 +11,13 @@
     "job_id": ["job_id"],
     "merge_request_iid": ["iid", "mr_iid"],
     "issue_iid": ["iid"],
-    "note_id": ["comment_id"]
+    "note_id": ["comment_id"],
+    "file_path": ["path", "filepath"],
+    "pipeline_id": ["pipeline"],
+    "discussion_id": ["discussion"],
+    "hook_id": ["webhook_id"],
+    "snippet_id": ["snippet"],
+    "tag_name": ["tag"]
   },
   
   "tools": [
@@ -69,6 +75,295 @@
     },
 
     {
+      "name": "manage_pipelines_jobs",
+      "description": "Run and inspect pipelines/jobs. Actions: 'run_pipeline', 'get_pipeline', 'get_job', 'retry_job', 'cancel_job', 'play_job', 'download_job_artifacts' (proxy download).",
+      "metadata_params": ["action", "project_id", "pipeline_id", "job_id"],
+      "operations": {
+        "run_pipeline": "postApiV4ProjectsIdPipeline",
+        "get_pipeline": "getApiV4ProjectsIdPipelinesPipelineId",
+        "get_job": "getApiV4ProjectsIdJobsJobId",
+        "retry_job": "postApiV4ProjectsIdJobsJobIdRetry",
+        "play_job": "triggerManualJob",
+        "cancel_job": "postApiV4ProjectsIdJobsJobIdCancel",
+        "download_job_artifacts": {
+          "type": "proxy_download",
+          "metadata_endpoint": "getApiV4ProjectsIdJobsJobId",
+          "download_endpoint": "getApiV4ProjectsIdJobsJobIdArtifacts"
+        }
+      },
+      "response_fields": {
+        "run_pipeline": ["id", "status", "ref", "web_url"],
+        "get_pipeline": ["id", "status", "ref", "web_url"],
+        "get_job": ["id", "status", "stage", "name", "ref", "web_url"]
+      },
+      "parameters": {
+        "action": {
+          "type": "string",
+          "enum": ["run_pipeline", "get_pipeline", "get_job", "retry_job", "cancel_job", "play_job", "download_job_artifacts"],
+          "description": "Pipeline/job action to perform",
+          "required": true
+        },
+        "project_id": {
+          "type": "string",
+          "description": "Project ID (numeric or URL-encoded path)",
+          "required": true
+        },
+        "pipeline_id": {
+          "type": "integer",
+          "description": "Pipeline ID",
+          "required_for": ["get_pipeline"]
+        },
+        "job_id": {
+          "type": "integer",
+          "description": "Job ID",
+          "required_for": ["get_job", "retry_job", "cancel_job", "play_job", "download_job_artifacts"]
+        },
+        "ref": {
+          "type": "string",
+          "description": "Branch or tag to run pipeline on",
+          "required_for": ["run_pipeline"]
+        }
+      }
+    },
+
+    {
+      "name": "manage_labels_milestones",
+      "description": "Manage project labels and milestones. Actions: 'list_labels', 'create_label', 'delete_label', 'list_milestones', 'create_milestone', 'update_milestone'.",
+      "metadata_params": ["action", "project_id", "milestone_id"],
+      "operations": {
+        "list_labels": "getApiV4ProjectsIdLabels",
+        "create_label": "postApiV4ProjectsIdLabels",
+        "delete_label": "deleteApiV4ProjectsIdLabels",
+        "list_milestones": "getApiV4ProjectsIdMilestones",
+        "create_milestone": "postApiV4ProjectsIdMilestones",
+        "update_milestone": "putApiV4ProjectsIdMilestonesMilestoneId"
+      },
+      "response_fields": {
+        "list_labels": ["id", "name", "color", "description"],
+        "create_label": ["id", "name", "color", "description"],
+        "list_milestones": ["id", "iid", "title", "state"],
+        "create_milestone": ["id", "iid", "title", "state"],
+        "update_milestone": ["id", "iid", "title", "state"]
+      },
+      "parameters": {
+        "action": {
+          "type": "string",
+          "enum": ["list_labels", "create_label", "delete_label", "list_milestones", "create_milestone", "update_milestone"],
+          "description": "Action to perform",
+          "required": true
+        },
+        "project_id": {
+          "type": "string",
+          "description": "Project ID",
+          "required": true
+        },
+        "name": {
+          "type": "string",
+          "description": "Label name",
+          "required_for": ["create_label", "delete_label"]
+        },
+        "color": {
+          "type": "string",
+          "description": "Label color in hex",
+          "required_for": ["create_label"]
+        },
+        "title": {
+          "type": "string",
+          "description": "Milestone title",
+          "required_for": ["create_milestone", "update_milestone"]
+        },
+        "milestone_id": {
+          "type": "integer",
+          "description": "Milestone ID",
+          "required_for": ["update_milestone"]
+        },
+        "state_event": {
+          "type": "string",
+          "enum": ["close", "activate"],
+          "description": "Change milestone state",
+          "required_for": []
+        }
+      }
+    },
+
+    {
+      "name": "manage_releases_tags",
+      "description": "Manage releases and tags. Actions: 'list_releases', 'create_release', 'list_tags', 'create_tag', 'delete_tag'.",
+      "metadata_params": ["action", "project_id", "tag_name"],
+      "operations": {
+        "list_releases": "getApiV4ProjectsIdReleases",
+        "create_release": "postApiV4ProjectsIdReleases",
+        "list_tags": "getApiV4ProjectsIdRepositoryTags",
+        "create_tag": "postApiV4ProjectsIdRepositoryTags",
+        "delete_tag": "deleteApiV4ProjectsIdRepositoryTagsTagName"
+      },
+      "response_fields": {
+        "list_releases": ["name", "tag_name", "description", "released_at"],
+        "create_release": ["name", "tag_name", "description", "released_at"],
+        "list_tags": ["name", "message", "target"],
+        "create_tag": ["name", "message", "target"]
+      },
+      "parameters": {
+        "action": {
+          "type": "string",
+          "enum": ["list_releases", "create_release", "list_tags", "create_tag", "delete_tag"],
+          "description": "Action to perform",
+          "required": true
+        },
+        "project_id": {
+          "type": "string",
+          "description": "Project ID",
+          "required": true
+        },
+        "tag_name": {
+          "type": "string",
+          "description": "Tag name",
+          "required_for": ["create_release", "create_tag", "delete_tag"]
+        },
+        "name": {
+          "type": "string",
+          "description": "Release or tag name",
+          "required_for": ["create_release"]
+        },
+        "ref": {
+          "type": "string",
+          "description": "Ref to create tag from",
+          "required_for": ["create_tag"]
+        },
+        "description": {
+          "type": "string",
+          "description": "Release description"
+        }
+      }
+    },
+
+    {
+      "name": "manage_project_members",
+      "description": "Manage project members. Actions: 'list_members', 'add_member', 'remove_member'.",
+      "metadata_params": ["action", "project_id", "user_id"],
+      "operations": {
+        "list_members": "getApiV4ProjectsIdMembers",
+        "add_member": "postApiV4ProjectsIdMembers",
+        "remove_member": "deleteApiV4ProjectsIdMembersUserId"
+      },
+      "response_fields": {
+        "list_members": ["id", "username", "name", "access_level"],
+        "add_member": ["id", "username", "name", "access_level"]
+      },
+      "parameters": {
+        "action": {
+          "type": "string",
+          "enum": ["list_members", "add_member", "remove_member"],
+          "description": "Action to perform",
+          "required": true
+        },
+        "project_id": {
+          "type": "string",
+          "description": "Project ID",
+          "required": true
+        },
+        "user_id": {
+          "type": "integer",
+          "description": "User ID to add or remove",
+          "required_for": ["add_member", "remove_member"]
+        },
+        "access_level": {
+          "type": "integer",
+          "description": "Access level (10=Guest, 20=Reporter, 30=Developer, 40=Maintainer, 50=Owner)",
+          "required_for": ["add_member"],
+          "default": 30
+        }
+      }
+    },
+
+    {
+      "name": "manage_project_hooks",
+      "description": "Manage project webhooks. Actions: 'list_hooks', 'create_hook', 'delete_hook'.",
+      "metadata_params": ["action", "project_id", "hook_id"],
+      "operations": {
+        "list_hooks": "getApiV4ProjectsIdHooks",
+        "create_hook": "postApiV4ProjectsIdHooks",
+        "delete_hook": "deleteApiV4ProjectsIdHooksHookId"
+      },
+      "response_fields": {
+        "list_hooks": ["id", "url", "push_events", "issues_events", "merge_requests_events"],
+        "create_hook": ["id", "url", "push_events", "issues_events", "merge_requests_events"]
+      },
+      "parameters": {
+        "action": {
+          "type": "string",
+          "enum": ["list_hooks", "create_hook", "delete_hook"],
+          "description": "Action to perform",
+          "required": true
+        },
+        "project_id": {
+          "type": "string",
+          "description": "Project ID",
+          "required": true
+        },
+        "hook_id": {
+          "type": "integer",
+          "description": "Hook ID",
+          "required_for": ["delete_hook"]
+        },
+        "url": {
+          "type": "string",
+          "description": "Hook URL",
+          "required_for": ["create_hook"]
+        },
+        "push_events": {
+          "type": "boolean",
+          "description": "Enable push events"
+        },
+        "issues_events": {
+          "type": "boolean",
+          "description": "Enable issues events"
+        },
+        "merge_requests_events": {
+          "type": "boolean",
+          "description": "Enable merge requests events"
+        }
+      }
+    },
+
+    {
+      "name": "manage_snippets",
+      "description": "Read project snippets and download raw content via proxy. Actions: 'list_snippets', 'get_snippet', 'download_snippet'.",
+      "metadata_params": ["action", "project_id", "snippet_id"],
+      "operations": {
+        "list_snippets": "getApiV4ProjectsIdSnippets",
+        "get_snippet": "getApiV4ProjectsIdSnippetsSnippetId",
+        "download_snippet": {
+          "type": "proxy_download",
+          "metadata_endpoint": "getApiV4ProjectsIdSnippetsSnippetId",
+          "download_endpoint": "getApiV4ProjectsIdSnippetsSnippetIdRaw"
+        }
+      },
+      "response_fields": {
+        "list_snippets": ["id", "title", "file_name", "visibility"],
+        "get_snippet": ["id", "title", "file_name", "description", "visibility"]
+      },
+      "parameters": {
+        "action": {
+          "type": "string",
+          "enum": ["list_snippets", "get_snippet", "download_snippet"],
+          "description": "Action to perform",
+          "required": true
+        },
+        "project_id": {
+          "type": "string",
+          "description": "Project ID",
+          "required": true
+        },
+        "snippet_id": {
+          "type": "integer",
+          "description": "Snippet ID",
+          "required_for": ["get_snippet", "download_snippet"]
+        }
+      }
+    },
+
+    {
       "name": "manage_projects",
       "description": "Work with GitLab projects. Actions: 'list' (all projects), 'get' (project details), 'search' (search projects). Use 'list' to discover projects, 'search' to find specific ones.",
       "metadata_params": ["action", "project_id"],
@@ -119,8 +414,8 @@
 
     {
       "name": "manage_merge_requests",
-      "description": "Work with merge requests. Actions: 'list' (all MRs in project), 'get' (single MR details), 'create' (create new MR), 'update' (update MR), 'delete' (delete MR - admins only), 'list_notes' (get all comments), 'create_note' (add comment), 'update_note' (edit comment), 'delete_note' (remove comment). Use 'list' to see all merge requests, filter by state (opened, closed, merged, all).",
-      "metadata_params": ["action", "project_id", "merge_request_iid", "note_id"],
+      "description": "Work with merge requests. Actions: 'list' (all MRs in project), 'get' (single MR details), 'create' (create new MR), 'update' (update MR), 'delete' (delete MR - admins only), 'list_notes' (get all comments), 'get_note' (single comment), 'create_note' (add comment), 'update_note' (edit comment), 'delete_note' (remove comment), 'download_note_attachment' (download note attachment via proxy), 'list_discussions', 'get_discussion', 'create_discussion', 'delete_discussion', 'resolve_discussion', 'unresolve_discussion', 'get_approvals', 'approve', 'unapprove', 'get_changes' (file diffs), 'list_versions' (list diff versions), 'get_version' (specific diff version). Use 'list' to see all merge requests, filter by state (opened, closed, merged, all).",
+      "metadata_params": ["action", "project_id", "merge_request_iid", "note_id", "discussion_id", "version_id"],
       "operations": {
         "list": "getApiV4ProjectsIdMergeRequests",
         "get": "getApiV4ProjectsIdMergeRequestsMergeRequestIid",
@@ -128,22 +423,52 @@
         "update": "putApiV4ProjectsIdMergeRequestsMergeRequestIid",
         "delete": "deleteApiV4ProjectsIdMergeRequestsMergeRequestIid",
         "list_notes": "getApiV4ProjectsIdMergeRequestsMergeRequestIidNotes",
+        "get_note": "getApiV4ProjectsIdMergeRequestsMergeRequestIidNotesNoteId",
         "create_note": "postApiV4ProjectsIdMergeRequestsMergeRequestIidNotes",
         "update_note": "putApiV4ProjectsIdMergeRequestsMergeRequestIidNotesNoteId",
-        "delete_note": "deleteApiV4ProjectsIdMergeRequestsMergeRequestIidNotesNoteId"
+        "delete_note": "deleteApiV4ProjectsIdMergeRequestsMergeRequestIidNotesNoteId",
+        "download_note_attachment": {
+          "type": "proxy_download",
+          "metadata_endpoint": "getApiV4ProjectsIdMergeRequestsMergeRequestIidNotesNoteId",
+          "url_field": "attachment"
+        },
+        "list_discussions": "getApiV4ProjectsIdMergeRequestsMergeRequestIidDiscussions",
+        "create_discussion": "postApiV4ProjectsIdMergeRequestsMergeRequestIidDiscussions",
+        "get_discussion": "getApiV4ProjectsIdMergeRequestsMergeRequestIidDiscussionsDiscussionId",
+        "delete_discussion": "deleteApiV4ProjectsIdMergeRequestsMergeRequestIidDiscussionsDiscussionId",
+        "resolve_discussion": "putApiV4ProjectsIdMergeRequestsMergeRequestIidDiscussionsDiscussionIdResolve",
+        "unresolve_discussion": "putApiV4ProjectsIdMergeRequestsMergeRequestIidDiscussionsDiscussionIdResolve",
+        "get_approvals": "getApiV4ProjectsIdMergeRequestsMergeRequestIidApprovals",
+        "approve": "postApiV4ProjectsIdMergeRequestsMergeRequestIidApprove",
+        "unapprove": "postApiV4ProjectsIdMergeRequestsMergeRequestIidUnapprove",
+        "get_changes": "getApiV4ProjectsIdMergeRequestsMergeRequestIidChanges",
+        "list_versions": "getApiV4ProjectsIdMergeRequestsMergeRequestIidVersions",
+        "get_version": "getApiV4ProjectsIdMergeRequestsMergeRequestIidVersionsVersionId"
       },
       "response_fields": {
         "list": ["id", "iid", "title", "description", "state", "web_url", "author", "created_at", "updated_at"],
         "create": ["id", "iid", "title", "description", "state", "web_url", "author", "created_at"],
         "update": ["id", "iid", "title", "description", "state", "web_url", "author", "created_at", "updated_at"],
         "list_notes": ["id", "body", "author", "created_at", "updated_at", "system", "confidential"],
+        "get_note": ["id", "body", "author", "created_at", "updated_at", "system", "confidential", "attachment"],
         "create_note": ["id", "body", "author", "created_at", "system", "confidential"],
-        "update_note": ["id", "body", "author", "created_at", "updated_at", "system", "confidential"]
+        "update_note": ["id", "body", "author", "created_at", "updated_at", "system", "confidential"],
+        "list_discussions": ["id", "notes", "resolved"],
+        "get_discussion": ["id", "notes", "resolved"],
+        "create_discussion": ["id", "notes", "resolved"],
+        "resolve_discussion": ["id", "notes", "resolved"],
+        "unresolve_discussion": ["id", "notes", "resolved"],
+        "get_approvals": ["approvals_required", "approvals_left", "approved_by"],
+        "approve": ["approvals_required", "approvals_left", "approved_by"],
+        "unapprove": ["approvals_required", "approvals_left", "approved_by"],
+        "get_changes": ["id", "iid", "title", "state", "changes"],
+        "list_versions": ["id", "short_commit_id", "created_at", "real_size", "commits_count", "head_commit_sha", "base_commit_sha", "start_commit_sha"],
+        "get_version": ["id", "head_commit_sha", "base_commit_sha", "start_commit_sha", "real_size", "created_at", "diffs"]
       },
       "parameters": {
         "action": {
           "type": "string",
-          "enum": ["list", "get", "create", "update", "delete", "list_notes", "create_note", "update_note", "delete_note"],
+          "enum": ["list", "get", "create", "update", "delete", "list_notes", "get_note", "create_note", "update_note", "delete_note", "download_note_attachment", "list_discussions", "get_discussion", "create_discussion", "delete_discussion", "resolve_discussion", "unresolve_discussion", "get_approvals", "approve", "unapprove", "get_changes", "list_versions", "get_version"],
           "description": "Action to perform",
           "required": true
         },
@@ -156,7 +481,17 @@
         "merge_request_iid": {
           "type": "integer",
           "description": "The internal ID of the merge request",
-          "required_for": ["get", "update", "delete", "list_notes", "create_note", "update_note", "delete_note"]
+          "required_for": ["get", "update", "delete", "list_notes", "get_note", "create_note", "update_note", "delete_note", "download_note_attachment", "list_discussions", "get_discussion", "create_discussion", "delete_discussion", "resolve_discussion", "unresolve_discussion", "get_approvals", "approve", "unapprove", "get_changes", "list_versions", "get_version"]
+        },
+        "discussion_id": {
+          "type": "string",
+          "description": "The ID of the discussion",
+          "required_for": ["get_discussion", "delete_discussion", "resolve_discussion", "unresolve_discussion"]
+        },
+        "version_id": {
+          "type": "integer",
+          "description": "The ID of the merge request version",
+          "required_for": ["get_version"]
         },
         "source_branch": {
           "type": "string",
@@ -266,12 +601,12 @@
         "note_id": {
           "type": "integer",
           "description": "The ID of the note",
-          "required_for": ["update_note", "delete_note"]
+          "required_for": ["update_note", "delete_note", "download_note_attachment"]
         },
         "body": {
           "type": "string",
-          "description": "The content of the note",
-          "required_for": ["create_note", "update_note"],
+          "description": "The content of the note or discussion",
+          "required_for": ["create_note", "update_note", "create_discussion"],
           "minLength": 1,
           "example": "This looks good to me!"
         },
@@ -565,6 +900,44 @@
     },
 
     {
+      "name": "repository_files",
+      "description": "Fetch repository file contents. Actions: 'get_file' (metadata + base64 content) and 'get_raw' (raw content as text/binary). Use 'get_file' when you need encoding and metadata, 'get_raw' for direct file contents.",
+      "metadata_params": ["action", "project_id", "file_path"],
+      "operations": {
+        "get_file": "getApiV4ProjectsIdRepositoryFilesFilePath",
+        "get_raw": "getApiV4ProjectsIdRepositoryFilesFilePathRaw"
+      },
+      "response_fields": {
+        "get_file": ["file_name", "file_path", "size", "encoding", "content", "ref", "blob_id", "commit_id", "last_commit_id"]
+      },
+      "parameters": {
+        "action": {
+          "type": "string",
+          "enum": ["get_file", "get_raw"],
+          "description": "Action to perform",
+          "required": true
+        },
+        "project_id": {
+          "type": "string",
+          "description": "Project ID. Use numeric ID (e.g. '123') or URL-encoded path (e.g. 'group%2Fproject').",
+          "required": true,
+          "example": "123"
+        },
+        "file_path": {
+          "type": "string",
+          "description": "URL-encoded full path to the file, e.g., 'src%2Findex.js'. Use %2F instead of '/'.",
+          "required": true
+        },
+        "ref": {
+          "type": "string",
+          "description": "Branch name, tag, or commit SHA to read from",
+          "required": true,
+          "example": "main"
+        }
+      }
+    },
+
+    {
       "name": "manage_access_requests",
       "description": "Manage access requests for projects or groups. Actions: 'list' (pending requests), 'approve' (grant access with access_level), 'deny' (reject request), 'request' (request access as current user). Use 'list' to see who requested access, 'approve' to grant it with specified access level (10=Guest, 20=Reporter, 30=Developer, 40=Maintainer, 50=Owner).",
       "operations": {
@@ -626,34 +999,6 @@
           "type": "array",
           "items": { "type": "string" },
           "description": "Filter by job status (can specify multiple)"
-        }
-      }
-    },
-
-    {
-      "name": "manage_job",
-      "description": "Manage a specific CI/CD job. Actions: 'get' (fetch job details, logs, and timing), 'play' (trigger a manual/delayed job to run immediately). Use 'get' to see job status and output, 'play' to run jobs in 'manual' state.",
-      "operations": {
-        "get": "getSingleJob",
-        "play": "triggerManualJob"
-      },
-      "parameters": {
-        "project_id": {
-          "type": "string",
-          "description": "Project ID. Use numeric ID (e.g. '123') or URL-encoded path (e.g. 'group%2Fproject').",
-          "required": true,
-          "example": "123"
-        },
-        "action": {
-          "type": "string",
-          "enum": ["get", "play"],
-          "description": "Job operation to perform",
-          "required": true
-        },
-        "job_id": {
-          "type": "integer",
-          "description": "The numeric job ID (not job name)",
-          "required": true
         }
       }
     }
@@ -718,4 +1063,3 @@
     }
   }
 }
-

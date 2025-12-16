@@ -199,24 +199,15 @@ Example:
 }
 ```
 
-### 9. manage_job
+### 9. manage_pipelines_jobs
 
-Manage a specific CI/CD job (get details, play manual job).
-
-Example - get job details:
-```json
-{
-  "project_id": "123",
-  "action": "get",
-  "job_id": 1234
-}
-```
+Run and inspect pipelines/jobs (run, inspect, retry/cancel, play manual jobs, download artifacts).
 
 Example - trigger manual job:
 ```json
 {
   "project_id": "123",
-  "action": "play",
+  "action": "play_job",
   "job_id": 1234
 }
 ```
@@ -246,7 +237,7 @@ Each tool groups related operations:
 - `manage_branches`: 7 operations (list, get, create, delete, protect, unprotect, exists)
 - `manage_access_requests`: 8 operations (list/approve/deny/request for project/group)
 - `list_project_jobs`: 1 operation with filtering
-- `manage_job`: 2 operations (get, play)
+- `manage_pipelines_jobs`: 7 operations (run, get pipeline, get job, retry, cancel, play job, download artifacts)
 
 Total: 37+ operations aggregated into 9 tools.
 

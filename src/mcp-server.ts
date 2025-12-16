@@ -640,7 +640,20 @@ export class MCPServer {
     }
 
     // Build path for metadata endpoint
-    const path = this.resolvePath(metadataOp.path, args);
+    const metadataPath = this.resolvePath(metadataOp.path, args);
+    const metadataMethod = metadataOp.method;
+
+    let directDownloadRequest: { path: string; method: string } | undefined;
+    if (operation.download_endpoint) {
+      const downloadOp = this.parser.getOperation(operation.download_endpoint);
+      if (!downloadOp) {
+        throw new OperationNotFoundError(operation.download_endpoint);
+      }
+      directDownloadRequest = {
+        path: this.resolvePath(downloadOp.path, args),
+        method: downloadOp.method,
+      };
+    }
     
     // Get auth credentials for download
     const httpClient = await this.getHttpClientForSession(sessionId);
@@ -648,7 +661,12 @@ export class MCPServer {
 
     // Execute proxy download
     const proxyExecutor = new ProxyDownloadExecutor(httpClient);
-    const result = await proxyExecutor.execute(operation, path, authCredentials);
+    const result = await proxyExecutor.execute(
+      operation,
+      { path: metadataPath, method: metadataMethod },
+      authCredentials,
+      directDownloadRequest
+    );
 
     this.logger.debug('Proxy download completed', {
       fileName: result.fileName,
@@ -1127,4 +1145,3 @@ export class MCPServer {
     }
   }
 }
-
