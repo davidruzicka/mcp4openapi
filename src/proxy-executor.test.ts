@@ -115,6 +115,49 @@ describe('ProxyDownloadExecutor', () => {
     );
   });
 
+  it('should enforce MIME whitelist for direct download responses', async () => {
+    mockHttpClient.request.mockResolvedValue({
+      status: 200,
+      headers: {},
+      body: {
+        id: 1234,
+        artifacts_file: {
+          filename: 'job-artifacts.zip',
+          size: 1024,
+        },
+      },
+    });
+
+    const mockBinary = new Uint8Array([0x00, 0x01]);
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      headers: new Headers({
+        'content-length': String(mockBinary.byteLength),
+        'content-type': 'application/zip',
+      }),
+      arrayBuffer: () => Promise.resolve(mockBinary.buffer),
+    });
+
+    const executor = new ProxyDownloadExecutor(mockHttpClient as any);
+    const operation: ProxyDownloadOperation = {
+      type: 'proxy_download',
+      metadata_endpoint: 'getApiV4ProjectsIdJobsJobId',
+      download_endpoint: 'getApiV4ProjectsIdJobsJobIdArtifacts',
+      allowed_mime_types: ['application/pdf'],
+    };
+
+    await expect(
+      executor.execute(
+        operation,
+        metadataRequest('/projects/1/jobs/1234'),
+        { headers: { Authorization: 'Bearer job-token' } },
+        { path: '/projects/1/jobs/1234/artifacts', method: 'GET' }
+      )
+    ).rejects.toThrow(
+      "MIME type 'application/zip' not in whitelist: application/pdf"
+    );
+  });
+
   it('should reject files exceeding max size', async () => {
     mockHttpClient.request.mockResolvedValue({
       status: 200,
