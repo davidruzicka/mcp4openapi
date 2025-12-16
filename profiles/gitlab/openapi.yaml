@@ -2805,7 +2805,7 @@ paths:
       tags:
       - jobs
       summary: Get a single job by ID
-      operationId: getSingleJob
+      operationId: getApiV4ProjectsIdJobsJobId
       parameters:
         - $ref: '#/components/parameters/ProjectIdOrPath'
         - name: job_id
@@ -3410,6 +3410,185 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/API_Error'
+  /projects/{id}/merge_requests/{merge_request_iid}/changes:
+    get:
+      tags:
+        - merge_requests
+      summary: Get merge request changes
+      description: Get file changes (diffs) for a merge request
+      operationId: getApiV4ProjectsIdMergeRequestsMergeRequestIidChanges
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The ID or URL-encoded path of the project
+          schema:
+            type: string
+        - name: merge_request_iid
+          in: path
+          required: true
+          description: The internal ID of the merge request
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/API_Entities_MergeRequestChanges'
+        '404':
+          description: Merge request not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/API_Error'
+  /projects/{id}/merge_requests/{merge_request_iid}/versions:
+    get:
+      tags:
+        - merge_requests
+      summary: List merge request diff versions
+      description: List diff versions for a merge request
+      operationId: getApiV4ProjectsIdMergeRequestsMergeRequestIidVersions
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The ID or URL-encoded path of the project
+          schema:
+            type: string
+        - name: merge_request_iid
+          in: path
+          required: true
+          description: The internal ID of the merge request
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/API_Entities_MergeRequestVersion'
+        '404':
+          description: Merge request not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/API_Error'
+  /projects/{id}/merge_requests/{merge_request_iid}/versions/{version_id}:
+    get:
+      tags:
+        - merge_requests
+      summary: Get merge request diff version
+      description: Get details for a specific diff version of a merge request
+      operationId: getApiV4ProjectsIdMergeRequestsMergeRequestIidVersionsVersionId
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The ID or URL-encoded path of the project
+          schema:
+            type: string
+        - name: merge_request_iid
+          in: path
+          required: true
+          description: The internal ID of the merge request
+          schema:
+            type: integer
+        - name: version_id
+          in: path
+          required: true
+          description: The ID of the merge request version
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/API_Entities_MergeRequestVersionDetails'
+        '404':
+          description: Merge request version not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/API_Error'
+  /projects/{id}/repository/files/{file_path}:
+    get:
+      tags:
+        - repository_files
+      summary: Get file from repository
+      description: Get file metadata and base64-encoded content from repository
+      operationId: getApiV4ProjectsIdRepositoryFilesFilePath
+      parameters:
+        - $ref: '#/components/parameters/ProjectIdOrPath'
+        - name: file_path
+          in: path
+          required: true
+          description: URL-encoded full path to the file (e.g., src%2Findex.js)
+          schema:
+            type: string
+        - name: ref
+          in: query
+          required: true
+          description: The name of branch, tag, or commit
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/API_Entities_RepositoryFile'
+        '404':
+          description: File Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/API_Error'
+  /projects/{id}/repository/files/{file_path}/raw:
+    get:
+      tags:
+        - repository_files
+      summary: Get raw file from repository
+      description: Get raw file content from repository
+      operationId: getApiV4ProjectsIdRepositoryFilesFilePathRaw
+      parameters:
+        - $ref: '#/components/parameters/ProjectIdOrPath'
+        - name: file_path
+          in: path
+          required: true
+          description: URL-encoded full path to the file (e.g., src%2Findex.js)
+          schema:
+            type: string
+        - name: ref
+          in: query
+          required: true
+          description: The name of branch, tag, or commit
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Raw file content
+          content:
+            text/plain:
+              schema:
+                type: string
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '404':
+          description: File Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/API_Error'
   /projects/{id}/merge_requests/{merge_request_iid}/notes:
     get:
       tags:
@@ -3515,19 +3694,51 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/API_Error'
+  /projects/{id}/merge_requests/{merge_request_iid}/notes/{note_id}:
+    get:
+      tags:
+        - merge_requests
+      summary: Get a single merge request note
+      description: Get details of a specific merge request note
+      operationId: getApiV4ProjectsIdMergeRequestsMergeRequestIidNotesNoteId
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The ID or URL-encoded path of the project
+          schema:
+            type: string
+        - name: merge_request_iid
+          in: path
+          required: true
+          description: The internal ID of the merge request
+          schema:
+            type: integer
+        - name: note_id
+          in: path
+          required: true
+          description: The ID of the note
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/API_Entities_Note'
+        '404':
+          description: Note not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/API_Error'
         '403':
           description: Forbidden
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/API_Error'
-        '404':
-          description: Merge request not found
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/API_Error'
-  /projects/{id}/merge_requests/{merge_request_iid}/notes/{note_id}:
     put:
       tags:
         - merge_requests
@@ -3632,6 +3843,799 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/API_Error'
+
+  /projects/{id}/merge_requests/{merge_request_iid}/discussions:
+    get:
+      tags:
+        - merge_requests
+      summary: List merge request discussions
+      description: Get all discussions for a merge request
+      operationId: getApiV4ProjectsIdMergeRequestsMergeRequestIidDiscussions
+      parameters:
+        - $ref: '#/components/parameters/ProjectIdOrPath'
+        - name: merge_request_iid
+          in: path
+          required: true
+          description: The internal ID of the merge request
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/API_Entities_Discussion'
+    post:
+      tags:
+        - merge_requests
+      summary: Create merge request discussion
+      description: Create a new discussion on a merge request
+      operationId: postApiV4ProjectsIdMergeRequestsMergeRequestIidDiscussions
+      parameters:
+        - $ref: '#/components/parameters/ProjectIdOrPath'
+        - name: merge_request_iid
+          in: path
+          required: true
+          description: The internal ID of the merge request
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [body]
+              properties:
+                body:
+                  type: string
+                  description: The discussion text
+      responses:
+        '201':
+          description: Discussion created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/API_Entities_Discussion'
+
+  /projects/{id}/merge_requests/{merge_request_iid}/discussions/{discussion_id}:
+    get:
+      tags:
+        - merge_requests
+      summary: Get merge request discussion
+      description: Get a specific discussion on a merge request
+      operationId: getApiV4ProjectsIdMergeRequestsMergeRequestIidDiscussionsDiscussionId
+      parameters:
+        - $ref: '#/components/parameters/ProjectIdOrPath'
+        - name: merge_request_iid
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: discussion_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/API_Entities_Discussion'
+        '404':
+          description: Discussion not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/API_Error'
+    delete:
+      tags:
+        - merge_requests
+      summary: Delete merge request discussion
+      description: Delete a discussion on a merge request
+      operationId: deleteApiV4ProjectsIdMergeRequestsMergeRequestIidDiscussionsDiscussionId
+      parameters:
+        - $ref: '#/components/parameters/ProjectIdOrPath'
+        - name: merge_request_iid
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: discussion_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Discussion deleted
+        '404':
+          description: Discussion not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/API_Error'
+
+  /projects/{id}/merge_requests/{merge_request_iid}/discussions/{discussion_id}/resolve:
+    put:
+      tags:
+        - merge_requests
+      summary: Resolve merge request discussion
+      description: Mark a discussion as resolved
+      operationId: putApiV4ProjectsIdMergeRequestsMergeRequestIidDiscussionsDiscussionIdResolve
+      parameters:
+        - $ref: '#/components/parameters/ProjectIdOrPath'
+        - name: merge_request_iid
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: discussion_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                resolved:
+                  type: boolean
+                  default: true
+      responses:
+        '200':
+          description: Discussion resolved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/API_Entities_Discussion'
+        '404':
+          description: Discussion not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/API_Error'
+
+  /projects/{id}/merge_requests/{merge_request_iid}/approvals:
+    get:
+      tags:
+        - merge_requests
+      summary: Get merge request approvals
+      description: Get approvals information for a merge request
+      operationId: getApiV4ProjectsIdMergeRequestsMergeRequestIidApprovals
+      parameters:
+        - $ref: '#/components/parameters/ProjectIdOrPath'
+        - name: merge_request_iid
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/API_Entities_Approval'
+
+  /projects/{id}/merge_requests/{merge_request_iid}/approve:
+    post:
+      tags:
+        - merge_requests
+      summary: Approve merge request
+      description: Approve a merge request
+      operationId: postApiV4ProjectsIdMergeRequestsMergeRequestIidApprove
+      parameters:
+        - $ref: '#/components/parameters/ProjectIdOrPath'
+        - name: merge_request_iid
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '201':
+          description: Merge request approved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/API_Entities_Approval'
+
+  /projects/{id}/merge_requests/{merge_request_iid}/unapprove:
+    post:
+      tags:
+        - merge_requests
+      summary: Unapprove merge request
+      description: Remove approval from a merge request
+      operationId: postApiV4ProjectsIdMergeRequestsMergeRequestIidUnapprove
+      parameters:
+        - $ref: '#/components/parameters/ProjectIdOrPath'
+        - name: merge_request_iid
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '201':
+          description: Merge request unapproved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/API_Entities_Approval'
+
+  /projects/{id}/pipeline:
+    post:
+      tags:
+        - pipelines
+      summary: Run pipeline
+      description: Create and run a new pipeline for a project
+      operationId: postApiV4ProjectsIdPipeline
+      parameters:
+        - $ref: '#/components/parameters/ProjectIdOrPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ref]
+              properties:
+                ref:
+                  type: string
+                  description: Branch or tag to run pipeline on
+      responses:
+        '201':
+          description: Pipeline created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/API_Entities_Pipeline'
+
+  /projects/{id}/pipelines/{pipeline_id}:
+    get:
+      tags:
+        - pipelines
+      summary: Get pipeline details
+      description: Get details of a pipeline
+      operationId: getApiV4ProjectsIdPipelinesPipelineId
+      parameters:
+        - $ref: '#/components/parameters/ProjectIdOrPath'
+        - name: pipeline_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/API_Entities_Pipeline'
+
+  /projects/{id}/jobs/{job_id}/retry:
+    post:
+      tags:
+        - jobs
+      summary: Retry job
+      description: Retry a job
+      operationId: postApiV4ProjectsIdJobsJobIdRetry
+      parameters:
+        - $ref: '#/components/parameters/ProjectIdOrPath'
+        - name: job_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '201':
+          description: Job retried
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/API_Entities_Job'
+
+  /projects/{id}/jobs/{job_id}/cancel:
+    post:
+      tags:
+        - jobs
+      summary: Cancel job
+      description: Cancel a job
+      operationId: postApiV4ProjectsIdJobsJobIdCancel
+      parameters:
+        - $ref: '#/components/parameters/ProjectIdOrPath'
+        - name: job_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '201':
+          description: Job cancelled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/API_Entities_Job'
+
+  /projects/{id}/jobs/{job_id}/artifacts:
+    get:
+      tags:
+        - jobs
+      summary: Download job artifacts
+      description: Download artifacts archive for a job
+      operationId: getApiV4ProjectsIdJobsJobIdArtifacts
+      parameters:
+        - $ref: '#/components/parameters/ProjectIdOrPath'
+        - name: job_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Artifacts archive
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+
+  /projects/{id}/labels:
+    get:
+      tags:
+        - labels
+      summary: List labels
+      description: List all labels for a project
+      operationId: getApiV4ProjectsIdLabels
+      parameters:
+        - $ref: '#/components/parameters/ProjectIdOrPath'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/API_Entities_Label'
+    post:
+      tags:
+        - labels
+      summary: Create label
+      description: Create a new label
+      operationId: postApiV4ProjectsIdLabels
+      parameters:
+        - $ref: '#/components/parameters/ProjectIdOrPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, color]
+              properties:
+                name:
+                  type: string
+                color:
+                  type: string
+                  description: Hex color code
+      responses:
+        '201':
+          description: Label created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/API_Entities_Label'
+    delete:
+      tags:
+        - labels
+      summary: Delete label
+      description: Delete a label by name
+      operationId: deleteApiV4ProjectsIdLabels
+      parameters:
+        - $ref: '#/components/parameters/ProjectIdOrPath'
+        - name: name
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Label deleted
+
+  /projects/{id}/milestones:
+    get:
+      tags:
+        - milestones
+      summary: List milestones
+      description: List milestones for a project
+      operationId: getApiV4ProjectsIdMilestones
+      parameters:
+        - $ref: '#/components/parameters/ProjectIdOrPath'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/API_Entities_Milestone'
+    post:
+      tags:
+        - milestones
+      summary: Create milestone
+      description: Create a new milestone
+      operationId: postApiV4ProjectsIdMilestones
+      parameters:
+        - $ref: '#/components/parameters/ProjectIdOrPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title]
+              properties:
+                title:
+                  type: string
+      responses:
+        '201':
+          description: Milestone created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/API_Entities_Milestone'
+
+  /projects/{id}/milestones/{milestone_id}:
+    put:
+      tags:
+        - milestones
+      summary: Update milestone
+      description: Update an existing milestone
+      operationId: putApiV4ProjectsIdMilestonesMilestoneId
+      parameters:
+        - $ref: '#/components/parameters/ProjectIdOrPath'
+        - name: milestone_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title:
+                  type: string
+                description:
+                  type: string
+                state_event:
+                  type: string
+                  enum: [close, activate]
+      responses:
+        '200':
+          description: Milestone updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/API_Entities_Milestone'
+
+  /projects/{id}/releases:
+    get:
+      tags:
+        - releases
+      summary: List releases
+      description: List releases for a project
+      operationId: getApiV4ProjectsIdReleases
+      parameters:
+        - $ref: '#/components/parameters/ProjectIdOrPath'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/API_Entities_Release'
+    post:
+      tags:
+        - releases
+      summary: Create release
+      description: Create a new release
+      operationId: postApiV4ProjectsIdReleases
+      parameters:
+        - $ref: '#/components/parameters/ProjectIdOrPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tag_name, name]
+              properties:
+                tag_name:
+                  type: string
+                name:
+                  type: string
+                description:
+                  type: string
+      responses:
+        '201':
+          description: Release created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/API_Entities_Release'
+
+  /projects/{id}/repository/tags:
+    get:
+      tags:
+        - tags
+      summary: List tags
+      description: List repository tags
+      operationId: getApiV4ProjectsIdRepositoryTags
+      parameters:
+        - $ref: '#/components/parameters/ProjectIdOrPath'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/API_Entities_Tag'
+    post:
+      tags:
+        - tags
+      summary: Create tag
+      description: Create a new tag from ref
+      operationId: postApiV4ProjectsIdRepositoryTags
+      parameters:
+        - $ref: '#/components/parameters/ProjectIdOrPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tag_name, ref]
+              properties:
+                tag_name:
+                  type: string
+                ref:
+                  type: string
+      responses:
+        '201':
+          description: Tag created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/API_Entities_Tag'
+
+  /projects/{id}/repository/tags/{tag_name}:
+    delete:
+      tags:
+        - tags
+      summary: Delete tag
+      description: Delete a tag
+      operationId: deleteApiV4ProjectsIdRepositoryTagsTagName
+      parameters:
+        - $ref: '#/components/parameters/ProjectIdOrPath'
+        - name: tag_name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Tag deleted
+
+  /projects/{id}/members:
+    get:
+      tags:
+        - members
+      summary: List project members
+      description: List members of a project
+      operationId: getApiV4ProjectsIdMembers
+      parameters:
+        - $ref: '#/components/parameters/ProjectIdOrPath'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/API_Entities_Member'
+    post:
+      tags:
+        - members
+      summary: Add project member
+      description: Add a user to a project
+      operationId: postApiV4ProjectsIdMembers
+      parameters:
+        - $ref: '#/components/parameters/ProjectIdOrPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [user_id, access_level]
+              properties:
+                user_id:
+                  type: integer
+                access_level:
+                  type: integer
+      responses:
+        '201':
+          description: Member added
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/API_Entities_Member'
+
+  /projects/{id}/members/{user_id}:
+    delete:
+      tags:
+        - members
+      summary: Remove project member
+      description: Remove a member from a project
+      operationId: deleteApiV4ProjectsIdMembersUserId
+      parameters:
+        - $ref: '#/components/parameters/ProjectIdOrPath'
+        - name: user_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '204':
+          description: Member removed
+
+  /projects/{id}/hooks:
+    get:
+      tags:
+        - hooks
+      summary: List project hooks
+      description: List webhooks for a project
+      operationId: getApiV4ProjectsIdHooks
+      parameters:
+        - $ref: '#/components/parameters/ProjectIdOrPath'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/API_Entities_Hook'
+    post:
+      tags:
+        - hooks
+      summary: Create project hook
+      description: Create a webhook for a project
+      operationId: postApiV4ProjectsIdHooks
+      parameters:
+        - $ref: '#/components/parameters/ProjectIdOrPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [url]
+              properties:
+                url:
+                  type: string
+                push_events:
+                  type: boolean
+                issues_events:
+                  type: boolean
+                merge_requests_events:
+                  type: boolean
+      responses:
+        '201':
+          description: Hook created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/API_Entities_Hook'
+
+  /projects/{id}/hooks/{hook_id}:
+    delete:
+      tags:
+        - hooks
+      summary: Delete project hook
+      description: Delete a webhook
+      operationId: deleteApiV4ProjectsIdHooksHookId
+      parameters:
+        - $ref: '#/components/parameters/ProjectIdOrPath'
+        - name: hook_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '204':
+          description: Hook deleted
+
+  /projects/{id}/snippets:
+    get:
+      tags:
+        - snippets
+      summary: List project snippets
+      description: List snippets for a project
+      operationId: getApiV4ProjectsIdSnippets
+      parameters:
+        - $ref: '#/components/parameters/ProjectIdOrPath'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/API_Entities_Snippet'
+
+  /projects/{id}/snippets/{snippet_id}:
+    get:
+      tags:
+        - snippets
+      summary: Get project snippet
+      description: Get a snippet by ID
+      operationId: getApiV4ProjectsIdSnippetsSnippetId
+      parameters:
+        - $ref: '#/components/parameters/ProjectIdOrPath'
+        - name: snippet_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/API_Entities_Snippet'
+
+  /projects/{id}/snippets/{snippet_id}/raw:
+    get:
+      tags:
+        - snippets
+      summary: Download snippet raw content
+      description: Download raw content of a snippet
+      operationId: getApiV4ProjectsIdSnippetsSnippetIdRaw
+      parameters:
+        - $ref: '#/components/parameters/ProjectIdOrPath'
+        - name: snippet_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Raw snippet content
+          content:
+            text/plain:
+              schema:
+                type: string
   /projects/{id}/issues:
     get:
       tags:
@@ -4687,6 +5691,319 @@ components:
         author:
           $ref: '#/components/schemas/API_Entities_UserBasic'
       description: Basic merge request information
+    API_Entities_MergeRequestChange:
+      type: object
+      properties:
+        old_path:
+          type: string
+          description: The path of the file before the change
+        new_path:
+          type: string
+          description: The path of the file after the change
+        a_mode:
+          type: string
+          description: File mode before the change
+        b_mode:
+          type: string
+          description: File mode after the change
+        diff:
+          type: string
+          description: Diff patch for the file
+        new_file:
+          type: boolean
+          description: Indicates if the file is newly added
+        renamed_file:
+          type: boolean
+          description: Indicates if the file was renamed
+        deleted_file:
+          type: boolean
+          description: Indicates if the file was deleted
+        too_large:
+          type: boolean
+          description: Indicates if the diff is too large to display
+        collapsed:
+          type: boolean
+          description: Indicates if the diff is collapsed
+      description: File change within a merge request
+    API_Entities_MergeRequestChanges:
+      type: object
+      properties:
+        id:
+          type: integer
+        iid:
+          type: integer
+        title:
+          type: string
+        description:
+          type: string
+        state:
+          type: string
+        web_url:
+          type: string
+        source_branch:
+          type: string
+        target_branch:
+          type: string
+        author:
+          $ref: '#/components/schemas/API_Entities_UserBasic'
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        changes:
+          type: array
+          items:
+            $ref: '#/components/schemas/API_Entities_MergeRequestChange'
+      description: Merge request details with file changes
+    API_Entities_MergeRequestVersion:
+      type: object
+      properties:
+        id:
+          type: integer
+        short_commit_id:
+          type: string
+          description: Short SHA of the diff version head commit
+        created_at:
+          type: string
+          format: date-time
+        created_by:
+          $ref: '#/components/schemas/API_Entities_UserBasic'
+        description:
+          type: string
+        merge_request_id:
+          type: integer
+        state:
+          type: string
+        real_size:
+          type: string
+          description: Indicates diff size (small, medium, large, etc.)
+        head_commit_sha:
+          type: string
+        base_commit_sha:
+          type: string
+        start_commit_sha:
+          type: string
+        commits_count:
+          type: integer
+      description: Merge request diff version summary
+    API_Entities_MergeRequestVersionDetails:
+      type: object
+      properties:
+        id:
+          type: integer
+        head_commit_sha:
+          type: string
+        base_commit_sha:
+          type: string
+        start_commit_sha:
+          type: string
+        state:
+          type: string
+        real_size:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        description:
+          type: string
+        commits:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              short_id:
+                type: string
+              title:
+                type: string
+              author_name:
+                type: string
+              author_email:
+                type: string
+              created_at:
+                type: string
+                format: date-time
+        diffs:
+          type: array
+          items:
+            $ref: '#/components/schemas/API_Entities_MergeRequestChange'
+      description: Merge request diff version with file diffs and commits
+    API_Entities_RepositoryFile:
+      type: object
+      properties:
+        file_name:
+          type: string
+        file_path:
+          type: string
+        size:
+          type: integer
+        encoding:
+          type: string
+        content:
+          type: string
+          description: Base64-encoded file content
+        ref:
+          type: string
+        blob_id:
+          type: string
+        commit_id:
+          type: string
+        last_commit_id:
+          type: string
+      description: Repository file metadata and content
+    API_Entities_DiscussionNote:
+      type: object
+      properties:
+        id:
+          type: integer
+        body:
+          type: string
+        author:
+          $ref: '#/components/schemas/API_Entities_UserBasic'
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        system:
+          type: boolean
+        resolved:
+          type: boolean
+      description: A single note in a discussion
+    API_Entities_Discussion:
+      type: object
+      properties:
+        id:
+          type: string
+        notes:
+          type: array
+          items:
+            $ref: '#/components/schemas/API_Entities_DiscussionNote'
+        resolved:
+          type: boolean
+      description: Merge request discussion thread
+    API_Entities_Approval:
+      type: object
+      properties:
+        approvals_required:
+          type: integer
+        approvals_left:
+          type: integer
+        approved_by:
+          type: array
+          items:
+            type: object
+            properties:
+              user:
+                $ref: '#/components/schemas/API_Entities_UserBasic'
+      description: Approval status for a merge request
+    API_Entities_Pipeline:
+      type: object
+      properties:
+        id:
+          type: integer
+        status:
+          type: string
+        ref:
+          type: string
+        sha:
+          type: string
+        web_url:
+          type: string
+      description: Pipeline information
+    API_Entities_Label:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        color:
+          type: string
+        description:
+          type: string
+      description: Project label
+    API_Entities_Milestone:
+      type: object
+      properties:
+        id:
+          type: integer
+        iid:
+          type: integer
+        title:
+          type: string
+        state:
+          type: string
+        description:
+          type: string
+      description: Project milestone
+    API_Entities_Release:
+      type: object
+      properties:
+        name:
+          type: string
+        tag_name:
+          type: string
+        description:
+          type: string
+        released_at:
+          type: string
+          format: date-time
+      description: Release information
+    API_Entities_Tag:
+      type: object
+      properties:
+        name:
+          type: string
+        message:
+          type: string
+        target:
+          type: string
+      description: Repository tag
+    API_Entities_Member:
+      type: object
+      properties:
+        id:
+          type: integer
+        username:
+          type: string
+        name:
+          type: string
+        access_level:
+          type: integer
+      description: Project member
+    API_Entities_Hook:
+      type: object
+      properties:
+        id:
+          type: integer
+        url:
+          type: string
+        push_events:
+          type: boolean
+        issues_events:
+          type: boolean
+        merge_requests_events:
+          type: boolean
+      description: Project webhook
+    API_Entities_Snippet:
+      type: object
+      properties:
+        id:
+          type: integer
+        title:
+          type: string
+        file_name:
+          type: string
+        description:
+          type: string
+        visibility:
+          type: string
+      description: Project snippet
     API_Entities_IssueBasic:
       type: object
       properties:

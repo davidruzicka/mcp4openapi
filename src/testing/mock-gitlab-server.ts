@@ -191,6 +191,7 @@ export function createGitLabHandlers(baseUrl: string = DEFAULT_BASE_URL): Reques
       structuredClone(branch) as BranchState,
     ])
   );
+  const escapedBaseUrl = baseUrl.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
 
   const findBranch = (name: string | null): BranchState | undefined => {
     if (!name) return undefined;
@@ -529,7 +530,7 @@ export function createGitLabHandlers(baseUrl: string = DEFAULT_BASE_URL): Reques
         return HttpResponse.json({ error: 'Invalid job ID' }, { status: 400 });
       }
       if (jobId === 1234) {
-        return HttpResponse.json(fixtures.mockJob);
+        return HttpResponse.json(fixtures.mockJobWithArtifacts);
       }
       return HttpResponse.json({ message: 'Not Found' }, { status: 404 });
     }),
@@ -544,12 +545,96 @@ export function createGitLabHandlers(baseUrl: string = DEFAULT_BASE_URL): Reques
       });
     }),
 
+    http.post(`${baseUrl}/projects/*/jobs/*/retry`, ({ request }) => {
+      const parts = request.url.split('/jobs/');
+      const tail = parts[1] || '';
+      const jobId = parseInt(tail.split('/')[0], 10);
+      if (isNaN(jobId)) {
+        return HttpResponse.json({ error: 'Invalid job ID' }, { status: 400 });
+      }
+      if (jobId === 1234) {
+        return HttpResponse.json({ ...fixtures.mockJobWithArtifacts, status: 'pending' }, { status: 201 });
+      }
+      return HttpResponse.json({ message: 'Not Found' }, { status: 404 });
+    }),
+
+    http.post(`${baseUrl}/projects/*/jobs/*/cancel`, ({ request }) => {
+      const parts = request.url.split('/jobs/');
+      const tail = parts[1] || '';
+      const jobId = parseInt(tail.split('/')[0], 10);
+      if (isNaN(jobId)) {
+        return HttpResponse.json({ error: 'Invalid job ID' }, { status: 400 });
+      }
+      if (jobId === 1234) {
+        return HttpResponse.json({ ...fixtures.mockJobWithArtifacts, status: 'canceled' }, { status: 201 });
+      }
+      return HttpResponse.json({ message: 'Not Found' }, { status: 404 });
+    }),
+
     // Rate limiting simulation
     http.get(`${baseUrl}/rate-limit-test`, () => {
       return HttpResponse.json(
         { message: 'Rate limit exceeded' },
         { status: 429, headers: { 'Retry-After': '60' } }
       );
+    }),
+
+    // Pipelines
+    http.post(`${baseUrl}/projects/*/pipeline`, async ({ request }) => {
+      const body = await request.json() as Record<string, unknown>;
+      if (!body.ref) {
+        return HttpResponse.json({ error: 'ref is required' }, { status: 400 });
+      }
+      return HttpResponse.json(fixtures.mockPipeline, { status: 201 });
+    }),
+
+    http.get(`${baseUrl}/projects/*/pipelines/*`, ({ request }) => {
+      const pipelineId = extractIidFromUrl(request.url);
+      if (pipelineId === null) {
+        return HttpResponse.json({ error: 'Invalid pipeline ID' }, { status: 400 });
+      }
+      if (pipelineId === fixtures.mockPipeline.id) {
+        return HttpResponse.json(fixtures.mockPipeline);
+      }
+      return HttpResponse.json({ message: 'Not Found' }, { status: 404 });
+    }),
+
+    // Repository files
+    http.get(`${baseUrl}/projects/*/repository/files/*/raw`, ({ request }) => {
+      const url = new URL(request.url);
+      const pathWithoutBase = url.pathname.replace(`${new URL(baseUrl).pathname}/projects/`, '');
+      const fileMatch = decodeURIComponent(pathWithoutBase).match(/repository\/files\/(.+)\/raw$/);
+      if (!fileMatch) {
+        return HttpResponse.json({ error: 'Invalid file path' }, { status: 400 });
+      }
+      const filePath = fileMatch[1];
+      if (!url.searchParams.get('ref')) {
+        return HttpResponse.json({ error: 'ref is required' }, { status: 400 });
+      }
+      if (filePath === 'src/index.js') {
+        return new HttpResponse(fixtures.mockRepositoryFileContent, {
+          status: 200,
+          headers: { 'Content-Type': 'text/plain' },
+        });
+      }
+      return HttpResponse.json({ message: 'Not Found' }, { status: 404 });
+    }),
+
+    http.get(`${baseUrl}/projects/*/repository/files/*`, ({ request }) => {
+      const url = new URL(request.url);
+      const pathWithoutBase = url.pathname.replace(`${new URL(baseUrl).pathname}/projects/`, '');
+      const fileMatch = decodeURIComponent(pathWithoutBase).match(/repository\/files\/(.+)$/);
+      if (!fileMatch) {
+        return HttpResponse.json({ error: 'Invalid file path' }, { status: 400 });
+      }
+      const filePath = fileMatch[1];
+      if (!url.searchParams.get('ref')) {
+        return HttpResponse.json({ error: 'ref is required' }, { status: 400 });
+      }
+      if (filePath === 'src/index.js') {
+        return HttpResponse.json(fixtures.mockRepositoryFile);
+      }
+      return HttpResponse.json({ message: 'Not Found' }, { status: 404 });
     }),
 
     // Merge Request Notes (MUST be before generic merge_requests/* handlers)
@@ -631,6 +716,25 @@ export function createGitLabHandlers(baseUrl: string = DEFAULT_BASE_URL): Reques
       return HttpResponse.json({ message: 'Not Found' }, { status: 404 });
     }),
 
+    http.get(`${baseUrl}/projects/*/merge_requests/*/notes/*`, ({ request }) => {
+      const parts = request.url.split('/notes/');
+      if (parts.length < 2) {
+        return HttpResponse.json({ error: 'Invalid note ID' }, { status: 400 });
+      }
+      const noteIdStr = parts[1].split(/[/?]/)[0];
+      const noteId = parseInt(noteIdStr, 10);
+      if (isNaN(noteId)) {
+        return HttpResponse.json({ error: 'Invalid note ID' }, { status: 400 });
+      }
+      if (noteId === 1) {
+        return HttpResponse.json(fixtures.mockNote);
+      }
+      if (noteId === 2) {
+        return HttpResponse.json(fixtures.mockNotesList[1]);
+      }
+      return HttpResponse.json({ message: 'Not Found' }, { status: 404 });
+    }),
+
     http.delete(`${baseUrl}/projects/*/merge_requests/*/notes/*`, ({ request }) => {
       const urlParts = request.url.split('/notes/');
       if (urlParts.length < 2) {
@@ -642,6 +746,263 @@ export function createGitLabHandlers(baseUrl: string = DEFAULT_BASE_URL): Reques
       }
       if (noteId === 1) {
         return new HttpResponse(null, { status: 204 });
+      }
+      return HttpResponse.json({ message: 'Not Found' }, { status: 404 });
+    }),
+
+    // Discussions
+    http.get(`${baseUrl}/projects/*/merge_requests/*/discussions`, () => {
+      return HttpResponse.json([fixtures.mockDiscussion]);
+    }),
+
+    http.post(`${baseUrl}/projects/*/merge_requests/*/discussions`, async ({ request }) => {
+      const body = await request.json() as Record<string, unknown>;
+      if (!body.body) {
+        return HttpResponse.json({ error: 'body is required' }, { status: 400 });
+      }
+      return HttpResponse.json(fixtures.mockDiscussion, { status: 201 });
+    }),
+
+    http.get(`${baseUrl}/projects/*/merge_requests/*/discussions/*`, ({ request }) => {
+      if (request.url.includes(fixtures.mockDiscussion.id)) {
+        return HttpResponse.json(fixtures.mockDiscussion);
+      }
+      return HttpResponse.json({ message: 'Not Found' }, { status: 404 });
+    }),
+
+    http.delete(`${baseUrl}/projects/*/merge_requests/*/discussions/*`, ({ request }) => {
+      if (request.url.includes(fixtures.mockDiscussion.id)) {
+        return new HttpResponse(null, { status: 204 });
+      }
+      return HttpResponse.json({ message: 'Not Found' }, { status: 404 });
+    }),
+
+    http.put(`${baseUrl}/projects/*/merge_requests/*/discussions/*/resolve`, async ({ request }) => {
+      const url = request.url;
+      let resolved = true;
+      try {
+        const body = await request.json() as Record<string, unknown>;
+        if (body.resolved === false) {
+          resolved = false;
+        }
+      } catch (e) {
+        resolved = true;
+      }
+      if (url.includes(fixtures.mockDiscussion.id)) {
+        return HttpResponse.json({ ...fixtures.mockDiscussion, resolved });
+      }
+      return HttpResponse.json({ message: 'Not Found' }, { status: 404 });
+    }),
+
+    // Approvals
+    http.get(`${baseUrl}/projects/*/merge_requests/*/approvals`, () => {
+      return HttpResponse.json(fixtures.mockApproval);
+    }),
+
+    http.post(`${baseUrl}/projects/*/merge_requests/*/approve`, () => {
+      return HttpResponse.json({ ...fixtures.mockApproval, approvals_left: 0 }, { status: 201 });
+    }),
+
+    http.post(`${baseUrl}/projects/*/merge_requests/*/unapprove`, () => {
+      return HttpResponse.json(fixtures.mockApproval, { status: 201 });
+    }),
+
+    // Merge Request diffs and versions
+    http.get(`${baseUrl}/projects/*/merge_requests/*/changes`, ({ request }) => {
+      const decodedUrl = decodeURIComponent(request.url);
+      const match = decodedUrl.match(/merge_requests\/(\d+)\/changes/);
+      if (!match) {
+        return HttpResponse.json({ error: 'Invalid merge request IID' }, { status: 400 });
+      }
+      const mergeRequestIid = parseInt(match[1], 10);
+      if (isNaN(mergeRequestIid)) {
+        return HttpResponse.json({ error: 'Invalid merge request IID' }, { status: 400 });
+      }
+      if (mergeRequestIid === 1) {
+        return HttpResponse.json(fixtures.mockMergeRequestChanges);
+      }
+      return HttpResponse.json({ message: 'Not Found' }, { status: 404 });
+    }),
+
+    http.get(`${baseUrl}/projects/*/merge_requests/*/versions`, ({ request }) => {
+      const decodedUrl = decodeURIComponent(request.url);
+      const match = decodedUrl.match(/merge_requests\/(\d+)\/versions/);
+      if (!match) {
+        return HttpResponse.json({ error: 'Invalid merge request IID' }, { status: 400 });
+      }
+      const mergeRequestIid = parseInt(match[1], 10);
+      if (isNaN(mergeRequestIid)) {
+        return HttpResponse.json({ error: 'Invalid merge request IID' }, { status: 400 });
+      }
+      if (mergeRequestIid === 1) {
+        return HttpResponse.json(fixtures.mockMergeRequestVersions);
+      }
+      return HttpResponse.json({ message: 'Not Found' }, { status: 404 });
+    }),
+
+    http.get(`${baseUrl}/projects/*/merge_requests/*/versions/*`, ({ request }) => {
+      const decodedUrl = decodeURIComponent(request.url);
+      const mrMatch = decodedUrl.match(/merge_requests\/(\d+)\/versions/);
+      const versionMatch = decodedUrl.match(/versions\/(\d+)/);
+      if (!mrMatch || !versionMatch) {
+        return HttpResponse.json({ error: 'Invalid merge request version' }, { status: 400 });
+      }
+      const mergeRequestIid = parseInt(mrMatch[1], 10);
+      const versionId = parseInt(versionMatch[1], 10);
+      if (isNaN(mergeRequestIid) || isNaN(versionId)) {
+        return HttpResponse.json({ error: 'Invalid merge request version' }, { status: 400 });
+      }
+      if (mergeRequestIid === 1 && versionId === 101) {
+        return HttpResponse.json(fixtures.mockMergeRequestVersionDetails);
+      }
+      return HttpResponse.json({ message: 'Not Found' }, { status: 404 });
+    }),
+
+    // Attachment download endpoint (used by proxy download)
+    http.get(`${baseUrl}/uploads/attachments/note-2.txt`, () => {
+      const content = 'attachment log content\n';
+      return new HttpResponse(content, {
+        status: 200,
+        headers: {
+          'Content-Type': 'text/plain',
+          'Content-Length': String(Buffer.byteLength(content)),
+        },
+      });
+    }),
+
+    // Labels
+    http.get(`${baseUrl}/projects/*/labels`, () => {
+      return HttpResponse.json(fixtures.mockLabels);
+    }),
+
+    http.post(`${baseUrl}/projects/*/labels`, async ({ request }) => {
+      const body = await request.json() as Record<string, unknown>;
+      if (!body.name || !body.color) {
+        return HttpResponse.json({ error: 'name and color required' }, { status: 400 });
+      }
+      return HttpResponse.json({ id: 3, name: body.name, color: body.color, description: body.description }, { status: 201 });
+    }),
+
+    http.delete(`${baseUrl}/projects/*/labels`, ({ request }) => {
+      const url = new URL(request.url);
+      if (!url.searchParams.get('name')) {
+        return HttpResponse.json({ error: 'name is required' }, { status: 400 });
+      }
+      return new HttpResponse(null, { status: 204 });
+    }),
+
+    // Milestones
+    http.get(`${baseUrl}/projects/*/milestones`, () => {
+      return HttpResponse.json(fixtures.mockMilestones);
+    }),
+
+    http.post(`${baseUrl}/projects/*/milestones`, async ({ request }) => {
+      const body = await request.json() as Record<string, unknown>;
+      if (!body.title) {
+        return HttpResponse.json({ error: 'title is required' }, { status: 400 });
+      }
+      return HttpResponse.json({ ...fixtures.mockMilestones[0], id: 2, iid: 2, title: body.title }, { status: 201 });
+    }),
+
+    http.put(`${baseUrl}/projects/*/milestones/*`, async ({ request }) => {
+      const milestoneId = extractIidFromUrl(request.url);
+      if (milestoneId === null) {
+        return HttpResponse.json({ error: 'Invalid milestone ID' }, { status: 400 });
+      }
+      const body = await request.json() as Record<string, unknown>;
+      if (milestoneId === 1) {
+        return HttpResponse.json({ ...fixtures.mockMilestones[0], ...body });
+      }
+      return HttpResponse.json({ message: 'Not Found' }, { status: 404 });
+    }),
+
+    // Releases
+    http.get(`${baseUrl}/projects/*/releases`, () => {
+      return HttpResponse.json(fixtures.mockReleases);
+    }),
+
+    http.post(`${baseUrl}/projects/*/releases`, async ({ request }) => {
+      const body = await request.json() as Record<string, unknown>;
+      if (!body.tag_name || !body.name) {
+        return HttpResponse.json({ error: 'tag_name and name required' }, { status: 400 });
+      }
+      return HttpResponse.json({ ...fixtures.mockReleases[0], tag_name: body.tag_name, name: body.name, description: body.description }, { status: 201 });
+    }),
+
+    // Tags
+    http.get(`${baseUrl}/projects/*/repository/tags`, () => {
+      return HttpResponse.json(fixtures.mockTags);
+    }),
+
+    http.post(`${baseUrl}/projects/*/repository/tags`, async ({ request }) => {
+      const body = await request.json() as Record<string, unknown>;
+      if (!body.tag_name || !body.ref) {
+        return HttpResponse.json({ error: 'tag_name and ref required' }, { status: 400 });
+      }
+      return HttpResponse.json({ name: body.tag_name, target: body.ref, message: '' }, { status: 201 });
+    }),
+
+    http.delete(`${baseUrl}/projects/*/repository/tags/*`, ({ request }) => {
+      const parts = request.url.split('/repository/tags/');
+      const tagName = decodeURIComponent(parts[1] || '');
+      if (!tagName) {
+        return HttpResponse.json({ error: 'Tag name required' }, { status: 400 });
+      }
+      return new HttpResponse(null, { status: 204 });
+    }),
+
+    // Members
+    http.get(`${baseUrl}/projects/*/members`, () => {
+      return HttpResponse.json(fixtures.mockMembers);
+    }),
+
+    http.post(`${baseUrl}/projects/*/members`, async ({ request }) => {
+      const body = await request.json() as Record<string, unknown>;
+      if (!body.user_id || !body.access_level) {
+        return HttpResponse.json({ error: 'user_id and access_level required' }, { status: 400 });
+      }
+      const member = { id: body.user_id as number, username: `user${body.user_id}`, name: `User ${body.user_id}`, access_level: body.access_level as number };
+      return HttpResponse.json(member, { status: 201 });
+    }),
+
+    http.delete(`${baseUrl}/projects/*/members/*`, ({ request }) => {
+      const userId = extractIidFromUrl(request.url);
+      if (userId === null) {
+        return HttpResponse.json({ error: 'Invalid user ID' }, { status: 400 });
+      }
+      return new HttpResponse(null, { status: 204 });
+    }),
+
+    // Hooks
+    http.get(`${baseUrl}/projects/*/hooks`, () => {
+      return HttpResponse.json(fixtures.mockHooks);
+    }),
+
+    http.post(`${baseUrl}/projects/*/hooks`, async ({ request }) => {
+      const body = await request.json() as Record<string, unknown>;
+      if (!body.url) {
+        return HttpResponse.json({ error: 'url required' }, { status: 400 });
+      }
+      return HttpResponse.json({ id: 2, url: body.url, push_events: !!body.push_events, issues_events: !!body.issues_events, merge_requests_events: !!body.merge_requests_events }, { status: 201 });
+    }),
+
+    http.delete(`${baseUrl}/projects/*/hooks/*`, ({ request }) => {
+      const hookId = extractIidFromUrl(request.url);
+      if (hookId === null) {
+        return HttpResponse.json({ error: 'Invalid hook ID' }, { status: 400 });
+      }
+      return new HttpResponse(null, { status: 204 });
+    }),
+
+    // Snippets
+    http.get(`${baseUrl}/projects/*/snippets`, () => {
+      return HttpResponse.json(fixtures.mockSnippets);
+    }),
+
+    http.get(`${baseUrl}/projects/*/snippets/*`, ({ request }) => {
+      const snippetId = extractIidFromUrl(request.url);
+      if (snippetId === 1) {
+        return HttpResponse.json(fixtures.mockSnippets[0]);
       }
       return HttpResponse.json({ message: 'Not Found' }, { status: 404 });
     }),
@@ -834,4 +1195,3 @@ export function createMockServer(
   const allHandlers = createAllHandlers(gitlabBaseUrl, oauthConfig);
   return setupServer(...allHandlers);
 }
-

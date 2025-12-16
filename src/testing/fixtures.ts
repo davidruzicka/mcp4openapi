@@ -180,6 +180,186 @@ export const mockMergeRequestsList = [
   },
 ];
 
+export const mockMergeRequestChanges = {
+  ...mockMergeRequest,
+  changes: [
+    {
+      old_path: 'README.md',
+      new_path: 'README.md',
+      a_mode: '100644',
+      b_mode: '100644',
+      diff: '@@ -1,4 +1,4 @@\n-Old README\n+New README\n',
+      new_file: false,
+      renamed_file: false,
+      deleted_file: false,
+      too_large: false,
+      collapsed: false,
+    },
+    {
+      old_path: 'src/index.js',
+      new_path: 'src/index.js',
+      a_mode: '100644',
+      b_mode: '100644',
+      diff: '@@ -10,7 +10,7 @@\n-const oldValue = true;\n+const newValue = false;\n',
+      new_file: false,
+      renamed_file: false,
+      deleted_file: false,
+      too_large: false,
+      collapsed: false,
+    },
+  ],
+};
+
+export const mockMergeRequestVersions = [
+  {
+    id: 101,
+    short_commit_id: 'abc1234',
+    created_at: '2024-06-01T10:00:00Z',
+    created_by: {
+      id: 1,
+      name: 'John Smith',
+      username: 'john_smith',
+    },
+    description: 'Initial diff',
+    merge_request_id: 1,
+    state: 'collected',
+    real_size: 'small',
+    head_commit_sha: 'abc1234567890',
+    base_commit_sha: '0000000000000',
+    start_commit_sha: '1111111111111',
+    commits_count: 1,
+  },
+  {
+    id: 102,
+    short_commit_id: 'def5678',
+    created_at: '2024-06-02T12:00:00Z',
+    created_by: {
+      id: 2,
+      name: 'Jane Doe',
+      username: 'jane_doe',
+    },
+    description: 'Follow-up changes',
+    merge_request_id: 1,
+    state: 'collected',
+    real_size: 'medium',
+    head_commit_sha: 'def5678123456',
+    base_commit_sha: 'abc1234567890',
+    start_commit_sha: '1111111111111',
+    commits_count: 2,
+  },
+];
+
+export const mockMergeRequestVersionDetails = {
+  id: 101,
+  head_commit_sha: 'abc1234567890',
+  base_commit_sha: '0000000000000',
+  start_commit_sha: '1111111111111',
+  state: 'collected',
+  real_size: 'small',
+  created_at: '2024-06-01T10:00:00Z',
+  description: 'Initial diff',
+  commits: [
+    {
+      id: 'abc1234567890',
+      short_id: 'abc1234',
+      title: 'Initial commit',
+      author_name: 'John Smith',
+      author_email: 'john.smith@example.com',
+      created_at: '2024-06-01T10:00:00Z',
+    },
+  ],
+  diffs: mockMergeRequestChanges.changes,
+};
+
+export const mockRepositoryFileContent = "console.log('hello world');\n";
+
+export const mockRepositoryFileBase64 = 'Y29uc29sZS5sb2coJ2hlbGxvIHdvcmxkJyk7Cg==';
+
+export const mockRepositoryFile = {
+  file_name: 'index.js',
+  file_path: 'src/index.js',
+  size: mockRepositoryFileContent.length,
+  encoding: 'base64',
+  content: mockRepositoryFileBase64,
+  ref: 'main',
+  blob_id: '123abc',
+  commit_id: 'commit123',
+  last_commit_id: 'commit123',
+};
+
+export const mockDiscussion = {
+  id: 'disc-1',
+  resolved: false,
+  notes: [
+    {
+      id: 11,
+      body: 'Discussion note 1',
+      author: mockMergeRequest.author,
+      created_at: '2024-06-01T10:00:00Z',
+      updated_at: '2024-06-01T10:00:00Z',
+      system: false,
+      resolved: false,
+    },
+  ],
+};
+
+export const mockApproval = {
+  approvals_required: 2,
+  approvals_left: 1,
+  approved_by: [
+    {
+      user: mockMergeRequest.author,
+    },
+  ],
+};
+
+export const mockPipeline = {
+  id: 501,
+  status: 'running',
+  ref: 'main',
+  sha: 'abc123',
+  web_url: 'https://gitlab.com/my-org/my-project/-/pipelines/501',
+};
+
+export const mockJobWithArtifacts = {
+  ...mockJob,
+  artifacts_file: 'data:application/octet-stream;base64,YXJ0aWZhY3QgZGF0YQo=',
+};
+
+export const mockArtifactsContent = 'artifact data\n';
+
+export const mockLabels = [
+  { id: 1, name: 'bug', color: '#FF0000', description: 'Bugfix' },
+  { id: 2, name: 'feature', color: '#00FF00', description: 'Feature' },
+];
+
+export const mockMilestones = [
+  { id: 1, iid: 1, title: 'M1', state: 'active', description: 'First milestone' },
+];
+
+export const mockReleases = [
+  { name: 'v1.0', tag_name: 'v1.0', description: 'Initial release', released_at: '2024-06-01T00:00:00Z' },
+];
+
+export const mockTags = [
+  { name: 'v1.0', message: 'Initial tag', target: 'abc123' },
+];
+
+export const mockMembers = [
+  { id: 1, username: 'john_smith', name: 'John Smith', access_level: 40 },
+  { id: 2, username: 'jane_doe', name: 'Jane Doe', access_level: 30 },
+];
+
+export const mockHooks = [
+  { id: 1, url: 'https://example.com/hook', push_events: true, issues_events: true, merge_requests_events: false },
+];
+
+export const mockSnippets = [
+  { id: 1, title: 'Snippet one', file_name: 'snippet1.txt', description: 'Test snippet', visibility: 'private', raw_url: 'data:text/plain;base64,c25pcHBldCBjb250ZW50Cg==' },
+];
+
+export const mockSnippetRawContent = 'snippet content\n';
+
 export const mockIssue = {
   id: 1,
   iid: 1,
@@ -242,9 +422,12 @@ export const mockNotesList = [
   {
     ...mockNote,
     id: 2,
-    body: 'I have some concerns about this approach.',
+    body: 'Please see attached log file',
     created_at: '2017-07-27T10:08:53+02:00',
     updated_at: '2017-07-27T10:08:53+02:00',
+    attachment: 'https://gitlab.com/api/v4/uploads/attachments/note-2.txt',
+    mimeType: 'text/plain',
+    size: 27,
   },
 ];
 
@@ -371,4 +554,3 @@ export const mockProjectsList = [
     archived: false,
   },
 ];
-

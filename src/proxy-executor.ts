@@ -90,7 +90,18 @@ export class ProxyDownloadExecutor {
       );
     }
 
-    // Step 5: Download binary content
+    // Step 5: Download binary content (supports HTTP(S) and data URLs)
+    if (url.startsWith('data:')) {
+      const { content, size, mimeType: inferredMime } = this.downloadFromDataUrl(url, maxSize);
+      return {
+        metadata,
+        content,
+        mimeType: inferredMime || mimeType,
+        size,
+        fileName: metadata['name'] as string | undefined,
+      };
+    }
+
     const skipAuth = operation.skip_auth ?? false;
     const { content, size } = await this.downloadWithAuth(
       url,
@@ -239,5 +250,22 @@ export class ProxyDownloadExecutor {
     } finally {
       clearTimeout(timeoutId);
     }
+  }
+
+  /**
+   * Handle inline data URLs (data:mime;base64,...)
+   */
+  private downloadFromDataUrl(url: string, maxSize: number): { content: string; size: number; mimeType: string } {
+    const match = url.match(/^data:(.*?);base64,(.*)$/);
+    if (!match) {
+      throw new ValidationError(`Unsupported data URL format`);
+    }
+    const mimeType = match[1] || 'application/octet-stream';
+    const base64Data = match[2];
+    const size = Buffer.from(base64Data, 'base64').length;
+    if (size > maxSize) {
+      throw new ValidationError(`Downloaded file size ${size} exceeds maximum ${maxSize} bytes`);
+    }
+    return { content: base64Data, size, mimeType };
   }
 }
