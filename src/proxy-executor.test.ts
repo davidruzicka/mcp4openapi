@@ -273,6 +273,34 @@ describe('ProxyDownloadExecutor', () => {
     ).rejects.toThrow();
   }, 2000);
 
+  it('should download content from data URL', async () => {
+    mockHttpClient.request.mockResolvedValue({
+      status: 200,
+      headers: {},
+      body: {
+        url: 'data:text/plain;base64,SGVsbG8=',
+        mimeType: 'text/plain',
+      },
+    });
+
+    const executor = new ProxyDownloadExecutor(mockHttpClient as any);
+    const operation: ProxyDownloadOperation = {
+      type: 'proxy_download',
+      metadata_endpoint: 'get_/file',
+      url_field: 'url',
+    };
+
+    const result = await executor.execute(
+      operation,
+      metadataRequest('/file'),
+      { headers: {} }
+    );
+
+    expect(result.content).toBe('SGVsbG8=');
+    expect(result.mimeType).toBe('text/plain');
+    expect(result.size).toBe(Buffer.from('Hello').length);
+  });
+
   it('should use default url_field when not specified', async () => {
     mockHttpClient.request.mockResolvedValue({
       status: 200,

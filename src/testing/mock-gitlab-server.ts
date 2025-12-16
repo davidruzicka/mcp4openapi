@@ -1011,6 +1011,17 @@ export function createGitLabHandlers(baseUrl: string = DEFAULT_BASE_URL): Reques
       return HttpResponse.json(fixtures.mockSnippets);
     }),
 
+    http.get(`${baseUrl}/projects/*/snippets/*/raw`, () => {
+      const content = fixtures.mockSnippetRawContent;
+      return new HttpResponse(content, {
+        status: 200,
+        headers: {
+          'Content-Type': 'text/plain',
+          'Content-Length': String(Buffer.byteLength(content)),
+        },
+      });
+    }),
+
     http.get(`${baseUrl}/projects/*/snippets/*`, ({ request }) => {
       const snippetId = extractIidFromUrl(request.url);
       if (snippetId === 1) {
