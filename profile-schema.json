@@ -81,15 +81,28 @@
         },
         "operations": {
           "type": "object",
-          "description": "Map action names to OpenAPI operationIds (for simple tools)",
+          "description": "Map action names to OpenAPI operationIds or proxy download operations",
           "additionalProperties": {
-            "type": "string"
+            "oneOf": [
+              {
+                "type": "string",
+                "description": "OpenAPI operation ID"
+              },
+              {
+                "$ref": "#/definitions/ProxyDownloadOperation"
+              }
+            ]
           },
           "examples": [
             {
               "list": "getApiV4ProjectsIdBadges",
               "get": "getApiV4ProjectsIdBadgesBadgeId",
-              "create": "postApiV4ProjectsIdBadges"
+              "create": "postApiV4ProjectsIdBadges",
+              "download_attachment": {
+                "type": "proxy_download",
+                "metadata_endpoint": "getApiV4ProjectsIdMergeRequestsMrIidNotesNoteId",
+                "url_field": "attachment.url"
+              }
             }
           ]
         },
@@ -596,4 +609,3 @@
     }
   }
 }
-
