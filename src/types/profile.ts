@@ -72,6 +72,14 @@ export interface ProxyDownloadOperation {
   
   /** OpenAPI operation ID to fetch metadata (e.g., 'get_/issues/{id}/attachments/{attachmentId}') */
   metadata_endpoint: string;
+
+  /**
+   * Optional OpenAPI operation ID for direct download endpoint.
+   * 
+   * Why: Some APIs (e.g., GitLab job artifacts) don't expose pre-signed URLs in metadata.
+   * When provided, the proxy will call this endpoint directly instead of extracting a URL.
+   */
+  download_endpoint?: string;
   
   /** JSON path to URL field in metadata response (default: 'url') */
   url_field?: string;
@@ -283,4 +291,3 @@ export interface RetryConfig {
   backoff_ms: number[]; // e.g., [1000, 2000, 4000]
   retry_on_status: number[];
 }
-

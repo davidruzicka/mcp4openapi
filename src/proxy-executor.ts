@@ -19,6 +19,7 @@ export interface HttpClient {
       body?: unknown;
     }
   ): Promise<ResponseContext>;
+  getBaseUrl(): string;
 }
 
 export interface ProxyDownloadResult {
@@ -53,16 +54,71 @@ export class ProxyDownloadExecutor {
    */
   async execute(
     operation: ProxyDownloadOperation,
-    path: string,
-    authCredentials: AuthCredentials
+    metadataRequest: { path: string; method: string },
+    authCredentials: AuthCredentials,
+    directDownloadRequest?: { path: string; method: string }
   ): Promise<ProxyDownloadResult> {
     const maxSize = this.resolveMaxSize(operation);
     const timeout = operation.timeout_ms ?? DEFAULT_TIMEOUT;
     const urlField = operation.url_field ?? 'url';
 
     // Step 1: Fetch metadata
-    const metadataResponse = await this.httpClient.request('GET', path);
+    const metadataResponse = await this.httpClient.request(
+      metadataRequest.method,
+      metadataRequest.path
+    );
     const metadata = metadataResponse.body as Record<string, unknown>;
+
+    // File metadata helpers
+    const fileName =
+      this.extractNestedString(metadata, 'artifacts_file.filename') ||
+      (metadata['file_name'] as string) ||
+      (metadata['filename'] as string) ||
+      (metadata['name'] as string);
+    const reportedSize =
+      this.extractNestedNumber(metadata, 'artifacts_file.size') ||
+      (metadata['size'] as number | undefined);
+    const metadataMime =
+      (metadata['mimeType'] as string | undefined) ||
+      (metadata['content_type'] as string | undefined) ||
+      'application/octet-stream';
+
+    // Step 2A: Direct download endpoint path (preferred when configured)
+    if (directDownloadRequest) {
+      const downloadUrl = this.buildAbsoluteUrl(directDownloadRequest.path);
+      const skipAuth = operation.skip_auth ?? false;
+      const { content, size, mimeType } = await this.downloadWithAuth(
+        downloadUrl,
+        authCredentials,
+        maxSize,
+        timeout,
+        skipAuth,
+        directDownloadRequest.method
+      );
+
+      if (reportedSize && reportedSize > maxSize) {
+        throw new ValidationError(
+          `File size ${reportedSize} exceeds maximum ${maxSize} bytes`
+        );
+      }
+
+      const finalMimeType = mimeType || metadataMime;
+      if (operation.allowed_mime_types) {
+        if (!this.isMimeTypeAllowed(finalMimeType, operation.allowed_mime_types)) {
+          throw new ValidationError(
+            `MIME type '${finalMimeType}' not in whitelist: ${operation.allowed_mime_types.join(', ')}`
+          );
+        }
+      }
+
+      return {
+        metadata,
+        content,
+        mimeType: finalMimeType,
+        size,
+        fileName,
+      };
+    }
 
     // Step 2: Extract URL from metadata
     const url = this.extractUrl(metadata, urlField);
@@ -73,7 +129,7 @@ export class ProxyDownloadExecutor {
     }
 
     // Step 3: Check MIME type whitelist (from metadata if available)
-    const mimeType = (metadata['mimeType'] as string) || 'application/octet-stream';
+    const mimeType = metadataMime;
     if (operation.allowed_mime_types) {
       if (!this.isMimeTypeAllowed(mimeType, operation.allowed_mime_types)) {
         throw new ValidationError(
@@ -83,7 +139,6 @@ export class ProxyDownloadExecutor {
     }
 
     // Step 4: Check file size (from metadata if available)
-    const reportedSize = metadata['size'] as number | undefined;
     if (reportedSize && reportedSize > maxSize) {
       throw new ValidationError(
         `File size ${reportedSize} exceeds maximum ${maxSize} bytes`
@@ -98,12 +153,12 @@ export class ProxyDownloadExecutor {
         content,
         mimeType: inferredMime || mimeType,
         size,
-        fileName: metadata['name'] as string | undefined,
+        fileName,
       };
     }
 
     const skipAuth = operation.skip_auth ?? false;
-    const { content, size } = await this.downloadWithAuth(
+    const { content, size, mimeType: responseMime } = await this.downloadWithAuth(
       url,
       authCredentials,
       maxSize,
@@ -114,9 +169,9 @@ export class ProxyDownloadExecutor {
     return {
       metadata,
       content,
-      mimeType,
+      mimeType: responseMime || mimeType,
       size,
-      fileName: metadata['name'] as string | undefined,
+      fileName,
     };
   }
 
@@ -162,6 +217,36 @@ export class ProxyDownloadExecutor {
     return typeof current === 'string' ? current : null;
   }
 
+  private extractNestedString(metadata: Record<string, unknown>, path: string): string | undefined {
+    const value = this.extractNestedValue(metadata, path);
+    return typeof value === 'string' ? value : undefined;
+  }
+
+  private extractNestedNumber(metadata: Record<string, unknown>, path: string): number | undefined {
+    const value = this.extractNestedValue(metadata, path);
+    return typeof value === 'number' ? value : undefined;
+  }
+
+  private extractNestedValue(metadata: Record<string, unknown>, path: string): unknown {
+    const parts = path.split('.');
+    let current: unknown = metadata;
+    for (const part of parts) {
+      if (current === null || typeof current !== 'object') {
+        return undefined;
+      }
+      current = (current as Record<string, unknown>)[part];
+    }
+    return current;
+  }
+
+  private buildAbsoluteUrl(path: string): string {
+    if (/^https?:\/\//i.test(path)) {
+      return path;
+    }
+    const baseUrl = this.httpClient.getBaseUrl();
+    return `${baseUrl}${path}`;
+  }
+
   /**
    * Check if MIME type matches whitelist (supports wildcards like 'image/*')
    */
@@ -186,8 +271,9 @@ export class ProxyDownloadExecutor {
     authCredentials: AuthCredentials,
     maxSize: number,
     timeout: number,
-    skipAuth: boolean = false
-  ): Promise<{ content: string; size: number }> {
+    skipAuth: boolean = false,
+    method: string = 'GET'
+  ): Promise<{ content: string; size: number; mimeType?: string }> {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeout);
 
@@ -206,6 +292,7 @@ export class ProxyDownloadExecutor {
       }
 
       const response = await fetch(downloadUrl, {
+        method,
         headers: skipAuth ? {} : authCredentials.headers,
         signal: controller.signal,
       });
@@ -245,6 +332,7 @@ export class ProxyDownloadExecutor {
       return {
         content,
         size: arrayBuffer.byteLength,
+        mimeType: response.headers.get('content-type') || undefined,
       };
 
     } finally {

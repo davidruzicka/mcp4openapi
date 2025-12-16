@@ -321,12 +321,15 @@ export const mockPipeline = {
   web_url: 'https://gitlab.com/my-org/my-project/-/pipelines/501',
 };
 
+export const mockArtifactsContent = 'artifact data\n';
+
 export const mockJobWithArtifacts = {
   ...mockJob,
-  artifacts_file: 'data:application/octet-stream;base64,YXJ0aWZhY3QgZGF0YQo=',
+  artifacts_file: {
+    filename: 'job-artifacts.txt',
+    size: Buffer.byteLength(mockArtifactsContent),
+  },
 };
-
-export const mockArtifactsContent = 'artifact data\n';
 
 export const mockLabels = [
   { id: 1, name: 'bug', color: '#FF0000', description: 'Bugfix' },
