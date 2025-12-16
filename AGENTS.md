@@ -4,9 +4,9 @@ Reference canonical sources; never duplicate rules.
 
 ## Canonical Sources
 
-| File                          | Purpose                          | Scope Boundary                                    | Notes                                           |
+| File                          | Purpose                          | Scope Boundary                                    | Prevails Over / Notes                           |
 | ----------------------------- | -------------------------------- | ------------------------------------------------- | ----------------------------------------------- |
-| `IMPLEMENTATION.md`           | Architecture & design decisions  | System design, component interactions            | Single source for architectural understanding   |
+| `IMPLEMENTATION.md`           | Architecture & design decisions  | System design, component interactions            | Prevails over all except STYLE.md               |
 | `docs/PROFILE-GUIDE.md`       | Profile creation & validation     | Profile structure, tool definitions, best practices | Use for profile-related questions                |
 | `src/types/profile.ts`        | Profile type definitions         | TypeScript interfaces for profiles                | Source of truth for profile structure            |
 | `profile-schema.json`         | JSON Schema for profiles         | IDE autocomplete, JSON validation                | Must stay in sync with TypeScript types         |
@@ -20,6 +20,8 @@ Reference canonical sources; never duplicate rules.
 | `.github/copilot-instructions.md` | Development patterns          | Schema sync, test patterns, file structure       | Development workflow & conventions              |
 
 ## Directives
+
+- **Never duplicate validation or business rules. Always reference canonical docs.**
 
 ### Schema Synchronization (CRITICAL)
 
@@ -65,6 +67,7 @@ Reference canonical sources; never duplicate rules.
 - E2E tests: `tests/e2e/`
 - Mock servers: `src/testing/mock-*-server.ts` (MSW-based)
 - Fixtures: `src/testing/fixtures.ts`
+- **Each new validator must have both success and failure tests.**
 
 Run specific tests: `npm test -- --grep "pattern"`
 
@@ -137,13 +140,14 @@ npm start              # run server
 
 ## Avoid
 
-- **Duplicating validation constraints** - reference `docs/PROFILE-GUIDE.md` and `profile-schema.json`
-- **Returning ORM/raw API responses** - use structured responses with proper error handling
-- **Broad catch-all exceptions** - use specific error types from `src/errors.ts`
-- **Hard-coding API assumptions** - all customization via profiles
-- **Skipping schema sync** - always run `npm run generate-schemas` after type changes
-- **Ignoring Zod strict mode** - unknown properties are silently removed
-- **Never use the Unicode em dash (`—`) or en dash (`–`)** - always use ASCII hyphen-minus (`-`) in documentation or code comments
+- Duplicating validation or business rules (reference canonical docs)
+- Returning ORM/raw API responses
+- Broad catch-all exceptions (use specific error types)
+- Duplicating constraint tables
+- Hard-coding API assumptions (all customization via profiles)
+- Skipping schema sync (always run `npm run generate-schemas` after type changes)
+- Ignoring Zod strict mode (unknown properties are silently removed)
+- Never use the Unicode em dash (`—`) or en dash (`–`) – always use ASCII hyphen-minus (`-`) in documentation or code comments
 
 ## Critical Gotchas
 
