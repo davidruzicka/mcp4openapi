@@ -336,6 +336,19 @@ describe('Integration Tests', () => {
       expect(download.size).toBeGreaterThan(0);
       expect(download.fileName).toBe('job-artifacts.txt');
     });
+
+    it('should play manual job', async () => {
+      const result = await server['executeSimpleTool'](
+        server['profile']!.tools.find(t => t.name === 'manage_pipelines_jobs')!,
+        {
+          project_id: 'my-org/my-project',
+          action: 'play_job',
+          job_id: 1234,
+        }
+      );
+
+      expect((result as Job).status).toBe('pending');
+    });
   });
 
   describe('manage_labels_milestones', () => {
@@ -525,35 +538,6 @@ describe('Integration Tests', () => {
       const jobs = result as Job[];
       expect(jobs.length).toBe(1);
       expect(jobs[0].status).toBe('failed');
-    });
-  });
-
-  describe('manage_job', () => {
-    it('should get job details', async () => {
-      const result = await server['executeSimpleTool'](
-        server['profile']!.tools.find(t => t.name === 'manage_job')!,
-        {
-          project_id: 'my-org/my-project',
-          action: 'get',
-          job_id: 1234,
-        }
-      );
-
-      expect((result as Job).id).toBe(1234);
-      expect((result as Branch).name).toBe('test:unit');
-    });
-
-    it('should play manual job', async () => {
-      const result = await server['executeSimpleTool'](
-        server['profile']!.tools.find(t => t.name === 'manage_job')!,
-        {
-          project_id: 'my-org/my-project',
-          action: 'play',
-          job_id: 1234,
-        }
-      );
-
-      expect((result as Job).status).toBe('pending');
     });
   });
 

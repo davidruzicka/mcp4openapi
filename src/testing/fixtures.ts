@@ -358,7 +358,14 @@ export const mockHooks = [
 ];
 
 export const mockSnippets = [
-  { id: 1, title: 'Snippet one', file_name: 'snippet1.txt', description: 'Test snippet', visibility: 'private', raw_url: 'data:text/plain;base64,c25pcHBldCBjb250ZW50Cg==' },
+  {
+    id: 1,
+    title: 'Snippet one',
+    file_name: 'snippet1.txt',
+    description: 'Test snippet',
+    visibility: 'private',
+    raw_url: 'https://gitlab.com/api/v4/projects/my-org%2Fmy-project/snippets/1/raw',
+  },
 ];
 
 export const mockSnippetRawContent = 'snippet content\n';

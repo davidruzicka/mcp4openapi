@@ -76,13 +76,14 @@
 
     {
       "name": "manage_pipelines_jobs",
-      "description": "Run and inspect pipelines/jobs. Actions: 'run_pipeline', 'get_pipeline', 'get_job', 'retry_job', 'cancel_job', 'download_job_artifacts' (proxy download).",
+      "description": "Run and inspect pipelines/jobs. Actions: 'run_pipeline', 'get_pipeline', 'get_job', 'retry_job', 'cancel_job', 'play_job', 'download_job_artifacts' (proxy download).",
       "metadata_params": ["action", "project_id", "pipeline_id", "job_id"],
       "operations": {
         "run_pipeline": "postApiV4ProjectsIdPipeline",
         "get_pipeline": "getApiV4ProjectsIdPipelinesPipelineId",
         "get_job": "getApiV4ProjectsIdJobsJobId",
         "retry_job": "postApiV4ProjectsIdJobsJobIdRetry",
+        "play_job": "triggerManualJob",
         "cancel_job": "postApiV4ProjectsIdJobsJobIdCancel",
         "download_job_artifacts": {
           "type": "proxy_download",
@@ -98,7 +99,7 @@
       "parameters": {
         "action": {
           "type": "string",
-          "enum": ["run_pipeline", "get_pipeline", "get_job", "retry_job", "cancel_job", "download_job_artifacts"],
+          "enum": ["run_pipeline", "get_pipeline", "get_job", "retry_job", "cancel_job", "play_job", "download_job_artifacts"],
           "description": "Pipeline/job action to perform",
           "required": true
         },
@@ -115,7 +116,7 @@
         "job_id": {
           "type": "integer",
           "description": "Job ID",
-          "required_for": ["get_job", "retry_job", "cancel_job", "download_job_artifacts"]
+          "required_for": ["get_job", "retry_job", "cancel_job", "play_job", "download_job_artifacts"]
         },
         "ref": {
           "type": "string",
@@ -335,8 +336,7 @@
         "download_snippet": {
           "type": "proxy_download",
           "metadata_endpoint": "getApiV4ProjectsIdSnippetsSnippetId",
-          "url_field": "raw_url",
-          "skip_auth": true
+          "download_endpoint": "getApiV4ProjectsIdSnippetsSnippetIdRaw"
         }
       },
       "response_fields": {
@@ -999,34 +999,6 @@
           "type": "array",
           "items": { "type": "string" },
           "description": "Filter by job status (can specify multiple)"
-        }
-      }
-    },
-
-    {
-      "name": "manage_job",
-      "description": "Manage a specific CI/CD job. Actions: 'get' (fetch job details, logs, and timing), 'play' (trigger a manual/delayed job to run immediately). Use 'get' to see job status and output, 'play' to run jobs in 'manual' state.",
-      "operations": {
-        "get": "getApiV4ProjectsIdJobsJobId",
-        "play": "triggerManualJob"
-      },
-      "parameters": {
-        "project_id": {
-          "type": "string",
-          "description": "Project ID. Use numeric ID (e.g. '123') or URL-encoded path (e.g. 'group%2Fproject').",
-          "required": true,
-          "example": "123"
-        },
-        "action": {
-          "type": "string",
-          "enum": ["get", "play"],
-          "description": "Job operation to perform",
-          "required": true
-        },
-        "job_id": {
-          "type": "integer",
-          "description": "The numeric job ID (not job name)",
-          "required": true
         }
       }
     }

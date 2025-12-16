@@ -78,9 +78,12 @@ function adjustParamsForMock(operation: ToolOperation): Record<string, unknown> 
     params.project_id = '12345';  // Override example value with mock data ID
   }
   
-  // manage_job uses job_id
-  if (operation.toolName === 'manage_job') {
-    params.project_id = '12345';  // Override example value with mock data ID
+  // manage_pipelines_jobs needs concrete project/job IDs for job actions
+  if (operation.toolName === 'manage_pipelines_jobs') {
+    params.project_id = '12345';
+    if (params.job_id === undefined) {
+      params.job_id = 1234;
+    }
   }
   
   // Ensure valid IDs for get/update/delete operations
