@@ -24,6 +24,7 @@ export const parameterDefinitionSchema = z.object({
 export const proxyDownloadOperationSchema = z.object({
     type: z.literal("proxy_download"),
     metadata_endpoint: z.string(),
+    download_endpoint: z.string().optional(),
     url_field: z.string().optional(),
     max_size_bytes: z.number().optional(),
     max_size_bytes_from_env: z.string().optional(),

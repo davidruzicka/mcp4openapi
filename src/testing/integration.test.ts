@@ -9,7 +9,29 @@ import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest';
 import path from 'path';
 import { MCPServer } from '../mcp-server.js';
 import { startMockServer, resetMockServer, stopMockServer } from './mock-gitlab-server.js';
-import type { Badge, Branch, AccessRequest, Job, MergeRequest, Issue, CompositeResult } from './test-types.js';
+import type {
+  Badge,
+  Branch,
+  AccessRequest,
+  Job,
+  MergeRequest,
+  MergeRequestChangesResponse,
+  MergeRequestVersion,
+  MergeRequestVersionDetails,
+  RepositoryFile,
+  ProxyDownloadResult,
+  Discussion,
+  Approval,
+  Pipeline,
+  Label,
+  Milestone,
+  Release,
+  Tag,
+  Member,
+  Hook,
+  Issue,
+  CompositeResult,
+} from './test-types.js';
 
 describe('Integration Tests', () => {
   let server: MCPServer;
@@ -221,6 +243,231 @@ describe('Integration Tests', () => {
     });
   });
 
+  describe('repository_files', () => {
+    it('should fetch file metadata with base64 content', async () => {
+      const result = await server['executeSimpleTool'](
+        server['profile']!.tools.find(t => t.name === 'repository_files')!,
+        {
+          project_id: 'my-org/my-project',
+          action: 'get_file',
+          file_path: 'src%2Findex.js',
+          ref: 'main',
+        }
+      );
+
+      const file = result as RepositoryFile;
+      expect(file.file_name).toBe('index.js');
+      expect(file.file_path).toBe('src/index.js');
+      expect(file.encoding).toBe('base64');
+      expect(file.content).toBeDefined();
+    });
+
+    it('should fetch raw file content', async () => {
+      const result = await server['executeSimpleTool'](
+        server['profile']!.tools.find(t => t.name === 'repository_files')!,
+        {
+          project_id: 'my-org/my-project',
+          action: 'get_raw',
+          file_path: 'src%2Findex.js',
+          ref: 'main',
+        }
+      );
+
+      expect(typeof result).toBe('string');
+      expect((result as string)).toContain('hello world');
+    });
+  });
+
+  describe('manage_pipelines_jobs', () => {
+    it('should run pipeline', async () => {
+      const result = await server['executeSimpleTool'](
+        server['profile']!.tools.find(t => t.name === 'manage_pipelines_jobs')!,
+        {
+          project_id: 'my-org/my-project',
+          action: 'run_pipeline',
+          ref: 'main',
+        }
+      );
+
+      const pipeline = result as Pipeline;
+      expect(pipeline.id).toBe(501);
+      expect(pipeline.status).toBeDefined();
+    });
+
+    it('should get pipeline', async () => {
+      const result = await server['executeSimpleTool'](
+        server['profile']!.tools.find(t => t.name === 'manage_pipelines_jobs')!,
+        {
+          project_id: 'my-org/my-project',
+          action: 'get_pipeline',
+          pipeline_id: 501,
+        }
+      );
+
+      expect((result as Pipeline).id).toBe(501);
+    });
+
+    it('should retry job', async () => {
+      const result = await server['executeSimpleTool'](
+        server['profile']!.tools.find(t => t.name === 'manage_pipelines_jobs')!,
+        {
+          project_id: 'my-org/my-project',
+          action: 'retry_job',
+          job_id: 1234,
+        }
+      );
+
+      expect((result as any).status).toBeDefined();
+    });
+
+    it('should download job artifacts via proxy', async () => {
+      const result = await server['executeSimpleTool'](
+        server['profile']!.tools.find(t => t.name === 'manage_pipelines_jobs')!,
+        {
+          project_id: 'my-org/my-project',
+          action: 'download_job_artifacts',
+          job_id: 1234,
+        }
+      );
+
+      const download = result as ProxyDownloadResult;
+      expect(download.mimeType).toBe('application/octet-stream');
+      expect(download.content).toBe('YXJ0aWZhY3QgZGF0YQo=');
+      expect(download.size).toBeGreaterThan(0);
+      expect(download.fileName).toBe('job-artifacts.txt');
+    });
+
+    it('should play manual job', async () => {
+      const result = await server['executeSimpleTool'](
+        server['profile']!.tools.find(t => t.name === 'manage_pipelines_jobs')!,
+        {
+          project_id: 'my-org/my-project',
+          action: 'play_job',
+          job_id: 1234,
+        }
+      );
+
+      expect((result as Job).status).toBe('pending');
+    });
+  });
+
+  describe('manage_labels_milestones', () => {
+    it('should list labels', async () => {
+      const result = await server['executeSimpleTool'](
+        server['profile']!.tools.find(t => t.name === 'manage_labels_milestones')!,
+        {
+          project_id: 'my-org/my-project',
+          action: 'list_labels',
+        }
+      );
+
+      const labels = result as Label[];
+      expect(labels.length).toBeGreaterThan(0);
+      expect(labels[0].name).toBeDefined();
+    });
+
+    it('should list milestones', async () => {
+      const result = await server['executeSimpleTool'](
+        server['profile']!.tools.find(t => t.name === 'manage_labels_milestones')!,
+        {
+          project_id: 'my-org/my-project',
+          action: 'list_milestones',
+        }
+      );
+
+      const milestones = result as Milestone[];
+      expect(milestones[0].title).toBeDefined();
+    });
+  });
+
+  describe('manage_releases_tags', () => {
+    it('should list tags', async () => {
+      const result = await server['executeSimpleTool'](
+        server['profile']!.tools.find(t => t.name === 'manage_releases_tags')!,
+        {
+          project_id: 'my-org/my-project',
+          action: 'list_tags',
+        }
+      );
+
+      const tags = result as Tag[];
+      expect(tags[0].name).toBeDefined();
+    });
+
+    it('should list releases', async () => {
+      const result = await server['executeSimpleTool'](
+        server['profile']!.tools.find(t => t.name === 'manage_releases_tags')!,
+        {
+          project_id: 'my-org/my-project',
+          action: 'list_releases',
+        }
+      );
+
+      const releases = result as Release[];
+      expect(releases[0].tag_name).toBeDefined();
+    });
+  });
+
+  describe('manage_project_members', () => {
+    it('should list members', async () => {
+      const result = await server['executeSimpleTool'](
+        server['profile']!.tools.find(t => t.name === 'manage_project_members')!,
+        {
+          project_id: 'my-org/my-project',
+          action: 'list_members',
+        }
+      );
+
+      const members = result as Member[];
+      expect(members[0].username).toBeDefined();
+    });
+  });
+
+  describe('manage_project_hooks', () => {
+    it('should list hooks', async () => {
+      const result = await server['executeSimpleTool'](
+        server['profile']!.tools.find(t => t.name === 'manage_project_hooks')!,
+        {
+          project_id: 'my-org/my-project',
+          action: 'list_hooks',
+        }
+      );
+
+      const hooks = result as Hook[];
+      expect(hooks[0].url).toBeDefined();
+    });
+  });
+
+  describe('manage_snippets', () => {
+    it('should list snippets', async () => {
+      const result = await server['executeSimpleTool'](
+        server['profile']!.tools.find(t => t.name === 'manage_snippets')!,
+        {
+          project_id: 'my-org/my-project',
+          action: 'list_snippets',
+        }
+      );
+
+      const snippets = result as any[];
+      expect(snippets[0].id).toBeDefined();
+    });
+
+    it('should download snippet raw content', async () => {
+      const result = await server['executeSimpleTool'](
+        server['profile']!.tools.find(t => t.name === 'manage_snippets')!,
+        {
+          project_id: 'my-org/my-project',
+          action: 'download_snippet',
+          snippet_id: 1,
+        }
+      );
+
+      const download = result as ProxyDownloadResult;
+      expect(download.mimeType).toContain('text/plain');
+      expect(download.content).toBe('c25pcHBldCBjb250ZW50Cg==');
+    });
+  });
+
   describe('manage_access_requests', () => {
     it('should list project access requests', async () => {
       const result = await server['executeSimpleTool'](
@@ -291,35 +538,6 @@ describe('Integration Tests', () => {
       const jobs = result as Job[];
       expect(jobs.length).toBe(1);
       expect(jobs[0].status).toBe('failed');
-    });
-  });
-
-  describe('manage_job', () => {
-    it('should get job details', async () => {
-      const result = await server['executeSimpleTool'](
-        server['profile']!.tools.find(t => t.name === 'manage_job')!,
-        {
-          project_id: 'my-org/my-project',
-          action: 'get',
-          job_id: 1234,
-        }
-      );
-
-      expect((result as Job).id).toBe(1234);
-      expect((result as Branch).name).toBe('test:unit');
-    });
-
-    it('should play manual job', async () => {
-      const result = await server['executeSimpleTool'](
-        server['profile']!.tools.find(t => t.name === 'manage_job')!,
-        {
-          project_id: 'my-org/my-project',
-          action: 'play',
-          job_id: 1234,
-        }
-      );
-
-      expect((result as Job).status).toBe('pending');
     });
   });
 
@@ -485,6 +703,130 @@ describe('Integration Tests', () => {
 
       // 204 No Content returns empty body
       expect(result).toBeDefined();
+    });
+
+    it('should download merge request note attachment via proxy', async () => {
+      const result = await server['executeSimpleTool'](
+        server['profile']!.tools.find(t => t.name === 'manage_merge_requests')!,
+        {
+          project_id: 'my-org/my-project',
+          action: 'download_note_attachment',
+          merge_request_iid: 1,
+          note_id: 2,
+        }
+      );
+
+      const download = result as ProxyDownloadResult;
+      expect(download.metadata).toBeDefined();
+      expect(download.content).toBeDefined();
+      expect(download.mimeType).toContain('text/plain');
+      expect(download.size).toBeGreaterThan(0);
+    });
+
+    it('should list discussions', async () => {
+      const result = await server['executeSimpleTool'](
+        server['profile']!.tools.find(t => t.name === 'manage_merge_requests')!,
+        {
+          project_id: 'my-org/my-project',
+          action: 'list_discussions',
+          merge_request_iid: 1,
+        }
+      );
+
+      const discussions = result as Discussion[];
+      expect(Array.isArray(discussions)).toBe(true);
+      expect(discussions[0].id).toBeDefined();
+    });
+
+    it('should resolve discussion', async () => {
+      const result = await server['executeSimpleTool'](
+        server['profile']!.tools.find(t => t.name === 'manage_merge_requests')!,
+        {
+          project_id: 'my-org/my-project',
+          action: 'resolve_discussion',
+          merge_request_iid: 1,
+          discussion_id: 'disc-1',
+        }
+      );
+
+      expect((result as Discussion).resolved).toBe(true);
+    });
+
+    it('should fetch approvals and approve MR', async () => {
+      const approvals = await server['executeSimpleTool'](
+        server['profile']!.tools.find(t => t.name === 'manage_merge_requests')!,
+        {
+          project_id: 'my-org/my-project',
+          action: 'get_approvals',
+          merge_request_iid: 1,
+        }
+      );
+      expect((approvals as Approval).approvals_required).toBeGreaterThan(0);
+
+      const approved = await server['executeSimpleTool'](
+        server['profile']!.tools.find(t => t.name === 'manage_merge_requests')!,
+        {
+          project_id: 'my-org/my-project',
+          action: 'approve',
+          merge_request_iid: 1,
+        }
+      );
+      expect((approved as Approval).approvals_left).toBe(0);
+    });
+
+    it('should get merge request changes', async () => {
+      const result = await server['executeSimpleTool'](
+        server['profile']!.tools.find(t => t.name === 'manage_merge_requests')!,
+        {
+          project_id: 'my-org/my-project',
+          action: 'get_changes',
+          merge_request_iid: 1,
+        }
+      );
+
+      expect(result).toBeDefined();
+      const changes = result as MergeRequestChangesResponse;
+      expect(changes.iid).toBe(1);
+      expect(Array.isArray(changes.changes)).toBe(true);
+      expect(changes.changes.length).toBeGreaterThan(0);
+      expect(changes.changes[0].diff).toContain('@@');
+    });
+
+    it('should list merge request diff versions', async () => {
+      const result = await server['executeSimpleTool'](
+        server['profile']!.tools.find(t => t.name === 'manage_merge_requests')!,
+        {
+          project_id: 'my-org/my-project',
+          action: 'list_versions',
+          merge_request_iid: 1,
+        }
+      );
+
+      expect(result).toBeDefined();
+      const versions = result as MergeRequestVersion[];
+      expect(Array.isArray(versions)).toBe(true);
+      expect(versions.length).toBe(2);
+      expect(versions[0].id).toBe(101);
+      expect(versions[0].head_commit_sha).toBeDefined();
+    });
+
+    it('should get merge request diff version', async () => {
+      const result = await server['executeSimpleTool'](
+        server['profile']!.tools.find(t => t.name === 'manage_merge_requests')!,
+        {
+          project_id: 'my-org/my-project',
+          action: 'get_version',
+          merge_request_iid: 1,
+          version_id: 101,
+        }
+      );
+
+      expect(result).toBeDefined();
+      const version = result as MergeRequestVersionDetails;
+      expect(version.id).toBe(101);
+      expect(Array.isArray(version.diffs)).toBe(true);
+      expect(version.diffs.length).toBeGreaterThan(0);
+      expect(version.diffs[0].old_path).toBeDefined();
     });
   });
 
@@ -674,4 +1016,3 @@ describe('Integration Tests', () => {
     });
   });
 });
-
