@@ -331,8 +331,10 @@ describe('Integration Tests', () => {
       );
 
       const download = result as ProxyDownloadResult;
-      expect(download.content).toBeDefined();
+      expect(download.mimeType).toBe('application/octet-stream');
+      expect(download.content).toBe('YXJ0aWZhY3QgZGF0YQo=');
       expect(download.size).toBeGreaterThan(0);
+      expect(download.fileName).toBe('job-artifacts.txt');
     });
   });
 
@@ -448,8 +450,8 @@ describe('Integration Tests', () => {
       );
 
       const download = result as ProxyDownloadResult;
-      expect(download.content).toBeDefined();
       expect(download.mimeType).toContain('text/plain');
+      expect(download.content).toBe('c25pcHBldCBjb250ZW50Cg==');
     });
   });
 

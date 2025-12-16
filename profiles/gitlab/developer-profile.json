@@ -568,8 +568,7 @@
         "download_job_artifacts": {
           "type": "proxy_download",
           "metadata_endpoint": "getApiV4ProjectsIdJobsJobId",
-          "url_field": "artifacts_file",
-          "skip_auth": true
+          "download_endpoint": "getApiV4ProjectsIdJobsJobIdArtifacts"
         }
       },
       "response_fields": {

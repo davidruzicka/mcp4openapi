@@ -4,15 +4,19 @@ import { ValidationError } from './errors.js';
 import type { ProxyDownloadOperation } from './types/profile.js';
 import type { AuthCredentials } from './interceptors.js';
 
+const metadataRequest = (path: string, method: string = 'GET') => ({ path, method });
+
 describe('ProxyDownloadExecutor', () => {
   const mockHttpClient = {
     request: vi.fn(),
+    getBaseUrl: vi.fn(() => 'https://api.example.com'),
   };
 
   let originalFetch: typeof fetch;
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockHttpClient.getBaseUrl.mockReturnValue('https://api.example.com');
     originalFetch = global.fetch;
   });
 
@@ -51,7 +55,7 @@ describe('ProxyDownloadExecutor', () => {
 
     const result = await executor.execute(
       operation,
-      '/issues/PROJ-1/attachments/att-123',
+      metadataRequest('/issues/PROJ-1/attachments/att-123'),
       { headers: { Authorization: 'Bearer token' } }
     );
 
@@ -60,6 +64,55 @@ describe('ProxyDownloadExecutor', () => {
     expect(result.content).toBeDefined();
     expect(result.size).toBe(mockBlob.byteLength);
     expect(result.metadata.id).toBe('att-123');
+  });
+
+  it('should download directly when download_endpoint is provided', async () => {
+    mockHttpClient.request.mockResolvedValue({
+      status: 200,
+      headers: {},
+      body: {
+        id: 1234,
+        artifacts_file: {
+          filename: 'job-artifacts.txt',
+          size: 14,
+        },
+      },
+    });
+
+    const mockBinary = new TextEncoder().encode('artifact data\n');
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      headers: new Headers({
+        'content-length': String(mockBinary.byteLength),
+        'content-type': 'application/octet-stream',
+      }),
+      arrayBuffer: () => Promise.resolve(mockBinary.buffer),
+    });
+
+    const executor = new ProxyDownloadExecutor(mockHttpClient as any);
+    const operation: ProxyDownloadOperation = {
+      type: 'proxy_download',
+      metadata_endpoint: 'getApiV4ProjectsIdJobsJobId',
+      download_endpoint: 'getApiV4ProjectsIdJobsJobIdArtifacts',
+    };
+
+    const result = await executor.execute(
+      operation,
+      metadataRequest('/projects/1/jobs/1234'),
+      { headers: { Authorization: 'Bearer job-token' } },
+      { path: '/projects/1/jobs/1234/artifacts', method: 'GET' }
+    );
+
+    expect(result.size).toBe(mockBinary.byteLength);
+    expect(result.fileName).toBe('job-artifacts.txt');
+    expect(result.mimeType).toBe('application/octet-stream');
+    expect(global.fetch).toHaveBeenCalledWith(
+      'https://api.example.com/projects/1/jobs/1234/artifacts',
+      expect.objectContaining({
+        method: 'GET',
+        headers: { Authorization: 'Bearer job-token' },
+      })
+    );
   });
 
   it('should reject files exceeding max size', async () => {
@@ -82,7 +135,7 @@ describe('ProxyDownloadExecutor', () => {
     };
 
     await expect(
-      executor.execute(operation, '/attachments/123', { headers: {} })
+      executor.execute(operation, metadataRequest('/attachments/123'), { headers: {} })
     ).rejects.toThrow('exceeds maximum');
   });
 
@@ -105,7 +158,7 @@ describe('ProxyDownloadExecutor', () => {
     };
 
     await expect(
-      executor.execute(operation, '/attachments/123', { headers: {} })
+      executor.execute(operation, metadataRequest('/attachments/123'), { headers: {} })
     ).rejects.toThrow('not in whitelist');
   });
 
@@ -139,7 +192,7 @@ describe('ProxyDownloadExecutor', () => {
 
     const result = await executor.execute(
       operation,
-      '/attachments/456',
+      metadataRequest('/attachments/456'),
       { headers: {} }
     );
 
@@ -173,7 +226,7 @@ describe('ProxyDownloadExecutor', () => {
     };
 
     await expect(
-      executor.execute(operation, '/attachments/123', {})
+      executor.execute(operation, metadataRequest('/attachments/123'), {})
     ).rejects.toThrow();
   }, 2000);
 
@@ -201,7 +254,11 @@ describe('ProxyDownloadExecutor', () => {
       // url_field omitted, should default to 'url'
     };
 
-    const result = await executor.execute(operation, '/attachments/123', { headers: {} });
+    const result = await executor.execute(
+      operation,
+      metadataRequest('/attachments/123'),
+      { headers: {} }
+    );
 
     expect(result.content).toBeDefined();
     expect(result.mimeType).toBe('text/plain');
@@ -227,7 +284,7 @@ describe('ProxyDownloadExecutor', () => {
     };
 
     await expect(
-      executor.execute(operation, '/attachments/789', { headers: {} })
+      executor.execute(operation, metadataRequest('/attachments/789'), { headers: {} })
     ).rejects.toThrow('not found in metadata');
   });
 });
@@ -235,12 +292,14 @@ describe('ProxyDownloadExecutor', () => {
 describe('ProxyDownloadExecutor - Auth Credentials', () => {
   const mockHttpClient = {
     request: vi.fn(),
+    getBaseUrl: vi.fn(() => 'https://api.example.com'),
   };
 
   let originalFetch: typeof fetch;
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockHttpClient.getBaseUrl.mockReturnValue('https://api.example.com');
     originalFetch = global.fetch;
   });
 
@@ -280,7 +339,7 @@ describe('ProxyDownloadExecutor - Auth Credentials', () => {
       headers: { Authorization: 'Bearer my-token' },
     };
 
-    await executor.execute(operation, '/file', authCredentials);
+    await executor.execute(operation, metadataRequest('/file'), authCredentials);
 
     expect(capturedInit?.headers).toEqual({ Authorization: 'Bearer my-token' });
   });
@@ -317,7 +376,7 @@ describe('ProxyDownloadExecutor - Auth Credentials', () => {
       headers: { 'X-API-Key': 'my-api-key' },
     };
 
-    await executor.execute(operation, '/file', authCredentials);
+    await executor.execute(operation, metadataRequest('/file'), authCredentials);
 
     expect(capturedInit?.headers).toEqual({ 'X-API-Key': 'my-api-key' });
   });
@@ -355,7 +414,7 @@ describe('ProxyDownloadExecutor - Auth Credentials', () => {
       queryParams: { key: 'token', value: 'abc123' },
     };
 
-    await executor.execute(operation, '/file', authCredentials);
+    await executor.execute(operation, metadataRequest('/file'), authCredentials);
 
     expect(capturedUrl).toContain('token=abc123');
     expect(capturedUrl).toContain('version=1'); // Original param preserved
@@ -394,7 +453,7 @@ describe('ProxyDownloadExecutor - Auth Credentials', () => {
       queryParams: { key: 'token', value: 'new-token' },
     };
 
-    await executor.execute(operation, '/file', authCredentials);
+    await executor.execute(operation, metadataRequest('/file'), authCredentials);
 
     // Should keep existing token, not add new one
     expect(capturedUrl).toContain('token=existing-token');
@@ -438,7 +497,7 @@ describe('ProxyDownloadExecutor - Auth Credentials', () => {
 
     // In reality, InterceptorChain would only return one auth type
     // But if both are provided, should use headers
-    await executor.execute(operation, '/file', authCredentials);
+    await executor.execute(operation, metadataRequest('/file'), authCredentials);
 
     expect(capturedInit?.headers).toEqual({ Authorization: 'Bearer my-token' });
     // Query param would still be added if provided
@@ -449,12 +508,14 @@ describe('ProxyDownloadExecutor - Auth Credentials', () => {
 describe('ProxyDownloadExecutor - skip_auth option', () => {
   const mockHttpClient = {
     request: vi.fn(),
+    getBaseUrl: vi.fn(() => 'https://api.example.com'),
   };
 
   let originalFetch: typeof fetch;
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockHttpClient.getBaseUrl.mockReturnValue('https://api.example.com');
     originalFetch = global.fetch;
   });
 
@@ -495,7 +556,7 @@ describe('ProxyDownloadExecutor - skip_auth option', () => {
       headers: { Authorization: 'Bearer should-not-be-used' },
     };
 
-    await executor.execute(operation, '/file', authCredentials);
+    await executor.execute(operation, metadataRequest('/file'), authCredentials);
 
     // Auth headers should NOT be sent
     expect(capturedInit?.headers).toEqual({});
@@ -535,7 +596,7 @@ describe('ProxyDownloadExecutor - skip_auth option', () => {
       queryParams: { key: 'token', value: 'should-not-be-added' },
     };
 
-    await executor.execute(operation, '/file', authCredentials);
+    await executor.execute(operation, metadataRequest('/file'), authCredentials);
 
     // Query auth param should NOT be added
     expect(capturedUrl).not.toContain('token=');
@@ -567,7 +628,7 @@ describe('ProxyDownloadExecutor - skip_auth option', () => {
       skip_auth: true,
     };
 
-    await executor.execute(operation, '/file', { headers: { Authorization: 'Bearer token' } });
+    await executor.execute(operation, metadataRequest('/file'), { headers: { Authorization: 'Bearer token' } });
 
     // Metadata endpoint should still be authenticated via httpClient.request()
     expect(mockHttpClient.request).toHaveBeenCalledWith('GET', '/file');
@@ -606,7 +667,7 @@ describe('ProxyDownloadExecutor - skip_auth option', () => {
       headers: { Authorization: 'Bearer token' },
     };
 
-    await executor.execute(operation, '/file', authCredentials);
+    await executor.execute(operation, metadataRequest('/file'), authCredentials);
 
     // Auth headers should be sent (default behavior)
     expect(capturedInit?.headers).toEqual({ Authorization: 'Bearer token' });
@@ -648,7 +709,7 @@ describe('ProxyDownloadExecutor - skip_auth option', () => {
       queryParams: { key: 'api_key', value: 'secret' },
     };
 
-    await executor.execute(operation, '/file', authCredentials);
+    await executor.execute(operation, metadataRequest('/file'), authCredentials);
 
     // S3 URL should be unchanged (no auth added)
     expect(capturedUrl).toContain('X-Amz-Signature=abc123def456');
@@ -689,7 +750,7 @@ describe('ProxyDownloadExecutor - skip_auth option', () => {
       headers: { Authorization: 'Bearer token' },
     };
 
-    await executor.execute(operation, '/file', authCredentials);
+    await executor.execute(operation, metadataRequest('/file'), authCredentials);
 
     // Auth headers should be sent
     expect(capturedInit?.headers).toEqual({ Authorization: 'Bearer token' });
@@ -721,7 +782,7 @@ describe('ProxyDownloadExecutor - skip_auth option', () => {
     };
 
     await expect(
-      executor.execute(operation, '/file', { headers: {} })
+      executor.execute(operation, metadataRequest('/file'), { headers: {} })
     ).rejects.toThrow('Download failed: HTTP 403');
   });
 
@@ -751,7 +812,7 @@ describe('ProxyDownloadExecutor - skip_auth option', () => {
     };
 
     await expect(
-      executor.execute(operation, '/file', { headers: {} })
+      executor.execute(operation, metadataRequest('/file'), { headers: {} })
     ).rejects.toThrow('exceeds maximum');
   });
 
@@ -783,7 +844,7 @@ describe('ProxyDownloadExecutor - skip_auth option', () => {
     };
 
     await expect(
-      executor.execute(operation, '/file', { headers: {} })
+      executor.execute(operation, metadataRequest('/file'), { headers: {} })
     ).rejects.toThrow('exceeds maximum');
   });
 
@@ -805,7 +866,7 @@ describe('ProxyDownloadExecutor - skip_auth option', () => {
     };
 
     await expect(
-      executor.execute(operation, '/attachments/999', { headers: {} })
+      executor.execute(operation, metadataRequest('/attachments/999'), { headers: {} })
     ).rejects.toThrow('not found in metadata');
   });
 
@@ -827,7 +888,7 @@ describe('ProxyDownloadExecutor - skip_auth option', () => {
     };
 
     await expect(
-      executor.execute(operation, '/attachments/888', { headers: {} })
+      executor.execute(operation, metadataRequest('/attachments/888'), { headers: {} })
     ).rejects.toThrow('not found in metadata');
   });
 
@@ -854,7 +915,7 @@ describe('ProxyDownloadExecutor - skip_auth option', () => {
     };
 
     await expect(
-      executor.execute(operation, { id: '123' }, { headers: {} })
+      executor.execute(operation, metadataRequest('/attachments/123'), { headers: {} })
     ).rejects.toThrow(
       "MIME type 'application/x-msdownload' not in whitelist: image/jpeg, image/png, application/pdf"
     );
@@ -862,12 +923,13 @@ describe('ProxyDownloadExecutor - skip_auth option', () => {
 });
 
 describe('ProxyDownloadExecutor - env overrides', () => {
-  const mockHttpClient = { request: vi.fn() };
+  const mockHttpClient = { request: vi.fn(), getBaseUrl: vi.fn(() => 'https://api.example.com') };
   let originalFetch: typeof fetch;
   const originalEnv = { ...process.env };
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockHttpClient.getBaseUrl.mockReturnValue('https://api.example.com');
     originalFetch = global.fetch;
   });
 
@@ -904,7 +966,7 @@ describe('ProxyDownloadExecutor - env overrides', () => {
     };
 
     await expect(
-      executor.execute(operation, '/file', { headers: {} })
+      executor.execute(operation, metadataRequest('/file'), { headers: {} })
     ).rejects.toBeInstanceOf(ValidationError);
   });
 
@@ -928,7 +990,7 @@ describe('ProxyDownloadExecutor - env overrides', () => {
     };
 
     await expect(
-      executor.execute(operation, '/file', { headers: {} })
+      executor.execute(operation, metadataRequest('/file'), { headers: {} })
     ).rejects.toBeInstanceOf(ValidationError);
   });
 
@@ -960,8 +1022,7 @@ describe('ProxyDownloadExecutor - env overrides', () => {
     };
 
     await expect(
-      executor.execute(operation, '/file', { headers: {} })
+      executor.execute(operation, metadataRequest('/file'), { headers: {} })
     ).rejects.toThrow('exceeds maximum');
   });
 });
-

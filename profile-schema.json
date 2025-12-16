@@ -572,6 +572,10 @@
           "type": "string",
           "description": "OpenAPI operation ID to fetch metadata (e.g., 'get_/issues/{id}/attachments/{attachmentId}')"
         },
+        "download_endpoint": {
+          "type": "string",
+          "description": "OpenAPI operation ID for direct download endpoint when metadata does not expose a URL"
+        },
         "url_field": {
           "type": "string",
           "description": "JSON path to URL field in metadata response",

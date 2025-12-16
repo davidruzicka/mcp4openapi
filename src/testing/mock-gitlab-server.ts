@@ -515,6 +515,17 @@ export function createGitLabHandlers(baseUrl: string = DEFAULT_BASE_URL): Reques
     }),
 
     // Jobs
+    http.get(`${baseUrl}/projects/*/jobs/*/artifacts`, () => {
+      const content = fixtures.mockArtifactsContent;
+      return new HttpResponse(content, {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/octet-stream',
+          'Content-Length': String(Buffer.byteLength(content)),
+        },
+      });
+    }),
+
     http.get(`${baseUrl}/projects/*/jobs`, ({ request }) => {
       const scope = parseScopeParam(request);
 
@@ -570,6 +581,7 @@ export function createGitLabHandlers(baseUrl: string = DEFAULT_BASE_URL): Reques
       }
       return HttpResponse.json({ message: 'Not Found' }, { status: 404 });
     }),
+
 
     // Rate limiting simulation
     http.get(`${baseUrl}/rate-limit-test`, () => {
