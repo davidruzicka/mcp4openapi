@@ -74,7 +74,7 @@ describe('ProxyDownloadExecutor', () => {
         id: 1234,
         artifacts_file: {
           filename: 'job-artifacts.txt',
-          size: 14,
+          size: '14',
         },
       },
     });
@@ -112,6 +112,84 @@ describe('ProxyDownloadExecutor', () => {
         method: 'GET',
         headers: { Authorization: 'Bearer job-token' },
       })
+    );
+  });
+
+  it('should throw when direct download metadata size exceeds max', async () => {
+    mockHttpClient.request.mockResolvedValue({
+      status: 200,
+      headers: {},
+      body: {
+        id: 1234,
+        artifacts_file: {
+          filename: 'job-artifacts.txt',
+          size: 200,
+        },
+      },
+    });
+
+    const mockBinary = new TextEncoder().encode('artifact data\n');
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      headers: new Headers({
+        'content-length': String(mockBinary.byteLength),
+        'content-type': 'application/octet-stream',
+      }),
+      arrayBuffer: () => Promise.resolve(mockBinary.buffer),
+    });
+
+    const executor = new ProxyDownloadExecutor(mockHttpClient as any);
+    const operation: ProxyDownloadOperation = {
+      type: 'proxy_download',
+      metadata_endpoint: 'getApiV4ProjectsIdJobsJobId',
+      download_endpoint: 'getApiV4ProjectsIdJobsJobIdArtifacts',
+      max_size_bytes: 100,
+    };
+
+    await expect(
+      executor.execute(
+        operation,
+        metadataRequest('/projects/1/jobs/1234'),
+        { headers: { Authorization: 'Bearer token' } },
+        { path: '/projects/1/jobs/1234/artifacts', method: 'GET' }
+      )
+    ).rejects.toThrow('exceeds maximum');
+  });
+
+  it('should use absolute download endpoint without prefixing base URL', async () => {
+    mockHttpClient.request.mockResolvedValue({
+      status: 200,
+      headers: {},
+      body: { id: 1234 },
+    });
+
+    const mockBinary = new Uint8Array([0x01, 0x02]);
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      headers: new Headers({
+        'content-length': String(mockBinary.byteLength),
+        'content-type': 'application/octet-stream',
+      }),
+      arrayBuffer: () => Promise.resolve(mockBinary.buffer),
+    });
+
+    const executor = new ProxyDownloadExecutor(mockHttpClient as any);
+    const operation: ProxyDownloadOperation = {
+      type: 'proxy_download',
+      metadata_endpoint: 'getApiV4ProjectsIdJobsJobId',
+      download_endpoint: 'getApiV4ProjectsIdJobsJobIdArtifacts',
+    };
+
+    await executor.execute(
+      operation,
+      metadataRequest('/projects/1/jobs/1234'),
+      { headers: { Authorization: 'Bearer token' } },
+      { path: 'https://cdn.example.com/artifacts/1234', method: 'GET' }
+    );
+
+    expect(global.fetch).toHaveBeenCalledWith(
+      'https://cdn.example.com/artifacts/1234',
+      expect.objectContaining({ method: 'GET' })
     );
   });
 
@@ -357,6 +435,49 @@ describe('ProxyDownloadExecutor', () => {
     await expect(
       executor.execute(operation, metadataRequest('/attachments/789'), { headers: {} })
     ).rejects.toThrow('not found in metadata');
+  });
+
+  it('should reject unsupported data URL format', async () => {
+    mockHttpClient.request.mockResolvedValue({
+      status: 200,
+      headers: {},
+      body: {
+        url: 'data:text/plain,Hello',
+      },
+    });
+
+    const executor = new ProxyDownloadExecutor(mockHttpClient as any);
+    const operation: ProxyDownloadOperation = {
+      type: 'proxy_download',
+      metadata_endpoint: 'get_/file',
+      url_field: 'url',
+    };
+
+    await expect(
+      executor.execute(operation, metadataRequest('/file'), { headers: {} })
+    ).rejects.toThrow('Unsupported data URL format');
+  });
+
+  it('should enforce max size for data URLs', async () => {
+    mockHttpClient.request.mockResolvedValue({
+      status: 200,
+      headers: {},
+      body: {
+        url: 'data:text/plain;base64,QUJDRA==', // ABCD
+      },
+    });
+
+    const executor = new ProxyDownloadExecutor(mockHttpClient as any);
+    const operation: ProxyDownloadOperation = {
+      type: 'proxy_download',
+      metadata_endpoint: 'get_/file',
+      url_field: 'url',
+      max_size_bytes: 3,
+    };
+
+    await expect(
+      executor.execute(operation, metadataRequest('/file'), { headers: {} })
+    ).rejects.toThrow('Downloaded file size 4 exceeds maximum 3 bytes');
   });
 });
 

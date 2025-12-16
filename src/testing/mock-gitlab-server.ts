@@ -1007,8 +1007,14 @@ export function createGitLabHandlers(baseUrl: string = DEFAULT_BASE_URL): Reques
     }),
 
     // Snippets
-    http.get(`${baseUrl}/projects/*/snippets`, () => {
-      return HttpResponse.json(fixtures.mockSnippets);
+    http.get(`${baseUrl}/projects/*/snippets`, ({ request }) => {
+      const url = new URL(request.url);
+      const projectPath = url.pathname.split('/projects/')[1]?.split('/snippets')[0] || '';
+      const snippets = fixtures.mockSnippets.map(snippet => ({
+        ...snippet,
+        raw_url: `${baseUrl}/projects/${projectPath}/snippets/${snippet.id}/raw`,
+      }));
+      return HttpResponse.json(snippets);
     }),
 
     http.get(`${baseUrl}/projects/*/snippets/*/raw`, () => {
@@ -1025,7 +1031,12 @@ export function createGitLabHandlers(baseUrl: string = DEFAULT_BASE_URL): Reques
     http.get(`${baseUrl}/projects/*/snippets/*`, ({ request }) => {
       const snippetId = extractIidFromUrl(request.url);
       if (snippetId === 1) {
-        return HttpResponse.json(fixtures.mockSnippets[0]);
+        const url = new URL(request.url);
+        const projectPath = url.pathname.split('/projects/')[1]?.split('/snippets')[0] || '';
+        return HttpResponse.json({
+          ...fixtures.mockSnippets[0],
+          raw_url: `${baseUrl}/projects/${projectPath}/snippets/${snippetId}/raw`,
+        });
       }
       return HttpResponse.json({ message: 'Not Found' }, { status: 404 });
     }),
