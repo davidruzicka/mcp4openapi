@@ -974,6 +974,15 @@ describe('MCPServer', () => {
       expect(hosts).toContain('not-a-url');
     });
 
+    it('should skip CIDR blocks', () => {
+      const server = new MCPServer();
+      const hosts = (server as any).extractHostsFromOrigins('localhost,127.0.0.1/8,10.0.0.0/8,2a06:2140::/29');
+      expect(hosts).toContain('localhost');
+      expect(hosts).not.toContain('127.0.0.1/8');
+      expect(hosts).not.toContain('10.0.0.0/8');
+      expect(hosts).not.toContain('2a06:2140::/29');
+    });
+
     it('should skip entries with spaces', () => {
       const server = new MCPServer();
       const hosts = (server as any).extractHostsFromOrigins('http://localhost, invalid entry');
