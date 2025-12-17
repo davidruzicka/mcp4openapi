@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.7] - 2025-12-18
+
+### Changed
+- Stabilized GitLab E2E suites by reusing a single mock server and MCP process per file, reducing startup/shutdown overhead.
+- Hardened HTTP transport config tests by mocking `HttpTransport` construction, ensuring environment-derived settings are exercised.
+
 ## [0.2.6] - 2025-12-17
 
 ### Added
@@ -103,7 +109,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Schema validation for request bodies
 - Structured logging (console/JSON)
 
-[Unreleased]: https://github.com/davidruzicka/mcp4openapi/compare/v0.2.5...HEAD
+[0.2.7]: https://github.com/davidruzicka/mcp4openapi/compare/v0.2.6...v0.2.7
+[0.2.6]: https://github.com/davidruzicka/mcp4openapi/compare/v0.2.5...v0.2.6
+[0.2.5]: https://github.com/davidruzicka/mcp4openapi/compare/v0.2.4...v0.2.5
 [0.2.4]: https://github.com/davidruzicka/mcp4openapi/compare/v0.2.3...v0.2.4
 [0.2.3]: https://github.com/davidruzicka/mcp4openapi/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/davidruzicka/mcp4openapi/compare/v0.2.1...v0.2.2
