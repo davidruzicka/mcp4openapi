@@ -1,11 +1,11 @@
 /**
  * E2E tests for full tools coverage
- * 
+ *
  * Tests all operations from the GitLab profile against mock API.
  * Validates that each tool call succeeds and returns expected response structure.
  */
 
-import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { resolve } from 'path';
 import { McpProcess, JsonRpcResponse } from './utils/mcp-process.js';
 import { startStandaloneMockServer, getAvailablePort, MockServerInstance } from './utils/mock-server.js';
@@ -116,28 +116,18 @@ function adjustParamsForMock(operation: ToolOperation): Record<string, unknown> 
   return params;
 }
 
-describe('Tools Coverage E2E', () => {
+describe('GitLab E2E (shared mock + MCP)', () => {
   let mockServer: MockServerInstance;
-  let mockServerPort: number;
   let mcp: McpProcess;
   let sessionId: string | undefined;
+  let httpPort: number;
   
   const operations = loadProfileOperations(PROFILE_PATH);
   const operationsByTool = groupOperationsByTool(operations);
 
   beforeAll(async () => {
-    mockServerPort = await getAvailablePort();
-    mockServer = await startStandaloneMockServer({
-      port: mockServerPort,
-    });
-  });
-
-  afterAll(async () => {
-    await mockServer.stop();
-  });
-
-  beforeEach(async () => {
-    const httpPort = await getAvailablePort();
+    mockServer = await startStandaloneMockServer();
+    httpPort = await getAvailablePort();
     mcp = new McpProcess({
       transport: 'http',
       openapiSpecPath: OPENAPI_PATH,
@@ -146,10 +136,20 @@ describe('Tools Coverage E2E', () => {
       apiToken: 'test-token-12345',
       httpPort,
       logLevel: 'ERROR',
+      env: {
+        // Avoid rate limiting when all tools run in one session
+        MCP4_HTTP_RATE_LIMIT_ENABLED: 'false',
+      },
     });
-    
     await mcp.start();
-    
+  });
+
+  afterAll(async () => {
+    await mcp.stop();
+    await mockServer.stop();
+  });
+
+  beforeEach(async () => {
     const initResponse = await mcp.initialize();
     expect(initResponse.error).toBeUndefined();
     
@@ -160,190 +160,118 @@ describe('Tools Coverage E2E', () => {
     }
   });
 
-  afterEach(async () => {
-    await mcp.stop();
-  });
-
-  // Generate tests for each tool
-  for (const [toolName, toolOps] of operationsByTool) {
-    const hasStandardOps = toolOps.some(op => !op.isComposite);
-    if (!hasStandardOps) {
-      continue;
-    }
-    describe(toolName, () => {
-      for (const operation of toolOps) {
-        // Skip composite tools from auto-generated coverage; they have dedicated tests below
-        if (operation.isComposite) {
-          continue;
-        }
-        
-        it(`${operation.action} returns valid response`, async () => {
-          const params = adjustParamsForMock(operation);
-          
-          const response = await mcp.callTool(toolName, params, sessionId);
-          
-          // Some delete operations may return 404 if resource doesn't exist in mock
-          // but the important thing is they complete without internal errors
-          if (response.error) {
-            // Check it's an API error, not internal error
-            expect(response.error.code).not.toBe(-32603); // Internal error
-            expect(response.error.code).not.toBe(-32600); // Invalid request
-          } else {
-            validateToolResponse(response, operation);
+  describe('Tools coverage', () => {
+    // Generate tests for each tool
+    for (const [toolName, toolOps] of operationsByTool) {
+      const hasStandardOps = toolOps.some(op => !op.isComposite);
+      if (!hasStandardOps) {
+        continue;
+      }
+      describe(toolName, () => {
+        for (const operation of toolOps) {
+          // Skip composite tools from auto-generated coverage; they have dedicated tests below
+          if (operation.isComposite) {
+            continue;
           }
-        }, 15000);
-      }
-    });
-  }
-});
-
-describe('Composite Tools E2E', () => {
-  let mockServer: MockServerInstance;
-  let mockServerPort: number;
-  let mcp: McpProcess;
-
-  beforeAll(async () => {
-    mockServerPort = await getAvailablePort();
-    mockServer = await startStandaloneMockServer({
-      port: mockServerPort,
-    });
-  });
-
-  afterAll(async () => {
-    await mockServer.stop();
-  });
-
-  beforeEach(async () => {
-    const httpPort = await getAvailablePort();
-    mcp = new McpProcess({
-      transport: 'http',
-      openapiSpecPath: OPENAPI_PATH,
-      profilePath: PROFILE_PATH,
-      apiBaseUrl: mockServer.gitlabApiUrl,
-      apiToken: 'test-token-12345',
-      httpPort,
-      logLevel: 'ERROR',
-    });
-    
-    await mcp.start();
-    await mcp.initialize();
-  });
-
-  afterEach(async () => {
-    await mcp.stop();
-  });
-
-  it('get_merge_request_with_details fetches MR and notes', async () => {
-    const response = await mcp.callTool('get_merge_request_with_details', {
-      project_id: '12345',
-      merge_request_iid: 1,
-    });
-    
-    expect(response.error).toBeUndefined();
-    expect(response.result).toBeDefined();
-    
-    const result = response.result as ToolResult;
-    expect(result.content).toBeDefined();
-    expect(result.content.length).toBeGreaterThan(0);
-    
-    const text = result.content[0].text!;
-    const data = JSON.parse(text);
-    
-    // Validate composite structure
-    expect(data).toBeDefined();
-    expect(typeof data).toBe('object');
-    expect((data as any).data).toBeDefined();
-    const compositeData = (data as any).data;
-    expect(compositeData.merge_request).toBeDefined();
-    const mr = compositeData.merge_request;
-    expect(mr.iid).toBe(1);
-    expect(Array.isArray(mr.notes)).toBe(true);
-    expect(mr.notes.length).toBeGreaterThan(0);
-    const note = mr.notes[0];
-    expect(note).toHaveProperty('id');
-    expect(note).toHaveProperty('body');
-    expect(note).toHaveProperty('author');
-  }, 15000);
-});
-
-describe('Error Handling E2E', () => {
-  let mockServer: MockServerInstance;
-  let mockServerPort: number;
-  let mcp: McpProcess;
-
-  beforeAll(async () => {
-    mockServerPort = await getAvailablePort();
-    mockServer = await startStandaloneMockServer({
-      port: mockServerPort,
-    });
-  });
-
-  afterAll(async () => {
-    await mockServer.stop();
-  });
-
-  beforeEach(async () => {
-    const httpPort = await getAvailablePort();
-    mcp = new McpProcess({
-      transport: 'http',
-      openapiSpecPath: OPENAPI_PATH,
-      profilePath: PROFILE_PATH,
-      apiBaseUrl: mockServer.gitlabApiUrl,
-      apiToken: 'test-token-12345',
-      httpPort,
-      logLevel: 'ERROR',
-    });
-    
-    await mcp.start();
-    await mcp.initialize();
-  });
-
-  afterEach(async () => {
-    await mcp.stop();
-  });
-
-  it('returns 404 for non-existent resource', async () => {
-    const response = await mcp.callTool('manage_merge_requests', {
-      action: 'get',
-      project_id: '12345',
-      merge_request_iid: 99999,
-    });
-    
-    // Should get an error response (not a crash)
-    const result = response.result as ToolResult | undefined;
-    if (result) {
-      const text = result.content[0]?.text;
-      if (text) {
-        const data = JSON.parse(text);
-        expect(data.message || data.error).toBeDefined();
-      }
+          
+          it(`${operation.action} returns valid response`, async () => {
+            const params = adjustParamsForMock(operation);
+            
+            const response = await mcp.callTool(toolName, params, sessionId);
+            
+            // Some delete operations may return 404 if resource doesn't exist in mock
+            // but the important thing is they complete without internal errors
+            if (response.error) {
+              // Check it's an API error, not internal error
+              expect(response.error.code).not.toBe(-32603); // Internal error
+              expect(response.error.code).not.toBe(-32600); // Invalid request
+            } else {
+              validateToolResponse(response, operation);
+            }
+          }, 15000);
+        }
+      });
     }
   });
 
-  it('returns 404 for non-existent group', async () => {
-    const response = await mcp.callTool('manage_groups', {
-      action: 'get',
-      group_id: 'non-existent-group',
-    });
-    
-    const result = response.result as ToolResult | undefined;
-    if (result) {
-      const text = result.content[0]?.text;
-      if (text) {
-        const data = JSON.parse(text);
-        expect(data.message || data.error).toBeDefined();
-      }
-    }
+  describe('Composite tools', () => {
+    it('get_merge_request_with_details fetches MR and notes', async () => {
+      const response = await mcp.callTool('get_merge_request_with_details', {
+        project_id: '12345',
+        merge_request_iid: 1,
+      });
+      
+      expect(response.error).toBeUndefined();
+      expect(response.result).toBeDefined();
+      
+      const result = response.result as ToolResult;
+      expect(result.content).toBeDefined();
+      expect(result.content.length).toBeGreaterThan(0);
+      
+      const text = result.content[0].text!;
+      const data = JSON.parse(text);
+      
+      // Validate composite structure
+      expect(data).toBeDefined();
+      expect(typeof data).toBe('object');
+      expect((data as any).data).toBeDefined();
+      const compositeData = (data as any).data;
+      expect(compositeData.merge_request).toBeDefined();
+      const mr = compositeData.merge_request;
+      expect(mr.iid).toBe(1);
+      expect(Array.isArray(mr.notes)).toBe(true);
+      expect(mr.notes.length).toBeGreaterThan(0);
+      const note = mr.notes[0];
+      expect(note).toHaveProperty('id');
+      expect(note).toHaveProperty('body');
+      expect(note).toHaveProperty('author');
+    }, 15000);
   });
 
-  it('handles missing required parameters gracefully', async () => {
-    const response = await mcp.callTool('manage_merge_requests', {
-      action: 'create',
-      project_id: '12345',
-      // Missing: source_branch, target_branch, title
+  describe('Error handling', () => {
+    it('returns 404 for non-existent resource', async () => {
+      const response = await mcp.callTool('manage_merge_requests', {
+        action: 'get',
+        project_id: '12345',
+        merge_request_iid: 99999,
+      });
+      
+      // Should get an error response (not a crash)
+      const result = response.result as ToolResult | undefined;
+      if (result) {
+        const text = result.content[0]?.text;
+        if (text) {
+          const data = JSON.parse(text);
+          expect(data.message || data.error).toBeDefined();
+        }
+      }
     });
-    
-    // Should error but not crash
-    expect(response.error || response.result).toBeDefined();
+  
+    it('returns 404 for non-existent group', async () => {
+      const response = await mcp.callTool('manage_groups', {
+        action: 'get',
+        group_id: 'non-existent-group',
+      });
+      
+      const result = response.result as ToolResult | undefined;
+      if (result) {
+        const text = result.content[0]?.text;
+        if (text) {
+          const data = JSON.parse(text);
+          expect(data.message || data.error).toBeDefined();
+        }
+      }
+    });
+  
+    it('handles missing required parameters gracefully', async () => {
+      const response = await mcp.callTool('manage_merge_requests', {
+        action: 'create',
+        project_id: '12345',
+        // Missing: source_branch, target_branch, title
+      });
+      
+      // Should error but not crash
+      expect(response.error || response.result).toBeDefined();
+    });
   });
 });
