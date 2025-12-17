@@ -316,11 +316,15 @@ export class MCPServer {
   /**
    * Extract hostnames from origin patterns for OAuth redirect validation
    * e.g., "http://localhost:*,https://app.example.com" -> ["localhost", "app.example.com"]
+   * 
+   * Filters out CIDR blocks (e.g., "127.0.0.1/8") which are valid for origin validation
+   * but not for OAuth redirect URI validation
    */
   private extractHostsFromOrigins(origins: string): string[] {
     const hosts: string[] = [];
     for (const origin of origins.split(',')) {
       const trimmed = origin.trim();
+      
       try {
         // Handle wildcard ports: http://localhost:* -> localhost
         const normalized = trimmed.replace(/:\*$/, ':80');
@@ -336,7 +340,8 @@ export class MCPServer {
         }
       } catch {
         // If not a URL, treat as hostname/pattern directly
-        if (trimmed && !trimmed.includes(' ')) {
+        // Skip CIDR blocks (e.g., 127.0.0.1/8, 10.0.0.0/8, 2a06:2140::/29)
+        if (trimmed && !trimmed.includes(' ') && !trimmed.includes('/')) {
           hosts.push(trimmed);
         }
       }

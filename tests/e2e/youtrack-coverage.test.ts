@@ -49,6 +49,7 @@ describe('YouTrack Tools Coverage E2E', () => {
   let mockServerPort: number;
   let mcp: McpProcess;
   let sessionId: string | undefined;
+  let httpPort: number;
 
   const operations = loadProfileOperations(PROFILE_PATH);
   const operationsByTool = groupOperationsByTool(operations);
@@ -56,14 +57,7 @@ describe('YouTrack Tools Coverage E2E', () => {
   beforeAll(async () => {
     mockServerPort = await getAvailablePort();
     mockServer = await startStandaloneYoutrackMockServer({ port: mockServerPort });
-  });
-
-  afterAll(async () => {
-    await mockServer.stop();
-  });
-
-  beforeEach(async () => {
-    const httpPort = await getAvailablePort();
+    httpPort = await getAvailablePort();
     mcp = new McpProcess({
       transport: 'http',
       openapiSpecPath: OPENAPI_PATH,
@@ -72,6 +66,10 @@ describe('YouTrack Tools Coverage E2E', () => {
       apiToken: 'yt-test-token',
       httpPort,
       logLevel: 'ERROR',
+      env: {
+        // Disable HTTP rate limiting for long-running coverage run
+        MCP4_HTTP_RATE_LIMIT_ENABLED: 'false',
+      },
     });
 
     mcp.on('stderr', (data) => {
@@ -80,14 +78,18 @@ describe('YouTrack Tools Coverage E2E', () => {
     });
 
     await mcp.start();
+  });
 
+  afterAll(async () => {
+    await mcp.stop();
+    await mockServer.stop();
+  });
+
+  beforeEach(async () => {
+    mockServer.requests.length = 0;
     const initResponse = await mcp.initialize();
     expect(initResponse.error).toBeUndefined();
     sessionId = undefined;
-  });
-
-  afterEach(async () => {
-    await mcp.stop();
   });
 
   for (const [toolName, toolOps] of operationsByTool) {
