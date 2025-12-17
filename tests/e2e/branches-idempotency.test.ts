@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { resolve } from 'path';
 import { McpProcess, JsonRpcResponse } from './utils/mcp-process.js';
 import { startStandaloneMockServer, getAvailablePort, MockServerInstance } from './utils/mock-server.js';
@@ -21,18 +21,12 @@ function extractData(response: JsonRpcResponse) {
 describe('Branch Protect/Unprotect Idempotency E2E', () => {
   let mockServer: MockServerInstance;
   let mcp: McpProcess;
+  let httpPort: number;
 
   beforeAll(async () => {
     const port = await getAvailablePort();
     mockServer = await startStandaloneMockServer({ port });
-  });
-
-  afterAll(async () => {
-    await mockServer.stop();
-  });
-
-  beforeEach(async () => {
-    const httpPort = await getAvailablePort();
+    httpPort = await getAvailablePort();
     mcp = new McpProcess({
       transport: 'http',
       openapiSpecPath: OPENAPI_PATH,
@@ -41,13 +35,21 @@ describe('Branch Protect/Unprotect Idempotency E2E', () => {
       apiToken: 'test-token-12345',
       httpPort,
       logLevel: 'ERROR',
+      env: {
+        // Prevent rate limit noise across repeated calls in one session
+        MCP4_HTTP_RATE_LIMIT_ENABLED: 'false',
+      },
     });
     await mcp.start();
-    await mcp.initialize();
   });
 
-  afterEach(async () => {
+  afterAll(async () => {
     await mcp.stop();
+    await mockServer.stop();
+  });
+
+  beforeEach(async () => {
+    await mcp.initialize();
   });
 
   it('protect / unprotect actions are idempotent', async () => {

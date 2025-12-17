@@ -3,7 +3,7 @@
  * and multi-step merge request workflows.
  */
 
-import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { resolve } from 'path';
 import { McpProcess, JsonRpcResponse } from './utils/mcp-process.js';
 import { startStandaloneMockServer, getAvailablePort, MockServerInstance } from './utils/mock-server.js';
@@ -35,15 +35,6 @@ describe('GitLab advanced flows E2E', () => {
 
   beforeAll(async () => {
     mockServer = await startStandaloneMockServer();
-  });
-
-  afterAll(async () => {
-    if (mockServer) {
-      await mockServer.stop();
-    }
-  });
-
-  beforeEach(async () => {
     httpPort = await getAvailablePort();
     mcp = new McpProcess({
       transport: 'http',
@@ -53,16 +44,26 @@ describe('GitLab advanced flows E2E', () => {
       apiToken: 'test-token-12345',
       httpPort,
       logLevel: 'ERROR',
+      env: {
+        // Disable rate limiting for shared-session E2E run
+        MCP4_HTTP_RATE_LIMIT_ENABLED: 'false',
+      },
     });
 
     await mcp.start();
+  });
+
+  beforeEach(async () => {
     const initResponse = await mcp.initialize();
     expect(initResponse.error).toBeUndefined();
   });
 
-  afterEach(async () => {
+  afterAll(async () => {
     if (mcp) {
       await mcp.stop();
+    }
+    if (mockServer) {
+      await mockServer.stop();
     }
   });
 
