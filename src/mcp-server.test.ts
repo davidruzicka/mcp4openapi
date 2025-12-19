@@ -927,6 +927,24 @@ describe('MCPServer', () => {
       });
     });
 
+    it('should not allow prototype pollution via field selectors', () => {
+      const server = new MCPServer();
+
+      const data = {
+        safe: 'ok',
+        __proto__: { polluted: true },
+      };
+
+      const before = ({} as any).polluted;
+      expect(before).toBeUndefined();
+
+      const result = (server as any).filterFields(data, ['safe', '__proto__(polluted)', 'constructor(prototype)', 'prototype(x)']);
+      expect(result).toEqual({ safe: 'ok' });
+
+      const after = ({} as any).polluted;
+      expect(after).toBeUndefined();
+    });
+
     it('should return primitive values as-is', () => {
       const server = new MCPServer();
       expect((server as any).filterFields('string', ['id'])).toBe('string');
