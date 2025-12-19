@@ -365,6 +365,8 @@ When generating tools from OpenAPI without a profile, long operation IDs may exc
   - `hash`: Use verb + resource + hash for guaranteed uniqueness
   - `auto`: Try strategies in order: balanced → iterative → hash
 - `MCP4_TOOLNAME_WARN_ONLY`: Only warn, don't shorten: `true|false` (default: `true`)
+- `MCP4_TOOLNAME_SIMILAR_TOP`: How many similar operationId pairs to show in warnings (default: `3`)
+- `MCP4_TOOLNAME_SIMILARITY_THRESHOLD`: Similarity threshold for warning examples (default: `0.75`)
 - `MCP4_TOOLNAME_MIN_PARTS`: Minimum parts for balanced strategy (default: `3`)
 - `MCP4_TOOLNAME_MIN_LENGTH`: Minimum length in chars for balanced strategy (default: `20`)
 
@@ -394,6 +396,8 @@ export MCP4_TOOLNAME_MAX=30
 - `MCP4_PORT`: Port (default: `3003`)
 - `MCP4_ALLOWED_ORIGINS`: Comma-separated origins (supports exact, wildcard `*.domain.com`, CIDR `192.168.1.0/24`)
 - `MCP4_SESSION_TIMEOUT_MS`: Session timeout (default: `1800000` = 30min)
+- `MCP4_OAUTH_SESSION_TIMEOUT_MS`: OAuth session timeout for sessions with refresh tokens (default: `86400000` = 24h, `0` = unlimited)
+- `MCP4_OAUTH_REFRESH_THRESHOLD_MS`: Refresh access tokens this many ms before expiry (default: `60000` = 60s)
 - `MCP4_HEARTBEAT_ENABLED`, `MCP4_HEARTBEAT_INTERVAL_MS`: SSE heartbeat settings
 - `MCP4_TOKEN_MAX_LENGTH`: Maximum token length in characters (default: `1000`)
 
