@@ -364,6 +364,36 @@ describe('ProxyDownloadExecutor', () => {
     ).rejects.toThrow('Download host not in allowlist');
   });
 
+  it('should log allowlist details when host is not allowed', async () => {
+    mockHttpClient.request.mockResolvedValue({
+      status: 200,
+      headers: {},
+      body: { url: 'https://cdn.example.com/files/abc123' },
+    });
+
+    const warn = vi.fn();
+    const executor = new ProxyDownloadExecutor(mockHttpClient as any, { debug: vi.fn(), warn } as any);
+    const operation: ProxyDownloadOperation = {
+      type: 'proxy_download',
+      metadata_endpoint: 'get_/file',
+      url_field: 'url',
+      skip_auth: true,
+      allowed_hosts: ['other.example.com'],
+    };
+
+    await expect(executor.execute(operation, metadataRequest('/file'), { headers: {} })).rejects.toThrow(
+      'Download host not in allowlist'
+    );
+    expect(warn).toHaveBeenCalledWith(
+      'proxy_download blocked: host not in allowlist',
+      expect.objectContaining({
+        hostname: 'cdn.example.com',
+        allowed_hosts: ['other.example.com'],
+        how_to_fix: expect.stringContaining('allowed_hosts'),
+      })
+    );
+  });
+
   it('should reject private network targets by default when skip_auth is true', async () => {
     mockHttpClient.request.mockResolvedValue({
       status: 200,
@@ -382,6 +412,62 @@ describe('ProxyDownloadExecutor', () => {
     await expect(
       executor.execute(operation, metadataRequest('/file'), { headers: {} })
     ).rejects.toThrow('Download IP not allowed');
+  });
+
+  it('should log blocked IPv4 targets when allow_private_network is false', async () => {
+    mockHttpClient.request.mockResolvedValue({
+      status: 200,
+      headers: {},
+      body: { url: 'http://10.0.0.1/secret' },
+    });
+
+    const warn = vi.fn();
+    const executor = new ProxyDownloadExecutor(mockHttpClient as any, { debug: vi.fn(), warn } as any);
+    const operation: ProxyDownloadOperation = {
+      type: 'proxy_download',
+      metadata_endpoint: 'get_/file',
+      url_field: 'url',
+      skip_auth: true,
+    };
+
+    await expect(executor.execute(operation, metadataRequest('/file'), { headers: {} })).rejects.toThrow(
+      'Download IP not allowed'
+    );
+    expect(warn).toHaveBeenCalledWith(
+      'proxy_download blocked: private/loopback/link-local IPv4 target',
+      expect.objectContaining({
+        hostname: '10.0.0.1',
+        how_to_fix: expect.stringContaining('allow_private_network=true'),
+      })
+    );
+  });
+
+  it('should log blocked IPv6 targets when allow_private_network is false', async () => {
+    mockHttpClient.request.mockResolvedValue({
+      status: 200,
+      headers: {},
+      body: { url: 'http://[::1]/secret' },
+    });
+
+    const warn = vi.fn();
+    const executor = new ProxyDownloadExecutor(mockHttpClient as any, { debug: vi.fn(), warn } as any);
+    const operation: ProxyDownloadOperation = {
+      type: 'proxy_download',
+      metadata_endpoint: 'get_/file',
+      url_field: 'url',
+      skip_auth: true,
+    };
+
+    await expect(executor.execute(operation, metadataRequest('/file'), { headers: {} })).rejects.toThrow(
+      'Download IP not allowed'
+    );
+    expect(warn).toHaveBeenCalledWith(
+      'proxy_download blocked: private/loopback/link-local IPv6 target',
+      expect.objectContaining({
+        hostname: '::1',
+        how_to_fix: expect.stringContaining('allow_private_network=true'),
+      })
+    );
   });
 
   it('should allow private network targets when allow_private_network is true', async () => {
@@ -434,6 +520,44 @@ describe('ProxyDownloadExecutor', () => {
     await expect(
       executor.execute(operation, metadataRequest('/file'), { headers: {} })
     ).rejects.toThrow('resolves to disallowed IP');
+  });
+
+  it('should log hostname resolution details when hostname resolves to disallowed IP', async () => {
+    vi.mocked(lookup).mockResolvedValue([{ address: '10.0.0.1', family: 4 }] as any);
+
+    mockHttpClient.request.mockResolvedValue({
+      status: 200,
+      headers: {},
+      body: { url: 'https://internal.example.com/files/abc123' },
+    });
+
+    const warn = vi.fn();
+    const executor = new ProxyDownloadExecutor(mockHttpClient as any, { debug: vi.fn(), warn } as any);
+    const operation: ProxyDownloadOperation = {
+      type: 'proxy_download',
+      metadata_endpoint: 'get_/file',
+      url_field: 'url',
+      skip_auth: true,
+    };
+
+    await expect(executor.execute(operation, metadataRequest('/file'), { headers: {} })).rejects.toThrow(
+      'resolves to disallowed IP'
+    );
+    expect(warn).toHaveBeenCalledWith(
+      'proxy_download blocked: hostname resolves to private/loopback/link-local IP',
+      expect.objectContaining({
+        hostname: 'internal.example.com',
+        resolved_addresses: ['10.0.0.1'],
+        how_to_fix: expect.stringContaining('allowed_hosts'),
+      })
+    );
+  });
+
+  it('should support wildcard allowed_hosts patterns', () => {
+    const executor = new ProxyDownloadExecutor(mockHttpClient as any);
+    expect((executor as any).isAllowedHost('sub.example.com', ['*.example.com'])).toBe(true);
+    expect((executor as any).isAllowedHost('example.com', ['*.example.com'])).toBe(false);
+    expect((executor as any).isAllowedHost('sub.example.com', ['*.'])).toBe(false);
   });
 
   it('should reject hostnames when DNS lookup fails', async () => {
