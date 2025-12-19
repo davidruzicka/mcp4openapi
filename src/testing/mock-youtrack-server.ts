@@ -26,6 +26,16 @@ const baseArticle = {
 
 const baseTag = { id: 'tag-1', name: 'Bug', color: '#ff0000' };
 const baseUser = { id: 'user-1', login: 'mock-user', fullName: 'Mock User', email: 'user@example.com' };
+const baseProject = { id: 'PROJ', shortName: 'PROJ', name: 'Mock Project', description: 'Mock project description' };
+const baseProjectCustomField = {
+  id: 'pcf-1',
+  $type: 'ProjectCustomField',
+  canBeEmpty: true,
+  emptyFieldText: '',
+  ordinal: 1,
+  isPublic: true,
+  field: { id: 'cf-1', name: 'Priority', fieldType: { id: 'ft-1', $type: 'FieldType' } },
+};
 
 function queryToRecord(searchParams: URLSearchParams): Record<string, string | string[]> {
   const entries: Record<string, string | string[]> = {};
@@ -134,6 +144,18 @@ export function createYoutrackHandlers(
     http.get(withBase('/tags'), ({ request }) => HttpResponse.json([createEchoResponse(request, baseTag, requestLog)])),
     http.get(withBase('/tags/:id'), ({ request, params }) =>
       HttpResponse.json(createEchoResponse(request, { ...baseTag, id: params.id }, requestLog))
+    ),
+    http.get(withBase('/admin/projects'), ({ request }) =>
+      HttpResponse.json([createEchoResponse(request, baseProject, requestLog)])
+    ),
+    http.get(withBase('/admin/projects/:id'), ({ request, params }) =>
+      HttpResponse.json({ ...createEchoResponse(request, { ...baseProject, id: params.id }, requestLog), customFields: [baseProjectCustomField] })
+    ),
+    http.get(withBase('/admin/projects/:id/customFields'), ({ request }) =>
+      HttpResponse.json([createEchoResponse(request, baseProjectCustomField, requestLog)])
+    ),
+    http.get(withBase('/admin/projects/:id/customFields/:projectCustomFieldId'), ({ request, params }) =>
+      HttpResponse.json(createEchoResponse(request, { ...baseProjectCustomField, id: params.projectCustomFieldId }, requestLog))
     ),
     http.get(withBase('/savedQueries'), ({ request }) => HttpResponse.json([createEchoResponse(request, { id: 'q-1' }, requestLog)])),
     http.get(withBase('/agiles'), ({ request }) => HttpResponse.json([createEchoResponse(request, { id: 'agile-1' }, requestLog)])),

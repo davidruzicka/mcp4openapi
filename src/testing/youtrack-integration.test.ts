@@ -42,6 +42,33 @@ const mockIssue = {
   ]
 };
 
+const mockProjectCustomField = {
+  id: 'pcf-1',
+  $type: 'ProjectCustomField',
+  canBeEmpty: true,
+  emptyFieldText: '',
+  ordinal: 1,
+  isPublic: true,
+  field: {
+    id: 'cf-1',
+    name: 'Priority',
+    fieldType: {
+      id: 'ft-1',
+      $type: 'FieldType',
+    },
+  },
+  ignored: 'ignored',
+};
+
+const mockProject = {
+  id: 'PROJ',
+  shortName: 'PROJ',
+  name: 'Test Project',
+  description: 'Test Project Description',
+  customFields: [mockProjectCustomField],
+  ignored: 'ignored',
+};
+
 describe('YouTrack Integration Tests', () => {
   const server = setupServer();
   let mcpServer: MCPServer;
@@ -153,5 +180,72 @@ describe('YouTrack Integration Tests', () => {
     expect(content).toHaveLength(1);
     expect(content[0].attachments).toHaveLength(1);
     expect(content[0].attachments[0].name).toBe('test.txt');
+  });
+
+  it('should include project custom field properties in get_project', async () => {
+    let capturedUrl: URL | undefined;
+
+    server.use(
+      http.get('*/admin/projects/PROJ', ({ request }) => {
+        capturedUrl = new URL(request.url);
+        return HttpResponse.json(mockProject);
+      })
+    );
+
+    const toolDef = mcpServer['profile']!.tools.find(t => t.name === 'retrieve_content')!;
+    const result = await mcpServer['executeSimpleTool'](toolDef, {
+      action: 'get_project',
+      id: 'PROJ'
+    });
+
+    const fieldsParam = capturedUrl?.searchParams.get('fields');
+    expect(fieldsParam).toBeDefined();
+    expect(fieldsParam).toContain('customFields(');
+    expect(fieldsParam).toContain('field(id,name,fieldType(id,$type))');
+
+    const content = result as any;
+    expect(content).toHaveProperty('id', 'PROJ');
+    expect(content).toHaveProperty('shortName', 'PROJ');
+    expect(content.customFields).toHaveLength(1);
+    expect(content.customFields[0]).toMatchObject({
+      id: 'pcf-1',
+      $type: 'ProjectCustomField',
+      ordinal: 1,
+      isPublic: true,
+      field: { id: 'cf-1', name: 'Priority', fieldType: { id: 'ft-1', $type: 'FieldType' } },
+    });
+    expect(content.ignored).toBeUndefined();
+  });
+
+  it('should handle list_project_custom_fields with nested field info', async () => {
+    let capturedUrl: URL | undefined;
+
+    server.use(
+      http.get('*/admin/projects/PROJ/customFields', ({ request }) => {
+        capturedUrl = new URL(request.url);
+        return HttpResponse.json([mockProjectCustomField]);
+      })
+    );
+
+    const toolDef = mcpServer['profile']!.tools.find(t => t.name === 'retrieve_content')!;
+    const result = await mcpServer['executeSimpleTool'](toolDef, {
+      action: 'list_project_custom_fields',
+      id: 'PROJ'
+    });
+
+    const fieldsParam = capturedUrl?.searchParams.get('fields');
+    expect(fieldsParam).toBeDefined();
+    expect(fieldsParam).toContain('field(id,name,fieldType(id,$type))');
+
+    const content = result as any[];
+    expect(content).toHaveLength(1);
+    expect(content[0]).toMatchObject({
+      id: 'pcf-1',
+      $type: 'ProjectCustomField',
+      ordinal: 1,
+      isPublic: true,
+      field: { id: 'cf-1', name: 'Priority', fieldType: { id: 'ft-1', $type: 'FieldType' } },
+    });
+    expect(content[0].ignored).toBeUndefined();
   });
 });
