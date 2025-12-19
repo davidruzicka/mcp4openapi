@@ -39,6 +39,7 @@ import type { OperationInfo } from './types/openapi.js';
 import { isInitializeRequest, isToolCallRequest } from './jsonrpc-validator.js';
 import { generateNameWarnings, type NameWarningOptions } from './naming-warnings.js';
 import { NamingStrategy, type OperationForNaming } from './naming.js';
+import { isSafePropertyName } from './validation-utils.js';
 
 export class MCPServer {
   private server: Server;
@@ -66,7 +67,7 @@ export class MCPServer {
   }
 
   private parseFieldSelection(fields: string[]): Record<string, true | Record<string, unknown>> {
-    const root: Record<string, true | Record<string, unknown>> = {};
+    const root: Record<string, true | Record<string, unknown>> = Object.create(null);
 
     for (const field of fields) {
       const trimmed = field.trim();
@@ -83,6 +84,7 @@ export class MCPServer {
   ): void {
     const baseName = selector.split('(')[0].trim();
     if (!baseName) return;
+    if (!isSafePropertyName(baseName)) return;
 
     const openParen = selector.indexOf('(');
     if (openParen === -1) {
@@ -98,7 +100,7 @@ export class MCPServer {
 
     const inner = selector.slice(openParen + 1, closeParen).trim();
     const subSelectors = this.splitTopLevel(inner);
-    const subTree: Record<string, true | Record<string, unknown>> = {};
+    const subTree: Record<string, true | Record<string, unknown>> = Object.create(null);
     for (const sub of subSelectors) {
       this.mergeFieldSelector(subTree, sub);
     }
@@ -118,6 +120,7 @@ export class MCPServer {
     incoming: Record<string, true | Record<string, unknown>>
   ): void {
     for (const [key, val] of Object.entries(incoming)) {
+      if (!isSafePropertyName(key)) continue;
       const existing = target[key];
       if (!existing) {
         target[key] = val;
@@ -171,10 +174,11 @@ export class MCPServer {
     }
 
     const obj = data as Record<string, unknown>;
-    const filtered: Record<string, unknown> = {};
+    const filtered: Record<string, unknown> = Object.create(null);
 
     for (const [key, sel] of Object.entries(selection)) {
-      if (!(key in obj)) continue;
+      if (!isSafePropertyName(key)) continue;
+      if (!Object.prototype.hasOwnProperty.call(obj, key)) continue;
       const value = obj[key];
       if (sel === true) {
         filtered[key] = value;
