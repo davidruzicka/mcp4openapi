@@ -214,6 +214,7 @@ describe('YouTrack Integration Tests', () => {
       isPublic: true,
       field: { id: 'cf-1', name: 'Priority', fieldType: { id: 'ft-1', $type: 'FieldType' } },
     });
+    expect(content.customFields[0].ignored).toBeUndefined();
     expect(content.ignored).toBeUndefined();
   });
 
