@@ -10,6 +10,7 @@ import { resolve } from 'path';
 import { McpProcess, JsonRpcResponse } from './utils/mcp-process.js';
 import { startStandaloneMockServer, getAvailablePort, MockServerInstance } from './utils/mock-server.js';
 import { loadProfileOperations, groupOperationsByTool, ToolOperation } from './utils/profile-loader.js';
+import { describeIfListen } from './utils/listen-support.js';
 
 const PROFILE_PATH = resolve(process.cwd(), 'profiles/gitlab/developer-profile.json');
 const OPENAPI_PATH = resolve(process.cwd(), 'profiles/gitlab/openapi.yaml');
@@ -116,7 +117,7 @@ function adjustParamsForMock(operation: ToolOperation): Record<string, unknown> 
   return params;
 }
 
-describe('GitLab E2E (shared mock + MCP)', () => {
+describeIfListen('GitLab E2E (shared mock + MCP)', () => {
   let mockServer: MockServerInstance;
   let mcp: McpProcess;
   let sessionId: string | undefined;

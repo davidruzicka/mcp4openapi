@@ -5,12 +5,13 @@
  * including session management, SSE streaming, and session expiration.
  */
 
-import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest';
+import { it, expect, beforeAll, afterAll, afterEach } from 'vitest';
 import * as path from 'path';
 import { McpProcess } from './utils/mcp-process.js';
 import { startStandaloneMockServer, MockServerInstance, getAvailablePort } from './utils/mock-server.js';
+import { describeIfListen } from './utils/listen-support.js';
 
-describe('E2E: http transport', () => {
+describeIfListen('E2E: http transport', () => {
   let mockServer: MockServerInstance;
   let mcp: McpProcess;
   let httpPort: number;

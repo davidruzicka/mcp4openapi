@@ -7,6 +7,7 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { resolve } from 'path';
 import { McpProcess, JsonRpcResponse } from './utils/mcp-process.js';
 import { startStandaloneMockServer, getAvailablePort, MockServerInstance } from './utils/mock-server.js';
+import { describeIfListen } from './utils/listen-support.js';
 
 const PROFILE_PATH = resolve(process.cwd(), 'profiles/gitlab/developer-profile.json');
 const OPENAPI_PATH = resolve(process.cwd(), 'profiles/gitlab/openapi.yaml');
@@ -28,7 +29,7 @@ async function parseToolResponse(responsePromise: Promise<JsonRpcResponse>) {
   return JSON.parse(first.text!);
 }
 
-describe('GitLab advanced flows E2E', () => {
+describeIfListen('GitLab advanced flows E2E', () => {
   let mockServer: MockServerInstance;
   let mcp: McpProcess;
   let httpPort: number;
