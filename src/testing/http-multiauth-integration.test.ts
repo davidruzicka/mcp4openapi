@@ -14,8 +14,9 @@ import { HttpTransport } from '../http-transport.js';
 import { ConsoleLogger } from '../logger.js';
 import type { Express } from 'express';
 import type { OAuthConfig } from '../types/profile.js';
+import { describeIfListen } from './listen-support.js';
 
-describe('HTTP Transport Multi-Auth Integration', () => {
+describeIfListen('HTTP Transport Multi-Auth Integration', () => {
   let transport: HttpTransport;
   let app: Express;
   let oauthConfig: OAuthConfig;
@@ -412,4 +413,3 @@ describe('HTTP Transport Multi-Auth Integration', () => {
     });
   });
 });
-
