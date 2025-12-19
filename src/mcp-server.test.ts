@@ -801,6 +801,150 @@ describe('MCPServer', () => {
       expect(result).toEqual([{ id: 1, name: 'a' }, { id: 2, name: 'b' }]);
     });
 
+    it('should recurse into nested objects and arrays when subfields are specified', () => {
+      const server = new MCPServer();
+      const data = {
+        id: 'PROJ',
+        customFields: [
+          {
+            id: 'pcf-1',
+            ignored: 'ignored',
+            field: {
+              id: 'cf-1',
+              name: 'Priority',
+              ignored: 'ignored',
+            },
+          },
+        ],
+        ignored: 'ignored',
+      };
+
+      const result = (server as any).filterFields(data, ['id', 'customFields(id,field(id,name))']);
+      expect(result).toEqual({
+        id: 'PROJ',
+        customFields: [
+          {
+            id: 'pcf-1',
+            field: {
+              id: 'cf-1',
+              name: 'Priority',
+            },
+          },
+        ],
+      });
+    });
+
+    it('should merge repeated selectors for the same base field', () => {
+      const server = new MCPServer();
+      const data = {
+        customFields: [
+          {
+            id: 'pcf-1',
+            ignored: 'ignored',
+            field: {
+              id: 'cf-1',
+              name: 'Priority',
+              ignored: 'ignored',
+            },
+          },
+        ],
+      };
+
+      const result = (server as any).filterFields(data, ['customFields(id)', 'customFields(field(id))']);
+      expect(result).toEqual({
+        customFields: [
+          {
+            id: 'pcf-1',
+            field: {
+              id: 'cf-1',
+            },
+          },
+        ],
+      });
+    });
+
+    it('should handle conflicts by promoting to full field selection', () => {
+      const server = new MCPServer();
+      const data = {
+        customFields: [
+          {
+            id: 'pcf-1',
+            ignored: 'ignored',
+            field: {
+              id: 'cf-1',
+              name: 'Priority',
+              ignored: 'ignored',
+            },
+          },
+        ],
+      };
+
+      const result = (server as any).filterFields(data, ['customFields(field)', 'customFields(field(id))']);
+      expect(result).toEqual({
+        customFields: [
+          {
+            field: {
+              id: 'cf-1',
+              name: 'Priority',
+              ignored: 'ignored',
+            },
+          },
+        ],
+      });
+    });
+
+    it('should split nested selectors correctly', () => {
+      const server = new MCPServer();
+      const data = {
+        id: 'ISSUE-1',
+        comments: [
+          {
+            id: 'c-1',
+            text: 'hello',
+            secret: 'ignored',
+            author: {
+              id: 'u-1',
+              login: 'user',
+              secret: 'ignored',
+            },
+          },
+        ],
+      };
+
+      const result = (server as any).filterFields(data, ['id', 'comments(id,text,author(id,login))']);
+      expect(result).toEqual({
+        id: 'ISSUE-1',
+        comments: [
+          {
+            id: 'c-1',
+            text: 'hello',
+            author: {
+              id: 'u-1',
+              login: 'user',
+            },
+          },
+        ],
+      });
+    });
+
+    it('should not allow prototype pollution via field selectors', () => {
+      const server = new MCPServer();
+
+      const data = {
+        safe: 'ok',
+        __proto__: { polluted: true },
+      };
+
+      const before = ({} as any).polluted;
+      expect(before).toBeUndefined();
+
+      const result = (server as any).filterFields(data, ['safe', '__proto__(polluted)', 'constructor(prototype)', 'prototype(x)']);
+      expect(result).toEqual({ safe: 'ok' });
+
+      const after = ({} as any).polluted;
+      expect(after).toBeUndefined();
+    });
+
     it('should return primitive values as-is', () => {
       const server = new MCPServer();
       expect((server as any).filterFields('string', ['id'])).toBe('string');

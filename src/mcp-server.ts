@@ -39,6 +39,7 @@ import type { OperationInfo } from './types/openapi.js';
 import { isInitializeRequest, isToolCallRequest } from './jsonrpc-validator.js';
 import { generateNameWarnings, type NameWarningOptions } from './naming-warnings.js';
 import { NamingStrategy, type OperationForNaming } from './naming.js';
+import { isSafePropertyName } from './validation-utils.js';
 
 export class MCPServer {
   private server: Server;
@@ -52,27 +53,140 @@ export class MCPServer {
   private httpTransport: any = null;
 
   /**
-   * Filter response object to include only specified fields
-   * Supports nested objects but keeps first level of arrays
+   * Filter response payload to include only specified fields.
+   *
+   * Supports YouTrack-style field selectors like:
+   * - "author(id,login)"
+   * - "comments(id,text,author(id,login))"
+   *
+   * Recurses into nested objects and arrays when subfields are specified.
    */
   private filterFields(data: unknown, fields: string[]): unknown {
+    const selection = this.parseFieldSelection(fields);
+    return this.applyFieldSelection(data, selection);
+  }
+
+  private parseFieldSelection(fields: string[]): Record<string, true | Record<string, unknown>> {
+    const root: Record<string, true | Record<string, unknown>> = Object.create(null);
+
+    for (const field of fields) {
+      const trimmed = field.trim();
+      if (!trimmed) continue;
+      this.mergeFieldSelector(root, trimmed);
+    }
+
+    return root;
+  }
+
+  private mergeFieldSelector(
+    target: Record<string, true | Record<string, unknown>>,
+    selector: string
+  ): void {
+    const baseName = selector.split('(')[0].trim();
+    if (!baseName) return;
+    if (!isSafePropertyName(baseName)) return;
+
+    const openParen = selector.indexOf('(');
+    if (openParen === -1) {
+      target[baseName] = true;
+      return;
+    }
+
+    const closeParen = selector.lastIndexOf(')');
+    if (closeParen === -1 || closeParen <= openParen) {
+      target[baseName] = true;
+      return;
+    }
+
+    const inner = selector.slice(openParen + 1, closeParen).trim();
+    const subSelectors = this.splitTopLevel(inner);
+    const subTree: Record<string, true | Record<string, unknown>> = Object.create(null);
+    for (const sub of subSelectors) {
+      this.mergeFieldSelector(subTree, sub);
+    }
+
+    const existing = target[baseName];
+    if (existing === true) return;
+    if (!existing) {
+      target[baseName] = subTree;
+      return;
+    }
+
+    this.mergeSelectionTrees(existing as Record<string, true | Record<string, unknown>>, subTree);
+  }
+
+  private mergeSelectionTrees(
+    target: Record<string, true | Record<string, unknown>>,
+    incoming: Record<string, true | Record<string, unknown>>
+  ): void {
+    for (const [key, val] of Object.entries(incoming)) {
+      if (!isSafePropertyName(key)) continue;
+      const existing = target[key];
+      if (!existing) {
+        target[key] = val;
+        continue;
+      }
+      if (existing === true || val === true) {
+        target[key] = true;
+        continue;
+      }
+      this.mergeSelectionTrees(
+        existing as Record<string, true | Record<string, unknown>>,
+        val as Record<string, true | Record<string, unknown>>
+      );
+    }
+  }
+
+  private splitTopLevel(input: string): string[] {
+    const result: string[] = [];
+    let depth = 0;
+    let current = '';
+
+    for (const ch of input) {
+      if (ch === '(') depth += 1;
+      if (ch === ')') depth = Math.max(0, depth - 1);
+
+      if (ch === ',' && depth === 0) {
+        const trimmed = current.trim();
+        if (trimmed) result.push(trimmed);
+        current = '';
+        continue;
+      }
+
+      current += ch;
+    }
+
+    const last = current.trim();
+    if (last) result.push(last);
+    return result;
+  }
+
+  private applyFieldSelection(
+    data: unknown,
+    selection: Record<string, true | Record<string, unknown>>
+  ): unknown {
     if (!data || typeof data !== 'object') {
       return data;
     }
 
     if (Array.isArray(data)) {
-      return data.map(item => this.filterFields(item, fields));
+      return data.map(item => this.applyFieldSelection(item, selection));
     }
 
-    const filtered: Record<string, unknown> = {};
-    for (const field of fields) {
-      // Handle YouTrack-style fields: "author(id,login)" -> "author"
-      const baseFieldName = field.split('(')[0];
-      
-      if (baseFieldName in data) {
-        filtered[baseFieldName] = (data as Record<string, unknown>)[baseFieldName];
+    const obj = data as Record<string, unknown>;
+    const filtered: Record<string, unknown> = Object.create(null);
+
+    for (const [key, sel] of Object.entries(selection)) {
+      if (!isSafePropertyName(key)) continue;
+      if (!Object.prototype.hasOwnProperty.call(obj, key)) continue;
+      const value = obj[key];
+      if (sel === true) {
+        filtered[key] = value;
+      } else {
+        filtered[key] = this.applyFieldSelection(value, sel as Record<string, true | Record<string, unknown>>);
       }
     }
+
     return filtered;
   }
 
