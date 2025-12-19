@@ -9,6 +9,13 @@
 import type { ProxyDownloadOperation } from './types/profile.js';
 import type { ResponseContext, AuthCredentials } from './interceptors.js';
 import { NetworkError, ValidationError } from './errors.js';
+import { isIP } from 'node:net';
+import { lookup } from 'node:dns/promises';
+
+export interface DebugLogger {
+  debug(message: string, context?: Record<string, unknown>): void;
+  warn?(message: string, context?: Record<string, unknown>): void;
+}
 
 export interface HttpClient {
   request(
@@ -41,9 +48,13 @@ export interface ProxyDownloadResult {
 
 const DEFAULT_MAX_SIZE = 10 * 1024 * 1024; // 10MB
 const DEFAULT_TIMEOUT = 30000; // 30s
+const MAX_REDIRECTS = 5;
 
 export class ProxyDownloadExecutor {
-  constructor(private httpClient: HttpClient) {}
+  constructor(
+    private httpClient: HttpClient,
+    private logger: DebugLogger = { debug: () => {} }
+  ) {}
 
   /**
    * Execute proxy download operation
@@ -61,6 +72,7 @@ export class ProxyDownloadExecutor {
     const maxSize = this.resolveMaxSize(operation);
     const timeout = operation.timeout_ms ?? DEFAULT_TIMEOUT;
     const urlField = operation.url_field ?? 'url';
+    const baseOrigin = this.getBaseOrigin();
 
     // Step 1: Fetch metadata
     const metadataResponse = await this.httpClient.request(
@@ -85,15 +97,17 @@ export class ProxyDownloadExecutor {
 
     // Step 2A: Direct download endpoint path (preferred when configured)
     if (directDownloadRequest) {
-      const downloadUrl = this.buildAbsoluteUrl(directDownloadRequest.path);
       const skipAuth = operation.skip_auth ?? false;
+      const downloadUrl = this.resolveHttpUrl(directDownloadRequest.path);
       const { content, size, mimeType } = await this.downloadWithAuth(
         downloadUrl,
         authCredentials,
         maxSize,
         timeout,
+        baseOrigin,
         skipAuth,
-        directDownloadRequest.method
+        directDownloadRequest.method,
+        operation
       );
 
       if (reportedSize && reportedSize > maxSize) {
@@ -158,12 +172,16 @@ export class ProxyDownloadExecutor {
     }
 
     const skipAuth = operation.skip_auth ?? false;
+    const downloadUrl = this.resolveHttpUrl(url);
     const { content, size, mimeType: responseMime } = await this.downloadWithAuth(
-      url,
+      downloadUrl,
       authCredentials,
       maxSize,
       timeout,
-      skipAuth
+      baseOrigin,
+      skipAuth,
+      'GET',
+      operation
     );
 
     return {
@@ -239,12 +257,80 @@ export class ProxyDownloadExecutor {
     return current;
   }
 
-  private buildAbsoluteUrl(path: string): string {
-    if (/^https?:\/\//i.test(path)) {
-      return path;
+  private getBaseOrigin(): string {
+    try {
+      return new URL(this.httpClient.getBaseUrl()).origin;
+    } catch {
+      throw new ValidationError('Invalid API base URL - expected absolute http(s) URL');
     }
+  }
+
+  private resolveHttpUrl(input: string): string {
+    // Absolute URL
+    let absoluteUrl: URL | undefined;
+    try {
+      absoluteUrl = new URL(input);
+    } catch (error) {
+      this.logger.debug('resolveHttpUrl: input is not an absolute URL, resolving relative', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+
+    if (absoluteUrl) {
+      if (absoluteUrl.protocol === 'http:' || absoluteUrl.protocol === 'https:') {
+        return absoluteUrl.toString();
+      }
+      throw new ValidationError(`Unsupported download URL scheme: '${absoluteUrl.protocol}'`);
+    }
+
     const baseUrl = this.httpClient.getBaseUrl();
-    return `${baseUrl}${path}`;
+    let base: URL;
+    try {
+      base = new URL(baseUrl);
+    } catch {
+      throw new ValidationError('Invalid API base URL - expected absolute http(s) URL');
+    }
+
+    if (base.protocol !== 'http:' && base.protocol !== 'https:') {
+      throw new ValidationError(`Unsupported API base URL scheme: '${base.protocol}'`);
+    }
+
+    try {
+      if (input.startsWith('/')) {
+        // Preserve base URL path segments (e.g., https://host/api/v4 + /projects -> https://host/api/v4/projects)
+        const combined = `${baseUrl.replace(/\/$/, '')}${input}`;
+        return new URL(combined).toString();
+      }
+
+      // Relative (no leading slash) uses URL resolution semantics
+      const baseForRelative = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
+      return new URL(input, baseForRelative).toString();
+    } catch {
+      throw new ValidationError(`Invalid download URL: '${input}'`);
+    }
+  }
+
+  private async enforceDownloadPolicy(
+    downloadUrl: string,
+    baseOrigin: string,
+    operation: ProxyDownloadOperation,
+    skipAuth: boolean
+  ): Promise<void> {
+    const downloadOrigin = new URL(downloadUrl).origin;
+
+    if (!skipAuth) {
+      if (downloadOrigin !== baseOrigin) {
+        throw new ValidationError(
+          `Cross-origin download URL not allowed with authentication (base origin '${baseOrigin}', download origin '${downloadOrigin}'). Set skip_auth=true or use a same-origin download endpoint.`
+        );
+      }
+      return;
+    }
+
+    // With skip_auth, allow same-origin without additional restrictions
+    if (downloadOrigin === baseOrigin) return;
+
+    await this.enforceAllowedDownloadTarget(downloadUrl, operation);
   }
 
   /**
@@ -271,73 +357,280 @@ export class ProxyDownloadExecutor {
     authCredentials: AuthCredentials,
     maxSize: number,
     timeout: number,
+    baseOrigin: string,
     skipAuth: boolean = false,
-    method: string = 'GET'
+    method: string = 'GET',
+    operation?: ProxyDownloadOperation
   ): Promise<{ content: string; size: number; mimeType?: string }> {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeout);
 
     try {
-      // Build download URL, adding query auth param if needed (and not skipping auth)
-      let downloadUrl = url;
-      if (!skipAuth && authCredentials.queryParams) {
-        const urlObj = new URL(url);
-        const { key, value } = authCredentials.queryParams;
-        
-        // Only add if not already present (URL may have pre-signed token)
-        if (!urlObj.searchParams.has(key)) {
-          urlObj.searchParams.set(key, value);
-          downloadUrl = urlObj.toString();
+      const initialUrl = this.buildDownloadUrlWithOptionalQueryAuth(url, authCredentials, skipAuth);
+      let currentUrl = initialUrl;
+      let currentMethod = method;
+      let currentHeaders = skipAuth ? {} : authCredentials.headers;
+
+      if (operation) {
+        await this.enforceDownloadPolicy(currentUrl, baseOrigin, operation, skipAuth);
+      }
+
+      for (let redirects = 0; redirects <= MAX_REDIRECTS; redirects++) {
+        const response = await fetch(currentUrl, {
+          method: currentMethod,
+          headers: currentHeaders,
+          signal: controller.signal,
+          redirect: 'manual',
+        });
+
+        if (this.isRedirectStatus(response.status)) {
+          if (redirects === MAX_REDIRECTS) {
+            throw new NetworkError(`Too many redirects (max ${MAX_REDIRECTS})`);
+          }
+
+          const location = response.headers.get('location');
+          if (!location) {
+            throw new NetworkError(`Redirect without Location header: HTTP ${response.status}`);
+          }
+
+          const nextUrl = this.resolveRedirectTarget(currentUrl, location);
+          if (operation) {
+            // Enforce the same policy on every redirect hop
+            await this.enforceDownloadPolicy(nextUrl, baseOrigin, operation, skipAuth);
+          }
+
+          const isCrossOrigin = new URL(nextUrl).origin !== new URL(currentUrl).origin;
+          if (isCrossOrigin) {
+            currentHeaders = {};
+          }
+
+          if (
+            response.status === 303 ||
+            ((response.status === 301 || response.status === 302) &&
+              currentMethod !== 'GET' &&
+              currentMethod !== 'HEAD')
+          ) {
+            currentMethod = 'GET';
+          }
+
+          currentUrl = nextUrl;
+          continue;
         }
+
+        if (!response.ok) {
+          throw new NetworkError(`Download failed: HTTP ${response.status}`, response.status);
+        }
+
+        // Check content-length header
+        const contentLength = response.headers.get('content-length');
+        if (contentLength && parseInt(contentLength, 10) > maxSize) {
+          throw new ValidationError(`File size ${contentLength} exceeds maximum ${maxSize} bytes`);
+        }
+
+        const arrayBuffer = await response.arrayBuffer();
+
+        // Final size check
+        if (arrayBuffer.byteLength > maxSize) {
+          throw new ValidationError(
+            `Downloaded file size ${arrayBuffer.byteLength} exceeds maximum ${maxSize} bytes`
+          );
+        }
+
+        // Convert to base64
+        const content = Buffer.from(arrayBuffer).toString('base64');
+
+        return {
+          content,
+          size: arrayBuffer.byteLength,
+          mimeType: response.headers.get('content-type') || undefined,
+        };
       }
 
-      const response = await fetch(downloadUrl, {
-        method,
-        headers: skipAuth ? {} : authCredentials.headers,
-        signal: controller.signal,
-      });
-
-      if (!response.ok) {
-        throw new NetworkError(
-          `Download failed: HTTP ${response.status}`,
-          response.status
-        );
-      }
-
-      // Check content-length header
-      const contentLength = response.headers.get('content-length');
-      if (contentLength && parseInt(contentLength, 10) > maxSize) {
-        throw new ValidationError(
-          `File size ${contentLength} exceeds maximum ${maxSize} bytes`
-        );
-      }
-
-      const arrayBuffer = await response.arrayBuffer();
-      
-      // Final size check
-      if (arrayBuffer.byteLength > maxSize) {
-        throw new ValidationError(
-          `Downloaded file size ${arrayBuffer.byteLength} exceeds maximum ${maxSize} bytes`
-        );
-      }
-
-      // Convert to base64
-      const bytes = new Uint8Array(arrayBuffer);
-      let binary = '';
-      for (let i = 0; i < bytes.byteLength; i++) {
-        binary += String.fromCharCode(bytes[i]);
-      }
-      const content = btoa(binary);
-
-      return {
-        content,
-        size: arrayBuffer.byteLength,
-        mimeType: response.headers.get('content-type') || undefined,
-      };
+      throw new NetworkError('Download failed: unexpected redirect handling state');
 
     } finally {
       clearTimeout(timeoutId);
     }
+  }
+
+  private buildDownloadUrlWithOptionalQueryAuth(
+    url: string,
+    authCredentials: AuthCredentials,
+    skipAuth: boolean
+  ): string {
+    if (skipAuth || !authCredentials.queryParams) return url;
+
+    const urlObj = new URL(url);
+    const { key, value } = authCredentials.queryParams;
+
+    // Only add if not already present (URL may have pre-signed token)
+    if (!urlObj.searchParams.has(key)) {
+      urlObj.searchParams.set(key, value);
+    }
+    return urlObj.toString();
+  }
+
+  private isRedirectStatus(status: number): boolean {
+    return status === 301 || status === 302 || status === 303 || status === 307 || status === 308;
+  }
+
+  private resolveRedirectTarget(currentUrl: string, location: string): string {
+    let resolved: URL;
+    try {
+      resolved = new URL(location, currentUrl);
+    } catch {
+      throw new NetworkError(`Invalid redirect URL: '${location}'`);
+    }
+
+    if (resolved.protocol !== 'http:' && resolved.protocol !== 'https:') {
+      throw new ValidationError(`Unsupported redirect URL scheme: '${resolved.protocol}'`);
+    }
+
+    return resolved.toString();
+  }
+
+  private async enforceAllowedDownloadTarget(targetUrl: string, operation: ProxyDownloadOperation): Promise<void> {
+    const url = new URL(targetUrl);
+    const hostnameRaw = url.hostname.toLowerCase();
+    const hostname = hostnameRaw.startsWith('[') && hostnameRaw.endsWith(']')
+      ? hostnameRaw.slice(1, -1)
+      : hostnameRaw;
+    const allowPrivateNetwork = operation.allow_private_network ?? false;
+
+    if (operation.allowed_hosts && operation.allowed_hosts.length > 0) {
+      if (!this.isAllowedHost(hostname, operation.allowed_hosts)) {
+        this.logger.warn?.('proxy_download blocked: host not in allowlist', {
+          hostname,
+          allowed_hosts: operation.allowed_hosts,
+          how_to_fix: "Add hostname to allowed_hosts, or use same-origin download endpoint.",
+        });
+        throw new ValidationError(
+          `Download host not in allowlist: '${hostname}' (allowed_hosts: ${operation.allowed_hosts.join(', ')})`
+        );
+      }
+    }
+
+    if (allowPrivateNetwork) return;
+
+    if (hostname === 'localhost') {
+      this.logger.warn?.('proxy_download blocked: localhost target', {
+        hostname,
+        how_to_fix: "If you really need localhost, set allow_private_network=true (and consider allowed_hosts).",
+      });
+      throw new ValidationError('Download hostname not allowed');
+    }
+
+    const ipVersion = isIP(hostname);
+    if (ipVersion === 4) {
+      if (this.isDisallowedIPv4(hostname)) {
+        this.logger.warn?.('proxy_download blocked: private/loopback/link-local IPv4 target', {
+          hostname,
+          how_to_fix: "If you really need private IPs, set allow_private_network=true (and consider allowed_hosts).",
+        });
+        throw new ValidationError('Download IP not allowed');
+      }
+    } else if (ipVersion === 6) {
+      if (this.isDisallowedIPv6(hostname)) {
+        this.logger.warn?.('proxy_download blocked: private/loopback/link-local IPv6 target', {
+          hostname,
+          how_to_fix: "If you really need private IPs, set allow_private_network=true (and consider allowed_hosts).",
+        });
+        throw new ValidationError('Download IP not allowed');
+      }
+    } else {
+      // Hostname: resolve to all IPs and block if any are private/loopback/link-local (SSRF defense)
+      const addresses = await this.lookupAllIpAddresses(hostname);
+      const disallowed = addresses.find(address => {
+        const family = isIP(address);
+        if (family === 4) return this.isDisallowedIPv4(address);
+        if (family === 6) return this.isDisallowedIPv6(address);
+        return false;
+      });
+
+      if (disallowed) {
+        this.logger.warn?.('proxy_download blocked: hostname resolves to private/loopback/link-local IP', {
+          hostname,
+          resolved_addresses: addresses,
+          how_to_fix:
+            "If this hostname must be allowed, set allow_private_network=true and restrict with allowed_hosts.",
+        });
+        throw new ValidationError('Download hostname resolves to disallowed IP');
+      }
+    }
+  }
+
+  private async lookupAllIpAddresses(hostname: string): Promise<string[]> {
+    const timeoutMs = 1000;
+
+    let results: Array<{ address: string }> = [];
+    try {
+      results = (await Promise.race([
+        lookup(hostname, { all: true, verbatim: true }) as Promise<Array<{ address: string }>>,
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error(`DNS lookup timeout after ${timeoutMs}ms`)), timeoutMs)
+        ),
+      ])) as Array<{ address: string }>;
+    } catch (error) {
+      this.logger.warn?.('proxy_download blocked: DNS lookup failed', {
+        hostname,
+        error: error instanceof Error ? error.message : String(error),
+        how_to_fix:
+          "If you need to allow internal hostnames, set allow_private_network=true and restrict with allowed_hosts.",
+      });
+      throw new ValidationError(`DNS lookup failed for hostname '${hostname}'`);
+    }
+
+    const addresses = results.map(r => r.address).filter(Boolean);
+    if (addresses.length === 0) {
+      this.logger.warn?.('proxy_download blocked: DNS lookup returned no addresses', {
+        hostname,
+        how_to_fix:
+          "If you need to allow internal hostnames, set allow_private_network=true and restrict with allowed_hosts.",
+      });
+      throw new ValidationError(`DNS lookup returned no addresses for hostname '${hostname}'`);
+    }
+
+    return addresses;
+  }
+
+  private isAllowedHost(hostname: string, allowedHosts: string[]): boolean {
+    const lower = hostname.toLowerCase();
+    return allowedHosts.some(patternRaw => {
+      const pattern = patternRaw.toLowerCase().trim();
+      if (!pattern) return false;
+
+      if (pattern.startsWith('*.')) {
+        const suffix = pattern.slice(2);
+        if (!suffix) return false;
+        return lower.endsWith(`.${suffix}`);
+      }
+
+      return lower === pattern;
+    });
+  }
+
+  private isDisallowedIPv4(ip: string): boolean {
+    const parts = ip.split('.').map(p => Number(p));
+    if (parts.length !== 4 || parts.some(p => !Number.isInteger(p) || p < 0 || p > 255)) return true;
+    const [a, b] = parts;
+    if (a === 127) return true; // loopback
+    if (a === 10) return true; // private
+    if (a === 172 && b >= 16 && b <= 31) return true; // private
+    if (a === 192 && b === 168) return true; // private
+    if (a === 169 && b === 254) return true; // link-local
+    if (a === 0) return true; // "this network"
+    return false;
+  }
+
+  private isDisallowedIPv6(ip: string): boolean {
+    const normalized = ip.toLowerCase();
+    if (normalized === '::1' || normalized === '0:0:0:0:0:0:0:1') return true; // loopback
+    if (normalized === '::' || normalized === '0:0:0:0:0:0:0:0') return true; // unspecified
+    if (normalized.startsWith('fe8') || normalized.startsWith('fe9') || normalized.startsWith('fea') || normalized.startsWith('feb')) {
+      return true; // link-local fe80::/10 (approx by prefix)
+    }
+    if (normalized.startsWith('fc') || normalized.startsWith('fd')) return true; // unique local fc00::/7 (approx by prefix)
+    return false;
   }
 
   /**

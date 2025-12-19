@@ -665,7 +665,7 @@ export class MCPServer {
     const authCredentials = httpClient.getAuthCredentials();
 
     // Execute proxy download
-    const proxyExecutor = new ProxyDownloadExecutor(httpClient);
+    const proxyExecutor = new ProxyDownloadExecutor(httpClient, this.logger);
     const result = await proxyExecutor.execute(
       operation,
       { path: metadataPath, method: metadataMethod },
@@ -900,6 +900,26 @@ export class MCPServer {
       resourceDocumentation: this.profile?.resource_documentation || resourceMetadata.documentation,
       sslCertFile: process.env.MCP4_SSL_CERT_FILE,
       sslKeyFile: process.env.MCP4_SSL_KEY_FILE,
+      oauthSessionTimeoutMs: (() => {
+        if (process.env.MCP4_OAUTH_SESSION_TIMEOUT_MS === undefined) return undefined;
+        const parsed = parseInt(process.env.MCP4_OAUTH_SESSION_TIMEOUT_MS, 10);
+        if (Number.isNaN(parsed)) {
+          throw new ConfigurationError(
+            `Invalid MCP4_OAUTH_SESSION_TIMEOUT_MS: expected integer milliseconds, got '${process.env.MCP4_OAUTH_SESSION_TIMEOUT_MS}'`
+          );
+        }
+        return parsed;
+      })(),
+      oauthRefreshThresholdMs: (() => {
+        if (process.env.MCP4_OAUTH_REFRESH_THRESHOLD_MS === undefined) return undefined;
+        const parsed = parseInt(process.env.MCP4_OAUTH_REFRESH_THRESHOLD_MS, 10);
+        if (Number.isNaN(parsed)) {
+          throw new ConfigurationError(
+            `Invalid MCP4_OAUTH_REFRESH_THRESHOLD_MS: expected integer milliseconds, got '${process.env.MCP4_OAUTH_REFRESH_THRESHOLD_MS}'`
+          );
+        }
+        return parsed;
+      })(),
     };
 
     // Warn if binding to non-localhost without explicit MCP4_ALLOWED_ORIGINS

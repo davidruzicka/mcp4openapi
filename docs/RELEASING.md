@@ -16,13 +16,13 @@ Releases are **fully automated** via GitHub Actions when you push a version tag.
 
 ### 1. Update CHANGELOG.md
 
-Move items from `[Unreleased]` section to a new version section (example for latest `v0.2.3`):
+Move items from `[Unreleased]` section to a new version section (example for next release `vX.Y.Z`):
 
 ```markdown
 ## [Unreleased]
 <!-- Empty for next version -->
 
-## [0.2.4] - 2025-12-04
+## [X.Y.Z] - YYYY-MM-DD
 
 ### Added
 - Feature description
@@ -36,25 +36,25 @@ Move items from `[Unreleased]` section to a new version section (example for lat
 
 Update comparison links at bottom:
 ```markdown
-[Unreleased]: https://github.com/davidruzicka/mcp4openapi/compare/v0.2.4...HEAD
-[0.2.4]: https://github.com/davidruzicka/mcp4openapi/compare/v0.2.3...v0.2.4
+[Unreleased]: https://github.com/davidruzicka/mcp4openapi/compare/vX.Y.Z...HEAD
+[X.Y.Z]: https://github.com/davidruzicka/mcp4openapi/compare/vX.Y.(Z-1)...vX.Y.Z
 ```
 
 ### 2. Commit Changes
 
 ```bash
 git add CHANGELOG.md
-git commit -m "chore: release v0.2.4"
+git commit -m "chore: release vX.Y.Z"
 ```
 
 ### 3. Update package.json Version
 
 ```bash
-npm version patch  # 0.2.3 → 0.2.4
+npm version patch  # X.Y.(Z-1) -> X.Y.Z
 # or
-npm version minor  # 0.2.3 → 0.3.0
+npm version minor  # X.Y.Z -> X.(Y+1).0
 # or
-npm version major  # 0.2.3 → 1.0.0
+npm version major  # X.Y.Z -> (X+1).0.0
 ```
 
 This updates `package.json` and creates a git commit.
@@ -62,11 +62,11 @@ This updates `package.json` and creates a git commit.
 ### 4. Create and Push Tag
 
 ```bash
-git tag v0.2.4
+git tag vX.Y.Z
 git push origin main --tags
 ```
 
-**Important**: Tag must start with `v` (e.g., `v0.2.4`, not `0.2.4`) to trigger CI publishing.
+**Important**: Tag must start with `v` (e.g., `vX.Y.Z`, not `X.Y.Z`) to trigger CI publishing.
 
 ### 5. Monitor CI Workflow
 
@@ -96,8 +96,8 @@ Check that:
 ### 7. Create GitHub Release (Optional)
 
 1. Go to https://github.com/davidruzicka/mcp4openapi/releases/new
-2. Select your tag (`v0.2.4`)
-3. Title: `v0.2.4`
+2. Select your tag (`vX.Y.Z`)
+3. Title: `vX.Y.Z`
 4. Description: Copy from CHANGELOG.md
 5. Click **Publish release**
 
@@ -131,24 +131,24 @@ Check that:
 1. Fix failing tests locally
 2. Run `npm test` and `npm run test:e2e`
 3. Commit fixes
-4. Delete failed tag: `git tag -d v0.2.4 && git push origin :refs/tags/v0.2.4`
+4. Delete failed tag: `git tag -d vX.Y.Z && git push origin :refs/tags/vX.Y.Z`
 5. Recreate tag after fixes
 
 ## Version Numbering (Semantic Versioning)
 
 Follow https://semver.org:
 
-- **Patch** (0.2.3 → 0.2.4): Bug fixes, minor documentation updates
-- **Minor** (0.2.3 → 0.3.0): New features, backwards compatible
-- **Major** (0.2.3 → 1.0.0): Breaking changes, API changes
+- **Patch** (X.Y.(Z-1) -> X.Y.Z): Bug fixes, minor documentation updates
+- **Minor** (X.Y.Z -> X.(Y+1).0): New features, backwards compatible
+- **Major** (X.Y.Z -> (X+1).0.0): Breaking changes, API changes
 
 ## Pre-release Versions
 
 For testing before official release:
 
 ```bash
-npm version prerelease --preid=beta  # 0.2.3 → 0.2.4-beta.0
-git tag v0.2.4-beta.0
+npm version prerelease --preid=beta  # X.Y.(Z-1) -> X.Y.Z-beta.0
+git tag vX.Y.Z-beta.0
 git push origin main --tags
 ```
 
@@ -165,7 +165,7 @@ If a release is broken:
 ### Rollback npm
 
 ```bash
-npm deprecate mcp4openapi@0.2.4 "Broken release, use 0.2.3"
+npm deprecate mcp4openapi@X.Y.Z "Broken release, use X.Y.(Z-1)"
 ```
 
 ### Rollback Docker
@@ -173,8 +173,8 @@ npm deprecate mcp4openapi@0.2.4 "Broken release, use 0.2.3"
 Delete tags from Docker Hub UI or retag `latest`:
 
 ```bash
-docker pull davidruzicka/mcp4openapi:0.2.3
-docker tag davidruzicka/mcp4openapi:0.2.3 davidruzicka/mcp4openapi:latest
+docker pull davidruzicka/mcp4openapi:X.Y.(Z-1)
+docker tag davidruzicka/mcp4openapi:X.Y.(Z-1) davidruzicka/mcp4openapi:latest
 docker push davidruzicka/mcp4openapi:latest
 ```
 

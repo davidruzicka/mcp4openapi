@@ -7,7 +7,10 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import path from 'path';
 import { MCPServer } from './mcp-server.js';
+import { HttpTransport } from './http-transport.js';
 import { ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
+import { JsonLogger } from './logger.js';
+import { Server as MCPProtocolServer } from '@modelcontextprotocol/sdk/server/index.js';
 import { 
   AuthenticationError, 
   AuthorizationError, 
@@ -100,6 +103,28 @@ describe('MCPServer', () => {
       await expect((server as any).getHttpClientForSession()).rejects.toThrow(
         /HasEnvToken\(MCP4_API_TOKEN\): false/
       );
+    });
+  });
+
+  describe('runStdio', () => {
+    it('should connect MCP server via StdioServerTransport', async () => {
+      const logger = {
+        debug: vi.fn(),
+        info: vi.fn(),
+        warn: vi.fn(),
+        error: vi.fn(),
+      };
+
+      const server = new MCPServer(logger as any);
+      const connectSpy = vi.spyOn((server as any).server, 'connect').mockResolvedValue(undefined);
+
+      try {
+        await server.runStdio();
+        expect(connectSpy).toHaveBeenCalledTimes(1);
+        expect(logger.info).toHaveBeenCalledWith('MCP server running on stdio');
+      } finally {
+        connectSpy.mockRestore();
+      }
     });
   });
 
@@ -396,6 +421,43 @@ describe('MCPServer', () => {
     });
   });
 
+  describe('handleToolCall error mapping (HTTP JSON-RPC)', () => {
+    it('maps AuthorizationError to -32002', async () => {
+      const server = new MCPServer();
+      const specPath = path.join(process.cwd(), 'profiles/gitlab/openapi.yaml');
+      await server.initialize(specPath);
+
+      (server as any).profile = {
+        profile_name: 'test',
+        description: 'test',
+        tools: [
+          {
+            name: 'simple_test',
+            description: 'test',
+            parameters: {},
+            operations: { execute: 'op' },
+          },
+        ],
+        interceptors: {},
+      };
+      (server as any).compositeExecutor = { execute: async () => ({}) };
+      (server as any).toolGenerator = { validateArguments: () => {} };
+      (server as any).executeSimpleTool = async () => {
+        throw new AuthorizationError('Forbidden');
+      };
+
+      const message = {
+        jsonrpc: '2.0',
+        id: '1',
+        method: 'tools/call',
+        params: { name: 'simple_test', arguments: {} },
+      };
+
+      const response = await (server as any).handleToolCall(message, 'test-session');
+      expect(response.error.code).toBe(-32002);
+    });
+  });
+
   describe('security warnings', () => {
     it('should warn when binding non-localhost with empty MCP4_ALLOWED_ORIGINS', async () => {
       const messages: string[] = [];
@@ -410,11 +472,15 @@ describe('MCPServer', () => {
 
       const prev = process.env.MCP4_ALLOWED_ORIGINS;
       delete process.env.MCP4_ALLOWED_ORIGINS;
+      const startSpy = vi.spyOn(HttpTransport.prototype, 'start').mockResolvedValue(undefined as any);
+      const stopSpy = vi.spyOn(HttpTransport.prototype, 'stop').mockResolvedValue(undefined as any);
       try {
         await serverWithLogger.runHttp('0.0.0.0', 0);
         expect(messages.find(m => m.includes('MCP4_ALLOWED_ORIGINS'))).toBeDefined();
       } finally {
         await serverWithLogger.stop();
+        startSpy.mockRestore();
+        stopSpy.mockRestore();
         process.env.MCP4_ALLOWED_ORIGINS = prev;
       }
     });
@@ -489,6 +555,75 @@ describe('MCPServer', () => {
       const config = capturedConfigs[0];
       expect(config.maxTokenLength).toBe(2048);
       expect(config.oauthConfig?.allowed_redirect_hosts).toEqual(['*.allowed.test']);
+    });
+  });
+
+  describe('executeProxyDownload wiring', () => {
+    const originalEnv = { ...process.env };
+
+    afterEach(() => {
+      process.env = { ...originalEnv };
+      vi.resetModules();
+      vi.clearAllMocks();
+    });
+
+    it('should pass logger into ProxyDownloadExecutor', async () => {
+      const capturedCtorArgs: any[] = [];
+
+      vi.doMock('./proxy-executor.js', () => {
+        return {
+          ProxyDownloadExecutor: class {
+            constructor(httpClient: any, logger: any) {
+              capturedCtorArgs.push({ httpClient, logger });
+            }
+            async execute() {
+              return { fileName: 'x', mimeType: 'text/plain', size: 1, content: 'a' };
+            }
+          },
+        };
+      });
+
+      const { MCPServer: MockedMCPServer } = await import('./mcp-server.js');
+
+      const logger = {
+        debug: vi.fn(),
+        info: vi.fn(),
+        warn: vi.fn(),
+        error: vi.fn(),
+      };
+
+      const server = new MockedMCPServer(logger as any);
+
+      (server as any).parser = {
+        getOperation: (opId: string) => {
+          if (opId === 'metadata') return { path: '/meta/{id}', method: 'GET' };
+          return undefined;
+        },
+      };
+
+      (server as any).profile = {
+        profile_name: 'test',
+        description: 'test profile',
+        tools: [],
+        interceptors: { auth: [] },
+      };
+
+      (server as any).getHttpClientForSession = vi.fn(async () => {
+        return {
+          getAuthCredentials: () => ({ type: 'none' }),
+        };
+      });
+
+      await (server as any).executeProxyDownload(
+        {
+          metadata_endpoint: 'metadata',
+          url_field: 'url',
+        },
+        { id: '123' }
+      );
+
+      expect(capturedCtorArgs.length).toBe(1);
+      expect(capturedCtorArgs[0].logger).toBe(logger);
     });
   });
 
@@ -598,6 +733,52 @@ describe('MCPServer', () => {
         expect(warns.find(m => m.includes('Session token validation/refresh failed'))).toBeUndefined();
       } finally {
         await serverWithLogger.stop();
+      }
+    });
+  });
+
+  describe('getAuthTokenFromSession', () => {
+    it('should return undefined when httpTransport is missing', async () => {
+      const server = new MCPServer();
+      const token = await (server as any).getAuthTokenFromSession('session-1');
+      expect(token).toBeUndefined();
+    });
+
+    it('should warn when token refresh fails but still return token if available', async () => {
+      const warns: any[] = [];
+      const testLogger: any = {
+        debug: () => {},
+        info: () => {},
+        warn: (msg: string, ctx?: any) => { warns.push({ msg, ctx }); },
+        error: () => {},
+      };
+
+      const server = new MCPServer(testLogger);
+      (server as any).httpTransport = {
+        ensureValidSessionToken: async () => false,
+        getSessionToken: () => 'still-returned-token',
+      };
+
+      const token = await (server as any).getAuthTokenFromSession('session-1');
+      expect(token).toBe('still-returned-token');
+      expect(warns.some(w => String(w.msg).includes('Session token validation/refresh failed'))).toBe(true);
+    });
+  });
+
+  describe('createLoggerWithAuth', () => {
+    it('should create JsonLogger when MCP4_LOG_FORMAT=json', () => {
+      const original = process.env.MCP4_LOG_FORMAT;
+      process.env.MCP4_LOG_FORMAT = 'json';
+      try {
+        const server = new MCPServer();
+        const logger = (server as any).createLoggerWithAuth({
+          type: 'bearer',
+          value_from_env: 'MCP4_API_TOKEN',
+        });
+        expect(logger).toBeInstanceOf(JsonLogger);
+      } finally {
+        if (original === undefined) delete process.env.MCP4_LOG_FORMAT;
+        else process.env.MCP4_LOG_FORMAT = original;
       }
     });
   });
@@ -896,6 +1077,26 @@ describe('MCPServer', () => {
       await expect((server as any).getHttpClientForSession()).rejects.toThrow('HTTP client not initialized');
     });
 
+    it('should suggest Authorization header when http transport is active', async () => {
+      const server = new MCPServer();
+      const specPath = path.join(process.cwd(), 'profiles/gitlab/openapi.yaml');
+
+      delete process.env.MCP4_API_TOKEN;
+      await server.initialize(specPath);
+
+      (server as any).httpTransport = {}; // Treat as http transport
+      (server as any).httpClientFactory = {
+        hasGlobalClient: () => false,
+        getGlobalClient: () => {
+          throw new Error('No client');
+        },
+      };
+
+      await expect((server as any).getHttpClientForSession()).rejects.toThrow(
+        /Send token in Authorization header during initialization/
+      );
+    });
+
     it('should throw ConfigurationError when profile not initialized', async () => {
       const server = new MCPServer();
       
@@ -908,6 +1109,227 @@ describe('MCPServer', () => {
       };
       
       await expect((server as any).getHttpClientForSession('some-session-id')).rejects.toThrow('Profile not initialized');
+    });
+  });
+
+  describe('setupHandlers (MCP SDK)', () => {
+    it('ListTools handler should wrap errors with correlation ID when uninitialized', async () => {
+      const setHandlerSpy = vi.spyOn(MCPProtocolServer.prototype as any, 'setRequestHandler');
+      const server = new MCPServer();
+
+      const listCall = setHandlerSpy.mock.calls.find(call => {
+        const schema: any = call[0];
+        return schema?.shape?.method?.value === 'tools/list';
+      });
+      expect(listCall).toBeDefined();
+
+      const listHandler = listCall![1] as () => Promise<unknown>;
+      await expect(listHandler()).rejects.toThrow(/correlation ID/);
+    });
+
+    it('ListTools handler should return tools when initialized', async () => {
+      const setHandlerSpy = vi.spyOn(MCPProtocolServer.prototype as any, 'setRequestHandler');
+      const server = new MCPServer();
+      const specPath = path.join(process.cwd(), 'profiles/gitlab/openapi.yaml');
+      await server.initialize(specPath);
+
+      const listCall = setHandlerSpy.mock.calls.find(call => {
+        const schema: any = call[0];
+        return schema?.shape?.method?.value === 'tools/list';
+      });
+      const listHandler = listCall![1] as () => Promise<any>;
+      const result = await listHandler();
+      expect(result).toHaveProperty('tools');
+      expect(Array.isArray(result.tools)).toBe(true);
+      expect(result.tools.length).toBeGreaterThan(0);
+    });
+
+    it('CallTool handler should return composite result with _metadata', async () => {
+      const setHandlerSpy = vi.spyOn(MCPProtocolServer.prototype as any, 'setRequestHandler');
+      const server = new MCPServer();
+      const specPath = path.join(process.cwd(), 'profiles/gitlab/openapi.yaml');
+      await server.initialize(specPath);
+
+      const toolDef: any = {
+        name: 'composite_test',
+        description: 'test',
+        composite: true,
+        steps: [{ operation: 'x', store_as: '$.x' }],
+        parameters: {},
+        operations: { execute: 'x' },
+      };
+      (server as any).profile.tools = [toolDef];
+      (server as any).compositeExecutor = {
+        execute: async () => ({
+          data: { ok: true },
+          completed_steps: 1,
+          total_steps: 1,
+          errors: [],
+        }),
+      };
+      (server as any).toolGenerator.validateArguments = () => {};
+
+      const callToolCall = setHandlerSpy.mock.calls.find(call => {
+        const schema: any = call[0];
+        return schema?.shape?.method?.value === 'tools/call';
+      });
+      expect(callToolCall).toBeDefined();
+      const callToolHandler = callToolCall![1] as (req: any) => Promise<any>;
+      const response = await callToolHandler({ params: { name: 'composite_test', arguments: {} } });
+      const parsed = JSON.parse(response.content[0].text);
+      expect(parsed).toHaveProperty('_metadata');
+      expect(parsed._metadata).toHaveProperty('success', true);
+    });
+
+    it('CallTool handler should map errors to client-safe message', async () => {
+      const setHandlerSpy = vi.spyOn(MCPProtocolServer.prototype as any, 'setRequestHandler');
+      const server = new MCPServer();
+      const specPath = path.join(process.cwd(), 'profiles/gitlab/openapi.yaml');
+      await server.initialize(specPath);
+
+      const toolDef: any = {
+        name: 'simple_test',
+        description: 'test',
+        composite: false,
+        parameters: {},
+        operations: { execute: 'x' },
+      };
+      (server as any).profile.tools = [toolDef];
+      (server as any).toolGenerator.validateArguments = () => {};
+      (server as any).executeSimpleTool = async () => {
+        throw new AuthorizationError('Forbidden');
+      };
+
+      const callToolCall = setHandlerSpy.mock.calls.find(call => {
+        const schema: any = call[0];
+        return schema?.shape?.method?.value === 'tools/call';
+      });
+      const callToolHandler = callToolCall![1] as (req: any) => Promise<any>;
+      await expect(
+        callToolHandler({ params: { name: 'simple_test', arguments: {} } })
+      ).rejects.toThrow(/Authorization failed: Forbidden/);
+    });
+  });
+
+  describe('checkToolNameLengths', () => {
+    it('should return early when names are already shortened', () => {
+      const originalStrategy = process.env.MCP4_TOOLNAME_STRATEGY;
+      const originalWarnOnly = process.env.MCP4_TOOLNAME_WARN_ONLY;
+
+      process.env.MCP4_TOOLNAME_STRATEGY = 'balanced';
+      process.env.MCP4_TOOLNAME_WARN_ONLY = 'false';
+
+      try {
+        const server = new MCPServer();
+        // Set parser to throw if getAllOperations is called - should not be called on early return
+        (server as any).parser = {
+          getAllOperations: () => {
+            throw new Error('should not be called');
+          },
+        };
+        expect(() => (server as any).checkToolNameLengths()).not.toThrow();
+      } finally {
+        if (originalStrategy === undefined) delete process.env.MCP4_TOOLNAME_STRATEGY;
+        else process.env.MCP4_TOOLNAME_STRATEGY = originalStrategy;
+        if (originalWarnOnly === undefined) delete process.env.MCP4_TOOLNAME_WARN_ONLY;
+        else process.env.MCP4_TOOLNAME_WARN_ONLY = originalWarnOnly;
+      }
+    });
+  });
+
+  describe('executeSimpleTool', () => {
+    it('should throw ValidationError when operation mapping is missing', async () => {
+      const server = new MCPServer();
+      (server as any).toolGenerator = {
+        getOperationDefinition: () => undefined,
+      };
+      await expect(
+        (server as any).executeSimpleTool(
+          { name: 't', operations: {}, parameters: {} },
+          { action: 'x' }
+        )
+      ).rejects.toBeInstanceOf(ValidationError);
+    });
+
+    it('should throw OperationNotFoundError when operationId is not in spec', async () => {
+      const server = new MCPServer();
+      (server as any).toolGenerator = {
+        getOperationDefinition: () => 'missingOp',
+      };
+      (server as any).parser = {
+        getOperation: () => undefined,
+      };
+      await expect(
+        (server as any).executeSimpleTool(
+          { name: 't', operations: { execute: 'missingOp' }, parameters: {} },
+          {}
+        )
+      ).rejects.toBeInstanceOf(OperationNotFoundError);
+    });
+
+    it('should send response_fields as query param when enabled', async () => {
+      const server = new MCPServer();
+      (server as any).toolGenerator = {
+        getOperationDefinition: () => 'op',
+      };
+      (server as any).parser = {
+        getOperation: () => ({
+          operationId: 'op',
+          method: 'GET',
+          path: '/items/{id}',
+          parameters: [],
+        }),
+      };
+      (server as any).resolvePath = () => '/items/1';
+      (server as any).extractQueryParams = () => ({});
+      (server as any).extractBody = () => undefined;
+      (server as any).schemaValidator = { validateRequestBody: () => ({ valid: true }) };
+
+      let capturedParams: any = undefined;
+      (server as any).getHttpClientForSession = async () => ({
+        request: async (_m: any, _p: any, opts: any) => {
+          capturedParams = opts.params;
+          return { body: { ok: true } };
+        },
+        getAuthCredentials: () => ({ headers: {} }),
+      });
+
+      const toolDef: any = {
+        name: 't',
+        operations: { execute: 'op' },
+        parameters: {},
+        send_response_fields_as_param: true,
+        response_fields: { list: ['id', 'name'] },
+      };
+
+      await (server as any).executeSimpleTool(toolDef, { action: 'list' });
+      expect(capturedParams).toHaveProperty('fields', 'id,name');
+    });
+  });
+
+  describe('runHttp config parsing', () => {
+    it('should throw ConfigurationError for invalid MCP4_OAUTH_SESSION_TIMEOUT_MS', async () => {
+      const server = new MCPServer();
+      const original = process.env.MCP4_OAUTH_SESSION_TIMEOUT_MS;
+      process.env.MCP4_OAUTH_SESSION_TIMEOUT_MS = 'nope';
+      try {
+        await expect(server.runHttp('127.0.0.1', 0)).rejects.toBeInstanceOf(ConfigurationError);
+      } finally {
+        if (original === undefined) delete process.env.MCP4_OAUTH_SESSION_TIMEOUT_MS;
+        else process.env.MCP4_OAUTH_SESSION_TIMEOUT_MS = original;
+      }
+    });
+
+    it('should throw ConfigurationError for invalid MCP4_OAUTH_REFRESH_THRESHOLD_MS', async () => {
+      const server = new MCPServer();
+      const original = process.env.MCP4_OAUTH_REFRESH_THRESHOLD_MS;
+      process.env.MCP4_OAUTH_REFRESH_THRESHOLD_MS = 'nope';
+      try {
+        await expect(server.runHttp('127.0.0.1', 0)).rejects.toBeInstanceOf(ConfigurationError);
+      } finally {
+        if (original === undefined) delete process.env.MCP4_OAUTH_REFRESH_THRESHOLD_MS;
+        else process.env.MCP4_OAUTH_REFRESH_THRESHOLD_MS = original;
+      }
     });
   });
 

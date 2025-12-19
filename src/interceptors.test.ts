@@ -172,6 +172,27 @@ describe('HttpClient - Auth Interceptors', () => {
     );
   });
 
+  it('should throw specific error when selected auth config resolves to oauth type', () => {
+    let reads = 0;
+    const flakyTypeAuthConfig = {
+      get type() {
+        reads += 1;
+        return reads === 1 ? 'bearer' : 'oauth';
+      },
+      value_from_env: 'MCP4_API_TOKEN',
+    } as any;
+
+    const config: InterceptorConfig = {
+      auth: [flakyTypeAuthConfig],
+    };
+
+    process.env.MCP4_API_TOKEN = 'test-token';
+
+    expect(() => new InterceptorChain(config)).toThrow(
+      'OAuth authentication not supported in InterceptorChain (use HTTP transport OAuth flow)'
+    );
+  });
+
   it('should work without auth if not configured', async () => {
     const config: InterceptorConfig = {};
 
@@ -1205,4 +1226,3 @@ describe('HttpClient - Multipart Support', () => {
     expect(options.headers).toHaveProperty('Content-Type', 'application/octet-stream');
   });
 });
-

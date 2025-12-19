@@ -350,6 +350,24 @@ describe('Token Redaction', () => {
         expect.stringContaining('key123')
       );
     });
+
+    it('should redact OAuth token fields in any context', () => {
+      const logger = new ConsoleLogger(LogLevel.INFO);
+      logger.info('OAuth response', {
+        body: {
+          access_token: 'at-123',
+          refresh_token: 'rt-456',
+          nested: {
+            client_secret: 'cs-789',
+          },
+        },
+      });
+
+      const call = consoleErrorSpy.mock.calls[0][0] as string;
+      expect(call).toContain('[REDACTED]');
+      expect(call).not.toContain('at-123');
+      expect(call).not.toContain('rt-456');
+      expect(call).not.toContain('cs-789');
+    });
   });
 });
-
