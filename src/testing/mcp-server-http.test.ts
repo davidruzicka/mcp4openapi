@@ -4,8 +4,9 @@ import request from 'supertest';
 import { MCPServer } from '../mcp-server.js';
 import path from 'path';
 import { HttpTransport } from '../http-transport.js';
+import { describeIfListen } from './listen-support.js';
 
-describe('MCPServer HTTP Integration', () => {
+describeIfListen('MCPServer HTTP Integration', () => {
   let server: MCPServer;
   let app: any;
 

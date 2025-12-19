@@ -110,14 +110,13 @@ export function generateNameWarnings(
   logger.warn(`How to Fix:\n`);
   logger.warn(`  1. Choose a shortening strategy based on collision analysis above`);
   logger.warn(`  2. Set environment variables:\n`);
-  logger.warn(`     export MCP_TOOLNAME_STRATEGY=balanced      # or: iterative, hash, auto`);
-  logger.warn(`     export MCP_TOOLNAME_WARN_ONLY=false       # Apply shortening`);
-  logger.warn(`     export MCP_TOOLNAME_MAX=45                # Optional: adjust limit`);
-  logger.warn(`     export MCP_TOOLNAME_MIN_PARTS=3           # Optional: min parts (for balanced)`);
-  logger.warn(`     export MCP_TOOLNAME_MIN_LENGTH=20         # Optional: min length (for balanced)\n`);
+  logger.warn(`     export MCP4_TOOLNAME_STRATEGY=balanced      # or: iterative, hash, auto`);
+  logger.warn(`     export MCP4_TOOLNAME_WARN_ONLY=false       # Apply shortening`);
+  logger.warn(`     export MCP4_TOOLNAME_MAX=45                # Optional: adjust limit`);
+  logger.warn(`     export MCP4_TOOLNAME_MIN_PARTS=3           # Optional: min parts (for balanced)`);
+  logger.warn(`     export MCP4_TOOLNAME_MIN_LENGTH=20         # Optional: min length (for balanced)\n`);
   logger.warn(`  Example for balanced strategy:`);
-  logger.warn(`     export MCP_TOOLNAME_STRATEGY=balanced MCP_TOOLNAME_WARN_ONLY=false\n`);
+  logger.warn(`     export MCP4_TOOLNAME_STRATEGY=balanced MCP4_TOOLNAME_WARN_ONLY=false\n`);
   logger.warn(`${'-'.repeat(80)}`);
   logger.warn(`Summary: ${offenders.length} names need shortening. Choose strategy and restart.\n`);
 }
-

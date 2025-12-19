@@ -7,6 +7,7 @@ import type { Server as HttpServer } from 'http';
 import { HttpTransport } from './http-transport.js';
 import { ConsoleLogger } from './logger.js';
 import type { HttpTransportConfig } from './types/http-transport.js';
+import { describeIfListen } from './testing/listen-support.js';
 
 // Generate unique port for each test run to avoid conflicts
 let portCounter = 13580;
@@ -14,7 +15,7 @@ function getNextPort(): number {
   return portCounter++;
 }
 
-describe('HttpTransport Rate Limiting', () => {
+describeIfListen('HttpTransport Rate Limiting', () => {
   let transport: HttpTransport;
   let server: HttpServer | null = null;
   let testPort: number;
@@ -212,4 +213,3 @@ describe('HttpTransport Rate Limiting', () => {
     });
   });
 });
-

@@ -10,6 +10,10 @@ import type { ProxyDownloadOperation } from './types/profile.js';
 import type { ResponseContext, AuthCredentials } from './interceptors.js';
 import { NetworkError, ValidationError } from './errors.js';
 
+export interface DebugLogger {
+  debug(message: string, context?: Record<string, unknown>): void;
+}
+
 export interface HttpClient {
   request(
     method: string,
@@ -43,7 +47,10 @@ const DEFAULT_MAX_SIZE = 10 * 1024 * 1024; // 10MB
 const DEFAULT_TIMEOUT = 30000; // 30s
 
 export class ProxyDownloadExecutor {
-  constructor(private httpClient: HttpClient) {}
+  constructor(
+    private httpClient: HttpClient,
+    private logger: DebugLogger = { debug: () => {} }
+  ) {}
 
   /**
    * Execute proxy download operation
@@ -61,6 +68,7 @@ export class ProxyDownloadExecutor {
     const maxSize = this.resolveMaxSize(operation);
     const timeout = operation.timeout_ms ?? DEFAULT_TIMEOUT;
     const urlField = operation.url_field ?? 'url';
+    const baseOrigin = this.getBaseOrigin();
 
     // Step 1: Fetch metadata
     const metadataResponse = await this.httpClient.request(
@@ -85,8 +93,9 @@ export class ProxyDownloadExecutor {
 
     // Step 2A: Direct download endpoint path (preferred when configured)
     if (directDownloadRequest) {
-      const downloadUrl = this.buildAbsoluteUrl(directDownloadRequest.path);
       const skipAuth = operation.skip_auth ?? false;
+      const downloadUrl = this.resolveHttpUrl(directDownloadRequest.path);
+      this.enforceCrossOriginAuth(downloadUrl, baseOrigin, skipAuth);
       const { content, size, mimeType } = await this.downloadWithAuth(
         downloadUrl,
         authCredentials,
@@ -158,8 +167,10 @@ export class ProxyDownloadExecutor {
     }
 
     const skipAuth = operation.skip_auth ?? false;
+    const downloadUrl = this.resolveHttpUrl(url);
+    this.enforceCrossOriginAuth(downloadUrl, baseOrigin, skipAuth);
     const { content, size, mimeType: responseMime } = await this.downloadWithAuth(
-      url,
+      downloadUrl,
       authCredentials,
       maxSize,
       timeout,
@@ -239,12 +250,68 @@ export class ProxyDownloadExecutor {
     return current;
   }
 
-  private buildAbsoluteUrl(path: string): string {
-    if (/^https?:\/\//i.test(path)) {
-      return path;
+  private getBaseOrigin(): string {
+    try {
+      return new URL(this.httpClient.getBaseUrl()).origin;
+    } catch {
+      throw new ValidationError('Invalid API base URL - expected absolute http(s) URL');
     }
+  }
+
+  private resolveHttpUrl(input: string): string {
+    // Absolute URL
+    let absoluteUrl: URL | undefined;
+    try {
+      absoluteUrl = new URL(input);
+    } catch (error) {
+      this.logger.debug('resolveHttpUrl: input is not an absolute URL, resolving relative', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+
+    if (absoluteUrl) {
+      if (absoluteUrl.protocol === 'http:' || absoluteUrl.protocol === 'https:') {
+        return absoluteUrl.toString();
+      }
+      throw new ValidationError(`Unsupported download URL scheme: '${absoluteUrl.protocol}'`);
+    }
+
     const baseUrl = this.httpClient.getBaseUrl();
-    return `${baseUrl}${path}`;
+    let base: URL;
+    try {
+      base = new URL(baseUrl);
+    } catch {
+      throw new ValidationError('Invalid API base URL - expected absolute http(s) URL');
+    }
+
+    if (base.protocol !== 'http:' && base.protocol !== 'https:') {
+      throw new ValidationError(`Unsupported API base URL scheme: '${base.protocol}'`);
+    }
+
+    try {
+      if (input.startsWith('/')) {
+        // Preserve base URL path segments (e.g., https://host/api/v4 + /projects -> https://host/api/v4/projects)
+        const combined = `${baseUrl.replace(/\/$/, '')}${input}`;
+        return new URL(combined).toString();
+      }
+
+      // Relative (no leading slash) uses URL resolution semantics
+      const baseForRelative = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
+      return new URL(input, baseForRelative).toString();
+    } catch {
+      throw new ValidationError(`Invalid download URL: '${input}'`);
+    }
+  }
+
+  private enforceCrossOriginAuth(downloadUrl: string, baseOrigin: string, skipAuth: boolean): void {
+    if (skipAuth) return;
+
+    const downloadOrigin = new URL(downloadUrl).origin;
+    if (downloadOrigin !== baseOrigin) {
+      throw new ValidationError(
+        `Cross-origin download URL not allowed with authentication (base origin '${baseOrigin}', download origin '${downloadOrigin}'). Set skip_auth=true or use a same-origin download endpoint.`
+      );
+    }
   }
 
   /**

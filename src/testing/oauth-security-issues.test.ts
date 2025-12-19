@@ -12,8 +12,9 @@ import { ConsoleLogger, LogLevel } from '../logger.js';
 import type { Express } from 'express';
 import type { OAuthConfig } from '../types/profile.js';
 import { ExternalOAuthProvider } from '../oauth-provider.js';
+import { describeIfListen } from './listen-support.js';
 
-describe('OAuth Security Issues - Proof Tests', () => {
+describeIfListen('OAuth Security Issues - Proof Tests', () => {
   let transport: HttpTransport;
   let app: Express;
   let oauthConfig: OAuthConfig;
@@ -299,4 +300,3 @@ describe('OAuth Security Issues - Proof Tests', () => {
     });
   });
 });
-

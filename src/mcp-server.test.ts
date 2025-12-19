@@ -7,6 +7,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import path from 'path';
 import { MCPServer } from './mcp-server.js';
+import { HttpTransport } from './http-transport.js';
 import { ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { 
   AuthenticationError, 
@@ -410,11 +411,15 @@ describe('MCPServer', () => {
 
       const prev = process.env.MCP4_ALLOWED_ORIGINS;
       delete process.env.MCP4_ALLOWED_ORIGINS;
+      const startSpy = vi.spyOn(HttpTransport.prototype, 'start').mockResolvedValue(undefined as any);
+      const stopSpy = vi.spyOn(HttpTransport.prototype, 'stop').mockResolvedValue(undefined as any);
       try {
         await serverWithLogger.runHttp('0.0.0.0', 0);
         expect(messages.find(m => m.includes('MCP4_ALLOWED_ORIGINS'))).toBeDefined();
       } finally {
         await serverWithLogger.stop();
+        startSpy.mockRestore();
+        stopSpy.mockRestore();
         process.env.MCP4_ALLOWED_ORIGINS = prev;
       }
     });

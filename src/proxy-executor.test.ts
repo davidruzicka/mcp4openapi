@@ -25,6 +25,8 @@ describe('ProxyDownloadExecutor', () => {
   });
 
   it('should extract URL from metadata and download content', async () => {
+    mockHttpClient.getBaseUrl.mockReturnValue('https://youtrack.cloud');
+
     // Mock metadata response
     mockHttpClient.request.mockResolvedValue({
       status: 200,
@@ -178,6 +180,7 @@ describe('ProxyDownloadExecutor', () => {
       type: 'proxy_download',
       metadata_endpoint: 'getApiV4ProjectsIdJobsJobId',
       download_endpoint: 'getApiV4ProjectsIdJobsJobIdArtifacts',
+      skip_auth: true,
     };
 
     await executor.execute(
@@ -189,8 +192,32 @@ describe('ProxyDownloadExecutor', () => {
 
     expect(global.fetch).toHaveBeenCalledWith(
       'https://cdn.example.com/artifacts/1234',
-      expect.objectContaining({ method: 'GET' })
+      expect.objectContaining({ method: 'GET', headers: {} })
     );
+  });
+
+  it('should reject cross-origin authenticated downloads', async () => {
+    mockHttpClient.request.mockResolvedValue({
+      status: 200,
+      headers: {},
+      body: {
+        url: 'https://cdn.example.com/files/abc123',
+      },
+    });
+
+    const executor = new ProxyDownloadExecutor(mockHttpClient as any);
+    const operation: ProxyDownloadOperation = {
+      type: 'proxy_download',
+      metadata_endpoint: 'get_/issues/{id}/attachments/{attachmentId}',
+    };
+
+    await expect(
+      executor.execute(
+        operation,
+        metadataRequest('/issues/PROJ-1/attachments/att-123'),
+        { headers: { Authorization: 'Bearer token' } }
+      )
+    ).rejects.toThrow('Cross-origin download URL not allowed');
   });
 
   it('should enforce MIME whitelist for direct download responses', async () => {
@@ -241,7 +268,7 @@ describe('ProxyDownloadExecutor', () => {
       status: 200,
       headers: {},
       body: {
-        url: 'https://example.com/file',
+        url: 'https://api.example.com/file',
         size: 20000000,
         mimeType: 'application/octet-stream',
       },
@@ -265,7 +292,7 @@ describe('ProxyDownloadExecutor', () => {
       status: 200,
       headers: {},
       body: {
-        url: 'https://example.com/file',
+        url: 'https://api.example.com/file',
         mimeType: 'application/exe',
       },
     });
@@ -290,7 +317,7 @@ describe('ProxyDownloadExecutor', () => {
       body: {
         id: 'att-456',
         metadata: {
-          downloadUrl: 'https://example.com/download/abc',
+          downloadUrl: 'https://api.example.com/download/abc',
           fileName: 'document.pdf',
         },
         mimeType: 'application/pdf',
@@ -320,7 +347,7 @@ describe('ProxyDownloadExecutor', () => {
     expect(result.mimeType).toBe('application/pdf');
     expect(result.size).toBe(mockBlob.byteLength);
     expect(global.fetch).toHaveBeenCalledWith(
-      'https://example.com/download/abc',
+      'https://api.example.com/download/abc',
       expect.any(Object)
     );
   });
@@ -330,7 +357,7 @@ describe('ProxyDownloadExecutor', () => {
       status: 200,
       headers: {},
       body: {
-        url: 'https://example.com/large-file',
+        url: 'https://api.example.com/large-file',
         mimeType: 'application/octet-stream',
       },
     });
@@ -347,7 +374,7 @@ describe('ProxyDownloadExecutor', () => {
     };
 
     await expect(
-      executor.execute(operation, metadataRequest('/attachments/123'), {})
+      executor.execute(operation, metadataRequest('/attachments/123'), { headers: {} })
     ).rejects.toThrow();
   }, 2000);
 
@@ -384,7 +411,7 @@ describe('ProxyDownloadExecutor', () => {
       status: 200,
       headers: {},
       body: {
-        url: 'https://example.com/file',
+        url: 'https://api.example.com/file',
         mimeType: 'text/plain',
       },
     });
@@ -504,7 +531,7 @@ describe('ProxyDownloadExecutor - Auth Credentials', () => {
       status: 200,
       headers: {},
       body: {
-        url: 'https://example.com/file',
+        url: 'https://api.example.com/file',
         mimeType: 'application/octet-stream',
       },
     });
@@ -541,7 +568,7 @@ describe('ProxyDownloadExecutor - Auth Credentials', () => {
       status: 200,
       headers: {},
       body: {
-        url: 'https://example.com/file',
+        url: 'https://api.example.com/file',
         mimeType: 'application/octet-stream',
       },
     });
@@ -578,7 +605,7 @@ describe('ProxyDownloadExecutor - Auth Credentials', () => {
       status: 200,
       headers: {},
       body: {
-        url: 'https://example.com/file?version=1',
+        url: 'https://api.example.com/file?version=1',
         mimeType: 'application/octet-stream',
       },
     });
@@ -617,7 +644,7 @@ describe('ProxyDownloadExecutor - Auth Credentials', () => {
       status: 200,
       headers: {},
       body: {
-        url: 'https://example.com/file?token=existing-token&version=1',
+        url: 'https://api.example.com/file?token=existing-token&version=1',
         mimeType: 'application/octet-stream',
       },
     });
@@ -657,7 +684,7 @@ describe('ProxyDownloadExecutor - Auth Credentials', () => {
       status: 200,
       headers: {},
       body: {
-        url: 'https://example.com/file',
+        url: 'https://api.example.com/file',
         mimeType: 'application/octet-stream',
       },
     });
@@ -759,7 +786,7 @@ describe('ProxyDownloadExecutor - skip_auth option', () => {
       status: 200,
       headers: {},
       body: {
-        url: 'https://example.com/file',
+        url: 'https://api.example.com/file',
         mimeType: 'application/octet-stream',
       },
     });
@@ -792,7 +819,7 @@ describe('ProxyDownloadExecutor - skip_auth option', () => {
 
     // Query auth param should NOT be added
     expect(capturedUrl).not.toContain('token=');
-    expect(capturedUrl).toBe('https://example.com/file');
+    expect(capturedUrl).toBe('https://api.example.com/file');
   });
 
   it('should still authenticate metadata endpoint when skip_auth is true', async () => {
@@ -831,7 +858,7 @@ describe('ProxyDownloadExecutor - skip_auth option', () => {
       status: 200,
       headers: {},
       body: {
-        url: 'https://example.com/file',
+        url: 'https://api.example.com/file',
         mimeType: 'application/octet-stream',
       },
     });
@@ -914,7 +941,7 @@ describe('ProxyDownloadExecutor - skip_auth option', () => {
       status: 200,
       headers: {},
       body: {
-        url: 'https://example.com/file',
+        url: 'https://api.example.com/file',
         mimeType: 'application/octet-stream',
       },
     });
@@ -953,7 +980,7 @@ describe('ProxyDownloadExecutor - skip_auth option', () => {
       status: 200,
       headers: {},
       body: {
-        url: 'https://example.com/file',
+        url: 'https://api.example.com/file',
         mimeType: 'application/octet-stream',
       },
     });
@@ -983,7 +1010,7 @@ describe('ProxyDownloadExecutor - skip_auth option', () => {
       status: 200,
       headers: {},
       body: {
-        url: 'https://example.com/large-file',
+        url: 'https://api.example.com/large-file',
         mimeType: 'application/octet-stream',
       },
     });
@@ -1013,7 +1040,7 @@ describe('ProxyDownloadExecutor - skip_auth option', () => {
       status: 200,
       headers: {},
       body: {
-        url: 'https://example.com/file',
+        url: 'https://api.example.com/file',
         mimeType: 'application/octet-stream',
       },
     });
@@ -1137,7 +1164,7 @@ describe('ProxyDownloadExecutor - env overrides', () => {
       status: 200,
       headers: {},
       body: {
-        url: 'https://example.com/file',
+        url: 'https://api.example.com/file',
         mimeType: 'application/octet-stream',
       },
     });
@@ -1169,7 +1196,7 @@ describe('ProxyDownloadExecutor - env overrides', () => {
       status: 200,
       headers: {},
       body: {
-        url: 'https://example.com/file',
+        url: 'https://api.example.com/file',
         mimeType: 'application/octet-stream',
       },
     });
@@ -1193,7 +1220,7 @@ describe('ProxyDownloadExecutor - env overrides', () => {
       status: 200,
       headers: {},
       body: {
-        url: 'https://example.com/file',
+        url: 'https://api.example.com/file',
         mimeType: 'application/octet-stream',
       },
     });
