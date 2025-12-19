@@ -5,12 +5,13 @@
  * and token refresh functionality.
  */
 
-import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest';
+import { it, expect, beforeAll, afterAll, afterEach } from 'vitest';
 import * as path from 'path';
 import { startStandaloneMockServer, MockServerInstance, getAvailablePort } from './utils/mock-server.js';
 import { McpProcess } from './utils/mcp-process.js';
+import { describeIfListen } from './utils/listen-support.js';
 
-describe('E2E: OAuth 2.0 authentication', () => {
+describeIfListen('E2E: OAuth 2.0 authentication', () => {
   let mockServer: MockServerInstance;
 
   const openapiSpecPath = path.resolve(process.cwd(), 'profiles/gitlab/openapi.yaml');
