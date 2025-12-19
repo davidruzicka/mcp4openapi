@@ -243,14 +243,15 @@ describeIfListen('HTTP Multi-User Mode (No MCP4_API_TOKEN)', () => {
             clientInfo: { name: 'test', version: '1.0.0' }
           }
         }),
-      });
-      
-      // P0#2 fix: Now properly rejects invalid format
-      expect(response.status).toBe(500);
-      const body = await response.json() as any;
-      expect(body.error).toBe('Internal Server Error');
-      expect(body.message).toContain('Invalid Authorization header format');
-    });
+	      });
+	      
+	      // Invalid auth header format should be rejected as a client error
+	      expect(response.status).toBe(400);
+	      const body = await response.json() as any;
+	      expect(body.error).toBe('Bad Request');
+	      expect(body.correlationId).toBeTruthy();
+	      expect(body.message).toContain('Invalid Authorization header format');
+	    });
     
     it('should handle initialization without any token gracefully', async () => {
       const response = await fetch(`${baseUrl}/mcp`, {
