@@ -108,6 +108,26 @@ export interface ProxyDownloadOperation {
    * - Temporary download URLs with embedded tokens
    */
   skip_auth?: boolean;
+
+  /**
+   * Optional allowlist of host patterns for cross-origin downloads when skip_auth=true.
+   *
+   * Why: When metadata contains a pre-signed or unauthenticated download URL, following it without
+   * restrictions can enable SSRF. Use this to restrict which hosts the proxy may contact.
+   *
+   * Supported patterns:
+   * - Exact hostname: "cdn.example.com"
+   * - Wildcard subdomain: "*.example.com" (matches "a.example.com", not "example.com")
+   * - Exact IP literal: "203.0.113.10" or "2001:db8::1"
+   */
+  allowed_hosts?: string[];
+
+  /**
+   * Allow downloads to private/loopback/link-local IP literals and localhost when skip_auth=true.
+   *
+   * Default is false to reduce SSRF risk. Set to true only when you explicitly need internal hosts.
+   */
+  allow_private_network?: boolean;
 }
 
 /**

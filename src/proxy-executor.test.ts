@@ -1,4 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+
+vi.mock('node:dns/promises', () => ({
+  lookup: vi.fn(async () => [{ address: '93.184.216.34', family: 4 }]),
+}));
+
+import { lookup } from 'node:dns/promises';
 import { ProxyDownloadExecutor } from './proxy-executor.js';
 import { ValidationError } from './errors.js';
 import type { ProxyDownloadOperation } from './types/profile.js';
@@ -16,6 +22,7 @@ describe('ProxyDownloadExecutor', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(lookup).mockResolvedValue([{ address: '93.184.216.34', family: 4 }] as any);
     mockHttpClient.getBaseUrl.mockReturnValue('https://api.example.com');
     originalFetch = global.fetch;
   });
@@ -218,6 +225,275 @@ describe('ProxyDownloadExecutor', () => {
         { headers: { Authorization: 'Bearer token' } }
       )
     ).rejects.toThrow('Cross-origin download URL not allowed');
+  });
+
+  it('should reject cross-origin redirects when skip_auth is false', async () => {
+    mockHttpClient.request.mockResolvedValue({
+      status: 200,
+      headers: {},
+      body: { url: 'https://api.example.com/download/123' },
+    });
+
+    global.fetch = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 302,
+        headers: new Headers({ location: 'https://cdn.example.com/artifacts/123' }),
+        arrayBuffer: () => Promise.resolve(new ArrayBuffer(0)),
+      });
+
+    const executor = new ProxyDownloadExecutor(mockHttpClient as any);
+    const operation: ProxyDownloadOperation = {
+      type: 'proxy_download',
+      metadata_endpoint: 'get_/file',
+      url_field: 'url',
+    };
+
+    await expect(
+      executor.execute(operation, metadataRequest('/file'), {
+        headers: { Authorization: 'Bearer token' },
+      })
+    ).rejects.toThrow('Cross-origin download URL not allowed');
+  });
+
+  it('should follow cross-origin redirects when skip_auth is true', async () => {
+    mockHttpClient.request.mockResolvedValue({
+      status: 200,
+      headers: {},
+      body: { url: 'https://api.example.com/download/123' },
+    });
+
+    const mockBinary = new Uint8Array([0x01, 0x02]);
+    global.fetch = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 302,
+        headers: new Headers({ location: 'https://cdn.example.com/artifacts/123' }),
+        arrayBuffer: () => Promise.resolve(new ArrayBuffer(0)),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        headers: new Headers({
+          'content-length': String(mockBinary.byteLength),
+          'content-type': 'application/octet-stream',
+        }),
+        arrayBuffer: () => Promise.resolve(mockBinary.buffer),
+      });
+
+    const executor = new ProxyDownloadExecutor(mockHttpClient as any);
+    const operation: ProxyDownloadOperation = {
+      type: 'proxy_download',
+      metadata_endpoint: 'get_/file',
+      url_field: 'url',
+      skip_auth: true,
+    };
+
+    await executor.execute(operation, metadataRequest('/file'), {
+      headers: { Authorization: 'Bearer token' },
+    });
+
+    expect(global.fetch).toHaveBeenNthCalledWith(
+      1,
+      'https://api.example.com/download/123',
+      expect.objectContaining({
+        headers: {},
+        redirect: 'manual',
+      })
+    );
+    expect(global.fetch).toHaveBeenNthCalledWith(
+      2,
+      'https://cdn.example.com/artifacts/123',
+      expect.objectContaining({
+        headers: {},
+        redirect: 'manual',
+      })
+    );
+  });
+
+  it('should allow only allowed_hosts when skip_auth is true', async () => {
+    mockHttpClient.request.mockResolvedValue({
+      status: 200,
+      headers: {},
+      body: { url: 'https://cdn.example.com/files/abc123' },
+    });
+
+    const mockBinary = new Uint8Array([0x01, 0x02]);
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: new Headers({
+        'content-length': String(mockBinary.byteLength),
+        'content-type': 'application/octet-stream',
+      }),
+      arrayBuffer: () => Promise.resolve(mockBinary.buffer),
+    });
+
+    const executor = new ProxyDownloadExecutor(mockHttpClient as any);
+    const operation: ProxyDownloadOperation = {
+      type: 'proxy_download',
+      metadata_endpoint: 'get_/file',
+      url_field: 'url',
+      skip_auth: true,
+      allowed_hosts: ['cdn.example.com'],
+    };
+
+    await executor.execute(operation, metadataRequest('/file'), { headers: {} });
+  });
+
+  it('should reject non-allowed_hosts when skip_auth is true', async () => {
+    mockHttpClient.request.mockResolvedValue({
+      status: 200,
+      headers: {},
+      body: { url: 'https://cdn.example.com/files/abc123' },
+    });
+
+    const executor = new ProxyDownloadExecutor(mockHttpClient as any);
+    const operation: ProxyDownloadOperation = {
+      type: 'proxy_download',
+      metadata_endpoint: 'get_/file',
+      url_field: 'url',
+      skip_auth: true,
+      allowed_hosts: ['other.example.com'],
+    };
+
+    await expect(
+      executor.execute(operation, metadataRequest('/file'), { headers: {} })
+    ).rejects.toThrow('Download host not in allowlist');
+  });
+
+  it('should reject private network targets by default when skip_auth is true', async () => {
+    mockHttpClient.request.mockResolvedValue({
+      status: 200,
+      headers: {},
+      body: { url: 'http://127.0.0.1/secret' },
+    });
+
+    const executor = new ProxyDownloadExecutor(mockHttpClient as any);
+    const operation: ProxyDownloadOperation = {
+      type: 'proxy_download',
+      metadata_endpoint: 'get_/file',
+      url_field: 'url',
+      skip_auth: true,
+    };
+
+    await expect(
+      executor.execute(operation, metadataRequest('/file'), { headers: {} })
+    ).rejects.toThrow('Download IP not allowed');
+  });
+
+  it('should allow private network targets when allow_private_network is true', async () => {
+    mockHttpClient.request.mockResolvedValue({
+      status: 200,
+      headers: {},
+      body: { url: 'http://127.0.0.1/secret' },
+    });
+
+    const mockBinary = new Uint8Array([0x01]);
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: new Headers({
+        'content-length': String(mockBinary.byteLength),
+        'content-type': 'application/octet-stream',
+      }),
+      arrayBuffer: () => Promise.resolve(mockBinary.buffer),
+    });
+
+    const executor = new ProxyDownloadExecutor(mockHttpClient as any);
+    const operation: ProxyDownloadOperation = {
+      type: 'proxy_download',
+      metadata_endpoint: 'get_/file',
+      url_field: 'url',
+      skip_auth: true,
+      allow_private_network: true,
+    };
+
+    await executor.execute(operation, metadataRequest('/file'), { headers: {} });
+  });
+
+  it('should reject hostname that resolves to private IP when skip_auth is true', async () => {
+    vi.mocked(lookup).mockResolvedValue([{ address: '10.0.0.1', family: 4 }] as any);
+
+    mockHttpClient.request.mockResolvedValue({
+      status: 200,
+      headers: {},
+      body: { url: 'https://internal.example.com/files/abc123' },
+    });
+
+    const executor = new ProxyDownloadExecutor(mockHttpClient as any);
+    const operation: ProxyDownloadOperation = {
+      type: 'proxy_download',
+      metadata_endpoint: 'get_/file',
+      url_field: 'url',
+      skip_auth: true,
+    };
+
+    await expect(
+      executor.execute(operation, metadataRequest('/file'), { headers: {} })
+    ).rejects.toThrow('resolves to disallowed IP');
+  });
+
+  it('should allow hostname that resolves to private IP when allow_private_network is true', async () => {
+    vi.mocked(lookup).mockResolvedValue([{ address: '10.0.0.1', family: 4 }] as any);
+
+    mockHttpClient.request.mockResolvedValue({
+      status: 200,
+      headers: {},
+      body: { url: 'https://internal.example.com/files/abc123' },
+    });
+
+    const mockBinary = new Uint8Array([0x01]);
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: new Headers({
+        'content-length': String(mockBinary.byteLength),
+        'content-type': 'application/octet-stream',
+      }),
+      arrayBuffer: () => Promise.resolve(mockBinary.buffer),
+    });
+
+    const executor = new ProxyDownloadExecutor(mockHttpClient as any);
+    const operation: ProxyDownloadOperation = {
+      type: 'proxy_download',
+      metadata_endpoint: 'get_/file',
+      url_field: 'url',
+      skip_auth: true,
+      allow_private_network: true,
+    };
+
+    await executor.execute(operation, metadataRequest('/file'), { headers: {} });
+  });
+
+  it('should reject redirects to localhost or private IPs', async () => {
+    mockHttpClient.request.mockResolvedValue({
+      status: 200,
+      headers: {},
+      body: { url: 'https://api.example.com/download/123' },
+    });
+
+    global.fetch = vi.fn().mockResolvedValueOnce({
+      ok: false,
+      status: 302,
+      headers: new Headers({ location: 'http://127.0.0.1/secret' }),
+      arrayBuffer: () => Promise.resolve(new ArrayBuffer(0)),
+    });
+
+    const executor = new ProxyDownloadExecutor(mockHttpClient as any);
+    const operation: ProxyDownloadOperation = {
+      type: 'proxy_download',
+      metadata_endpoint: 'get_/file',
+      url_field: 'url',
+    };
+
+    await expect(
+      executor.execute(operation, metadataRequest('/file'), {
+        headers: { Authorization: 'Bearer token' },
+      })
+    ).rejects.toThrow(ValidationError);
   });
 
   it('should enforce MIME whitelist for direct download responses', async () => {
