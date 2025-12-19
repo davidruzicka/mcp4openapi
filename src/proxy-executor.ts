@@ -491,7 +491,10 @@ export class ProxyDownloadExecutor {
 
   private async enforceAllowedDownloadTarget(targetUrl: string, operation: ProxyDownloadOperation): Promise<void> {
     const url = new URL(targetUrl);
-    const hostname = url.hostname.toLowerCase();
+    const hostnameRaw = url.hostname.toLowerCase();
+    const hostname = hostnameRaw.startsWith('[') && hostnameRaw.endsWith(']')
+      ? hostnameRaw.slice(1, -1)
+      : hostnameRaw;
     const allowPrivateNetwork = operation.allow_private_network ?? false;
 
     if (operation.allowed_hosts && operation.allowed_hosts.length > 0) {
