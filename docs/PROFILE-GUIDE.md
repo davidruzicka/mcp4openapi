@@ -197,7 +197,7 @@ Use `proxy_download` operations when an API returns a URL for binary content tha
 - `max_size_bytes_from_env` (optional): Environment variable name that overrides `max_size_bytes` (e.g., `CUSTOM_PROXY_MAX_BYTES`).
 - `timeout_ms` (optional): Download timeout in milliseconds (default: 30000).
 - `allowed_mime_types` (optional): Whitelist of allowed MIME types (supports wildcards such as `image/*`).
-- `skip_auth` (optional): When `true`, skips auth for the final download URL (useful for pre-signed links).
+- `skip_auth` (optional): When `true`, skips auth for the final download URL (useful for pre-signed links). **If the extracted download URL is cross-origin (different origin than your API base URL), `skip_auth` must be `true` to avoid leaking credentials.**
 
 **Download size precedence**
 
@@ -1036,4 +1036,3 @@ export interface ToolDefinition {
 - [MCP SDK Documentation](https://github.com/microsoft/mcp-sdk)
 - [Zod Documentation](https://zod.dev/)
 - Profile Schema: `profile-schema.json`
-
