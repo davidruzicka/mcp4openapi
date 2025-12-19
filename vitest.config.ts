@@ -24,6 +24,7 @@ export default defineConfig({
         'vitest.config.ts',
         'vitest.e2e.config.ts',
         'node_modules/**',
+        '.git/**',
         'dist/**',
         'coverage/**',
         '**/*.test.ts',

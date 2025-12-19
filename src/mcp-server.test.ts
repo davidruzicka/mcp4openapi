@@ -9,6 +9,7 @@ import path from 'path';
 import { MCPServer } from './mcp-server.js';
 import { HttpTransport } from './http-transport.js';
 import { ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
+import { JsonLogger } from './logger.js';
 import { 
   AuthenticationError, 
   AuthorizationError, 
@@ -603,6 +604,52 @@ describe('MCPServer', () => {
         expect(warns.find(m => m.includes('Session token validation/refresh failed'))).toBeUndefined();
       } finally {
         await serverWithLogger.stop();
+      }
+    });
+  });
+
+  describe('getAuthTokenFromSession', () => {
+    it('should return undefined when httpTransport is missing', async () => {
+      const server = new MCPServer();
+      const token = await (server as any).getAuthTokenFromSession('session-1');
+      expect(token).toBeUndefined();
+    });
+
+    it('should warn when token refresh fails but still return token if available', async () => {
+      const warns: any[] = [];
+      const testLogger: any = {
+        debug: () => {},
+        info: () => {},
+        warn: (msg: string, ctx?: any) => { warns.push({ msg, ctx }); },
+        error: () => {},
+      };
+
+      const server = new MCPServer(testLogger);
+      (server as any).httpTransport = {
+        ensureValidSessionToken: async () => false,
+        getSessionToken: () => 'still-returned-token',
+      };
+
+      const token = await (server as any).getAuthTokenFromSession('session-1');
+      expect(token).toBe('still-returned-token');
+      expect(warns.some(w => String(w.msg).includes('Session token validation/refresh failed'))).toBe(true);
+    });
+  });
+
+  describe('createLoggerWithAuth', () => {
+    it('should create JsonLogger when MCP4_LOG_FORMAT=json', () => {
+      const original = process.env.MCP4_LOG_FORMAT;
+      process.env.MCP4_LOG_FORMAT = 'json';
+      try {
+        const server = new MCPServer();
+        const logger = (server as any).createLoggerWithAuth({
+          type: 'bearer',
+          value_from_env: 'MCP4_API_TOKEN',
+        });
+        expect(logger).toBeInstanceOf(JsonLogger);
+      } finally {
+        if (original === undefined) delete process.env.MCP4_LOG_FORMAT;
+        else process.env.MCP4_LOG_FORMAT = original;
       }
     });
   });

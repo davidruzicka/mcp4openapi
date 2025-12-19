@@ -436,6 +436,90 @@ describe('ProxyDownloadExecutor', () => {
     ).rejects.toThrow('resolves to disallowed IP');
   });
 
+  it('should reject hostnames when DNS lookup fails', async () => {
+    vi.mocked(lookup).mockRejectedValue(new Error('dns failure'));
+
+    mockHttpClient.request.mockResolvedValue({
+      status: 200,
+      headers: {},
+      body: { url: 'https://internal.example.com/files/abc123' },
+    });
+
+    const warn = vi.fn();
+    const executor = new ProxyDownloadExecutor(mockHttpClient as any, { debug: vi.fn(), warn } as any);
+    const operation: ProxyDownloadOperation = {
+      type: 'proxy_download',
+      metadata_endpoint: 'get_/file',
+      url_field: 'url',
+      skip_auth: true,
+    };
+
+    await expect(
+      executor.execute(operation, metadataRequest('/file'), { headers: {} })
+    ).rejects.toThrow('DNS lookup failed');
+    expect(warn).toHaveBeenCalled();
+  });
+
+  it('should reject redirects without Location header', async () => {
+    mockHttpClient.request.mockResolvedValue({
+      status: 200,
+      headers: {},
+      body: { url: 'https://cdn.example.com/download/123' },
+    });
+
+    global.fetch = vi.fn().mockResolvedValueOnce({
+      ok: false,
+      status: 302,
+      headers: new Headers(),
+      arrayBuffer: () => Promise.resolve(new ArrayBuffer(0)),
+    });
+
+    const executor = new ProxyDownloadExecutor(mockHttpClient as any);
+    const operation: ProxyDownloadOperation = {
+      type: 'proxy_download',
+      metadata_endpoint: 'get_/file',
+      url_field: 'url',
+      skip_auth: true,
+      allowed_hosts: ['cdn.example.com'],
+    };
+
+    await expect(
+      executor.execute(operation, metadataRequest('/file'), { headers: {} })
+    ).rejects.toThrow('Redirect without Location header');
+  });
+
+  it('should stop after too many redirects', async () => {
+    mockHttpClient.request.mockResolvedValue({
+      status: 200,
+      headers: {},
+      body: { url: 'https://cdn.example.com/download/123' },
+    });
+
+    const fetchMock = vi.fn();
+    for (let i = 0; i < 6; i++) {
+      fetchMock.mockResolvedValueOnce({
+        ok: false,
+        status: 302,
+        headers: new Headers({ location: 'https://cdn.example.com/download/123' }),
+        arrayBuffer: () => Promise.resolve(new ArrayBuffer(0)),
+      });
+    }
+    global.fetch = fetchMock;
+
+    const executor = new ProxyDownloadExecutor(mockHttpClient as any);
+    const operation: ProxyDownloadOperation = {
+      type: 'proxy_download',
+      metadata_endpoint: 'get_/file',
+      url_field: 'url',
+      skip_auth: true,
+      allowed_hosts: ['cdn.example.com'],
+    };
+
+    await expect(
+      executor.execute(operation, metadataRequest('/file'), { headers: {} })
+    ).rejects.toThrow('Too many redirects');
+  });
+
   it('should allow hostname that resolves to private IP when allow_private_network is true', async () => {
     vi.mocked(lookup).mockResolvedValue([{ address: '10.0.0.1', family: 4 }] as any);
 
@@ -781,6 +865,183 @@ describe('ProxyDownloadExecutor', () => {
     await expect(
       executor.execute(operation, metadataRequest('/file'), { headers: {} })
     ).rejects.toThrow('Downloaded file size 4 exceeds maximum 3 bytes');
+  });
+
+  it('should throw on invalid API base URL when deriving base origin', async () => {
+    mockHttpClient.getBaseUrl.mockReturnValue('not-a-url');
+
+    const executor = new ProxyDownloadExecutor(mockHttpClient as any);
+    await expect(
+      executor.execute(
+        { type: 'proxy_download', metadata_endpoint: 'get_/file' },
+        metadataRequest('/file'),
+        { headers: {} }
+      )
+    ).rejects.toThrow('Invalid API base URL - expected absolute http(s) URL');
+  });
+
+  it('should reject unsupported download URL scheme', async () => {
+    mockHttpClient.request.mockResolvedValue({
+      status: 200,
+      headers: {},
+      body: { url: 'file:///etc/passwd' },
+    });
+
+    const executor = new ProxyDownloadExecutor(mockHttpClient as any);
+    await expect(
+      executor.execute(
+        { type: 'proxy_download', metadata_endpoint: 'get_/file', url_field: 'url' },
+        metadataRequest('/file'),
+        { headers: {} }
+      )
+    ).rejects.toThrow("Unsupported download URL scheme: 'file:'");
+  });
+
+  it('should reject unsupported API base URL scheme when resolving relative downloads', async () => {
+    mockHttpClient.getBaseUrl.mockReturnValue('ftp://api.example.com');
+    mockHttpClient.request.mockResolvedValue({
+      status: 200,
+      headers: {},
+      body: { url: '/download/123' },
+    });
+
+    const executor = new ProxyDownloadExecutor(mockHttpClient as any);
+    await expect(
+      executor.execute(
+        { type: 'proxy_download', metadata_endpoint: 'get_/file', url_field: 'url' },
+        metadataRequest('/file'),
+        { headers: {} }
+      )
+    ).rejects.toThrow("Unsupported API base URL scheme: 'ftp:'");
+  });
+
+  it('should reject invalid redirect URL', async () => {
+    mockHttpClient.request.mockResolvedValue({
+      status: 200,
+      headers: {},
+      body: { url: 'https://api.example.com/download/123' },
+    });
+
+    global.fetch = vi.fn().mockResolvedValueOnce({
+      ok: false,
+      status: 302,
+      headers: new Headers({ location: 'http://[::1' }),
+      arrayBuffer: () => Promise.resolve(new ArrayBuffer(0)),
+    });
+
+    const executor = new ProxyDownloadExecutor(mockHttpClient as any);
+    await expect(
+      executor.execute(
+        {
+          type: 'proxy_download',
+          metadata_endpoint: 'get_/file',
+          url_field: 'url',
+          skip_auth: true,
+          allowed_hosts: ['api.example.com'],
+        },
+        metadataRequest('/file'),
+        { headers: {} }
+      )
+    ).rejects.toThrow("Invalid redirect URL: 'http://[::1'");
+  });
+
+  it('should block localhost targets when skip_auth is true', async () => {
+    mockHttpClient.request.mockResolvedValue({
+      status: 200,
+      headers: {},
+      body: { url: 'http://localhost/secret' },
+    });
+
+    const warn = vi.fn();
+    const executor = new ProxyDownloadExecutor(mockHttpClient as any, { debug: vi.fn(), warn } as any);
+    await expect(
+      executor.execute(
+        { type: 'proxy_download', metadata_endpoint: 'get_/file', url_field: 'url', skip_auth: true },
+        metadataRequest('/file'),
+        { headers: {} }
+      )
+    ).rejects.toThrow('Download hostname not allowed');
+    expect(warn).toHaveBeenCalled();
+  });
+
+  it('should block hostname resolving to IPv6 loopback when skip_auth is true', async () => {
+    vi.mocked(lookup).mockResolvedValue([{ address: '::1', family: 6 }] as any);
+
+    mockHttpClient.request.mockResolvedValue({
+      status: 200,
+      headers: {},
+      body: { url: 'https://internal.example.com/secret' },
+    });
+
+    const executor = new ProxyDownloadExecutor(mockHttpClient as any);
+    await expect(
+      executor.execute(
+        { type: 'proxy_download', metadata_endpoint: 'get_/file', url_field: 'url', skip_auth: true },
+        metadataRequest('/file'),
+        { headers: {} }
+      )
+    ).rejects.toThrow('Download hostname resolves to disallowed IP');
+  });
+
+  it('should reject hostnames when DNS lookup returns no addresses', async () => {
+    vi.mocked(lookup).mockResolvedValue([] as any);
+
+    mockHttpClient.request.mockResolvedValue({
+      status: 200,
+      headers: {},
+      body: { url: 'https://internal.example.com/files/abc123' },
+    });
+
+    const warn = vi.fn();
+    const executor = new ProxyDownloadExecutor(mockHttpClient as any, { debug: vi.fn(), warn } as any);
+    await expect(
+      executor.execute(
+        {
+          type: 'proxy_download',
+          metadata_endpoint: 'get_/file',
+          url_field: 'url',
+          skip_auth: true,
+        },
+        metadataRequest('/file'),
+        { headers: {} }
+      )
+    ).rejects.toThrow('DNS lookup returned no addresses');
+    expect(warn).toHaveBeenCalled();
+  });
+
+  it('should reject hostnames when DNS lookup times out', async () => {
+    vi.useFakeTimers();
+    try {
+      vi.mocked(lookup).mockImplementation(() => new Promise(() => {}) as any);
+
+      mockHttpClient.request.mockResolvedValue({
+        status: 200,
+        headers: {},
+        body: { url: 'https://internal.example.com/files/abc123' },
+      });
+
+      const warn = vi.fn();
+      const executor = new ProxyDownloadExecutor(mockHttpClient as any, { debug: vi.fn(), warn } as any);
+
+      const promise = executor.execute(
+        {
+          type: 'proxy_download',
+          metadata_endpoint: 'get_/file',
+          url_field: 'url',
+          skip_auth: true,
+        },
+        metadataRequest('/file'),
+        { headers: {} }
+      );
+
+      const assertion = expect(promise).rejects.toThrow('DNS lookup failed for hostname');
+      await vi.advanceTimersByTimeAsync(1100);
+      await assertion;
+      expect(warn).toHaveBeenCalled();
+    } finally {
+      vi.mocked(lookup).mockResolvedValue([{ address: '93.184.216.34', family: 4 }] as any);
+      vi.useRealTimers();
+    }
   });
 });
 
