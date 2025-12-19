@@ -11,8 +11,9 @@ import { ConsoleLogger } from '../logger.js';
 import type { Express } from 'express';
 import type { AuthInterceptor } from '../types/profile.js';
 import http from 'http';
+import { describeIfListen } from './listen-support.js';
 
-describe('Token Validation Integration', () => {
+describeIfListen('Token Validation Integration', () => {
   let transport: HttpTransport;
   let app: Express;
   let mockApiServer: http.Server;
@@ -451,4 +452,3 @@ describe('Token Validation Integration', () => {
     });
   });
 });
-

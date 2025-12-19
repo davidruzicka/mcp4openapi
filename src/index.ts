@@ -52,6 +52,10 @@ function deriveIssuerFromBaseUrl(baseUrl: string): string | null {
 }
 
 async function main() {
+  // Create logger early so startup/autodiscovery logs are structured and redacted consistently
+  const logFormat = process.env.MCP4_LOG_FORMAT || 'console';
+  const logger = logFormat === 'json' ? new JsonLogger() : new ConsoleLogger();
+
   // OAuth Configuration Priority:
   // 1. Explicit env vars (MCP4_OAUTH_AUTHORIZATION_URL, MCP4_OAUTH_TOKEN_URL)
   // 2. Explicit issuer (MCP4_OAUTH_ISSUER)
@@ -77,7 +81,7 @@ async function main() {
         issuer = derivedIssuer;
         // Log origin only, not full URL to avoid logging sensitive paths
         const issuerOrigin = new URL(derivedIssuer).origin;
-        console.log(`[OAuth Autodiscovery] Derived issuer from MCP4_API_BASE_URL: ${issuerOrigin}`);
+        logger.info('OAuth autodiscovery: derived issuer from MCP4_API_BASE_URL', { issuerOrigin });
       }
     }
     
@@ -85,22 +89,36 @@ async function main() {
       // Try to fetch OAuth metadata
       // Log origin only, not full URL to avoid logging sensitive paths
       const issuerOrigin = new URL(issuer).origin;
-      console.log(`[OAuth Autodiscovery] Fetching metadata from ${issuerOrigin}/.well-known/oauth-authorization-server`);
+      logger.info('OAuth autodiscovery: fetching metadata', { issuerOrigin });
       const metadata = await fetchOAuthMetadata(issuer);
       
       if (metadata) {
-        console.log(`[OAuth Autodiscovery] Successfully discovered OAuth endpoints`);
+        logger.info('OAuth autodiscovery: successfully discovered OAuth endpoints');
         if (!process.env.MCP4_OAUTH_AUTHORIZATION_URL) {
           process.env.MCP4_OAUTH_AUTHORIZATION_URL = metadata.authorization_endpoint;
-          console.log(`[OAuth Autodiscovery] authorization_endpoint: ${metadata.authorization_endpoint}`);
+          let authorizationEndpointOrigin: string | undefined;
+          try {
+            authorizationEndpointOrigin = new URL(metadata.authorization_endpoint).origin;
+          } catch {
+            authorizationEndpointOrigin = undefined;
+          }
+          logger.info('OAuth autodiscovery: set authorization_endpoint', { authorizationEndpointOrigin });
         }
         if (!process.env.MCP4_OAUTH_TOKEN_URL) {
           process.env.MCP4_OAUTH_TOKEN_URL = metadata.token_endpoint;
-          console.log(`[OAuth Autodiscovery] token_endpoint: ${metadata.token_endpoint}`);
+          let tokenEndpointOrigin: string | undefined;
+          try {
+            tokenEndpointOrigin = new URL(metadata.token_endpoint).origin;
+          } catch {
+            tokenEndpointOrigin = undefined;
+          }
+          logger.info('OAuth autodiscovery: set token_endpoint', { tokenEndpointOrigin });
         }
       } else {
         // Fallback to standard OAuth paths
-        console.log(`[OAuth Autodiscovery] Metadata fetch failed, using standard OAuth paths`);
+        logger.warn('OAuth autodiscovery: metadata fetch failed, using standard OAuth paths', {
+          issuerOrigin,
+        });
         if (!process.env.MCP4_OAUTH_AUTHORIZATION_URL) {
           process.env.MCP4_OAUTH_AUTHORIZATION_URL = `${issuer}/oauth/authorize`;
         }
@@ -119,12 +137,6 @@ async function main() {
       process.env.MCP4_OAUTH_TOKEN_URL = `${issuer}/oauth/token`;
     }
   }
-
-  // Create logger based on env
-  const logFormat = process.env.MCP4_LOG_FORMAT || 'console';
-  const logger = logFormat === 'json'
-    ? new JsonLogger()
-    : new ConsoleLogger();
 
   const specPath = process.env.MCP4_OPENAPI_SPEC_PATH;
   if (!specPath) {
@@ -175,4 +187,3 @@ async function main() {
 }
 
 main();
-

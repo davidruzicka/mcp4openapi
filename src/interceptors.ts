@@ -7,7 +7,13 @@
 
 import type { InterceptorConfig } from './types/profile.js';
 import { TIME, HTTP_STATUS } from './constants.js';
-import { AuthenticationError, AuthorizationError, NetworkError, RateLimitError } from './errors.js';
+import {
+  AuthenticationError,
+  AuthorizationError,
+  ConfigurationError,
+  NetworkError,
+  RateLimitError,
+} from './errors.js';
 import { isSafePropertyName } from './validation-utils.js';
 
 export interface RequestContext {
@@ -80,22 +86,26 @@ export class InterceptorChain {
     const authConfig = sortedConfigs.find(c => c.type !== 'oauth');
     
     if (!authConfig) {
-      throw new Error('Only OAuth authentication configured. OAuth requires HTTP transport for the authorization flow (redirects, callbacks). Add a token-based auth config or use HTTP transport.');
+      throw new ConfigurationError(
+        'Only OAuth authentication configured. OAuth requires HTTP transport for the authorization flow (redirects, callbacks). Add a token-based auth config or use HTTP transport.'
+      );
     }
     
     if (authConfig.type === 'oauth') {
-      throw new Error('OAuth authentication not supported in InterceptorChain (use HTTP transport OAuth flow)');
+      throw new ConfigurationError(
+        'OAuth authentication not supported in InterceptorChain (use HTTP transport OAuth flow)'
+      );
     }
     
     const envVarName = authConfig.value_from_env;
     if (!envVarName) {
-      throw new Error('Auth configuration missing value_from_env');
+      throw new ConfigurationError('Auth configuration missing value_from_env');
     }
     
     const token = this.authToken || process.env[envVarName];
 
     if (!token) {
-      throw new Error(
+      throw new AuthenticationError(
         `Auth token not found. Expected in environment variable: ${envVarName} or passed to constructor`
       );
     }
@@ -109,7 +119,7 @@ export class InterceptorChain {
         ctx.url = url.toString();
       } else if (authConfig.type === 'custom-header' && authConfig.header_name) {
         if (!isSafePropertyName(authConfig.header_name)) {
-          throw new Error(`Invalid header name: ${authConfig.header_name}`);
+          throw new ConfigurationError(`Invalid header name: ${authConfig.header_name}`);
         }
         // nosemgrep: javascript.express.security.audit.remote-property-injection.remote-property-injection
         ctx.headers[authConfig.header_name] = token;
@@ -475,4 +485,3 @@ export class HttpClient {
     });
   }
 }
-

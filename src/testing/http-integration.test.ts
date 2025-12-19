@@ -9,8 +9,9 @@ import request from 'supertest';
 import { HttpTransport } from '../http-transport.js';
 import { ConsoleLogger } from '../logger.js';
 import type { Express } from 'express';
+import { describeIfListen } from './listen-support.js';
 
-describe('HTTP Transport Integration', () => {
+describeIfListen('HTTP Transport Integration', () => {
   let transport: HttpTransport;
   let app: Express;
   let sessionId: string;
@@ -428,4 +429,3 @@ describe('HTTP Transport Integration', () => {
     });
   });
 });
-

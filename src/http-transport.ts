@@ -31,6 +31,13 @@ import type { AuthInterceptor } from './types/profile.js';
 import { HTTP_STATUS, MIME_TYPES, OAUTH_PATHS, TIMEOUTS, OAUTH_RATE_LIMIT } from './constants.js';
 import { escapeHtmlSafe } from './validation-utils.js';
 import type { OAuthTokens } from '@modelcontextprotocol/sdk/shared/auth.js';
+import {
+  AuthenticationError,
+  AuthorizationError,
+  RateLimitError,
+  ValidationError,
+  generateCorrelationId,
+} from './errors.js';
 
 // Default maximum token length (1000 characters)
 const DEFAULT_MAX_TOKEN_LENGTH = 1000;
@@ -922,7 +929,6 @@ export class HttpTransport {
       return (this.handlePost as any)(req, res, next);
     });
     this.app.get('/sse', mcpRateLimiter, (req: Request, res: Response, next: NextFunction) => {
-      console.log('=== SSE GET handler called for path:', req.path);
       this.logger.warn('Deprecated endpoint used: GET /sse. Please migrate to GET /mcp');
       this.logger.info(`Handling GET /sse request from: ${req.ip}`);
       return (this.handleGet as any)(req as any, res, next);
@@ -1102,16 +1108,16 @@ export class HttpTransport {
   private validateToken(token: string, source: string): void {
     const maxLength = this.config.maxTokenLength ?? DEFAULT_MAX_TOKEN_LENGTH;
     if (token.length > maxLength) {
-      throw new Error(`${source} too long (max ${maxLength} characters)`);
+      throw new ValidationError(`${source} too long (max ${maxLength} characters)`);
     }
     if (token.length === 0) {
-      throw new Error(`${source} is empty`);
+      throw new ValidationError(`${source} is empty`);
     }
     // RFC 6750 Bearer token characters + common API token chars (including colons for YouTrack)
     // Allow: alphanumeric, dash, underscore, dot, tilde, plus, slash, equals, colon
     // Note: dash at end of character class to avoid being interpreted as range
     if (!/^[A-Za-z0-9._~+/:=-]+$/.test(token)) {
-      throw new Error(`Invalid ${source} format: ...${(token||"").slice(-4)}`);
+      throw new ValidationError(`Invalid ${source} format`);
     }
   }
 
@@ -1143,7 +1149,7 @@ export class HttpTransport {
       // Defense against ReDoS: Check length before regex
       const maxHeaderLength = (this.config.maxTokenLength ?? DEFAULT_MAX_TOKEN_LENGTH) + 10; // Bearer + spaces + margin
       if (authHeader.length > maxHeaderLength) {
-        throw new Error(`Authorization header too long (max ${maxHeaderLength} characters)`);
+        throw new ValidationError(`Authorization header too long (max ${maxHeaderLength} characters)`);
       }
       
       // Relaxed Bearer token format validation - allow flexible whitespace
@@ -1151,7 +1157,7 @@ export class HttpTransport {
       const trimmed = authHeader.trim();
       const match = trimmed.match(/^Bearer\s+(.+)$/);
       if (!match) {
-        throw new Error('Invalid Authorization header format. Expected: Bearer <token>');
+        throw new ValidationError('Invalid Authorization header format. Expected: Bearer <token>');
       }
       const token = match[1].trim();
       this.validateToken(token, 'Authorization token');
@@ -1162,7 +1168,7 @@ export class HttpTransport {
     const apiTokenHeader = req.headers['x-api-token'];
     if (apiTokenHeader) {
       if (typeof apiTokenHeader !== 'string') {
-        throw new Error('X-API-Token must be a string');
+        throw new ValidationError('X-API-Token must be a string');
       }
       this.validateToken(apiTokenHeader, 'X-API-Token');
       return { type: 'api-token', token: apiTokenHeader };
@@ -1322,7 +1328,7 @@ export class HttpTransport {
               });
             } else {
               this.logger.debug('No OAuth token data found in map (may be non-OAuth bearer token)', {
-                tokenPrefix: authInfo.token.substring(0, 10),
+                hasToken: true,
               });
             }
           }
@@ -1371,9 +1377,32 @@ export class HttpTransport {
 
       res.status(HTTP_STATUS.BAD_REQUEST).json({ error: 'Bad Request', message: 'Invalid message type' });
     } catch (error) {
-      this.logger.error('POST request error', error as Error);
-      const status = 500;
-      res.status(status).json({ error: 'Internal Server Error', message: (error as Error).message });
+      const correlationId = generateCorrelationId();
+      this.logger.error('POST request error', error as Error, { correlationId });
+
+      let status = 500;
+      let errorLabel = 'Internal Server Error';
+      let message = `Internal error (correlation ID: ${correlationId})`;
+
+      if (error instanceof ValidationError) {
+        status = HTTP_STATUS.BAD_REQUEST;
+        errorLabel = 'Bad Request';
+        message = `Validation error: ${error.message} (correlation ID: ${correlationId})`;
+      } else if (error instanceof AuthenticationError) {
+        status = HTTP_STATUS.UNAUTHORIZED;
+        errorLabel = 'Unauthorized';
+        message = `Authentication failed: ${error.message} (correlation ID: ${correlationId})`;
+      } else if (error instanceof AuthorizationError) {
+        status = HTTP_STATUS.FORBIDDEN;
+        errorLabel = 'Forbidden';
+        message = `Authorization failed: ${error.message} (correlation ID: ${correlationId})`;
+      } else if (error instanceof RateLimitError) {
+        status = HTTP_STATUS.TOO_MANY_REQUESTS;
+        errorLabel = 'Too Many Requests';
+        message = `Rate limit exceeded: ${error.message} (correlation ID: ${correlationId})`;
+      }
+
+      res.status(status).json({ error: errorLabel, message, correlationId });
       
       // Record error metrics
       if (this.metrics) {

@@ -9,8 +9,9 @@ import request from 'supertest';
 import type { Express } from 'express';
 import { HttpTransport } from './http-transport.js';
 import { ConsoleLogger, LogLevel, type Logger } from './logger.js';
+import { describeIfListen } from './testing/listen-support.js';
 
-describe('HttpTransport', () => {
+describeIfListen('HttpTransport', () => {
   let transport: HttpTransport;
   let app: Express;
   const logger = new ConsoleLogger();
@@ -898,7 +899,9 @@ describe('HttpTransport', () => {
 
       expect(response.status).toBe(500);
       expect(response.body).toHaveProperty('error', 'Internal Server Error');
-      expect(response.body.message).toContain('Test error');
+      expect(response.body).toHaveProperty('correlationId');
+      expect(response.body.message).toContain('correlation ID');
+      expect(response.body.message).not.toContain('Test error');
     });
 
     it('should handle missing message handler', async () => {
@@ -1232,9 +1235,9 @@ describe('HttpTransport', () => {
     });
   });
 
-  describe('OAuth Authorize Endpoint', () => {
-    let oauthTransport: HttpTransport;
-    let oauthApp: any;
+	  describe('OAuth Authorize Endpoint', () => {
+	    let oauthTransport: HttpTransport;
+	    let oauthApp: any;
 
     beforeEach(async () => {
       const oauthConfig = {
@@ -1270,14 +1273,22 @@ describe('HttpTransport', () => {
       expect(response.status).toBe(400);
     });
 
-    it('should reject authorize request without response_type', async () => {
-      const response = await request(oauthApp)
-        .get('/oauth/authorize')
-        .query({ client_id: 'test-client' });
+	    it('should reject authorize request without response_type', async () => {
+	      const response = await request(oauthApp)
+	        .get('/oauth/authorize')
+	        .query({ client_id: 'test-client' });
 
-      expect(response.status).toBe(400);
-    });
-  });
+	      expect(response.status).toBe(400);
+	    });
+
+	    it('should reject authorize request without redirect_uri', async () => {
+	      const response = await request(oauthApp)
+	        .get('/oauth/authorize')
+	        .query({ response_type: 'code', client_id: 'test-client' });
+
+	      expect(response.status).toBe(400);
+	    });
+	  });
 
   describe('OAuth Well-Known Endpoint', () => {
     let oauthTransport: HttpTransport;
@@ -1341,6 +1352,40 @@ describe('HttpTransport', () => {
       expect(response.status).toBe(201);
       expect(response.body.client_id).toBeDefined();
     });
+
+    it('should omit optional protected resource metadata fields when not configured', async () => {
+      await oauthTransport.stop();
+
+      const minimalOauthConfig = {
+        host: '127.0.0.1',
+        port: 0,
+        sessionTimeoutMs: 1800000,
+        heartbeatEnabled: false,
+        heartbeatIntervalMs: 30000,
+        metricsEnabled: false,
+        metricsPath: '/metrics',
+        oauthConfig: {
+          issuer: 'https://auth.example.com',
+          client_id: 'test-client',
+          client_secret: 'test-secret',
+          scopes: [],
+        },
+      };
+
+      oauthTransport = new HttpTransport(minimalOauthConfig as any, logger);
+      oauthApp = (oauthTransport as any).app;
+
+      const response = await request(oauthApp)
+        .get('/.well-known/oauth-protected-resource/mcp');
+
+      expect(response.status).toBe(200);
+      expect(response.body).toHaveProperty('resource');
+      expect(response.body).toHaveProperty('authorization_servers');
+      expect(response.body).toHaveProperty('bearer_methods_supported');
+      expect(response.body).not.toHaveProperty('resource_name');
+      expect(response.body).not.toHaveProperty('resource_documentation');
+      expect(response.body).not.toHaveProperty('scopes_supported');
+    });
   });
 
   describe('OAuth Disabled', () => {
@@ -1399,6 +1444,124 @@ describe('HttpTransport', () => {
       expect(response.status).not.toBe(400);
 
       await tokenTransport.stop();
+    });
+  });
+
+  describe('Initialization Token Validation (validation_endpoint)', () => {
+    it('should reject initialization when validation endpoint returns non-2xx', async () => {
+      const tokenTransport = new HttpTransport(
+        {
+          host: '127.0.0.1',
+          port: 0,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: false,
+          metricsPath: '/metrics',
+          baseUrl: 'https://api.example.com',
+          authConfigs: [
+            {
+              type: 'bearer',
+              value_from_env: 'MCP4_API_TOKEN',
+              validation_endpoint: '/validate',
+            } as any,
+          ],
+        } as any,
+        logger
+      );
+      const tokenApp = (tokenTransport as any).app;
+      tokenTransport.setMessageHandler(async () => ({ result: 'ok' }));
+
+      const originalFetch = global.fetch;
+      global.fetch = vi.fn(async () => ({ status: 401 }) as any);
+      try {
+        const response = await request(tokenApp)
+          .post('/mcp')
+          .set('Accept', 'application/json, text/event-stream')
+          .set('Authorization', 'Bearer test-token')
+          .set('Host', 'localhost')
+          .send({ jsonrpc: '2.0', id: 1, method: 'initialize' });
+
+        expect(response.status).toBe(401);
+        expect(response.body).toHaveProperty('message', 'Invalid or expired authentication token');
+      } finally {
+        global.fetch = originalFetch;
+        await tokenTransport.stop();
+      }
+    });
+
+    it('should allow initialization when validation endpoint returns 2xx', async () => {
+      const tokenTransport = new HttpTransport(
+        {
+          host: '127.0.0.1',
+          port: 0,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: false,
+          metricsPath: '/metrics',
+          baseUrl: 'https://api.example.com',
+          authConfigs: [
+            {
+              type: 'bearer',
+              value_from_env: 'MCP4_API_TOKEN',
+              validation_endpoint: '/validate',
+            } as any,
+          ],
+        } as any,
+        logger
+      );
+      const tokenApp = (tokenTransport as any).app;
+      tokenTransport.setMessageHandler(async () => ({ result: 'ok' }));
+
+      const originalFetch = global.fetch;
+      global.fetch = vi.fn(async () => ({ status: 204 }) as any);
+      try {
+        const response = await request(tokenApp)
+          .post('/mcp')
+          .set('Accept', 'application/json, text/event-stream')
+          .set('Authorization', 'Bearer test-token')
+          .set('Host', 'localhost')
+          .send({ jsonrpc: '2.0', id: 1, method: 'initialize' });
+
+        expect(response.status).toBe(200);
+        expect(response.headers['mcp-session-id']).toBeDefined();
+      } finally {
+        global.fetch = originalFetch;
+        await tokenTransport.stop();
+      }
+    });
+  });
+
+  describe('Auth Header Validation', () => {
+    it('should return 400 for invalid Authorization header format', async () => {
+      transport.setMessageHandler(async () => ({ result: 'ok' }));
+
+      const response = await request(app)
+        .post('/mcp')
+        .set('Accept', 'application/json, text/event-stream')
+        .set('Authorization', 'NotBearer abc')
+        .set('Host', 'localhost')
+        .send({ jsonrpc: '2.0', id: 1, method: 'initialize' });
+
+      expect(response.status).toBe(400);
+      expect(response.body).toHaveProperty('error', 'Bad Request');
+      expect(response.body).toHaveProperty('correlationId');
+    });
+
+    it('should return 400 for invalid token characters', async () => {
+      transport.setMessageHandler(async () => ({ result: 'ok' }));
+
+      const response = await request(app)
+        .post('/mcp')
+        .set('Accept', 'application/json, text/event-stream')
+        .set('Authorization', 'Bearer abc$123')
+        .set('Host', 'localhost')
+        .send({ jsonrpc: '2.0', id: 1, method: 'initialize' });
+
+      expect(response.status).toBe(400);
+      expect(response.body).toHaveProperty('error', 'Bad Request');
+      expect(response.body).toHaveProperty('correlationId');
     });
   });
 

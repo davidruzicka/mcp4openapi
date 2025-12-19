@@ -8,6 +8,7 @@ import {
   YoutrackMockServerInstance,
 } from './utils/mock-youtrack-server.js';
 import { loadProfileOperations, groupOperationsByTool } from './utils/profile-loader.js';
+import { describeIfListen } from './utils/listen-support.js';
 
 const PROFILE_PATH = resolve(process.cwd(), 'profiles/youtrack/profile.json');
 const OPENAPI_PATH = resolve(process.cwd(), 'profiles/youtrack/openapi.json');
@@ -44,7 +45,7 @@ function parseResult(response: JsonRpcResponse): any {
   return JSON.parse(payloadText!);
 }
 
-describe('YouTrack Tools Coverage E2E', () => {
+describeIfListen('YouTrack Tools Coverage E2E', () => {
   let mockServer: YoutrackMockServerInstance;
   let mockServerPort: number;
   let mcp: McpProcess;

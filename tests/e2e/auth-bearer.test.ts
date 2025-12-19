@@ -6,8 +6,9 @@ import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest';
 import * as path from 'path';
 import { McpProcess } from './utils/mcp-process.js';
 import { startStandaloneMockServer, MockServerInstance } from './utils/mock-server.js';
+import { describeIfListen } from './utils/listen-support.js';
 
-describe('E2E: Bearer token authentication', () => {
+describeIfListen('E2E: Bearer token authentication', () => {
   let mockServer: MockServerInstance;
   let mcp: McpProcess;
 

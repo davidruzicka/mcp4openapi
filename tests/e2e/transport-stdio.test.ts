@@ -5,12 +5,13 @@
  * which is the primary mode for local development and IDE integration.
  */
 
-import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
+import { it, expect, beforeAll, afterAll, afterEach } from 'vitest';
 import * as path from 'path';
 import { McpProcess } from './utils/mcp-process.js';
 import { startStandaloneMockServer, MockServerInstance } from './utils/mock-server.js';
+import { describeIfListen } from './utils/listen-support.js';
 
-describe('E2E: stdio transport', () => {
+describeIfListen('E2E: stdio transport', () => {
   let mockServer: MockServerInstance;
   let mcp: McpProcess;
 
