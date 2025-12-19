@@ -608,6 +608,18 @@
           "type": "boolean",
           "description": "Skip authentication for download URL (default: false). Set to true for pre-signed URLs.",
           "default": false
+        },
+        "allowed_hosts": {
+          "type": "array",
+          "description": "Optional allowlist of host patterns for cross-origin downloads when skip_auth=true (e.g., [\"cdn.example.com\", \"*.example.com\"])",
+          "items": {
+            "type": "string"
+          }
+        },
+        "allow_private_network": {
+          "type": "boolean",
+          "description": "SSRF safety switch: when skip_auth=true, controls whether proxy_download may fetch from localhost and private/loopback/link-local IPs (including hostnames that resolve to them) (default: false)",
+          "default": false
         }
       }
     }

@@ -899,7 +899,9 @@ describeIfListen('HttpTransport', () => {
 
       expect(response.status).toBe(500);
       expect(response.body).toHaveProperty('error', 'Internal Server Error');
-      expect(response.body.message).toContain('Test error');
+      expect(response.body).toHaveProperty('correlationId');
+      expect(response.body.message).toContain('correlation ID');
+      expect(response.body.message).not.toContain('Test error');
     });
 
     it('should handle missing message handler', async () => {
@@ -1400,6 +1402,38 @@ describeIfListen('HttpTransport', () => {
       expect(response.status).not.toBe(400);
 
       await tokenTransport.stop();
+    });
+  });
+
+  describe('Auth Header Validation', () => {
+    it('should return 400 for invalid Authorization header format', async () => {
+      transport.setMessageHandler(async () => ({ result: 'ok' }));
+
+      const response = await request(app)
+        .post('/mcp')
+        .set('Accept', 'application/json, text/event-stream')
+        .set('Authorization', 'NotBearer abc')
+        .set('Host', 'localhost')
+        .send({ jsonrpc: '2.0', id: 1, method: 'initialize' });
+
+      expect(response.status).toBe(400);
+      expect(response.body).toHaveProperty('error', 'Bad Request');
+      expect(response.body).toHaveProperty('correlationId');
+    });
+
+    it('should return 400 for invalid token characters', async () => {
+      transport.setMessageHandler(async () => ({ result: 'ok' }));
+
+      const response = await request(app)
+        .post('/mcp')
+        .set('Accept', 'application/json, text/event-stream')
+        .set('Authorization', 'Bearer abc$123')
+        .set('Host', 'localhost')
+        .send({ jsonrpc: '2.0', id: 1, method: 'initialize' });
+
+      expect(response.status).toBe(400);
+      expect(response.body).toHaveProperty('error', 'Bad Request');
+      expect(response.body).toHaveProperty('correlationId');
     });
   });
 

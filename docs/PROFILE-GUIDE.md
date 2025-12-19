@@ -198,6 +198,8 @@ Use `proxy_download` operations when an API returns a URL for binary content tha
 - `timeout_ms` (optional): Download timeout in milliseconds (default: 30000).
 - `allowed_mime_types` (optional): Whitelist of allowed MIME types (supports wildcards such as `image/*`).
 - `skip_auth` (optional): When `true`, skips auth for the final download URL (useful for pre-signed links). **If the extracted download URL is cross-origin (different origin than your API base URL), `skip_auth` must be `true` to avoid leaking credentials.**
+- `allowed_hosts` (optional): Allowlist for cross-origin downloads when `skip_auth: true` (recommended). Supports exact hosts like `cdn.example.com` and wildcard subdomains like `*.example.com`.
+- `allow_private_network` (optional): SSRF safety switch. When `true` and `skip_auth: true`, allows cross-origin downloads for `localhost` and private/loopback/link-local IPs (including hostnames that resolve to them). Default is `false`.
 
 **Download size precedence**
 

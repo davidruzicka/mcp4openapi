@@ -30,7 +30,9 @@ export const proxyDownloadOperationSchema = z.object({
     max_size_bytes_from_env: z.string().optional(),
     timeout_ms: z.number().optional(),
     allowed_mime_types: z.array(z.string()).optional(),
-    skip_auth: z.boolean().optional()
+    skip_auth: z.boolean().optional(),
+    allowed_hosts: z.array(z.string()).optional(),
+    allow_private_network: z.boolean().optional()
 });
 
 export const operationDefinitionSchema = z.union([z.string(), proxyDownloadOperationSchema]);
