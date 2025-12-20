@@ -1,13 +1,17 @@
 import { z } from 'zod';
 
 export const MockDefinitionSchema = z.object({
-  operationId: z.string().describe('The OpenAPI operationId to mock'),
+  operationId: z.string().optional().describe('The OpenAPI operationId to mock'),
+  path: z.string().optional().describe('Raw URL path pattern (e.g. /api/v4/projects)'),
+  method: z.string().optional().describe('HTTP method (GET, POST, etc.)'),
   response: z.object({
     status: z.number().optional().default(200),
     body: z.any().optional(),
     headers: z.record(z.string()).optional(),
     delay: z.number().optional().describe('Response delay in milliseconds')
   }).optional()
+}).refine(data => data.operationId || (data.path && data.method), {
+  message: "Either operationId or (path and method) must be provided"
 });
 
 export const TestExpectationSchema = z.object({
