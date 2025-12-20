@@ -1,0 +1,95 @@
+{
+  "$schema": "../../src/testing/test-schema.ts",
+  "profile_name": "gitlab-developer",
+  "scenarios": [
+    {
+      "name": "List Projects - Success",
+      "tool": "manage_projects",
+      "arguments": { "action": "list" },
+      "mocks": [
+        {
+          "operationId": "getApiV4Projects",
+          "response": {
+            "status": 200,
+            "body": [
+              { "id": 1, "name": "Project 1", "path_with_namespace": "group/project1" },
+              { "id": 2, "name": "Project 2", "path_with_namespace": "group/project2" }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": [
+           { "id": 1, "name": "Project 1" },
+           { "id": 2, "name": "Project 2" }
+        ]
+      }
+    },
+    {
+      "name": "Get Project - Not Found",
+      "tool": "manage_projects",
+      "arguments": { "action": "get", "project_id": "999" },
+      "mocks": [
+        {
+          "operationId": "getApiV4ProjectsId",
+          "response": {
+            "status": 404,
+            "body": { "message": "404 Project Not Found" }
+          }
+        }
+      ],
+      "expect": {
+        "success": false,
+        "error_message_regex": "404"
+      }
+    },
+    {
+      "name": "Get Project - With Delay",
+      "tool": "manage_projects",
+      "arguments": { "action": "get", "project_id": "1" },
+      "mocks": [
+        {
+          "operationId": "getApiV4ProjectsId",
+          "response": {
+             "delay": 100,
+             "body": { "id": 1, "name": "Delayed Project" }
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": { "id": 1, "name": "Delayed Project" }
+      }
+    },
+    {
+      "name": "Create Issue - Dynamic Response",
+      "tool": "manage_issues",
+      "arguments": {
+        "action": "create",
+        "project_id": "1",
+        "title": "Dynamic Issue"
+      },
+      "mocks": [
+        {
+          "operationId": "postApiV4ProjectsIdIssues",
+          "response": {
+            "status": 201,
+            "body": {
+              "id": "{{$randomInt(10000, 20000)}}",
+              "title": "Dynamic Issue",
+              "state": "opened"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": {
+          "title": "Dynamic Issue",
+          "state": "opened"
+        }
+      }
+    }
+  ]
+}
