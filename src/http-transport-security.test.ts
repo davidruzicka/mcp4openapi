@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
+import request from 'supertest';
 import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
 import https from 'node:https';
@@ -1605,5 +1606,19 @@ describe('HttpTransport security behavior (no listen)', () => {
       if (originalKey === undefined) delete process.env.MCP4_SSL_KEY_FILE;
       else process.env.MCP4_SSL_KEY_FILE = originalKey;
     }
+  });
+
+  it('sets security headers (X-Content-Type-Options, X-Frame-Options, CSP)', async () => {
+    const transport = createTransport();
+    const app = (transport as any).app;
+
+    const res = await request(app).get('/health');
+
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['x-content-type-options']).toBe('nosniff');
+    expect(res.headers['x-frame-options']).toBe('DENY');
+    expect(res.headers['content-security-policy']).toBe("default-src 'none'; frame-ancestors 'none'");
+
+    await transport.stop();
   });
 });

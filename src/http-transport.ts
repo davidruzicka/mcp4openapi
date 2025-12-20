@@ -127,6 +127,14 @@ export class HttpTransport {
       next();
     });
 
+    // Security: Set default security headers
+    this.app.use((_req: Request, res: Response, next: NextFunction) => {
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.setHeader('X-Frame-Options', 'DENY');
+      res.setHeader('Content-Security-Policy', "default-src 'none'; frame-ancestors 'none'");
+      next();
+    });
+
     // JSON body parser
     this.app.use(express.json());
 
