@@ -31,22 +31,40 @@ export class DynamicMockEngine {
     const handlers: RequestHandler[] = [];
 
     for (const mock of mocks) {
-      const opInfo = this.parser.getOperation(mock.operationId);
-      if (!opInfo) {
-        console.warn(`Warning: Operation ID '${mock.operationId}' not found in OpenAPI spec. Skipping mock.`);
+      let method: string | undefined;
+      let fullUrl: string | undefined;
+
+      if (mock.operationId) {
+        const opInfo = this.parser.getOperation(mock.operationId);
+        if (!opInfo) {
+          console.warn(`Warning: Operation ID '${mock.operationId}' not found in OpenAPI spec. Skipping mock.`);
+          continue;
+        }
+        method = opInfo.method.toLowerCase();
+        // Convert OpenAPI path parameters {param} to MSW format :param
+        const mswPath = opInfo.path.replace(/{([^}]+)}/g, ':$1');
+        fullUrl = `${this.baseUrl}${mswPath}`;
+      } else if (mock.path && mock.method) {
+        method = mock.method.toLowerCase();
+        if (mock.path.startsWith('http://') || mock.path.startsWith('https://')) {
+          fullUrl = mock.path;
+        } else {
+          // If relative path, prepend base URL
+          // Ensure strictly one slash
+          const safePath = mock.path.startsWith('/') ? mock.path : `/${mock.path}`;
+          fullUrl = `${this.baseUrl}${safePath}`;
+        }
+      }
+
+      if (!method || !fullUrl) {
         continue;
       }
 
-      const method = opInfo.method.toLowerCase();
       // Only support standard HTTP methods that MSW supports
       if (!['get', 'post', 'put', 'patch', 'delete', 'head', 'options'].includes(method)) {
-        console.warn(`Warning: Unsupported HTTP method '${opInfo.method}'.`);
+        console.warn(`Warning: Unsupported HTTP method '${method}'.`);
         continue;
       }
-
-      // Convert OpenAPI path parameters {param} to MSW format :param
-      const mswPath = opInfo.path.replace(/{([^}]+)}/g, ':$1');
-      const fullUrl = `${this.baseUrl}${mswPath}`;
 
       // MSW http methods are typed as http.get, http.post, etc.
       // We cast to any to access dynamic method name
@@ -67,10 +85,11 @@ export class DynamicMockEngine {
         }
 
         // Otherwise treat as raw response (string, null, etc.)
-        // Note: HttpResponse.json(null) is valid, but new HttpResponse(null) is also valid (empty body)
-        // If body is undefined/null, use {} for JSON compatibility if content-type says so?
-        // Defaulting to JSON {} if body is missing was previous behavior.
         if (body === undefined) {
+             // 204 No Content must have empty body
+             if (status === 204) {
+                 return new HttpResponse(null, { status, headers });
+             }
              return HttpResponse.json({}, { status, headers });
         }
 
