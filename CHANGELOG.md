@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.8] - 2025-12-20
+
+### Added
+- YouTrack profile support for project custom fields, including new actions and response field selection for project custom field details.
+
+### Changed
+- HTTP transport now uses typed errors and correlation IDs for client-facing responses, with stricter token/header validation.
+- Proxy downloads validate URL schemes/origins, enforce redirect limits, and add allowlist/private-network controls.
+
 ## [0.2.7] - 2025-12-18
 
 ### Changed
@@ -109,6 +118,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Schema validation for request bodies
 - Structured logging (console/JSON)
 
+[Unreleased]: https://github.com/davidruzicka/mcp4openapi/compare/v0.2.7...HEAD
+[0.2.8]: https://github.com/davidruzicka/mcp4openapi/compare/v0.2.7...v0.2.8
 [0.2.7]: https://github.com/davidruzicka/mcp4openapi/compare/v0.2.6...v0.2.7
 [0.2.6]: https://github.com/davidruzicka/mcp4openapi/compare/v0.2.5...v0.2.6
 [0.2.5]: https://github.com/davidruzicka/mcp4openapi/compare/v0.2.4...v0.2.5
