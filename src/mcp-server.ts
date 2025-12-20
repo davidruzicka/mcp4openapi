@@ -53,6 +53,14 @@ export class MCPServer {
   private httpTransport: any = null;
 
   /**
+   * Get loaded profile
+   * Useful for testing to inspect loaded configuration
+   */
+  get loadedProfile(): Profile | undefined {
+    return this.profile;
+  }
+
+  /**
    * Filter response payload to include only specified fields.
    *
    * Supports YouTrack-style field selectors like:
