@@ -92,7 +92,6 @@ testFiles.forEach(testFile => {
     beforeEach(() => {
       mockEngine.reset();
       if (testDef.global_mocks) {
-        // Apply templates to global mocks if needed (using global variables)
         const context = { ...testDef.variables };
         const processedGlobalMocks = processTemplate(testDef.global_mocks, context);
         mockEngine.configureMocks(processedGlobalMocks);
@@ -101,7 +100,7 @@ testFiles.forEach(testFile => {
 
     testDef.scenarios.forEach(scenario => {
       it(scenario.name, async () => {
-        // Prepare context (merge global variables)
+        // Prepare context
         const context = { ...testDef.variables };
 
         // Process templates
@@ -114,20 +113,36 @@ testFiles.forEach(testFile => {
           mockEngine.configureMocks(processedMocks);
         }
 
-        const tool = server.loadedProfile!.tools.find(t => t.name === scenario.tool);
-        if (!tool) {
-          throw new Error(`Tool ${scenario.tool} not found in profile`);
-        }
-
-        // Execute
+        // Execute via handleToolCall to support both Simple and Composite tools
         let result: any;
         let error: any;
         try {
-          // Use public method if available, else cast to access private
-          // We don't have public executeTool yet, so using executeSimpleTool via any cast
-          // But we could use handleToolCall if we wrapped args in JSONRPC.
-          // For now sticking to direct method for simplicity of result inspection.
-          result = await (server as any).executeSimpleTool(tool, processedArgs);
+          // Use 'handleToolCall' (private) via any cast
+          const response = await (server as any).handleToolCall({
+            jsonrpc: '2.0',
+            id: 1,
+            method: 'tools/call',
+            params: {
+              name: scenario.tool,
+              arguments: processedArgs
+            }
+          });
+
+          if (response.error) {
+             // Convert JSON-RPC error to Error object for easier assertion matching
+             error = new Error(response.error.message);
+             (error as any).code = response.error.code;
+          } else if (response.result) {
+             // Parse result from content text
+             if (response.result.content && response.result.content.length > 0) {
+                result = JSON.parse(response.result.content[0].text);
+             } else {
+                result = null; // Empty success
+             }
+          } else {
+             // Unexpected response structure
+             error = new Error('Invalid JSON-RPC response');
+          }
         } catch (e) {
           error = e;
         }

@@ -57,10 +57,24 @@ export class DynamicMockEngine {
           await delay(mock.response.delay);
         }
 
-        return HttpResponse.json(mock.response?.body ?? {}, {
-          status: mock.response?.status ?? 200,
-          headers: mock.response?.headers,
-        });
+        const body = mock.response?.body;
+        const headers = mock.response?.headers || {};
+        const status = mock.response?.status ?? 200;
+
+        // If body is an object or array, treat as JSON
+        if (body !== undefined && typeof body === 'object') {
+           return HttpResponse.json(body, { status, headers });
+        }
+
+        // Otherwise treat as raw response (string, null, etc.)
+        // Note: HttpResponse.json(null) is valid, but new HttpResponse(null) is also valid (empty body)
+        // If body is undefined/null, use {} for JSON compatibility if content-type says so?
+        // Defaulting to JSON {} if body is missing was previous behavior.
+        if (body === undefined) {
+             return HttpResponse.json({}, { status, headers });
+        }
+
+        return new HttpResponse(body, { status, headers });
       });
 
       handlers.push(handler);
