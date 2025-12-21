@@ -6,6 +6,7 @@ import type { McpRequest } from './types/http-transport.js';
 import { HttpTransport } from './http-transport.js';
 import { ConsoleLogger } from './logger.js';
 import { AuthenticationError, AuthorizationError, RateLimitError, ValidationError } from './errors.js';
+import request from 'supertest';
 
 function createTransport(config?: Partial<any>) {
   return new HttpTransport(
@@ -1605,5 +1606,23 @@ describe('HttpTransport security behavior (no listen)', () => {
       if (originalKey === undefined) delete process.env.MCP4_SSL_KEY_FILE;
       else process.env.MCP4_SSL_KEY_FILE = originalKey;
     }
+  });
+
+  it('sets standard security headers on responses', async () => {
+    const transport = createTransport();
+    transport.setMessageHandler(async () => ({ result: 'ok' }));
+
+    const app = (transport as any).app;
+
+    const response = await request(app)
+      .post('/mcp')
+      .send({ jsonrpc: '2.0', id: 1, method: 'initialize' })
+      .set('Accept', 'application/json');
+
+    expect(response.headers['x-content-type-options']).toBe('nosniff');
+    expect(response.headers['x-frame-options']).toBe('DENY');
+    expect(response.headers['content-security-policy']).toBe("default-src 'self'");
+
+    await transport.stop();
   });
 });

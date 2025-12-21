@@ -106,6 +106,15 @@ export class HttpTransport {
       next();
     });
 
+    // Security: Standard security headers
+    // Why: Protect against common web vulnerabilities (XSS, Clickjacking, MIME sniffing)
+    this.app.use((_req: Request, res: Response, next: NextFunction) => {
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.setHeader('X-Frame-Options', 'DENY');
+      res.setHeader('Content-Security-Policy', "default-src 'self'");
+      next();
+    });
+
     // DNS rebinding protection when binding to localhost
     // Deny requests with mismatched Host headers to prevent DNS rebinding attacks
     // Applies when server host is localhost/127.0.0.1, regardless of auth configuration
