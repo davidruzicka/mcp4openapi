@@ -1,0 +1,98 @@
+{
+  "$schema": "../../src/testing/test-schema.ts",
+  "profile_name": "semgrep",
+  "variables": {
+    "deploymentSlug": "test-deployment"
+  },
+  "scenarios": [
+    {
+      "name": "Get Deployment",
+      "tool": "get_deployment",
+      "arguments": {},
+      "mocks": [
+        {
+          "operationId": "DeploymentsService_ListDeployments",
+          "response": { "body": { "deployments": [{ "id": 123, "slug": "test-deployment", "name": "Test Deployment" }] } }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": {
+          "data": {
+            "deployment": { "deployments": [{ "id": 123, "slug": "test-deployment" }] }
+          },
+          "success": true
+        }
+      }
+    },
+    {
+      "name": "List Projects",
+      "tool": "manage_projects",
+      "arguments": { "action": "list", "deploymentSlug": "{{deploymentSlug}}", "page": 0, "page_size": 5 },
+      "mocks": [
+        {
+          "operationId": "ProjectsService_ListProjects",
+          "response": { "body": { "projects": [{ "id": 1, "name": "test-org/test-repo" }] } }
+        }
+      ],
+      "expect": { "success": true, "result": { "projects": [{ "name": "test-org/test-repo" }] } }
+    },
+    {
+      "name": "List Findings",
+      "tool": "manage_findings",
+      "arguments": { "deploymentSlug": "{{deploymentSlug}}", "issue_type": "sast", "page": 0, "page_size": 10 },
+      "mocks": [
+        {
+          "operationId": "FindingsService_ListFindings",
+          "response": { "body": { "sastFindings": { "findings": [{ "id": 123, "severity": "high" }] } } }
+        }
+      ],
+      "expect": { "success": true, "result": { "sastFindings": { "findings": [{ "id": 123 }] } } }
+    },
+    {
+      "name": "Triage Findings",
+      "tool": "triage_findings",
+      "arguments": {
+        "deploymentSlug": "{{deploymentSlug}}",
+        "issue_type": "sast",
+        "status": "open",
+        "new_triage_state": "ignored",
+        "new_triage_reason": "false_positive",
+        "limit": 10
+      },
+      "mocks": [
+        {
+          "operationId": "TriageService_BulkTriage",
+          "response": { "body": { "num_triaged": 3, "triaged_issues": [123, 456, 789] } }
+        }
+      ],
+      "expect": { "success": true, "result": { "num_triaged": 3 } }
+    },
+    {
+      "name": "Triage Findings - Missing Params",
+      "tool": "triage_findings",
+      "arguments": {
+        "issue_type": "sast",
+        "status": "open",
+        "new_triage_state": "ignored",
+        "new_triage_reason": "false_positive"
+      },
+      "mocks": [],
+      "expect": { "success": false, "error_message_regex": "deploymentSlug" }
+    },
+    {
+      "name": "Triage Findings - Non-Integer Limit",
+      "tool": "triage_findings",
+      "arguments": {
+        "deploymentSlug": "{{deploymentSlug}}",
+        "issue_type": "sast",
+        "status": "open",
+        "new_triage_state": "ignored",
+        "new_triage_reason": "false_positive",
+        "limit": 10.5
+      },
+      "mocks": [],
+      "expect": { "success": false, "error_message_regex": "integer" }
+    }
+  ]
+}
