@@ -428,4 +428,39 @@ describeIfListen('HTTP Transport Integration', () => {
       expect(typeof response.body.sessions).toBe('number');
     });
   });
+
+  describe('Security Headers', () => {
+    it('should include security headers in responses', async () => {
+      const response = await request(app)
+        .post('/mcp')
+        .set('Accept', 'application/json')
+        .send({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'initialize',
+          params: {},
+        });
+
+      expect(response.headers['x-content-type-options']).toBe('nosniff');
+      expect(response.headers['x-frame-options']).toBe('DENY');
+      expect(response.headers['content-security-policy']).toContain("default-src 'none'");
+    });
+
+    it('should include CORS headers for allowed origin', async () => {
+      const response = await request(app)
+        .post('/mcp')
+        .set('Origin', 'http://localhost:3000') // Localhost is allowed by default
+        .set('Accept', 'application/json')
+        .send({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'initialize',
+          params: {},
+        });
+
+      expect(response.headers['access-control-allow-origin']).toBe('http://localhost:3000');
+      expect(response.headers['access-control-allow-credentials']).toBe('false');
+      expect(response.headers['vary']).toBe('Origin');
+    });
+  });
 });

@@ -30,6 +30,7 @@ import { ExternalOAuthProvider } from './oauth-provider.js';
 import type { AuthInterceptor } from './types/profile.js';
 import { HTTP_STATUS, MIME_TYPES, OAUTH_PATHS, TIMEOUTS, OAUTH_RATE_LIMIT } from './constants.js';
 import { escapeHtmlSafe } from './validation-utils.js';
+import { addSecurityHeaders } from './security-headers.js';
 import type { OAuthTokens } from '@modelcontextprotocol/sdk/shared/auth.js';
 import {
   AuthenticationError,
@@ -105,6 +106,9 @@ export class HttpTransport {
       });
       next();
     });
+
+    // Security: Add standard security headers (HSTS, CSP, etc.)
+    this.app.use(addSecurityHeaders);
 
     // DNS rebinding protection when binding to localhost
     // Deny requests with mismatched Host headers to prevent DNS rebinding attacks
@@ -189,6 +193,13 @@ export class HttpTransport {
       if (this.config.host === '0.0.0.0' && !this.hasWarnedAboutBinding) {
         this.logger.warn('HTTP transport bound to 0.0.0.0 - accessible from network. Ensure firewall protection.');
         this.hasWarnedAboutBinding = true;
+      }
+
+      // Security: Enable CORS for allowed origins on actual requests (not just preflight)
+      if (origin && this.isAllowedOrigin(origin)) {
+        res.setHeader('Access-Control-Allow-Origin', origin);
+        res.setHeader('Access-Control-Allow-Credentials', 'false');
+        res.setHeader('Vary', 'Origin');
       }
 
       // Skip Origin check for localhost
