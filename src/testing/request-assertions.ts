@@ -78,6 +78,18 @@ function assertSingleRequestMatch(
   }
 }
 
+function matchesExpectation(
+  request: CapturedRequest,
+  expectation: RequestExpectation
+): boolean {
+  try {
+    assertSingleRequestMatch(request, expectation);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function assertRequestMatches(
   requests: CapturedRequest[],
   expectation: RequestExpectation
@@ -106,19 +118,31 @@ export function assertRequestsSequence(
     return;
   }
 
-  if (!allowAdditional && requests.length !== expectations.length) {
-    throw new Error(`Captured ${requests.length} requests but expected ${expectations.length}.`);
+  if (!allowAdditional) {
+    if (requests.length !== expectations.length) {
+      throw new Error(`Captured ${requests.length} requests but expected ${expectations.length}.`);
+    }
+
+    expectations.forEach((expectation, index) => {
+      const request = requests[index];
+      if (!request) {
+        throw new Error(`Missing request at index ${index}.`);
+      }
+      assertSingleRequestMatch(request, expectation);
+    });
+    return;
   }
 
   if (requests.length < expectations.length) {
     throw new Error('Not all expected requests were captured.');
   }
 
-  expectations.forEach((expectation, index) => {
-    const request = requests[index];
-    if (!request) {
-      throw new Error(`Missing request at index ${index}.`);
+  let searchStart = 0;
+  expectations.forEach((expectation, expectationIndex) => {
+    const foundIndex = requests.findIndex((request, idx) => idx >= searchStart && matchesExpectation(request, expectation));
+    if (foundIndex === -1) {
+      throw new Error(`Missing request for expectation at index ${expectationIndex}.`);
     }
-    assertSingleRequestMatch(request, expectation);
+    searchStart = foundIndex + 1;
   });
 }

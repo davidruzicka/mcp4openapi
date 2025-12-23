@@ -20,6 +20,24 @@ const requests: CapturedRequest[] = [
   }
 ];
 
+const requestsWithExtra: CapturedRequest[] = [
+  {
+    method: 'HEAD',
+    path: '/health',
+    origin: 'https://mock.local',
+    query: {},
+    headers: {}
+  },
+  ...requests,
+  {
+    method: 'GET',
+    path: '/metrics',
+    origin: 'https://mock.local',
+    query: {},
+    headers: {}
+  }
+];
+
 describe('assertRequestMatches', () => {
   it('matches method, path, headers, query, and body', () => {
     expect(() =>
@@ -80,5 +98,29 @@ describe('assertRequestMatches', () => {
     expect(() =>
       assertRequestsSequence(requests, [{ method: 'GET' }], false)
     ).toThrowError();
+  });
+
+  it('supports subsequence matching when additional requests are allowed', () => {
+    expect(() =>
+      assertRequestsSequence(
+        requestsWithExtra,
+        [
+          { method: 'GET', path: '/items', origin: 'https://mock.local' },
+          { method: 'POST', path: '/items/42', origin: 'https://mock.local', body: { name: 'demo' } }
+        ],
+        true
+      )
+    ).not.toThrow();
+
+    expect(() =>
+      assertRequestsSequence(
+        requestsWithExtra,
+        [
+          { method: 'POST', path: '/items/42' },
+          { method: 'GET', path: '/items' }
+        ],
+        true
+      )
+    ).toThrowError(/Missing request/);
   });
 });
