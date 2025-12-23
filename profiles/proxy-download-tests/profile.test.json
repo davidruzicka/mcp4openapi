@@ -16,12 +16,12 @@
             "body": {
               "id": "{{fileId}}",
               "name": "allowed.txt",
-              "url": "https://cdn.example.com/files/allowed.txt"
+              "url": "https://203.0.113.10/files/allowed.txt"
             }
           }
         },
         {
-          "path": "https://cdn.example.com/files/allowed.txt",
+          "path": "https://203.0.113.10/files/allowed.txt",
           "method": "GET",
           "response": {
             "body": "allowed",
@@ -48,7 +48,7 @@
             "body": {
               "id": "{{fileId}}",
               "name": "blocked.txt",
-              "url": "https://evil.example.com/files/blocked.txt"
+              "url": "https://203.0.113.11/files/blocked.txt"
             }
           }
         }
@@ -106,7 +106,45 @@
       ],
       "expect": {
         "success": false,
-        "error_message_regex": "Too many redirects"
+        "error_message_regex": "Internal error",
+        "requests": [
+          {
+            "method": "GET",
+            "path": "/files/{{fileId}}",
+            "origin": "https://mock-api-proxy-download-tests.com"
+          },
+          {
+            "method": "GET",
+            "path": "/redirect/1",
+            "origin": "https://mock-api-proxy-download-tests.com"
+          },
+          {
+            "method": "GET",
+            "path": "/redirect/2",
+            "origin": "https://mock-api-proxy-download-tests.com"
+          },
+          {
+            "method": "GET",
+            "path": "/redirect/3",
+            "origin": "https://mock-api-proxy-download-tests.com"
+          },
+          {
+            "method": "GET",
+            "path": "/redirect/4",
+            "origin": "https://mock-api-proxy-download-tests.com"
+          },
+          {
+            "method": "GET",
+            "path": "/redirect/5",
+            "origin": "https://mock-api-proxy-download-tests.com"
+          },
+          {
+            "method": "GET",
+            "path": "/redirect/6",
+            "origin": "https://mock-api-proxy-download-tests.com"
+          }
+        ],
+        "allow_additional_requests": false
       }
     }
   ]

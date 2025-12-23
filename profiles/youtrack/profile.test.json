@@ -996,8 +996,10 @@
       "arguments": {
         "action": "log_time",
         "id": "ISSUE-123",
-        "duration": "1h",
-        "date": "2024-01-01"
+        "duration": {
+          "minutes": 60
+        },
+        "date": 1704067200000
       },
       "mocks": [
         {
@@ -1237,7 +1239,9 @@
         "action": "update_work_item",
         "id": "ISSUE-123",
         "issueWorkItemId": "work-1",
-        "duration": "1h"
+        "duration": {
+          "minutes": 60
+        }
       },
       "mocks": [
         {

@@ -189,7 +189,7 @@
     {
       "name": "manage_releases_tags",
       "description": "Manage releases and tags. Actions: 'list_releases', 'create_release', 'list_tags', 'create_tag', 'delete_tag'.",
-      "metadata_params": ["action", "project_id", "tag_name"],
+      "metadata_params": ["action", "project_id"],
       "operations": {
         "list_releases": "getApiV4ProjectsIdReleases",
         "create_release": "postApiV4ProjectsIdReleases",
@@ -240,7 +240,7 @@
     {
       "name": "manage_project_members",
       "description": "Manage project members. Actions: 'list_members', 'add_member', 'remove_member'.",
-      "metadata_params": ["action", "project_id", "user_id"],
+      "metadata_params": ["action", "project_id"],
       "operations": {
         "list_members": "getApiV4ProjectsIdMembers",
         "add_member": "postApiV4ProjectsIdMembers",

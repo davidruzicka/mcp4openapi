@@ -35,7 +35,7 @@
           "metadata_endpoint": "getFileMetadata",
           "url_field": "url",
           "skip_auth": true,
-          "allowed_hosts": ["cdn.example.com"]
+          "allowed_hosts": ["203.0.113.10"]
         }
       }
     }
