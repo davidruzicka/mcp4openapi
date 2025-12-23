@@ -43,24 +43,24 @@ Deliverable:
 ## Phase 2 - Cover profile rules in schema scenarios
 
 4) Required/conditional params
-   - [ ] Add scenarios where required params are missing and expect validation errors.
-   - [ ] Add success scenarios that include `required_for` params.
+   - [x] Add scenarios where required params are missing and expect validation errors.
+   - [x] Add success scenarios that include `required_for` params.
 
 5) Response fields and filtering
-   - [ ] Add scenarios that validate `fields` query presence and filtered response output.
-   - [ ] Include nested selectors and ensure unexpected fields are removed.
+   - [x] Add scenarios that validate `fields` query presence and filtered response output.
+   - [x] Include nested selectors and ensure unexpected fields are removed.
 
 6) Proxy download behavior
-   - [ ] Add schema support for multi-request flows or composite mocks:
+   - [x] Add schema support for multi-request flows or composite mocks:
      - metadata endpoint -> download URL -> download response
    - [ ] Validate:
-     - same-origin enforcement
-     - `skip_auth` behavior
-     - `allowed_hosts`
-     - redirect limits
+     - [x] same-origin enforcement
+     - [x] `skip_auth` behavior
+     - [ ] `allowed_hosts`
+     - [ ] redirect limits
 
 7) Composite tools
-   - [ ] Add scenario support for composite steps:
+   - [x] Add scenario support for composite steps:
      - `steps`, `store_as`, `depends_on`
      - `partial_results` error behavior
 
