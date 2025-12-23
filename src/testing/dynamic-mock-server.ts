@@ -6,6 +6,7 @@ import { MockDefinition } from './test-schema.js';
 export interface CapturedRequest {
   method: string;
   path: string;
+  origin: string;
   query: Record<string, string | string[]>;
   headers: Record<string, string>;
   body?: unknown;
@@ -160,6 +161,7 @@ export class DynamicMockEngine {
     return {
       method: request.method.toUpperCase(),
       path: url.pathname,
+      origin: url.origin,
       query,
       headers,
       body

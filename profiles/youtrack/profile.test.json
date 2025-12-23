@@ -27,6 +27,13 @@
       }
     },
     {
+      "name": "Get Issue - Missing Id",
+      "tool": "retrieve_content",
+      "arguments": { "action": "get_issue" },
+      "mocks": [],
+      "expect": { "success": false, "error_message_regex": "id" }
+    },
+    {
       "name": "List Issue Comments",
       "tool": "retrieve_content",
       "arguments": { "action": "list_issue_comments", "id": "ISSUE-123" },
@@ -37,6 +44,47 @@
         }
       ],
       "expect": { "success": true, "result": [{ "text": "Comment 1" }] }
+    },
+    {
+      "name": "List Issue Comments - Response Fields",
+      "tool": "retrieve_content",
+      "arguments": { "action": "list_issue_comments", "id": "ISSUE-123" },
+      "mocks": [
+        {
+          "operationId": "get_/issues/{id}/comments",
+          "response": {
+            "body": [
+              {
+                "id": "c1",
+                "text": "Comment 1",
+                "author": { "login": "user1", "email": "hidden@example.com" },
+                "created": "2024-01-01",
+                "attachments": [{ "id": "a1", "name": "file", "url": "https://mock-api-youtrack-optimized.com/file", "token": "secret" }],
+                "internal": true
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result_exact": [
+          {
+            "id": "c1",
+            "text": "Comment 1",
+            "author": { "login": "user1" },
+            "created": "2024-01-01",
+            "attachments": [{ "id": "a1", "name": "file", "url": "https://mock-api-youtrack-optimized.com/file" }]
+          }
+        ],
+        "request": {
+          "method": "GET",
+          "path": "/issues/ISSUE-123/comments",
+          "origin": "https://mock-api-youtrack-optimized.com",
+          "headers": { "authorization": "Bearer test-token" },
+          "query": { "fields": "id,text,author(login),created,attachments(id,name,url)" }
+        }
+      }
     },
     {
       "name": "Get Project",
@@ -57,6 +105,49 @@
       "expect": {
         "success": true,
         "result": { "id": "PROJ", "customFields": [{ "field": { "name": "Priority" } }] }
+      }
+    },
+    {
+      "name": "Download Issue Attachment - Skip Auth",
+      "tool": "retrieve_content",
+      "arguments": { "action": "download_issue_attachment", "id": "ISSUE-123", "issueAttachmentId": "att-1" },
+      "mocks": [
+        {
+          "operationId": "get_/issues/{id}/attachments/{issueAttachmentId}",
+          "response": {
+            "body": {
+              "id": "att-1",
+              "name": "log.txt",
+              "mimeType": "text/plain",
+              "size": 5,
+              "url": "https://mock-api-youtrack-optimized.com/attachments/log.txt"
+            }
+          }
+        },
+        {
+          "path": "/attachments/log.txt",
+          "method": "GET",
+          "response": { "body": "hello", "headers": { "content-type": "text/plain" } }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": { "fileName": "log.txt", "content": "aGVsbG8=" },
+        "requests": [
+          {
+            "method": "GET",
+            "path": "/issues/ISSUE-123/attachments/att-1",
+            "origin": "https://mock-api-youtrack-optimized.com",
+            "headers": { "authorization": "Bearer test-token" }
+          },
+          {
+            "method": "GET",
+            "path": "/attachments/log.txt",
+            "origin": "https://mock-api-youtrack-optimized.com",
+            "headers_absent": ["authorization"]
+          }
+        ],
+        "allow_additional_requests": false
       }
     }
   ]

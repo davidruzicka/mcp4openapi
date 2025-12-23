@@ -79,6 +79,13 @@
       "expect": { "success": true, "result": { "iid": 1, "state": "opened" } }
     },
     {
+      "name": "Merge Requests - Missing IID",
+      "tool": "manage_merge_requests",
+      "arguments": { "action": "get", "project_id": "{{projectId}}" },
+      "mocks": [],
+      "expect": { "success": false, "error_message_regex": "merge_request_iid" }
+    },
+    {
       "name": "Merge Requests - Create",
       "tool": "manage_merge_requests",
       "arguments": {
@@ -181,6 +188,53 @@
           },
           "success": true
         }
+      }
+    },
+    {
+      "name": "Merge Requests - Composite With Partial Failure",
+      "tool": "get_merge_request_with_details",
+      "arguments": { "project_id": "{{projectId}}", "merge_request_iid": 1 },
+      "mocks": [
+        {
+          "operationId": "getApiV4ProjectsIdMergeRequestsMergeRequestIid",
+          "response": { "body": { "id": 1, "iid": 1, "title": "Composite MR" } }
+        },
+        {
+          "operationId": "getApiV4ProjectsIdMergeRequestsMergeRequestIidNotes",
+          "response": { "status": 500, "body": { "message": "notes down" } }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": {
+          "data": {
+            "merge_request": {
+              "id": 1,
+              "iid": 1,
+              "title": "Composite MR",
+              "notes_error": {
+                "step_index": 1,
+                "step_call": "GET /projects/{id}/merge_requests/{merge_request_iid}/notes",
+                "error": "notes down"
+              }
+            }
+          },
+          "completed_steps": 1,
+          "errors": [
+            {
+              "step_index": 1,
+              "step_call": "GET /projects/{id}/merge_requests/{merge_request_iid}/notes",
+              "error": "notes down"
+            }
+          ],
+          "success": false,
+          "total_steps": 2
+        },
+        "requests": [
+          { "method": "GET", "path": "/projects/12345/merge_requests/1" },
+          { "method": "GET", "path": "/projects/12345/merge_requests/1/notes" }
+        ],
+        "allow_additional_requests": true
       }
     },
     {
@@ -404,7 +458,25 @@
           "response": { "body": "Snippet Content", "headers": { "content-type": "text/plain" } }
         }
       ],
-      "expect": { "success": true, "result": { "content": "U25pcHBldCBDb250ZW50" } }
+      "expect": {
+        "success": true,
+        "result": { "content": "U25pcHBldCBDb250ZW50" },
+        "requests": [
+          {
+            "method": "GET",
+            "path": "/projects/12345/snippets/1",
+            "origin": "https://mock-api-gitlab-developer.com",
+            "headers": { "authorization": "Bearer test-token" }
+          },
+          {
+            "method": "GET",
+            "path": "/snippets/1/raw",
+            "origin": "https://mock-api-gitlab-developer.com",
+            "headers_absent": ["authorization"]
+          }
+        ],
+        "allow_additional_requests": false
+      }
     },
     {
       "name": "Branches - List",

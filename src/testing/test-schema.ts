@@ -3,11 +3,13 @@ import { z } from 'zod';
 const RequestExpectationSchema = z.object({
   method: z.string().optional().describe('Expected HTTP method'),
   path: z.string().optional().describe('Expected request path'),
+  origin: z.string().optional().describe('Expected request origin (protocol + host + port)'),
   query: z
     .record(z.union([z.string(), z.number(), z.boolean(), z.array(z.union([z.string(), z.number(), z.boolean()]))]))
     .optional()
     .describe('Expected query parameters (strings, numbers, booleans, or arrays)'),
   headers: z.record(z.string()).optional().describe('Expected HTTP headers'),
+  headers_absent: z.array(z.string()).optional().describe('Headers that must NOT be present on the request'),
   body: z.any().optional().describe('Expected request body (partial match allowed)')
 });
 
@@ -30,10 +32,13 @@ export const MockDefinitionSchema = z.object({
 export const TestExpectationSchema = z.object({
   success: z.boolean().default(true).describe('Whether the tool call should succeed'),
   result: z.any().optional().describe('Expected exact result (partial match)'),
+  result_exact: z.any().optional().describe('Expected result with deep equality (no extra fields)'),
   result_schema: z.any().optional().describe('JSON schema to validate result against'),
   error_code: z.string().optional().describe('Expected error code if success is false'),
   error_message_regex: z.string().optional().describe('Regex to match error message'),
-  request: RequestExpectationSchema.optional().describe('Expected HTTP request details for the scenario')
+  request: RequestExpectationSchema.optional().describe('Expected HTTP request details for the scenario'),
+  requests: z.array(RequestExpectationSchema).optional().describe('Expected ordered list of HTTP requests'),
+  allow_additional_requests: z.boolean().optional().describe('If true, additional captured requests are allowed beyond expectations')
 });
 
 export const TestScenarioSchema = z.object({
