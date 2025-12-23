@@ -53,11 +53,11 @@ Deliverable:
 6) Proxy download behavior
    - [x] Add schema support for multi-request flows or composite mocks:
      - metadata endpoint -> download URL -> download response
-   - [ ] Validate:
+   - [x] Validate:
      - [x] same-origin enforcement
      - [x] `skip_auth` behavior
-     - [ ] `allowed_hosts`
-     - [ ] redirect limits
+     - [x] `allowed_hosts`
+     - [x] redirect limits
 
 7) Composite tools
    - [x] Add scenario support for composite steps:

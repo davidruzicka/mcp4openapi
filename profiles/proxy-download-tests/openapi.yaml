@@ -1,0 +1,23 @@
+openapi: 3.0.3
+info:
+  title: Proxy Download Test API
+  version: 1.0.0
+servers:
+  - url: https://mock-api-proxy-download-tests.com
+paths:
+  /files/{file_id}:
+    get:
+      operationId: getFileMetadata
+      parameters:
+        - name: file_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: File metadata
+          content:
+            application/json:
+              schema:
+                type: object
