@@ -4,9 +4,12 @@ import fs from 'fs';
 import { MCPServer } from '../mcp-server.js';
 import { OpenAPIParser } from '../openapi-parser.js';
 import { DynamicMockEngine } from './dynamic-mock-server.js';
-import { loadTestDefinitionSync } from './test-loader.js';
+import { loadTestDefinitionSync, validateTestAgainstProfile } from './test-loader.js';
 import { ProfileTestDefinition } from './test-schema.js';
 import { processTemplate } from './template-utils.js';
+import { Profile } from '../types/profile.js';
+import { ProfileLoader } from '../profile-loader.js';
+import { assertRequestMatches } from './request-assertions.js';
 
 // Helper to find test files
 function findTestFiles(dir: string): string[] {
@@ -47,6 +50,7 @@ testFiles.forEach(testFile => {
     let server: MCPServer;
     let mockEngine: DynamicMockEngine;
     let parser: OpenAPIParser;
+    let profile: Profile;
 
     beforeAll(async () => {
       const files = fs.readdirSync(testDir);
@@ -70,6 +74,10 @@ testFiles.forEach(testFile => {
 
       const fullProfilePath = path.join(testDir, profileJsonName);
       const fullSpecPath = path.join(testDir, openApiSpec);
+
+      const profileLoader = new ProfileLoader();
+      profile = await profileLoader.load(fullProfilePath);
+      validateTestAgainstProfile(testDef, profile);
 
       parser = new OpenAPIParser();
       await parser.load(fullSpecPath);
@@ -129,19 +137,19 @@ testFiles.forEach(testFile => {
           });
 
           if (response.error) {
-             // Convert JSON-RPC error to Error object for easier assertion matching
-             error = new Error(response.error.message);
-             (error as any).code = response.error.code;
+            // Convert JSON-RPC error to Error object for easier assertion matching
+            error = new Error(response.error.message);
+            (error as any).code = response.error.code;
           } else if (response.result) {
-             // Parse result from content text
-             if (response.result.content && response.result.content.length > 0) {
-                result = JSON.parse(response.result.content[0].text);
-             } else {
-                result = null; // Empty success
-             }
+            // Parse result from content text
+            if (response.result.content && response.result.content.length > 0) {
+              result = JSON.parse(response.result.content[0].text);
+            } else {
+              result = null; // Empty success
+            }
           } else {
-             // Unexpected response structure
-             error = new Error('Invalid JSON-RPC response');
+            // Unexpected response structure
+            error = new Error('Invalid JSON-RPC response');
           }
         } catch (e) {
           error = e;
@@ -149,24 +157,29 @@ testFiles.forEach(testFile => {
 
         // Assertions
         if (processedExpect.success) {
-           if (error) {
-             console.error(`Scenario '${scenario.name}' failed unexpectedly:`, error);
-           }
-           expect(error).toBeUndefined();
-           expect(result).toBeDefined();
+          if (error) {
+            console.error(`Scenario '${scenario.name}' failed unexpectedly:`, error);
+          }
+          expect(error).toBeUndefined();
+          expect(result).toBeDefined();
 
-           if (processedExpect.result) {
-             expect(result).toMatchObject(processedExpect.result);
-           }
+          if (processedExpect.result) {
+            expect(result).toMatchObject(processedExpect.result);
+          }
         } else {
-           expect(error).toBeDefined();
-           if (processedExpect.error_code) {
-             const msg = (error.message || '').toString();
-             expect(msg).toContain(processedExpect.error_code);
-           }
-           if (processedExpect.error_message_regex) {
-             expect(error.message).toMatch(new RegExp(processedExpect.error_message_regex));
-           }
+          expect(error).toBeDefined();
+          if (processedExpect.error_code) {
+            const msg = (error.message || '').toString();
+            expect(msg).toContain(processedExpect.error_code);
+          }
+          if (processedExpect.error_message_regex) {
+            expect(error.message).toMatch(new RegExp(processedExpect.error_message_regex));
+          }
+        }
+
+        if (processedExpect.request) {
+          const capturedRequests = mockEngine.getCapturedRequests();
+          assertRequestMatches(capturedRequests, processedExpect.request);
         }
       }, scenario.timeout_ms || 10000);
     });
