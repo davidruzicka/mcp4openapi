@@ -17,20 +17,20 @@ Principles:
 ## Phase 1 - Make generic tests enforce profile coverage
 
 1) Validate schema against profile
-   - [ ] Call `validateTestAgainstProfile()` in `generic-profile.test.ts` after loading the profile JSON.
-   - [ ] Fail fast if any scenario targets a missing tool or required params are missing.
+   - [x] Call `validateTestAgainstProfile()` in `generic-profile.test.ts` after loading the profile JSON.
+   - [x] Fail fast if any scenario targets a missing tool or required params are missing.
 
 2) Add coverage rules to schema
-   - [ ] Extend `ProfileTestDefinitionSchema` with:
+   - [x] Extend `ProfileTestDefinitionSchema` with:
      - `coverage`: { `require_all_actions`: boolean, `skip_actions`: Record<string, string> }
-   - [ ] For each tool, collect `operations` actions and compare with scenarios.
-   - [ ] If missing and not in `skip_actions`, fail the test with a clear report.
+   - [x] For each tool, collect `operations` actions and compare with scenarios.
+   - [x] If missing and not in `skip_actions`, fail the test with a clear report.
 
 3) Add request assertion support
-   - [ ] Extend schema with `expect.request`:
+   - [x] Extend schema with `expect.request`:
      - `method`, `path`, `query`, `headers`, `body`
-   - [ ] Capture requests in `DynamicMockEngine` and assert per-scenario.
-   - [ ] Use this to validate:
+   - [x] Capture requests in `DynamicMockEngine` and assert per-scenario.
+   - [x] Use this to validate:
      - `parameter_aliases` -> correct query/path usage
      - `send_response_fields_as_param` -> `fields` query
      - `array_format` -> query serialization
