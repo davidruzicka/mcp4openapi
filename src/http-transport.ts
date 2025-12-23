@@ -27,6 +27,7 @@ import type {
 import { isInitializeRequest } from './jsonrpc-validator.js';
 import { MetricsCollector } from './metrics.js';
 import { ExternalOAuthProvider } from './oauth-provider.js';
+import { securityHeaders } from './security-headers.js';
 import type { AuthInterceptor } from './types/profile.js';
 import { HTTP_STATUS, MIME_TYPES, OAUTH_PATHS, TIMEOUTS, OAUTH_RATE_LIMIT } from './constants.js';
 import { escapeHtmlSafe } from './validation-utils.js';
@@ -105,6 +106,9 @@ export class HttpTransport {
       });
       next();
     });
+
+    // Security headers (standard hardening)
+    this.app.use(securityHeaders);
 
     // DNS rebinding protection when binding to localhost
     // Deny requests with mismatched Host headers to prevent DNS rebinding attacks

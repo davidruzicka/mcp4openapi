@@ -1876,4 +1876,30 @@ describeIfListen('HttpTransport', () => {
       expect(isAllowed).toBe(true); // localhost always allowed
     });
   });
+
+  describe('Security Headers', () => {
+    it('should include standard security headers in responses', async () => {
+      const response = await request(app).get('/health');
+
+      expect(response.headers['x-content-type-options']).toBe('nosniff');
+      expect(response.headers['x-frame-options']).toBe('DENY');
+      expect(response.headers['content-security-policy']).toContain("default-src 'self'");
+      expect(response.headers['referrer-policy']).toBe('no-referrer');
+      expect(response.headers['permissions-policy']).toBe('interest-cohort=()');
+    });
+
+    it('should include HSTS header when X-Forwarded-Proto is https', async () => {
+      const response = await request(app)
+        .get('/health')
+        .set('X-Forwarded-Proto', 'https');
+
+      expect(response.headers['strict-transport-security']).toContain('max-age=31536000');
+    });
+
+    it('should not include HSTS header on plain HTTP', async () => {
+      const response = await request(app).get('/health');
+
+      expect(response.headers['strict-transport-security']).toBeUndefined();
+    });
+  });
 });
