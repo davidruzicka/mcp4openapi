@@ -1376,7 +1376,8 @@
       "arguments": {
         "action": "get_note",
         "project_id": "{{projectId}}",
-        "merge_request_iid": 1
+        "merge_request_iid": 1,
+        "note_id": 2
       },
       "mocks": [
         {
@@ -1915,7 +1916,15 @@
         }
       ],
       "expect": {
-        "success": true
+        "success": true,
+        "request": {
+          "method": "POST",
+          "path": "/projects/{{projectId}}/releases",
+          "body": {
+            "tag_name": "v1.0",
+            "name": "New"
+          }
+        }
       }
     },
     {
@@ -1959,7 +1968,15 @@
         }
       ],
       "expect": {
-        "success": true
+        "success": true,
+        "request": {
+          "method": "POST",
+          "path": "/projects/{{projectId}}/repository/tags",
+          "body": {
+            "tag_name": "v1.0",
+            "ref": "main"
+          }
+        }
       }
     },
     {
@@ -2003,7 +2020,15 @@
         }
       ],
       "expect": {
-        "success": true
+        "success": true,
+        "request": {
+          "method": "POST",
+          "path": "/projects/{{projectId}}/members",
+          "body": {
+            "user_id": 1,
+            "access_level": 30
+          }
+        }
       }
     },
     {

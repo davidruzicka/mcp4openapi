@@ -12,7 +12,7 @@ Principles:
 - Test schema: `src/testing/test-schema.ts`
 - Mock engine: `src/testing/dynamic-mock-server.ts`
 - Existing schema example: `profiles/gitlab/developer-profile.test.json`
-- Still hardcoded: `src/testing/mock-gitlab-server.ts`, `src/testing/youtrack-integration.test.ts`, plus E2E utilities.
+- Still hardcoded: `src/testing/mock-gitlab-server.ts`, plus E2E utilities.
 
 ## Phase 1 - Make generic tests enforce profile coverage
 
@@ -71,7 +71,7 @@ Deliverable:
 
 8) GitLab profile
    - [x] Expand `profiles/gitlab/developer-profile.test.json` to cover all tool actions.
-   - [ ] Use `expect.request` to assert parameter mapping and metadata exclusion.
+   - [x] Use `expect.request` to assert parameter mapping and metadata exclusion.
    - [ ] Keep E2E transport tests; remove redundant hardcoded mocks.
    - [ ] Replace `src/testing/mock-gitlab-server.ts` usage where possible.
 
@@ -81,7 +81,7 @@ Deliverable:
      - response_fields for nested content
      - proxy download flows
      - project custom fields
-   - [ ] Replace `src/testing/youtrack-integration.test.ts` with schema tests.
+   - [x] Replace `src/testing/youtrack-integration.test.ts` with schema tests (file not present).
 
 10) Semgrep or other profiles
    - [ ] Add `*.test.json` per profile.
