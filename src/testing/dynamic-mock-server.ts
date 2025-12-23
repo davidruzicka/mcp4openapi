@@ -3,10 +3,19 @@ import { setupServer, SetupServerApi } from 'msw/node';
 import { OpenAPIParser } from '../openapi-parser.js';
 import { MockDefinition } from './test-schema.js';
 
+export interface CapturedRequest {
+  method: string;
+  path: string;
+  query: Record<string, string | string[]>;
+  headers: Record<string, string>;
+  body?: unknown;
+}
+
 export class DynamicMockEngine {
   private parser: OpenAPIParser;
   private server: SetupServerApi;
   private baseUrl: string;
+  private capturedRequests: CapturedRequest[] = [];
 
   constructor(parser: OpenAPIParser, baseUrl: string) {
     this.parser = parser;
@@ -25,6 +34,11 @@ export class DynamicMockEngine {
 
   reset() {
     this.server.resetHandlers();
+    this.capturedRequests = [];
+  }
+
+  getCapturedRequests(): CapturedRequest[] {
+    return [...this.capturedRequests];
   }
 
   configureMocks(mocks: MockDefinition[]) {
@@ -70,7 +84,12 @@ export class DynamicMockEngine {
       // We cast to any to access dynamic method name
       const handlerGenerator = (http as any)[method];
 
-      const handler = handlerGenerator(fullUrl, async () => {
+      const handler = handlerGenerator(fullUrl, async ({ request }: { request: Request }) => {
+        const captured = await this.captureRequest(request);
+        if (captured) {
+          this.capturedRequests.push(captured);
+        }
+
         if (mock.response?.delay) {
           await delay(mock.response.delay);
         }
@@ -81,16 +100,16 @@ export class DynamicMockEngine {
 
         // If body is an object or array, treat as JSON
         if (body !== undefined && typeof body === 'object') {
-           return HttpResponse.json(body, { status, headers });
+          return HttpResponse.json(body, { status, headers });
         }
 
         // Otherwise treat as raw response (string, null, etc.)
         if (body === undefined) {
-             // 204 No Content must have empty body
-             if (status === 204) {
-                 return new HttpResponse(null, { status, headers });
-             }
-             return HttpResponse.json({}, { status, headers });
+          // 204 No Content must have empty body
+          if (status === 204) {
+            return new HttpResponse(null, { status, headers });
+          }
+          return HttpResponse.json({}, { status, headers });
         }
 
         return new HttpResponse(body, { status, headers });
@@ -100,5 +119,50 @@ export class DynamicMockEngine {
     }
 
     this.server.use(...handlers);
+  }
+
+  private async captureRequest(request: Request): Promise<CapturedRequest> {
+    const url = new URL(request.url);
+    const query: Record<string, string | string[]> = {};
+    for (const [key, value] of url.searchParams.entries()) {
+      if (query[key]) {
+        const existing = query[key];
+        query[key] = Array.isArray(existing) ? [...existing, value] : [existing, value];
+      } else {
+        query[key] = value;
+      }
+    }
+
+    const headers: Record<string, string> = {};
+    for (const [key, value] of request.headers.entries()) {
+      headers[key.toLowerCase()] = value;
+    }
+
+    const contentType = request.headers.get('content-type') || '';
+    let body: unknown;
+
+    if (request.method !== 'GET' && request.method !== 'HEAD') {
+      if (contentType.includes('application/json')) {
+        try {
+          body = await request.json();
+        } catch {
+          body = await request.text();
+        }
+      } else if (contentType.includes('application/x-www-form-urlencoded')) {
+        const textBody = await request.text();
+        body = Object.fromEntries(new URLSearchParams(textBody));
+      } else {
+        const textBody = await request.text();
+        body = textBody === '' ? undefined : textBody;
+      }
+    }
+
+    return {
+      method: request.method.toUpperCase(),
+      path: url.pathname,
+      query,
+      headers,
+      body
+    };
   }
 }
