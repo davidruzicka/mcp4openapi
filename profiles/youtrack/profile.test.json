@@ -5,7 +5,10 @@
     {
       "name": "Get Issue",
       "tool": "retrieve_content",
-      "arguments": { "action": "get_issue", "id": "ISSUE-123" },
+      "arguments": {
+        "action": "get_issue",
+        "id": "ISSUE-123"
+      },
       "mocks": [
         {
           "operationId": "get_/issues/{id}",
@@ -13,7 +16,14 @@
             "body": {
               "id": "ISSUE-123",
               "summary": "Test Issue",
-              "comments": [{ "text": "Test Comment", "author": { "login": "user1" } }]
+              "comments": [
+                {
+                  "text": "Test Comment",
+                  "author": {
+                    "login": "user1"
+                  }
+                }
+              ]
             }
           }
         }
@@ -22,33 +32,61 @@
         "success": true,
         "result": {
           "id": "ISSUE-123",
-          "comments": [{ "text": "Test Comment" }]
+          "comments": [
+            {
+              "text": "Test Comment"
+            }
+          ]
         }
       }
     },
     {
       "name": "Get Issue - Missing Id",
       "tool": "retrieve_content",
-      "arguments": { "action": "get_issue" },
+      "arguments": {
+        "action": "get_issue"
+      },
       "mocks": [],
-      "expect": { "success": false, "error_message_regex": "id" }
+      "expect": {
+        "success": false,
+        "error_message_regex": "id"
+      }
     },
     {
       "name": "List Issue Comments",
       "tool": "retrieve_content",
-      "arguments": { "action": "list_issue_comments", "id": "ISSUE-123" },
+      "arguments": {
+        "action": "list_issue_comments",
+        "id": "ISSUE-123"
+      },
       "mocks": [
         {
           "operationId": "get_/issues/{id}/comments",
-          "response": { "body": [{ "text": "Comment 1" }] }
+          "response": {
+            "body": [
+              {
+                "text": "Comment 1"
+              }
+            ]
+          }
         }
       ],
-      "expect": { "success": true, "result": [{ "text": "Comment 1" }] }
+      "expect": {
+        "success": true,
+        "result": [
+          {
+            "text": "Comment 1"
+          }
+        ]
+      }
     },
     {
       "name": "List Issue Comments - Response Fields",
       "tool": "retrieve_content",
-      "arguments": { "action": "list_issue_comments", "id": "ISSUE-123" },
+      "arguments": {
+        "action": "list_issue_comments",
+        "id": "ISSUE-123"
+      },
       "mocks": [
         {
           "operationId": "get_/issues/{id}/comments",
@@ -57,9 +95,19 @@
               {
                 "id": "c1",
                 "text": "Comment 1",
-                "author": { "login": "user1", "email": "hidden@example.com" },
+                "author": {
+                  "login": "user1",
+                  "email": "hidden@example.com"
+                },
                 "created": "2024-01-01",
-                "attachments": [{ "id": "a1", "name": "file", "url": "https://mock-api-youtrack-optimized.com/file", "token": "secret" }],
+                "attachments": [
+                  {
+                    "id": "a1",
+                    "name": "file",
+                    "url": "https://mock-api-youtrack-optimized.com/file",
+                    "token": "secret"
+                  }
+                ],
                 "internal": true
               }
             ]
@@ -72,24 +120,39 @@
           {
             "id": "c1",
             "text": "Comment 1",
-            "author": { "login": "user1" },
+            "author": {
+              "login": "user1"
+            },
             "created": "2024-01-01",
-            "attachments": [{ "id": "a1", "name": "file", "url": "https://mock-api-youtrack-optimized.com/file" }]
+            "attachments": [
+              {
+                "id": "a1",
+                "name": "file",
+                "url": "https://mock-api-youtrack-optimized.com/file"
+              }
+            ]
           }
         ],
         "request": {
           "method": "GET",
           "path": "/issues/ISSUE-123/comments",
           "origin": "https://mock-api-youtrack-optimized.com",
-          "headers": { "authorization": "Bearer test-token" },
-          "query": { "fields": "id,text,author(login),created,attachments(id,name,url)" }
+          "headers": {
+            "authorization": "Bearer test-token"
+          },
+          "query": {
+            "fields": "id,text,author(login),created,attachments(id,name,url)"
+          }
         }
       }
     },
     {
       "name": "Get Project",
       "tool": "retrieve_content",
-      "arguments": { "action": "get_project", "id": "PROJ" },
+      "arguments": {
+        "action": "get_project",
+        "id": "PROJ"
+      },
       "mocks": [
         {
           "operationId": "get_/admin/projects/{id}",
@@ -97,20 +160,39 @@
             "body": {
               "id": "PROJ",
               "name": "Project",
-              "customFields": [{ "field": { "name": "Priority" } }]
+              "customFields": [
+                {
+                  "field": {
+                    "name": "Priority"
+                  }
+                }
+              ]
             }
           }
         }
       ],
       "expect": {
         "success": true,
-        "result": { "id": "PROJ", "customFields": [{ "field": { "name": "Priority" } }] }
+        "result": {
+          "id": "PROJ",
+          "customFields": [
+            {
+              "field": {
+                "name": "Priority"
+              }
+            }
+          ]
+        }
       }
     },
     {
       "name": "Download Issue Attachment - Skip Auth",
       "tool": "retrieve_content",
-      "arguments": { "action": "download_issue_attachment", "id": "ISSUE-123", "issueAttachmentId": "att-1" },
+      "arguments": {
+        "action": "download_issue_attachment",
+        "id": "ISSUE-123",
+        "issueAttachmentId": "att-1"
+      },
       "mocks": [
         {
           "operationId": "get_/issues/{id}/attachments/{issueAttachmentId}",
@@ -127,28 +209,1346 @@
         {
           "path": "/attachments/log.txt",
           "method": "GET",
-          "response": { "body": "hello", "headers": { "content-type": "text/plain" } }
+          "response": {
+            "body": "hello",
+            "headers": {
+              "content-type": "text/plain"
+            }
+          }
         }
       ],
       "expect": {
         "success": true,
-        "result": { "fileName": "log.txt", "content": "aGVsbG8=" },
+        "result": {
+          "fileName": "log.txt",
+          "content": "aGVsbG8="
+        },
         "requests": [
           {
             "method": "GET",
             "path": "/issues/ISSUE-123/attachments/att-1",
             "origin": "https://mock-api-youtrack-optimized.com",
-            "headers": { "authorization": "Bearer test-token" }
+            "headers": {
+              "authorization": "Bearer test-token"
+            }
           },
           {
             "method": "GET",
             "path": "/attachments/log.txt",
             "origin": "https://mock-api-youtrack-optimized.com",
-            "headers_absent": ["authorization"]
+            "headers_absent": [
+              "authorization"
+            ]
           }
         ],
         "allow_additional_requests": false
       }
+    },
+    {
+      "name": "Download Article Attachment - Skip Auth",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "download_article_attachment",
+        "id": "ARTICLE-1",
+        "articleAttachmentId": "aa-1"
+      },
+      "mocks": [
+        {
+          "operationId": "get_/articles/{id}/attachments/{articleAttachmentId}",
+          "response": {
+            "body": {
+              "id": "aa-1",
+              "name": "article.txt",
+              "mimeType": "text/plain",
+              "size": 7,
+              "url": "https://mock-api-youtrack-optimized.com/attachments/article.txt"
+            }
+          }
+        },
+        {
+          "path": "/attachments/article.txt",
+          "method": "GET",
+          "response": {
+            "body": "article",
+            "headers": {
+              "content-type": "text/plain"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": {
+          "fileName": "article.txt",
+          "content": "YXJ0aWNsZQ=="
+        },
+        "requests": [
+          {
+            "method": "GET",
+            "path": "/articles/ARTICLE-1/attachments/aa-1",
+            "origin": "https://mock-api-youtrack-optimized.com",
+            "headers": {
+              "authorization": "Bearer test-token"
+            }
+          },
+          {
+            "method": "GET",
+            "path": "/attachments/article.txt",
+            "origin": "https://mock-api-youtrack-optimized.com",
+            "headers_absent": [
+              "authorization"
+            ]
+          }
+        ],
+        "allow_additional_requests": false
+      }
+    },
+    {
+      "name": "Retrieve Content - List Issues",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "list_issues"
+      },
+      "mocks": [
+        {
+          "operationId": "get_/issues",
+          "response": {
+            "status": 200,
+            "body": []
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Retrieve Content - Get Issue Comment",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "get_issue_comment",
+        "id": "ISSUE-123",
+        "issueCommentId": "comment-1"
+      },
+      "mocks": [
+        {
+          "operationId": "get_/issues/{id}/comments/{issueCommentId}",
+          "response": {
+            "status": 200,
+            "body": {
+              "id": "id-1"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Retrieve Content - List Issue Attachments",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "list_issue_attachments",
+        "id": "ISSUE-123"
+      },
+      "mocks": [
+        {
+          "operationId": "get_/issues/{id}/attachments",
+          "response": {
+            "status": 200,
+            "body": []
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Retrieve Content - Get Issue Attachment",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "get_issue_attachment",
+        "id": "ISSUE-123",
+        "issueAttachmentId": "att-1"
+      },
+      "mocks": [
+        {
+          "operationId": "get_/issues/{id}/attachments/{issueAttachmentId}",
+          "response": {
+            "status": 200,
+            "body": {
+              "id": "id-1"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Retrieve Content - List Issue Tags",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "list_issue_tags",
+        "id": "ISSUE-123"
+      },
+      "mocks": [
+        {
+          "operationId": "get_/issues/{id}/tags",
+          "response": {
+            "status": 200,
+            "body": []
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Retrieve Content - List Issue Links",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "list_issue_links",
+        "id": "ISSUE-123"
+      },
+      "mocks": [
+        {
+          "operationId": "get_/issues/{id}/links",
+          "response": {
+            "status": 200,
+            "body": []
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Retrieve Content - Get Issue Link",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "get_issue_link",
+        "id": "ISSUE-123",
+        "issueLinkId": "link-1"
+      },
+      "mocks": [
+        {
+          "operationId": "get_/issues/{id}/links/{issueLinkId}",
+          "response": {
+            "status": 200,
+            "body": {
+              "id": "id-1"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Retrieve Content - List Linked Issues",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "list_linked_issues",
+        "id": "ISSUE-123",
+        "issueLinkId": "link-1"
+      },
+      "mocks": [
+        {
+          "operationId": "get_/issues/{id}/links/{issueLinkId}/issues",
+          "response": {
+            "status": 200,
+            "body": []
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Retrieve Content - List Projects",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "list_projects"
+      },
+      "mocks": [
+        {
+          "operationId": "get_/admin/projects",
+          "response": {
+            "status": 200,
+            "body": []
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Retrieve Content - List Project Custom Fields",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "list_project_custom_fields",
+        "id": "ISSUE-123"
+      },
+      "mocks": [
+        {
+          "operationId": "get_/admin/projects/{id}/customFields",
+          "response": {
+            "status": 200,
+            "body": []
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Retrieve Content - Get Project Custom Field",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "get_project_custom_field",
+        "id": "ISSUE-123",
+        "projectCustomFieldId": "pcf-1"
+      },
+      "mocks": [
+        {
+          "operationId": "get_/admin/projects/{id}/customFields/{projectCustomFieldId}",
+          "response": {
+            "status": 200,
+            "body": {
+              "id": "id-1"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Retrieve Content - List Workitems",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "list_workitems"
+      },
+      "mocks": [
+        {
+          "operationId": "get_/workItems",
+          "response": {
+            "status": 200,
+            "body": []
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Retrieve Content - List Articles",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "list_articles"
+      },
+      "mocks": [
+        {
+          "operationId": "get_/articles",
+          "response": {
+            "status": 200,
+            "body": []
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Retrieve Content - Get Article",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "get_article",
+        "id": "ISSUE-123"
+      },
+      "mocks": [
+        {
+          "operationId": "get_/articles/{id}",
+          "response": {
+            "status": 200,
+            "body": {
+              "id": "id-1"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Retrieve Content - List Article Comments",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "list_article_comments",
+        "id": "ISSUE-123"
+      },
+      "mocks": [
+        {
+          "operationId": "get_/articles/{id}/comments",
+          "response": {
+            "status": 200,
+            "body": []
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Retrieve Content - List Article Attachments",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "list_article_attachments",
+        "id": "ISSUE-123"
+      },
+      "mocks": [
+        {
+          "operationId": "get_/articles/{id}/attachments",
+          "response": {
+            "status": 200,
+            "body": []
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Retrieve Content - Get Article Attachment",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "get_article_attachment",
+        "id": "ISSUE-123",
+        "articleAttachmentId": "aa-1"
+      },
+      "mocks": [
+        {
+          "operationId": "get_/articles/{id}/attachments/{articleAttachmentId}",
+          "response": {
+            "status": 200,
+            "body": {
+              "id": "id-1"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Retrieve Content - List Tags",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "list_tags"
+      },
+      "mocks": [
+        {
+          "operationId": "get_/tags",
+          "response": {
+            "status": 200,
+            "body": []
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Retrieve Content - Get Tag",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "get_tag",
+        "id": "ISSUE-123"
+      },
+      "mocks": [
+        {
+          "operationId": "get_/tags/{id}",
+          "response": {
+            "status": 200,
+            "body": {
+              "id": "id-1"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Retrieve Content - List Saved Queries",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "list_saved_queries"
+      },
+      "mocks": [
+        {
+          "operationId": "get_/savedQueries",
+          "response": {
+            "status": 200,
+            "body": []
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Retrieve Content - List Agiles",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "list_agiles"
+      },
+      "mocks": [
+        {
+          "operationId": "get_/agiles",
+          "response": {
+            "status": 200,
+            "body": []
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Retrieve Content - Get Agile",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "get_agile",
+        "id": "ISSUE-123"
+      },
+      "mocks": [
+        {
+          "operationId": "get_/agiles/{id}",
+          "response": {
+            "status": 200,
+            "body": {
+              "id": "id-1"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Retrieve Content - List Sprints",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "list_sprints",
+        "id": "ISSUE-123",
+        "agile_id": "test"
+      },
+      "mocks": [
+        {
+          "operationId": "get_/agiles/{id}/sprints",
+          "response": {
+            "status": 200,
+            "body": []
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Retrieve Content - List Users",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "list_users"
+      },
+      "mocks": [
+        {
+          "operationId": "get_/users",
+          "response": {
+            "status": 200,
+            "body": []
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Retrieve Content - Get User",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "get_user",
+        "id": "ISSUE-123"
+      },
+      "mocks": [
+        {
+          "operationId": "get_/users/{id}",
+          "response": {
+            "status": 200,
+            "body": {
+              "id": "id-1"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Retrieve Content - List Groups",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "list_groups"
+      },
+      "mocks": [
+        {
+          "operationId": "get_/groups",
+          "response": {
+            "status": 200,
+            "body": []
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Retrieve History - List Activities",
+      "tool": "retrieve_history",
+      "arguments": {
+        "action": "list_activities"
+      },
+      "mocks": [
+        {
+          "operationId": "get_/activities",
+          "response": {
+            "status": 200,
+            "body": []
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Retrieve History - Get Activity",
+      "tool": "retrieve_history",
+      "arguments": {
+        "action": "get_activity",
+        "id": "ISSUE-123"
+      },
+      "mocks": [
+        {
+          "operationId": "get_/activities/{id}",
+          "response": {
+            "status": 200,
+            "body": {
+              "id": "id-1"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Retrieve History - List Activities Page",
+      "tool": "retrieve_history",
+      "arguments": {
+        "action": "list_activities_page"
+      },
+      "mocks": [
+        {
+          "operationId": "get_/activitiesPage",
+          "response": {
+            "status": 200,
+            "body": []
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Retrieve History - List Issue Activities",
+      "tool": "retrieve_history",
+      "arguments": {
+        "action": "list_issue_activities",
+        "id": "ISSUE-123"
+      },
+      "mocks": [
+        {
+          "operationId": "get_/issues/{id}/activities",
+          "response": {
+            "status": 200,
+            "body": []
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Create Content - Create Issue",
+      "tool": "create_content",
+      "arguments": {
+        "action": "create_issue",
+        "summary": "Test issue",
+        "project": {
+          "shortName": "PROJ"
+        }
+      },
+      "mocks": [
+        {
+          "operationId": "post_/issues",
+          "response": {
+            "status": 200,
+            "body": {
+              "id": "id-1"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Create Content - Create Issue Comment",
+      "tool": "create_content",
+      "arguments": {
+        "action": "create_issue_comment",
+        "id": "ISSUE-123",
+        "text": "Test text"
+      },
+      "mocks": [
+        {
+          "operationId": "post_/issues/{id}/comments",
+          "response": {
+            "status": 200,
+            "body": {
+              "id": "id-1"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Create Content - Create Article Comment",
+      "tool": "create_content",
+      "arguments": {
+        "action": "create_article_comment",
+        "id": "ISSUE-123",
+        "text": "Test text"
+      },
+      "mocks": [
+        {
+          "operationId": "post_/articles/{id}/comments",
+          "response": {
+            "status": 200,
+            "body": {
+              "id": "id-1"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Create Content - Log Time",
+      "tool": "create_content",
+      "arguments": {
+        "action": "log_time",
+        "id": "ISSUE-123",
+        "duration": "1h",
+        "date": "2024-01-01"
+      },
+      "mocks": [
+        {
+          "operationId": "post_/issues/{id}/timeTracking/workItems",
+          "response": {
+            "status": 200,
+            "body": {
+              "id": "id-1"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Create Content - Add Issue Tag",
+      "tool": "create_content",
+      "arguments": {
+        "action": "add_issue_tag",
+        "id": "ISSUE-123",
+        "tag": {
+          "id": "tag-1"
+        }
+      },
+      "mocks": [
+        {
+          "operationId": "post_/issues/{id}/tags",
+          "response": {
+            "status": 200,
+            "body": {
+              "id": "id-1"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Create Content - Add Article Tag",
+      "tool": "create_content",
+      "arguments": {
+        "action": "add_article_tag",
+        "id": "ISSUE-123",
+        "tag": {
+          "id": "tag-1"
+        }
+      },
+      "mocks": [
+        {
+          "operationId": "post_/articles/{id}/tags",
+          "response": {
+            "status": 200,
+            "body": {
+              "id": "id-1"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Create Content - Create Tag",
+      "tool": "create_content",
+      "arguments": {
+        "action": "create_tag",
+        "name": "Test name"
+      },
+      "mocks": [
+        {
+          "operationId": "post_/tags",
+          "response": {
+            "status": 200,
+            "body": {
+              "id": "id-1"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Create Content - Add Issue Link",
+      "tool": "create_content",
+      "arguments": {
+        "action": "add_issue_link",
+        "id": "ISSUE-123",
+        "issueLinkId": "link-1",
+        "issues": [
+          "ISSUE-456"
+        ]
+      },
+      "mocks": [
+        {
+          "operationId": "post_/issues/{id}/links/{issueLinkId}/issues",
+          "response": {
+            "status": 200,
+            "body": {
+              "id": "id-1"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Create Content - Upload Issue Attachment",
+      "tool": "create_content",
+      "arguments": {
+        "action": "upload_issue_attachment",
+        "id": "ISSUE-123",
+        "fileName": "test.txt",
+        "base64Content": "dGVzdA=="
+      },
+      "mocks": [
+        {
+          "operationId": "post_/issues/{id}/attachments",
+          "response": {
+            "status": 200,
+            "body": {
+              "id": "id-1"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Create Content - Upload Article Attachment",
+      "tool": "create_content",
+      "arguments": {
+        "action": "upload_article_attachment",
+        "id": "ISSUE-123",
+        "fileName": "test.txt",
+        "base64Content": "dGVzdA=="
+      },
+      "mocks": [
+        {
+          "operationId": "post_/articles/{id}/attachments",
+          "response": {
+            "status": 200,
+            "body": {
+              "id": "id-1"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Update Content - Update Issue",
+      "tool": "update_content",
+      "arguments": {
+        "action": "update_issue",
+        "id": "ISSUE-123"
+      },
+      "mocks": [
+        {
+          "operationId": "post_/issues/{id}",
+          "response": {
+            "status": 200,
+            "body": {
+              "id": "id-1"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Update Content - Update Issue Comment",
+      "tool": "update_content",
+      "arguments": {
+        "action": "update_issue_comment",
+        "id": "ISSUE-123",
+        "issueCommentId": "comment-1",
+        "text": "Test text"
+      },
+      "mocks": [
+        {
+          "operationId": "post_/issues/{id}/comments/{issueCommentId}",
+          "response": {
+            "status": 200,
+            "body": {
+              "id": "id-1"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Update Content - Update Article Comment",
+      "tool": "update_content",
+      "arguments": {
+        "action": "update_article_comment",
+        "id": "ISSUE-123",
+        "articleCommentId": "ac-1",
+        "text": "Test text"
+      },
+      "mocks": [
+        {
+          "operationId": "post_/articles/{id}/comments/{articleCommentId}",
+          "response": {
+            "status": 200,
+            "body": {
+              "id": "id-1"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Update Content - Update Work Item",
+      "tool": "update_content",
+      "arguments": {
+        "action": "update_work_item",
+        "id": "ISSUE-123",
+        "issueWorkItemId": "work-1",
+        "duration": "1h"
+      },
+      "mocks": [
+        {
+          "operationId": "post_/issues/{id}/timeTracking/workItems/{issueWorkItemId}",
+          "response": {
+            "status": 200,
+            "body": {
+              "id": "id-1"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Update Content - Update Issue Attachment",
+      "tool": "update_content",
+      "arguments": {
+        "action": "update_issue_attachment",
+        "id": "ISSUE-123",
+        "issueAttachmentId": "att-1",
+        "name": "Test name"
+      },
+      "mocks": [
+        {
+          "operationId": "post_/issues/{id}/attachments/{issueAttachmentId}",
+          "response": {
+            "status": 200,
+            "body": {
+              "id": "id-1"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Update Content - Update Tag",
+      "tool": "update_content",
+      "arguments": {
+        "action": "update_tag",
+        "id": "ISSUE-123",
+        "name": "Test name"
+      },
+      "mocks": [
+        {
+          "operationId": "post_/tags/{id}",
+          "response": {
+            "status": 200,
+            "body": {
+              "id": "id-1"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Delete Content - Delete Issue",
+      "tool": "delete_content",
+      "arguments": {
+        "action": "delete_issue",
+        "id": "ISSUE-123"
+      },
+      "mocks": [
+        {
+          "operationId": "delete_/issues/{id}",
+          "response": {
+            "status": 204
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Delete Content - Delete Issue Comment",
+      "tool": "delete_content",
+      "arguments": {
+        "action": "delete_issue_comment",
+        "id": "ISSUE-123",
+        "issueCommentId": "comment-1"
+      },
+      "mocks": [
+        {
+          "operationId": "delete_/issues/{id}/comments/{issueCommentId}",
+          "response": {
+            "status": 204
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Delete Content - Delete Article Comment",
+      "tool": "delete_content",
+      "arguments": {
+        "action": "delete_article_comment",
+        "id": "ISSUE-123",
+        "articleCommentId": "ac-1"
+      },
+      "mocks": [
+        {
+          "operationId": "delete_/articles/{id}/comments/{articleCommentId}",
+          "response": {
+            "status": 204
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Delete Content - Delete Work Item",
+      "tool": "delete_content",
+      "arguments": {
+        "action": "delete_work_item",
+        "id": "ISSUE-123",
+        "issueWorkItemId": "work-1"
+      },
+      "mocks": [
+        {
+          "operationId": "delete_/issues/{id}/timeTracking/workItems/{issueWorkItemId}",
+          "response": {
+            "status": 204
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Delete Content - Delete Issue Attachment",
+      "tool": "delete_content",
+      "arguments": {
+        "action": "delete_issue_attachment",
+        "id": "ISSUE-123",
+        "issueAttachmentId": "att-1"
+      },
+      "mocks": [
+        {
+          "operationId": "delete_/issues/{id}/attachments/{issueAttachmentId}",
+          "response": {
+            "status": 204
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Delete Content - Delete Article Attachment",
+      "tool": "delete_content",
+      "arguments": {
+        "action": "delete_article_attachment",
+        "id": "ISSUE-123",
+        "articleAttachmentId": "aa-1"
+      },
+      "mocks": [
+        {
+          "operationId": "delete_/articles/{id}/attachments/{articleAttachmentId}",
+          "response": {
+            "status": 204
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Delete Content - Remove Issue Tag",
+      "tool": "delete_content",
+      "arguments": {
+        "action": "remove_issue_tag",
+        "id": "ISSUE-123",
+        "tagId": "tag-1"
+      },
+      "mocks": [
+        {
+          "operationId": "delete_/issues/{id}/tags/{tagId}",
+          "response": {
+            "status": 204
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Delete Content - Remove Article Tag",
+      "tool": "delete_content",
+      "arguments": {
+        "action": "remove_article_tag",
+        "id": "ISSUE-123",
+        "tagId": "tag-1"
+      },
+      "mocks": [
+        {
+          "operationId": "delete_/articles/{id}/tags/{tagId}",
+          "response": {
+            "status": 204
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Delete Content - Delete Tag",
+      "tool": "delete_content",
+      "arguments": {
+        "action": "delete_tag",
+        "id": "ISSUE-123",
+        "tagId": "tag-1"
+      },
+      "mocks": [
+        {
+          "operationId": "delete_/tags/{id}",
+          "response": {
+            "status": 204
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Delete Content - Remove Issue Link",
+      "tool": "delete_content",
+      "arguments": {
+        "action": "remove_issue_link",
+        "id": "ISSUE-123",
+        "issueLinkId": "link-1",
+        "issueId": "ISSUE-456"
+      },
+      "mocks": [
+        {
+          "operationId": "delete_/issues/{id}/links/{issueLinkId}/issues/{issueId}",
+          "response": {
+            "status": 204
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Run Commands - Execute Command",
+      "tool": "run_commands",
+      "arguments": {
+        "action": "execute_command",
+        "query": "project: PROJ",
+        "command": "state: Open"
+      },
+      "mocks": [
+        {
+          "operationId": "post_/commands",
+          "response": {
+            "status": 200,
+            "body": {
+              "id": "id-1"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Run Commands - Assist Command",
+      "tool": "run_commands",
+      "arguments": {
+        "action": "assist_command",
+        "text": "Test text"
+      },
+      "mocks": [
+        {
+          "operationId": "post_/commands/assist",
+          "response": {
+            "status": 200,
+            "body": {
+              "id": "id-1"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
     }
-  ]
+  ],
+  "coverage": {
+    "require_all_actions": true,
+    "skip_actions": {}
+  }
 }
