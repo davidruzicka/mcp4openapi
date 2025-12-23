@@ -1,17 +1,30 @@
 import { z } from 'zod';
 
+const RequestExpectationSchema = z.object({
+  method: z.string().optional().describe('Expected HTTP method'),
+  path: z.string().optional().describe('Expected request path'),
+  query: z
+    .record(z.union([z.string(), z.number(), z.boolean(), z.array(z.union([z.string(), z.number(), z.boolean()]))]))
+    .optional()
+    .describe('Expected query parameters (strings, numbers, booleans, or arrays)'),
+  headers: z.record(z.string()).optional().describe('Expected HTTP headers'),
+  body: z.any().optional().describe('Expected request body (partial match allowed)')
+});
+
 export const MockDefinitionSchema = z.object({
   operationId: z.string().optional().describe('The OpenAPI operationId to mock'),
   path: z.string().optional().describe('Raw URL path pattern (e.g. /api/v4/projects)'),
   method: z.string().optional().describe('HTTP method (GET, POST, etc.)'),
-  response: z.object({
-    status: z.number().optional().default(200),
-    body: z.any().optional(),
-    headers: z.record(z.string()).optional(),
-    delay: z.number().optional().describe('Response delay in milliseconds')
-  }).optional()
+  response: z
+    .object({
+      status: z.number().optional().default(200),
+      body: z.any().optional(),
+      headers: z.record(z.string()).optional(),
+      delay: z.number().optional().describe('Response delay in milliseconds')
+    })
+    .optional()
 }).refine(data => data.operationId || (data.path && data.method), {
-  message: "Either operationId or (path and method) must be provided"
+  message: 'Either operationId or (path and method) must be provided'
 });
 
 export const TestExpectationSchema = z.object({
@@ -19,7 +32,8 @@ export const TestExpectationSchema = z.object({
   result: z.any().optional().describe('Expected exact result (partial match)'),
   result_schema: z.any().optional().describe('JSON schema to validate result against'),
   error_code: z.string().optional().describe('Expected error code if success is false'),
-  error_message_regex: z.string().optional().describe('Regex to match error message')
+  error_message_regex: z.string().optional().describe('Regex to match error message'),
+  request: RequestExpectationSchema.optional().describe('Expected HTTP request details for the scenario')
 });
 
 export const TestScenarioSchema = z.object({
@@ -32,15 +46,28 @@ export const TestScenarioSchema = z.object({
   timeout_ms: z.number().optional()
 });
 
+const CoverageRulesSchema = z
+  .object({
+    require_all_actions: z.boolean().default(false),
+    skip_actions: z.record(z.string().min(1)).default({})
+  })
+  .default({
+    require_all_actions: false,
+    skip_actions: {}
+  });
+
 export const ProfileTestDefinitionSchema = z.object({
   $schema: z.string().optional(),
   profile_name: z.string().optional(),
   variables: z.record(z.any()).optional().describe('Global variables for templating'),
   global_mocks: z.array(MockDefinitionSchema).optional().describe('Default mocks applied to all scenarios'),
-  scenarios: z.array(TestScenarioSchema)
+  scenarios: z.array(TestScenarioSchema),
+  coverage: CoverageRulesSchema
 });
 
+export type RequestExpectation = z.infer<typeof RequestExpectationSchema>;
 export type MockDefinition = z.infer<typeof MockDefinitionSchema>;
 export type TestExpectation = z.infer<typeof TestExpectationSchema>;
 export type TestScenario = z.infer<typeof TestScenarioSchema>;
+export type CoverageRules = z.infer<typeof CoverageRulesSchema>;
 export type ProfileTestDefinition = z.infer<typeof ProfileTestDefinitionSchema>;
