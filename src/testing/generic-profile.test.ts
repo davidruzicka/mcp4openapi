@@ -9,7 +9,7 @@ import { ProfileTestDefinition } from './test-schema.js';
 import { processTemplate } from './template-utils.js';
 import { Profile } from '../types/profile.js';
 import { ProfileLoader } from '../profile-loader.js';
-import { assertRequestMatches } from './request-assertions.js';
+import { assertRequestMatches, assertRequestsSequence } from './request-assertions.js';
 
 // Helper to find test files
 function findTestFiles(dir: string): string[] {
@@ -91,7 +91,7 @@ testFiles.forEach(testFile => {
 
       server = new MCPServer();
       await server.initialize(fullSpecPath, fullProfilePath);
-    });
+    }, 30000);
 
     afterAll(() => {
       mockEngine?.stop();
@@ -166,6 +166,10 @@ testFiles.forEach(testFile => {
           if (processedExpect.result) {
             expect(result).toMatchObject(processedExpect.result);
           }
+
+          if (processedExpect.result_exact) {
+            expect(result).toEqual(processedExpect.result_exact);
+          }
         } else {
           expect(error).toBeDefined();
           if (processedExpect.error_code) {
@@ -177,8 +181,10 @@ testFiles.forEach(testFile => {
           }
         }
 
-        if (processedExpect.request) {
-          const capturedRequests = mockEngine.getCapturedRequests();
+        const capturedRequests = mockEngine.getCapturedRequests();
+        if (processedExpect.requests) {
+          assertRequestsSequence(capturedRequests, processedExpect.requests, processedExpect.allow_additional_requests);
+        } else if (processedExpect.request) {
           assertRequestMatches(capturedRequests, processedExpect.request);
         }
       }, scenario.timeout_ms || 10000);

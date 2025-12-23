@@ -40,6 +40,7 @@ describe('DynamicMockEngine', () => {
     expect(captured).toHaveLength(1);
     expect(captured[0].method).toBe('POST');
     expect(captured[0].path).toBe('/resource/123');
+    expect(captured[0].origin).toBe('https://mock.local');
     expect(captured[0].query.flag).toEqual(['true', 'false']);
     expect(captured[0].headers['x-test']).toBe('yes');
     expect(captured[0].body).toEqual({ value: 1 });
