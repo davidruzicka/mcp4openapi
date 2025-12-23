@@ -70,14 +70,14 @@ Deliverable:
 ## Phase 3 - Migrate profiles (one by one)
 
 8) GitLab profile
-   - [ ] Expand `profiles/gitlab/developer-profile.test.json` to cover all tool actions.
+   - [x] Expand `profiles/gitlab/developer-profile.test.json` to cover all tool actions.
    - [ ] Use `expect.request` to assert parameter mapping and metadata exclusion.
    - [ ] Keep E2E transport tests; remove redundant hardcoded mocks.
    - [ ] Replace `src/testing/mock-gitlab-server.ts` usage where possible.
 
 9) YouTrack profile
-   - [ ] Add `profiles/youtrack/profile.test.json` (new).
-   - [ ] Cover:
+   - [x] Add `profiles/youtrack/profile.test.json` (new).
+   - [x] Cover:
      - response_fields for nested content
      - proxy download flows
      - project custom fields
