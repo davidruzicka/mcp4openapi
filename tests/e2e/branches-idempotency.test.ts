@@ -54,7 +54,7 @@ describeIfListen('Branch Protect/Unprotect Idempotency E2E', () => {
   });
 
   it('protect / unprotect actions are idempotent', async () => {
-    // Branch starts unprotected in fixtures (feature/new-feature)
+    // Branch starts unprotected in the mock server state (feature/new-feature)
     const protectFirst = await mcp.callTool('manage_branches', {
       action: 'protect',
       project_id: '12345',

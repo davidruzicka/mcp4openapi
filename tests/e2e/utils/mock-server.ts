@@ -1,19 +1,19 @@
 /**
  * Standalone mock server for E2E tests
- * 
- * Why: Creates a real HTTP server from MSW handlers for process-based testing.
+ *
+ * Why: Creates a real HTTP server for process-based testing.
  * The MCP server runs as a separate process and needs actual network endpoints.
  */
 
-import { createServer as createMswServer } from '@mswjs/http-middleware';
-import { Server } from 'http';
+import express, { Request, Response } from 'express';
+import { createServer, Server } from 'http';
 import { AddressInfo } from 'net';
-import {
-  createGitLabHandlers,
-  createOAuthHandlers,
-  OAuthConfig,
-  DEFAULT_BASE_URL,
-} from '../../../src/testing/mock-gitlab-server.js';
+
+export interface OAuthConfig {
+  accessToken: string;
+  refreshToken: string;
+  expiresIn: number;
+}
 
 export interface MockServerConfig {
   /** Port to listen on (0 = random available port) */
@@ -37,6 +37,28 @@ export interface MockServerInstance {
   stop: () => Promise<void>;
 }
 
+interface BranchState {
+  name: string;
+  protected: boolean;
+}
+
+function getBaseUrl(request: Request): string {
+  return `${request.protocol}://${request.get('host')}`;
+}
+
+function respondUnsupportedGrant(res: Response): void {
+  res.status(400).json({ error: 'unsupported_grant_type' });
+}
+
+function buildRedirectUrl(redirectUri: string, state?: string): string {
+  const url = new URL(redirectUri);
+  url.searchParams.set('code', 'mock-code');
+  if (state) {
+    url.searchParams.set('state', state);
+  }
+  return url.toString();
+}
+
 /**
  * Start a standalone mock server with GitLab API and OAuth endpoints
  */
@@ -45,54 +67,101 @@ export async function startStandaloneMockServer(
 ): Promise<MockServerInstance> {
   const { port = 0, apiBasePath = '/api/v4' } = config;
 
-  // We'll determine the actual URL after the server starts
-  const tempBaseUrl = `http://localhost${apiBasePath}`;
-  
-  // Create handlers - we'll need to recreate them with the actual URL
-  const gitlabHandlers = createGitLabHandlers(tempBaseUrl);
-  
-  // Create MSW-based Express server
-  const httpServer = createMswServer(...gitlabHandlers);
+  const app = express();
+  app.use(express.json());
+  app.use(express.urlencoded({ extended: false }));
+
+  const branches = new Map<string, BranchState>();
+  branches.set('feature/new-feature', { name: 'feature/new-feature', protected: false });
+
+  const apiRouter = express.Router();
+
+  apiRouter.get('/projects/:id/repository/branches', (_req, res) => {
+    res.json(Array.from(branches.values()));
+  });
+
+  apiRouter.put('/projects/:id/repository/branches/:branch/protect', (req, res) => {
+    const branchName = decodeURIComponent(req.params.branch);
+    const current = branches.get(branchName) ?? { name: branchName, protected: false };
+    const updated = { ...current, protected: true };
+    branches.set(branchName, updated);
+    res.json(updated);
+  });
+
+  apiRouter.put('/projects/:id/repository/branches/:branch/unprotect', (req, res) => {
+    const branchName = decodeURIComponent(req.params.branch);
+    const current = branches.get(branchName) ?? { name: branchName, protected: false };
+    const updated = { ...current, protected: false };
+    branches.set(branchName, updated);
+    res.json(updated);
+  });
+
+  app.use(apiBasePath, apiRouter);
+
+  if (config.oauth) {
+    app.get('/.well-known/oauth-authorization-server', (req, res) => {
+      const baseUrl = getBaseUrl(req);
+      res.json({
+        authorization_endpoint: `${baseUrl}/oauth/authorize`,
+        token_endpoint: `${baseUrl}/oauth/token`,
+      });
+    });
+
+    app.get('/oauth/authorize', (req, res) => {
+      const redirectUri = String(req.query.redirect_uri || '');
+      if (!redirectUri) {
+        res.status(400).json({ error: 'invalid_request' });
+        return;
+      }
+      const state = req.query.state ? String(req.query.state) : undefined;
+      res.redirect(302, buildRedirectUrl(redirectUri, state));
+    });
+
+    app.post('/oauth/token', (req, res) => {
+      const grantType = String(req.body?.grant_type || '');
+      if (grantType === 'authorization_code') {
+        res.json({
+          access_token: config.oauth?.accessToken ?? 'mock-access-token',
+          refresh_token: config.oauth?.refreshToken ?? 'mock-refresh-token',
+          token_type: 'Bearer',
+          expires_in: config.oauth?.expiresIn ?? 3600,
+        });
+        return;
+      }
+
+      if (grantType === 'refresh_token') {
+        res.json({
+          access_token: `refreshed-${config.oauth?.accessToken ?? 'mock-access-token'}`,
+          refresh_token: config.oauth?.refreshToken ?? 'mock-refresh-token',
+          token_type: 'Bearer',
+          expires_in: config.oauth?.expiresIn ?? 3600,
+        });
+        return;
+      }
+
+      respondUnsupportedGrant(res);
+    });
+  }
+
+  const server = createServer(app);
 
   return new Promise((resolve, reject) => {
-    const server = httpServer.listen(port, '127.0.0.1', () => {
+    server.listen(port, '127.0.0.1', () => {
       const address = server.address() as AddressInfo;
       const actualPort = address.port;
       const baseUrl = `http://127.0.0.1:${actualPort}`;
 
-      // Now recreate handlers with correct URLs
-      const actualGitlabUrl = `${baseUrl}${apiBasePath}`;
-      const actualGitlabHandlers = createGitLabHandlers(actualGitlabUrl);
-      
-      let oauthHandlers: ReturnType<typeof createOAuthHandlers> = [];
-      if (config.oauth) {
-        const oauthConfig: OAuthConfig = {
-          ...config.oauth,
-          oauthBaseUrl: baseUrl,
-        };
-        oauthHandlers = createOAuthHandlers(oauthConfig);
-      }
-
-      // Close the initial server and start a new one with correct handlers
-      server.close(() => {
-        const finalServer = createMswServer(...oauthHandlers, ...actualGitlabHandlers);
-        
-        const newServer = finalServer.listen(actualPort, '127.0.0.1', () => {
-          resolve({
-            server: newServer,
-            port: actualPort,
-            gitlabApiUrl: actualGitlabUrl,
-            oauthUrl: baseUrl,
-            stop: () => new Promise<void>((res, rej) => {
-              newServer.close((err) => {
-                if (err) rej(err);
-                else res();
-              });
-            }),
+      resolve({
+        server,
+        port: actualPort,
+        gitlabApiUrl: `${baseUrl}${apiBasePath}`,
+        oauthUrl: baseUrl,
+        stop: () => new Promise<void>((res, rej) => {
+          server.close((err) => {
+            if (err) rej(err);
+            else res();
           });
-        });
-
-        newServer.on('error', reject);
+        }),
       });
     });
 
@@ -105,7 +174,7 @@ export async function startStandaloneMockServer(
  */
 export async function getAvailablePort(): Promise<number> {
   return new Promise((resolve, reject) => {
-    const server = require('net').createServer();
+    const server = createServer();
     server.listen(0, '127.0.0.1', () => {
       const port = (server.address() as AddressInfo).port;
       server.close(() => resolve(port));
