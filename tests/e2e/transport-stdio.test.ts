@@ -85,26 +85,20 @@ describeIfListen('E2E: stdio transport', () => {
     await mcp.start();
     await mcp.initialize();
 
-    // Find a tool that lists something (e.g., badges, branches)
-    const toolsResponse = await mcp.listTools();
-    const tools = (toolsResponse.result as { tools: Array<{ name: string }> }).tools;
-    
-    // Look for a simple GET tool
-    const listTool = tools.find(t => 
-      t.name.includes('badge') || 
-      t.name.includes('branch') ||
-      t.name.includes('issue')
-    );
+    const callResponse = await mcp.callTool('manage_branches', {
+      action: 'list',
+      project_id: '12345',
+    });
 
-    if (listTool) {
-      const callResponse = await mcp.callTool(listTool.name, {
-        id: 'my-org/my-project',
-        action: 'list',
-      });
+    expect(callResponse.jsonrpc).toBe('2.0');
+    expect(callResponse.error).toBeUndefined();
 
-      // Response should be valid JSON-RPC (may have error if mock doesn't match exactly)
-      expect(callResponse.jsonrpc).toBe('2.0');
-    }
+    const content = (callResponse.result as { content: Array<{ text?: string }> }).content?.[0]?.text;
+    expect(content).toBeDefined();
+
+    const data = JSON.parse(content || '{}') as Array<{ name: string }>;
+    expect(Array.isArray(data)).toBe(true);
+    expect(data.length).toBeGreaterThan(0);
   }, 20000);
 
   it('should handle invalid tool call gracefully', async () => {

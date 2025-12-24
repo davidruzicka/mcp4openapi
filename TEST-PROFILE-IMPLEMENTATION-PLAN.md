@@ -72,8 +72,8 @@ Deliverable:
 8) GitLab profile
    - [x] Expand `profiles/gitlab/developer-profile.test.json` to cover all tool actions.
    - [x] Use `expect.request` to assert parameter mapping and metadata exclusion.
-   - [ ] Keep E2E transport tests; remove redundant hardcoded mocks.
-   - [ ] Replace `src/testing/mock-gitlab-server.ts` usage where possible.
+   - [x] Keep E2E transport tests; remove redundant hardcoded mocks.
+   - [x] Replace `src/testing/mock-gitlab-server.ts` usage where possible.
 
 9) YouTrack profile
    - [x] Add `profiles/youtrack/profile.test.json` (new).
@@ -84,8 +84,8 @@ Deliverable:
    - [x] Replace `src/testing/youtrack-integration.test.ts` with schema tests (file not present).
 
 10) Semgrep or other profiles
-   - [ ] Add `*.test.json` per profile.
-   - [ ] Ensure full action coverage or explicit skips.
+   - [x] Add `*.test.json` per profile.
+   - [x] Ensure full action coverage or explicit skips.
 
 Deliverable:
 - Each profile has a schema test file with complete action coverage.
@@ -93,13 +93,13 @@ Deliverable:
 ## Phase 4 - Enforce coverage in CI
 
 11) Add a CI gate
-   - [ ] New test or script that verifies:
+   - [x] New test or script that verifies:
      - every profile has a `*.test.json`
      - no uncovered actions remain
 
 12) Remove legacy tests
-   - [ ] Remove or simplify hardcoded profile tests that are fully superseded.
-   - [ ] Keep low-level unit tests (schema validator, parser, errors).
+   - [x] Remove or simplify hardcoded profile tests that are fully superseded.
+   - [x] Keep low-level unit tests (schema validator, parser, errors).
 
 ## Open Questions
 - Do we want to require coverage for destructive actions by default?
