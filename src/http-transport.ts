@@ -130,6 +130,27 @@ export class HttpTransport {
     // JSON body parser
     this.app.use(express.json());
 
+    // Security Headers
+    this.app.use((req: Request, res: Response, next: NextFunction) => {
+      // HSTS: 1 year, include subdomains
+      if (this.config.host !== 'localhost' && this.config.host !== '127.0.0.1') {
+        res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+      }
+
+      // Prevent MIME sniffing
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+
+      // Prevent clickjacking
+      res.setHeader('X-Frame-Options', 'DENY');
+
+      // CSP: Restrict sources to self
+      // Note: We use a minimal policy suitable for an API server.
+      // default-src 'self' prevents loading resources from external domains.
+      res.setHeader('Content-Security-Policy', "default-src 'self'; frame-ancestors 'none'; object-src 'none'; base-uri 'none';");
+
+      next();
+    });
+
     // Metrics: Track request start time
     this.app.use((req: Request, res: Response, next: NextFunction) => {
       (req as any).startTime = Date.now();
