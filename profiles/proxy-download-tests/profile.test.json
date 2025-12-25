@@ -147,5 +147,9 @@
         "allow_additional_requests": false
       }
     }
-  ]
+  ],
+  "coverage": {
+    "require_all_actions": true,
+    "skip_actions": {}
+  }
 }
