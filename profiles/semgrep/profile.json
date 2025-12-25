@@ -4,7 +4,7 @@
   "description": "MCP tools for Semgrep security platform workflows. Reduces 20 API operations to 10 MCP tools.",
   
   "parameter_aliases": {
-    "deploymentId": ["deployment_id", "deploymentSlug", "deployment_slug"],
+    "deploymentId": ["deployment_id"],
     "deploymentSlug": ["deployment_slug"],
     "projectName": ["project_name", "project"],
     "repositoryId": ["repository_id", "repo_id"],
