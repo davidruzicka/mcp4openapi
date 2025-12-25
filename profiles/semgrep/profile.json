@@ -239,6 +239,11 @@
         "list": "SecretsService_ListSecretsPath"
       },
       "parameters": {
+        "deployment_id": {
+          "type": "string",
+          "description": "Deployment ID (numeric). Required for API paths that use deploymentId.",
+          "required": true
+        },
         "deploymentSlug": {
           "type": "string",
           "description": "Deployment slug (string). Get from get_deployment tool. Required for all operations.",
@@ -309,7 +314,7 @@
         "deployment_id": {
           "type": "string",
           "description": "Deployment ID (numeric). Required for search request body validation.",
-          "required_for": ["search"]
+          "required_for": ["search", "get"]
         },
         "scanId": {
           "type": "string",
@@ -350,6 +355,11 @@
           "required": true,
           "example": "your-deployment"
         },
+        "deployment_id": {
+          "type": "string",
+          "description": "Deployment ID (numeric). Required for API paths that use deploymentId.",
+          "required": true
+        },
         "policyId": {
           "type": "string",
           "description": "Policy ID (numeric)",
@@ -379,7 +389,7 @@
     {
       "name": "manage_dependencies",
       "description": "Work with supply chain dependencies. Actions: 'list' (all dependencies), 'list_repositories' (repos with dependencies), 'list_lockfiles' (lockfiles in a repo). Filter by ecosystem, name, transitivity, license.",
-      "metadata_params": ["action", "deploymentSlug", "repositoryId"],
+      "metadata_params": ["action", "deploymentSlug"],
       "operations": {
         "list": "SupplyChainService_ListDependencies",
         "list_repositories": "SupplyChainService_ListRepositoriesForDependencies",
@@ -398,10 +408,19 @@
           "required": true,
           "example": "your-deployment"
         },
+        "deployment_id": {
+          "type": "string",
+          "description": "Deployment ID (numeric). Required for API paths that use deploymentId.",
+          "required": true
+        },
+        "repository_id": {
+          "type": "string",
+          "description": "Repository ID (for list_lockfiles).",
+          "required_for": ["list_lockfiles"]
+        },
         "repositoryId": {
           "type": "string",
-          "description": "Repository ID (for list_lockfiles)",
-          "required_for": ["list_lockfiles"]
+          "description": "Repository ID (for list_lockfiles). Use repository_id when passing request bodies that require snake-case fields."
         },
         "cursor": {
           "type": "string",
@@ -438,7 +457,7 @@
         "deployment_id": {
           "type": "string",
           "description": "Deployment ID (numeric). Required for SBOM export request body validation.",
-          "required_for": ["create"]
+          "required_for": ["create", "get"]
         },
         "taskToken": {
           "type": "string",

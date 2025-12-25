@@ -186,7 +186,7 @@
     {
       "name": "List Secrets",
       "tool": "manage_secrets",
-      "arguments": { "deploymentSlug": "{{deploymentSlug}}" },
+      "arguments": { "deploymentSlug": "{{deploymentSlug}}", "deployment_id": "{{deploymentId}}" },
       "mocks": [
         {
           "operationId": "SecretsService_ListSecretsPath",
@@ -215,7 +215,12 @@
     {
       "name": "Get Scan",
       "tool": "manage_scans",
-      "arguments": { "action": "get", "deploymentSlug": "{{deploymentSlug}}", "scanId": "{{scanId}}" },
+      "arguments": {
+        "action": "get",
+        "deploymentSlug": "{{deploymentSlug}}",
+        "deployment_id": "{{deploymentId}}",
+        "scanId": "{{scanId}}"
+      },
       "mocks": [
         {
           "operationId": "ScansService_GetScan",
@@ -227,7 +232,11 @@
     {
       "name": "List Policies",
       "tool": "manage_policies",
-      "arguments": { "action": "list", "deploymentSlug": "{{deploymentSlug}}" },
+      "arguments": {
+        "action": "list",
+        "deploymentSlug": "{{deploymentSlug}}",
+        "deployment_id": "{{deploymentId}}"
+      },
       "mocks": [
         {
           "operationId": "PoliciesService_ListPolicies",
@@ -239,7 +248,12 @@
     {
       "name": "List Policy Rules",
       "tool": "manage_policies",
-      "arguments": { "action": "list_rules", "deploymentSlug": "{{deploymentSlug}}", "policyId": "{{policyId}}" },
+      "arguments": {
+        "action": "list_rules",
+        "deploymentSlug": "{{deploymentSlug}}",
+        "deployment_id": "{{deploymentId}}",
+        "policyId": "{{policyId}}"
+      },
       "mocks": [
         {
           "operationId": "PoliciesService_ListPolicyRules",
@@ -254,6 +268,7 @@
       "arguments": {
         "action": "update",
         "deploymentSlug": "{{deploymentSlug}}",
+        "deployment_id": "{{deploymentId}}",
         "policyId": "{{policyId}}",
         "rulePath": "rule.path.1",
         "policyMode": "MODE_BLOCK"
@@ -269,7 +284,11 @@
     {
       "name": "List Dependencies",
       "tool": "manage_dependencies",
-      "arguments": { "action": "list", "deploymentSlug": "{{deploymentSlug}}" },
+      "arguments": {
+        "action": "list",
+        "deploymentSlug": "{{deploymentSlug}}",
+        "deployment_id": "{{deploymentId}}"
+      },
       "mocks": [
         {
           "operationId": "SupplyChainService_ListDependencies",
@@ -281,7 +300,11 @@
     {
       "name": "List Dependency Repositories",
       "tool": "manage_dependencies",
-      "arguments": { "action": "list_repositories", "deploymentSlug": "{{deploymentSlug}}" },
+      "arguments": {
+        "action": "list_repositories",
+        "deploymentSlug": "{{deploymentSlug}}",
+        "deployment_id": "{{deploymentId}}"
+      },
       "mocks": [
         {
           "operationId": "SupplyChainService_ListRepositoriesForDependencies",
@@ -293,7 +316,12 @@
     {
       "name": "List Dependency Lockfiles",
       "tool": "manage_dependencies",
-      "arguments": { "action": "list_lockfiles", "deploymentSlug": "{{deploymentSlug}}", "repositoryId": "{{repositoryId}}" },
+      "arguments": {
+        "action": "list_lockfiles",
+        "deploymentSlug": "{{deploymentSlug}}",
+        "deployment_id": "{{deploymentId}}",
+        "repository_id": "{{repositoryId}}"
+      },
       "mocks": [
         {
           "operationId": "SupplyChainService_ListLockfilesForDependencies",
@@ -321,9 +349,26 @@
       "expect": { "success": true, "result": { "task_token": "{{taskToken}}" } }
     },
     {
+      "name": "Create SBOM Export - Missing deployment_id",
+      "tool": "manage_sbom",
+      "arguments": {
+        "action": "create",
+        "deployment_slug": "{{deploymentSlug}}",
+        "repositoryId": "{{repositoryId}}",
+        "ref": "refs/heads/main"
+      },
+      "mocks": [],
+      "expect": { "success": false, "error_message_regex": "deploymentId" }
+    },
+    {
       "name": "Get SBOM Export",
       "tool": "manage_sbom",
-      "arguments": { "action": "get", "deploymentSlug": "{{deploymentSlug}}", "taskToken": "{{taskToken}}" },
+      "arguments": {
+        "action": "get",
+        "deploymentSlug": "{{deploymentSlug}}",
+        "deployment_id": "{{deploymentId}}",
+        "taskToken": "{{taskToken}}"
+      },
       "mocks": [
         {
           "operationId": "SupplyChainService_GetSbomExport",
