@@ -191,12 +191,9 @@ export class HttpTransport {
         this.hasWarnedAboutBinding = true;
       }
 
-      // Skip Origin check for localhost
-      if (req.hostname === 'localhost' || req.hostname === '127.0.0.1') {
-        return next();
-      }
-
-      // Validate Origin header for non-localhost
+      // Validate Origin header if present
+      // We explicitly check localhost origins too to prevent CSRF from malicious sites
+      // (browsers send Origin: null or the site's origin)
       if (origin && !this.isAllowedOrigin(origin)) {
         this.logger.warn('Rejected request from disallowed origin', { origin, ip: req.ip });
         return res.status(HTTP_STATUS.FORBIDDEN).json({

@@ -210,9 +210,20 @@ describeIfListen('HttpTransport', () => {
       expect(response.status).not.toBe(403);
     });
 
+    it('should validate Origin header for localhost requests (CSRF protection)', async () => {
+      const response = await request(app)
+        .post('/mcp')
+        .set('Accept', 'application/json, text/event-stream')
+        .set('Origin', 'https://evil.com')
+        .set('Host', 'localhost')
+        .send({ jsonrpc: '2.0', id: 1, method: 'initialize' });
+
+      expect(response.status).toBe(403);
+      expect(response.body).toHaveProperty('error', 'Forbidden');
+    });
+
     it('should validate Origin header for non-localhost requests', async () => {
-      // Skip Origin check is only for localhost hostname
-      // For other hostnames, Origin validation applies
+      // Origin validation applies for all requests
       const response = await request(app)
         .post('/mcp')
         .set('Accept', 'application/json, text/event-stream')
