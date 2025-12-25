@@ -12,7 +12,8 @@ Principles:
 - Test schema: `src/testing/test-schema.ts`
 - Mock engine: `src/testing/dynamic-mock-server.ts`
 - Existing schema example: `profiles/gitlab/developer-profile.test.json`
-- Still hardcoded: `src/testing/mock-gitlab-server.ts`, plus E2E utilities.
+- Coverage gate: `src/testing/profile-test-coverage.test.ts`
+- E2E utilities still use a standalone mock server (by design).
 
 ## Phase 1 - Make generic tests enforce profile coverage
 
@@ -74,6 +75,11 @@ Deliverable:
    - [x] Use `expect.request` to assert parameter mapping and metadata exclusion.
    - [x] Keep E2E transport tests; remove redundant hardcoded mocks.
    - [x] Replace `src/testing/mock-gitlab-server.ts` usage where possible.
+   - [ ] Remove plain bearer GitLab profile and keep only OAuth variant.
+     - [ ] Delete `profiles/gitlab/developer-profile.json` and its test file once OAuth coverage is in place.
+     - [ ] Add `profiles/gitlab/developer-profile-oauth.test.json` based on existing scenarios.
+     - [ ] Update all references in tests and docs to use the OAuth profile.
+     - [ ] Extend coverage gate to require a `.test.json` per profile JSON (not just per directory).
 
 9) YouTrack profile
    - [x] Add `profiles/youtrack/profile.test.json` (new).
@@ -100,6 +106,34 @@ Deliverable:
 12) Remove legacy tests
    - [x] Remove or simplify hardcoded profile tests that are fully superseded.
    - [x] Keep low-level unit tests (schema validator, parser, errors).
+
+## Phase 5 - Remaining gaps for full migration
+
+13) Enforce coverage for composite tools (no `operations`)
+   - [ ] Update coverage to treat each composite tool as a required action.
+     - [ ] Add a coverage key for composite tools (e.g., `tool.name`).
+     - [ ] Allow `skip_actions` to reference composite tools by name.
+     - [ ] Add tests in `src/testing/test-loader.test.ts` to cover composite enforcement.
+
+14) Require request-shape assertions for critical scenarios only
+   - [ ] Extend schema with coverage rules like `require_request_assertions` and `skip_request_assertions`.
+   - [ ] Enforce in `validateTestAgainstProfile()` that scenarios include `expect.request` or `expect.requests` when required.
+   - [ ] Define "critical" as: parameter_aliases, send_response_fields_as_param, proxy download, metadata exclusion checks.
+   - [ ] Add negative cases in `src/testing/test-loader.test.ts`.
+
+15) Add negative request assertions for metadata exclusion
+   - [ ] Extend `RequestExpectationSchema` with `query_absent` and `body_exact`.
+   - [ ] Implement checks in `assertSingleRequestMatch()` to validate absence and exact body matches.
+   - [ ] Add request-assertion unit tests for absence and exact matches.
+   - [ ] Use in profile tests to verify `metadata_params` are excluded from body.
+
+16) Validate `array_format` behavior in schema tests
+   - [ ] Add at least one scenario per profile that uses array parameters.
+   - [ ] Assert serialized query shape for `array_format` (e.g., brackets) via `expect.request.query`.
+
+17) Remove `result_schema` from test schema
+   - [ ] Remove from `src/testing/test-schema.ts`.
+   - [ ] Remove any mention from docs or plans if present.
 
 ## Open Questions
 - Do we want to require coverage for destructive actions by default?
