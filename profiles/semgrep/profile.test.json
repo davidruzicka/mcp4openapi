@@ -2,7 +2,14 @@
   "$schema": "../../src/testing/test-schema.ts",
   "profile_name": "semgrep",
   "variables": {
-    "deploymentSlug": "test-deployment"
+    "deploymentSlug": "test-deployment",
+    "projectName": "test-org/test-repo",
+    "policyId": "policy-123",
+    "repositoryId": "repo-456",
+    "scanId": "scan-789",
+    "taskToken": "task-123",
+    "externalTicketId": 987,
+    "deploymentId": "deployment-42"
   },
   "scenarios": [
     {
@@ -32,10 +39,137 @@
       "mocks": [
         {
           "operationId": "ProjectsService_ListProjects",
-          "response": { "body": { "projects": [{ "id": 1, "name": "test-org/test-repo" }] } }
+          "response": { "body": { "projects": [{ "id": 1, "name": "{{projectName}}" }] } }
         }
       ],
-      "expect": { "success": true, "result": { "projects": [{ "name": "test-org/test-repo" }] } }
+      "expect": { "success": true, "result": { "projects": [{ "name": "{{projectName}}" }] } }
+    },
+    {
+      "name": "Get Project",
+      "tool": "manage_projects",
+      "arguments": { "action": "get", "deploymentSlug": "{{deploymentSlug}}", "project_name": "{{projectName}}" },
+      "mocks": [
+        {
+          "operationId": "ProjectsService_GetProject",
+          "response": {
+            "body": {
+              "id": 1,
+              "name": "{{projectName}}",
+              "url": "https://example.com/{{projectName}}",
+              "default_branch": "main",
+              "primary_branch": "main",
+              "tags": ["frontend"],
+              "latest_scan_at": "2024-01-01T00:00:00Z",
+              "managed_scan_config": { "diff_scan": { "enabled": true } }
+            }
+          }
+        }
+      ],
+      "expect": { "success": true, "result": { "id": 1, "name": "{{projectName}}", "tags": ["frontend"] } }
+    },
+    {
+      "name": "Update Project",
+      "tool": "manage_projects",
+      "arguments": {
+        "action": "update",
+        "deploymentSlug": "{{deploymentSlug}}",
+        "project_name": "{{projectName}}",
+        "tags": ["security"],
+        "primary_branch": "refs/heads/main",
+        "managed_scan_config.diff_scan.enabled": true,
+        "managed_scan_config.full_scan.enabled": false
+      },
+      "mocks": [
+        {
+          "operationId": "ProjectsService_UpdateProject",
+          "response": {
+            "body": {
+              "id": 1,
+              "name": "{{projectName}}",
+              "tags": ["security"],
+              "primary_branch": "refs/heads/main",
+              "managed_scan_config": {
+                "diff_scan": { "enabled": true },
+                "full_scan": { "enabled": false }
+              }
+            }
+          }
+        }
+      ],
+      "expect": { "success": true, "result": { "id": 1, "tags": ["security"] } }
+    },
+    {
+      "name": "Add Project Tags",
+      "tool": "manage_projects",
+      "arguments": {
+        "action": "add_tags",
+        "deploymentSlug": "{{deploymentSlug}}",
+        "project_name": "{{projectName}}",
+        "tags": ["critical"]
+      },
+      "mocks": [
+        {
+          "operationId": "ProjectsService_AddProjectTags",
+          "response": { "body": { "id": 1, "name": "{{projectName}}", "tags": ["critical"] } }
+        }
+      ],
+      "expect": { "success": true, "result": { "name": "{{projectName}}", "tags": ["critical"] } }
+    },
+    {
+      "name": "Remove Project Tags",
+      "tool": "manage_projects",
+      "arguments": {
+        "action": "remove_tags",
+        "deploymentSlug": "{{deploymentSlug}}",
+        "project_name": "{{projectName}}",
+        "tags": ["frontend"]
+      },
+      "mocks": [
+        {
+          "operationId": "ProjectsService_DeleteProjectTags",
+          "response": { "body": { "id": 1, "name": "{{projectName}}", "tags": [] } }
+        }
+      ],
+      "expect": { "success": true, "result": { "name": "{{projectName}}", "tags": [] } }
+    },
+    {
+      "name": "Toggle Managed Scan",
+      "tool": "manage_projects",
+      "arguments": {
+        "action": "toggle_managed_scan",
+        "deploymentSlug": "{{deploymentSlug}}",
+        "project_name": "{{projectName}}",
+        "diff_scan.enabled": true,
+        "full_scan.enabled": true
+      },
+      "mocks": [
+        {
+          "operationId": "ProjectsService_ToggleProjectManagedScan",
+          "response": {
+            "body": {
+              "id": 1,
+              "name": "{{projectName}}",
+              "managed_scan_config": {
+                "diff_scan": { "enabled": true },
+                "full_scan": { "enabled": true }
+              }
+            }
+          }
+        }
+      ],
+      "expect": { "success": true, "result": { "name": "{{projectName}}" } }
+    },
+    {
+      "name": "Delete Project",
+      "tool": "manage_projects",
+      "arguments": { "action": "delete", "deploymentSlug": "{{deploymentSlug}}", "project_name": "{{projectName}}" },
+      "mocks": [
+        {
+          "operationId": "ProjectsService_DeleteProject",
+          "response": { "status": 204 }
+        }
+      ],
+      "expect": { "success": true }
     },
     {
       "name": "List Findings",
@@ -48,6 +182,233 @@
         }
       ],
       "expect": { "success": true, "result": { "sastFindings": { "findings": [{ "id": 123 }] } } }
+    },
+    {
+      "name": "List Secrets",
+      "tool": "manage_secrets",
+      "arguments": { "deploymentSlug": "{{deploymentSlug}}", "deployment_id": "{{deploymentId}}" },
+      "mocks": [
+        {
+          "operationId": "SecretsService_ListSecretsPath",
+          "response": { "body": { "secrets": [{ "id": 55, "status": "FINDING_STATUS_OPEN" }] } }
+        }
+      ],
+      "expect": { "success": true, "result": { "secrets": [{ "id": 55 }] } }
+    },
+    {
+      "name": "Search Scans",
+      "tool": "manage_scans",
+      "arguments": {
+        "action": "search",
+        "deploymentSlug": "{{deploymentSlug}}",
+        "deployment_id": "{{deploymentId}}",
+        "repository_id": 101
+      },
+      "mocks": [
+        {
+          "operationId": "ScansService_SearchScans",
+          "response": { "body": { "scans": [{ "id": "scan-1", "repository_id": 101 }] } }
+        }
+      ],
+      "expect": { "success": true, "result": { "scans": [{ "id": "scan-1" }] } }
+    },
+    {
+      "name": "Get Scan",
+      "tool": "manage_scans",
+      "arguments": {
+        "action": "get",
+        "deploymentSlug": "{{deploymentSlug}}",
+        "deployment_id": "{{deploymentId}}",
+        "scanId": "{{scanId}}"
+      },
+      "mocks": [
+        {
+          "operationId": "ScansService_GetScan",
+          "response": { "body": { "id": "{{scanId}}", "status": "completed" } }
+        }
+      ],
+      "expect": { "success": true, "result": { "id": "{{scanId}}" } }
+    },
+    {
+      "name": "List Policies",
+      "tool": "manage_policies",
+      "arguments": {
+        "action": "list",
+        "deploymentSlug": "{{deploymentSlug}}",
+        "deployment_id": "{{deploymentId}}"
+      },
+      "mocks": [
+        {
+          "operationId": "PoliciesService_ListPolicies",
+          "response": { "body": { "policies": [{ "id": "{{policyId}}", "name": "Default" }] } }
+        }
+      ],
+      "expect": { "success": true, "result": { "policies": [{ "id": "{{policyId}}" }] } }
+    },
+    {
+      "name": "List Policy Rules",
+      "tool": "manage_policies",
+      "arguments": {
+        "action": "list_rules",
+        "deploymentSlug": "{{deploymentSlug}}",
+        "deployment_id": "{{deploymentId}}",
+        "policyId": "{{policyId}}"
+      },
+      "mocks": [
+        {
+          "operationId": "PoliciesService_ListPolicyRules",
+          "response": { "body": { "rules": [{ "path": "rule.path.1" }] } }
+        }
+      ],
+      "expect": { "success": true, "result": { "rules": [{ "path": "rule.path.1" }] } }
+    },
+    {
+      "name": "Update Policy",
+      "tool": "manage_policies",
+      "arguments": {
+        "action": "update",
+        "deploymentSlug": "{{deploymentSlug}}",
+        "deployment_id": "{{deploymentId}}",
+        "policyId": "{{policyId}}",
+        "rulePath": "rule.path.1",
+        "policyMode": "MODE_BLOCK"
+      },
+      "mocks": [
+        {
+          "operationId": "PoliciesService_UpdatePolicy",
+          "response": { "body": { "policy": { "id": "{{policyId}}", "mode": "MODE_BLOCK" } } }
+        }
+      ],
+      "expect": { "success": true, "result": { "policy": { "id": "{{policyId}}" } } }
+    },
+    {
+      "name": "List Dependencies",
+      "tool": "manage_dependencies",
+      "arguments": {
+        "action": "list",
+        "deploymentSlug": "{{deploymentSlug}}",
+        "deployment_id": "{{deploymentId}}"
+      },
+      "mocks": [
+        {
+          "operationId": "SupplyChainService_ListDependencies",
+          "response": { "body": { "dependencies": [{ "id": "dep-1", "name": "requests" }] } }
+        }
+      ],
+      "expect": { "success": true, "result": { "dependencies": [{ "id": "dep-1" }] } }
+    },
+    {
+      "name": "List Dependency Repositories",
+      "tool": "manage_dependencies",
+      "arguments": {
+        "action": "list_repositories",
+        "deploymentSlug": "{{deploymentSlug}}",
+        "deployment_id": "{{deploymentId}}"
+      },
+      "mocks": [
+        {
+          "operationId": "SupplyChainService_ListRepositoriesForDependencies",
+          "response": { "body": { "repositories": [{ "id": "repo-1", "name": "{{projectName}}" }] } }
+        }
+      ],
+      "expect": { "success": true, "result": { "repositories": [{ "id": "repo-1" }] } }
+    },
+    {
+      "name": "List Dependency Lockfiles",
+      "tool": "manage_dependencies",
+      "arguments": {
+        "action": "list_lockfiles",
+        "deploymentSlug": "{{deploymentSlug}}",
+        "deployment_id": "{{deploymentId}}",
+        "repository_id": "{{repositoryId}}"
+      },
+      "mocks": [
+        {
+          "operationId": "SupplyChainService_ListLockfilesForDependencies",
+          "response": { "body": { "lockfiles": [{ "path": "package-lock.json" }] } }
+        }
+      ],
+      "expect": { "success": true, "result": { "lockfiles": [{ "path": "package-lock.json" }] } }
+    },
+    {
+      "name": "Create SBOM Export",
+      "tool": "manage_sbom",
+      "arguments": {
+        "action": "create",
+        "deploymentSlug": "{{deploymentSlug}}",
+        "deployment_id": "{{deploymentId}}",
+        "repositoryId": "{{repositoryId}}",
+        "ref": "refs/heads/main"
+      },
+      "mocks": [
+        {
+          "operationId": "SupplyChainService_CreateSbomExport",
+          "response": { "body": { "task_token": "{{taskToken}}" } }
+        }
+      ],
+      "expect": { "success": true, "result": { "task_token": "{{taskToken}}" } }
+    },
+    {
+      "name": "Create SBOM Export - Missing deployment_id",
+      "tool": "manage_sbom",
+      "arguments": {
+        "action": "create",
+        "deployment_slug": "{{deploymentSlug}}",
+        "repositoryId": "{{repositoryId}}",
+        "ref": "refs/heads/main"
+      },
+      "mocks": [],
+      "expect": { "success": false, "error_message_regex": "deploymentId" }
+    },
+    {
+      "name": "Get SBOM Export",
+      "tool": "manage_sbom",
+      "arguments": {
+        "action": "get",
+        "deploymentSlug": "{{deploymentSlug}}",
+        "deployment_id": "{{deploymentId}}",
+        "taskToken": "{{taskToken}}"
+      },
+      "mocks": [
+        {
+          "operationId": "SupplyChainService_GetSbomExport",
+          "response": { "body": { "status": "COMPLETED", "download_url": "https://example.com/sbom.json" } }
+        }
+      ],
+      "expect": { "success": true, "result": { "status": "COMPLETED" } }
+    },
+    {
+      "name": "Create Tickets",
+      "tool": "manage_tickets",
+      "arguments": {
+        "action": "create",
+        "deployment_slug": "{{deploymentSlug}}",
+        "issue_type": "sast",
+        "issue_ids": ["123", "456"]
+      },
+      "mocks": [
+        {
+          "operationId": "TicketingService_CreateTicket",
+          "response": { "body": { "tickets": [{ "id": 1, "external_id": "SEC-1" }] } }
+        }
+      ],
+      "expect": { "success": true, "result": { "tickets": [{ "id": 1 }] } }
+    },
+    {
+      "name": "Delete Ticket",
+      "tool": "manage_tickets",
+      "arguments": {
+        "action": "delete",
+        "deployment_id": "{{deploymentId}}",
+        "externalTicketId": "{{externalTicketId}}"
+      },
+      "mocks": [
+        {
+          "operationId": "TicketingService_DeleteTicket",
+          "response": { "status": 204 }
+        }
+      ],
+      "expect": { "success": true }
     },
     {
       "name": "Triage Findings",
@@ -94,5 +455,9 @@
       "mocks": [],
       "expect": { "success": false, "error_message_regex": "integer" }
     }
-  ]
+  ],
+  "coverage": {
+    "require_all_actions": true,
+    "skip_actions": {}
+  }
 }
