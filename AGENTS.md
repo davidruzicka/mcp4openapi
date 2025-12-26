@@ -22,6 +22,7 @@ Reference canonical sources; never duplicate rules.
 ## Directives
 
 - **Never duplicate validation or business rules. Always reference canonical docs.**
+- Keep changes consistent with the current test migration: prefer schema-driven profile tests over hardcoded mocks.
 
 ### Schema Synchronization (CRITICAL)
 
@@ -68,6 +69,8 @@ Reference canonical sources; never duplicate rules.
 - Mock servers: `src/testing/mock-*-server.ts` (MSW-based)
 - Fixtures: `src/testing/fixtures.ts`
 - **Each new validator must have both success and failure tests.**
+- OAuth profiles require `MCP4_OAUTH_*` env vars in HTTP transport tests and an Authorization header for initialization.
+- E2E mock server should include auth validation endpoints used by profile auth configs.
 
 Run specific tests: `npm test -- --grep "pattern"`
 
