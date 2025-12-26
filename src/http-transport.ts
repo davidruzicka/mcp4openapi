@@ -106,6 +106,26 @@ export class HttpTransport {
       next();
     });
 
+    // Security Headers
+    this.app.use((req: Request, res: Response, next: NextFunction) => {
+      // Prevent MIME-sniffing
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+
+      // Prevent clickjacking
+      res.setHeader('X-Frame-Options', 'DENY');
+
+      // Content Security Policy - strictly limit sources for API security
+      res.setHeader('Content-Security-Policy', "default-src 'none'");
+
+      // Strict Transport Security (HSTS)
+      // Only set if running on HTTPS or production
+      if (req.secure || process.env.NODE_ENV === 'production') {
+        res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+      }
+
+      next();
+    });
+
     // DNS rebinding protection when binding to localhost
     // Deny requests with mismatched Host headers to prevent DNS rebinding attacks
     // Applies when server host is localhost/127.0.0.1, regardless of auth configuration
