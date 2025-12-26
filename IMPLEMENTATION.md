@@ -227,7 +227,7 @@ src/
 
 profiles/gitlab/
 ├── openapi.yaml         - GitLab OpenAPI spec
-└── developer-profile.json - Example profile
+└── developer-profile-oauth.json - Example profile
 
 scripts/
 ├── validate-profile.ts  - Profile validation CLI

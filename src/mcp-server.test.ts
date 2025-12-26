@@ -70,7 +70,7 @@ describe('MCPServer', () => {
   describe('initialize with profile', () => {
     it('should load profile and provide tools', async () => {
       const specPath = path.join(process.cwd(), 'profiles/gitlab/openapi.yaml');
-      const profilePath = path.join(process.cwd(), 'profiles/gitlab/developer-profile.json');
+      const profilePath = path.join(process.cwd(), 'profiles/gitlab/developer-profile-oauth.json');
 
       await server.initialize(specPath, profilePath);
 
@@ -79,7 +79,7 @@ describe('MCPServer', () => {
 
     it('should create global client when OAuth is higher priority than env auth', async () => {
       const specPath = path.join(process.cwd(), 'profiles/gitlab/openapi.yaml');
-      const profilePath = path.join(process.cwd(), 'profiles/gitlab/developer-profile.json');
+      const profilePath = path.join(process.cwd(), 'profiles/gitlab/developer-profile-oauth.json');
 
       process.env.MCP4_API_TOKEN = 'test-token';
 
@@ -91,7 +91,7 @@ describe('MCPServer', () => {
 
     it('should report missing env token when OAuth is primary and env auth has no token', async () => {
       const specPath = path.join(process.cwd(), 'profiles/gitlab/openapi.yaml');
-      const profilePath = path.join(process.cwd(), 'profiles/gitlab/developer-profile.json');
+      const profilePath = path.join(process.cwd(), 'profiles/gitlab/developer-profile-oauth.json');
 
       delete process.env.MCP4_API_TOKEN;
 

@@ -21,7 +21,7 @@ services:
     environment:
       # Required
       - MCP4_OPENAPI_SPEC_PATH=/app/profiles/gitlab/openapi.yaml
-      - MCP4_PROFILE_PATH=/app/profiles/gitlab/developer-profile.json
+      - MCP4_PROFILE_PATH=/app/profiles/gitlab/developer-profile-oauth.json
       - MCP4_API_TOKEN=${MCP4_API_TOKEN}
       - MCP4_API_BASE_URL=${MCP4_API_BASE_URL:-https://gitlab.com/api/v4}
       
