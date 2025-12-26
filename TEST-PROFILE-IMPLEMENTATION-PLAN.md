@@ -135,10 +135,15 @@ Deliverable:
    - [ ] Remove from `src/testing/test-schema.ts`.
    - [ ] Remove any mention from docs or plans if present.
 
-## Open Questions
-- Do we want to require coverage for destructive actions by default?
-- Should `skip_actions` be allowed only with an explicit reason string?
-- Should request assertions allow regex matching for dynamic values?
+18) Enforce destructive action coverage
+   - [ ] Define destructive actions per tool (e.g., `delete`, `remove`, `revoke`, `cancel`, `reset`, `terminate`) in `validateTestAgainstProfile()` or a helper.
+   - [ ] Require scenarios for destructive actions unless explicitly skipped with a reason in `skip_actions`.
+   - [ ] Add tests in `src/testing/test-loader.test.ts` for destructive enforcement and skip reasons.
+
+19) Add regex request assertions (opt-in)
+   - [ ] Extend `RequestExpectationSchema` with `path_regex`, `origin_regex`, `headers_regex`, `query_regex`, `body_regex`.
+   - [ ] Implement regex matching in `assertSingleRequestMatch()` (only when corresponding `*_regex` is provided).
+   - [ ] Add unit tests in `src/testing/request-assertions.test.ts` for regex pass/fail cases.
 
 ## Suggested Sequence (Minimum Viable)
 1) Add coverage enforcement to generic runner.
