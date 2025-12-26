@@ -46,8 +46,7 @@ describeIfListen('E2E: Bearer token authentication', () => {
     expect((response.result as { tools: unknown[] }).tools.length).toBeGreaterThan(0);
   }, 15000);
 
-  it('should work without token for public APIs', async () => {
-    // OpenAPI spec without security requirements should work without token
+  it('should reject missing token when auth is configured', async () => {
     mcp = new McpProcess({
       transport: 'stdio',
       openapiSpecPath,
@@ -59,8 +58,10 @@ describeIfListen('E2E: Bearer token authentication', () => {
     await mcp.start();
     await mcp.initialize();
 
-    const response = await mcp.listTools();
-    expect(response.error).toBeUndefined();
+    const response = await mcp.callTool('manage_groups', {
+      action: 'list'
+    });
+    expect(response.error).toBeDefined();
   }, 15000);
 
   it('should use custom token env var', async () => {
