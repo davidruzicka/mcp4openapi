@@ -44,6 +44,7 @@ Thank you for considering contributing! This document provides guidelines for de
 - Run `npm test` before submitting PR
 - Integration tests in `src/testing/`
 - Unit tests alongside source files (`*.test.ts`)
+- Adding a profile requires a matching `*.test.json` in the same directory (coverage gate enforces this).
 
 ## ⚠️ CRITICAL: Profile Schema Synchronization
 
@@ -144,4 +145,3 @@ When adding features:
 ## License
 
 By contributing, you agree that your contributions will be licensed under the MIT License.
-

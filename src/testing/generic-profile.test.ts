@@ -121,20 +121,11 @@ testFiles.forEach(testFile => {
           mockEngine.configureMocks(processedMocks);
         }
 
-        // Execute via handleToolCall to support both Simple and Composite tools
+        // Execute via JSON-RPC tool call to support both Simple and Composite tools
         let result: any;
         let error: any;
         try {
-          // Use 'handleToolCall' (private) via any cast
-          const response = await (server as any).handleToolCall({
-            jsonrpc: '2.0',
-            id: 1,
-            method: 'tools/call',
-            params: {
-              name: scenario.tool,
-              arguments: processedArgs
-            }
-          });
+          const response = await server.callToolRpc(scenario.tool, processedArgs, undefined, 1);
 
           if (response.error) {
             // Convert JSON-RPC error to Error object for easier assertion matching
