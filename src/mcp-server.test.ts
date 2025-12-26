@@ -206,17 +206,7 @@ describe('MCPServer', () => {
         return { id: 1, name: 'test' };
       };
 
-      const message = {
-        jsonrpc: '2.0',
-        id: '1',
-        method: 'tools/call',
-        params: {
-          name: simpleTool.name,
-          arguments: {}
-        }
-      };
-
-      const response = await (server as any)['handleToolCall'](message, 'test-session');
+      const response = await server.callToolRpc(simpleTool.name, {}, 'test-session', '1');
       expect(response.result).toBeDefined();
       expect(response.result.content).toBeDefined();
       expect(response.result.content[0].type).toBe('text');
@@ -228,17 +218,7 @@ describe('MCPServer', () => {
       const specPath = path.join(process.cwd(), 'profiles/gitlab/openapi.yaml');
       await server.initialize(specPath);
 
-      const message = {
-        jsonrpc: '2.0',
-        id: '1',
-        method: 'tools/call',
-        params: {
-          name: 'non_existing_tool',
-          arguments: {}
-        }
-      };
-
-      const response = await (server as any)['handleToolCall'](message, 'test-session');
+      const response = await server.callToolRpc('non_existing_tool', {}, 'test-session', '1');
       expect(response).toHaveProperty('error');
       expect(response.error).toHaveProperty('message');
       // OperationNotFoundError is safe to show with correlation ID
@@ -262,17 +242,7 @@ describe('MCPServer', () => {
       const compositeTool = (server as any).profile.tools.find((t: any) => t.composite);
       if (!compositeTool) return; // Skip if no composite tools
       
-      const message = {
-        jsonrpc: '2.0',
-        id: '1',
-        method: 'tools/call',
-        params: {
-          name: compositeTool.name,
-          arguments: {}
-        }
-      };
-
-      const response = await (server as any)['handleToolCall'](message, 'test-session');
+      const response = await server.callToolRpc(compositeTool.name, {}, 'test-session', '1');
       expect(response.error.code).toBe(-32002);
     });
 
@@ -290,17 +260,7 @@ describe('MCPServer', () => {
         throw new ValidationError('Invalid input');
       };
 
-      const message = {
-        jsonrpc: '2.0',
-        id: '1',
-        method: 'tools/call',
-        params: {
-          name: simpleTool.name,
-          arguments: {}
-        }
-      };
-
-      const response = await (server as any)['handleToolCall'](message, 'test-session');
+      const response = await server.callToolRpc(simpleTool.name, {}, 'test-session', '1');
       expect(response.error.code).toBe(-32602);
     });
 
@@ -318,17 +278,7 @@ describe('MCPServer', () => {
         throw new RateLimitError('Too many requests', 60);
       };
 
-      const message = {
-        jsonrpc: '2.0',
-        id: '1',
-        method: 'tools/call',
-        params: {
-          name: simpleTool.name,
-          arguments: {}
-        }
-      };
-
-      const response = await (server as any)['handleToolCall'](message, 'test-session');
+      const response = await server.callToolRpc(simpleTool.name, {}, 'test-session', '1');
       expect(response.error.code).toBe(-32003);
     });
 
@@ -346,17 +296,7 @@ describe('MCPServer', () => {
         throw new AuthenticationError('Token expired');
       };
 
-      const message = {
-        jsonrpc: '2.0',
-        id: '1',
-        method: 'tools/call',
-        params: {
-          name: simpleTool.name,
-          arguments: {}
-        }
-      };
-
-      const response = await (server as any)['handleToolCall'](message, 'test-session');
+      const response = await server.callToolRpc(simpleTool.name, {}, 'test-session', '1');
       expect(response.error.code).toBe(-32001);
     });
 
@@ -377,17 +317,7 @@ describe('MCPServer', () => {
       // Mock getAuthTokenFromSession to return null (no token)
       (server as any).getAuthTokenFromSession = async () => null;
 
-      const message = {
-        jsonrpc: '2.0',
-        id: '1',
-        method: 'tools/call',
-        params: {
-          name: simpleTool.name,
-          arguments: {}
-        }
-      };
-
-      const response = await (server as any)['handleToolCall'](message, 'test-session');
+      const response = await server.callToolRpc(simpleTool.name, {}, 'test-session', '1');
       expect(response.error).toBeDefined();
       expect(response.error.code).toBe(-32001);
       expect(response.error.message).toContain('Authentication required');
@@ -406,17 +336,7 @@ describe('MCPServer', () => {
         throw new Error('Generic internal error');
       };
 
-      const message = {
-        jsonrpc: '2.0',
-        id: '1',
-        method: 'tools/call',
-        params: {
-          name: simpleTool.name,
-          arguments: {}
-        }
-      };
-
-      const response = await (server as any)['handleToolCall'](message, 'test-session');
+      const response = await server.callToolRpc(simpleTool.name, {}, 'test-session', '1');
       expect(response.error.code).toBe(-32603);
     });
   });
@@ -446,14 +366,7 @@ describe('MCPServer', () => {
         throw new AuthorizationError('Forbidden');
       };
 
-      const message = {
-        jsonrpc: '2.0',
-        id: '1',
-        method: 'tools/call',
-        params: { name: 'simple_test', arguments: {} },
-      };
-
-      const response = await (server as any).handleToolCall(message, 'test-session');
+      const response = await server.callToolRpc('simple_test', {}, 'test-session', '1');
       expect(response.error.code).toBe(-32002);
     });
   });
@@ -1572,10 +1485,7 @@ describe('MCPServer', () => {
       // Mock getAuthTokenFromSession to return undefined
       (server as any).getAuthTokenFromSession = async () => undefined;
       
-      const response = await (server as any).handleToolCall(
-        { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'some_tool', arguments: {} } },
-        'test-session'
-      );
+      const response = await server.callToolRpc('some_tool', {}, 'test-session', 1);
       
       expect(response.error.code).toBe(-32001);
       expect(response.error.data.oauth_required).toBe(true);
