@@ -966,12 +966,12 @@ grep -r "operationId" your-openapi.yaml
 
 ## Examples
 
-See working examples in `profiles/examples/`:
+See working examples in `profiles/`:
 
 - **GitLab Developer**: `profiles/gitlab/developer-profile-oauth.json`
   - 5 aggregated tools
   - 1 composite tool
-  - Bearer auth
+  - OAuth + bearer fallback
   - Rate limiting & retry
 
 ## Important: Schema Synchronization

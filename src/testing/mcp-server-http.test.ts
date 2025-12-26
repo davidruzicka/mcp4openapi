@@ -12,11 +12,13 @@ describeIfListen('MCPServer HTTP Integration', () => {
   let server: MCPServer;
   let app: any;
   let originalEnv: NodeJS.ProcessEnv;
+  let originalEnvKeys: Set<string>;
   let mockApiServer: Server;
   let mockApiBaseUrl: string;
 
   beforeAll(async () => {
     originalEnv = { ...process.env };
+    originalEnvKeys = new Set(Object.keys(process.env));
     mockApiServer = createServer((req, res) => {
       if (!req.url) {
         res.statusCode = 404;
@@ -80,7 +82,12 @@ describeIfListen('MCPServer HTTP Integration', () => {
         mockApiServer.close(err => (err ? reject(err) : resolve()));
       });
     }
-    process.env = originalEnv;
+    for (const key of Object.keys(process.env)) {
+      if (!originalEnvKeys.has(key)) {
+        delete process.env[key];
+      }
+    }
+    Object.assign(process.env, originalEnv);
   });
 
   it('should handle initialize request via HTTP', async () => {
