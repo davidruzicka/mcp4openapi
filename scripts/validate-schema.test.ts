@@ -80,7 +80,7 @@ describe('profile-schema.json', () => {
   it('should validate example GitLab profile', async () => {
     const examplePath = path.resolve(
       process.cwd(),
-      'profiles/gitlab/developer-profile.json'
+      'profiles/gitlab/developer-profile-oauth.json'
     );
     const exampleContent = await fs.readFile(examplePath, 'utf-8');
     const exampleProfile = JSON.parse(exampleContent);

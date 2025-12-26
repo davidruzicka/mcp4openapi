@@ -19,8 +19,8 @@ Visit https://gitlab.com/-/user_settings/personal_access_tokens and create a tok
 
 Reuse the [README Quick Start](../README.md#quick-start) instructions to load the GitLab specification and profile. Substitute:
 
-- `MCP4_OPENAPI_SPEC_PATH=profiles/examples/gitlab/openapi.yaml`
-- `MCP4_PROFILE_PATH=profiles/examples/gitlab/developer-profile.json`
+- `MCP4_OPENAPI_SPEC_PATH=profiles/gitlab/openapi.yaml`
+- `MCP4_PROFILE_PATH=profiles/gitlab/developer-profile-oauth.json`
 - `MCP4_API_TOKEN=<your GitLab token>`
 - `MCP4_API_BASE_URL=https://gitlab.com/api/v4`
 
@@ -30,7 +30,7 @@ Follow the [standard launch steps](../README.md#quick-start) (`npm start` or `np
 
 ## Available Tools
 
-The `profiles/examples/gitlab/developer-profile.json` profile provides 9 aggregated tools.
+The `profiles/gitlab/developer-profile-oauth.json` profile provides 9 aggregated tools.
 Some of them are:
 
 ### 1. manage_groups
@@ -268,8 +268,8 @@ Add to your `mcp.json`:
       "command": "node",
       "args": ["/path/to/mcp4openapi/dist/index.js"],
       "env": {
-        "MCP4_OPENAPI_SPEC_PATH": "/path/to/profiles/examples/gitlab/openapi.yaml",
-        "MCP4_PROFILE_PATH": "/path/to/profiles/examples/gitlab/developer-profile.json",
+        "MCP4_OPENAPI_SPEC_PATH": "/path/to/profiles/gitlab/openapi.yaml",
+        "MCP4_PROFILE_PATH": "/path/to/profiles/gitlab/developer-profile-oauth.json",
         "MCP4_API_TOKEN": "glpat-xxxxxxxxxxxxxxxxxxxx",
         "MCP4_API_BASE_URL": "https://gitlab.com/api/v4"
       }
@@ -446,7 +446,7 @@ You can create additional profiles for different use cases:
 - `profiles/gitlab/readonly-profile.json` - Only GET operations
 - `profiles/gitlab/ci-profile.json` - Focus on CI/CD operations
 
-See `profiles/gitlab/developer-profile.json` as a template and `profile-schema.json` for the JSON schema.
+See `profiles/gitlab/developer-profile-oauth.json` as a template and `profile-schema.json` for the JSON schema.
 
 ## OpenAPI Specification
 

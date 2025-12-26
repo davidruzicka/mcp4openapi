@@ -76,6 +76,14 @@ export async function startStandaloneMockServer(
 
   const apiRouter = express.Router();
 
+  apiRouter.get('/user', (_req, res) => {
+    res.json({ id: 1, username: 'mock-user' });
+  });
+
+  apiRouter.get('/personal_access_tokens/self', (_req, res) => {
+    res.json({ id: 1, active: true });
+  });
+
   apiRouter.get('/projects/:id/repository/branches', (_req, res) => {
     res.json(Array.from(branches.values()));
   });

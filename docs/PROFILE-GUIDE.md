@@ -968,7 +968,7 @@ grep -r "operationId" your-openapi.yaml
 
 See working examples in `profiles/examples/`:
 
-- **GitLab Developer**: `profiles/examples/gitlab/developer-profile.json`
+- **GitLab Developer**: `profiles/gitlab/developer-profile-oauth.json`
   - 5 aggregated tools
   - 1 composite tool
   - Bearer auth

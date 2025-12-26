@@ -1016,14 +1016,12 @@
           "operationId": "getApiV4ProjectsIdSnippetsSnippetId",
           "response": {
             "body": {
-              "id": 1,
-              "raw_url": "https://mock-api-gitlab-developer.com/snippets/1/raw"
+              "id": 1
             }
           }
         },
         {
-          "path": "/snippets/1/raw",
-          "method": "GET",
+          "operationId": "getApiV4ProjectsIdSnippetsSnippetIdRaw",
           "response": {
             "body": "Snippet Content",
             "headers": {
@@ -1048,11 +1046,11 @@
           },
           {
             "method": "GET",
-            "path": "/snippets/1/raw",
+            "path": "/projects/12345/snippets/1/raw",
             "origin": "https://mock-api-gitlab-developer.com",
-            "headers_absent": [
-              "authorization"
-            ]
+            "headers": {
+              "authorization": "Bearer test-token"
+            }
           }
         ],
         "allow_additional_requests": false

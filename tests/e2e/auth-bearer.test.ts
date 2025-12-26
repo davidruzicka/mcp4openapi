@@ -13,7 +13,7 @@ describeIfListen('E2E: Bearer token authentication', () => {
   let mcp: McpProcess;
 
   const openapiSpecPath = path.resolve(process.cwd(), 'profiles/gitlab/openapi.yaml');
-  const profilePath = path.resolve(process.cwd(), 'profiles/gitlab/developer-profile.json');
+  const profilePath = path.resolve(process.cwd(), 'profiles/gitlab/developer-profile-oauth.json');
 
   beforeAll(async () => {
     mockServer = await startStandaloneMockServer({

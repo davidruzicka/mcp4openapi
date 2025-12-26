@@ -11,7 +11,7 @@ Principles:
 - Generic runner: `src/testing/generic-profile.test.ts`
 - Test schema: `src/testing/test-schema.ts`
 - Mock engine: `src/testing/dynamic-mock-server.ts`
-- Existing schema example: `profiles/gitlab/developer-profile.test.json`
+- Existing schema example: `profiles/gitlab/developer-profile-oauth.test.json`
 - Coverage gate: `src/testing/profile-test-coverage.test.ts`
 - E2E utilities still use a standalone mock server (by design).
 
@@ -71,14 +71,14 @@ Deliverable:
 ## Phase 3 - Migrate profiles (one by one)
 
 8) GitLab profile
-   - [x] Expand `profiles/gitlab/developer-profile.test.json` to cover all tool actions.
+   - [x] Expand `profiles/gitlab/developer-profile-oauth.test.json` to cover all tool actions.
    - [x] Use `expect.request` to assert parameter mapping and metadata exclusion.
    - [x] Keep E2E transport tests; remove redundant hardcoded mocks.
    - [x] Replace `src/testing/mock-gitlab-server.ts` usage where possible.
-   - [ ] Remove plain bearer GitLab profile and keep only OAuth variant.
-     - [ ] Delete `profiles/gitlab/developer-profile.json` and its test file once OAuth coverage is in place.
-     - [ ] Add `profiles/gitlab/developer-profile-oauth.test.json` based on existing scenarios.
-     - [ ] Update all references in tests and docs to use the OAuth profile.
+   - [x] Remove plain bearer GitLab profile and keep only OAuth variant.
+     - [x] Delete `profiles/gitlab/developer-profile.json` and its test file.
+     - [x] Add `profiles/gitlab/developer-profile-oauth.test.json` based on existing scenarios.
+     - [x] Update all references in tests and docs to use the OAuth profile.
      - [ ] Extend coverage gate to require a `.test.json` per profile JSON (not just per directory).
 
 9) YouTrack profile
