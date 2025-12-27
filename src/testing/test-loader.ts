@@ -35,6 +35,9 @@ export function validateTestAgainstProfile(testDef: ProfileTestDefinition, profi
   }
 
   const coveredOperations = new Set<string>();
+  const aliasKeys = new Set(
+    Object.values(profile.parameter_aliases ?? {}).flat()
+  );
 
   for (const scenario of testDef.scenarios) {
     // 1. Check if tool exists
@@ -65,8 +68,9 @@ export function validateTestAgainstProfile(testDef: ProfileTestDefinition, profi
       }
     }
 
+    let operationKey: string | undefined;
     if (tool.operations) {
-      const operationKey = resolveOperationKey(tool, scenario.arguments);
+      operationKey = resolveOperationKey(tool, scenario.arguments);
       if (operationKey) {
         coveredOperations.add(`${tool.name}.${operationKey}`);
       } else {
@@ -74,6 +78,17 @@ export function validateTestAgainstProfile(testDef: ProfileTestDefinition, profi
         throw new Error(
           `Test scenario '${scenario.name}' does not map to a known operation for tool '${scenario.tool}'. ` +
           `Available operations: ${available.join(', ')}`
+        );
+      }
+    } else if (tool.composite) {
+      coveredOperations.add(tool.name);
+    }
+
+    if (testDef.coverage?.require_request_assertions && shouldRequireRequestAssertions(tool, scenario, operationKey, aliasKeys)) {
+      const skipReason = resolveSkipRequestAssertions(testDef.coverage, scenario, tool, operationKey);
+      if (!skipReason && !hasRequestAssertions(scenario)) {
+        throw new Error(
+          `Test scenario '${scenario.name}' must include request assertions (expect.request or expect.requests).`
         );
       }
     }
@@ -119,6 +134,15 @@ function enforceCoverage(
   const missing: string[] = [];
 
   for (const tool of profile.tools) {
+    if (tool.composite) {
+      const coverageKey = tool.name;
+      const skipReason = coverage.skip_actions?.[coverageKey];
+      if (!skipReason && !coveredOperations.has(coverageKey)) {
+        missing.push(coverageKey);
+      }
+      continue;
+    }
+
     if (!tool.operations) continue;
 
     for (const action of Object.keys(tool.operations)) {
@@ -139,4 +163,58 @@ function enforceCoverage(
     const skipMessage = skipList.length > 0 ? ` Skipped: ${skipList.join(', ')}.` : '';
     throw new Error(`Test coverage incomplete. Missing scenarios for: ${missing.join(', ')}.${skipMessage}`);
   }
+}
+
+function hasRequestAssertions(scenario: ProfileTestDefinition['scenarios'][number]): boolean {
+  return Boolean(scenario.expect.request || (scenario.expect.requests && scenario.expect.requests.length > 0));
+}
+
+function shouldRequireRequestAssertions(
+  tool: Profile['tools'][number],
+  scenario: ProfileTestDefinition['scenarios'][number],
+  operationKey: string | undefined,
+  aliasKeys: Set<string>
+): boolean {
+  if (scenario.arguments && Object.keys(scenario.arguments).some(key => aliasKeys.has(key))) {
+    return true;
+  }
+
+  if (tool.send_response_fields_as_param && tool.response_fields) {
+    const action = scenario.arguments['action'] as string | undefined;
+    if ((action && tool.response_fields[action]) || (operationKey && tool.response_fields[operationKey])) {
+      return true;
+    }
+  }
+
+  if (operationKey && tool.operations) {
+    const operation = tool.operations[operationKey];
+    if (typeof operation === 'object' && operation?.type === 'proxy_download') {
+      return true;
+    }
+  }
+
+  const metadataParams = tool.metadata_params ?? [];
+  const usesCustomMetadata = metadataParams.some(param => param !== 'action' && param !== 'resource_type');
+  if (usesCustomMetadata && metadataParams.some(param => param in scenario.arguments)) {
+    return true;
+  }
+
+  return false;
+}
+
+function resolveSkipRequestAssertions(
+  coverage: CoverageRules,
+  scenario: ProfileTestDefinition['scenarios'][number],
+  tool: Profile['tools'][number],
+  operationKey: string | undefined
+): string | undefined {
+  if (!coverage.skip_request_assertions) {
+    return undefined;
+  }
+
+  return (
+    coverage.skip_request_assertions[scenario.name] ??
+    (operationKey ? coverage.skip_request_assertions[`${tool.name}.${operationKey}`] : undefined) ??
+    coverage.skip_request_assertions[tool.name]
+  );
 }
