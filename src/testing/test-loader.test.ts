@@ -74,7 +74,7 @@ describe('validateTestAgainstProfile', () => {
     };
 
     expect(() => validateTestAgainstProfile(testDef, baseProfile)).toThrowError(
-      /Missing scenarios for: manage_items.delete/
+      /Missing test coverage for destructive actions: manage_items.delete/
     );
   });
 

@@ -69,12 +69,23 @@ function assertSingleRequestMatch(
     }
   }
 
+  if (expectation.query_absent) {
+    for (const key of expectation.query_absent) {
+      const actual = matchingRequest.query[key];
+      expect(actual).toBeUndefined();
+    }
+  }
+
   if (expectation.body !== undefined) {
     if (typeof expectation.body === 'object' && expectation.body !== null) {
       expect(matchingRequest.body).toMatchObject(expectation.body as Record<string, unknown>);
     } else {
       expect(matchingRequest.body).toEqual(expectation.body);
     }
+  }
+
+  if (expectation.body_exact !== undefined) {
+    expect(matchingRequest.body).toEqual(expectation.body_exact);
   }
 }
 

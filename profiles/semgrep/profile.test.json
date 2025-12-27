@@ -29,6 +29,9 @@
             "deployment": { "deployments": [{ "id": 123, "slug": "test-deployment" }] }
           },
           "success": true
+        },
+        "request": {
+          "query_absent": ["action"]
         }
       }
     },
@@ -42,7 +45,14 @@
           "response": { "body": { "projects": [{ "id": 1, "name": "{{projectName}}" }] } }
         }
       ],
-      "expect": { "success": true, "result": { "projects": [{ "name": "{{projectName}}" }] } }
+      "expect": {
+        "success": true,
+        "result": { "projects": [{ "name": "{{projectName}}" }] },
+        "request": {
+          "query": { "page": 0, "page_size": 5 },
+          "query_absent": ["action"]
+        }
+      }
     },
     {
       "name": "Get Project",
@@ -65,7 +75,13 @@
           }
         }
       ],
-      "expect": { "success": true, "result": { "id": 1, "name": "{{projectName}}", "tags": ["frontend"] } }
+      "expect": {
+        "success": true,
+        "result": { "id": 1, "name": "{{projectName}}", "tags": ["frontend"] },
+        "request": {
+          "query_absent": ["action"]
+        }
+      }
     },
     {
       "name": "Update Project",
@@ -96,7 +112,13 @@
           }
         }
       ],
-      "expect": { "success": true, "result": { "id": 1, "tags": ["security"] } }
+      "expect": {
+        "success": true,
+        "result": { "id": 1, "tags": ["security"] },
+        "request": {
+          "query_absent": ["action"]
+        }
+      }
     },
     {
       "name": "Add Project Tags",
@@ -113,7 +135,13 @@
           "response": { "body": { "id": 1, "name": "{{projectName}}", "tags": ["critical"] } }
         }
       ],
-      "expect": { "success": true, "result": { "name": "{{projectName}}", "tags": ["critical"] } }
+      "expect": {
+        "success": true,
+        "result": { "name": "{{projectName}}", "tags": ["critical"] },
+        "request": {
+          "query_absent": ["action"]
+        }
+      }
     },
     {
       "name": "Remove Project Tags",
@@ -130,7 +158,13 @@
           "response": { "body": { "id": 1, "name": "{{projectName}}", "tags": [] } }
         }
       ],
-      "expect": { "success": true, "result": { "name": "{{projectName}}", "tags": [] } }
+      "expect": {
+        "success": true,
+        "result": { "name": "{{projectName}}", "tags": [] },
+        "request": {
+          "query_absent": ["action"]
+        }
+      }
     },
     {
       "name": "Toggle Managed Scan",
@@ -157,7 +191,13 @@
           }
         }
       ],
-      "expect": { "success": true, "result": { "name": "{{projectName}}" } }
+      "expect": {
+        "success": true,
+        "result": { "name": "{{projectName}}" },
+        "request": {
+          "query_absent": ["action"]
+        }
+      }
     },
     {
       "name": "Delete Project",
@@ -169,7 +209,12 @@
           "response": { "status": 204 }
         }
       ],
-      "expect": { "success": true }
+      "expect": {
+        "success": true,
+        "request": {
+          "query_absent": ["action"]
+        }
+      }
     },
     {
       "name": "List Findings",
@@ -181,7 +226,13 @@
           "response": { "body": { "sastFindings": { "findings": [{ "id": 123, "severity": "high" }] } } }
         }
       ],
-      "expect": { "success": true, "result": { "sastFindings": { "findings": [{ "id": 123 }] } } }
+      "expect": {
+        "success": true,
+        "result": { "sastFindings": { "findings": [{ "id": 123 }] } },
+        "request": {
+          "query_absent": ["action"]
+        }
+      }
     },
     {
       "name": "List Secrets",
@@ -193,7 +244,13 @@
           "response": { "body": { "secrets": [{ "id": 55, "status": "FINDING_STATUS_OPEN" }] } }
         }
       ],
-      "expect": { "success": true, "result": { "secrets": [{ "id": 55 }] } }
+      "expect": {
+        "success": true,
+        "result": { "secrets": [{ "id": 55 }] },
+        "request": {
+          "query_absent": ["action"]
+        }
+      }
     },
     {
       "name": "Search Scans",
@@ -210,7 +267,13 @@
           "response": { "body": { "scans": [{ "id": "scan-1", "repository_id": 101 }] } }
         }
       ],
-      "expect": { "success": true, "result": { "scans": [{ "id": "scan-1" }] } }
+      "expect": {
+        "success": true,
+        "result": { "scans": [{ "id": "scan-1" }] },
+        "request": {
+          "query_absent": ["action"]
+        }
+      }
     },
     {
       "name": "Get Scan",
@@ -227,7 +290,13 @@
           "response": { "body": { "id": "{{scanId}}", "status": "completed" } }
         }
       ],
-      "expect": { "success": true, "result": { "id": "{{scanId}}" } }
+      "expect": {
+        "success": true,
+        "result": { "id": "{{scanId}}" },
+        "request": {
+          "query_absent": ["action"]
+        }
+      }
     },
     {
       "name": "List Policies",
@@ -243,7 +312,13 @@
           "response": { "body": { "policies": [{ "id": "{{policyId}}", "name": "Default" }] } }
         }
       ],
-      "expect": { "success": true, "result": { "policies": [{ "id": "{{policyId}}" }] } }
+      "expect": {
+        "success": true,
+        "result": { "policies": [{ "id": "{{policyId}}" }] },
+        "request": {
+          "query_absent": ["action"]
+        }
+      }
     },
     {
       "name": "List Policy Rules",
@@ -260,7 +335,13 @@
           "response": { "body": { "rules": [{ "path": "rule.path.1" }] } }
         }
       ],
-      "expect": { "success": true, "result": { "rules": [{ "path": "rule.path.1" }] } }
+      "expect": {
+        "success": true,
+        "result": { "rules": [{ "path": "rule.path.1" }] },
+        "request": {
+          "query_absent": ["action"]
+        }
+      }
     },
     {
       "name": "Update Policy",
@@ -279,7 +360,13 @@
           "response": { "body": { "policy": { "id": "{{policyId}}", "mode": "MODE_BLOCK" } } }
         }
       ],
-      "expect": { "success": true, "result": { "policy": { "id": "{{policyId}}" } } }
+      "expect": {
+        "success": true,
+        "result": { "policy": { "id": "{{policyId}}" } },
+        "request": {
+          "query_absent": ["action"]
+        }
+      }
     },
     {
       "name": "List Dependencies",
@@ -295,7 +382,13 @@
           "response": { "body": { "dependencies": [{ "id": "dep-1", "name": "requests" }] } }
         }
       ],
-      "expect": { "success": true, "result": { "dependencies": [{ "id": "dep-1" }] } }
+      "expect": {
+        "success": true,
+        "result": { "dependencies": [{ "id": "dep-1" }] },
+        "request": {
+          "query_absent": ["action"]
+        }
+      }
     },
     {
       "name": "List Dependency Repositories",
@@ -311,7 +404,13 @@
           "response": { "body": { "repositories": [{ "id": "repo-1", "name": "{{projectName}}" }] } }
         }
       ],
-      "expect": { "success": true, "result": { "repositories": [{ "id": "repo-1" }] } }
+      "expect": {
+        "success": true,
+        "result": { "repositories": [{ "id": "repo-1" }] },
+        "request": {
+          "query_absent": ["action"]
+        }
+      }
     },
     {
       "name": "List Dependency Lockfiles",
@@ -328,7 +427,13 @@
           "response": { "body": { "lockfiles": [{ "path": "package-lock.json" }] } }
         }
       ],
-      "expect": { "success": true, "result": { "lockfiles": [{ "path": "package-lock.json" }] } }
+      "expect": {
+        "success": true,
+        "result": { "lockfiles": [{ "path": "package-lock.json" }] },
+        "request": {
+          "query_absent": ["action"]
+        }
+      }
     },
     {
       "name": "Create SBOM Export",
@@ -346,7 +451,13 @@
           "response": { "body": { "task_token": "{{taskToken}}" } }
         }
       ],
-      "expect": { "success": true, "result": { "task_token": "{{taskToken}}" } }
+      "expect": {
+        "success": true,
+        "result": { "task_token": "{{taskToken}}" },
+        "request": {
+          "query_absent": ["action"]
+        }
+      }
     },
     {
       "name": "Create SBOM Export - Missing deployment_id",
@@ -375,7 +486,13 @@
           "response": { "body": { "status": "COMPLETED", "download_url": "https://example.com/sbom.json" } }
         }
       ],
-      "expect": { "success": true, "result": { "status": "COMPLETED" } }
+      "expect": {
+        "success": true,
+        "result": { "status": "COMPLETED" },
+        "request": {
+          "query_absent": ["action"]
+        }
+      }
     },
     {
       "name": "Create Tickets",
@@ -392,7 +509,13 @@
           "response": { "body": { "tickets": [{ "id": 1, "external_id": "SEC-1" }] } }
         }
       ],
-      "expect": { "success": true, "result": { "tickets": [{ "id": 1 }] } }
+      "expect": {
+        "success": true,
+        "result": { "tickets": [{ "id": 1 }] },
+        "request": {
+          "query_absent": ["action"]
+        }
+      }
     },
     {
       "name": "Delete Ticket",
@@ -408,7 +531,12 @@
           "response": { "status": 204 }
         }
       ],
-      "expect": { "success": true }
+      "expect": {
+        "success": true,
+        "request": {
+          "query_absent": ["action"]
+        }
+      }
     },
     {
       "name": "Triage Findings",
@@ -427,7 +555,13 @@
           "response": { "body": { "num_triaged": 3, "triaged_issues": [123, 456, 789] } }
         }
       ],
-      "expect": { "success": true, "result": { "num_triaged": 3 } }
+      "expect": {
+        "success": true,
+        "result": { "num_triaged": 3 },
+        "request": {
+          "query_absent": ["action"]
+        }
+      }
     },
     {
       "name": "Triage Findings - Missing Params",

@@ -1,5 +1,5 @@
 import fs from 'fs';
-import { ProfileTestDefinitionSchema, ProfileTestDefinition, CoverageRules } from './test-schema.js';
+import { ProfileTestDefinitionSchema, ProfileTestDefinition, CoverageRules, TestScenario } from './test-schema.js';
 import { Profile } from '../types/profile.js';
 
 export async function loadTestDefinition(filepath: string): Promise<ProfileTestDefinition> {
@@ -76,9 +76,14 @@ export function validateTestAgainstProfile(testDef: ProfileTestDefinition, profi
           `Available operations: ${available.join(', ')}`
         );
       }
+    } else {
+      // For composite tools (no operations), use the tool name as the key
+      coveredOperations.add(tool.name);
     }
   }
 
+  enforceRequestAssertions(testDef, profile);
+  enforceDestructiveActionCoverage(testDef, profile);
   enforceCoverage(testDef.coverage, profile, coveredOperations);
 }
 
@@ -119,11 +124,22 @@ function enforceCoverage(
   const missing: string[] = [];
 
   for (const tool of profile.tools) {
-    if (!tool.operations) continue;
+    if (tool.operations) {
+      for (const action of Object.keys(tool.operations)) {
+        const coverageKey = `${tool.name}.${action}`;
+        const skipReason = coverage.skip_actions?.[coverageKey] ?? coverage.skip_actions?.[action];
+        if (skipReason) {
+          continue;
+        }
 
-    for (const action of Object.keys(tool.operations)) {
-      const coverageKey = `${tool.name}.${action}`;
-      const skipReason = coverage.skip_actions?.[coverageKey] ?? coverage.skip_actions?.[action];
+        if (!coveredOperations.has(coverageKey)) {
+          missing.push(coverageKey);
+        }
+      }
+    } else {
+      // Composite tool coverage check
+      const coverageKey = tool.name;
+      const skipReason = coverage.skip_actions?.[coverageKey];
       if (skipReason) {
         continue;
       }
@@ -138,5 +154,133 @@ function enforceCoverage(
     const skipList = Object.entries(coverage.skip_actions || {}).map(([key, reason]) => `${key} (${reason})`);
     const skipMessage = skipList.length > 0 ? ` Skipped: ${skipList.join(', ')}.` : '';
     throw new Error(`Test coverage incomplete. Missing scenarios for: ${missing.join(', ')}.${skipMessage}`);
+  }
+}
+
+function enforceRequestAssertions(testDef: ProfileTestDefinition, profile: Profile): void {
+  for (const tool of profile.tools) {
+    const criticalFeatures = [];
+
+    // Check for parameter aliases (defined in profile, applied to tool if param exists)
+    if (profile.parameter_aliases) {
+      const toolParamNames = Object.keys(tool.parameters);
+      const aliasedParams = Object.keys(profile.parameter_aliases).filter(targetParam =>
+        toolParamNames.includes(targetParam)
+      );
+      if (aliasedParams.length > 0) {
+        criticalFeatures.push('parameter_aliases');
+      }
+    }
+
+    // Check for metadata params (often excluded from body)
+    if (tool.metadata_params && tool.metadata_params.length > 0) {
+      criticalFeatures.push('metadata_params');
+    }
+
+    if (tool.send_response_fields_as_param) {
+      criticalFeatures.push('send_response_fields_as_param');
+    }
+
+    // Check for proxy operations
+    if (tool.operations) {
+      const hasProxy = Object.values(tool.operations).some(op =>
+        typeof op === 'object' && op.type === 'proxy_download'
+      );
+      if (hasProxy) {
+        criticalFeatures.push('proxy_download');
+      }
+    }
+
+    if (criticalFeatures.length === 0) continue;
+
+    // Find scenarios for this tool
+    const scenarios = testDef.scenarios.filter(s => s.tool === tool.name);
+
+    if (scenarios.length === 0) continue; // Coverage check handles missing scenarios
+
+    // Check if any scenario has request assertions, unless skipped
+    // We enforce this per-action (or per-tool if no operations)
+    // At least ONE scenario for each action must have assertions.
+
+    if (tool.operations) {
+      for (const action of Object.keys(tool.operations)) {
+        const coverageKey = `${tool.name}.${action}`;
+        const isSkipped = testDef.coverage?.skip_request_assertions?.includes(coverageKey);
+        if (isSkipped) continue;
+
+        // Find scenarios for this specific action
+        const actionScenarios = scenarios.filter(s => resolveOperationKey(tool, s.arguments) === action);
+
+        if (actionScenarios.length === 0) continue; // Covered by general coverage check
+
+        const hasAssertion = actionScenarios.some(s => s.expect.request || s.expect.requests);
+        if (!hasAssertion) {
+           throw new Error(
+            `No test scenario for action '${coverageKey}' includes request assertions (expect.request or expect.requests), ` +
+            `but the tool uses critical features (${criticalFeatures.join(', ')}). ` +
+            `Add assertions to at least one scenario for this action.`
+          );
+        }
+      }
+    } else {
+      // Composite tool (no operations map)
+      const coverageKey = tool.name;
+      const isSkipped = testDef.coverage?.skip_request_assertions?.includes(coverageKey);
+      if (!isSkipped) {
+        const hasAssertion = scenarios.some(s => s.expect.request || s.expect.requests);
+        if (!hasAssertion) {
+           throw new Error(
+            `No test scenario for tool '${coverageKey}' includes request assertions (expect.request or expect.requests), ` +
+            `but the tool uses critical features (${criticalFeatures.join(', ')}). ` +
+            `Add assertions to at least one scenario.`
+          );
+        }
+      }
+    }
+  }
+}
+
+function enforceDestructiveActionCoverage(testDef: ProfileTestDefinition, profile: Profile): void {
+  const destructiveRegex = /(delete|remove|revoke|cancel|terminate|reset)/i;
+  const missingDestructive: string[] = [];
+
+  for (const tool of profile.tools) {
+    if (tool.operations) {
+      for (const [action, opDef] of Object.entries(tool.operations)) {
+        const opId = typeof opDef === 'string' ? opDef : (opDef as any).operationId; // Type cast as fallback
+        const isDestructive = destructiveRegex.test(action) || (opId && destructiveRegex.test(opId));
+
+        if (isDestructive) {
+          const coverageKey = `${tool.name}.${action}`;
+          const isSkipped = testDef.coverage.skip_actions[coverageKey];
+          if (isSkipped) continue;
+
+          // Check if covered
+          const covered = testDef.scenarios.some(s => s.tool === tool.name && resolveOperationKey(tool, s.arguments) === action);
+          if (!covered) {
+            missingDestructive.push(coverageKey);
+          }
+        }
+      }
+    } else {
+       const isDestructive = destructiveRegex.test(tool.name);
+       if (isDestructive) {
+         const coverageKey = tool.name;
+         const isSkipped = testDef.coverage.skip_actions[coverageKey];
+         if (isSkipped) continue;
+
+         const covered = testDef.scenarios.some(s => s.tool === tool.name);
+         if (!covered) {
+           missingDestructive.push(coverageKey);
+         }
+       }
+    }
+  }
+
+  if (missingDestructive.length > 0) {
+    throw new Error(
+      `Missing test coverage for destructive actions: ${missingDestructive.join(', ')}. ` +
+      `Destructive actions must be tested or explicitly skipped in coverage.skip_actions.`
+    );
   }
 }

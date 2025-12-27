@@ -34,7 +34,18 @@
         "result": {
           "fileName": "allowed.txt",
           "content": "YWxsb3dlZA=="
-        }
+        },
+        "requests": [
+          {
+            "method": "GET",
+            "path": "/files/{{fileId}}"
+          },
+          {
+            "method": "GET",
+            "origin": "https://203.0.113.10",
+            "path": "/files/allowed.txt"
+          }
+        ]
       }
     },
     {

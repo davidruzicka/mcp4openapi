@@ -10,7 +10,9 @@ const RequestExpectationSchema = z.object({
     .describe('Expected query parameters (strings, numbers, booleans, or arrays)'),
   headers: z.record(z.string()).optional().describe('Expected HTTP headers'),
   headers_absent: z.array(z.string()).optional().describe('Headers that must NOT be present on the request'),
-  body: z.any().optional().describe('Expected request body (partial match allowed)')
+  query_absent: z.array(z.string()).optional().describe('Query parameters that must NOT be present on the request'),
+  body: z.any().optional().describe('Expected request body (partial match allowed)'),
+  body_exact: z.any().optional().describe('Expected request body with deep equality (no extra fields)')
 });
 
 export const MockDefinitionSchema = z.object({
@@ -33,7 +35,6 @@ export const TestExpectationSchema = z.object({
   success: z.boolean().default(true).describe('Whether the tool call should succeed'),
   result: z.any().optional().describe('Expected exact result (partial match)'),
   result_exact: z.any().optional().describe('Expected result with deep equality (no extra fields)'),
-  result_schema: z.any().optional().describe('JSON schema to validate result against'),
   error_code: z.string().optional().describe('Expected error code if success is false'),
   error_message_regex: z.string().optional().describe('Regex to match error message'),
   request: RequestExpectationSchema.optional().describe('Expected HTTP request details for the scenario'),
@@ -54,11 +55,13 @@ export const TestScenarioSchema = z.object({
 const CoverageRulesSchema = z
   .object({
     require_all_actions: z.boolean().default(false),
-    skip_actions: z.record(z.string().min(1)).default({})
+    skip_actions: z.record(z.string().min(1)).default({}),
+    skip_request_assertions: z.array(z.string()).optional().describe('List of coverage keys to skip request assertion enforcement for')
   })
   .default({
     require_all_actions: false,
-    skip_actions: {}
+    skip_actions: {},
+    skip_request_assertions: []
   });
 
 export const ProfileTestDefinitionSchema = z.object({
