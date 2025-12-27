@@ -3,14 +3,21 @@ import { z } from 'zod';
 const RequestExpectationSchema = z.object({
   method: z.string().optional().describe('Expected HTTP method'),
   path: z.string().optional().describe('Expected request path'),
+  path_regex: z.string().optional().describe('Regex to match request path'),
   origin: z.string().optional().describe('Expected request origin (protocol + host + port)'),
+  origin_regex: z.string().optional().describe('Regex to match request origin (protocol + host + port)'),
   query: z
     .record(z.union([z.string(), z.number(), z.boolean(), z.array(z.union([z.string(), z.number(), z.boolean()]))]))
     .optional()
     .describe('Expected query parameters (strings, numbers, booleans, or arrays)'),
+  query_absent: z.array(z.string()).optional().describe('Query parameters that must NOT be present'),
+  query_regex: z.record(z.string()).optional().describe('Regex to match query parameter values'),
   headers: z.record(z.string()).optional().describe('Expected HTTP headers'),
+  headers_regex: z.record(z.string()).optional().describe('Regex to match header values'),
   headers_absent: z.array(z.string()).optional().describe('Headers that must NOT be present on the request'),
-  body: z.any().optional().describe('Expected request body (partial match allowed)')
+  body: z.any().optional().describe('Expected request body (partial match allowed)'),
+  body_exact: z.any().optional().describe('Expected request body (exact match required)'),
+  body_regex: z.string().optional().describe('Regex to match stringified request body')
 });
 
 export const MockDefinitionSchema = z.object({
@@ -33,7 +40,6 @@ export const TestExpectationSchema = z.object({
   success: z.boolean().default(true).describe('Whether the tool call should succeed'),
   result: z.any().optional().describe('Expected exact result (partial match)'),
   result_exact: z.any().optional().describe('Expected result with deep equality (no extra fields)'),
-  result_schema: z.any().optional().describe('JSON schema to validate result against'),
   error_code: z.string().optional().describe('Expected error code if success is false'),
   error_message_regex: z.string().optional().describe('Regex to match error message'),
   request: RequestExpectationSchema.optional().describe('Expected HTTP request details for the scenario'),
@@ -54,11 +60,15 @@ export const TestScenarioSchema = z.object({
 const CoverageRulesSchema = z
   .object({
     require_all_actions: z.boolean().default(false),
-    skip_actions: z.record(z.string().min(1)).default({})
+    skip_actions: z.record(z.string().min(1)).default({}),
+    require_request_assertions: z.boolean().default(false),
+    skip_request_assertions: z.record(z.string().min(1)).default({})
   })
   .default({
     require_all_actions: false,
-    skip_actions: {}
+    skip_actions: {},
+    require_request_assertions: false,
+    skip_request_assertions: {}
   });
 
 export const ProfileTestDefinitionSchema = z.object({
