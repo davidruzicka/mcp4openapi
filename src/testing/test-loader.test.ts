@@ -303,4 +303,68 @@ describe('validateTestAgainstProfile', () => {
 
     expect(() => validateTestAgainstProfile(withAssertions, profile)).not.toThrow();
   });
+
+  it('enforces destructive action coverage unless explicitly skipped', () => {
+    const profile: Profile = {
+      profile_name: 'dangerous',
+      tools: [
+        {
+          name: 'manage_jobs',
+          description: 'Manage jobs',
+          operations: {
+            create: 'createJob',
+            cancel: 'cancelJob',
+            reset: 'resetJob'
+          },
+          parameters: {
+            action: {
+              type: 'string',
+              required: true,
+              enum: ['create', 'cancel', 'reset'],
+              description: 'Action to perform'
+            }
+          }
+        }
+      ]
+    };
+
+    const missingDestructive: ProfileTestDefinition = {
+      scenarios: [
+        {
+          name: 'create job',
+          tool: 'manage_jobs',
+          arguments: { action: 'create' },
+          expect: { success: true }
+        }
+      ],
+      coverage: {
+        require_all_actions: false,
+        skip_actions: {}
+      }
+    };
+
+    expect(() => validateTestAgainstProfile(missingDestructive, profile)).toThrowError(
+      /Destructive actions missing coverage: manage_jobs.cancel, manage_jobs.reset/
+    );
+
+    const skippedDestructive: ProfileTestDefinition = {
+      scenarios: [
+        {
+          name: 'create job',
+          tool: 'manage_jobs',
+          arguments: { action: 'create' },
+          expect: { success: true }
+        }
+      ],
+      coverage: {
+        require_all_actions: false,
+        skip_actions: {
+          'manage_jobs.cancel': 'Cancel covered elsewhere',
+          reset: 'Reset not supported in staging'
+        }
+      }
+    };
+
+    expect(() => validateTestAgainstProfile(skippedDestructive, profile)).not.toThrow();
+  });
 });

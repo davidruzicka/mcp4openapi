@@ -486,7 +486,8 @@
       "tool": "manage_issues",
       "arguments": {
         "action": "list",
-        "project_id": "{{projectId}}"
+        "project_id": "{{projectId}}",
+        "state": ["opened", "closed"]
       },
       "mocks": [
         {
@@ -508,7 +509,14 @@
           {
             "title": "Bug"
           }
-        ]
+        ],
+        "request": {
+          "method": "GET",
+          "path": "/projects/{{projectId}}/issues",
+          "query": {
+            "state[]": ["opened", "closed"]
+          }
+        }
       }
     },
     {
@@ -1918,7 +1926,7 @@
         "request": {
           "method": "POST",
           "path": "/projects/{{projectId}}/releases",
-          "body": {
+          "body_exact": {
             "tag_name": "v1.0",
             "name": "New"
           }

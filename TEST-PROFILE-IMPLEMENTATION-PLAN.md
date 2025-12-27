@@ -125,20 +125,20 @@ Deliverable:
    - [x] Extend `RequestExpectationSchema` with `query_absent` and `body_exact`.
    - [x] Implement checks in `assertSingleRequestMatch()` to validate absence and exact body matches.
    - [x] Add request-assertion unit tests for absence and exact matches.
-   - [ ] Use in profile tests to verify `metadata_params` are excluded from body.
+   - [x] Use in profile tests to verify `metadata_params` are excluded from body.
 
 16) Validate `array_format` behavior in schema tests
-   - [ ] Add at least one scenario per profile that uses array parameters.
-   - [ ] Assert serialized query shape for `array_format` (e.g., brackets) via `expect.request.query`.
+   - [x] Add at least one scenario per profile that uses array parameters.
+   - [x] Assert serialized query shape for `array_format` (e.g., brackets) via `expect.request.query`.
 
-17) Remove `result_schema` from test schema
+17) Remove deprecated test-schema field references
    - [x] Remove from `src/testing/test-schema.ts`.
-   - [ ] Remove any mention from docs or plans if present.
+   - [x] Remove any mention from docs or plans if present.
 
 18) Enforce destructive action coverage
-   - [ ] Define destructive actions per tool (e.g., `delete`, `remove`, `revoke`, `cancel`, `reset`, `terminate`) in `validateTestAgainstProfile()` or a helper.
-   - [ ] Require scenarios for destructive actions unless explicitly skipped with a reason in `skip_actions`.
-   - [ ] Add tests in `src/testing/test-loader.test.ts` for destructive enforcement and skip reasons.
+   - [x] Define destructive actions per tool (e.g., `delete`, `remove`, `revoke`, `cancel`, `reset`, `terminate`) in `validateTestAgainstProfile()` or a helper.
+   - [x] Require scenarios for destructive actions unless explicitly skipped with a reason in `skip_actions`.
+   - [x] Add tests in `src/testing/test-loader.test.ts` for destructive enforcement and skip reasons.
 
 19) Add regex request assertions (opt-in)
    - [x] Extend `RequestExpectationSchema` with `path_regex`, `origin_regex`, `headers_regex`, `query_regex`, `body_regex`.
