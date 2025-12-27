@@ -110,35 +110,35 @@ Deliverable:
 ## Phase 5 - Remaining gaps for full migration
 
 13) Enforce coverage for composite tools (no `operations`)
-   - [ ] Update coverage to treat each composite tool as a required action.
-     - [ ] Add a coverage key for composite tools (e.g., `tool.name`).
-     - [ ] Allow `skip_actions` to reference composite tools by name.
-     - [ ] Add tests in `src/testing/test-loader.test.ts` to cover composite enforcement.
+   - [x] Update coverage to treat each composite tool as a required action.
+     - [x] Add a coverage key for composite tools (e.g., `tool.name`).
+     - [x] Allow `skip_actions` to reference composite tools by name.
+     - [x] Add tests in `src/testing/test-loader.test.ts` to cover composite enforcement.
 
 14) Require request-shape assertions for critical scenarios only
-   - [ ] Extend schema with coverage rules like `require_request_assertions` and `skip_request_assertions`.
-   - [ ] Enforce in `validateTestAgainstProfile()` that scenarios include `expect.request` or `expect.requests` when required.
-   - [ ] Define "critical" as: parameter_aliases, send_response_fields_as_param, proxy download, metadata exclusion checks.
-   - [ ] Add negative cases in `src/testing/test-loader.test.ts`.
+   - [x] Extend schema with coverage rules like `require_request_assertions` and `skip_request_assertions`.
+   - [x] Enforce in `validateTestAgainstProfile()` that scenarios include `expect.request` or `expect.requests` when required.
+   - [x] Define "critical" as: parameter_aliases, send_response_fields_as_param, proxy download, metadata exclusion checks.
+   - [x] Add negative cases in `src/testing/test-loader.test.ts`.
 
 15) Add negative request assertions for metadata exclusion
-   - [ ] Extend `RequestExpectationSchema` with `query_absent` and `body_exact`.
-   - [ ] Implement checks in `assertSingleRequestMatch()` to validate absence and exact body matches.
-   - [ ] Add request-assertion unit tests for absence and exact matches.
-   - [ ] Use in profile tests to verify `metadata_params` are excluded from body.
+   - [x] Extend `RequestExpectationSchema` with `query_absent` and `body_exact`.
+   - [x] Implement checks in `assertSingleRequestMatch()` to validate absence and exact body matches.
+   - [x] Add request-assertion unit tests for absence and exact matches.
+   - [x] Use in profile tests to verify `metadata_params` are excluded from body.
 
 16) Validate `array_format` behavior in schema tests
    - [ ] Add at least one scenario per profile that uses array parameters.
    - [ ] Assert serialized query shape for `array_format` (e.g., brackets) via `expect.request.query`.
 
 17) Remove `result_schema` from test schema
-   - [ ] Remove from `src/testing/test-schema.ts`.
-   - [ ] Remove any mention from docs or plans if present.
+   - [x] Remove from `src/testing/test-schema.ts`.
+   - [x] Remove any mention from docs or plans if present.
 
 18) Enforce destructive action coverage
-   - [ ] Define destructive actions per tool (e.g., `delete`, `remove`, `revoke`, `cancel`, `reset`, `terminate`) in `validateTestAgainstProfile()` or a helper.
-   - [ ] Require scenarios for destructive actions unless explicitly skipped with a reason in `skip_actions`.
-   - [ ] Add tests in `src/testing/test-loader.test.ts` for destructive enforcement and skip reasons.
+   - [x] Define destructive actions per tool (e.g., `delete`, `remove`, `revoke`, `cancel`, `reset`, `terminate`) in `validateTestAgainstProfile()` or a helper.
+   - [x] Require scenarios for destructive actions unless explicitly skipped with a reason in `skip_actions`.
+   - [x] Add tests in `src/testing/test-loader.test.ts` for destructive enforcement and skip reasons.
 
 19) Add regex request assertions (opt-in)
    - [ ] Extend `RequestExpectationSchema` with `path_regex`, `origin_regex`, `headers_regex`, `query_regex`, `body_regex`.
