@@ -8,7 +8,7 @@
     {
       "name": "Proxy Download - Allowed Host",
       "tool": "download_files",
-      "arguments": { "action": "download", "file_id": "{{fileId}}" },
+      "arguments": { "action": "download", "file_id": "{{fileId}}", "include": ["id", "url"] },
       "mocks": [
         {
           "operationId": "getFileMetadata",

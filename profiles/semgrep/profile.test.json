@@ -113,7 +113,15 @@
           "response": { "body": { "id": 1, "name": "{{projectName}}", "tags": ["critical"] } }
         }
       ],
-      "expect": { "success": true, "result": { "name": "{{projectName}}", "tags": ["critical"] } }
+      "expect": {
+        "success": true,
+        "result": { "name": "{{projectName}}", "tags": ["critical"] },
+        "request": {
+          "method": "PUT",
+          "path": "/api/v1/deployments/{{deploymentSlug}}/projects/test-org%2Ftest-repo/tags",
+          "query": { "tags": ["critical"] }
+        }
+      }
     },
     {
       "name": "Remove Project Tags",

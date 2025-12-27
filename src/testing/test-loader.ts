@@ -95,6 +95,7 @@ export function validateTestAgainstProfile(testDef: ProfileTestDefinition, profi
   }
 
   enforceCoverage(testDef.coverage, profile, coveredOperations);
+  enforceDestructiveCoverage(testDef.coverage, profile, coveredOperations);
 }
 
 function resolveOperationKey(tool: Profile['tools'][number], args: Record<string, unknown>): string | undefined {
@@ -147,7 +148,7 @@ function enforceCoverage(
 
     for (const action of Object.keys(tool.operations)) {
       const coverageKey = `${tool.name}.${action}`;
-      const skipReason = coverage.skip_actions?.[coverageKey] ?? coverage.skip_actions?.[action];
+      const skipReason = resolveSkipAction(coverage, coverageKey, action);
       if (skipReason) {
         continue;
       }
@@ -163,6 +164,68 @@ function enforceCoverage(
     const skipMessage = skipList.length > 0 ? ` Skipped: ${skipList.join(', ')}.` : '';
     throw new Error(`Test coverage incomplete. Missing scenarios for: ${missing.join(', ')}.${skipMessage}`);
   }
+}
+
+function enforceDestructiveCoverage(
+  coverage: CoverageRules | undefined,
+  profile: Profile,
+  coveredOperations: Set<string>
+): void {
+  const missing: string[] = [];
+  const destructiveActions = new Set<string>();
+
+  for (const tool of profile.tools) {
+    if (!tool.operations) continue;
+
+    for (const action of Object.keys(tool.operations)) {
+      if (!isDestructiveAction(action)) {
+        continue;
+      }
+
+      destructiveActions.add(`${tool.name}.${action}`);
+      const coverageKey = `${tool.name}.${action}`;
+      const skipReason = resolveSkipAction(coverage, coverageKey, action);
+      if (skipReason) {
+        continue;
+      }
+
+      if (!coveredOperations.has(coverageKey)) {
+        missing.push(coverageKey);
+      }
+    }
+  }
+
+  if (missing.length > 0) {
+    const skipList = Object.entries(coverage?.skip_actions || {}).map(([key, reason]) => `${key} (${reason})`);
+    const skipMessage = skipList.length > 0 ? ` Skipped: ${skipList.join(', ')}.` : '';
+    throw new Error(`Destructive actions missing coverage: ${missing.join(', ')}.${skipMessage}`);
+  }
+}
+
+function resolveSkipAction(
+  coverage: CoverageRules | undefined,
+  coverageKey: string,
+  action?: string
+): string | undefined {
+  if (!coverage?.skip_actions) {
+    return undefined;
+  }
+
+  if (coverage.skip_actions[coverageKey]) {
+    return coverage.skip_actions[coverageKey];
+  }
+
+  if (action && coverage.skip_actions[action]) {
+    return coverage.skip_actions[action];
+  }
+
+  return undefined;
+}
+
+function isDestructiveAction(action: string): boolean {
+  const destructiveVerbs = ['delete', 'remove', 'revoke', 'cancel', 'reset', 'terminate', 'destroy', 'purge'];
+  const tokens = action.toLowerCase().split(/[^a-z0-9]+/);
+  return destructiveVerbs.some(verb => tokens.includes(verb));
 }
 
 function hasRequestAssertions(scenario: ProfileTestDefinition['scenarios'][number]): boolean {
