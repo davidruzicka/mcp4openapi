@@ -79,6 +79,24 @@ describe('assertRequestMatches', () => {
     ).toThrowError();
   });
 
+  it('supports regex assertions', () => {
+    expect(() =>
+      assertRequestMatches(requests, {
+        method: 'POST', // Ensure we pick the POST request which has a body
+        path_regex: '/item.*',
+        origin_regex: 'https://.*\\.local',
+        headers_regex: { 'content-type': 'application/json' },
+        body_regex: '.*demo.*'
+      })
+    ).not.toThrow();
+
+    expect(() =>
+      assertRequestMatches(requests, {
+        path_regex: '/nonexistent.*'
+      })
+    ).toThrowError(/Expected request was not executed/);
+  });
+
   it('checks headers_absent and sequences', () => {
     expect(() =>
       assertRequestsSequence(

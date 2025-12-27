@@ -12,7 +12,12 @@ const RequestExpectationSchema = z.object({
   headers_absent: z.array(z.string()).optional().describe('Headers that must NOT be present on the request'),
   query_absent: z.array(z.string()).optional().describe('Query parameters that must NOT be present on the request'),
   body: z.any().optional().describe('Expected request body (partial match allowed)'),
-  body_exact: z.any().optional().describe('Expected request body with deep equality (no extra fields)')
+  body_exact: z.any().optional().describe('Expected request body with deep equality (no extra fields)'),
+  path_regex: z.string().optional().describe('Regex to match request path'),
+  origin_regex: z.string().optional().describe('Regex to match request origin'),
+  headers_regex: z.record(z.string()).optional().describe('Regexes to match specific HTTP headers'),
+  query_regex: z.record(z.string()).optional().describe('Regexes to match specific query parameters'),
+  body_regex: z.string().optional().describe('Regex to match request body (as string)')
 });
 
 export const MockDefinitionSchema = z.object({

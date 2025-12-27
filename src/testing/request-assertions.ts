@@ -20,8 +20,22 @@ function findMatchingRequest(
       return false;
     }
 
+    if (expectation.path_regex) {
+      const regex = new RegExp(expectation.path_regex);
+      if (!regex.test(request.path)) {
+        return false;
+      }
+    }
+
     if (expectation.origin && request.origin !== expectation.origin) {
       return false;
+    }
+
+    if (expectation.origin_regex) {
+      const regex = new RegExp(expectation.origin_regex);
+      if (!regex.test(request.origin)) {
+        return false;
+      }
     }
 
     return true;
@@ -40,8 +54,16 @@ function assertSingleRequestMatch(
     expect(matchingRequest.path).toBe(expectation.path);
   }
 
+  if (expectation.path_regex) {
+    expect(matchingRequest.path).toMatch(new RegExp(expectation.path_regex));
+  }
+
   if (expectation.origin) {
     expect(matchingRequest.origin).toBe(expectation.origin);
+  }
+
+  if (expectation.origin_regex) {
+    expect(matchingRequest.origin).toMatch(new RegExp(expectation.origin_regex));
   }
 
   if (expectation.headers) {
@@ -49,6 +71,14 @@ function assertSingleRequestMatch(
       const actual = matchingRequest.headers[key.toLowerCase()];
       expect(actual).toBeDefined();
       expect(actual).toBe(value);
+    }
+  }
+
+  if (expectation.headers_regex) {
+    for (const [key, regexStr] of Object.entries(expectation.headers_regex)) {
+      const actual = matchingRequest.headers[key.toLowerCase()];
+      expect(actual).toBeDefined();
+      expect(actual).toMatch(new RegExp(regexStr));
     }
   }
 
@@ -69,6 +99,15 @@ function assertSingleRequestMatch(
     }
   }
 
+  if (expectation.query_regex) {
+    for (const [key, regexStr] of Object.entries(expectation.query_regex)) {
+      const actual = matchingRequest.query[key];
+      expect(actual).toBeDefined();
+      const actualStr = String(actual); // Simple conversion, assuming scalar for regex
+      expect(actualStr).toMatch(new RegExp(regexStr));
+    }
+  }
+
   if (expectation.query_absent) {
     for (const key of expectation.query_absent) {
       const actual = matchingRequest.query[key];
@@ -86,6 +125,14 @@ function assertSingleRequestMatch(
 
   if (expectation.body_exact !== undefined) {
     expect(matchingRequest.body).toEqual(expectation.body_exact);
+  }
+
+  if (expectation.body_regex) {
+    expect(matchingRequest.body).toBeDefined();
+    const bodyStr = typeof matchingRequest.body === 'string'
+      ? matchingRequest.body
+      : JSON.stringify(matchingRequest.body);
+    expect(bodyStr).toMatch(new RegExp(expectation.body_regex));
   }
 }
 

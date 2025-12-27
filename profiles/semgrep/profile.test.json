@@ -139,6 +139,7 @@
         "success": true,
         "result": { "name": "{{projectName}}", "tags": ["critical"] },
         "request": {
+          "query": { "tags": ["critical"] },
           "query_absent": ["action"]
         }
       }
