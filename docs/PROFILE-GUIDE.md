@@ -664,6 +664,12 @@ export MCP4_OPENAPI_SPEC_PATH=./openapi.yaml
 npm start
 ```
 
+### Automated Testing
+
+We highly recommend writing automated tests for your profile using our schema-driven testing framework. This allows you to verify tool behavior, parameter mapping, and coverage without needing a live API.
+
+See the **[Profile Testing Guide](./PROFILE-TESTING-GUIDE.md)** for detailed instructions on creating `*.test.json` files.
+
 The `validate` command checks:
 - JSON syntax
 - Schema compliance (types, required fields)
