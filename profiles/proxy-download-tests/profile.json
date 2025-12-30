@@ -27,6 +27,13 @@
           "type": "string",
           "description": "File identifier",
           "required_for": ["download"]
+        },
+        "include": {
+          "type": "array",
+          "description": "Optional metadata fields to include",
+          "items": {
+            "type": "string"
+          }
         }
       },
       "operations": {
