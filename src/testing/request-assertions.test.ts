@@ -60,6 +60,67 @@ describe('assertRequestMatches', () => {
     ).not.toThrow();
   });
 
+  it('supports absent query checks and exact body matching', () => {
+    expect(() =>
+      assertRequestMatches(requests, {
+        method: 'GET',
+        path: '/items',
+        query_absent: ['missing']
+      })
+    ).not.toThrow();
+
+    expect(() =>
+      assertRequestMatches(requests, {
+        method: 'POST',
+        path: '/items/42',
+        body_exact: { name: 'demo', description: 'item' }
+      })
+    ).not.toThrow();
+
+    expect(() =>
+      assertRequestMatches(requests, {
+        method: 'GET',
+        path: '/items',
+        query_absent: ['page']
+      })
+    ).toThrowError();
+
+    expect(() =>
+      assertRequestMatches(requests, {
+        method: 'POST',
+        path: '/items/42',
+        body_exact: { name: 'demo' }
+      })
+    ).toThrowError();
+  });
+
+  it('matches regex expectations when provided', () => {
+    expect(() =>
+      assertRequestMatches(requests, {
+        method: 'GET',
+        path_regex: '^/items$',
+        origin_regex: '^https://mock\\.local$',
+        headers_regex: { 'x-id': '^ab' },
+        query_regex: { page: '^1$' }
+      })
+    ).not.toThrow();
+
+    expect(() =>
+      assertRequestMatches(requests, {
+        method: 'POST',
+        path_regex: '^/items/\\d+$',
+        body_regex: '"name":"demo"'
+      })
+    ).not.toThrow();
+
+    expect(() =>
+      assertRequestMatches(requests, {
+        method: 'GET',
+        path_regex: '^/missing$'
+      })
+    ).toThrowError();
+  });
+
   it('fails when no request matches expectation', () => {
     expect(() =>
       assertRequestMatches(requests, {

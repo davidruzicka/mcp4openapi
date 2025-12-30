@@ -964,7 +964,14 @@
         }
       ],
       "expect": {
-        "success": true
+        "success": true,
+        "request": {
+          "method": "POST",
+          "path": "/issues/ISSUE-123/comments",
+          "body_exact": {
+            "text": "Test text"
+          }
+        }
       }
     },
     {
@@ -1096,7 +1103,8 @@
         "id": "ISSUE-123",
         "issueLinkId": "link-1",
         "issues": [
-          "ISSUE-456"
+          "ISSUE-456",
+          "ISSUE-789"
         ]
       },
       "mocks": [
@@ -1111,7 +1119,17 @@
         }
       ],
       "expect": {
-        "success": true
+        "success": true,
+        "request": {
+          "method": "POST",
+          "path": "/issues/ISSUE-123/links/link-1/issues",
+          "body_exact": {
+            "issues": [
+              "ISSUE-456",
+              "ISSUE-789"
+            ]
+          }
+        }
       }
     },
     {
