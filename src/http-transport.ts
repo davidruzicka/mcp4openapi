@@ -127,6 +127,21 @@ export class HttpTransport {
       next();
     });
 
+    // Security: Standard security headers
+    this.app.use((req: Request, res: Response, next: NextFunction) => {
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.setHeader('X-Frame-Options', 'DENY');
+      res.setHeader('Content-Security-Policy', "default-src 'self'");
+
+      // Strict-Transport-Security (HSTS)
+      // Only set for non-localhost to facilitate local development
+      if (req.hostname !== 'localhost' && req.hostname !== '127.0.0.1') {
+        res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+      }
+
+      next();
+    });
+
     // JSON body parser
     this.app.use(express.json());
 
