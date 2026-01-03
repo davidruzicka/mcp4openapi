@@ -6,14 +6,18 @@ import { ProfileLoader } from '../profile-loader.js';
 
 const profilesDir = path.join(process.cwd(), 'profiles');
 
-function isProfileJsonFile(fileName: string): boolean {
-  return (
-    fileName.endsWith('.json') &&
-    !fileName.endsWith('.test.json') &&
-    !fileName.endsWith('schema.json') &&
-    !fileName.endsWith('package.json') &&
-    !fileName.endsWith('openapi.json')
-  );
+function isProfileJsonFile(filePath: string): boolean {
+  if (!filePath.endsWith('.json') || filePath.endsWith('.test.json')) {
+    return false;
+  }
+
+  try {
+    const raw = fs.readFileSync(filePath, 'utf8');
+    const parsed = JSON.parse(raw) as { profile_name?: string };
+    return typeof parsed.profile_name === 'string' && parsed.profile_name.length > 0;
+  } catch {
+    return false;
+  }
 }
 
 function listProfileDirectories(rootDir: string): string[] {
@@ -46,7 +50,7 @@ function findMissingTestFiles(rootDir: string): string[] {
 
   for (const dir of dirs) {
     const entries = fs.readdirSync(dir);
-    const profileJsonFiles = entries.filter(isProfileJsonFile);
+    const profileJsonFiles = entries.filter((entry) => isProfileJsonFile(path.join(dir, entry)));
     for (const profileJson of profileJsonFiles) {
       const expectedTest = profileJson.replace('.json', '.test.json');
       if (!entries.includes(expectedTest)) {
@@ -65,10 +69,7 @@ function resolveProfilePath(testFile: string): string {
 
   const files = fs.readdirSync(dir);
   if (!files.includes(profileJsonName)) {
-    const candidate = files.find(
-      (file) =>
-        isProfileJsonFile(file)
-    );
+    const candidate = files.find((file) => isProfileJsonFile(path.join(dir, file)));
     if (!candidate) {
       throw new Error(`Could not find corresponding profile JSON for ${testFile}`);
     }
@@ -88,9 +89,15 @@ describe('Profile test coverage gate', () => {
     const tempRoot = fs.mkdtempSync(path.join(process.cwd(), 'tmp-profile-tests-'));
     const profileDir = path.join(tempRoot, 'example');
     fs.mkdirSync(profileDir);
-    fs.writeFileSync(path.join(profileDir, 'profile.json'), JSON.stringify({}));
+    fs.writeFileSync(
+      path.join(profileDir, 'profile.json'),
+      JSON.stringify({ profile_name: 'profile' })
+    );
     fs.writeFileSync(path.join(profileDir, 'profile.test.json'), JSON.stringify({}));
-    fs.writeFileSync(path.join(profileDir, 'profile-minimal.json'), JSON.stringify({}));
+    fs.writeFileSync(
+      path.join(profileDir, 'profile-minimal.json'),
+      JSON.stringify({ profile_name: 'profile-minimal' })
+    );
 
     try {
       const missing = findMissingTestFiles(tempRoot);
@@ -104,9 +111,15 @@ describe('Profile test coverage gate', () => {
     const tempRoot = fs.mkdtempSync(path.join(process.cwd(), 'tmp-profile-tests-'));
     const profileDir = path.join(tempRoot, 'example');
     fs.mkdirSync(profileDir);
-    fs.writeFileSync(path.join(profileDir, 'profile.json'), JSON.stringify({}));
+    fs.writeFileSync(
+      path.join(profileDir, 'profile.json'),
+      JSON.stringify({ profile_name: 'profile' })
+    );
     fs.writeFileSync(path.join(profileDir, 'profile.test.json'), JSON.stringify({}));
-    fs.writeFileSync(path.join(profileDir, 'profile-minimal.json'), JSON.stringify({}));
+    fs.writeFileSync(
+      path.join(profileDir, 'profile-minimal.json'),
+      JSON.stringify({ profile_name: 'profile-minimal' })
+    );
     fs.writeFileSync(path.join(profileDir, 'profile-minimal.test.json'), JSON.stringify({}));
 
     try {
