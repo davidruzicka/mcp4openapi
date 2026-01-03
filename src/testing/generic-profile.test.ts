@@ -61,8 +61,11 @@ function findTestFiles(dir: string): string[] {
   return results;
 }
 
-const profilesDir = path.join(process.cwd(), 'profiles');
-const testFiles = findTestFiles(profilesDir);
+const profileTestRoots = [
+  path.join(process.cwd(), 'profiles'),
+  path.join(process.cwd(), 'tests', 'profiles')
+];
+const testFiles = profileTestRoots.flatMap(findTestFiles);
 
 if (testFiles.length === 0) {
   describe('Generic Profile Tests', () => {
