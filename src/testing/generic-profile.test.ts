@@ -11,6 +11,37 @@ import { Profile } from '../types/profile.js';
 import { ProfileLoader } from '../profile-loader.js';
 import { assertRequestMatches, assertRequestsSequence } from './request-assertions.js';
 
+function assertErrorExpectation(
+  error: unknown,
+  processedExpect: { error_code?: string; error_message_regex?: string }
+): void {
+  expect(error).toBeDefined();
+  if (processedExpect.error_code) {
+    const errorCode = (error as any)?.code;
+    expect(errorCode).toBeDefined();
+    expect(String(errorCode)).toBe(processedExpect.error_code);
+  }
+  if (processedExpect.error_message_regex) {
+    expect((error as Error).message).toMatch(new RegExp(processedExpect.error_message_regex));
+  }
+}
+
+describe('generic profile error expectations', () => {
+  it('matches error_code against error.code', () => {
+    const error = new Error('Validation failed');
+    (error as any).code = 'VALIDATION_ERROR';
+
+    expect(() => assertErrorExpectation(error, { error_code: 'VALIDATION_ERROR' })).not.toThrow();
+  });
+
+  it('fails when error_code does not match error.code', () => {
+    const error = new Error('Validation failed');
+    (error as any).code = 'VALIDATION_ERROR';
+
+    expect(() => assertErrorExpectation(error, { error_code: 'AUTH_ERROR' })).toThrow();
+  });
+});
+
 // Helper to find test files
 function findTestFiles(dir: string): string[] {
   if (!fs.existsSync(dir)) return [];
@@ -162,14 +193,7 @@ testFiles.forEach(testFile => {
             expect(result).toEqual(processedExpect.result_exact);
           }
         } else {
-          expect(error).toBeDefined();
-          if (processedExpect.error_code) {
-            const msg = (error.message || '').toString();
-            expect(msg).toContain(processedExpect.error_code);
-          }
-          if (processedExpect.error_message_regex) {
-            expect(error.message).toMatch(new RegExp(processedExpect.error_message_regex));
-          }
+          assertErrorExpectation(error, processedExpect);
         }
 
         const capturedRequests = mockEngine.getCapturedRequests();
