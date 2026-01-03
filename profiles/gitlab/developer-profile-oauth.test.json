@@ -613,7 +613,8 @@
       ],
       "expect": {
         "success": false,
-        "error_code": "Forbidden"
+        "error_code": "-32002",
+        "error_message_regex": "Forbidden"
       }
     },
     {
