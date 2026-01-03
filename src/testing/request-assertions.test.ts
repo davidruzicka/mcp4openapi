@@ -140,6 +140,36 @@ describe('assertRequestMatches', () => {
     ).toThrowError();
   });
 
+  it('matches the correct request when method and path are reused', () => {
+    const duplicatePathRequests: CapturedRequest[] = [
+      {
+        method: 'POST',
+        path: '/items/42',
+        origin: 'https://mock.local',
+        query: { attempt: '1' },
+        headers: { 'content-type': 'application/json' },
+        body: { name: 'first' }
+      },
+      {
+        method: 'POST',
+        path: '/items/42',
+        origin: 'https://mock.local',
+        query: { attempt: '2' },
+        headers: { 'content-type': 'application/json' },
+        body: { name: 'second' }
+      }
+    ];
+
+    expect(() =>
+      assertRequestMatches(duplicatePathRequests, {
+        method: 'POST',
+        path: '/items/42',
+        query: { attempt: '2' },
+        body: { name: 'second' }
+      })
+    ).not.toThrow();
+  });
+
   it('checks headers_absent and sequences', () => {
     expect(() =>
       assertRequestsSequence(

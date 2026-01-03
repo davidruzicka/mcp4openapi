@@ -159,7 +159,7 @@ export function assertRequestMatches(
     throw new Error('No requests were captured for this scenario.');
   }
 
-  const matchingRequest = findMatchingRequest(requests, expectation);
+  const matchingRequest = requests.find(request => matchesExpectation(request, expectation));
   if (!matchingRequest) {
     throw new Error('Expected request was not executed for this scenario.');
   }
