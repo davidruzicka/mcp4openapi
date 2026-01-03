@@ -76,10 +76,11 @@ Deliverable:
    - [x] Keep E2E transport tests; remove redundant hardcoded mocks.
    - [x] Replace `src/testing/mock-gitlab-server.ts` usage where possible.
    - [x] Remove plain bearer GitLab profile and keep only OAuth variant.
-     - [x] Delete `profiles/gitlab/developer-profile.json` and its test file.
-     - [x] Add `profiles/gitlab/developer-profile-oauth.test.json` based on existing scenarios.
-     - [x] Update all references in tests and docs to use the OAuth profile.
-     - [ ] Extend coverage gate to require a `.test.json` per profile JSON (not just per directory).
+    - [x] Delete `profiles/gitlab/developer-profile.json` and its test file.
+    - [x] Add `profiles/gitlab/developer-profile-oauth.test.json` based on existing scenarios.
+    - [x] Update all references in tests and docs to use the OAuth profile.
+    - [x] Extend coverage gate to require a `.test.json` per profile JSON (not just per directory).
+      - `profile-name.json` -> `profile-name.test.json`
 
 9) YouTrack profile
    - [x] Add `profiles/youtrack/profile.test.json` (new).
