@@ -24,15 +24,15 @@
       }
     },
     {
-      "name": "List Issues - Missing Action",
+      "name": "List Issues - Missing Query",
       "tool": "list_issues",
       "arguments": {
-        "query": "project: TEST"
+        "action": "list"
       },
       "mocks": [],
       "expect": {
         "success": false,
-        "error_message_regex": "action"
+        "error_message_regex": "query"
       }
     }
   ],

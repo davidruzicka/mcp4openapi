@@ -48,7 +48,7 @@ function findMissingTestFiles(rootDir: string): string[] {
     const entries = fs.readdirSync(dir);
     const profileJsonFiles = entries.filter(isProfileJsonFile);
     for (const profileJson of profileJsonFiles) {
-      const expectedTest = profileJson.replace('.json', '.test.json');
+      const expectedTest = `${profileJson.slice(0, -'.json'.length)}.test.json`;
       if (!entries.includes(expectedTest)) {
         missing.push(path.join(dir, expectedTest));
       }
