@@ -63,6 +63,7 @@
     "express-rate-limit": "^8.2.1",
     "openapi-types": "^12.1.3",
     "prom-client": "^15.1.3",
+    "qs": "^6.14.1",
     "yaml": "^2.6.1",
     "zod": "^3.24.1"
   },
@@ -80,6 +81,7 @@
     "ajv-formats": "^3.0.1",
     "eslint": "^9.17.0",
     "msw": "^2.7.0",
+    "qs": "^6.14.1",
     "supertest": "^7.1.4",
     "ts-to-zod": "^5.0.1",
     "typescript": "^5.9.3",
