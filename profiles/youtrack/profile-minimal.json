@@ -18,9 +18,20 @@
         "list": "get_/issues"
       },
       "parameters": {
+        "action": {
+          "type": "string",
+          "description": "Tool action selector",
+          "enum": [
+            "list"
+          ],
+          "required": true
+        },
         "query": {
           "type": "string",
-          "description": "Issue search query"
+          "description": "Issue search query",
+          "required_for": [
+            "list"
+          ]
         },
         "top": {
           "type": "integer",
