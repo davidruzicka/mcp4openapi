@@ -181,6 +181,23 @@ export class HttpTransport {
       next();
     });
 
+    // Security: Standard security headers
+    // Why: Defense in depth against common web vulnerabilities
+    this.app.use((req: Request, res: Response, next: NextFunction) => {
+      // Prevent MIME-sniffing
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      // Prevent clickjacking
+      res.setHeader('X-Frame-Options', 'DENY');
+      // Restrict resources to same origin by default
+      res.setHeader('Content-Security-Policy', "default-src 'self'");
+      // Enforce HTTPS (HSTS) - skipped for localhost/127.0.0.1
+      // 1 year max-age, include subdomains
+      if (req.hostname !== 'localhost' && req.hostname !== '127.0.0.1') {
+        res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+      }
+      next();
+    });
+
     // Security: Origin validation (DNS rebinding protection)
     this.app.use((req: Request, res: Response, next: NextFunction) => {
       const origin = req.headers.origin;
