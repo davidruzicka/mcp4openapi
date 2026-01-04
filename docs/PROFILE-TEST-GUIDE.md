@@ -236,7 +236,7 @@ This example validates a composite tool that stores intermediate results and fee
 
 ### Composite Tool With Partial Failures
 
-This example covers a composite tool configured with `partial_results: true`. One step fails, and the tool still returns completed steps.
+This example covers a composite tool configured with `partial_results: true`. One step fails, and the tool still returns completed steps with metadata describing partial success.
 
 ```
 {
@@ -256,10 +256,18 @@ This example covers a composite tool configured with `partial_results: true`. On
     }
   ],
   "expect": {
-    "success": false,
-    "error_code": "NETWORK_ERROR",
+    "success": true,
     "result": {
-      "project": { "id": 123, "name": "Core" }
+      "project": { "id": 123, "name": "Core" },
+      "_metadata": {
+        "success": false,
+        "errors": [
+          {
+            "step": "list_issues",
+            "code": "NETWORK_ERROR"
+          }
+        ]
+      }
     },
     "requests": [
       {
