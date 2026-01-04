@@ -191,6 +191,98 @@ If a scenario is intentionally excluded, add a reason in `skip_request_assertion
 }
 ```
 
+## Example Composite Tool Scenarios
+
+### Composite Tool With Aggregation
+
+This example validates a composite tool that stores intermediate results and feeds them into later steps.
+
+```
+{
+  "name": "Composite - Aggregate project and issues",
+  "tool": "project_summary",
+  "arguments": {
+    "project_id": "{{projectId}}"
+  },
+  "mocks": [
+    {
+      "operationId": "getApiV4ProjectsId",
+      "response": { "status": 200, "body": { "id": 123, "name": "Core" } }
+    },
+    {
+      "operationId": "getApiV4ProjectsIdIssues",
+      "response": { "status": 200, "body": [{ "id": 9, "title": "Bug" }] }
+    }
+  ],
+  "expect": {
+    "success": true,
+    "result": {
+      "project": { "id": 123, "name": "Core" },
+      "issues": [{ "id": 9, "title": "Bug" }]
+    },
+    "requests": [
+      {
+        "method": "GET",
+        "path": "/projects/{{projectId}}"
+      },
+      {
+        "method": "GET",
+        "path": "/projects/{{projectId}}/issues"
+      }
+    ]
+  }
+}
+```
+
+### Composite Tool With Partial Failures
+
+This example covers a composite tool configured with `partial_results: true`. One step fails, and the tool still returns completed steps with metadata describing partial success.
+
+```
+{
+  "name": "Composite - Partial results with failure",
+  "tool": "project_summary",
+  "arguments": {
+    "project_id": "{{projectId}}"
+  },
+  "mocks": [
+    {
+      "operationId": "getApiV4ProjectsId",
+      "response": { "status": 200, "body": { "id": 123, "name": "Core" } }
+    },
+    {
+      "operationId": "getApiV4ProjectsIdIssues",
+      "response": { "status": 500, "body": { "error": "Internal error" } }
+    }
+  ],
+  "expect": {
+    "success": true,
+    "result": {
+      "project": { "id": 123, "name": "Core" },
+      "_metadata": {
+        "success": false,
+        "errors": [
+          {
+            "step": "list_issues",
+            "code": "NETWORK_ERROR"
+          }
+        ]
+      }
+    },
+    "requests": [
+      {
+        "method": "GET",
+        "path": "/projects/{{projectId}}"
+      },
+      {
+        "method": "GET",
+        "path": "/projects/{{projectId}}/issues"
+      }
+    ]
+  }
+}
+```
+
 ## Running Tests
 
 Run unit tests:

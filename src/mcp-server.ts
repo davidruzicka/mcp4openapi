@@ -53,14 +53,6 @@ export class MCPServer {
   private httpTransport: any = null;
 
   /**
-   * Get loaded profile
-   * Useful for testing to inspect loaded configuration
-   */
-  get loadedProfile(): Profile | undefined {
-    return this.profile;
-  }
-
-  /**
    * Execute a tools/call request via the JSON-RPC handler.
    * Intended for internal use and tests to avoid accessing private methods.
    */
