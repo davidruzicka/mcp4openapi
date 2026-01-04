@@ -106,6 +106,26 @@ export class HttpTransport {
       next();
     });
 
+    // Security headers
+    this.app.use((req: Request, res: Response, next: NextFunction) => {
+      // HSTS: 2 years, include subdomains
+      // Skip on localhost to avoid development issues
+      if (req.hostname !== 'localhost' && req.hostname !== '127.0.0.1') {
+        res.setHeader('Strict-Transport-Security', 'max-age=63072000; includeSubDomains');
+      }
+
+      // Prevent MIME type sniffing
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+
+      // Clickjacking protection
+      res.setHeader('X-Frame-Options', 'DENY');
+
+      // Content Security Policy
+      res.setHeader('Content-Security-Policy', "default-src 'self'; frame-ancestors 'none';");
+
+      next();
+    });
+
     // DNS rebinding protection when binding to localhost
     // Deny requests with mismatched Host headers to prevent DNS rebinding attacks
     // Applies when server host is localhost/127.0.0.1, regardless of auth configuration
