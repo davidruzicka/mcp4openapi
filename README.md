@@ -311,7 +311,7 @@ When running without a profile, authentication is automatically configured from 
 export MCP4_API_TOKEN=glpat-xxxxxxxxxxxx
 export MCP4_API_BASE_URL=https://gitlab.example.com/api/v4
 export MCP4_OPENAPI_SPEC_PATH=profiles/gitlab/openapi.yaml
-export MCP4_PROFILE_PATH=profiles/gitlab/developer-profile.json
+export MCP4_PROFILE_PATH=profiles/gitlab/developer-profile-oauth.json
 npm start
 ```
 

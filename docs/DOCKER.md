@@ -47,7 +47,7 @@ docker run -d \
   -p 3003:3003 \
   -v $(pwd)/profiles:/app/profiles:ro \
   -e MCP4_OPENAPI_SPEC_PATH=/app/profiles/gitlab/openapi.yaml \
-  -e MCP4_PROFILE_PATH=/app/profiles/gitlab/developer-profile.json \
+  -e MCP4_PROFILE_PATH=/app/profiles/gitlab/developer-profile-oauth.json \
   -e MCP4_API_TOKEN=your_token \
   -e MCP4_API_BASE_URL=https://gitlab.com/api/v4 \
   mcp4openapi:latest
@@ -60,7 +60,7 @@ docker run -d \
   -p 3003:3003 \
   -v $(pwd)/profiles:/app/profiles:ro \
   -e MCP4_OPENAPI_SPEC_PATH=/app/profiles/gitlab/openapi.yaml \
-  -e MCP4_PROFILE_PATH=/app/profiles/gitlab/developer-profile.json \
+  -e MCP4_PROFILE_PATH=/app/profiles/gitlab/developer-profile-oauth.json \
   -e MCP4_API_BASE_URL=https://gitlab.com/api/v4 \
   -e MCP4_TRANSPORT=http \
   -e MCP4_HOST=0.0.0.0 \
@@ -444,7 +444,7 @@ docker run -d \
   -p 3003:3003 \
   -v path/to/profiles:/app/profiles:ro \
   -e MCP4_OPENAPI_SPEC_PATH=/app/profiles/gitlab/openapi.yaml \
-  -e MCP4_PROFILE_PATH=/app/profiles/gitlab/developer-profile.json \
+  -e MCP4_PROFILE_PATH=/app/profiles/gitlab/developer-profile-oauth.json \
   -e MCP4_API_TOKEN=$MCP4_API_TOKEN \
   -e MCP4_API_BASE_URL=$MCP4_API_BASE_URL \
   mcp4openapi

@@ -315,6 +315,10 @@ export class McpProcess extends EventEmitter {
       },
     };
 
+    if (this.config.apiToken && !('Authorization' in fetchOptions.headers)) {
+      (fetchOptions.headers as Record<string, string>)['Authorization'] = `Bearer ${this.config.apiToken}`;
+    }
+
     if (body !== undefined) {
       fetchOptions.body = JSON.stringify(body);
     }

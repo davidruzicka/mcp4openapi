@@ -17,7 +17,13 @@ describeIfListen('E2E: http transport', () => {
   let httpPort: number;
 
   const openapiSpecPath = path.resolve(process.cwd(), 'profiles/gitlab/openapi.yaml');
-  const profilePath = path.resolve(process.cwd(), 'profiles/gitlab/developer-profile.json');
+  const profilePath = path.resolve(process.cwd(), 'profiles/gitlab/developer-profile-oauth.json');
+  const oauthEnv = {
+    MCP4_OAUTH_ISSUER: 'https://gitlab.example.com',
+    MCP4_OAUTH_CLIENT_ID: 'test-client-id',
+    MCP4_OAUTH_CLIENT_SECRET: 'test-client-secret',
+    MCP4_OAUTH_REDIRECT_URI: 'http://127.0.0.1/oauth/callback',
+  };
 
   beforeAll(async () => {
     mockServer = await startStandaloneMockServer({
@@ -42,6 +48,7 @@ describeIfListen('E2E: http transport', () => {
       apiBaseUrl: mockServer.gitlabApiUrl,
       apiToken: 'test-token',
       httpPort,
+      env: oauthEnv,
     });
 
     await mcp.start();
@@ -61,6 +68,7 @@ describeIfListen('E2E: http transport', () => {
       apiBaseUrl: mockServer.gitlabApiUrl,
       apiToken: 'test-token',
       httpPort,
+      env: oauthEnv,
     });
 
     await mcp.start();
@@ -99,6 +107,7 @@ describeIfListen('E2E: http transport', () => {
       apiBaseUrl: mockServer.gitlabApiUrl,
       apiToken: 'test-token',
       httpPort,
+      env: oauthEnv,
     });
 
     await mcp.start();
@@ -148,6 +157,7 @@ describeIfListen('E2E: http transport', () => {
       apiBaseUrl: mockServer.gitlabApiUrl,
       apiToken: 'test-token',
       httpPort,
+      env: oauthEnv,
     });
 
     await mcp.start();
@@ -182,6 +192,7 @@ describeIfListen('E2E: http transport', () => {
       apiToken: 'test-token',
       httpPort: shortPort,
       sessionTimeoutMs: shortTimeout,
+      env: oauthEnv,
     });
 
     await mcp.start();
@@ -235,6 +246,7 @@ describeIfListen('E2E: http transport', () => {
       apiBaseUrl: mockServer.gitlabApiUrl,
       apiToken: 'test-token',
       httpPort,
+      env: oauthEnv,
     });
 
     await mcp.start();

@@ -1,0 +1,155 @@
+{
+  "$schema": "../../src/testing/test-schema.ts",
+  "profile_name": "proxy-download-tests",
+  "variables": {
+    "fileId": "file-1"
+  },
+  "scenarios": [
+    {
+      "name": "Proxy Download - Allowed Host",
+      "tool": "download_files",
+      "arguments": { "action": "download", "file_id": "{{fileId}}", "include": ["id", "url"] },
+      "mocks": [
+        {
+          "operationId": "getFileMetadata",
+          "response": {
+            "body": {
+              "id": "{{fileId}}",
+              "name": "allowed.txt",
+              "url": "https://203.0.113.10/files/allowed.txt"
+            }
+          }
+        },
+        {
+          "path": "https://203.0.113.10/files/allowed.txt",
+          "method": "GET",
+          "response": {
+            "body": "allowed",
+            "headers": { "content-type": "text/plain" }
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": {
+          "fileName": "allowed.txt",
+          "content": "YWxsb3dlZA=="
+        }
+      }
+    },
+    {
+      "name": "Proxy Download - Blocked Host",
+      "tool": "download_files",
+      "arguments": { "action": "download", "file_id": "{{fileId}}" },
+      "mocks": [
+        {
+          "operationId": "getFileMetadata",
+          "response": {
+            "body": {
+              "id": "{{fileId}}",
+              "name": "blocked.txt",
+              "url": "https://203.0.113.11/files/blocked.txt"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": false,
+        "error_message_regex": "Download host not in allowlist"
+      }
+    },
+    {
+      "name": "Proxy Download - Redirect Limit",
+      "tool": "download_files",
+      "arguments": { "action": "download", "file_id": "{{fileId}}" },
+      "mocks": [
+        {
+          "operationId": "getFileMetadata",
+          "response": {
+            "body": {
+              "id": "{{fileId}}",
+              "name": "redirect.txt",
+              "url": "/redirect/1"
+            }
+          }
+        },
+        {
+          "path": "/redirect/1",
+          "method": "GET",
+          "response": { "status": 302, "headers": { "location": "/redirect/2" } }
+        },
+        {
+          "path": "/redirect/2",
+          "method": "GET",
+          "response": { "status": 302, "headers": { "location": "/redirect/3" } }
+        },
+        {
+          "path": "/redirect/3",
+          "method": "GET",
+          "response": { "status": 302, "headers": { "location": "/redirect/4" } }
+        },
+        {
+          "path": "/redirect/4",
+          "method": "GET",
+          "response": { "status": 302, "headers": { "location": "/redirect/5" } }
+        },
+        {
+          "path": "/redirect/5",
+          "method": "GET",
+          "response": { "status": 302, "headers": { "location": "/redirect/6" } }
+        },
+        {
+          "path": "/redirect/6",
+          "method": "GET",
+          "response": { "status": 302, "headers": { "location": "/redirect/7" } }
+        }
+      ],
+      "expect": {
+        "success": false,
+        "error_message_regex": "Internal error",
+        "requests": [
+          {
+            "method": "GET",
+            "path": "/files/{{fileId}}",
+            "origin": "https://mock-api-proxy-download-tests.com"
+          },
+          {
+            "method": "GET",
+            "path": "/redirect/1",
+            "origin": "https://mock-api-proxy-download-tests.com"
+          },
+          {
+            "method": "GET",
+            "path": "/redirect/2",
+            "origin": "https://mock-api-proxy-download-tests.com"
+          },
+          {
+            "method": "GET",
+            "path": "/redirect/3",
+            "origin": "https://mock-api-proxy-download-tests.com"
+          },
+          {
+            "method": "GET",
+            "path": "/redirect/4",
+            "origin": "https://mock-api-proxy-download-tests.com"
+          },
+          {
+            "method": "GET",
+            "path": "/redirect/5",
+            "origin": "https://mock-api-proxy-download-tests.com"
+          },
+          {
+            "method": "GET",
+            "path": "/redirect/6",
+            "origin": "https://mock-api-proxy-download-tests.com"
+          }
+        ],
+        "allow_additional_requests": false
+      }
+    }
+  ],
+  "coverage": {
+    "require_all_actions": true,
+    "skip_actions": {}
+  }
+}

@@ -111,7 +111,7 @@ MCP4_OAUTH_REDIRECT_URI=http://<mcp-server-url>:<mcp-server-port>/oauth/callback
 
 ### 3. Create OAuth Profile
 
-Use the example profile `profiles/gitlab/developer-profile.json`:
+Use the example profile `profiles/gitlab/developer-profile-oauth.json`:
 
 ```json
 {
@@ -163,7 +163,7 @@ Use the example profile `profiles/gitlab/developer-profile.json`:
       "args": ["mcp4openapi"],
       "env": {
         "MCP4_OPENAPI_SPEC_PATH": "profiles/gitlab/openapi.yaml",
-        "MCP4_PROFILE_PATH": "profiles/gitlab/developer-profile.json",
+        "MCP4_PROFILE_PATH": "profiles/gitlab/developer-profile-oauth.json",
         "MCP4_TRANSPORT": "http",
         "MCP4_HOST": "<mcp-server-url>",
         "MCP4_PORT": "<mcp-server-port>",

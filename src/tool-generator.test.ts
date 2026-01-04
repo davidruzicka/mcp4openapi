@@ -21,7 +21,7 @@ describe('ToolGenerator', () => {
     generator = new ToolGenerator(parser);
     
     const loader = new ProfileLoader();
-    profile = await loader.load(path.join(process.cwd(), 'profiles/gitlab/developer-profile.json'));
+    profile = await loader.load(path.join(process.cwd(), 'profiles/gitlab/developer-profile-oauth.json'));
   });
 
   it('should generate MCP tool from profile definition', () => {

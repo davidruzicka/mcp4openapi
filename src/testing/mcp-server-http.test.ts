@@ -5,17 +5,59 @@ import { MCPServer } from '../mcp-server.js';
 import path from 'path';
 import { HttpTransport } from '../http-transport.js';
 import { describeIfListen } from './listen-support.js';
+import { createServer, Server } from 'http';
+import { AddressInfo } from 'net';
 
 describeIfListen('MCPServer HTTP Integration', () => {
   let server: MCPServer;
   let app: any;
+  let originalEnv: NodeJS.ProcessEnv;
+  let originalEnvKeys: Set<string>;
+  let mockApiServer: Server;
+  let mockApiBaseUrl: string;
 
   beforeAll(async () => {
+    originalEnv = { ...process.env };
+    originalEnvKeys = new Set(Object.keys(process.env));
+    mockApiServer = createServer((req, res) => {
+      if (!req.url) {
+        res.statusCode = 404;
+        res.end();
+        return;
+      }
+
+      if (req.url.startsWith('/api/v4/user') || req.url.startsWith('/api/v4/personal_access_tokens/self')) {
+        res.statusCode = 200;
+        res.setHeader('content-type', 'application/json');
+        res.end(JSON.stringify({ id: 1 }));
+        return;
+      }
+
+      res.statusCode = 404;
+      res.end();
+    });
+
+    await new Promise<void>((resolve, reject) => {
+      mockApiServer.listen(0, '127.0.0.1', () => {
+        const address = mockApiServer.address() as AddressInfo;
+        mockApiBaseUrl = `http://127.0.0.1:${address.port}/api/v4`;
+        resolve();
+      });
+      mockApiServer.on('error', reject);
+    });
+
+    process.env.MCP4_OAUTH_ISSUER = 'https://gitlab.example.com';
+    process.env.MCP4_OAUTH_CLIENT_ID = 'test-client-id';
+    process.env.MCP4_OAUTH_CLIENT_SECRET = 'test-client-secret';
+    process.env.MCP4_OAUTH_REDIRECT_URI = 'http://127.0.0.1/oauth/callback';
+    process.env.MCP4_API_BASE_URL = mockApiBaseUrl;
+    process.env.MCP4_API_TOKEN = 'test-token';
+
     server = new MCPServer();
     
     // Use GitLab profile for testing
     const specPath = path.join(process.cwd(), 'profiles/gitlab/openapi.yaml');
-    const profilePath = path.join(process.cwd(), 'profiles/gitlab/developer-profile.json');
+    const profilePath = path.join(process.cwd(), 'profiles/gitlab/developer-profile-oauth.json');
     
     await server.initialize(specPath, profilePath);
     
@@ -35,11 +77,23 @@ describeIfListen('MCPServer HTTP Integration', () => {
     if (transport) {
       await transport.stop();
     }
+    if (mockApiServer) {
+      await new Promise<void>((resolve, reject) => {
+        mockApiServer.close(err => (err ? reject(err) : resolve()));
+      });
+    }
+    for (const key of Object.keys(process.env)) {
+      if (!originalEnvKeys.has(key)) {
+        delete process.env[key];
+      }
+    }
+    Object.assign(process.env, originalEnv);
   });
 
   it('should handle initialize request via HTTP', async () => {
     const response = await request(app)
       .post('/mcp')
+      .set('Authorization', 'Bearer test-token')
       .send({
         jsonrpc: '2.0',
         id: 1,
@@ -70,6 +124,7 @@ describeIfListen('MCPServer HTTP Integration', () => {
     
     const initResponse = await request(app)
       .post('/mcp')
+      .set('Authorization', 'Bearer test-token')
       .send({
         jsonrpc: '2.0',
         id: 1,
@@ -104,6 +159,7 @@ describeIfListen('MCPServer HTTP Integration', () => {
     // Initialize session
     const initResponse = await request(app)
       .post('/mcp')
+      .set('Authorization', 'Bearer test-token')
       .send({
         jsonrpc: '2.0',
         id: 1,

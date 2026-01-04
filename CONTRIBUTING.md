@@ -24,7 +24,7 @@ Thank you for considering contributing! This document provides guidelines for de
 4. **Run with example**:
    ```bash
    export MCP4_OPENAPI_SPEC_PATH=./profiles/gitlab/openapi.yaml
-   export MCP4_PROFILE_PATH=./profiles/gitlab/developer-profile.json
+   export MCP4_PROFILE_PATH=./profiles/gitlab/developer-profile-oauth.json
    export MCP4_API_BASE_URL=https://your-gitlab-instance/api/v4
    export MCP4_API_TOKEN=your-token
    npm start
@@ -44,6 +44,7 @@ Thank you for considering contributing! This document provides guidelines for de
 - Run `npm test` before submitting PR
 - Integration tests in `src/testing/`
 - Unit tests alongside source files (`*.test.ts`)
+- Adding a profile requires a matching `*.test.json` in the same directory (coverage gate enforces this).
 
 ## ⚠️ CRITICAL: Profile Schema Synchronization
 
@@ -144,4 +145,3 @@ When adding features:
 ## License
 
 By contributing, you agree that your contributions will be licensed under the MIT License.
-
