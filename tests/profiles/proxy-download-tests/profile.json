@@ -1,0 +1,50 @@
+{
+  "$schema": "../../profile-schema.json",
+  "profile_name": "proxy-download-tests",
+  "description": "Test profile for proxy download rules",
+  "interceptors": {
+    "base_url": {
+      "value_from_env": "MCP4_API_BASE_URL"
+    },
+    "auth": {
+      "type": "bearer",
+      "value_from_env": "MCP4_API_TOKEN"
+    }
+  },
+  "tools": [
+    {
+      "name": "download_files",
+      "description": "Proxy download files via metadata",
+      "metadata_params": ["action"],
+      "parameters": {
+        "action": {
+          "type": "string",
+          "description": "Operation to perform",
+          "required": true,
+          "enum": ["download"]
+        },
+        "file_id": {
+          "type": "string",
+          "description": "File identifier",
+          "required_for": ["download"]
+        },
+        "include": {
+          "type": "array",
+          "description": "Optional metadata fields to include",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "operations": {
+        "download": {
+          "type": "proxy_download",
+          "metadata_endpoint": "getFileMetadata",
+          "url_field": "url",
+          "skip_auth": true,
+          "allowed_hosts": ["203.0.113.10"]
+        }
+      }
+    }
+  ]
+}

@@ -9,7 +9,7 @@ import path from 'path';
 describe('ProfileLoader', () => {
   it('should load valid GitLab profile', async () => {
     const loader = new ProfileLoader();
-    const profilePath = path.join(process.cwd(), 'profiles/gitlab/developer-profile.json');
+    const profilePath = path.join(process.cwd(), 'profiles/gitlab/developer-profile-oauth.json');
 
     const profile = await loader.load(profilePath);
 
@@ -20,7 +20,7 @@ describe('ProfileLoader', () => {
 
   it('should validate required_for references', async () => {
     const loader = new ProfileLoader();
-    const profilePath = path.join(process.cwd(), 'profiles/gitlab/developer-profile.json');
+    const profilePath = path.join(process.cwd(), 'profiles/gitlab/developer-profile-oauth.json');
 
     const profile = await loader.load(profilePath);
     const badgeTool = profile.tools.find(t => t.name === 'manage_project_badges');

@@ -53,6 +53,29 @@ export class MCPServer {
   private httpTransport: any = null;
 
   /**
+   * Execute a tools/call request via the JSON-RPC handler.
+   * Intended for internal use and tests to avoid accessing private methods.
+   */
+  async callToolRpc(
+    name: string,
+    args: Record<string, unknown>,
+    sessionId?: string,
+    requestId: string | number = 1
+  ): Promise<unknown> {
+    const message = {
+      jsonrpc: '2.0',
+      id: requestId,
+      method: 'tools/call',
+      params: {
+        name,
+        arguments: args,
+      },
+    };
+
+    return this.handleToolCall(message, sessionId);
+  }
+
+  /**
    * Filter response payload to include only specified fields.
    *
    * Supports YouTrack-style field selectors like:

@@ -312,13 +312,14 @@
           "required_for": ["create_issue_comment", "create_article_comment"]
         },
         "duration": {
-          "type": "string",
-          "description": "Duration in minutes or YouTrack duration format (e.g., '1h 30m')",
-          "required_for": ["log_time"]
+          "type": "object",
+          "description": "Duration object (minutes or presentation) for work item",
+          "required_for": ["log_time"],
+          "properties": {}
         },
         "date": {
-          "type": "string",
-          "description": "Work item date (ISO 8601 format)",
+          "type": "integer",
+          "description": "Work item date as unix timestamp in milliseconds",
           "required_for": ["log_time"]
         },
         "tag": {
@@ -434,13 +435,14 @@
           "required_for": ["update_issue_comment", "update_article_comment"]
         },
         "duration": {
-          "type": "string",
-          "description": "Duration in minutes or YouTrack format (for update_work_item)",
-          "required_for": ["update_work_item"]
+          "type": "object",
+          "description": "Duration object for update_work_item",
+          "required_for": ["update_work_item"],
+          "properties": {}
         },
         "date": {
-          "type": "string",
-          "description": "Work item date (ISO 8601 format, for update_work_item)"
+          "type": "integer",
+          "description": "Work item date as unix timestamp in milliseconds (for update_work_item)"
         },
         "name": {
           "type": "string",
