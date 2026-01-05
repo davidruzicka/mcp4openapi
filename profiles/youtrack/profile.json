@@ -362,9 +362,17 @@
           "required_for": []
         },
         "customFields": {
-          "type": "object",
+          "type": ["object", "array"],
           "description": "Custom fields array or object (for create_issue). Example: [{\"name\": \"Priority\", \"value\": {\"name\": \"High\"}}]",
-          "properties": {}
+          "properties": {},
+          "items": {
+            "type": "object"
+          },
+          "object_entries_to_array": {
+            "key_field": "name",
+            "value_field": "value",
+            "wrap_value_field": "name"
+          }
         }
       }
     },
@@ -454,9 +462,17 @@
           "description": "Tag color in hex format (for update_tag)"
         },
         "customFields": {
-          "type": "object",
+          "type": ["object", "array"],
           "description": "Custom fields to update (for update_issue)",
-          "properties": {}
+          "properties": {},
+          "items": {
+            "type": "object"
+          },
+          "object_entries_to_array": {
+            "key_field": "name",
+            "value_field": "value",
+            "wrap_value_field": "name"
+          }
         }
       }
     },
@@ -554,13 +570,23 @@
         },
         "query": {
           "type": "string",
-          "description": "Issue query to select issues (e.g., 'project: PROJ state: Open')",
+          "description": "Issue query to select issues (e.g., 'project: PROJ state: Open'). Required for execute_command.",
           "required_for": ["execute_command"]
         },
         "command": {
           "type": "string",
           "description": "YouTrack command to execute (e.g., 'state: Open', 'priority: Critical'). For details on command syntax, see YouTrack documentation.",
           "required_for": ["execute_command"]
+        },
+        "issues": {
+          "type": "array",
+          "description": "Issue IDs to apply the command to (for execute_command).",
+          "items": {
+            "type": "string"
+          },
+          "array_item_to_object": {
+            "key_field": "id"
+          }
         },
         "text": {
           "type": "string",

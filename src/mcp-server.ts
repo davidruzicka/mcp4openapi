@@ -15,6 +15,7 @@ import {
 import { OpenAPIParser } from './openapi-parser.js';
 import { ProfileLoader } from './profile-loader.js';
 import { ToolGenerator } from './tool-generator.js';
+import { normalizeArguments } from './argument-normalizer.js';
 import { CompositeExecutor } from './composite-executor.js';
 import { ProxyDownloadExecutor } from './proxy-executor.js';
 import { 
@@ -667,15 +668,17 @@ export class MCPServer {
     args: Record<string, unknown>,
     sessionId?: string
   ): Promise<unknown> {
+    const normalizedArgs = normalizeArguments(toolDef, args);
+
     this.logger.debug('Executing simple tool', {
       toolName: toolDef.name,
-      action: args['action'],
-      resourceType: args['resource_type'],
+      action: normalizedArgs['action'],
+      resourceType: normalizedArgs['resource_type'],
       sessionId
     });
 
     // Get operation definition (can be string or ProxyDownloadOperation)
-    const operationDef = this.toolGenerator.getOperationDefinition(toolDef, args);
+    const operationDef = this.toolGenerator.getOperationDefinition(toolDef, normalizedArgs);
     
     if (!operationDef) {
       throw new ValidationError(
@@ -691,7 +694,7 @@ export class MCPServer {
 
     // Check if this is a proxy download operation
     if (typeof operationDef === 'object' && operationDef.type === 'proxy_download') {
-      return this.executeProxyDownload(operationDef, args, sessionId);
+        return this.executeProxyDownload(operationDef, normalizedArgs, sessionId);
     }
 
     // Regular string operation
@@ -702,9 +705,9 @@ export class MCPServer {
     }
 
     // Build request
-    const path = this.resolvePath(operation.path, args);
-    const queryParams = this.extractQueryParams(operation, args);
-    const body = this.extractBody(operation, args, toolDef);
+    const path = this.resolvePath(operation.path, normalizedArgs);
+    const queryParams = this.extractQueryParams(operation, normalizedArgs);
+    const body = this.extractBody(operation, normalizedArgs, toolDef);
 
     this.logger.debug('Executing HTTP request', {
       operationId,
@@ -733,7 +736,7 @@ export class MCPServer {
     const httpClient = await this.getHttpClientForSession(sessionId);
     
     // Set fields parameter if response_fields are configured for this action AND enabled
-    const action = args.action as string | undefined;
+    const action = normalizedArgs.action as string | undefined;
     if (toolDef.send_response_fields_as_param && toolDef.response_fields && action && toolDef.response_fields[action]) {
       const fields = toolDef.response_fields[action];
       queryParams.fields = fields.join(',');
@@ -748,7 +751,7 @@ export class MCPServer {
     // Apply response field filtering if configured
     let result = response.body;
     if (toolDef.response_fields) {
-      const action = args.action as string | undefined;
+      const action = normalizedArgs.action as string | undefined;
       if (action && toolDef.response_fields[action]) {
         const fields = toolDef.response_fields[action];
         result = this.filterFields(result, fields);
