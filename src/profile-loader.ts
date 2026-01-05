@@ -14,7 +14,7 @@
  */
 
 import fs from 'fs/promises';
-import type { Profile } from './types/profile.js';
+import type { Profile, ParameterType } from './types/profile.js';
 import { ValidationError, ConfigurationError } from './errors.js';
 import { ZodError } from 'zod';
 import { profileSchema, authInterceptorSchema } from './generated-schemas.js';
@@ -120,8 +120,11 @@ export class ProfileLoader {
 
       // Validate required_for references existing enum values
       for (const [paramName, paramDef] of Object.entries(tool.parameters)) {
+        const paramTypes = Array.isArray(paramDef.type) ? paramDef.type : [paramDef.type];
+        const hasType = (type: ParameterType) => paramTypes.includes(type);
+
         // Validate array parameters have items
-        if (paramDef.type === 'array' && !paramDef.items) {
+        if (hasType('array') && !paramDef.items) {
           throw new ValidationError(
             `Parameter '${paramName}' in tool '${tool.name}' is type 'array' but missing required 'items' property`,
             { toolName: tool.name, paramName, paramType: paramDef.type }
@@ -129,7 +132,7 @@ export class ProfileLoader {
         }
 
         // Validate object parameters have properties
-        if (paramDef.type === 'object' && paramDef.properties === undefined) {
+        if (hasType('object') && paramDef.properties === undefined) {
           throw new ValidationError(
             `Parameter '${paramName}' in tool '${tool.name}' is type 'object' but missing 'properties'. Use empty object {} for free-form objects.`,
             { toolName: tool.name, paramName, paramType: paramDef.type }
@@ -620,4 +623,3 @@ export class ProfileLoader {
     }
   }
 }
-

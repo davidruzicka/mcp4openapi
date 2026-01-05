@@ -164,6 +164,33 @@ describe('ToolGenerator', () => {
     expect(configProperty.properties).toEqual({});
   });
 
+  it('should generate oneOf schema for multi-type parameters', () => {
+    const toolDef = {
+      name: 'test_multi_type',
+      description: 'Test multi type parameter',
+      parameters: {
+        customFields: {
+          type: ['object', 'array'] as const,
+          description: 'Custom fields',
+          properties: {},
+          items: { type: 'object' }
+        }
+      }
+    };
+
+    const tool = generator.generateTool(toolDef);
+    const customFieldsProperty = tool.inputSchema.properties?.customFields as { oneOf?: unknown[] };
+
+    expect(customFieldsProperty.oneOf).toBeDefined();
+    expect(customFieldsProperty.oneOf).toHaveLength(2);
+    expect(customFieldsProperty.oneOf).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: 'object' }),
+        expect.objectContaining({ type: 'array', items: { type: 'object' } })
+      ])
+    );
+  });
+
   it('should fail validation if array parameter is missing items', () => {
     // This test documents the bug that was fixed
     const toolDefInvalid = {
@@ -340,4 +367,3 @@ describe('ToolGenerator', () => {
     });
   });
 });
-
