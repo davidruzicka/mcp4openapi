@@ -927,6 +927,12 @@
         "summary": "Test issue",
         "project": {
           "shortName": "PROJ"
+        },
+        "customFields": {
+          "Type": "Task",
+          "Priority": {
+            "name": "Medium"
+          }
         }
       },
       "mocks": [
@@ -941,7 +947,31 @@
         }
       ],
       "expect": {
-        "success": true
+        "success": true,
+        "request": {
+          "method": "POST",
+          "path": "/issues",
+          "body_exact": {
+            "summary": "Test issue",
+            "project": {
+              "shortName": "PROJ"
+            },
+            "customFields": [
+              {
+                "name": "Type",
+                "value": {
+                  "name": "Task"
+                }
+              },
+              {
+                "name": "Priority",
+                "value": {
+                  "name": "Medium"
+                }
+              }
+            ]
+          }
+        }
       }
     },
     {
@@ -1544,6 +1574,46 @@
       ],
       "expect": {
         "success": true
+      }
+    },
+    {
+      "name": "Run Commands - Execute Command With Issues",
+      "tool": "run_commands",
+      "arguments": {
+        "action": "execute_command",
+        "query": "project: PROJ",
+        "command": "state: Open",
+        "issues": ["ISSUE-123", "ISSUE-456"]
+      },
+      "mocks": [
+        {
+          "operationId": "post_/commands",
+          "response": {
+            "status": 200,
+            "body": {
+              "id": "id-1"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "request": {
+          "method": "POST",
+          "path": "/commands",
+          "body_exact": {
+            "query": "project: PROJ",
+            "command": "state: Open",
+            "issues": [
+              {
+                "id": "ISSUE-123"
+              },
+              {
+                "id": "ISSUE-456"
+              }
+            ]
+          }
+        }
       }
     },
     {
