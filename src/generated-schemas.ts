@@ -7,8 +7,10 @@ export const compositeStepSchema = z.object({
     depends_on: z.array(z.string()).optional()
 });
 
+export const parameterTypeSchema = z.union([z.literal("string"), z.literal("integer"), z.literal("number"), z.literal("boolean"), z.literal("array"), z.literal("object")]);
+
 export const parameterDefinitionSchema = z.object({
-    type: z.union([z.literal("string"), z.literal("integer"), z.literal("number"), z.literal("boolean"), z.literal("array"), z.literal("object")]),
+    type: z.union([parameterTypeSchema, z.array(parameterTypeSchema)]),
     description: z.string(),
     required: z.boolean().optional(),
     required_for: z.array(z.string()).optional(),
@@ -18,7 +20,15 @@ export const parameterDefinitionSchema = z.object({
     }).optional(),
     properties: z.record(z.string(), z.unknown()).optional(),
     default: z.unknown().optional(),
-    example: z.unknown().optional()
+    example: z.unknown().optional(),
+    object_entries_to_array: z.object({
+        key_field: z.string(),
+        value_field: z.string(),
+        wrap_value_field: z.string().optional()
+    }).optional(),
+    array_item_to_object: z.object({
+        key_field: z.string()
+    }).optional()
 });
 
 export const proxyDownloadOperationSchema = z.object({

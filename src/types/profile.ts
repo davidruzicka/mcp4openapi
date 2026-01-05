@@ -42,8 +42,10 @@ export interface ToolDefinition {
   send_response_fields_as_param?: boolean;
 }
 
+export type ParameterType = 'string' | 'integer' | 'number' | 'boolean' | 'array' | 'object'
+
 export interface ParameterDefinition {
-  type: 'string' | 'integer' | 'number' | 'boolean' | 'array' | 'object';
+  type: ParameterType | ParameterType[];
   description: string;
   required?: boolean;
   required_for?: string[]; // Which actions require this parameter
@@ -52,6 +54,14 @@ export interface ParameterDefinition {
   properties?: Record<string, unknown>; // For object type (empty {} = free-form object)
   default?: unknown;
   example?: unknown;
+  object_entries_to_array?: {
+    key_field: string;
+    value_field: string;
+    wrap_value_field?: string;
+  };
+  array_item_to_object?: {
+    key_field: string;
+  };
 }
 
 export interface CompositeStep {

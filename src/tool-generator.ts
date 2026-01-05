@@ -6,7 +6,7 @@
  */
 
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
-import type { ToolDefinition, ParameterDefinition } from './types/profile.js';
+import type { ToolDefinition, ParameterDefinition, ParameterType } from './types/profile.js';
 import type { OpenAPIParser } from './openapi-parser.js';
 
 export class ToolGenerator {
@@ -62,10 +62,24 @@ export class ToolGenerator {
    * Convert parameter definition to JSON Schema
    */
   private parameterToJsonSchema(param: ParameterDefinition): Record<string, unknown> {
-    const schema: Record<string, unknown> = {
-      type: param.type,
-      description: param.description,
-    };
+    if (Array.isArray(param.type)) {
+      const oneOf = param.type.map(type => this.parameterTypeToSchema(type, param));
+      return {
+        description: param.description,
+        oneOf,
+      };
+    }
+
+    const schema = this.parameterTypeToSchema(param.type, param);
+    schema.description = param.description;
+    return schema;
+  }
+
+  private parameterTypeToSchema(
+    type: ParameterType,
+    param: ParameterDefinition
+  ): Record<string, unknown> {
+    const schema: Record<string, unknown> = { type };
 
     if (param.enum) {
       schema.enum = param.enum;
@@ -75,11 +89,11 @@ export class ToolGenerator {
       schema.default = param.default;
     }
 
-    if (param.type === 'array' && param.items) {
+    if (type === 'array' && param.items) {
       schema.items = { type: param.items.type };
     }
 
-    if (param.type === 'object') {
+    if (type === 'object') {
       // Always include properties for object type (empty {} = free-form object)
       schema.properties = param.properties || {};
     }
@@ -204,4 +218,3 @@ export class ToolGenerator {
     return formData;
   }
 }
-

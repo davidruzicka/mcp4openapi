@@ -188,9 +188,21 @@
       "required": ["type", "description"],
       "properties": {
         "type": {
-          "type": "string",
-          "enum": ["string", "integer", "number", "boolean", "array", "object"],
-          "description": "Parameter data type"
+          "description": "Parameter data type",
+          "oneOf": [
+            {
+              "type": "string",
+              "enum": ["string", "integer", "number", "boolean", "array", "object"]
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": ["string", "integer", "number", "boolean", "array", "object"]
+              },
+              "minItems": 1
+            }
+          ]
         },
         "description": {
           "type": "string",
@@ -237,6 +249,36 @@
         },
         "example": {
           "description": "Example value for documentation"
+        },
+        "object_entries_to_array": {
+          "type": "object",
+          "description": "Convert an object map into an array of objects using key/value fields",
+          "required": ["key_field", "value_field"],
+          "properties": {
+            "key_field": {
+              "type": "string",
+              "description": "Field name to store the object key"
+            },
+            "value_field": {
+              "type": "string",
+              "description": "Field name to store the object value"
+            },
+            "wrap_value_field": {
+              "type": "string",
+              "description": "Optional wrapper field name for non-object values"
+            }
+          }
+        },
+        "array_item_to_object": {
+          "type": "object",
+          "description": "Convert primitive array items into objects using the provided field",
+          "required": ["key_field"],
+          "properties": {
+            "key_field": {
+              "type": "string",
+              "description": "Field name to store the array item value"
+            }
+          }
         }
       }
     },
