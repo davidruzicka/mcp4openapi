@@ -14,7 +14,7 @@
  */
 
 import fs from 'fs/promises';
-import type { Profile } from './types/profile.js';
+import type { Profile, ParameterType } from './types/profile.js';
 import { ValidationError, ConfigurationError } from './errors.js';
 import { ZodError } from 'zod';
 import { profileSchema, authInterceptorSchema } from './generated-schemas.js';
@@ -121,7 +121,7 @@ export class ProfileLoader {
       // Validate required_for references existing enum values
       for (const [paramName, paramDef] of Object.entries(tool.parameters)) {
         const paramTypes = Array.isArray(paramDef.type) ? paramDef.type : [paramDef.type];
-        const hasType = (type: string) => paramTypes.includes(type);
+        const hasType = (type: ParameterType) => paramTypes.includes(type);
 
         // Validate array parameters have items
         if (hasType('array') && !paramDef.items) {
