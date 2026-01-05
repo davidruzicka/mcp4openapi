@@ -89,6 +89,85 @@ describe('normalizeArguments', () => {
     ])
   })
 
+  it('keeps object entry values unchanged when wrapping is disabled', () => {
+    const toolDef: ToolDefinition = {
+      name: 'create_content',
+      description: 'Test tool',
+      parameters: {
+        customFields: {
+          type: ['object', 'array'],
+          description: 'Custom fields',
+          properties: {},
+          items: { type: 'object' },
+          object_entries_to_array: {
+            key_field: 'name',
+            value_field: 'value',
+          },
+        },
+      },
+    }
+
+    const result = normalizeArguments(toolDef, {
+      customFields: {
+        Type: 'Task',
+        Tags: [{ name: 'bug' }],
+      },
+    })
+
+    expect(result.customFields).toEqual([
+      { name: 'Type', value: 'Task' },
+      { name: 'Tags', value: [{ name: 'bug' }] },
+    ])
+  })
+
+  it('skips array item mapping when the value is not an array', () => {
+    const toolDef: ToolDefinition = {
+      name: 'run_commands',
+      description: 'Test tool',
+      parameters: {
+        issues: {
+          type: 'array',
+          description: 'Issue IDs',
+          items: { type: 'string' },
+          array_item_to_object: {
+            key_field: 'id',
+          },
+        },
+      },
+    }
+
+    const args = {
+      issues: 'ISSUE-1',
+    }
+
+    const result = normalizeArguments(toolDef, args)
+
+    expect(result.issues).toBe('ISSUE-1')
+  })
+
+  it('leaves non-primitive array items unchanged', () => {
+    const toolDef: ToolDefinition = {
+      name: 'run_commands',
+      description: 'Test tool',
+      parameters: {
+        issues: {
+          type: 'array',
+          description: 'Issue IDs',
+          items: { type: 'string' },
+          array_item_to_object: {
+            key_field: 'id',
+          },
+        },
+      },
+    }
+
+    const result = normalizeArguments(toolDef, {
+      issues: [['ISSUE-1'], { id: 'ISSUE-2' }],
+    })
+
+    expect(result.issues).toEqual([['ISSUE-1'], { id: 'ISSUE-2' }])
+  })
+
   it('keeps array items unchanged when no transformation applies', () => {
     const toolDef: ToolDefinition = {
       name: 'run_commands',
