@@ -106,6 +106,28 @@ export class HttpTransport {
       next();
     });
 
+    // Security: Standard security headers
+    this.app.use((req: Request, res: Response, next: NextFunction) => {
+      // HSTS: Enforce HTTPS (skip for localhost/IPs to facilitate local dev)
+      if (req.hostname !== 'localhost' && req.hostname !== '127.0.0.1' && !isIP(req.hostname)) {
+        res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+      }
+
+      // Prevent MIME sniffing
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+
+      // Prevent clickjacking
+      res.setHeader('X-Frame-Options', 'DENY');
+
+      // Content Security Policy
+      // Prevent XSS and data injection
+      // default-src 'self': Only load resources from same origin
+      // frame-ancestors 'none': Prevent embedding in iframes (matches X-Frame-Options)
+      res.setHeader('Content-Security-Policy', "default-src 'self'; frame-ancestors 'none'");
+
+      next();
+    });
+
     // DNS rebinding protection when binding to localhost
     // Deny requests with mismatched Host headers to prevent DNS rebinding attacks
     // Applies when server host is localhost/127.0.0.1, regardless of auth configuration
