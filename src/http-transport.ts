@@ -108,8 +108,15 @@ export class HttpTransport {
 
     // Security: Standard security headers
     this.app.use((req: Request, res: Response, next: NextFunction) => {
-      // HSTS: Enforce HTTPS (skip for localhost/IPs to facilitate local dev)
-      if (req.hostname !== 'localhost' && req.hostname !== '127.0.0.1' && !isIP(req.hostname)) {
+      // HSTS: Enforce HTTPS
+      // Skip for localhost/IPs to facilitate local dev
+      // Skip for Let's Encrypt validation paths (.well-known/acme-challenge) which require HTTP
+      if (
+        req.hostname !== 'localhost' &&
+        req.hostname !== '127.0.0.1' &&
+        !isIP(req.hostname) &&
+        !req.path.startsWith('/.well-known/acme-challenge/')
+      ) {
         res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
       }
 

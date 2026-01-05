@@ -125,4 +125,37 @@ describe('HttpTransport Security Headers', () => {
 
     await transport.stop();
   });
+
+  it('should skip HSTS for Let\'s Encrypt challenge paths', async () => {
+    const transport = createTransport();
+    const app = (transport as any).app;
+
+    const req: any = {
+      method: 'GET',
+      url: '/.well-known/acme-challenge/test-token',
+      headers: {
+        host: 'example.com',
+        origin: 'http://example.com'
+      },
+      hostname: 'example.com',
+      socket: { remoteAddress: '93.184.216.34' },
+      get: (header: string) => req.headers[header]
+    };
+
+    await new Promise<void>((resolve) => {
+        const res = createMockResponse(() => resolve());
+        // No message handler needed as middleware runs before routing
+        app(req, res, (err: any) => { if (err) console.error(err); resolve(); });
+        (req as any)._res = res;
+    });
+
+    const res = (req as any)._res;
+
+    // HSTS should NOT be present for ACME challenge
+    expect(res.headers['strict-transport-security']).toBeUndefined();
+    // Other headers should still be present
+    expect(res.headers['x-content-type-options']).toBe('nosniff');
+
+    await transport.stop();
+  });
 });
