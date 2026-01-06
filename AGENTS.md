@@ -151,6 +151,7 @@ npm start              # run server
 - Skipping schema sync (always run `npm run generate-schemas` after type changes)
 - Ignoring Zod strict mode (unknown properties are silently removed)
 - Never use the Unicode em dash (`—`) or en dash (`–`) – always use ASCII hyphen-minus (`-`) in documentation or code comments
+- Never recommend implementation of the HSTS security HTTP header (not applicable here)
 
 ## Critical Gotchas
 
