@@ -23,7 +23,7 @@
   "tools": [
     {
       "name": "manage_groups",
-      "description": "Work with GitLab groups. Actions: 'list' (all groups), 'get' (group details), 'list_projects' (projects in group), 'list_subgroups' (subgroups of group). Use 'list' to discover groups, 'list_projects' to see projects in a specific group.",
+      "description": "Work with GitLab groups. Actions: 'list' (all groups), 'get' (group details), 'list_projects' (projects in group), 'list_subgroups' (subgroups of group). Use 'list' to discover groups, 'list_projects' to see projects in a specific group. For 'get', 'list_projects', and 'list_subgroups', pass 'group_id'.",
       "metadata_params": ["action", "group_id"],
       "operations": {
         "list": "getApiV4Groups",
@@ -76,7 +76,7 @@
 
     {
       "name": "manage_pipelines_jobs",
-      "description": "Run and inspect pipelines/jobs. Actions: 'run_pipeline', 'get_pipeline', 'get_job', 'retry_job', 'cancel_job', 'play_job', 'download_job_artifacts' (proxy download).",
+      "description": "Run and inspect pipelines/jobs. Actions: 'run_pipeline', 'get_pipeline', 'get_job', 'retry_job', 'cancel_job', 'play_job', 'download_job_artifacts' (proxy download). For 'run_pipeline', pass 'ref'. For 'get_pipeline', pass 'pipeline_id'. For job actions, pass 'job_id'.",
       "metadata_params": ["action", "project_id", "pipeline_id", "job_id"],
       "operations": {
         "run_pipeline": "postApiV4ProjectsIdPipeline",
@@ -128,7 +128,7 @@
 
     {
       "name": "manage_labels_milestones",
-      "description": "Manage project labels and milestones. Actions: 'list_labels', 'create_label', 'delete_label', 'list_milestones', 'create_milestone', 'update_milestone'.",
+      "description": "Manage project labels and milestones. Actions: 'list_labels', 'create_label', 'delete_label', 'list_milestones', 'create_milestone', 'update_milestone'. For 'create_label', pass 'name' and 'color'. For 'delete_label', pass 'name'. For 'create_milestone' and 'update_milestone', pass 'title'. For 'update_milestone', also pass 'milestone_id'.",
       "metadata_params": ["action", "project_id", "milestone_id"],
       "operations": {
         "list_labels": "getApiV4ProjectsIdLabels",
@@ -188,7 +188,7 @@
 
     {
       "name": "manage_releases_tags",
-      "description": "Manage releases and tags. Actions: 'list_releases', 'create_release', 'list_tags', 'create_tag', 'delete_tag'.",
+      "description": "Manage releases and tags. Actions: 'list_releases', 'create_release', 'list_tags', 'create_tag', 'delete_tag'. For 'create_release', pass 'name' and 'tag_name'. For 'create_tag', pass 'tag_name' and 'ref'. For 'delete_tag', pass 'tag_name'.",
       "metadata_params": ["action", "project_id"],
       "operations": {
         "list_releases": "getApiV4ProjectsIdReleases",
@@ -239,7 +239,7 @@
 
     {
       "name": "manage_project_members",
-      "description": "Manage project members. Actions: 'list_members', 'add_member', 'remove_member'.",
+      "description": "Manage project members. Actions: 'list_members', 'add_member', 'remove_member'. For 'add_member', pass 'user_id' and 'access_level'. For 'remove_member', pass 'user_id'.",
       "metadata_params": ["action", "project_id"],
       "operations": {
         "list_members": "getApiV4ProjectsIdMembers",
@@ -278,7 +278,7 @@
 
     {
       "name": "manage_project_hooks",
-      "description": "Manage project webhooks. Actions: 'list_hooks', 'create_hook', 'delete_hook'.",
+      "description": "Manage project webhooks. Actions: 'list_hooks', 'create_hook', 'delete_hook'. For 'create_hook', pass 'url'. For 'delete_hook', pass 'hook_id'.",
       "metadata_params": ["action", "project_id", "hook_id"],
       "operations": {
         "list_hooks": "getApiV4ProjectsIdHooks",
@@ -328,7 +328,7 @@
 
     {
       "name": "manage_snippets",
-      "description": "Read project snippets and download raw content via proxy. Actions: 'list_snippets', 'get_snippet', 'download_snippet'.",
+      "description": "Read project snippets and download raw content via proxy. Actions: 'list_snippets', 'get_snippet', 'download_snippet'. For 'get_snippet' and 'download_snippet', pass 'snippet_id'.",
       "metadata_params": ["action", "project_id", "snippet_id"],
       "operations": {
         "list_snippets": "getApiV4ProjectsIdSnippets",
@@ -365,7 +365,7 @@
 
     {
       "name": "manage_projects",
-      "description": "Work with GitLab projects. Actions: 'list' (all projects), 'get' (project details), 'search' (search projects). Use 'list' to discover projects, 'search' to find specific ones.",
+      "description": "Work with GitLab projects. Actions: 'list' (all projects), 'get' (project details), 'search' (search projects). Use 'list' to discover projects, 'search' to find specific ones. For 'get', pass 'project_id'.",
       "metadata_params": ["action", "project_id"],
       "operations": {
         "list": "getApiV4Projects",
@@ -414,7 +414,7 @@
 
     {
       "name": "manage_merge_requests",
-      "description": "Work with merge requests. Actions: 'list' (all MRs in project), 'get' (single MR details), 'create' (create new MR), 'update' (update MR), 'delete' (delete MR - admins only), 'list_notes' (get all comments), 'get_note' (single comment), 'create_note' (add comment), 'update_note' (edit comment), 'delete_note' (remove comment), 'download_note_attachment' (download note attachment via proxy), 'list_discussions', 'get_discussion', 'create_discussion', 'delete_discussion', 'resolve_discussion', 'unresolve_discussion', 'get_approvals', 'approve', 'unapprove', 'get_changes' (file diffs), 'list_versions' (list diff versions), 'get_version' (specific diff version). Use 'list' to see all merge requests, filter by state (opened, closed, merged, all).",
+      "description": "Work with merge requests. Actions: 'list' (all MRs in project), 'get' (single MR details), 'create' (create new MR), 'update' (update MR), 'delete' (delete MR - admins only), 'list_notes' (get all comments), 'get_note' (single comment), 'create_note' (add comment), 'update_note' (edit comment), 'delete_note' (remove comment), 'download_note_attachment' (download note attachment via proxy), 'list_discussions', 'get_discussion', 'create_discussion', 'delete_discussion', 'resolve_discussion', 'unresolve_discussion', 'get_approvals', 'approve', 'unapprove', 'get_changes' (file diffs), 'list_versions' (list diff versions), 'get_version' (specific diff version). Use 'list' to see all merge requests, filter by state (opened, closed, merged, all). For all actions that target a specific MR (including 'get_changes', 'list_versions', 'get_version'), pass 'merge_request_iid'.",
       "metadata_params": ["action", "project_id", "merge_request_iid", "note_id", "discussion_id", "version_id"],
       "operations": {
         "list": "getApiV4ProjectsIdMergeRequests",
@@ -687,7 +687,7 @@
 
     {
       "name": "manage_issues",
-      "description": "Work with issues. Actions: 'list' (all issues in project), 'get' (single issue details), 'create' (create new issue), 'delete' (delete issue - admins only). Use 'list' to see all issues, filter by state (opened, closed, all).",
+      "description": "Work with issues. Actions: 'list' (all issues in project), 'get' (single issue details), 'create' (create new issue), 'delete' (delete issue - admins only). Use 'list' to see all issues, filter by state (opened, closed, all). For 'get' and 'delete', pass 'issue_iid'. For 'create', pass 'title'.",
       "metadata_params": ["action", "project_id", "issue_iid"],
       "operations": {
         "list": "getApiV4ProjectsIdIssues",
@@ -790,7 +790,7 @@
 
     {
       "name": "manage_project_badges",
-      "description": "Manage badges for a project. Actions: 'list' (get all badges), 'get' (single badge by ID), 'create' (new badge with link_url and image_url), 'update' (modify existing badge), 'delete' (remove badge). Use 'list' when you want to see what badges exist, 'create' to add new ones.",
+      "description": "Manage badges for a project. Actions: 'list' (get all badges), 'get' (single badge by ID), 'create' (new badge with link_url and image_url), 'update' (modify existing badge), 'delete' (remove badge). Use 'list' when you want to see what badges exist, 'create' to add new ones. For 'get', 'update', and 'delete', pass 'badge_id'. For 'create', pass 'link_url' and 'image_url'.",
       "metadata_params": ["action", "project_id", "badge_id"],
       "operations": {
         "list": "getApiV4ProjectsIdBadges",
@@ -846,7 +846,7 @@
 
     {
       "name": "manage_branches",
-      "description": "Manage repository branches. Actions: 'list' (all branches, supports search/sort), 'get' (single branch details), 'create' (new branch from ref), 'delete' (remove branch), 'protect' (make protected), 'unprotect' (remove protection), 'exists' (check if branch exists). Use 'list' to see all branches, 'create' to make a new feature branch from main.",
+      "description": "Manage repository branches. Actions: 'list' (all branches, supports search/sort), 'get' (single branch details), 'create' (new branch from ref), 'delete' (remove branch), 'protect' (make protected), 'unprotect' (remove protection), 'exists' (check if branch exists). Use 'list' to see all branches, 'create' to make a new feature branch from main. For 'get', 'delete', 'protect', 'unprotect', and 'exists', pass 'branch'. For 'create', pass 'ref'.",
       "operations": {
         "list": "getApiV4ProjectsIdRepositoryBranches",
         "get": "getApiV4ProjectsIdRepositoryBranchesBranch",
@@ -939,7 +939,7 @@
 
     {
       "name": "manage_access_requests",
-      "description": "Manage access requests for projects or groups. Actions: 'list' (pending requests), 'approve' (grant access with access_level), 'deny' (reject request), 'request' (request access as current user). Use 'list' to see who requested access, 'approve' to grant it with specified access level (10=Guest, 20=Reporter, 30=Developer, 40=Maintainer, 50=Owner).",
+      "description": "Manage access requests for projects or groups. Actions: 'list' (pending requests), 'approve' (grant access with access_level), 'deny' (reject request), 'request' (request access as current user). Use 'list' to see who requested access, 'approve' to grant it with specified access level (10=Guest, 20=Reporter, 30=Developer, 40=Maintainer, 50=Owner). For 'approve' and 'deny', pass 'user_id'.",
       "operations": {
         "list_project": "getApiV4ProjectsIdAccessRequests",
         "list_group": "getApiV4GroupsIdAccessRequests",
