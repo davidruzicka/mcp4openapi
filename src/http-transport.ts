@@ -106,6 +106,27 @@ export class HttpTransport {
       next();
     });
 
+    // Security: Standard headers (HSTS, CSP, X-Frame-Options, X-Content-Type-Options)
+    this.app.use((req: Request, res: Response, next: NextFunction) => {
+      // Standard security headers
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.setHeader('X-Frame-Options', 'DENY');
+      res.setHeader('Content-Security-Policy', "default-src 'self'; frame-ancestors 'none'");
+
+      // HSTS - strict transport security
+      // Skip for localhost, 127.0.0.1, and IPs to support local development
+      // Also skip for ACME challenge paths
+      const hostname = req.hostname;
+      const isLocal = hostname === 'localhost' || hostname === '127.0.0.1' || hostname.endsWith('.localhost');
+      const isIPAddress = isIP(hostname) !== 0;
+
+      if (!isLocal && !isIPAddress && !req.path.startsWith('/.well-known/acme-challenge/')) {
+        res.setHeader('Strict-Transport-Security', 'max-age=63072000; includeSubDomains; preload');
+      }
+
+      next();
+    });
+
     // DNS rebinding protection when binding to localhost
     // Deny requests with mismatched Host headers to prevent DNS rebinding attacks
     // Applies when server host is localhost/127.0.0.1, regardless of auth configuration
