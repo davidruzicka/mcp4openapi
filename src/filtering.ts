@@ -87,6 +87,17 @@ export function isControlKey(key: string): boolean {
   return CONTROL_KEYS.has(key);
 }
 
+interface FilteringContext {
+  aliasToCanonical: Map<string, string>;
+  toolParamGroups: Map<string, { names: string[] }>;
+  allowedByCanonical: Map<string, string[]>;
+  applicableCanonicals: string[];
+  operationCategory: 'list' | 'read' | 'modify';
+  hasAnyFilterParam: boolean;
+  permissions: { allowList: boolean; allowRead: boolean };
+  action?: string;
+}
+
 export function getFilterMaxValues(): number {
   const raw = process.env.MCP4_FILTER_MAX_VALUES;
   if (raw === undefined) {
@@ -101,24 +112,54 @@ export function getFilterMaxValues(): number {
   return parsed;
 }
 
-export function enforceFiltering(context: {
-  filtering: FilteringRules;
-  toolDef: ToolDefinition;
-  args: Record<string, unknown>;
-  parameterAliases?: Record<string, string[]>;
-  operation?: OperationInfo;
-}): void {
-  const { filtering, toolDef, args, parameterAliases, operation } = context;
+function prepareFilteringContext(
+  filtering: FilteringRules,
+  toolDef: ToolDefinition,
+  args: Record<string, unknown>,
+  parameterAliases: Record<string, string[]>,
+  operation?: OperationInfo
+): FilteringContext {
+  const aliasToCanonical = buildAliasToCanonical(parameterAliases);
+  const toolParamGroups = buildToolParamGroups(toolDef, parameterAliases, aliasToCanonical);
   const filterKeys = Object.keys(filtering).filter(key => !isControlKey(key));
-  if (filterKeys.length === 0) {
-    return;
-  }
-
-  const aliasToCanonical = buildAliasToCanonical(parameterAliases ?? {});
-  const toolParamGroups = buildToolParamGroups(toolDef, parameterAliases ?? {}, aliasToCanonical);
+  
   validateFilterKeys(filterKeys, toolParamGroups, toolDef.parameters);
+  
+  const allowedByCanonical = buildAllowedByCanonical(
+    filterKeys,
+    filtering,
+    aliasToCanonical,
+    toolParamGroups
+  );
+  const applicableCanonicals = Array.from(allowedByCanonical.keys());
+  const operationCategory = resolveOperationCategory(operation, args['action']);
+  
+  return {
+    aliasToCanonical,
+    toolParamGroups,
+    allowedByCanonical,
+    applicableCanonicals,
+    operationCategory,
+    hasAnyFilterParam: applicableCanonicals.some(canonical => {
+      const group = toolParamGroups.get(canonical);
+      return group ? getArgumentValue(args, group.names) !== undefined : false;
+    }),
+    permissions: {
+      allowList: Object.prototype.hasOwnProperty.call(filtering, '_allow_list'),
+      allowRead: Object.prototype.hasOwnProperty.call(filtering, '_allow_read')
+    },
+    action: typeof args['action'] === 'string' ? args['action'] : undefined
+  };
+}
 
+function buildAllowedByCanonical(
+  filterKeys: string[],
+  filtering: FilteringRules,
+  aliasToCanonical: Map<string, string>,
+  toolParamGroups: Map<string, { names: string[] }>
+): Map<string, string[]> {
   const allowedByCanonical = new Map<string, string[]>();
+  
   for (const key of filterKeys) {
     const canonical = aliasToCanonical.get(key) ?? key;
     if (!toolParamGroups.has(canonical)) {
@@ -132,98 +173,126 @@ export function enforceFiltering(context: {
     existing.push(...values);
     allowedByCanonical.set(canonical, dedupe(existing));
   }
+  
+  return allowedByCanonical;
+}
 
-  const applicableCanonicals = Array.from(allowedByCanonical.keys());
-  if (applicableCanonicals.length === 0) {
+function validateParameterValue(
+  argValue: unknown,
+  allowedValues: string[],
+  canonical: string
+): void {
+  const allowedSet = new Set(allowedValues);
+  
+  if (Array.isArray(argValue)) {
+    for (const item of argValue) {
+      if (!isPrimitiveValue(item)) {
+        throw new AuthorizationError(
+          `Filter conflict for '${canonical}': expected one of [${allowedValues.join(', ')}], got '${formatValue(item)}'.`
+        );
+      }
+      const stringValue = String(item);
+      if (!allowedSet.has(stringValue)) {
+        throw new AuthorizationError(
+          `Filter conflict for '${canonical}': expected one of [${allowedValues.join(', ')}], got '${stringValue}'.`
+        );
+      }
+    }
     return;
   }
+  
+  if (typeof argValue === 'object' && argValue !== null) {
+    throw new AuthorizationError(
+      `Filter conflict for '${canonical}': expected one of [${allowedValues.join(', ')}], got '${formatValue(argValue)}'.`
+    );
+  }
+  
+  const stringValue = String(argValue);
+  if (!allowedSet.has(stringValue)) {
+    throw new AuthorizationError(
+      `Filter conflict for '${canonical}': expected one of [${allowedValues.join(', ')}], got '${stringValue}'.`
+    );
+  }
+}
 
-  const allowList = Object.prototype.hasOwnProperty.call(filtering, '_allow_list');
-  const allowRead = Object.prototype.hasOwnProperty.call(filtering, '_allow_read');
-
-  const action = typeof args['action'] === 'string' ? args['action'] : undefined;
-  const operationCategory = resolveOperationCategory(operation, args['action']);
+function validateCanonicalParameter(
+  ctx: FilteringContext,
+  canonical: string,
+  args: Record<string, unknown>,
+  toolDef: ToolDefinition
+): void {
+  const allowedValues = ctx.allowedByCanonical.get(canonical) ?? [];
+  const group = ctx.toolParamGroups.get(canonical);
+  if (!group) {
+    return;
+  }
+  
+  const paramDefinition = toolDef.parameters[canonical];
+  const argValue = getArgumentValue(args, group.names);
+  const { operationCategory, permissions, hasAnyFilterParam, action } = ctx;
   const isList = operationCategory === 'list';
   const isRead = operationCategory === 'read';
   const isModify = operationCategory === 'modify';
+  
+  if (argValue === undefined) {
+    if ((isList && permissions.allowList) || (isRead && permissions.allowRead)) {
+      return;
+    }
+    if (action && isRequiredForAction(paramDefinition, action)) {
+      throw new AuthorizationError(
+        `Filter requires parameter '${canonical}' for tool '${toolDef.name}' action '${action}'.`
+      );
+    }
+    if (isModify && hasAnyFilterParam) {
+      return;
+    }
+    if (isList || isRead || isModify) {
+      throw new AuthorizationError(
+        `Filter requires parameter '${canonical}' for tool '${toolDef.name}'.`
+      );
+    }
+    return;
+  }
+  
+  validateParameterValue(argValue, allowedValues, canonical);
+}
 
-  const hasAnyFilterParam = applicableCanonicals.some(canonical => {
-    const group = toolParamGroups.get(canonical);
-    if (!group) return false;
-    return getArgumentValue(args, group.names) !== undefined;
-  });
+export function enforceFiltering(context: {
+  filtering: FilteringRules;
+  toolDef: ToolDefinition;
+  args: Record<string, unknown>;
+  parameterAliases?: Record<string, string[]>;
+  operation?: OperationInfo;
+}): void {
+  const { filtering, toolDef, args, parameterAliases, operation } = context;
+  const filterKeys = Object.keys(filtering).filter(key => !isControlKey(key));
+  
+  if (filterKeys.length === 0) {
+    return;
+  }
+  
+  const ctx = prepareFilteringContext(filtering, toolDef, args, parameterAliases ?? {}, operation);
+  
+  if (ctx.applicableCanonicals.length === 0) {
+    return;
+  }
 
-  if (isModify && !hasAnyFilterParam) {
-    for (const canonical of applicableCanonicals) {
+  if (ctx.operationCategory === 'modify' && !ctx.hasAnyFilterParam) {
+    for (const canonical of ctx.applicableCanonicals) {
       const paramDefinition = toolDef.parameters[canonical];
-      if (action && isRequiredForAction(paramDefinition, action)) {
+      if (ctx.action && isRequiredForAction(paramDefinition, ctx.action)) {
         throw new AuthorizationError(
-          `Filter requires parameter '${canonical}' for tool '${toolDef.name}' action '${action}'.`
+          `Filter requires parameter '${canonical}' for tool '${toolDef.name}' action '${ctx.action}'.`
         );
       }
     }
     throw new AuthorizationError(
-      `Filter requires at least one of [${applicableCanonicals.join(', ')}] for tool '${toolDef.name}'.`
+      `Filter requires at least one of [${ctx.applicableCanonicals.join(', ')}] for tool '${toolDef.name}'.`
     );
   }
-
-  for (const canonical of applicableCanonicals) {
-    const allowedValues = allowedByCanonical.get(canonical) ?? [];
-    const group = toolParamGroups.get(canonical) as { names: string[] };
-    const paramDefinition = toolDef.parameters[canonical];
-    const argValue = getArgumentValue(args, group.names);
-
-    if (argValue === undefined) {
-      if ((isList && allowList) || (isRead && allowRead)) {
-        continue;
-      }
-      if (action && isRequiredForAction(paramDefinition, action)) {
-        throw new AuthorizationError(
-          `Filter requires parameter '${canonical}' for tool '${toolDef.name}' action '${action}'.`
-        );
-      }
-      if (isModify && hasAnyFilterParam) {
-        continue;
-      }
-      if (isList || isRead || isModify) {
-        throw new AuthorizationError(
-          `Filter requires parameter '${canonical}' for tool '${toolDef.name}'.`
-        );
-      }
-      continue;
-    }
-
-    const allowedSet = new Set(allowedValues);
-
-    if (Array.isArray(argValue)) {
-      for (const item of argValue) {
-        if (!isPrimitiveValue(item)) {
-          throw new AuthorizationError(
-            `Filter conflict for '${canonical}': expected one of [${allowedValues.join(', ')}], got '${formatValue(item)}'.`
-          );
-        }
-        const stringValue = String(item);
-        if (!allowedSet.has(stringValue)) {
-          throw new AuthorizationError(
-            `Filter conflict for '${canonical}': expected one of [${allowedValues.join(', ')}], got '${stringValue}'.`
-          );
-        }
-      }
-      continue;
-    }
-
-    if (typeof argValue === 'object' && argValue !== null) {
-      throw new AuthorizationError(
-        `Filter conflict for '${canonical}': expected one of [${allowedValues.join(', ')}], got '${formatValue(argValue)}'.`
-      );
-    }
-
-    const stringValue = String(argValue);
-    if (!allowedSet.has(stringValue)) {
-      throw new AuthorizationError(
-        `Filter conflict for '${canonical}': expected one of [${allowedValues.join(', ')}], got '${stringValue}'.`
-      );
-    }
+  
+  for (const canonical of ctx.applicableCanonicals) {
+    validateCanonicalParameter(ctx, canonical, args, toolDef);
   }
 }
 
