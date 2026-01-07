@@ -18,6 +18,8 @@ export interface SessionData {
   accessTokenExpiresAt?: number; // Access token expiration timestamp in ms
   scopes?: string[]; // OAuth scopes for debugging/validation
   oauthClientId?: string; // OAuth client ID for debugging/validation
+  filtering?: Record<string, string[]>;
+  filteringHeader?: string;
 }
 
 export interface SSEStreamState {
@@ -64,4 +66,3 @@ export interface HttpTransportConfig {
 export interface McpRequest extends ExpressRequest {
   sessionId?: string;
 }
-

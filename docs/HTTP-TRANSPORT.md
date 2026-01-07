@@ -98,6 +98,18 @@ Source: https://modelcontextprotocol.io/specification/2025-03-26/basic/transport
 - `Authorization: Bearer <token>` or `X-API-Token: <token>` (required for initialization if not using env var)
   - Supports various token formats: GitLab (`glpat-...`), YouTrack (`perm:...`), generic tokens
   - Flexible whitespace handling (extra spaces are trimmed)
+- `X-Mcp4-Filtering: <filter>` (optional, initialization only)
+
+**Filtering header format**:
+- Comma-separated list of `key=value` items
+- Control keys: `_allow_list`, `_allow_read` (no value)
+- Values containing spaces or commas must be percent-encoded
+- Key pattern: `^[A-Za-z0-9_][A-Za-z0-9_-]{0,63}$`
+
+**Example**:
+```
+X-Mcp4-Filtering: project_id=123, project_id=456, _allow_read
+```
 
 **Request Body**:
 - Single JSON-RPC request/notification/response
