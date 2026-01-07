@@ -403,7 +403,7 @@ describe('filtering', () => {
       ).not.toThrow();
     });
 
-    it('ignores filter keys not present in tool parameters', () => {
+    it('rejects filter keys not present in tool parameters', () => {
       const filtering = { merge_request_iid: ['8'] };
       expect(() =>
         enforceFiltering({
@@ -412,7 +412,49 @@ describe('filtering', () => {
           args: { action: 'update' },
           operation: undefined,
         })
-      ).not.toThrow();
+      ).toThrow(ValidationError);
+    });
+
+    it('rejects unknown filter keys for the tool', () => {
+      const filtering = { unknown_param: ['1'] };
+      expect(() =>
+        enforceFiltering({
+          filtering,
+          toolDef: baseTool,
+          args: { action: 'get' },
+          operation: readOperation,
+        })
+      ).toThrow(ValidationError);
+    });
+
+    it('reports required_for dependency with action name', () => {
+      const toolDef: ToolDefinition = {
+        name: 'issues',
+        description: 'Issue operations',
+        operations: { update: 'updateIssue' },
+        parameters: {
+          action: {
+            type: 'string',
+            description: 'Action',
+            enum: ['update'],
+          },
+          issue_id: {
+            type: 'string',
+            description: 'Issue ID',
+            required_for: ['update'],
+          },
+        },
+      };
+      const filtering = { issue_id: ['1'] };
+
+      expect(() =>
+        enforceFiltering({
+          filtering,
+          toolDef,
+          args: { action: 'update' },
+          operation: undefined,
+        })
+      ).toThrow(/action 'update'/);
     });
 
     it('uses action fallback for list and read', () => {

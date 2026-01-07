@@ -1,6 +1,7 @@
 import type { ToolDefinition } from './types/profile.js';
 import type { OperationInfo } from './types/openapi.js';
 import { AuthorizationError, ValidationError } from './errors.js';
+import type { ParameterDefinition } from './types/profile.js';
 
 const CONTROL_KEYS = new Set(['_allow_list', '_allow_read']);
 const KEY_PATTERN = /^[A-Za-z0-9_][A-Za-z0-9_-]{0,63}$/;
@@ -115,6 +116,7 @@ export function enforceFiltering(context: {
 
   const aliasToCanonical = buildAliasToCanonical(parameterAliases ?? {});
   const toolParamGroups = buildToolParamGroups(toolDef, parameterAliases ?? {}, aliasToCanonical);
+  validateFilterKeys(filterKeys, toolParamGroups, toolDef.parameters);
 
   const allowedByCanonical = new Map<string, string[]>();
   for (const key of filterKeys) {
@@ -139,6 +141,7 @@ export function enforceFiltering(context: {
   const allowList = Object.prototype.hasOwnProperty.call(filtering, '_allow_list');
   const allowRead = Object.prototype.hasOwnProperty.call(filtering, '_allow_read');
 
+  const action = typeof args['action'] === 'string' ? args['action'] : undefined;
   const operationCategory = resolveOperationCategory(operation, args['action']);
   const isList = operationCategory === 'list';
   const isRead = operationCategory === 'read';
@@ -151,6 +154,14 @@ export function enforceFiltering(context: {
   });
 
   if (isModify && !hasAnyFilterParam) {
+    for (const canonical of applicableCanonicals) {
+      const paramDefinition = toolDef.parameters[canonical];
+      if (action && isRequiredForAction(paramDefinition, action)) {
+        throw new AuthorizationError(
+          `Filter requires parameter '${canonical}' for tool '${toolDef.name}' action '${action}'.`
+        );
+      }
+    }
     throw new AuthorizationError(
       `Filter requires at least one of [${applicableCanonicals.join(', ')}] for tool '${toolDef.name}'.`
     );
@@ -159,13 +170,22 @@ export function enforceFiltering(context: {
   for (const canonical of applicableCanonicals) {
     const allowedValues = allowedByCanonical.get(canonical) ?? [];
     const group = toolParamGroups.get(canonical) as { names: string[] };
+    const paramDefinition = toolDef.parameters[canonical];
     const argValue = getArgumentValue(args, group.names);
 
     if (argValue === undefined) {
       if ((isList && allowList) || (isRead && allowRead)) {
         continue;
       }
-      if (isList || isRead) {
+      if (action && isRequiredForAction(paramDefinition, action)) {
+        throw new AuthorizationError(
+          `Filter requires parameter '${canonical}' for tool '${toolDef.name}' action '${action}'.`
+        );
+      }
+      if (isModify && hasAnyFilterParam) {
+        continue;
+      }
+      if (isList || isRead || isModify) {
         throw new AuthorizationError(
           `Filter requires parameter '${canonical}' for tool '${toolDef.name}'.`
         );
@@ -235,6 +255,45 @@ function buildToolParamGroups(
   }
 
   return groups;
+}
+
+function validateFilterKeys(
+  filterKeys: string[],
+  toolParamGroups: Map<string, { names: string[] }>,
+  parameters: Record<string, ParameterDefinition>
+): void {
+  const allowedKeys = new Set<string>();
+  for (const [canonical, group] of toolParamGroups.entries()) {
+    allowedKeys.add(canonical);
+    for (const name of group.names) {
+      allowedKeys.add(name);
+    }
+  }
+  for (const key of Object.keys(parameters)) {
+    allowedKeys.add(key);
+  }
+
+  const unknownKeys = filterKeys.filter(key => !allowedKeys.has(key));
+  if (unknownKeys.length === 0) {
+    return;
+  }
+  const allowedList = Array.from(allowedKeys).sort().join(', ');
+  throw new ValidationError(
+    `Unknown filter key '${unknownKeys[0]}'. Allowed keys: ${allowedList}`
+  );
+}
+
+function isRequiredForAction(paramDefinition: ParameterDefinition | undefined, action: string): boolean {
+  if (!paramDefinition) {
+    return false;
+  }
+  if (paramDefinition.required) {
+    return true;
+  }
+  if (!paramDefinition.required_for || paramDefinition.required_for.length === 0) {
+    return false;
+  }
+  return paramDefinition.required_for.includes(action);
 }
 
 function getArgumentValue(args: Record<string, unknown>, names: string[]): unknown {

@@ -89,7 +89,7 @@ Example:
   must appear in server logs
 - [x] Invalid format:
   - `ValidationError: Invalid X-Mcp4-Filtering header. Expected comma-separated key=value pairs.`
-- [ ] Unknown key:
+- [x] Unknown key:
   - `ValidationError: Unknown filter key 'foo'. Allowed keys: ...`
 - [x] Conflict:
   - `AuthorizationError: Filter conflict for 'param_name': expected one of [value1, value2], got 'value3'.`
@@ -99,7 +99,7 @@ Example:
   - `ValidationError: X-Mcp4-Filtering header mismatch for existing session.`
 - [x] Forbidden API-specific dependency:
   - `ConfigurationError: Filter dependency resolution requires API-specific knowledge; use profile-driven required params.`
-- [ ] Missing required param from profile-derived dependencies:
+- [x] Missing required param from profile-derived dependencies:
   - `AuthorizationError: Filter requires parameter 'param_name' for tool 'tool_name' action 'action_name'.`
 
 ## Implementation impact
