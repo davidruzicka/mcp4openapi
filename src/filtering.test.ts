@@ -2,7 +2,12 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import type { ToolDefinition } from './types/profile.js';
 import type { OperationInfo } from './types/openapi.js';
 import { AuthorizationError, ValidationError } from './errors.js';
-import { enforceFiltering, parseFilteringHeader } from './filtering.js';
+import {
+  enforceFiltering,
+  getFilterMaxValues,
+  normalizeFilteringHeaderValue,
+  parseFilteringHeader,
+} from './filtering.js';
 
 describe('filtering', () => {
   const baseTool: ToolDefinition = {
@@ -81,11 +86,60 @@ describe('filtering', () => {
       expect(() => parseFilteringHeader('resource_id')).toThrow(ValidationError);
     });
 
+    it('rejects invalid key patterns', () => {
+      expect(() => parseFilteringHeader('bad key=1')).toThrow(ValidationError);
+      expect(() => parseFilteringHeader('-bad=1')).toThrow(ValidationError);
+    });
+
+    it('rejects control keys with values', () => {
+      expect(() => parseFilteringHeader('_allow_list=1')).toThrow(ValidationError);
+      expect(() => parseFilteringHeader('_allow_read=1')).toThrow(ValidationError);
+    });
+
+    it('rejects malformed percent-encoding', () => {
+      expect(() => parseFilteringHeader('project_id=%E0%A4%A')).toThrow(ValidationError);
+    });
+
     it('enforces max values per key', () => {
       process.env.MCP4_FILTER_MAX_VALUES = '2';
       expect(() => parseFilteringHeader('resource_id=1, resource_id=2, resource_id=3')).toThrow(
         ValidationError
       );
+    });
+  });
+
+  describe('normalizeFilteringHeaderValue', () => {
+    it('returns undefined for empty or whitespace values', () => {
+      expect(normalizeFilteringHeaderValue('')).toBeUndefined();
+      expect(normalizeFilteringHeaderValue('   ')).toBeUndefined();
+    });
+
+    it('trims non-empty values', () => {
+      expect(normalizeFilteringHeaderValue('  resource_id=1 ')).toBe('resource_id=1');
+    });
+  });
+
+  describe('getFilterMaxValues', () => {
+    const originalMax = process.env.MCP4_FILTER_MAX_VALUES;
+
+    afterEach(() => {
+      if (originalMax === undefined) {
+        delete process.env.MCP4_FILTER_MAX_VALUES;
+      } else {
+        process.env.MCP4_FILTER_MAX_VALUES = originalMax;
+      }
+    });
+
+    it('defaults to 10 when unset', () => {
+      delete process.env.MCP4_FILTER_MAX_VALUES;
+      expect(getFilterMaxValues()).toBe(10);
+    });
+
+    it('rejects invalid values', () => {
+      process.env.MCP4_FILTER_MAX_VALUES = '0';
+      expect(() => getFilterMaxValues()).toThrow(ValidationError);
+      process.env.MCP4_FILTER_MAX_VALUES = 'not-a-number';
+      expect(() => getFilterMaxValues()).toThrow(ValidationError);
     });
   });
 
@@ -204,6 +258,18 @@ describe('filtering', () => {
           filtering,
           toolDef: baseTool,
           args: { action: 'get', project_id: ['1', '3'] },
+          operation: readOperation,
+        })
+      ).toThrow(AuthorizationError);
+    });
+
+    it('rejects array arguments with non-primitive values', () => {
+      const filtering = { project_id: ['1'] };
+      expect(() =>
+        enforceFiltering({
+          filtering,
+          toolDef: baseTool,
+          args: { action: 'get', project_id: [{ id: '1' }] },
           operation: readOperation,
         })
       ).toThrow(AuthorizationError);
