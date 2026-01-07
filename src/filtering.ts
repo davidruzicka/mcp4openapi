@@ -158,10 +158,7 @@ export function enforceFiltering(context: {
 
   for (const canonical of applicableCanonicals) {
     const allowedValues = allowedByCanonical.get(canonical) ?? [];
-    const group = toolParamGroups.get(canonical);
-    if (!group) {
-      continue;
-    }
+    const group = toolParamGroups.get(canonical) as { names: string[] };
     const argValue = getArgumentValue(args, group.names);
 
     if (argValue === undefined) {
@@ -173,10 +170,6 @@ export function enforceFiltering(context: {
           `Filter requires parameter '${canonical}' for tool '${toolDef.name}'.`
         );
       }
-      continue;
-    }
-
-    if (allowedValues.length === 0) {
       continue;
     }
 

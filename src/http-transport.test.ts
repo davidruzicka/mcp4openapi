@@ -36,6 +36,62 @@ describeIfListen('HttpTransport', () => {
     await transport.stop();
   });
 
+  describe('filtering header helpers', () => {
+    it('detects unknown message types', () => {
+      const messageType = (transport as any).getMessageType(123);
+      expect(messageType).toBe('unknown');
+    });
+
+    it('handles filtering header arrays', () => {
+      const getFilteringHeaderValue = (transport as any).getFilteringHeaderValue.bind(transport);
+      expect(getFilteringHeaderValue({ headers: { 'x-mcp4-filtering': [] } })).toBeUndefined();
+      expect(() =>
+        getFilteringHeaderValue({ headers: { 'x-mcp4-filtering': ['a=b', 'c=d'] } })
+      ).toThrow();
+    });
+
+    it('exposes session filtering values', () => {
+      const sessionId = (transport as any).createSession(
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        { project_id: ['1'] },
+        'project_id=1'
+      );
+
+      expect(transport.getSessionFiltering(sessionId)).toEqual({ project_id: ['1'] });
+      expect(transport.getSessionFilteringHeader(sessionId)).toBe('project_id=1');
+    });
+  });
+
+  describe('filtering header mismatch', () => {
+    it('rejects mismatched filtering header on existing session', async () => {
+      transport.setMessageHandler(async () => ({ result: 'ok' }));
+      const sessionId = (transport as any).createSession(
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        { project_id: ['1'] },
+        'project_id=1'
+      );
+
+      const response = await request(app)
+        .post('/mcp')
+        .set('Accept', 'application/json')
+        .set('Content-Type', 'application/json')
+        .set('Mcp-Session-Id', sessionId)
+        .set('X-Mcp4-Filtering', 'project_id=2')
+        .send({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} });
+
+      expect(response.status).toBe(400);
+      expect(response.body.message).toContain('X-Mcp4-Filtering header mismatch');
+    });
+  });
+
   describe('DNS rebinding protection with localhost host config', () => {
     let localTransport: HttpTransport;
     let localApp: Express;
