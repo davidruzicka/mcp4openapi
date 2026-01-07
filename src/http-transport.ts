@@ -38,6 +38,7 @@ import {
   ValidationError,
   generateCorrelationId,
 } from './errors.js';
+import { parseFilteringHeader, normalizeFilteringHeaderValue } from './filtering.js';
 
 // Default maximum token length (1000 characters)
 const DEFAULT_MAX_TOKEN_LENGTH = 1000;
@@ -1188,6 +1189,8 @@ export class HttpTransport {
       this.logger.debug('handlePost called', { method: req.method, path: req.path, sessionId: req.sessionId, accept: req.headers.accept });
       const sessionId = req.sessionId;
       const body = req.body;
+      const filteringHeader = normalizeFilteringHeaderValue(this.getFilteringHeaderValue(req));
+      const parsedFiltering = filteringHeader ? parseFilteringHeader(filteringHeader) : undefined;
 
       // Validate Accept header per MCP Streamable HTTP specification
       const accept = req.headers.accept || '';
@@ -1226,6 +1229,11 @@ export class HttpTransport {
         if (!session) {
           res.status(HTTP_STATUS.NOT_FOUND).json({ error: 'Not Found', message: 'Session not found or expired' });
           return;
+        }
+        if (filteringHeader !== undefined) {
+          if (!session.filteringHeader || session.filteringHeader !== filteringHeader) {
+            throw new ValidationError('X-Mcp4-Filtering header mismatch for existing session.');
+          }
         }
         this.updateSessionActivity(sessionId);
       } else if (!isInitialization && !sessionId) {
@@ -1333,7 +1341,15 @@ export class HttpTransport {
             }
           }
           
-          newSessionId = this.createSession(authInfo.token, refreshToken, accessTokenExpiresAt, scopes, oauthClientId);
+          newSessionId = this.createSession(
+            authInfo.token,
+            refreshToken,
+            accessTokenExpiresAt,
+            scopes,
+            oauthClientId,
+            parsedFiltering?.filtering,
+            parsedFiltering?.normalizedHeader
+          );
         }
 
         this.logger.debug('Calling messageHandler', { body, sessionId: isInitialization ? newSessionId : sessionId });
@@ -1669,12 +1685,34 @@ export class HttpTransport {
     return 'unknown';
   }
 
+  private getFilteringHeaderValue(req: Request): string | undefined {
+    const headerValue = req.headers['x-mcp4-filtering'];
+    if (Array.isArray(headerValue)) {
+      if (headerValue.length === 0) {
+        return undefined;
+      }
+      if (headerValue.length > 1) {
+        throw new ValidationError('Invalid X-Mcp4-Filtering header. Expected comma-separated key=value pairs.');
+      }
+      return headerValue[0];
+    }
+    return headerValue;
+  }
+
   /**
    * Create new session
    *
    * Why: Stateful sessions for MCP protocol
    */
-  private createSession(authToken?: string, refreshToken?: string, accessTokenExpiresAt?: number, scopes?: string[], oauthClientId?: string): string {
+  private createSession(
+    authToken?: string,
+    refreshToken?: string,
+    accessTokenExpiresAt?: number,
+    scopes?: string[],
+    oauthClientId?: string,
+    filtering?: Record<string, string[]>,
+    filteringHeader?: string
+  ): string {
     // Validate token if provided (defense in depth)
     if (authToken) {
       this.validateToken(authToken, 'Session auth token');
@@ -1691,6 +1729,8 @@ export class HttpTransport {
       accessTokenExpiresAt,
       scopes,
       oauthClientId,
+      filtering,
+      filteringHeader,
     };
     this.sessions.set(sessionId, session);
     this.logger.info('Session created', { 
@@ -1869,6 +1909,16 @@ export class HttpTransport {
   public getSessionToken(sessionId: string): string | undefined {
     const session = this.sessions.get(sessionId);
     return session?.authToken;
+  }
+
+  public getSessionFiltering(sessionId: string): Record<string, string[]> | undefined {
+    const session = this.sessions.get(sessionId);
+    return session?.filtering;
+  }
+
+  public getSessionFilteringHeader(sessionId: string): string | undefined {
+    const session = this.sessions.get(sessionId);
+    return session?.filteringHeader;
   }
 
   /**
