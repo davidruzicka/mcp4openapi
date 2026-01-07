@@ -141,7 +141,7 @@ export function enforceFiltering(context: {
 
   const operationCategory = resolveOperationCategory(operation, args['action']);
   const isList = operationCategory === 'list';
-  const isRead = operationCategory === 'read' || operationCategory === 'unknown';
+  const isRead = operationCategory === 'read';
   const isModify = operationCategory === 'modify';
 
   const hasAnyFilterParam = applicableCanonicals.some(canonical => {
@@ -256,7 +256,7 @@ function getArgumentValue(args: Record<string, unknown>, names: string[]): unkno
 function resolveOperationCategory(
   operation: OperationInfo | undefined,
   action: unknown
-): 'list' | 'read' | 'modify' | 'unknown' {
+): 'list' | 'read' | 'modify' {
   if (operation) {
     const method = operation.method.toLowerCase();
     if (method === 'get') {
@@ -272,11 +272,7 @@ function resolveOperationCategory(
   if (actionValue === 'get' || actionValue === 'read') {
     return 'read';
   }
-  if (actionValue) {
-    return 'modify';
-  }
-
-  return 'unknown';
+  return 'modify';
 }
 
 function dedupe(values: string[]): string[] {
