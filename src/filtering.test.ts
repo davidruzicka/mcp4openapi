@@ -354,6 +354,18 @@ describe('filtering', () => {
       ).toThrow(AuthorizationError);
     });
 
+    it('formats undefined values in errors', () => {
+      const filtering = { project_id: ['1'] };
+      expect(() =>
+        enforceFiltering({
+          filtering,
+          toolDef: baseTool,
+          args: { action: 'get', project_id: [undefined] },
+          operation: readOperation,
+        })
+      ).toThrow(AuthorizationError);
+    });
+
     it('formats function values in errors', () => {
       const filtering = { project_id: ['1'] };
       expect(() =>

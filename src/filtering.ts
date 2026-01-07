@@ -277,6 +277,9 @@ function isPrimitiveValue(value: unknown): value is string | number | boolean {
 }
 
 function formatValue(value: unknown): string {
+  if (value === undefined) {
+    return 'undefined';
+  }
   if (value === null) {
     return 'null';
   }
