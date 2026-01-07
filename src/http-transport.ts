@@ -91,7 +91,7 @@ export class HttpTransport {
   /**
    * Setup Express middleware
    * 
-   * Why: Security (Origin validation, rate limiting), JSON parsing, session extraction, metrics
+   * Why: Security (Headers, Origin validation, rate limiting), JSON parsing, session extraction, metrics
    */
   private setupMiddleware(): void {
     // Request logging (before any middleware)
@@ -103,6 +103,28 @@ export class HttpTransport {
         userAgent: req.get('user-agent'),
         ip: req.ip,
       });
+      next();
+    });
+
+    // Security headers
+    this.app.use((req: Request, res: Response, next: NextFunction) => {
+      // Standard security headers
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.setHeader('X-Frame-Options', 'DENY');
+      res.setHeader('Content-Security-Policy', "default-src 'self'; frame-ancestors 'none';");
+
+      // HSTS (Strict-Transport-Security)
+      // Skip for localhost, IPs, and ACME challenges to support local development
+      // and certificate renewal
+      const hostname = req.hostname;
+      const isLocalhost = hostname === 'localhost' || hostname === '127.0.0.1';
+      const isIpAddress = isIP(hostname) !== 0;
+      const isAcmeChallenge = req.path.startsWith('/.well-known/acme-challenge/');
+
+      if (!isLocalhost && !isIpAddress && !isAcmeChallenge) {
+        res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+      }
+
       next();
     });
 
