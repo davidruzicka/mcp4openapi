@@ -118,7 +118,7 @@ export function enforceFiltering(context: {
 
   const allowedByCanonical = new Map<string, string[]>();
   for (const key of filterKeys) {
-    const canonical = aliasToCanonical[key] ?? key;
+    const canonical = aliasToCanonical.get(key) ?? key;
     if (!toolParamGroups.has(canonical)) {
       continue;
     }
