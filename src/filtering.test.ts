@@ -126,6 +126,11 @@ describe('filtering', () => {
       expect(normalizeFilteringHeaderValue('   ')).toBeUndefined();
     });
 
+    it('returns undefined for null or undefined', () => {
+      expect(normalizeFilteringHeaderValue(undefined)).toBeUndefined();
+      expect(normalizeFilteringHeaderValue(null as any)).toBeUndefined();
+    });
+
     it('trims non-empty values', () => {
       expect(normalizeFilteringHeaderValue('  resource_id=1 ')).toBe('resource_id=1');
     });
@@ -473,6 +478,211 @@ describe('filtering', () => {
           filtering,
           toolDef: baseTool,
           args: { action: 'get', project_id: '1' },
+          operation: undefined,
+        })
+      ).not.toThrow();
+    });
+
+    it('handles search action as list operation', () => {
+      const filtering = { project_id: ['1'], _allow_list: [] };
+      expect(() =>
+        enforceFiltering({
+          filtering,
+          toolDef: baseTool,
+          args: { action: 'search' },
+          operation: undefined,
+        })
+      ).not.toThrow();
+    });
+
+    it('handles read action as read operation', () => {
+      const filtering = { project_id: ['1'], _allow_read: [] };
+      expect(() =>
+        enforceFiltering({
+          filtering,
+          toolDef: baseTool,
+          args: { action: 'read' },
+          operation: undefined,
+        })
+      ).not.toThrow();
+    });
+
+    it('validates primitives: string, number, boolean', () => {
+      const filtering = { project_id: ['1', '2', 'true'] };
+      
+      expect(() =>
+        enforceFiltering({
+          filtering,
+          toolDef: baseTool,
+          args: { action: 'get', project_id: '1' },
+          operation: readOperation,
+        })
+      ).not.toThrow();
+
+      expect(() =>
+        enforceFiltering({
+          filtering,
+          toolDef: baseTool,
+          args: { action: 'get', project_id: 2 },
+          operation: readOperation,
+        })
+      ).not.toThrow();
+
+      expect(() =>
+        enforceFiltering({
+          filtering,
+          toolDef: baseTool,
+          args: { action: 'get', project_id: true },
+          operation: readOperation,
+        })
+      ).not.toThrow();
+    });
+
+    it('handles POST/PUT/DELETE operations as modify', () => {
+      const postOp: OperationInfo = {
+        operationId: 'createProject',
+        method: 'post',
+        path: '/projects',
+        parameters: [],
+      };
+
+      const filtering = { project_id: ['1'] };
+      
+      expect(() =>
+        enforceFiltering({
+          filtering,
+          toolDef: baseTool,
+          args: { project_id: '1' },
+          operation: postOp,
+        })
+      ).not.toThrow();
+    });
+
+    it('deduplicates allowed values from multiple filter keys', () => {
+      const filtering = { project_id: ['1', '2', '1'] };
+      
+      expect(() =>
+        enforceFiltering({
+          filtering,
+          toolDef: baseTool,
+          args: { action: 'get', project_id: '1' },
+          operation: readOperation,
+        })
+      ).not.toThrow();
+    });
+
+    it('validates when parameter has required=true', () => {
+      const toolDef: ToolDefinition = {
+        name: 'issues',
+        description: 'Issue operations',
+        operations: { update: 'updateIssue' },
+        parameters: {
+          issue_id: {
+            type: 'string',
+            description: 'Issue ID',
+            required: true,
+          },
+        },
+      };
+      const filtering = { issue_id: ['1'] };
+
+      expect(() =>
+        enforceFiltering({
+          filtering,
+          toolDef,
+          args: { action: 'update' },
+          operation: undefined,
+        })
+      ).toThrow(AuthorizationError);
+    });
+
+    it('allows empty filtering rules', () => {
+      expect(() =>
+        enforceFiltering({
+          filtering: {},
+          toolDef: baseTool,
+          args: { action: 'list' },
+          operation: listOperation,
+        })
+      ).not.toThrow();
+    });
+
+    it('handles parameter not defined in toolDef for required_for check', () => {
+      const toolDef: ToolDefinition = {
+        name: 'test',
+        description: 'Test',
+        operations: { update: 'update' },
+        parameters: {
+          action: {
+            type: 'string',
+            description: 'Action',
+          },
+        },
+      };
+      const filtering = { unknown_param: ['1'] };
+
+      expect(() =>
+        enforceFiltering({
+          filtering,
+          toolDef,
+          args: { action: 'update' },
+          operation: undefined,
+        })
+      ).toThrow(ValidationError);
+    });
+
+    it('handles alias collision in toolParamGroups', () => {
+      const toolDef: ToolDefinition = {
+        name: 'test',
+        description: 'Test',
+        operations: { get: 'get' },
+        parameters: {
+          id: {
+            type: 'string',
+            description: 'ID',
+          },
+          project_id: {
+            type: 'string',
+            description: 'Project ID',
+          },
+        },
+      };
+      const filtering = { id: ['1'] };
+      const parameterAliases = {
+        project_id: ['id'],
+      };
+
+      // First alias wins (id -> project_id)
+      expect(() =>
+        enforceFiltering({
+          filtering,
+          toolDef,
+          args: { id: '1', project_id: '1' },
+          parameterAliases,
+          operation: readOperation,
+        })
+      ).not.toThrow();
+    });
+
+    it('includes parameter keys in allowed keys even without aliases', () => {
+      const toolDef: ToolDefinition = {
+        name: 'test',
+        description: 'Test',
+        operations: { update: 'update' },
+        parameters: {
+          standalone_param: {
+            type: 'string',
+            description: 'Standalone',
+          },
+        },
+      };
+      const filtering = { standalone_param: ['value'] };
+
+      expect(() =>
+        enforceFiltering({
+          filtering,
+          toolDef,
+          args: { standalone_param: 'value' },
           operation: undefined,
         })
       ).not.toThrow();
