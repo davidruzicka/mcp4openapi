@@ -150,6 +150,32 @@ describe('filtering', () => {
       ).toThrow(AuthorizationError);
     });
 
+    it('treats unknown operations as modify even with _allow_read', () => {
+      const filtering = { project_id: ['123'], _allow_read: [] };
+      const toolDef: ToolDefinition = {
+        name: 'projects_modify',
+        description: 'Project modify',
+        operations: {
+          create: 'createProject',
+        },
+        parameters: {
+          project_id: {
+            type: 'string',
+            description: 'Project ID',
+          },
+        },
+      };
+
+      expect(() =>
+        enforceFiltering({
+          filtering,
+          toolDef,
+          args: {},
+          operation: undefined,
+        })
+      ).toThrow(AuthorizationError);
+    });
+
     it('rejects values outside the allowed set', () => {
       const filtering = { project_id: ['123'] };
       expect(() =>
