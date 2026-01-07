@@ -106,6 +106,18 @@ describe('filtering', () => {
         ValidationError
       );
     });
+
+    it('returns empty filtering for blank header', () => {
+      const result = parseFilteringHeader('   ');
+      expect(Object.keys(result.filtering)).toHaveLength(0);
+      expect(result.normalizedHeader).toBe('');
+    });
+
+    it('ignores empty parts between commas', () => {
+      const result = parseFilteringHeader('resource_id=1,,project_id=2');
+      expect(result.filtering.resource_id).toEqual(['1']);
+      expect(result.filtering.project_id).toEqual(['2']);
+    });
   });
 
   describe('normalizeFilteringHeaderValue', () => {
@@ -204,6 +216,52 @@ describe('filtering', () => {
       ).toThrow(AuthorizationError);
     });
 
+    it('returns early when only control keys are present', () => {
+      const filtering = { _allow_list: [] };
+      expect(() =>
+        enforceFiltering({
+          filtering,
+          toolDef: baseTool,
+          args: {},
+          operation: listOperation,
+        })
+      ).not.toThrow();
+    });
+
+    it('ignores filtering keys with empty allowed values', () => {
+      const filtering = { project_id: [] };
+      expect(() =>
+        enforceFiltering({
+          filtering,
+          toolDef: baseTool,
+          args: {},
+          operation: readOperation,
+        })
+      ).not.toThrow();
+    });
+
+    it('continues when another filter param is present for modify actions', () => {
+      const filtering = { project_id: ['1'], other_id: ['2'] };
+      const toolDef: ToolDefinition = {
+        name: 'projects_multi',
+        description: 'Project operations',
+        operations: { update: 'updateProject' },
+        parameters: {
+          project_id: { type: 'string', description: 'Project ID' },
+          other_id: { type: 'string', description: 'Other ID' },
+        },
+      };
+
+      expect(() =>
+        enforceFiltering({
+          filtering,
+          toolDef,
+          args: { project_id: '1' },
+          operation: undefined,
+        })
+      ).not.toThrow();
+    });
+
     it('treats unknown operations as modify even with _allow_read', () => {
       const filtering = { project_id: ['123'], _allow_read: [] };
       const toolDef: ToolDefinition = {
@@ -275,6 +333,39 @@ describe('filtering', () => {
       ).toThrow(AuthorizationError);
     });
 
+    it('formats array and null values in errors', () => {
+      const filtering = { project_id: ['1'] };
+      expect(() =>
+        enforceFiltering({
+          filtering,
+          toolDef: baseTool,
+          args: { action: 'get', project_id: [null] },
+          operation: readOperation,
+        })
+      ).toThrow(AuthorizationError);
+
+      expect(() =>
+        enforceFiltering({
+          filtering,
+          toolDef: baseTool,
+          args: { action: 'get', project_id: [[]] },
+          operation: readOperation,
+        })
+      ).toThrow(AuthorizationError);
+    });
+
+    it('formats function values in errors', () => {
+      const filtering = { project_id: ['1'] };
+      expect(() =>
+        enforceFiltering({
+          filtering,
+          toolDef: baseTool,
+          args: { action: 'get', project_id: [() => 'x'] },
+          operation: readOperation,
+        })
+      ).toThrow(AuthorizationError);
+    });
+
     it('rejects object values', () => {
       const filtering = { project_id: ['1'] };
       expect(() =>
@@ -307,6 +398,27 @@ describe('filtering', () => {
           filtering,
           toolDef: baseTool,
           args: { action: 'update' },
+          operation: undefined,
+        })
+      ).not.toThrow();
+    });
+
+    it('uses action fallback for list and read', () => {
+      const filtering = { project_id: ['1'] };
+      expect(() =>
+        enforceFiltering({
+          filtering,
+          toolDef: baseTool,
+          args: { action: 'list', project_id: '1' },
+          operation: undefined,
+        })
+      ).not.toThrow();
+
+      expect(() =>
+        enforceFiltering({
+          filtering,
+          toolDef: baseTool,
+          args: { action: 'get', project_id: '1' },
           operation: undefined,
         })
       ).not.toThrow();

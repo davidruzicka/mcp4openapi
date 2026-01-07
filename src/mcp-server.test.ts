@@ -1003,6 +1003,98 @@ describe('MCPServer', () => {
       
       expect(response.result.sessionId).toBeUndefined();
     });
+
+    it('should store stdio filtering when provided', () => {
+      const server = new MCPServer();
+      const message = {
+        jsonrpc: '2.0',
+        id: '1',
+        method: 'initialize',
+        params: { filtering: 'project_id=1' }
+      };
+
+      (server as any).handleInitialize(message, undefined);
+      expect((server as any).stdioFiltering).toEqual({ project_id: ['1'] });
+    });
+
+    it('should reject non-string stdio filtering', () => {
+      const server = new MCPServer();
+      const message = {
+        jsonrpc: '2.0',
+        id: '1',
+        method: 'initialize',
+        params: { filtering: 123 }
+      };
+
+      expect(() => (server as any).handleInitialize(message, undefined)).toThrow(ValidationError);
+    });
+  });
+
+  describe('filtering enforcement in tool calls', () => {
+    it('applies filtering with resolved operation info', async () => {
+      const server = new MCPServer();
+      (server as any).profile = {
+        profile_name: 'test',
+        description: 'test',
+        tools: [
+          {
+            name: 'projects',
+            description: 'Project tool',
+            parameters: {
+              project_id: { type: 'string', description: 'Project ID' },
+            },
+            operations: { get: 'getProject' },
+          },
+        ],
+        interceptors: {},
+      };
+
+      (server as any).toolGenerator = {
+        mapActionToOperation: () => 'getProject',
+      };
+      (server as any).parser = {
+        getOperation: () => ({
+          operationId: 'getProject',
+          method: 'get',
+          path: '/projects',
+          parameters: [],
+        }),
+      };
+      (server as any).executeSimpleTool = async () => ({ ok: true });
+
+      (server as any).handleInitialize({
+        jsonrpc: '2.0',
+        id: '1',
+        method: 'initialize',
+        params: { filtering: 'project_id=1' }
+      }, undefined);
+
+      const response = await server.callToolRpc('projects', { project_id: '1' }, undefined, '1');
+      expect(response.result).toBeDefined();
+    });
+
+    it('returns undefined operation info for composite tools and missing operations', () => {
+      const server = new MCPServer();
+      const compositeTool = {
+        name: 'composite',
+        description: 'Composite tool',
+        composite: true,
+        steps: [],
+        parameters: {},
+      };
+
+      expect((server as any).getFilteringOperationInfo(compositeTool, {})).toBeUndefined();
+
+      const simpleTool = {
+        name: 'simple',
+        description: 'Simple tool',
+        parameters: {},
+        operations: {},
+      };
+      (server as any).toolGenerator = { mapActionToOperation: () => undefined };
+
+      expect((server as any).getFilteringOperationInfo(simpleTool, {})).toBeUndefined();
+    });
   });
 
   describe('OperationNotFoundError formatting', () => {
