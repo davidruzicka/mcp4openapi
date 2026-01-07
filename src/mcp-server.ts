@@ -18,6 +18,7 @@ import { ToolGenerator } from './tool-generator.js';
 import { normalizeArguments } from './argument-normalizer.js';
 import { CompositeExecutor } from './composite-executor.js';
 import { ProxyDownloadExecutor } from './proxy-executor.js';
+import { enforceFiltering, parseFilteringHeader, type FilteringRules } from './filtering.js';
 import { 
   ConfigurationError, 
   OperationNotFoundError, 
@@ -52,6 +53,7 @@ export class MCPServer {
   private schemaValidator: SchemaValidator;
   private logger: Logger;
   private httpTransport: any = null;
+  private stdioFiltering?: FilteringRules;
 
   /**
    * Execute a tools/call request via the JSON-RPC handler.
@@ -1110,6 +1112,15 @@ export class MCPServer {
 
   private handleInitialize(message: unknown, sessionId?: string): unknown {
     const req = message as Record<string, unknown>;
+    const params = req.params as Record<string, unknown> | undefined;
+
+    if (!this.httpTransport && params?.filtering !== undefined) {
+      if (typeof params.filtering !== 'string') {
+        throw new ValidationError('Invalid X-Mcp4-Filtering header. Expected comma-separated key=value pairs.');
+      }
+      const parsed = parseFilteringHeader(params.filtering);
+      this.stdioFiltering = parsed.filtering;
+    }
 
     const result: any = {
       protocolVersion: '2025-03-26',
@@ -1171,6 +1182,18 @@ export class MCPServer {
       const toolDef = this.profile?.tools.find(t => t.name === toolName);
       if (!toolDef) {
         throw new OperationNotFoundError(toolName);
+      }
+
+      const filtering = this.getFilteringForSession(sessionId);
+      if (filtering) {
+        const operation = this.getFilteringOperationInfo(toolDef, args);
+        enforceFiltering({
+          filtering,
+          toolDef,
+          args,
+          parameterAliases: this.profile?.parameter_aliases,
+          operation,
+        });
       }
 
       // Execute tool (reuse existing execution logic)
@@ -1245,6 +1268,27 @@ export class MCPServer {
         },
       };
     }
+  }
+
+  private getFilteringForSession(sessionId?: string): FilteringRules | undefined {
+    if (this.httpTransport && sessionId) {
+      return this.httpTransport.getSessionFiltering(sessionId);
+    }
+    return this.stdioFiltering;
+  }
+
+  private getFilteringOperationInfo(
+    toolDef: ToolDefinition,
+    args: Record<string, unknown>
+  ): OperationInfo | undefined {
+    if (toolDef.composite) {
+      return undefined;
+    }
+    const operationId = this.toolGenerator.mapActionToOperation(toolDef, args);
+    if (!operationId) {
+      return undefined;
+    }
+    return this.parser.getOperation(operationId);
   }
 
   private async handleOtherRequest(message: unknown, sessionId?: string): Promise<unknown> {

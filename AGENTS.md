@@ -23,6 +23,7 @@ Reference canonical sources; never duplicate rules.
 
 - **Never duplicate validation or business rules. Always reference canonical docs.**
 - Keep changes consistent with the current test migration: prefer schema-driven profile tests over hardcoded mocks.
+- Run `npm run typecheck` before finishing work.
 
 ### Schema Synchronization (CRITICAL)
 

@@ -400,6 +400,7 @@ export MCP4_TOOLNAME_MAX=30
 - `MCP4_OAUTH_REFRESH_THRESHOLD_MS`: Refresh access tokens this many ms before expiry (default: `60000` = 60s)
 - `MCP4_HEARTBEAT_ENABLED`, `MCP4_HEARTBEAT_INTERVAL_MS`: SSE heartbeat settings
 - `MCP4_TOKEN_MAX_LENGTH`: Maximum token length in characters (default: `1000`)
+- `MCP4_FILTER_MAX_VALUES`: Max values per filtering key (default: `10`)
 
 See [docs/HTTP-TRANSPORT.md](./docs/HTTP-TRANSPORT.md) for detailed HTTP transport configuration.
 
