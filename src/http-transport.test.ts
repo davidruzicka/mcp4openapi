@@ -42,12 +42,24 @@ describeIfListen('HttpTransport', () => {
       expect(messageType).toBe('unknown');
     });
 
+    it('detects response-only messages', () => {
+      const messageType = (transport as any).getMessageType({ result: { ok: true } });
+      expect(messageType).toBe('response-only');
+    });
+
     it('handles filtering header arrays', () => {
       const getFilteringHeaderValue = (transport as any).getFilteringHeaderValue.bind(transport);
       expect(getFilteringHeaderValue({ headers: { 'x-mcp4-filtering': [] } })).toBeUndefined();
       expect(() =>
         getFilteringHeaderValue({ headers: { 'x-mcp4-filtering': ['a=b', 'c=d'] } })
       ).toThrow();
+    });
+
+    it('returns first filtering header value when single entry is provided', () => {
+      const getFilteringHeaderValue = (transport as any).getFilteringHeaderValue.bind(transport);
+      expect(getFilteringHeaderValue({ headers: { 'x-mcp4-filtering': ['project_id=1'] } })).toBe(
+        'project_id=1'
+      );
     });
 
     it('exposes session filtering values', () => {
