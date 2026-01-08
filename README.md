@@ -58,6 +58,7 @@ More about profiles: [docs/PROFILE-GUIDE.md](https://github.com/davidruzicka/mcp
 - **Multi-Auth**: Support multiple auth methods (OAuth + Bearer) with priority-based fallback (see [docs/MULTI-AUTH.md](./docs/MULTI-AUTH.md))
 - **Multipart uploads**: HttpClient handles `multipart/form-data` (file attachments and mixed fields)
 - **Observability**: Structured logging (console/JSON) with profile-aware token redaction, Prometheus metrics
+- **Tool Filtering**: Global and per-session tool filtering for security and context management (see `MCP4_TOOL_FILTER_*` env vars and `X-Mcp4-Tools` header)
 
 ## Security Note
 
@@ -465,6 +466,23 @@ Returns `429 Too Many Requests` when exceeded.
 **Security Note**: 
 - Sensitive auth tokens are automatically redacted from logs based on your profile's auth configuration (bearer, query, or custom-header)
 - All errors returned to clients are sanitized to generic messages (`Internal error`) while full details are logged server-side
+
+### Optional - Tool Filtering (Security)
+Restrict which tools are available to clients globally or per-session.
+
+**Global Environment Filters:**
+- `MCP4_TOOL_FILTER_ALLOW_LIST`: Comma-separated list of allowed tools
+- `MCP4_TOOL_FILTER_ALLOW_REGEX`: Comma-separated regex patterns for allowed tools
+- `MCP4_TOOL_FILTER_DENY_LIST`: Comma-separated list of denied tools (precedence over allow)
+- `MCP4_TOOL_FILTER_DENY_REGEX`: Comma-separated regex patterns for denied tools
+- `MCP4_TOOL_FILTER_ALLOW_COMPOSITES`: Auto-allow "list"/"read" composite tools when using allow-lists (`true`|`false`)
+
+**Session Filtering:**
+Clients can request a restricted subset of tools via `X-Mcp4-Tools` header during initialization.
+Example: `X-Mcp4-Tools: get_user, list_projects, regex:read_.*`
+
+**Limits:**
+- `MCP4_TOOL_FILTER_SESSION_MAX_TOOLS`: Max number of entries in `X-Mcp4-Tools` header (default: `100`)
 
 ## Profile System
 

@@ -16,6 +16,13 @@ export interface Profile {
   // OAuth resource metadata (optional overrides)
   resource_name?: string;           // OAuth resource name (overrides OpenAPI info.title)
   resource_documentation?: string;  // OAuth resource documentation URL (overrides OpenAPI externalDocs.url)
+
+  // Internal: Metrics for global filtering
+  _filterStats?: {
+    originalCount: number;
+    allowedCount: number;
+    deniedCount: number;
+  };
 }
 
 export interface ToolDefinition {

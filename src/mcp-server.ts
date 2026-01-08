@@ -42,6 +42,7 @@ import { isInitializeRequest, isToolCallRequest } from './jsonrpc-validator.js';
 import { generateNameWarnings, type NameWarningOptions } from './naming-warnings.js';
 import { NamingStrategy, type OperationForNaming } from './naming.js';
 import { isSafePropertyName } from './validation-utils.js';
+import { detectListReadOperations } from './tool-filter.js';
 
 export class MCPServer {
   private server: Server;
@@ -580,9 +581,14 @@ export class MCPServer {
           throw new ConfigurationError('Server not initialized. Call initialize() first.');
         }
 
-        const tools = this.profile.tools.map(toolDef =>
+        let tools = this.profile.tools.map(toolDef =>
           this.toolGenerator.generateTool(toolDef)
         );
+
+        // Note: Global filter has already been applied at profile load time (in initialize)
+        // so this.profile.tools is already reduced.
+        // Note: Session-specific filtering for tools/list is handled in handleOtherRequest
+        // because the standard SDK handler doesn't receive session context easily.
 
         return { tools };
       } catch (err) {
@@ -1085,6 +1091,16 @@ export class MCPServer {
 
     await this.httpTransport.start();
     
+    // Record global filter metrics if available
+    if (this.profile && this.profile._filterStats) {
+      const metrics = this.httpTransport.getMetrics();
+      if (metrics) {
+        const stats = this.profile._filterStats;
+        metrics.recordTotalTools(stats.originalCount);
+        metrics.recordGlobalFilterStats(stats.allowedCount, stats.deniedCount);
+      }
+    }
+
     this.logger.info('MCP server running on HTTP', { host, port });
   }
 
@@ -1184,6 +1200,50 @@ export class MCPServer {
         throw new OperationNotFoundError(toolName);
       }
 
+      // Check session-specific tool filter (X-Mcp4-Tools header)
+      // This is dynamic per-session restriction (AI agent requesting limited toolbox)
+      const toolFilter = this.getToolFilterForSession(sessionId);
+      if (toolFilter) {
+        const { allowedToolNames, patterns } = toolFilter;
+        let isAllowed = false;
+
+        // Check exact match
+        if (allowedToolNames.has(toolName)) {
+          isAllowed = true;
+        }
+        // Check regex patterns
+        else if (patterns.allow.some(regex => regex.test(toolName))) {
+          isAllowed = true;
+        }
+
+        // Note: X-Mcp4-Tools doesn't support "deny" patterns currently, only allow list/regex
+        // If it's not in the allow list/regex, it's denied.
+        // Also handle composite auto-allow if we implement that logic here or reuse detectListReadOperations
+        // The plan says: "Composite Tools: If the filter includes _allow_list or _allow_read keywords..."
+        if (!isAllowed) {
+           // We need to check for special keywords in allowedToolNames
+           const allowList = allowedToolNames.has('_allow_list');
+           const allowRead = allowedToolNames.has('_allow_read');
+
+           if ((allowList || allowRead) && toolDef.composite) {
+              const { isList, isRead } = detectListReadOperations(toolDef);
+              if ((allowList && isList) || (allowRead && isRead)) {
+                isAllowed = true;
+              }
+           }
+        }
+
+        if (!isAllowed) {
+           if (this.httpTransport) {
+             const metrics = this.httpTransport.getMetrics();
+             if (metrics) {
+               metrics.recordFilterRejection(toolName, 'session');
+             }
+           }
+           throw new AuthorizationError(`Tool '${toolName}' not allowed in this session. Check X-Mcp4-Tools filter.`);
+        }
+      }
+
       const filtering = this.getFilteringForSession(sessionId);
       if (filtering) {
         const operation = this.getFilteringOperationInfo(toolDef, args);
@@ -1277,6 +1337,13 @@ export class MCPServer {
     return this.stdioFiltering;
   }
 
+  private getToolFilterForSession(sessionId?: string): { allowedToolNames: Set<string>; patterns: { allow: RegExp[]; deny: RegExp[] } } | undefined {
+    if (this.httpTransport && sessionId) {
+      return this.httpTransport.getSessionToolFilter(sessionId);
+    }
+    return undefined;
+  }
+
   private getFilteringOperationInfo(
     toolDef: ToolDefinition,
     args: Record<string, unknown>
@@ -1319,9 +1386,36 @@ export class MCPServer {
 
     // Handle tools/list
     if (req.method === 'tools/list') {
-      const tools = this.profile?.tools.map(toolDef =>
+      let tools = this.profile?.tools.map(toolDef =>
         this.toolGenerator!.generateTool(toolDef)
       ) || [];
+
+      // Filter tools if session filter exists
+      const toolFilter = this.getToolFilterForSession(sessionId);
+      if (toolFilter) {
+        const { allowedToolNames, patterns } = toolFilter;
+        tools = tools.filter(tool => {
+          if (allowedToolNames.has(tool.name)) return true;
+          if (patterns.allow.some(regex => regex.test(tool.name))) return true;
+
+          // Check for auto-allow keywords
+          const allowList = allowedToolNames.has('_allow_list');
+          const allowRead = allowedToolNames.has('_allow_read');
+          if (allowList || allowRead) {
+             // We need to check if tool is list/read.
+             // But here we only have `Tool` object, not `ToolDefinition`.
+             // We can find definition by name.
+             const def = this.profile?.tools.find(t => t.name === tool.name);
+             if (def && def.composite) {
+                const { isList, isRead } = detectListReadOperations(def);
+                if (allowList && isList) return true;
+                if (allowRead && isRead) return true;
+             }
+          }
+
+          return false;
+        });
+      }
 
       return {
         jsonrpc: '2.0',

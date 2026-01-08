@@ -39,6 +39,7 @@ import {
   generateCorrelationId,
 } from './errors.js';
 import { parseFilteringHeader, normalizeFilteringHeaderValue } from './filtering.js';
+import { validateRegexPattern } from './tool-filter.js';
 
 // Default maximum token length (1000 characters)
 const DEFAULT_MAX_TOKEN_LENGTH = 1000;
@@ -1192,6 +1193,9 @@ export class HttpTransport {
       const filteringHeader = normalizeFilteringHeaderValue(this.getFilteringHeaderValue(req));
       const parsedFiltering = filteringHeader ? parseFilteringHeader(filteringHeader) : undefined;
 
+      const toolFilteringHeader = normalizeFilteringHeaderValue(this.getToolFilteringHeaderValue(req));
+      const parsedToolFilter = toolFilteringHeader ? this.parseToolFilteringHeader(toolFilteringHeader) : undefined;
+
       // Validate Accept header per MCP Streamable HTTP specification
       const accept = req.headers.accept || '';
 
@@ -1235,6 +1239,24 @@ export class HttpTransport {
             throw new ValidationError('X-Mcp4-Filtering header mismatch for existing session.');
           }
         }
+
+        // Immutability check for X-Mcp4-Tools header
+        if (toolFilteringHeader !== undefined) {
+          if (!session.toolFilter || session.toolFilter.originalHeader !== toolFilteringHeader) {
+             // If session has no filter but request has one -> mismatch
+             // If session has filter but request has different one -> mismatch
+             // If session has filter and request has same one -> OK
+             if (!session.toolFilter && toolFilteringHeader) {
+                throw new ValidationError('X-Mcp4-Tools header mismatch for existing session. Session has no filter, request has one.');
+             }
+             if (session.toolFilter && session.toolFilter.originalHeader !== toolFilteringHeader) {
+                throw new ValidationError('X-Mcp4-Tools header mismatch for existing session.');
+             }
+          }
+        } else if (session.toolFilter) {
+           // Request has no header but session has filter -> allowed (header not required on subsequent requests)
+        }
+
         this.updateSessionActivity(sessionId);
       } else if (!isInitialization && !sessionId) {
         this.logger.debug('Session validation failed: non-init request without sessionId');
@@ -1348,7 +1370,8 @@ export class HttpTransport {
             scopes,
             oauthClientId,
             parsedFiltering?.filtering,
-            parsedFiltering?.normalizedHeader
+            parsedFiltering?.normalizedHeader,
+            parsedToolFilter
           );
         }
 
@@ -1699,6 +1722,64 @@ export class HttpTransport {
     return headerValue;
   }
 
+  private getToolFilteringHeaderValue(req: Request): string | undefined {
+    const headerValue = req.headers['x-mcp4-tools'];
+    if (Array.isArray(headerValue)) {
+      if (headerValue.length === 0) {
+        return undefined;
+      }
+      if (headerValue.length > 1) {
+        throw new ValidationError('Invalid X-Mcp4-Tools header. Expected single comma-separated list.');
+      }
+      return headerValue[0];
+    }
+    return headerValue;
+  }
+
+  private parseToolFilteringHeader(headerValue: string): { allowedToolNames: Set<string>; patterns: { allow: RegExp[]; deny: RegExp[] }; originalHeader: string } {
+    const maxTools = parseInt(process.env.MCP4_TOOL_FILTER_SESSION_MAX_TOOLS || '100', 10);
+    const parts = headerValue.split(',').map(s => s.trim()).filter(s => s.length > 0);
+
+    if (parts.length > maxTools) {
+      throw new ValidationError(`X-Mcp4-Tools contains too many entries (${parts.length} > ${maxTools}). Reduce to ${maxTools} or configure MCP4_TOOL_FILTER_SESSION_MAX_TOOLS.`);
+    }
+
+    const allowedToolNames = new Set<string>();
+    const patterns = { allow: [] as RegExp[], deny: [] as RegExp[] };
+
+    for (const part of parts) {
+      if (part.length > 255) {
+        throw new ValidationError(`X-Mcp4-Tools entry exceeds 255 chars: '${part.substring(0, 20)}...'`);
+      }
+
+      if (part.startsWith('regex:')) {
+        const patternStr = part.substring(6);
+        const validation = validateRegexPattern(patternStr);
+        if (!validation.valid) {
+          throw new ValidationError(`Invalid regex in X-Mcp4-Tools: '${patternStr}'. ${validation.error}`);
+        }
+
+        let finalPattern = patternStr;
+        if (!finalPattern.startsWith('^')) finalPattern = '^' + finalPattern;
+        if (!finalPattern.endsWith('$')) finalPattern = finalPattern + '$';
+
+        try {
+          patterns.allow.push(new RegExp(finalPattern));
+        } catch (e) {
+          throw new ValidationError(`Failed to compile regex '${finalPattern}': ${(e as Error).message}`);
+        }
+      } else {
+        allowedToolNames.add(part);
+      }
+    }
+
+    // Check if filter has no effect (empty) - though here empty means "nothing allowed" if strict,
+    // or "everything allowed" if not present. The caller handles "not present".
+    // If present but empty, it means allow nothing.
+
+    return { allowedToolNames, patterns, originalHeader: headerValue };
+  }
+
   /**
    * Create new session
    *
@@ -1711,7 +1792,8 @@ export class HttpTransport {
     scopes?: string[],
     oauthClientId?: string,
     filtering?: Record<string, string[]>,
-    filteringHeader?: string
+    filteringHeader?: string,
+    toolFilter?: SessionData['toolFilter']
   ): string {
     // Validate token if provided (defense in depth)
     if (authToken) {
@@ -1731,6 +1813,7 @@ export class HttpTransport {
       oauthClientId,
       filtering,
       filteringHeader,
+      toolFilter,
     };
     this.sessions.set(sessionId, session);
     this.logger.info('Session created', { 
@@ -1743,6 +1826,15 @@ export class HttpTransport {
     // Record metrics
     if (this.metrics) {
       this.metrics.recordSessionCreated();
+      // Record session tool count if filter is present (or full count if we had it, but we don't have tool list here easily)
+      // Actually, mcpToolsSession is a Gauge. We can only set it if we know the count.
+      // With filtering, the count is dynamic.
+      // But we only know the 'allowedToolNames' size if filter exists.
+      // If no filter, it's all tools (unknown count here).
+      // We'll only record if we have a filter with explicit allow list.
+      if (toolFilter?.allowedToolNames) {
+         this.metrics.recordSessionToolCount(sessionId, toolFilter.allowedToolNames.size);
+      }
     }
 
     return sessionId;
@@ -1795,6 +1887,7 @@ export class HttpTransport {
       // Record metrics
       if (this.metrics) {
         this.metrics.recordSessionDestroyed();
+        this.metrics.removeSessionToolCount(sessionId);
       }
     }
   }
@@ -1919,6 +2012,18 @@ export class HttpTransport {
   public getSessionFilteringHeader(sessionId: string): string | undefined {
     const session = this.sessions.get(sessionId);
     return session?.filteringHeader;
+  }
+
+  public getSessionToolFilter(sessionId: string): SessionData['toolFilter'] | undefined {
+    const session = this.sessions.get(sessionId);
+    return session?.toolFilter;
+  }
+
+  /**
+   * Get metrics collector (if enabled)
+   */
+  public getMetrics(): MetricsCollector | null {
+    return this.metrics;
   }
 
   /**

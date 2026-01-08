@@ -99,8 +99,9 @@ Source: https://modelcontextprotocol.io/specification/2025-03-26/basic/transport
   - Supports various token formats: GitLab (`glpat-...`), YouTrack (`perm:...`), generic tokens
   - Flexible whitespace handling (extra spaces are trimmed)
 - `X-Mcp4-Filtering: <filter>` (optional, initialization only)
+- `X-Mcp4-Tools: <tools-filter>` (optional, initialization only)
 
-**Filtering header format**:
+**Filtering header format (`X-Mcp4-Filtering`)**:
 - Comma-separated list of `key=value` items
 - Control keys: `_allow_list`, `_allow_read` (no value)
 - Values containing spaces or commas must be percent-encoded
@@ -110,6 +111,13 @@ Source: https://modelcontextprotocol.io/specification/2025-03-26/basic/transport
 ```
 X-Mcp4-Filtering: project_id=123, project_id=456, _allow_read
 ```
+
+**Tool Filtering Header Format (`X-Mcp4-Tools`)**:
+- Allows AI agents to request a restricted view of the toolbox for the session.
+- Comma-separated list of tool names or regex patterns.
+- Regex syntax: `regex:pattern` (e.g., `regex:read_.*`). Patterns are auto-anchored if needed.
+- Control keys: `_allow_list`, `_allow_read` (auto-allow composite tools of those types).
+- **Example**: `X-Mcp4-Tools: get_user, list_users, regex:read_.*`
 
 **Request Body**:
 - Single JSON-RPC request/notification/response
@@ -636,6 +644,13 @@ mcp_tool_call_errors_total{tool,error_type}
 mcp_api_calls_total{operation,status}
 mcp_api_call_duration_seconds{operation,status}
 mcp_api_call_errors_total{operation,error_type}
+
+# Tool Filtering metrics
+mcp_tools_total{source="profile"}
+mcp_tools_filtered{source="global_env",action="allowed|denied"}
+mcp_tools_session{session_id="..."}
+mcp_tool_filter_rejections_total{tool="...",source="env|session"}
+mcp_tool_filter_patterns{type="allow_regex|deny_list|..."}
 ```
 
 **Prometheus scrape config**:
@@ -812,4 +827,5 @@ See [EXAMPLE-GITLAB.md](../EXAMPLE-GITLAB.md) for complete curl-based examples w
 
 - [README.md](../README.md) - Project overview
 - [PROFILE-GUIDE.md](./PROFILE-GUIDE.md) - Creating profiles
-- [MCP Specification](https://modelcontextprotocol.io/specification/2025-03-26/basic/transports) - Official spec
+- [MCP Specification](https://modelcontextprotocol.io/specification/2025-03-26/basic/transports)
+- [Tool Filtering](./tool-filtering.md) - Tool filtering configuration

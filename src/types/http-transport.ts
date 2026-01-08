@@ -20,6 +20,11 @@ export interface SessionData {
   oauthClientId?: string; // OAuth client ID for debugging/validation
   filtering?: Record<string, string[]>;
   filteringHeader?: string;
+  toolFilter?: {
+    allowedToolNames: Set<string>;
+    patterns: { allow: RegExp[]; deny: RegExp[] };
+    originalHeader: string;
+  };
 }
 
 export interface SSEStreamState {

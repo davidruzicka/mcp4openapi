@@ -8,6 +8,7 @@
  * - Session lifecycle (active, created, destroyed)
  * - MCP operations (tool calls, duration, errors)
  * - API calls to backend (operation, status, duration)
+ * - Tool filtering stats
  */
 
 import { Registry, Counter, Gauge, Histogram } from 'prom-client';
@@ -39,6 +40,13 @@ export class MetricsCollector {
   private apiCallsTotal: Counter;
   private apiCallDuration: Histogram;
   private apiCallErrors: Counter;
+
+  // Tool filtering metrics
+  private mcpToolsTotal: Gauge; // Original tool count
+  private mcpToolsFiltered: Gauge; // Tools after global filter
+  private mcpToolsSession: Gauge; // Per-session tool count
+  private mcpToolFilterRejectionsTotal: Counter; // Blocked callTool attempts
+  private mcpToolFilterPatterns: Gauge; // Active filter patterns
 
   constructor(config: MetricsCollectorConfig) {
     this.enabled = config.enabled;
@@ -126,6 +134,42 @@ export class MetricsCollector {
       labelNames: ['operation', 'error_type'],
       registers: [this.registry],
     });
+
+    // Tool filtering metrics
+    this.mcpToolsTotal = new Gauge({
+      name: `${prefix}tools_total`,
+      help: 'Original tool count from profile',
+      labelNames: ['source'], // e.g. 'profile'
+      registers: [this.registry],
+    });
+
+    this.mcpToolsFiltered = new Gauge({
+      name: `${prefix}tools_filtered`,
+      help: 'Tools count after global filtering',
+      labelNames: ['source', 'action'], // source='global_env', action='allowed'|'denied'
+      registers: [this.registry],
+    });
+
+    this.mcpToolsSession = new Gauge({
+      name: `${prefix}tools_session`,
+      help: 'Per-session tool count',
+      labelNames: ['session_id'],
+      registers: [this.registry],
+    });
+
+    this.mcpToolFilterRejectionsTotal = new Counter({
+      name: `${prefix}tool_filter_rejections_total`,
+      help: 'Counter of blocked callTool attempts',
+      labelNames: ['tool', 'source'], // source='env'|'session'
+      registers: [this.registry],
+    });
+
+    this.mcpToolFilterPatterns = new Gauge({
+      name: `${prefix}tool_filter_patterns`,
+      help: 'Number of active filter patterns',
+      labelNames: ['type'], // 'allow_regex'|'deny_list'|etc
+      registers: [this.registry],
+    });
   }
 
   /**
@@ -206,6 +250,57 @@ export class MetricsCollector {
     this.apiCallErrors.inc({ operation, error_type: errorType });
   }
 
+  // --- Filtering Metrics ---
+
+  /**
+   * Record original tool count (before filtering)
+   */
+  recordTotalTools(count: number): void {
+    if (!this.enabled) return;
+    this.mcpToolsTotal.set({ source: 'profile' }, count);
+  }
+
+  /**
+   * Record global filtered tool counts
+   */
+  recordGlobalFilterStats(allowedCount: number, deniedCount: number): void {
+    if (!this.enabled) return;
+    this.mcpToolsFiltered.set({ source: 'global_env', action: 'allowed' }, allowedCount);
+    this.mcpToolsFiltered.set({ source: 'global_env', action: 'denied' }, deniedCount);
+  }
+
+  /**
+   * Record session tool count
+   */
+  recordSessionToolCount(sessionId: string, count: number): void {
+    if (!this.enabled) return;
+    this.mcpToolsSession.set({ session_id: sessionId }, count);
+  }
+
+  /**
+   * Remove session tool count (on destroy)
+   */
+  removeSessionToolCount(sessionId: string): void {
+    if (!this.enabled) return;
+    this.mcpToolsSession.remove({ session_id: sessionId });
+  }
+
+  /**
+   * Record tool filter rejection
+   */
+  recordFilterRejection(tool: string, source: 'env' | 'session'): void {
+    if (!this.enabled) return;
+    this.mcpToolFilterRejectionsTotal.inc({ tool, source });
+  }
+
+  /**
+   * Record active filter patterns count
+   */
+  recordFilterPatternCount(type: string, count: number): void {
+    if (!this.enabled) return;
+    this.mcpToolFilterPatterns.set({ type }, count);
+  }
+
   /**
    * Get metrics in Prometheus format
    */
@@ -260,4 +355,3 @@ export class MetricsCollector {
     return 'unknown';
   }
 }
-

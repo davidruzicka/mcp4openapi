@@ -21,6 +21,7 @@ import { profileSchema, authInterceptorSchema } from './generated-schemas.js';
 import type { OpenAPIParser } from './openapi-parser.js';
 import type { OperationInfo, SchemaInfo } from './types/openapi.js';
 import { shortenToolName, NamingStrategy, levenshteinDistance, type OperationForNaming, type ShortenResult } from './naming.js';
+import { parseToolFilterConfig, applyToolFilter } from './tool-filter.js';
 
 // Schemas are now auto-generated from TypeScript types!
 // See scripts/generate-schemas.js for details.
@@ -54,6 +55,9 @@ export class ProfileLoader {
     
     this.validateLogic(profile);
     
+    // Apply global tool filtering if configured
+    this.applyGlobalFiltering(profile);
+
     return profile;
   }
 
@@ -208,6 +212,41 @@ export class ProfileLoader {
       // Validate composite steps DAG (no circular dependencies)
       if (tool.composite && tool.steps) {
         this.validateCompositeStepsDAG(tool.name, tool.steps);
+      }
+    }
+  }
+
+  /**
+   * Apply global tool filtering based on environment variables
+   */
+  private applyGlobalFiltering(profile: Profile): void {
+    const filterConfig = parseToolFilterConfig(process.env);
+
+    if (filterConfig) {
+      const originalCount = profile.tools.length;
+      const result = applyToolFilter(profile.tools, filterConfig);
+
+      // Store filter stats in profile metadata for metrics
+      profile._filterStats = {
+        originalCount,
+        allowedCount: result.allowed.length,
+        deniedCount: result.removed.length
+      };
+
+      // Update profile with allowed tools
+      profile.tools = result.allowed;
+
+      const filteredCount = originalCount - profile.tools.length;
+
+      if (filteredCount > 0) {
+        // We don't have logger here, but we can verify if we removed everything
+        if (profile.tools.length === 0) {
+          throw new ConfigurationError(
+            `All tools were filtered out by global configuration (original: ${originalCount}). Check MCP4_TOOL_FILTER_* settings.`
+          );
+        }
+      } else {
+        // No-op detection: filter configured but nothing removed
       }
     }
   }
@@ -377,12 +416,18 @@ export class ProfileLoader {
     // Generate auth interceptor from OpenAPI security scheme
     const interceptors = this.generateAuthInterceptor(parser);
 
-    return {
+    const profile: Profile = {
       profile_name: profileName,
       description: `Auto-generated default profile with ${tools.length} tools from OpenAPI spec`,
       tools,
       interceptors,
     };
+
+    // Apply global filtering to default profile as well
+    const loader = new ProfileLoader();
+    loader.applyGlobalFiltering(profile);
+
+    return profile;
   }
 
   /**
