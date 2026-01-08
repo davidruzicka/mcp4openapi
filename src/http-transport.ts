@@ -95,6 +95,32 @@ export class HttpTransport {
    * Why: Security (Origin validation, rate limiting), JSON parsing, session extraction, metrics
    */
   private setupMiddleware(): void {
+    // Security: Add security headers
+    this.app.use((req: Request, res: Response, next: NextFunction) => {
+      // Prevent clickjacking
+      res.setHeader('X-Frame-Options', 'DENY');
+      // Content Security Policy
+      res.setHeader('Content-Security-Policy', "default-src 'self'; frame-ancestors 'none'");
+      // Prevent MIME type sniffing
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      // Referrer Policy
+      res.setHeader('Referrer-Policy', 'no-referrer');
+      // Remove X-Powered-By
+      res.removeHeader('X-Powered-By');
+
+      // Strict-Transport-Security (HSTS) - only for non-localhost/IP
+      const host = req.hostname;
+      const isLocal = host === 'localhost' || host === '127.0.0.1' || isIP(host) > 0;
+      // Skip HSTS for Let's Encrypt validation
+      const isAcme = req.path.startsWith('/.well-known/acme-challenge/');
+
+      if (!isLocal && !isAcme) {
+        res.setHeader('Strict-Transport-Security', 'max-age=63072000; includeSubDomains; preload');
+      }
+
+      next();
+    });
+
     // Request logging (before any middleware)
     this.app.use((req: Request, res: Response, next: NextFunction) => {
       this.logger.debug('Request received', {
