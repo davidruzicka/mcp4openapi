@@ -1457,7 +1457,7 @@ export class MCPServer {
       allowRegex: config.sources.allowRegex,
       denyList: config.sources.denyList,
       denyRegex: config.sources.denyRegex,
-      allowComposite: config.sources.allowComposite,
+      allowCategories: config.sources.allowCategories,
     });
 
     this.globalToolFilterSummary = {
@@ -1465,11 +1465,11 @@ export class MCPServer {
       allowedCount,
       removedCount,
       patternCounts: {
-        allow_list: config.sources.allowList.length,
-        allow_regex: config.sources.allowRegex.length,
-        deny_list: config.sources.denyList.length,
-        deny_regex: config.sources.denyRegex.length,
-        allow_composite: config.sources.allowComposite.length,
+        allow_names: config.sources.allowList.length,
+        allow_name_regex: config.sources.allowRegex.length,
+        deny_names: config.sources.denyList.length,
+        deny_name_regex: config.sources.denyRegex.length,
+        allow_categories: config.sources.allowCategories.length,
       },
     };
 
@@ -1657,22 +1657,19 @@ export class MCPServer {
 function getToolFilterSourcesSummary(config: ToolFilterConfig): string {
   const sources: string[] = [];
   if (config.sources.allowList.length > 0) {
-    sources.push('allow_list');
+    sources.push('allow_names');
   }
   if (config.sources.allowRegex.length > 0) {
-    sources.push('allow_regex');
+    sources.push('allow_name_regex');
   }
   if (config.sources.denyList.length > 0) {
-    sources.push('deny_list');
+    sources.push('deny_names');
   }
   if (config.sources.denyRegex.length > 0) {
-    sources.push('deny_regex');
+    sources.push('deny_name_regex');
   }
-  if (config.allowComposite.allowList) {
-    sources.push('_allow_list');
-  }
-  if (config.allowComposite.allowRead) {
-    sources.push('_allow_read');
+  if (config.allowCategories.size > 0) {
+    sources.push(`allow_categories:${Array.from(config.allowCategories).sort().join(',')}`);
   }
   return sources.length > 0 ? sources.join(', ') : 'none';
 }

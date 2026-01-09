@@ -10,11 +10,11 @@ This document extends the existing MCP filtering work to cover entire tools. It 
 This filter applies when the profile is loaded. It removes tools from the server's available set immediately, making them unavailable to all clients.
 
 ### Environment Variables
-- [x] `MCP4_TOOL_FILTER_ALLOW_LIST`: Comma-separated list of exact tool names to keep. If present, only these tools (and those matching regex) are allowed.
-- [x] `MCP4_TOOL_FILTER_ALLOW_REGEX`: JavaScript regex pattern to match allowed tool names (e.g. `get.*` which becomes `^get.*$`). **Patterns are automatically anchored** with `^...$` unless already present.
-- [x] `MCP4_TOOL_FILTER_DENY_LIST`: Comma-separated list of exact tool names to exclude.
-- [x] `MCP4_TOOL_FILTER_DENY_REGEX`: JavaScript regex pattern to exclude tool names (automatically anchored).
-- [x] `MCP4_TOOL_FILTER_ALLOW_COMPOSITES`: Include `_allow_list` and/or `_allow_read` keywords to allow composite tools of those types without explicit naming.
+- [x] `MCP4_TOOL_FILTER_ALLOW_NAMES`: Comma-separated list of exact tool names to keep. If present, only these tools (and those matching regex) are allowed.
+- [x] `MCP4_TOOL_FILTER_ALLOW_NAME_REGEX`: JavaScript regex pattern to match allowed tool names (e.g. `get.*` which becomes `^get.*$`). **Patterns are automatically anchored** with `^...$` unless already present.
+- [x] `MCP4_TOOL_FILTER_DENY_NAMES`: Comma-separated list of exact tool names to exclude.
+- [x] `MCP4_TOOL_FILTER_DENY_NAME_REGEX`: JavaScript regex pattern to exclude tool names (automatically anchored).
+- [x] `MCP4_TOOL_FILTER_ALLOW_CATEGORIES`: Comma-separated categories `list` and/or `read` to allow tools by detected operation category. Composite tools are allowed only if all steps are within the allowed categories.
 
 ### Regex Security
 - [x] **ReDoS Protection**: Validate regex patterns at parse time. Reject patterns exceeding complexity threshold (e.g., max 100 chars, no nested quantifiers like `(a+)+`).
@@ -50,8 +50,8 @@ This filter applies per-session via HTTP transport, allowing AI agents to reques
     - Validate regex syntax (fail session init if invalid).
     - Apply ReDoS protection (max length 100 chars per pattern, reject nested quantifiers).
     - Enforce entry count limit and per-entry length limit.
-- [x] **Composite Tool Syntax**: Include `_allow_list` and/or `_allow_read` keywords to allow composite tools without naming them explicitly.
-    - Example: `X-Mcp4-Tools: manage_merge_request, _allow_read` allows `manage_merge_request` plus all read-type composites.
+- [x] **List/Read Keyword Syntax**: Include `_allow_list` and/or `_allow_read` keywords to allow all list/read operations without naming them explicitly (based on tool category detection).
+    - Example: `X-Mcp4-Tools: manage_merge_request, _allow_read` allows `manage_merge_request` plus all read-type tools.
 
 ### Session Logic
 - [x] Filter is extracted from the `initialize` request.
@@ -146,9 +146,9 @@ This filter applies per-session via HTTP transport, allowing AI agents to reques
 - [x] Composite tool keyword handling: `_allow_list`, `_allow_read`.
 
 **Integration Tests (Global Env Filter):**
-- [x] Server startup with `MCP4_TOOL_FILTER_ALLOW_LIST=get_user,list_users` - verify only those tools exist.
-- [x] Server startup with `MCP4_TOOL_FILTER_ALLOW_REGEX=get.*` - verify regex matching.
-- [x] Server startup with `MCP4_TOOL_FILTER_DENY_LIST=delete_user` - verify exclusion.
+- [x] Server startup with `MCP4_TOOL_FILTER_ALLOW_NAMES=get_user,list_users` - verify only those tools exist.
+- [x] Server startup with `MCP4_TOOL_FILTER_ALLOW_NAME_REGEX=get.*` - verify regex matching.
+- [x] Server startup with `MCP4_TOOL_FILTER_DENY_NAMES=delete_user` - verify exclusion.
 - [x] Server startup with no-op filter - verify failure with detailed error.
 - [x] Server startup with filter removing all tools - verify failure with tool count in error.
 - [x] Metrics validation: check `mcp4_tools_total`, `mcp4_tools_filtered` counts.
