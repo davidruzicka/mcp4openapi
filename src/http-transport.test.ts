@@ -10,6 +10,7 @@ import type { Express } from 'express';
 import { HttpTransport } from './http-transport.js';
 import { ConsoleLogger, LogLevel, type Logger } from './logger.js';
 import { describeIfListen } from './testing/listen-support.js';
+import { parseSessionToolFilterHeader } from './tool-filter.js';
 
 describeIfListen('HttpTransport', () => {
   let transport: HttpTransport;
@@ -76,6 +77,31 @@ describeIfListen('HttpTransport', () => {
       expect(transport.getSessionFiltering(sessionId)).toEqual({ project_id: ['1'] });
       expect(transport.getSessionFilteringHeader(sessionId)).toBe('project_id=1');
     });
+
+    it('handles tool filter header arrays', () => {
+      const getToolFilterHeaderValue = (transport as any).getToolFilterHeaderValue.bind(transport);
+      expect(getToolFilterHeaderValue({ headers: { 'x-mcp4-tools': [] } })).toBeUndefined();
+      expect(() =>
+        getToolFilterHeaderValue({ headers: { 'x-mcp4-tools': ['a', 'b'] } })
+      ).toThrow();
+    });
+
+    it('exposes session tool filter values', () => {
+      const toolFilterRequest = parseSessionToolFilterHeader('get_user');
+      const sessionId = (transport as any).createSession(
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        toolFilterRequest,
+        toolFilterRequest.normalizedHeader
+      );
+      expect(transport.getSessionToolFilterRequest(sessionId)).toEqual(toolFilterRequest);
+      expect(transport.getSessionToolFilterHeader(sessionId)).toBe(toolFilterRequest.normalizedHeader);
+    });
   });
 
   describe('filtering header mismatch', () => {
@@ -101,6 +127,33 @@ describeIfListen('HttpTransport', () => {
 
       expect(response.status).toBe(400);
       expect(response.body.message).toContain('X-Mcp4-Filtering header mismatch');
+    });
+
+    it('rejects mismatched tool filter header on existing session', async () => {
+      transport.setMessageHandler(async () => ({ result: 'ok' }));
+      const toolFilterRequest = parseSessionToolFilterHeader('get_user');
+      const sessionId = (transport as any).createSession(
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        toolFilterRequest,
+        toolFilterRequest.normalizedHeader
+      );
+
+      const response = await request(app)
+        .post('/mcp')
+        .set('Accept', 'application/json')
+        .set('Content-Type', 'application/json')
+        .set('Mcp-Session-Id', sessionId)
+        .set('X-Mcp4-Tools', 'delete_user')
+        .send({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} });
+
+      expect(response.status).toBe(400);
+      expect(response.body.message).toContain('X-Mcp4-Tools header mismatch');
     });
   });
 
