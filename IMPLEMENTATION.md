@@ -54,25 +54,64 @@
 **Why**: Allow runtime tool filtering for security, performance, and customization.
 
 **Implementation**:
-- **Modular Design**: 15+ focused modules replacing monolithic file
+- **Modular Design**: 15+ focused modules replacing monolithic 648-line file
 - **Strategy Pattern**: Pluggable filter rules (Exact, Regex, Category)
 - **Facade Pattern**: ToolFilterService orchestrates all components
-- **ReDoS Protection**: Validates regex patterns for safety
+- **ReDoS Protection**: Validates regex patterns for safety (nested quantifiers, alternations)
 - **Unicode Normalization**: NFC normalization for consistent matching
+- **Compatibility Layer**: Legacy API preserved through compat.ts wrappers
+
+**Module Structure**:
+```
+tool-filter/
+├── types.ts              - Shared type definitions
+├── errors.ts             - Custom error classes
+├── utils.ts              - Utility functions (normalizeToolName)
+├── compat.ts             - Backward compatibility wrappers
+├── regex/
+│   ├── regex-validator.ts   - ReDoS pattern detection
+│   └── regex-compiler.ts    - Auto-anchoring compiler
+├── operation/
+│   ├── operation-classifier.ts - Classify operations (list/read/modify)
+│   ├── operation-resolver.ts   - Strong operation lookup interface
+│   └── operation-detector.ts   - Detect tool categories
+├── filter/
+│   ├── filter-rules.ts      - Strategy pattern implementations
+│   ├── filter-engine.ts     - Rule orchestration with precedence
+│   ├── global-tool-filter.ts   - Environment-based filtering
+│   └── session-tool-filter.ts  - HTTP header-based filtering
+├── config/
+│   ├── env-config-parser.ts    - Parse MCP4_TOOL_FILTER_* vars
+│   └── header-config-parser.ts - Parse X-Mcp4-Tools header
+└── integration/
+    └── tool-filter-service.ts  - Facade for all filtering
+```
 
 **Components**:
-- **EnvConfigParser**: Parses MCP4_TOOL_FILTER_* environment variables
-- **HeaderConfigParser**: Parses X-Mcp4-Tools HTTP header
+- **EnvConfigParser**: Parses MCP4_TOOL_FILTER_* environment variables with validation
+- **HeaderConfigParser**: Parses X-Mcp4-Tools HTTP header (255 char limit, 100 entries max)
 - **FilterEngine**: Applies rules with precedence (deny > allow)
-- **GlobalToolFilter**: Environment-based filtering
+- **GlobalToolFilter**: Environment-based filtering with logging and summaries
 - **SessionToolFilter**: Per-session HTTP header filtering
-- **OperationClassifier**: Categorizes operations (list/read/modify)
+- **OperationClassifier**: Categorizes operations (list/read/modify) based on HTTP method and params
+- **OperationDetector**: Detects categories for simple and composite tools
+- **ToolFilterService**: Facade that orchestrates all filtering components
+
+**Key Features**:
+- **ReDoS Protection**: Detects unsafe patterns (nested quantifiers, ambiguous alternation)
+- **Auto-anchoring**: Automatically adds ^ and $ to regex patterns
+- **Unicode Support**: NFC normalization ensures "café" matches "café" (composed vs decomposed)
+- **Category Filtering**: Allow only list/read operations (e.g., `_allow_list`, `_allow_read`)
+- **Composite Tool Support**: Detects categories for multi-step composite tools
+- **Session Filtering**: Per-session tool filtering via X-Mcp4-Tools HTTP header
+- **Backward Compatibility**: Legacy API preserved through compat.ts wrappers
 
 **Trade-offs**:
-- More modules vs simpler monolithic design
-- Better testability (each module independent)
-- Easier to extend (new rules, parsers)
-- Minimal performance overhead (+5ms initialization)
+- More modules (15+) vs simpler monolithic design
+- Better testability (each module independently testable)
+- Easier to extend (new rules via Strategy pattern)
+- Minimal performance overhead (+5ms initialization, lazy loaded)
+- Clean separation of concerns (parsing, filtering, detection)
 
 ### 2. Configuration-Driven Design
 
@@ -269,7 +308,6 @@ src/
 ├── constants.ts         - Time & HTTP status constants
 ├── mcp-server.ts        - Main MCP server
 ├── index.ts             - CLI entry point
-├── tool-filter.ts       - Legacy filter (DEPRECATED - use tool-filter/)
 ├── testing/
 │   ├── fixtures.ts      - Test data fixtures
 │   ├── mock-utils.ts    - Mock server URL parsing utilities
@@ -292,12 +330,19 @@ docs/
 └── PROFILE-GUIDE.md     - Profile creation guide (622 lines)
 ```
 
-## Test Coverage (455+ tests, 100% passing)
+## Test Coverage (1,316+ tests, 100% passing)
 
 ### **Unit Tests**:
 - **OpenAPI Parser** (8 tests) - spec parsing, $ref resolution
 - **Profile Loader** (9 tests) - validation, logic checks, operation keys validation
 - **Tool Generator** (7 tests) - MCP tool generation, JSON schema
+- **Tool Filter Module** (50+ tests) - modular filtering architecture
+  - Regex validation (8 tests) - ReDoS protection, auto-anchoring
+  - Operation classification (12 tests) - list/read/modify detection
+  - Filter rules (15 tests) - exact, regex, category matching
+  - Config parsers (10 tests) - env vars, HTTP headers
+  - Filter engine (8 tests) - rule precedence, Unicode normalization
+  - Integration (5 tests) - ToolFilterService, end-to-end
 - **Interceptors** (10 tests) - auth, rate-limit, retry, array serialization
 - **Composite Executor** (11 tests) - multi-step execution, partial results, **prototype pollution protection**
 - **Schema Validator** (9 tests) - request body validation
@@ -313,6 +358,13 @@ docs/
 - **GitLab API** (21 tests) - badges, branches, access requests, jobs
 - **HTTP Protocol** (9 tests) - full request/response cycle, tool execution
 
+### **E2E Tests** (21 tests):
+- **HTTP Transport** (6 tests) - session management, SSE streaming
+- **Stdio Transport** (5 tests) - local MCP communication
+- **Bearer Auth** (3 tests) - token authentication
+- **OAuth Auth** (6 tests) - OAuth 2.0 flow, token refresh
+- **Idempotency** (1 test) - branch operations
+
 ### **Validation Tests** (19 tests):
 - **Profile Schema** (10 tests) - JSON Schema validation, compilation
 - **Validation CLI** (9 tests) - profile validation script
@@ -320,6 +372,16 @@ docs/
 ### **Test Utilities** (19 tests):
 - **Mock Utils** (12 tests) - URL parsing, pagination utilities
 - **Test HTTP Utils** (7 tests) - HTTP client test setup, mocking
+
+## Key Test Improvements
+
+### Tool Filter Testing
+- **50+ dedicated tests** for filtering module
+- ReDoS protection verified with nested quantifier tests
+- Unicode normalization tested with composed/decomposed forms
+- Category detection tested for simple and composite tools
+- Filter precedence (deny > allow) thoroughly tested
+- Edge cases: empty configs, all-filtered, no-op detection
 
 ## Performance Characteristics
 

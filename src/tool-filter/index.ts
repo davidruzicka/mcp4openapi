@@ -31,6 +31,17 @@ export { HeaderConfigParser } from './config/header-config-parser.js';
 // Integration service
 export { ToolFilterService } from './integration/tool-filter-service.js';
 
+// Utilities
+export { normalizeToolName } from './utils.js';
+
+// Compatibility functions (for legacy code)
+export { 
+  normalizeToolFilterHeaderValue, 
+  parseSessionToolFilterHeader,
+  applySessionToolFilter,
+  type SessionToolFilter as SessionToolFilterCompat
+} from './compat.js';
+
 // Types
 export type {
   ValidationResult,
@@ -46,17 +57,3 @@ export type {
 
 // Errors
 export { InvalidRegexError, ConfigurationError, ValidationError } from './errors.js';
-
-// Re-export from original tool-filter for backward compatibility
-// These will be gradually migrated
-export {
-  normalizeToolName,
-  normalizeToolFilterHeaderValue,
-  parseToolFilterConfig,
-  parseSessionToolFilterHeader,
-  applyToolFilter,
-  applySessionToolFilter,
-  detectListReadOperations,
-  validateRegexPattern,
-  getSessionToolFilterMaxEntries
-} from '../tool-filter.js';

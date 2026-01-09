@@ -13,7 +13,7 @@ import { HttpTransport } from './http-transport.js';
 import { ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { JsonLogger } from './logger.js';
 import { Server as MCPProtocolServer } from '@modelcontextprotocol/sdk/server/index.js';
-import { parseSessionToolFilterHeader } from './tool-filter.js';
+import { parseSessionToolFilterHeader } from './tool-filter/index.js';
 import { 
   AuthenticationError, 
   AuthorizationError, 

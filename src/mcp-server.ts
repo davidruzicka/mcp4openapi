@@ -44,19 +44,15 @@ import { generateNameWarnings, type NameWarningOptions } from './naming-warnings
 import { NamingStrategy, type OperationForNaming } from './naming.js';
 import { isSafePropertyName } from './validation-utils.js';
 import {
-  applySessionToolFilter,
-  applyToolFilter,
-  parseToolFilterConfig,
-  type ToolFilterConfig,
-  type SessionToolFilter,
-  type SessionToolFilterRequest,
-} from './tool-filter.js';
-import {
   ToolFilterService,
   EnvConfigParser,
   HeaderConfigParser,
   RegexCompiler,
   RegexValidator,
+  applySessionToolFilter,
+  type SessionToolFilterCompat as SessionToolFilter,
+  type SessionToolFilterRequest,
+  type ToolFilterConfig,
 } from './tool-filter/index.js';
 
 export class MCPServer {

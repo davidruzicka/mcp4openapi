@@ -10,7 +10,7 @@ import type { Express } from 'express';
 import { HttpTransport } from './http-transport.js';
 import { ConsoleLogger, LogLevel, type Logger } from './logger.js';
 import { describeIfListen } from './testing/listen-support.js';
-import { parseSessionToolFilterHeader } from './tool-filter.js';
+import { parseSessionToolFilterHeader } from './tool-filter/index.js';
 
 describeIfListen('HttpTransport', () => {
   let transport: HttpTransport;
