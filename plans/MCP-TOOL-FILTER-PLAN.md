@@ -20,6 +20,7 @@ This filter applies when the profile is loaded. It removes tools from the server
 - [x] **ReDoS Protection**: Validate regex patterns at parse time. Reject patterns exceeding complexity threshold (e.g., max 100 chars, no nested quantifiers like `(a+)+`).
 - [x] **Alternation Guard**: Reject regex groups with alternation followed by quantifiers to reduce backtracking risk.
 - [x] **Auto-anchoring**: All regex patterns without explicit `^` prefix and `$` suffix are automatically anchored to prevent partial matches. Example: `user` becomes `^user$`, `.*user.*` stays as-is.
+- [x] **Timeout Enforcement (not applicable)**: JavaScript `RegExp` has no built-in execution timeout. We mitigate ReDoS risk using strict parse-time validation and pattern length limits. If we ever need hard timeouts, we'd need a different regex engine (e.g., RE2) or sandboxed execution.
 - [x] **Case Sensitivity**: Tool name matching is **case-sensitive** per MCP specification (tools are identifiers).
 
 ### Logic
