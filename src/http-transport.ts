@@ -107,6 +107,36 @@ export class HttpTransport {
       next();
     });
 
+    // Security Headers (HSTS, CSP, etc.)
+    this.app.use((req: Request, res: Response, next: NextFunction) => {
+      // Content Security Policy
+      res.setHeader('Content-Security-Policy', "default-src 'self'; frame-ancestors 'none'");
+
+      // Prevent clickjacking
+      res.setHeader('X-Frame-Options', 'DENY');
+
+      // Prevent MIME type sniffing
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+
+      // Referrer Policy
+      res.setHeader('Referrer-Policy', 'no-referrer');
+
+      // Remove X-Powered-By
+      res.removeHeader('X-Powered-By');
+
+      // Strict-Transport-Security (HSTS)
+      // Skip for localhost, IP addresses, and ACME challenges
+      const host = req.hostname;
+      const isLocal = host === 'localhost' || host === '127.0.0.1' || isIP(host) !== 0;
+      const isAcmeChallenge = req.path.startsWith('/.well-known/acme-challenge/');
+
+      if (!isLocal && !isAcmeChallenge) {
+        res.setHeader('Strict-Transport-Security', 'max-age=63072000; includeSubDomains');
+      }
+
+      next();
+    });
+
     // DNS rebinding protection when binding to localhost
     // Deny requests with mismatched Host headers to prevent DNS rebinding attacks
     // Applies when server host is localhost/127.0.0.1, regardless of auth configuration
