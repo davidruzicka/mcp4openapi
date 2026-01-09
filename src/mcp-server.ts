@@ -22,6 +22,7 @@ import { enforceFiltering, parseFilteringHeader, type FilteringRules } from './f
 import { 
   ConfigurationError, 
   OperationNotFoundError, 
+  ResourceNotFoundError,
   ValidationError, 
   AuthenticationError,
   AuthorizationError,
@@ -42,6 +43,14 @@ import { isInitializeRequest, isToolCallRequest } from './jsonrpc-validator.js';
 import { generateNameWarnings, type NameWarningOptions } from './naming-warnings.js';
 import { NamingStrategy, type OperationForNaming } from './naming.js';
 import { isSafePropertyName } from './validation-utils.js';
+import {
+  applySessionToolFilter,
+  applyToolFilter,
+  parseToolFilterConfig,
+  type ToolFilterConfig,
+  type SessionToolFilter,
+  type SessionToolFilterRequest,
+} from './tool-filter.js';
 
 export class MCPServer {
   private server: Server;
@@ -54,6 +63,12 @@ export class MCPServer {
   private logger: Logger;
   private httpTransport: any = null;
   private stdioFiltering?: FilteringRules;
+  private globalToolFilterSummary?: {
+    originalCount: number;
+    allowedCount: number;
+    removedCount: number;
+    patternCounts: Record<string, number>;
+  };
 
   /**
    * Execute a tools/call request via the JSON-RPC handler.
@@ -260,6 +275,10 @@ export class MCPServer {
       return `Operation not found: ${error.message} (correlation ID: ${correlationId})`;
     }
 
+    if (error instanceof ResourceNotFoundError) {
+      return `${error.message} (correlation ID: ${correlationId})`;
+    }
+
     // Configuration errors - safe to show (helps admin fix setup)
     if (error instanceof ConfigurationError) {
       return `Configuration error: ${error.message} (correlation ID: ${correlationId})`;
@@ -313,6 +332,8 @@ export class MCPServer {
       // Check if we should warn about long names
       this.checkToolNameLengths();
     }
+
+    this.applyGlobalToolFiltering();
 
     // Re-create logger with auth config for token redaction
     const authConfigs = this.getAuthConfigs();
@@ -1072,6 +1093,8 @@ export class MCPServer {
     }
 
     this.httpTransport = new HttpTransport(config, this.logger);
+
+    this.recordGlobalToolFilterMetrics();
     
     // Set message handler to process JSON-RPC messages
     this.httpTransport.setMessageHandler(async (message: unknown, sessionId?: string) => {
@@ -1120,6 +1143,10 @@ export class MCPServer {
       }
       const parsed = parseFilteringHeader(params.filtering);
       this.stdioFiltering = parsed.filtering;
+    }
+
+    if (this.httpTransport && sessionId) {
+      this.applySessionToolFiltering(sessionId);
     }
 
     const result: any = {
@@ -1181,7 +1208,17 @@ export class MCPServer {
       // Find tool definition
       const toolDef = this.profile?.tools.find(t => t.name === toolName);
       if (!toolDef) {
-        throw new OperationNotFoundError(toolName);
+        throw new ResourceNotFoundError(toolName, 'Tool');
+      }
+
+      const toolFilter = this.getToolFilterForSession(sessionId);
+      if (toolFilter && !toolFilter.allowedToolNames.has(toolName)) {
+        this.recordToolFilterRejection(toolName, 'session');
+        const reason = toolFilter.reasons.get(toolName)?.[0];
+        const reasonSuffix = reason ? ` Blocked by: ${reason}.` : '';
+        throw new AuthorizationError(
+          `Tool '${toolName}' not allowed by X-Mcp4-Tools filter.${reasonSuffix}`
+        );
       }
 
       const filtering = this.getFilteringForSession(sessionId);
@@ -1257,6 +1294,8 @@ export class MCPServer {
         errorCode = -32003; // Rate limit error
       } else if (error instanceof OperationNotFoundError) {
         errorCode = -32601; // Method not found
+      } else if (error instanceof ResourceNotFoundError) {
+        errorCode = -32601; // Method not found
       }
       
       return {
@@ -1275,6 +1314,13 @@ export class MCPServer {
       return this.httpTransport.getSessionFiltering(sessionId);
     }
     return this.stdioFiltering;
+  }
+
+  private getToolFilterForSession(sessionId?: string): SessionToolFilter | undefined {
+    if (this.httpTransport && sessionId && typeof this.httpTransport.getSessionToolFilter === 'function') {
+      return this.httpTransport.getSessionToolFilter(sessionId);
+    }
+    return undefined;
   }
 
   private getFilteringOperationInfo(
@@ -1319,9 +1365,11 @@ export class MCPServer {
 
     // Handle tools/list
     if (req.method === 'tools/list') {
-      const tools = this.profile?.tools.map(toolDef =>
-        this.toolGenerator!.generateTool(toolDef)
-      ) || [];
+      const sessionFilter = this.getToolFilterForSession(sessionId);
+      const allowedSet = sessionFilter?.allowedToolNames;
+      const tools = this.profile?.tools
+        .filter(toolDef => !allowedSet || allowedSet.has(toolDef.name))
+        .map(toolDef => this.toolGenerator!.generateTool(toolDef)) || [];
 
       return {
         jsonrpc: '2.0',
@@ -1343,6 +1391,257 @@ export class MCPServer {
     };
   }
 
+  private applyGlobalToolFiltering(): void {
+    if (!this.profile) {
+      return;
+    }
+
+    const config = parseToolFilterConfig(process.env);
+    if (!config) {
+      return;
+    }
+
+    const originalTools = this.profile.tools;
+    const resolver = this.buildToolFilterResolver();
+    const result = applyToolFilter(originalTools, config, resolver);
+    const originalCount = originalTools.length;
+    const allowedCount = result.allowed.length;
+    const removedCount = result.removed.length;
+
+    if (originalCount > 0 && allowedCount === originalCount) {
+      throw new ConfigurationError(
+        `Tool filter configuration has no effect. Original tool count: ${originalCount}, filtered: ${allowedCount}. Check MCP4_TOOL_FILTER_* patterns.`
+      );
+    }
+
+    if (originalCount > 0 && allowedCount === 0) {
+      const sources = getToolFilterSourcesSummary(config);
+      throw new ConfigurationError(
+        `All tools filtered out (original: ${originalCount}). Check MCP4_TOOL_FILTER_* settings. Removed by: ${sources}.`
+      );
+    }
+
+    this.validateCompositeToolsAgainstFilteredOperations(originalTools, result.allowed, resolver);
+
+    this.profile.tools = result.allowed;
+
+    for (const tool of result.removed) {
+      const reasonList = result.reasons.get(tool.name) ?? [];
+      const reason = reasonList.join(', ') || 'filtered';
+      this.logger.info('Tool filtered', {
+        filter_source: 'env',
+        tool: tool.name,
+        action: 'removed',
+        reason,
+      });
+    }
+
+    const warnThreshold = this.getToolFilterWarnThresholdPct();
+    if (originalCount > 0) {
+      const percentFiltered = ((originalCount - allowedCount) / originalCount) * 100;
+      if (percentFiltered >= warnThreshold) {
+        this.logger.warn('Tool filter removed high percentage of tools', {
+          original: originalCount,
+          surviving: allowedCount,
+          threshold_pct: warnThreshold,
+          removed_count: originalCount - allowedCount,
+        });
+      }
+    }
+
+    this.logger.debug('Global tool filter applied', {
+      originalCount,
+      allowedCount,
+      removedCount,
+      allowList: config.sources.allowList,
+      allowRegex: config.sources.allowRegex,
+      denyList: config.sources.denyList,
+      denyRegex: config.sources.denyRegex,
+      allowComposite: config.sources.allowComposite,
+    });
+
+    this.globalToolFilterSummary = {
+      originalCount,
+      allowedCount,
+      removedCount,
+      patternCounts: {
+        allow_list: config.sources.allowList.length,
+        allow_regex: config.sources.allowRegex.length,
+        deny_list: config.sources.denyList.length,
+        deny_regex: config.sources.denyRegex.length,
+        allow_composite: config.sources.allowComposite.length,
+      },
+    };
+
+    if (this.httpTransport) {
+      this.recordGlobalToolFilterMetrics();
+    }
+  }
+
+  private applySessionToolFiltering(sessionId: string): void {
+    if (!this.httpTransport || !this.profile) {
+      return;
+    }
+
+    if (typeof this.httpTransport.getSessionToolFilterRequest !== 'function') {
+      return;
+    }
+    const request: SessionToolFilterRequest | undefined =
+      this.httpTransport.getSessionToolFilterRequest(sessionId);
+    if (!request) {
+      return;
+    }
+
+    const originalCount = this.profile.tools.length;
+    const resolver = this.buildToolFilterResolver();
+    const sessionFilter = applySessionToolFilter(this.profile.tools, request, resolver);
+    const allowedCount = sessionFilter.allowedToolNames.size;
+
+    if (allowedCount === originalCount) {
+      throw new ValidationError(
+        `X-Mcp4-Tools filter has no effect for this session. Available tools: ${originalCount}, after filter: ${allowedCount}. Check patterns.`
+      );
+    }
+
+    if (originalCount > 0 && allowedCount === 0) {
+      const sources = request.rawEntries.length > 0 ? request.rawEntries.join(', ') : 'none';
+      throw new ValidationError(
+        `X-Mcp4-Tools filtered out all tools (original: ${originalCount}). Removed by: ${sources}. Check session filter configuration.`
+      );
+    }
+
+    this.httpTransport.setSessionToolFilter(sessionId, sessionFilter);
+    this.logger.info('Session tool filter applied', {
+      sessionId,
+      originalCount,
+      allowedCount,
+      patterns: request.rawEntries,
+    });
+
+    this.recordSessionToolFilterMetrics(sessionId, allowedCount, request);
+  }
+
+  private buildToolFilterResolver() {
+    return {
+      getOperationById: (operationId: string) => this.parser.getOperation(operationId),
+      getOperationForCall: (call: string) => {
+        const [method, path] = call.split(' ');
+        if (!method || !path) {
+          return undefined;
+        }
+        const pathInfo = this.parser.getPath(path);
+        return pathInfo?.operations[method.toLowerCase()];
+      },
+    };
+  }
+
+  private validateCompositeToolsAgainstFilteredOperations(
+    originalTools: ToolDefinition[],
+    allowedTools: ToolDefinition[],
+    resolver: ReturnType<MCPServer['buildToolFilterResolver']>
+  ): void {
+    const operationToTools = new Map<string, string[]>();
+    for (const tool of originalTools) {
+      if (!tool.operations) {
+        continue;
+      }
+      for (const operationId of Object.values(tool.operations)) {
+        if (typeof operationId !== 'string') {
+          continue;
+        }
+        const names = operationToTools.get(operationId) ?? [];
+        names.push(tool.name);
+        operationToTools.set(operationId, names);
+      }
+    }
+
+    const allowedOperationIds = new Set<string>();
+    for (const tool of allowedTools) {
+      if (!tool.operations) {
+        continue;
+      }
+      for (const operationId of Object.values(tool.operations)) {
+        if (typeof operationId !== 'string') {
+          continue;
+        }
+        allowedOperationIds.add(operationId);
+      }
+    }
+
+    for (const tool of allowedTools) {
+      if (!tool.composite || !tool.steps) {
+        continue;
+      }
+
+      for (const step of tool.steps) {
+        const operation = resolver.getOperationForCall(step.call);
+        if (!operation) {
+          continue;
+        }
+        if (allowedOperationIds.has(operation.operationId)) {
+          continue;
+        }
+        const removedTools = operationToTools.get(operation.operationId);
+        if (!removedTools || removedTools.length === 0) {
+          continue;
+        }
+        const removedList = removedTools.join(', ');
+        throw new ConfigurationError(
+          `Composite tool '${tool.name}' step '${step.call}' calls filtered tool '${removedList}'. ` +
+          `Add '${removedList}' to filter or include _allow_list or _allow_read if it is a list or read operation.`
+        );
+      }
+    }
+  }
+
+  private getToolFilterWarnThresholdPct(): number {
+    const raw = process.env.MCP4_TOOL_FILTER_WARN_THRESHOLD_PCT;
+    if (raw === undefined) {
+      return 90;
+    }
+    const parsed = Number(raw);
+    if (Number.isNaN(parsed) || parsed <= 0) {
+      throw new ConfigurationError(
+        `Invalid MCP4_TOOL_FILTER_WARN_THRESHOLD_PCT: expected positive number, got '${raw}'.`
+      );
+    }
+    return parsed;
+  }
+
+  private recordGlobalToolFilterMetrics(): void {
+    if (!this.httpTransport || !this.globalToolFilterSummary) {
+      return;
+    }
+    if (typeof this.httpTransport.recordGlobalToolFilterMetrics !== 'function') {
+      return;
+    }
+    this.httpTransport.recordGlobalToolFilterMetrics(this.globalToolFilterSummary);
+  }
+
+  private recordSessionToolFilterMetrics(
+    sessionId: string,
+    allowedCount: number,
+    request: SessionToolFilterRequest
+  ): void {
+    if (!this.httpTransport) {
+      return;
+    }
+    if (typeof this.httpTransport.recordSessionToolFilterMetrics !== 'function') {
+      return;
+    }
+    this.httpTransport.recordSessionToolFilterMetrics(sessionId, allowedCount, request);
+  }
+
+  private recordToolFilterRejection(toolName: string, source: 'env' | 'session'): void {
+    if (!this.httpTransport) {
+      return;
+    }
+    if (typeof this.httpTransport.recordToolFilterRejection !== 'function') {
+      return;
+    }
+    this.httpTransport.recordToolFilterRejection(toolName, source);
+  }
+
   /**
    * Stop the MCP server gracefully
    *
@@ -1353,4 +1652,27 @@ export class MCPServer {
       await this.httpTransport.stop();
     }
   }
+}
+
+function getToolFilterSourcesSummary(config: ToolFilterConfig): string {
+  const sources: string[] = [];
+  if (config.sources.allowList.length > 0) {
+    sources.push('allow_list');
+  }
+  if (config.sources.allowRegex.length > 0) {
+    sources.push('allow_regex');
+  }
+  if (config.sources.denyList.length > 0) {
+    sources.push('deny_list');
+  }
+  if (config.sources.denyRegex.length > 0) {
+    sources.push('deny_regex');
+  }
+  if (config.allowComposite.allowList) {
+    sources.push('_allow_list');
+  }
+  if (config.allowComposite.allowRead) {
+    sources.push('_allow_read');
+  }
+  return sources.length > 0 ? sources.join(', ') : 'none';
 }

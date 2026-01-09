@@ -294,6 +294,19 @@ echo 'export NODE_EXTRA_CA_CERTS="$HOME/ca-bundle.pem"' >> $HOME/.bash_profile
 - `MCP4_TRANSPORT`: `stdio` (default) or `http`
 - `MCP4_API_BASE_URL`: Override OpenAPI server URL
 
+### Optional - Tool Filtering
+Global tool filtering removes tools during profile load for every session.
+
+- `MCP4_TOOL_FILTER_ALLOW_LIST`: Comma-separated tool names to keep (exact match, case-sensitive)
+- `MCP4_TOOL_FILTER_ALLOW_REGEX`: Comma-separated regex patterns to allow (auto-anchored unless already wrapped with `^` and `$`)
+- `MCP4_TOOL_FILTER_DENY_LIST`: Comma-separated tool names to exclude
+- `MCP4_TOOL_FILTER_DENY_REGEX`: Comma-separated regex patterns to exclude (auto-anchored)
+- `MCP4_TOOL_FILTER_ALLOW_COMPOSITES`: Comma-separated keywords `_allow_list` and or `_allow_read` to allow composite list or read tools without explicit naming
+- `MCP4_TOOL_FILTER_WARN_THRESHOLD_PCT`: Warn when filtered percentage exceeds this threshold (default: `90`)
+- `MCP4_TOOL_FILTER_SESSION_MAX_TOOLS`: Max entries in `X-Mcp4-Tools` header (default: `100`)
+
+Regex patterns are validated for length and nested quantifiers to reduce ReDoS risk.
+
 ### Optional - Authentication (No-Profile Mode)
 When running without a profile, authentication is automatically configured from OpenAPI spec's `security` schemes:
 

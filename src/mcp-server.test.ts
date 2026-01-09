@@ -6,6 +6,8 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import path from 'path';
+import fs from 'fs/promises';
+import os from 'os';
 import { MCPServer } from './mcp-server.js';
 import { HttpTransport } from './http-transport.js';
 import { ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
@@ -18,7 +20,8 @@ import {
   NetworkError,
   ValidationError,
   OperationNotFoundError,
-  ConfigurationError
+  ConfigurationError,
+  ResourceNotFoundError
 } from './errors.js';
 
 describe('MCPServer', () => {
@@ -103,6 +106,59 @@ describe('MCPServer', () => {
       await expect((server as any).getHttpClientForSession()).rejects.toThrow(
         /HasEnvToken\(MCP4_API_TOKEN\): false/
       );
+    });
+  });
+
+  describe('global tool filtering', () => {
+    const specPath = path.join(process.cwd(), 'profiles/gitlab/openapi.yaml');
+    let profilePath: string;
+
+    const buildProfile = () => ({
+      profile_name: 'test',
+      description: 'test profile',
+      tools: [
+        {
+          name: 'keep_tool',
+          description: 'Keep tool',
+          parameters: {},
+          operations: { execute: 'getProject' },
+        },
+        {
+          name: 'drop_tool',
+          description: 'Drop tool',
+          parameters: {},
+          operations: { execute: 'listProjects' },
+        },
+      ],
+      interceptors: {},
+    });
+
+    beforeEach(async () => {
+      profilePath = path.join(os.tmpdir(), `profile-${Date.now()}-${Math.random()}.json`);
+      await fs.writeFile(profilePath, JSON.stringify(buildProfile()), 'utf-8');
+    });
+
+    afterEach(async () => {
+      delete process.env.MCP4_TOOL_FILTER_ALLOW_LIST;
+      delete process.env.MCP4_TOOL_FILTER_DENY_LIST;
+      await fs.unlink(profilePath);
+    });
+
+    it('applies allow list filtering from environment', async () => {
+      process.env.MCP4_TOOL_FILTER_ALLOW_LIST = 'keep_tool';
+      await server.initialize(specPath, profilePath);
+      expect((server as any).profile.tools).toHaveLength(1);
+      expect((server as any).profile.tools[0].name).toBe('keep_tool');
+    });
+
+    it('rejects no-op tool filter configuration', async () => {
+      process.env.MCP4_TOOL_FILTER_ALLOW_LIST = 'keep_tool,drop_tool';
+      await expect(server.initialize(specPath, profilePath)).rejects.toBeInstanceOf(ConfigurationError);
+    });
+
+    it('rejects configurations that filter out all tools', async () => {
+      process.env.MCP4_TOOL_FILTER_DENY_LIST = 'keep_tool,drop_tool';
+      await expect(server.initialize(specPath, profilePath)).rejects.toBeInstanceOf(ConfigurationError);
     });
   });
 
@@ -222,7 +278,7 @@ describe('MCPServer', () => {
       expect(response).toHaveProperty('error');
       expect(response.error).toHaveProperty('message');
       // OperationNotFoundError is safe to show with correlation ID
-      expect(response.error.message).toContain('Operation not found');
+      expect(response.error.message).toContain('Tool not found');
       expect(response.error.message).toContain('correlation ID');
     });
 
@@ -970,6 +1026,73 @@ describe('MCPServer', () => {
     });
   });
 
+  describe('session tool filtering', () => {
+    it('filters tools list based on session allow list', async () => {
+      const localServer = new MCPServer();
+      (localServer as any).profile = {
+        profile_name: 'test',
+        description: 'test',
+        tools: [
+          { name: 'allowed', description: 'allowed', parameters: {}, operations: { execute: 'op1' } },
+          { name: 'blocked', description: 'blocked', parameters: {}, operations: { execute: 'op2' } },
+        ],
+        interceptors: {},
+      };
+      (localServer as any).toolGenerator = {
+        generateTool: (toolDef: any) => ({ name: toolDef.name }),
+      };
+      (localServer as any).httpTransport = {
+        hasOAuthProvider: () => false,
+        getSessionToolFilter: () => ({
+          allowedToolNames: new Set(['allowed']),
+          reasons: new Map(),
+          patterns: { allow: [] },
+          allowComposite: { allowList: false, allowRead: false },
+          normalizedHeader: 'allowed',
+        }),
+      };
+
+      const response = await (localServer as any).handleOtherRequest({
+        jsonrpc: '2.0',
+        id: '1',
+        method: 'tools/list',
+        params: {},
+      }, 'session-1');
+
+      expect(response.result.tools).toHaveLength(1);
+      expect(response.result.tools[0].name).toBe('allowed');
+    });
+
+    it('blocks tool calls not allowed by session filter', async () => {
+      const localServer = new MCPServer();
+      (localServer as any).profile = {
+        profile_name: 'test',
+        description: 'test',
+        tools: [
+          { name: 'blocked', description: 'blocked', parameters: {}, operations: { execute: 'op2' } },
+        ],
+        interceptors: {},
+      };
+      (localServer as any).executeSimpleTool = vi.fn().mockResolvedValue({ ok: true });
+      (localServer as any).httpTransport = {
+        hasOAuthProvider: () => false,
+        getSessionToolFilter: () => ({
+          allowedToolNames: new Set(['allowed']),
+          reasons: new Map([['blocked', ['session_allow_list:allowed']]]),
+          patterns: { allow: [] },
+          allowComposite: { allowList: false, allowRead: false },
+          normalizedHeader: 'allowed',
+        }),
+        getSessionFiltering: () => undefined,
+      };
+
+      const response = await localServer.callToolRpc('blocked', {}, 'session-1', '1') as any;
+      expect(response.error).toBeDefined();
+      expect(response.error.code).toBe(-32002);
+      expect(response.error.message).toContain('X-Mcp4-Tools');
+    });
+  });
+
   describe('handleInitialize', () => {
     it('should return server info and capabilities', () => {
       const server = new MCPServer();
@@ -1106,6 +1229,19 @@ describe('MCPServer', () => {
       const formatted = (server as any).formatErrorForClient(error, correlationId);
       
       expect(formatted).toContain('Operation not found');
+      expect(formatted).toContain(correlationId);
+    });
+  });
+
+  describe('ResourceNotFoundError formatting', () => {
+    it('should format ResourceNotFoundError with correlation ID', () => {
+      const server = new MCPServer();
+      const error = new ResourceNotFoundError('missing_tool', 'Tool');
+      const correlationId = 'test-correlation-id';
+
+      const formatted = (server as any).formatErrorForClient(error, correlationId);
+
+      expect(formatted).toContain('Tool not found');
       expect(formatted).toContain(correlationId);
     });
   });

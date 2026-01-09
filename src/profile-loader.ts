@@ -21,6 +21,7 @@ import { profileSchema, authInterceptorSchema } from './generated-schemas.js';
 import type { OpenAPIParser } from './openapi-parser.js';
 import type { OperationInfo, SchemaInfo } from './types/openapi.js';
 import { shortenToolName, NamingStrategy, levenshteinDistance, type OperationForNaming, type ShortenResult } from './naming.js';
+import { normalizeToolName } from './tool-filter.js';
 
 // Schemas are now auto-generated from TypeScript types!
 // See scripts/generate-schemas.js for details.
@@ -51,7 +52,8 @@ export class ProfileLoader {
 
     // Validate with Zod - throws detailed error if invalid
     const profile = enhancedProfileSchema.parse(json) as Profile;
-    
+
+    ProfileLoader.normalizeToolNames(profile);
     this.validateLogic(profile);
     
     return profile;
@@ -377,12 +379,16 @@ export class ProfileLoader {
     // Generate auth interceptor from OpenAPI security scheme
     const interceptors = this.generateAuthInterceptor(parser);
 
-    return {
+    const profile = {
       profile_name: profileName,
       description: `Auto-generated default profile with ${tools.length} tools from OpenAPI spec`,
       tools,
       interceptors,
     };
+
+    this.normalizeToolNames(profile);
+
+    return profile;
   }
 
   /**
@@ -620,6 +626,12 @@ export class ProfileLoader {
           required: isRequired,
         };
       }
+    }
+  }
+
+  private static normalizeToolNames(profile: Profile): void {
+    for (const tool of profile.tools) {
+      tool.name = normalizeToolName(tool.name);
     }
   }
 }
