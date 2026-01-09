@@ -35,6 +35,12 @@
          │            - Retry (exponential backoff)
          │            - Fetch wrapper
          │
+         ├──────────► Tool Filter Service (tool-filter/)
+         │            - Modular filtering architecture
+         │            - Global filtering (env vars)
+         │            - Session filtering (HTTP headers)
+         │            - ReDoS protection & validation
+         │
          └──────────► Composite Executor (composite-executor.ts)
                       - Chains API calls
                       - Merges results into nested structure
@@ -43,7 +49,32 @@
 
 ## Key Design Decisions
 
-### 1. Configuration-Driven Design
+### 1. Tool Filtering Architecture
+
+**Why**: Allow runtime tool filtering for security, performance, and customization.
+
+**Implementation**:
+- **Modular Design**: 15+ focused modules replacing monolithic file
+- **Strategy Pattern**: Pluggable filter rules (Exact, Regex, Category)
+- **Facade Pattern**: ToolFilterService orchestrates all components
+- **ReDoS Protection**: Validates regex patterns for safety
+- **Unicode Normalization**: NFC normalization for consistent matching
+
+**Components**:
+- **EnvConfigParser**: Parses MCP4_TOOL_FILTER_* environment variables
+- **HeaderConfigParser**: Parses X-Mcp4-Tools HTTP header
+- **FilterEngine**: Applies rules with precedence (deny > allow)
+- **GlobalToolFilter**: Environment-based filtering
+- **SessionToolFilter**: Per-session HTTP header filtering
+- **OperationClassifier**: Categorizes operations (list/read/modify)
+
+**Trade-offs**:
+- More modules vs simpler monolithic design
+- Better testability (each module independent)
+- Easier to extend (new rules, parsers)
+- Minimal performance overhead (+5ms initialization)
+
+### 2. Configuration-Driven Design
 
 **Why**: Same server code works with any API. All customization in profile JSON.
 
@@ -59,7 +90,7 @@
 - Validation at profile load time catches errors early
 - No hard-coded API assumptions in core code
 
-### 2. Tool Aggregation Strategy
+### 3. Tool Aggregation Strategy
 
 **Why**: Reduce MCP tool count from 200+ to ~5-10
 
@@ -73,7 +104,7 @@
 - Less context pollution for LLM
 - ⚠️ Slightly more complex parameter validation
 
-### 2. Profile-Driven Configuration
+### 4. Profile-Driven Configuration
 
 **Why**: Same server, different tool surfaces without code changes
 
@@ -88,7 +119,7 @@
 - Developer profile: read/write, no admin ops
 - Readonly profile: only GET operations
 
-### 3. Conditional Parameter Requirements
+### 5. Conditional Parameter Requirements
 
 **Why**: `badge_id` only needed for get/update/delete, not list/create
 
@@ -98,7 +129,7 @@
 
 **Validation**: Runtime check in `validateArguments()`
 
-### 4. Interceptor Chain Pattern
+### 6. Interceptor Chain Pattern
 
 **Why**: Separate auth, rate-limiting, retry concerns from business logic
 
@@ -111,7 +142,7 @@
 - Easy to add new interceptors (logging, metrics)
 - Configuration-driven (no code changes)
 
-### 5. Composite Tools for Reducing Roundtrips
+### 7. Composite Tools for Reducing Roundtrips
 
 **Why**: Fetching MR + comments + changes requires 3 calls
 
@@ -129,7 +160,7 @@
 
 **Result**: Single JSON with nested structure
 
-### 6. $ref Resolution in OpenAPI
+### 8. $ref Resolution in OpenAPI
 
 **Why**: GitLab spec uses shared parameters (`ProjectIdOrPath`)
 
@@ -137,7 +168,7 @@
 
 **Impact**: Properly extracts `id` path parameter that was previously missed
 
-### 7. Resource Type Discrimination
+### 9. Resource Type Discrimination
 
 **Why**: Same operation on different resources (project badges vs group badges)
 
@@ -153,7 +184,7 @@
 
 **Lookup**: `mapActionToOperation()` tries `{action}_{resource_type}` first, falls back to `{action}`
 
-### 8. Token Bucket Rate Limiting
+### 10. Token Bucket Rate Limiting
 
 **Why**: Allow bursts while enforcing average rate
 
@@ -163,7 +194,7 @@
 
 **Better than**: Simple per-request delays (poor UX, doesn't prevent bursts)
 
-### 9. Exponential Backoff Retry
+### 11. Exponential Backoff Retry
 
 **Why**: Reduces server load during outages
 
@@ -173,7 +204,7 @@
 
 **Better than**: Linear backoff (thundering herd problem)
 
-### 10. Dual Transport Support (stdio + HTTP)
+### 12. Dual Transport Support (stdio + HTTP)
 
 **Why**: stdio for local development, HTTP for remote/production access
 
@@ -201,6 +232,28 @@ src/
 │   ├── profile.ts       - Profile configuration types
 │   ├── openapi.ts       - Simplified OpenAPI types
 │   └── http-transport.ts - HTTP transport types
+├── tool-filter/         - Modular tool filtering architecture
+│   ├── types.ts         - Shared filtering types
+│   ├── errors.ts        - Custom filter error classes
+│   ├── regex/
+│   │   ├── regex-validator.ts  - ReDoS protection
+│   │   └── regex-compiler.ts   - Auto-anchoring compiler
+│   ├── operation/
+│   │   ├── operation-classifier.ts - Classify operations (list/read/modify)
+│   │   ├── operation-resolver.ts   - Operation lookup interface
+│   │   └── operation-detector.ts   - Detect tool categories
+│   ├── filter/
+│   │   ├── filter-rules.ts         - Rule interfaces (Strategy pattern)
+│   │   ├── filter-engine.ts        - Rule orchestration
+│   │   ├── global-tool-filter.ts   - Environment-based filtering
+│   │   └── session-tool-filter.ts  - HTTP header-based filtering
+│   ├── config/
+│   │   ├── env-config-parser.ts    - Parse MCP4_TOOL_FILTER_* vars
+│   │   └── header-config-parser.ts - Parse X-Mcp4-Tools header
+│   ├── integration/
+│   │   └── tool-filter-service.ts  - Facade for all filtering
+│   ├── index.ts         - Public API
+│   └── README.md        - Module documentation
 ├── openapi-parser.ts    - OpenAPI spec parser & indexer
 ├── profile-loader.ts    - Profile JSON loader & validator (operation keys validation)
 ├── tool-generator.ts    - MCP tool generator
@@ -216,6 +269,7 @@ src/
 ├── constants.ts         - Time & HTTP status constants
 ├── mcp-server.ts        - Main MCP server
 ├── index.ts             - CLI entry point
+├── tool-filter.ts       - Legacy filter (DEPRECATED - use tool-filter/)
 ├── testing/
 │   ├── fixtures.ts      - Test data fixtures
 │   ├── mock-utils.ts    - Mock server URL parsing utilities
