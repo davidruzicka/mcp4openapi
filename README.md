@@ -391,6 +391,23 @@ export MCP4_TOOLNAME_WARN_ONLY=false
 export MCP4_TOOLNAME_MAX=30
 ```
 
+### Optional - Tool Filtering
+Filter tools globally at startup and per session for HTTP transport.
+
+- `MCP4_TOOL_FILTER_ALLOW_LIST`: Comma-separated tool names to allow (exact match)
+- `MCP4_TOOL_FILTER_ALLOW_REGEX`: Regex pattern to allow tool names (auto-anchored unless already anchored)
+- `MCP4_TOOL_FILTER_DENY_LIST`: Comma-separated tool names to deny (exact match)
+- `MCP4_TOOL_FILTER_DENY_REGEX`: Regex pattern to deny tool names (auto-anchored unless already anchored)
+- `MCP4_TOOL_FILTER_ALLOW_COMPOSITES`: Allow composite list or read tools without explicit naming (`_allow_list`, `_allow_read`)
+- `MCP4_TOOL_FILTER_SESSION_MAX_TOOLS`: Max tool entries in `X-Mcp4-Tools` header (default: `100`)
+- `MCP4_TOOL_FILTER_WARN_THRESHOLD_PCT`: Warn if filtered tools exceed this percentage (default: `90`)
+
+**Example**: Allow only read tools and composite list operations
+```bash
+export MCP4_TOOL_FILTER_ALLOW_REGEX=get_.*
+export MCP4_TOOL_FILTER_ALLOW_COMPOSITES=_allow_list
+```
+
 ### Optional - HTTP Transport
 - `MCP4_HOST`: Bind address (default: `127.0.0.1`)
 - `MCP4_PORT`: Port (default: `3003`)

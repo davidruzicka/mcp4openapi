@@ -51,7 +51,8 @@ export class ProfileLoader {
 
     // Validate with Zod - throws detailed error if invalid
     const profile = enhancedProfileSchema.parse(json) as Profile;
-    
+
+    this.normalizeToolNames(profile);
     this.validateLogic(profile);
     
     return profile;
@@ -209,6 +210,22 @@ export class ProfileLoader {
       if (tool.composite && tool.steps) {
         this.validateCompositeStepsDAG(tool.name, tool.steps);
       }
+    }
+  }
+
+  private normalizeToolNames(profile: Profile): void {
+    const seen = new Set<string>();
+
+    for (const tool of profile.tools) {
+      const normalized = tool.name.normalize('NFC');
+      if (seen.has(normalized)) {
+        throw new ValidationError(
+          `Duplicate tool name after normalization: '${normalized}'.`,
+          { toolName: normalized }
+        );
+      }
+      seen.add(normalized);
+      tool.name = normalized;
     }
   }
 

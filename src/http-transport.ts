@@ -39,6 +39,12 @@ import {
   generateCorrelationId,
 } from './errors.js';
 import { parseFilteringHeader, normalizeFilteringHeaderValue } from './filtering.js';
+import {
+  parseSessionToolFilterHeader,
+  getSessionToolFilterMaxEntries,
+  type SessionToolFilterRequest,
+  type SessionToolFilterState
+} from './tool-filter.js';
 
 // Default maximum token length (1000 characters)
 const DEFAULT_MAX_TOKEN_LENGTH = 1000;
@@ -1191,6 +1197,13 @@ export class HttpTransport {
       const body = req.body;
       const filteringHeader = normalizeFilteringHeaderValue(this.getFilteringHeaderValue(req));
       const parsedFiltering = filteringHeader ? parseFilteringHeader(filteringHeader) : undefined;
+      const toolsHeaderValue = this.getToolsHeaderValue(req);
+      const toolFilterRequest = toolsHeaderValue !== undefined
+        ? parseSessionToolFilterHeader(toolsHeaderValue, {
+            maxEntries: getSessionToolFilterMaxEntries(),
+            maxEntryLength: 255,
+          })
+        : undefined;
 
       // Validate Accept header per MCP Streamable HTTP specification
       const accept = req.headers.accept || '';
@@ -1233,6 +1246,13 @@ export class HttpTransport {
         if (filteringHeader !== undefined) {
           if (!session.filteringHeader || session.filteringHeader !== filteringHeader) {
             throw new ValidationError('X-Mcp4-Filtering header mismatch for existing session.');
+          }
+        }
+        if (toolsHeaderValue !== undefined) {
+          if (!session.toolFilterRequest?.originalHeader || session.toolFilterRequest.originalHeader !== toolsHeaderValue.trim()) {
+            throw new ValidationError(
+              `X-Mcp4-Tools header mismatch for existing session. Expected: ${session.toolFilterRequest?.originalHeader ?? ''}, Got: ${toolsHeaderValue.trim()}.`
+            );
           }
         }
         this.updateSessionActivity(sessionId);
@@ -1348,7 +1368,8 @@ export class HttpTransport {
             scopes,
             oauthClientId,
             parsedFiltering?.filtering,
-            parsedFiltering?.normalizedHeader
+            parsedFiltering?.normalizedHeader,
+            toolFilterRequest
           );
         }
 
@@ -1699,6 +1720,20 @@ export class HttpTransport {
     return headerValue;
   }
 
+  private getToolsHeaderValue(req: Request): string | undefined {
+    const headerValue = req.headers['x-mcp4-tools'];
+    if (Array.isArray(headerValue)) {
+      if (headerValue.length === 0) {
+        return undefined;
+      }
+      if (headerValue.length > 1) {
+        throw new ValidationError('Invalid X-Mcp4-Tools header. Expected a single header value.');
+      }
+      return headerValue[0];
+    }
+    return headerValue;
+  }
+
   /**
    * Create new session
    *
@@ -1711,7 +1746,8 @@ export class HttpTransport {
     scopes?: string[],
     oauthClientId?: string,
     filtering?: Record<string, string[]>,
-    filteringHeader?: string
+    filteringHeader?: string,
+    toolFilterRequest?: SessionToolFilterRequest
   ): string {
     // Validate token if provided (defense in depth)
     if (authToken) {
@@ -1731,6 +1767,7 @@ export class HttpTransport {
       oauthClientId,
       filtering,
       filteringHeader,
+      toolFilterRequest,
     };
     this.sessions.set(sessionId, session);
     this.logger.info('Session created', { 
@@ -1919,6 +1956,53 @@ export class HttpTransport {
   public getSessionFilteringHeader(sessionId: string): string | undefined {
     const session = this.sessions.get(sessionId);
     return session?.filteringHeader;
+  }
+
+  public getSessionToolFilterRequest(sessionId: string): SessionToolFilterRequest | undefined {
+    const session = this.sessions.get(sessionId);
+    return session?.toolFilterRequest;
+  }
+
+  public getSessionToolFilter(sessionId: string): SessionToolFilterState | undefined {
+    const session = this.sessions.get(sessionId);
+    return session?.toolFilter;
+  }
+
+  public setSessionToolFilter(sessionId: string, toolFilter: SessionToolFilterState): void {
+    const session = this.sessions.get(sessionId);
+    if (session) {
+      session.toolFilter = toolFilter;
+    }
+  }
+
+  public recordGlobalToolFilterMetrics(metrics: {
+    originalCount: number;
+    filteredCount: number;
+    removedCount: number;
+    patterns: Record<string, number>;
+  }): void {
+    if (!this.metrics) {
+      return;
+    }
+
+    this.metrics.recordToolFilterTotals(metrics.originalCount, metrics.filteredCount);
+    for (const [type, count] of Object.entries(metrics.patterns)) {
+      this.metrics.recordToolFilterPatternCount(type, count);
+    }
+  }
+
+  public recordSessionToolCount(sessionId: string, count: number): void {
+    if (!this.metrics) {
+      return;
+    }
+    this.metrics.recordSessionToolCount(sessionId, count);
+  }
+
+  public recordToolFilterRejection(tool: string, source: 'env' | 'session'): void {
+    if (!this.metrics) {
+      return;
+    }
+    this.metrics.recordToolFilterRejection(tool, source);
   }
 
   /**

@@ -20,6 +20,7 @@ import {
   OperationNotFoundError,
   ConfigurationError
 } from './errors.js';
+import { parseSessionToolFilterHeader } from './tool-filter.js';
 
 describe('MCPServer', () => {
   let server: MCPServer;
@@ -103,6 +104,142 @@ describe('MCPServer', () => {
       await expect((server as any).getHttpClientForSession()).rejects.toThrow(
         /HasEnvToken\(MCP4_API_TOKEN\): false/
       );
+    });
+  });
+
+  describe('global tool filtering', () => {
+    const specPath = path.join(process.cwd(), 'profiles/gitlab/openapi.yaml');
+    const profilePath = path.join(process.cwd(), 'profiles/gitlab/developer-profile-oauth.json');
+    const envKeys = [
+      'MCP4_TOOL_FILTER_ALLOW_LIST',
+      'MCP4_TOOL_FILTER_ALLOW_REGEX',
+      'MCP4_TOOL_FILTER_DENY_LIST',
+      'MCP4_TOOL_FILTER_DENY_REGEX',
+      'MCP4_TOOL_FILTER_ALLOW_COMPOSITES',
+      'MCP4_TOOL_FILTER_WARN_THRESHOLD_PCT',
+    ];
+    const envSnapshot = new Map<string, string | undefined>();
+
+    beforeEach(() => {
+      for (const key of envKeys) {
+        envSnapshot.set(key, process.env[key]);
+        delete process.env[key];
+      }
+    });
+
+    afterEach(() => {
+      for (const key of envKeys) {
+        const value = envSnapshot.get(key);
+        if (value === undefined) {
+          delete process.env[key];
+        } else {
+          process.env[key] = value;
+        }
+      }
+    });
+
+    it('should apply allow list filtering', async () => {
+      process.env.MCP4_TOOL_FILTER_ALLOW_LIST = 'manage_projects';
+
+      await server.initialize(specPath, profilePath);
+
+      expect(server['profile']!.tools).toHaveLength(1);
+      expect(server['profile']!.tools[0].name).toBe('manage_projects');
+    });
+
+    it('should reject no-op filter configurations', async () => {
+      process.env.MCP4_TOOL_FILTER_ALLOW_REGEX = '.*';
+
+      await expect(server.initialize(specPath, profilePath)).rejects.toThrow(ConfigurationError);
+    });
+
+    it('should reject filters that remove every tool', async () => {
+      process.env.MCP4_TOOL_FILTER_ALLOW_LIST = 'nonexistent_tool';
+
+      await expect(server.initialize(specPath, profilePath)).rejects.toThrow(ConfigurationError);
+    });
+  });
+
+  describe('session tool filtering', () => {
+    const specPath = path.join(process.cwd(), 'profiles/gitlab/openapi.yaml');
+    const profilePath = path.join(process.cwd(), 'profiles/gitlab/developer-profile-oauth.json');
+
+    beforeEach(async () => {
+      await server.initialize(specPath, profilePath);
+    });
+
+    afterEach(() => {
+      (server as any).httpTransport = null;
+    });
+
+    it('filters tools/list responses for sessions', async () => {
+      const toolFilterState = {
+        originalHeader: 'manage_projects',
+        allowNames: ['manage_projects'],
+        allowRegex: [],
+        allowComposite: { allowList: false, allowRead: false },
+        allowedToolNames: new Set(['manage_projects']),
+      };
+
+      (server as any).httpTransport = {
+        getSessionToolFilter: () => toolFilterState,
+        hasOAuthProvider: () => false,
+      };
+
+      const message = { jsonrpc: '2.0', id: 1, method: 'tools/list' };
+      const response = await (server as any).handleOtherRequest(message, 'session-1');
+
+      expect(response.result.tools).toHaveLength(1);
+      expect(response.result.tools[0].name).toBe('manage_projects');
+    });
+
+    it('blocks tool calls not allowed by session filter', async () => {
+      const toolFilterState = {
+        originalHeader: 'manage_projects',
+        allowNames: ['manage_projects'],
+        allowRegex: [],
+        allowComposite: { allowList: false, allowRead: false },
+        allowedToolNames: new Set(['manage_projects']),
+      };
+
+      (server as any).httpTransport = {
+        getSessionToolFilter: () => toolFilterState,
+        hasOAuthProvider: () => false,
+        recordToolFilterRejection: vi.fn(),
+      };
+
+      const message = {
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'tools/call',
+        params: {
+          name: 'manage_merge_requests',
+          arguments: {},
+        },
+      };
+
+      const response = await (server as any).handleToolCall(message, 'session-1');
+      expect(response.error.code).toBe(-32002);
+      expect(response.error.message).toContain('X-Mcp4-Tools');
+    });
+
+    it('rejects no-op session filters during initialization', () => {
+      const request = parseSessionToolFilterHeader('', { maxEntries: 100, maxEntryLength: 255 });
+
+      (server as any).httpTransport = {
+        getSessionToolFilterRequest: () => request,
+        setSessionToolFilter: vi.fn(),
+        recordSessionToolCount: vi.fn(),
+      };
+
+      const message = {
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'initialize',
+        params: {},
+      };
+
+      expect(() => (server as any).handleInitialize(message, 'session-1')).toThrow(ValidationError);
     });
   });
 

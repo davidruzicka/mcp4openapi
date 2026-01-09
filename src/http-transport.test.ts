@@ -62,6 +62,14 @@ describeIfListen('HttpTransport', () => {
       );
     });
 
+    it('handles tools header arrays', () => {
+      const getToolsHeaderValue = (transport as any).getToolsHeaderValue.bind(transport);
+      expect(getToolsHeaderValue({ headers: { 'x-mcp4-tools': [] } })).toBeUndefined();
+      expect(() =>
+        getToolsHeaderValue({ headers: { 'x-mcp4-tools': ['a', 'b'] } })
+      ).toThrow();
+    });
+
     it('exposes session filtering values', () => {
       const sessionId = (transport as any).createSession(
         undefined,
@@ -101,6 +109,79 @@ describeIfListen('HttpTransport', () => {
 
       expect(response.status).toBe(400);
       expect(response.body.message).toContain('X-Mcp4-Filtering header mismatch');
+    });
+  });
+
+  describe('tools header mismatch', () => {
+    it('rejects mismatched tools header on existing session', async () => {
+      transport.setMessageHandler(async () => ({ result: 'ok' }));
+      const sessionId = (transport as any).createSession(
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        { originalHeader: 'manage_projects', allowNames: ['manage_projects'], allowRegex: [], allowComposite: { allowList: false, allowRead: false } }
+      );
+
+      const response = await request(app)
+        .post('/mcp')
+        .set('Accept', 'application/json')
+        .set('Content-Type', 'application/json')
+        .set('Mcp-Session-Id', sessionId)
+        .set('X-Mcp4-Tools', 'manage_issues')
+        .send({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} });
+
+      expect(response.status).toBe(400);
+      expect(response.body.message).toContain('X-Mcp4-Tools header mismatch');
+    });
+  });
+
+  describe('tools header validation', () => {
+    it('rejects too many tool entries', async () => {
+      transport.setMessageHandler(async () => ({ result: 'ok' }));
+      const entries = Array.from({ length: 101 }, (_, i) => `tool_${i}`).join(',');
+
+      const response = await request(app)
+        .post('/mcp')
+        .set('Accept', 'application/json')
+        .set('Content-Type', 'application/json')
+        .set('X-Mcp4-Tools', entries)
+        .send({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} });
+
+      expect(response.status).toBe(400);
+      expect(response.body.message).toContain('X-Mcp4-Tools contains too many entries');
+    });
+
+    it('rejects tool entries exceeding length limit', async () => {
+      transport.setMessageHandler(async () => ({ result: 'ok' }));
+      const longEntry = 'a'.repeat(256);
+
+      const response = await request(app)
+        .post('/mcp')
+        .set('Accept', 'application/json')
+        .set('Content-Type', 'application/json')
+        .set('X-Mcp4-Tools', longEntry)
+        .send({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} });
+
+      expect(response.status).toBe(400);
+      expect(response.body.message).toContain('X-Mcp4-Tools entry exceeds 255 chars');
+    });
+
+    it('rejects invalid regex entries', async () => {
+      transport.setMessageHandler(async () => ({ result: 'ok' }));
+
+      const response = await request(app)
+        .post('/mcp')
+        .set('Accept', 'application/json')
+        .set('Content-Type', 'application/json')
+        .set('X-Mcp4-Tools', 'regex:(a+)+b')
+        .send({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} });
+
+      expect(response.status).toBe(400);
+      expect(response.body.message).toContain('X-Mcp4-Tools');
     });
   });
 

@@ -14,6 +14,15 @@ import {
 
 import { OpenAPIParser } from './openapi-parser.js';
 import { ProfileLoader } from './profile-loader.js';
+import {
+  parseToolFilterConfig,
+  applyToolFilter,
+  applySessionToolFilter,
+  normalizeToolName,
+  type ToolFilterConfig,
+  type SessionToolFilterRequest,
+  type SessionToolFilterState
+} from './tool-filter.js';
 import { ToolGenerator } from './tool-generator.js';
 import { normalizeArguments } from './argument-normalizer.js';
 import { CompositeExecutor } from './composite-executor.js';
@@ -54,6 +63,18 @@ export class MCPServer {
   private logger: Logger;
   private httpTransport: any = null;
   private stdioFiltering?: FilteringRules;
+  private globalToolFilter: {
+    removedToolNames: Set<string>;
+    config: ToolFilterConfig;
+    originalCount: number;
+    filteredCount: number;
+  } | null = null;
+  private pendingToolFilterMetrics: {
+    originalCount: number;
+    filteredCount: number;
+    removedCount: number;
+    patterns: Record<string, number>;
+  } | null = null;
 
   /**
    * Execute a tools/call request via the JSON-RPC handler.
@@ -314,6 +335,8 @@ export class MCPServer {
       this.checkToolNameLengths();
     }
 
+    this.applyGlobalToolFiltering();
+
     // Re-create logger with auth config for token redaction
     const authConfigs = this.getAuthConfigs();
     if (authConfigs.length > 0) {
@@ -348,6 +371,107 @@ export class MCPServer {
       baseUrl,
       toolCount: this.profile.tools.length,
     });
+  }
+
+  private applyGlobalToolFiltering(): void {
+    if (!this.profile) {
+      return;
+    }
+
+    const config = parseToolFilterConfig(process.env);
+    if (!config) {
+      return;
+    }
+
+    const originalCount = this.profile.tools.length;
+    const result = applyToolFilter(this.profile.tools, config);
+    const filteredCount = result.allowed.length;
+    const removedCount = result.removed.length;
+
+    if (removedCount === 0) {
+      throw new ConfigurationError(
+        `Tool filter configuration has no effect. Original tool count: ${originalCount}, filtered: ${filteredCount}. Check MCP4_TOOL_FILTER_* patterns.`
+      );
+    }
+
+    if (filteredCount === 0) {
+      const sources = new Set<string>();
+      for (const reason of result.reasons.values()) {
+        const source = reason.split(':')[0];
+        sources.add(source);
+      }
+      throw new ConfigurationError(
+        `All tools filtered out (original: ${originalCount}). Check MCP4_TOOL_FILTER_* settings. Removed by: ${Array.from(sources).join(', ')}.`
+      );
+    }
+
+    this.profile.tools = result.allowed;
+    this.globalToolFilter = {
+      removedToolNames: new Set(result.removed.map(tool => tool.name)),
+      config,
+      originalCount,
+      filteredCount,
+    };
+
+    this.logger.debug('Global tool filter applied', {
+      originalCount,
+      filteredCount,
+      removedCount,
+      allowList: config.allowList,
+      allowRegex: config.allowRegex.map(rule => rule.pattern),
+      denyList: config.denyList,
+      denyRegex: config.denyRegex.map(rule => rule.pattern),
+      allowComposite: config.allowComposite,
+      survivingTools: result.allowed.map(tool => tool.name),
+    });
+
+    for (const tool of result.removed) {
+      this.logger.debug('Tool filtered', {
+        filter_source: 'env',
+        filter_type: result.reasons.get(tool.name),
+        tool: tool.name,
+        action: 'removed',
+      });
+    }
+
+    const warnThreshold = this.getToolFilterWarnThreshold();
+    const percentFiltered = ((originalCount - filteredCount) / originalCount) * 100;
+    if (percentFiltered >= warnThreshold) {
+      this.logger.warn('Tool filter removed high percentage of tools', {
+        original: originalCount,
+        surviving: filteredCount,
+        threshold_pct: warnThreshold,
+        removed_count: originalCount - filteredCount,
+        removed_pct: percentFiltered,
+      });
+    }
+
+    this.pendingToolFilterMetrics = {
+      originalCount,
+      filteredCount,
+      removedCount,
+      patterns: {
+        allow_list: config.allowList.length,
+        allow_regex: config.allowRegex.length,
+        deny_list: config.denyList.length,
+        deny_regex: config.denyRegex.length,
+        allow_composites: Number(config.allowComposite.allowList) + Number(config.allowComposite.allowRead),
+      },
+    };
+  }
+
+  private getToolFilterWarnThreshold(): number {
+    const raw = process.env.MCP4_TOOL_FILTER_WARN_THRESHOLD_PCT;
+    if (raw === undefined) {
+      return 90;
+    }
+    const parsed = parseFloat(raw);
+    if (Number.isNaN(parsed) || parsed < 0 || parsed > 100) {
+      throw new ConfigurationError(
+        `Invalid MCP4_TOOL_FILTER_WARN_THRESHOLD_PCT: expected 0-100, got '${raw}'.`
+      );
+    }
+    return parsed;
   }
 
   /**
@@ -1084,6 +1208,10 @@ export class MCPServer {
     });
 
     await this.httpTransport.start();
+
+    if (this.pendingToolFilterMetrics) {
+      this.httpTransport.recordGlobalToolFilterMetrics(this.pendingToolFilterMetrics);
+    }
     
     this.logger.info('MCP server running on HTTP', { host, port });
   }
@@ -1120,6 +1248,10 @@ export class MCPServer {
       }
       const parsed = parseFilteringHeader(params.filtering);
       this.stdioFiltering = parsed.filtering;
+    }
+
+    if (this.httpTransport && sessionId) {
+      this.applySessionToolFilter(sessionId);
     }
 
     const result: any = {
@@ -1178,11 +1310,7 @@ export class MCPServer {
     }
 
     try {
-      // Find tool definition
-      const toolDef = this.profile?.tools.find(t => t.name === toolName);
-      if (!toolDef) {
-        throw new OperationNotFoundError(toolName);
-      }
+      const toolDef = this.getToolDefinitionForSession(toolName, sessionId);
 
       const filtering = this.getFilteringForSession(sessionId);
       if (filtering) {
@@ -1319,9 +1447,8 @@ export class MCPServer {
 
     // Handle tools/list
     if (req.method === 'tools/list') {
-      const tools = this.profile?.tools.map(toolDef =>
-        this.toolGenerator!.generateTool(toolDef)
-      ) || [];
+      const toolDefinitions = this.filterToolsForSession(this.profile?.tools || [], sessionId);
+      const tools = toolDefinitions.map(toolDef => this.toolGenerator!.generateTool(toolDef));
 
       return {
         jsonrpc: '2.0',
@@ -1341,6 +1468,100 @@ export class MCPServer {
         message: `Method not found: ${req.method}`,
       },
     };
+  }
+
+  private applySessionToolFilter(sessionId: string): void {
+    if (!this.httpTransport || !this.profile) {
+      return;
+    }
+
+    const request = this.httpTransport.getSessionToolFilterRequest(sessionId) as SessionToolFilterRequest | undefined;
+    if (!request) {
+      return;
+    }
+
+    const result = applySessionToolFilter(this.profile.tools, request);
+    const originalCount = this.profile.tools.length;
+    const filteredCount = result.allowedTools.length;
+
+    if (!result.hasEffect) {
+      throw new ValidationError(
+        `X-Mcp4-Tools filter has no effect for this session. Available tools: ${originalCount}, after filter: ${filteredCount}. Check patterns.`
+      );
+    }
+
+    if (filteredCount === 0) {
+      throw new ValidationError(
+        `X-Mcp4-Tools filtered out all tools (original: ${originalCount}). Removed by: allow_rules. Check session filter configuration.`
+      );
+    }
+
+    const toolFilterState: SessionToolFilterState = {
+      ...request,
+      allowedToolNames: result.allowedToolNames,
+    };
+
+    this.httpTransport.setSessionToolFilter(sessionId, toolFilterState);
+
+    this.logger.info('Session tool filter applied', {
+      sessionId,
+      originalCount,
+      filteredCount,
+      allowNames: request.allowNames,
+      allowRegex: request.allowRegex.map(rule => rule.pattern),
+      allowComposite: request.allowComposite,
+    });
+
+    this.httpTransport.recordSessionToolCount(sessionId, filteredCount);
+  }
+
+  private filterToolsForSession(tools: ToolDefinition[], sessionId?: string): ToolDefinition[] {
+    if (!this.httpTransport || !sessionId) {
+      return tools;
+    }
+    const toolFilter = this.httpTransport.getSessionToolFilter(sessionId);
+    if (!toolFilter) {
+      return tools;
+    }
+
+    return tools.filter(tool => toolFilter.allowedToolNames.has(tool.name));
+  }
+
+  private getToolDefinitionForSession(toolName: string, sessionId?: string): ToolDefinition {
+    if (!this.profile) {
+      throw new ConfigurationError('Profile not initialized.');
+    }
+
+    const normalizedName = normalizeToolName(toolName);
+    const toolDef = this.profile.tools.find(tool => tool.name === normalizedName);
+    if (!toolDef) {
+      if (this.globalToolFilter?.removedToolNames.has(normalizedName)) {
+        this.httpTransport?.recordToolFilterRejection(normalizedName, 'env');
+      }
+      throw new OperationNotFoundError(normalizedName);
+    }
+
+    if (this.httpTransport && sessionId) {
+      const toolFilter = this.httpTransport.getSessionToolFilter(sessionId) as SessionToolFilterState | undefined;
+      if (toolFilter && !toolFilter.allowedToolNames.has(normalizedName)) {
+        this.httpTransport.recordToolFilterRejection(normalizedName, 'session');
+        const allowList = toolFilter.allowNames.length > 0 ? toolFilter.allowNames.join(', ') : 'none';
+        const allowRegex = toolFilter.allowRegex.length > 0
+          ? toolFilter.allowRegex.map(rule => rule.pattern).join(', ')
+          : 'none';
+        const compositeFlags = [
+          toolFilter.allowComposite.allowList ? '_allow_list' : null,
+          toolFilter.allowComposite.allowRead ? '_allow_read' : null,
+        ].filter(Boolean).join(', ');
+        const compositeDetail = compositeFlags ? ` Composite keywords: ${compositeFlags}.` : '';
+
+        throw new AuthorizationError(
+          `Tool '${normalizedName}' not allowed in this session. Filter source: X-Mcp4-Tools. Allowed names: ${allowList}. Allowed regex: ${allowRegex}.${compositeDetail}`
+        );
+      }
+    }
+
+    return toolDef;
   }
 
   /**

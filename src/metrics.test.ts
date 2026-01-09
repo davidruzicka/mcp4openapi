@@ -107,6 +107,49 @@ describe('MetricsCollector', () => {
     });
   });
 
+  describe('Tool Filter Metrics', () => {
+    it('should record tool filter totals', async () => {
+      metrics.recordToolFilterTotals(10, 7);
+
+      const output = await metrics.getMetrics();
+
+      expect(output).toContain('test_tools_total');
+      expect(output).toContain('source="profile"');
+      expect(output).toContain('test_tools_filtered');
+      expect(output).toContain('action="allowed"');
+      expect(output).toContain('action="denied"');
+    });
+
+    it('should record tool filter pattern counts', async () => {
+      metrics.recordToolFilterPatternCount('allow_regex', 2);
+
+      const output = await metrics.getMetrics();
+
+      expect(output).toContain('test_tool_filter_patterns');
+      expect(output).toContain('type="allow_regex"');
+      expect(output).toContain(' 2');
+    });
+
+    it('should record session tool counts', async () => {
+      metrics.recordSessionToolCount('session-1', 3);
+
+      const output = await metrics.getMetrics();
+
+      expect(output).toContain('test_tools_session');
+      expect(output).toContain('session_id="session-1"');
+    });
+
+    it('should record tool filter rejections', async () => {
+      metrics.recordToolFilterRejection('manage_projects', 'session');
+
+      const output = await metrics.getMetrics();
+
+      expect(output).toContain('test_tool_filter_rejections_total');
+      expect(output).toContain('source="session"');
+      expect(output).toContain('tool="manage_projects"');
+    });
+  });
+
   describe('API Call Metrics', () => {
     it('should record API calls', async () => {
       metrics.recordApiCall('get_project_badges', 200, 0.2);
@@ -245,4 +288,3 @@ describe('MetricsCollector', () => {
     });
   });
 });
-

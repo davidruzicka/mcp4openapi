@@ -11,6 +11,12 @@ vi.mock('./http-transport.js', () => {
     public getServerUrl = vi.fn(() => 'http://127.0.0.1:0');
     public ensureValidSessionToken = vi.fn(async () => true);
     public getSessionToken = vi.fn((_sessionId: string) => undefined);
+    public getSessionToolFilterRequest = vi.fn(() => undefined);
+    public getSessionToolFilter = vi.fn(() => undefined);
+    public setSessionToolFilter = vi.fn((_sessionId: string, _filter: any) => {});
+    public recordSessionToolCount = vi.fn((_sessionId: string, _count: number) => {});
+    public recordToolFilterRejection = vi.fn((_tool: string, _source: string) => {});
+    public recordGlobalToolFilterMetrics = vi.fn((_metrics: any) => {});
 
     constructor(public config: any, public logger: any) {}
   }

@@ -99,6 +99,7 @@ Source: https://modelcontextprotocol.io/specification/2025-03-26/basic/transport
   - Supports various token formats: GitLab (`glpat-...`), YouTrack (`perm:...`), generic tokens
   - Flexible whitespace handling (extra spaces are trimmed)
 - `X-Mcp4-Filtering: <filter>` (optional, initialization only)
+- `X-Mcp4-Tools: <tools>` (optional, initialization only)
 
 **Filtering header format**:
 - Comma-separated list of `key=value` items
@@ -109,6 +110,19 @@ Source: https://modelcontextprotocol.io/specification/2025-03-26/basic/transport
 **Example**:
 ```
 X-Mcp4-Filtering: project_id=123, project_id=456, _allow_read
+```
+
+**Tool filter header format**:
+- Comma-separated list of tool names or regex patterns
+- Regex entries use the `regex:` prefix (auto-anchored unless already anchored)
+- Composite keywords: `_allow_list`, `_allow_read`
+- Max entries default: 100 (configurable via `MCP4_TOOL_FILTER_SESSION_MAX_TOOLS`)
+- Max entry length: 255 characters
+- Regex patterns are validated for safety and length limits
+
+**Example**:
+```
+X-Mcp4-Tools: manage_projects, regex:list_.*, _allow_read
 ```
 
 **Request Body**:
