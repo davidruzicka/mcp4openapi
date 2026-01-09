@@ -1,3 +1,12 @@
+/**
+ * DEPRECATED: Legacy tool-filter module
+ * 
+ * This module is being refactored into tool-filter/ directory.
+ * Exports are re-exported for backward compatibility.
+ * 
+ * New code should import from './tool-filter/index.js'
+ */
+
 import type { ToolDefinition } from './types/profile.js';
 import type { OperationInfo } from './types/openapi.js';
 import { ConfigurationError, ValidationError } from './errors.js';
@@ -6,6 +15,7 @@ const MAX_REGEX_LENGTH = 100;
 const MAX_HEADER_ENTRY_LENGTH = 255;
 const DEFAULT_MAX_SESSION_ENTRIES = 100;
 
+// Legacy interfaces - kept for backward compatibility
 export interface ToolFilterConfig {
   allowList: Set<string>;
   denyList: Set<string>;
