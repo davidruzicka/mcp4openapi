@@ -104,6 +104,37 @@ describeIfListen('HttpTransport', () => {
     });
   });
 
+  describe('tool filter metrics', () => {
+    it('records global tool filter metrics', async () => {
+      const metricsTransport = new HttpTransport(
+        {
+          host: '127.0.0.1',
+          port: 0,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: true,
+          metricsPath: '/metrics',
+        },
+        logger
+      );
+
+      metricsTransport.recordGlobalToolFilterMetrics({
+        originalCount: 4,
+        allowedCount: 3,
+        removedCount: 1,
+        patternCounts: { allow_list: 1 },
+      });
+
+      const metricsOutput = await (metricsTransport as any).metrics.getMetrics();
+      expect(metricsOutput).toContain('mcp_tools_total{source="profile"} 4');
+      expect(metricsOutput).toContain('mcp_tools_filtered{source="global_env",action="allowed"} 3');
+      expect(metricsOutput).toContain('mcp_tools_filtered{source="global_env",action="denied"} 1');
+
+      await metricsTransport.stop();
+    });
+  });
+
   describe('filtering header mismatch', () => {
     it('rejects mismatched filtering header on existing session', async () => {
       transport.setMessageHandler(async () => ({ result: 'ok' }));

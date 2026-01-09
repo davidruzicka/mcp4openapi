@@ -60,7 +60,7 @@ export function normalizeToolFilterHeaderValue(value?: string): string | undefin
   }
 
   const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : undefined;
+  return trimmed.length > 0 ? trimmed : '';
 }
 
 export function parseToolFilterConfig(env: NodeJS.ProcessEnv): ToolFilterConfig | undefined {
@@ -333,6 +333,13 @@ export function validateRegexPattern(pattern: string): { valid: boolean; error?:
     };
   }
 
+  if (hasAmbiguousAlternation(pattern)) {
+    return {
+      valid: false,
+      error: 'Regex pattern contains alternation with a quantifier.',
+    };
+  }
+
   return { valid: true };
 }
 
@@ -387,6 +394,11 @@ function autoAnchorPattern(pattern: string): string {
 function hasNestedQuantifiers(pattern: string): boolean {
   const nested = /\((?:[^\\]|\\.)*?[+*{](?:[^\\]|\\.)*?\)[+*{]/;
   return nested.test(pattern);
+}
+
+function hasAmbiguousAlternation(pattern: string): boolean {
+  const alternation = /\((?:[^\\]|\\.)*?\|(?:[^\\]|\\.)*?\)[+*{]/;
+  return alternation.test(pattern);
 }
 
 function parseAllowCompositeEntries(

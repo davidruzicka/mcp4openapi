@@ -1198,7 +1198,8 @@ export class HttpTransport {
       const filteringHeader = normalizeFilteringHeaderValue(this.getFilteringHeaderValue(req));
       const parsedFiltering = filteringHeader ? parseFilteringHeader(filteringHeader) : undefined;
       const toolFilterHeader = normalizeToolFilterHeaderValue(this.getToolFilterHeaderValue(req));
-      const parsedToolFilter = toolFilterHeader ? parseSessionToolFilterHeader(toolFilterHeader) : undefined;
+      const parsedToolFilter =
+        toolFilterHeader !== undefined ? parseSessionToolFilterHeader(toolFilterHeader) : undefined;
       const normalizedToolFilterHeader = parsedToolFilter?.normalizedHeader;
 
       // Validate Accept header per MCP Streamable HTTP specification

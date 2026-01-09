@@ -13,6 +13,7 @@ import { HttpTransport } from './http-transport.js';
 import { ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { JsonLogger } from './logger.js';
 import { Server as MCPProtocolServer } from '@modelcontextprotocol/sdk/server/index.js';
+import { parseSessionToolFilterHeader } from './tool-filter.js';
 import { 
   AuthenticationError, 
   AuthorizationError, 
@@ -140,12 +141,22 @@ describe('MCPServer', () => {
 
     afterEach(async () => {
       delete process.env.MCP4_TOOL_FILTER_ALLOW_LIST;
+      delete process.env.MCP4_TOOL_FILTER_ALLOW_REGEX;
       delete process.env.MCP4_TOOL_FILTER_DENY_LIST;
+      delete process.env.MCP4_TOOL_FILTER_DENY_REGEX;
+      delete process.env.MCP4_TOOL_FILTER_ALLOW_COMPOSITES;
       await fs.unlink(profilePath);
     });
 
     it('applies allow list filtering from environment', async () => {
       process.env.MCP4_TOOL_FILTER_ALLOW_LIST = 'keep_tool';
+      await server.initialize(specPath, profilePath);
+      expect((server as any).profile.tools).toHaveLength(1);
+      expect((server as any).profile.tools[0].name).toBe('keep_tool');
+    });
+
+    it('applies allow regex filtering from environment', async () => {
+      process.env.MCP4_TOOL_FILTER_ALLOW_REGEX = 'keep_.*';
       await server.initialize(specPath, profilePath);
       expect((server as any).profile.tools).toHaveLength(1);
       expect((server as any).profile.tools[0].name).toBe('keep_tool');
@@ -159,6 +170,42 @@ describe('MCPServer', () => {
     it('rejects configurations that filter out all tools', async () => {
       process.env.MCP4_TOOL_FILTER_DENY_LIST = 'keep_tool,drop_tool';
       await expect(server.initialize(specPath, profilePath)).rejects.toBeInstanceOf(ConfigurationError);
+    });
+
+    it('rejects composite tools that reference filtered operations', async () => {
+      process.env.MCP4_TOOL_FILTER_ALLOW_LIST = 'composite_tool';
+      const localServer = new MCPServer();
+      (localServer as any).profile = {
+        profile_name: 'test',
+        description: 'test',
+        tools: [
+          {
+            name: 'composite_tool',
+            description: 'Composite',
+            composite: true,
+            steps: [{ call: 'GET /project', store_as: 'project' }],
+            parameters: {},
+          },
+          {
+            name: 'get_project',
+            description: 'Get project',
+            parameters: {},
+            operations: { read: 'getProject' },
+          },
+        ],
+        interceptors: {},
+      };
+
+      (localServer as any).buildToolFilterResolver = () => ({
+        getOperationForCall: () => ({
+          operationId: 'getProject',
+          method: 'get',
+          path: '/project',
+          parameters: [],
+        }),
+      });
+
+      expect(() => (localServer as any).applyGlobalToolFiltering()).toThrow(ConfigurationError);
     });
   });
 
@@ -1063,6 +1110,46 @@ describe('MCPServer', () => {
       expect(response.result.tools[0].name).toBe('allowed');
     });
 
+    it('filters tools list based on session allow regex', async () => {
+      const localServer = new MCPServer();
+      (localServer as any).profile = {
+        profile_name: 'test',
+        description: 'test',
+        tools: [
+          { name: 'read_item', description: 'read', parameters: {}, operations: { execute: 'op1' } },
+          { name: 'write_item', description: 'write', parameters: {}, operations: { execute: 'op2' } },
+        ],
+        interceptors: {},
+      };
+      (localServer as any).toolGenerator = {
+        generateTool: (toolDef: any) => ({ name: toolDef.name }),
+      };
+
+      const sessionFilters = new Map<string, any>();
+      const request = parseSessionToolFilterHeader('regex:read_.*');
+      (localServer as any).httpTransport = {
+        hasOAuthProvider: () => false,
+        getSessionToolFilterRequest: () => request,
+        setSessionToolFilter: (sessionId: string, filter: any) => {
+          sessionFilters.set(sessionId, filter);
+        },
+        getSessionToolFilter: (sessionId: string) => sessionFilters.get(sessionId),
+      };
+
+      (localServer as any).handleInitialize(
+        { jsonrpc: '2.0', id: '1', method: 'initialize', params: {} },
+        'session-1'
+      );
+
+      const response = await (localServer as any).handleOtherRequest(
+        { jsonrpc: '2.0', id: '2', method: 'tools/list', params: {} },
+        'session-1'
+      );
+
+      expect(response.result.tools).toHaveLength(1);
+      expect(response.result.tools[0].name).toBe('read_item');
+    });
+
     it('blocks tool calls not allowed by session filter', async () => {
       const localServer = new MCPServer();
       (localServer as any).profile = {
@@ -1090,6 +1177,177 @@ describe('MCPServer', () => {
       expect(response.error).toBeDefined();
       expect(response.error.code).toBe(-32002);
       expect(response.error.message).toContain('X-Mcp4-Tools');
+    });
+
+    it('allows tool calls permitted by session filter', async () => {
+      const localServer = new MCPServer();
+      (localServer as any).profile = {
+        profile_name: 'test',
+        description: 'test',
+        tools: [
+          { name: 'allowed', description: 'allowed', parameters: {}, operations: { execute: 'op1' } },
+        ],
+        interceptors: {},
+      };
+      (localServer as any).executeSimpleTool = vi.fn().mockResolvedValue({ ok: true });
+      (localServer as any).httpTransport = {
+        hasOAuthProvider: () => false,
+        getSessionToolFilter: () => ({
+          allowedToolNames: new Set(['allowed']),
+          reasons: new Map(),
+          patterns: { allow: [] },
+          allowComposite: { allowList: false, allowRead: false },
+          normalizedHeader: 'allowed',
+        }),
+        getSessionFiltering: () => undefined,
+      };
+
+      const response = await localServer.callToolRpc('allowed', {}, 'session-1', '1') as any;
+      expect(response.result).toBeDefined();
+      const payload = JSON.parse(response.result.content[0].text);
+      expect(payload).toEqual({ ok: true });
+    });
+
+    it('rejects session tool filters that match all tools', () => {
+      const localServer = new MCPServer();
+      (localServer as any).profile = {
+        profile_name: 'test',
+        description: 'test',
+        tools: [
+          { name: 'alpha', description: 'alpha', parameters: {}, operations: { execute: 'op1' } },
+          { name: 'beta', description: 'beta', parameters: {}, operations: { execute: 'op2' } },
+        ],
+        interceptors: {},
+      };
+
+      const request = parseSessionToolFilterHeader('alpha, beta');
+      (localServer as any).httpTransport = {
+        hasOAuthProvider: () => false,
+        getSessionToolFilterRequest: () => request,
+        setSessionToolFilter: vi.fn(),
+      };
+
+      expect(() =>
+        (localServer as any).handleInitialize(
+          { jsonrpc: '2.0', id: '1', method: 'initialize', params: {} },
+          'session-1'
+        )
+      ).toThrow(ValidationError);
+    });
+
+    it('rejects empty session tool filter headers', () => {
+      const localServer = new MCPServer();
+      (localServer as any).profile = {
+        profile_name: 'test',
+        description: 'test',
+        tools: [
+          { name: 'alpha', description: 'alpha', parameters: {}, operations: { execute: 'op1' } },
+        ],
+        interceptors: {},
+      };
+
+      const request = parseSessionToolFilterHeader('');
+      (localServer as any).httpTransport = {
+        hasOAuthProvider: () => false,
+        getSessionToolFilterRequest: () => request,
+        setSessionToolFilter: vi.fn(),
+      };
+
+      expect(() =>
+        (localServer as any).handleInitialize(
+          { jsonrpc: '2.0', id: '1', method: 'initialize', params: {} },
+          'session-1'
+        )
+      ).toThrow(ValidationError);
+    });
+
+    it('rejects session tool filters that remove all tools', () => {
+      const localServer = new MCPServer();
+      (localServer as any).profile = {
+        profile_name: 'test',
+        description: 'test',
+        tools: [
+          { name: 'alpha', description: 'alpha', parameters: {}, operations: { execute: 'op1' } },
+          { name: 'beta', description: 'beta', parameters: {}, operations: { execute: 'op2' } },
+        ],
+        interceptors: {},
+      };
+
+      const request = parseSessionToolFilterHeader('regex:does_not_exist');
+      (localServer as any).httpTransport = {
+        hasOAuthProvider: () => false,
+        getSessionToolFilterRequest: () => request,
+        setSessionToolFilter: vi.fn(),
+      };
+
+      expect(() =>
+        (localServer as any).handleInitialize(
+          { jsonrpc: '2.0', id: '1', method: 'initialize', params: {} },
+          'session-1'
+        )
+      ).toThrow(ValidationError);
+    });
+  });
+
+  describe('tool call validation', () => {
+    it('returns not found when tool is missing', async () => {
+      const localServer = new MCPServer();
+      (localServer as any).profile = {
+        profile_name: 'test',
+        description: 'test',
+        tools: [
+          { name: 'allowed', description: 'allowed', parameters: {}, operations: { execute: 'op1' } },
+        ],
+        interceptors: {},
+      };
+      (localServer as any).httpTransport = {
+        hasOAuthProvider: () => false,
+        getSessionFiltering: () => undefined,
+      };
+
+      const response = await localServer.callToolRpc('missing', {}, 'session-1', '1') as any;
+      expect(response.error).toBeDefined();
+      expect(response.error.code).toBe(-32601);
+      expect(response.error.message).toContain('Tool not found');
+    });
+  });
+
+  describe('tool filter intersection', () => {
+    it('keeps intersection of global and session filters', () => {
+      const localServer = new MCPServer();
+      process.env.MCP4_TOOL_FILTER_ALLOW_LIST = 'tool_a,tool_b,tool_c';
+      try {
+        (localServer as any).profile = {
+          profile_name: 'test',
+          description: 'test',
+          tools: [
+            { name: 'tool_a', description: 'a', parameters: {}, operations: { execute: 'op1' } },
+            { name: 'tool_b', description: 'b', parameters: {}, operations: { execute: 'op2' } },
+            { name: 'tool_c', description: 'c', parameters: {}, operations: { execute: 'op3' } },
+            { name: 'tool_d', description: 'd', parameters: {}, operations: { execute: 'op4' } },
+          ],
+          interceptors: {},
+        };
+
+        const sessionFilters = new Map<string, any>();
+        const request = parseSessionToolFilterHeader('tool_b, tool_c, tool_d');
+        (localServer as any).httpTransport = {
+          getSessionToolFilterRequest: () => request,
+          setSessionToolFilter: (sessionId: string, filter: any) => {
+            sessionFilters.set(sessionId, filter);
+          },
+        };
+
+        (localServer as any).applyGlobalToolFiltering();
+        (localServer as any).applySessionToolFiltering('session-1');
+
+        const sessionFilter = sessionFilters.get('session-1');
+        expect(sessionFilter.allowedToolNames.size).toBe(2);
+        expect(sessionFilter.allowedToolNames.has('tool_b')).toBe(true);
+        expect(sessionFilter.allowedToolNames.has('tool_c')).toBe(true);
+      } finally {
+        delete process.env.MCP4_TOOL_FILTER_ALLOW_LIST;
+      }
     });
   });
 

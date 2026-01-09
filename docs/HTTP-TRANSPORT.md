@@ -123,6 +123,8 @@ X-Mcp4-Filtering: project_id=123, project_id=456, _allow_read
 X-Mcp4-Tools: get_user, list_users, regex:read_.*
 ```
 
+Regex patterns are validated for length, nested quantifiers, and alternations with quantifiers.
+
 **Request Body**:
 - Single JSON-RPC request/notification/response
 - Or array (batch) of requests/notifications/responses

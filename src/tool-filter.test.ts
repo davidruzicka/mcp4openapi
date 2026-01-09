@@ -4,6 +4,7 @@ import type { OperationInfo } from './types/openapi.js';
 import {
   applySessionToolFilter,
   applyToolFilter,
+  normalizeToolFilterHeaderValue,
   parseSessionToolFilterHeader,
   parseToolFilterConfig,
   validateRegexPattern,
@@ -44,6 +45,11 @@ describe('tool filter', () => {
     expect(parseToolFilterConfig(process.env)).toBeUndefined();
   });
 
+  it('normalizes empty tool filter header values', () => {
+    expect(normalizeToolFilterHeaderValue('   ')).toBe('');
+    expect(normalizeToolFilterHeaderValue(undefined)).toBeUndefined();
+  });
+
   it('rejects nested quantifier regex patterns', () => {
     const result = validateRegexPattern('(a+)+b');
     expect(result.valid).toBe(false);
@@ -52,6 +58,11 @@ describe('tool filter', () => {
   it('rejects overly long regex patterns', () => {
     const longPattern = 'a'.repeat(101);
     const result = validateRegexPattern(longPattern);
+    expect(result.valid).toBe(false);
+  });
+
+  it('rejects alternation patterns with quantifiers', () => {
+    const result = validateRegexPattern('(a|aa)+');
     expect(result.valid).toBe(false);
   });
 
@@ -85,6 +96,57 @@ describe('tool filter', () => {
     const result = applyToolFilter(tools, config!);
     expect(result.allowed).toHaveLength(0);
     expect(result.removed).toHaveLength(1);
+  });
+
+  it('applies mixed allow and deny rules', () => {
+    process.env.MCP4_TOOL_FILTER_ALLOW_LIST = 'alpha';
+    process.env.MCP4_TOOL_FILTER_ALLOW_REGEX = 'beta_.*';
+    process.env.MCP4_TOOL_FILTER_DENY_LIST = 'beta_blocked';
+    const config = parseToolFilterConfig(process.env);
+    const tools: ToolDefinition[] = [
+      {
+        name: 'alpha',
+        description: 'Alpha',
+        parameters: {},
+        operations: { execute: 'alphaOp' },
+      },
+      {
+        name: 'beta_ok',
+        description: 'Beta ok',
+        parameters: {},
+        operations: { execute: 'betaOp' },
+      },
+      {
+        name: 'beta_blocked',
+        description: 'Beta blocked',
+        parameters: {},
+        operations: { execute: 'betaBlockedOp' },
+      },
+    ];
+    const result = applyToolFilter(tools, config!);
+    expect(result.allowed.map(tool => tool.name)).toEqual(['alpha', 'beta_ok']);
+    expect(result.removed.map(tool => tool.name)).toEqual(['beta_blocked']);
+  });
+
+  it('handles special characters in tool names', () => {
+    process.env.MCP4_TOOL_FILTER_ALLOW_LIST = 'tool-name_v2,tool.name';
+    const config = parseToolFilterConfig(process.env);
+    const tools: ToolDefinition[] = [
+      {
+        name: 'tool-name_v2',
+        description: 'Dash tool',
+        parameters: {},
+        operations: { execute: 'dashOp' },
+      },
+      {
+        name: 'tool.name',
+        description: 'Dot tool',
+        parameters: {},
+        operations: { execute: 'dotOp' },
+      },
+    ];
+    const result = applyToolFilter(tools, config!);
+    expect(result.allowed).toHaveLength(2);
   });
 
   it('allows composite tools with allow list keyword', () => {
@@ -218,6 +280,30 @@ describe('tool filter', () => {
     const sessionFilter = applySessionToolFilter(tools, request);
     expect(sessionFilter.allowedToolNames.has('get_user')).toBe(true);
     expect(sessionFilter.allowedToolNames.has('delete_user')).toBe(false);
+  });
+
+  it('allows composite tools from session allow keywords', () => {
+    const request = parseSessionToolFilterHeader('_allow_read');
+    const tools: ToolDefinition[] = [
+      {
+        name: 'read_items',
+        description: 'Composite read',
+        composite: true,
+        steps: [{ call: 'GET /items/{id}', store_as: 'item' }],
+        parameters: {},
+      },
+    ];
+    const resolver = {
+      getOperationForCall: () =>
+        ({
+          operationId: 'getItem',
+          method: 'get',
+          path: '/items/{id}',
+          parameters: [{ in: 'path', name: 'id' }],
+        }) as OperationInfo,
+    };
+    const sessionFilter = applySessionToolFilter(tools, request, resolver);
+    expect(sessionFilter.allowedToolNames.has('read_items')).toBe(true);
   });
 
   it('applies session filter without rules to allow all tools', () => {

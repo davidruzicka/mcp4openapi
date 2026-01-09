@@ -18,7 +18,7 @@ This filter applies when the profile is loaded. It removes tools from the server
 
 ### Regex Security
 - [x] **ReDoS Protection**: Validate regex patterns at parse time. Reject patterns exceeding complexity threshold (e.g., max 100 chars, no nested quantifiers like `(a+)+`).
-- [ ] **Timeout Enforcement**: Compile regex with implicit timeout (use safe-regex or similar library to detect dangerous patterns).
+- [x] **Alternation Guard**: Reject regex groups with alternation followed by quantifiers to reduce backtracking risk.
 - [x] **Auto-anchoring**: All regex patterns without explicit `^` prefix and `$` suffix are automatically anchored to prevent partial matches. Example: `user` becomes `^user$`, `.*user.*` stays as-is.
 - [x] **Case Sensitivity**: Tool name matching is **case-sensitive** per MCP specification (tools are identifiers).
 
@@ -137,45 +137,45 @@ This filter applies per-session via HTTP transport, allowing AI agents to reques
 
 ### 4. Tests
 **Unit Tests:**
-- [ ] `isToolAllowed` logic with mixed allow/deny/regex patterns.
+- [x] `isToolAllowed` logic with mixed allow/deny/regex patterns.
 - [x] Auto-anchoring: `user` → `^user$`, `.*user.*` stays functionally unchanged because of `^.*user.*$` equivalence, `^user` → `^user$`.
 - [x] ReDoS pattern rejection: `(a+)+b`, nested quantifiers, excessive length.
 - [x] Case sensitivity: `GetUser` ≠ `getuser`.
-- [ ] No-op detection: filter that doesn't change tool set.
+- [x] No-op detection: filter that doesn't change tool set.
 - [x] Composite tool keyword handling: `_allow_list`, `_allow_read`.
 
 **Integration Tests (Global Env Filter):**
 - [x] Server startup with `MCP4_TOOL_FILTER_ALLOW_LIST=get_user,list_users` - verify only those tools exist.
-- [ ] Server startup with `MCP4_TOOL_FILTER_ALLOW_REGEX=get.*` - verify regex matching.
+- [x] Server startup with `MCP4_TOOL_FILTER_ALLOW_REGEX=get.*` - verify regex matching.
 - [x] Server startup with `MCP4_TOOL_FILTER_DENY_LIST=delete_user` - verify exclusion.
 - [x] Server startup with no-op filter - verify failure with detailed error.
 - [x] Server startup with filter removing all tools - verify failure with tool count in error.
-- [ ] Metrics validation: check `mcp4_tools_total`, `mcp4_tools_filtered` counts.
+- [x] Metrics validation: check `mcp4_tools_total`, `mcp4_tools_filtered` counts.
 
 **Integration Tests (Session Header Filter):**
 - [x] `listTools` with `X-Mcp4-Tools: get_user, list_users` - returns only those tools.
-- [ ] `listTools` with `X-Mcp4-Tools: regex:read_.*` - returns matching tools.
-- [ ] `callTool` for allowed tool - succeeds.
+- [x] `listTools` with `X-Mcp4-Tools: regex:read_.*` - returns matching tools.
+- [x] `callTool` for allowed tool - succeeds.
 - [x] `callTool` for session-filtered tool - throws `AuthorizationError` with session attribution.
-- [ ] `callTool` for globally-filtered tool - throws `ResourceNotFoundError` (no filter mention).
-- [ ] Session init with no-op header - fails with detailed error.
-- [ ] Session init with all-tools-filtered header - fails with tool count.
+- [x] `callTool` for globally-filtered tool - throws `ResourceNotFoundError` (no filter mention).
+- [x] Session init with no-op header - fails with detailed error.
+- [x] Session init with all-tools-filtered header - fails with tool count.
 - [x] Header immutability: subsequent request with different header - throws `ValidationError`.
-- [ ] Composite tool with `_allow_read` - allowed without explicit naming.
-- [ ] Composite step referencing filtered sub-tool - fails at validation with explicit error.
+- [x] Composite tool with `_allow_read` - allowed without explicit naming.
+- [x] Composite step referencing filtered sub-tool - fails at validation with explicit error.
 
 **Edge Cases:**
-- [ ] Global filter allows 10 tools, session header requests 5, only 3 overlap - returns 3 (intersection logic, no special handling needed).
+- [x] Global filter allows 10 tools, session header requests 5, only 3 overlap - returns 3 (intersection logic, no special handling needed).
 - [x] Unicode tool names: `读取用户` - normalize all tool names using `String.prototype.normalize('NFC')` at profile load and filter parsing to handle Unicode composition variants (`café` vs `cafe\u0301`). Regex matching works correctly with Unicode by default. Test both exact match and regex patterns with Unicode.
 - [x] Very long tool names: max 255 chars per entry enforced. Test rejection of `X-Mcp4-Tools: very_long_tool_name_with_256_or_more_characters...` with specific error. Note: agents typically struggle with >64 tools in a single session.
 - [x] Too many tool entries: max 100 entries (configurable via `MCP4_TOOL_FILTER_SESSION_MAX_TOOLS`). Test rejection of header with 101+ entries (default) with specific error.
-- [ ] Special chars in tool names: `tool-name_v2`, `tool.name` - allowed by MCP definition and matched correctly test it.
-- [ ] Empty header: `X-Mcp4-Tools:` - caught by no-op detection, test it.
-- [ ] Regex with typo matching zero tools - caught by no-op detection, test it.
+- [x] Special chars in tool names: `tool-name_v2`, `tool.name` - allowed by MCP definition and matched correctly test it.
+- [x] Empty header: `X-Mcp4-Tools:` - caught by no-op detection, test it.
+- [x] Regex with typo matching zero tools - caught by no-op detection, test it.
 
 ### 5. Documentation Updates
 - [x] Update `README.md` with `MCP4_TOOL_FILTER_*` env var descriptions.
 - [x] Update `docs/HTTP-TRANSPORT.md` with `X-Mcp4-Tools` header format, examples, and composite tool keywords.
 - [x] Document auto-anchoring behavior and ReDoS protections.
-- [ ] Add troubleshooting section for common filter misconfigurations.
+- [x] Add troubleshooting section for common filter misconfigurations.
 - [x] Update `env.example` with tool filter variables.
