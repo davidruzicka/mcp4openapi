@@ -4,6 +4,8 @@ import type { OperationInfo } from './types/openapi.js';
 import {
   applySessionToolFilter,
   applyToolFilter,
+  detectListReadOperations,
+  getSessionToolFilterMaxEntries,
   normalizeToolFilterHeaderValue,
   parseSessionToolFilterHeader,
   parseToolFilterConfig,
@@ -23,25 +25,25 @@ describe('tool filter', () => {
   });
 
   it('auto-anchors regex patterns from environment', () => {
-    process.env.MCP4_TOOL_FILTER_ALLOW_REGEX = 'user';
+    process.env.MCP4_TOOL_FILTER_ALLOW_NAME_REGEX = 'user';
     const config = parseToolFilterConfig(process.env);
     expect(config?.allowRegex[0].source).toBe('^user$');
 
-    process.env.MCP4_TOOL_FILTER_ALLOW_REGEX = '^user';
+    process.env.MCP4_TOOL_FILTER_ALLOW_NAME_REGEX = '^user';
     const configWithPrefix = parseToolFilterConfig(process.env);
     expect(configWithPrefix?.allowRegex[0].source).toBe('^user$');
 
-    process.env.MCP4_TOOL_FILTER_ALLOW_REGEX = '.*user.*';
+    process.env.MCP4_TOOL_FILTER_ALLOW_NAME_REGEX = '.*user.*';
     const configWithDots = parseToolFilterConfig(process.env);
     expect(configWithDots?.allowRegex[0].source).toBe('^.*user.*$');
   });
 
   it('returns undefined when no tool filter env vars are set', () => {
-    delete process.env.MCP4_TOOL_FILTER_ALLOW_LIST;
-    delete process.env.MCP4_TOOL_FILTER_ALLOW_REGEX;
-    delete process.env.MCP4_TOOL_FILTER_DENY_LIST;
-    delete process.env.MCP4_TOOL_FILTER_DENY_REGEX;
-    delete process.env.MCP4_TOOL_FILTER_ALLOW_COMPOSITES;
+    delete process.env.MCP4_TOOL_FILTER_ALLOW_NAMES;
+    delete process.env.MCP4_TOOL_FILTER_ALLOW_NAME_REGEX;
+    delete process.env.MCP4_TOOL_FILTER_DENY_NAMES;
+    delete process.env.MCP4_TOOL_FILTER_DENY_NAME_REGEX;
+    delete process.env.MCP4_TOOL_FILTER_ALLOW_CATEGORIES;
     expect(parseToolFilterConfig(process.env)).toBeUndefined();
   });
 
@@ -67,7 +69,7 @@ describe('tool filter', () => {
   });
 
   it('enforces case-sensitive allow lists', () => {
-    process.env.MCP4_TOOL_FILTER_ALLOW_LIST = 'GetUser';
+    process.env.MCP4_TOOL_FILTER_ALLOW_NAMES = 'GetUser';
     const config = parseToolFilterConfig(process.env);
     const tools: ToolDefinition[] = [
       {
@@ -82,8 +84,8 @@ describe('tool filter', () => {
   });
 
   it('denies tools when deny list matches allow list', () => {
-    process.env.MCP4_TOOL_FILTER_ALLOW_LIST = 'get_user';
-    process.env.MCP4_TOOL_FILTER_DENY_LIST = 'get_user';
+    process.env.MCP4_TOOL_FILTER_ALLOW_NAMES = 'get_user';
+    process.env.MCP4_TOOL_FILTER_DENY_NAMES = 'get_user';
     const config = parseToolFilterConfig(process.env);
     const tools: ToolDefinition[] = [
       {
@@ -99,9 +101,9 @@ describe('tool filter', () => {
   });
 
   it('applies mixed allow and deny rules', () => {
-    process.env.MCP4_TOOL_FILTER_ALLOW_LIST = 'alpha';
-    process.env.MCP4_TOOL_FILTER_ALLOW_REGEX = 'beta_.*';
-    process.env.MCP4_TOOL_FILTER_DENY_LIST = 'beta_blocked';
+    process.env.MCP4_TOOL_FILTER_ALLOW_NAMES = 'alpha';
+    process.env.MCP4_TOOL_FILTER_ALLOW_NAME_REGEX = 'beta_.*';
+    process.env.MCP4_TOOL_FILTER_DENY_NAMES = 'beta_blocked';
     const config = parseToolFilterConfig(process.env);
     const tools: ToolDefinition[] = [
       {
@@ -129,7 +131,7 @@ describe('tool filter', () => {
   });
 
   it('handles special characters in tool names', () => {
-    process.env.MCP4_TOOL_FILTER_ALLOW_LIST = 'tool-name_v2,tool.name';
+    process.env.MCP4_TOOL_FILTER_ALLOW_NAMES = 'tool-name_v2,tool.name';
     const config = parseToolFilterConfig(process.env);
     const tools: ToolDefinition[] = [
       {
@@ -150,7 +152,7 @@ describe('tool filter', () => {
   });
 
   it('allows composite tools with allow list keyword', () => {
-    process.env.MCP4_TOOL_FILTER_ALLOW_COMPOSITES = '_allow_list';
+    process.env.MCP4_TOOL_FILTER_ALLOW_CATEGORIES = 'list';
     const config = parseToolFilterConfig(process.env);
     const tools: ToolDefinition[] = [
       {
@@ -175,7 +177,7 @@ describe('tool filter', () => {
   });
 
   it('normalizes tool names for unicode matches', () => {
-    process.env.MCP4_TOOL_FILTER_ALLOW_LIST = 'café';
+    process.env.MCP4_TOOL_FILTER_ALLOW_NAMES = 'café';
     const config = parseToolFilterConfig(process.env);
     const tools: ToolDefinition[] = [
       {
@@ -216,7 +218,7 @@ describe('tool filter', () => {
   });
 
   it('rejects invalid environment composite keyword', () => {
-    process.env.MCP4_TOOL_FILTER_ALLOW_COMPOSITES = '_allow_write';
+    process.env.MCP4_TOOL_FILTER_ALLOW_CATEGORIES = 'write';
     expect(() => parseToolFilterConfig(process.env)).toThrow(ConfigurationError);
   });
 
@@ -235,12 +237,12 @@ describe('tool filter', () => {
   });
 
   it('rejects invalid allow regex patterns from environment', () => {
-    process.env.MCP4_TOOL_FILTER_ALLOW_REGEX = '(';
+    process.env.MCP4_TOOL_FILTER_ALLOW_NAME_REGEX = '(';
     expect(() => parseToolFilterConfig(process.env)).toThrow(ConfigurationError);
   });
 
   it('denies tools that match deny regex without allow rules', () => {
-    process.env.MCP4_TOOL_FILTER_DENY_REGEX = 'delete_.*';
+    process.env.MCP4_TOOL_FILTER_DENY_NAME_REGEX = 'delete_.*';
     const config = parseToolFilterConfig(process.env);
     const tools: ToolDefinition[] = [
       {
@@ -378,14 +380,14 @@ describe('tool filter', () => {
       },
     };
 
-    process.env.MCP4_TOOL_FILTER_ALLOW_COMPOSITES = '_allow_list,_allow_read';
+    process.env.MCP4_TOOL_FILTER_ALLOW_CATEGORIES = 'list,read';
     const config = parseToolFilterConfig(process.env);
     const result = applyToolFilter(tools, config!, resolver);
     expect(result.allowed.map(tool => tool.name)).toEqual(['list_items', 'read_item']);
   });
 
   it('detects list and read operations from action names', () => {
-    process.env.MCP4_TOOL_FILTER_ALLOW_COMPOSITES = '_allow_list,_allow_read';
+    process.env.MCP4_TOOL_FILTER_ALLOW_CATEGORIES = 'list,read';
     const config = parseToolFilterConfig(process.env);
     const tools: ToolDefinition[] = [
       {
@@ -403,5 +405,157 @@ describe('tool filter', () => {
     ];
     const result = applyToolFilter(tools, config!);
     expect(result.allowed).toHaveLength(2);
+  });
+
+  it('does not classify composite tool as read-only when it mixes list and read steps', () => {
+    process.env.MCP4_TOOL_FILTER_ALLOW_CATEGORIES = 'read';
+    const config = parseToolFilterConfig(process.env);
+    const tools: ToolDefinition[] = [
+      {
+        name: 'mixed_composite',
+        description: 'Composite with list + read',
+        composite: true,
+        steps: [{ call: 'GET /items', store_as: 'items' }, { call: 'GET /items/{id}', store_as: 'item' }],
+        parameters: {},
+      },
+    ];
+    const resolver = {
+      getOperationForCall: (call: string) => {
+        if (call === 'GET /items') {
+          return { operationId: 'listItems', method: 'get', path: '/items', parameters: [] } as OperationInfo;
+        }
+        if (call === 'GET /items/{id}') {
+          return {
+            operationId: 'getItem',
+            method: 'get',
+            path: '/items/{id}',
+            parameters: [{ in: 'path', name: 'id' }],
+          } as OperationInfo;
+        }
+        return undefined;
+      },
+    };
+    const result = applyToolFilter(tools, config!, resolver);
+    expect(result.allowed).toHaveLength(0);
+  });
+
+  it('allows composite tool when ALLOW_CATEGORIES includes both list and read and all steps are list/read', () => {
+    process.env.MCP4_TOOL_FILTER_ALLOW_CATEGORIES = 'list,read';
+    const config = parseToolFilterConfig(process.env);
+    const tools: ToolDefinition[] = [
+      {
+        name: 'mixed_composite',
+        description: 'Composite with list + read',
+        composite: true,
+        steps: [{ call: 'GET /items', store_as: 'items' }, { call: 'GET /items/{id}', store_as: 'item' }],
+        parameters: {},
+      },
+    ];
+    const resolver = {
+      getOperationForCall: (call: string) => {
+        if (call === 'GET /items') {
+          return { operationId: 'listItems', method: 'get', path: '/items', parameters: [] } as OperationInfo;
+        }
+        if (call === 'GET /items/{id}') {
+          return {
+            operationId: 'getItem',
+            method: 'get',
+            path: '/items/{id}',
+            parameters: [{ in: 'path', name: 'id' }],
+          } as OperationInfo;
+        }
+        return undefined;
+      },
+    };
+    const result = applyToolFilter(tools, config!, resolver);
+    expect(result.allowed).toHaveLength(1);
+  });
+
+  it('does not allow composite tool when it contains a modify step even if ALLOW_CATEGORIES includes list/read', () => {
+    process.env.MCP4_TOOL_FILTER_ALLOW_CATEGORIES = 'list,read';
+    const config = parseToolFilterConfig(process.env);
+    const tools: ToolDefinition[] = [
+      {
+        name: 'bad_composite',
+        description: 'Composite with modify',
+        composite: true,
+        steps: [{ call: 'GET /items', store_as: 'items' }, { call: 'POST /items', store_as: 'created' }],
+        parameters: {},
+      },
+    ];
+    const resolver = {
+      getOperationForCall: (call: string) => {
+        if (call === 'GET /items') {
+          return { operationId: 'listItems', method: 'get', path: '/items', parameters: [] } as OperationInfo;
+        }
+        if (call === 'POST /items') {
+          return { operationId: 'createItem', method: 'post', path: '/items', parameters: [] } as OperationInfo;
+        }
+        return undefined;
+      },
+    };
+    const result = applyToolFilter(tools, config!, resolver);
+    expect(result.allowed).toHaveLength(0);
+  });
+
+  it('detectListReadOperations returns neither list nor read when a composite step cannot be resolved', () => {
+    const tool: ToolDefinition = {
+      name: 'broken_composite',
+      description: 'Composite with unresolved step',
+      composite: true,
+      steps: [{ call: 'GET /unknown', store_as: 'x' }],
+      parameters: {},
+    };
+    const resolver = { getOperationForCall: () => undefined };
+    const result = detectListReadOperations(tool, resolver as any);
+    expect(result).toEqual({ isList: false, isRead: false });
+  });
+
+  it('detectListReadOperations detects list and read from tool.operations with resolver operation metadata', () => {
+    const tool: ToolDefinition = {
+      name: 'op_tool',
+      description: 'Tool with operations',
+      parameters: {},
+      operations: { list: 'listItems', read: 'getItem' },
+    };
+
+    const resolver = {
+      getOperationById: (operationId: string) => {
+        if (operationId === 'listItems') {
+          return { operationId, method: 'get', path: '/items', parameters: [] } as OperationInfo;
+        }
+        if (operationId === 'getItem') {
+          return {
+            operationId,
+            method: 'get',
+            path: '/items/{id}',
+            parameters: [{ in: 'path', name: 'id' }],
+          } as OperationInfo;
+        }
+        return undefined;
+      },
+    };
+
+    const result = detectListReadOperations(tool, resolver as any);
+    expect(result.isList).toBe(true);
+    expect(result.isRead).toBe(true);
+  });
+
+  it('detectListReadOperations detects list and read from action names without resolver', () => {
+    const tool: ToolDefinition = {
+      name: 'action_tool',
+      description: 'Tool with action names',
+      parameters: {},
+      operations: { search: 'ignored', get: 'ignored' },
+    };
+    const result = detectListReadOperations(tool);
+    expect(result).toEqual({ isList: true, isRead: true });
+  });
+
+  it('reads MCP4_TOOL_FILTER_SESSION_MAX_TOOLS when valid', () => {
+    process.env.MCP4_TOOL_FILTER_SESSION_MAX_TOOLS = '5';
+    expect(getSessionToolFilterMaxEntries()).toBe(5);
+    const request = parseSessionToolFilterHeader('tool_a, tool_b');
+    expect(request.hasRules).toBe(true);
   });
 });

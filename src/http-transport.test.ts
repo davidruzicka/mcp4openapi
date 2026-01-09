@@ -135,6 +135,216 @@ describeIfListen('HttpTransport', () => {
     });
   });
 
+  describe('origin / CIDR matching helpers', () => {
+    it('allows localhost origins and configured host origin', async () => {
+      const localTransport = new HttpTransport(
+        {
+          host: 'example.com',
+          port: 0,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: false,
+          metricsPath: '/metrics',
+          allowedOrigins: [],
+        } as any,
+        logger
+      );
+
+      const isAllowedOrigin = (localTransport as any).isAllowedOrigin.bind(localTransport);
+      expect(isAllowedOrigin('http://localhost:1234')).toBe(true);
+      expect(isAllowedOrigin('http://127.0.0.1:1234')).toBe(true);
+      expect(isAllowedOrigin('https://example.com')).toBe(true);
+      expect(isAllowedOrigin('https://not-example.com')).toBe(false);
+
+      await localTransport.stop();
+    });
+
+    it('matches wildcard and exact allowed origins', async () => {
+      const localTransport = new HttpTransport(
+        {
+          host: '127.0.0.1',
+          port: 0,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: false,
+          metricsPath: '/metrics',
+          allowedOrigins: ['*.example.com', 'exact.example.org'],
+        } as any,
+        logger
+      );
+
+      const isAllowedOrigin = (localTransport as any).isAllowedOrigin.bind(localTransport);
+      expect(isAllowedOrigin('https://api.example.com')).toBe(true);
+      expect(isAllowedOrigin('https://example.com')).toBe(true);
+      expect(isAllowedOrigin('https://exact.example.org')).toBe(true);
+      expect(isAllowedOrigin('https://nope.example.org')).toBe(false);
+
+      await localTransport.stop();
+    });
+
+    it('supports CIDR patterns and rejects invalid masks', async () => {
+      const localTransport = new HttpTransport(
+        {
+          host: '127.0.0.1',
+          port: 0,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: false,
+          metricsPath: '/metrics',
+          allowedOrigins: [],
+        } as any,
+        logger
+      );
+
+      const matchOrigin = (localTransport as any).matchOrigin.bind(localTransport);
+      expect(matchOrigin('192.168.1.50', '192.168.1.0/24')).toBe(true);
+      expect(matchOrigin('192.168.2.50', '192.168.1.0/24')).toBe(false);
+      expect(matchOrigin('10.0.0.1', '10.0.0.0/not-a-number')).toBe(false);
+
+      await localTransport.stop();
+    });
+
+    it('parses IPv6 and IPv4-mapped IPv6 values', async () => {
+      const localTransport = new HttpTransport(
+        {
+          host: '127.0.0.1',
+          port: 0,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: false,
+          metricsPath: '/metrics',
+          allowedOrigins: [],
+        } as any,
+        logger
+      );
+
+      const ipv6ToBigInt = (localTransport as any).ipv6ToBigInt.bind(localTransport);
+      expect(ipv6ToBigInt('2001:db8::1')).not.toBeNull();
+      expect(ipv6ToBigInt('[2001:db8::1]')).not.toBeNull();
+      expect(ipv6ToBigInt('::ffff:192.168.0.1')).not.toBeNull();
+      expect(ipv6ToBigInt('not-an-ip')).toBeNull();
+
+      await localTransport.stop();
+    });
+
+    it('rejects invalid origin strings and ignores invalid oauth redirectUri', async () => {
+      const localLogger = {
+        debug: vi.fn(),
+        info: vi.fn(),
+        warn: vi.fn(),
+        error: vi.fn(),
+      };
+
+      const localTransport = new HttpTransport(
+        {
+          host: 'example.com',
+          port: 0,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: false,
+          metricsPath: '/metrics',
+          allowedOrigins: [],
+        } as any,
+        localLogger as any
+      );
+
+      // Force an invalid redirectUri to exercise the internal try/catch.
+      (localTransport as any).oauthProvider = { redirectUri: 'not-a-url' };
+
+      const isAllowedOrigin = (localTransport as any).isAllowedOrigin.bind(localTransport);
+      expect(isAllowedOrigin('not-a-url')).toBe(false);
+      expect(isAllowedOrigin('https://not-example.com')).toBe(false);
+
+      await localTransport.stop();
+    });
+
+    it('matches IPv6 CIDR patterns and rejects invalid IPv6 masks', async () => {
+      const localLogger = {
+        debug: vi.fn(),
+        info: vi.fn(),
+        warn: vi.fn(),
+        error: vi.fn(),
+      };
+
+      const localTransport = new HttpTransport(
+        {
+          host: '127.0.0.1',
+          port: 0,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: false,
+          metricsPath: '/metrics',
+          allowedOrigins: [],
+        } as any,
+        localLogger as any
+      );
+
+      const matchOrigin = (localTransport as any).matchOrigin.bind(localTransport);
+      expect(matchOrigin('2001:db8::1', '2001:db8::/32')).toBe(true);
+      expect(matchOrigin('2001:db9::1', '2001:db8::/32')).toBe(false);
+      expect(matchOrigin('2001:db8::1', '2001:db8::/129')).toBe(false);
+      expect(localLogger.warn).toHaveBeenCalled();
+
+      // Cover ipv6Mask(0) branch
+      const ipv6Mask = (localTransport as any).ipv6Mask.bind(localTransport);
+      expect(ipv6Mask(0)).toBe(0n);
+
+      await localTransport.stop();
+    });
+
+    it('ipv4ToInt rejects invalid IPv4 inputs', async () => {
+      const localTransport = new HttpTransport(
+        {
+          host: '127.0.0.1',
+          port: 0,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: false,
+          metricsPath: '/metrics',
+          allowedOrigins: [],
+        } as any,
+        logger
+      );
+
+      const ipv4ToInt = (localTransport as any).ipv4ToInt.bind(localTransport);
+      expect(ipv4ToInt('1.2.3')).toBeNull();
+      expect(ipv4ToInt('256.1.1.1')).toBeNull();
+
+      await localTransport.stop();
+    });
+
+    it('ipv6ToBigInt rejects invalid IPv6 inputs', async () => {
+      const localTransport = new HttpTransport(
+        {
+          host: '127.0.0.1',
+          port: 0,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: false,
+          metricsPath: '/metrics',
+          allowedOrigins: [],
+        } as any,
+        logger
+      );
+
+      const ipv6ToBigInt = (localTransport as any).ipv6ToBigInt.bind(localTransport);
+      expect(ipv6ToBigInt('2001:db8:::1')).toBeNull(); // too many ::
+      expect(ipv6ToBigInt('2001::db8::1')).toBeNull(); // too many ::
+      expect(ipv6ToBigInt('2001:db8:zzzz::1')).toBeNull(); // invalid hextet
+      expect(ipv6ToBigInt('1:2:3:4:5:6:7:8:9')).toBeNull(); // too many segments
+
+      await localTransport.stop();
+    });
+  });
+
   describe('filtering header mismatch', () => {
     it('rejects mismatched filtering header on existing session', async () => {
       transport.setMessageHandler(async () => ({ result: 'ok' }));

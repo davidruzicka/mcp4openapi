@@ -11,14 +11,14 @@ export interface ToolFilterConfig {
   denyList: Set<string>;
   allowRegex: RegExp[];
   denyRegex: RegExp[];
-  allowComposite: { allowList: boolean; allowRead: boolean };
+  allowCategories: Set<'list' | 'read'>;
   hasAllowRules: boolean;
   sources: {
     allowList: string[];
     allowRegex: string[];
     denyList: string[];
     denyRegex: string[];
-    allowComposite: string[];
+    allowCategories: string[];
   };
 }
 
@@ -64,18 +64,18 @@ export function normalizeToolFilterHeaderValue(value?: string): string | undefin
 }
 
 export function parseToolFilterConfig(env: NodeJS.ProcessEnv): ToolFilterConfig | undefined {
-  const allowListRaw = env.MCP4_TOOL_FILTER_ALLOW_LIST;
-  const allowRegexRaw = env.MCP4_TOOL_FILTER_ALLOW_REGEX;
-  const denyListRaw = env.MCP4_TOOL_FILTER_DENY_LIST;
-  const denyRegexRaw = env.MCP4_TOOL_FILTER_DENY_REGEX;
-  const allowCompositeRaw = env.MCP4_TOOL_FILTER_ALLOW_COMPOSITES;
+  const allowListRaw = env.MCP4_TOOL_FILTER_ALLOW_NAMES;
+  const allowRegexRaw = env.MCP4_TOOL_FILTER_ALLOW_NAME_REGEX;
+  const denyListRaw = env.MCP4_TOOL_FILTER_DENY_NAMES;
+  const denyRegexRaw = env.MCP4_TOOL_FILTER_DENY_NAME_REGEX;
+  const allowCategoriesRaw = env.MCP4_TOOL_FILTER_ALLOW_CATEGORIES;
 
   const hasAnyEnv =
     allowListRaw !== undefined ||
     allowRegexRaw !== undefined ||
     denyListRaw !== undefined ||
     denyRegexRaw !== undefined ||
-    allowCompositeRaw !== undefined;
+    allowCategoriesRaw !== undefined;
 
   if (!hasAnyEnv) {
     return undefined;
@@ -85,20 +85,20 @@ export function parseToolFilterConfig(env: NodeJS.ProcessEnv): ToolFilterConfig 
   const denyListEntries = parseCsvList(denyListRaw);
   const allowRegexEntries = parseCsvList(allowRegexRaw);
   const denyRegexEntries = parseCsvList(denyRegexRaw);
-  const allowCompositeEntries = parseCsvList(allowCompositeRaw);
+  const allowCategoryEntries = parseCsvList(allowCategoriesRaw);
 
   const allowList = new Set(allowListEntries.map(normalizeToolName));
   const denyList = new Set(denyListEntries.map(normalizeToolName));
   const allowRegex = allowRegexEntries.map(pattern =>
-    compileRegex(pattern, 'MCP4_TOOL_FILTER_ALLOW_REGEX', ConfigurationError)
+    compileRegex(pattern, 'MCP4_TOOL_FILTER_ALLOW_NAME_REGEX', ConfigurationError)
   );
   const denyRegex = denyRegexEntries.map(pattern =>
-    compileRegex(pattern, 'MCP4_TOOL_FILTER_DENY_REGEX', ConfigurationError)
+    compileRegex(pattern, 'MCP4_TOOL_FILTER_DENY_NAME_REGEX', ConfigurationError)
   );
 
-  const allowComposite = parseAllowCompositeEntries(
-    allowCompositeEntries,
-    'MCP4_TOOL_FILTER_ALLOW_COMPOSITES',
+  const allowCategories = parseAllowCategoryEntries(
+    allowCategoryEntries,
+    'MCP4_TOOL_FILTER_ALLOW_CATEGORIES',
     ConfigurationError
   );
 
@@ -107,18 +107,17 @@ export function parseToolFilterConfig(env: NodeJS.ProcessEnv): ToolFilterConfig 
     denyList,
     allowRegex,
     denyRegex,
-    allowComposite,
+    allowCategories,
     hasAllowRules:
       allowListEntries.length > 0 ||
       allowRegexEntries.length > 0 ||
-      allowComposite.allowList ||
-      allowComposite.allowRead,
+      allowCategories.size > 0,
     sources: {
       allowList: allowListEntries,
       allowRegex: allowRegexEntries,
       denyList: denyListEntries,
       denyRegex: denyRegexEntries,
-      allowComposite: allowCompositeEntries,
+      allowCategories: allowCategoryEntries,
     },
   };
 }
@@ -277,18 +276,34 @@ export function detectListReadOperations(
   let isRead = false;
 
   if (tool.composite && tool.steps && resolver?.getOperationForCall) {
+    // Strict classification for composite tools:
+    // - isList: every step is a list operation
+    // - isRead: every step is a read operation
+    // Mixed list+read composites are neither list nor read.
+    // Any non-GET step (modify) makes it neither list nor read.
+    let hasAny = false;
+    let allList = true;
+    let allRead = true;
+
     for (const step of tool.steps) {
       const operation = resolver.getOperationForCall(step.call);
-      if (operation) {
-        const category = resolveOperationCategory(operation);
-        if (category === 'list') {
-          isList = true;
-        }
-        if (category === 'read') {
-          isRead = true;
-        }
+      if (!operation) {
+        allList = false;
+        allRead = false;
+        continue;
+      }
+      hasAny = true;
+      const category = resolveOperationCategory(operation);
+      if (category !== 'list') {
+        allList = false;
+      }
+      if (category !== 'read') {
+        allRead = false;
       }
     }
+
+    isList = hasAny && allList;
+    isRead = hasAny && allRead;
   } else if (tool.operations) {
     for (const [action, operationId] of Object.entries(tool.operations)) {
       if (typeof operationId === 'string' && resolver?.getOperationById) {
@@ -422,6 +437,26 @@ function parseAllowCompositeEntries(
   return { allowList, allowRead };
 }
 
+function parseAllowCategoryEntries(
+  entries: string[],
+  context: string,
+  ErrorType: new (message: string) => Error
+): Set<'list' | 'read'> {
+  const categories = new Set<'list' | 'read'>();
+  for (const entry of entries) {
+    if (!entry) {
+      continue;
+    }
+    const normalized = entry.trim().toLowerCase();
+    if (normalized === 'list' || normalized === 'read') {
+      categories.add(normalized);
+      continue;
+    }
+    throw new ErrorType(`${context} supports only 'list' and/or 'read' values.`);
+  }
+  return categories;
+}
+
 function resolveOperationCategory(operation: OperationInfo): 'list' | 'read' | 'modify' {
   const method = operation.method.toLowerCase();
   if (method === 'get') {
@@ -429,6 +464,66 @@ function resolveOperationCategory(operation: OperationInfo): 'list' | 'read' | '
     return hasPathParams ? 'read' : 'list';
   }
   return 'modify';
+}
+
+function classifyToolOperations(
+  tool: ToolDefinition,
+  resolver?: ToolFilterOperationResolver
+): { hasList: boolean; hasRead: boolean; hasModify: boolean } {
+  let hasList = false;
+  let hasRead = false;
+  let hasModify = false;
+
+  if (tool.composite && tool.steps && resolver?.getOperationForCall) {
+    for (const step of tool.steps) {
+      const operation = resolver.getOperationForCall(step.call);
+      if (!operation) {
+        hasModify = true;
+        continue;
+      }
+      const category = resolveOperationCategory(operation);
+      if (category === 'list') {
+        hasList = true;
+      } else if (category === 'read') {
+        hasRead = true;
+      } else {
+        hasModify = true;
+      }
+    }
+    return { hasList, hasRead, hasModify };
+  }
+
+  if (tool.operations) {
+    for (const [action, operationId] of Object.entries(tool.operations)) {
+      if (typeof operationId === 'string' && resolver?.getOperationById) {
+        const operation = resolver.getOperationById(operationId);
+        if (operation) {
+          const category = resolveOperationCategory(operation);
+          if (category === 'list') {
+            hasList = true;
+          } else if (category === 'read') {
+            hasRead = true;
+          } else {
+            hasModify = true;
+          }
+          continue;
+        }
+      }
+
+      const actionValue = action.toLowerCase();
+      if (actionValue === 'list' || actionValue === 'search') {
+        hasList = true;
+      } else if (actionValue === 'get' || actionValue === 'read') {
+        hasRead = true;
+      } else {
+        hasModify = true;
+      }
+    }
+    return { hasList, hasRead, hasModify };
+  }
+
+  // Unknown tool type (no operations and not a resolvable composite): treat as modify (unsafe)
+  return { hasList: false, hasRead: false, hasModify: true };
 }
 
 function getAllowMatchReasons(
@@ -448,13 +543,24 @@ function getAllowMatchReasons(
     }
   }
 
-  if (config.allowComposite.allowList || config.allowComposite.allowRead) {
-    const listRead = detectListReadOperations(tool, resolver);
-    if (config.allowComposite.allowList && listRead.isList) {
-      reasons.push('allow_composite:_allow_list');
-    }
-    if (config.allowComposite.allowRead && listRead.isRead) {
-      reasons.push('allow_composite:_allow_read');
+  if (config.allowCategories.size > 0) {
+    const { hasList, hasRead, hasModify } = classifyToolOperations(tool, resolver);
+    const isListOnly = hasList && !hasRead && !hasModify;
+    const isReadOnly = hasRead && !hasList && !hasModify;
+    const isListReadOnly = (hasList || hasRead) && !hasModify;
+
+    if (config.allowCategories.has('list') && config.allowCategories.has('read')) {
+      if (isListReadOnly) {
+        reasons.push('allow_categories:list,read');
+      }
+    } else if (config.allowCategories.has('list')) {
+      if (isListOnly) {
+        reasons.push('allow_categories:list');
+      }
+    } else if (config.allowCategories.has('read')) {
+      if (isReadOnly) {
+        reasons.push('allow_categories:read');
+      }
     }
   }
 
@@ -499,11 +605,8 @@ function getAllowFailureReasons(config: ToolFilterConfig): string[] {
   if (config.sources.allowRegex.length > 0) {
     reasons.push('allow_regex');
   }
-  if (config.allowComposite.allowList) {
-    reasons.push('_allow_list');
-  }
-  if (config.allowComposite.allowRead) {
-    reasons.push('_allow_read');
+  if (config.sources.allowCategories.length > 0) {
+    reasons.push('allow_categories');
   }
   return reasons.length > 0 ? reasons : ['allow'];
 }

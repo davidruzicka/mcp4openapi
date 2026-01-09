@@ -297,11 +297,11 @@ echo 'export NODE_EXTRA_CA_CERTS="$HOME/ca-bundle.pem"' >> $HOME/.bash_profile
 ### Optional - Tool Filtering
 Global tool filtering removes tools during profile load for every session.
 
-- `MCP4_TOOL_FILTER_ALLOW_LIST`: Comma-separated tool names to keep (exact match, case-sensitive)
-- `MCP4_TOOL_FILTER_ALLOW_REGEX`: Comma-separated regex patterns to allow (auto-anchored unless already wrapped with `^` and `$`)
-- `MCP4_TOOL_FILTER_DENY_LIST`: Comma-separated tool names to exclude
-- `MCP4_TOOL_FILTER_DENY_REGEX`: Comma-separated regex patterns to exclude (auto-anchored)
-- `MCP4_TOOL_FILTER_ALLOW_COMPOSITES`: Comma-separated keywords `_allow_list` and or `_allow_read` to allow composite list or read tools without explicit naming
+- `MCP4_TOOL_FILTER_ALLOW_NAMES`: Comma-separated tool names to keep (exact match, case-sensitive)
+- `MCP4_TOOL_FILTER_ALLOW_NAME_REGEX`: Comma-separated regex patterns to allow (auto-anchored unless already wrapped with `^` and `$`)
+- `MCP4_TOOL_FILTER_DENY_NAMES`: Comma-separated tool names to exclude
+- `MCP4_TOOL_FILTER_DENY_NAME_REGEX`: Comma-separated regex patterns to exclude (auto-anchored)
+- `MCP4_TOOL_FILTER_ALLOW_CATEGORIES`: Comma-separated operation categories to allow (`list` and/or `read`). Composite tools are allowed only if all steps are within the allowed categories.
 - `MCP4_TOOL_FILTER_WARN_THRESHOLD_PCT`: Warn when filtered percentage exceeds this threshold (default: `90`)
 - `MCP4_TOOL_FILTER_SESSION_MAX_TOOLS`: Max entries in `X-Mcp4-Tools` header (default: `100`)
 

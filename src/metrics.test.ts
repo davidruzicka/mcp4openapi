@@ -147,6 +147,33 @@ describe('MetricsCollector', () => {
       expect(output).toContain('status="4xx"');
       expect(output).toContain('status="5xx"');
     });
+
+    it('uses unknown status label for non-standard status codes', async () => {
+      metrics.recordApiCall('weird_status', 700, 0.1);
+      const output = await metrics.getMetrics();
+      expect(output).toContain('operation="weird_status"');
+      expect(output).toContain('status="unknown"');
+    });
+  });
+
+  describe('Tool filter metrics', () => {
+    it('records and clears per-session tool counts', async () => {
+      metrics.recordToolsSession('s1', 10);
+      metrics.clearToolsSession('s1');
+      const output = await metrics.getMetrics();
+      expect(output).toContain('test_tools_session');
+    });
+
+    it('records tool filter rejections, pattern counts, and exposes registry', async () => {
+      metrics.recordToolFilterRejection('tool_a', 'session');
+      metrics.recordToolFilterPatternCount('allow_names', 2);
+      const output = await metrics.getMetrics();
+      expect(output).toContain('test_tool_filter_rejections_total');
+      expect(output).toContain('tool="tool_a"');
+      expect(output).toContain('source="session"');
+      expect(output).toContain('test_tool_filter_patterns');
+      expect(metrics.getRegistry()).toBeDefined();
+    });
   });
 
   describe('Disabled Metrics', () => {
