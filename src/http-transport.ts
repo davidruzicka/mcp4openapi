@@ -45,6 +45,13 @@ import {
   type SessionToolFilter,
   type SessionToolFilterRequest,
 } from './tool-filter.js';
+import {
+  ToolFilterService,
+  EnvConfigParser,
+  HeaderConfigParser,
+  RegexCompiler,
+  RegexValidator,
+} from './tool-filter/index.js';
 
 // Default maximum token length (1000 characters)
 const DEFAULT_MAX_TOKEN_LENGTH = 1000;
@@ -59,6 +66,7 @@ export class HttpTransport {
   private cleanupInterval: NodeJS.Timeout | null = null;
   private messageHandler: ((message: unknown, sessionId?: string) => Promise<unknown>) | null = null;
   private oauthProvider: ExternalOAuthProvider | null = null;
+  private toolFilterService?: ToolFilterService;
   // Map access_token -> { refreshToken, expiresAt, clientId, scopes }
   // Used to bridge /oauth/token endpoint (where we see OAuthTokens) and session initialization (where we only see access token)
   private oauthTokensByAccessToken: Map<string, { refreshToken?: string; expiresAt?: number; clientId: string; scopes: string[] }> = new Map();
@@ -1182,6 +1190,20 @@ export class HttpTransport {
     }
     
     return { type: 'none' };
+  }
+
+  /**
+   * Lazy initialization of ToolFilterService
+   */
+  private getToolFilterService(): ToolFilterService {
+    if (!this.toolFilterService) {
+      const validator = new RegexValidator();
+      const compiler = new RegexCompiler(validator);
+      const envParser = new EnvConfigParser(compiler);
+      const headerParser = new HeaderConfigParser(compiler);
+      this.toolFilterService = new ToolFilterService(envParser, headerParser, this.logger);
+    }
+    return this.toolFilterService;
   }
 
   /**

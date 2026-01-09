@@ -51,6 +51,13 @@ import {
   type SessionToolFilter,
   type SessionToolFilterRequest,
 } from './tool-filter.js';
+import {
+  ToolFilterService,
+  EnvConfigParser,
+  HeaderConfigParser,
+  RegexCompiler,
+  RegexValidator,
+} from './tool-filter/index.js';
 
 export class MCPServer {
   private server: Server;
@@ -63,6 +70,7 @@ export class MCPServer {
   private logger: Logger;
   private httpTransport: any = null;
   private stdioFiltering?: FilteringRules;
+  private toolFilterService?: ToolFilterService;
   private globalToolFilterSummary?: {
     originalCount: number;
     allowedCount: number;
@@ -1396,82 +1404,73 @@ export class MCPServer {
       return;
     }
 
-    const config = parseToolFilterConfig(process.env);
-    if (!config) {
-      return;
+    // Initialize ToolFilterService if not already done
+    if (!this.toolFilterService) {
+      const validator = new RegexValidator();
+      const compiler = new RegexCompiler(validator);
+      const envParser = new EnvConfigParser(compiler);
+      const headerParser = new HeaderConfigParser(compiler);
+      this.toolFilterService = new ToolFilterService(envParser, headerParser, this.logger);
     }
 
     const originalTools = this.profile.tools;
-    const resolver = this.buildToolFilterResolver();
-    const result = applyToolFilter(originalTools, config, resolver);
     const originalCount = originalTools.length;
-    const allowedCount = result.allowed.length;
-    const removedCount = result.removed.length;
 
-    if (originalCount > 0 && allowedCount === originalCount) {
+    // Apply filtering using new service
+    const filteredTools = this.toolFilterService.applyGlobalFilter(originalTools, process.env);
+    const allowedCount = filteredTools.length;
+    const removedCount = originalCount - allowedCount;
+
+    // Early return if no filtering config present (service returned same tools)
+    if (filteredTools === originalTools) {
+      return;
+    }
+
+    // Validation: check if filter has no effect
+    if (originalCount > 0 && allowedCount === originalCount && removedCount === 0) {
       throw new ConfigurationError(
         `Tool filter configuration has no effect. Original tool count: ${originalCount}, filtered: ${allowedCount}. Check MCP4_TOOL_FILTER_* patterns.`
       );
     }
 
+    // Validation: check if all tools filtered
     if (originalCount > 0 && allowedCount === 0) {
-      const sources = getToolFilterSourcesSummary(config);
       throw new ConfigurationError(
-        `All tools filtered out (original: ${originalCount}). Check MCP4_TOOL_FILTER_* settings. Removed by: ${sources}.`
+        `All tools filtered out (original: ${originalCount}). Check MCP4_TOOL_FILTER_* settings.`
       );
     }
 
-    this.validateCompositeToolsAgainstFilteredOperations(originalTools, result.allowed, resolver);
+    // Validate composite tools against filtered operations
+    const resolver = this.buildToolFilterResolver();
+    this.validateCompositeToolsAgainstFilteredOperations(originalTools, filteredTools, resolver);
 
-    this.profile.tools = result.allowed;
+    // Update profile
+    this.profile.tools = filteredTools;
 
-    for (const tool of result.removed) {
-      const reasonList = result.reasons.get(tool.name) ?? [];
-      const reason = reasonList.join(', ') || 'filtered';
-      this.logger.info('Tool filtered', {
-        filter_source: 'env',
-        tool: tool.name,
-        action: 'removed',
-        reason,
-      });
-    }
-
-    const warnThreshold = this.getToolFilterWarnThresholdPct();
-    if (originalCount > 0) {
-      const percentFiltered = ((originalCount - allowedCount) / originalCount) * 100;
-      if (percentFiltered >= warnThreshold) {
-        this.logger.warn('Tool filter removed high percentage of tools', {
-          original: originalCount,
-          surviving: allowedCount,
-          threshold_pct: warnThreshold,
-          removed_count: originalCount - allowedCount,
-        });
-      }
-    }
-
-    this.logger.debug('Global tool filter applied', {
-      originalCount,
-      allowedCount,
-      removedCount,
-      allowList: config.sources.allowList,
-      allowRegex: config.sources.allowRegex,
-      denyList: config.sources.denyList,
-      denyRegex: config.sources.denyRegex,
-      allowCategories: config.sources.allowCategories,
-    });
-
+    // Record summary for metrics
     this.globalToolFilterSummary = {
       originalCount,
       allowedCount,
       removedCount,
       patternCounts: {
-        allow_names: config.sources.allowList.length,
-        allow_name_regex: config.sources.allowRegex.length,
-        deny_names: config.sources.denyList.length,
-        deny_name_regex: config.sources.denyRegex.length,
-        allow_categories: config.sources.allowCategories.length,
-      },
+        // Note: counts not available from new service, using simplified version
+        filtered: removedCount
+      }
     };
+
+    // Warn if high percentage filtered
+    const warnThreshold = this.getToolFilterWarnThresholdPct();
+    if (originalCount > 0) {
+      const percentFiltered = (removedCount / originalCount) * 100;
+      if (percentFiltered >= warnThreshold) {
+        this.logger.warn('Tool filter removed high percentage of tools', {
+          original: originalCount,
+          surviving: allowedCount,
+          threshold_pct: warnThreshold,
+          removed_count: removedCount
+        });
+      }
+    }
 
     if (this.httpTransport) {
       this.recordGlobalToolFilterMetrics();

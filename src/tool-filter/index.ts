@@ -28,6 +28,9 @@ export type { SessionToolFilterResult } from './filter/session-tool-filter.js';
 export { EnvConfigParser } from './config/env-config-parser.js';
 export { HeaderConfigParser } from './config/header-config-parser.js';
 
+// Integration service
+export { ToolFilterService } from './integration/tool-filter-service.js';
+
 // Types
 export type {
   ValidationResult,
