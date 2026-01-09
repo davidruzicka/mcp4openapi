@@ -305,7 +305,14 @@ Global tool filtering removes tools during profile load for every session.
 - `MCP4_TOOL_FILTER_WARN_THRESHOLD_PCT`: Warn when filtered percentage exceeds this threshold (default: `90`)
 - `MCP4_TOOL_FILTER_SESSION_MAX_TOOLS`: Max entries in `X-Mcp4-Tools` header (default: `100`)
 
-Regex patterns are validated for length and nested quantifiers to reduce ReDoS risk.
+Regex patterns are validated for length, nested quantifiers, and alternations with quantifiers to reduce ReDoS risk.
+
+#### Tool Filtering Troubleshooting
+- If startup fails with "Tool filter configuration has no effect", ensure allow or deny patterns actually change the tool set.
+- If startup fails with "All tools filtered out", relax allow or deny settings to leave at least one tool.
+- If session initialization fails with "X-Mcp4-Tools filter has no effect", remove empty headers or adjust entries to restrict tools.
+- If session initialization fails with "X-Mcp4-Tools filtered out all tools", verify tool names or regex patterns match available tools.
+- If regex validation fails, shorten patterns and avoid nested quantifiers or alternations with quantifiers.
 
 ### Optional - Authentication (No-Profile Mode)
 When running without a profile, authentication is automatically configured from OpenAPI spec's `security` schemes:
