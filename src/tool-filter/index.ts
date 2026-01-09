@@ -18,6 +18,16 @@ export { FilterEngine, FilterResult } from './filter/filter-engine.js';
 export { ExactMatchRule, RegexMatchRule, CategoryMatchRule } from './filter/filter-rules.js';
 export type { FilterRule } from './filter/filter-rules.js';
 
+// Filter implementations
+export { GlobalToolFilter } from './filter/global-tool-filter.js';
+export type { GlobalToolFilterResult } from './filter/global-tool-filter.js';
+export { SessionToolFilter } from './filter/session-tool-filter.js';
+export type { SessionToolFilterResult } from './filter/session-tool-filter.js';
+
+// Config parsers
+export { EnvConfigParser } from './config/env-config-parser.js';
+export { HeaderConfigParser } from './config/header-config-parser.js';
+
 // Types
 export type {
   ValidationResult,
@@ -25,7 +35,7 @@ export type {
   ToolFilterConfig,
   ToolFilterResult,
   SessionToolFilterRequest,
-  SessionToolFilter,
+  SessionToolFilter as SessionToolFilterLegacy,
   OperationResolver,
   OperationCategory,
   ToolCategories
