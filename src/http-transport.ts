@@ -40,18 +40,15 @@ import {
 } from './errors.js';
 import { parseFilteringHeader, normalizeFilteringHeaderValue } from './filtering.js';
 import {
-  parseSessionToolFilterHeader,
-  normalizeToolFilterHeaderValue,
-  type SessionToolFilter,
-  type SessionToolFilterRequest,
-} from './tool-filter.js';
-import {
   ToolFilterService,
   EnvConfigParser,
   HeaderConfigParser,
   RegexCompiler,
   RegexValidator,
+  normalizeToolFilterHeaderValue,
+  parseSessionToolFilterHeader,
 } from './tool-filter/index.js';
+import type { SessionToolFilter, SessionToolFilterRequest } from './types/http-transport.js';
 
 // Default maximum token length (1000 characters)
 const DEFAULT_MAX_TOKEN_LENGTH = 1000;

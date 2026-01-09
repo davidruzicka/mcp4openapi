@@ -7,7 +7,9 @@
 
 import type { Request as ExpressRequest, Response } from 'express';
 import type { OAuthConfig, AuthInterceptor } from './profile.js';
-import type { SessionToolFilter, SessionToolFilterRequest } from '../tool-filter.js';
+import type { SessionToolFilterRequest, SessionToolFilterCompat as SessionToolFilter } from '../tool-filter/index.js';
+
+export type { SessionToolFilter, SessionToolFilterRequest };
 
 export interface SessionData {
   id: string;

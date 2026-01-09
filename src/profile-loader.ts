@@ -21,7 +21,7 @@ import { profileSchema, authInterceptorSchema } from './generated-schemas.js';
 import type { OpenAPIParser } from './openapi-parser.js';
 import type { OperationInfo, SchemaInfo } from './types/openapi.js';
 import { shortenToolName, NamingStrategy, levenshteinDistance, type OperationForNaming, type ShortenResult } from './naming.js';
-import { normalizeToolName } from './tool-filter.js';
+import { normalizeToolName } from './tool-filter/utils.js';
 
 // Schemas are now auto-generated from TypeScript types!
 // See scripts/generate-schemas.js for details.
