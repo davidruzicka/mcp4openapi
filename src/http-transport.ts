@@ -131,6 +131,38 @@ export class HttpTransport {
     // JSON body parser
     this.app.use(express.json());
 
+    // Security: Standard Headers
+    // Why: Protect against common web vulnerabilities
+    // - Strict-Transport-Security: Enforce HTTPS (HSTS)
+    // - Content-Security-Policy: Restrict resource loading (CSP)
+    // - X-Frame-Options: Prevent clickjacking
+    // - X-Content-Type-Options: Prevent MIME sniffing
+    // - Referrer-Policy: Control referrer information
+    this.app.use((req: Request, res: Response, next: NextFunction) => {
+      // HSTS: 1 year, include subdomains
+      // Skip for localhost/IPs to avoid locking out local development
+      if (req.hostname !== 'localhost' && req.hostname !== '127.0.0.1' && !isIP(req.hostname)) {
+        res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+      }
+
+      // CSP: Restrict to self, disallow framing
+      res.setHeader('Content-Security-Policy', "default-src 'self'; frame-ancestors 'none'");
+
+      // Prevent clickjacking (older browsers)
+      res.setHeader('X-Frame-Options', 'DENY');
+
+      // Prevent MIME sniffing
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+
+      // Control referrer information
+      res.setHeader('Referrer-Policy', 'no-referrer');
+
+      next();
+    });
+
+    // Security: Remove X-Powered-By header to hide server details
+    this.app.disable('x-powered-by');
+
     // Metrics: Track request start time
     this.app.use((req: Request, res: Response, next: NextFunction) => {
       (req as any).startTime = Date.now();
