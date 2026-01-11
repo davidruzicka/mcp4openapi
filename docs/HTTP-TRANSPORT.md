@@ -120,7 +120,6 @@ X-Mcp4-Params: project_id=123, project_id=456, _allow_read
 **Tool filtering header format**:
 - Comma-separated list of tool names or regex entries
 - Regex entries must be prefixed with `regex:` and are auto-anchored unless already wrapped with `^` and `$`
-- List/read keywords: `_allow_list`, `_allow_read` (allow all list/read operations without explicit tool naming, based on tool category detection)
 - Max entries default is 100, max entry length is 255 characters
 
 **Example**:

@@ -2032,8 +2032,6 @@ export class HttpTransport {
     this.metrics.recordToolsSession(sessionId, allowedCount);
     this.metrics.recordToolFilterPatternCount('session_allow_list', request.exactNames.size);
     this.metrics.recordToolFilterPatternCount('session_allow_regex', request.regexPatterns.length);
-    const compositeCount = Number(request.allowComposite.allowList) + Number(request.allowComposite.allowRead);
-    this.metrics.recordToolFilterPatternCount('session_allow_composite', compositeCount);
   }
 
   public recordToolFilterRejection(tool: string, source: 'env' | 'session'): void {

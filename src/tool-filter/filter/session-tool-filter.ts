@@ -76,8 +76,7 @@ export class SessionToolFilter {
       allowRules.push(new RegexMatchRule(request.regexPatterns, 'allow'));
     }
 
-    // Note: allowComposite (CategoryMatchRule) requires OperationDetector
-    // This will be added in Phase 4 integration
+    // Note: CategoryMatchRule requires OperationDetector (not wired here).
 
     return new FilterEngine(allowRules, []);
   }

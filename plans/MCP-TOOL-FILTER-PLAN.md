@@ -50,8 +50,7 @@ This filter applies per-session via HTTP transport, allowing AI agents to reques
     - Validate regex syntax (fail session init if invalid).
     - Apply ReDoS protection (max length 100 chars per pattern, reject nested quantifiers).
     - Enforce entry count limit and per-entry length limit.
-- [x] **List/Read Keyword Syntax**: Include `_allow_list` and/or `_allow_read` keywords to allow all list/read operations without naming them explicitly (based on tool category detection).
-    - Example: `X-Mcp4-Tools: manage_merge_request, _allow_read` allows `manage_merge_request` plus all read-type tools.
+- [ ] **List/Read Keyword Syntax**: Removed. `X-Mcp4-Tools` does not support `_allow_*` keywords; use explicit tool names or `regex:` patterns.
 
 ### Session Logic
 - [x] Filter is extracted from the `initialize` request.
@@ -75,8 +74,7 @@ This filter applies per-session via HTTP transport, allowing AI agents to reques
     - If tool exists in profile but is blocked by session filter, throw `AuthorizationError: Tool 'X' not allowed in this session. Check X-Mcp4-Tools filter.`
     - If tool was removed by global filter, throw `ResourceNotFoundError: Tool 'X' does not exist.` (no mention of filtering to avoid information disclosure).
 - [x] **Composite Tools**:
-    - If the filter includes `_allow_list` or `_allow_read` keywords, automatically allow composite tools detected as list or read operations without requiring explicit naming.
-    - If composite step references a filtered sub-tool, fail at validation time (not mid-execution) with `ConfigurationError: Composite tool 'X' step 'Y' calls filtered tool 'Z'. Add 'Z' to filter or include _allow_list/_allow_read if Z is in list/read operations and you want them all.`
+    - If composite step references a filtered sub-tool, fail at validation time (not mid-execution) with `ConfigurationError: Composite tool 'X' step 'Y' calls filtered tool 'Z'. Add 'Z' to filter or adjust filter rules to allow it.`
 
 ### Observability & Metrics
 - [x] **Structured Logging** (JSON format with correlation IDs):
@@ -93,7 +91,7 @@ This filter applies per-session via HTTP transport, allowing AI agents to reques
     - Env var `MCP4_TOOL_FILTER_WARN_THRESHOLD_PCT` (default: 90) - Warn if more than N% of tools are filtered out.
     - Calculation: `percentage_filtered = ((original_count - surviving_count) / original_count) * 100`
     - Original count: Total tools after profile load, before any filtering.
-    - Surviving count: Tools remaining after filter, including composite tools auto-allowed via `_allow_list`/`_allow_read` keywords.
+    - Surviving count: Tools remaining after filter.
     - Log: `{"level":"warn","msg":"Tool filter removed X% of tools","original":N,"surviving":M,"threshold_pct":90,"removed_count":N-M}`.
 - [x] **Attribution in Errors**: All error messages include which filter source (global env vs session header) and specific pattern caused rejection.
 
@@ -103,7 +101,7 @@ This filter applies per-session via HTTP transport, allowing AI agents to reques
 - [x] **Create `src/tool-filter.ts`** (new module, separate concern from ProfileLoader per SRP):
     - Export `parseToolFilterConfig(env: NodeJS.ProcessEnv): ToolFilterConfig` - parse env vars, validate regex, auto-anchor patterns, ReDoS protection.
     - Export `applyToolFilter(tools: Tool[], config: ToolFilterConfig): ToolFilterResult` where `ToolFilterResult = {allowed: Tool[], removed: Tool[], reasons: Map<string, string>}`.
-    - Export `detectListReadOperations(tool: Tool): {isList: boolean, isRead: boolean}` - reusable logic for `_allow_list`/`_allow_read` detection.
+    - Export `detectListReadOperations(tool: Tool): {isList: boolean, isRead: boolean}` - reusable logic for category detection (future use).
     - Export `validateRegexPattern(pattern: string): {valid: boolean, error?: string}` - ReDoS check using `safe-regex` or similar.
     - Co-locate `src/tool-filter.test.ts` with comprehensive unit tests.
 - [x] **Integrate in `src/mcp-server.ts`**:
@@ -134,7 +132,7 @@ This filter applies per-session via HTTP transport, allowing AI agents to reques
     - Validate `callTool` against session allowlist (O(1) Set lookup).
     - Distinguish global vs session filter rejections in error messages.
     - Validate composite tool dependencies at session init (fail fast if step references filtered tool).
-    - Handle `_allow_list` and `_allow_read` keywords for composite tools.
+    - (Removed) Handle `_allow_*` keywords for composite tools.
 
 ### 4. Tests
 **Unit Tests:**
@@ -143,7 +141,7 @@ This filter applies per-session via HTTP transport, allowing AI agents to reques
 - [x] ReDoS pattern rejection: `(a+)+b`, nested quantifiers, excessive length.
 - [x] Case sensitivity: `GetUser` ≠ `getuser`.
 - [x] No-op detection: filter that doesn't change tool set.
-- [x] Composite tool keyword handling: `_allow_list`, `_allow_read`.
+- [ ] Composite tool keyword handling: removed.
 
 **Integration Tests (Global Env Filter):**
 - [x] Server startup with `MCP4_TOOL_FILTER_ALLOW_NAMES=get_user,list_users` - verify only those tools exist.
@@ -162,7 +160,7 @@ This filter applies per-session via HTTP transport, allowing AI agents to reques
 - [x] Session init with no-op header - fails with detailed error.
 - [x] Session init with all-tools-filtered header - fails with tool count.
 - [x] Header immutability: subsequent request with different header - throws `ValidationError`.
-- [x] Composite tool with `_allow_read` - allowed without explicit naming.
+- [ ] Composite tool with `_allow_read` - removed.
 - [x] Composite step referencing filtered sub-tool - fails at validation with explicit error.
 
 **Edge Cases:**

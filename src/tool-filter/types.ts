@@ -57,7 +57,6 @@ export interface ToolFilterResult {
 export interface SessionToolFilterRequest {
   exactNames: Set<string>;
   regexPatterns: CompiledRegex[];
-  allowComposite: { allowList: boolean; allowRead: boolean };
   normalizedHeader: string;
   rawEntries: string[];
   hasRules: boolean;
@@ -70,7 +69,6 @@ export interface SessionToolFilter {
   allowedToolNames: Set<string>;
   reasons: Map<string, string[]>;
   patterns: { allow: CompiledRegex[] };
-  allowComposite: { allowList: boolean; allowRead: boolean };
   normalizedHeader: string;
 }
 

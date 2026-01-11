@@ -20,7 +20,6 @@ export interface SessionToolFilter {
   allowedToolNames: Set<string>;
   reasons: Map<string, string[]>;
   patterns: { allow: RegExp[] };
-  allowComposite: { allowList: boolean; allowRead: boolean };
   normalizedHeader: string;
 }
 
@@ -95,7 +94,6 @@ export function applySessionToolFilter(
     allowedToolNames: result.allowedToolNames,
     reasons: result.reasons,
     patterns: { allow: [] }, // Not tracked in new architecture
-    allowComposite: request.allowComposite,
     normalizedHeader: request.normalizedHeader
   };
 }
