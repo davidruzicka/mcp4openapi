@@ -131,6 +131,17 @@ export class HttpTransport {
     // JSON body parser
     this.app.use(express.json());
 
+    // Security: Standard security headers
+    // Why: Protect against common web vulnerabilities (clickjacking, MIME sniffing, etc.)
+    this.app.disable('x-powered-by'); // Don't advertise Express
+    this.app.use((req: Request, res: Response, next: NextFunction) => {
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.setHeader('X-Frame-Options', 'DENY');
+      res.setHeader('Content-Security-Policy', "default-src 'self'; frame-ancestors 'none'");
+      res.setHeader('Referrer-Policy', 'no-referrer');
+      next();
+    });
+
     // Metrics: Track request start time
     this.app.use((req: Request, res: Response, next: NextFunction) => {
       (req as any).startTime = Date.now();
