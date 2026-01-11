@@ -1143,7 +1143,7 @@ export class MCPServer {
 
     if (!this.httpTransport && params?.filtering !== undefined) {
       if (typeof params.filtering !== 'string') {
-        throw new ValidationError('Invalid X-Mcp4-Filtering header. Expected comma-separated key=value pairs.');
+        throw new ValidationError('Invalid X-Mcp4-Params header. Expected comma-separated key=value pairs.');
       }
       const parsed = parseFilteringHeader(params.filtering);
       this.stdioFiltering = parsed.filtering;

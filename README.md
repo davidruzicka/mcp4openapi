@@ -422,6 +422,32 @@ export MCP4_TOOLNAME_MAX=30
 - `MCP4_TOKEN_MAX_LENGTH`: Maximum token length in characters (default: `1000`)
 - `MCP4_FILTER_MAX_VALUES`: Max values per filtering key (default: `10`)
 
+#### Parameter Filtering (HTTP: X-Mcp4-Params)
+
+`X-Mcp4-Params` is a per-session header for constraining tool call parameters (not tool selection). It is parsed on session initialization and then enforced for the lifetime of the session: subsequent requests may omit the header, but if provided it must match the session value or the server returns a `400` validation error.
+
+**Format**: comma-separated `key=value` pairs. Repeat keys to allow multiple values.
+
+**Example for GitLab profile**:
+```
+X-Mcp4-Params: project_id=123, project_id=mcp/mcp-gitlab, _allow_list, _allow_read
+```
+
+**What this means**:
+- The session is constrained to the GitLab project identified by either `123` or `mcp/mcp-gitlab` (both refer to the same project) for tools that accept `project_id` (or an alias mapped to it). If a tool call provides a different `project_id`, the server rejects it.
+- This is useful for agent-style workflows (e.g., "code review only within project 123/456") because the client can enforce the scope at session init instead of relying on the agent to always remember to pass the correct project parameter.
+- `_allow_list` and `_allow_read` relax filter enforcement for list and read operations; use them if you want list/read calls to be allowed even when they omit the filtered key, or when they pass a different value.
+
+**Notes**:
+- Keys are validated against the currently available tool parameters (including parameter aliases).
+- Max values per key are limited by `MCP4_FILTER_MAX_VALUES`.
+- Control keys (no value):
+  - `_allow_list`: allows list operations to omit the filtered key (only affects presence enforcement).
+  - `_allow_read`: allows read operations to omit the filtered key (only affects presence enforcement).
+  - If the filtered key is present in arguments, its value is not constrained for list/read operations.
+  - Control keys do not relax modify operations.
+  - Control keys are only meaningful when at least one `key=value` filter is present (otherwise there is nothing to enforce).
+
 See [docs/HTTP-TRANSPORT.md](./docs/HTTP-TRANSPORT.md) for detailed HTTP transport configuration.
 
 #### SSL/TLS Configuration

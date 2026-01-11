@@ -50,15 +50,15 @@ describeIfListen('HttpTransport', () => {
 
     it('handles filtering header arrays', () => {
       const getFilteringHeaderValue = (transport as any).getFilteringHeaderValue.bind(transport);
-      expect(getFilteringHeaderValue({ headers: { 'x-mcp4-filtering': [] } })).toBeUndefined();
+      expect(getFilteringHeaderValue({ headers: { 'x-mcp4-params': [] } })).toBeUndefined();
       expect(() =>
-        getFilteringHeaderValue({ headers: { 'x-mcp4-filtering': ['a=b', 'c=d'] } })
+        getFilteringHeaderValue({ headers: { 'x-mcp4-params': ['a=b', 'c=d'] } })
       ).toThrow();
     });
 
     it('returns first filtering header value when single entry is provided', () => {
       const getFilteringHeaderValue = (transport as any).getFilteringHeaderValue.bind(transport);
-      expect(getFilteringHeaderValue({ headers: { 'x-mcp4-filtering': ['project_id=1'] } })).toBe(
+      expect(getFilteringHeaderValue({ headers: { 'x-mcp4-params': ['project_id=1'] } })).toBe(
         'project_id=1'
       );
     });
@@ -363,11 +363,11 @@ describeIfListen('HttpTransport', () => {
         .set('Accept', 'application/json')
         .set('Content-Type', 'application/json')
         .set('Mcp-Session-Id', sessionId)
-        .set('X-Mcp4-Filtering', 'project_id=2')
+        .set('X-Mcp4-Params', 'project_id=2')
         .send({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} });
 
       expect(response.status).toBe(400);
-      expect(response.body.message).toContain('X-Mcp4-Filtering header mismatch');
+      expect(response.body.message).toContain('X-Mcp4-Params header mismatch');
     });
 
     it('rejects mismatched tool filter header on existing session', async () => {
