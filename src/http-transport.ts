@@ -1261,7 +1261,7 @@ export class HttpTransport {
         }
         if (filteringHeader !== undefined) {
           if (!session.filteringHeader || session.filteringHeader !== filteringHeader) {
-            throw new ValidationError('X-Mcp4-Filtering header mismatch for existing session.');
+            throw new ValidationError('X-Mcp4-Params header mismatch for existing session.');
           }
         }
         if (normalizedToolFilterHeader !== undefined) {
@@ -1724,13 +1724,13 @@ export class HttpTransport {
   }
 
   private getFilteringHeaderValue(req: Request): string | undefined {
-    const headerValue = req.headers['x-mcp4-filtering'];
+    const headerValue = req.headers['x-mcp4-params'];
     if (Array.isArray(headerValue)) {
       if (headerValue.length === 0) {
         return undefined;
       }
       if (headerValue.length > 1) {
-        throw new ValidationError('Invalid X-Mcp4-Filtering header. Expected comma-separated key=value pairs.');
+        throw new ValidationError('Invalid X-Mcp4-Params header. Expected comma-separated key=value pairs.');
       }
       return headerValue[0];
     }

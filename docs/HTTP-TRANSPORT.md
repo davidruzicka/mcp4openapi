@@ -98,18 +98,23 @@ Source: https://modelcontextprotocol.io/specification/2025-03-26/basic/transport
 - `Authorization: Bearer <token>` or `X-API-Token: <token>` (required for initialization if not using env var)
   - Supports various token formats: GitLab (`glpat-...`), YouTrack (`perm:...`), generic tokens
   - Flexible whitespace handling (extra spaces are trimmed)
-- `X-Mcp4-Filtering: <filter>` (optional, initialization only)
-- `X-Mcp4-Tools: <tool-filter>` (optional, initialization only)
+- `X-Mcp4-Params: <filter>` (optional)
+- `X-Mcp4-Tools: <tool-filter>` (optional)
+  - If sent during initialization, the server stores the normalized header value in the session.
+  - Subsequent requests may omit the header, but if provided it must match the session value or the server returns `400`.
 
-**Filtering header format**:
+**Parameter Filtering header format**:
 - Comma-separated list of `key=value` items
-- Control keys: `_allow_list`, `_allow_read` (no value)
+- Control keys (no value):
+  - `_allow_list`: for list operations, allow omitting the filtered key and allow any value if the key is present.
+  - `_allow_read`: for read operations, allow omitting the filtered key and allow any value if the key is present.
+  - Control keys do not relax modify operations (write remains constrained by the allowed set).
 - Values containing spaces or commas must be percent-encoded
 - Key pattern: `^[A-Za-z0-9_][A-Za-z0-9_-]{0,63}$`
 
 **Example**:
 ```
-X-Mcp4-Filtering: project_id=123, project_id=456, _allow_read
+X-Mcp4-Params: project_id=123, project_id=456, _allow_read
 ```
 
 **Tool filtering header format**:

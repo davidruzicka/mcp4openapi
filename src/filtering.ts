@@ -41,7 +41,7 @@ export function parseFilteringHeader(headerValue: string): FilteringParseResult 
     const equalsIndex = trimmed.indexOf('=');
     if (equalsIndex === -1) {
       if (!CONTROL_KEYS.has(trimmed) || !KEY_PATTERN.test(trimmed)) {
-        throw new ValidationError('Invalid X-Mcp4-Filtering header. Expected comma-separated key=value pairs.');
+        throw new ValidationError('Invalid X-Mcp4-Params header. Expected comma-separated key=value pairs.');
       }
       filtering[trimmed] = filtering[trimmed] ?? [];
       continue;
@@ -51,11 +51,11 @@ export function parseFilteringHeader(headerValue: string): FilteringParseResult 
     const rawValue = trimmed.slice(equalsIndex + 1).trim();
 
     if (!key || !KEY_PATTERN.test(key)) {
-      throw new ValidationError('Invalid X-Mcp4-Filtering header. Expected comma-separated key=value pairs.');
+      throw new ValidationError('Invalid X-Mcp4-Params header. Expected comma-separated key=value pairs.');
     }
 
     if (CONTROL_KEYS.has(key)) {
-      throw new ValidationError('Invalid X-Mcp4-Filtering header. Expected comma-separated key=value pairs.');
+      throw new ValidationError('Invalid X-Mcp4-Params header. Expected comma-separated key=value pairs.');
     }
 
     if (!rawValue) {
@@ -66,13 +66,13 @@ export function parseFilteringHeader(headerValue: string): FilteringParseResult 
     try {
       decodedValue = decodeURIComponent(rawValue);
     } catch {
-      throw new ValidationError('Invalid X-Mcp4-Filtering header. Expected comma-separated key=value pairs.');
+      throw new ValidationError('Invalid X-Mcp4-Params header. Expected comma-separated key=value pairs.');
     }
 
     const values = filtering[key] ?? [];
     if (values.length >= maxValues) {
       throw new ValidationError(
-        `X-Mcp4-Filtering exceeds max values for key '${key}'. Max allowed is ${maxValues}.`
+        `X-Mcp4-Params exceeds max values for key '${key}'. Max allowed is ${maxValues}.`
       );
     }
 
@@ -254,6 +254,12 @@ function validateCanonicalParameter(
     return;
   }
   
+  // For list/read operations, allow _allow_list/_allow_read to relax value enforcement.
+  // This enables "read/list any" access while keeping modify operations constrained to the allow-set.
+  if ((isList && permissions.allowList) || (isRead && permissions.allowRead)) {
+    return;
+  }
+
   validateParameterValue(argValue, allowedValues, canonical);
 }
 
