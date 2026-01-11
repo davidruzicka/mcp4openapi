@@ -30,7 +30,6 @@ export class HeaderConfigParser {
     return {
       exactNames: parsed.exactNames,
       regexPatterns: parsed.regexPatterns,
-      allowComposite: parsed.allowComposite,
       normalizedHeader: normalized,
       rawEntries: parts,
       hasRules: parts.length > 0
@@ -78,16 +77,11 @@ export class HeaderConfigParser {
   private parseParts(parts: string[]): ParsedParts {
     const exactNames = new Set<string>();
     const regexPatterns: CompiledRegex[] = [];
-    const allowComposite = { allowList: false, allowRead: false };
 
     for (const part of parts) {
-      if (part === '_allow_list') {
-        allowComposite.allowList = true;
-      } else if (part === '_allow_read') {
-        allowComposite.allowRead = true;
-      } else if (part.startsWith('_allow_')) {
+      if (part.startsWith('_allow_')) {
         throw new ValidationError(
-          'X-Mcp4-Tools supports only _allow_list or _allow_read special values'
+          'X-Mcp4-Tools does not support _allow_* keywords. Use explicit tool names or regex: patterns. (Did you mean to use X-Mcp4-Params?)'
         );
       } else if (part.startsWith('regex:')) {
         const pattern = part.slice('regex:'.length).trim();
@@ -100,7 +94,7 @@ export class HeaderConfigParser {
       }
     }
 
-    return { exactNames, regexPatterns, allowComposite };
+    return { exactNames, regexPatterns };
   }
 
   /**
@@ -129,7 +123,6 @@ export class HeaderConfigParser {
     return {
       exactNames: new Set(),
       regexPatterns: [],
-      allowComposite: { allowList: false, allowRead: false },
       normalizedHeader: '',
       rawEntries: [],
       hasRules: false
@@ -140,5 +133,4 @@ export class HeaderConfigParser {
 interface ParsedParts {
   exactNames: Set<string>;
   regexPatterns: CompiledRegex[];
-  allowComposite: { allowList: boolean; allowRead: boolean };
 }

@@ -1094,7 +1094,6 @@ describe('MCPServer', () => {
           allowedToolNames: new Set(['allowed']),
           reasons: new Map(),
           patterns: { allow: [] },
-          allowComposite: { allowList: false, allowRead: false },
           normalizedHeader: 'allowed',
         }),
       };
@@ -1167,7 +1166,6 @@ describe('MCPServer', () => {
           allowedToolNames: new Set(['allowed']),
           reasons: new Map([['blocked', ['session_allow_list:allowed']]]),
           patterns: { allow: [] },
-          allowComposite: { allowList: false, allowRead: false },
           normalizedHeader: 'allowed',
         }),
         getSessionFiltering: () => undefined,
@@ -1196,7 +1194,6 @@ describe('MCPServer', () => {
           allowedToolNames: new Set(['allowed']),
           reasons: new Map(),
           patterns: { allow: [] },
-          allowComposite: { allowList: false, allowRead: false },
           normalizedHeader: 'allowed',
         }),
         getSessionFiltering: () => undefined,
