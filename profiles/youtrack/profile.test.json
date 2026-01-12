@@ -314,12 +314,130 @@
           "operationId": "get_/issues",
           "response": {
             "status": 200,
-            "body": []
+            "body": [
+              {
+                "id": "issue-1",
+                "idReadable": "PROJ-123",
+                "summary": "Test Issue",
+                "resolved": false,
+                "description": "Should not be in response",
+                "customFields": [
+                  {
+                    "name": "Priority",
+                    "value": {
+                      "name": "High"
+                    }
+                  }
+                ]
+              }
+            ]
           }
         }
       ],
       "expect": {
-        "success": true
+        "success": true,
+        "result_exact": [
+          {
+            "id": "issue-1",
+            "idReadable": "PROJ-123",
+            "summary": "Test Issue",
+            "resolved": false
+          }
+        ],
+        "request": {
+          "method": "GET",
+          "path": "/issues",
+          "origin": "https://mock-api-youtrack-optimized.com",
+          "headers": {
+            "authorization": "Bearer test-token"
+          },
+          "query": {
+            "fields": "id,idReadable,summary,resolved"
+          }
+        }
+      }
+    },
+    {
+      "name": "Retrieve Content - List Issues Detailed",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "list_issues_detailed"
+      },
+      "mocks": [
+        {
+          "operationId": "get_/issues",
+          "response": {
+            "status": 200,
+            "body": [
+              {
+                "id": "issue-1",
+                "idReadable": "PROJ-123",
+                "summary": "Test Issue",
+                "description": "Full description",
+                "resolved": false,
+                "customFields": [
+                  {
+                    "id": "cf-1",
+                    "name": "Priority",
+                    "value": {
+                      "id": "val-1",
+                      "name": "High"
+                    }
+                  }
+                ],
+                "created": 1704067200000,
+                "updated": 1704153600000,
+                "reporter": {
+                  "id": "user-1",
+                  "login": "testuser"
+                },
+                "state": {
+                  "id": "state-1",
+                  "name": "Open"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result_exact": [
+          {
+            "id": "issue-1",
+            "idReadable": "PROJ-123",
+            "summary": "Test Issue",
+            "description": "Full description",
+            "resolved": false,
+            "customFields": [
+              {
+                "id": "cf-1",
+                "name": "Priority",
+                "value": {
+                  "id": "val-1",
+                  "name": "High"
+                }
+              }
+            ],
+            "created": 1704067200000,
+            "updated": 1704153600000,
+            "reporter": {
+              "id": "user-1",
+              "login": "testuser"
+            }
+          }
+        ],
+        "request": {
+          "method": "GET",
+          "path": "/issues",
+          "origin": "https://mock-api-youtrack-optimized.com",
+          "headers": {
+            "authorization": "Bearer test-token"
+          },
+          "query": {
+            "fields": "id,idReadable,summary,description,resolved,customFields(id,name,value(id,name)),created,updated,reporter(id,login)"
+          }
+        }
       }
     },
     {
@@ -496,19 +614,98 @@
       "tool": "retrieve_content",
       "arguments": {
         "action": "list_project_custom_fields",
-        "id": "ISSUE-123"
+        "id": "PROJ"
       },
       "mocks": [
         {
           "operationId": "get_/admin/projects/{id}/customFields",
           "response": {
             "status": 200,
-            "body": []
+            "body": [
+              {
+                "id": "pcf-1",
+                "$type": "EnumProjectCustomField",
+                "field": {
+                  "id": "cf-1",
+                  "name": "Priority",
+                  "fieldType": {
+                    "id": "enum",
+                    "$type": "EnumFieldType"
+                  }
+                },
+                "bundle": {
+                  "id": "bundle-1",
+                  "$type": "EnumBundle"
+                },
+                "defaultValues": [
+                  {
+                    "id": "val-1",
+                    "name": "High",
+                    "$type": "EnumBundleElement"
+                  },
+                  {
+                    "id": "val-2",
+                    "name": "Medium",
+                    "$type": "EnumBundleElement"
+                  }
+                ],
+                "canBeEmpty": true,
+                "emptyFieldText": "No priority",
+                "ordinal": 1,
+                "isPublic": true,
+                "extraField": "should not be in response"
+              }
+            ]
           }
         }
       ],
       "expect": {
-        "success": true
+        "success": true,
+        "result_exact": [
+          {
+            "id": "pcf-1",
+            "$type": "EnumProjectCustomField",
+            "field": {
+              "id": "cf-1",
+              "name": "Priority",
+              "fieldType": {
+                "id": "enum",
+                "$type": "EnumFieldType"
+              }
+            },
+            "bundle": {
+              "id": "bundle-1",
+              "$type": "EnumBundle"
+            },
+            "defaultValues": [
+              {
+                "id": "val-1",
+                "name": "High",
+                "$type": "EnumBundleElement"
+              },
+              {
+                "id": "val-2",
+                "name": "Medium",
+                "$type": "EnumBundleElement"
+              }
+            ],
+            "canBeEmpty": true,
+            "emptyFieldText": "No priority",
+            "ordinal": 1,
+            "isPublic": true
+          }
+        ],
+        "request": {
+          "method": "GET",
+          "path": "/admin/projects/PROJ/customFields",
+          "origin": "https://mock-api-youtrack-optimized.com",
+          "headers": {
+            "authorization": "Bearer test-token"
+          },
+          "query": {
+            "fields": "id,$type,field(id,name,fieldType(id,$type)),bundle($type,id),defaultValues($type,id,name),canBeEmpty,emptyFieldText,ordinal,isPublic"
+          }
+        }
       }
     },
     {
@@ -516,7 +713,7 @@
       "tool": "retrieve_content",
       "arguments": {
         "action": "get_project_custom_field",
-        "id": "ISSUE-123",
+        "id": "PROJ",
         "projectCustomFieldId": "pcf-1"
       },
       "mocks": [
@@ -525,13 +722,96 @@
           "response": {
             "status": 200,
             "body": {
-              "id": "id-1"
+              "id": "pcf-1",
+              "$type": "EnumProjectCustomField",
+              "field": {
+                "id": "cf-1",
+                "name": "Priority",
+                "fieldType": {
+                  "id": "enum",
+                  "$type": "EnumFieldType"
+                }
+              },
+              "bundle": {
+                "id": "bundle-1",
+                "$type": "EnumBundle"
+              },
+              "defaultValues": [
+                {
+                  "id": "val-1",
+                  "name": "High",
+                  "$type": "EnumBundleElement"
+                },
+                {
+                  "id": "val-2",
+                  "name": "Medium",
+                  "$type": "EnumBundleElement"
+                },
+                {
+                  "id": "val-3",
+                  "name": "Low",
+                  "$type": "EnumBundleElement"
+                }
+              ],
+              "canBeEmpty": false,
+              "emptyFieldText": "",
+              "ordinal": 1,
+              "isPublic": true,
+              "extraField": "should not be in response"
             }
           }
         }
       ],
       "expect": {
-        "success": true
+        "success": true,
+        "result_exact": {
+          "id": "pcf-1",
+          "$type": "EnumProjectCustomField",
+          "field": {
+            "id": "cf-1",
+            "name": "Priority",
+            "fieldType": {
+              "id": "enum",
+              "$type": "EnumFieldType"
+            }
+          },
+          "bundle": {
+            "id": "bundle-1",
+            "$type": "EnumBundle"
+          },
+          "defaultValues": [
+            {
+              "id": "val-1",
+              "name": "High",
+              "$type": "EnumBundleElement"
+            },
+            {
+              "id": "val-2",
+              "name": "Medium",
+              "$type": "EnumBundleElement"
+            },
+            {
+              "id": "val-3",
+              "name": "Low",
+              "$type": "EnumBundleElement"
+            }
+          ],
+          "canBeEmpty": false,
+          "emptyFieldText": "",
+          "ordinal": 1,
+          "isPublic": true
+        },
+        "request": {
+          "method": "GET",
+          "path": "/admin/projects/PROJ/customFields/pcf-1",
+          "origin": "https://mock-api-youtrack-optimized.com",
+          "headers": {
+            "authorization": "Bearer test-token"
+          },
+          "query": {
+            "fields": "id,$type,field(id,name,fieldType(id,$type)),bundle($type,id),defaultValues($type,id,name),canBeEmpty,emptyFieldText,ordinal,isPublic"
+          }
+        }
       }
     },
     {
