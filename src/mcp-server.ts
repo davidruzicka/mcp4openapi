@@ -1648,23 +1648,3 @@ export class MCPServer {
     }
   }
 }
-
-function getToolFilterSourcesSummary(config: ToolFilterConfig): string {
-  const sources: string[] = [];
-  if (config.sources.allowList.length > 0) {
-    sources.push('allow_names');
-  }
-  if (config.sources.allowRegex.length > 0) {
-    sources.push('allow_name_regex');
-  }
-  if (config.sources.denyList.length > 0) {
-    sources.push('deny_names');
-  }
-  if (config.sources.denyRegex.length > 0) {
-    sources.push('deny_name_regex');
-  }
-  if (config.allowCategories.size > 0) {
-    sources.push(`allow_categories:${Array.from(config.allowCategories).sort().join(',')}`);
-  }
-  return sources.length > 0 ? sources.join(', ') : 'none';
-}

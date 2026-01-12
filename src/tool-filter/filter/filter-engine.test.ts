@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { FilterEngine, FilterResult } from './filter-engine.js';
 import { ExactMatchRule, RegexMatchRule } from './filter-rules.js';
 import { RegexCompiler } from '../regex/regex-compiler.js';
