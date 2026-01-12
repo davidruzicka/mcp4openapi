@@ -73,7 +73,7 @@ Reference canonical sources; never duplicate rules.
 - OAuth profiles require `MCP4_OAUTH_*` env vars in HTTP transport tests and an Authorization header for initialization.
 - E2E mock server should include auth validation endpoints used by profile auth configs.
 
-Run specific tests: `npm test -- --grep "pattern"`
+Run specific tests: `npm test -- -t "pattern"`.
 
 ### Code Organization
 
