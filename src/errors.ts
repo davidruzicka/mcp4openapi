@@ -34,6 +34,17 @@ export class OperationNotFoundError extends MCPError {
   }
 }
 
+export class ResourceNotFoundError extends MCPError {
+  constructor(resource: string, resourceType: string = 'Resource') {
+    super(
+      `${resourceType} not found: ${resource}`,
+      'RESOURCE_NOT_FOUND',
+      { resource, resourceType }
+    );
+    this.name = 'ResourceNotFoundError';
+  }
+}
+
 export class ParameterError extends MCPError {
   constructor(paramName: string, reason: string) {
     super(

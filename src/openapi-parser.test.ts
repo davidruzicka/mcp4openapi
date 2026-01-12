@@ -219,6 +219,50 @@ describe('OpenAPIParser - schema resolution', () => {
   });
 });
 
+describe('OpenAPIParser - additional coverage', () => {
+  it('detectYamlFormat falls back to YAML when JSON parsing fails', () => {
+    const parser = new OpenAPIParser();
+    const isYaml = (parser as any).detectYamlFormat('spec.unknown', null, 'openapi: 3.0.0');
+    expect(isYaml).toBe(true);
+  });
+
+  it('extractSchema processes oneOf schemas', () => {
+    const parser = new OpenAPIParser();
+    const schema = {
+      oneOf: [{ type: 'string' }, { type: 'number' }],
+    };
+    const info = (parser as any).extractSchema(schema, new Set());
+    expect(info.oneOf).toBeDefined();
+    expect(info.oneOf).toHaveLength(2);
+  });
+
+  it('resolveSchema returns undefined when traversing a non-object path', () => {
+    const parser = new OpenAPIParser();
+    (parser as any).spec = { components: 'not-an-object' };
+    const out = (parser as any).resolveSchema('#/components/schemas/X');
+    expect(out).toBeUndefined();
+  });
+
+  it('resolveSchema returns undefined when $ref contains unsafe segments', () => {
+    const parser = new OpenAPIParser();
+    (parser as any).spec = { components: { schemas: { X: { type: 'string' } } } };
+    const out = (parser as any).resolveSchema('#/components/__proto__/polluted');
+    expect(out).toBeUndefined();
+  });
+
+  it('getSecurityScheme returns undefined for unknown scheme types', () => {
+    const parser = new OpenAPIParser();
+    (parser as any).spec = {
+      openapi: '3.0.0',
+      info: { title: 'Test', version: '1.0.0' },
+      paths: {},
+      security: [{ mTls: [] }],
+      components: { securitySchemes: { mTls: { type: 'mutualTLS' } } },
+    };
+    expect(parser.getSecurityScheme()).toBeUndefined();
+  });
+});
+
 describe('OpenAPIParser - Security Schemes', () => {
   it('should parse bearer token auth', async () => {
     const parser = new OpenAPIParser();

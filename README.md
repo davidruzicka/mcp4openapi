@@ -294,6 +294,26 @@ echo 'export NODE_EXTRA_CA_CERTS="$HOME/ca-bundle.pem"' >> $HOME/.bash_profile
 - `MCP4_TRANSPORT`: `stdio` (default) or `http`
 - `MCP4_API_BASE_URL`: Override OpenAPI server URL
 
+### Optional - Tool Filtering
+Global tool filtering removes tools during profile load for every session.
+
+- `MCP4_TOOL_FILTER_ALLOW_NAMES`: Comma-separated tool names to keep (exact match, case-sensitive)
+- `MCP4_TOOL_FILTER_ALLOW_NAME_REGEX`: Comma-separated regex patterns to allow (auto-anchored unless already wrapped with `^` and `$`)
+- `MCP4_TOOL_FILTER_DENY_NAMES`: Comma-separated tool names to exclude
+- `MCP4_TOOL_FILTER_DENY_NAME_REGEX`: Comma-separated regex patterns to exclude (auto-anchored)
+- `MCP4_TOOL_FILTER_ALLOW_CATEGORIES`: Comma-separated operation categories to allow (`list` and/or `read`). Composite tools are allowed only if all steps are within the allowed categories.
+- `MCP4_TOOL_FILTER_WARN_THRESHOLD_PCT`: Warn when filtered percentage exceeds this threshold (default: `90`)
+- `MCP4_TOOL_FILTER_SESSION_MAX_TOOLS`: Max entries in `X-Mcp4-Tools` header (default: `100`)
+
+Regex patterns are validated for length, nested quantifiers, and alternations with quantifiers to reduce ReDoS risk.
+
+#### Tool Filtering Troubleshooting
+- If startup fails with "Tool filter configuration has no effect", ensure allow or deny patterns actually change the tool set.
+- If startup fails with "All tools filtered out", relax allow or deny settings to leave at least one tool.
+- If session initialization fails with "X-Mcp4-Tools filter has no effect", remove empty headers or adjust entries to restrict tools.
+- If session initialization fails with "X-Mcp4-Tools filtered out all tools", verify tool names or regex patterns match available tools.
+- If regex validation fails, shorten patterns and avoid nested quantifiers or alternations with quantifiers.
+
 ### Optional - Authentication (No-Profile Mode)
 When running without a profile, authentication is automatically configured from OpenAPI spec's `security` schemes:
 
@@ -401,6 +421,32 @@ export MCP4_TOOLNAME_MAX=30
 - `MCP4_HEARTBEAT_ENABLED`, `MCP4_HEARTBEAT_INTERVAL_MS`: SSE heartbeat settings
 - `MCP4_TOKEN_MAX_LENGTH`: Maximum token length in characters (default: `1000`)
 - `MCP4_FILTER_MAX_VALUES`: Max values per filtering key (default: `10`)
+
+#### Parameter Filtering (HTTP: X-Mcp4-Params)
+
+`X-Mcp4-Params` is a per-session header for constraining tool call parameters (not tool selection). It is parsed on session initialization and then enforced for the lifetime of the session: subsequent requests may omit the header, but if provided it must match the session value or the server returns a `400` validation error.
+
+**Format**: comma-separated `key=value` pairs. Repeat keys to allow multiple values.
+
+**Example for GitLab profile**:
+```
+X-Mcp4-Params: project_id=123, project_id=mcp/mcp-gitlab, _allow_list, _allow_read
+```
+
+**What this means**:
+- The session is constrained to the GitLab project identified by either `123` or `mcp/mcp-gitlab` (both refer to the same project) for tools that accept `project_id` (or an alias mapped to it). If a tool call provides a different `project_id`, the server rejects it.
+- This is useful for agent-style workflows (e.g., "code review only within project 123/456") because the client can enforce the scope at session init instead of relying on the agent to always remember to pass the correct project parameter.
+- `_allow_list` and `_allow_read` relax filter enforcement for list and read operations; use them if you want list/read calls to be allowed even when they omit the filtered key, or when they pass a different value.
+
+**Notes**:
+- Keys are validated against the currently available tool parameters (including parameter aliases).
+- Max values per key are limited by `MCP4_FILTER_MAX_VALUES`.
+- Control keys (no value):
+  - `_allow_list`: allows list operations to omit the filtered key (only affects presence enforcement).
+  - `_allow_read`: allows read operations to omit the filtered key (only affects presence enforcement).
+  - If the filtered key is present in arguments, its value is not constrained for list/read operations.
+  - Control keys do not relax modify operations.
+  - Control keys are only meaningful when at least one `key=value` filter is present (otherwise there is nothing to enforce).
 
 See [docs/HTTP-TRANSPORT.md](./docs/HTTP-TRANSPORT.md) for detailed HTTP transport configuration.
 
