@@ -7,6 +7,9 @@
 
 import type { Request as ExpressRequest, Response } from 'express';
 import type { OAuthConfig, AuthInterceptor } from './profile.js';
+import type { SessionToolFilterRequest, SessionToolFilterCompat as SessionToolFilter } from '../tool-filter/index.js';
+
+export type { SessionToolFilter, SessionToolFilterRequest };
 
 export interface SessionData {
   id: string;
@@ -20,6 +23,9 @@ export interface SessionData {
   oauthClientId?: string; // OAuth client ID for debugging/validation
   filtering?: Record<string, string[]>;
   filteringHeader?: string;
+  toolFilterRequest?: SessionToolFilterRequest;
+  toolFilter?: SessionToolFilter;
+  toolFilterHeader?: string;
 }
 
 export interface SSEStreamState {

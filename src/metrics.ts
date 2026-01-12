@@ -34,6 +34,13 @@ export class MetricsCollector {
   private mcpToolCallsTotal: Counter;
   private mcpToolCallDuration: Histogram;
   private mcpToolCallErrors: Counter;
+
+  // Tool filter metrics
+  private toolsTotal: Gauge;
+  private toolsFiltered: Gauge;
+  private toolsSession: Gauge;
+  private toolFilterRejections: Counter;
+  private toolFilterPatterns: Gauge;
   
   // API metrics (calls to backend API)
   private apiCallsTotal: Counter;
@@ -101,6 +108,42 @@ export class MetricsCollector {
       name: `${prefix}tool_call_errors_total`,
       help: 'Total number of MCP tool call errors',
       labelNames: ['tool', 'error_type'],
+      registers: [this.registry],
+    });
+
+    // Tool filter metrics
+    this.toolsTotal = new Gauge({
+      name: `${prefix}tools_total`,
+      help: 'Total number of tools by source',
+      labelNames: ['source'],
+      registers: [this.registry],
+    });
+
+    this.toolsFiltered = new Gauge({
+      name: `${prefix}tools_filtered`,
+      help: 'Number of tools after filtering',
+      labelNames: ['source', 'action'],
+      registers: [this.registry],
+    });
+
+    this.toolsSession = new Gauge({
+      name: `${prefix}tools_session`,
+      help: 'Number of tools available per session',
+      labelNames: ['session_id'],
+      registers: [this.registry],
+    });
+
+    this.toolFilterRejections = new Counter({
+      name: `${prefix}tool_filter_rejections_total`,
+      help: 'Number of tool calls blocked by tool filters',
+      labelNames: ['tool', 'source'],
+      registers: [this.registry],
+    });
+
+    this.toolFilterPatterns = new Gauge({
+      name: `${prefix}tool_filter_patterns`,
+      help: 'Number of active tool filter patterns by type',
+      labelNames: ['type'],
       registers: [this.registry],
     });
 
@@ -186,6 +229,36 @@ export class MetricsCollector {
     this.mcpToolCallErrors.inc({ tool, error_type: errorType });
   }
 
+  recordToolsTotal(source: string, count: number): void {
+    if (!this.enabled) return;
+    this.toolsTotal.set({ source }, count);
+  }
+
+  recordToolsFiltered(source: string, action: string, count: number): void {
+    if (!this.enabled) return;
+    this.toolsFiltered.set({ source, action }, count);
+  }
+
+  recordToolsSession(sessionId: string, count: number): void {
+    if (!this.enabled) return;
+    this.toolsSession.set({ session_id: sessionId }, count);
+  }
+
+  clearToolsSession(sessionId: string): void {
+    if (!this.enabled) return;
+    this.toolsSession.remove({ session_id: sessionId });
+  }
+
+  recordToolFilterRejection(tool: string, source: string): void {
+    if (!this.enabled) return;
+    this.toolFilterRejections.inc({ tool, source });
+  }
+
+  recordToolFilterPatternCount(type: string, count: number): void {
+    if (!this.enabled) return;
+    this.toolFilterPatterns.set({ type }, count);
+  }
+
   /**
    * Record API call to backend
    */
@@ -260,4 +333,3 @@ export class MetricsCollector {
     return 'unknown';
   }
 }
-

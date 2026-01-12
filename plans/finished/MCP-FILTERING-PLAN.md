@@ -2,7 +2,7 @@
 
 ## Goal
 - [x] Introduce session-scoped parameter filtering for HTTP transport via the
-  `X-Mcp4-Filtering` header to constrain automated AI tools to specific entities
+  `X-Mcp4-Params` header to constrain automated AI tools to specific entities
   without changing profiles.
 
 ## Header format
@@ -14,7 +14,7 @@
 
 Example:
 ```
-X-Mcp4-Filtering: resource_id=123, resource_id=456, child_id=8, _allow_read
+X-Mcp4-Params: resource_id=123, resource_id=456, child_id=8, _allow_read
 ```
 
 ## AND and OR logic
@@ -88,7 +88,7 @@ Example:
 - [x] Every client-facing error must include a correlation ID, and the same ID
   must appear in server logs
 - [x] Invalid format:
-  - `ValidationError: Invalid X-Mcp4-Filtering header. Expected comma-separated key=value pairs.`
+  - `ValidationError: Invalid X-Mcp4-Params header. Expected comma-separated key=value pairs.`
 - [x] Unknown key:
   - `ValidationError: Unknown filter key 'foo'. Allowed keys: ...`
 - [x] Conflict:
@@ -96,7 +96,7 @@ Example:
 - [x] Missing required param:
   - `AuthorizationError: Filter requires parameter 'param_name' for tool 'tool_name'.`
 - [x] Header mismatch after initialize:
-  - `ValidationError: X-Mcp4-Filtering header mismatch for existing session.`
+  - `ValidationError: X-Mcp4-Params header mismatch for existing session.`
 - [x] Forbidden API-specific dependency:
   - `ConfigurationError: Filter dependency resolution requires API-specific knowledge; use profile-driven required params.`
 - [x] Missing required param from profile-derived dependencies:
@@ -106,7 +106,7 @@ Example:
 - [x] `src/types/http-transport.ts`:
   - Add `filtering?: Record<string, string[]>` to `SessionData`
 - [x] `src/http-transport.ts`:
-  - Parse and validate `X-Mcp4-Filtering`
+  - Parse and validate `X-Mcp4-Params`
   - Store on session during initialize
   - Enforce header match after initialize
 - [x] `src/mcp-server.ts`:

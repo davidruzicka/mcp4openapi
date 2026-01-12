@@ -39,6 +39,16 @@ import {
   generateCorrelationId,
 } from './errors.js';
 import { parseFilteringHeader, normalizeFilteringHeaderValue } from './filtering.js';
+import {
+  ToolFilterService,
+  EnvConfigParser,
+  HeaderConfigParser,
+  RegexCompiler,
+  RegexValidator,
+  normalizeToolFilterHeaderValue,
+  parseSessionToolFilterHeader,
+} from './tool-filter/index.js';
+import type { SessionToolFilter, SessionToolFilterRequest } from './types/http-transport.js';
 
 // Default maximum token length (1000 characters)
 const DEFAULT_MAX_TOKEN_LENGTH = 1000;
@@ -53,6 +63,7 @@ export class HttpTransport {
   private cleanupInterval: NodeJS.Timeout | null = null;
   private messageHandler: ((message: unknown, sessionId?: string) => Promise<unknown>) | null = null;
   private oauthProvider: ExternalOAuthProvider | null = null;
+  private toolFilterService?: ToolFilterService;
   // Map access_token -> { refreshToken, expiresAt, clientId, scopes }
   // Used to bridge /oauth/token endpoint (where we see OAuthTokens) and session initialization (where we only see access token)
   private oauthTokensByAccessToken: Map<string, { refreshToken?: string; expiresAt?: number; clientId: string; scopes: string[] }> = new Map();
@@ -1179,6 +1190,20 @@ export class HttpTransport {
   }
 
   /**
+   * Lazy initialization of ToolFilterService
+   */
+  private getToolFilterService(): ToolFilterService {
+    if (!this.toolFilterService) {
+      const validator = new RegexValidator();
+      const compiler = new RegexCompiler(validator);
+      const envParser = new EnvConfigParser(compiler);
+      const headerParser = new HeaderConfigParser(compiler);
+      this.toolFilterService = new ToolFilterService(envParser, headerParser, this.logger);
+    }
+    return this.toolFilterService;
+  }
+
+  /**
    * Handle POST requests - Client sending messages to server
    * 
    * MCP Spec: POST can contain requests, notifications, or responses
@@ -1191,6 +1216,10 @@ export class HttpTransport {
       const body = req.body;
       const filteringHeader = normalizeFilteringHeaderValue(this.getFilteringHeaderValue(req));
       const parsedFiltering = filteringHeader ? parseFilteringHeader(filteringHeader) : undefined;
+      const toolFilterHeader = normalizeToolFilterHeaderValue(this.getToolFilterHeaderValue(req));
+      const parsedToolFilter =
+        toolFilterHeader !== undefined ? parseSessionToolFilterHeader(toolFilterHeader) : undefined;
+      const normalizedToolFilterHeader = parsedToolFilter?.normalizedHeader;
 
       // Validate Accept header per MCP Streamable HTTP specification
       const accept = req.headers.accept || '';
@@ -1232,7 +1261,14 @@ export class HttpTransport {
         }
         if (filteringHeader !== undefined) {
           if (!session.filteringHeader || session.filteringHeader !== filteringHeader) {
-            throw new ValidationError('X-Mcp4-Filtering header mismatch for existing session.');
+            throw new ValidationError('X-Mcp4-Params header mismatch for existing session.');
+          }
+        }
+        if (normalizedToolFilterHeader !== undefined) {
+          if (!session.toolFilterHeader || session.toolFilterHeader !== normalizedToolFilterHeader) {
+            throw new ValidationError(
+              `X-Mcp4-Tools header mismatch for existing session. Expected: '${session.toolFilterHeader ?? ''}', Got: '${normalizedToolFilterHeader}'.`
+            );
           }
         }
         this.updateSessionActivity(sessionId);
@@ -1348,7 +1384,9 @@ export class HttpTransport {
             scopes,
             oauthClientId,
             parsedFiltering?.filtering,
-            parsedFiltering?.normalizedHeader
+            parsedFiltering?.normalizedHeader,
+            parsedToolFilter,
+            normalizedToolFilterHeader
           );
         }
 
@@ -1686,13 +1724,27 @@ export class HttpTransport {
   }
 
   private getFilteringHeaderValue(req: Request): string | undefined {
-    const headerValue = req.headers['x-mcp4-filtering'];
+    const headerValue = req.headers['x-mcp4-params'];
     if (Array.isArray(headerValue)) {
       if (headerValue.length === 0) {
         return undefined;
       }
       if (headerValue.length > 1) {
-        throw new ValidationError('Invalid X-Mcp4-Filtering header. Expected comma-separated key=value pairs.');
+        throw new ValidationError('Invalid X-Mcp4-Params header. Expected comma-separated key=value pairs.');
+      }
+      return headerValue[0];
+    }
+    return headerValue;
+  }
+
+  private getToolFilterHeaderValue(req: Request): string | undefined {
+    const headerValue = req.headers['x-mcp4-tools'];
+    if (Array.isArray(headerValue)) {
+      if (headerValue.length === 0) {
+        return undefined;
+      }
+      if (headerValue.length > 1) {
+        throw new ValidationError('Invalid X-Mcp4-Tools header. Expected comma-separated tool names.');
       }
       return headerValue[0];
     }
@@ -1711,7 +1763,9 @@ export class HttpTransport {
     scopes?: string[],
     oauthClientId?: string,
     filtering?: Record<string, string[]>,
-    filteringHeader?: string
+    filteringHeader?: string,
+    toolFilterRequest?: SessionToolFilterRequest,
+    toolFilterHeader?: string
   ): string {
     // Validate token if provided (defense in depth)
     if (authToken) {
@@ -1731,6 +1785,8 @@ export class HttpTransport {
       oauthClientId,
       filtering,
       filteringHeader,
+      toolFilterRequest,
+      toolFilterHeader,
     };
     this.sessions.set(sessionId, session);
     this.logger.info('Session created', { 
@@ -1795,6 +1851,7 @@ export class HttpTransport {
       // Record metrics
       if (this.metrics) {
         this.metrics.recordSessionDestroyed();
+        this.metrics.clearToolsSession(sessionId);
       }
     }
   }
@@ -1919,6 +1976,69 @@ export class HttpTransport {
   public getSessionFilteringHeader(sessionId: string): string | undefined {
     const session = this.sessions.get(sessionId);
     return session?.filteringHeader;
+  }
+
+  public getSessionToolFilterRequest(sessionId: string): SessionToolFilterRequest | undefined {
+    const session = this.sessions.get(sessionId);
+    return session?.toolFilterRequest;
+  }
+
+  public getSessionToolFilter(sessionId: string): SessionToolFilter | undefined {
+    const session = this.sessions.get(sessionId);
+    return session?.toolFilter;
+  }
+
+  public getSessionToolFilterHeader(sessionId: string): string | undefined {
+    const session = this.sessions.get(sessionId);
+    return session?.toolFilterHeader;
+  }
+
+  public setSessionToolFilter(sessionId: string, toolFilter: SessionToolFilter): void {
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+      return;
+    }
+    session.toolFilter = toolFilter;
+  }
+
+  public recordGlobalToolFilterMetrics(summary: {
+    originalCount: number;
+    allowedCount: number;
+    removedCount: number;
+    patternCounts: Record<string, number>;
+  }): void {
+    if (!this.metrics) {
+      return;
+    }
+
+    this.metrics.recordToolsTotal('profile', summary.originalCount);
+    this.metrics.recordToolsFiltered('global_env', 'allowed', summary.allowedCount);
+    this.metrics.recordToolsFiltered('global_env', 'denied', summary.removedCount);
+
+    for (const [type, count] of Object.entries(summary.patternCounts)) {
+      this.metrics.recordToolFilterPatternCount(type, count);
+    }
+  }
+
+  public recordSessionToolFilterMetrics(
+    sessionId: string,
+    allowedCount: number,
+    request: SessionToolFilterRequest
+  ): void {
+    if (!this.metrics) {
+      return;
+    }
+
+    this.metrics.recordToolsSession(sessionId, allowedCount);
+    this.metrics.recordToolFilterPatternCount('session_allow_list', request.exactNames.size);
+    this.metrics.recordToolFilterPatternCount('session_allow_regex', request.regexPatterns.length);
+  }
+
+  public recordToolFilterRejection(tool: string, source: 'env' | 'session'): void {
+    if (!this.metrics) {
+      return;
+    }
+    this.metrics.recordToolFilterRejection(tool, source);
   }
 
   /**
