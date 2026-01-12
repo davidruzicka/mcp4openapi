@@ -128,6 +128,28 @@ export class HttpTransport {
       next();
     });
 
+    // Security: Standard security headers
+    this.app.use((req: Request, res: Response, next: NextFunction) => {
+      // Prevent MIME type sniffing
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+
+      // Prevent clickjacking
+      res.setHeader('X-Frame-Options', 'DENY');
+
+      // Content Security Policy
+      // default-src 'self': Only allow content from same origin
+      // frame-ancestors 'none': Prevent embedding in iframes (redundant with X-Frame-Options but good practice)
+      res.setHeader('Content-Security-Policy', "default-src 'self'; frame-ancestors 'none'");
+
+      // Referrer Policy: Don't send referrer to third parties
+      res.setHeader('Referrer-Policy', 'no-referrer');
+
+      // Remove X-Powered-By header to hide server details
+      res.removeHeader('X-Powered-By');
+
+      next();
+    });
+
     // JSON body parser
     this.app.use(express.json());
 

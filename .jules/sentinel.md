@@ -1,0 +1,4 @@
+## 2026-01-12 - [Missing Security Headers in Express App]
+**Vulnerability:** The Express application was missing critical security headers (`X-Content-Type-Options`, `X-Frame-Options`, `Content-Security-Policy`, `Referrer-Policy`) and was exposing server details via `X-Powered-By`. This leaves the application vulnerable to MIME sniffing, clickjacking, and information leakage.
+**Learning:** Even when security headers are documented as requirements or "implemented via middleware", they might be missing from the actual codebase. Manual verification or automated tests are essential to confirm their presence. Relying on default Express behavior is insecure.
+**Prevention:** Always use a security header middleware (like `helmet` or a custom implementation as done here) and include integration tests that specifically assert the presence and values of these headers.
