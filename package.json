@@ -56,7 +56,7 @@
     "url": "https://github.com/davidruzicka/mcp4openapi/issues"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.24.0",
+    "@modelcontextprotocol/sdk": "1.25.2",
     "dotenv": "^17.2.3",
     "escape-html": "^1.0.3",
     "express": "^5.2.1",
