@@ -6,14 +6,11 @@
  */
 
 import type { ToolDefinition } from '../types/profile.js';
-import type { SessionToolFilterRequest, OperationResolver } from './types.js';
+import type { SessionToolFilterRequest } from './types.js';
 import { HeaderConfigParser } from './config/header-config-parser.js';
 import { RegexCompiler } from './regex/regex-compiler.js';
 import { RegexValidator } from './regex/regex-validator.js';
 import { SessionToolFilter as SessionToolFilterClass } from './filter/session-tool-filter.js';
-import { OpenAPIOperationResolver } from './operation/operation-resolver.js';
-import { OperationDetector } from './operation/operation-detector.js';
-import { OperationClassifier } from './operation/operation-classifier.js';
 
 // Legacy SessionToolFilter type for compatibility
 export interface SessionToolFilter {
@@ -75,17 +72,7 @@ export function applySessionToolFilter(
   request: SessionToolFilterRequest,
   resolver?: { getOperationById?: (id: string) => any; getOperationForCall?: (call: string) => any }
 ): SessionToolFilter {
-  // Create detector if resolver provided
-  const detector = resolver 
-    ? new OperationDetector(
-        new OperationClassifier(),
-        {
-          getOperationById: resolver.getOperationById || (() => undefined),
-          getOperationForCall: resolver.getOperationForCall || (() => undefined)
-        } as OperationResolver
-      )
-    : undefined;
-  
+  void resolver;
   const filter = new SessionToolFilterClass(request);
   const result = filter.apply(tools);
   

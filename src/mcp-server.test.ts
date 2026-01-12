@@ -1650,7 +1650,7 @@ describe('MCPServer', () => {
       (s as any).applySessionToolFiltering('s1');
     });
 
-    it('covers getToolFilterSourcesSummary via all-tools-filtered error', () => {
+    it('throws ConfigurationError when all tools are filtered out', () => {
       const s = new MCPServer();
       (s as any).profile = {
         profile_name: 'test',
