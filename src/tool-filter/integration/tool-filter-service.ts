@@ -6,6 +6,7 @@ import type { ToolDefinition } from '../../types/profile.js';
 import type { Logger } from '../../logger.js';
 import type { EnvConfigParser } from '../config/env-config-parser.js';
 import type { HeaderConfigParser } from '../config/header-config-parser.js';
+import type { OperationDetector } from '../operation/operation-detector.js';
 import type { SessionToolFilterResult } from '../filter/session-tool-filter.js';
 import { GlobalToolFilter } from '../filter/global-tool-filter.js';
 import { SessionToolFilter } from '../filter/session-tool-filter.js';
@@ -17,7 +18,8 @@ export class ToolFilterService {
   constructor(
     private envParser: EnvConfigParser,
     private headerParser: HeaderConfigParser,
-    private logger: Logger
+    private logger: Logger,
+    private detector?: OperationDetector
   ) {}
 
   /**
@@ -37,7 +39,7 @@ export class ToolFilterService {
       return tools;
     }
 
-    const filter = new GlobalToolFilter(config, this.logger);
+    const filter = new GlobalToolFilter(config, this.logger, this.detector);
     const result = filter.apply(tools);
 
     this.logger.info('Global tool filter applied', {
@@ -61,7 +63,7 @@ export class ToolFilterService {
     headerValue: string
   ): SessionToolFilterResult {
     const request = this.headerParser.parse(headerValue);
-    const filter = new SessionToolFilter(request);
+    const filter = new SessionToolFilter(request, this.detector);
     const result = filter.apply(tools);
 
     if (request.hasRules) {

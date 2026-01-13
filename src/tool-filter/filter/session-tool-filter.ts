@@ -4,8 +4,9 @@
 
 import type { ToolDefinition } from '../../types/profile.js';
 import type { SessionToolFilterRequest } from '../types.js';
+import type { OperationDetector } from '../operation/operation-detector.js';
 import { FilterEngine } from './filter-engine.js';
-import { ExactMatchRule, RegexMatchRule } from './filter-rules.js';
+import { ExactMatchRule, RegexMatchRule, CategoryMatchRule } from './filter-rules.js';
 
 export interface SessionToolFilterResult {
   allowedToolNames: Set<string>;
@@ -20,7 +21,8 @@ export class SessionToolFilter {
   private engine: FilterEngine;
 
   constructor(
-    private request: SessionToolFilterRequest
+    private request: SessionToolFilterRequest,
+    private detector?: OperationDetector
   ) {
     this.engine = this.buildEngine(request);
   }
@@ -46,7 +48,7 @@ export class SessionToolFilter {
 
     // Apply rules
     for (const tool of tools) {
-      const result = this.engine.evaluate(tool.name);
+      const result = this.engine.evaluateTool(tool);
 
       if (result.allowed) {
         allowedToolNames.add(tool.name);
@@ -76,7 +78,15 @@ export class SessionToolFilter {
       allowRules.push(new RegexMatchRule(request.regexPatterns, 'allow'));
     }
 
-    // Note: CategoryMatchRule requires OperationDetector (not wired here).
+    if (request.allowCategories.size > 0) {
+      if (!this.detector) {
+        throw new Error(
+          'X-Mcp4-Tools includes _allow_list/_allow_read but OperationDetector is not available. ' +
+          'Category-based session tool filtering requires OpenAPI parser.'
+        );
+      }
+      allowRules.push(new CategoryMatchRule(request.allowCategories, this.detector));
+    }
 
     return new FilterEngine(allowRules, []);
   }

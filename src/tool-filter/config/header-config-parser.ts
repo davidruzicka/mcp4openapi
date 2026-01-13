@@ -30,6 +30,7 @@ export class HeaderConfigParser {
     return {
       exactNames: parsed.exactNames,
       regexPatterns: parsed.regexPatterns,
+      allowCategories: parsed.allowCategories,
       normalizedHeader: normalized,
       rawEntries: parts,
       hasRules: parts.length > 0
@@ -77,11 +78,17 @@ export class HeaderConfigParser {
   private parseParts(parts: string[]): ParsedParts {
     const exactNames = new Set<string>();
     const regexPatterns: CompiledRegex[] = [];
+    const allowCategories = new Set<'list' | 'read'>();
 
     for (const part of parts) {
-      if (part.startsWith('_allow_')) {
+      if (part === '_allow_list') {
+        allowCategories.add('list');
+      } else if (part === '_allow_read') {
+        allowCategories.add('read');
+      } else if (part.startsWith('_allow_')) {
         throw new ValidationError(
-          'X-Mcp4-Tools does not support _allow_* keywords. Use explicit tool names or regex: patterns. (Did you mean to use X-Mcp4-Params?)'
+          'X-Mcp4-Tools supports only _allow_list and _allow_read. ' +
+          'Other _allow_* keywords are not supported here. (Did you mean to use X-Mcp4-Params?)'
         );
       } else if (part.startsWith('regex:')) {
         const pattern = part.slice('regex:'.length).trim();
@@ -94,7 +101,7 @@ export class HeaderConfigParser {
       }
     }
 
-    return { exactNames, regexPatterns };
+    return { exactNames, regexPatterns, allowCategories };
   }
 
   /**
@@ -123,6 +130,7 @@ export class HeaderConfigParser {
     return {
       exactNames: new Set(),
       regexPatterns: [],
+      allowCategories: new Set(),
       normalizedHeader: '',
       rawEntries: [],
       hasRules: false
@@ -133,4 +141,5 @@ export class HeaderConfigParser {
 interface ParsedParts {
   exactNames: Set<string>;
   regexPatterns: CompiledRegex[];
+  allowCategories: Set<import('../types.js').ToolFilterCategory>;
 }
