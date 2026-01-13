@@ -209,6 +209,42 @@ describe('filtering', () => {
       ).not.toThrow();
     });
 
+    it('allows any filtered value for read when _allow_read is present', () => {
+      const filtering = { project_id: ['123'], _allow_read: [] };
+      expect(() =>
+        enforceFiltering({
+          filtering,
+          toolDef: baseTool,
+          args: { action: 'get', project_id: '999' },
+          operation: readOperation,
+        })
+      ).not.toThrow();
+    });
+
+    it('allows any filtered value for list when _allow_list is present', () => {
+      const filtering = { project_id: ['123'], _allow_list: [] };
+      expect(() =>
+        enforceFiltering({
+          filtering,
+          toolDef: baseTool,
+          args: { action: 'list', project_id: '999' },
+          operation: listOperation,
+        })
+      ).not.toThrow();
+    });
+
+    it('still rejects values outside the allowed set for modify even with _allow_read and _allow_list', () => {
+      const filtering = { project_id: ['123'], _allow_read: [], _allow_list: [] };
+      expect(() =>
+        enforceFiltering({
+          filtering,
+          toolDef: baseTool,
+          args: { action: 'update', project_id: '999' },
+          operation: undefined,
+        })
+      ).toThrow(AuthorizationError);
+    });
+
     it('requires at least one filter param for modify actions', () => {
       const filtering = { project_id: ['123'] };
       expect(() =>

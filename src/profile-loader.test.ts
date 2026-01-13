@@ -86,6 +86,147 @@ describe('ProfileLoader', () => {
     }).rejects.toThrow();
   });
 
+  it('normalizes tool names using NFC', async () => {
+    const loader = new ProfileLoader();
+    const fs = await import('fs/promises');
+    const tmpPath = `/tmp/profile-nfc-${Date.now()}-${Math.random()}.json`;
+    await fs.writeFile(
+      tmpPath,
+      JSON.stringify({
+        profile_name: 'nfc-test',
+        tools: [
+          {
+            name: 'cafe\u0301',
+            description: 'Unicode tool',
+            parameters: {},
+            operations: { execute: 'op' },
+          },
+        ],
+        interceptors: {},
+      }),
+      'utf-8'
+    );
+
+    const profile = await loader.load(tmpPath);
+    expect(profile.tools[0].name).toBe('café');
+  });
+
+  describe('tool semantic validation', () => {
+    it('rejects composite tools without steps', async () => {
+      const loader = new ProfileLoader();
+      const fs = await import('fs/promises');
+      const tmpPath = `/tmp/profile-no-steps-${Date.now()}-${Math.random()}.json`;
+      await fs.writeFile(
+        tmpPath,
+        JSON.stringify({
+          profile_name: 'test',
+          tools: [
+            {
+              name: 'composite_tool',
+              description: 'Composite',
+              composite: true,
+              parameters: {},
+            },
+          ],
+          interceptors: {},
+        }),
+        'utf-8'
+      );
+
+      await expect(loader.load(tmpPath)).rejects.toThrow('marked as composite but has no steps');
+    });
+
+    it('rejects non-composite tools without operations', async () => {
+      const loader = new ProfileLoader();
+      const fs = await import('fs/promises');
+      const tmpPath = `/tmp/profile-no-ops-${Date.now()}-${Math.random()}.json`;
+      await fs.writeFile(
+        tmpPath,
+        JSON.stringify({
+          profile_name: 'test',
+          tools: [
+            {
+              name: 'plain_tool',
+              description: 'Plain',
+              parameters: {},
+            },
+          ],
+          interceptors: {},
+        }),
+        'utf-8'
+      );
+
+      await expect(loader.load(tmpPath)).rejects.toThrow(
+        "must have either 'operations' or be marked as 'composite' with 'steps'"
+      );
+    });
+
+    it('rejects required_for when action enum is missing', async () => {
+      const loader = new ProfileLoader();
+      const fs = await import('fs/promises');
+      const tmpPath = `/tmp/profile-required-for-${Date.now()}-${Math.random()}.json`;
+      await fs.writeFile(
+        tmpPath,
+        JSON.stringify({
+          profile_name: 'test',
+          tools: [
+            {
+              name: 'tool',
+              description: 'Tool',
+              parameters: {
+                some_id: {
+                  type: 'string',
+                  description: 'id',
+                  required_for: ['get'],
+                },
+              },
+              operations: { execute: 'op' },
+            },
+          ],
+          interceptors: {},
+        }),
+        'utf-8'
+      );
+
+      await expect(loader.load(tmpPath)).rejects.toThrow("has 'required_for' but 'action' parameter has no enum");
+    });
+
+    it('rejects required_for actions that are not in action enum', async () => {
+      const loader = new ProfileLoader();
+      const fs = await import('fs/promises');
+      const tmpPath = `/tmp/profile-required-for-enum-${Date.now()}-${Math.random()}.json`;
+      await fs.writeFile(
+        tmpPath,
+        JSON.stringify({
+          profile_name: 'test',
+          tools: [
+            {
+              name: 'tool',
+              description: 'Tool',
+              parameters: {
+                action: {
+                  type: 'string',
+                  description: 'Action',
+                  enum: ['list'],
+                },
+                some_id: {
+                  type: 'string',
+                  description: 'id',
+                  required_for: ['get'],
+                },
+              },
+              operations: { execute: 'op' },
+            },
+          ],
+          interceptors: {},
+        }),
+        'utf-8'
+      );
+
+      await expect(loader.load(tmpPath)).rejects.toThrow("requires action 'get' but it's not in action enum");
+    });
+  });
+
   describe('auth interceptor validation', () => {
     it('should accept array-form auth interceptors', async () => {
       const loader = new ProfileLoader();
@@ -168,6 +309,35 @@ describe('ProfileLoader', () => {
       await fs.writeFile(tmpPath, profileJson);
 
       await expect(loader.load(tmpPath)).rejects.toThrow('custom-header requires header_name');
+    });
+
+    it('should reject query auth interceptor without query_param', async () => {
+      const loader = new ProfileLoader();
+      const fs = await import('fs/promises');
+      const tmpPath = `/tmp/profile-query-missing-${Date.now()}-${Math.random()}.json`;
+      await fs.writeFile(
+        tmpPath,
+        JSON.stringify({
+          profile_name: 'test-profile',
+          interceptors: {
+            auth: {
+              type: 'query',
+              value_from_env: 'API_KEY',
+            },
+          },
+          tools: [
+            {
+              name: 'tool',
+              description: 'Tool',
+              parameters: {},
+              operations: { execute: 'op' },
+            },
+          ],
+        }),
+        'utf-8'
+      );
+
+      await expect(loader.load(tmpPath)).rejects.toThrow('query type requires query_param');
     });
   });
 

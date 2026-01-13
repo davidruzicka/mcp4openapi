@@ -155,9 +155,73 @@ describe('shortenToolName', () => {
       expect(result2.name.length).toBeLessThanOrEqual(200);
     });
   });
+
+  describe('options parameter', () => {
+    it('should use default allOperations when not provided', () => {
+      const result = shortenToolName(mockOp, NamingStrategy.Hash, 45);
+      expect(result.name).toBeTruthy();
+      expect(result.name.length).toBeLessThanOrEqual(45);
+    });
+
+    it('should use custom minParts from options', () => {
+      const result = shortenToolName(mockOp, NamingStrategy.Balanced, 45, allOps, {
+        minParts: 2
+      });
+      expect(result.name).toBeTruthy();
+      expect(result.name.length).toBeLessThanOrEqual(45);
+    });
+
+    it('should use custom minLength from options', () => {
+      const result = shortenToolName(mockOp, NamingStrategy.Balanced, 45, allOps, {
+        minLength: 15
+      });
+      expect(result.name).toBeTruthy();
+      expect(result.name.length).toBeLessThanOrEqual(45);
+    });
+
+    it('should use custom allOperations from options', () => {
+      const customOps: OperationForNaming[] = [
+        mockOp,
+        { operationId: 'otherOp', method: 'get', path: '/other', tags: [] }
+      ];
+      
+      const result = shortenToolName(mockOp, NamingStrategy.Balanced, 45, undefined, {
+        allOperations: customOps
+      });
+      expect(result.name).toBeTruthy();
+    });
+  });
+
+  describe('default case in switch statement', () => {
+    it('should handle unknown strategy by returning original name', () => {
+      const result = shortenToolName(mockOp, 'unknown' as any, 45, allOps);
+      expect(result.name).toBe(mockOp.operationId);
+      expect(result.truncated).toBe(false);
+      expect(result.strategy).toBe('unknown');
+    });
+  });
 });
 
 describe('pickMostSimilarPairs', () => {
+  it('should return empty array when operations.length < 2', () => {
+    const singleOp: OperationForNaming[] = [
+      {
+        operationId: 'getUser',
+        method: 'get',
+        path: '/users/{id}',
+        tags: []
+      }
+    ];
+    
+    const pairs = pickMostSimilarPairs(singleOp, 5, 0.5);
+    expect(pairs).toEqual([]);
+  });
+
+  it('should return empty array when operations array is empty', () => {
+    const pairs = pickMostSimilarPairs([], 5, 0.5);
+    expect(pairs).toEqual([]);
+  });
+
   const ops: OperationForNaming[] = [
     {
       operationId: 'putApiV4ProjectsIdRepositoryBranchesBranchProtect',
@@ -256,6 +320,27 @@ describe('pickMostSimilarPairs', () => {
     
     // Should return pairs even with reused operations
     expect(pairs.length).toBeLessThanOrEqual(3);
+  });
+
+  it('should fill remaining slots when selected.length < topN by adding pairs even with reused ops', () => {
+    // Create scenario where some pairs pass threshold but not enough to fill topN
+    // This triggers the fallback at lines 598-603 that adds pairs even with reused ops
+    const opsForReuse: OperationForNaming[] = [
+      { operationId: 'getUserById', method: 'get', path: '/users/{id}', tags: [] },
+      { operationId: 'getUserByEmail', method: 'get', path: '/users/email/{email}', tags: [] },
+      { operationId: 'getUserByName', method: 'get', path: '/users/name/{name}', tags: [] },
+      { operationId: 'getProjectById', method: 'get', path: '/projects/{id}', tags: [] },
+    ];
+
+    // Request 4 pairs with moderate threshold
+    // With 4 ops, max unique pairs is 6, but threshold might filter some
+    // If we get fewer than 4, the fallback logic should add more even with reused ops
+    const pairs = pickMostSimilarPairs(opsForReuse, 4, 0.6);
+    
+    // Should return some pairs
+    expect(pairs.length).toBeGreaterThan(0);
+    // The fallback logic (lines 598-603) ensures we get as many as possible up to topN
+    expect(pairs.length).toBeLessThanOrEqual(4);
   });
 
   it('should include pair even if one operation is already used when not at topN', () => {
