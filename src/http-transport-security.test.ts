@@ -6,6 +6,7 @@ import type { McpRequest } from './types/http-transport.js';
 import { HttpTransport } from './http-transport.js';
 import { ConsoleLogger } from './logger.js';
 import { AuthenticationError, AuthorizationError, RateLimitError, ValidationError } from './errors.js';
+import request from 'supertest';
 
 function createTransport(config?: Partial<any>) {
   return new HttpTransport(
@@ -112,6 +113,26 @@ function createMockSseResponse() {
 }
 
 describe('HttpTransport security behavior (no listen)', () => {
+  it('should set security headers on response', async () => {
+    const transport = createTransport();
+    const app = (transport as any).app;
+
+    const response = await request(app).post('/mcp').send({
+      jsonrpc: '2.0',
+      method: 'initialize',
+      id: 1,
+      params: {}
+    });
+
+    // Check for standard security headers
+    expect(response.headers['content-security-policy']).toBe("default-src 'self'; frame-ancestors 'none'");
+    expect(response.headers['x-frame-options']).toBe('DENY');
+    expect(response.headers['x-content-type-options']).toBe('nosniff');
+    expect(response.headers['referrer-policy']).toBe('no-referrer');
+    expect(response.headers['x-powered-by']).toBeUndefined();
+    await transport.stop();
+  });
+
   it('returns 400 for invalid Authorization header format (no 500 leak)', async () => {
     const transport = createTransport();
     transport.setMessageHandler(async () => ({ result: 'ok' }));

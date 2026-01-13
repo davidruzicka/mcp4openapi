@@ -107,6 +107,16 @@ export class HttpTransport {
       next();
     });
 
+    // Security: Hardening headers
+    this.app.disable('x-powered-by');
+    this.app.use((req: Request, res: Response, next: NextFunction) => {
+      res.setHeader('Content-Security-Policy', "default-src 'self'; frame-ancestors 'none'");
+      res.setHeader('X-Frame-Options', 'DENY');
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.setHeader('Referrer-Policy', 'no-referrer');
+      next();
+    });
+
     // DNS rebinding protection when binding to localhost
     // Deny requests with mismatched Host headers to prevent DNS rebinding attacks
     // Applies when server host is localhost/127.0.0.1, regardless of auth configuration
