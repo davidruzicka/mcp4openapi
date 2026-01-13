@@ -349,9 +349,12 @@ export class HttpTransport {
       const ipInt = this.ipv4ToInt(ip);
       const rangeInt = this.ipv4ToInt(range);
 
+      /* c8 ignore start - defensive check for edge cases where isIP() passes but parsing fails
+       * This should never happen in practice, but serves as a fail-safe */
       if (ipInt === null || rangeInt === null) {
         return false;
       }
+      /* c8 ignore end */
 
       const mask = (0xFFFFFFFF << (32 - maskBits)) >>> 0;
       return (ipInt & mask) === (rangeInt & mask);
@@ -365,9 +368,12 @@ export class HttpTransport {
     const ipInt = this.ipv6ToBigInt(ip);
     const rangeInt = this.ipv6ToBigInt(range);
 
+    /* c8 ignore start - defensive check for edge cases where isIP() passes but parsing fails
+     * This should never happen in practice, but serves as a fail-safe */
     if (ipInt === null || rangeInt === null) {
       return false;
     }
+    /* c8 ignore end */
 
     const mask = this.ipv6Mask(maskBits);
     return (ipInt & mask) === (rangeInt & mask);
@@ -455,9 +461,11 @@ export class HttpTransport {
 
     segments = [...headVals, ...Array(missing).fill(0), ...tailVals];
 
+    /* c8 ignore start - defensive check that should never trigger if logic above is correct */
     if (segments.length !== totalSegmentsNeeded) {
       return null;
     }
+    /* c8 ignore end */
 
     if (ipv4Tail !== null) {
       const high = (ipv4Tail >>> 16) & 0xFFFF;
@@ -465,9 +473,11 @@ export class HttpTransport {
       segments.push(high, low);
     }
 
+    /* c8 ignore start - defensive check that should never trigger if logic above is correct */
     if (segments.length !== 8) {
       return null;
     }
+    /* c8 ignore end */
 
     let value = 0n;
     for (const part of segments) {
