@@ -14,6 +14,7 @@
   - [4. Response Caching](#4-response-caching)
   - [5. Request Deduplication](#5-request-deduplication)
   - [6. Improve project_id encoding](#6-improve-project_id-encoding)
+  - [7. Strengthen ReDoS Protection in Regex Compiler](#7-strengthen-redos-protection-in-regex-compiler)
 
 ## P1: Correctness and Core Features
 
@@ -172,3 +173,42 @@ Prevent multiple identical in-flight requests (thundering herd):
 - Replace `/` characters only with `%2F`.
 
 **Estimated effort**: 1-2 hours
+
+### 7. Strengthen ReDoS Protection in Regex Compiler
+**Problem**: `RegexCompiler` accepts user input from HTTP headers (`X-Mcp4-Tools`) and environment variables. While `RegexValidator` provides partial protection (length limits, nested quantifiers, ambiguous alternation), it doesn't cover all ReDoS attack vectors. A malicious user could craft regex patterns that pass validation but still cause exponential backtracking.
+
+**Current protection**:
+- Max length: 100 characters (configurable)
+- Nested quantifiers detection: `(a+)+`, `(x*)*`, etc.
+- Ambiguous alternation detection: `(a|aa)+`, `(foo|foobar)*`, etc.
+
+**Gaps**:
+- Other ReDoS patterns may pass validation
+- No timeout for regex matching operations
+- No limit on input length being tested against regex
+
+**Goal**: Strengthen ReDoS protection to prevent DoS attacks via malicious regex patterns.
+
+**Implementation options**:
+
+**Option A: Add Regex Matching Timeout (Recommended)**
+- Use worker threads or `piscina` to run regex matches with timeout
+- Kill worker if match exceeds threshold (e.g., 100ms)
+- Fallback to rejection if timeout occurs
+
+**Option B: Expand Validation Patterns**
+- Add detection for more ReDoS patterns (e.g., overlapping alternations, complex nested groups)
+- Use regex analysis libraries (e.g., `safe-regex`, `redos-detector`)
+
+**Option C: Limit Test Input Length**
+- Restrict length of strings tested against compiled regex
+- Tool names are naturally limited, but add explicit check in `CompiledRegex.test()`
+
+**Recommendation**: Implement **Option A** (timeout) + **Option C** (input length limit) for defense in depth. Option B can be added incrementally.
+
+**Files to modify**:
+- `src/tool-filter/regex/regex-compiler.ts` - add timeout wrapper for regex matching
+- `src/tool-filter/regex/regex-validator.ts` - expand pattern detection (optional)
+- `src/tool-filter/regex/regex-compiler.test.ts` - add timeout and edge case tests
+
+**Estimated effort**: 2-3 hours (timeout implementation) + 1-2 hours (expanded validation)
