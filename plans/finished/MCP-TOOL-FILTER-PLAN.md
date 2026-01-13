@@ -50,7 +50,7 @@ This filter applies per-session via HTTP transport, allowing AI agents to reques
     - Validate regex syntax (fail session init if invalid).
     - Apply ReDoS protection (max length 100 chars per pattern, reject nested quantifiers).
     - Enforce entry count limit and per-entry length limit.
-- [ ] **List/Read Keyword Syntax**: Removed. `X-Mcp4-Tools` does not support `_allow_*` keywords; use explicit tool names or `regex:` patterns.
+- [x] **List/Read Keyword Syntax**: `X-Mcp4-Tools` support `_allow_read` and `_allow_list` keywords.
 
 ### Session Logic
 - [x] Filter is extracted from the `initialize` request.
@@ -141,7 +141,7 @@ This filter applies per-session via HTTP transport, allowing AI agents to reques
 - [x] ReDoS pattern rejection: `(a+)+b`, nested quantifiers, excessive length.
 - [x] Case sensitivity: `GetUser` ≠ `getuser`.
 - [x] No-op detection: filter that doesn't change tool set.
-- [ ] Composite tool keyword handling: removed.
+- [x] Composite tool keyword handling.
 
 **Integration Tests (Global Env Filter):**
 - [x] Server startup with `MCP4_TOOL_FILTER_ALLOW_NAMES=get_user,list_users` - verify only those tools exist.
@@ -160,7 +160,7 @@ This filter applies per-session via HTTP transport, allowing AI agents to reques
 - [x] Session init with no-op header - fails with detailed error.
 - [x] Session init with all-tools-filtered header - fails with tool count.
 - [x] Header immutability: subsequent request with different header - throws `ValidationError`.
-- [ ] Composite tool with `_allow_read` - removed.
+- [x] Composite tool with `_allow_read`
 - [x] Composite step referencing filtered sub-tool - fails at validation with explicit error.
 
 **Edge Cases:**
