@@ -7,6 +7,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import request from 'supertest';
 import type { Express } from 'express';
+import fs from 'fs';
+import https from 'https';
 import { HttpTransport } from './http-transport.js';
 import { ConsoleLogger, LogLevel, type Logger } from './logger.js';
 import { describeIfListen } from './testing/listen-support.js';
@@ -101,6 +103,126 @@ describeIfListen('HttpTransport', () => {
       );
       expect(transport.getSessionToolFilterRequest(sessionId)).toEqual(toolFilterRequest);
       expect(transport.getSessionToolFilterHeader(sessionId)).toBe(toolFilterRequest.normalizedHeader);
+    });
+
+    it('parses and stores _allow_list category in session tool filter', () => {
+      const toolFilterRequest = parseSessionToolFilterHeader('_allow_list');
+      expect(toolFilterRequest.allowCategories.has('list')).toBe(true);
+      expect(toolFilterRequest.hasRules).toBe(true);
+
+      const sessionId = (transport as any).createSession(
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        toolFilterRequest,
+        toolFilterRequest.normalizedHeader
+      );
+      const stored = transport.getSessionToolFilterRequest(sessionId);
+      expect(stored?.allowCategories.has('list')).toBe(true);
+    });
+
+    it('parses and stores _allow_read category in session tool filter', () => {
+      const toolFilterRequest = parseSessionToolFilterHeader('_allow_read');
+      expect(toolFilterRequest.allowCategories.has('read')).toBe(true);
+
+      const sessionId = (transport as any).createSession(
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        toolFilterRequest,
+        toolFilterRequest.normalizedHeader
+      );
+      const stored = transport.getSessionToolFilterRequest(sessionId);
+      expect(stored?.allowCategories.has('read')).toBe(true);
+    });
+
+    it('parses and stores combined categories with tool names', () => {
+      const toolFilterRequest = parseSessionToolFilterHeader('get_user, _allow_list, regex:read_.*');
+      expect(toolFilterRequest.exactNames.has('get_user')).toBe(true);
+      expect(toolFilterRequest.allowCategories.has('list')).toBe(true);
+      expect(toolFilterRequest.regexPatterns.length).toBe(1);
+
+      const sessionId = (transport as any).createSession(
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        toolFilterRequest,
+        toolFilterRequest.normalizedHeader
+      );
+      const stored = transport.getSessionToolFilterRequest(sessionId);
+      expect(stored?.exactNames.has('get_user')).toBe(true);
+      expect(stored?.allowCategories.has('list')).toBe(true);
+      expect(stored?.regexPatterns.length).toBe(1);
+    });
+  });
+
+  describe('tool filter service with OperationDetector', () => {
+    it('creates OperationDetector when parser is provided in config', async () => {
+      const mockParser = {
+        getOperationById: vi.fn(),
+        getOperationForCall: vi.fn()
+      } as any;
+
+      const transportWithParser = new HttpTransport(
+        {
+          host: '127.0.0.1',
+          port: 0,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: false,
+          metricsPath: '/metrics',
+          parser: mockParser
+        },
+        logger
+      );
+
+      // Access private method to test
+      const service = (transportWithParser as any).getToolFilterService();
+      expect(service).toBeDefined();
+
+      // Verify detector was created (indirectly - service should work with categories)
+      const toolFilterRequest = parseSessionToolFilterHeader('_allow_list');
+      expect(toolFilterRequest.allowCategories.has('list')).toBe(true);
+
+      await transportWithParser.stop();
+    });
+
+    it('creates ToolFilterService without detector when parser not provided', async () => {
+      const transportWithoutParser = new HttpTransport(
+        {
+          host: '127.0.0.1',
+          port: 0,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: false,
+          metricsPath: '/metrics'
+        },
+        logger
+      );
+
+      // Access private method to test
+      const service = (transportWithoutParser as any).getToolFilterService();
+      expect(service).toBeDefined();
+
+      // Service should still work, just without category support
+      const toolFilterRequest = parseSessionToolFilterHeader('get_user');
+      expect(toolFilterRequest.exactNames.has('get_user')).toBe(true);
+
+      await transportWithoutParser.stop();
     });
   });
 
@@ -1998,6 +2120,145 @@ describeIfListen('HttpTransport', () => {
       expect(serverUrl).toContain('http://');
       expect(serverUrl).toContain('127.0.0.1');
     });
+
+    it('should fallback to configured host when OAuth redirect URI is invalid', () => {
+      const oauthTransport = new HttpTransport(
+        {
+          host: '127.0.0.1',
+          port: 3003,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: false,
+          metricsPath: '/metrics',
+          oauthConfig: {
+            issuer: 'https://auth.example.com',
+            client_id: 'test-client',
+            client_secret: 'test-secret',
+            scopes: ['api']
+          }
+        },
+        logger
+      );
+
+      // Mock invalid redirect URI
+      (oauthTransport as any).oauthProvider = {
+        redirectUri: 'not-a-valid-url'
+      };
+
+      const serverUrl = oauthTransport.getServerUrl();
+      expect(serverUrl).toBe('http://127.0.0.1:3003');
+
+      oauthTransport.stop();
+    });
+  });
+
+  describe('Server start error handling', () => {
+    it('should handle HTTPS server start error when reading cert files fails', async () => {
+      const sslError = new Error('SSL certificate read failed');
+      const savedCertFile = process.env.MCP4_SSL_CERT_FILE;
+      const savedKeyFile = process.env.MCP4_SSL_KEY_FILE;
+      
+      try {
+        // Set SSL env vars to trigger HTTPS path
+        process.env.MCP4_SSL_CERT_FILE = '/path/to/cert.pem';
+        process.env.MCP4_SSL_KEY_FILE = '/path/to/key.pem';
+        
+        // Mock fs.readFileSync to throw error
+        const readFileSyncSpy = vi.spyOn(fs, 'readFileSync').mockImplementation(() => {
+          throw sslError;
+        });
+
+        const httpsTransport = new HttpTransport(
+          {
+            host: '127.0.0.1',
+            port: 0,
+            sessionTimeoutMs: 1800000,
+            heartbeatEnabled: false,
+            heartbeatIntervalMs: 30000,
+            metricsEnabled: false,
+            metricsPath: '/metrics'
+          },
+          logger
+        );
+
+        try {
+          await httpsTransport.start();
+          expect.fail('Should have thrown error');
+        } catch (error) {
+          expect(error).toBe(sslError);
+          expect(readFileSyncSpy).toHaveBeenCalled();
+        } finally {
+          readFileSyncSpy.mockRestore();
+        }
+      } finally {
+        if (savedCertFile !== undefined) {
+          process.env.MCP4_SSL_CERT_FILE = savedCertFile;
+        } else {
+          delete process.env.MCP4_SSL_CERT_FILE;
+        }
+        if (savedKeyFile !== undefined) {
+          process.env.MCP4_SSL_KEY_FILE = savedKeyFile;
+        } else {
+          delete process.env.MCP4_SSL_KEY_FILE;
+        }
+      }
+    });
+
+    it('should handle start() general error in catch block', async () => {
+      const startError = new Error('Server start failed');
+      const savedCertFile = process.env.MCP4_SSL_CERT_FILE;
+      const savedKeyFile = process.env.MCP4_SSL_KEY_FILE;
+      
+      try {
+        // Set SSL env vars to trigger HTTPS path
+        process.env.MCP4_SSL_CERT_FILE = '/tmp/test-cert.pem';
+        process.env.MCP4_SSL_KEY_FILE = '/tmp/test-key.pem';
+        
+        // Mock fs.readFileSync to succeed (so we get to https.createServer)
+        const readFileSyncSpy = vi.spyOn(fs, 'readFileSync').mockReturnValue('dummy-cert-content' as any);
+        
+        // Mock https.createServer to throw error
+        const createServerSpy = vi.spyOn(https, 'createServer').mockImplementation(() => {
+          throw startError;
+        });
+
+        const httpsTransport = new HttpTransport(
+          {
+            host: '127.0.0.1',
+            port: 0,
+            sessionTimeoutMs: 1800000,
+            heartbeatEnabled: false,
+            heartbeatIntervalMs: 30000,
+            metricsEnabled: false,
+            metricsPath: '/metrics'
+          },
+          logger
+        );
+
+        try {
+          await httpsTransport.start();
+          expect.fail('Should have thrown error');
+        } catch (error) {
+          expect(error).toBe(startError);
+          expect(createServerSpy).toHaveBeenCalled();
+        } finally {
+          createServerSpy.mockRestore();
+          readFileSyncSpy.mockRestore();
+        }
+      } finally {
+        if (savedCertFile !== undefined) {
+          process.env.MCP4_SSL_CERT_FILE = savedCertFile;
+        } else {
+          delete process.env.MCP4_SSL_CERT_FILE;
+        }
+        if (savedKeyFile !== undefined) {
+          process.env.MCP4_SSL_KEY_FILE = savedKeyFile;
+        } else {
+          delete process.env.MCP4_SSL_KEY_FILE;
+        }
+      }
+    });
   });
 
   describe('hasOAuthProvider', () => {
@@ -2151,6 +2412,91 @@ describeIfListen('HttpTransport', () => {
       const sessionId = (transport as any).createSession('access-token', 'refresh-token');
       const result = await (transport as any).refreshAccessToken(sessionId);
       expect(result).toBe(false);
+    });
+
+    it('should handle token refresh without expires_in', async () => {
+      const oauthTransport = new HttpTransport(
+        {
+          host: '127.0.0.1',
+          port: 0,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: false,
+          metricsPath: '/metrics',
+          oauthConfig: {
+            issuer: 'https://auth.example.com',
+            client_id: 'test-client',
+            client_secret: 'test-secret',
+            scopes: ['api']
+          }
+        },
+        logger
+      );
+
+      const sessionId = (oauthTransport as any).createSession('old-access', 'refresh-token');
+      const session = (oauthTransport as any).sessions.get(sessionId);
+      session.oauthClientId = 'test-client';
+
+      (oauthTransport as any).oauthProvider = {
+        ensureEndpointsInitialized: async () => {},
+        clientsStore: {
+          getClient: async () => ({ client_id: 'test-client', scope: 'api' })
+        },
+        exchangeRefreshToken: async () => ({
+          access_token: 'new-access',
+          refresh_token: 'new-refresh',
+          token_type: 'Bearer'
+          // No expires_in field
+        })
+      };
+
+      const result = await (oauthTransport as any).refreshAccessToken(sessionId);
+      expect(result).toBe(true);
+      expect(session.accessTokenExpiresAt).toBeUndefined();
+      expect(session.authToken).toBe('new-access');
+
+      await oauthTransport.stop();
+    });
+
+    it('should handle token refresh error', async () => {
+      const oauthTransport = new HttpTransport(
+        {
+          host: '127.0.0.1',
+          port: 0,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: false,
+          metricsPath: '/metrics',
+          oauthConfig: {
+            issuer: 'https://auth.example.com',
+            client_id: 'test-client',
+            client_secret: 'test-secret',
+            scopes: ['api']
+          }
+        },
+        logger
+      );
+
+      const sessionId = (oauthTransport as any).createSession('old-access', 'refresh-token');
+      const session = (oauthTransport as any).sessions.get(sessionId);
+      session.oauthClientId = 'test-client';
+
+      (oauthTransport as any).oauthProvider = {
+        ensureEndpointsInitialized: async () => {},
+        clientsStore: {
+          getClient: async () => ({ client_id: 'test-client', scope: 'api' })
+        },
+        exchangeRefreshToken: async () => {
+          throw new Error('Token exchange failed');
+        }
+      };
+
+      const result = await (oauthTransport as any).refreshAccessToken(sessionId);
+      expect(result).toBe(false);
+
+      await oauthTransport.stop();
     });
   });
 

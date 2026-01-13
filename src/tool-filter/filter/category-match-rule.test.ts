@@ -166,4 +166,28 @@ describe('CategoryMatchRule', () => {
       expect(rule.getReason()).toBe('allow_categories:list');
     });
   });
+
+  describe('string input handling', () => {
+    it('returns false when passed string instead of ToolDefinition', () => {
+      const rule = new CategoryMatchRule(new Set(['list']), detector);
+      expect(rule.matches('list_users')).toBe(false);
+    });
+  });
+
+  describe('empty allowedCategories', () => {
+    it('returns false when no categories allowed', () => {
+      const rule = new CategoryMatchRule(new Set(), detector);
+      
+      const tool: ToolDefinition = {
+        name: 'get_user',
+        description: 'Get',
+        parameters: {},
+        operations: { read: 'getOp' }
+      };
+
+      vi.spyOn(detector, 'detectCategories').mockReturnValue({ isList: false, isRead: true });
+      
+      expect(rule.matches(tool)).toBe(false);
+    });
+  });
 });

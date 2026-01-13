@@ -427,6 +427,44 @@ describe('InterceptorChain - getAuthCredentials', () => {
     expect(credentials.queryParams).toBeUndefined();
   });
 
+  it('should return empty credentials when value_from_env is missing in getAuthCredentials', () => {
+    const config: InterceptorConfig = {
+      auth: {
+        type: 'bearer',
+        // value_from_env missing
+      } as any,
+    };
+
+    // Create chain without throwing (bypass constructor validation)
+    const chain = new InterceptorChain({});
+    (chain as any).config = config;
+    (chain as any).authToken = undefined;
+
+    const credentials = chain.getAuthCredentials();
+    expect(credentials.headers).toEqual({});
+    expect(credentials.queryParams).toBeUndefined();
+  });
+
+  it('should return empty credentials when token is not found in getAuthCredentials', () => {
+    delete process.env.MISSING_TOKEN;
+
+    const config: InterceptorConfig = {
+      auth: {
+        type: 'bearer',
+        value_from_env: 'MISSING_TOKEN',
+      },
+    };
+
+    // Create chain without throwing (bypass constructor validation)
+    const chain = new InterceptorChain({});
+    (chain as any).config = config;
+    (chain as any).authToken = undefined;
+
+    const credentials = chain.getAuthCredentials();
+    expect(credentials.headers).toEqual({});
+    expect(credentials.queryParams).toBeUndefined();
+  });
+
   it('HttpClient should expose getAuthCredentials via pass-through', () => {
     process.env.MCP4_API_TOKEN = 'test-token';
 
