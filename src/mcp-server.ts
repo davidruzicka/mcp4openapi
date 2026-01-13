@@ -49,6 +49,9 @@ import {
   HeaderConfigParser,
   RegexCompiler,
   RegexValidator,
+  OperationClassifier,
+  OpenAPIOperationResolver,
+  OperationDetector,
   applySessionToolFilter,
   type SessionToolFilterCompat as SessionToolFilter,
   type SessionToolFilterRequest,
@@ -1087,6 +1090,7 @@ export class MCPServer {
         }
         return parsed;
       })(),
+      parser: this.parser
     };
 
     // Warn if binding to non-localhost without explicit MCP4_ALLOWED_ORIGINS
@@ -1406,7 +1410,18 @@ export class MCPServer {
       const compiler = new RegexCompiler(validator);
       const envParser = new EnvConfigParser(compiler);
       const headerParser = new HeaderConfigParser(compiler);
-      this.toolFilterService = new ToolFilterService(envParser, headerParser, this.logger);
+      
+      // Create OperationDetector for category filtering
+      const classifier = new OperationClassifier();
+      const resolver = new OpenAPIOperationResolver(this.parser);
+      const detector = new OperationDetector(classifier, resolver);
+      
+      this.toolFilterService = new ToolFilterService(
+        envParser,
+        headerParser,
+        this.logger,
+        detector
+      );
     }
 
     const originalTools = this.profile.tools;

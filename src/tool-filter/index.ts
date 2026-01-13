@@ -52,6 +52,7 @@ export type {
   SessionToolFilter as SessionToolFilterLegacy,
   OperationResolver,
   OperationCategory,
+  ToolFilterCategory,
   ToolCategories
 } from './types.js';
 

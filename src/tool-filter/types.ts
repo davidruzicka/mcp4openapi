@@ -31,7 +31,7 @@ export interface ToolFilterConfig {
   denyList: Set<string>;
   allowRegex: CompiledRegex[];
   denyRegex: CompiledRegex[];
-  allowCategories: Set<'list' | 'read'>;
+  allowCategories: Set<ToolFilterCategory>;
   hasAllowRules: boolean;
   sources: {
     allowList: string[];
@@ -57,6 +57,7 @@ export interface ToolFilterResult {
 export interface SessionToolFilterRequest {
   exactNames: Set<string>;
   regexPatterns: CompiledRegex[];
+  allowCategories: Set<ToolFilterCategory>;
   normalizedHeader: string;
   rawEntries: string[];
   hasRules: boolean;
@@ -84,6 +85,11 @@ export interface OperationResolver {
  * Operation category
  */
 export type OperationCategory = 'list' | 'read' | 'modify';
+
+/**
+ * Allowed tool filter category (excludes 'modify')
+ */
+export type ToolFilterCategory = 'list' | 'read';
 
 /**
  * Tool categories detection result

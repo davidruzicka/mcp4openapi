@@ -121,6 +121,13 @@ X-Mcp4-Params: project_id=123, project_id=456, _allow_read
 - Comma-separated list of tool names or regex entries
 - Regex entries must be prefixed with `regex:` and are auto-anchored unless already wrapped with `^` and `$`
 - Max entries default is 100, max entry length is 255 characters
+- Control keywords (tools categories, session initialization only):
+  - `_allow_list`: allow tools detected as **list** category (GET without path params)
+  - `_allow_read`: allow tools detected as **read** category (GET with path params)
+  - These keywords are **only allowed during session initialization**. The server stores the normalized header value in the session. Subsequent requests may omit the header, but if provided it must match the session value or the server returns `400`.
+  - Other `_allow_*` keywords are rejected with an error suggesting `X-Mcp4-Params`.
+
+**Important**: In `X-Mcp4-Tools`, `_allow_list/_allow_read` control **which tools are available** (tool categories). In `X-Mcp4-Params`, `_allow_list/_allow_read` control **parameter filtering behavior** for list/read operations.
 
 **Example**:
 ```

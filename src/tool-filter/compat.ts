@@ -6,11 +6,13 @@
  */
 
 import type { ToolDefinition } from '../types/profile.js';
-import type { SessionToolFilterRequest } from './types.js';
+import type { OperationResolver, SessionToolFilterRequest } from './types.js';
 import { HeaderConfigParser } from './config/header-config-parser.js';
 import { RegexCompiler } from './regex/regex-compiler.js';
 import { RegexValidator } from './regex/regex-validator.js';
 import { SessionToolFilter as SessionToolFilterClass } from './filter/session-tool-filter.js';
+import { OperationClassifier } from './operation/operation-classifier.js';
+import { OperationDetector } from './operation/operation-detector.js';
 
 // Legacy SessionToolFilter type for compatibility
 export interface SessionToolFilter {
@@ -72,8 +74,17 @@ export function applySessionToolFilter(
   request: SessionToolFilterRequest,
   resolver?: { getOperationById?: (id: string) => any; getOperationForCall?: (call: string) => any }
 ): SessionToolFilter {
-  void resolver;
-  const filter = new SessionToolFilterClass(request);
+  const detector = resolver
+    ? new OperationDetector(
+        new OperationClassifier(),
+        {
+          getOperationById: (operationId: string) => resolver.getOperationById?.(operationId),
+          getOperationForCall: (call: string) => resolver.getOperationForCall?.(call),
+        } satisfies OperationResolver
+      )
+    : undefined;
+
+  const filter = new SessionToolFilterClass(request, detector);
   const result = filter.apply(tools);
   
   // Convert to legacy format

@@ -5,8 +5,9 @@
 import type { ToolDefinition } from '../../types/profile.js';
 import type { ToolFilterConfig } from '../types.js';
 import type { Logger } from '../../logger.js';
+import type { OperationDetector } from '../operation/operation-detector.js';
 import { FilterEngine } from './filter-engine.js';
-import { ExactMatchRule, RegexMatchRule } from './filter-rules.js';
+import { ExactMatchRule, RegexMatchRule, CategoryMatchRule } from './filter-rules.js';
 
 export interface GlobalToolFilterResult {
   allowed: ToolDefinition[];
@@ -27,7 +28,8 @@ export class GlobalToolFilter {
 
   constructor(
     private config: ToolFilterConfig,
-    private logger: Logger
+    private logger: Logger,
+    private detector?: OperationDetector
   ) {
     this.engine = this.buildEngine(config);
   }
@@ -41,7 +43,7 @@ export class GlobalToolFilter {
     const reasons = new Map<string, string[]>();
 
     for (const tool of tools) {
-      const result = this.engine.evaluate(tool.name);
+      const result = this.engine.evaluateTool(tool);
 
       if (result.allowed) {
         allowed.push(tool);
@@ -82,8 +84,18 @@ export class GlobalToolFilter {
       allowRules.push(new RegexMatchRule(config.allowRegex, 'allow'));
     }
 
-    // Note: CategoryMatchRule requires OperationDetector, which is not available here
-    // This will be added in Phase 4 integration
+    // Add CategoryMatchRule if categories configured and detector available
+    if (config.allowCategories.size > 0) {
+      if (this.detector) {
+        allowRules.push(new CategoryMatchRule(config.allowCategories, this.detector));
+      } else {
+        // Fail-safe: if allowCategories is set but detector is not available, throw error
+        throw new Error(
+          'MCP4_TOOL_FILTER_ALLOW_CATEGORIES is set but OperationDetector is not available. ' +
+          'This is a configuration error - category filtering requires OpenAPI parser.'
+        );
+      }
+    }
 
     // Build deny rules
     if (config.denyList.size > 0) {

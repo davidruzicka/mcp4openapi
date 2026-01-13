@@ -45,12 +45,15 @@ import {
   HeaderConfigParser,
   RegexCompiler,
   RegexValidator,
+  OperationClassifier,
+  OpenAPIOperationResolver,
+  OperationDetector,
   normalizeToolFilterHeaderValue,
   parseSessionToolFilterHeader,
 } from './tool-filter/index.js';
 import type { SessionToolFilter, SessionToolFilterRequest } from './types/http-transport.js';
 
-// Default maximum token length (1000 characters)
+import type { OpenAPIParser } from './openapi-parser.js';
 const DEFAULT_MAX_TOKEN_LENGTH = 1000;
 
 export class HttpTransport {
@@ -1198,7 +1201,21 @@ export class HttpTransport {
       const compiler = new RegexCompiler(validator);
       const envParser = new EnvConfigParser(compiler);
       const headerParser = new HeaderConfigParser(compiler);
-      this.toolFilterService = new ToolFilterService(envParser, headerParser, this.logger);
+      
+      // Create OperationDetector for category filtering (if parser available)
+      let detector: OperationDetector | undefined;
+      if (this.config.parser) {
+        const classifier = new OperationClassifier();
+        const resolver = new OpenAPIOperationResolver(this.config.parser);
+        detector = new OperationDetector(classifier, resolver);
+      }
+      
+      this.toolFilterService = new ToolFilterService(
+        envParser,
+        headerParser,
+        this.logger,
+        detector
+      );
     }
     return this.toolFilterService;
   }
