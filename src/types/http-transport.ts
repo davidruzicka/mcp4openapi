@@ -7,6 +7,10 @@
 
 import type { Request as ExpressRequest, Response } from 'express';
 import type { OAuthConfig, AuthInterceptor } from './profile.js';
+import type { SessionToolFilterRequest, SessionToolFilterCompat as SessionToolFilter } from '../tool-filter/index.js';
+import type { OpenAPIParser } from '../openapi-parser.js';
+
+export type { SessionToolFilter, SessionToolFilterRequest };
 
 export interface SessionData {
   id: string;
@@ -20,6 +24,9 @@ export interface SessionData {
   oauthClientId?: string; // OAuth client ID for debugging/validation
   filtering?: Record<string, string[]>;
   filteringHeader?: string;
+  toolFilterRequest?: SessionToolFilterRequest;
+  toolFilter?: SessionToolFilter;
+  toolFilterHeader?: string;
 }
 
 export interface SSEStreamState {
@@ -61,6 +68,7 @@ export interface HttpTransportConfig {
   sslKeyFile?: string; // Path to SSL key file
   oauthSessionTimeoutMs?: number; // OAuth session timeout in ms (default: 24 hours, 0 = unlimited)
   oauthRefreshThresholdMs?: number; // Refresh token threshold in ms before expiration (default: 60 seconds)
+  parser?: OpenAPIParser; // OpenAPI parser for operation resolution (optional, for category filtering)
 }
 
 export interface McpRequest extends ExpressRequest {

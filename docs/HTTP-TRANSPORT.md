@@ -98,18 +98,43 @@ Source: https://modelcontextprotocol.io/specification/2025-03-26/basic/transport
 - `Authorization: Bearer <token>` or `X-API-Token: <token>` (required for initialization if not using env var)
   - Supports various token formats: GitLab (`glpat-...`), YouTrack (`perm:...`), generic tokens
   - Flexible whitespace handling (extra spaces are trimmed)
-- `X-Mcp4-Filtering: <filter>` (optional, initialization only)
+- `X-Mcp4-Params: <filter>` (optional)
+- `X-Mcp4-Tools: <tool-filter>` (optional)
+  - If sent during initialization, the server stores the normalized header value in the session.
+  - Subsequent requests may omit the header, but if provided it must match the session value or the server returns `400`.
 
-**Filtering header format**:
+**Parameter Filtering header format**:
 - Comma-separated list of `key=value` items
-- Control keys: `_allow_list`, `_allow_read` (no value)
+- Control keys (no value):
+  - `_allow_list`: for list operations, allow omitting the filtered key and allow any value if the key is present.
+  - `_allow_read`: for read operations, allow omitting the filtered key and allow any value if the key is present.
+  - Control keys do not relax modify operations (write remains constrained by the allowed set).
 - Values containing spaces or commas must be percent-encoded
 - Key pattern: `^[A-Za-z0-9_][A-Za-z0-9_-]{0,63}$`
 
 **Example**:
 ```
-X-Mcp4-Filtering: project_id=123, project_id=456, _allow_read
+X-Mcp4-Params: project_id=123, project_id=456, _allow_read
 ```
+
+**Tool filtering header format**:
+- Comma-separated list of tool names or regex entries
+- Regex entries must be prefixed with `regex:` and are auto-anchored unless already wrapped with `^` and `$`
+- Max entries default is 100, max entry length is 255 characters
+- Control keywords (tools categories, session initialization only):
+  - `_allow_list`: allow tools detected as **list** category (GET without path params)
+  - `_allow_read`: allow tools detected as **read** category (GET with path params)
+  - These keywords are **only allowed during session initialization**. The server stores the normalized header value in the session. Subsequent requests may omit the header, but if provided it must match the session value or the server returns `400`.
+  - Other `_allow_*` keywords are rejected with an error suggesting `X-Mcp4-Params`.
+
+**Important**: In `X-Mcp4-Tools`, `_allow_list/_allow_read` control **which tools are available** (tool categories). In `X-Mcp4-Params`, `_allow_list/_allow_read` control **parameter filtering behavior** for list/read operations.
+
+**Example**:
+```
+X-Mcp4-Tools: get_user, list_users, regex:read_.*
+```
+
+Regex patterns are validated for length, nested quantifiers, and alternations with quantifiers.
 
 **Request Body**:
 - Single JSON-RPC request/notification/response

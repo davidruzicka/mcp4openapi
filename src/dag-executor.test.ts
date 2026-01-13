@@ -121,6 +121,20 @@ describe('DAGExecutor', () => {
       expect(result.levels).toHaveLength(2);
     });
 
+    it('reports cycles when some nodes are processed but a remaining cycle exists', () => {
+      const steps: CompositeStep[] = [
+        { call: 'GET /a', store_as: 'a' },
+        { call: 'GET /b', store_as: 'b', depends_on: ['a', 'c'] },
+        { call: 'GET /c', store_as: 'c', depends_on: ['b'] },
+      ];
+
+      const result = DAGExecutor.analyzeDAG(steps);
+      expect(result.hasCycles).toBe(true);
+      expect(result.errorMessage).toContain('Circular dependency detected');
+      expect(result.errorMessage).toContain('b');
+      expect(result.errorMessage).toContain('c');
+    });
+
     it('handles multiple steps depending on the same dependency', () => {
       const steps: CompositeStep[] = [
         { call: 'GET /root', store_as: 'root' },
