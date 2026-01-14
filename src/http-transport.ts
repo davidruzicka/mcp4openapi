@@ -109,6 +109,16 @@ export class HttpTransport {
    * Why: Security (Origin validation, rate limiting), JSON parsing, session extraction, metrics
    */
   private setupMiddleware(): void {
+    // Security: standard headers
+    this.app.disable('x-powered-by');
+    this.app.use((req: Request, res: Response, next: NextFunction) => {
+      res.setHeader('Content-Security-Policy', "default-src 'self'; frame-ancestors 'none'");
+      res.setHeader('X-Frame-Options', 'DENY');
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.setHeader('Referrer-Policy', 'no-referrer');
+      next();
+    });
+
     // Request logging (before any middleware)
     this.app.use((req: Request, res: Response, next: NextFunction) => {
       this.logger.debug('Request received', {
