@@ -74,6 +74,7 @@ Reference canonical sources; never duplicate rules.
 - E2E mock server should include auth validation endpoints used by profile auth configs.
 
 Run specific tests: `npm test -- -t "pattern"`.
+Check diff coverage (codecov style): `node scripts/check-diff-coverage.js` (run after `npm test -- --coverage`).
 
 ### Code Organization
 
