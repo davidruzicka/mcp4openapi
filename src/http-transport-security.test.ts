@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
 import https from 'node:https';
+import request from 'supertest';
 import type { McpRequest } from './types/http-transport.js';
 import { HttpTransport } from './http-transport.js';
 import { ConsoleLogger } from './logger.js';
@@ -112,6 +113,20 @@ function createMockSseResponse() {
 }
 
 describe('HttpTransport security behavior (no listen)', () => {
+  it('checks for security headers using supertest', async () => {
+    const transport = createTransport();
+    const app = (transport as any).app;
+
+    const response = await request(app).get('/health');
+
+    expect(response.headers['x-powered-by']).toBeUndefined();
+    expect(response.headers['content-security-policy']).toBe("default-src 'self'; frame-ancestors 'none'");
+    expect(response.headers['x-content-type-options']).toBe('nosniff');
+    expect(response.headers['x-frame-options']).toBe('DENY');
+    expect(response.headers['referrer-policy']).toBe('no-referrer');
+    await transport.stop();
+  });
+
   it('returns 400 for invalid Authorization header format (no 500 leak)', async () => {
     const transport = createTransport();
     transport.setMessageHandler(async () => ({ result: 'ok' }));
