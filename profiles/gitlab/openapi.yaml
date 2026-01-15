@@ -39,6 +39,8 @@ tags:
   description: Operations about applications
 - name: avatar
   description: Operations about avatars
+- name: award_emoji
+  description: Operations related to emoji reactions
 - name: broadcast_messages
   description: Operations about broadcast_messages
 - name: bulk_imports
@@ -3844,6 +3846,388 @@ paths:
               schema:
                 $ref: '#/components/schemas/API_Error'
 
+  /projects/{id}/merge_requests/{merge_request_iid}/award_emoji:
+    get:
+      tags:
+        - award_emoji
+      summary: List merge request emoji reactions
+      description: Get a list of all emoji reactions for a merge request
+      operationId: getApiV4ProjectsIdMergeRequestsMergeRequestIidAwardEmoji
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The ID or URL-encoded path of the project
+          schema:
+            type: string
+        - name: merge_request_iid
+          in: path
+          required: true
+          description: The internal ID of the merge request
+          schema:
+            type: integer
+        - name: page
+          in: query
+          description: Current page number
+          schema:
+            type: integer
+            default: 1
+        - name: per_page
+          in: query
+          description: Number of items per page
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/API_Entities_AwardEmoji'
+        '404':
+          description: Merge request not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/API_Error'
+    post:
+      tags:
+        - award_emoji
+      summary: Add a new emoji reaction
+      description: Add an emoji reaction to a merge request
+      operationId: postApiV4ProjectsIdMergeRequestsMergeRequestIidAwardEmoji
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The ID or URL-encoded path of the project
+          schema:
+            type: string
+        - name: merge_request_iid
+          in: path
+          required: true
+          description: The internal ID of the merge request
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+              properties:
+                name:
+                  type: string
+                  description: Name of the emoji without colons
+                  example: thumbsup
+      responses:
+        '201':
+          description: Emoji reaction created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/API_Entities_AwardEmoji'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/API_Error'
+        '404':
+          description: Merge request not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/API_Error'
+
+  /projects/{id}/merge_requests/{merge_request_iid}/award_emoji/{award_id}:
+    get:
+      tags:
+        - award_emoji
+      summary: Get a single emoji reaction
+      description: Get a single emoji reaction from a merge request
+      operationId: getApiV4ProjectsIdMergeRequestsMergeRequestIidAwardEmojiAwardId
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The ID or URL-encoded path of the project
+          schema:
+            type: string
+        - name: merge_request_iid
+          in: path
+          required: true
+          description: The internal ID of the merge request
+          schema:
+            type: integer
+        - name: award_id
+          in: path
+          required: true
+          description: ID of the emoji reaction
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/API_Entities_AwardEmoji'
+        '404':
+          description: Emoji reaction not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/API_Error'
+    delete:
+      tags:
+        - award_emoji
+      summary: Delete an emoji reaction
+      description: Delete an emoji reaction from a merge request
+      operationId: deleteApiV4ProjectsIdMergeRequestsMergeRequestIidAwardEmojiAwardId
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The ID or URL-encoded path of the project
+          schema:
+            type: string
+        - name: merge_request_iid
+          in: path
+          required: true
+          description: The internal ID of the merge request
+          schema:
+            type: integer
+        - name: award_id
+          in: path
+          required: true
+          description: ID of the emoji reaction
+          schema:
+            type: integer
+      responses:
+        '204':
+          description: Emoji reaction deleted
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/API_Error'
+        '404':
+          description: Emoji reaction not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/API_Error'
+
+  /projects/{id}/merge_requests/{merge_request_iid}/notes/{note_id}/award_emoji:
+    get:
+      tags:
+        - award_emoji
+      summary: List merge request note emoji reactions
+      description: Get a list of all emoji reactions for a merge request note
+      operationId: getApiV4ProjectsIdMergeRequestsMergeRequestIidNotesNoteIdAwardEmoji
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The ID or URL-encoded path of the project
+          schema:
+            type: string
+        - name: merge_request_iid
+          in: path
+          required: true
+          description: The internal ID of the merge request
+          schema:
+            type: integer
+        - name: note_id
+          in: path
+          required: true
+          description: The ID of the note
+          schema:
+            type: integer
+        - name: page
+          in: query
+          description: Current page number
+          schema:
+            type: integer
+            default: 1
+        - name: per_page
+          in: query
+          description: Number of items per page
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/API_Entities_AwardEmoji'
+        '404':
+          description: Merge request or note not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/API_Error'
+    post:
+      tags:
+        - award_emoji
+      summary: Add a new emoji reaction
+      description: Add an emoji reaction to a merge request note
+      operationId: postApiV4ProjectsIdMergeRequestsMergeRequestIidNotesNoteIdAwardEmoji
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The ID or URL-encoded path of the project
+          schema:
+            type: string
+        - name: merge_request_iid
+          in: path
+          required: true
+          description: The internal ID of the merge request
+          schema:
+            type: integer
+        - name: note_id
+          in: path
+          required: true
+          description: The ID of the note
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+              properties:
+                name:
+                  type: string
+                  description: Name of the emoji without colons
+                  example: eyes
+      responses:
+        '201':
+          description: Emoji reaction created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/API_Entities_AwardEmoji'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/API_Error'
+        '404':
+          description: Merge request or note not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/API_Error'
+
+  /projects/{id}/merge_requests/{merge_request_iid}/notes/{note_id}/award_emoji/{award_id}:
+    get:
+      tags:
+        - award_emoji
+      summary: Get a single emoji reaction
+      description: Get a single emoji reaction from a merge request note
+      operationId: getApiV4ProjectsIdMergeRequestsMergeRequestIidNotesNoteIdAwardEmojiAwardId
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The ID or URL-encoded path of the project
+          schema:
+            type: string
+        - name: merge_request_iid
+          in: path
+          required: true
+          description: The internal ID of the merge request
+          schema:
+            type: integer
+        - name: note_id
+          in: path
+          required: true
+          description: The ID of the note
+          schema:
+            type: integer
+        - name: award_id
+          in: path
+          required: true
+          description: ID of the emoji reaction
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/API_Entities_AwardEmoji'
+        '404':
+          description: Emoji reaction not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/API_Error'
+    delete:
+      tags:
+        - award_emoji
+      summary: Delete an emoji reaction
+      description: Delete an emoji reaction from a merge request note
+      operationId: deleteApiV4ProjectsIdMergeRequestsMergeRequestIidNotesNoteIdAwardEmojiAwardId
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The ID or URL-encoded path of the project
+          schema:
+            type: string
+        - name: merge_request_iid
+          in: path
+          required: true
+          description: The internal ID of the merge request
+          schema:
+            type: integer
+        - name: note_id
+          in: path
+          required: true
+          description: The ID of the note
+          schema:
+            type: integer
+        - name: award_id
+          in: path
+          required: true
+          description: ID of the emoji reaction
+          schema:
+            type: integer
+      responses:
+        '204':
+          description: Emoji reaction deleted
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/API_Error'
+        '404':
+          description: Emoji reaction not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/API_Error'
+
   /projects/{id}/merge_requests/{merge_request_iid}/discussions:
     get:
       tags:
@@ -6022,6 +6406,33 @@ components:
         author:
           $ref: '#/components/schemas/API_Entities_UserBasic'
       description: Basic issue information
+    API_Entities_AwardEmoji:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int32
+          example: 1
+        name:
+          type: string
+          example: thumbsup
+        user:
+          $ref: '#/components/schemas/API_Entities_UserBasic'
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        awardable_id:
+          type: integer
+          format: int32
+        awardable_type:
+          type: string
+          example: MergeRequest
+        url:
+          type: string
+      description: Emoji reaction information
     API_Entities_Note:
       type: object
       properties:
