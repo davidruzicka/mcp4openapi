@@ -3,7 +3,8 @@
   "profile_name": "gitlab-developer",
   "variables": {
     "projectId": "12345",
-    "groupId": "36173"
+    "groupId": "36173",
+    "awardId": 7
   },
   "scenarios": [
     {
@@ -1438,6 +1439,280 @@
       "mocks": [
         {
           "operationId": "deleteApiV4ProjectsIdMergeRequestsMergeRequestIidNotesNoteId",
+          "response": {
+            "status": 204
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Merge Requests - List Award Emoji",
+      "tool": "manage_merge_requests",
+      "arguments": {
+        "action": "list_award_emoji",
+        "project_id": "{{projectId}}",
+        "merge_request_iid": 1
+      },
+      "mocks": [
+        {
+          "operationId": "getApiV4ProjectsIdMergeRequestsMergeRequestIidAwardEmoji",
+          "response": {
+            "status": 200,
+            "body": [
+              {
+                "id": 1,
+                "name": "thumbsup",
+                "user": {
+                  "id": 101,
+                  "username": "reviewer"
+                },
+                "awardable_id": 1,
+                "awardable_type": "MergeRequest",
+                "created_at": "2025-01-01T10:00:00Z",
+                "updated_at": "2025-01-01T10:00:00Z"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": [
+          {
+            "id": 1,
+            "name": "thumbsup"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Merge Requests - Create Award Emoji",
+      "tool": "manage_merge_requests",
+      "arguments": {
+        "action": "create_award_emoji",
+        "project_id": "{{projectId}}",
+        "merge_request_iid": 1,
+        "name": "thumbsup"
+      },
+      "mocks": [
+        {
+          "operationId": "postApiV4ProjectsIdMergeRequestsMergeRequestIidAwardEmoji",
+          "response": {
+            "status": 201,
+            "body": {
+              "id": 2,
+              "name": "thumbsup",
+              "user": {
+                "id": 102,
+                "username": "author"
+              },
+              "awardable_id": 1,
+              "awardable_type": "MergeRequest",
+              "created_at": "2025-01-01T10:01:00Z",
+              "updated_at": "2025-01-01T10:01:00Z"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": {
+          "id": 2,
+          "name": "thumbsup"
+        }
+      }
+    },
+    {
+      "name": "Merge Requests - Get Award Emoji",
+      "tool": "manage_merge_requests",
+      "arguments": {
+        "action": "get_award_emoji",
+        "project_id": "{{projectId}}",
+        "merge_request_iid": 1,
+        "award_id": "{{awardId}}"
+      },
+      "mocks": [
+        {
+          "operationId": "getApiV4ProjectsIdMergeRequestsMergeRequestIidAwardEmojiAwardId",
+          "response": {
+            "status": 200,
+            "body": {
+              "id": 7,
+              "name": "eyes",
+              "user": {
+                "id": 103,
+                "username": "observer"
+              },
+              "awardable_id": 1,
+              "awardable_type": "MergeRequest",
+              "created_at": "2025-01-01T10:02:00Z",
+              "updated_at": "2025-01-01T10:02:00Z"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": {
+          "id": 7,
+          "name": "eyes"
+        }
+      }
+    },
+    {
+      "name": "Merge Requests - Delete Award Emoji",
+      "tool": "manage_merge_requests",
+      "arguments": {
+        "action": "delete_award_emoji",
+        "project_id": "{{projectId}}",
+        "merge_request_iid": 1,
+        "award_id": "{{awardId}}"
+      },
+      "mocks": [
+        {
+          "operationId": "deleteApiV4ProjectsIdMergeRequestsMergeRequestIidAwardEmojiAwardId",
+          "response": {
+            "status": 204
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Merge Requests - List Note Award Emoji",
+      "tool": "manage_merge_requests",
+      "arguments": {
+        "action": "list_note_award_emoji",
+        "project_id": "{{projectId}}",
+        "merge_request_iid": 1,
+        "note_id": 2
+      },
+      "mocks": [
+        {
+          "operationId": "getApiV4ProjectsIdMergeRequestsMergeRequestIidNotesNoteIdAwardEmoji",
+          "response": {
+            "status": 200,
+            "body": [
+              {
+                "id": 8,
+                "name": "rocket",
+                "user": {
+                  "id": 104,
+                  "username": "dev"
+                },
+                "awardable_id": 2,
+                "awardable_type": "Note",
+                "created_at": "2025-01-01T10:03:00Z",
+                "updated_at": "2025-01-01T10:03:00Z"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": [
+          {
+            "id": 8,
+            "name": "rocket"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Merge Requests - Create Note Award Emoji",
+      "tool": "manage_merge_requests",
+      "arguments": {
+        "action": "create_note_award_emoji",
+        "project_id": "{{projectId}}",
+        "merge_request_iid": 1,
+        "note_id": 2,
+        "name": "rocket"
+      },
+      "mocks": [
+        {
+          "operationId": "postApiV4ProjectsIdMergeRequestsMergeRequestIidNotesNoteIdAwardEmoji",
+          "response": {
+            "status": 201,
+            "body": {
+              "id": 9,
+              "name": "rocket",
+              "user": {
+                "id": 105,
+                "username": "dev"
+              },
+              "awardable_id": 2,
+              "awardable_type": "Note",
+              "created_at": "2025-01-01T10:04:00Z",
+              "updated_at": "2025-01-01T10:04:00Z"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": {
+          "id": 9,
+          "name": "rocket"
+        }
+      }
+    },
+    {
+      "name": "Merge Requests - Get Note Award Emoji",
+      "tool": "manage_merge_requests",
+      "arguments": {
+        "action": "get_note_award_emoji",
+        "project_id": "{{projectId}}",
+        "merge_request_iid": 1,
+        "note_id": 2,
+        "award_id": "{{awardId}}"
+      },
+      "mocks": [
+        {
+          "operationId": "getApiV4ProjectsIdMergeRequestsMergeRequestIidNotesNoteIdAwardEmojiAwardId",
+          "response": {
+            "status": 200,
+            "body": {
+              "id": 7,
+              "name": "eyes",
+              "user": {
+                "id": 106,
+                "username": "qa"
+              },
+              "awardable_id": 2,
+              "awardable_type": "Note",
+              "created_at": "2025-01-01T10:05:00Z",
+              "updated_at": "2025-01-01T10:05:00Z"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": {
+          "id": 7,
+          "name": "eyes"
+        }
+      }
+    },
+    {
+      "name": "Merge Requests - Delete Note Award Emoji",
+      "tool": "manage_merge_requests",
+      "arguments": {
+        "action": "delete_note_award_emoji",
+        "project_id": "{{projectId}}",
+        "merge_request_iid": 1,
+        "note_id": 2,
+        "award_id": "{{awardId}}"
+      },
+      "mocks": [
+        {
+          "operationId": "deleteApiV4ProjectsIdMergeRequestsMergeRequestIidNotesNoteIdAwardEmojiAwardId",
           "response": {
             "status": 204
           }

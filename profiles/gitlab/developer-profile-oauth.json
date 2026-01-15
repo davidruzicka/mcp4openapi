@@ -414,8 +414,8 @@
 
     {
       "name": "manage_merge_requests",
-      "description": "Work with merge requests. Actions: 'list' (all MRs in project), 'get' (single MR details), 'create' (create new MR), 'update' (update MR), 'delete' (delete MR - admins only), 'list_notes' (get all comments), 'get_note' (single comment), 'create_note' (add comment), 'update_note' (edit comment), 'delete_note' (remove comment), 'download_note_attachment' (download note attachment via proxy), 'list_discussions', 'get_discussion', 'create_discussion', 'delete_discussion', 'resolve_discussion', 'unresolve_discussion', 'get_approvals', 'approve', 'unapprove', 'get_changes' (file diffs), 'list_versions' (list diff versions), 'get_version' (specific diff version). Use 'list' to see all merge requests, filter by state (opened, closed, merged, all). For all actions that target a specific MR (including 'get_changes', 'list_versions', 'get_version'), pass 'merge_request_iid'.",
-      "metadata_params": ["action", "project_id", "merge_request_iid", "note_id", "discussion_id", "version_id"],
+      "description": "Work with merge requests. Actions: 'list' (all MRs in project), 'get' (single MR details), 'create' (create new MR), 'update' (update MR), 'delete' (delete MR - admins only), 'list_notes' (get all comments), 'get_note' (single comment), 'create_note' (add comment), 'update_note' (edit comment), 'delete_note' (remove comment), 'download_note_attachment' (download note attachment via proxy), 'list_discussions', 'get_discussion', 'create_discussion', 'delete_discussion', 'resolve_discussion', 'unresolve_discussion', 'get_approvals', 'approve', 'unapprove', 'get_changes' (file diffs), 'list_versions' (list diff versions), 'get_version' (specific diff version), 'list_award_emoji', 'get_award_emoji', 'create_award_emoji', 'delete_award_emoji', 'list_note_award_emoji', 'get_note_award_emoji', 'create_note_award_emoji', 'delete_note_award_emoji'. Use 'list' to see all merge requests, filter by state (opened, closed, merged, all). For all actions that target a specific MR (including 'get_changes', 'list_versions', 'get_version'), pass 'merge_request_iid'.",
+      "metadata_params": ["action", "project_id", "merge_request_iid", "note_id", "award_id", "discussion_id", "version_id"],
       "operations": {
         "list": "getApiV4ProjectsIdMergeRequests",
         "get": "getApiV4ProjectsIdMergeRequestsMergeRequestIid",
@@ -443,7 +443,15 @@
         "unapprove": "postApiV4ProjectsIdMergeRequestsMergeRequestIidUnapprove",
         "get_changes": "getApiV4ProjectsIdMergeRequestsMergeRequestIidChanges",
         "list_versions": "getApiV4ProjectsIdMergeRequestsMergeRequestIidVersions",
-        "get_version": "getApiV4ProjectsIdMergeRequestsMergeRequestIidVersionsVersionId"
+        "get_version": "getApiV4ProjectsIdMergeRequestsMergeRequestIidVersionsVersionId",
+        "list_award_emoji": "getApiV4ProjectsIdMergeRequestsMergeRequestIidAwardEmoji",
+        "create_award_emoji": "postApiV4ProjectsIdMergeRequestsMergeRequestIidAwardEmoji",
+        "get_award_emoji": "getApiV4ProjectsIdMergeRequestsMergeRequestIidAwardEmojiAwardId",
+        "delete_award_emoji": "deleteApiV4ProjectsIdMergeRequestsMergeRequestIidAwardEmojiAwardId",
+        "list_note_award_emoji": "getApiV4ProjectsIdMergeRequestsMergeRequestIidNotesNoteIdAwardEmoji",
+        "create_note_award_emoji": "postApiV4ProjectsIdMergeRequestsMergeRequestIidNotesNoteIdAwardEmoji",
+        "get_note_award_emoji": "getApiV4ProjectsIdMergeRequestsMergeRequestIidNotesNoteIdAwardEmojiAwardId",
+        "delete_note_award_emoji": "deleteApiV4ProjectsIdMergeRequestsMergeRequestIidNotesNoteIdAwardEmojiAwardId"
       },
       "response_fields": {
         "list": ["id", "iid", "title", "description", "state", "web_url", "author", "created_at", "updated_at"],
@@ -463,12 +471,18 @@
         "unapprove": ["approvals_required", "approvals_left", "approved_by"],
         "get_changes": ["id", "iid", "title", "state", "changes"],
         "list_versions": ["id", "short_commit_id", "created_at", "real_size", "commits_count", "head_commit_sha", "base_commit_sha", "start_commit_sha"],
-        "get_version": ["id", "head_commit_sha", "base_commit_sha", "start_commit_sha", "real_size", "created_at", "diffs"]
+        "get_version": ["id", "head_commit_sha", "base_commit_sha", "start_commit_sha", "real_size", "created_at", "diffs"],
+        "list_award_emoji": ["id", "name", "user", "created_at", "updated_at", "awardable_id", "awardable_type"],
+        "create_award_emoji": ["id", "name", "user", "created_at", "updated_at", "awardable_id", "awardable_type"],
+        "get_award_emoji": ["id", "name", "user", "created_at", "updated_at", "awardable_id", "awardable_type"],
+        "list_note_award_emoji": ["id", "name", "user", "created_at", "updated_at", "awardable_id", "awardable_type"],
+        "create_note_award_emoji": ["id", "name", "user", "created_at", "updated_at", "awardable_id", "awardable_type"],
+        "get_note_award_emoji": ["id", "name", "user", "created_at", "updated_at", "awardable_id", "awardable_type"]
       },
       "parameters": {
         "action": {
           "type": "string",
-          "enum": ["list", "get", "create", "update", "delete", "list_notes", "get_note", "create_note", "update_note", "delete_note", "download_note_attachment", "list_discussions", "get_discussion", "create_discussion", "delete_discussion", "resolve_discussion", "unresolve_discussion", "get_approvals", "approve", "unapprove", "get_changes", "list_versions", "get_version"],
+          "enum": ["list", "get", "create", "update", "delete", "list_notes", "get_note", "create_note", "update_note", "delete_note", "download_note_attachment", "list_discussions", "get_discussion", "create_discussion", "delete_discussion", "resolve_discussion", "unresolve_discussion", "get_approvals", "approve", "unapprove", "get_changes", "list_versions", "get_version", "list_award_emoji", "get_award_emoji", "create_award_emoji", "delete_award_emoji", "list_note_award_emoji", "get_note_award_emoji", "create_note_award_emoji", "delete_note_award_emoji"],
           "description": "Action to perform",
           "required": true
         },
@@ -481,7 +495,7 @@
         "merge_request_iid": {
           "type": "integer",
           "description": "The internal ID of the merge request",
-          "required_for": ["get", "update", "delete", "list_notes", "get_note", "create_note", "update_note", "delete_note", "download_note_attachment", "list_discussions", "get_discussion", "create_discussion", "delete_discussion", "resolve_discussion", "unresolve_discussion", "get_approvals", "approve", "unapprove", "get_changes", "list_versions", "get_version"]
+          "required_for": ["get", "update", "delete", "list_notes", "get_note", "create_note", "update_note", "delete_note", "download_note_attachment", "list_discussions", "get_discussion", "create_discussion", "delete_discussion", "resolve_discussion", "unresolve_discussion", "get_approvals", "approve", "unapprove", "get_changes", "list_versions", "get_version", "list_award_emoji", "get_award_emoji", "create_award_emoji", "delete_award_emoji", "list_note_award_emoji", "get_note_award_emoji", "create_note_award_emoji", "delete_note_award_emoji"]
         },
         "discussion_id": {
           "type": "string",
@@ -601,7 +615,18 @@
         "note_id": {
           "type": "integer",
           "description": "The ID of the note",
-          "required_for": ["update_note", "delete_note", "download_note_attachment"]
+          "required_for": ["update_note", "delete_note", "download_note_attachment", "list_note_award_emoji", "get_note_award_emoji", "create_note_award_emoji", "delete_note_award_emoji"]
+        },
+        "award_id": {
+          "type": "integer",
+          "description": "The ID of the emoji reaction",
+          "required_for": ["get_award_emoji", "delete_award_emoji", "get_note_award_emoji", "delete_note_award_emoji"]
+        },
+        "name": {
+          "type": "string",
+          "description": "Name of the emoji without colons",
+          "required_for": ["create_award_emoji", "create_note_award_emoji"],
+          "example": "thumbsup"
         },
         "body": {
           "type": "string",
