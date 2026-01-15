@@ -1741,7 +1741,8 @@ describeIfListen('HttpTransport', () => {
 
       expect(response.status).toBe(500);
       expect(response.body.error).toBe('Internal Server Error');
-      expect(response.body.message).toBe('Metrics error');
+      expect(response.body.message).toMatch(/^Internal error \(correlation ID: .+\)$/);
+      expect(response.body.message).not.toContain('Metrics error');
     });
 
     it('should return 404 when metrics is null after endpoint registration', async () => {

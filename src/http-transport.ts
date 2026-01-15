@@ -116,6 +116,7 @@ export class HttpTransport {
       res.setHeader('X-Frame-Options', 'DENY');
       res.setHeader('X-Content-Type-Options', 'nosniff');
       res.setHeader('Referrer-Policy', 'no-referrer');
+      res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(), camera=(), payment=()');
       next();
     });
 
@@ -1030,8 +1031,13 @@ export class HttpTransport {
       
       // Don't record metrics call in metrics (avoid recursion)
     } catch (error) {
-      this.logger.error('Metrics endpoint error', error as Error);
-      res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ error: 'Internal Server Error', message: (error as Error).message });
+      const correlationId = generateCorrelationId();
+      this.logger.error('Metrics endpoint error', error as Error, { correlationId });
+      res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+        error: 'Internal Server Error',
+        message: `Internal error (correlation ID: ${correlationId})`,
+        correlationId
+      });
     }
   }
 
@@ -1460,6 +1466,8 @@ export class HttpTransport {
           if (newSessionId) {
             res.setHeader('Mcp-Session-Id', newSessionId);
           }
+          // Security: Prevent caching of sensitive API responses
+          res.setHeader('Cache-Control', 'no-store');
           this.logger.debug('Sending JSON response', { response, newSessionId });
           res.json(response);
         }
@@ -1550,10 +1558,15 @@ export class HttpTransport {
         this.metrics.recordHttpRequest(req.method, req.path, 200, duration);
       }
     } catch (error) {
-      this.logger.error('GET request error', error as Error);
+      const correlationId = generateCorrelationId();
+      this.logger.error('GET request error', error as Error, { correlationId });
       const status = 500;
       if (!res.headersSent) {
-        res.status(status).json({ error: 'Internal Server Error', message: (error as Error).message });
+        res.status(status).json({
+          error: 'Internal Server Error',
+          message: `Internal error (correlation ID: ${correlationId})`,
+          correlationId
+        });
       }
       
       // Record error metrics
