@@ -711,6 +711,329 @@
     },
 
     {
+      "name": "manage_deploy_keys",
+      "description": "List deploy keys available to the authenticated user. Actions: 'list'.",
+      "metadata_params": ["action"],
+      "operations": {
+        "list": "getApiV4DeployKeys"
+      },
+      "response_fields": {
+        "list": ["id", "title", "key", "created_at"]
+      },
+      "parameters": {
+        "action": {
+          "type": "string",
+          "enum": ["list"],
+          "description": "Action to perform",
+          "required": true
+        },
+        "page": {
+          "type": "integer",
+          "description": "Page number for pagination",
+          "default": 1
+        },
+        "per_page": {
+          "type": "integer",
+          "description": "Items per page (recommended max 100)",
+          "default": 20
+        }
+      }
+    },
+
+    {
+      "name": "manage_deploy_tokens",
+      "description": "List deploy tokens available to the authenticated user. Actions: 'list'.",
+      "metadata_params": ["action"],
+      "operations": {
+        "list": "getApiV4DeployTokens"
+      },
+      "response_fields": {
+        "list": ["id", "name", "username", "expires_at"]
+      },
+      "parameters": {
+        "action": {
+          "type": "string",
+          "enum": ["list"],
+          "description": "Action to perform",
+          "required": true
+        },
+        "page": {
+          "type": "integer",
+          "description": "Page number for pagination",
+          "default": 1
+        },
+        "per_page": {
+          "type": "integer",
+          "description": "Items per page (recommended max 100)",
+          "default": 20
+        }
+      }
+    },
+
+    {
+      "name": "manage_group_deploy_tokens",
+      "description": "Manage deploy tokens at group level. Actions: 'list', 'create'.",
+      "metadata_params": ["action", "group_id"],
+      "operations": {
+        "list": "getApiV4GroupsIdDeployTokens",
+        "create": "postApiV4GroupsIdDeployTokens"
+      },
+      "response_fields": {
+        "list": ["id", "name", "username", "expires_at"],
+        "create": ["id", "name", "username", "expires_at"]
+      },
+      "parameters": {
+        "action": {
+          "type": "string",
+          "enum": ["list", "create"],
+          "description": "Action to perform",
+          "required": true
+        },
+        "group_id": {
+          "type": "string",
+          "description": "Group ID (numeric like '36173' or short name like 'davidruzicka')",
+          "required": true,
+          "example": "davidruzicka"
+        },
+        "name": {
+          "type": "string",
+          "description": "Deploy token name",
+          "required_for": ["create"],
+          "example": "ci-token"
+        },
+        "scopes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Scopes for the deploy token",
+          "example": ["read_repository", "read_registry"]
+        },
+        "expires_at": {
+          "type": "string",
+          "format": "date",
+          "description": "Expiration date for the deploy token",
+          "example": "2025-12-31"
+        },
+        "page": {
+          "type": "integer",
+          "description": "Page number for pagination",
+          "default": 1
+        },
+        "per_page": {
+          "type": "integer",
+          "description": "Items per page (recommended max 100)",
+          "default": 20
+        }
+      }
+    },
+
+    {
+      "name": "manage_events",
+      "description": "List recent events accessible to the authenticated user. Actions: 'list'.",
+      "metadata_params": ["action"],
+      "operations": {
+        "list": "getApiV4Events"
+      },
+      "response_fields": {
+        "list": ["id", "action_name", "target_type", "target_id", "created_at"]
+      },
+      "parameters": {
+        "action": {
+          "type": "string",
+          "enum": ["list"],
+          "description": "Action to perform",
+          "required": true
+        },
+        "page": {
+          "type": "integer",
+          "description": "Page number for pagination",
+          "default": 1
+        },
+        "per_page": {
+          "type": "integer",
+          "description": "Items per page (recommended max 100)",
+          "default": 20
+        }
+      }
+    },
+
+    {
+      "name": "manage_feature_flags",
+      "description": "Manage instance feature flags. Actions: 'list', 'list_definitions', 'set', 'get', 'update', 'delete'.",
+      "metadata_params": ["action", "name"],
+      "operations": {
+        "list": "getApiV4Features",
+        "list_definitions": "getApiV4FeaturesDefinitions",
+        "set": "postApiV4Features",
+        "get": "getApiV4FeaturesName",
+        "update": "postApiV4FeaturesName",
+        "delete": "deleteApiV4FeaturesName"
+      },
+      "response_fields": {
+        "list": ["name", "state", "gates"],
+        "list_definitions": ["name", "description"],
+        "set": ["name", "state"],
+        "get": ["name", "state", "gates"],
+        "update": ["name", "state"]
+      },
+      "parameters": {
+        "action": {
+          "type": "string",
+          "enum": ["list", "list_definitions", "set", "get", "update", "delete"],
+          "description": "Action to perform",
+          "required": true
+        },
+        "name": {
+          "type": "string",
+          "description": "Feature flag name",
+          "required_for": ["set", "get", "update", "delete"],
+          "example": "new_navigation"
+        },
+        "state": {
+          "type": "string",
+          "description": "Feature flag state",
+          "example": "on"
+        }
+      }
+    },
+
+    {
+      "name": "manage_unleash_feature_flags",
+      "description": "Work with Unleash feature flags for a project. Actions: 'get_config', 'list_features', 'list_client_features', 'report_client_metrics', 'register_client'.",
+      "metadata_params": ["action", "project_id"],
+      "operations": {
+        "get_config": "getApiV4FeatureFlagsUnleashProjectId",
+        "list_features": "getApiV4FeatureFlagsUnleashProjectIdFeatures",
+        "list_client_features": "getApiV4FeatureFlagsUnleashProjectIdClientFeatures",
+        "report_client_metrics": "postApiV4FeatureFlagsUnleashProjectIdClientMetrics",
+        "register_client": "postApiV4FeatureFlagsUnleashProjectIdClientRegister"
+      },
+      "response_fields": {
+        "get_config": ["version", "project"],
+        "list_features": ["features"],
+        "list_client_features": ["features"],
+        "report_client_metrics": ["status"],
+        "register_client": ["status"]
+      },
+      "parameters": {
+        "action": {
+          "type": "string",
+          "enum": ["get_config", "list_features", "list_client_features", "report_client_metrics", "register_client"],
+          "description": "Action to perform",
+          "required": true
+        },
+        "project_id": {
+          "type": "integer",
+          "description": "Project ID",
+          "required": true,
+          "example": 12345
+        },
+        "metrics": {
+          "type": "object",
+          "properties": {},
+          "description": "Client metrics payload",
+          "required_for": ["report_client_metrics"]
+        },
+        "client": {
+          "type": "object",
+          "properties": {},
+          "description": "Client registration payload",
+          "required_for": ["register_client"]
+        }
+      }
+    },
+
+    {
+      "name": "manage_dependency_proxy_cache",
+      "description": "Manage dependency proxy cache for a group. Actions: 'purge'.",
+      "metadata_params": ["action", "group_id"],
+      "operations": {
+        "purge": "deleteApiV4GroupsIdDependencyProxyCache"
+      },
+      "parameters": {
+        "action": {
+          "type": "string",
+          "enum": ["purge"],
+          "description": "Action to perform",
+          "required": true
+        },
+        "group_id": {
+          "type": "string",
+          "description": "Group ID (numeric like '36173' or short name like 'davidruzicka')",
+          "required": true,
+          "example": "davidruzicka"
+        }
+      }
+    },
+
+    {
+      "name": "manage_group_custom_attributes",
+      "description": "Manage custom attributes for a group. Actions: 'list', 'get', 'set', 'delete'.",
+      "metadata_params": ["action", "group_id", "key"],
+      "operations": {
+        "list": "getApiV4GroupsIdCustomAttributes",
+        "get": "getApiV4GroupsIdCustomAttributesKey",
+        "set": "putApiV4GroupsIdCustomAttributesKey",
+        "delete": "deleteApiV4GroupsIdCustomAttributesKey"
+      },
+      "response_fields": {
+        "list": ["key", "value"],
+        "get": ["key", "value"],
+        "set": ["key", "value"]
+      },
+      "parameters": {
+        "action": {
+          "type": "string",
+          "enum": ["list", "get", "set", "delete"],
+          "description": "Action to perform",
+          "required": true
+        },
+        "group_id": {
+          "type": "string",
+          "description": "Group ID (numeric like '36173' or short name like 'davidruzicka')",
+          "required": true,
+          "example": "davidruzicka"
+        },
+        "key": {
+          "type": "string",
+          "description": "Custom attribute key",
+          "required_for": ["get", "set", "delete"],
+          "example": "team"
+        },
+        "value": {
+          "type": "string",
+          "description": "Custom attribute value",
+          "required_for": ["set"],
+          "example": "core"
+        }
+      }
+    },
+
+    {
+      "name": "run_glql",
+      "description": "Execute a GLQL query. Actions: 'query'.",
+      "metadata_params": ["action"],
+      "operations": {
+        "query": "postApiV4Glql"
+      },
+      "parameters": {
+        "action": {
+          "type": "string",
+          "enum": ["query"],
+          "description": "Action to perform",
+          "required": true
+        },
+        "query": {
+          "type": "string",
+          "description": "GLQL query string",
+          "required_for": ["query"],
+          "example": "{ projects { nodes { id name } } }"
+        }
+      }
+    },
+
+    {
       "name": "manage_issues",
       "description": "Work with issues. Actions: 'list' (all issues in project), 'get' (single issue details), 'create' (create new issue), 'delete' (delete issue - admins only). Use 'list' to see all issues, filter by state (opened, closed, all). For 'get' and 'delete', pass 'issue_iid'. For 'create', pass 'title'.",
       "metadata_params": ["action", "project_id", "issue_iid"],

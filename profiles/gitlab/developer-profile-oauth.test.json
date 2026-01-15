@@ -483,6 +483,615 @@
       }
     },
     {
+      "name": "Deploy Keys - List",
+      "tool": "manage_deploy_keys",
+      "arguments": {
+        "action": "list"
+      },
+      "mocks": [
+        {
+          "operationId": "getApiV4DeployKeys",
+          "response": {
+            "body": [
+              {
+                "id": 1,
+                "title": "CI key",
+                "key": "ssh-rsa AAA",
+                "created_at": "2024-01-01T00:00:00Z"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": [
+          {
+            "id": 1,
+            "title": "CI key"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Deploy Tokens - List",
+      "tool": "manage_deploy_tokens",
+      "arguments": {
+        "action": "list"
+      },
+      "mocks": [
+        {
+          "operationId": "getApiV4DeployTokens",
+          "response": {
+            "body": [
+              {
+                "id": 2,
+                "name": "deploy-token",
+                "username": "gitlab+deploy-token-2",
+                "expires_at": "2025-01-01"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": [
+          {
+            "id": 2,
+            "name": "deploy-token"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Group Deploy Tokens - List",
+      "tool": "manage_group_deploy_tokens",
+      "arguments": {
+        "action": "list",
+        "group_id": "{{groupId}}"
+      },
+      "mocks": [
+        {
+          "operationId": "getApiV4GroupsIdDeployTokens",
+          "response": {
+            "body": [
+              {
+                "id": 3,
+                "name": "group-token",
+                "username": "gitlab+deploy-token-3",
+                "expires_at": "2025-06-01"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": [
+          {
+            "id": 3,
+            "name": "group-token"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Group Deploy Tokens - Create",
+      "tool": "manage_group_deploy_tokens",
+      "arguments": {
+        "action": "create",
+        "group_id": "{{groupId}}",
+        "name": "ci-token",
+        "scopes": ["read_repository"],
+        "expires_at": "2025-12-31"
+      },
+      "mocks": [
+        {
+          "operationId": "postApiV4GroupsIdDeployTokens",
+          "response": {
+            "status": 201,
+            "body": {
+              "id": 4,
+              "name": "ci-token",
+              "username": "gitlab+deploy-token-4",
+              "expires_at": "2025-12-31"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": {
+          "id": 4,
+          "name": "ci-token"
+        }
+      }
+    },
+    {
+      "name": "Events - List",
+      "tool": "manage_events",
+      "arguments": {
+        "action": "list"
+      },
+      "mocks": [
+        {
+          "operationId": "getApiV4Events",
+          "response": {
+            "body": [
+              {
+                "id": 1,
+                "action_name": "pushed",
+                "target_type": "project",
+                "target_id": 12345,
+                "created_at": "2024-01-01T00:00:00Z"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": [
+          {
+            "id": 1,
+            "action_name": "pushed"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Feature Flags - List",
+      "tool": "manage_feature_flags",
+      "arguments": {
+        "action": "list"
+      },
+      "mocks": [
+        {
+          "operationId": "getApiV4Features",
+          "response": {
+            "body": [
+              {
+                "name": "new_navigation",
+                "state": "on",
+                "gates": []
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": [
+          {
+            "name": "new_navigation",
+            "state": "on"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Feature Flags - List Definitions",
+      "tool": "manage_feature_flags",
+      "arguments": {
+        "action": "list_definitions"
+      },
+      "mocks": [
+        {
+          "operationId": "getApiV4FeaturesDefinitions",
+          "response": {
+            "body": [
+              {
+                "name": "new_navigation",
+                "description": "New UI"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": [
+          {
+            "name": "new_navigation",
+            "description": "New UI"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Feature Flags - Set",
+      "tool": "manage_feature_flags",
+      "arguments": {
+        "action": "set",
+        "name": "new_navigation",
+        "state": "on"
+      },
+      "mocks": [
+        {
+          "operationId": "postApiV4Features",
+          "response": {
+            "status": 201,
+            "body": {
+              "name": "new_navigation",
+              "state": "on"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": {
+          "name": "new_navigation",
+          "state": "on"
+        }
+      }
+    },
+    {
+      "name": "Feature Flags - Get",
+      "tool": "manage_feature_flags",
+      "arguments": {
+        "action": "get",
+        "name": "new_navigation"
+      },
+      "mocks": [
+        {
+          "operationId": "getApiV4FeaturesName",
+          "response": {
+            "body": {
+              "name": "new_navigation",
+              "state": "on",
+              "gates": []
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": {
+          "name": "new_navigation",
+          "state": "on"
+        }
+      }
+    },
+    {
+      "name": "Feature Flags - Update",
+      "tool": "manage_feature_flags",
+      "arguments": {
+        "action": "update",
+        "name": "new_navigation",
+        "state": "off"
+      },
+      "mocks": [
+        {
+          "operationId": "postApiV4FeaturesName",
+          "response": {
+            "body": {
+              "name": "new_navigation",
+              "state": "off"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": {
+          "name": "new_navigation",
+          "state": "off"
+        }
+      }
+    },
+    {
+      "name": "Feature Flags - Delete",
+      "tool": "manage_feature_flags",
+      "arguments": {
+        "action": "delete",
+        "name": "new_navigation"
+      },
+      "mocks": [
+        {
+          "operationId": "deleteApiV4FeaturesName",
+          "response": {
+            "status": 204
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Unleash Feature Flags - Get Config",
+      "tool": "manage_unleash_feature_flags",
+      "arguments": {
+        "action": "get_config",
+        "project_id": 12345
+      },
+      "mocks": [
+        {
+          "operationId": "getApiV4FeatureFlagsUnleashProjectId",
+          "response": {
+            "body": {
+              "version": "1.0",
+              "project": "mcp4openapi"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": {
+          "version": "1.0",
+          "project": "mcp4openapi"
+        }
+      }
+    },
+    {
+      "name": "Unleash Feature Flags - List Features",
+      "tool": "manage_unleash_feature_flags",
+      "arguments": {
+        "action": "list_features",
+        "project_id": 12345
+      },
+      "mocks": [
+        {
+          "operationId": "getApiV4FeatureFlagsUnleashProjectIdFeatures",
+          "response": {
+            "body": {
+              "features": []
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": {
+          "features": []
+        }
+      }
+    },
+    {
+      "name": "Unleash Feature Flags - List Client Features",
+      "tool": "manage_unleash_feature_flags",
+      "arguments": {
+        "action": "list_client_features",
+        "project_id": 12345
+      },
+      "mocks": [
+        {
+          "operationId": "getApiV4FeatureFlagsUnleashProjectIdClientFeatures",
+          "response": {
+            "body": {
+              "features": []
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": {
+          "features": []
+        }
+      }
+    },
+    {
+      "name": "Unleash Feature Flags - Report Client Metrics",
+      "tool": "manage_unleash_feature_flags",
+      "arguments": {
+        "action": "report_client_metrics",
+        "project_id": 12345,
+        "metrics": {
+          "bucket": {
+            "start": "2024-01-01T00:00:00Z",
+            "stop": "2024-01-01T01:00:00Z"
+          },
+          "applications": []
+        }
+      },
+      "mocks": [
+        {
+          "operationId": "postApiV4FeatureFlagsUnleashProjectIdClientMetrics",
+          "response": {
+            "status": 202,
+            "body": {
+              "status": "accepted"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": {
+          "status": "accepted"
+        }
+      }
+    },
+    {
+      "name": "Unleash Feature Flags - Register Client",
+      "tool": "manage_unleash_feature_flags",
+      "arguments": {
+        "action": "register_client",
+        "project_id": 12345,
+        "client": {
+          "appName": "web",
+          "instanceId": "web-1"
+        }
+      },
+      "mocks": [
+        {
+          "operationId": "postApiV4FeatureFlagsUnleashProjectIdClientRegister",
+          "response": {
+            "status": 202,
+            "body": {
+              "status": "ok"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": {
+          "status": "ok"
+        }
+      }
+    },
+    {
+      "name": "Dependency Proxy Cache - Purge",
+      "tool": "manage_dependency_proxy_cache",
+      "arguments": {
+        "action": "purge",
+        "group_id": "{{groupId}}"
+      },
+      "mocks": [
+        {
+          "operationId": "deleteApiV4GroupsIdDependencyProxyCache",
+          "response": {
+            "status": 204
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Group Custom Attributes - List",
+      "tool": "manage_group_custom_attributes",
+      "arguments": {
+        "action": "list",
+        "group_id": "{{groupId}}"
+      },
+      "mocks": [
+        {
+          "operationId": "getApiV4GroupsIdCustomAttributes",
+          "response": {
+            "body": [
+              {
+                "key": "team",
+                "value": "core"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": [
+          {
+            "key": "team",
+            "value": "core"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Group Custom Attributes - Get",
+      "tool": "manage_group_custom_attributes",
+      "arguments": {
+        "action": "get",
+        "group_id": "{{groupId}}",
+        "key": "team"
+      },
+      "mocks": [
+        {
+          "operationId": "getApiV4GroupsIdCustomAttributesKey",
+          "response": {
+            "body": {
+              "key": "team",
+              "value": "core"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": {
+          "key": "team",
+          "value": "core"
+        }
+      }
+    },
+    {
+      "name": "Group Custom Attributes - Set",
+      "tool": "manage_group_custom_attributes",
+      "arguments": {
+        "action": "set",
+        "group_id": "{{groupId}}",
+        "key": "team",
+        "value": "core"
+      },
+      "mocks": [
+        {
+          "operationId": "putApiV4GroupsIdCustomAttributesKey",
+          "response": {
+            "body": {
+              "key": "team",
+              "value": "core"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": {
+          "key": "team",
+          "value": "core"
+        }
+      }
+    },
+    {
+      "name": "Group Custom Attributes - Delete",
+      "tool": "manage_group_custom_attributes",
+      "arguments": {
+        "action": "delete",
+        "group_id": "{{groupId}}",
+        "key": "team"
+      },
+      "mocks": [
+        {
+          "operationId": "deleteApiV4GroupsIdCustomAttributesKey",
+          "response": {
+            "status": 204
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "GLQL - Query",
+      "tool": "run_glql",
+      "arguments": {
+        "action": "query",
+        "query": "{ projects { nodes { id name } } }"
+      },
+      "mocks": [
+        {
+          "operationId": "postApiV4Glql",
+          "response": {
+            "body": {
+              "data": {
+                "projects": {
+                  "nodes": []
+                }
+              }
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": {
+          "data": {
+            "projects": {
+              "nodes": []
+            }
+          }
+        }
+      }
+    },
+    {
       "name": "Issues - List",
       "tool": "manage_issues",
       "arguments": {

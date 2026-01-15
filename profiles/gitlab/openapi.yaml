@@ -83,6 +83,8 @@ tags:
   description: Operations related to DevOps Research and Assessment (DORA) key metrics
 - name: environments
   description: Operations related to environments
+- name: events
+  description: Operations related to events
 - name: error_tracking_client_keys
   description: Operations related to error tracking client keys
 - name: error_tracking_project_settings
@@ -101,6 +103,8 @@ tags:
   description: Operations related to Geo
 - name: geo_nodes
   description: Operations related Geo Nodes
+- name: glql
+  description: Operations related to GLQL queries
 - name: go_proxy
   description: Operations related to Go Proxy
 - name: group_export
@@ -5224,6 +5228,1524 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/API_Error'
+
+  /applications/{id}/renew-secret:
+    post:
+      tags:
+        - applications
+      summary: Renew application secret
+      description: Renew the secret for an application
+      operationId: postApiV4ApplicationsIdRenewSecret
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The ID of the application
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/API_Entities_ApplicationWithSecret'
+        '404':
+          description: Application not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/API_Error'
+
+  /application/statistics:
+    get:
+      tags:
+        - application
+      summary: Get application statistics
+      description: Retrieve statistics for the GitLab instance
+      operationId: getApiV4ApplicationStatistics
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/API_Error'
+
+  /bulk_imports/{import_id}/cancel:
+    post:
+      tags:
+        - bulk_imports
+      summary: Cancel bulk import
+      description: Cancel a bulk import
+      operationId: postApiV4BulkImportsImportIdCancel
+      parameters:
+        - name: import_id
+          in: path
+          required: true
+          description: The ID of the bulk import
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '202':
+          description: Cancel accepted
+          content: {}
+        '404':
+          description: Bulk import not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/API_Error'
+
+  /bulk_imports/{import_id}/entities/{entity_id}/failures:
+    get:
+      tags:
+        - bulk_imports
+      summary: List bulk import failures
+      description: Get failures for a bulk import entity
+      operationId: getApiV4BulkImportsImportIdEntitiesEntityIdFailures
+      parameters:
+        - name: import_id
+          in: path
+          required: true
+          description: The ID of the bulk import
+          schema:
+            type: integer
+            format: int32
+        - name: entity_id
+          in: path
+          required: true
+          description: The ID of the bulk import entity
+          schema:
+            type: integer
+            format: int32
+        - name: page
+          in: query
+          description: Current page number
+          schema:
+            type: integer
+            default: 1
+        - name: per_page
+          in: query
+          description: Number of items per page
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/API_Entities_BulkImports_EntityFailure'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/API_Error'
+
+  /container_registry_event/events:
+    get:
+      tags:
+        - container_registry_event
+      summary: List container registry events
+      description: Get a list of container registry events
+      operationId: getApiV4ContainerRegistryEventEvents
+      parameters:
+        - name: page
+          in: query
+          description: Current page number
+          schema:
+            type: integer
+            default: 1
+        - name: per_page
+          in: query
+          description: Number of items per page
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+
+  /deploy_keys:
+    get:
+      tags:
+        - deploy_keys
+      summary: List deploy keys
+      description: Get a list of deploy keys
+      operationId: getApiV4DeployKeys
+      parameters:
+        - name: page
+          in: query
+          description: Current page number
+          schema:
+            type: integer
+            default: 1
+        - name: per_page
+          in: query
+          description: Number of items per page
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+
+  /deploy_tokens:
+    get:
+      tags:
+        - deploy_tokens
+      summary: List deploy tokens
+      description: Get a list of deploy tokens
+      operationId: getApiV4DeployTokens
+      parameters:
+        - name: page
+          in: query
+          description: Current page number
+          schema:
+            type: integer
+            default: 1
+        - name: per_page
+          in: query
+          description: Number of items per page
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+
+  /discover-cert-based-clusters:
+    get:
+      tags:
+        - clusters
+      summary: Discover certificate based clusters
+      description: Get clusters discovered via certificate based discovery
+      operationId: getApiV4DiscoverCertBasedClusters
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+
+  /events:
+    get:
+      tags:
+        - events
+      summary: List events
+      description: Get a list of events
+      operationId: getApiV4Events
+      parameters:
+        - name: page
+          in: query
+          description: Current page number
+          schema:
+            type: integer
+            default: 1
+        - name: per_page
+          in: query
+          description: Number of items per page
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+
+  /feature_flags/unleash/{project_id}:
+    get:
+      tags:
+        - feature_flags
+      summary: Get Unleash configuration
+      description: Get Unleash configuration for a project
+      operationId: getApiV4FeatureFlagsUnleashProjectId
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          description: The project ID
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /feature_flags/unleash/{project_id}/client/features:
+    get:
+      tags:
+        - feature_flags
+      summary: Get Unleash client features
+      description: Get Unleash client feature list for a project
+      operationId: getApiV4FeatureFlagsUnleashProjectIdClientFeatures
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          description: The project ID
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /feature_flags/unleash/{project_id}/client/metrics:
+    post:
+      tags:
+        - feature_flags
+      summary: Report Unleash client metrics
+      description: Report Unleash client metrics for a project
+      operationId: postApiV4FeatureFlagsUnleashProjectIdClientMetrics
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          description: The project ID
+          schema:
+            type: integer
+            format: int32
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '202':
+          description: Metrics accepted
+          content: {}
+
+  /feature_flags/unleash/{project_id}/client/register:
+    post:
+      tags:
+        - feature_flags
+      summary: Register Unleash client
+      description: Register an Unleash client for a project
+      operationId: postApiV4FeatureFlagsUnleashProjectIdClientRegister
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          description: The project ID
+          schema:
+            type: integer
+            format: int32
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '202':
+          description: Registration accepted
+          content: {}
+
+  /feature_flags/unleash/{project_id}/features:
+    get:
+      tags:
+        - feature_flags
+      summary: List Unleash features
+      description: Get Unleash feature list for a project
+      operationId: getApiV4FeatureFlagsUnleashProjectIdFeatures
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          description: The project ID
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /features:
+    get:
+      tags:
+        - features
+      summary: List feature flags
+      description: Get a list of feature flags
+      operationId: getApiV4Features
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+    post:
+      tags:
+        - features
+      summary: Set feature flag
+      description: Enable or disable a feature flag
+      operationId: postApiV4Features
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /features/definitions:
+    get:
+      tags:
+        - features
+      summary: List feature flag definitions
+      description: Get a list of feature flag definitions
+      operationId: getApiV4FeaturesDefinitions
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+
+  /features/{name}:
+    get:
+      tags:
+        - features
+      summary: Get feature flag
+      description: Get a single feature flag
+      operationId: getApiV4FeaturesName
+      parameters:
+        - name: name
+          in: path
+          required: true
+          description: The name of the feature flag
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/API_Error'
+    post:
+      tags:
+        - features
+      summary: Update feature flag
+      description: Enable or disable a feature flag
+      operationId: postApiV4FeaturesName
+      parameters:
+        - name: name
+          in: path
+          required: true
+          description: The name of the feature flag
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+    delete:
+      tags:
+        - features
+      summary: Delete feature flag
+      description: Delete a feature flag
+      operationId: deleteApiV4FeaturesName
+      parameters:
+        - name: name
+          in: path
+          required: true
+          description: The name of the feature flag
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Deleted
+
+  /geo/node_proxy/{id}/graphql:
+    post:
+      tags:
+        - geo
+      summary: Geo node proxy GraphQL
+      description: Proxy GraphQL requests to a Geo node
+      operationId: postApiV4GeoNodeProxyIdGraphql
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The Geo node ID
+          schema:
+            type: integer
+            format: int32
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /geo/proxy:
+    post:
+      tags:
+        - geo
+      summary: Geo proxy
+      description: Proxy requests to Geo secondary
+      operationId: postApiV4GeoProxy
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /geo/proxy_git_ssh/info_refs_receive_pack:
+    get:
+      tags:
+        - geo
+      summary: Geo proxy Git SSH info refs receive pack
+      description: Proxy Git SSH info refs receive pack
+      operationId: getApiV4GeoProxyGitSshInfoRefsReceivePack
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /geo/proxy_git_ssh/info_refs_upload_pack:
+    get:
+      tags:
+        - geo
+      summary: Geo proxy Git SSH info refs upload pack
+      description: Proxy Git SSH info refs upload pack
+      operationId: getApiV4GeoProxyGitSshInfoRefsUploadPack
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /geo/proxy_git_ssh/receive_pack:
+    post:
+      tags:
+        - geo
+      summary: Geo proxy Git SSH receive pack
+      description: Proxy Git SSH receive pack
+      operationId: postApiV4GeoProxyGitSshReceivePack
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /geo/proxy_git_ssh/upload_pack:
+    post:
+      tags:
+        - geo
+      summary: Geo proxy Git SSH upload pack
+      description: Proxy Git SSH upload pack
+      operationId: postApiV4GeoProxyGitSshUploadPack
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /geo/repositories/{gl_repository}/pipeline_refs:
+    get:
+      tags:
+        - geo
+      summary: Get Geo pipeline refs
+      description: Get pipeline refs for a Geo repository
+      operationId: getApiV4GeoRepositoriesGlRepositoryPipelineRefs
+      parameters:
+        - name: gl_repository
+          in: path
+          required: true
+          description: The repository identifier
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /geo/retrieve/{replicable_name}/{replicable_id}:
+    get:
+      tags:
+        - geo
+      summary: Retrieve Geo replicable
+      description: Retrieve a replicable from Geo
+      operationId: getApiV4GeoRetrieveReplicableNameReplicableId
+      parameters:
+        - name: replicable_name
+          in: path
+          required: true
+          description: The replicable name
+          schema:
+            type: string
+        - name: replicable_id
+          in: path
+          required: true
+          description: The replicable ID
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /geo/status:
+    get:
+      tags:
+        - geo
+      summary: Get Geo status
+      description: Get status for Geo nodes
+      operationId: getApiV4GeoStatus
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /glql:
+    post:
+      tags:
+        - glql
+      summary: Execute GLQL query
+      description: Execute a GLQL query
+      operationId: postApiV4Glql
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                query:
+                  type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /group/{id}/-/packages/composer/*package_name:
+    get:
+      tags:
+        - composer_packages
+      summary: Get Composer package metadata
+      description: Get Composer package metadata for a group
+      operationId: getApiV4GroupIdPackagesComposerPackageName
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The group ID or full group path
+          schema:
+            type: string
+        - name: package_name
+          in: path
+          required: true
+          description: The Composer package name
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /group/{id}/-/packages/composer/packages:
+    get:
+      tags:
+        - composer_packages
+      summary: Get Composer packages index
+      description: Get Composer packages index for a group
+      operationId: getApiV4GroupIdPackagesComposerPackages
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The group ID or full group path
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /group/{id}/-/packages/composer/p/{sha}:
+    get:
+      tags:
+        - composer_packages
+      summary: Get Composer packages provider
+      description: Get Composer packages provider data by SHA
+      operationId: getApiV4GroupIdPackagesComposerPSha
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The group ID or full group path
+          schema:
+            type: string
+        - name: sha
+          in: path
+          required: true
+          description: The SHA of the provider data
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /group/{id}/-/packages/composer/p2/*package_name:
+    get:
+      tags:
+        - composer_packages
+      summary: Get Composer packages provider v2
+      description: Get Composer packages provider v2 data for a group
+      operationId: getApiV4GroupIdPackagesComposerP2PackageName
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The group ID or full group path
+          schema:
+            type: string
+        - name: package_name
+          in: path
+          required: true
+          description: The Composer package name
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /groups/{id}/access_tokens/self/rotate:
+    post:
+      tags:
+        - groups
+      summary: Rotate group access token
+      description: Rotate the access token for the current user in a group
+      operationId: postApiV4GroupsIdAccessTokensSelfRotate
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The ID or URL-encoded path of the group
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /groups/{id}/archive:
+    post:
+      tags:
+        - groups
+      summary: Archive group
+      description: Archive a group
+      operationId: postApiV4GroupsIdArchive
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The ID or URL-encoded path of the group
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/API_Entities_BasicGroupDetails'
+
+  /groups/{id}/audit_events:
+    get:
+      tags:
+        - groups
+      summary: List group audit events
+      description: Get a list of audit events in a group
+      operationId: getApiV4GroupsIdAuditEvents
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The ID or URL-encoded path of the group
+          schema:
+            type: string
+        - name: page
+          in: query
+          description: Current page number
+          schema:
+            type: integer
+            default: 1
+        - name: per_page
+          in: query
+          description: Number of items per page
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+
+  /groups/{id}/audit_events/{audit_event_id}:
+    get:
+      tags:
+        - groups
+      summary: Get group audit event
+      description: Get a single audit event in a group
+      operationId: getApiV4GroupsIdAuditEventsAuditEventId
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The ID or URL-encoded path of the group
+          schema:
+            type: string
+        - name: audit_event_id
+          in: path
+          required: true
+          description: The audit event ID
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/API_Error'
+
+  /groups/{id}/avatar:
+    get:
+      tags:
+        - groups
+      summary: Download group avatar
+      description: Download the group avatar
+      operationId: getApiV4GroupsIdAvatar
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The ID or URL-encoded path of the group
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+
+  /groups/{id}/billable_members:
+    get:
+      tags:
+        - groups
+      summary: List billable members
+      description: Get a list of billable members in a group
+      operationId: getApiV4GroupsIdBillableMembers
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The ID or URL-encoded path of the group
+          schema:
+            type: string
+        - name: page
+          in: query
+          description: Current page number
+          schema:
+            type: integer
+            default: 1
+        - name: per_page
+          in: query
+          description: Number of items per page
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+
+  /groups/{id}/billable_members/{user_id}:
+    get:
+      tags:
+        - groups
+      summary: Get billable member
+      description: Get a billable member in a group
+      operationId: getApiV4GroupsIdBillableMembersUserId
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The ID or URL-encoded path of the group
+          schema:
+            type: string
+        - name: user_id
+          in: path
+          required: true
+          description: The user ID
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /groups/{id}/billable_members/{user_id}/indirect:
+    get:
+      tags:
+        - groups
+      summary: Get indirect billable members
+      description: Get indirect billable members for a user in a group
+      operationId: getApiV4GroupsIdBillableMembersUserIdIndirect
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The ID or URL-encoded path of the group
+          schema:
+            type: string
+        - name: user_id
+          in: path
+          required: true
+          description: The user ID
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /groups/{id}/billable_members/{user_id}/memberships:
+    get:
+      tags:
+        - groups
+      summary: Get billable member memberships
+      description: Get billable member memberships for a user in a group
+      operationId: getApiV4GroupsIdBillableMembersUserIdMemberships
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The ID or URL-encoded path of the group
+          schema:
+            type: string
+        - name: user_id
+          in: path
+          required: true
+          description: The user ID
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+
+  /groups/{id}/clusters:
+    get:
+      tags:
+        - clusters
+        - groups
+      summary: List group clusters
+      description: Get a list of clusters for a group
+      operationId: getApiV4GroupsIdClusters
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The ID or URL-encoded path of the group
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+
+  /groups/{id}/clusters/{cluster_id}:
+    get:
+      tags:
+        - clusters
+        - groups
+      summary: Get group cluster
+      description: Get a single cluster for a group
+      operationId: getApiV4GroupsIdClustersClusterId
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The ID or URL-encoded path of the group
+          schema:
+            type: string
+        - name: cluster_id
+          in: path
+          required: true
+          description: The cluster ID
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /groups/{id}/clusters/user:
+    post:
+      tags:
+        - clusters
+        - groups
+      summary: Add existing cluster to group
+      description: Add an existing cluster to a group
+      operationId: postApiV4GroupsIdClustersUser
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The ID or URL-encoded path of the group
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '201':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /groups/{id}/custom_attributes:
+    get:
+      tags:
+        - groups
+      summary: List group custom attributes
+      description: Get a list of custom attributes for a group
+      operationId: getApiV4GroupsIdCustomAttributes
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The ID or URL-encoded path of the group
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/API_Entities_CustomAttribute'
+
+  /groups/{id}/custom_attributes/{key}:
+    get:
+      tags:
+        - groups
+      summary: Get group custom attribute
+      description: Get a custom attribute for a group
+      operationId: getApiV4GroupsIdCustomAttributesKey
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The ID or URL-encoded path of the group
+          schema:
+            type: string
+        - name: key
+          in: path
+          required: true
+          description: The custom attribute key
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/API_Entities_CustomAttribute'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/API_Error'
+    put:
+      tags:
+        - groups
+      summary: Set group custom attribute
+      description: Create or update a custom attribute for a group
+      operationId: putApiV4GroupsIdCustomAttributesKey
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The ID or URL-encoded path of the group
+          schema:
+            type: string
+        - name: key
+          in: path
+          required: true
+          description: The custom attribute key
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                value:
+                  type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/API_Entities_CustomAttribute'
+    delete:
+      tags:
+        - groups
+      summary: Delete group custom attribute
+      description: Delete a custom attribute for a group
+      operationId: deleteApiV4GroupsIdCustomAttributesKey
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The ID or URL-encoded path of the group
+          schema:
+            type: string
+        - name: key
+          in: path
+          required: true
+          description: The custom attribute key
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Deleted
+
+  /groups/{id}/-/debian_distributions:
+    get:
+      tags:
+        - debian_distribution
+      summary: List Debian distributions
+      description: Get a list of Debian distributions for a group
+      operationId: getApiV4GroupsIdDebianDistributions
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The ID or URL-encoded path of the group
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+    post:
+      tags:
+        - debian_distribution
+      summary: Create Debian distribution
+      description: Create a Debian distribution for a group
+      operationId: postApiV4GroupsIdDebianDistributions
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The ID or URL-encoded path of the group
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /groups/{id}/-/debian_distributions/{codename}:
+    get:
+      tags:
+        - debian_distribution
+      summary: Get Debian distribution
+      description: Get a Debian distribution for a group
+      operationId: getApiV4GroupsIdDebianDistributionsCodename
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The ID or URL-encoded path of the group
+          schema:
+            type: string
+        - name: codename
+          in: path
+          required: true
+          description: The Debian codename
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+    put:
+      tags:
+        - debian_distribution
+      summary: Update Debian distribution
+      description: Update a Debian distribution for a group
+      operationId: putApiV4GroupsIdDebianDistributionsCodename
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The ID or URL-encoded path of the group
+          schema:
+            type: string
+        - name: codename
+          in: path
+          required: true
+          description: The Debian codename
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+    delete:
+      tags:
+        - debian_distribution
+      summary: Delete Debian distribution
+      description: Delete a Debian distribution for a group
+      operationId: deleteApiV4GroupsIdDebianDistributionsCodename
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The ID or URL-encoded path of the group
+          schema:
+            type: string
+        - name: codename
+          in: path
+          required: true
+          description: The Debian codename
+          schema:
+            type: string
+      responses:
+        '202':
+          description: Delete accepted
+          content: {}
+
+  /groups/{id}/-/debian_distributions/{codename}/key.asc:
+    get:
+      tags:
+        - debian_distribution
+      summary: Get Debian distribution key
+      description: Get the Debian distribution key for a group
+      operationId: getApiV4GroupsIdDebianDistributionsCodenameKeyAsc
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The ID or URL-encoded path of the group
+          schema:
+            type: string
+        - name: codename
+          in: path
+          required: true
+          description: The Debian codename
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+
+  /groups/{id}/dependency_proxy/cache:
+    delete:
+      tags:
+        - dependency_proxy
+      summary: Purge dependency proxy cache
+      description: Purge the dependency proxy cache for a group
+      operationId: deleteApiV4GroupsIdDependencyProxyCache
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The ID or URL-encoded path of the group
+          schema:
+            type: string
+      responses:
+        '202':
+          description: Purge scheduled
+          content: {}
+
+  /groups/{id}/deploy_tokens:
+    get:
+      tags:
+        - deploy_tokens
+        - groups
+      summary: List group deploy tokens
+      description: Get a list of deploy tokens for a group
+      operationId: getApiV4GroupsIdDeployTokens
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The ID or URL-encoded path of the group
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+    post:
+      tags:
+        - deploy_tokens
+        - groups
+      summary: Create group deploy token
+      description: Create a deploy token for a group
+      operationId: postApiV4GroupsIdDeployTokens
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The ID or URL-encoded path of the group
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
 components:
   parameters:
     ProjectIdOrPath:
