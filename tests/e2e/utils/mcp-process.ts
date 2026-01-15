@@ -70,6 +70,7 @@ export class McpProcess extends EventEmitter {
   private isReady = false;
   private readyPromise: Promise<void> | null = null;
   private readyResolve: (() => void) | null = null;
+  private readyReject: ((error: Error) => void) | null = null;
   private httpSessionId: string | null = null;
 
   constructor(config: McpProcessConfig) {
@@ -128,8 +129,9 @@ export class McpProcess extends EventEmitter {
       Object.assign(env, this.config.env);
     }
 
-    this.readyPromise = new Promise((resolve) => {
+    this.readyPromise = new Promise((resolve, reject) => {
       this.readyResolve = resolve;
+      this.readyReject = reject;
     });
 
     this.process = spawn('node', [distPath], {
@@ -192,7 +194,8 @@ export class McpProcess extends EventEmitter {
     });
 
     const checkHealth = async (): Promise<void> => {
-      const maxAttempts = 30;
+      const maxAttempts = 100;
+      const delayMs = 200;
       for (let i = 0; i < maxAttempts; i++) {
         try {
           const response = await fetch(healthUrl);
@@ -203,12 +206,15 @@ export class McpProcess extends EventEmitter {
         } catch {
           // Server not ready yet
         }
-        await new Promise((r) => setTimeout(r, 100));
+        await new Promise((r) => setTimeout(r, delayMs));
       }
       throw new Error(`MCP server failed to start (health check failed after ${maxAttempts} attempts)`);
     };
 
-    checkHealth().catch((err) => this.emit('error', err));
+    checkHealth().catch((err) => {
+      this.readyReject?.(err);
+      this.emit('error', err);
+    });
   }
 
   private handleStdoutLine(line: string): void {
@@ -236,6 +242,7 @@ export class McpProcess extends EventEmitter {
     if (!this.isReady) {
       this.isReady = true;
       this.readyResolve?.();
+      this.readyReject = null;
       this.emit('ready');
     }
   }
@@ -315,8 +322,9 @@ export class McpProcess extends EventEmitter {
       },
     };
 
-    if (this.config.apiToken && !('Authorization' in fetchOptions.headers)) {
-      (fetchOptions.headers as Record<string, string>)['Authorization'] = `Bearer ${this.config.apiToken}`;
+    const headerMap = fetchOptions.headers as Record<string, string>;
+    if (this.config.apiToken && !('Authorization' in headerMap)) {
+      headerMap['Authorization'] = `Bearer ${this.config.apiToken}`;
     }
 
     if (body !== undefined) {
