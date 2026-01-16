@@ -9,6 +9,7 @@
 import type { ProxyDownloadOperation } from './types/profile.js';
 import type { ResponseContext, AuthCredentials } from './interceptors.js';
 import { NetworkError, ValidationError } from './errors.js';
+import { isSafePropertyName } from './validation-utils.js';
 import { isIP } from 'node:net';
 import { lookup } from 'node:dns/promises';
 
@@ -229,6 +230,9 @@ export class ProxyDownloadExecutor {
       if (current === null || typeof current !== 'object') {
         return null;
       }
+      if (!isSafePropertyName(part)) {
+        return null;
+      }
       current = (current as Record<string, unknown>)[part];
     }
 
@@ -250,6 +254,9 @@ export class ProxyDownloadExecutor {
     let current: unknown = metadata;
     for (const part of parts) {
       if (current === null || typeof current !== 'object') {
+        return undefined;
+      }
+      if (!isSafePropertyName(part)) {
         return undefined;
       }
       current = (current as Record<string, unknown>)[part];

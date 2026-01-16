@@ -836,6 +836,42 @@ describe('ProxyDownloadExecutor', () => {
     );
   });
 
+  it('should return undefined for unsafe nested path segments', () => {
+    const executor = new ProxyDownloadExecutor(mockHttpClient as any);
+    const metadata = {
+      metadata: {
+        downloadUrl: 'https://api.example.com/download/abc',
+      },
+    };
+
+    const value = (executor as any).extractNestedValue(metadata, '__proto__.downloadUrl');
+
+    expect(value).toBeUndefined();
+  });
+
+  it('should reject unsafe url_field path segments', async () => {
+    mockHttpClient.request.mockResolvedValue({
+      status: 200,
+      headers: {},
+      body: {
+        metadata: {
+          downloadUrl: 'https://api.example.com/download/abc',
+        },
+      },
+    });
+
+    const executor = new ProxyDownloadExecutor(mockHttpClient as any);
+    const operation: ProxyDownloadOperation = {
+      type: 'proxy_download',
+      metadata_endpoint: 'get_/attachments/{id}',
+      url_field: '__proto__.downloadUrl',
+    };
+
+    await expect(
+      executor.execute(operation, metadataRequest('/attachments/456'), { headers: {} })
+    ).rejects.toThrow("URL field '__proto__.downloadUrl' not found in metadata response");
+  });
+
   it('should handle download timeout', async () => {
     mockHttpClient.request.mockResolvedValue({
       status: 200,
