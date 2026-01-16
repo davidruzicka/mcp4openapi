@@ -1892,6 +1892,42 @@
       }
     },
     {
+      "name": "Repository Commits - List",
+      "tool": "repository_commits",
+      "arguments": {
+        "action": "list",
+        "project_id": "{{projectId}}",
+        "path": "src%2Findex.js",
+        "ref_name": "main"
+      },
+      "mocks": [
+        {
+          "operationId": "getApiV4ProjectsIdRepositoryCommits",
+          "response": {
+            "body": [
+              {
+                "id": "abc123",
+                "short_id": "abc123",
+                "title": "Initial commit",
+                "author_name": "Dev",
+                "committed_date": "2025-01-01T00:00:00Z",
+                "web_url": "https://gitlab.example.com/commit/abc123"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": [
+          {
+            "short_id": "abc123",
+            "title": "Initial commit"
+          }
+        ]
+      }
+    },
+    {
       "name": "Repository Files - Get File",
       "tool": "repository_files",
       "arguments": {

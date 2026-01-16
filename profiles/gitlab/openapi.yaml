@@ -3523,6 +3523,82 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/API_Error'
+  /projects/{id}/repository/commits:
+    get:
+      tags:
+        - repository_commits
+      summary: List repository commits
+      description: Get a list of repository commits for a project, optionally filtered by ref or file path.
+      operationId: getApiV4ProjectsIdRepositoryCommits
+      parameters:
+        - $ref: '#/components/parameters/ProjectIdOrPath'
+        - name: ref_name
+          in: query
+          description: The name of a branch, tag, or commit SHA to list commits from
+          schema:
+            type: string
+        - name: path
+          in: query
+          description: File path to filter commits, use URL-encoded slashes for nested paths
+          schema:
+            type: string
+        - name: since
+          in: query
+          description: Only commits after this date in ISO 8601 format
+          schema:
+            type: string
+        - name: until
+          in: query
+          description: Only commits before this date in ISO 8601 format
+          schema:
+            type: string
+        - name: all
+          in: query
+          description: Return all commits, including those not in the default branch
+          schema:
+            type: boolean
+        - name: with_stats
+          in: query
+          description: Include commit stats in the response
+          schema:
+            type: boolean
+        - name: first_parent
+          in: query
+          description: Return only the first parent of merge commits
+          schema:
+            type: boolean
+        - name: page
+          in: query
+          description: Page number for pagination
+          schema:
+            type: integer
+            default: 1
+        - name: per_page
+          in: query
+          description: Number of items per page
+          schema:
+            type: integer
+            default: 20
+        - name: order
+          in: query
+          description: Order commits, for example default or topo
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/API_Entities_Commit'
+        '404':
+          description: Project not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/API_Error'
   /projects/{id}/repository/files/{file_path}:
     get:
       tags:
