@@ -8,6 +8,7 @@ import type { OAuthConfig } from './types/profile.js';
 import type { Logger } from './logger.js';
 import type { Response } from 'express';
 import type { OAuthClientInformationFull } from '@modelcontextprotocol/sdk/shared/auth.js';
+import { PROXY_CREDENTIALS } from './constants.js';
 
 describe('InMemoryClientsStore', () => {
   let store: InMemoryClientsStore;
@@ -69,6 +70,18 @@ describe('ExternalOAuthProvider', () => {
       expect(mockLogger.info).toHaveBeenCalledWith(
         'Pre-registered mcp-proxy-client for VS Code compatibility'
       );
+    });
+
+    it('should pre-register proxy client with credentials from constants', async () => {
+      provider = new ExternalOAuthProvider(config, mockLogger);
+
+      // Access private store to verify registration
+      const store = (provider as any)._clientsStore;
+      const proxyClient = await store.getClient(PROXY_CREDENTIALS.CLIENT_ID);
+
+      expect(proxyClient).toBeDefined();
+      expect(proxyClient?.client_id).toBe(PROXY_CREDENTIALS.CLIENT_ID);
+      expect(proxyClient?.client_secret).toBe(PROXY_CREDENTIALS.CLIENT_SECRET);
     });
 
     describe('host allowlist matching', () => {

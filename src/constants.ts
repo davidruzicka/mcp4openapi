@@ -89,3 +89,14 @@ export const OAUTH_RATE_LIMIT = {
   WINDOW_MS: 10 * TIME.MS_PER_MINUTE,            // 10 minutes window
 } as const;
 
+/**
+ * Proxy mode credentials
+ *
+ * Why: Allows configuring the internal proxy client ID and secret via environment variables,
+ * preventing hardcoded secrets from being the only option.
+ * Defaults to legacy values for backward compatibility.
+ */
+export const PROXY_CREDENTIALS = {
+  CLIENT_ID: process.env.MCP_PROXY_CLIENT_ID || 'mcp-proxy-client',
+  CLIENT_SECRET: process.env.MCP_PROXY_CLIENT_SECRET || 'mcp-proxy-secret',
+} as const;
