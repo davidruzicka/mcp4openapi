@@ -13,6 +13,7 @@
     "issue_iid": ["iid"],
     "note_id": ["comment_id"],
     "file_path": ["path", "filepath"],
+    "path": ["file_path", "filepath"],
     "pipeline_id": ["pipeline"],
     "discussion_id": ["discussion"],
     "hook_id": ["webhook_id"],
@@ -1243,6 +1244,73 @@
         "developers_can_merge": {
           "type": "boolean",
           "description": "Allow developers to merge (for protect action)"
+        }
+      }
+    },
+
+    {
+      "name": "repository_commits",
+      "description": "List repository commits with optional filters like ref and file path. Actions: 'list'.",
+      "metadata_params": ["action", "project_id"],
+      "operations": {
+        "list": "getApiV4ProjectsIdRepositoryCommits"
+      },
+      "response_fields": {
+        "list": ["id", "short_id", "title", "message", "author_name", "author_email", "authored_date", "committed_date", "web_url"]
+      },
+      "parameters": {
+        "action": {
+          "type": "string",
+          "enum": ["list"],
+          "description": "Action to perform",
+          "required": true
+        },
+        "project_id": {
+          "type": "string",
+          "description": "Project ID (numeric or URL-encoded path)",
+          "required": true
+        },
+        "ref_name": {
+          "type": "string",
+          "description": "Branch, tag, or commit SHA to list commits from"
+        },
+        "path": {
+          "type": "string",
+          "description": "File path to filter commits, use URL-encoded slashes for nested paths"
+        },
+        "since": {
+          "type": "string",
+          "description": "Only commits after this date in ISO 8601 format"
+        },
+        "until": {
+          "type": "string",
+          "description": "Only commits before this date in ISO 8601 format"
+        },
+        "all": {
+          "type": "boolean",
+          "description": "Return all commits, including those not in the default branch"
+        },
+        "with_stats": {
+          "type": "boolean",
+          "description": "Include commit stats in the response"
+        },
+        "first_parent": {
+          "type": "boolean",
+          "description": "Return only the first parent of merge commits"
+        },
+        "page": {
+          "type": "integer",
+          "description": "Page number for pagination",
+          "default": 1
+        },
+        "per_page": {
+          "type": "integer",
+          "description": "Items per page (recommended max 100)",
+          "default": 20
+        },
+        "order": {
+          "type": "string",
+          "description": "Order commits, for example default or topo"
         }
       }
     },
