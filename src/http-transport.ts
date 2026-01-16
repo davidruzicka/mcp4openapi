@@ -1033,6 +1033,7 @@ export class HttpTransport {
     } catch (error) {
       const correlationId = generateCorrelationId();
       this.logger.error('Metrics endpoint error', error as Error, { correlationId });
+      res.setHeader('Cache-Control', 'no-store');
       res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
         error: 'Internal Server Error',
         message: `Internal error (correlation ID: ${correlationId})`,
@@ -1478,6 +1479,7 @@ export class HttpTransport {
     } catch (error) {
       const correlationId = generateCorrelationId();
       this.logger.error('POST request error', error as Error, { correlationId });
+      res.setHeader('Cache-Control', 'no-store');
 
       let status = 500;
       let errorLabel = 'Internal Server Error';
@@ -1562,6 +1564,7 @@ export class HttpTransport {
       this.logger.error('GET request error', error as Error, { correlationId });
       const status = 500;
       if (!res.headersSent) {
+        res.setHeader('Cache-Control', 'no-store');
         res.status(status).json({
           error: 'Internal Server Error',
           message: `Internal error (correlation ID: ${correlationId})`,
