@@ -1383,6 +1383,36 @@ describeIfListen('HttpTransport', () => {
       expect(response.status).toBe(405);
       expect(response.body).toHaveProperty('error', 'Method Not Allowed');
     });
+
+    it('should sanitize internal GET errors with correlation ID', async () => {
+      transport.setMessageHandler(async () => ({ result: 'ok' }));
+
+      const initResponse = await request(app)
+        .post('/mcp')
+        .set('Accept', 'application/json, text/event-stream')
+        .send({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'initialize',
+        });
+
+      const sessionId = initResponse.headers['mcp-session-id'];
+
+      (transport as any).startSSEStream = () => {
+        throw new Error('SSE failure');
+      };
+
+      const response = await request(app)
+        .get('/mcp')
+        .set('Accept', 'text/event-stream')
+        .set('Mcp-Session-Id', sessionId);
+
+      expect(response.status).toBe(500);
+      expect(response.body.error).toBe('Internal Server Error');
+      expect(response.body.message).toMatch(/^Internal error \(correlation ID: .+\)$/);
+      expect(response.body.message).not.toContain('SSE failure');
+      expect(response.headers['cache-control']).toBe('no-store');
+    });
   });
 
   describe('Legacy /sse alias (deprecated)', () => {
@@ -1741,7 +1771,8 @@ describeIfListen('HttpTransport', () => {
 
       expect(response.status).toBe(500);
       expect(response.body.error).toBe('Internal Server Error');
-      expect(response.body.message).toBe('Metrics error');
+      expect(response.body.message).toMatch(/^Internal error \(correlation ID: .+\)$/);
+      expect(response.body.message).not.toContain('Metrics error');
     });
 
     it('should return 404 when metrics is null after endpoint registration', async () => {
