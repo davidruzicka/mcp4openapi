@@ -836,6 +836,19 @@ describe('ProxyDownloadExecutor', () => {
     );
   });
 
+  it('should return undefined for unsafe nested path segments', () => {
+    const executor = new ProxyDownloadExecutor(mockHttpClient as any);
+    const metadata = {
+      metadata: {
+        downloadUrl: 'https://api.example.com/download/abc',
+      },
+    };
+
+    const value = (executor as any).extractNestedValue(metadata, '__proto__.downloadUrl');
+
+    expect(value).toBeUndefined();
+  });
+
   it('should reject unsafe url_field path segments', async () => {
     mockHttpClient.request.mockResolvedValue({
       status: 200,
