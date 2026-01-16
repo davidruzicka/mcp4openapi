@@ -25,6 +25,19 @@ import {
   ResourceNotFoundError
 } from './errors.js';
 
+type ToolCallResponse = {
+  result?: {
+    content?: Array<{ type: string; text?: string }>;
+  };
+  error?: {
+    code?: number;
+    message?: string;
+    data?: any;
+  };
+};
+
+const asToolCallResponse = (value: unknown): ToolCallResponse => value as ToolCallResponse;
+
 describe('MCPServer', () => {
   let server: MCPServer;
   const originalApiToken = process.env.MCP4_API_TOKEN;
@@ -309,11 +322,12 @@ describe('MCPServer', () => {
         return { id: 1, name: 'test' };
       };
 
-      const response = await server.callToolRpc(simpleTool.name, {}, 'test-session', '1');
+      const response = asToolCallResponse(await server.callToolRpc(simpleTool.name, {}, 'test-session', '1'));
       expect(response.result).toBeDefined();
-      expect(response.result.content).toBeDefined();
-      expect(response.result.content[0].type).toBe('text');
-      const parsed = JSON.parse(response.result.content[0].text);
+      const result = response.result as { content: Array<{ type: string; text?: string }> };
+      expect(result.content).toBeDefined();
+      expect(result.content[0].type).toBe('text');
+      const parsed = JSON.parse(result.content[0].text as string);
       expect(parsed).toEqual({ id: 1, name: 'test' });
     });
 
@@ -321,12 +335,13 @@ describe('MCPServer', () => {
       const specPath = path.join(process.cwd(), 'profiles/gitlab/openapi.yaml');
       await server.initialize(specPath);
 
-      const response = await server.callToolRpc('non_existing_tool', {}, 'test-session', '1');
+      const response = asToolCallResponse(await server.callToolRpc('non_existing_tool', {}, 'test-session', '1'));
       expect(response).toHaveProperty('error');
       expect(response.error).toHaveProperty('message');
+      const error = response.error as { message?: string };
       // OperationNotFoundError is safe to show with correlation ID
-      expect(response.error.message).toContain('Tool not found');
-      expect(response.error.message).toContain('correlation ID');
+      expect(error.message).toContain('Tool not found');
+      expect(error.message).toContain('correlation ID');
     });
 
     it('should map AuthorizationError to error code -32002', async () => {
@@ -345,8 +360,9 @@ describe('MCPServer', () => {
       const compositeTool = (server as any).profile.tools.find((t: any) => t.composite);
       if (!compositeTool) return; // Skip if no composite tools
       
-      const response = await server.callToolRpc(compositeTool.name, {}, 'test-session', '1');
-      expect(response.error.code).toBe(-32002);
+      const response = asToolCallResponse(await server.callToolRpc(compositeTool.name, {}, 'test-session', '1'));
+      const error = response.error as { code?: number };
+      expect(error.code).toBe(-32002);
     });
 
     it('should map ValidationError to error code -32602', async () => {
@@ -363,8 +379,9 @@ describe('MCPServer', () => {
         throw new ValidationError('Invalid input');
       };
 
-      const response = await server.callToolRpc(simpleTool.name, {}, 'test-session', '1');
-      expect(response.error.code).toBe(-32602);
+      const response = asToolCallResponse(await server.callToolRpc(simpleTool.name, {}, 'test-session', '1'));
+      const error = response.error as { code?: number };
+      expect(error.code).toBe(-32602);
     });
 
     it('should map RateLimitError to error code -32003', async () => {
@@ -381,8 +398,9 @@ describe('MCPServer', () => {
         throw new RateLimitError('Too many requests', 60);
       };
 
-      const response = await server.callToolRpc(simpleTool.name, {}, 'test-session', '1');
-      expect(response.error.code).toBe(-32003);
+      const response = asToolCallResponse(await server.callToolRpc(simpleTool.name, {}, 'test-session', '1'));
+      const error = response.error as { code?: number };
+      expect(error.code).toBe(-32003);
     });
 
     it('should map AuthenticationError to error code -32001', async () => {
@@ -399,8 +417,9 @@ describe('MCPServer', () => {
         throw new AuthenticationError('Token expired');
       };
 
-      const response = await server.callToolRpc(simpleTool.name, {}, 'test-session', '1');
-      expect(response.error.code).toBe(-32001);
+      const response = asToolCallResponse(await server.callToolRpc(simpleTool.name, {}, 'test-session', '1'));
+      const error = response.error as { code?: number };
+      expect(error.code).toBe(-32001);
     });
 
     it('should return OAuth required error when httpTransport has OAuth provider but no auth token', async () => {
@@ -420,11 +439,12 @@ describe('MCPServer', () => {
       // Mock getAuthTokenFromSession to return null (no token)
       (server as any).getAuthTokenFromSession = async () => null;
 
-      const response = await server.callToolRpc(simpleTool.name, {}, 'test-session', '1');
+      const response = asToolCallResponse(await server.callToolRpc(simpleTool.name, {}, 'test-session', '1'));
       expect(response.error).toBeDefined();
-      expect(response.error.code).toBe(-32001);
-      expect(response.error.message).toContain('Authentication required');
-      expect(response.error.data.oauth_required).toBe(true);
+      const error = response.error as { code?: number; message?: string; data?: { oauth_required?: boolean } };
+      expect(error.code).toBe(-32001);
+      expect(error.message).toContain('Authentication required');
+      expect(error.data?.oauth_required).toBe(true);
     });
 
     it('should map generic Error to -32603 internal error code', async () => {
@@ -439,8 +459,9 @@ describe('MCPServer', () => {
         throw new Error('Generic internal error');
       };
 
-      const response = await server.callToolRpc(simpleTool.name, {}, 'test-session', '1');
-      expect(response.error.code).toBe(-32603);
+      const response = asToolCallResponse(await server.callToolRpc(simpleTool.name, {}, 'test-session', '1'));
+      const error = response.error as { code?: number };
+      expect(error.code).toBe(-32603);
     });
   });
 
@@ -469,8 +490,9 @@ describe('MCPServer', () => {
         throw new AuthorizationError('Forbidden');
       };
 
-      const response = await server.callToolRpc('simple_test', {}, 'test-session', '1');
-      expect(response.error.code).toBe(-32002);
+      const response = asToolCallResponse(await server.callToolRpc('simple_test', {}, 'test-session', '1'));
+      const error = response.error as { code?: number };
+      expect(error.code).toBe(-32002);
     });
   });
 
@@ -1807,7 +1829,7 @@ describe('MCPServer', () => {
         params: { filtering: 'project_id=1' }
       }, undefined);
 
-      const response = await server.callToolRpc('projects', { project_id: '1' }, undefined, '1');
+      const response = asToolCallResponse(await server.callToolRpc('projects', { project_id: '1' }, undefined, '1'));
       expect(response.result).toBeDefined();
     });
 
@@ -2328,10 +2350,11 @@ describe('MCPServer', () => {
       // Mock getAuthTokenFromSession to return undefined
       (server as any).getAuthTokenFromSession = async () => undefined;
       
-      const response = await server.callToolRpc('some_tool', {}, 'test-session', 1);
+      const response = asToolCallResponse(await server.callToolRpc('some_tool', {}, 'test-session', 1));
       
-      expect(response.error.code).toBe(-32001);
-      expect(response.error.data.oauth_required).toBe(true);
+      const error = response.error as { code?: number; data?: { oauth_required?: boolean } };
+      expect(error.code).toBe(-32001);
+      expect(error.data?.oauth_required).toBe(true);
     });
   });
 });

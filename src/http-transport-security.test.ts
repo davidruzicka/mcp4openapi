@@ -519,7 +519,7 @@ describe('HttpTransport security behavior (no listen)', () => {
       new ConsoleLogger()
     );
 
-    const authorize = vi.fn(async () => {});
+    const authorize = vi.fn(async (..._args: any[]) => {});
     (transport as any).oauthProvider = {
       ensureEndpointsInitialized: async () => {},
       clientsStore: { getClient: async () => ({ client_id: 'test-client', scope: 'read write' }) },
@@ -544,7 +544,8 @@ describe('HttpTransport security behavior (no listen)', () => {
     await handler(req, res);
 
     expect(authorize).toHaveBeenCalled();
-    expect(authorize.mock.calls[0][1]).toMatchObject({
+    const [, authorizeParams] = authorize.mock.calls[0] as any[];
+    expect(authorizeParams).toMatchObject({
       responseType: 'code',
       clientId: 'test-client',
       redirectUri: 'http://localhost/cb',
@@ -1453,7 +1454,7 @@ describe('HttpTransport security behavior (no listen)', () => {
 
       (transport as any).startSSEStream(res, sessionId, '1');
 
-      const session = (transport as any).sessions.get(sessionId);
+      const session = (transport as any).sessions.get(sessionId) as { sseStreams: Map<string, any> };
       const [streamId, streamState] = Array.from(session.sseStreams.entries())[0];
       streamState.messageQueue.push({ eventId: 1, data: { a: 1 }, timestamp: Date.now() });
       streamState.messageQueue.push({ eventId: 2, data: { a: 2 }, timestamp: Date.now() });

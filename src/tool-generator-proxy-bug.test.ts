@@ -17,6 +17,13 @@ describe('ProxyDownloadOperation handling', () => {
     const toolDef = {
       name: 'download_attachment',
       description: 'Download file attachment',
+      parameters: {
+        action: {
+          type: 'string' as const,
+          description: 'Action',
+          enum: ['download']
+        }
+      },
       operations: {
         download: proxyDownloadOp
       }
@@ -41,6 +48,13 @@ describe('ProxyDownloadOperation handling', () => {
     const toolDef = {
       name: 'get_attachment',
       description: 'Get attachment metadata',
+      parameters: {
+        action: {
+          type: 'string' as const,
+          description: 'Action',
+          enum: ['get']
+        }
+      },
       operations: {
         get: 'get_/issues/{id}/attachments/{attachmentId}'
       }
@@ -59,6 +73,13 @@ describe('ProxyDownloadOperation handling', () => {
     const toolDef = {
       name: 'download_attachment',
       description: 'Download file attachment',
+      parameters: {
+        action: {
+          type: 'string' as const,
+          description: 'Action',
+          enum: ['download']
+        }
+      },
       operations: {
         download: {
           type: 'proxy_download',
@@ -82,6 +103,13 @@ describe('ProxyDownloadOperation handling', () => {
     const toolDef = {
       name: 'get_attachment',
       description: 'Get attachment metadata',
+      parameters: {
+        action: {
+          type: 'string' as const,
+          description: 'Action',
+          enum: ['get']
+        }
+      },
       operations: {
         get: 'get_/issues/{id}/attachments/{attachmentId}'
       }

@@ -91,6 +91,16 @@ describe('ToolGenerator', () => {
     expect(createOp).toBe('postApiV4ProjectsIdBadges');
   });
 
+  it('should map repository commits action to operation ID', () => {
+    const toolDef = profile.tools.find(t => t.name === 'repository_commits');
+    expect(toolDef).toBeDefined();
+
+    const listOp = generator.mapActionToOperation(toolDef!, {
+      action: 'list'
+    });
+    expect(listOp).toBe('getApiV4ProjectsIdRepositoryCommits');
+  });
+
   it('should handle resource_type discrimination', () => {
     const toolDef = profile.tools.find(t => t.name === 'manage_access_requests');
     expect(toolDef).toBeDefined();
@@ -170,7 +180,7 @@ describe('ToolGenerator', () => {
       description: 'Test multi type parameter',
       parameters: {
         customFields: {
-          type: ['object', 'array'] as const,
+          type: ['object', 'array'] as ('object' | 'array')[],
           description: 'Custom fields',
           properties: {},
           items: { type: 'object' }

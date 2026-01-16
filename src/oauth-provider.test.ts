@@ -2,7 +2,7 @@
  * Tests for OAuth provider adapter
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { ExternalOAuthProvider, InMemoryClientsStore } from './oauth-provider.js';
 import type { OAuthConfig } from './types/profile.js';
 import type { Logger } from './logger.js';

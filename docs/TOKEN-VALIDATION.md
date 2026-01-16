@@ -7,7 +7,7 @@ Token validation allows the MCP server to verify authentication tokens during in
 ## Why Token Validation?
 
 **Without validation:**
-- ❌ Server connects successfully (shows "9 tools detected")
+- ❌ Server connects successfully (shows "26 tools detected")
 - ❌ First tool call fails with 401
 - ❌ User thinks they're connected but aren't
 - ❌ Confusion about where the problem is
