@@ -50,7 +50,9 @@ describe('validateTestAgainstProfile', () => {
       ],
       coverage: {
         require_all_actions: true,
-        skip_actions: {}
+        skip_actions: {},
+        require_request_assertions: false,
+        skip_request_assertions: {}
       }
     };
 
@@ -69,7 +71,9 @@ describe('validateTestAgainstProfile', () => {
       ],
       coverage: {
         require_all_actions: true,
-        skip_actions: {}
+        skip_actions: {},
+        require_request_assertions: false,
+        skip_request_assertions: {}
       }
     };
 
@@ -120,7 +124,9 @@ describe('validateTestAgainstProfile', () => {
         require_all_actions: true,
         skip_actions: {
           'list_resources.list_group': 'Not needed for this profile'
-        }
+        },
+        require_request_assertions: false,
+        skip_request_assertions: {}
       }
     };
 
@@ -145,7 +151,9 @@ describe('validateTestAgainstProfile', () => {
       scenarios: [],
       coverage: {
         require_all_actions: true,
-        skip_actions: {}
+        skip_actions: {},
+        require_request_assertions: false,
+        skip_request_assertions: {}
       }
     };
 
@@ -164,7 +172,9 @@ describe('validateTestAgainstProfile', () => {
       ],
       coverage: {
         require_all_actions: true,
-        skip_actions: {}
+        skip_actions: {},
+        require_request_assertions: false,
+        skip_request_assertions: {}
       }
     };
 
@@ -339,7 +349,9 @@ describe('validateTestAgainstProfile', () => {
       ],
       coverage: {
         require_all_actions: false,
-        skip_actions: {}
+        skip_actions: {},
+        require_request_assertions: false,
+        skip_request_assertions: {}
       }
     };
 
@@ -361,7 +373,9 @@ describe('validateTestAgainstProfile', () => {
         skip_actions: {
           'manage_jobs.cancel': 'Cancel covered elsewhere',
           reset: 'Reset not supported in staging'
-        }
+        },
+        require_request_assertions: false,
+        skip_request_assertions: {}
       }
     };
 

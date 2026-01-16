@@ -24,7 +24,7 @@ describe('DynamicMockEngine', () => {
 
   it('captures request details for mocked operations', async () => {
     engine.configureMocks([
-      { operationId: 'opWithBody', response: { body: { ok: true } } }
+      { operationId: 'opWithBody', response: { status: 200, body: { ok: true } } }
     ]);
 
     await fetch('https://mock.local/resource/123?flag=true&flag=false', {
@@ -48,7 +48,7 @@ describe('DynamicMockEngine', () => {
 
   it('resets handlers and captured requests', async () => {
     engine.configureMocks([
-      { operationId: 'opWithBody', response: { body: { ok: true } } }
+      { operationId: 'opWithBody', response: { status: 200, body: { ok: true } } }
     ]);
 
     await fetch('https://mock.local/resource/123', { method: 'POST' });
@@ -58,7 +58,7 @@ describe('DynamicMockEngine', () => {
     expect(engine.getCapturedRequests()).toHaveLength(0);
 
     engine.configureMocks([
-      { operationId: 'opWithBody', response: { body: { ok: true } } }
+      { operationId: 'opWithBody', response: { status: 200, body: { ok: true } } }
     ]);
     await fetch('https://mock.local/resource/123', { method: 'POST' });
 

@@ -5,7 +5,7 @@ Complete working example using MCP server with GitLab API.
 ## Results
 
 For GitLab API specifically:
-- Reduced from 200+ potential tools to 9 aggregated tools
+- Reduced from 200+ potential tools to 26 aggregated tools
 - 85% reduction in MCP tool count
 - Tested with real GitLab OpenAPI specification
 
@@ -30,7 +30,7 @@ Follow the [standard launch steps](../README.md#quick-start) (`npm start` or `np
 
 ## Available Tools
 
-The `profiles/gitlab/developer-profile-oauth.json` profile provides 9 aggregated tools.
+The `profiles/gitlab/developer-profile-oauth.json` profile provides 26 aggregated tools.
 Some of them are:
 
 ### 1. manage_groups
@@ -163,7 +163,21 @@ Example - protect branch:
 }
 ```
 
-### 7. manage_access_requests
+### 7. repository_commits
+
+List repository commits with optional filters for ref and file path.
+
+Example - list commits for a file:
+```json
+{
+  "project_id": "123",
+  "action": "list",
+  "path": "src%2Findex.js",
+  "ref_name": "main"
+}
+```
+
+### 8. manage_access_requests
 
 Manage access requests for projects or groups (list, approve, deny, request).
 
@@ -187,7 +201,7 @@ Example - approve access request:
 }
 ```
 
-### 8. list_project_jobs
+### 9. list_project_jobs
 
 List CI/CD jobs for a project with optional status filtering.
 
@@ -199,7 +213,7 @@ Example:
 }
 ```
 
-### 9. manage_pipelines_jobs
+### 10. manage_pipelines_jobs
 
 Run and inspect pipelines/jobs (run, inspect, retry/cancel, play manual jobs, download artifacts).
 
@@ -227,7 +241,7 @@ The `gitlab-developer.json` profile includes:
 
 ### Tool Aggregation Strategy
 
-Each tool groups related operations:
+Each tool groups related operations, e.g.:
 
 - `manage_groups`: 4 operations (list, get, list_projects, list_subgroups)
 - `manage_projects`: 2 operations (list, get)
@@ -235,11 +249,13 @@ Each tool groups related operations:
 - `manage_issues`: 4 operations (list, get, create, delete)
 - `manage_project_badges`: 5 operations (list, get, create, update, delete)
 - `manage_branches`: 7 operations (list, get, create, delete, protect, unprotect, exists)
+- `repository_commits`: 1 operation (list)
 - `manage_access_requests`: 8 operations (list/approve/deny/request for project/group)
 - `list_project_jobs`: 1 operation with filtering
 - `manage_pipelines_jobs`: 7 operations (run, get pipeline, get job, retry, cancel, play job, download artifacts)
+- ...
 
-Total: 37+ operations aggregated into 9 tools.
+Total: 38+ operations aggregated into 26 tools.
 
 ## Testing
 
@@ -250,7 +266,7 @@ npm test
 ```
 
 Tests cover:
-- All 9 tools
+- All 10 tools
 - CRUD operations
 - Error scenarios (404, 403)
 - Query parameter handling

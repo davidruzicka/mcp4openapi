@@ -11,6 +11,18 @@ import { Profile } from '../types/profile.js';
 import { ProfileLoader } from '../profile-loader.js';
 import { assertRequestMatches, assertRequestsSequence } from './request-assertions.js';
 
+type ToolCallResponse = {
+  result?: {
+    content?: Array<{ type: string; text?: string }>;
+  };
+  error?: {
+    code?: number | string;
+    message?: string;
+  };
+};
+
+const asToolCallResponse = (value: unknown): ToolCallResponse => value as ToolCallResponse;
+
 function assertErrorExpectation(
   error: unknown,
   processedExpect: { error_code?: string; error_message_regex?: string }
@@ -159,7 +171,7 @@ testFiles.forEach(testFile => {
         let result: any;
         let error: any;
         try {
-          const response = await server.callToolRpc(scenario.tool, processedArgs, undefined, 1);
+          const response = asToolCallResponse(await server.callToolRpc(scenario.tool, processedArgs, undefined, 1));
 
           if (response.error) {
             // Convert JSON-RPC error to Error object for easier assertion matching
@@ -168,7 +180,7 @@ testFiles.forEach(testFile => {
           } else if (response.result) {
             // Parse result from content text
             if (response.result.content && response.result.content.length > 0) {
-              result = JSON.parse(response.result.content[0].text);
+              result = JSON.parse(response.result.content[0].text as string);
             } else {
               result = null; // Empty success
             }
