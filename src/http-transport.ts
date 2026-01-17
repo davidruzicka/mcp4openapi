@@ -654,6 +654,9 @@ export class HttpTransport {
       // Initiates the OAuth flow by redirecting the user to the external provider
       this.app.get(OAUTH_PATHS.AUTHORIZE, oauthRateLimiter, async (req: Request, res: Response) => {
         try {
+          // Security: Prevent caching of authorization redirects
+          res.setHeader('Cache-Control', 'no-store');
+
           const { response_type, client_id, redirect_uri, scope, state, code_challenge, code_challenge_method } = req.query;
 
           if (!client_id || typeof client_id !== 'string') {
@@ -706,6 +709,9 @@ export class HttpTransport {
       // Exchanges authorization code or refresh token for access token
       this.app.post(OAUTH_PATHS.TOKEN, oauthRateLimiter, express.urlencoded({ extended: false }), async (req: Request, res: Response) => {
         try {
+          // Security: Prevent caching of token responses which contain sensitive credentials
+          res.setHeader('Cache-Control', 'no-store');
+
           const { grant_type, code, redirect_uri, client_id, code_verifier, refresh_token } = req.body;
 
           this.logger.debug('OAuth token request', {
@@ -785,7 +791,12 @@ export class HttpTransport {
           }
         } catch (error) {
           this.logger.error('OAuth token exchange error', error instanceof Error ? error : new Error(String(error)));
-          res.status(HTTP_STATUS.BAD_REQUEST).json({ error: 'invalid_grant', error_description: String(error) });
+          // Sanitize error message to prevent leakage of internal details
+          // We only expose a generic error or the error message if it's safe
+          res.status(HTTP_STATUS.BAD_REQUEST).json({
+            error: 'invalid_grant',
+            error_description: 'Token exchange failed'
+          });
         }
       });
 

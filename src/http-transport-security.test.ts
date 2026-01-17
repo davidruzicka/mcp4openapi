@@ -872,7 +872,8 @@ describe('HttpTransport security behavior (no listen)', () => {
 
     expect(res.statusCode).toBe(400);
     expect(res.body).toMatchObject({ error: 'invalid_grant' });
-    expect(String(res.body.error_description)).toContain('bad code');
+    // Error message is sanitized
+    expect(String(res.body.error_description)).toBe('Token exchange failed');
 
     await transport.stop();
   });
@@ -913,7 +914,8 @@ describe('HttpTransport security behavior (no listen)', () => {
 
     expect(res.statusCode).toBe(400);
     expect(res.body).toMatchObject({ error: 'invalid_grant' });
-    expect(String(res.body.error_description)).toContain('bad refresh');
+    // Error message is sanitized
+    expect(String(res.body.error_description)).toBe('Token exchange failed');
 
     await transport.stop();
   });
