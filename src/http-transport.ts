@@ -154,7 +154,9 @@ export class HttpTransport {
     });
 
     // JSON body parser
-    this.app.use(express.json());
+    // Limit set to 10MB to support large tool inputs/results (e.g. file content)
+    // while preventing massive DoS attacks. Default is 100kb.
+    this.app.use(express.json({ limit: '10mb' }));
 
     // Metrics: Track request start time
     this.app.use((req: Request, res: Response, next: NextFunction) => {
@@ -707,7 +709,8 @@ export class HttpTransport {
 
       // Token endpoint
       // Exchanges authorization code or refresh token for access token
-      this.app.post(OAUTH_PATHS.TOKEN, oauthRateLimiter, express.urlencoded({ extended: false }), async (req: Request, res: Response) => {
+      // Stricter body limit (50kb) for token exchange as payloads should be small
+      this.app.post(OAUTH_PATHS.TOKEN, oauthRateLimiter, express.urlencoded({ extended: false, limit: '50kb' }), async (req: Request, res: Response) => {
         try {
           // Security: Prevent caching of token responses which contain sensitive credentials
           res.setHeader('Cache-Control', 'no-store');
