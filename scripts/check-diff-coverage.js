@@ -7,6 +7,7 @@
 
 import { readFileSync } from 'fs';
 import { execSync } from 'child_process';
+import { createInterface } from 'readline/promises';
 import { fileURLToPath } from 'url';
 import { dirname, resolve } from 'path';
 
@@ -15,38 +16,136 @@ const __dirname = dirname(__filename);
 const projectRoot = resolve(__dirname, '..');
 
 // Get changed files and lines from git diff
-function getChangedLines() {
+async function getChangedLines() {
   try {
-    const diff = execSync('git diff origin/main...HEAD --unified=0', { 
-      cwd: projectRoot,
-      encoding: 'utf-8',
-      stdio: 'pipe'
-    }).toString();
-    
-    // Fallback to HEAD~1 if origin/main doesn't exist
+    const baseRef = await getComparisonBase();
+    const diff = getDiff(`git diff ${baseRef}...HEAD --unified=0`);
     if (!diff || diff.trim() === '') {
-      const diff2 = execSync('git diff HEAD~1..HEAD --unified=0', { 
-        cwd: projectRoot,
-        encoding: 'utf-8',
-        stdio: 'pipe'
-      }).toString();
-      return parseDiff(diff2);
+      return getFallbackDiff();
     }
-    
     return parseDiff(diff);
   } catch (error) {
-    // Try HEAD~1 as fallback
-    try {
-      const diff = execSync('git diff HEAD~1..HEAD --unified=0', { 
-        cwd: projectRoot,
-        encoding: 'utf-8',
-        stdio: 'pipe'
-      }).toString();
-      return parseDiff(diff);
-    } catch (e) {
-      console.error('Could not get git diff:', e.message);
-      return new Map();
+    return getFallbackDiff();
+  }
+}
+
+function getDiff(command) {
+  return execSync(command, {
+    cwd: projectRoot,
+    encoding: 'utf-8',
+    stdio: 'pipe'
+  }).toString();
+}
+
+function printHelp() {
+  console.log('Usage: node scripts/check-diff-coverage.js [--base <ref>]');
+  console.log('');
+  console.log('Options:');
+  console.log('  -b, --base <ref>  Base branch or ref to compare against');
+  console.log('  -h, --help        Show this help message');
+}
+
+function getBaseFromArgs() {
+  const args = process.argv.slice(2);
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = args[i];
+    if (arg === '--help' || arg === '-h') {
+      printHelp();
+      process.exit(0);
     }
+    if (arg === '--base' || arg === '-b') {
+      const value = args[i + 1];
+      if (value && !value.startsWith('-')) {
+        return value;
+      }
+    }
+    if (arg.startsWith('--base=')) {
+      const value = arg.slice('--base='.length);
+      if (value) {
+        return value;
+      }
+    }
+  }
+
+  const positional = args.find((arg) => !arg.startsWith('-'));
+  return positional;
+}
+
+function getGhBaseRef() {
+  const output = getDiff('gh pr view --json baseRefName');
+  const data = JSON.parse(output || '{}');
+  if (typeof data.baseRefName !== 'string' || data.baseRefName.trim() === '') {
+    return undefined;
+  }
+  return data.baseRefName.trim();
+}
+
+function resolveRemoteRef(name) {
+  const candidate = `origin/${name}`;
+  try {
+    getDiff(`git rev-parse --verify ${candidate}`);
+    return candidate;
+  } catch (error) {
+    return name;
+  }
+}
+
+function listRemoteBranches() {
+  const output = getDiff('git for-each-ref --sort=-committerdate --format="%(refname:short)" refs/remotes');
+  return output
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0 && !line.endsWith('/HEAD'));
+}
+
+async function promptForBaseRef() {
+  const branches = listRemoteBranches();
+  if (branches.length > 0) {
+    console.log('Available remote branches (newest first):');
+    for (const branch of branches) {
+      console.log(`  ${branch}`);
+    }
+    console.log('');
+  }
+
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    const answer = await rl.question('Enter base branch to compare (e.g. origin/main): ');
+    const trimmed = answer.trim();
+    if (trimmed.length === 0) {
+      throw new Error('Base branch is required.');
+    }
+    return trimmed;
+  } finally {
+    rl.close();
+  }
+}
+
+async function getComparisonBase() {
+  const baseFromArgs = getBaseFromArgs();
+  if (baseFromArgs) {
+    return baseFromArgs;
+  }
+
+  try {
+    const ghBase = getGhBaseRef();
+    if (ghBase) {
+      return resolveRemoteRef(ghBase);
+    }
+  } catch (error) {
+    // Ignore and prompt
+  }
+
+  return promptForBaseRef();
+}
+
+function getFallbackDiff() {
+  try {
+    const diff = getDiff('git diff HEAD~1..HEAD --unified=0');
+    return parseDiff(diff);
+  } catch (error) {
+    console.error('Could not get git diff:', error.message);
+    return new Map();
   }
 }
 
@@ -141,7 +240,7 @@ function checkUncoveredLines(changedLines, coverage) {
 }
 
 // Main
-const changedLines = getChangedLines();
+const changedLines = await getChangedLines();
 const coverage = loadCoverage();
 const uncovered = checkUncoveredLines(changedLines, coverage);
 
@@ -149,7 +248,7 @@ if (uncovered.length === 0) {
   console.log('✓ All changed lines are covered!');
 } else {
   console.log(`\n⚠ Found ${uncovered.length} uncovered changed lines:\n`);
-  
+
   // Group by file
   const byFile = new Map();
   for (const item of uncovered) {
@@ -159,13 +258,13 @@ if (uncovered.length === 0) {
     }
     byFile.get(relPath).push(item.line);
   }
-  
+
   for (const [file, lines] of byFile.entries()) {
     console.log(`${file}:`);
     lines.sort((a, b) => a - b);
     console.log(`  Lines: ${lines.join(', ')}`);
     console.log();
   }
-  
+
   console.log(`\nTotal: ${uncovered.length} uncovered lines in ${byFile.size} files`);
 }
