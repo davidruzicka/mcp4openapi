@@ -219,12 +219,8 @@ export class HttpTransport {
         this.hasWarnedAboutBinding = true;
       }
 
-      // Skip Origin check for localhost
-      if (req.hostname === 'localhost' || req.hostname === '127.0.0.1') {
-        return next();
-      }
-
-      // Validate Origin header for non-localhost
+      // Validate Origin header
+      // We do not skip this check for localhost, as requests to localhost can still be CSRF targets
       if (origin && !this.isAllowedOrigin(origin)) {
         this.logger.warn('Rejected request from disallowed origin', { origin, ip: req.ip });
         return res.status(HTTP_STATUS.FORBIDDEN).json({
