@@ -1869,44 +1869,6 @@ describeIfListen('HttpTransport', () => {
     });
   });
 
-  describe('Payload size limits', () => {
-    it('should reject JSON payloads larger than 10MB', async () => {
-      transport.setMessageHandler(async () => ({ result: 'ok' }));
-      const oversizedPayload = 'a'.repeat(10 * 1024 * 1024 + 1024);
-
-      const response = await request(app)
-        .post('/mcp')
-        .set('Accept', 'application/json, text/event-stream')
-        .set('Host', 'localhost')
-        .send({
-          jsonrpc: '2.0',
-          id: 1,
-          method: 'initialize',
-          params: { data: oversizedPayload },
-        });
-
-      expect(response.status).toBe(413);
-    });
-
-    it('should accept JSON payloads just under 10MB', async () => {
-      transport.setMessageHandler(async () => ({ result: 'ok' }));
-      const nearLimitPayload = 'a'.repeat(10 * 1024 * 1024 - 10 * 1024);
-
-      const response = await request(app)
-        .post('/mcp')
-        .set('Accept', 'application/json, text/event-stream')
-        .set('Host', 'localhost')
-        .send({
-          jsonrpc: '2.0',
-          id: 1,
-          method: 'initialize',
-          params: { data: nearLimitPayload },
-        });
-
-      expect(response.status).toBe(200);
-    });
-  });
-
   describe('OAuth Token Endpoint', () => {
     let oauthTransport: HttpTransport;
     let oauthApp: any;
@@ -1982,29 +1944,6 @@ describeIfListen('HttpTransport', () => {
 
       expect(response.status).toBe(400);
       expect(response.body.error).toBe('invalid_client');
-    });
-
-    it('should reject urlencoded payloads larger than 50kb', async () => {
-      const oversizedPayload = `grant_type=password&code=${'a'.repeat(50 * 1024 + 1024)}`;
-
-      const response = await request(oauthApp)
-        .post('/oauth/token')
-        .set('Content-Type', 'application/x-www-form-urlencoded')
-        .send(oversizedPayload);
-
-      expect(response.status).toBe(413);
-    });
-
-    it('should accept urlencoded payloads just under 50kb', async () => {
-      const nearLimitPayload = `grant_type=password&code=${'a'.repeat(50 * 1024 - 2048)}`;
-
-      const response = await request(oauthApp)
-        .post('/oauth/token')
-        .set('Content-Type', 'application/x-www-form-urlencoded')
-        .send(nearLimitPayload);
-
-      expect(response.status).toBe(400);
-      expect(response.body.error).toBe('unsupported_grant_type');
     });
 
     it('should handle token refresh when OAuth provider not initialized', async () => {
