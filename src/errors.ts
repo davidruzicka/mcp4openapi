@@ -5,6 +5,8 @@
  * and structured error details for better debugging and client handling.
  */
 
+import { randomUUID } from 'node:crypto';
+
 export class MCPError extends Error {
   constructor(
     message: string,
@@ -123,12 +125,7 @@ export function isMCPError(error: unknown): error is MCPError {
  * Why: Allows matching client-reported errors with server logs
  */
 export function generateCorrelationId(): string {
-  // Simple UUID v4 implementation
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
-    const r = Math.random() * 16 | 0;
-    const v = c === 'x' ? r : (r & 0x3 | 0x8);
-    return v.toString(16);
-  });
+  return randomUUID();
 }
 
 /**
