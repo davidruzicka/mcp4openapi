@@ -6,6 +6,8 @@ description: Propose creating a new skill after a correction reveals reusable ex
 ## Goal
 Capture lessons from corrections by proposing a new skill that preserves existing knowledge, avoids repeated mistakes, and aligns with preferred behavior.
 
+Also ensure existing skills are respected by extending them when they should have applied but lacked a trigger or instruction.
+
 ## When to Use
 - The user corrects a prior proposal, implementation, communication style or different chat pattern.
 - The correction reveals a reusable rule, tool, policy, or preferred pattern.
@@ -13,6 +15,7 @@ Capture lessons from corrections by proposing a new skill that preserves existin
 ## Preconditions
 - A correction or review has occurred in the current conversation.
 - The correction is relevant beyond the single instance.
+- A quick scan of existing skills shows no match, or a near match that can be fixed by updating the existing skill.
 
 ## Definitions
 - **Critical issue**: A correction that affects UI/UX, API, DB scheme, architecture, safety, compliance, legal risk, financial impact, or major business outcomes. Propose a new skill immediately on first occurrence.
@@ -42,12 +45,16 @@ Capture lessons from corrections by proposing a new skill that preserves existin
 3. If the correction changes the assistant’s **communication style**, propose a new skill immediately if it is a strong preference or policy, otherwise wait for repetition.
 4. Always propose a **positive, goal‑oriented** skill name (e.g., “remember‑existing‑knowledge”).
 5. The skill proposal must include a one‑sentence **Why now** justification.
+6. Before proposing a new skill, check existing skills by name and description to avoid duplicates.
+7. If an existing skill should have triggered but did not, update that skill instead of proposing a new one.
 
 ## Procedure
 1. Identify the correction and classify it as critical or trivial.
-2. Decide whether to propose a new skill based on the Rules.
-3. Draft a proposed skill (name + description + key rules).
-4. Ask the user to confirm creation of the new skill.
+2. Scan existing skills for a matching or near matching description.
+3. If a matching skill exists, update its SKILL.md to include the missing trigger, condition, or instruction.
+4. If no matching skill exists, decide whether to propose a new skill based on the Rules.
+5. Draft a proposed skill (name + description + key rules).
+6. Ask the user to confirm creation of the new skill.
 
 ## Output Format
 Use the language of the last messages; if mixed, use the most recent message.
@@ -75,3 +82,4 @@ Create this skill now? (yes/no)
 - Ignoring the critical vs. trivial distinction.
 - Using a negative or prohibitive skill name.
 - Skipping the user confirmation step.
+- Duplicating an existing skill when a small update would solve the issue.
