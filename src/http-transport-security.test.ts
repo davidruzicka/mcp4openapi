@@ -124,6 +124,9 @@ describe('HttpTransport security behavior (no listen)', () => {
     expect(response.headers['x-content-type-options']).toBe('nosniff');
     expect(response.headers['x-frame-options']).toBe('DENY');
     expect(response.headers['referrer-policy']).toBe('no-referrer');
+    expect(response.headers['permissions-policy']).toBe('geolocation=(), microphone=(), camera=(), payment=(), usb=(), magnetometer=(), accelerometer=(), gyroscope=(), autoplay=()');
+    expect(response.headers['x-permitted-cross-domain-policies']).toBe('none');
+    expect(response.headers['cache-control']).toBe('no-store');
     await transport.stop();
   });
 

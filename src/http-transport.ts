@@ -116,7 +116,9 @@ export class HttpTransport {
       res.setHeader('X-Frame-Options', 'DENY');
       res.setHeader('X-Content-Type-Options', 'nosniff');
       res.setHeader('Referrer-Policy', 'no-referrer');
-      res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(), camera=(), payment=()');
+      res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(), camera=(), payment=(), usb=(), magnetometer=(), accelerometer=(), gyroscope=(), autoplay=()');
+      res.setHeader('X-Permitted-Cross-Domain-Policies', 'none');
+      res.setHeader('Cache-Control', 'no-store');
       next();
     });
 
