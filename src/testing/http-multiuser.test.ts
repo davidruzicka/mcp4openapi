@@ -28,7 +28,7 @@ describeIfListen('HTTP Multi-User Mode (No MCP4_API_TOKEN)', () => {
     const logger = new ConsoleLogger(LogLevel.ERROR); // Quiet during tests
     
     const config = {
-      host: 'localhost',
+      host: '127.0.0.1',
       port: 0, // Port 0 selects an ephemeral port
       sessionTimeoutMs: 1800000,
       heartbeatEnabled: false,
@@ -46,7 +46,7 @@ describeIfListen('HTTP Multi-User Mode (No MCP4_API_TOKEN)', () => {
     if (!address || typeof address !== 'object' || !('port' in address)) {
       throw new Error('HTTP transport did not expose a usable server address');
     }
-    baseUrl = `http://localhost:${address.port}`;
+    baseUrl = `http://127.0.0.1:${address.port}`;
     
     // Set up simple mock message handler
     httpTransport.setMessageHandler(async (message: unknown, sessionId?: string) => {

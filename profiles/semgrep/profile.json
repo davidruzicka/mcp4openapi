@@ -1,6 +1,9 @@
 {
   "$schema": "../../profile-schema.json",
   "profile_name": "semgrep",
+  "profile_id": "semgrep",
+  "profile_aliases": ["semgrep-default"],
+  "openapi_spec_path": "./openapi.yaml",
   "description": "MCP tools for Semgrep security platform workflows. Reduces 20 API operations to 10 MCP tools.",
   
   "parameter_aliases": {
@@ -654,10 +657,10 @@
   "interceptors": {
     "auth": {
       "type": "bearer",
-      "value_from_env": "MCP4_API_TOKEN"
+      "value_from_env": "SEMGREP_TOKEN"
     },
     "base_url": {
-      "value_from_env": "MCP4_API_BASE_URL",
+      "value_from_env": "SEMGREP_API_BASE_URL",
       "default": "https://semgrep.dev"
     },
     "rate_limit": {

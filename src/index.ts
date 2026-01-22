@@ -10,6 +10,12 @@ import 'dotenv/config';
 import { MCPServer } from './mcp-server.js';
 import { ConsoleLogger, JsonLogger } from './logger.js';
 import { OAUTH_PATHS } from './constants.js';
+import { resolveProfileById, resolveProfileFromPath, type ResolvedProfile } from './profile-resolver.js';
+import { applyCliEnvOverrides, parseCliArgs } from './cli-config.js';
+import { buildHttpTransportBaseConfig } from './http-transport-config.js';
+import { ProfileRegistry } from './profile-registry.js';
+import { MCPServerManager } from './mcp-server-manager.js';
+import { getHttpProfileRoutingErrorMessage } from './startup-validation.js';
 
 /**
  * Fetch OAuth Authorization Server Metadata (RFC 8414)
@@ -51,7 +57,21 @@ function deriveIssuerFromBaseUrl(baseUrl: string): string | null {
   }
 }
 
+function resolveHttpHostPort(): { host: string; port: number } {
+  const host = process.env.MCP4_HOST || '127.0.0.1';
+  const port = parseInt(process.env.MCP4_PORT || '3003', 10);
+
+  if (Number.isNaN(port)) {
+    throw new Error(`Invalid MCP4_PORT: ${process.env.MCP4_PORT}`);
+  }
+
+  return { host, port };
+}
+
 async function main() {
+  const cliArgs = parseCliArgs(process.argv.slice(2));
+  applyCliEnvOverrides(cliArgs);
+
   // Create logger early so startup/autodiscovery logs are structured and redacted consistently
   const logFormat = process.env.MCP4_LOG_FORMAT || 'console';
   const logger = logFormat === 'json' ? new JsonLogger() : new ConsoleLogger();
@@ -138,26 +158,113 @@ async function main() {
     }
   }
 
-  const specPath = process.env.MCP4_OPENAPI_SPEC_PATH;
-  if (!specPath) {
-    logger.error('MCP4_OPENAPI_SPEC_PATH environment variable is required');
+  let specPath = process.env.MCP4_OPENAPI_SPEC_PATH;
+  let profilePath = process.env.MCP4_PROFILE_PATH;
+  let profileId = process.env.MCP4_PROFILE;
+  const profilesDir = process.env.MCP4_PROFILES_DIR;
+  let defaultProfile: ResolvedProfile | undefined;
+
+  if (!profilePath && profileId) {
+    const resolved = await resolveProfileById(profileId, profilesDir);
+    defaultProfile = resolved;
+    profilePath = resolved.profilePath;
+    profileId = resolved.profileId;
+    if (!specPath) {
+      specPath = resolved.specPath;
+    }
+  } else if (profilePath) {
+    const resolved = await resolveProfileFromPath(profilePath);
+    defaultProfile = resolved;
+    profilePath = resolved.profilePath;
+    profileId = resolved.profileId;
+    if (!specPath) {
+      specPath = resolved.specPath;
+    }
+  }
+
+  const transport = process.env.MCP4_TRANSPORT || 'stdio';
+  const httpProfileRoutingEnabled = process.env.MCP4_HTTP_PROFILE_ROUTING === 'true';
+  const hasDefaultProfile = !!defaultProfile;
+
+  const routingError = getHttpProfileRoutingErrorMessage({
+    transport,
+    profileRoutingEnabled: httpProfileRoutingEnabled,
+    hasDefaultProfile,
+  });
+  if (routingError) {
+    logger.error(routingError);
     process.exit(1);
   }
 
-  const profilePath = process.env.MCP4_PROFILE_PATH;
-  const transport = process.env.MCP4_TRANSPORT || 'stdio';
+  const requiresSpecPath = transport !== 'http' || !httpProfileRoutingEnabled || hasDefaultProfile;
+  if (!specPath && requiresSpecPath) {
+    logger.error('MCP4_OPENAPI_SPEC_PATH is required. Provide --openapi-spec-path (or MCP4_OPENAPI_SPEC_PATH), or use --profile with openapi_spec_path in the profile.');
+    process.exit(1);
+  }
   
   try {
+    if (defaultProfile && specPath) {
+      defaultProfile = { ...defaultProfile, specPath };
+    }
+
+    if (transport === 'http' && httpProfileRoutingEnabled) {
+      const { host, port } = resolveHttpHostPort();
+
+      const baseConfig = buildHttpTransportBaseConfig(host, port);
+      const { HttpTransport } = await import('./http-transport.js');
+      const httpTransport = new HttpTransport({
+        ...baseConfig,
+        profileRoutingEnabled: true,
+        defaultProfileId: defaultProfile?.profileId,
+      }, logger);
+
+      const registry = new ProfileRegistry({ profilesDir, defaultProfile });
+      const manager = new MCPServerManager(registry, logger, httpTransport);
+
+      httpTransport.setProfileContextProvider(async (id) => manager.getProfileContext(id));
+
+      httpTransport.setMessageHandler(async (message, sessionId, profileId) => {
+        if (!profileId) {
+          throw new Error('Profile ID is required for HTTP routing.');
+        }
+        const server = await manager.getServer(profileId);
+        return server.handleHttpMessage(message, sessionId, profileId);
+      });
+
+      httpTransport.onSessionDestroyed(async (profileId, sessionId) => {
+        try {
+          const server = await manager.getServer(profileId);
+          server.handleSessionDestroyed(profileId, sessionId);
+        } catch (error) {
+          logger.error('Session cleanup failed', error as Error, { profileId, sessionId });
+        }
+      });
+
+      await httpTransport.start();
+      logger.info('MCP server running on HTTP', { host, port });
+
+      const shutdown = async (signal: string) => {
+        logger.info(`Received ${signal}, shutting down gracefully...`);
+        try {
+          await httpTransport.stop();
+          logger.info('Server stopped successfully');
+          process.exit(0);
+        } catch (error) {
+          logger.error('Error during shutdown', error as Error);
+          process.exit(1);
+        }
+      };
+
+      process.on('SIGTERM', () => shutdown('SIGTERM'));
+      process.on('SIGINT', () => shutdown('SIGINT'));
+      return;
+    }
+
     const server = new MCPServer(logger);
-    await server.initialize(specPath, profilePath);
+    await server.initialize(specPath!, profilePath);
 
     if (transport === 'http') {
-      const host = process.env.MCP4_HOST || '127.0.0.1';
-      const port = parseInt(process.env.MCP4_PORT || '3003', 10);
-
-      if (isNaN(port)) {
-        throw new Error(`Invalid MCP4_PORT: ${process.env.MCP4_PORT}`);
-      }
+      const { host, port } = resolveHttpHostPort();
 
       await server.runHttp(host, port);
     } else {
