@@ -288,7 +288,7 @@ echo 'export NODE_EXTRA_CA_CERTS="$HOME/ca-bundle.pem"' >> $HOME/.bash_profile
 - `MCP4_PROFILE`: Profile ID for resolving profiles from a directory (used by `--profile`)
 - `MCP4_PROFILES_DIR`: Profiles root directory for profile ID resolution (default: `./profiles`)
 - `MCP4_PROFILE_PATH`: Profile JSON path (default: auto-generate tools from OpenAPI spec; warning logged if tool exceeds 60 parameters)
-- `MCP4_OPENAPI_SPEC_PATH`: Path or URL to OpenAPI spec (YAML/JSON, supports local files and HTTP/HTTPS URLs). Required when no profile provides `openapi_spec_path`.
+- `MCP4_OPENAPI_SPEC_PATH`: Path or URL to OpenAPI spec (YAML/JSON, supports local files and HTTP/HTTPS URLs). Required when profile does not provide `openapi_spec_path`. In HTTP profile routing, this acts as a global fallback for profiles without `openapi_spec_path`.
 - `MCP4_TRANSPORT`: `stdio` (default) or `http`
 - `MCP4_API_BASE_URL`: Override OpenAPI server URL
 

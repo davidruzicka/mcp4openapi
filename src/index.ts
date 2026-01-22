@@ -165,7 +165,7 @@ async function main() {
   let defaultProfile: ResolvedProfile | undefined;
 
   if (!profilePath && profileId) {
-    const resolved = await resolveProfileById(profileId, profilesDir);
+    const resolved = await resolveProfileById(profileId, profilesDir, { specPathOverride: specPath });
     defaultProfile = resolved;
     profilePath = resolved.profilePath;
     profileId = resolved.profileId;
@@ -173,7 +173,7 @@ async function main() {
       specPath = resolved.specPath;
     }
   } else if (profilePath) {
-    const resolved = await resolveProfileFromPath(profilePath);
+    const resolved = await resolveProfileFromPath(profilePath, { specPathOverride: specPath });
     defaultProfile = resolved;
     profilePath = resolved.profilePath;
     profileId = resolved.profileId;
@@ -218,7 +218,11 @@ async function main() {
         defaultProfileId: defaultProfile?.profileId,
       }, logger);
 
-      const registry = new ProfileRegistry({ profilesDir, defaultProfile });
+      const registry = new ProfileRegistry({
+        profilesDir,
+        defaultProfile,
+        specPathOverride: specPath,
+      });
       const manager = new MCPServerManager(registry, logger, httpTransport);
 
       httpTransport.setProfileContextProvider(async (id) => manager.getProfileContext(id));

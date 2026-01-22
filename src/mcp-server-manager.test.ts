@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import path from 'path';
+import fs from 'node:fs/promises';
+import os from 'node:os';
 import { ConsoleLogger } from './logger.js';
 import { ProfileRegistry } from './profile-registry.js';
 import type { ResolvedProfile } from './profile-resolver.js';
@@ -155,5 +157,28 @@ describe('ProfileRegistry', () => {
 
     const resolved = await registry.resolveProfile('Default Profile');
     expect(resolved).toBe(defaultProfile);
+  });
+
+  it('uses spec path override for profiles missing openapi_spec_path', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'mcp4-registry-'));
+    const profilesDir = path.join(root, 'profiles');
+    const profilePath = path.join(profilesDir, 'profile.json');
+    const specPath = path.join(root, 'openapi.yaml');
+
+    await fs.mkdir(profilesDir, { recursive: true });
+    await fs.writeFile(profilePath, JSON.stringify({
+      profile_name: 'missing-spec',
+      profile_id: 'missing',
+      tools: [],
+    }), 'utf-8');
+    await fs.writeFile(specPath, 'openapi: 3.1.0', 'utf-8');
+
+    const registry = new ProfileRegistry({
+      profilesDir,
+      specPathOverride: specPath,
+    });
+
+    const resolved = await registry.resolveProfile('missing');
+    expect(resolved.specPath).toBe(specPath);
   });
 });

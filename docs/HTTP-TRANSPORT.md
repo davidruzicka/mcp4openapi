@@ -46,7 +46,7 @@ npx mcp4openapi \
   --profile-path ./mcp-profile.json
 ```
 
-Note: `MCP4_OPENAPI_SPEC_PATH` is optional when the selected profile includes `openapi_spec_path`. If profile do not provide it, you must set `MCP4_OPENAPI_SPEC_PATH` or `--openapi-spec-path`.
+Note: `MCP4_OPENAPI_SPEC_PATH` is optional when the selected profile includes `openapi_spec_path`. If a profile does not provide it, you must set `MCP4_OPENAPI_SPEC_PATH` or `--openapi-spec-path`. In HTTP profile routing mode, `MCP4_OPENAPI_SPEC_PATH` acts as a global fallback for profiles that omit `openapi_spec_path`.
 
 Server will log:
 ```

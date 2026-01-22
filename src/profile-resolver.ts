@@ -45,11 +45,22 @@ function isHttpUrl(value: string): boolean {
   }
 }
 
-function resolveSpecPath(profilePath: string, specPathRaw?: string): string {
-  if (!specPathRaw || typeof specPathRaw !== 'string' || specPathRaw.trim().length === 0) {
+function normalizeSpecPath(value?: string): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function resolveSpecPath(profilePath: string, specPathRaw?: string, overrideSpecPath?: string): string {
+  const override = normalizeSpecPath(overrideSpecPath);
+  if (override) {
+    return override;
+  }
+
+  const trimmed = normalizeSpecPath(specPathRaw);
+  if (!trimmed) {
     throw new ConfigurationError('Profile is missing openapi_spec_path', { profilePath });
   }
-  const trimmed = specPathRaw.trim();
   if (isHttpUrl(trimmed)) {
     return trimmed;
   }
@@ -138,7 +149,11 @@ function matchProfiles(profileId: string, profiles: ProfileIndexEntry[]): Profil
   });
 }
 
-export async function resolveProfileById(profileId: string, profilesDir?: string): Promise<ResolvedProfile> {
+export async function resolveProfileById(
+  profileId: string,
+  profilesDir?: string,
+  options?: { specPathOverride?: string }
+): Promise<ResolvedProfile> {
   const resolvedDir = normalizeProfilesDir(profilesDir);
   const profiles = await buildProfileIndex(resolvedDir);
   const matches = matchProfiles(profileId, profiles);
@@ -155,7 +170,7 @@ export async function resolveProfileById(profileId: string, profilesDir?: string
   }
 
   const match = matches[0];
-  const specPath = resolveSpecPath(match.profilePath, match.specPathRaw);
+  const specPath = resolveSpecPath(match.profilePath, match.specPathRaw, options?.specPathOverride);
 
   return {
     profileId: match.profileId,
@@ -165,7 +180,10 @@ export async function resolveProfileById(profileId: string, profilesDir?: string
   };
 }
 
-export async function resolveProfileFromPath(profilePath: string): Promise<ResolvedProfile> {
+export async function resolveProfileFromPath(
+  profilePath: string,
+  options?: { specPathOverride?: string }
+): Promise<ResolvedProfile> {
   const resolvedPath = path.isAbsolute(profilePath) ? profilePath : path.resolve(process.cwd(), profilePath);
   const entry = await loadProfileIndexEntry(resolvedPath);
 
@@ -173,7 +191,7 @@ export async function resolveProfileFromPath(profilePath: string): Promise<Resol
     throw new ConfigurationError('Profile file does not look like a valid profile', { profilePath: resolvedPath });
   }
 
-  const specPath = resolveSpecPath(resolvedPath, entry.specPathRaw);
+  const specPath = resolveSpecPath(resolvedPath, entry.specPathRaw, options?.specPathOverride);
 
   return {
     profileId: entry.profileId,
