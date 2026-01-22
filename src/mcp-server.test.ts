@@ -98,7 +98,7 @@ describe('MCPServer', () => {
       const specPath = path.join(process.cwd(), 'profiles/gitlab/openapi.yaml');
       const profilePath = path.join(process.cwd(), 'profiles/gitlab/developer-profile-oauth.json');
 
-      process.env.MCP4_API_TOKEN = 'test-token';
+      process.env.GITLAB_TOKEN = 'test-token';
 
       await server.initialize(specPath, profilePath);
 
@@ -110,7 +110,7 @@ describe('MCPServer', () => {
       const specPath = path.join(process.cwd(), 'profiles/gitlab/openapi.yaml');
       const profilePath = path.join(process.cwd(), 'profiles/gitlab/developer-profile-oauth.json');
 
-      delete process.env.MCP4_API_TOKEN;
+      delete process.env.GITLAB_TOKEN;
 
       await server.initialize(specPath, profilePath);
 
@@ -118,7 +118,7 @@ describe('MCPServer', () => {
       expect(hasGlobalClient).toBe(false);
 
       await expect((server as any).getHttpClientForSession()).rejects.toThrow(
-        /HasEnvToken\(MCP4_API_TOKEN\): false/
+        /HasEnvToken\(GITLAB_TOKEN\): false/
       );
     });
   });

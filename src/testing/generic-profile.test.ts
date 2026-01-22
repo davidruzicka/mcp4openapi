@@ -23,6 +23,24 @@ type ToolCallResponse = {
 
 const asToolCallResponse = (value: unknown): ToolCallResponse => value as ToolCallResponse;
 
+function configureProfileEnv(profile: Profile, baseUrl: string): void {
+  const authConfigs = profile.interceptors?.auth;
+  const authList = Array.isArray(authConfigs) ? authConfigs : authConfigs ? [authConfigs] : [];
+  for (const authConfig of authList) {
+    if (
+      (authConfig.type === 'bearer' || authConfig.type === 'query' || authConfig.type === 'custom-header') &&
+      authConfig.value_from_env
+    ) {
+      process.env[authConfig.value_from_env] = 'test-token';
+    }
+  }
+
+  const baseUrlEnv = profile.interceptors?.base_url?.value_from_env;
+  if (baseUrlEnv) {
+    process.env[baseUrlEnv] = baseUrl;
+  }
+}
+
 function assertErrorExpectation(
   error: unknown,
   processedExpect: { error_code?: string; error_message_regex?: string }
@@ -134,6 +152,7 @@ testFiles.forEach(testFile => {
 
       process.env.MCP4_API_TOKEN = 'test-token';
       process.env.MCP4_API_BASE_URL = baseUrl;
+      configureProfileEnv(profile, baseUrl);
 
       server = new MCPServer();
       await server.initialize(fullSpecPath, fullProfilePath);
