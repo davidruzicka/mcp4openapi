@@ -13,13 +13,13 @@ describeIfListen('MCPServer OAuth Integration', () => {
 
   beforeAll(async () => {
     process.env = { ...originalEnv };
-    process.env.MCP4_OAUTH_CLIENT_ID = 'test-client';
-    process.env.MCP4_OAUTH_CLIENT_SECRET = 'test-secret';
-    process.env.MCP4_OAUTH_ISSUER = 'https://gitlab.com';
-    process.env.MCP4_OAUTH_AUTHORIZATION_URL = 'https://gitlab.com/oauth/authorize';
-    process.env.MCP4_OAUTH_TOKEN_URL = 'https://gitlab.com/oauth/token';
-    process.env.MCP4_OAUTH_REDIRECT_URI = 'http://localhost:3000/callback';
-    process.env.MCP4_OAUTH_SCOPES = 'api';
+    process.env.GITLAB_OAUTH_CLIENT_ID = 'test-client';
+    process.env.GITLAB_OAUTH_CLIENT_SECRET = 'test-secret';
+    process.env.GITLAB_OAUTH_ISSUER = 'https://gitlab.com';
+    process.env.GITLAB_OAUTH_AUTHORIZATION_URL = 'https://gitlab.com/oauth/authorize';
+    process.env.GITLAB_OAUTH_TOKEN_URL = 'https://gitlab.com/oauth/token';
+    process.env.GITLAB_OAUTH_REDIRECT_URI = 'http://localhost:3000/callback';
+    process.env.GITLAB_OAUTH_SCOPES = 'api';
 
     server = new MCPServer();
     

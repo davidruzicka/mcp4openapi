@@ -13,7 +13,7 @@ describe('ProfileLoader', () => {
 
     const profile = await loader.load(profilePath);
 
-    expect(profile.profile_name).toBe('gitlab');
+    expect(profile.profile_name).toBe('gitlab-default');
     expect(profile.profile_aliases).toContain('gitlab-developer');
     expect(profile.tools.length).toBeGreaterThan(0);
     expect(profile.interceptors).toBeDefined();

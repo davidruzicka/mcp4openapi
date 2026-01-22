@@ -24,10 +24,10 @@ describeIfListen('Branch Protect/Unprotect Idempotency E2E', () => {
   let mcp: McpProcess;
   let httpPort: number;
   const oauthEnv = {
-    MCP4_OAUTH_ISSUER: 'https://gitlab.example.com',
-    MCP4_OAUTH_CLIENT_ID: 'test-client-id',
-    MCP4_OAUTH_CLIENT_SECRET: 'test-client-secret',
-    MCP4_OAUTH_REDIRECT_URI: 'http://127.0.0.1/oauth/callback',
+    GITLAB_OAUTH_ISSUER: 'https://gitlab.example.com',
+    GITLAB_OAUTH_CLIENT_ID: 'test-client-id',
+    GITLAB_OAUTH_CLIENT_SECRET: 'test-client-secret',
+    GITLAB_OAUTH_REDIRECT_URI: 'http://127.0.0.1/oauth/callback',
   };
 
   beforeAll(async () => {

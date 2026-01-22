@@ -2,7 +2,7 @@
   "$schema": "../../../profile-schema.json",
   "profile_name": "gitlab-default",
   "profile_id": "gitlab",
-  "profile_aliases": ["gitlab-default"],
+  "profile_aliases": ["gitlab-default", "gitlab-developer"],
   "openapi_spec_path": "./openapi.yaml",
   "description": "Developer-focused tools for common GitLab workflows",
   
