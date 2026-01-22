@@ -122,6 +122,8 @@ Each interceptor is independently testable. Configuration in profile `intercepto
 5. Update documentation (`IMPLEMENTATION.md` for architecture, `docs/` for user-facing)
 6. **Remove completed item from `TODO.md`** - if feature was listed there
 
+ALWAYS implement one feature at a time with tests passing before proceeding.
+
 ### Profile Validation
 
 ```bash

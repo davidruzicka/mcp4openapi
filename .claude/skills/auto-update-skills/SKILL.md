@@ -1,6 +1,6 @@
 ---
-name: remember-existing-knowledge
-description: Propose creating a new skill after a correction reveals reusable existing knowledge, tools, policies, or preferred communication style. Trigger immediately for critical issues and on repetition for trivial patterns.
+name: auto-update-skills
+description: Propose creating a new skill or update existing after a correction reveals reusable existing knowledge, tools, policies, or preferred communication style. Trigger immediately for critical issues and on repetition for trivial patterns.
 ---
 
 ## Goal
@@ -47,18 +47,24 @@ Also ensure existing skills are respected by extending them when they should hav
 5. The skill proposal must include a one‑sentence **Why now** justification.
 6. Before proposing a new skill, check existing skills by name and description to avoid duplicates.
 7. If an existing skill should have triggered but did not, update that skill instead of proposing a new one.
+8. SKILL.md under 500 lines. Split detailed content into reference files. Load only what's needed for the current workflow.
+9. Ensure YAML frontmatter is valid, the `name` matches the directory and uses lowercase hyphens, and the `description` states what it does and when to use it.
+10. SKILL.md is always loaded on activation, so keep essential principles and guardrails in SKILL.md and move detailed procedures to workflows or references.
+11. If a skill grows complex, use a router pattern with workflows, references, templates, and scripts instead of expanding SKILL.md. Keep the rule max 500 lines for SKILL.md files.
 
 ## Procedure
 1. Identify the correction and classify it as critical or trivial.
 2. Scan existing skills for a matching or near matching description.
 3. If a matching skill exists, update its SKILL.md to include the missing trigger, condition, or instruction.
-4. If no matching skill exists, decide whether to propose a new skill based on the Rules.
-5. Draft a proposed skill (name + description + key rules).
-6. Ask the user to confirm creation of the new skill.
+4. When updating or creating a skill, verify frontmatter and placement rules from this skill.
+5. If no matching skill exists, decide whether to propose a new skill based on the Rules.
+6. Draft a proposed skill (name + description + key rules).
+7. Ask the user to confirm creation of the new skill.
 
 ## Output Format
 Use the language of the last messages; if mixed, use the most recent message.
 
+Creating new skill proposal:
 ```text
 Proposal: Create a new skill
 Name: <proposed-skill-name>
@@ -69,6 +75,19 @@ Key rules:
 Why now: <one sentence>
 
 Create this skill now? (yes/no)
+```
+
+Updating existing skill proposal:
+```text
+Proposal: Update existing skill
+Name: <updated-skill-name>
+Description: <1–2 sentence description>
+Key updates:
+- <update 1>
+- <update 2>
+Why now: <one sentence>
+
+Update this skill now? (yes/no)
 ```
 
 ## Examples
