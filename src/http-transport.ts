@@ -22,6 +22,7 @@ import type {
   SSEStreamState,
   QueuedMessage,
   HttpTransportConfig,
+  HttpProfileContext,
   McpRequest
 } from './types/http-transport.js';
 import { isInitializeRequest } from './jsonrpc-validator.js';
@@ -34,6 +35,7 @@ import type { OAuthTokens } from '@modelcontextprotocol/sdk/shared/auth.js';
 import {
   AuthenticationError,
   AuthorizationError,
+  ConfigurationError,
   RateLimitError,
   ValidationError,
   generateCorrelationId,
@@ -56,20 +58,25 @@ import type { SessionToolFilter, SessionToolFilterRequest } from './types/http-t
 import type { OpenAPIParser } from './openapi-parser.js';
 const DEFAULT_MAX_TOKEN_LENGTH = 1000;
 
+interface ProfileRuntimeState {
+  profileId: string;
+  context: HttpProfileContext;
+  oauthProvider: ExternalOAuthProvider | null;
+  toolFilterService?: ToolFilterService;
+  oauthTokensByAccessToken: Map<string, { refreshToken?: string; expiresAt?: number; clientId: string; scopes: string[] }>;
+  sessions: Map<string, SessionData>;
+}
+
 export class HttpTransport {
   private app: express.Application;
   private server: Server | https.Server | null = null;
-  private sessions: Map<string, SessionData> = new Map();
   private config: HttpTransportConfig;
   private logger: Logger;
   private metrics: MetricsCollector | null = null;
   private cleanupInterval: NodeJS.Timeout | null = null;
-  private messageHandler: ((message: unknown, sessionId?: string) => Promise<unknown>) | null = null;
-  private oauthProvider: ExternalOAuthProvider | null = null;
-  private toolFilterService?: ToolFilterService;
-  // Map access_token -> { refreshToken, expiresAt, clientId, scopes }
-  // Used to bridge /oauth/token endpoint (where we see OAuthTokens) and session initialization (where we only see access token)
-  private oauthTokensByAccessToken: Map<string, { refreshToken?: string; expiresAt?: number; clientId: string; scopes: string[] }> = new Map();
+  private messageHandler: ((message: unknown, sessionId?: string, profileId?: string) => Promise<unknown>) | null = null;
+  private profileContextProvider: ((profileId: string) => Promise<HttpProfileContext | null>) | null = null;
+  private profileStates: Map<string, ProfileRuntimeState> = new Map();
 
   constructor(config: HttpTransportConfig, logger: Logger) {
     // Freeze config to prevent runtime mutation of security-critical settings (allowedOrigins, rate limits, etc.)
@@ -82,20 +89,6 @@ export class HttpTransport {
         enabled: true,
         prefix: 'mcp_',
       });
-    }
-    
-    // Initialize OAuth provider if configured
-    if (config.oauthConfig) {
-      this.logger.info('Initializing OAuth provider with config', { hasClientId: !!config.oauthConfig.client_id });
-      this.oauthProvider = new ExternalOAuthProvider(config.oauthConfig, logger);
-      // Note: authorizationEndpoint may be undefined at this point if config uses issuer-based discovery
-      // It will be resolved lazily on first OAuth operation (authorize/token)
-      this.logger.info('OAuth provider initialized', { 
-        endpoint: this.oauthProvider.authorizationEndpoint || '(to be derived from issuer)',
-        hasIssuer: !!config.oauthConfig.issuer,
-      });
-    } else {
-      this.logger.info('No OAuth config provided - OAuth provider not initialized');
     }
     
     this.app = express();
@@ -242,6 +235,112 @@ export class HttpTransport {
     });
   }
 
+  public setProfileContextProvider(
+    provider: (profileId: string) => Promise<HttpProfileContext | null>
+  ): void {
+    this.profileContextProvider = provider;
+  }
+
+  private getDefaultProfileId(): string | undefined {
+    if (this.config.defaultProfileId) {
+      return this.config.defaultProfileId;
+    }
+    if (this.config.profileRoutingEnabled) {
+      return undefined;
+    }
+    return 'default';
+  }
+
+  private buildDefaultProfileContext(): HttpProfileContext | null {
+    const profileId = this.getDefaultProfileId();
+    if (!profileId) {
+      return null;
+    }
+
+    return {
+      profileId,
+      oauthConfig: this.config.oauthConfig,
+      authConfigs: this.config.authConfigs,
+      baseUrl: this.config.baseUrl,
+      rateLimitOAuthMax: this.config.rateLimitOAuthMax,
+      rateLimitOAuthWindowMs: this.config.rateLimitOAuthWindowMs,
+      resourceName: this.config.resourceName,
+      resourceDocumentation: this.config.resourceDocumentation,
+      parser: this.config.parser,
+    };
+  }
+
+  private async getProfileState(profileId: string): Promise<ProfileRuntimeState | null> {
+    const existing = this.profileStates.get(profileId);
+    if (existing) {
+      return existing;
+    }
+
+    let context: HttpProfileContext | null = null;
+    if (this.profileContextProvider) {
+      try {
+        context = await this.profileContextProvider(profileId);
+      } catch (error) {
+        if (error instanceof ConfigurationError && error.message === 'Profile not found') {
+          this.logger.warn('Profile not found during request', { profileId });
+          return null;
+        }
+        throw error;
+      }
+    } else {
+      const defaultContext = this.buildDefaultProfileContext();
+      if (defaultContext?.profileId === profileId) {
+        context = defaultContext;
+      }
+    }
+
+    if (!context) {
+      return null;
+    }
+
+    let oauthProvider: ExternalOAuthProvider | null = null;
+    if (context.oauthConfig) {
+      this.logger.info('Initializing OAuth provider with config', {
+        profileId,
+        hasClientId: !!context.oauthConfig.client_id,
+      });
+      oauthProvider = new ExternalOAuthProvider(context.oauthConfig, this.logger);
+      this.logger.info('OAuth provider initialized', {
+        profileId,
+        endpoint: oauthProvider.authorizationEndpoint || '(to be derived from issuer)',
+        hasIssuer: !!context.oauthConfig.issuer,
+      });
+    } else {
+      this.logger.info('No OAuth config provided - OAuth provider not initialized', { profileId });
+    }
+
+    const state: ProfileRuntimeState = {
+      profileId,
+      context,
+      oauthProvider,
+      oauthTokensByAccessToken: new Map(),
+      sessions: new Map(),
+    };
+
+    this.profileStates.set(profileId, state);
+    return state;
+  }
+
+  private getProfileIdForRequest(req: McpRequest): string | undefined {
+    if (req.profileId) {
+      return req.profileId;
+    }
+    return this.getDefaultProfileId();
+  }
+
+  private async getProfileStateForRequest(req: McpRequest): Promise<ProfileRuntimeState | null> {
+    const profileId = this.getProfileIdForRequest(req);
+    if (!profileId) {
+      return null;
+    }
+    return await this.getProfileState(profileId);
+  }
+
   private hasWarnedAboutBinding = false;
 
   /**
@@ -270,15 +369,10 @@ export class HttpTransport {
         return true;
       }
 
-      // Allow OAuth redirect URI host if configured
-      if (this.oauthProvider?.redirectUri) {
-        try {
-          const redirectUrl = new URL(this.oauthProvider.redirectUri);
-          if (hostname === redirectUrl.hostname) {
-            return true;
-          }
-        } catch {
-          // Invalid URL, ignore
+      // Allow OAuth redirect URI hosts for initialized profiles
+      for (const redirectHost of this.getOAuthRedirectHosts()) {
+        if (hostname === redirectHost) {
+          return true;
         }
       }
 
@@ -295,6 +389,22 @@ export class HttpTransport {
     } catch {
       return false;
     }
+  }
+
+  private getOAuthRedirectHosts(): string[] {
+    const hosts = new Set<string>();
+    for (const state of this.profileStates.values()) {
+      if (!state.oauthProvider?.redirectUri) {
+        continue;
+      }
+      try {
+        const redirectUrl = new URL(state.oauthProvider.redirectUri);
+        hosts.add(redirectUrl.hostname);
+      } catch {
+        // Ignore invalid URL
+      }
+    }
+    return Array.from(hosts);
   }
 
   /**
@@ -552,6 +662,90 @@ export class HttpTransport {
     return `Rate limit exceeded for ${scope}. Max ${maxRequests} requests per ${windowMs / 1000} seconds.`;
   }
 
+  private getProfilePrefix(profileId?: string): string {
+    if (!this.config.profileRoutingEnabled) {
+      return '';
+    }
+    const defaultProfileId = this.getDefaultProfileId();
+    if (!profileId || (defaultProfileId && profileId === defaultProfileId)) {
+      return '';
+    }
+    return `/profile/${encodeURIComponent(profileId)}`;
+  }
+
+  private buildProfilePath(profileId: string | undefined, path: string): string {
+    const prefix = this.getProfilePrefix(profileId);
+    const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+    return `${prefix}${normalizedPath}`;
+  }
+
+  private getServerOrigin(profileId?: string): string {
+    if (profileId) {
+      const state = this.profileStates.get(profileId);
+      if (state?.oauthProvider?.redirectUri) {
+        try {
+          return new URL(state.oauthProvider.redirectUri).origin;
+        } catch {
+          // Ignore invalid URL
+        }
+      }
+    }
+
+    const protocol = this.config.host.includes('://') ? '' : 'http://';
+    const host = this.config.host.includes('://') ? this.config.host : this.config.host;
+    return `${protocol}${host}:${this.config.port}`;
+  }
+
+  private buildProfileUrl(profileId: string | undefined, path: string): string {
+    return `${this.getServerOrigin(profileId)}${this.buildProfilePath(profileId, path)}`;
+  }
+
+  private normalizeResourcePath(pathname: string): string {
+    const normalized = pathname.replace(/\/+$/, '');
+    return normalized === '' ? '/' : normalized;
+  }
+
+  private resolveProfileIdFromResourceUrl(resource: string): string | null {
+    let url: URL;
+    try {
+      url = new URL(resource);
+    } catch {
+      return null;
+    }
+
+    const path = this.normalizeResourcePath(url.pathname);
+    if (path === '/mcp') {
+      return this.getDefaultProfileId() ?? null;
+    }
+
+    if (!this.config.profileRoutingEnabled) {
+      return null;
+    }
+
+    const match = /^\/profile\/([^/]+)\/mcp$/.exec(path);
+    if (!match) {
+      return null;
+    }
+
+    try {
+      return decodeURIComponent(match[1]);
+    } catch {
+      return null;
+    }
+  }
+
+  public getOAuthProtectedResourceUrl(profileId?: string): string {
+    const effectiveProfileId = profileId ?? this.getDefaultProfileId();
+    return this.buildProfileUrl(effectiveProfileId, OAUTH_PATHS.WELL_KNOWN_PROTECTED_RESOURCE);
+  }
+
+  private respondProfileNotFound(res: Response, profileId?: string): void {
+    res.status(HTTP_STATUS.NOT_FOUND).json({
+      error: 'Not Found',
+      message: profileId ? `Profile '${profileId}' not found` : 'Profile not found',
+    });
+  }
+
   /**
    * Setup MCP endpoint routes
    *
@@ -562,355 +756,155 @@ export class HttpTransport {
 
     // Security: Rate limiting setup (needed for OAuth routes)
     const rateLimitEnabled = this.config.rateLimitEnabled !== false; // default: true
-    
-    // Rate limiter for OAuth endpoints (stricter limits for security)
-    // OAuth endpoints are sensitive and should have lower limits than general API
-    // Configuration priority: profile > env vars > defaults
-    const oauthWindowMs = this.config.rateLimitOAuthWindowMs || OAUTH_RATE_LIMIT.WINDOW_MS;
-    const oauthMaxRequests = this.config.rateLimitOAuthMax || OAUTH_RATE_LIMIT.MAX_REQUESTS;
-    const oauthRateLimiter = this.createRateLimiter({
-      enabled: rateLimitEnabled,
-      windowMs: oauthWindowMs,
-      maxRequests: oauthMaxRequests,
-      logMessage: 'Rate limit exceeded for OAuth',
-      responseMessage: `Too many OAuth requests. Limit: ${oauthMaxRequests} requests per ${Math.round(oauthWindowMs / 60000)} minutes. Please try again later.`,
-    });
 
-    // OAuth 2.0 routes (if configured)
-    if (this.oauthProvider) {
-      // Build redirect URI
-      const redirectUri = this.oauthProvider.redirectUri ||
-        `http://${this.config.host}:${this.config.port}/oauth/callback`;
+    const profileRoutingEnabled = this.config.profileRoutingEnabled === true;
+    const defaultProfileId = this.getDefaultProfileId();
 
-      // Derive serverUrl from redirectUri
-      const baseUrl = new URL(redirectUri).origin;
-      const serverUrl = new URL(`${baseUrl}/mcp`);
-      // issuerUrl should be the base URL of the authorization server (e.g. https://gitlab.com),
-      // NOT the authorization endpoint (e.g. https://gitlab.com/oauth/authorize)
-      // We try to derive it from authorizationEndpoint if not explicitly configured
-      // Note: authorizationEndpoint might not be ready yet (async initialization),
-      // so we use serverUrl.origin as fallback
-      let issuerUrl: URL;
-      try {
-         const authEndpoint = this.oauthProvider.authorizationEndpoint;
-         if (authEndpoint) {
-           // Try to extract base URL from auth endpoint
-           const authUrl = new URL(authEndpoint);
-           issuerUrl = new URL(authUrl.origin);
-         } else {
-           // Fallback: use server origin (will be updated after async init)
-           issuerUrl = new URL(serverUrl.origin);
-         }
-      } catch (e) {
-         // Fallback: use server origin
-         issuerUrl = new URL(serverUrl.origin);
+    const attachProfileId: RequestHandler = (req: Request, _res: Response, next: NextFunction) => {
+      (req as McpRequest).profileId = req.params.profileId;
+      next();
+    };
+
+    const oauthRateLimiterByProfile = new Map<string, RequestHandler>();
+    const getOAuthRateLimiter = (profileState: ProfileRuntimeState): RequestHandler => {
+      const existing = oauthRateLimiterByProfile.get(profileState.profileId);
+      if (existing) {
+        return existing;
       }
 
-      this.logger.info('Setting up OAuth routes', {
-        serverUrl: serverUrl.toString(),
-        issuerUrl: issuerUrl.toString(),
-        redirectUri,
+      const oauthWindowMs = profileState.context.rateLimitOAuthWindowMs || OAUTH_RATE_LIMIT.WINDOW_MS;
+      const oauthMaxRequests = profileState.context.rateLimitOAuthMax || OAUTH_RATE_LIMIT.MAX_REQUESTS;
+      const limiter = this.createRateLimiter({
+        enabled: rateLimitEnabled,
+        windowMs: oauthWindowMs,
+        maxRequests: oauthMaxRequests,
+        logMessage: 'Rate limit exceeded for OAuth',
+        responseMessage: `Too many OAuth requests. Limit: ${oauthMaxRequests} requests per ${Math.round(oauthWindowMs / 60000)} minutes. Please try again later.`,
       });
+      oauthRateLimiterByProfile.set(profileState.profileId, limiter);
+      return limiter;
+    };
 
-      // Install MCP OAuth router
-      // This adds standard OAuth endpoints:
-      // - /.well-known/oauth-authorization-server
-      // - /.well-known/oauth-protected-resource
-      // - /oauth/authorize
-      // - /oauth/token
-      // - /oauth/register (dynamic client registration)
-      // - /oauth/revoke (token revocation)
-      // Only register resource server endpoints, not authorization server endpoints
-      // since our MCP server is not an OAuth authorization server
-      this.app.get(OAUTH_PATHS.WELL_KNOWN_PROTECTED_RESOURCE, oauthRateLimiter, (req: Request, res: Response) => {
-        // Build metadata object with only defined fields (RFC 8707)
-        const metadata: any = {
-          resource: serverUrl.href,
-          authorization_servers: [serverUrl.origin], // We are the authorization server (proxy)
-          bearer_methods_supported: ['header'],
-        };
-        
-        // Optional: scopes_supported (only if scopes are defined)
-        if (this.oauthProvider?.scopes && this.oauthProvider.scopes.length > 0) {
-          metadata.scopes_supported = this.oauthProvider.scopes;
+    const oauthRateLimiter: RequestHandler = async (req: Request, res: Response, next: NextFunction) => {
+      const profileState = await this.getProfileStateForRequest(req as McpRequest);
+      if (!profileState) {
+        this.respondProfileNotFound(res, (req as McpRequest).profileId);
+        return;
+      }
+      const limiter = getOAuthRateLimiter(profileState);
+      return limiter(req, res, next);
+    };
+
+    const withProfileState = (handler: (req: Request, res: Response, profileState: ProfileRuntimeState) => Promise<void> | void): RequestHandler => {
+      return async (req: Request, res: Response) => {
+        const profileState = await this.getProfileStateForRequest(req as McpRequest);
+        if (!profileState) {
+          this.respondProfileNotFound(res, (req as McpRequest).profileId);
+          return;
         }
-        
-        // Optional: resource_name (from config, already has fallback in mcp-server.ts)
-        if (this.config.resourceName) {
-          metadata.resource_name = this.config.resourceName;
-        }
-        
-        // Optional: resource_documentation (from config, may be undefined)
-        if (this.config.resourceDocumentation) {
-          metadata.resource_documentation = this.config.resourceDocumentation;
-        }
-        
-        res.json(metadata);
+        await handler(req, res, profileState);
+      };
+    };
+
+    const registerOAuthRoutes = (basePath: string, includeProfileParam: boolean, includeProtectedResource: boolean): void => {
+      const middlewares: RequestHandler[] = includeProfileParam ? [attachProfileId] : [];
+
+      const withOAuthRateLimit = [ ...middlewares, oauthRateLimiter ];
+      const withProfile = (handler: (req: Request, res: Response, profileState: ProfileRuntimeState) => Promise<void> | void): RequestHandler[] => {
+        return [ ...middlewares, oauthRateLimiter, withProfileState(handler) ];
+      };
+
+      if (includeProtectedResource) {
+        this.app.get(
+          `${basePath}${OAUTH_PATHS.WELL_KNOWN_PROTECTED_RESOURCE}`,
+          ...withProfile((req, res, profileState) => this.handleOAuthProtectedResource(req, res, profileState))
+        );
+      }
+
+      this.app.get(
+        `${basePath}${OAUTH_PATHS.AUTHORIZE}`,
+        ...withProfile((req, res, profileState) => this.handleOAuthAuthorize(req, res, profileState))
+      );
+
+      this.app.post(
+        `${basePath}${OAUTH_PATHS.TOKEN}`,
+        ...middlewares,
+        oauthRateLimiter,
+        express.urlencoded({ extended: false, limit: '50kb' }),
+        withProfileState((req, res, profileState) => this.handleOAuthToken(req, res, profileState))
+      );
+
+      this.app.get(
+        `${basePath}${OAUTH_PATHS.CALLBACK}`,
+        ...withProfile((req, res, profileState) => this.handleOAuthCallback(req, res, profileState))
+      );
+
+      this.app.get(
+        `${basePath}${OAUTH_PATHS.WELL_KNOWN_AUTHORIZATION_SERVER}`,
+        ...withProfile((req, res, profileState) => this.handleOAuthAuthorizationServerMetadata(req, res, profileState))
+      );
+
+      this.app.post(
+        `${basePath}${OAUTH_PATHS.REGISTER}`,
+        ...middlewares,
+        oauthRateLimiter,
+        express.json(),
+        withProfileState((req, res, profileState) => this.handleOAuthRegister(req, res, profileState))
+      );
+
+      this.logger.info('OAuth routes registered', {
+        basePath,
+        profileRoutingEnabled,
       });
+    };
 
-      // Authorization endpoint
-      // Initiates the OAuth flow by redirecting the user to the external provider
-      this.app.get(OAUTH_PATHS.AUTHORIZE, oauthRateLimiter, async (req: Request, res: Response) => {
-        try {
-          // Security: Prevent caching of authorization redirects
-          res.setHeader('Cache-Control', 'no-store');
-
-          const { response_type, client_id, redirect_uri, scope, state, code_challenge, code_challenge_method } = req.query;
-
-          if (!client_id || typeof client_id !== 'string') {
-            res.status(HTTP_STATUS.BAD_REQUEST).send('Missing client_id');
-            return;
-          }
-
-          if (!redirect_uri || typeof redirect_uri !== 'string') {
-            res.status(HTTP_STATUS.BAD_REQUEST).send('Missing redirect_uri');
-            return;
-          }
-
-          if (this.oauthProvider) {
-             // Ensure provider is initialized before client validation
-             // This registers configured client_id if present
-             await this.oauthProvider.ensureEndpointsInitialized();
-             
-             // Find the client to validate configuration
-             const client = await this.oauthProvider.clientsStore.getClient(client_id);
-             if (!client) {
-                 res.status(HTTP_STATUS.BAD_REQUEST).send('Invalid client_id');
-                 return;
-             }
-
-             // Prepare parameters for provider authorization
-             const scopeStr = (scope as string || '').trim();
-             const params = {
-                 responseType: response_type as string || 'code',
-                 clientId: client_id,
-                 redirectUri: redirect_uri,
-                 scope: scopeStr ? scopeStr.split(' ') : [],
-                 state: state as string,
-                 codeChallenge: code_challenge as string,
-                 codeChallengeMethod: code_challenge_method as string,
-                 scopes: scopeStr ? scopeStr.split(' ') : [],
-             };
-
-             // Call provider authorize method which handles the redirect logic
-             await this.oauthProvider.authorize(client, params, res);
-          } else {
-             res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).send('OAuth provider not initialized');
-          }
-        } catch (error) {
-          this.logger.error('OAuth authorize error', error instanceof Error ? error : new Error(String(error)));
-          res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).send('OAuth authorization failed');
-        }
-      });
-
-      // Token endpoint
-      // Exchanges authorization code or refresh token for access token
-      // Stricter body limit (50kb) for token exchange as payloads should be small
-      this.app.post(OAUTH_PATHS.TOKEN, oauthRateLimiter, express.urlencoded({ extended: false, limit: '50kb' }), async (req: Request, res: Response) => {
-        try {
-          // Security: Prevent caching of token responses which contain sensitive credentials
-          res.setHeader('Cache-Control', 'no-store');
-
-          const { grant_type, code, redirect_uri, client_id, code_verifier, refresh_token } = req.body;
-
-          this.logger.debug('OAuth token request', {
-            grant_type,
-            client_id,
-            has_code: !!code,
-            has_code_verifier: !!code_verifier,
-            redirect_uri,
-          });
-
-          if (grant_type === 'authorization_code') {
-            // Authorization Code Flow
-            if (!code) {
-               res.status(HTTP_STATUS.BAD_REQUEST).json({ error: 'invalid_request', error_description: 'Missing code' });
-               return;
-            }
-
-            if (this.oauthProvider) {
-               // Ensure provider is initialized before client validation
-               await this.oauthProvider.ensureEndpointsInitialized();
-               
-               const client = await this.oauthProvider.clientsStore.getClient(client_id);
-               if (!client) {
-                   res.status(HTTP_STATUS.BAD_REQUEST).json({ error: 'invalid_client' });
-                   return;
-               }
-
-               const tokens = await this.oauthProvider.exchangeAuthorizationCode(
-                   client,
-                   code,
-                   code_verifier,
-                   redirect_uri
-               );
-
-               // Store OAuth tokens for later session initialization
-               this.storeOAuthTokens(tokens, client.client_id, client.scope?.split(' ') || []);
-
-               res.json(tokens);
-            } else {
-               res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ error: 'server_error', error_description: 'OAuth provider not initialized' });
-            }
-          } else if (grant_type === 'refresh_token') {
-            // Refresh Token Flow
-            if (!refresh_token) {
-               res.status(HTTP_STATUS.BAD_REQUEST).json({ error: 'invalid_request', error_description: 'Missing refresh_token' });
-               return;
-            }
-
-            if (this.oauthProvider) {
-               // Ensure provider is initialized before client validation
-               await this.oauthProvider.ensureEndpointsInitialized();
-               
-               const client = await this.oauthProvider.clientsStore.getClient(client_id);
-               if (!client) {
-                   res.status(HTTP_STATUS.BAD_REQUEST).json({ error: 'invalid_client' });
-                   return;
-               }
-
-               const tokens = await this.oauthProvider.exchangeRefreshToken(
-                   client,
-                   refresh_token
-               );
-
-               // Store OAuth tokens for later session initialization
-               // Note: When refreshing, the old access token should be invalidated
-               // but we don't track it here - the new token replaces it in the map
-               this.storeOAuthTokens(tokens, client.client_id, client.scope?.split(' ') || []);
-
-               res.json(tokens);
-            } else {
-               res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ error: 'server_error', error_description: 'OAuth provider not initialized' });
-            }
-          } else {
-             this.logger.warn('Unsupported grant type', { grant_type, expected: 'authorization_code or refresh_token' });
-             res.status(HTTP_STATUS.BAD_REQUEST).json({ error: 'unsupported_grant_type' });
-             return;
-          }
-        } catch (error) {
-          this.logger.error('OAuth token exchange error', error instanceof Error ? error : new Error(String(error)));
-          // Sanitize error message to prevent leakage of internal details
-          // We only expose a generic error or the error message if it's safe
-          res.status(HTTP_STATUS.BAD_REQUEST).json({
-            error: 'invalid_grant',
-            error_description: 'Token exchange failed'
-          });
-        }
-      });
-
-      // OAuth callback endpoint to receive tokens from authorization server
-      this.app.get(OAUTH_PATHS.CALLBACK, oauthRateLimiter, async (req: Request, res: Response) => {
-        try {
-          const { code, state, error, error_description } = req.query;
-
-          this.logger.info('OAuth callback received', { 
-            hasCode: !!code, 
-            hasState: !!state,
-            error: error,
-            errorDescription: error_description
-          });
-
-          if (error) {
-             // Sanitize error messages to prevent XSS
-             const safeError = escapeHtmlSafe(error as string);
-             const safeErrorDesc = escapeHtmlSafe(error_description as string);
-             
-             res.status(HTTP_STATUS.BAD_REQUEST).json({ 
-               error: safeError,
-               error_description: safeErrorDesc || safeError
-             });
-             return;
-          }
-
-          if (!code || typeof code !== 'string') {
-            res.status(HTTP_STATUS.BAD_REQUEST).send('Missing authorization code');
-            return;
-          }
-
-          // Delegate to OAuth provider to handle token exchange and redirect back to client (Cursor)
-          if (this.oauthProvider) {
-             await this.oauthProvider.handleCallback(req, res);
-          } else {
-             res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).send('OAuth provider not initialized');
-          }
-        } catch (error) {
-          this.logger.error('OAuth callback error', error instanceof Error ? error : new Error(String(error)));
-          if (!res.headersSent) {
-            res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).send('OAuth callback failed');
-          }
-        }
-      });
-
-      // Provide authorization server metadata
-      // We advertise the MCP server itself as the authorization server (Proxy Mode)
-      // This allows us to handle the redirect dance between Cursor -> MCP -> GitLab -> MCP -> Cursor
-      this.app.get(OAUTH_PATHS.WELL_KNOWN_AUTHORIZATION_SERVER, async (req: Request, res: Response) => {
-        try {
-          res.json({
-            issuer: serverUrl.origin, // We are the issuer for the client
-            authorization_endpoint: new URL(OAUTH_PATHS.AUTHORIZE, serverUrl.origin).href,
-            token_endpoint: new URL(OAUTH_PATHS.TOKEN, serverUrl.origin).href,
-            registration_endpoint: new URL(OAUTH_PATHS.REGISTER, serverUrl.origin).href,
-            response_types_supported: ['code'],
-            code_challenge_methods_supported: ['S256'],
-            grant_types_supported: ['authorization_code', 'refresh_token'],
-            scopes_supported: this.oauthProvider?.scopes || ['api'],
-          });
-        } catch (error) {
-          this.logger.error('OAuth authorization server metadata error', error instanceof Error ? error : new Error(String(error)));
-          res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).send('OAuth metadata failed');
-        }
-      });
-
-      // Dynamic Client Registration endpoint
-      // Cursor requires this to register itself with a redirect URI
-      this.app.post(OAUTH_PATHS.REGISTER, express.json(), async (req: Request, res: Response) => {
-         try {
-            const { redirect_uris } = req.body;
-            this.logger.info('Dynamic client registration request', { redirect_uris });
-            
-            // We don't actually strictly enforce registration in this proxy mode,
-            // but we return a valid client configuration to satisfy the client.
-            // We use a static client ID for the internal mapping.
-            const clientId = 'mcp-proxy-client';
-            const clientSecret = 'mcp-proxy-secret';
-            
-            // Register this client in our internal store so authorize requests pass validation
-            if (this.oauthProvider) {
-                const client = {
-                    client_id: clientId,
-                    client_secret: clientSecret,
-                    redirect_uris: redirect_uris || [],
-                    grant_types: ['authorization_code', 'refresh_token'],
-                    response_types: ['code'],
-                    scope: (this.oauthProvider.scopes || []).join(' '),
-                };
-                // We need to cast to any because registerClient might not be exposed on the interface
-                // but we know ExternalOAuthProvider uses InMemoryClientsStore
-                await (this.oauthProvider.clientsStore as any).registerClient(client);
-            }
-
-            res.status(HTTP_STATUS.CREATED).json({
-                client_id: clientId,
-                client_secret: clientSecret,
-                redirect_uris: redirect_uris,
-                grant_types: ['authorization_code', 'refresh_token'],
-                response_types: ['code'],
-                scope: (this.oauthProvider?.scopes || []).join(' '),
-                token_endpoint_auth_method: 'client_secret_post'
-            });
-         } catch (error) {
-            this.logger.error('Client registration failed', error instanceof Error ? error : new Error(String(error)));
-            res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ error: 'server_error', error_description: 'Registration failed' });
-         }
-      });
-
-      this.logger.info('OAuth routes registered');
+    if (defaultProfileId) {
+      registerOAuthRoutes('', false, false);
     }
 
-      // Security: Rate limiting setup (for MCP endpoints)
-      const windowMs = this.config.rateLimitWindowMs || TIMEOUTS.RATE_LIMIT_WINDOW_MS;
+    if (profileRoutingEnabled) {
+      registerOAuthRoutes('/profile/:profileId', true, true);
+    }
+
+    const attachProfileFromResourceQuery: RequestHandler = (req: Request, res: Response, next: NextFunction) => {
+      const { resource } = req.query;
+      if (resource === undefined) {
+        next();
+        return;
+      }
+
+      if (typeof resource !== 'string') {
+        res.status(HTTP_STATUS.BAD_REQUEST).json({
+          error: 'invalid_request',
+          message: 'Invalid resource query parameter',
+        });
+        return;
+      }
+
+      const profileId = this.resolveProfileIdFromResourceUrl(resource);
+      if (!profileId) {
+        res.status(HTTP_STATUS.NOT_FOUND).json({
+          error: 'Not Found',
+          message: 'OAuth metadata unavailable for requested resource',
+        });
+        return;
+      }
+
+      (req as McpRequest).profileId = profileId;
+      next();
+    };
+
+    if (defaultProfileId || profileRoutingEnabled) {
+      this.app.get(
+        OAUTH_PATHS.WELL_KNOWN_PROTECTED_RESOURCE,
+        attachProfileFromResourceQuery,
+        oauthRateLimiter,
+        withProfileState((req, res, profileState) => this.handleOAuthProtectedResource(req, res, profileState))
+      );
+    }
+
+    // Security: Rate limiting setup (for MCP endpoints)
+    const windowMs = this.config.rateLimitWindowMs || TIMEOUTS.RATE_LIMIT_WINDOW_MS;
     const maxRequests = this.config.rateLimitMaxRequests || 100; // 100 req/min
     const metricsMaxRequests = this.config.rateLimitMetricsMax || 10; // 10 req/min for metrics
 
@@ -939,51 +933,67 @@ export class HttpTransport {
       responseMessage: this.formatRateLimitMessage('metrics', metricsMaxRequests, windowMs),
     });
 
-    // Main MCP endpoint - POST for sending messages
-    this.app.post('/mcp', mcpRateLimiter, this.handlePost.bind(this));
-    // CORS preflight handler
-    this.app.options('/mcp', (req: Request, res: Response) => {
-      const origin = req.headers.origin;
-      // Only send CORS headers for explicitly allowed origins; otherwise reject
-      if (origin && this.isAllowedOrigin(origin)) {
-        // nosemgrep: javascript.express.security.cors-misconfiguration.cors-misconfiguration
-        res.setHeader('Access-Control-Allow-Origin', origin);
-        res.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
-        res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept, Mcp-Session-Id');
-        // We do not allow credentials; prevents cookie-based attacks by default
-        res.setHeader('Access-Control-Allow-Credentials', 'false');
-        res.setHeader('Access-Control-Max-Age', '86400'); // 24 hours cache
-        return res.status(HTTP_STATUS.OK).send();
+    const registerMcpRoutes = (basePath: string, includeProfileParam: boolean, isDefault: boolean): void => {
+      const middlewares: RequestHandler[] = includeProfileParam ? [attachProfileId] : [];
+      const pathPrefix = basePath || '';
+
+      // Main MCP endpoint - POST for sending messages
+      this.app.post(`${pathPrefix}/mcp`, ...middlewares, mcpRateLimiter, this.handlePost.bind(this));
+      // CORS preflight handler
+      this.app.options(`${pathPrefix}/mcp`, ...middlewares, (req: Request, res: Response) => {
+        const origin = req.headers.origin;
+        // Only send CORS headers for explicitly allowed origins; otherwise reject
+        if (origin && this.isAllowedOrigin(origin)) {
+          // nosemgrep: javascript.express.security.cors-misconfiguration.cors-misconfiguration
+          res.setHeader('Access-Control-Allow-Origin', origin);
+          res.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
+          res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept, Mcp-Session-Id');
+          // We do not allow credentials; prevents cookie-based attacks by default
+          res.setHeader('Access-Control-Allow-Credentials', 'false');
+          res.setHeader('Access-Control-Max-Age', '86400'); // 24 hours cache
+          return res.status(HTTP_STATUS.OK).send();
+        }
+        // Disallowed origin: do not echo origin or emit permissive headers
+        res.status(HTTP_STATUS.FORBIDDEN).json({ error: 'Forbidden', message: 'Origin not allowed' });
+      });
+
+      // Main MCP endpoint - GET for SSE streaming
+      this.app.get(`${pathPrefix}/mcp`, ...middlewares, mcpRateLimiter, this.handleGet.bind(this));
+
+      // Session termination
+      this.app.delete(`${pathPrefix}/mcp`, ...middlewares, mcpRateLimiter, this.handleDelete.bind(this));
+
+      // Legacy alias endpoints - deprecated
+      // Why: Backward compatibility for clients using /sse during migration
+      this.app.post(`${pathPrefix}/sse`, ...middlewares, mcpRateLimiter, (req: Request, res: Response, next: NextFunction) => {
+        this.logger.warn('Deprecated endpoint used: POST /sse. Please migrate to POST /mcp');
+        this.logger.info('Handling POST /sse request');
+        return (this.handlePost as any)(req, res, next);
+      });
+      this.app.get(`${pathPrefix}/sse`, ...middlewares, mcpRateLimiter, (req: Request, res: Response, next: NextFunction) => {
+        this.logger.warn('Deprecated endpoint used: GET /sse. Please migrate to GET /mcp');
+        this.logger.info(`Handling GET /sse request from: ${req.ip}`);
+        return (this.handleGet as any)(req as any, res, next);
+      });
+      this.app.delete(`${pathPrefix}/sse`, ...middlewares, mcpRateLimiter, (req: Request, res: Response, next: NextFunction) => {
+        this.logger.warn('Deprecated endpoint used: DELETE /sse. Please migrate to DELETE /mcp');
+        return (this.handleDelete as any)(req as any, res, next);
+      });
+
+      if (isDefault) {
+        this.logger.info('Registered MCP routes for default profile', { pathPrefix: pathPrefix || '/mcp' });
+      } else {
+        this.logger.info('Registered MCP routes for profile routing', { pathPrefix: `${pathPrefix}/mcp` });
       }
-      // Disallowed origin: do not echo origin or emit permissive headers
-      res.status(HTTP_STATUS.FORBIDDEN).json({ error: 'Forbidden', message: 'Origin not allowed' });
-    });
+    };
 
-    this.logger.info('Registered POST /mcp route');
+    if (defaultProfileId) {
+      registerMcpRoutes('', false, true);
+    }
 
-    // Main MCP endpoint - GET for SSE streaming
-    this.app.get('/mcp', mcpRateLimiter, this.handleGet.bind(this));
-
-    // Session termination
-    this.app.delete('/mcp', mcpRateLimiter, this.handleDelete.bind(this));
-
-    // Legacy alias endpoints - deprecated
-    // Why: Backward compatibility for clients using /sse during migration
-    this.app.post('/sse', mcpRateLimiter, (req: Request, res: Response, next: NextFunction) => {
-      this.logger.warn('Deprecated endpoint used: POST /sse. Please migrate to POST /mcp');
-      this.logger.info('Handling POST /sse request');
-      return (this.handlePost as any)(req, res, next);
-    });
-    this.app.get('/sse', mcpRateLimiter, (req: Request, res: Response, next: NextFunction) => {
-      this.logger.warn('Deprecated endpoint used: GET /sse. Please migrate to GET /mcp');
-      this.logger.info(`Handling GET /sse request from: ${req.ip}`);
-      return (this.handleGet as any)(req as any, res, next);
-    });
-    this.logger.info('Registered SSE routes: POST/GET/DELETE /sse');
-    this.app.delete('/sse', mcpRateLimiter, (req: Request, res: Response, next: NextFunction) => {
-      this.logger.warn('Deprecated endpoint used: DELETE /sse. Please migrate to DELETE /mcp');
-      return (this.handleDelete as any)(req as any, res, next);
-    });
+    if (profileRoutingEnabled) {
+      registerMcpRoutes('/profile/:profileId', true, false);
+    }
 
     // Metrics endpoint (if enabled)
     if (this.config.metricsEnabled) {
@@ -993,7 +1003,11 @@ export class HttpTransport {
     // Health check (with rate limiting)
     this.app.get('/health', mcpRateLimiter, (req: Request, res: Response) => {
       const startTime = Date.now();
-      res.json({ status: 'ok', sessions: this.sessions.size });
+      let totalSessions = 0;
+      for (const state of this.profileStates.values()) {
+        totalSessions += state.sessions.size;
+      }
+      res.json({ status: 'ok', sessions: totalSessions });
 
       if (this.metrics) {
         const duration = (Date.now() - startTime) / 1000;
@@ -1021,6 +1035,309 @@ export class HttpTransport {
     });
   }
   
+  private getProfileIssuerUrl(profileId: string): string {
+    const origin = this.getServerOrigin(profileId);
+    const prefix = this.getProfilePrefix(profileId);
+    return `${origin}${prefix}`;
+  }
+
+  private async handleOAuthProtectedResource(
+    _req: Request,
+    res: Response,
+    profileState: ProfileRuntimeState
+  ): Promise<void> {
+    if (!profileState.oauthProvider) {
+      res.status(HTTP_STATUS.NOT_FOUND).json({ error: 'Not Found', message: 'OAuth not configured for this profile' });
+      return;
+    }
+
+    const profileId = profileState.profileId;
+    const serverUrl = new URL(this.buildProfileUrl(profileId, '/mcp'));
+    const issuerUrl = this.getProfileIssuerUrl(profileId);
+
+    const metadata: any = {
+      resource: serverUrl.href,
+      authorization_servers: [issuerUrl],
+      bearer_methods_supported: ['header'],
+    };
+
+    if (profileState.oauthProvider.scopes && profileState.oauthProvider.scopes.length > 0) {
+      metadata.scopes_supported = profileState.oauthProvider.scopes;
+    }
+
+    if (profileState.context.resourceName) {
+      metadata.resource_name = profileState.context.resourceName;
+    }
+
+    if (profileState.context.resourceDocumentation) {
+      metadata.resource_documentation = profileState.context.resourceDocumentation;
+    }
+
+    res.json(metadata);
+  }
+
+  private async handleOAuthAuthorize(
+    req: Request,
+    res: Response,
+    profileState: ProfileRuntimeState
+  ): Promise<void> {
+    if (!profileState.oauthProvider) {
+      res.status(HTTP_STATUS.NOT_FOUND).send('OAuth not configured for this profile');
+      return;
+    }
+
+    try {
+      res.setHeader('Cache-Control', 'no-store');
+
+      const { response_type, client_id, redirect_uri, scope, state, code_challenge, code_challenge_method } = req.query;
+
+      if (!client_id || typeof client_id !== 'string') {
+        res.status(HTTP_STATUS.BAD_REQUEST).send('Missing client_id');
+        return;
+      }
+
+      if (!response_type || typeof response_type !== 'string') {
+        res.status(HTTP_STATUS.BAD_REQUEST).send('Missing response_type');
+        return;
+      }
+
+      if (response_type !== 'code') {
+        res.status(HTTP_STATUS.BAD_REQUEST).send('Unsupported response_type');
+        return;
+      }
+
+      if (!redirect_uri || typeof redirect_uri !== 'string') {
+        res.status(HTTP_STATUS.BAD_REQUEST).send('Missing redirect_uri');
+        return;
+      }
+
+      await profileState.oauthProvider.ensureEndpointsInitialized();
+      const client = await profileState.oauthProvider.clientsStore.getClient(client_id);
+      if (!client) {
+        res.status(HTTP_STATUS.BAD_REQUEST).send('Invalid client_id');
+        return;
+      }
+
+      const scopeStr = (scope as string || '').trim();
+      const params = {
+        responseType: response_type,
+        clientId: client_id,
+        redirectUri: redirect_uri,
+        scope: scopeStr ? scopeStr.split(' ') : [],
+        state: state as string,
+        codeChallenge: code_challenge as string,
+        codeChallengeMethod: code_challenge_method as string,
+        scopes: scopeStr ? scopeStr.split(' ') : [],
+      };
+
+      await profileState.oauthProvider.authorize(client, params, res);
+    } catch (error) {
+      this.logger.error('OAuth authorize error', error instanceof Error ? error : new Error(String(error)));
+      res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).send('OAuth authorization failed');
+    }
+  }
+
+  private async handleOAuthToken(
+    req: Request,
+    res: Response,
+    profileState: ProfileRuntimeState
+  ): Promise<void> {
+    if (!profileState.oauthProvider) {
+      res.status(HTTP_STATUS.NOT_FOUND).json({ error: 'server_error', error_description: 'OAuth provider not initialized' });
+      return;
+    }
+
+    try {
+      res.setHeader('Cache-Control', 'no-store');
+
+      const { grant_type, code, redirect_uri, client_id, code_verifier, refresh_token } = req.body;
+
+      this.logger.debug('OAuth token request', {
+        profileId: profileState.profileId,
+        grant_type,
+        client_id,
+        has_code: !!code,
+        has_code_verifier: !!code_verifier,
+        redirect_uri,
+      });
+
+      if (grant_type === 'authorization_code') {
+        if (!code) {
+          res.status(HTTP_STATUS.BAD_REQUEST).json({ error: 'invalid_request', error_description: 'Missing code' });
+          return;
+        }
+
+        await profileState.oauthProvider.ensureEndpointsInitialized();
+        const client = await profileState.oauthProvider.clientsStore.getClient(client_id);
+        if (!client) {
+          res.status(HTTP_STATUS.BAD_REQUEST).json({ error: 'invalid_client' });
+          return;
+        }
+
+        const tokens = await profileState.oauthProvider.exchangeAuthorizationCode(
+          client,
+          code,
+          code_verifier,
+          redirect_uri
+        );
+
+        this.storeOAuthTokens(profileState, tokens, client.client_id, client.scope?.split(' ') || []);
+        res.json(tokens);
+        return;
+      }
+
+      if (grant_type === 'refresh_token') {
+        if (!refresh_token) {
+          res.status(HTTP_STATUS.BAD_REQUEST).json({ error: 'invalid_request', error_description: 'Missing refresh_token' });
+          return;
+        }
+
+        await profileState.oauthProvider.ensureEndpointsInitialized();
+        const client = await profileState.oauthProvider.clientsStore.getClient(client_id);
+        if (!client) {
+          res.status(HTTP_STATUS.BAD_REQUEST).json({ error: 'invalid_client' });
+          return;
+        }
+
+        const tokens = await profileState.oauthProvider.exchangeRefreshToken(client, refresh_token);
+        this.storeOAuthTokens(profileState, tokens, client.client_id, client.scope?.split(' ') || []);
+        res.json(tokens);
+        return;
+      }
+
+      this.logger.warn('Unsupported grant type', { grant_type, expected: 'authorization_code or refresh_token' });
+      res.status(HTTP_STATUS.BAD_REQUEST).json({ error: 'unsupported_grant_type' });
+    } catch (error) {
+      this.logger.error('OAuth token exchange error', error instanceof Error ? error : new Error(String(error)));
+      res.status(HTTP_STATUS.BAD_REQUEST).json({
+        error: 'invalid_grant',
+        error_description: 'Token exchange failed',
+      });
+    }
+  }
+
+  private async handleOAuthCallback(
+    req: Request,
+    res: Response,
+    profileState: ProfileRuntimeState
+  ): Promise<void> {
+    if (!profileState.oauthProvider) {
+      res.status(HTTP_STATUS.NOT_FOUND).send('OAuth provider not initialized');
+      return;
+    }
+
+    try {
+      const { code, state, error, error_description } = req.query;
+
+      this.logger.info('OAuth callback received', {
+        profileId: profileState.profileId,
+        hasCode: !!code,
+        hasState: !!state,
+        error: error,
+        errorDescription: error_description,
+      });
+
+      if (error) {
+        const safeError = escapeHtmlSafe(error as string);
+        const safeErrorDesc = escapeHtmlSafe(error_description as string);
+
+        res.status(HTTP_STATUS.BAD_REQUEST).json({
+          error: safeError,
+          error_description: safeErrorDesc || safeError,
+        });
+        return;
+      }
+
+      if (!code || typeof code !== 'string') {
+        res.status(HTTP_STATUS.BAD_REQUEST).send('Missing authorization code');
+        return;
+      }
+
+      await profileState.oauthProvider.handleCallback(req, res);
+    } catch (error) {
+      this.logger.error('OAuth callback error', error instanceof Error ? error : new Error(String(error)));
+      if (!res.headersSent) {
+        res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).send('OAuth callback failed');
+      }
+    }
+  }
+
+  private async handleOAuthAuthorizationServerMetadata(
+    _req: Request,
+    res: Response,
+    profileState: ProfileRuntimeState
+  ): Promise<void> {
+    if (!profileState.oauthProvider) {
+      res.status(HTTP_STATUS.NOT_FOUND).send('OAuth metadata unavailable');
+      return;
+    }
+
+    try {
+      const profileId = profileState.profileId;
+      const issuer = this.getProfileIssuerUrl(profileId);
+
+      res.json({
+        issuer,
+        authorization_endpoint: this.buildProfileUrl(profileId, OAUTH_PATHS.AUTHORIZE),
+        token_endpoint: this.buildProfileUrl(profileId, OAUTH_PATHS.TOKEN),
+        registration_endpoint: this.buildProfileUrl(profileId, OAUTH_PATHS.REGISTER),
+        response_types_supported: ['code'],
+        code_challenge_methods_supported: ['S256'],
+        grant_types_supported: ['authorization_code', 'refresh_token'],
+        scopes_supported: profileState.oauthProvider.scopes || ['api'],
+      });
+    } catch (error) {
+      this.logger.error('OAuth authorization server metadata error', error instanceof Error ? error : new Error(String(error)));
+      res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).send('OAuth metadata failed');
+    }
+  }
+
+  private async handleOAuthRegister(
+    req: Request,
+    res: Response,
+    profileState: ProfileRuntimeState
+  ): Promise<void> {
+    if (!profileState.oauthProvider) {
+      res.status(HTTP_STATUS.NOT_FOUND).json({ error: 'server_error', error_description: 'Registration unavailable' });
+      return;
+    }
+
+    try {
+      const { redirect_uris } = req.body;
+      this.logger.info('Dynamic client registration request', {
+        profileId: profileState.profileId,
+        redirect_uris,
+      });
+
+      const clientId = 'mcp-proxy-client';
+      const clientSecret = 'mcp-proxy-secret';
+
+      const client = {
+        client_id: clientId,
+        client_secret: clientSecret,
+        redirect_uris: redirect_uris || [],
+        grant_types: ['authorization_code', 'refresh_token'],
+        response_types: ['code'],
+        scope: (profileState.oauthProvider.scopes || []).join(' '),
+      };
+
+      await (profileState.oauthProvider.clientsStore as any).registerClient(client);
+
+      res.status(HTTP_STATUS.CREATED).json({
+        client_id: clientId,
+        client_secret: clientSecret,
+        redirect_uris: redirect_uris,
+        grant_types: ['authorization_code', 'refresh_token'],
+        response_types: ['code'],
+        scope: (profileState.oauthProvider.scopes || []).join(' '),
+        token_endpoint_auth_method: 'client_secret_post',
+      });
+    } catch (error) {
+      this.logger.error('Client registration failed', error instanceof Error ? error : new Error(String(error)));
+      res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ error: 'server_error', error_description: 'Registration failed' });
+    }
+  }
+
   /**
    * Handle metrics endpoint
    * 
@@ -1185,11 +1502,14 @@ export class HttpTransport {
    * 
    * Returns: { type: 'bearer' | 'oauth' | 'api-token', token: string, sessionId?: string }
    */
-  private extractAuthToken(req: McpRequest): { type: 'bearer' | 'oauth' | 'api-token' | 'none', token?: string, sessionId?: string } {
+  private extractAuthToken(
+    req: McpRequest,
+    profileState: ProfileRuntimeState
+  ): { type: 'bearer' | 'oauth' | 'api-token' | 'none', token?: string, sessionId?: string } {
     // 1. Check for OAuth session first (highest priority for authenticated sessions)
     const sessionId = req.sessionId || req.headers['mcp-session-id'] as string | undefined;
-    if (sessionId && this.sessions.has(sessionId)) {
-      const session = this.sessions.get(sessionId);
+    if (sessionId && profileState.sessions.has(sessionId)) {
+      const session = profileState.sessions.get(sessionId);
       if (session && session.authToken) {
         return { type: 'oauth', token: session.authToken, sessionId };
       }
@@ -1232,8 +1552,8 @@ export class HttpTransport {
   /**
    * Lazy initialization of ToolFilterService
    */
-  private getToolFilterService(): ToolFilterService {
-    if (!this.toolFilterService) {
+  private getToolFilterService(profileState: ProfileRuntimeState): ToolFilterService {
+    if (!profileState.toolFilterService) {
       const validator = new RegexValidator();
       const compiler = new RegexCompiler(validator);
       const envParser = new EnvConfigParser(compiler);
@@ -1241,20 +1561,20 @@ export class HttpTransport {
       
       // Create OperationDetector for category filtering (if parser available)
       let detector: OperationDetector | undefined;
-      if (this.config.parser) {
+      if (profileState.context.parser) {
         const classifier = new OperationClassifier();
-        const resolver = new OpenAPIOperationResolver(this.config.parser);
+        const resolver = new OpenAPIOperationResolver(profileState.context.parser);
         detector = new OperationDetector(classifier, resolver);
       }
       
-      this.toolFilterService = new ToolFilterService(
+      profileState.toolFilterService = new ToolFilterService(
         envParser,
         headerParser,
         this.logger,
         detector
       );
     }
-    return this.toolFilterService;
+    return profileState.toolFilterService;
   }
 
   /**
@@ -1266,6 +1586,11 @@ export class HttpTransport {
     const startTime = Date.now();
     try {
       this.logger.debug('handlePost called', { method: req.method, path: req.path, sessionId: req.sessionId, accept: req.headers.accept });
+      const profileState = await this.getProfileStateForRequest(req);
+      if (!profileState) {
+        this.respondProfileNotFound(res, req.profileId);
+        return;
+      }
       const sessionId = req.sessionId;
       const body = req.body;
       const filteringHeader = normalizeFilteringHeaderValue(this.getFilteringHeaderValue(req));
@@ -1308,7 +1633,7 @@ export class HttpTransport {
 
       // Validate session (except for initialization)
       if (!isInitialization && sessionId) {
-        const session = this.sessions.get(sessionId);
+        const session = profileState.sessions.get(sessionId);
         if (!session) {
           res.status(HTTP_STATUS.NOT_FOUND).json({ error: 'Not Found', message: 'Session not found or expired' });
           return;
@@ -1325,7 +1650,7 @@ export class HttpTransport {
             );
           }
         }
-        this.updateSessionActivity(sessionId);
+        this.updateSessionActivity(profileState, sessionId);
       } else if (!isInitialization && !sessionId) {
         this.logger.debug('Session validation failed: non-init request without sessionId');
         res.status(HTTP_STATUS.BAD_REQUEST).json({ error: 'Bad Request', message: 'Mcp-Session-Id header required (except for initialization)' });
@@ -1339,7 +1664,7 @@ export class HttpTransport {
       // If only notifications/responses, return 202 Accepted
       if (messageType === 'notification-only' || messageType === 'response-only') {
         if (this.messageHandler) {
-          await this.messageHandler(body);
+          await this.messageHandler(body, undefined, profileState.profileId);
         }
         res.status(HTTP_STATUS.ACCEPTED).send();
         return;
@@ -1356,15 +1681,15 @@ export class HttpTransport {
         let newSessionId: string | undefined;
         if (isInitialization) {
           // Extract and validate auth token from headers
-          const authInfo = this.extractAuthToken(req);
+          const authInfo = this.extractAuthToken(req, profileState);
           this.logger.debug('Auth token extracted', { authType: authInfo?.type, hasToken: !!authInfo?.token });
 
           // If OAuth is configured, require authentication for initialization
           // This ensures clients like Cursor properly handle OAuth flow
-          if (this.oauthProvider && !authInfo.token) {
+          if (profileState.oauthProvider && !authInfo.token) {
             this.logger.debug('OAuth configured but no token provided, triggering OAuth flow');
-            const resourceMetadataUrl = new URL(OAUTH_PATHS.WELL_KNOWN_PROTECTED_RESOURCE, this.getServerUrl()).href;
-            res.setHeader('WWW-Authenticate', `Bearer resource_metadata="${resourceMetadataUrl}", scope="${this.oauthProvider.scopes.join(' ')}"`);
+            const resourceMetadataUrl = this.getOAuthProtectedResourceUrl(profileState.profileId);
+            res.setHeader('WWW-Authenticate', `Bearer resource_metadata="${resourceMetadataUrl}", scope="${profileState.oauthProvider.scopes.join(' ')}"`);
             res.status(HTTP_STATUS.UNAUTHORIZED).json({
               error: 'Unauthorized',
               message: 'Authentication required for OAuth'
@@ -1375,10 +1700,10 @@ export class HttpTransport {
           // Allow initialization without token for non-OAuth scenarios
           
           // Validate token if auth is configured and token is provided
-          if (authInfo && authInfo.token && this.config.authConfigs && this.config.baseUrl) {
+          if (authInfo && authInfo.token && profileState.context.authConfigs && profileState.context.baseUrl) {
             // Find matching auth config based on priority (authConfigs is sorted)
             // For 'bearer' token type, 'oauth' config is also a match
-            const authConfig = this.config.authConfigs.find(c => 
+            const authConfig = profileState.context.authConfigs.find(c =>
                 c.type === authInfo.type || 
                 (authInfo.type === 'bearer' && c.type === 'oauth')
             );
@@ -1389,7 +1714,7 @@ export class HttpTransport {
                 endpoint: authConfig.validation_endpoint,
               });
               
-              const isValid = await this.validateAuthToken(authConfig, authInfo.token, this.config.baseUrl);
+              const isValid = await this.validateAuthToken(authConfig, authInfo.token, profileState.context.baseUrl);
               
               if (!isValid) {
                 this.logger.warn('Auth token validation failed during initialization', {
@@ -1413,7 +1738,7 @@ export class HttpTransport {
           let oauthClientId: string | undefined;
           
           if (authInfo.token && (authInfo.type === 'oauth' || authInfo.type === 'bearer')) {
-            const tokenData = this.oauthTokensByAccessToken.get(authInfo.token);
+            const tokenData = profileState.oauthTokensByAccessToken.get(authInfo.token);
             if (tokenData) {
               refreshToken = tokenData.refreshToken;
               accessTokenExpiresAt = tokenData.expiresAt;
@@ -1432,6 +1757,7 @@ export class HttpTransport {
           }
           
           newSessionId = this.createSession(
+            profileState,
             authInfo.token,
             refreshToken,
             accessTokenExpiresAt,
@@ -1445,21 +1771,21 @@ export class HttpTransport {
         }
 
         this.logger.debug('Calling messageHandler', { body, sessionId: isInitialization ? newSessionId : sessionId });
-        const response = await this.messageHandler(body, isInitialization ? newSessionId : sessionId);
+        const response = await this.messageHandler(body, isInitialization ? newSessionId : sessionId, profileState.profileId);
         this.logger.debug('MessageHandler response', { response });
 
         // Debug: Check OAuth conditions
         this.logger.debug('Checking OAuth conditions', {
           responseError: (response as any).error,
-          hasOAuthProvider: !!this.oauthProvider,
-          oauthProviderType: typeof this.oauthProvider
+          hasOAuthProvider: !!profileState.oauthProvider,
+          oauthProviderType: typeof profileState.oauthProvider
         });
 
 
         // Check if response contains OAuth error and add WWW-Authenticate header
         const responseObj = response as any;
         if (responseObj.error && responseObj.error.data && responseObj.error.data.oauth_required) {
-          const resourceMetadataUrl = new URL(OAUTH_PATHS.WELL_KNOWN_PROTECTED_RESOURCE, this.getServerUrl()).href;
+          const resourceMetadataUrl = this.getOAuthProtectedResourceUrl(profileState.profileId);
           res.setHeader('WWW-Authenticate', `Bearer resource_metadata="${resourceMetadataUrl}", scope="api"`);
           res.status(HTTP_STATUS.UNAUTHORIZED); // Set 401 status for OAuth errors
         }
@@ -1537,6 +1863,11 @@ export class HttpTransport {
   private async handleGet(req: McpRequest, res: Response): Promise<void> {
     const startTime = Date.now();
     try {
+      const profileState = await this.getProfileStateForRequest(req);
+      if (!profileState) {
+        this.respondProfileNotFound(res, req.profileId);
+        return;
+      }
       const sessionId = req.sessionId;
       const lastEventId = req.headers['last-event-id'] as string | undefined;
 
@@ -1553,16 +1884,16 @@ export class HttpTransport {
         return;
       }
 
-      const session = this.sessions.get(sessionId);
+      const session = profileState.sessions.get(sessionId);
       if (!session) {
         res.status(HTTP_STATUS.NOT_FOUND).json({ error: 'Not Found', message: 'Session not found or expired' });
         return;
       }
 
-      this.updateSessionActivity(sessionId);
+      this.updateSessionActivity(profileState, sessionId);
 
       // Start SSE stream
-      this.startSSEStream(res, sessionId, lastEventId);
+      this.startSSEStream(res, sessionId, lastEventId, profileState);
       
       // Record metrics for successful SSE start
       if (this.metrics) {
@@ -1598,6 +1929,12 @@ export class HttpTransport {
   private handleDelete(req: McpRequest, res: Response): void {
     const startTime = Date.now();
     const sessionId = req.sessionId;
+    const profileId = this.getProfileIdForRequest(req);
+
+    if (!profileId) {
+      this.respondProfileNotFound(res, req.profileId);
+      return;
+    }
 
     if (!sessionId) {
       const status = 400;
@@ -1609,7 +1946,13 @@ export class HttpTransport {
       return;
     }
 
-    const session = this.sessions.get(sessionId);
+    const profileState = this.profileStates.get(profileId);
+    if (!profileState) {
+      this.respondProfileNotFound(res, profileId);
+      return;
+    }
+
+    const session = profileState.sessions.get(sessionId);
     if (!session) {
       const status = 404;
       res.status(status).json({ error: 'Not Found', message: 'Session not found' });
@@ -1620,7 +1963,7 @@ export class HttpTransport {
       return;
     }
 
-    this.destroySession(sessionId);
+    this.destroySession(profileState, sessionId);
     const status = 204;
     res.status(status).send();
     
@@ -1663,13 +2006,18 @@ export class HttpTransport {
    * 
    * Why: Allows server to send requests/notifications to client
    */
-  private startSSEStream(res: Response, sessionId: string, lastEventId?: string): void {
+  private startSSEStream(
+    res: Response,
+    sessionId: string,
+    lastEventId: string | undefined,
+    profileState: ProfileRuntimeState
+  ): void {
     res.setHeader('Content-Type', MIME_TYPES.EVENT_STREAM);
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
 
     const streamId = crypto.randomBytes(16).toString('hex');
-    const session = this.sessions.get(sessionId)!;
+    const session = profileState.sessions.get(sessionId)!;
 
     const streamState: SSEStreamState = {
       streamId,
@@ -1731,10 +2079,10 @@ export class HttpTransport {
    * 
    * Why: Server-initiated requests/notifications
    */
-  public sendToClient(sessionId: string, message: unknown): void {
-    const session = this.sessions.get(sessionId);
+  public sendToClient(profileId: string, sessionId: string, message: unknown): void {
+    const session = this.profileStates.get(profileId)?.sessions.get(sessionId);
     if (!session) {
-      this.logger.warn('Cannot send to client: session not found', { sessionId });
+      this.logger.warn('Cannot send to client: session not found', { profileId, sessionId });
       return;
     }
 
@@ -1820,6 +2168,7 @@ export class HttpTransport {
    * Why: Stateful sessions for MCP protocol
    */
   private createSession(
+    profileState: ProfileRuntimeState,
     authToken?: string,
     refreshToken?: string,
     accessTokenExpiresAt?: number,
@@ -1851,8 +2200,9 @@ export class HttpTransport {
       toolFilterRequest,
       toolFilterHeader,
     };
-    this.sessions.set(sessionId, session);
+    profileState.sessions.set(sessionId, session);
     this.logger.info('Session created', { 
+      profileId: profileState.profileId,
       sessionId, 
       hasAuthToken: !!authToken,
       hasRefreshToken: !!refreshToken,
@@ -1870,8 +2220,8 @@ export class HttpTransport {
   /**
    * Update session activity timestamp
    */
-  private updateSessionActivity(sessionId: string): void {
-    const session = this.sessions.get(sessionId);
+  private updateSessionActivity(profileState: ProfileRuntimeState, sessionId: string): void {
+    const session = profileState.sessions.get(sessionId);
     if (session) {
       session.lastActivityAt = Date.now();
     }
@@ -1882,8 +2232,8 @@ export class HttpTransport {
    * 
    * Why: Free memory, close streams
    */
-  private destroySession(sessionId: string): void {
-    const session = this.sessions.get(sessionId);
+  private destroySession(profileState: ProfileRuntimeState, sessionId: string): void {
+    const session = profileState.sessions.get(sessionId);
     if (session) {
       // Close all active SSE streams
       for (const [, streamState] of session.sseStreams) {
@@ -1902,14 +2252,14 @@ export class HttpTransport {
       
       // Clean up OAuth token from map if present
       if (session.authToken) {
-        this.oauthTokensByAccessToken.delete(session.authToken);
+        profileState.oauthTokensByAccessToken.delete(session.authToken);
       }
       
-      this.sessions.delete(sessionId);
-      this.logger.info('Session destroyed', { sessionId });
+      profileState.sessions.delete(sessionId);
+      this.logger.info('Session destroyed', { profileId: profileState.profileId, sessionId });
       
       // Notify session destruction listeners (for cleanup in MCPServer)
-      this.notifySessionDestroyed(sessionId);
+      this.notifySessionDestroyed(profileState.profileId, sessionId);
       
       // Record metrics
       if (this.metrics) {
@@ -1922,24 +2272,24 @@ export class HttpTransport {
   /**
    * Session destruction listeners for cleanup in other components
    */
-  private sessionDestroyedListeners: Array<(sessionId: string) => void> = [];
+  private sessionDestroyedListeners: Array<(profileId: string, sessionId: string) => void> = [];
 
   /**
    * Register listener for session destruction events
    * 
    * Why: Allows MCPServer to cleanup per-session HTTP clients
    */
-  public onSessionDestroyed(listener: (sessionId: string) => void): void {
+  public onSessionDestroyed(listener: (profileId: string, sessionId: string) => void): void {
     this.sessionDestroyedListeners.push(listener);
   }
 
   /**
    * Notify all listeners about session destruction
    */
-  private notifySessionDestroyed(sessionId: string): void {
+  private notifySessionDestroyed(profileId: string, sessionId: string): void {
     for (const listener of this.sessionDestroyedListeners) {
       try {
-        listener(sessionId);
+        listener(profileId, sessionId);
       } catch (error) {
         this.logger.error('Session destroyed listener error', error as Error);
       }
@@ -1952,7 +2302,12 @@ export class HttpTransport {
    * Why: Bridge between /oauth/token endpoint (where we see OAuthTokens) 
    * and session initialization (where we only see access token in Authorization header)
    */
-  private storeOAuthTokens(tokens: OAuthTokens, clientId: string, scopes: string[]): void {
+  private storeOAuthTokens(
+    profileState: ProfileRuntimeState,
+    tokens: OAuthTokens,
+    clientId: string,
+    scopes: string[]
+  ): void {
     if (!tokens.access_token) {
       this.logger.warn('OAuth tokens missing access_token, skipping storage');
       return;
@@ -1962,7 +2317,7 @@ export class HttpTransport {
       ? Date.now() + tokens.expires_in * 1000 
       : undefined;
 
-    this.oauthTokensByAccessToken.set(tokens.access_token, {
+    profileState.oauthTokensByAccessToken.set(tokens.access_token, {
       refreshToken: tokens.refresh_token,
       expiresAt,
       clientId,
@@ -1970,6 +2325,7 @@ export class HttpTransport {
     });
 
     this.logger.debug('Stored OAuth tokens', {
+      profileId: profileState.profileId,
       hasRefreshToken: !!tokens.refresh_token,
       expiresAt,
       clientId,
@@ -1987,32 +2343,36 @@ export class HttpTransport {
    */
   private cleanupExpiredSessions(): void {
     const now = Date.now();
-    const expiredSessions: string[] = [];
+    const expiredSessions: Array<{ profileId: string; sessionId: string }> = [];
     
     // Default OAuth session timeout: 24 hours (or configurable)
     const oauthSessionTimeoutMs = this.config.oauthSessionTimeoutMs 
       ?? (24 * 60 * 60 * 1000); // 24 hours default
 
-    for (const [sessionId, session] of this.sessions) {
-      const age = now - session.lastActivityAt;
-      
-      // OAuth sessions with refresh tokens: use extended timeout or never expire
-      if (session.refreshToken) {
-        // If oauthSessionTimeoutMs is 0 or negative, never expire OAuth sessions
-        if (oauthSessionTimeoutMs > 0 && age > oauthSessionTimeoutMs) {
-          expiredSessions.push(sessionId);
-        }
-        // Otherwise, keep the session alive (unlimited timeout)
-      } else {
-        // Non-OAuth sessions: use standard timeout
-        if (age > this.config.sessionTimeoutMs) {
-          expiredSessions.push(sessionId);
+    for (const profileState of this.profileStates.values()) {
+      for (const [sessionId, session] of profileState.sessions) {
+        const age = now - session.lastActivityAt;
+        
+        // OAuth sessions with refresh tokens: use extended timeout or never expire
+        if (session.refreshToken) {
+          // If oauthSessionTimeoutMs is 0 or negative, never expire OAuth sessions
+          if (oauthSessionTimeoutMs > 0 && age > oauthSessionTimeoutMs) {
+            expiredSessions.push({ profileId: profileState.profileId, sessionId });
+          }
+        } else {
+          // Non-OAuth sessions: use standard timeout
+          if (age > this.config.sessionTimeoutMs) {
+            expiredSessions.push({ profileId: profileState.profileId, sessionId });
+          }
         }
       }
     }
 
-    for (const sessionId of expiredSessions) {
-      this.destroySession(sessionId);
+    for (const entry of expiredSessions) {
+      const state = this.profileStates.get(entry.profileId);
+      if (state) {
+        this.destroySession(state, entry.sessionId);
+      }
     }
 
     if (expiredSessions.length > 0) {
@@ -2026,38 +2386,38 @@ export class HttpTransport {
    * 
    * Why public: Allows MCPServer to securely access session tokens without breaking encapsulation
    */
-  public getSessionToken(sessionId: string): string | undefined {
-    const session = this.sessions.get(sessionId);
+  public getSessionToken(profileId: string, sessionId: string): string | undefined {
+    const session = this.profileStates.get(profileId)?.sessions.get(sessionId);
     return session?.authToken;
   }
 
-  public getSessionFiltering(sessionId: string): Record<string, string[]> | undefined {
-    const session = this.sessions.get(sessionId);
+  public getSessionFiltering(profileId: string, sessionId: string): Record<string, string[]> | undefined {
+    const session = this.profileStates.get(profileId)?.sessions.get(sessionId);
     return session?.filtering;
   }
 
-  public getSessionFilteringHeader(sessionId: string): string | undefined {
-    const session = this.sessions.get(sessionId);
+  public getSessionFilteringHeader(profileId: string, sessionId: string): string | undefined {
+    const session = this.profileStates.get(profileId)?.sessions.get(sessionId);
     return session?.filteringHeader;
   }
 
-  public getSessionToolFilterRequest(sessionId: string): SessionToolFilterRequest | undefined {
-    const session = this.sessions.get(sessionId);
+  public getSessionToolFilterRequest(profileId: string, sessionId: string): SessionToolFilterRequest | undefined {
+    const session = this.profileStates.get(profileId)?.sessions.get(sessionId);
     return session?.toolFilterRequest;
   }
 
-  public getSessionToolFilter(sessionId: string): SessionToolFilter | undefined {
-    const session = this.sessions.get(sessionId);
+  public getSessionToolFilter(profileId: string, sessionId: string): SessionToolFilter | undefined {
+    const session = this.profileStates.get(profileId)?.sessions.get(sessionId);
     return session?.toolFilter;
   }
 
-  public getSessionToolFilterHeader(sessionId: string): string | undefined {
-    const session = this.sessions.get(sessionId);
+  public getSessionToolFilterHeader(profileId: string, sessionId: string): string | undefined {
+    const session = this.profileStates.get(profileId)?.sessions.get(sessionId);
     return session?.toolFilterHeader;
   }
 
-  public setSessionToolFilter(sessionId: string, toolFilter: SessionToolFilter): void {
-    const session = this.sessions.get(sessionId);
+  public setSessionToolFilter(profileId: string, sessionId: string, toolFilter: SessionToolFilter): void {
+    const session = this.profileStates.get(profileId)?.sessions.get(sessionId);
     if (!session) {
       return;
     }
@@ -2110,8 +2470,9 @@ export class HttpTransport {
    * Why: Transparently refresh expired OAuth tokens before making API calls
    * Returns true if token is valid (or was successfully refreshed), false otherwise
    */
-  public async ensureValidSessionToken(sessionId: string): Promise<boolean> {
-    const session = this.sessions.get(sessionId);
+  public async ensureValidSessionToken(profileId: string, sessionId: string): Promise<boolean> {
+    const profileState = this.profileStates.get(profileId);
+    const session = profileState?.sessions.get(sessionId);
     if (!session) {
       return false;
     }
@@ -2128,11 +2489,12 @@ export class HttpTransport {
     // If token is expired or about to expire, refresh it
     if (timeUntilExpiration <= refreshThresholdMs) {
       this.logger.debug('Access token expired or expiring soon, refreshing', {
+        profileId,
         sessionId,
         expiresAt: new Date(session.accessTokenExpiresAt).toISOString(),
         timeUntilExpiration,
       });
-      return await this.refreshAccessToken(sessionId);
+      return await this.refreshAccessToken(profileId, sessionId);
     }
 
     return true;
@@ -2144,14 +2506,16 @@ export class HttpTransport {
    * Why: Automatically renew expired OAuth access tokens without user intervention
    * Returns true on success, false on failure
    */
-  private async refreshAccessToken(sessionId: string): Promise<boolean> {
-    const session = this.sessions.get(sessionId);
-    if (!session || !session.refreshToken || !this.oauthProvider) {
+  private async refreshAccessToken(profileId: string, sessionId: string): Promise<boolean> {
+    const profileState = this.profileStates.get(profileId);
+    const session = profileState?.sessions.get(sessionId);
+    if (!profileState || !session || !session.refreshToken || !profileState.oauthProvider) {
       this.logger.warn('Cannot refresh token: missing session, refreshToken, or OAuth provider', {
+        profileId,
         sessionId,
         hasSession: !!session,
         hasRefreshToken: !!session?.refreshToken,
-        hasOAuthProvider: !!this.oauthProvider,
+        hasOAuthProvider: !!profileState?.oauthProvider,
       });
       return false;
     }
@@ -2161,27 +2525,28 @@ export class HttpTransport {
       // Try to find client by clientId stored in session, or use default client
       let client;
       if (session.oauthClientId) {
-        await this.oauthProvider.ensureEndpointsInitialized();
-        client = await this.oauthProvider.clientsStore.getClient(session.oauthClientId);
+        await profileState.oauthProvider.ensureEndpointsInitialized();
+        client = await profileState.oauthProvider.clientsStore.getClient(session.oauthClientId);
       }
 
       // Fallback to default client from config if session client not found
-      if (!client && this.oauthProvider) {
-        await this.oauthProvider.ensureEndpointsInitialized();
+      if (!client && profileState.oauthProvider) {
+        await profileState.oauthProvider.ensureEndpointsInitialized();
         // Try common client IDs
         const defaultClientIds = ['mcp-proxy-client'];
-        if (this.config.oauthConfig?.client_id) {
-          defaultClientIds.unshift(this.config.oauthConfig.client_id);
+        if (profileState.context.oauthConfig?.client_id) {
+          defaultClientIds.unshift(profileState.context.oauthConfig.client_id);
         }
         
         for (const clientId of defaultClientIds) {
-          client = await this.oauthProvider.clientsStore.getClient(clientId);
+          client = await profileState.oauthProvider.clientsStore.getClient(clientId);
           if (client) break;
         }
       }
 
       if (!client) {
         this.logger.error('Cannot refresh token: OAuth client not found', undefined, {
+          profileId,
           sessionId,
           oauthClientId: session.oauthClientId,
         });
@@ -2189,7 +2554,7 @@ export class HttpTransport {
       }
 
       // Exchange refresh token for new tokens
-      const tokens = await this.oauthProvider.exchangeRefreshToken(
+      const tokens = await profileState.oauthProvider.exchangeRefreshToken(
         client,
         session.refreshToken,
         session.scopes
@@ -2205,11 +2570,12 @@ export class HttpTransport {
 
       // Update token map: remove old token, add new one
       if (oldAccessToken) {
-        this.oauthTokensByAccessToken.delete(oldAccessToken);
+        profileState.oauthTokensByAccessToken.delete(oldAccessToken);
       }
-      this.storeOAuthTokens(tokens, client.client_id, session.scopes || []);
+      this.storeOAuthTokens(profileState, tokens, client.client_id, session.scopes || []);
 
       this.logger.info('Access token refreshed successfully', {
+        profileId,
         sessionId,
         newExpiresAt: session.accessTokenExpiresAt ? new Date(session.accessTokenExpiresAt).toISOString() : undefined,
       });
@@ -2217,6 +2583,7 @@ export class HttpTransport {
       return true;
     } catch (error) {
       this.logger.error('Token refresh failed', error instanceof Error ? error : new Error(String(error)), {
+        profileId,
         sessionId,
       });
       return false;
@@ -2226,51 +2593,59 @@ export class HttpTransport {
   /**
    * Set message handler for processing incoming JSON-RPC messages
    */
-  public setMessageHandler(handler: (message: unknown, sessionId?: string) => Promise<unknown>): void {
+  public setMessageHandler(handler: (message: unknown, sessionId?: string, profileId?: string) => Promise<unknown>): void {
     this.messageHandler = handler;
   }
 
   /**
    * Check if OAuth provider is configured
    */
-  public hasOAuthProvider(): boolean {
-    return this.oauthProvider !== null;
+  public hasOAuthProvider(profileId?: string): boolean {
+    if (!profileId) {
+      const defaultProfileId = this.getDefaultProfileId();
+      if (!defaultProfileId) {
+        return false;
+      }
+      const state = this.profileStates.get(defaultProfileId);
+      return state ? state.oauthProvider !== null : false;
+    }
+    const state = this.profileStates.get(profileId);
+    return state ? state.oauthProvider !== null : false;
   }
 
   /**
    * Get server URL
    */
-  public getServerUrl(): string {
-    // Prefer base URL derived from OAuth redirect URI if available
-    // This ensures consistency with the public address used for OAuth callbacks
-    if (this.oauthProvider?.redirectUri) {
-        try {
-            return new URL(this.oauthProvider.redirectUri).origin;
-        } catch (e) {
-            // Ignore invalid URL format
-        }
-    }
-
-    // Fallback to configured host/port
-    // If configured with 0.0.0.0, this will return http://0.0.0.0:port
-    // which is usually fine for internal communication but not for external clients
-    const protocol = this.config.host.includes('://') ? '' : 'http://';
-    const host = this.config.host.includes('://') ? this.config.host : this.config.host;
-    return `${protocol}${host}:${this.config.port}`;
+  public getServerUrl(profileId?: string): string {
+    return this.getServerOrigin(profileId);
   }
 
   /**
    * Get OAuth authorization URL
    */
-  public getOAuthAuthorizationUrl(): string {
-    return this.oauthProvider?.authorizationEndpoint || '';
+  public getOAuthAuthorizationUrl(profileId?: string): string {
+    if (!profileId) {
+      const defaultProfileId = this.getDefaultProfileId();
+      if (!defaultProfileId) {
+        return '';
+      }
+      return this.profileStates.get(defaultProfileId)?.oauthProvider?.authorizationEndpoint || '';
+    }
+    return this.profileStates.get(profileId)?.oauthProvider?.authorizationEndpoint || '';
   }
 
   /**
    * Get OAuth scopes
    */
-  public getOAuthScopes(): string[] {
-    return this.oauthProvider?.scopes || [];
+  public getOAuthScopes(profileId?: string): string[] {
+    if (!profileId) {
+      const defaultProfileId = this.getDefaultProfileId();
+      if (!defaultProfileId) {
+        return [];
+      }
+      return this.profileStates.get(defaultProfileId)?.oauthProvider?.scopes || [];
+    }
+    return this.profileStates.get(profileId)?.oauthProvider?.scopes || [];
   }
 
   /**
@@ -2355,8 +2730,10 @@ export class HttpTransport {
     }
 
     // Destroy all sessions
-    for (const sessionId of this.sessions.keys()) {
-      this.destroySession(sessionId);
+    for (const profileState of this.profileStates.values()) {
+      for (const sessionId of profileState.sessions.keys()) {
+        this.destroySession(profileState, sessionId);
+      }
     }
 
     if (this.server) {

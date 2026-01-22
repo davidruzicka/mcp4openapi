@@ -1,0 +1,263 @@
+import { describe, it, expect } from 'vitest';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import os from 'node:os';
+
+import { resolveProfileById, resolveProfileFromPath } from './profile-resolver.js';
+
+async function writeJson(filePath: string, data: unknown): Promise<void> {
+  await fs.mkdir(path.dirname(filePath), { recursive: true });
+  await fs.writeFile(filePath, JSON.stringify(data, null, 2), 'utf-8');
+}
+
+async function createTempDir(): Promise<string> {
+  return await fs.mkdtemp(path.join(os.tmpdir(), 'mcp4-profiles-'));
+}
+
+describe('profile-resolver', () => {
+  it('resolves profile by id or alias', async () => {
+    const root = await createTempDir();
+    const profilesDir = path.join(root, 'profiles');
+    const profilePath = path.join(profilesDir, 'gitlab', 'profile.json');
+    const specPath = path.join(profilesDir, 'gitlab', 'openapi.yaml');
+    const ignoredPath = path.join(profilesDir, 'ignored-link');
+
+    await writeJson(profilePath, {
+      profile_name: 'gitlab-dev',
+      profile_id: 'gitlab',
+      profile_aliases: ['gitlab-default'],
+      openapi_spec_path: './openapi.yaml',
+      tools: [],
+    });
+    await fs.writeFile(specPath, 'openapi: 3.1.0', 'utf-8');
+    await fs.writeFile(path.join(profilesDir, '.hidden.json'), '{}', 'utf-8');
+    await fs.writeFile(path.join(profilesDir, 'notes.txt'), 'ignored', 'utf-8');
+    await writeJson(path.join(profilesDir, 'profile.test.json'), { profile_name: 'skip', tools: [] });
+    await writeJson(path.join(profilesDir, 'string.json'), 'not an object');
+    await fs.symlink(specPath, ignoredPath);
+
+    const resolved = await resolveProfileById('gitlab', profilesDir);
+    expect(resolved.profilePath).toBe(profilePath);
+    expect(resolved.specPath).toBe(specPath);
+
+    const resolvedAlias = await resolveProfileById('gitlab-default', profilesDir);
+    expect(resolvedAlias.profilePath).toBe(profilePath);
+  });
+
+  it('ignores non-profile JSON files', async () => {
+    const root = await createTempDir();
+    const profilesDir = path.join(root, 'profiles');
+    const apiPath = path.join(profilesDir, 'youtrack', 'openapi.json');
+
+    await writeJson(apiPath, { openapi: '3.1.0', info: { title: 'API' } });
+
+    await expect(resolveProfileById('youtrack', profilesDir)).rejects.toThrow('Profile not found');
+  });
+
+  it('throws when profile is missing openapi_spec_path', async () => {
+    const root = await createTempDir();
+    const profilesDir = path.join(root, 'profiles');
+    const profilePath = path.join(profilesDir, 'profile.json');
+
+    await writeJson(profilePath, {
+      profile_name: 'missing-spec',
+      profile_id: 'missing',
+      tools: [],
+    });
+
+    await expect(resolveProfileById('missing', profilesDir)).rejects.toThrow('openapi_spec_path');
+  });
+
+  it('throws when alias is ambiguous', async () => {
+    const root = await createTempDir();
+    const profilesDir = path.join(root, 'profiles');
+
+    await writeJson(path.join(profilesDir, 'a', 'profile.json'), {
+      profile_name: 'a',
+      profile_id: 'a',
+      profile_aliases: ['shared'],
+      openapi_spec_path: './openapi.yaml',
+      tools: [],
+    });
+
+    await writeJson(path.join(profilesDir, 'b', 'profile.json'), {
+      profile_name: 'b',
+      profile_id: 'b',
+      profile_aliases: ['shared'],
+      openapi_spec_path: './openapi.yaml',
+      tools: [],
+    });
+
+    await expect(resolveProfileById('shared', profilesDir)).rejects.toThrow('not unique');
+  });
+
+  it('throws when profiles directory is missing', async () => {
+    const missingDir = path.join(os.tmpdir(), `missing-profiles-${Date.now()}`);
+    await expect(resolveProfileById('anything', missingDir)).rejects.toThrow('Profiles directory not found');
+  });
+
+  it('throws when profile JSON is invalid', async () => {
+    const root = await createTempDir();
+    const profilesDir = path.join(root, 'profiles');
+    const profilePath = path.join(profilesDir, 'broken.json');
+    await fs.mkdir(profilesDir, { recursive: true });
+    await fs.writeFile(profilePath, '{', 'utf-8');
+
+    await expect(resolveProfileById('broken', profilesDir)).rejects.toThrow('Failed to parse profile JSON');
+  });
+
+  it('matches profiles by profile_name when profile_id differs', async () => {
+    const root = await createTempDir();
+    const profilesDir = path.join(root, 'profiles');
+    const profilePath = path.join(profilesDir, 'profile.json');
+    const specPath = path.join(profilesDir, 'openapi.yaml');
+
+    await writeJson(profilePath, {
+      profile_name: 'by-name',
+      profile_id: 'by-id',
+      openapi_spec_path: './openapi.yaml',
+      tools: [],
+    });
+    await fs.writeFile(specPath, 'openapi: 3.1.0', 'utf-8');
+
+    const resolved = await resolveProfileById('by-name', profilesDir);
+    expect(resolved.profileId).toBe('by-id');
+    expect(resolved.profileName).toBe('by-name');
+  });
+
+  it('throws when profile file is not a valid profile', async () => {
+    const root = await createTempDir();
+    const profilePath = path.join(root, 'profile.json');
+    await writeJson(profilePath, { profile_name: 'invalid' });
+
+    await expect(resolveProfileFromPath(profilePath)).rejects.toThrow('valid profile');
+  });
+
+  it('falls back to profile_name when profile_id is missing', async () => {
+    const root = await createTempDir();
+    const profilesDir = path.join(root, 'profiles');
+    const profilePath = path.join(profilesDir, 'default.json');
+    const specPath = path.join(profilesDir, 'openapi.yaml');
+
+    await writeJson(profilePath, {
+      profile_name: 'fallback-name',
+      openapi_spec_path: './openapi.yaml',
+      tools: [],
+      profile_aliases: ['alias', 123],
+    });
+    await fs.writeFile(specPath, 'openapi: 3.1.0', 'utf-8');
+
+    const resolved = await resolveProfileById('fallback-name', profilesDir);
+    expect(resolved.profileId).toBe('fallback-name');
+    expect(resolved.profileName).toBe('fallback-name');
+  });
+
+  it('resolves relative profilesDir paths', async () => {
+    const root = await createTempDir();
+    const profilesDir = path.join(root, 'profiles');
+    const profilePath = path.join(profilesDir, 'profile.json');
+    const specPath = path.join(profilesDir, 'openapi.yaml');
+
+    await writeJson(profilePath, {
+      profile_name: 'relative-dir',
+      profile_id: 'relative',
+      openapi_spec_path: './openapi.yaml',
+      tools: [],
+    });
+    await fs.writeFile(specPath, 'openapi: 3.1.0', 'utf-8');
+
+    const relativeDir = path.relative(process.cwd(), profilesDir);
+    const resolved = await resolveProfileById('relative', relativeDir);
+    expect(resolved.profilePath).toBe(profilePath);
+  });
+
+  it('uses default profiles directory when profilesDir is empty', async () => {
+    const resolved = await resolveProfileById('gitlab');
+    expect(resolved.profileId).toBe('gitlab');
+  });
+
+  it('resolves absolute openapi_spec_path values', async () => {
+    const root = await createTempDir();
+    const profilesDir = path.join(root, 'profiles');
+    const profilePath = path.join(profilesDir, 'profile.json');
+    const specPath = path.join(profilesDir, 'openapi.yaml');
+
+    await writeJson(profilePath, {
+      profile_name: 'absolute-spec',
+      profile_id: 'absolute',
+      openapi_spec_path: specPath,
+      tools: [],
+    });
+    await fs.writeFile(specPath, 'openapi: 3.1.0', 'utf-8');
+
+    const resolved = await resolveProfileById('absolute', profilesDir);
+    expect(resolved.specPath).toBe(specPath);
+  });
+
+  it('resolves relative profile paths via resolveProfileFromPath', async () => {
+    const root = await createTempDir();
+    const profilePath = path.join(root, 'profile.json');
+    const specPath = path.join(root, 'openapi.yaml');
+
+    await writeJson(profilePath, {
+      profile_name: 'relative-profile',
+      profile_id: 'relative-profile',
+      openapi_spec_path: './openapi.yaml',
+      tools: [],
+    });
+    await fs.writeFile(specPath, 'openapi: 3.1.0', 'utf-8');
+
+    const relativePath = path.relative(process.cwd(), profilePath);
+    const resolved = await resolveProfileFromPath(relativePath);
+    expect(resolved.profilePath).toBe(profilePath);
+  });
+
+  it('treats non-http URLs as file paths', async () => {
+    const root = await createTempDir();
+    const profilesDir = path.join(root, 'profiles');
+    const profilePath = path.join(profilesDir, 'profile.json');
+
+    await writeJson(profilePath, {
+      profile_name: 'non-http-url',
+      profile_id: 'non-http',
+      openapi_spec_path: 'ftp://example.com/openapi.yaml',
+      tools: [],
+    });
+
+    const resolved = await resolveProfileById('non-http', profilesDir);
+    expect(resolved.specPath).toBe(path.resolve(profilesDir, 'ftp://example.com/openapi.yaml'));
+  });
+
+  it('resolves HTTP OpenAPI spec URLs without path normalization', async () => {
+    const root = await createTempDir();
+    const profilesDir = path.join(root, 'profiles');
+    const profilePath = path.join(profilesDir, 'profile.json');
+
+    await writeJson(profilePath, {
+      profile_name: 'remote-spec',
+      profile_id: 'remote',
+      openapi_spec_path: 'https://example.com/openapi.json',
+      tools: [],
+    });
+
+    const resolved = await resolveProfileById('remote', profilesDir);
+    expect(resolved.specPath).toBe('https://example.com/openapi.json');
+  });
+
+  it('resolves profile from explicit path', async () => {
+    const root = await createTempDir();
+    const profilePath = path.join(root, 'profile.json');
+    const specPath = path.join(root, 'openapi.yaml');
+
+    await writeJson(profilePath, {
+      profile_name: 'direct',
+      profile_id: 'direct',
+      openapi_spec_path: './openapi.yaml',
+      tools: [],
+    });
+    await fs.writeFile(specPath, 'openapi: 3.1.0', 'utf-8');
+
+    const resolved = await resolveProfileFromPath(profilePath);
+    expect(resolved.specPath).toBe(specPath);
+  });
+});

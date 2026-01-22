@@ -30,7 +30,7 @@ describeIfListen('HttpTransport Rate Limiting', () => {
     beforeEach(async () => {
       testPort = getNextPort();
       const config: HttpTransportConfig = {
-        host: 'localhost',
+        host: '127.0.0.1',
         port: testPort,
         sessionTimeoutMs: 300000,
         heartbeatEnabled: false,
@@ -56,7 +56,7 @@ describeIfListen('HttpTransport Rate Limiting', () => {
 
       // Make 3 requests (under limit of 5)
       for (let i = 0; i < 3; i++) {
-        const response = await fetch(`http://localhost:${testPort}/health`);
+        const response = await fetch(`http://127.0.0.1:${testPort}/health`);
         responses.push(response);
       }
 
@@ -71,7 +71,7 @@ describeIfListen('HttpTransport Rate Limiting', () => {
 
       // Make 7 requests (over limit of 5)
       for (let i = 0; i < 7; i++) {
-        const response = await fetch(`http://localhost:${testPort}/health`);
+        const response = await fetch(`http://127.0.0.1:${testPort}/health`);
         responses.push(response);
       }
 
@@ -89,7 +89,7 @@ describeIfListen('HttpTransport Rate Limiting', () => {
     });
 
     it('should return rate limit headers', async () => {
-      const response = await fetch(`http://localhost:${testPort}/health`);
+      const response = await fetch(`http://127.0.0.1:${testPort}/health`);
       
       expect(response.headers.has('ratelimit-limit')).toBe(true);
       expect(response.headers.has('ratelimit-remaining')).toBe(true);
@@ -101,7 +101,7 @@ describeIfListen('HttpTransport Rate Limiting', () => {
 
       // Make 6 requests to /health (over limit of 5)
       for (let i = 0; i < 6; i++) {
-        const response = await fetch(`http://localhost:${testPort}/health`);
+        const response = await fetch(`http://127.0.0.1:${testPort}/health`);
         responses.push(response);
       }
 
@@ -121,7 +121,7 @@ describeIfListen('HttpTransport Rate Limiting', () => {
       await transport.stop();
       
       const config: HttpTransportConfig = {
-        host: 'localhost',
+        host: '127.0.0.1',
         port: testPort,
         sessionTimeoutMs: 300000,
         heartbeatEnabled: false,
@@ -141,7 +141,7 @@ describeIfListen('HttpTransport Rate Limiting', () => {
 
       // Make 4 requests to /metrics (over limit of 2)
       for (let i = 0; i < 4; i++) {
-        const response = await fetch(`http://localhost:${testPort}/metrics`);
+        const response = await fetch(`http://127.0.0.1:${testPort}/metrics`);
         responses.push(response);
       }
 
@@ -157,18 +157,18 @@ describeIfListen('HttpTransport Rate Limiting', () => {
     it('should reset rate limit after window expires', async () => {
       // Make 5 requests (hit the limit)
       for (let i = 0; i < 5; i++) {
-        await fetch(`http://localhost:${testPort}/health`);
+        await fetch(`http://127.0.0.1:${testPort}/health`);
       }
 
       // 6th request should be blocked
-      const blockedResponse = await fetch(`http://localhost:${testPort}/health`);
+      const blockedResponse = await fetch(`http://127.0.0.1:${testPort}/health`);
       expect(blockedResponse.status).toBe(429);
 
       // Wait for window to reset (1 second + buffer)
       await new Promise(resolve => setTimeout(resolve, 1100));
 
       // New request should succeed
-      const newResponse = await fetch(`http://localhost:${testPort}/health`);
+      const newResponse = await fetch(`http://127.0.0.1:${testPort}/health`);
       expect(newResponse.status).toBe(200);
     });
   });
@@ -177,7 +177,7 @@ describeIfListen('HttpTransport Rate Limiting', () => {
     beforeEach(async () => {
       testPort = getNextPort();
       const config: HttpTransportConfig = {
-        host: 'localhost',
+        host: '127.0.0.1',
         port: testPort,
         sessionTimeoutMs: 300000,
         heartbeatEnabled: false,
@@ -202,7 +202,7 @@ describeIfListen('HttpTransport Rate Limiting', () => {
 
       // Make 20 requests (well over normal limit)
       for (let i = 0; i < 20; i++) {
-        const response = await fetch(`http://localhost:${testPort}/health`);
+        const response = await fetch(`http://127.0.0.1:${testPort}/health`);
         responses.push(response);
       }
 

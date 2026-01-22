@@ -8,6 +8,9 @@
 
 export interface Profile {
   profile_name: string;
+  profile_id?: string;
+  profile_aliases?: string[];
+  openapi_spec_path?: string;
   description?: string;
   tools: ToolDefinition[];
   interceptors?: InterceptorConfig;

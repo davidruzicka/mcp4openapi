@@ -51,6 +51,8 @@ export interface HttpTransportConfig {
   heartbeatIntervalMs: number;
   metricsEnabled: boolean;
   metricsPath: string;
+  profileRoutingEnabled?: boolean;
+  defaultProfileId?: string;
   allowedOrigins?: string[]; // Allowed origins/CIDR ranges
   rateLimitEnabled?: boolean; // Enable rate limiting (default: true)
   rateLimitWindowMs?: number; // Rate limit window in ms (default: 60000 = 1 min)
@@ -71,6 +73,19 @@ export interface HttpTransportConfig {
   parser?: OpenAPIParser; // OpenAPI parser for operation resolution (optional, for category filtering)
 }
 
+export interface HttpProfileContext {
+  profileId: string;
+  oauthConfig?: OAuthConfig;
+  authConfigs?: AuthInterceptor[];
+  baseUrl?: string;
+  rateLimitOAuthMax?: number;
+  rateLimitOAuthWindowMs?: number;
+  resourceName?: string;
+  resourceDocumentation?: string;
+  parser?: OpenAPIParser;
+}
+
 export interface McpRequest extends ExpressRequest {
   sessionId?: string;
+  profileId?: string;
 }

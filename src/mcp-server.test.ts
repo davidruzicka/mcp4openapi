@@ -432,8 +432,8 @@ describe('MCPServer', () => {
 
       // Mock httpTransport with OAuth provider
       (server as any).httpTransport = {
-        hasOAuthProvider: () => true,
-        getServerUrl: () => 'http://localhost:3000',
+        hasOAuthProvider: (_profileId?: string) => true,
+        getOAuthProtectedResourceUrl: (_profileId?: string) => 'http://localhost:3000/.well-known/oauth-protected-resource/mcp',
       };
 
       // Mock getAuthTokenFromSession to return null (no token)
@@ -507,6 +507,9 @@ describe('MCPServer', () => {
       };
 
       const serverWithLogger = new MCPServer(testLogger);
+      const specPath = path.join(process.cwd(), 'profiles/gitlab/openapi.yaml');
+      await serverWithLogger.initialize(specPath);
+      (serverWithLogger as any).logger = testLogger;
 
       const prev = process.env.MCP4_ALLOWED_ORIGINS;
       delete process.env.MCP4_ALLOWED_ORIGINS;
@@ -546,9 +549,9 @@ describe('MCPServer', () => {
             onSessionDestroyed() {}
             async start() {}
             async stop() {}
-            hasOAuthProvider() { return false; }
-            getSessionToken() { return undefined; }
-            ensureValidSessionToken() { return Promise.resolve(true); }
+            hasOAuthProvider(_profileId?: string) { return false; }
+            getSessionToken(_profileId: string, _sessionId: string) { return undefined; }
+            ensureValidSessionToken(_profileId: string, _sessionId: string) { return Promise.resolve(true); }
           }
         };
       });
@@ -764,6 +767,10 @@ describe('MCPServer', () => {
       };
 
       const serverWithLogger = new MCPServer(testLogger);
+      const specPath = path.join(process.cwd(), 'profiles/gitlab/openapi.yaml');
+      await serverWithLogger.initialize(specPath);
+      const startSpy = vi.spyOn(HttpTransport.prototype, 'start').mockResolvedValue(undefined as any);
+      const stopSpy = vi.spyOn(HttpTransport.prototype, 'stop').mockResolvedValue(undefined as any);
       await serverWithLogger.runHttp('127.0.0.1', 0);
       try {
         const token = await (serverWithLogger as any).getAuthTokenFromSession('');
@@ -771,6 +778,8 @@ describe('MCPServer', () => {
         expect(warns.find(m => m.includes('Session token validation/refresh failed'))).toBeUndefined();
       } finally {
         await serverWithLogger.stop();
+        startSpy.mockRestore();
+        stopSpy.mockRestore();
       }
     });
   });
@@ -792,9 +801,14 @@ describe('MCPServer', () => {
       };
 
       const server = new MCPServer(testLogger);
+      (server as any).profile = {
+        profile_name: 'test',
+        tools: [],
+        interceptors: {},
+      };
       (server as any).httpTransport = {
-        ensureValidSessionToken: async () => false,
-        getSessionToken: () => 'still-returned-token',
+        ensureValidSessionToken: async (_profileId: string, _sessionId: string) => false,
+        getSessionToken: (_profileId: string, _sessionId: string) => 'still-returned-token',
       };
 
       const token = await (server as any).getAuthTokenFromSession('session-1');
@@ -1111,8 +1125,8 @@ describe('MCPServer', () => {
         generateTool: (toolDef: any) => ({ name: toolDef.name }),
       };
       (localServer as any).httpTransport = {
-        hasOAuthProvider: () => false,
-        getSessionToolFilter: () => ({
+        hasOAuthProvider: (_profileId?: string) => false,
+        getSessionToolFilter: (_profileId: string, _sessionId: string) => ({
           allowedToolNames: new Set(['allowed']),
           reasons: new Map(),
           patterns: { allow: [] },
@@ -1149,12 +1163,12 @@ describe('MCPServer', () => {
       const sessionFilters = new Map<string, any>();
       const request = parseSessionToolFilterHeader('regex:read_.*');
       (localServer as any).httpTransport = {
-        hasOAuthProvider: () => false,
-        getSessionToolFilterRequest: () => request,
-        setSessionToolFilter: (sessionId: string, filter: any) => {
+        hasOAuthProvider: (_profileId?: string) => false,
+        getSessionToolFilterRequest: (_profileId: string, _sessionId: string) => request,
+        setSessionToolFilter: (_profileId: string, sessionId: string, filter: any) => {
           sessionFilters.set(sessionId, filter);
         },
-        getSessionToolFilter: (sessionId: string) => sessionFilters.get(sessionId),
+        getSessionToolFilter: (_profileId: string, sessionId: string) => sessionFilters.get(sessionId),
       };
 
       (localServer as any).handleInitialize(
@@ -1183,14 +1197,14 @@ describe('MCPServer', () => {
       };
       (localServer as any).executeSimpleTool = vi.fn().mockResolvedValue({ ok: true });
       (localServer as any).httpTransport = {
-        hasOAuthProvider: () => false,
-        getSessionToolFilter: () => ({
+        hasOAuthProvider: (_profileId?: string) => false,
+        getSessionToolFilter: (_profileId: string, _sessionId: string) => ({
           allowedToolNames: new Set(['allowed']),
           reasons: new Map([['blocked', ['session_allow_list:allowed']]]),
           patterns: { allow: [] },
           normalizedHeader: 'allowed',
         }),
-        getSessionFiltering: () => undefined,
+        getSessionFiltering: (_profileId: string, _sessionId: string) => undefined,
       };
 
       const response = await localServer.callToolRpc('blocked', {}, 'session-1', '1') as any;
@@ -1211,14 +1225,14 @@ describe('MCPServer', () => {
       };
       (localServer as any).executeSimpleTool = vi.fn().mockResolvedValue({ ok: true });
       (localServer as any).httpTransport = {
-        hasOAuthProvider: () => false,
-        getSessionToolFilter: () => ({
+        hasOAuthProvider: (_profileId?: string) => false,
+        getSessionToolFilter: (_profileId: string, _sessionId: string) => ({
           allowedToolNames: new Set(['allowed']),
           reasons: new Map(),
           patterns: { allow: [] },
           normalizedHeader: 'allowed',
         }),
-        getSessionFiltering: () => undefined,
+        getSessionFiltering: (_profileId: string, _sessionId: string) => undefined,
       };
 
       const response = await localServer.callToolRpc('allowed', {}, 'session-1', '1') as any;
@@ -1241,8 +1255,8 @@ describe('MCPServer', () => {
 
       const request = parseSessionToolFilterHeader('alpha, beta');
       (localServer as any).httpTransport = {
-        hasOAuthProvider: () => false,
-        getSessionToolFilterRequest: () => request,
+        hasOAuthProvider: (_profileId?: string) => false,
+        getSessionToolFilterRequest: (_profileId: string, _sessionId: string) => request,
         setSessionToolFilter: vi.fn(),
       };
 
@@ -1267,8 +1281,8 @@ describe('MCPServer', () => {
 
       const request = parseSessionToolFilterHeader('');
       (localServer as any).httpTransport = {
-        hasOAuthProvider: () => false,
-        getSessionToolFilterRequest: () => request,
+        hasOAuthProvider: (_profileId?: string) => false,
+        getSessionToolFilterRequest: (_profileId: string, _sessionId: string) => request,
         setSessionToolFilter: vi.fn(),
       };
 
@@ -1294,8 +1308,8 @@ describe('MCPServer', () => {
 
       const request = parseSessionToolFilterHeader('regex:does_not_exist');
       (localServer as any).httpTransport = {
-        hasOAuthProvider: () => false,
-        getSessionToolFilterRequest: () => request,
+        hasOAuthProvider: (_profileId?: string) => false,
+        getSessionToolFilterRequest: (_profileId: string, _sessionId: string) => request,
         setSessionToolFilter: vi.fn(),
       };
 
@@ -1320,8 +1334,8 @@ describe('MCPServer', () => {
         interceptors: {},
       };
       (localServer as any).httpTransport = {
-        hasOAuthProvider: () => false,
-        getSessionFiltering: () => undefined,
+        hasOAuthProvider: (_profileId?: string) => false,
+        getSessionFiltering: (_profileId: string, _sessionId: string) => undefined,
       };
 
       const response = await localServer.callToolRpc('missing', {}, 'session-1', '1') as any;
@@ -1351,8 +1365,8 @@ describe('MCPServer', () => {
         const sessionFilters = new Map<string, any>();
         const request = parseSessionToolFilterHeader('tool_b, tool_c, tool_d');
         (localServer as any).httpTransport = {
-          getSessionToolFilterRequest: () => request,
-          setSessionToolFilter: (sessionId: string, filter: any) => {
+          getSessionToolFilterRequest: (_profileId: string, _sessionId: string) => request,
+          setSessionToolFilter: (_profileId: string, sessionId: string, filter: any) => {
             sessionFilters.set(sessionId, filter);
           },
         };
@@ -1499,8 +1513,8 @@ describe('MCPServer', () => {
     it('returns OAuth-required error for tools/list when OAuth is enabled and session has no token', async () => {
       const server = new MCPServer();
       (server as any).httpTransport = {
-        hasOAuthProvider: () => true,
-        getServerUrl: () => 'http://127.0.0.1:9999',
+        hasOAuthProvider: (_profileId?: string) => true,
+        getOAuthProtectedResourceUrl: (_profileId?: string) => 'http://127.0.0.1:9999/.well-known/oauth-protected-resource/mcp',
       };
       (server as any).getAuthTokenFromSession = async () => undefined;
 
@@ -1551,8 +1565,8 @@ describe('MCPServer', () => {
       const logger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
       const server = new MCPServer(logger as any);
       (server as any).httpClientFactory = { cleanupSessionClient: () => true };
-      (server as any).cleanupSessionClient('session-1');
-      expect(logger.info).toHaveBeenCalledWith('Cleaned up session HTTP client', { sessionId: 'session-1' });
+      (server as any).cleanupSessionClient('default', 'session-1');
+      expect(logger.info).toHaveBeenCalledWith('Cleaned up session HTTP client', { profileId: 'default', sessionId: 'session-1' });
     });
 
     it('CallTool request handler returns a user-friendly error when server is not initialized', async () => {
@@ -1594,9 +1608,9 @@ describe('MCPServer', () => {
 
       const sessionFilters = new Map<string, any>();
       (localServer as any).httpTransport = {
-        getSessionToolFilterRequest: (sessionId: string) =>
+        getSessionToolFilterRequest: (_profileId: string, sessionId: string) =>
           sessionId === 'no-rules' ? noRulesRequest : allFilteredRequest,
-        setSessionToolFilter: (sessionId: string, filter: any) => {
+        setSessionToolFilter: (_profileId: string, sessionId: string, filter: any) => {
           sessionFilters.set(sessionId, filter);
         },
       };
@@ -2263,8 +2277,8 @@ describe('MCPServer', () => {
       
       // Mock httpTransport with OAuth
       (server as any).httpTransport = {
-        hasOAuthProvider: () => true,
-        getServerUrl: () => 'https://example.com',
+        hasOAuthProvider: (_profileId?: string) => true,
+        getOAuthProtectedResourceUrl: (_profileId?: string) => 'https://example.com/.well-known/oauth-protected-resource/mcp',
       };
       
       // Mock getAuthTokenFromSession to return undefined
@@ -2343,8 +2357,8 @@ describe('MCPServer', () => {
       
       // Mock httpTransport with OAuth
       (server as any).httpTransport = {
-        hasOAuthProvider: () => true,
-        getServerUrl: () => 'https://example.com',
+        hasOAuthProvider: (_profileId?: string) => true,
+        getOAuthProtectedResourceUrl: (_profileId?: string) => 'https://example.com/.well-known/oauth-protected-resource/mcp',
       };
       
       // Mock getAuthTokenFromSession to return undefined

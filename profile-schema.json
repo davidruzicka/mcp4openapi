@@ -11,6 +11,24 @@
       "description": "Unique identifier for this profile",
       "examples": ["gitlab-developer", "github-readonly", "custom-api"]
     },
+    "profile_id": {
+      "type": "string",
+      "description": "Short ID used for selecting a profile via MCP4_PROFILE or --profile",
+      "examples": ["gitlab", "semgrep", "youtrack"]
+    },
+    "profile_aliases": {
+      "type": "array",
+      "description": "Alternate IDs that can be used to select this profile via MCP4_PROFILE or --profile",
+      "items": {
+        "type": "string"
+      },
+      "examples": [["gitlab-developer", "gitlab-default"]]
+    },
+    "openapi_spec_path": {
+      "type": "string",
+      "description": "OpenAPI spec path used when launching by profile without MCP4_OPENAPI_SPEC_PATH",
+      "examples": ["./openapi.yaml", "../specs/openapi.json"]
+    },
     "description": {
       "type": "string",
       "description": "Human-readable description of what this profile provides"

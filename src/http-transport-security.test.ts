@@ -7,6 +7,7 @@ import type { McpRequest } from './types/http-transport.js';
 import { HttpTransport } from './http-transport.js';
 import { ConsoleLogger } from './logger.js';
 import { AuthenticationError, AuthorizationError, RateLimitError, ValidationError } from './errors.js';
+import { CAN_LISTEN } from './testing/listen-support.js';
 
 function createTransport(config?: Partial<any>) {
   return new HttpTransport(
@@ -22,6 +23,18 @@ function createTransport(config?: Partial<any>) {
     } as any,
     new ConsoleLogger()
   );
+}
+
+function createProfileState(transport: any, profileId: string = 'default') {
+  const state = {
+    profileId,
+    context: { profileId },
+    oauthProvider: null,
+    oauthTokensByAccessToken: new Map(),
+    sessions: new Map(),
+  };
+  transport.profileStates.set(profileId, state);
+  return state;
 }
 
 function getExpressRouteHandler(app: any, method: string, path: string): any {
@@ -113,7 +126,7 @@ function createMockSseResponse() {
 }
 
 describe('HttpTransport security behavior (no listen)', () => {
-  it('checks for security headers using supertest', async () => {
+  (CAN_LISTEN ? it : it.skip)('checks for security headers using supertest', async () => {
     const transport = createTransport();
     const app = (transport as any).app;
 
@@ -474,7 +487,7 @@ describe('HttpTransport security behavior (no listen)', () => {
       new ConsoleLogger()
     );
 
-    (transport as any).oauthProvider = {
+    createProfileState(transport as any).oauthProvider = {
       ensureEndpointsInitialized: async () => {},
       clientsStore: { getClient: async () => undefined },
       authorize: async () => {},
@@ -520,7 +533,7 @@ describe('HttpTransport security behavior (no listen)', () => {
     );
 
     const authorize = vi.fn(async (..._args: any[]) => {});
-    (transport as any).oauthProvider = {
+    createProfileState(transport as any).oauthProvider = {
       ensureEndpointsInitialized: async () => {},
       clientsStore: { getClient: async () => ({ client_id: 'test-client', scope: 'read write' }) },
       authorize,
@@ -575,7 +588,7 @@ describe('HttpTransport security behavior (no listen)', () => {
       new ConsoleLogger()
     );
 
-    (transport as any).oauthProvider = null;
+    createProfileState(transport as any).oauthProvider = null;
 
     const app = (transport as any).app;
     const handler = getExpressRouteHandler(app, 'get', '/oauth/authorize');
@@ -583,8 +596,8 @@ describe('HttpTransport security behavior (no listen)', () => {
     const res = createMockResponse();
     await handler(req, res);
 
-    expect(res.statusCode).toBe(500);
-    expect(String(res.body)).toContain('OAuth provider not initialized');
+    expect(res.statusCode).toBe(404);
+    expect(String(res.body)).toContain('OAuth not configured for this profile');
 
     await transport.stop();
   });
@@ -609,7 +622,7 @@ describe('HttpTransport security behavior (no listen)', () => {
       new ConsoleLogger()
     );
 
-    (transport as any).oauthProvider = {
+    createProfileState(transport as any).oauthProvider = {
       ensureEndpointsInitialized: async () => {},
       clientsStore: { getClient: async () => ({ client_id: 'test-client' }) },
       authorize: async () => {
@@ -745,7 +758,7 @@ describe('HttpTransport security behavior (no listen)', () => {
       new ConsoleLogger()
     );
 
-    (transport as any).oauthProvider = {
+    createProfileState(transport as any).oauthProvider = {
       ensureEndpointsInitialized: async () => {},
       clientsStore: { getClient: async () => undefined },
       exchangeAuthorizationCode: async () => ({}),
@@ -783,7 +796,7 @@ describe('HttpTransport security behavior (no listen)', () => {
       new ConsoleLogger()
     );
 
-    (transport as any).oauthProvider = null;
+    createProfileState(transport as any).oauthProvider = null;
 
     const app = (transport as any).app;
     const handler = getExpressRouteHandler(app, 'post', '/oauth/token');
@@ -791,7 +804,7 @@ describe('HttpTransport security behavior (no listen)', () => {
     const res = createMockResponse();
     await handler(req, res);
 
-    expect(res.statusCode).toBe(500);
+    expect(res.statusCode).toBe(404);
     expect(res.body).toMatchObject({ error: 'server_error' });
 
     await transport.stop();
@@ -818,7 +831,7 @@ describe('HttpTransport security behavior (no listen)', () => {
     );
 
     const tokens = { access_token: 'access', token_type: 'Bearer', expires_in: 3600 };
-    (transport as any).oauthProvider = {
+    createProfileState(transport as any).oauthProvider = {
       ensureEndpointsInitialized: async () => {},
       clientsStore: { getClient: async () => ({ client_id: 'test-client', scope: 'read' }) },
       exchangeAuthorizationCode: async () => tokens,
@@ -856,7 +869,7 @@ describe('HttpTransport security behavior (no listen)', () => {
       new ConsoleLogger()
     );
 
-    (transport as any).oauthProvider = {
+    createProfileState(transport as any).oauthProvider = {
       ensureEndpointsInitialized: async () => {},
       clientsStore: { getClient: async () => ({ client_id: 'test-client', scope: 'read' }) },
       exchangeAuthorizationCode: async () => {
@@ -898,7 +911,7 @@ describe('HttpTransport security behavior (no listen)', () => {
       new ConsoleLogger()
     );
 
-    (transport as any).oauthProvider = {
+    createProfileState(transport as any).oauthProvider = {
       ensureEndpointsInitialized: async () => {},
       clientsStore: { getClient: async () => ({ client_id: 'test-client', scope: 'read' }) },
       exchangeRefreshToken: async () => {
@@ -1008,7 +1021,7 @@ describe('HttpTransport security behavior (no listen)', () => {
       new ConsoleLogger()
     );
 
-    (transport as any).oauthProvider = null;
+    createProfileState(transport as any).oauthProvider = null;
 
     const app = (transport as any).app;
     const handler = getExpressRouteHandler(app, 'get', '/oauth/callback');
@@ -1016,7 +1029,7 @@ describe('HttpTransport security behavior (no listen)', () => {
     const res = createMockResponse();
     await handler(req, res);
 
-    expect(res.statusCode).toBe(500);
+    expect(res.statusCode).toBe(404);
     expect(String(res.body)).toContain('OAuth provider not initialized');
 
     await transport.stop();
@@ -1042,7 +1055,7 @@ describe('HttpTransport security behavior (no listen)', () => {
       new ConsoleLogger()
     );
 
-    (transport as any).oauthProvider = {
+    createProfileState(transport as any).oauthProvider = {
       handleCallback: async () => {
         throw new Error('callback boom');
       },
@@ -1080,7 +1093,7 @@ describe('HttpTransport security behavior (no listen)', () => {
       new ConsoleLogger()
     );
 
-    (transport as any).oauthProvider = {
+    createProfileState(transport as any).oauthProvider = {
       handleCallback: async () => {
         throw new Error('callback boom');
       },
@@ -1120,7 +1133,7 @@ describe('HttpTransport security behavior (no listen)', () => {
     );
 
     const registerClient = vi.fn(async () => {});
-    (transport as any).oauthProvider = {
+    createProfileState(transport as any).oauthProvider = {
       scopes: ['read', 'write'],
       clientsStore: { registerClient },
     };
@@ -1158,7 +1171,12 @@ describe('HttpTransport security behavior (no listen)', () => {
       new ConsoleLogger()
     );
 
-    (transport as any).oauthProvider = null;
+    createProfileState(transport as any).oauthProvider = {
+      scopes: ['read'],
+      clientsStore: {
+        registerClient: async () => {},
+      },
+    };
 
     const app = (transport as any).app;
     const handler = getExpressRouteHandler(app, 'post', '/oauth/register');
@@ -1192,7 +1210,7 @@ describe('HttpTransport security behavior (no listen)', () => {
       new ConsoleLogger()
     );
 
-    (transport as any).oauthProvider = {
+    createProfileState(transport as any).oauthProvider = {
       scopes: ['read'],
       clientsStore: {
         registerClient: async () => {
@@ -1274,7 +1292,8 @@ describe('HttpTransport security behavior (no listen)', () => {
 
   it('extracts OAuth token from session when session exists', async () => {
     const transport = createTransport();
-    (transport as any).sessions.set('s1', {
+    const profileState = createProfileState(transport as any);
+    profileState.sessions.set('s1', {
       id: 's1',
       createdAt: Date.now(),
       lastActivityAt: Date.now(),
@@ -1284,28 +1303,30 @@ describe('HttpTransport security behavior (no listen)', () => {
     });
 
     const req: any = { headers: { }, sessionId: 's1' };
-    const info = (transport as any).extractAuthToken(req);
+    const info = (transport as any).extractAuthToken(req, profileState);
     expect(info).toEqual({ type: 'oauth', token: 'oauth-token', sessionId: 's1' });
     await transport.stop();
   });
 
   it('rejects invalid token formats and header shapes', async () => {
     const transportHeaderLimit = createTransport({ maxTokenLength: 5 });
+    const profileStateHeaderLimit = createProfileState(transportHeaderLimit as any);
     const headerTooLong: any = {
       headers: {
         authorization: `Bearer ${'x'.repeat(100)}`,
       },
     };
-    expect(() => (transportHeaderLimit as any).extractAuthToken(headerTooLong)).toThrow('Authorization header too long');
+    expect(() => (transportHeaderLimit as any).extractAuthToken(headerTooLong, profileStateHeaderLimit)).toThrow('Authorization header too long');
     await transportHeaderLimit.stop();
 
     const transport = createTransport({ maxTokenLength: 100 });
+    const profileState = createProfileState(transport as any);
     const invalidChars: any = {
       headers: {
         authorization: 'Bearer bad*token',
       },
     };
-    expect(() => (transport as any).extractAuthToken(invalidChars)).toThrow('Invalid Authorization token format');
+    expect(() => (transport as any).extractAuthToken(invalidChars, profileState)).toThrow('Invalid Authorization token format');
 
     expect(() => (transport as any).validateToken('', 'Authorization token')).toThrow('Authorization token is empty');
 
@@ -1314,7 +1335,7 @@ describe('HttpTransport security behavior (no listen)', () => {
         'x-api-token': ['a', 'b'],
       },
     };
-    expect(() => (transport as any).extractAuthToken(apiTokenNotString)).toThrow('X-API-Token must be a string');
+    expect(() => (transport as any).extractAuthToken(apiTokenNotString, profileState)).toThrow('X-API-Token must be a string');
 
     await transport.stop();
   });
@@ -1439,10 +1460,11 @@ describe('HttpTransport security behavior (no listen)', () => {
     await (transport as any).handleGet({ method: 'GET', path: '/mcp', url: '/mcp', sessionId: 'missing', headers: { accept: 'text/event-stream', 'mcp-session-id': 'missing' } } as any, res3);
     expect(res3.statusCode).toBe(404);
 
-    const sessionId = (transport as any).createSession(undefined, undefined, undefined, undefined, undefined);
+    const profileState = createProfileState(transport as any);
+    const sessionId = (transport as any).createSession(profileState, undefined, undefined, undefined, undefined, undefined);
     const res4 = createMockSseResponse();
     await (transport as any).handleGet({ method: 'GET', path: '/mcp', url: '/mcp', sessionId, headers: { accept: 'text/event-stream', 'mcp-session-id': sessionId } } as any, res4);
-    expect((transport as any).sessions.get(sessionId).sseStreams.size).toBeGreaterThan(0);
+    expect(profileState.sessions.get(sessionId).sseStreams.size).toBeGreaterThan(0);
 
     await transport.stop();
   });
@@ -1451,12 +1473,13 @@ describe('HttpTransport security behavior (no listen)', () => {
     vi.useFakeTimers();
     try {
       const transport = createTransport({ heartbeatEnabled: true, heartbeatIntervalMs: 10 });
-      const sessionId = (transport as any).createSession(undefined, undefined, undefined, undefined, undefined);
+      const profileState = createProfileState(transport as any);
+      const sessionId = (transport as any).createSession(profileState, undefined, undefined, undefined, undefined, undefined);
       const res = createMockSseResponse();
 
-      (transport as any).startSSEStream(res, sessionId, '1');
+      (transport as any).startSSEStream(res, sessionId, '1', profileState);
 
-      const session = (transport as any).sessions.get(sessionId) as { sseStreams: Map<string, any> };
+      const session = profileState.sessions.get(sessionId) as { sseStreams: Map<string, any> };
       const [streamId, streamState] = Array.from(session.sseStreams.entries())[0];
       streamState.messageQueue.push({ eventId: 1, data: { a: 1 }, timestamp: Date.now() });
       streamState.messageQueue.push({ eventId: 2, data: { a: 2 }, timestamp: Date.now() });
@@ -1472,7 +1495,7 @@ describe('HttpTransport security behavior (no listen)', () => {
       // Message queue trimming to last 100
       streamState.active = true;
       streamState.messageQueue = Array.from({ length: 100 }).map((_, i) => ({ eventId: i, data: i, timestamp: Date.now() }));
-      (transport as any).sendToClient(sessionId, { hello: 'world' });
+      (transport as any).sendToClient('default', sessionId, { hello: 'world' });
       expect(streamState.messageQueue).toHaveLength(100);
 
       // Close stream
@@ -1489,28 +1512,30 @@ describe('HttpTransport security behavior (no listen)', () => {
   it('destroys sessions, notifies listeners, and handles listener errors', async () => {
     const transport = createTransport();
     const destroyed: string[] = [];
-    transport.onSessionDestroyed((sid: string) => destroyed.push(sid));
+    transport.onSessionDestroyed((_profileId: string, sid: string) => destroyed.push(sid));
     transport.onSessionDestroyed(() => {
       throw new Error('listener boom');
     });
 
-    const sessionId = (transport as any).createSession('tok', undefined, undefined, undefined, undefined);
+    const profileState = createProfileState(transport as any);
+    const sessionId = (transport as any).createSession(profileState, 'tok', undefined, undefined, undefined, undefined);
     const res = createMockSseResponse();
-    (transport as any).startSSEStream(res, sessionId);
+    (transport as any).startSSEStream(res, sessionId, undefined, profileState);
 
-    expect((transport as any).sessions.has(sessionId)).toBe(true);
-    (transport as any).destroySession(sessionId);
+    expect(profileState.sessions.has(sessionId)).toBe(true);
+    (transport as any).destroySession(profileState, sessionId);
     expect(destroyed).toContain(sessionId);
-    expect((transport as any).sessions.has(sessionId)).toBe(false);
+    expect(profileState.sessions.has(sessionId)).toBe(false);
 
     await transport.stop();
   });
 
   it('stores OAuth tokens and handles missing access_token', async () => {
     const transport = createTransport();
-    (transport as any).storeOAuthTokens({}, 'client', ['a']);
-    (transport as any).storeOAuthTokens({ access_token: 'a', token_type: 'Bearer', expires_in: 1, refresh_token: 'r' }, 'client', ['a']);
-    expect((transport as any).oauthTokensByAccessToken.has('a')).toBe(true);
+    const profileState = createProfileState(transport as any);
+    (transport as any).storeOAuthTokens(profileState, {}, 'client', ['a']);
+    (transport as any).storeOAuthTokens(profileState, { access_token: 'a', token_type: 'Bearer', expires_in: 1, refresh_token: 'r' }, 'client', ['a']);
+    expect(profileState.oauthTokensByAccessToken.has('a')).toBe(true);
     await transport.stop();
   });
 
@@ -1518,7 +1543,8 @@ describe('HttpTransport security behavior (no listen)', () => {
     const transport = createTransport({ sessionTimeoutMs: 10, oauthSessionTimeoutMs: 0 });
     const now = Date.now();
 
-    (transport as any).sessions.set('oauth-old', {
+    const profileState = createProfileState(transport as any);
+    profileState.sessions.set('oauth-old', {
       id: 'oauth-old',
       createdAt: now,
       lastActivityAt: now - 30,
@@ -1527,7 +1553,7 @@ describe('HttpTransport security behavior (no listen)', () => {
       refreshToken: 'r1',
       messageQueue: [],
     });
-    (transport as any).sessions.set('plain-old', {
+    profileState.sessions.set('plain-old', {
       id: 'plain-old',
       createdAt: now,
       lastActivityAt: now - 30,
@@ -1535,7 +1561,7 @@ describe('HttpTransport security behavior (no listen)', () => {
       authToken: 't2',
       messageQueue: [],
     });
-    (transport as any).sessions.set('oauth-never', {
+    profileState.sessions.set('oauth-never', {
       id: 'oauth-never',
       createdAt: now,
       lastActivityAt: now - 999999,
@@ -1546,9 +1572,9 @@ describe('HttpTransport security behavior (no listen)', () => {
     });
 
     (transport as any).cleanupExpiredSessions();
-    expect((transport as any).sessions.has('plain-old')).toBe(false);
-    expect((transport as any).sessions.has('oauth-old')).toBe(true);
-    expect((transport as any).sessions.has('oauth-never')).toBe(true);
+    expect(profileState.sessions.has('plain-old')).toBe(false);
+    expect(profileState.sessions.has('oauth-old')).toBe(true);
+    expect(profileState.sessions.has('oauth-never')).toBe(true);
 
     await transport.stop();
   });
@@ -1559,21 +1585,22 @@ describe('HttpTransport security behavior (no listen)', () => {
       oauthRefreshThresholdMs: 60 * 1000,
     });
 
-    const sessionId = (transport as any).createSession('old-access', 'old-refresh', Date.now() + 1, ['read'], 'mcp-proxy-client');
-    const session = (transport as any).sessions.get(sessionId);
+    const profileState = createProfileState(transport as any);
+    const sessionId = (transport as any).createSession(profileState, 'old-access', 'old-refresh', Date.now() + 1, ['read'], 'mcp-proxy-client');
+    const session = profileState.sessions.get(sessionId);
     session.accessTokenExpiresAt = Date.now() + 1;
     session.refreshToken = 'old-refresh';
 
-    (transport as any).oauthProvider = {
+    profileState.oauthProvider = {
       ensureEndpointsInitialized: async () => {},
       clientsStore: { getClient: async () => ({ client_id: 'mcp-proxy-client', scope: 'read' }) },
       exchangeRefreshToken: async () => ({ access_token: 'new-access', refresh_token: 'new-refresh', token_type: 'Bearer', expires_in: 3600 }),
     };
 
-    const ok = await transport.ensureValidSessionToken(sessionId);
+    const ok = await transport.ensureValidSessionToken('default', sessionId);
     expect(ok).toBe(true);
-    expect(transport.getSessionToken(sessionId)).toBe('new-access');
-    expect((transport as any).oauthTokensByAccessToken.has('new-access')).toBe(true);
+    expect(transport.getSessionToken('default', sessionId)).toBe('new-access');
+    expect(profileState.oauthTokensByAccessToken.has('new-access')).toBe(true);
 
     await transport.stop();
   });
