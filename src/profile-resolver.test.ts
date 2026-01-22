@@ -68,6 +68,38 @@ describe('profile-resolver', () => {
     await expect(resolveProfileById('missing', profilesDir)).rejects.toThrow('openapi_spec_path');
   });
 
+  it('accepts openapi_spec_path override when profile is missing it', async () => {
+    const root = await createTempDir();
+    const profilesDir = path.join(root, 'profiles');
+    const profilePath = path.join(profilesDir, 'profile.json');
+    const specPath = path.join(root, 'override.yaml');
+
+    await writeJson(profilePath, {
+      profile_name: 'missing-spec',
+      profile_id: 'missing',
+      tools: [],
+    });
+    await fs.writeFile(specPath, 'openapi: 3.1.0', 'utf-8');
+
+    const resolved = await resolveProfileById('missing', profilesDir, { specPathOverride: specPath });
+    expect(resolved.specPath).toBe(specPath);
+  });
+
+  it('uses override when resolving profile by path', async () => {
+    const root = await createTempDir();
+    const profilePath = path.join(root, 'profile.json');
+    const specPath = path.join(root, 'override.yaml');
+
+    await writeJson(profilePath, {
+      profile_name: 'missing-spec',
+      tools: [],
+    });
+    await fs.writeFile(specPath, 'openapi: 3.1.0', 'utf-8');
+
+    const resolved = await resolveProfileFromPath(profilePath, { specPathOverride: specPath });
+    expect(resolved.specPath).toBe(specPath);
+  });
+
   it('throws when alias is ambiguous', async () => {
     const root = await createTempDir();
     const profilesDir = path.join(root, 'profiles');

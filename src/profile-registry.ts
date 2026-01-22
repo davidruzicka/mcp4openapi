@@ -7,15 +7,18 @@ import { resolveProfileById, type ResolvedProfile } from './profile-resolver.js'
 export interface ProfileRegistryOptions {
   profilesDir?: string;
   defaultProfile?: ResolvedProfile;
+  specPathOverride?: string;
 }
 
 export class ProfileRegistry {
   private profilesDir?: string;
   private defaultProfile?: ResolvedProfile;
+  private specPathOverride?: string;
 
   constructor(options: ProfileRegistryOptions) {
     this.profilesDir = options.profilesDir;
     this.defaultProfile = options.defaultProfile;
+    this.specPathOverride = options.specPathOverride;
   }
 
   getDefaultProfile(): ResolvedProfile | undefined {
@@ -29,6 +32,6 @@ export class ProfileRegistry {
       }
     }
 
-    return resolveProfileById(profileId, this.profilesDir);
+    return resolveProfileById(profileId, this.profilesDir, { specPathOverride: this.specPathOverride });
   }
 }
