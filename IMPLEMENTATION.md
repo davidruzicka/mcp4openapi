@@ -158,6 +158,18 @@ tool-filter/
 - Developer profile: read/write, no admin ops
 - Readonly profile: only GET operations
 
+### 5. Multi-Profile Selection and Routing
+
+**Why**: Support multiple profiles in one deployment and enable profile-specific MCP endpoints.
+
+**How**:
+- **CLI profile selection**: `--profile <id>` resolves a profile JSON and OpenAPI spec from a profiles directory.
+- **Profile registry**: `ProfileRegistry` discovers and resolves profiles using `profile_id`, `profile_name`, and `profile_aliases`.
+- **Server manager**: `MCPServerManager` lazily initializes a server per profile and caches instances.
+- **HTTP profile routing**: `/profile/:profileId/mcp` routes requests to the correct server when enabled with `MCP4_HTTP_PROFILE_ROUTING=true`.
+- **Default profile behavior**: `/mcp` remains available only when a default profile is configured (via `MCP4_PROFILE_PATH` or `--profile-path`).
+- **OAuth metadata per profile**: `/.well-known/oauth-authorization-server` and `/.well-known/oauth-protected-resource/mcp` are available under `/profile/:profileId/` when routing is enabled.
+
 ### 5. Conditional Parameter Requirements
 
 **Why**: `badge_id` only needed for get/update/delete, not list/create
@@ -561,4 +573,3 @@ See [TODO.md](./TODO.md) for detailed implementation plans.
 1. Profile field works in tests but not runtime? → Run `npm run generate-schemas`
 2. TypeScript happy but feature broken? → Run `npm run generate-schemas`
 3. JSON validates but field is undefined? → Run `npm run generate-schemas`
-

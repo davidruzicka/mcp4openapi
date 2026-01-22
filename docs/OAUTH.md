@@ -59,6 +59,18 @@ MCP4_HOST=<mcp-server-url>
 MCP4_PORT=<mcp-server-port>
 ```
 
+CLI alternative:
+```bash
+npx mcp4openapi \
+  --oauth-client-id your_application_id_here \
+  --oauth-client-secret your_secret_here \
+  --oauth-redirect-uri http://<mcp-server-url>:<mcp-server-port>/oauth/callback \
+  --api-base-url https://www.gitlab.com/api/v4 \
+  --transport http \
+  --host <mcp-server-url> \
+  --port <mcp-server-port>
+```
+
 **How autodiscovery works:**
 1. Derives issuer from `MCP4_API_BASE_URL` → `https://www.gitlab.com`
 2. Fetches `https://www.gitlab.com/.well-known/oauth-authorization-server` (RFC 8414)
@@ -162,7 +174,6 @@ Use the example profile `profiles/gitlab/developer-profile-oauth.json`:
       "command": "npx",
       "args": ["mcp4openapi"],
       "env": {
-        "MCP4_OPENAPI_SPEC_PATH": "profiles/gitlab/openapi.yaml",
         "MCP4_PROFILE_PATH": "profiles/gitlab/developer-profile-oauth.json",
         "MCP4_TRANSPORT": "http",
         "MCP4_HOST": "<mcp-server-url>",
@@ -210,7 +221,13 @@ When OAuth is enabled, the following endpoints are available:
 ### Discovery Endpoints
 
 - **`/.well-known/oauth-authorization-server`** - OAuth server metadata
-- **`/.well-known/oauth-protected-resource`** - Protected resource metadata
+- **`/.well-known/oauth-protected-resource/mcp`** - Protected resource metadata
+
+When profile routing is enabled, you can select a profile with a `resource` query parameter:
+
+```
+/.well-known/oauth-protected-resource/mcp?resource=http://localhost:3003/profile/gitlab/mcp
+```
 
 ### OAuth Flow Endpoints
 

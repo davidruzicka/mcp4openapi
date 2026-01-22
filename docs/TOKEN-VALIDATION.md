@@ -50,6 +50,13 @@ export MCP4_API_TOKEN=glpat-xxxxxxxxxxxx
 export MCP4_API_BASE_URL=https://gitlab.example.com/api/v4
 ```
 
+CLI alternative:
+```bash
+npx mcp4openapi \
+  --api-token glpat-xxxxxxxxxxxx \
+  --api-base-url https://gitlab.example.com/api/v4
+```
+
 ### Multi-Auth with Validation
 
 ```json
@@ -90,6 +97,18 @@ export MCP4_API_TOKEN=glpat-xxxxxxxxxxxx
 
 # GitLab instance URL
 export MCP4_API_BASE_URL=https://gitlab.example.com/api/v4
+```
+
+CLI alternative:
+```bash
+npx mcp4openapi \
+  --oauth-authorization-url https://gitlab.example.com/oauth/authorize \
+  --oauth-token-url https://gitlab.example.com/oauth/token \
+  --oauth-client-id xxx \
+  --oauth-client-secret yyy \
+  --oauth-redirect-uri https://mcp-gitlab.example.com/oauth/callback \
+  --api-token glpat-xxxxxxxxxxxx \
+  --api-base-url https://gitlab.example.com/api/v4
 ```
 
 **How it works:**
@@ -358,4 +377,3 @@ curl -H "Authorization: Bearer $TOKEN" \
 - [OAuth Guide](./OAUTH.md)
 - [Multi-Auth Guide](./MULTI-AUTH.md)
 - [Profile Guide](./PROFILE-GUIDE.md)
-
