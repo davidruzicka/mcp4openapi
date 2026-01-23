@@ -2529,6 +2529,44 @@ describeIfListen('HttpTransport', () => {
       await routingTransport.stop();
     });
 
+    it('keeps profile prefix for default profile OAuth metadata', async () => {
+      const routingTransport = new HttpTransport(
+        {
+          host: '127.0.0.1',
+          port: 0,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: false,
+          metricsPath: '/metrics',
+          profileRoutingEnabled: true,
+          defaultProfileId: 'default',
+        },
+        logger
+      );
+      routingTransport.setProfileContextProvider(async (id) => ({
+        profileId: id,
+        oauthConfig: {
+          authorization_endpoint: 'https://auth.example.com/oauth/authorize',
+          token_endpoint: 'https://auth.example.com/oauth/token',
+          client_id: 'client',
+          client_secret: 'secret',
+          redirect_uri: 'http://localhost:3003/oauth/callback',
+          scopes: ['api'],
+        },
+      }));
+
+      const routingApp = (routingTransport as any).app;
+      const response = await request(routingApp).get('/profile/default/.well-known/oauth-authorization-server');
+
+      expect(response.status).toBe(200);
+      expect(response.body.issuer).toContain('/profile/default');
+      expect(response.body.authorization_endpoint).toContain('/profile/default/oauth/authorize');
+      expect(response.body.token_endpoint).toContain('/profile/default/oauth/token');
+
+      await routingTransport.stop();
+    });
+
     it('serves profile-scoped protected resource metadata', async () => {
       const routingTransport = new HttpTransport(
         {
