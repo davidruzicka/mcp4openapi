@@ -5,6 +5,7 @@ import os from 'node:os';
 import { ConsoleLogger } from './logger.js';
 import { ProfileRegistry } from './profile-registry.js';
 import type { ResolvedProfile } from './profile-resolver.js';
+import { resolveProfileFromPath } from './profile-resolver.js';
 import { MCPServerManager } from './mcp-server-manager.js';
 import { HttpTransport } from './http-transport.js';
 
@@ -130,6 +131,100 @@ describe('MCPServerManager', () => {
 
     await httpTransport.stop();
   });
+
+  it('routes HTTP requests through manager when profile id is an alias of default profile', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'mcp4-alias-routing-'));
+    const profilePath = path.join(root, 'profile.json');
+    const specPath = path.join(process.cwd(), 'profiles/gitlab/openapi.yaml');
+
+    await fs.writeFile(profilePath, JSON.stringify({
+      profile_name: 'alias-profile',
+      profile_id: 'alias-profile',
+      profile_aliases: ['alias-one'],
+      openapi_spec_path: specPath,
+      tools: [],
+    }), 'utf-8');
+
+    const defaultProfile = await resolveProfileFromPath(profilePath);
+    const logger = new ConsoleLogger();
+    const registry = new ProfileRegistry({ defaultProfile });
+    const httpTransport = new HttpTransport(
+      {
+        host: '127.0.0.1',
+        port: 0,
+        sessionTimeoutMs: 1800000,
+        heartbeatEnabled: false,
+        heartbeatIntervalMs: 30000,
+        metricsEnabled: false,
+        metricsPath: '/metrics',
+        profileRoutingEnabled: true,
+      },
+      logger
+    );
+    const manager = new MCPServerManager(registry, logger, httpTransport);
+
+    httpTransport.setProfileContextProvider(async (id) => manager.getProfileContext(id));
+    httpTransport.setMessageHandler(async (message, sessionId, profileId) => {
+      if (!profileId) {
+        throw new Error('Profile ID missing');
+      }
+      const server = await manager.getServer(profileId);
+      return server.handleHttpMessage(message, sessionId, profileId);
+    });
+
+    const req: any = {
+      method: 'POST',
+      path: '/profile/alias-one/mcp',
+      url: '/profile/alias-one/mcp',
+      headers: {
+        accept: 'application/json',
+        host: 'localhost',
+      },
+      profileId: 'alias-one',
+      body: {
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'initialize',
+        params: {
+          protocolVersion: '2025-03-26',
+          clientInfo: { name: 'test', version: '1.0.0' },
+        },
+      },
+    };
+    const res: any = {
+      statusCode: 200,
+      headers: {} as Record<string, string>,
+      headersSent: false,
+      setHeader: (key: string, value: string) => {
+        res.headers[key.toLowerCase()] = value;
+      },
+      status: (code: number) => {
+        res.statusCode = code;
+        return res;
+      },
+      json: (body: unknown) => {
+        res.body = body;
+        res.headersSent = true;
+        return res;
+      },
+      send: (body?: unknown) => {
+        res.body = body;
+        res.headersSent = true;
+        return res;
+      },
+      end: () => {
+        res.headersSent = true;
+      },
+      get: () => undefined,
+    };
+
+    await (httpTransport as any).handlePost(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body?.result?.serverInfo?.name).toBe('mcp4openapi');
+
+    await httpTransport.stop();
+  });
 });
 
 describe('ProfileRegistry', () => {
@@ -156,6 +251,20 @@ describe('ProfileRegistry', () => {
     const registry = new ProfileRegistry({ defaultProfile });
 
     const resolved = await registry.resolveProfile('Default Profile');
+    expect(resolved).toBe(defaultProfile);
+  });
+
+  it('returns default profile when alias matches', async () => {
+    const defaultProfile: ResolvedProfile = {
+      profileId: 'primary',
+      profileName: 'Default Profile',
+      profileAliases: ['alias-one', 'alias-two'],
+      profilePath: '/tmp/profile.json',
+      specPath: '/tmp/openapi.yaml',
+    };
+    const registry = new ProfileRegistry({ defaultProfile });
+
+    const resolved = await registry.resolveProfile('alias-two');
     expect(resolved).toBe(defaultProfile);
   });
 
