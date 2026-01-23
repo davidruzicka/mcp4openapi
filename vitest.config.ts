@@ -23,6 +23,7 @@ export default defineConfig({
         // Default excludes
         'vitest.config.ts',
         'vitest.e2e.config.ts',
+        'eslint.config.js',
         'node_modules/**',
         '.git/**',
         'dist/**',
