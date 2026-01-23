@@ -51,4 +51,12 @@ describe('cli-config', () => {
     expect(process.env.MCP4_PROFILE).toBe('gitlab');
     expect(process.env.MCP4_PROFILES_DIR).toBe('profiles');
   });
+
+  it('skips CLI args without known MCP4 env mappings', () => {
+    const parsed = parseCliArgs(['--help', '--unknown-flag', 'value', '--profile', 'gitlab']);
+    applyCliEnvOverrides(parsed);
+    expect(process.env.MCP4_HELP).toBeUndefined();
+    expect(process.env.MCP4_UNKNOWN_FLAG).toBeUndefined();
+    expect(process.env.MCP4_PROFILE).toBe('gitlab');
+  });
 });
