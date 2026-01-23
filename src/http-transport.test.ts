@@ -2492,6 +2492,51 @@ describeIfListen('HttpTransport', () => {
       await routingTransport.stop();
     });
 
+    it('passes request profile id to handler when alias is used', async () => {
+      const routingTransport = new HttpTransport(
+        {
+          host: '127.0.0.1',
+          port: 0,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: false,
+          metricsPath: '/metrics',
+          profileRoutingEnabled: true,
+        },
+        logger
+      );
+      routingTransport.setProfileContextProvider(async () => ({
+        profileId: 'canonical',
+      }));
+      const handler = vi.fn(async (message: any, sessionId?: string, profileId?: string) => ({
+        jsonrpc: '2.0',
+        id: message.id,
+        result: { sessionId, profileId },
+      }));
+      routingTransport.setMessageHandler(handler);
+
+      const routingApp = (routingTransport as any).app;
+      const response = await request(routingApp)
+        .post('/profile/alias/mcp')
+        .set('Accept', 'application/json')
+        .send({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'initialize',
+          params: {
+            protocolVersion: '2025-03-26',
+            clientInfo: { name: 'test', version: '1.0.0' },
+          },
+        });
+
+      expect(response.status).toBe(200);
+      const [, , profileId] = handler.mock.calls[0];
+      expect(profileId).toBe('alias');
+
+      await routingTransport.stop();
+    });
+
     it('serves profile-scoped OAuth metadata', async () => {
       const routingTransport = new HttpTransport(
         {
