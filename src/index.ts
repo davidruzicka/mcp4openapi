@@ -10,12 +10,12 @@ import 'dotenv/config';
 import { MCPServer } from './mcp-server.js';
 import { ConsoleLogger, JsonLogger } from './logger.js';
 import { OAUTH_PATHS } from './constants.js';
-import { resolveProfileById, resolveProfileFromPath, type ResolvedProfile } from './profile-resolver.js';
 import { applyCliEnvOverrides, parseCliArgs } from './cli-config.js';
 import { buildHttpTransportBaseConfig } from './http-transport-config.js';
 import { ProfileRegistry } from './profile-registry.js';
 import { MCPServerManager } from './mcp-server-manager.js';
 import { getHttpProfileRoutingErrorMessage } from './startup-validation.js';
+import { resolveStartupProfile } from './startup-profile.js';
 
 /**
  * Fetch OAuth Authorization Server Metadata (RFC 8414)
@@ -158,30 +158,19 @@ async function main() {
     }
   }
 
-  const hasExplicitSpecPath = !!process.env.MCP4_OPENAPI_SPEC_PATH;
-  let specPath = process.env.MCP4_OPENAPI_SPEC_PATH;
-  let profilePath = process.env.MCP4_PROFILE_PATH;
-  let profileId = process.env.MCP4_PROFILE;
   const profilesDir = process.env.MCP4_PROFILES_DIR;
-  let defaultProfile: ResolvedProfile | undefined;
-
-  if (!profilePath && profileId) {
-    const resolved = await resolveProfileById(profileId, profilesDir, { specPathOverride: specPath });
-    defaultProfile = resolved;
-    profilePath = resolved.profilePath;
-    profileId = resolved.profileId;
-    if (!specPath) {
-      specPath = resolved.specPath;
-    }
-  } else if (profilePath) {
-    const resolved = await resolveProfileFromPath(profilePath, { specPathOverride: specPath });
-    defaultProfile = resolved;
-    profilePath = resolved.profilePath;
-    profileId = resolved.profileId;
-    if (!specPath) {
-      specPath = resolved.specPath;
-    }
-  }
+  const {
+    specPath,
+    profilePath,
+    profileId,
+    defaultProfile,
+    hasExplicitSpecPath,
+  } = await resolveStartupProfile({
+    specPathEnv: process.env.MCP4_OPENAPI_SPEC_PATH,
+    profilePath: process.env.MCP4_PROFILE_PATH,
+    profileId: process.env.MCP4_PROFILE,
+    profilesDir,
+  });
 
   const transport = process.env.MCP4_TRANSPORT || 'stdio';
   const httpProfileRoutingEnabled = process.env.MCP4_HTTP_PROFILE_ROUTING === 'true';
@@ -206,10 +195,6 @@ async function main() {
   }
   
   try {
-    if (defaultProfile && specPath) {
-      defaultProfile = { ...defaultProfile, specPath };
-    }
-
     if (transport === 'http' && httpProfileRoutingEnabled) {
       const { host, port } = resolveHttpHostPort();
 
