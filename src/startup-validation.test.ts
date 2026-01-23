@@ -7,6 +7,7 @@ describe('startup validation', () => {
       transport: 'http',
       profileRoutingEnabled: false,
       hasDefaultProfile: false,
+      hasSpecPath: false,
     });
 
     expect(message).toBe(HTTP_PROFILE_ROUTING_ERROR);
@@ -17,6 +18,7 @@ describe('startup validation', () => {
       transport: 'http',
       profileRoutingEnabled: true,
       hasDefaultProfile: false,
+      hasSpecPath: false,
     });
 
     expect(message).toBeNull();
@@ -27,6 +29,18 @@ describe('startup validation', () => {
       transport: 'http',
       profileRoutingEnabled: false,
       hasDefaultProfile: true,
+      hasSpecPath: false,
+    });
+
+    expect(message).toBeNull();
+  });
+
+  it('returns null when spec path is provided without default profile', () => {
+    const message = getHttpProfileRoutingErrorMessage({
+      transport: 'http',
+      profileRoutingEnabled: false,
+      hasDefaultProfile: false,
+      hasSpecPath: true,
     });
 
     expect(message).toBeNull();
