@@ -57,7 +57,7 @@ interface ProfileInterceptors {
   base_url?: {
     value_from_env?: string;
   };
-  auth?: ProfileAuthConfig[];
+  auth?: ProfileAuthConfig | ProfileAuthConfig[];
 }
 
 interface ProfileDefinition {
@@ -108,7 +108,14 @@ function resolveProfileEnv(profilePath: string | undefined): {
 
   const baseUrlEnv = profile?.interceptors?.base_url?.value_from_env;
 
-  for (const auth of profile?.interceptors?.auth ?? []) {
+  const authInterceptors = profile?.interceptors?.auth;
+  const authList = Array.isArray(authInterceptors)
+    ? authInterceptors
+    : authInterceptors
+      ? [authInterceptors]
+      : [];
+
+  for (const auth of authList) {
     if (auth.value_from_env) {
       authEnvVars.push(auth.value_from_env);
     }
