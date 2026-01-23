@@ -28,7 +28,7 @@ import type {
 import { isInitializeRequest } from './jsonrpc-validator.js';
 import { MetricsCollector } from './metrics.js';
 import { ExternalOAuthProvider } from './oauth-provider.js';
-import type { AuthInterceptor } from './types/profile.js';
+import type { AuthInterceptor, OAuthConfig } from './types/profile.js';
 import { HTTP_STATUS, MIME_TYPES, OAUTH_PATHS, TIMEOUTS, OAUTH_RATE_LIMIT } from './constants.js';
 import { escapeHtmlSafe } from './validation-utils.js';
 import type { OAuthTokens } from '@modelcontextprotocol/sdk/shared/auth.js';
@@ -77,6 +77,8 @@ export class HttpTransport {
   private messageHandler: ((message: unknown, sessionId?: string, profileId?: string) => Promise<unknown>) | null = null;
   private profileContextProvider: ((profileId: string) => Promise<HttpProfileContext | null>) | null = null;
   private profileStates: Map<string, ProfileRuntimeState> = new Map();
+  private oauthRedirectHostCache: Map<string, string[]> = new Map();
+  private warnedMissingOAuthRedirectEnvVars: Set<string> = new Set();
 
   constructor(config: HttpTransportConfig, logger: Logger) {
     // Freeze config to prevent runtime mutation of security-critical settings (allowedOrigins, rate limits, etc.)
@@ -214,15 +216,30 @@ export class HttpTransport {
 
       // Validate Origin header
       // We do not skip this check for localhost, as requests to localhost can still be CSRF targets
-      if (origin && !this.isAllowedOrigin(origin)) {
-        this.logger.warn('Rejected request from disallowed origin', { origin, ip: req.ip });
-        return res.status(HTTP_STATUS.FORBIDDEN).json({
-          error: 'Forbidden',
-          message: 'Origin not allowed'
-        });
+      if (!origin) {
+        next();
+        return;
       }
 
-      next();
+      this.isAllowedOriginForRequest(origin, req)
+        .then((allowed) => {
+          if (!allowed) {
+            this.logger.warn('Rejected request from disallowed origin', { origin, ip: req.ip });
+            res.status(HTTP_STATUS.FORBIDDEN).json({
+              error: 'Forbidden',
+              message: 'Origin not allowed'
+            });
+            return;
+          }
+          next();
+        })
+        .catch((error) => {
+          this.logger.error('Origin validation failed', error instanceof Error ? error : new Error(String(error)));
+          res.status(HTTP_STATUS.FORBIDDEN).json({
+            error: 'Forbidden',
+            message: 'Origin not allowed'
+          });
+        });
     });
 
     // Extract session ID from header
@@ -369,9 +386,9 @@ export class HttpTransport {
         return true;
       }
 
-      // Allow OAuth redirect URI hosts for initialized profiles
-      for (const redirectHost of this.getOAuthRedirectHosts()) {
-        if (hostname === redirectHost) {
+      // Allow OAuth redirect URI hosts (initialized + cached + configured)
+      for (const redirectHost of this.getOAuthRedirectHostPatterns()) {
+        if (this.matchOrigin(hostname, redirectHost)) {
           return true;
         }
       }
@@ -391,20 +408,157 @@ export class HttpTransport {
     }
   }
 
-  private getOAuthRedirectHosts(): string[] {
+  private getOAuthRedirectHostPatterns(): string[] {
     const hosts = new Set<string>();
+    const defaultProfileId = this.getDefaultProfileId() ?? 'default';
+
     for (const state of this.profileStates.values()) {
-      if (!state.oauthProvider?.redirectUri) {
+      const redirectUri = state.oauthProvider?.redirectUri;
+      if (!redirectUri) {
         continue;
       }
       try {
-        const redirectUrl = new URL(state.oauthProvider.redirectUri);
+        const redirectUrl = new URL(redirectUri);
         hosts.add(redirectUrl.hostname);
       } catch {
         // Ignore invalid URL
       }
     }
+
+    if (this.config.oauthConfig) {
+      for (const pattern of this.extractRedirectHostPatterns(this.config.oauthConfig, defaultProfileId)) {
+        hosts.add(pattern);
+      }
+    }
+
+    for (const patterns of this.oauthRedirectHostCache.values()) {
+      for (const pattern of patterns) {
+        hosts.add(pattern);
+      }
+    }
+
     return Array.from(hosts);
+  }
+
+  private extractRedirectHostPatterns(oauthConfig: OAuthConfig | undefined, profileId: string): string[] {
+    if (!oauthConfig?.redirect_uri) {
+      return [];
+    }
+
+    const resolvedRedirectUri = this.resolveRedirectUriFromEnv(oauthConfig.redirect_uri, profileId);
+    if (!resolvedRedirectUri) {
+      return [];
+    }
+
+    try {
+      const redirectUrl = new URL(resolvedRedirectUri);
+      return [redirectUrl.hostname];
+    } catch {
+      return [];
+    }
+  }
+
+  private resolveRedirectUriFromEnv(value: string, profileId: string): string | undefined {
+    const match = value.match(/^\$\{env:([^}]+)\}$/);
+    if (!match) {
+      return value;
+    }
+
+    const envVar = match[1];
+    const envValue = process.env[envVar];
+    if (!envValue || envValue.trim().length === 0) {
+      const warningKey = `${profileId}:${envVar}`;
+      if (!this.warnedMissingOAuthRedirectEnvVars.has(warningKey)) {
+        this.warnedMissingOAuthRedirectEnvVars.add(warningKey);
+        this.logger.warn('OAuth redirect_uri environment variable is empty', {
+          profileId,
+          envVar,
+        });
+      }
+      return undefined;
+    }
+
+    return envValue;
+  }
+
+  private resolveProfileIdFromPath(pathname: string): string | null {
+    if (!this.config.profileRoutingEnabled) {
+      return null;
+    }
+
+    const match = /^\/profile\/([^/]+)/.exec(pathname);
+    if (!match) {
+      return null;
+    }
+
+    try {
+      return decodeURIComponent(match[1]);
+    } catch {
+      return null;
+    }
+  }
+
+  private resolveProfileIdForOriginCheck(req: Request): string | null {
+    const pathProfileId = this.resolveProfileIdFromPath(req.path);
+    if (pathProfileId) {
+      return pathProfileId;
+    }
+
+    const resource = req.query?.resource;
+    if (typeof resource === 'string') {
+      const profileId = this.resolveProfileIdFromResourceUrl(resource);
+      if (profileId) {
+        return profileId;
+      }
+    }
+
+    return this.getDefaultProfileId() ?? null;
+  }
+
+  private async primeOAuthRedirectHosts(profileId: string): Promise<void> {
+    if (!this.profileContextProvider) {
+      return;
+    }
+
+    if (this.oauthRedirectHostCache.has(profileId)) {
+      return;
+    }
+
+    try {
+      const context = await this.profileContextProvider(profileId);
+      if (!context?.oauthConfig) {
+        this.oauthRedirectHostCache.set(profileId, []);
+        return;
+      }
+      const patterns = this.extractRedirectHostPatterns(context.oauthConfig, profileId);
+      this.oauthRedirectHostCache.set(profileId, patterns);
+    } catch (error) {
+      if (error instanceof ConfigurationError && error.message === 'Profile not found') {
+        return;
+      }
+      this.logger.warn('Failed to preload OAuth redirect hosts', {
+        profileId,
+        error: String(error),
+      });
+    }
+  }
+
+  private async isAllowedOriginForRequest(origin: string, req: Request): Promise<boolean> {
+    if (this.isAllowedOrigin(origin)) {
+      return true;
+    }
+
+    if (!this.config.profileRoutingEnabled) {
+      return false;
+    }
+
+    const profileId = this.resolveProfileIdForOriginCheck(req);
+    if (!profileId) {
+      return false;
+    }
+
+    await this.primeOAuthRedirectHosts(profileId);
+    return this.isAllowedOrigin(origin);
   }
 
   /**
@@ -943,21 +1097,26 @@ export class HttpTransport {
       // Main MCP endpoint - POST for sending messages
       this.app.post(`${pathPrefix}/mcp`, ...middlewares, mcpRateLimiter, this.handlePost.bind(this));
       // CORS preflight handler
-      this.app.options(`${pathPrefix}/mcp`, ...middlewares, (req: Request, res: Response) => {
+      this.app.options(`${pathPrefix}/mcp`, ...middlewares, async (req: Request, res: Response) => {
         const origin = req.headers.origin;
-        // Only send CORS headers for explicitly allowed origins; otherwise reject
-        if (origin && this.isAllowedOrigin(origin)) {
-          // nosemgrep: javascript.express.security.cors-misconfiguration.cors-misconfiguration
-          res.setHeader('Access-Control-Allow-Origin', origin);
-          res.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
-          res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept, Mcp-Session-Id');
-          // We do not allow credentials; prevents cookie-based attacks by default
-          res.setHeader('Access-Control-Allow-Credentials', 'false');
-          res.setHeader('Access-Control-Max-Age', '86400'); // 24 hours cache
-          return res.status(HTTP_STATUS.OK).send();
+        try {
+          // Only send CORS headers for explicitly allowed origins; otherwise reject
+          if (origin && await this.isAllowedOriginForRequest(origin, req)) {
+            // nosemgrep: javascript.express.security.cors-misconfiguration.cors-misconfiguration
+            res.setHeader('Access-Control-Allow-Origin', origin);
+            res.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
+            res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept, Mcp-Session-Id');
+            // We do not allow credentials; prevents cookie-based attacks by default
+            res.setHeader('Access-Control-Allow-Credentials', 'false');
+            res.setHeader('Access-Control-Max-Age', '86400'); // 24 hours cache
+            return res.status(HTTP_STATUS.OK).send();
+          }
+          // Disallowed origin: do not echo origin or emit permissive headers
+          res.status(HTTP_STATUS.FORBIDDEN).json({ error: 'Forbidden', message: 'Origin not allowed' });
+        } catch (error) {
+          this.logger.error('Origin validation failed', error instanceof Error ? error : new Error(String(error)));
+          res.status(HTTP_STATUS.FORBIDDEN).json({ error: 'Forbidden', message: 'Origin not allowed' });
         }
-        // Disallowed origin: do not echo origin or emit permissive headers
-        res.status(HTTP_STATUS.FORBIDDEN).json({ error: 'Forbidden', message: 'Origin not allowed' });
       });
 
       // Main MCP endpoint - GET for SSE streaming

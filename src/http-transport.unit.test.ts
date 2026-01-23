@@ -472,6 +472,30 @@ describe('HttpTransport unit', () => {
       await localTransport.stop();
     });
 
+    it('allows origin matching OAuth redirect_uri from config', async () => {
+      const localTransport = new HttpTransport(
+        {
+          host: '127.0.0.1',
+          port: 0,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: false,
+          metricsPath: '/metrics',
+          oauthConfig: {
+            redirect_uri: 'http://app.example.com/callback',
+          },
+        } as any,
+        logger
+      );
+
+      const isAllowedOrigin = (localTransport as any).isAllowedOrigin.bind(localTransport);
+      expect(isAllowedOrigin('http://app.example.com')).toBe(true);
+      expect(isAllowedOrigin('http://not-app.example.com')).toBe(false);
+
+      await localTransport.stop();
+    });
+
     it('supports CIDR patterns and rejects invalid masks', async () => {
       const localTransport = new HttpTransport(
         {
@@ -627,6 +651,74 @@ describe('HttpTransport unit', () => {
       expect(ipv6ToBigInt('2001:db8:zzzz::1')).toBeNull();
       expect(ipv6ToBigInt('1:2:3:4:5:6:7:8:9')).toBeNull();
 
+      await localTransport.stop();
+    });
+
+    it('allows origin when profile OAuth redirect_uri is set via env before init', async () => {
+      const localTransport = new HttpTransport(
+        {
+          host: '127.0.0.1',
+          port: 0,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: false,
+          metricsPath: '/metrics',
+          profileRoutingEnabled: true,
+        } as any,
+        logger
+      );
+
+      process.env.OAUTH_REDIRECT_URI = 'http://oauth.example.com/callback';
+      localTransport.setProfileContextProvider(async (id) => ({
+        profileId: id,
+        oauthConfig: {
+          redirect_uri: '${env:OAUTH_REDIRECT_URI}',
+        },
+      }));
+
+      const req: any = { path: '/profile/gitlab/oauth/authorize', query: {}, headers: {} };
+      const isAllowed = await (localTransport as any).isAllowedOriginForRequest('http://oauth.example.com', req);
+      expect(isAllowed).toBe(true);
+
+      delete process.env.OAUTH_REDIRECT_URI;
+      await localTransport.stop();
+    });
+
+    it('warns when OAuth redirect_uri env var is empty', async () => {
+      const localTransport = new HttpTransport(
+        {
+          host: '127.0.0.1',
+          port: 0,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: false,
+          metricsPath: '/metrics',
+          profileRoutingEnabled: true,
+        } as any,
+        logger
+      );
+
+      const warnSpy = vi.spyOn(logger, 'warn');
+      process.env.OAUTH_REDIRECT_URI = '';
+      localTransport.setProfileContextProvider(async (id) => ({
+        profileId: id,
+        oauthConfig: {
+          redirect_uri: '${env:OAUTH_REDIRECT_URI}',
+        },
+      }));
+
+      const req: any = { path: '/profile/gitlab/oauth/authorize', query: {}, headers: {} };
+      const isAllowed = await (localTransport as any).isAllowedOriginForRequest('http://oauth.example.com', req);
+      expect(isAllowed).toBe(false);
+      expect(warnSpy).toHaveBeenCalledWith(
+        'OAuth redirect_uri environment variable is empty',
+        expect.objectContaining({ profileId: 'gitlab', envVar: 'OAUTH_REDIRECT_URI' })
+      );
+
+      warnSpy.mockRestore();
+      delete process.env.OAUTH_REDIRECT_URI;
       await localTransport.stop();
     });
   });
