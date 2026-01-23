@@ -1986,6 +1986,11 @@ export class HttpTransport {
    * to avoid forcing users to re-authenticate after periods of inactivity
    */
   private cleanupExpiredSessions(): void {
+    // Also cleanup OAuth provider state (expired tokens, codes, states)
+    if (this.oauthProvider) {
+      this.oauthProvider.cleanup();
+    }
+
     const now = Date.now();
     const expiredSessions: string[] = [];
     

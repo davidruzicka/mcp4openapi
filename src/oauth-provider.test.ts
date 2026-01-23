@@ -1511,4 +1511,79 @@ describe('ExternalOAuthProvider', () => {
     });
   });
 
+  describe('cleanup', () => {
+    beforeEach(() => {
+      provider = new ExternalOAuthProvider(config, mockLogger);
+    });
+
+    it('should remove expired states', () => {
+      // Add expired state (15 mins old)
+      (provider as any).stateStore.set('expired-state', {
+        clientRedirectUri: 'http://localhost:3003/callback',
+        codeChallenge: 'challenge',
+        clientId: 'client',
+        createdAt: Date.now() - 15 * 60 * 1000,
+      });
+
+      // Add fresh state (1 min old)
+      (provider as any).stateStore.set('fresh-state', {
+        clientRedirectUri: 'http://localhost:3003/callback',
+        codeChallenge: 'challenge',
+        clientId: 'client',
+        createdAt: Date.now() - 1 * 60 * 1000,
+      });
+
+      provider.cleanup();
+
+      expect((provider as any).stateStore.has('expired-state')).toBe(false);
+      expect((provider as any).stateStore.has('fresh-state')).toBe(true);
+    });
+
+    it('should remove expired authorization codes', () => {
+      // Add expired code (10 mins old)
+      (provider as any).authorizationCodes.set('expired-code', {
+        client: { client_id: 'client' },
+        params: {},
+        createdAt: Date.now() - 10 * 60 * 1000,
+      });
+
+      // Add fresh code (1 min old)
+      (provider as any).authorizationCodes.set('fresh-code', {
+        client: { client_id: 'client' },
+        params: {},
+        createdAt: Date.now() - 1 * 60 * 1000,
+      });
+
+      provider.cleanup();
+
+      expect((provider as any).authorizationCodes.has('expired-code')).toBe(false);
+      expect((provider as any).authorizationCodes.has('fresh-code')).toBe(true);
+    });
+
+    it('should remove expired access tokens', () => {
+      // Add expired token
+      (provider as any).accessTokens.set('expired-token', {
+        token: 'expired-token',
+        expiresAt: Date.now() - 1000,
+      });
+
+      // Add valid token (future expiration)
+      (provider as any).accessTokens.set('valid-token', {
+        token: 'valid-token',
+        expiresAt: Date.now() + 3600 * 1000,
+      });
+
+      // Add token without expiration (should be kept)
+      (provider as any).accessTokens.set('forever-token', {
+        token: 'forever-token',
+      });
+
+      provider.cleanup();
+
+      expect((provider as any).accessTokens.has('expired-token')).toBe(false);
+      expect((provider as any).accessTokens.has('valid-token')).toBe(true);
+      expect((provider as any).accessTokens.has('forever-token')).toBe(true);
+    });
+  });
+
 });

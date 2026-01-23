@@ -29,7 +29,7 @@ import type {
 import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
 import type { OAuthConfig } from './types/profile.js';
 import type { Logger } from './logger.js';
-import { OAUTH_PATHS } from './constants.js';
+import { OAUTH_PATHS, OAUTH_RATE_LIMIT } from './constants.js';
 import { escapeHtmlSafe } from './validation-utils.js';
 
 /**
@@ -57,6 +57,7 @@ interface AuthorizationState {
   originalState?: string;
   clientId: string;
   scopes?: string[];
+  createdAt: number;
 }
 
 /**
@@ -573,6 +574,7 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
       originalState: params.state,
       clientId: client.client_id,
       scopes: params.scopes,
+      createdAt: Date.now(),
     });
 
     const authUrl = new URL(this.config.authorization_endpoint!);
@@ -1040,6 +1042,38 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
 
     if (!response.ok) {
       this.logger.warn('Token revocation failed', { status: response.status });
+    }
+  }
+
+  /**
+   * Cleanup expired states, codes, and tokens
+   *
+   * Why: Prevent memory leaks from unfinished auth flows
+   */
+  public cleanup(): void {
+    const now = Date.now();
+    const STATE_TTL = OAUTH_RATE_LIMIT.WINDOW_MS; // 10 minutes
+    const CODE_TTL = 5 * 60 * 1000; // 5 minutes
+
+    // Cleanup expired states
+    for (const [key, state] of this.stateStore) {
+      if (now - state.createdAt > STATE_TTL) {
+        this.stateStore.delete(key);
+      }
+    }
+
+    // Cleanup expired authorization codes
+    for (const [key, code] of this.authorizationCodes) {
+      if (now - code.createdAt > CODE_TTL) {
+        this.authorizationCodes.delete(key);
+      }
+    }
+
+    // Cleanup expired access tokens
+    for (const [key, token] of this.accessTokens) {
+      if (token.expiresAt && token.expiresAt < now) {
+        this.accessTokens.delete(key);
+      }
     }
   }
 }
