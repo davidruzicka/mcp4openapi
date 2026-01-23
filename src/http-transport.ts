@@ -662,9 +662,12 @@ export class HttpTransport {
     return `Rate limit exceeded for ${scope}. Max ${maxRequests} requests per ${windowMs / 1000} seconds.`;
   }
 
-  private getProfilePrefix(profileId?: string): string {
+  private getProfilePrefix(profileId?: string, options?: { forceProfilePrefix?: boolean }): string {
     if (!this.config.profileRoutingEnabled) {
       return '';
+    }
+    if (options?.forceProfilePrefix && profileId) {
+      return `/profile/${encodeURIComponent(profileId)}`;
     }
     const defaultProfileId = this.getDefaultProfileId();
     if (!profileId || (defaultProfileId && profileId === defaultProfileId)) {
@@ -673,8 +676,8 @@ export class HttpTransport {
     return `/profile/${encodeURIComponent(profileId)}`;
   }
 
-  private buildProfilePath(profileId: string | undefined, path: string): string {
-    const prefix = this.getProfilePrefix(profileId);
+  private buildProfilePath(profileId: string | undefined, path: string, options?: { forceProfilePrefix?: boolean }): string {
+    const prefix = this.getProfilePrefix(profileId, options);
     const normalizedPath = path.startsWith('/') ? path : `/${path}`;
     return `${prefix}${normalizedPath}`;
   }
@@ -696,8 +699,8 @@ export class HttpTransport {
     return `${protocol}${host}:${this.config.port}`;
   }
 
-  private buildProfileUrl(profileId: string | undefined, path: string): string {
-    return `${this.getServerOrigin(profileId)}${this.buildProfilePath(profileId, path)}`;
+  private buildProfileUrl(profileId: string | undefined, path: string, options?: { forceProfilePrefix?: boolean }): string {
+    return `${this.getServerOrigin(profileId)}${this.buildProfilePath(profileId, path, options)}`;
   }
 
   private normalizeResourcePath(pathname: string): string {
@@ -1035,14 +1038,14 @@ export class HttpTransport {
     });
   }
   
-  private getProfileIssuerUrl(profileId: string): string {
+  private getProfileIssuerUrl(profileId: string, options?: { forceProfilePrefix?: boolean }): string {
     const origin = this.getServerOrigin(profileId);
-    const prefix = this.getProfilePrefix(profileId);
+    const prefix = this.getProfilePrefix(profileId, options);
     return `${origin}${prefix}`;
   }
 
   private async handleOAuthProtectedResource(
-    _req: Request,
+    req: Request,
     res: Response,
     profileState: ProfileRuntimeState
   ): Promise<void> {
@@ -1052,8 +1055,10 @@ export class HttpTransport {
     }
 
     const profileId = profileState.profileId;
-    const serverUrl = new URL(this.buildProfileUrl(profileId, '/mcp'));
-    const issuerUrl = this.getProfileIssuerUrl(profileId);
+    const isProfileScoped = typeof req.params?.profileId === 'string';
+    const urlOptions = isProfileScoped ? { forceProfilePrefix: true } : undefined;
+    const serverUrl = new URL(this.buildProfileUrl(profileId, '/mcp', urlOptions));
+    const issuerUrl = this.getProfileIssuerUrl(profileId, urlOptions);
 
     const metadata: any = {
       resource: serverUrl.href,
@@ -1263,7 +1268,7 @@ export class HttpTransport {
   }
 
   private async handleOAuthAuthorizationServerMetadata(
-    _req: Request,
+    req: Request,
     res: Response,
     profileState: ProfileRuntimeState
   ): Promise<void> {
@@ -1274,13 +1279,15 @@ export class HttpTransport {
 
     try {
       const profileId = profileState.profileId;
-      const issuer = this.getProfileIssuerUrl(profileId);
+      const isProfileScoped = typeof req.params?.profileId === 'string';
+      const urlOptions = isProfileScoped ? { forceProfilePrefix: true } : undefined;
+      const issuer = this.getProfileIssuerUrl(profileId, urlOptions);
 
       res.json({
         issuer,
-        authorization_endpoint: this.buildProfileUrl(profileId, OAUTH_PATHS.AUTHORIZE),
-        token_endpoint: this.buildProfileUrl(profileId, OAUTH_PATHS.TOKEN),
-        registration_endpoint: this.buildProfileUrl(profileId, OAUTH_PATHS.REGISTER),
+        authorization_endpoint: this.buildProfileUrl(profileId, OAUTH_PATHS.AUTHORIZE, urlOptions),
+        token_endpoint: this.buildProfileUrl(profileId, OAUTH_PATHS.TOKEN, urlOptions),
+        registration_endpoint: this.buildProfileUrl(profileId, OAUTH_PATHS.REGISTER, urlOptions),
         response_types_supported: ['code'],
         code_challenge_methods_supported: ['S256'],
         grant_types_supported: ['authorization_code', 'refresh_token'],
