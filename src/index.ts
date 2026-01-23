@@ -158,6 +158,7 @@ async function main() {
     }
   }
 
+  const hasExplicitSpecPath = !!process.env.MCP4_OPENAPI_SPEC_PATH;
   let specPath = process.env.MCP4_OPENAPI_SPEC_PATH;
   let profilePath = process.env.MCP4_PROFILE_PATH;
   let profileId = process.env.MCP4_PROFILE;
@@ -221,7 +222,7 @@ async function main() {
       const registry = new ProfileRegistry({
         profilesDir,
         defaultProfile,
-        specPathOverride: specPath,
+        specPathOverride: hasExplicitSpecPath ? specPath : undefined,
       });
       const manager = new MCPServerManager(registry, logger, httpTransport);
 
