@@ -10,11 +10,15 @@ export function getHttpProfileRoutingErrorMessage(options: {
   transport: string;
   profileRoutingEnabled: boolean;
   hasDefaultProfile: boolean;
+  hasSpecPath: boolean;
 }): string | null {
   if (options.transport !== 'http') {
     return null;
   }
   if (options.hasDefaultProfile) {
+    return null;
+  }
+  if (options.hasSpecPath) {
     return null;
   }
   if (options.profileRoutingEnabled) {

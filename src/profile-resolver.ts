@@ -52,13 +52,12 @@ function normalizeSpecPath(value?: string): string | undefined {
 }
 
 function resolveSpecPath(profilePath: string, specPathRaw?: string, overrideSpecPath?: string): string {
-  const override = normalizeSpecPath(overrideSpecPath);
-  if (override) {
-    return override;
-  }
-
   const trimmed = normalizeSpecPath(specPathRaw);
   if (!trimmed) {
+    const override = normalizeSpecPath(overrideSpecPath);
+    if (override) {
+      return override;
+    }
     throw new ConfigurationError('Profile is missing openapi_spec_path', { profilePath });
   }
   if (isHttpUrl(trimmed)) {

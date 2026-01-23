@@ -186,11 +186,13 @@ async function main() {
   const transport = process.env.MCP4_TRANSPORT || 'stdio';
   const httpProfileRoutingEnabled = process.env.MCP4_HTTP_PROFILE_ROUTING === 'true';
   const hasDefaultProfile = !!defaultProfile;
+  const hasSpecPath = !!specPath;
 
   const routingError = getHttpProfileRoutingErrorMessage({
     transport,
     profileRoutingEnabled: httpProfileRoutingEnabled,
     hasDefaultProfile,
+    hasSpecPath,
   });
   if (routingError) {
     logger.error(routingError);
