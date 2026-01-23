@@ -30,6 +30,9 @@ export class ProfileRegistry {
       if (profileId === this.defaultProfile.profileId || profileId === this.defaultProfile.profileName) {
         return this.defaultProfile;
       }
+      if (this.defaultProfile.profileAliases?.includes(profileId)) {
+        return this.defaultProfile;
+      }
     }
 
     return resolveProfileById(profileId, this.profilesDir, { specPathOverride: this.specPathOverride });

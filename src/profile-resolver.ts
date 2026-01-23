@@ -11,6 +11,7 @@ import { ConfigurationError } from './errors.js';
 export interface ResolvedProfile {
   profileId: string;
   profileName: string;
+  profileAliases?: string[];
   profilePath: string;
   specPath: string;
 }
@@ -174,6 +175,7 @@ export async function resolveProfileById(
   return {
     profileId: match.profileId,
     profileName: match.profileName,
+    profileAliases: match.aliases,
     profilePath: match.profilePath,
     specPath,
   };
@@ -195,6 +197,7 @@ export async function resolveProfileFromPath(
   return {
     profileId: entry.profileId,
     profileName: entry.profileName,
+    profileAliases: entry.aliases,
     profilePath: resolvedPath,
     specPath,
   };
