@@ -1757,6 +1757,7 @@ export class HttpTransport {
         this.respondProfileNotFound(res, req.profileId);
         return;
       }
+      const requestProfileId = req.profileId ?? profileState.profileId;
       const sessionId = req.sessionId;
       const body = req.body;
       const filteringHeader = normalizeFilteringHeaderValue(this.getFilteringHeaderValue(req));
@@ -1830,7 +1831,7 @@ export class HttpTransport {
       // If only notifications/responses, return 202 Accepted
       if (messageType === 'notification-only' || messageType === 'response-only') {
         if (this.messageHandler) {
-          await this.messageHandler(body, undefined, profileState.profileId);
+          await this.messageHandler(body, undefined, requestProfileId);
         }
         res.status(HTTP_STATUS.ACCEPTED).send();
         return;
@@ -1854,7 +1855,7 @@ export class HttpTransport {
           // This ensures clients like Cursor properly handle OAuth flow
           if (profileState.oauthProvider && !authInfo.token) {
             this.logger.debug('OAuth configured but no token provided, triggering OAuth flow');
-            const resourceMetadataUrl = this.getOAuthProtectedResourceUrl(profileState.profileId);
+            const resourceMetadataUrl = this.getOAuthProtectedResourceUrl(requestProfileId);
             res.setHeader('WWW-Authenticate', `Bearer resource_metadata="${resourceMetadataUrl}", scope="${profileState.oauthProvider.scopes.join(' ')}"`);
             res.status(HTTP_STATUS.UNAUTHORIZED).json({
               error: 'Unauthorized',
@@ -1937,7 +1938,7 @@ export class HttpTransport {
         }
 
         this.logger.debug('Calling messageHandler', { body, sessionId: isInitialization ? newSessionId : sessionId });
-        const response = await this.messageHandler(body, isInitialization ? newSessionId : sessionId, profileState.profileId);
+        const response = await this.messageHandler(body, isInitialization ? newSessionId : sessionId, requestProfileId);
         this.logger.debug('MessageHandler response', { response });
 
         // Debug: Check OAuth conditions
@@ -1951,7 +1952,7 @@ export class HttpTransport {
         // Check if response contains OAuth error and add WWW-Authenticate header
         const responseObj = response as any;
         if (responseObj.error && responseObj.error.data && responseObj.error.data.oauth_required) {
-          const resourceMetadataUrl = this.getOAuthProtectedResourceUrl(profileState.profileId);
+          const resourceMetadataUrl = this.getOAuthProtectedResourceUrl(requestProfileId);
           res.setHeader('WWW-Authenticate', `Bearer resource_metadata="${resourceMetadataUrl}", scope="api"`);
           res.status(HTTP_STATUS.UNAUTHORIZED); // Set 401 status for OAuth errors
         }
