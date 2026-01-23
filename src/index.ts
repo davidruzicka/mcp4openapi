@@ -159,6 +159,7 @@ async function main() {
   }
 
   const profilesDir = process.env.MCP4_PROFILES_DIR;
+  const specPathOverride = process.env.MCP4_OPENAPI_SPEC_PATH;
   const {
     specPath,
     profilePath,
@@ -166,7 +167,7 @@ async function main() {
     defaultProfile,
     hasExplicitSpecPath,
   } = await resolveStartupProfile({
-    specPathEnv: process.env.MCP4_OPENAPI_SPEC_PATH,
+    specPathEnv: specPathOverride,
     profilePath: process.env.MCP4_PROFILE_PATH,
     profileId: process.env.MCP4_PROFILE,
     profilesDir,
@@ -209,7 +210,7 @@ async function main() {
       const registry = new ProfileRegistry({
         profilesDir,
         defaultProfile,
-        specPathOverride: hasExplicitSpecPath ? specPath : undefined,
+        specPathOverride: hasExplicitSpecPath ? specPathOverride : undefined,
       });
       const manager = new MCPServerManager(registry, logger, httpTransport);
 
