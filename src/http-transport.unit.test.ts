@@ -7,6 +7,7 @@ import { HttpTransport } from './http-transport.js';
 import { ConsoleLogger } from './logger.js';
 import { parseSessionToolFilterHeader } from './tool-filter/index.js';
 import type { SessionToolFilter } from './types/http-transport.js';
+import { ConfigurationError } from './errors.js';
 
 describe('HttpTransport unit', () => {
   let transport: HttpTransport;
@@ -543,6 +544,206 @@ describe('HttpTransport unit', () => {
       await localTransport.stop();
     });
 
+    it('collects OAuth redirect host patterns from states, config, and cache', async () => {
+      const localTransport = new HttpTransport(
+        {
+          host: '127.0.0.1',
+          port: 0,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: false,
+          metricsPath: '/metrics',
+          oauthConfig: { redirect_uri: 'http://config.example.com/callback' },
+        } as any,
+        logger
+      );
+
+      (localTransport as any).profileStates.set('default', {
+        profileId: 'default',
+        context: { profileId: 'default' },
+        oauthProvider: { redirectUri: 'http://state.example.com/callback' },
+        oauthTokensByAccessToken: new Map(),
+        sessions: new Map(),
+      });
+      (localTransport as any).profileStates.set('bad', {
+        profileId: 'bad',
+        context: { profileId: 'bad' },
+        oauthProvider: { redirectUri: 'not-a-url' },
+        oauthTokensByAccessToken: new Map(),
+        sessions: new Map(),
+      });
+      (localTransport as any).oauthRedirectHostCache.set('cached', ['cached.example.com']);
+
+      const hosts = (localTransport as any).getOAuthRedirectHostPatterns();
+      expect(hosts).toContain('state.example.com');
+      expect(hosts).toContain('config.example.com');
+      expect(hosts).toContain('cached.example.com');
+
+      await localTransport.stop();
+    });
+
+    it('extractRedirectHostPatterns handles missing and invalid redirect URIs', async () => {
+      const localTransport = new HttpTransport(
+        {
+          host: '127.0.0.1',
+          port: 0,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: false,
+          metricsPath: '/metrics',
+        } as any,
+        logger
+      );
+
+      const extractor = (localTransport as any).extractRedirectHostPatterns.bind(localTransport);
+      expect(extractor(undefined, 'default')).toEqual([]);
+      expect(extractor({ redirect_uri: 'not-a-url' }, 'default')).toEqual([]);
+
+      await localTransport.stop();
+    });
+
+    it('resolveRedirectUriFromEnv returns literal values and resolves env', async () => {
+      const localTransport = new HttpTransport(
+        {
+          host: '127.0.0.1',
+          port: 0,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: false,
+          metricsPath: '/metrics',
+        } as any,
+        logger
+      );
+
+      const resolver = (localTransport as any).resolveRedirectUriFromEnv.bind(localTransport);
+      expect(resolver('http://literal.example.com/cb', 'default')).toBe('http://literal.example.com/cb');
+
+      process.env.OAUTH_REDIRECT_URI = 'http://env.example.com/cb';
+      expect(resolver('${env:OAUTH_REDIRECT_URI}', 'default')).toBe('http://env.example.com/cb');
+      delete process.env.OAUTH_REDIRECT_URI;
+
+      await localTransport.stop();
+    });
+
+    it('resolves profile id from path and resource query', async () => {
+      const localTransport = new HttpTransport(
+        {
+          host: '127.0.0.1',
+          port: 0,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: false,
+          metricsPath: '/metrics',
+          profileRoutingEnabled: true,
+          defaultProfileId: 'default',
+        } as any,
+        logger
+      );
+
+      const fromPath = (localTransport as any).resolveProfileIdFromPath.bind(localTransport);
+      expect(fromPath('/profile/gitlab/mcp')).toBe('gitlab');
+      expect(fromPath('/not-profile/mcp')).toBeNull();
+      expect(fromPath('/profile/%E0%A4%A/mcp')).toBeNull();
+
+      const fromReq = (localTransport as any).resolveProfileIdForOriginCheck.bind(localTransport);
+      const reqPath: any = { path: '/profile/alias/mcp', query: {} };
+      expect(fromReq(reqPath)).toBe('alias');
+
+      const reqResource: any = { path: '/mcp', query: { resource: 'http://localhost/profile/alpha/mcp' } };
+      expect(fromReq(reqResource)).toBe('alpha');
+
+      const reqDefault: any = { path: '/mcp', query: {} };
+      expect(fromReq(reqDefault)).toBe('default');
+
+      await localTransport.stop();
+    });
+
+    it('primeOAuthRedirectHosts caches empty configs and handles errors', async () => {
+      const localTransport = new HttpTransport(
+        {
+          host: '127.0.0.1',
+          port: 0,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: false,
+          metricsPath: '/metrics',
+          profileRoutingEnabled: true,
+        } as any,
+        logger
+      );
+
+      const warnSpy = vi.spyOn(logger, 'warn');
+      (localTransport as any).setProfileContextProvider(async (id: string) => {
+        if (id === 'missing') {
+          throw new ConfigurationError('Profile not found');
+        }
+        if (id === 'boom') {
+          throw new Error('boom');
+        }
+        return { profileId: id };
+      });
+
+      const primer = (localTransport as any).primeOAuthRedirectHosts.bind(localTransport);
+      await primer('empty');
+      expect((localTransport as any).oauthRedirectHostCache.get('empty')).toEqual([]);
+
+      await primer('missing');
+      await primer('boom');
+      expect(warnSpy).toHaveBeenCalledWith(
+        'Failed to preload OAuth redirect hosts',
+        expect.objectContaining({ profileId: 'boom' })
+      );
+
+      warnSpy.mockRestore();
+      await localTransport.stop();
+    });
+
+    it('isAllowedOriginForRequest returns false when routing disabled or no profile id', async () => {
+      const localTransport = new HttpTransport(
+        {
+          host: '127.0.0.1',
+          port: 0,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: false,
+          metricsPath: '/metrics',
+        } as any,
+        logger
+      );
+
+      const checker = (localTransport as any).isAllowedOriginForRequest.bind(localTransport);
+      const req: any = { path: '/mcp', query: {} };
+      expect(await checker('http://example.com', req)).toBe(false);
+
+      await localTransport.stop();
+
+      const routingTransport = new HttpTransport(
+        {
+          host: '127.0.0.1',
+          port: 0,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: false,
+          metricsPath: '/metrics',
+          profileRoutingEnabled: true,
+        } as any,
+        logger
+      );
+
+      const checkerRouting = (routingTransport as any).isAllowedOriginForRequest.bind(routingTransport);
+      const reqNoProfile: any = { path: '/mcp', query: {} };
+      expect(await checkerRouting('http://example.com', reqNoProfile)).toBe(false);
+
+      await routingTransport.stop();
+    });
+
     it('rejects invalid origin strings and ignores invalid oauth redirectUri', async () => {
       const localLogger = {
         debug: vi.fn(),
@@ -719,6 +920,154 @@ describe('HttpTransport unit', () => {
 
       warnSpy.mockRestore();
       delete process.env.OAUTH_REDIRECT_URI;
+      await localTransport.stop();
+    });
+  });
+
+  describe('origin middleware error handling', () => {
+    it('returns 403 when origin check throws', async () => {
+      const localTransport = new HttpTransport(
+        {
+          host: '127.0.0.1',
+          port: 0,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: false,
+          metricsPath: '/metrics',
+        } as any,
+        logger
+      );
+
+      (localTransport as any).isAllowedOriginForRequest = async () => {
+        throw new Error('boom');
+      };
+
+      const app = (localTransport as any).app;
+      const router = app._router ?? app.router;
+      expect(router).toBeDefined();
+      const originLayer = router.stack.find((layer: any) =>
+        typeof layer.handle === 'function' && layer.handle.toString().includes('isAllowedOriginForRequest')
+      );
+      expect(originLayer).toBeDefined();
+
+      const req: any = { headers: { origin: 'http://evil.example.com' }, ip: '127.0.0.1' };
+      const res: any = {
+        statusCode: 200,
+        body: undefined,
+        status(code: number) {
+          this.statusCode = code;
+          return this;
+        },
+        json(payload: unknown) {
+          this.body = payload;
+          return this;
+        },
+      };
+      const next = vi.fn();
+
+      originLayer.handle(req, res, next);
+      await new Promise(resolve => setImmediate(resolve));
+
+      expect(res.statusCode).toBe(403);
+      expect(res.body.message).toBe('Origin not allowed');
+      expect(next).not.toHaveBeenCalled();
+
+      await localTransport.stop();
+    });
+  });
+
+  describe('profile context resolution', () => {
+    it('buildDefaultProfileContext returns null without default profile', async () => {
+      const localTransport = new HttpTransport(
+        {
+          host: '127.0.0.1',
+          port: 0,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: false,
+          metricsPath: '/metrics',
+          profileRoutingEnabled: true,
+        } as any,
+        logger
+      );
+
+      const context = (localTransport as any).buildDefaultProfileContext();
+      expect(context).toBeNull();
+
+      await localTransport.stop();
+    });
+
+    it('getProfileState returns null and warns when profile not found', async () => {
+      const localTransport = new HttpTransport(
+        {
+          host: '127.0.0.1',
+          port: 0,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: false,
+          metricsPath: '/metrics',
+          profileRoutingEnabled: true,
+        } as any,
+        logger
+      );
+
+      const warnSpy = vi.spyOn(logger, 'warn');
+      localTransport.setProfileContextProvider(async () => {
+        throw new ConfigurationError('Profile not found');
+      });
+
+      const state = await (localTransport as any).getProfileState('missing');
+      expect(state).toBeNull();
+      expect(warnSpy).toHaveBeenCalledWith('Profile not found during request', { profileId: 'missing' });
+
+      warnSpy.mockRestore();
+      await localTransport.stop();
+    });
+
+    it('getProfileState returns null when provider returns null', async () => {
+      const localTransport = new HttpTransport(
+        {
+          host: '127.0.0.1',
+          port: 0,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: false,
+          metricsPath: '/metrics',
+          profileRoutingEnabled: true,
+        } as any,
+        logger
+      );
+
+      localTransport.setProfileContextProvider(async () => null);
+      const state = await (localTransport as any).getProfileState('missing');
+      expect(state).toBeNull();
+
+      await localTransport.stop();
+    });
+
+    it('getProfileStateForRequest returns null without profile id', async () => {
+      const localTransport = new HttpTransport(
+        {
+          host: '127.0.0.1',
+          port: 0,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: false,
+          metricsPath: '/metrics',
+          profileRoutingEnabled: true,
+        } as any,
+        logger
+      );
+
+      const req: any = { headers: {}, path: '/mcp' };
+      const state = await (localTransport as any).getProfileStateForRequest(req);
+      expect(state).toBeNull();
+
       await localTransport.stop();
     });
   });

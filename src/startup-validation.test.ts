@@ -2,6 +2,17 @@ import { describe, it, expect } from 'vitest';
 import { getHttpProfileRoutingErrorMessage, HTTP_PROFILE_ROUTING_ERROR } from './startup-validation.js';
 
 describe('startup validation', () => {
+  it('returns null when transport is not http', () => {
+    const message = getHttpProfileRoutingErrorMessage({
+      transport: 'stdio',
+      profileRoutingEnabled: false,
+      hasDefaultProfile: false,
+      hasSpecPath: false,
+    });
+
+    expect(message).toBeNull();
+  });
+
   it('returns error message when http routing disabled and no default profile', () => {
     const message = getHttpProfileRoutingErrorMessage({
       transport: 'http',
