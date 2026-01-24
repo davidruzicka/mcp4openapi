@@ -15,6 +15,10 @@
   - [5. Request Deduplication](#5-request-deduplication)
   - [6. Improve project_id encoding](#6-improve-project_id-encoding)
   - [7. Strengthen ReDoS Protection in Regex Compiler](#7-strengthen-redos-protection-in-regex-compiler)
+  - [8. Limit HTTP profile server cache growth](#8-limit-http-profile-server-cache-growth)
+  - [9. Break MCPServer-HttpTransport circular dependency](#9-break-mcpserver-httptransport-circular-dependency)
+  - [10. Split HttpTransport into smaller modules](#10-split-httptransport-into-smaller-modules)
+  - [11. Reduce usage of any casts in HTTP transport](#11-reduce-usage-of-any-casts-in-http-transport)
 
 ## P1: Correctness and Core Features
 
@@ -212,3 +216,72 @@ Prevent multiple identical in-flight requests (thundering herd):
 - `src/tool-filter/regex/regex-compiler.test.ts` - add timeout and edge case tests
 
 **Estimated effort**: 2-3 hours (timeout implementation) + 1-2 hours (expanded validation)
+
+### 8. Limit HTTP profile server cache growth
+**Problem**: HTTP profile routing keeps every requested profile's MCPServer initialized indefinitely. With many large OpenAPI specs, this can exhaust memory.
+
+**Goal**: Add basic eviction or caps for profile server instances to bound memory usage.
+
+**Implementation options**:
+- TTL eviction: expire inactive profiles after `MCP4_PROFILE_CACHE_TTL_MS`.
+- Max size: cap servers to `MCP4_PROFILE_CACHE_MAX` with LRU eviction.
+- Combine TTL + max size with soft warnings when evicting.
+
+**Files to modify**:
+- `src/mcp-server-manager.ts` - eviction logic and tracking
+- `src/index.ts` - pass env config into manager/registry
+- `README.md` - document new env vars
+
+**Estimated effort**: 2-4 hours
+
+### 9. Break MCPServer-HttpTransport circular dependency
+**Problem**: MCPServer holds a reference to HttpTransport (typed as any), creating a circular dependency and weaker type safety.
+
+**Goal**: Remove direct dependency between MCPServer and HttpTransport for session cleanup and related hooks.
+
+**Implementation options**:
+- Introduce a small transport interface (methods used by MCPServer only) and type against that.
+- Use event-based cleanup: MCPServer emits session cleanup events, HttpTransport subscribes.
+- Invert control: move cleanup trigger into HttpTransport and pass a callback instead of full transport instance.
+
+**Files to modify**:
+- `src/mcp-server.ts` - replace direct transport reference with interface/callback
+- `src/http-transport.ts` - adjust session cleanup hookup
+- `src/mcp-server-manager.ts` - wiring changes if needed
+- `README.md` or `IMPLEMENTATION.md` - document architecture change
+
+**Estimated effort**: 2-3 hours
+
+### 10. Split HttpTransport into smaller modules
+**Problem**: `src/http-transport.ts` is >2700 lines. `setupRoutes` and related OAuth/MCP handlers are large and hard to maintain.
+
+**Goal**: Improve maintainability by splitting HttpTransport into focused modules with clear responsibilities.
+
+**Implementation options**:
+- Extract OAuth handlers to `src/http/oauth-handler.ts` (authorize, token, callback, metadata).
+- Extract MCP route setup to `src/http/mcp-router.ts` (POST/GET/DELETE + SSE).
+- Keep core transport state in `src/http-transport.ts` and delegate route registration.
+
+**Files to modify**:
+- `src/http-transport.ts` - delegate to new modules
+- new module files under `src/http/`
+- `IMPLEMENTATION.md` - architecture update (if needed)
+
+**Estimated effort**: 3-5 hours
+
+### 11. Reduce usage of any casts in HTTP transport
+**Problem**: `as any` casts have grown, especially in `src/http-transport.ts` and related unit tests, weakening type safety.
+
+**Goal**: Replace `any` casts with explicit interfaces or type guards where practical.
+
+**Implementation options**:
+- Introduce small internal interfaces for private helper shapes used in tests.
+- Add type guards for request/response mocks in unit tests.
+- Replace `any` in `HttpTransport` signatures with typed callbacks or narrow types.
+
+**Files to modify**:
+- `src/http-transport.ts`
+- `src/http-transport.unit.test.ts`
+- `src/http-transport.test.ts`
+
+**Estimated effort**: 2-4 hours
