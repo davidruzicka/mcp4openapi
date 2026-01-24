@@ -2510,11 +2510,6 @@ export class HttpTransport {
    */
   private cleanupExpiredSessions(): void {
     const now = Date.now();
-    // Cleanup OAuth provider resources (states, codes, tokens)
-    if (this.oauthProvider) {
-      this.oauthProvider.cleanup();
-    }
-
     const expiredSessions: Array<{ profileId: string; sessionId: string }> = [];
     
     // Default OAuth session timeout: 24 hours (or configurable)
@@ -2522,6 +2517,11 @@ export class HttpTransport {
       ?? (24 * 60 * 60 * 1000); // 24 hours default
 
     for (const profileState of this.profileStates.values()) {
+      // Cleanup OAuth provider resources (states, codes, tokens)
+      if (profileState.oauthProvider) {
+        profileState.oauthProvider.cleanup();
+      }
+
       for (const [sessionId, session] of profileState.sessions) {
         const age = now - session.lastActivityAt;
         
