@@ -112,6 +112,13 @@ export class HttpTransport {
       res.setHeader('X-Content-Type-Options', 'nosniff');
       res.setHeader('Referrer-Policy', 'no-referrer');
       res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(), camera=(), payment=()');
+
+      // Additional security headers
+      res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
+      res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
+      res.setHeader('X-Permitted-Cross-Domain-Policies', 'none');
+      res.setHeader('X-DNS-Prefetch-Control', 'off');
+
       next();
     });
 
