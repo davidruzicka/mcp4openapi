@@ -164,7 +164,7 @@ describeIfListen('E2E: OAuth 2.0 authentication', () => {
           tokenEndpoint: `${mockServer.oauthUrl}/oauth/token`,
         },
         env: {
-          MCP4_OAUTH_ISSUER: mockServer.oauthUrl,
+          GITLAB_OAUTH_ISSUER: mockServer.oauthUrl,
           MCP4_ALLOWED_ORIGINS: 'anysphere.cursor-mcp',
           MCP4_LOG_LEVEL: 'ERROR',
         },

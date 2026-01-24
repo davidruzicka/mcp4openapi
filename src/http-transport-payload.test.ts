@@ -1,11 +1,12 @@
 
-import { describe, it, expect, beforeAll } from 'vitest';
+import { it, expect, beforeAll } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 import { HttpTransport } from './http-transport.js';
 import { ConsoleLogger } from './logger.js';
+import { describeIfListen } from './testing/listen-support.js';
 
-describe('Payload Size Limits', () => {
+describeIfListen('Payload Size Limits', () => {
   let transport: HttpTransport;
   let app: express.Application;
 

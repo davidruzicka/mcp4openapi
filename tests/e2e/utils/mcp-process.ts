@@ -9,6 +9,7 @@ import { spawn, ChildProcess } from 'child_process';
 import { EventEmitter } from 'events';
 import * as path from 'path';
 import * as readline from 'readline';
+import { readFileSync } from 'fs';
 
 export interface McpProcessConfig {
   /** Transport mode */
@@ -37,6 +38,98 @@ export interface McpProcessConfig {
   env?: Record<string, string>;
   /** Log level */
   logLevel?: 'DEBUG' | 'INFO' | 'WARN' | 'ERROR' | 'SILENT';
+}
+
+interface ProfileAuthConfig {
+  type: string;
+  value_from_env?: string;
+  oauth_config?: {
+    issuer?: string;
+    authorization_endpoint?: string;
+    token_endpoint?: string;
+    client_id?: string;
+    client_secret?: string;
+    redirect_uri?: string;
+  };
+}
+
+interface ProfileInterceptors {
+  base_url?: {
+    value_from_env?: string;
+  };
+  auth?: ProfileAuthConfig | ProfileAuthConfig[];
+}
+
+interface ProfileDefinition {
+  interceptors?: ProfileInterceptors;
+}
+
+function parseEnvRef(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  const match = value.match(/^\$\{env:([^}]+)\}$/);
+  return match?.[1];
+}
+
+function loadProfileDefinition(profilePath: string): ProfileDefinition | undefined {
+  try {
+    const raw = readFileSync(profilePath, 'utf-8');
+    return JSON.parse(raw) as ProfileDefinition;
+  } catch {
+    return undefined;
+  }
+}
+
+function resolveProfileEnv(profilePath: string | undefined): {
+  authEnvVars: string[];
+  baseUrlEnv?: string;
+  oauthEnvVars: {
+    issuer?: string;
+    authorizationEndpoint?: string;
+    tokenEndpoint?: string;
+    clientId?: string;
+    clientSecret?: string;
+    redirectUri?: string;
+  };
+} {
+  if (!profilePath) {
+    return { authEnvVars: [], oauthEnvVars: {} };
+  }
+
+  const profile = loadProfileDefinition(profilePath);
+  const authEnvVars: string[] = [];
+  const oauthEnvVars: {
+    issuer?: string;
+    authorizationEndpoint?: string;
+    tokenEndpoint?: string;
+    clientId?: string;
+    clientSecret?: string;
+    redirectUri?: string;
+  } = {};
+
+  const baseUrlEnv = profile?.interceptors?.base_url?.value_from_env;
+
+  const authInterceptors = profile?.interceptors?.auth;
+  const authList = Array.isArray(authInterceptors)
+    ? authInterceptors
+    : authInterceptors
+      ? [authInterceptors]
+      : [];
+
+  for (const auth of authList) {
+    if (auth.value_from_env) {
+      authEnvVars.push(auth.value_from_env);
+    }
+
+    if (auth.type !== 'oauth' || !auth.oauth_config) continue;
+    oauthEnvVars.issuer = parseEnvRef(auth.oauth_config.issuer) ?? oauthEnvVars.issuer;
+    oauthEnvVars.authorizationEndpoint = parseEnvRef(auth.oauth_config.authorization_endpoint) ?? oauthEnvVars.authorizationEndpoint;
+    oauthEnvVars.tokenEndpoint = parseEnvRef(auth.oauth_config.token_endpoint) ?? oauthEnvVars.tokenEndpoint;
+    oauthEnvVars.clientId = parseEnvRef(auth.oauth_config.client_id) ?? oauthEnvVars.clientId;
+    oauthEnvVars.clientSecret = parseEnvRef(auth.oauth_config.client_secret) ?? oauthEnvVars.clientSecret;
+    oauthEnvVars.redirectUri = parseEnvRef(auth.oauth_config.redirect_uri) ?? oauthEnvVars.redirectUri;
+  }
+
+  return { authEnvVars, baseUrlEnv, oauthEnvVars };
 }
 
 export interface JsonRpcRequest {
@@ -83,6 +176,7 @@ export class McpProcess extends EventEmitter {
    */
   async start(): Promise<void> {
     const distPath = path.resolve(process.cwd(), 'dist/src/index.js');
+    const profileEnv = resolveProfileEnv(this.config.profilePath);
     
     const env: Record<string, string> = {
       ...process.env as Record<string, string>,
@@ -98,10 +192,16 @@ export class McpProcess extends EventEmitter {
 
     if (this.config.apiBaseUrl) {
       env.MCP4_API_BASE_URL = this.config.apiBaseUrl;
+      if (profileEnv.baseUrlEnv) {
+        env[profileEnv.baseUrlEnv] = this.config.apiBaseUrl;
+      }
     }
 
     if (this.config.apiToken) {
       env.MCP4_API_TOKEN = this.config.apiToken;
+      for (const authEnv of profileEnv.authEnvVars) {
+        env[authEnv] = this.config.apiToken;
+      }
     }
 
     if (this.config.transport === 'http') {
@@ -122,6 +222,22 @@ export class McpProcess extends EventEmitter {
       }
       if (this.config.oauth.tokenEndpoint) {
         env.MCP4_OAUTH_TOKEN_ENDPOINT = this.config.oauth.tokenEndpoint;
+      }
+
+      if (profileEnv.oauthEnvVars.clientId) {
+        env[profileEnv.oauthEnvVars.clientId] = this.config.oauth.clientId;
+      }
+      if (profileEnv.oauthEnvVars.clientSecret) {
+        env[profileEnv.oauthEnvVars.clientSecret] = this.config.oauth.clientSecret;
+      }
+      if (profileEnv.oauthEnvVars.redirectUri) {
+        env[profileEnv.oauthEnvVars.redirectUri] = this.config.oauth.redirectUri;
+      }
+      if (this.config.oauth.authorizationEndpoint && profileEnv.oauthEnvVars.authorizationEndpoint) {
+        env[profileEnv.oauthEnvVars.authorizationEndpoint] = this.config.oauth.authorizationEndpoint;
+      }
+      if (this.config.oauth.tokenEndpoint && profileEnv.oauthEnvVars.tokenEndpoint) {
+        env[profileEnv.oauthEnvVars.tokenEndpoint] = this.config.oauth.tokenEndpoint;
       }
     }
 

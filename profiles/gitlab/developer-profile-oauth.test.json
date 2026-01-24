@@ -1,6 +1,6 @@
 {
   "$schema": "../../src/testing/test-schema.ts",
-  "profile_name": "gitlab-developer",
+  "profile_name": "gitlab-default",
   "variables": {
     "projectId": "12345",
     "groupId": "36173",
@@ -345,7 +345,7 @@
           "response": {
             "body": {
               "id": 2,
-              "attachment": "https://mock-api-gitlab-developer.com/uploads/note.txt"
+              "attachment": "https://mock-api-gitlab-default.com/uploads/note.txt"
             }
           }
         },
@@ -1658,7 +1658,7 @@
           {
             "method": "GET",
             "path": "/projects/12345/snippets/1",
-            "origin": "https://mock-api-gitlab-developer.com",
+            "origin": "https://mock-api-gitlab-default.com",
             "headers": {
               "authorization": "Bearer test-token"
             }
@@ -1666,7 +1666,7 @@
           {
             "method": "GET",
             "path": "/projects/12345/snippets/1/raw",
-            "origin": "https://mock-api-gitlab-developer.com",
+            "origin": "https://mock-api-gitlab-default.com",
             "headers": {
               "authorization": "Bearer test-token"
             }

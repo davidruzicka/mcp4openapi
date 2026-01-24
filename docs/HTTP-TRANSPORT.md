@@ -29,10 +29,24 @@ export MCP4_HOST=127.0.0.1  # localhost only (secure default)
 export MCP4_PORT=3003
 export MCP4_API_TOKEN=your_token
 export MCP4_API_BASE_URL=https://api.example.com
+export MCP4_PROFILE_PATH=./mcp-profile.json
 
 # Start server
 npm start
 ```
+
+CLI alternative:
+```bash
+export MCP4_API_TOKEN=your_token
+npx mcp4openapi \
+  --transport http \
+  --host 127.0.0.1 \
+  --port 3003 \
+  --api-base-url https://api.example.com
+  --profile-path ./mcp-profile.json
+```
+
+Note: `MCP4_OPENAPI_SPEC_PATH` is optional when the selected profile includes `openapi_spec_path`. If a profile does not provide it, you must set `MCP4_OPENAPI_SPEC_PATH` or `--openapi-spec-path`. In HTTP profile routing mode, `MCP4_OPENAPI_SPEC_PATH` acts as a global fallback for profiles that omit `openapi_spec_path`.
 
 Server will log:
 ```
@@ -60,12 +74,70 @@ export MCP4_ALLOWED_ORIGINS="example.com,*.company.com,192.168.1.0/24,10.0.0.0/8
 export MCP4_HEARTBEAT_ENABLED=true
 export MCP4_HEARTBEAT_INTERVAL_MS=30000  # 30 seconds
 
-npm start
+npx mcp4openapi
 ```
 
-**Each client sends their own token in `Authorization: Bearer <token>` header during initialization.**
+CLI alternative:
+```bash
+npx mcp4openapi \
+  --transport http \
+  --host 0.0.0.0 \
+  --port 3003 \
+  --api-base-url https://api.example.com \
+  --allowed-origins "example.com,*.company.com,192.168.1.0/24,10.0.0.0/8,2001:db8::/32" \
+  --heartbeat-enabled true \
+  --heartbeat-interval-ms 30000
+```
+
+**Each client sends their own token in `Authorization: Bearer <token>` header during initialization.** Alternatively, clients can use OAuth authorization flow for API with OAuth support.
 
 **Security Warning**: When binding to `0.0.0.0`, ensure firewall protection, configure `MCP4_ALLOWED_ORIGINS`, and use HTTPS reverse proxy. Server will log warning if `MCP4_ALLOWED_ORIGINS` is not configured.
+
+### Profile Routing (HTTP)
+
+Enable profile-specific routes to serve multiple profiles from one HTTP server:
+
+```bash
+export MCP4_TRANSPORT=http
+export MCP4_HTTP_PROFILE_ROUTING=true
+export MCP4_PROFILES_DIR=./profiles
+export MCP4_HOST=127.0.0.1
+export MCP4_PORT=3003
+npx mcp4openapi
+```
+
+CLI alternative:
+```bash
+npx mcp4openapi \
+  --transport http \
+  --http-profile-routing true \
+  --profiles-dir ./profiles \
+  --host 127.0.0.1 \
+  --port 3003
+```
+
+Routes:
+- `POST /profile/:profileId/mcp`
+- `GET /profile/:profileId/mcp`
+- `DELETE /profile/:profileId/mcp`
+- Legacy alias: `POST|GET|DELETE /profile/:profileId/sse`
+
+Default profile behavior:
+- If `MCP4_PROFILE_PATH` (or `--profile-path`) is set, `/mcp` and `/sse` stay available.
+- If no default profile is configured, `/mcp` is not registered and you must use `/profile/:profileId/mcp`.
+
+OAuth and metadata endpoints are scoped per profile when routing is enabled:
+- `/.well-known/oauth-protected-resource/mcp` -> `/profile/:profileId/.well-known/oauth-protected-resource/mcp`
+- `/.well-known/oauth-authorization-server` -> `/profile/:profileId/.well-known/oauth-authorization-server`
+- `/oauth/authorize` -> `/profile/:profileId/oauth/authorize`
+- `/oauth/token` -> `/profile/:profileId/oauth/token`
+- `/oauth/register` -> `/profile/:profileId/oauth/register`
+- `/oauth/callback` -> `/profile/:profileId/oauth/callback`
+
+Root protected resource metadata also supports a `resource` query parameter for profile selection:
+- `/.well-known/oauth-protected-resource/mcp?resource=http://host/profile/:profileId/mcp`
+
+If no default profile is configured, use the `resource` query parameter to resolve metadata.
 
 ## MCP Protocol Compliance
 
@@ -75,15 +147,15 @@ Source: https://modelcontextprotocol.io/specification/2025-03-26/basic/transport
 
 ### Supported Features
 
-✅ Single MCP endpoint (`/mcp`) for POST + GET
-✅ JSON-RPC request/notification/response handling
-✅ Batch requests (JSON-RPC arrays)
-✅ SSE streaming responses
-✅ Session management (`Mcp-Session-Id` header)
-✅ Resumability (`Last-Event-ID` header)
-✅ Origin validation (DNS rebinding protection)
-✅ Session termination (DELETE endpoint)
-✅ Accept header validation
+- Single MCP endpoint (`/mcp`) for POST + GET
+- JSON-RPC request/notification/response handling
+- Batch requests (JSON-RPC arrays)
+- SSE streaming responses
+- Session management (`Mcp-Session-Id` header)
+- Resumability (`Last-Event-ID` header)
+- Origin validation (DNS rebinding protection)
+- Session termination (DELETE endpoint)
+- Accept header validation
 
 ## API Endpoints
 
@@ -184,7 +256,7 @@ curl -X POST http://localhost:3003/mcp \
     "protocolVersion": "2025-03-26",
     "serverInfo": {
       "name": "mcp4openapi",
-      "version": "0.1.0"
+      "version": "0.2.9"
     },
     "capabilities": {
       "tools": {}
@@ -531,7 +603,7 @@ export MCP4_HOST=0.0.0.0    # Network access (use with caution!)
 ### Best Practices
 
 1. **Localhost first**: Use `127.0.0.1` unless remote access needed
-2. **HTTPS reverse proxy**: Use nginx/caddy with TLS for remote access
+2. **HTTPS reverse proxy**: Use traefik/nginx/caddy with TLS for remote access
 3. **Firewall**: Restrict port access to trusted IPs
 4. **Strong tokens**: Use cryptographically secure API tokens
 5. **Monitor sessions**: Check `/health` endpoint regularly
@@ -711,14 +783,6 @@ export MCP4_LOG_FORMAT=console
 npm start
 ```
 
-### Metrics (Phase 2)
-
-Prometheus metrics planned:
-- `mcp_requests_total`
-- `mcp_request_duration_seconds`
-- `mcp_active_sessions`
-- `mcp_tool_calls_total`
-
 ## Rate Limiting
 
 ### Global Rate Limit
@@ -726,8 +790,8 @@ Prometheus metrics planned:
 Default rate limit applies to all API operations:
 
 ```bash
-RATE_LIMIT_MAX_REQUESTS=600  # per minute
-RATE_LIMIT_WINDOW_MS=60000   # 60 seconds
+MCP4_HTTP_RATE_LIMIT_MAX_REQUESTS=600  # per minute
+MCP4_HTTP_RATE_LIMIT_WINDOW_MS=60000   # 60 seconds
 ```
 
 **Default**: 600 requests/minute per API token

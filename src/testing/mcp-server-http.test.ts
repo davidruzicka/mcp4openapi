@@ -46,12 +46,12 @@ describeIfListen('MCPServer HTTP Integration', () => {
       mockApiServer.on('error', reject);
     });
 
-    process.env.MCP4_OAUTH_ISSUER = 'https://gitlab.example.com';
-    process.env.MCP4_OAUTH_CLIENT_ID = 'test-client-id';
-    process.env.MCP4_OAUTH_CLIENT_SECRET = 'test-client-secret';
-    process.env.MCP4_OAUTH_REDIRECT_URI = 'http://127.0.0.1/oauth/callback';
-    process.env.MCP4_API_BASE_URL = mockApiBaseUrl;
-    process.env.MCP4_API_TOKEN = 'test-token';
+    process.env.GITLAB_OAUTH_ISSUER = 'https://gitlab.example.com';
+    process.env.GITLAB_OAUTH_CLIENT_ID = 'test-client-id';
+    process.env.GITLAB_OAUTH_CLIENT_SECRET = 'test-client-secret';
+    process.env.GITLAB_OAUTH_REDIRECT_URI = 'http://127.0.0.1/oauth/callback';
+    process.env.GITLAB_API_BASE_URL = mockApiBaseUrl;
+    process.env.GITLAB_TOKEN = 'test-token';
 
     server = new MCPServer();
     

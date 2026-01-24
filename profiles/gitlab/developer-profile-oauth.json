@@ -1,6 +1,9 @@
 {
   "$schema": "../../../profile-schema.json",
-  "profile_name": "gitlab-developer",
+  "profile_name": "gitlab-default",
+  "profile_id": "gitlab",
+  "profile_aliases": ["gitlab-default", "gitlab-developer"],
+  "openapi_spec_path": "./openapi.yaml",
   "description": "Developer-focused tools for common GitLab workflows",
   
   "parameter_aliases": {
@@ -1428,22 +1431,22 @@
         "priority": 0,
         "validation_endpoint": "user",
         "oauth_config": {
-          "issuer": "${env:MCP4_OAUTH_ISSUER}",
-          "client_id": "${env:MCP4_OAUTH_CLIENT_ID}",
-          "client_secret": "${env:MCP4_OAUTH_CLIENT_SECRET}",
+          "issuer": "${env:GITLAB_OAUTH_ISSUER}",
+          "client_id": "${env:GITLAB_OAUTH_CLIENT_ID}",
+          "client_secret": "${env:GITLAB_OAUTH_CLIENT_SECRET}",
           "scopes": ["api", "read_repository"],
-          "redirect_uri": "${env:MCP4_OAUTH_REDIRECT_URI}"
+          "redirect_uri": "${env:GITLAB_OAUTH_REDIRECT_URI}"
         }
       },
       {
         "type": "bearer",
         "priority": 1,
-        "value_from_env": "MCP4_API_TOKEN",
+        "value_from_env": "GITLAB_TOKEN",
         "validation_endpoint": "personal_access_tokens/self"
       }
     ],
     "base_url": {
-      "value_from_env": "MCP4_API_BASE_URL",
+      "value_from_env": "GITLAB_API_BASE_URL",
       "default": "https://gitlab.com/api/v4"
     },
     "rate_limit": {

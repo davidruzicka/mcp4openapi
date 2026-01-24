@@ -19,14 +19,23 @@ Visit https://gitlab.com/-/user_settings/personal_access_tokens and create a tok
 
 Reuse the [README Quick Start](../README.md#quick-start) instructions to load the GitLab specification and profile. Substitute:
 
-- `MCP4_OPENAPI_SPEC_PATH=profiles/gitlab/openapi.yaml`
 - `MCP4_PROFILE_PATH=profiles/gitlab/developer-profile-oauth.json`
-- `MCP4_API_TOKEN=<your GitLab token>`
-- `MCP4_API_BASE_URL=https://gitlab.com/api/v4`
+- `GITLAB_TOKEN=<your GitLab token>`
+- `GITLAB_API_BASE_URL=https://gitlab.com/api/v4`
 
 ### 3. Run
 
 Follow the [standard launch steps](../README.md#quick-start) (`npm start` or `npx mcp4openapi`) after installing dependencies.
+
+CLI profile selector variant (uses the profile registry):
+
+```bash
+npx mcp4openapi --profile gitlab
+```
+
+- loads GitLab profile from `profiles/gitlab/developer-profile-oauth.json` because of `"profile_id": "gitlab"` definition
+- loads OpenAPI specification from `profiles/gitlab/openapi.yaml` because of `"openapi_spec_path": "./openapi.yaml"` definition
+- uses profile-specific auth env vars (for example, `GITLAB_TOKEN` and `GITLAB_API_BASE_URL`)
 
 ## Available Tools
 
@@ -232,8 +241,8 @@ The `gitlab-developer.json` profile includes:
 
 ### Interceptors
 
-- **Auth**: Bearer token configurable via `MCP4_API_TOKEN` environment variable
-- **Base URL**: Configurable via `MCP4_API_BASE_URL` (default: `https://gitlab.com/api/v4`)
+- **Auth**: Bearer token configurable via `GITLAB_TOKEN` environment variable
+- **Base URL**: Configurable via `GITLAB_API_BASE_URL` (default: `https://gitlab.com/api/v4`)
 - **Rate Limit**: 600 requests/minute global, with overrides for destructive operations
 - **Retry**: 3 attempts with exponential backoff [1s, 2s, 4s]
 - **Retry Status Codes**: 429, 502, 503, 504
@@ -284,10 +293,9 @@ Add to your `mcp.json`:
       "command": "node",
       "args": ["/path/to/mcp4openapi/dist/index.js"],
       "env": {
-        "MCP4_OPENAPI_SPEC_PATH": "/path/to/profiles/gitlab/openapi.yaml",
         "MCP4_PROFILE_PATH": "/path/to/profiles/gitlab/developer-profile-oauth.json",
-        "MCP4_API_TOKEN": "glpat-xxxxxxxxxxxxxxxxxxxx",
-        "MCP4_API_BASE_URL": "https://gitlab.com/api/v4"
+        "GITLAB_TOKEN": "glpat-xxxxxxxxxxxxxxxxxxxx",
+        "GITLAB_API_BASE_URL": "https://gitlab.com/api/v4"
       }
     }
   }
@@ -431,7 +439,7 @@ Access levels:
 
 Verify your token (`read_user` right is required):
 ```bash
-curl -H "Authorization: Bearer $MCP4_API_TOKEN" https://gitlab.com/api/v4/user
+curl -H "Authorization: Bearer $GITLAB_TOKEN" https://gitlab.com/api/v4/user
 ```
 
 ### Rate Limiting

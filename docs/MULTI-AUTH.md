@@ -229,6 +229,15 @@ MCP4_API_TOKEN=glpat-xxxxxxxxxxxx
 MCP4_API_BASE_URL=https://gitlab.example.com/api/v4
 ```
 
+CLI alternative:
+```bash
+npx mcp4openapi \
+  --oauth-client-id your-client-id \
+  --oauth-client-secret your-secret \
+  --api-token glpat-xxxxxxxxxxxx \
+  --api-base-url https://gitlab.example.com/api/v4
+```
+
 ### 3. Token Rotation
 
 - OAuth tokens: Automatically refreshed by OAuth provider
@@ -261,6 +270,17 @@ npm start
 }
 
 # 3. Click "Connect" button → OAuth flow
+```
+
+CLI alternative:
+```bash
+npx mcp4openapi \
+  --oauth-authorization-url https://gitlab.example.com/oauth/authorize \
+  --oauth-token-url https://gitlab.example.com/oauth/token \
+  --oauth-client-id xxx \
+  --oauth-client-secret yyy \
+  --oauth-redirect-uri https://<your-mcp-server-host>/oauth/callback \
+  --api-base-url https://gitlab.example.com/api/v4
 ```
 
 ### Test 2: Bearer Token (CI/CD)
@@ -425,4 +445,3 @@ spec:
 - [Kubernetes Deployment](./DEPLOYMENT-K8S-OAUTH.md)
 - [Profile Guide](./PROFILE-GUIDE.md)
 - [HTTP Transport](./HTTP-TRANSPORT.md)
-
