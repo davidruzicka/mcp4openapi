@@ -536,6 +536,42 @@ describe('MCPServer', () => {
       vi.clearAllMocks();
     });
 
+    it('getHttpProfileContext merges allowed_redirect_hosts from MCP4_ALLOWED_ORIGINS', async () => {
+      const serverWithMock = new MCPServer({
+        info: () => {},
+        warn: () => {},
+        error: () => {},
+        debug: () => {},
+      } as any);
+
+      (serverWithMock as any).parser = {
+        getBaseUrl: () => 'https://api.test',
+        getResourceMetadata: () => ({ name: 'Test', documentation: 'Docs' })
+      };
+
+      (serverWithMock as any).profile = {
+        profile_name: 'test',
+        description: 'test profile',
+        tools: [],
+        interceptors: {
+          auth: [{
+            type: 'oauth',
+            priority: 1,
+            oauth_config: {
+              issuer: 'https://issuer.test',
+              client_id: 'client-id',
+              redirect_uri: 'https://app.test/callback'
+            }
+          }]
+        }
+      };
+
+      process.env.MCP4_ALLOWED_ORIGINS = 'https://*.allowed.test,https://app.example.com';
+
+      const context = serverWithMock.getHttpProfileContext();
+      expect(context.oauthConfig?.allowed_redirect_hosts).toEqual(['*.allowed.test', 'app.example.com']);
+    });
+
     it('should derive OAuth redirect hosts and token limits from environment', async () => {
       const capturedConfigs: any[] = [];
 
