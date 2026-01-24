@@ -2517,6 +2517,11 @@ export class HttpTransport {
       ?? (24 * 60 * 60 * 1000); // 24 hours default
 
     for (const profileState of this.profileStates.values()) {
+      // Cleanup OAuth provider resources (states, codes, tokens)
+      if (profileState.oauthProvider) {
+        profileState.oauthProvider.cleanup();
+      }
+
       for (const [sessionId, session] of profileState.sessions) {
         const age = now - session.lastActivityAt;
         

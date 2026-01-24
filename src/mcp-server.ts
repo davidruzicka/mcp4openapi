@@ -484,6 +484,20 @@ export class MCPServer {
     return oauthConfig?.oauth_config;
   }
 
+  private buildOAuthConfigWithAllowedRedirectHosts(oauthConfig?: OAuthConfig): OAuthConfig | undefined {
+    if (!oauthConfig) {
+      return undefined;
+    }
+
+    return {
+      ...oauthConfig,
+      allowed_redirect_hosts: oauthConfig.allowed_redirect_hosts
+        || (process.env.MCP4_ALLOWED_ORIGINS
+          ? this.extractHostsFromOrigins(process.env.MCP4_ALLOWED_ORIGINS)
+          : undefined),
+    };
+  }
+
   private getProfileIdValue(): string {
     if (!this.profile) {
       throw new ConfigurationError('Profile not initialized. Call initialize() first.');
@@ -515,7 +529,7 @@ export class MCPServer {
 
     const authConfigs = this.getAuthConfigs();
     const baseUrl = this.getBaseUrl();
-    const oauthConfig = this.getOAuthConfig();
+    const oauthConfig = this.buildOAuthConfigWithAllowedRedirectHosts(this.getOAuthConfig());
     const resourceMetadata = this.parser.getResourceMetadata();
     const oauthRateLimit = this.getOAuthRateLimitConfig();
 
@@ -1082,14 +1096,8 @@ export class MCPServer {
       // OAuth rate limiting (priority: profile > env vars > defaults)
       rateLimitOAuthMax: profileContext.rateLimitOAuthMax,
       rateLimitOAuthWindowMs: profileContext.rateLimitOAuthWindowMs,
-      // Pass OAuth config with allowed_redirect_hosts derived from MCP4_ALLOWED_ORIGINS
-      oauthConfig: profileContext.oauthConfig ? {
-        ...profileContext.oauthConfig,
-        allowed_redirect_hosts: profileContext.oauthConfig.allowed_redirect_hosts 
-          || (process.env.MCP4_ALLOWED_ORIGINS
-            ? this.extractHostsFromOrigins(process.env.MCP4_ALLOWED_ORIGINS)
-            : undefined),
-      } : undefined,
+      // OAuth config already merged with allowed_redirect_hosts
+      oauthConfig: profileContext.oauthConfig,
       baseUrl: profileContext.baseUrl,
       authConfigs: profileContext.authConfigs,
       resourceName: profileContext.resourceName,
