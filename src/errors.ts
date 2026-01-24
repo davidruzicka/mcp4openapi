@@ -98,6 +98,18 @@ export class SessionError extends MCPError {
   }
 }
 
+export class UnknownCliFlagError extends MCPError {
+  constructor(flags: string[]) {
+    const sortedFlags = [...flags].sort();
+    super(
+      `Unknown CLI flags: ${sortedFlags.join(', ')}`,
+      'UNKNOWN_CLI_FLAG',
+      { flags: sortedFlags }
+    );
+    this.name = 'UnknownCliFlagError';
+  }
+}
+
 /**
  * Helper function to check if an error is an MCPError
  */
