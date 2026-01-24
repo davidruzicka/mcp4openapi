@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { applyCliEnvOverrides, flagToEnvVar, parseCliArgs } from './cli-config.js';
+import { UnknownCliFlagError } from './errors.js';
 
 describe('cli-config', () => {
   const originalEnv = process.env;
@@ -50,5 +51,25 @@ describe('cli-config', () => {
     applyCliEnvOverrides(parsed);
     expect(process.env.MCP4_PROFILE).toBe('gitlab');
     expect(process.env.MCP4_PROFILES_DIR).toBe('profiles');
+  });
+
+  it('throws for CLI args without known MCP4 env vars', () => {
+    const parsed = parseCliArgs(['--help', '--unknown-flag', 'value']);
+    expect(() => applyCliEnvOverrides(parsed)).toThrow(UnknownCliFlagError);
+    expect(() => applyCliEnvOverrides(parsed)).toThrow('Unknown CLI flags: help, unknown-flag');
+  });
+
+  it('allows known OAuth env vars', () => {
+    const parsed = parseCliArgs(['--oauth-client-id', 'client', '--oauth-token-url', 'https://auth/token']);
+    applyCliEnvOverrides(parsed);
+    expect(process.env.MCP4_OAUTH_CLIENT_ID).toBe('client');
+    expect(process.env.MCP4_OAUTH_TOKEN_URL).toBe('https://auth/token');
+  });
+
+  it('throws for mixed known and unknown flags', () => {
+    const parsed = parseCliArgs(['--profile', 'gitlab', '--unknown', 'value']);
+    expect(() => applyCliEnvOverrides(parsed)).toThrow(UnknownCliFlagError);
+    expect(() => applyCliEnvOverrides(parsed)).toThrow('Unknown CLI flags: unknown');
+    expect(process.env.MCP4_PROFILE).toBeUndefined();
   });
 });
