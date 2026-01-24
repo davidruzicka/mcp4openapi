@@ -294,7 +294,7 @@ echo 'export NODE_EXTRA_CA_CERTS="$HOME/ca-bundle.pem"' >> $HOME/.bash_profile
 
 **Profile auth env vars**: Use profile-specific names for `value_from_env` (for example, `GITLAB_TOKEN`, `YOUTRACK_TOKEN`) instead of the generic `MCP4_API_TOKEN`.
 
-**CLI mapping rule**: Any `MCP4_*` env var can be passed as a CLI flag by dropping the `MCP4_` prefix and using kebab-case. Example: `MCP4_PROFILE_PATH` -> `--profile-path`, `MCP4_OPENAPI_SPEC_PATH` -> `--openapi-spec-path`.
+**CLI mapping rule**: Documented `MCP4_*` env vars can be passed as a CLI flag by dropping the `MCP4_` prefix and using kebab-case. Example: `MCP4_PROFILE_PATH` -> `--profile-path`, `MCP4_OPENAPI_SPEC_PATH` -> `--openapi-spec-path`. Unknown flags cause startup to fail.
 
 ### Optional - Tool Filtering
 Global tool filtering removes tools during profile load for every session.
