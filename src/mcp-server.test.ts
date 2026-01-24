@@ -2147,6 +2147,34 @@ describe('MCPServer', () => {
     });
   });
 
+  describe('profile id resolution', () => {
+    it('throws when profile is not initialized', () => {
+      const server = new MCPServer();
+      (server as any).profile = undefined;
+      expect(() => (server as any).getProfileIdValue()).toThrow('Profile not initialized. Call initialize() first.');
+    });
+
+    it('throws when profile has no id or name', () => {
+      const server = new MCPServer();
+      (server as any).profile = {
+        profile_name: '',
+        profile_id: '   ',
+        tools: [],
+        interceptors: {},
+      };
+      expect(() => (server as any).getProfileIdValue()).toThrow('Profile is missing profile_id and profile_name.');
+    });
+  });
+
+  describe('session cleanup', () => {
+    it('handleSessionDestroyed forwards to cleanupSessionClient', () => {
+      const server = new MCPServer();
+      const cleanupSpy = vi.spyOn(server as any, 'cleanupSessionClient');
+      server.handleSessionDestroyed('default', 'session-1');
+      expect(cleanupSpy).toHaveBeenCalledWith('default', 'session-1');
+    });
+  });
+
   describe('checkToolNameLengths', () => {
     it('should return early when names are already shortened', () => {
       const originalStrategy = process.env.MCP4_TOOLNAME_STRATEGY;
