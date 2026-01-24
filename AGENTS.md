@@ -70,6 +70,8 @@ Reference canonical sources; never duplicate rules.
 - Mock servers: `src/testing/mock-*-server.ts` (MSW-based)
 - Fixtures: `src/testing/fixtures.ts`
 - **Each new validator must have both success and failure tests.**
+- **When adding new code or behavior changes, add tests to cover it if possible.**
+- **Doc-only changes do not require running tests.**
 - OAuth profiles require `MCP4_OAUTH_*` env vars in HTTP transport tests and an Authorization header for initialization.
 - E2E mock server should include auth validation endpoints used by profile auth configs.
 
