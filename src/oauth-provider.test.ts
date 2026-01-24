@@ -1511,4 +1511,101 @@ describe('ExternalOAuthProvider', () => {
     });
   });
 
+  describe('cleanup', () => {
+    beforeEach(() => {
+      provider = new ExternalOAuthProvider(config, mockLogger);
+    });
+
+    it('should remove expired states', () => {
+      // Add expired state
+      const expiredState = 'expired-state';
+      (provider as any).stateStore.set(expiredState, {
+        clientRedirectUri: 'http://localhost',
+        codeChallenge: 'challenge',
+        clientId: 'client',
+        createdAt: Date.now() - 11 * 60 * 1000, // 11 minutes ago (timeout is 10 min)
+      });
+
+      // Add valid state
+      const validState = 'valid-state';
+      (provider as any).stateStore.set(validState, {
+        clientRedirectUri: 'http://localhost',
+        codeChallenge: 'challenge',
+        clientId: 'client',
+        createdAt: Date.now() - 5 * 60 * 1000, // 5 minutes ago
+      });
+
+      provider.cleanup();
+
+      expect((provider as any).stateStore.has(expiredState)).toBe(false);
+      expect((provider as any).stateStore.has(validState)).toBe(true);
+    });
+
+    it('should remove expired authorization codes', () => {
+      const client: OAuthClientInformationFull = {
+        client_id: 'client',
+        redirect_uris: [],
+        grant_types: [],
+        response_types: [],
+      };
+
+      // Add expired code
+      const expiredCode = 'expired-code';
+      (provider as any).authorizationCodes.set(expiredCode, {
+        client,
+        params: {},
+        createdAt: Date.now() - 6 * 60 * 1000, // 6 minutes ago (timeout is 5 min)
+        tokens: {},
+      });
+
+      // Add valid code
+      const validCode = 'valid-code';
+      (provider as any).authorizationCodes.set(validCode, {
+        client,
+        params: {},
+        createdAt: Date.now() - 2 * 60 * 1000, // 2 minutes ago
+        tokens: {},
+      });
+
+      provider.cleanup();
+
+      expect((provider as any).authorizationCodes.has(expiredCode)).toBe(false);
+      expect((provider as any).authorizationCodes.has(validCode)).toBe(true);
+    });
+
+    it('should remove expired access tokens', () => {
+      // Add expired token
+      const expiredToken = 'expired-token';
+      (provider as any).accessTokens.set(expiredToken, {
+        token: expiredToken,
+        clientId: 'client',
+        scopes: [],
+        expiresAt: Date.now() - 1000, // Expired 1 second ago
+      });
+
+      // Add valid token (future expiration)
+      const validToken = 'valid-token';
+      (provider as any).accessTokens.set(validToken, {
+        token: validToken,
+        clientId: 'client',
+        scopes: [],
+        expiresAt: Date.now() + 3600 * 1000, // Expires in 1 hour
+      });
+
+      // Add token without expiration (should remain)
+      const noExpiryToken = 'no-expiry-token';
+      (provider as any).accessTokens.set(noExpiryToken, {
+        token: noExpiryToken,
+        clientId: 'client',
+        scopes: [],
+      });
+
+      provider.cleanup();
+
+      expect((provider as any).accessTokens.has(expiredToken)).toBe(false);
+      expect((provider as any).accessTokens.has(validToken)).toBe(true);
+      expect((provider as any).accessTokens.has(noExpiryToken)).toBe(true);
+    });
+  });
+
 });
