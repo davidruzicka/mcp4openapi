@@ -78,10 +78,9 @@ Access Token (Bearer) example:
             "command": "npx",
             "args": ["mcp4openapi"],
             "env": {
-                "MCP4_OPENAPI_SPEC_PATH": "path/to/openapi.yaml",
                 "MCP4_API_TOKEN": "${input:api-token}",
                 "MCP4_API_BASE_URL": "https://api.example.com",
-                "MCP4_PROFILE_PATH": "path/to/mcp-profile.json" //optional
+                "MCP4_PROFILE_PATH": "path/to/mcp-profile.json"
             }
         },
         "inputs": [
@@ -107,29 +106,40 @@ _`inputs` section prompts you for the token when the server starts, so environme
             "command": "npx",
             "args": ["mcp4openapi"],
             "env": {
-                "MCP4_OPENAPI_SPEC_PATH": "path/to/openapi.yaml",
                 "MCP4_API_TOKEN": "${env:MCP4_API_TOKEN}",
                 "MCP4_API_BASE_URL": "https://api.example.com",
-                "MCP4_PROFILE_PATH": "path/to/mcp-profile.json" //optional
+                "MCP4_PROFILE_PATH": "path/to/mcp-profile.json"
             }
         }
     }
 }
 ```
 
+#### Profile shortcut
+
+If profile defines `profile_id` (or `profile_name` or `profile_alias`), you can start with:
+
+```bash
+npx mcp4openapi --profile (profile-id/name/alias)
+```
+
+Predefined profiles in the `profiles/` directory contains names for easy reference:
+- GitLab profile: `gitlab`
+- YouTrack profile: `youtrack`
+- SemGrep profile: `semgrep`
+
+Profiles are resolved from `./profiles` path by default. Override with `--profiles-dir` or `MCP4_PROFILES_DIR`.
+
 ##### ⚠️ Prerequisites
 
-- `MCP4_API_TOKEN` with access token (Bearer) must be set.
+- `MCP4_API_TOKEN` (or equivalent environment variable name defined in your profile) with access token (Bearer) must be set for stdio transport with authenticated APIs. OAuth authorization flow is supported for HTTP transport only.
 
 #### Claude Code example:
 
 ```bash
 claude mcp add --transport stdio mcp4openapi \
   --env MCP4_API_TOKEN="${MCP4_API_TOKEN}" \
-  --env MCP4_OPENAPI_SPEC_PATH=path/to/openapi.yaml \
-  --env MCP4_API_BASE_URL=https://api.example.com \
-  --env MCP4_PROFILE_PATH=path/to/mcp-profile.json \
-  -- npx mcp4openapi
+  -- npx mcp4openapi --profile mcp-profile --api-base-url https://api.example.com
 ```
 
 ##### ⚠️ Prerequisites
@@ -143,12 +153,15 @@ claude mcp add --transport stdio mcp4openapi \
     "servers": {
         "mcp4openapi": {
             "command": "npx",
-            "args": ["mcp4openapi"],
+            "args": [
+                "mcp4openapi",
+                "--profile",
+                "mcp-profile",
+                "--api-base-url",
+                "https://api.example.com"
+            ],
             "env": {
-                "MCP4_OPENAPI_SPEC_PATH": "path/to/openapi.yaml",
                 "MCP4_API_TOKEN": "${input:api-token}",
-                "MCP4_API_BASE_URL": "https://api.example.com",
-                "MCP4_PROFILE_PATH": "path/to/mcp-profile.json" //optional
             }
         }
     }
@@ -185,7 +198,14 @@ cp env.example .env
 
 **4. Run:**
 ```bash
+# uses .env for configuration
 npm start
+```
+
+- alternatively, run with CLI flags:
+```bash
+export MCP4_API_TOKEN=glpat-xxxxxxxxxxxx
+npm start --profile mcp-profile
 ```
 
 See [docs/HTTP-TRANSPORT.md](./docs/HTTP-TRANSPORT.md) for transport options (stdio vs HTTP) and authentication modes.
@@ -259,16 +279,22 @@ echo 'export NODE_EXTRA_CA_CERTS="$HOME/ca-bundle.pem"' >> $HOME/.bash_profile
 ## Environment Variables
 
 ### Required
-- `MCP4_OPENAPI_SPEC_PATH`: Path or URL to OpenAPI spec (YAML/JSON, supports local files and HTTP/HTTPS URLs)
 - `MCP4_API_TOKEN`: API token (default env var name; customizable via `MCP4_AUTH_ENV_VAR`)
   - **Required for stdio** mode with authenticated APIs
   - **Optional for HTTP** mode with per-session tokens sent in HTTP headers
   - When using no profile mode, auth type is auto-detected from OpenAPI `security` schemes if present
 
 ### Optional - Core
+- `MCP4_PROFILE`: Profile ID for resolving profiles from a directory (used by `--profile`)
+- `MCP4_PROFILES_DIR`: Profiles root directory for profile ID resolution (default: `./profiles`)
 - `MCP4_PROFILE_PATH`: Profile JSON path (default: auto-generate tools from OpenAPI spec; warning logged if tool exceeds 60 parameters)
+- `MCP4_OPENAPI_SPEC_PATH`: Path or URL to OpenAPI spec (YAML/JSON, supports local files and HTTP/HTTPS URLs). Required when profile does not provide `openapi_spec_path`. In HTTP profile routing, this acts as a global fallback for profiles without `openapi_spec_path`.
 - `MCP4_TRANSPORT`: `stdio` (default) or `http`
 - `MCP4_API_BASE_URL`: Override OpenAPI server URL
+
+**Profile auth env vars**: Use profile-specific names for `value_from_env` (for example, `GITLAB_TOKEN`, `YOUTRACK_TOKEN`) instead of the generic `MCP4_API_TOKEN`.
+
+**CLI mapping rule**: Documented `MCP4_*` env vars can be passed as a CLI flag by dropping the `MCP4_` prefix and using kebab-case. Example: `MCP4_PROFILE_PATH` -> `--profile-path`, `MCP4_OPENAPI_SPEC_PATH` -> `--openapi-spec-path`. Unknown flags cause startup to fail.
 
 ### Optional - Tool Filtering
 Global tool filtering removes tools during profile load for every session.
@@ -291,7 +317,7 @@ Regex patterns are validated for length, nested quantifiers, and alternations wi
 - If regex validation fails, shorten patterns and avoid nested quantifiers or alternations with quantifiers.
 
 ### Optional - Authentication (No-Profile Mode)
-When running without a profile, authentication is automatically configured from OpenAPI spec's `security` schemes:
+When running without a profile (OpenAPI spec only), authentication is automatically configured from OpenAPI spec's `security` schemes:
 
 - `MCP4_AUTH_ENV_VAR`: Environment variable name for auth token (default: `MCP4_API_TOKEN`)
 
@@ -304,12 +330,12 @@ When running without a profile, authentication is automatically configured from 
 
 **Example**: Use custom env var for GitLab own instance token:
 ```bash
-export MCP4_API_TOKEN=glpat-xxxxxxxxxxxx
-export MCP4_API_BASE_URL=https://gitlab.example.com/api/v4
-export MCP4_OPENAPI_SPEC_PATH=profiles/gitlab/openapi.yaml
-export MCP4_PROFILE_PATH=profiles/gitlab/developer-profile-oauth.json
-npm start
+export MCP4_API_TOKEN=xxxxxxxxxxxx
+npm start \
+  --api-base-url https://gitlab.example.com/api/v4 \
+  --openapi-spec-path https://gitlab.example.com/api/v4/openapi.yaml
 ```
+_⚠️ Warning: Running without a profile may generate many tools with many parameters, leading to LLM context pollution._
 
 #### Force Authentication Override
 For APIs with incomplete OpenAPI specs (missing `security` definition but requiring authentication):
@@ -328,13 +354,13 @@ export MCP4_OPENAPI_SPEC_PATH=./incomplete-spec.yaml
 npm start
 ```
 
-**Example**: Force custom header authentication:
+CLI alternative:
 ```bash
-export MCP4_AUTH_FORCE=true
-export MCP4_AUTH_TYPE=custom-header
-export MCP4_AUTH_HEADER_NAME=X-API-Key
-export MCP4_API_TOKEN=your_api_key_here
-npm start
+export MCP4_API_TOKEN=your_token_here
+npm start \
+  --auth-force true \
+  --auth-type bearer \
+  --openapi-spec-path ./incomplete-spec.yaml
 ```
 
 **Note**: If OpenAPI spec has `security` defined, it takes precedence over force auth settings.
@@ -397,6 +423,29 @@ export MCP4_TOOLNAME_MAX=30
 - `MCP4_HEARTBEAT_ENABLED`, `MCP4_HEARTBEAT_INTERVAL_MS`: SSE heartbeat settings
 - `MCP4_TOKEN_MAX_LENGTH`: Maximum token length in characters (default: `1000`)
 - `MCP4_FILTER_MAX_VALUES`: Max values per filtering key (default: `10`)
+- `MCP4_HTTP_PROFILE_ROUTING`: Enable profile routing (`/profile/:id/mcp`). If enabled without a default profile, `/mcp` is not registered.
+
+**Profile routing example**:
+```bash
+export MCP4_TRANSPORT=http
+export MCP4_HTTP_PROFILE_ROUTING=true
+export MCP4_PROFILES_DIR=./profiles
+npx mcp4openapi
+```
+
+CLI alternative:
+```bash
+npx mcp4openapi --transport http \
+  --http-profile-routing true \
+  --profiles-dir ./profiles
+```
+
+**Test with curl**:
+```bash
+curl -X POST http://localhost:3003/profile/mcp-profile-name/mcp -H "Content-Type: application/json" -d '{"jsonrpc":"2.0","id":1,"method":"initialize"}'
+```
+
+If `MCP4_PROFILE_PATH` (or `--profile-path`) is set, `/mcp` remains available alongside `/profile/:id/mcp`.
 
 #### Parameter Filtering (HTTP: X-Mcp4-Params)
 
@@ -441,7 +490,7 @@ See [docs/OAUTH.md](./docs/OAUTH.md#ssltls-support) for SSL configuration with O
 export MCP4_API_BASE_URL=https://www.gitlab.com/api/v4
 export MCP4_OAUTH_CLIENT_ID=your_dcr_client_id
 export MCP4_OAUTH_CLIENT_SECRET=your_dcr_client_secret
-export MCP4_OAUTH_REDIRECT_URI=http://mcp.local:3003/oauth/callback
+export MCP4_OAUTH_REDIRECT_URI=http://127.0.0.1:3003/oauth/callback
 # OAuth endpoints are automatically discovered from API base URL
 ```
 **Note**: DCR and OAuth callback must be registered with the OAuth provider.
@@ -518,6 +567,7 @@ npm run validate:schema
 ### Run Tests
 ```bash
 npm test
+npm run test:e2e
 ```
 
 ## Troubleshooting MCP

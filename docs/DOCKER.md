@@ -15,7 +15,7 @@ docker build -t mcp4openapi .
 **Single-user mode** (simple, one token for all):
 ```bash
 cp .env.docker.example .env.docker
-# Edit .env.docker with MCP4_API_TOKEN
+# Edit .env.docker with profile-specific token env var (for example, GITLAB_TOKEN)
 ```
 
 **Multi-user mode** (each user sends own token):
@@ -46,10 +46,9 @@ docker run -d \
   --name mcp-server \
   -p 3003:3003 \
   -v $(pwd)/profiles:/app/profiles:ro \
-  -e MCP4_OPENAPI_SPEC_PATH=/app/profiles/gitlab/openapi.yaml \
   -e MCP4_PROFILE_PATH=/app/profiles/gitlab/developer-profile-oauth.json \
-  -e MCP4_API_TOKEN=your_token \
-  -e MCP4_API_BASE_URL=https://gitlab.com/api/v4 \
+  -e GITLAB_TOKEN=your_token \
+  -e GITLAB_API_BASE_URL=https://gitlab.com/api/v4 \
   mcp4openapi:latest
 ```
 
@@ -59,9 +58,8 @@ docker run -d \
   --name mcp-server \
   -p 3003:3003 \
   -v $(pwd)/profiles:/app/profiles:ro \
-  -e MCP4_OPENAPI_SPEC_PATH=/app/profiles/gitlab/openapi.yaml \
   -e MCP4_PROFILE_PATH=/app/profiles/gitlab/developer-profile-oauth.json \
-  -e MCP4_API_BASE_URL=https://gitlab.com/api/v4 \
+  -e GITLAB_API_BASE_URL=https://gitlab.com/api/v4 \
   -e MCP4_TRANSPORT=http \
   -e MCP4_HOST=0.0.0.0 \
   mcp4openapi:latest
@@ -312,8 +310,6 @@ spec:
           value: "true"
         - name: MCP4_API_BASE_URL
           value: https://your-api-instance/api/v4
-        - name: MCP4_OPENAPI_SPEC_PATH
-          value: /app/profiles/your-openapi-spec.yaml
         - name: MCP4_PROFILE_PATH
           value: /app/profiles/your-mcp-profile.json
         - name: MCP4_METRICS_ENABLED
@@ -363,7 +359,7 @@ docker-compose logs mcp4openapi
 
 **Common issues**:
 - Missing `MCP4_API_TOKEN` environment variable
-- Invalid `MCP4_OPENAPI_SPEC_PATH` or `MCP4_PROFILE_PATH`
+- Invalid `MCP4_PROFILE_PATH`
 - Profiles directory not mounted
 
 ### Permission denied
@@ -443,7 +439,6 @@ docker buildx build \
 docker run -d \
   -p 3003:3003 \
   -v path/to/profiles:/app/profiles:ro \
-  -e MCP4_OPENAPI_SPEC_PATH=/app/profiles/gitlab/openapi.yaml \
   -e MCP4_PROFILE_PATH=/app/profiles/gitlab/developer-profile-oauth.json \
   -e MCP4_API_TOKEN=$MCP4_API_TOKEN \
   -e MCP4_API_BASE_URL=$MCP4_API_BASE_URL \

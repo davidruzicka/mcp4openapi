@@ -9,8 +9,8 @@ vi.mock('./http-transport.js', () => {
     public onSessionDestroyed = vi.fn((_handler: any) => {});
     public hasOAuthProvider = vi.fn(() => false);
     public getServerUrl = vi.fn(() => 'http://127.0.0.1:0');
-    public ensureValidSessionToken = vi.fn(async () => true);
-    public getSessionToken = vi.fn((_sessionId: string) => undefined);
+    public ensureValidSessionToken = vi.fn(async (_profileId: string, _sessionId: string) => true);
+    public getSessionToken = vi.fn((_profileId: string, _sessionId: string) => undefined);
 
     constructor(public config: any, public logger: any) {}
   }
@@ -71,12 +71,13 @@ describe('MCPServer HTTP transport wiring (no listen)', () => {
           clientInfo: { name: 'test', version: '1.0.0' },
         },
       },
-      'session-1'
+      'session-1',
+      undefined
     );
     expect(response).toMatchObject({ jsonrpc: '2.0', id: 1 });
 
     const sessionDestroyed = transport.onSessionDestroyed.mock.calls[0][0];
-    sessionDestroyed('session-1');
+    sessionDestroyed('default', 'session-1');
   });
 
   it('handleJsonRpcMessage routes initialize, tools/call, and other requests', async () => {

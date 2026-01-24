@@ -15,7 +15,7 @@ Reference canonical sources; never duplicate rules.
 | `docs/HTTP-TRANSPORT.md`      | HTTP transport details           | HTTP transport, sessions, OAuth                  | Transport-specific configuration                |
 | `docs/OAUTH.md`               | OAuth 2.0 setup                 | OAuth authentication flow                        | OAuth configuration & troubleshooting           |
 | `docs/MULTI-AUTH.md`          | Multi-auth support               | Multiple auth methods with priority              | Multi-auth configuration                         |
-| `src/errors.ts`               | Error types                      | Error codes, error handling                      | Use typed errors, never ad-hoc strings           |
+| `src/errors.ts`               | Error types                      | Error codes, error handling                      | Always define new typed error instead of throwing generic one. Use typed errors, never ad-hoc strings           |
 | `TODO.md`                     | Future work & backlog            | P1/P2/P3 prioritized tasks                       | Remove items when implemented                   |
 | `.github/copilot-instructions.md` | Development patterns          | Schema sync, test patterns, file structure       | Development workflow & conventions              |
 
@@ -70,6 +70,8 @@ Reference canonical sources; never duplicate rules.
 - Mock servers: `src/testing/mock-*-server.ts` (MSW-based)
 - Fixtures: `src/testing/fixtures.ts`
 - **Each new validator must have both success and failure tests.**
+- **When adding new code or behavior changes, add tests to cover it if possible.**
+- **Doc-only changes do not require running tests.**
 - OAuth profiles require `MCP4_OAUTH_*` env vars in HTTP transport tests and an Authorization header for initialization.
 - E2E mock server should include auth validation endpoints used by profile auth configs.
 

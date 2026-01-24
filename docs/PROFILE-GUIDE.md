@@ -31,7 +31,6 @@ This guide explains how to create custom MCP tool profiles for any OpenAPI-compl
 5. **Test with real API**:
    ```bash
    npm run build
-   export MCP4_OPENAPI_SPEC_PATH=./path/to/openapi.yaml
    export MCP4_PROFILE_PATH=./profiles/<my-api-name>-profile.json
    npm start
    ```
@@ -42,6 +41,9 @@ This guide explains how to create custom MCP tool profiles for any OpenAPI-compl
 {
   "$schema": "../profile-schema.json",
   "profile_name": "unique-name",
+  "profile_id": "my-api",
+  "profile_aliases": ["my-api-default"],
+  "openapi_spec_path": "./openapi.yaml",
   "description": "What this profile provides",
   "parameter_aliases": { ... },
   "resource_name": "My API",
@@ -55,12 +57,19 @@ This guide explains how to create custom MCP tool profiles for any OpenAPI-compl
 
 - **`$schema`** (optional): Path to `profile-schema.json` for IDE validation
 - **`profile_name`** (required): Unique identifier (lowercase, underscores)
+- **`profile_id`** (optional): Short ID used with `--profile` or `MCP4_PROFILE`
+- **`profile_aliases`** (optional): Alternate IDs that can select this profile
+- **`openapi_spec_path`** (optional): OpenAPI spec path used when launching by profile without `--openapi-spec-path` or `MCP4_OPENAPI_SPEC_PATH` (resolved relative to the profile file unless absolute or URL)
 - **`description`** (optional): Human-readable description
 - **`parameter_aliases`** (optional): Map parameter names to common aliases
 - **`resource_name`** (optional): OAuth 2.0 resource name (overrides OpenAPI `info.title`, defaults to `"MCP Server"`)
 - **`resource_documentation`** (optional): OAuth 2.0 resource documentation URL (overrides OpenAPI `externalDocs.url`)
 - **`tools`** (required): Array of tool definitions
 - **`interceptors`** (optional): Auth, rate limiting, retry configuration
+
+**Profile selection**: If you set `profile_id` (or `profile_aliases`) and `openapi_spec_path`, you can launch the server with `--profile <id>` or `MCP4_PROFILE=<id>` without setting `--openapi-spec-path` or `MCP4_OPENAPI_SPEC_PATH`.
+
+**Profile auth env vars**: Prefer profile-specific names for `value_from_env` (for example, `GITLAB_TOKEN`, `YOUTRACK_TOKEN`) instead of the generic `MCP4_API_TOKEN`.
 
 #### OAuth Resource Metadata
 
@@ -660,8 +669,12 @@ npm run validate -- profiles/my-profile.json openapi.yaml
 # Test with actual API
 npm run build
 export MCP4_PROFILE_PATH=./profiles/my-profile.json
-export MCP4_OPENAPI_SPEC_PATH=./openapi.yaml
 npm start
+```
+
+CLI alternative:
+```bash
+npx mcp4openapi --profile-path ./profiles/my-profile.json
 ```
 
 The `validate` command checks:

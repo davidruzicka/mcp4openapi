@@ -57,6 +57,9 @@ import {
   type SessionToolFilterRequest,
   type ToolFilterConfig,
 } from './tool-filter/index.js';
+import type { HttpProfileContext } from './types/http-transport.js';
+import type { HttpTransport } from './http-transport.js';
+import { buildHttpTransportBaseConfig } from './http-transport-config.js';
 
 export class MCPServer {
   private server: Server;
@@ -481,6 +484,54 @@ export class MCPServer {
     return oauthConfig?.oauth_config;
   }
 
+  private getProfileIdValue(): string {
+    if (!this.profile) {
+      throw new ConfigurationError('Profile not initialized. Call initialize() first.');
+    }
+    const profileId = this.profile.profile_id?.trim() || this.profile.profile_name;
+    if (!profileId) {
+      throw new ConfigurationError('Profile is missing profile_id and profile_name.');
+    }
+    return profileId;
+  }
+
+  private getOAuthRateLimitConfig(): { max: number; windowMs: number } {
+    const authConfigs = this.getAuthConfigs();
+    const oauthAuthConfig = authConfigs.find(c => c.type === 'oauth');
+    const oauthRateLimit = oauthAuthConfig?.oauth_rate_limit;
+
+    const max = oauthRateLimit?.max_requests
+      || parseInt(process.env.MCP4_OAUTH_RATE_LIMIT_MAX || String(OAUTH_RATE_LIMIT.MAX_REQUESTS), 10);
+    const windowMs = oauthRateLimit?.window_ms
+      || parseInt(process.env.MCP4_OAUTH_RATE_LIMIT_WINDOW_MS || String(OAUTH_RATE_LIMIT.WINDOW_MS), 10);
+
+    return { max, windowMs };
+  }
+
+  public getHttpProfileContext(): HttpProfileContext {
+    if (!this.profile) {
+      throw new ConfigurationError('Profile not initialized. Call initialize() first.');
+    }
+
+    const authConfigs = this.getAuthConfigs();
+    const baseUrl = this.getBaseUrl();
+    const oauthConfig = this.getOAuthConfig();
+    const resourceMetadata = this.parser.getResourceMetadata();
+    const oauthRateLimit = this.getOAuthRateLimitConfig();
+
+    return {
+      profileId: this.getProfileIdValue(),
+      oauthConfig,
+      authConfigs,
+      baseUrl,
+      rateLimitOAuthMax: oauthRateLimit.max,
+      rateLimitOAuthWindowMs: oauthRateLimit.windowMs,
+      resourceName: this.profile.resource_name || resourceMetadata.name || 'MCP Server',
+      resourceDocumentation: this.profile.resource_documentation || resourceMetadata.documentation,
+      parser: this.parser,
+    };
+  }
+
   /**
    * Extract hostnames from origin patterns for OAuth redirect validation
    * e.g., "http://localhost:*,https://app.example.com" -> ["localhost", "app.example.com"]
@@ -520,7 +571,7 @@ export class MCPServer {
   /**
    * Get or create HTTP client for session
    */
-  private async getHttpClientForSession(sessionId?: string): Promise<HttpClient> {
+  private async getHttpClientForSession(sessionId?: string, profileId?: string): Promise<HttpClient> {
     if (!sessionId) {
       // Fallback to global client for stdio transport
       if (!this.httpClientFactory.hasGlobalClient()) {
@@ -549,7 +600,7 @@ export class MCPServer {
     }
 
     // Get auth token from session (ensures token is valid/refreshed)
-    const authToken = await this.getAuthTokenFromSession(sessionId);
+    const authToken = await this.getAuthTokenFromSession(sessionId, profileId);
 
     // Create or get session client using factory
     return this.httpClientFactory.getOrCreateSessionClient(sessionId, {
@@ -563,7 +614,7 @@ export class MCPServer {
    * Get auth token from HTTP transport session
    * Ensures token is valid (refreshes if expired) before returning
    */
-  private async getAuthTokenFromSession(sessionId: string): Promise<string | undefined> {
+  private async getAuthTokenFromSession(sessionId: string, profileId?: string): Promise<string | undefined> {
     // Early return if sessionId is missing/empty
     // Prevents misleading warn logs with empty sessionId
     if (!sessionId) {
@@ -575,14 +626,15 @@ export class MCPServer {
     }
 
     // Ensure token is valid (refresh if expired)
-    const isValid = await this.httpTransport.ensureValidSessionToken(sessionId);
+    const effectiveProfileId = profileId || this.getProfileIdValue();
+    const isValid = await this.httpTransport.ensureValidSessionToken(effectiveProfileId, sessionId);
     if (!isValid) {
-      this.logger.warn('Session token validation/refresh failed', { sessionId });
+      this.logger.warn('Session token validation/refresh failed', { profileId: effectiveProfileId, sessionId });
       // Still return token if available - let the API call fail with proper error
     }
 
     // Use public API instead of type casting
-    return this.httpTransport.getSessionToken(sessionId);
+    return this.httpTransport.getSessionToken(effectiveProfileId, sessionId);
   }
 
   /**
@@ -590,10 +642,10 @@ export class MCPServer {
    *
    * Why: Prevent memory leak - sessions expire but cached clients stay forever
    */
-  private cleanupSessionClient(sessionId: string): void {
+  private cleanupSessionClient(profileId: string | undefined, sessionId: string): void {
     const removed = this.httpClientFactory.cleanupSessionClient(sessionId);
     if (removed) {
-      this.logger.info('Cleaned up session HTTP client', { sessionId });
+      this.logger.info('Cleaned up session HTTP client', { profileId, sessionId });
     }
   }
 
@@ -696,7 +748,8 @@ export class MCPServer {
   private async executeSimpleTool(
     toolDef: ToolDefinition,
     args: Record<string, unknown>,
-    sessionId?: string
+    sessionId?: string,
+    profileId?: string
   ): Promise<unknown> {
     const normalizedArgs = normalizeArguments(toolDef, args);
 
@@ -724,7 +777,7 @@ export class MCPServer {
 
     // Check if this is a proxy download operation
     if (typeof operationDef === 'object' && operationDef.type === 'proxy_download') {
-        return this.executeProxyDownload(operationDef, normalizedArgs, sessionId);
+        return this.executeProxyDownload(operationDef, normalizedArgs, sessionId, profileId);
     }
 
     // Regular string operation
@@ -763,7 +816,7 @@ export class MCPServer {
     }
 
     // Execute with session-specific client
-    const httpClient = await this.getHttpClientForSession(sessionId);
+    const httpClient = await this.getHttpClientForSession(sessionId, profileId);
     
     // Set fields parameter if response_fields are configured for this action AND enabled
     const action = normalizedArgs.action as string | undefined;
@@ -800,7 +853,8 @@ export class MCPServer {
   private async executeProxyDownload(
     operation: ProxyDownloadOperation,
     args: Record<string, unknown>,
-    sessionId?: string
+    sessionId?: string,
+    profileId?: string
   ): Promise<unknown> {
     this.logger.debug('Executing proxy download', {
       metadataEndpoint: operation.metadata_endpoint,
@@ -831,7 +885,7 @@ export class MCPServer {
     }
     
     // Get auth credentials for download
-    const httpClient = await this.getHttpClientForSession(sessionId);
+    const httpClient = await this.getHttpClientForSession(sessionId, profileId);
     const authCredentials = httpClient.getAuthCredentials();
 
     // Execute proxy download
@@ -1015,82 +1069,32 @@ export class MCPServer {
   async runHttp(host: string, port: number): Promise<void> {
     const { HttpTransport } = await import('./http-transport.js');
     
-    // Get OAuth config from profile (supports multi-auth)
-    const oauthConfig = this.getOAuthConfig();
-    if (oauthConfig) {
+    const profileContext = this.getHttpProfileContext();
+    if (profileContext.oauthConfig) {
       this.logger.info('OAuth authentication enabled for HTTP transport');
     }
     
-    // Get auth configs for token validation
-    const authConfigs = this.getAuthConfigs();
-    const baseUrl = this.getBaseUrl();
-    
-    // Extract OAuth rate limit from profile (if configured)
-    const oauthAuthConfig = authConfigs.find(c => c.type === 'oauth');
-    const oauthRateLimit = oauthAuthConfig?.oauth_rate_limit;
-    
-    // Extract resource metadata from OpenAPI spec or profile
-    const resourceMetadata = this.parser.getResourceMetadata();
-    
+    const baseConfig = buildHttpTransportBaseConfig(host, port);
     const config = {
-      host,
-      port,
-      sessionTimeoutMs: parseInt(process.env.MCP4_SESSION_TIMEOUT_MS || String(TIMEOUTS.SESSION_TIMEOUT_MS), 10),
-      heartbeatEnabled: process.env.MCP4_HEARTBEAT_ENABLED === 'true',
-      heartbeatIntervalMs: parseInt(process.env.MCP4_HEARTBEAT_INTERVAL_MS || String(TIMEOUTS.HEARTBEAT_INTERVAL_MS), 10),
-      metricsEnabled: process.env.MCP4_METRICS_ENABLED === 'true',
-      metricsPath: process.env.MCP4_METRICS_PATH || '/metrics',
-      allowedOrigins: process.env.MCP4_ALLOWED_ORIGINS
-        ? process.env.MCP4_ALLOWED_ORIGINS.split(',').map(o => o.trim())
-        : undefined,
-      rateLimitEnabled: process.env.MCP4_HTTP_RATE_LIMIT_ENABLED !== 'false', // default: true
-      rateLimitWindowMs: parseInt(process.env.MCP4_HTTP_RATE_LIMIT_WINDOW_MS || String(TIMEOUTS.RATE_LIMIT_WINDOW_MS), 10),
-      rateLimitMaxRequests: parseInt(process.env.MCP4_HTTP_RATE_LIMIT_MAX_REQUESTS || '100', 10),
-      rateLimitMetricsMax: parseInt(process.env.MCP4_HTTP_RATE_LIMIT_METRICS_MAX || '10', 10),
+      ...baseConfig,
+      profileRoutingEnabled: false,
+      defaultProfileId: profileContext.profileId,
       // OAuth rate limiting (priority: profile > env vars > defaults)
-      rateLimitOAuthMax: oauthRateLimit?.max_requests 
-        || parseInt(process.env.MCP4_OAUTH_RATE_LIMIT_MAX || String(OAUTH_RATE_LIMIT.MAX_REQUESTS), 10),
-      rateLimitOAuthWindowMs: oauthRateLimit?.window_ms 
-        || parseInt(process.env.MCP4_OAUTH_RATE_LIMIT_WINDOW_MS || String(OAUTH_RATE_LIMIT.WINDOW_MS), 10),
-      maxTokenLength: process.env.MCP4_TOKEN_MAX_LENGTH
-        ? parseInt(process.env.MCP4_TOKEN_MAX_LENGTH, 10)
-        : undefined, // Uses default from http-transport.ts if undefined
+      rateLimitOAuthMax: profileContext.rateLimitOAuthMax,
+      rateLimitOAuthWindowMs: profileContext.rateLimitOAuthWindowMs,
       // Pass OAuth config with allowed_redirect_hosts derived from MCP4_ALLOWED_ORIGINS
-      oauthConfig: oauthConfig ? {
-        ...oauthConfig,
-        allowed_redirect_hosts: oauthConfig.allowed_redirect_hosts 
+      oauthConfig: profileContext.oauthConfig ? {
+        ...profileContext.oauthConfig,
+        allowed_redirect_hosts: profileContext.oauthConfig.allowed_redirect_hosts 
           || (process.env.MCP4_ALLOWED_ORIGINS
             ? this.extractHostsFromOrigins(process.env.MCP4_ALLOWED_ORIGINS)
             : undefined),
       } : undefined,
-      baseUrl, // Pass base URL for token validation
-      authConfigs, // Pass auth configs for token validation
-      // OAuth resource metadata (priority: profile > OpenAPI > fallback)
-      resourceName: this.profile?.resource_name || resourceMetadata.name || 'MCP Server',
-      resourceDocumentation: this.profile?.resource_documentation || resourceMetadata.documentation,
-      sslCertFile: process.env.MCP4_SSL_CERT_FILE,
-      sslKeyFile: process.env.MCP4_SSL_KEY_FILE,
-      oauthSessionTimeoutMs: (() => {
-        if (process.env.MCP4_OAUTH_SESSION_TIMEOUT_MS === undefined) return undefined;
-        const parsed = parseInt(process.env.MCP4_OAUTH_SESSION_TIMEOUT_MS, 10);
-        if (Number.isNaN(parsed)) {
-          throw new ConfigurationError(
-            `Invalid MCP4_OAUTH_SESSION_TIMEOUT_MS: expected integer milliseconds, got '${process.env.MCP4_OAUTH_SESSION_TIMEOUT_MS}'`
-          );
-        }
-        return parsed;
-      })(),
-      oauthRefreshThresholdMs: (() => {
-        if (process.env.MCP4_OAUTH_REFRESH_THRESHOLD_MS === undefined) return undefined;
-        const parsed = parseInt(process.env.MCP4_OAUTH_REFRESH_THRESHOLD_MS, 10);
-        if (Number.isNaN(parsed)) {
-          throw new ConfigurationError(
-            `Invalid MCP4_OAUTH_REFRESH_THRESHOLD_MS: expected integer milliseconds, got '${process.env.MCP4_OAUTH_REFRESH_THRESHOLD_MS}'`
-          );
-        }
-        return parsed;
-      })(),
-      parser: this.parser
+      baseUrl: profileContext.baseUrl,
+      authConfigs: profileContext.authConfigs,
+      resourceName: profileContext.resourceName,
+      resourceDocumentation: profileContext.resourceDocumentation,
+      parser: profileContext.parser,
     };
 
     // Warn if binding to non-localhost without explicit MCP4_ALLOWED_ORIGINS
@@ -1105,13 +1109,13 @@ export class MCPServer {
     this.recordGlobalToolFilterMetrics();
     
     // Set message handler to process JSON-RPC messages
-    this.httpTransport.setMessageHandler(async (message: unknown, sessionId?: string) => {
-      return await this.handleJsonRpcMessage(message, sessionId);
+    this.httpTransport.setMessageHandler(async (message: unknown, sessionId?: string, profileId?: string) => {
+      return await this.handleJsonRpcMessage(message, sessionId, profileId);
     });
 
     // Register cleanup listener for session destruction (memory leak prevention)
-    this.httpTransport.onSessionDestroyed((sessionId: string) => {
-      this.cleanupSessionClient(sessionId);
+    this.httpTransport.onSessionDestroyed((profileId: string, sessionId: string) => {
+      this.cleanupSessionClient(profileId, sessionId);
     });
 
     await this.httpTransport.start();
@@ -1119,29 +1123,41 @@ export class MCPServer {
     this.logger.info('MCP server running on HTTP', { host, port });
   }
 
+  public attachHttpTransport(transport: HttpTransport): void {
+    this.httpTransport = transport;
+  }
+
+  public handleSessionDestroyed(profileId: string, sessionId: string): void {
+    this.cleanupSessionClient(profileId, sessionId);
+  }
+
   /**
    * Handle JSON-RPC message from HTTP transport
    *
    * Why: Unified message handling for both stdio and HTTP transports
    */
-  private async handleJsonRpcMessage(message: unknown, sessionId?: string): Promise<unknown> {
+  private async handleJsonRpcMessage(message: unknown, sessionId?: string, profileId?: string): Promise<unknown> {
     // Handle initialize
     if (isInitializeRequest(message)) {
-      return this.handleInitialize(message, sessionId);
+      return this.handleInitialize(message, sessionId, profileId);
     }
 
     // Handle tool calls
     if (isToolCallRequest(message)) {
-      return await this.handleToolCall(message, sessionId);
+      return await this.handleToolCall(message, sessionId, profileId);
     }
 
     // Handle other JSON-RPC requests
     // (tools/list, prompts/list, etc.)
-    return await this.handleOtherRequest(message, sessionId);
+    return await this.handleOtherRequest(message, sessionId, profileId);
+  }
+
+  public async handleHttpMessage(message: unknown, sessionId?: string, profileId?: string): Promise<unknown> {
+    return this.handleJsonRpcMessage(message, sessionId, profileId);
   }
 
 
-  private handleInitialize(message: unknown, sessionId?: string): unknown {
+  private handleInitialize(message: unknown, sessionId?: string, profileId?: string): unknown {
     const req = message as Record<string, unknown>;
     const params = req.params as Record<string, unknown> | undefined;
 
@@ -1154,7 +1170,7 @@ export class MCPServer {
     }
 
     if (this.httpTransport && sessionId) {
-      this.applySessionToolFiltering(sessionId);
+      this.applySessionToolFiltering(sessionId, profileId);
     }
 
     const result: any = {
@@ -1183,16 +1199,16 @@ export class MCPServer {
     };
   }
 
-  private async handleToolCall(message: unknown, sessionId?: string): Promise<unknown> {
+  private async handleToolCall(message: unknown, sessionId?: string, profileId?: string): Promise<unknown> {
     const req = message as Record<string, unknown>;
     const params = req.params as Record<string, unknown>;
     const toolName = params.name as string;
     const args = params.arguments as Record<string, unknown>;
 
-      // Check OAuth authentication for tool operations
-      if (this.httpTransport && this.httpTransport.hasOAuthProvider()) {
-        const authToken = await this.getAuthTokenFromSession(sessionId || '');
-        if (!authToken) {
+    // Check OAuth authentication for tool operations
+    if (this.httpTransport && this.httpTransport.hasOAuthProvider(profileId)) {
+      const authToken = await this.getAuthTokenFromSession(sessionId || '', profileId);
+      if (!authToken) {
         // Return OAuth required error with WWW-Authenticate header
         // This should trigger the OAuth flow in the client
         const errorResponse = {
@@ -1203,7 +1219,7 @@ export class MCPServer {
             message: 'Authentication required. Please authorize via OAuth.',
             data: {
               oauth_required: true,
-              resource_metadata: `${this.httpTransport.getServerUrl()}/.well-known/oauth-protected-resource/mcp`,
+              resource_metadata: this.httpTransport.getOAuthProtectedResourceUrl(profileId),
               scope: 'api'
             }
           }
@@ -1219,7 +1235,7 @@ export class MCPServer {
         throw new ResourceNotFoundError(toolName, 'Tool');
       }
 
-      const toolFilter = this.getToolFilterForSession(sessionId);
+      const toolFilter = this.getToolFilterForSession(sessionId, profileId);
       if (toolFilter && !toolFilter.allowedToolNames.has(toolName)) {
         this.recordToolFilterRejection(toolName, 'session');
         const reason = toolFilter.reasons.get(toolName)?.[0];
@@ -1229,7 +1245,7 @@ export class MCPServer {
         );
       }
 
-      const filtering = this.getFilteringForSession(sessionId);
+      const filtering = this.getFilteringForSession(sessionId, profileId);
       if (filtering) {
         const operation = this.getFilteringOperationInfo(toolDef, args);
         enforceFiltering({
@@ -1244,7 +1260,7 @@ export class MCPServer {
       // Execute tool (reuse existing execution logic)
       let result;
       if (toolDef.composite && toolDef.steps) {
-        const httpClient = await this.getHttpClientForSession(sessionId);
+        const httpClient = await this.getHttpClientForSession(sessionId, profileId);
         const compositeResult = await this.compositeExecutor!.execute(
           toolDef.steps,
           args,
@@ -1259,7 +1275,7 @@ export class MCPServer {
           errors: compositeResult.errors,
         };
       } else {
-        result = await this.executeSimpleTool(toolDef, args, sessionId);
+        result = await this.executeSimpleTool(toolDef, args, sessionId, profileId);
       }
 
       return {
@@ -1317,16 +1333,18 @@ export class MCPServer {
     }
   }
 
-  private getFilteringForSession(sessionId?: string): FilteringRules | undefined {
+  private getFilteringForSession(sessionId?: string, profileId?: string): FilteringRules | undefined {
     if (this.httpTransport && sessionId) {
-      return this.httpTransport.getSessionFiltering(sessionId);
+      const effectiveProfileId = profileId || this.getProfileIdValue();
+      return this.httpTransport.getSessionFiltering(effectiveProfileId, sessionId);
     }
     return this.stdioFiltering;
   }
 
-  private getToolFilterForSession(sessionId?: string): SessionToolFilter | undefined {
+  private getToolFilterForSession(sessionId?: string, profileId?: string): SessionToolFilter | undefined {
     if (this.httpTransport && sessionId && typeof this.httpTransport.getSessionToolFilter === 'function') {
-      return this.httpTransport.getSessionToolFilter(sessionId);
+      const effectiveProfileId = profileId || this.getProfileIdValue();
+      return this.httpTransport.getSessionToolFilter(effectiveProfileId, sessionId);
     }
     return undefined;
   }
@@ -1345,12 +1363,12 @@ export class MCPServer {
     return this.parser.getOperation(operationId);
   }
 
-  private async handleOtherRequest(message: unknown, sessionId?: string): Promise<unknown> {
+  private async handleOtherRequest(message: unknown, sessionId?: string, profileId?: string): Promise<unknown> {
     const req = message as Record<string, unknown>;
 
     // Check OAuth authentication for other operations (like tools/list)
-    if (this.httpTransport && this.httpTransport.hasOAuthProvider()) {
-      const authToken = await this.getAuthTokenFromSession(sessionId || '');
+    if (this.httpTransport && this.httpTransport.hasOAuthProvider(profileId)) {
+      const authToken = await this.getAuthTokenFromSession(sessionId || '', profileId);
       if (!authToken) {
         // Return OAuth required error with WWW-Authenticate header
         // This should trigger the OAuth flow in the client
@@ -1362,7 +1380,7 @@ export class MCPServer {
             message: 'Authentication required. Please authorize via OAuth.',
             data: {
               oauth_required: true,
-              resource_metadata: `${this.httpTransport.getServerUrl()}/.well-known/oauth-protected-resource/mcp`,
+              resource_metadata: this.httpTransport.getOAuthProtectedResourceUrl(profileId),
               scope: 'api'
             }
           }
@@ -1373,7 +1391,7 @@ export class MCPServer {
 
     // Handle tools/list
     if (req.method === 'tools/list') {
-      const sessionFilter = this.getToolFilterForSession(sessionId);
+      const sessionFilter = this.getToolFilterForSession(sessionId, profileId);
       const allowedSet = sessionFilter?.allowedToolNames;
       const tools = this.profile?.tools
         .filter(toolDef => !allowedSet || allowedSet.has(toolDef.name))
@@ -1488,7 +1506,7 @@ export class MCPServer {
     }
   }
 
-  private applySessionToolFiltering(sessionId: string): void {
+  private applySessionToolFiltering(sessionId: string, profileId?: string): void {
     if (!this.httpTransport || !this.profile) {
       return;
     }
@@ -1496,8 +1514,9 @@ export class MCPServer {
     if (typeof this.httpTransport.getSessionToolFilterRequest !== 'function') {
       return;
     }
+    const effectiveProfileId = profileId || this.getProfileIdValue();
     const request: SessionToolFilterRequest | undefined =
-      this.httpTransport.getSessionToolFilterRequest(sessionId);
+      this.httpTransport.getSessionToolFilterRequest(effectiveProfileId, sessionId);
     if (!request) {
       return;
     }
@@ -1520,7 +1539,7 @@ export class MCPServer {
       );
     }
 
-    this.httpTransport.setSessionToolFilter(sessionId, sessionFilter);
+    this.httpTransport.setSessionToolFilter(effectiveProfileId, sessionId, sessionFilter);
     this.logger.info('Session tool filter applied', {
       sessionId,
       originalCount,

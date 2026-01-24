@@ -118,6 +118,9 @@ export const interceptorConfigSchema = z.object({
 
 export const profileSchema = z.object({
     profile_name: z.string(),
+    profile_id: z.string().optional(),
+    profile_aliases: z.array(z.string()).optional(),
+    openapi_spec_path: z.string().optional(),
     description: z.string().optional(),
     tools: z.array(toolDefinitionSchema),
     interceptors: interceptorConfigSchema.optional(),

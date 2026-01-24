@@ -13,12 +13,22 @@ import { HttpTransport } from './http-transport.js';
 import { ConsoleLogger, LogLevel, type Logger } from './logger.js';
 import { describeIfListen } from './testing/listen-support.js';
 import { parseSessionToolFilterHeader } from './tool-filter/index.js';
-import type { SessionToolFilter } from './types/http-transport.js';
 
 describeIfListen('HttpTransport', () => {
   let transport: HttpTransport;
   let app: Express;
   const logger = new ConsoleLogger();
+  const createProfileState = (target: any, profileId: string = 'default') => {
+    const state = {
+      profileId,
+      context: { profileId },
+      oauthProvider: null,
+      oauthTokensByAccessToken: new Map(),
+      sessions: new Map(),
+    };
+    target.profileStates.set(profileId, state);
+    return state;
+  };
 
   beforeEach(async () => {
     const config = {
@@ -40,599 +50,13 @@ describeIfListen('HttpTransport', () => {
     await transport.stop();
   });
 
-  describe('filtering header helpers', () => {
-    it('detects unknown message types', () => {
-      const messageType = (transport as any).getMessageType(123);
-      expect(messageType).toBe('unknown');
-    });
-
-    it('detects response-only messages', () => {
-      const messageType = (transport as any).getMessageType({ result: { ok: true } });
-      expect(messageType).toBe('response-only');
-    });
-
-    it('handles filtering header arrays', () => {
-      const getFilteringHeaderValue = (transport as any).getFilteringHeaderValue.bind(transport);
-      expect(getFilteringHeaderValue({ headers: { 'x-mcp4-params': [] } })).toBeUndefined();
-      expect(() =>
-        getFilteringHeaderValue({ headers: { 'x-mcp4-params': ['a=b', 'c=d'] } })
-      ).toThrow();
-    });
-
-    it('returns first filtering header value when single entry is provided', () => {
-      const getFilteringHeaderValue = (transport as any).getFilteringHeaderValue.bind(transport);
-      expect(getFilteringHeaderValue({ headers: { 'x-mcp4-params': ['project_id=1'] } })).toBe(
-        'project_id=1'
-      );
-    });
-
-    it('exposes session filtering values', () => {
-      const sessionId = (transport as any).createSession(
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        { project_id: ['1'] },
-        'project_id=1'
-      );
-
-      expect(transport.getSessionFiltering(sessionId)).toEqual({ project_id: ['1'] });
-      expect(transport.getSessionFilteringHeader(sessionId)).toBe('project_id=1');
-    });
-
-    it('handles tool filter header arrays', () => {
-      const getToolFilterHeaderValue = (transport as any).getToolFilterHeaderValue.bind(transport);
-      expect(getToolFilterHeaderValue({ headers: { 'x-mcp4-tools': [] } })).toBeUndefined();
-      expect(() =>
-        getToolFilterHeaderValue({ headers: { 'x-mcp4-tools': ['a', 'b'] } })
-      ).toThrow();
-    });
-
-    it('exposes session tool filter values', () => {
-      const toolFilterRequest = parseSessionToolFilterHeader('get_user');
-      const sessionId = (transport as any).createSession(
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        toolFilterRequest,
-        toolFilterRequest.normalizedHeader
-      );
-      expect(transport.getSessionToolFilterRequest(sessionId)).toEqual(toolFilterRequest);
-      expect(transport.getSessionToolFilterHeader(sessionId)).toBe(toolFilterRequest.normalizedHeader);
-    });
-
-    it('parses and stores _allow_list category in session tool filter', () => {
-      const toolFilterRequest = parseSessionToolFilterHeader('_allow_list');
-      expect(toolFilterRequest.allowCategories.has('list')).toBe(true);
-      expect(toolFilterRequest.hasRules).toBe(true);
-
-      const sessionId = (transport as any).createSession(
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        toolFilterRequest,
-        toolFilterRequest.normalizedHeader
-      );
-      const stored = transport.getSessionToolFilterRequest(sessionId);
-      expect(stored?.allowCategories.has('list')).toBe(true);
-    });
-
-    it('parses and stores _allow_read category in session tool filter', () => {
-      const toolFilterRequest = parseSessionToolFilterHeader('_allow_read');
-      expect(toolFilterRequest.allowCategories.has('read')).toBe(true);
-
-      const sessionId = (transport as any).createSession(
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        toolFilterRequest,
-        toolFilterRequest.normalizedHeader
-      );
-      const stored = transport.getSessionToolFilterRequest(sessionId);
-      expect(stored?.allowCategories.has('read')).toBe(true);
-    });
-
-    it('parses and stores combined categories with tool names', () => {
-      const toolFilterRequest = parseSessionToolFilterHeader('get_user, _allow_list, regex:read_.*');
-      expect(toolFilterRequest.exactNames.has('get_user')).toBe(true);
-      expect(toolFilterRequest.allowCategories.has('list')).toBe(true);
-      expect(toolFilterRequest.regexPatterns.length).toBe(1);
-
-      const sessionId = (transport as any).createSession(
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        toolFilterRequest,
-        toolFilterRequest.normalizedHeader
-      );
-      const stored = transport.getSessionToolFilterRequest(sessionId);
-      expect(stored?.exactNames.has('get_user')).toBe(true);
-      expect(stored?.allowCategories.has('list')).toBe(true);
-      expect(stored?.regexPatterns.length).toBe(1);
-    });
-  });
-
-  describe('tool filter service with OperationDetector', () => {
-    it('creates OperationDetector when parser is provided in config', async () => {
-      const mockParser = {
-        getOperationById: vi.fn(),
-        getOperationForCall: vi.fn()
-      } as any;
-
-      const transportWithParser = new HttpTransport(
-        {
-          host: '127.0.0.1',
-          port: 0,
-          sessionTimeoutMs: 1800000,
-          heartbeatEnabled: false,
-          heartbeatIntervalMs: 30000,
-          metricsEnabled: false,
-          metricsPath: '/metrics',
-          parser: mockParser
-        },
-        logger
-      );
-
-      // Access private method to test
-      const service = (transportWithParser as any).getToolFilterService();
-      expect(service).toBeDefined();
-
-      // Verify detector was created (indirectly - service should work with categories)
-      const toolFilterRequest = parseSessionToolFilterHeader('_allow_list');
-      expect(toolFilterRequest.allowCategories.has('list')).toBe(true);
-
-      await transportWithParser.stop();
-    });
-
-    it('creates ToolFilterService without detector when parser not provided', async () => {
-      const transportWithoutParser = new HttpTransport(
-        {
-          host: '127.0.0.1',
-          port: 0,
-          sessionTimeoutMs: 1800000,
-          heartbeatEnabled: false,
-          heartbeatIntervalMs: 30000,
-          metricsEnabled: false,
-          metricsPath: '/metrics'
-        },
-        logger
-      );
-
-      // Access private method to test
-      const service = (transportWithoutParser as any).getToolFilterService();
-      expect(service).toBeDefined();
-
-      // Service should still work, just without category support
-      const toolFilterRequest = parseSessionToolFilterHeader('get_user');
-      expect(toolFilterRequest.exactNames.has('get_user')).toBe(true);
-
-      await transportWithoutParser.stop();
-    });
-  });
-
-  describe('tool filter metrics', () => {
-    it('records global tool filter metrics', async () => {
-      const metricsTransport = new HttpTransport(
-        {
-          host: '127.0.0.1',
-          port: 0,
-          sessionTimeoutMs: 1800000,
-          heartbeatEnabled: false,
-          heartbeatIntervalMs: 30000,
-          metricsEnabled: true,
-          metricsPath: '/metrics',
-        },
-        logger
-      );
-
-      metricsTransport.recordGlobalToolFilterMetrics({
-        originalCount: 4,
-        allowedCount: 3,
-        removedCount: 1,
-        patternCounts: { allow_list: 1 },
-      });
-
-      const metricsOutput = await (metricsTransport as any).metrics.getMetrics();
-      expect(metricsOutput).toContain('mcp_tools_total{source="profile"} 4');
-      expect(metricsOutput).toContain('mcp_tools_filtered{source="global_env",action="allowed"} 3');
-      expect(metricsOutput).toContain('mcp_tools_filtered{source="global_env",action="denied"} 1');
-
-      await metricsTransport.stop();
-    });
-
-    it('records session tool filter metrics', async () => {
-      const metricsTransport = new HttpTransport(
-        {
-          host: '127.0.0.1',
-          port: 0,
-          sessionTimeoutMs: 1800000,
-          heartbeatEnabled: false,
-          heartbeatIntervalMs: 30000,
-          metricsEnabled: true,
-          metricsPath: '/metrics',
-        },
-        logger
-      );
-
-      const sessionId = 'test-session';
-      const request = parseSessionToolFilterHeader('get_user, list_users, regex:read_.*');
-      
-      metricsTransport.recordSessionToolFilterMetrics(sessionId, 2, request);
-
-      const metricsOutput = await (metricsTransport as any).metrics.getMetrics();
-      expect(metricsOutput).toContain(`mcp_tools_session{session_id="${sessionId}"} 2`);
-      expect(metricsOutput).toContain('mcp_tool_filter_patterns{type="session_allow_list"} 2');
-      expect(metricsOutput).toContain('mcp_tool_filter_patterns{type="session_allow_regex"} 1');
-
-      await metricsTransport.stop();
-    });
-
-    it('records tool filter rejection metrics', async () => {
-      const metricsTransport = new HttpTransport(
-        {
-          host: '127.0.0.1',
-          port: 0,
-          sessionTimeoutMs: 1800000,
-          heartbeatEnabled: false,
-          heartbeatIntervalMs: 30000,
-          metricsEnabled: true,
-          metricsPath: '/metrics',
-        },
-        logger
-      );
-
-      metricsTransport.recordToolFilterRejection('delete_user', 'env');
-      metricsTransport.recordToolFilterRejection('drop_table', 'session');
-
-      const metricsOutput = await (metricsTransport as any).metrics.getMetrics();
-      expect(metricsOutput).toContain('mcp_tool_filter_rejections_total{tool="delete_user",source="env"} 1');
-      expect(metricsOutput).toContain('mcp_tool_filter_rejections_total{tool="drop_table",source="session"} 1');
-
-      await metricsTransport.stop();
-    });
-
-    it('skips metrics recording when metrics disabled', async () => {
-      const noMetricsTransport = new HttpTransport(
-        {
-          host: '127.0.0.1',
-          port: 0,
-          sessionTimeoutMs: 1800000,
-          heartbeatEnabled: false,
-          heartbeatIntervalMs: 30000,
-          metricsEnabled: false,
-          metricsPath: '/metrics',
-        },
-        logger
-      );
-
-      // Should not throw
-      noMetricsTransport.recordGlobalToolFilterMetrics({
-        originalCount: 1,
-        allowedCount: 1,
-        removedCount: 0,
-        patternCounts: {},
-      });
-
-      noMetricsTransport.recordSessionToolFilterMetrics('session', 1, parseSessionToolFilterHeader('tool'));
-      noMetricsTransport.recordToolFilterRejection('tool', 'env');
-
-      await noMetricsTransport.stop();
-    });
-  });
-
-  describe('session tool filter getters/setters', () => {
-    it('gets and sets session tool filter', async () => {
-      const localTransport = new HttpTransport(
-        {
-          host: '127.0.0.1',
-          port: 0,
-          sessionTimeoutMs: 1800000,
-          heartbeatEnabled: false,
-          heartbeatIntervalMs: 30000,
-          metricsEnabled: false,
-          metricsPath: '/metrics',
-        },
-        logger
-      );
-      const sessionId = (localTransport as any).createSession();
-
-      const toolFilter: SessionToolFilter = {
-        allowedToolNames: new Set(['get_user', 'list_users']),
-        reasons: new Map(),
-        patterns: { allow: [] },
-        normalizedHeader: 'get_user, list_users'
-      };
-
-      localTransport.setSessionToolFilter(sessionId, toolFilter);
-      const retrieved = localTransport.getSessionToolFilter(sessionId);
-
-      expect(retrieved).toEqual(toolFilter);
-      expect(retrieved?.allowedToolNames.has('get_user')).toBe(true);
-      expect(retrieved?.allowedToolNames.has('list_users')).toBe(true);
-
-      (localTransport as any).destroySession(sessionId);
-      await localTransport.stop();
-    });
-
-    it('getSessionToolFilter returns undefined for non-existent session', async () => {
-      const localTransport = new HttpTransport(
-        {
-          host: '127.0.0.1',
-          port: 0,
-          sessionTimeoutMs: 1800000,
-          heartbeatEnabled: false,
-          heartbeatIntervalMs: 30000,
-          metricsEnabled: false,
-          metricsPath: '/metrics',
-        },
-        logger
-      );
-      
-      const result = localTransport.getSessionToolFilter('non-existent');
-      expect(result).toBeUndefined();
-
-      await localTransport.stop();
-    });
-
-    it('setSessionToolFilter does nothing for non-existent session', async () => {
-      const localTransport = new HttpTransport(
-        {
-          host: '127.0.0.1',
-          port: 0,
-          sessionTimeoutMs: 1800000,
-          heartbeatEnabled: false,
-          heartbeatIntervalMs: 30000,
-          metricsEnabled: false,
-          metricsPath: '/metrics',
-        },
-        logger
-      );
-      
-      const toolFilter: SessionToolFilter = {
-        allowedToolNames: new Set(['tool']),
-        reasons: new Map(),
-        patterns: { allow: [] },
-        normalizedHeader: 'tool'
-      };
-
-      // Should not throw
-      localTransport.setSessionToolFilter('non-existent', toolFilter);
-
-      await localTransport.stop();
-    });
-  });
-
-  describe('origin / CIDR matching helpers', () => {
-    it('allows localhost origins and configured host origin', async () => {
-      const localTransport = new HttpTransport(
-        {
-          host: 'example.com',
-          port: 0,
-          sessionTimeoutMs: 1800000,
-          heartbeatEnabled: false,
-          heartbeatIntervalMs: 30000,
-          metricsEnabled: false,
-          metricsPath: '/metrics',
-          allowedOrigins: [],
-        } as any,
-        logger
-      );
-
-      const isAllowedOrigin = (localTransport as any).isAllowedOrigin.bind(localTransport);
-      expect(isAllowedOrigin('http://localhost:1234')).toBe(true);
-      expect(isAllowedOrigin('http://127.0.0.1:1234')).toBe(true);
-      expect(isAllowedOrigin('https://example.com')).toBe(true);
-      expect(isAllowedOrigin('https://not-example.com')).toBe(false);
-
-      await localTransport.stop();
-    });
-
-    it('matches wildcard and exact allowed origins', async () => {
-      const localTransport = new HttpTransport(
-        {
-          host: '127.0.0.1',
-          port: 0,
-          sessionTimeoutMs: 1800000,
-          heartbeatEnabled: false,
-          heartbeatIntervalMs: 30000,
-          metricsEnabled: false,
-          metricsPath: '/metrics',
-          allowedOrigins: ['*.example.com', 'exact.example.org'],
-        } as any,
-        logger
-      );
-
-      const isAllowedOrigin = (localTransport as any).isAllowedOrigin.bind(localTransport);
-      expect(isAllowedOrigin('https://api.example.com')).toBe(true);
-      expect(isAllowedOrigin('https://example.com')).toBe(true);
-      expect(isAllowedOrigin('https://exact.example.org')).toBe(true);
-      expect(isAllowedOrigin('https://nope.example.org')).toBe(false);
-
-      await localTransport.stop();
-    });
-
-    it('supports CIDR patterns and rejects invalid masks', async () => {
-      const localTransport = new HttpTransport(
-        {
-          host: '127.0.0.1',
-          port: 0,
-          sessionTimeoutMs: 1800000,
-          heartbeatEnabled: false,
-          heartbeatIntervalMs: 30000,
-          metricsEnabled: false,
-          metricsPath: '/metrics',
-          allowedOrigins: [],
-        } as any,
-        logger
-      );
-
-      const matchOrigin = (localTransport as any).matchOrigin.bind(localTransport);
-      expect(matchOrigin('192.168.1.50', '192.168.1.0/24')).toBe(true);
-      expect(matchOrigin('192.168.2.50', '192.168.1.0/24')).toBe(false);
-      expect(matchOrigin('10.0.0.1', '10.0.0.0/not-a-number')).toBe(false);
-
-      await localTransport.stop();
-    });
-
-    it('parses IPv6 and IPv4-mapped IPv6 values', async () => {
-      const localTransport = new HttpTransport(
-        {
-          host: '127.0.0.1',
-          port: 0,
-          sessionTimeoutMs: 1800000,
-          heartbeatEnabled: false,
-          heartbeatIntervalMs: 30000,
-          metricsEnabled: false,
-          metricsPath: '/metrics',
-          allowedOrigins: [],
-        } as any,
-        logger
-      );
-
-      const ipv6ToBigInt = (localTransport as any).ipv6ToBigInt.bind(localTransport);
-      expect(ipv6ToBigInt('2001:db8::1')).not.toBeNull();
-      expect(ipv6ToBigInt('[2001:db8::1]')).not.toBeNull();
-      expect(ipv6ToBigInt('::ffff:192.168.0.1')).not.toBeNull();
-      expect(ipv6ToBigInt('not-an-ip')).toBeNull();
-
-      await localTransport.stop();
-    });
-
-    it('rejects invalid origin strings and ignores invalid oauth redirectUri', async () => {
-      const localLogger = {
-        debug: vi.fn(),
-        info: vi.fn(),
-        warn: vi.fn(),
-        error: vi.fn(),
-      };
-
-      const localTransport = new HttpTransport(
-        {
-          host: 'example.com',
-          port: 0,
-          sessionTimeoutMs: 1800000,
-          heartbeatEnabled: false,
-          heartbeatIntervalMs: 30000,
-          metricsEnabled: false,
-          metricsPath: '/metrics',
-          allowedOrigins: [],
-        } as any,
-        localLogger as any
-      );
-
-      // Force an invalid redirectUri to exercise the internal try/catch.
-      (localTransport as any).oauthProvider = { redirectUri: 'not-a-url' };
-
-      const isAllowedOrigin = (localTransport as any).isAllowedOrigin.bind(localTransport);
-      expect(isAllowedOrigin('not-a-url')).toBe(false);
-      expect(isAllowedOrigin('https://not-example.com')).toBe(false);
-
-      await localTransport.stop();
-    });
-
-    it('matches IPv6 CIDR patterns and rejects invalid IPv6 masks', async () => {
-      const localLogger = {
-        debug: vi.fn(),
-        info: vi.fn(),
-        warn: vi.fn(),
-        error: vi.fn(),
-      };
-
-      const localTransport = new HttpTransport(
-        {
-          host: '127.0.0.1',
-          port: 0,
-          sessionTimeoutMs: 1800000,
-          heartbeatEnabled: false,
-          heartbeatIntervalMs: 30000,
-          metricsEnabled: false,
-          metricsPath: '/metrics',
-          allowedOrigins: [],
-        } as any,
-        localLogger as any
-      );
-
-      const matchOrigin = (localTransport as any).matchOrigin.bind(localTransport);
-      expect(matchOrigin('2001:db8::1', '2001:db8::/32')).toBe(true);
-      expect(matchOrigin('2001:db9::1', '2001:db8::/32')).toBe(false);
-      expect(matchOrigin('2001:db8::1', '2001:db8::/129')).toBe(false);
-      expect(localLogger.warn).toHaveBeenCalled();
-
-      // Cover ipv6Mask(0) branch
-      const ipv6Mask = (localTransport as any).ipv6Mask.bind(localTransport);
-      expect(ipv6Mask(0)).toBe(0n);
-
-      await localTransport.stop();
-    });
-
-    it('ipv4ToInt rejects invalid IPv4 inputs', async () => {
-      const localTransport = new HttpTransport(
-        {
-          host: '127.0.0.1',
-          port: 0,
-          sessionTimeoutMs: 1800000,
-          heartbeatEnabled: false,
-          heartbeatIntervalMs: 30000,
-          metricsEnabled: false,
-          metricsPath: '/metrics',
-          allowedOrigins: [],
-        } as any,
-        logger
-      );
-
-      const ipv4ToInt = (localTransport as any).ipv4ToInt.bind(localTransport);
-      expect(ipv4ToInt('1.2.3')).toBeNull();
-      expect(ipv4ToInt('256.1.1.1')).toBeNull();
-
-      await localTransport.stop();
-    });
-
-    it('ipv6ToBigInt rejects invalid IPv6 inputs', async () => {
-      const localTransport = new HttpTransport(
-        {
-          host: '127.0.0.1',
-          port: 0,
-          sessionTimeoutMs: 1800000,
-          heartbeatEnabled: false,
-          heartbeatIntervalMs: 30000,
-          metricsEnabled: false,
-          metricsPath: '/metrics',
-          allowedOrigins: [],
-        } as any,
-        logger
-      );
-
-      const ipv6ToBigInt = (localTransport as any).ipv6ToBigInt.bind(localTransport);
-      expect(ipv6ToBigInt('2001:db8:::1')).toBeNull(); // too many ::
-      expect(ipv6ToBigInt('2001::db8::1')).toBeNull(); // too many ::
-      expect(ipv6ToBigInt('2001:db8:zzzz::1')).toBeNull(); // invalid hextet
-      expect(ipv6ToBigInt('1:2:3:4:5:6:7:8:9')).toBeNull(); // too many segments
-
-      await localTransport.stop();
-    });
-  });
+  // Unit tests that do not need listening sockets live in http-transport.unit.test.ts.
 
   describe('filtering header mismatch', () => {
     it('rejects mismatched filtering header on existing session', async () => {
       transport.setMessageHandler(async () => ({ result: 'ok' }));
       const sessionId = (transport as any).createSession(
+        createProfileState(transport as any),
         undefined,
         undefined,
         undefined,
@@ -658,6 +82,7 @@ describeIfListen('HttpTransport', () => {
       transport.setMessageHandler(async () => ({ result: 'ok' }));
       const toolFilterRequest = parseSessionToolFilterHeader('get_user');
       const sessionId = (transport as any).createSession(
+        createProfileState(transport as any),
         undefined,
         undefined,
         undefined,
@@ -1637,11 +1062,11 @@ describeIfListen('HttpTransport', () => {
           jsonrpc: '2.0',
           id: 1,
           method: 'initialize',
-        });
+      });
 
       const sessionId = initResponse.headers['mcp-session-id'];
-      const sessions = (transport as any).sessions;
-      const session = sessions.get(sessionId);
+      const profileState = (transport as any).profileStates.get('default');
+      const session = profileState.sessions.get(sessionId);
 
       expect(session).toBeDefined();
       expect(session.id).toBe(sessionId);
@@ -1664,11 +1089,11 @@ describeIfListen('HttpTransport', () => {
           jsonrpc: '2.0',
           id: 1,
           method: 'initialize',
-        });
+      });
 
       const sessionId = initResponse.headers['mcp-session-id'];
-      const sessions = (transport as any).sessions;
-      const initialActivity = sessions.get(sessionId).lastActivityAt;
+      const profileState = (transport as any).profileStates.get('default');
+      const initialActivity = profileState.sessions.get(sessionId).lastActivityAt;
 
       // Wait a bit
       await new Promise(resolve => setTimeout(resolve, 50));
@@ -1684,7 +1109,7 @@ describeIfListen('HttpTransport', () => {
           method: 'tools/list',
         });
 
-      const updatedActivity = sessions.get(sessionId).lastActivityAt;
+      const updatedActivity = profileState.sessions.get(sessionId).lastActivityAt;
       expect(updatedActivity).toBeGreaterThan(initialActivity);
     });
   });
@@ -1967,7 +1392,7 @@ describeIfListen('HttpTransport', () => {
         logger
       );
       // Force oauthProvider to null after setup to test the else branch
-      (oauthTransport as any).oauthProvider = null;
+      createProfileState(oauthTransport as any).oauthProvider = null;
       const oauthApp = (oauthTransport as any).app;
 
       const response = await request(oauthApp)
@@ -1978,7 +1403,7 @@ describeIfListen('HttpTransport', () => {
           refresh_token: 'valid-refresh-token'
         });
 
-      expect(response.status).toBe(500);
+      expect(response.status).toBe(404);
       expect(response.body.error).toBe('server_error');
       expect(response.body.error_description).toBe('OAuth provider not initialized');
 
@@ -2033,7 +1458,7 @@ describeIfListen('HttpTransport', () => {
 
     it('should handle exception during OAuth callback', async () => {
       // Mock the oauthProvider to throw an error during handleCallback
-      (oauthTransport as any).oauthProvider = {
+      createProfileState(oauthTransport as any).oauthProvider = {
         handleCallback: async () => {
           throw new Error('Token exchange failed');
         }
@@ -2382,8 +1807,8 @@ describeIfListen('HttpTransport', () => {
     it('should call onSessionDestroyed callback when session is destroyed', async () => {
       const destroyedSessions: string[] = [];
       
-      transport.onSessionDestroyed((sessionId) => {
-        destroyedSessions.push(sessionId);
+      transport.onSessionDestroyed((profileId, sessionId) => {
+        destroyedSessions.push(`${profileId}:${sessionId}`);
       });
 
       transport.setMessageHandler(async (msg) => ({ result: 'ok' }));
@@ -2405,7 +1830,7 @@ describeIfListen('HttpTransport', () => {
         .set('Host', 'localhost');
 
       // Callback should have been called
-      expect(destroyedSessions).toContain(sessionId);
+      expect(destroyedSessions).toContain(`default:${sessionId}`);
     });
   });
 
@@ -2471,7 +1896,7 @@ describeIfListen('HttpTransport', () => {
       );
 
       // Mock invalid redirect URI
-      (oauthTransport as any).oauthProvider = {
+      createProfileState(oauthTransport as any).oauthProvider = {
         redirectUri: 'not-a-valid-url'
       };
 
@@ -2595,7 +2020,7 @@ describeIfListen('HttpTransport', () => {
       expect(transport.hasOAuthProvider()).toBe(false);
     });
 
-    it('should return true when OAuth is configured', () => {
+    it('should return true when OAuth is configured', async () => {
       const oauthConfig = {
         host: '127.0.0.1',
         port: 0,
@@ -2613,6 +2038,7 @@ describeIfListen('HttpTransport', () => {
       };
 
       const oauthTransport = new HttpTransport(oauthConfig, logger);
+      await (oauthTransport as any).getProfileState('default');
       expect(oauthTransport.hasOAuthProvider()).toBe(true);
       oauthTransport.stop();
     });
@@ -2623,7 +2049,7 @@ describeIfListen('HttpTransport', () => {
       expect(transport.getOAuthAuthorizationUrl()).toBe('');
     });
 
-    it('should return authorization URL when OAuth is configured', () => {
+    it('should return authorization URL when OAuth is configured', async () => {
       const oauthConfig = {
         host: '127.0.0.1',
         port: 0,
@@ -2641,6 +2067,7 @@ describeIfListen('HttpTransport', () => {
       };
 
       const oauthTransport = new HttpTransport(oauthConfig, logger);
+      await (oauthTransport as any).getProfileState('default');
       expect(oauthTransport.getOAuthAuthorizationUrl()).toBe('https://example.com/oauth/authorize');
       oauthTransport.stop();
     });
@@ -2651,7 +2078,7 @@ describeIfListen('HttpTransport', () => {
       expect(transport.getOAuthScopes()).toEqual([]);
     });
 
-    it('should return scopes when OAuth is configured with scopes', () => {
+    it('should return scopes when OAuth is configured with scopes', async () => {
       const oauthConfig = {
         host: '127.0.0.1',
         port: 0,
@@ -2670,6 +2097,7 @@ describeIfListen('HttpTransport', () => {
       };
 
       const oauthTransport = new HttpTransport(oauthConfig, logger);
+      await (oauthTransport as any).getProfileState('default');
       expect(oauthTransport.getOAuthScopes()).toEqual(['api', 'read_user']);
       oauthTransport.stop();
     });
@@ -2677,20 +2105,21 @@ describeIfListen('HttpTransport', () => {
 
   describe('Session token retrieval', () => {
     it('should return undefined for non-existent session', () => {
-      expect(transport.getSessionToken('non-existent')).toBeUndefined();
+      expect(transport.getSessionToken('default', 'non-existent')).toBeUndefined();
     });
   });
 
   describe('destroySession', () => {
     it('should handle destroying non-existent session gracefully', () => {
+      const profileState = createProfileState(transport as any);
       // Should not throw
-      expect(() => (transport as any).destroySession('non-existent-session')).not.toThrow();
+      expect(() => (transport as any).destroySession(profileState, 'non-existent-session')).not.toThrow();
     });
   });
 
   describe('ensureValidSessionToken', () => {
     it('should return false for non-existent session', async () => {
-      const result = await transport.ensureValidSessionToken('non-existent-session');
+      const result = await transport.ensureValidSessionToken('default', 'non-existent-session');
       expect(result).toBe(false);
     });
 
@@ -2712,7 +2141,7 @@ describeIfListen('HttpTransport', () => {
       expect(sessionId).toBeDefined();
 
       // Token without expiration should be considered valid
-      const result = await transport.ensureValidSessionToken(sessionId);
+      const result = await transport.ensureValidSessionToken('default', sessionId);
       expect(result).toBe(true);
     });
   });
@@ -2725,21 +2154,23 @@ describeIfListen('HttpTransport', () => {
 
   describe('refreshAccessToken', () => {
     it('should return false when session does not exist', async () => {
-      const result = await (transport as any).refreshAccessToken('non-existent');
+      const result = await (transport as any).refreshAccessToken('default', 'non-existent');
       expect(result).toBe(false);
     });
 
     it('should return false when session has no refresh token', async () => {
       // Create session without refresh token
-      const sessionId = (transport as any).createSession('access-token');
-      const result = await (transport as any).refreshAccessToken(sessionId);
+      const profileState = createProfileState(transport as any);
+      const sessionId = (transport as any).createSession(profileState, 'access-token');
+      const result = await (transport as any).refreshAccessToken('default', sessionId);
       expect(result).toBe(false);
     });
 
     it('should return false when OAuth provider is not configured', async () => {
       // Create session with refresh token but no OAuth provider
-      const sessionId = (transport as any).createSession('access-token', 'refresh-token');
-      const result = await (transport as any).refreshAccessToken(sessionId);
+      const profileState = createProfileState(transport as any);
+      const sessionId = (transport as any).createSession(profileState, 'access-token', 'refresh-token');
+      const result = await (transport as any).refreshAccessToken('default', sessionId);
       expect(result).toBe(false);
     });
 
@@ -2763,11 +2194,12 @@ describeIfListen('HttpTransport', () => {
         logger
       );
 
-      const sessionId = (oauthTransport as any).createSession('old-access', 'refresh-token');
-      const session = (oauthTransport as any).sessions.get(sessionId);
+      const profileState = createProfileState(oauthTransport as any);
+      const sessionId = (oauthTransport as any).createSession(profileState, 'old-access', 'refresh-token');
+      const session = profileState.sessions.get(sessionId);
       session.oauthClientId = 'test-client';
 
-      (oauthTransport as any).oauthProvider = {
+      profileState.oauthProvider = {
         ensureEndpointsInitialized: async () => {},
         clientsStore: {
           getClient: async () => ({ client_id: 'test-client', scope: 'api' })
@@ -2780,7 +2212,7 @@ describeIfListen('HttpTransport', () => {
         })
       };
 
-      const result = await (oauthTransport as any).refreshAccessToken(sessionId);
+      const result = await (oauthTransport as any).refreshAccessToken('default', sessionId);
       expect(result).toBe(true);
       expect(session.accessTokenExpiresAt).toBeUndefined();
       expect(session.authToken).toBe('new-access');
@@ -2808,11 +2240,12 @@ describeIfListen('HttpTransport', () => {
         logger
       );
 
-      const sessionId = (oauthTransport as any).createSession('old-access', 'refresh-token');
-      const session = (oauthTransport as any).sessions.get(sessionId);
+      const profileState = createProfileState(oauthTransport as any);
+      const sessionId = (oauthTransport as any).createSession(profileState, 'old-access', 'refresh-token');
+      const session = profileState.sessions.get(sessionId);
       session.oauthClientId = 'test-client';
 
-      (oauthTransport as any).oauthProvider = {
+      profileState.oauthProvider = {
         ensureEndpointsInitialized: async () => {},
         clientsStore: {
           getClient: async () => ({ client_id: 'test-client', scope: 'api' })
@@ -2822,7 +2255,7 @@ describeIfListen('HttpTransport', () => {
         }
       };
 
-      const result = await (oauthTransport as any).refreshAccessToken(sessionId);
+      const result = await (oauthTransport as any).refreshAccessToken('default', sessionId);
       expect(result).toBe(false);
 
       await oauthTransport.stop();
@@ -2831,15 +2264,23 @@ describeIfListen('HttpTransport', () => {
 
   describe('storeOAuthTokens', () => {
     it('should store tokens with expiration', () => {
+      const profileState = {
+        profileId: 'default',
+        context: { profileId: 'default' },
+        oauthProvider: null,
+        oauthTokensByAccessToken: new Map(),
+        sessions: new Map(),
+      };
+      (transport as any).profileStates.set('default', profileState);
       const tokens = {
         access_token: 'test-access-token',
         refresh_token: 'test-refresh-token',
         expires_in: 3600
       };
       
-      (transport as any).storeOAuthTokens(tokens, 'client-id', ['read', 'write']);
+      (transport as any).storeOAuthTokens(profileState, tokens, 'client-id', ['read', 'write']);
       
-      const stored = (transport as any).oauthTokensByAccessToken.get('test-access-token');
+      const stored = profileState.oauthTokensByAccessToken.get('test-access-token');
       expect(stored).toBeDefined();
       expect(stored.refreshToken).toBe('test-refresh-token');
       expect(stored.clientId).toBe('client-id');
@@ -2848,13 +2289,21 @@ describeIfListen('HttpTransport', () => {
     });
 
     it('should store tokens without expiration', () => {
+      const profileState = {
+        profileId: 'default',
+        context: { profileId: 'default' },
+        oauthProvider: null,
+        oauthTokensByAccessToken: new Map(),
+        sessions: new Map(),
+      };
+      (transport as any).profileStates.set('default', profileState);
       const tokens = {
         access_token: 'test-access-token-2'
       };
       
-      (transport as any).storeOAuthTokens(tokens, 'client-id', []);
+      (transport as any).storeOAuthTokens(profileState, tokens, 'client-id', []);
       
-      const stored = (transport as any).oauthTokensByAccessToken.get('test-access-token-2');
+      const stored = profileState.oauthTokensByAccessToken.get('test-access-token-2');
       expect(stored).toBeDefined();
       expect(stored.refreshToken).toBeUndefined();
       expect(stored.expiresAt).toBeUndefined();
@@ -2863,9 +2312,430 @@ describeIfListen('HttpTransport', () => {
 
   describe('getSessionToken', () => {
     it('should return token for existing session', () => {
-      const sessionId = (transport as any).createSession('my-auth-token');
-      const token = transport.getSessionToken(sessionId);
+      const profileState = createProfileState(transport as any);
+      const sessionId = (transport as any).createSession(profileState, 'my-auth-token');
+      const token = transport.getSessionToken('default', sessionId);
       expect(token).toBe('my-auth-token');
+    });
+  });
+
+  describe('profile routing', () => {
+    it('routes /profile/:id/mcp to handler with profileId', async () => {
+      const config = {
+        host: '127.0.0.1',
+        port: 0,
+        sessionTimeoutMs: 1800000,
+        heartbeatEnabled: false,
+        heartbeatIntervalMs: 30000,
+        metricsEnabled: false,
+        metricsPath: '/metrics',
+        profileRoutingEnabled: true,
+      };
+
+      const routingTransport = new HttpTransport(config, logger);
+      routingTransport.setProfileContextProvider(async (id) => ({ profileId: id }));
+      const handler = vi.fn(async (message: any, sessionId?: string, profileId?: string) => ({
+        jsonrpc: '2.0',
+        id: message.id,
+        result: { sessionId, profileId },
+      }));
+      routingTransport.setMessageHandler(handler);
+
+      const routingApp = (routingTransport as any).app;
+
+      const response = await request(routingApp)
+        .post('/profile/gitlab/mcp')
+        .set('Accept', 'application/json')
+        .send({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'initialize',
+          params: {
+            protocolVersion: '2025-03-26',
+            clientInfo: { name: 'test', version: '1.0.0' },
+          },
+        });
+
+      expect(response.status).toBe(200);
+      const [, , profileId] = handler.mock.calls[0];
+      expect(profileId).toBe('gitlab');
+
+      await routingTransport.stop();
+    });
+
+    it('returns 404 for /mcp when routing enabled without default profile', async () => {
+      const routingTransport = new HttpTransport(
+        {
+          host: '127.0.0.1',
+          port: 0,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: false,
+          metricsPath: '/metrics',
+          profileRoutingEnabled: true,
+        },
+        logger
+      );
+      routingTransport.setProfileContextProvider(async (id) => ({ profileId: id }));
+      routingTransport.setMessageHandler(async (message: any) => ({
+        jsonrpc: '2.0',
+        id: message.id,
+        result: { ok: true },
+      }));
+
+      const routingApp = (routingTransport as any).app;
+      const response = await request(routingApp)
+        .post('/mcp')
+        .set('Accept', 'application/json')
+        .send({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'initialize',
+          params: {
+            protocolVersion: '2025-03-26',
+            clientInfo: { name: 'test', version: '1.0.0' },
+          },
+        });
+
+      expect(response.status).toBe(404);
+      expect(response.body.error).toBe('Not Found');
+
+      await routingTransport.stop();
+    });
+
+    it('keeps /mcp when default profile is set in routing mode', async () => {
+      const routingTransport = new HttpTransport(
+        {
+          host: '127.0.0.1',
+          port: 0,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: false,
+          metricsPath: '/metrics',
+          profileRoutingEnabled: true,
+          defaultProfileId: 'default',
+        },
+        logger
+      );
+      routingTransport.setProfileContextProvider(async (id) => (id === 'default' ? { profileId: id } : null));
+      const handler = vi.fn(async (message: any, sessionId?: string, profileId?: string) => ({
+        jsonrpc: '2.0',
+        id: message.id,
+        result: { sessionId, profileId },
+      }));
+      routingTransport.setMessageHandler(handler);
+
+      const routingApp = (routingTransport as any).app;
+      const response = await request(routingApp)
+        .post('/mcp')
+        .set('Accept', 'application/json')
+        .send({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'initialize',
+          params: {
+            protocolVersion: '2025-03-26',
+            clientInfo: { name: 'test', version: '1.0.0' },
+          },
+        });
+
+      expect(response.status).toBe(200);
+      const [, , profileId] = handler.mock.calls[0];
+      expect(profileId).toBe('default');
+
+      await routingTransport.stop();
+    });
+
+    it('routes alias profile ids when default profile is set', async () => {
+      const routingTransport = new HttpTransport(
+        {
+          host: '127.0.0.1',
+          port: 0,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: false,
+          metricsPath: '/metrics',
+          profileRoutingEnabled: true,
+          defaultProfileId: 'default',
+        },
+        logger
+      );
+      routingTransport.setProfileContextProvider(async (id) => (id === 'alias-default' ? { profileId: id } : null));
+      const handler = vi.fn(async (message: any, sessionId?: string, profileId?: string) => ({
+        jsonrpc: '2.0',
+        id: message.id,
+        result: { sessionId, profileId },
+      }));
+      routingTransport.setMessageHandler(handler);
+
+      const routingApp = (routingTransport as any).app;
+      const response = await request(routingApp)
+        .post('/profile/alias-default/mcp')
+        .set('Accept', 'application/json')
+        .send({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'initialize',
+          params: {
+            protocolVersion: '2025-03-26',
+            clientInfo: { name: 'test', version: '1.0.0' },
+          },
+        });
+
+      expect(response.status).toBe(200);
+      const [, , profileId] = handler.mock.calls[0];
+      expect(profileId).toBe('alias-default');
+
+      await routingTransport.stop();
+    });
+
+    it('passes request profile id to handler when alias is used', async () => {
+      const routingTransport = new HttpTransport(
+        {
+          host: '127.0.0.1',
+          port: 0,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: false,
+          metricsPath: '/metrics',
+          profileRoutingEnabled: true,
+        },
+        logger
+      );
+      routingTransport.setProfileContextProvider(async () => ({
+        profileId: 'canonical',
+      }));
+      const handler = vi.fn(async (message: any, sessionId?: string, profileId?: string) => ({
+        jsonrpc: '2.0',
+        id: message.id,
+        result: { sessionId, profileId },
+      }));
+      routingTransport.setMessageHandler(handler);
+
+      const routingApp = (routingTransport as any).app;
+      const response = await request(routingApp)
+        .post('/profile/alias/mcp')
+        .set('Accept', 'application/json')
+        .send({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'initialize',
+          params: {
+            protocolVersion: '2025-03-26',
+            clientInfo: { name: 'test', version: '1.0.0' },
+          },
+        });
+
+      expect(response.status).toBe(200);
+      const [, , profileId] = handler.mock.calls[0];
+      expect(profileId).toBe('alias');
+
+      await routingTransport.stop();
+    });
+
+    it('serves profile-scoped OAuth metadata', async () => {
+      const routingTransport = new HttpTransport(
+        {
+          host: '127.0.0.1',
+          port: 0,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: false,
+          metricsPath: '/metrics',
+          profileRoutingEnabled: true,
+        },
+        logger
+      );
+      routingTransport.setProfileContextProvider(async (id) => ({
+        profileId: id,
+        oauthConfig: {
+          authorization_endpoint: 'https://auth.example.com/oauth/authorize',
+          token_endpoint: 'https://auth.example.com/oauth/token',
+          client_id: 'client',
+          client_secret: 'secret',
+          redirect_uri: 'http://localhost:3003/oauth/callback',
+          scopes: ['api'],
+        },
+      }));
+
+      const routingApp = (routingTransport as any).app;
+      const response = await request(routingApp).get('/profile/gitlab/.well-known/oauth-authorization-server');
+
+      expect(response.status).toBe(200);
+      expect(response.body.issuer).toContain('/profile/gitlab');
+      expect(response.body.authorization_endpoint).toContain('/profile/gitlab/oauth/authorize');
+      expect(response.body.token_endpoint).toContain('/profile/gitlab/oauth/token');
+
+      await routingTransport.stop();
+    });
+
+    it('keeps profile prefix for default profile OAuth metadata', async () => {
+      const routingTransport = new HttpTransport(
+        {
+          host: '127.0.0.1',
+          port: 0,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: false,
+          metricsPath: '/metrics',
+          profileRoutingEnabled: true,
+          defaultProfileId: 'default',
+        },
+        logger
+      );
+      routingTransport.setProfileContextProvider(async (id) => ({
+        profileId: id,
+        oauthConfig: {
+          authorization_endpoint: 'https://auth.example.com/oauth/authorize',
+          token_endpoint: 'https://auth.example.com/oauth/token',
+          client_id: 'client',
+          client_secret: 'secret',
+          redirect_uri: 'http://localhost:3003/oauth/callback',
+          scopes: ['api'],
+        },
+      }));
+
+      const routingApp = (routingTransport as any).app;
+      const response = await request(routingApp).get('/profile/default/.well-known/oauth-authorization-server');
+
+      expect(response.status).toBe(200);
+      expect(response.body.issuer).toContain('/profile/default');
+      expect(response.body.authorization_endpoint).toContain('/profile/default/oauth/authorize');
+      expect(response.body.token_endpoint).toContain('/profile/default/oauth/token');
+
+      await routingTransport.stop();
+    });
+
+    it('serves profile-scoped protected resource metadata', async () => {
+      const routingTransport = new HttpTransport(
+        {
+          host: '127.0.0.1',
+          port: 0,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: false,
+          metricsPath: '/metrics',
+          profileRoutingEnabled: true,
+        },
+        logger
+      );
+      routingTransport.setProfileContextProvider(async (id) => ({
+        profileId: id,
+        oauthConfig: {
+          authorization_endpoint: 'https://auth.example.com/oauth/authorize',
+          token_endpoint: 'https://auth.example.com/oauth/token',
+          client_id: 'client',
+          client_secret: 'secret',
+          redirect_uri: 'http://localhost:3003/oauth/callback',
+          scopes: ['api'],
+        },
+      }));
+
+      const routingApp = (routingTransport as any).app;
+      const response = await request(routingApp).get('/profile/gitlab/.well-known/oauth-protected-resource/mcp');
+
+      expect(response.status).toBe(200);
+      expect(response.body.resource).toContain('/profile/gitlab/mcp');
+      expect(response.body.authorization_servers?.[0]).toContain('/profile/gitlab');
+
+      await routingTransport.stop();
+    });
+
+    it('serves root protected resource metadata using resource query', async () => {
+      const routingTransport = new HttpTransport(
+        {
+          host: '127.0.0.1',
+          port: 0,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: false,
+          metricsPath: '/metrics',
+          profileRoutingEnabled: true,
+        },
+        logger
+      );
+      routingTransport.setProfileContextProvider(async (id) => ({
+        profileId: id,
+        oauthConfig: {
+          authorization_endpoint: 'https://auth.example.com/oauth/authorize',
+          token_endpoint: 'https://auth.example.com/oauth/token',
+          client_id: 'client',
+          client_secret: 'secret',
+          redirect_uri: 'http://localhost:3003/oauth/callback',
+          scopes: ['api'],
+        },
+      }));
+
+      const routingApp = (routingTransport as any).app;
+      const response = await request(routingApp)
+        .get('/.well-known/oauth-protected-resource/mcp')
+        .query({ resource: 'https://example.com/profile/gitlab/mcp/' });
+
+      expect(response.status).toBe(200);
+      expect(response.body.resource).toContain('/profile/gitlab/mcp');
+      expect(response.body.authorization_servers?.[0]).toContain('/profile/gitlab');
+
+      await routingTransport.stop();
+    });
+
+    it('rejects invalid resource query parameter', async () => {
+      const routingTransport = new HttpTransport(
+        {
+          host: '127.0.0.1',
+          port: 0,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: false,
+          metricsPath: '/metrics',
+          profileRoutingEnabled: true,
+        },
+        logger
+      );
+
+      const routingApp = (routingTransport as any).app;
+      const response = await request(routingApp)
+        .get('/.well-known/oauth-protected-resource/mcp')
+        .query({ resource: ['one', 'two'] });
+
+      expect(response.status).toBe(400);
+      expect(response.body.message).toBe('Invalid resource query parameter');
+
+      await routingTransport.stop();
+    });
+
+    it('returns not found for unrecognized resource url', async () => {
+      const routingTransport = new HttpTransport(
+        {
+          host: '127.0.0.1',
+          port: 0,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: false,
+          metricsPath: '/metrics',
+          profileRoutingEnabled: true,
+        },
+        logger
+      );
+
+      const routingApp = (routingTransport as any).app;
+      const response = await request(routingApp)
+        .get('/.well-known/oauth-protected-resource/mcp')
+        .query({ resource: 'not-a-url' });
+
+      expect(response.status).toBe(404);
+      expect(response.body.message).toBe('OAuth metadata unavailable for requested resource');
+
+      await routingTransport.stop();
     });
   });
 
@@ -2894,9 +2764,13 @@ describeIfListen('HttpTransport', () => {
 
     it('should allow origin matching OAuth redirect URI host', async () => {
       // Mock OAuth provider with redirect URI
-      (oauthTransport as any).oauthProvider = {
-        redirectUri: 'http://myapp.example.com:3000/callback',
-      };
+      (oauthTransport as any).profileStates.set('default', {
+        profileId: 'default',
+        context: { profileId: 'default' },
+        oauthProvider: { redirectUri: 'http://myapp.example.com:3000/callback' },
+        oauthTokensByAccessToken: new Map(),
+        sessions: new Map(),
+      });
 
       const isAllowed = (oauthTransport as any).isAllowedOrigin('http://myapp.example.com:3000');
       expect(isAllowed).toBe(true);
@@ -2904,9 +2778,13 @@ describeIfListen('HttpTransport', () => {
 
     it('should handle invalid OAuth redirect URI gracefully', async () => {
       // Mock OAuth provider with invalid redirect URI
-      (oauthTransport as any).oauthProvider = {
-        redirectUri: 'not-a-valid-url',
-      };
+      (oauthTransport as any).profileStates.set('default', {
+        profileId: 'default',
+        context: { profileId: 'default' },
+        oauthProvider: { redirectUri: 'not-a-valid-url' },
+        oauthTokensByAccessToken: new Map(),
+        sessions: new Map(),
+      });
 
       // Should not throw and should fall back to other checks
       const isAllowed = (oauthTransport as any).isAllowedOrigin('http://localhost:3000');

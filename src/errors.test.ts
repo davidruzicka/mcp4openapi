@@ -10,13 +10,15 @@ import {
   MCPError,
   ValidationError,
   OperationNotFoundError,
+  ResourceNotFoundError,
   ParameterError,
   AuthenticationError,
   AuthorizationError,
   RateLimitError,
   NetworkError,
   ConfigurationError,
-  SessionError
+  SessionError,
+  UnknownCliFlagError
 } from './errors.js';
 
 describe('Error Classes', () => {
@@ -37,6 +39,32 @@ describe('Error Classes', () => {
       expect(error.code).toBe('PARAMETER_ERROR');
       expect(error.details).toEqual({ paramName: 'userId', reason: 'must be a positive integer' });
       expect(error.name).toBe('ParameterError');
+    });
+  });
+
+  describe('ResourceNotFoundError', () => {
+    it('should format message with resource and default type', () => {
+      const error = new ResourceNotFoundError('abc');
+      expect(error.message).toBe('Resource not found: abc');
+      expect(error.code).toBe('RESOURCE_NOT_FOUND');
+      expect(error.details).toEqual({ resource: 'abc', resourceType: 'Resource' });
+      expect(error.name).toBe('ResourceNotFoundError');
+    });
+
+    it('should format message with custom resource type', () => {
+      const error = new ResourceNotFoundError('user-1', 'User');
+      expect(error.message).toBe('User not found: user-1');
+      expect(error.details).toEqual({ resource: 'user-1', resourceType: 'User' });
+    });
+  });
+
+  describe('UnknownCliFlagError', () => {
+    it('should sort flags and include them in details', () => {
+      const error = new UnknownCliFlagError(['--z', '--a']);
+      expect(error.message).toBe('Unknown CLI flags: --a, --z');
+      expect(error.code).toBe('UNKNOWN_CLI_FLAG');
+      expect(error.details).toEqual({ flags: ['--a', '--z'] });
+      expect(error.name).toBe('UnknownCliFlagError');
     });
   });
 
@@ -62,6 +90,7 @@ describe('isMCPError', () => {
     expect(isMCPError(new MCPError('test', 'CODE'))).toBe(true);
     expect(isMCPError(new ValidationError('test'))).toBe(true);
     expect(isMCPError(new OperationNotFoundError('op1'))).toBe(true);
+    expect(isMCPError(new ResourceNotFoundError('res1'))).toBe(true);
     expect(isMCPError(new ParameterError('param', 'reason'))).toBe(true);
     expect(isMCPError(new AuthenticationError())).toBe(true);
     expect(isMCPError(new AuthorizationError())).toBe(true);
@@ -69,6 +98,7 @@ describe('isMCPError', () => {
     expect(isMCPError(new NetworkError('network failed'))).toBe(true);
     expect(isMCPError(new ConfigurationError('bad config'))).toBe(true);
     expect(isMCPError(new SessionError('session issue'))).toBe(true);
+    expect(isMCPError(new UnknownCliFlagError(['--x']))).toBe(true);
   });
 
   it('should return false for non-MCPError', () => {
@@ -147,4 +177,3 @@ describe('generateCorrelationId', () => {
     expect(['8', '9', 'a', 'b']).toContain(parts[3][0]);
   });
 });
-
