@@ -99,6 +99,16 @@ describe('ConsoleLogger', () => {
 
     expect(consoleErrorSpy).not.toHaveBeenCalled();
   });
+
+  it('sanitizes newlines to prevent log injection', () => {
+    const logger = new ConsoleLogger(LogLevel.INFO);
+    logger.info('User login\n[2026-01-01] ERROR: Fake error');
+
+    // Should contain literal \n characters, not actual newline
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('User login\\n[2026-01-01] ERROR: Fake error')
+    );
+  });
 });
 
 describe('JsonLogger', () => {
