@@ -25,3 +25,15 @@ In-memory stores for temporary security state (like OAuth nonces/states) must al
 1.  Add `createdAt` timestamps to all in-memory state objects.
 2.  Implement a `cleanup()` method that iterates and removes expired entries.
 3.  Hook this cleanup method into a global interval (e.g., existing session cleanup).
+
+## 2026-01-25 - [MEDIUM] Log Injection in Console Logger
+
+**Vulnerability:**
+The `ConsoleLogger` was writing user-supplied messages directly to `stderr` without sanitization. An attacker could inject newline characters (`\n`) into a log message (e.g., via a login username or error message) to forge fake log entries, potentially confusing log analysis tools or administrators (CWE-117).
+
+**Learning:**
+Logging untrusted input to a text-based stream (like console/file) requires sanitization of control characters, especially newlines. JSON logging (`JsonLogger`) is inherently safe from this specific attack because `JSON.stringify` escapes control characters.
+
+**Prevention:**
+1.  Sanitize all log messages in text-based loggers by escaping newlines (e.g., replacing `\n` with `\\n`).
+2.  Prefer structured logging (JSON) in production environments where log integrity is critical.
