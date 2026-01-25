@@ -9,7 +9,17 @@ This guide explains how to create custom MCP tool profiles for any OpenAPI-compl
    touch profiles/<my-api-name>-profile.json
    ```
 
-2. **Add JSON Schema reference** (for IDE auto-complete and validation):
+2. **Confirm required inputs up front** (ask explicitly if missing):
+   - Profile name/id/aliases and the OpenAPI spec location
+   - Auth type and env var names (use profile-specific env vars, not MCP4_* generics)
+   - Base URL env var and default (needed for multi-profile runs and tests)
+   - Desired tool aggregation (which endpoints are grouped under each tool and action)
+   - Parameter aliases (id, projectId, workflowId, etc.)
+   - Response fields policy (which fields to return per action)
+   - Test expectations (request assertions required or not, and any must-cover actions)
+   - **Explicitly ask**: Which env var should be used for the base URL, and what default should be set? Missing this is a common cause of profile test failures (relative base URL like `/api/v1`).
+
+3. **Add JSON Schema reference** (for IDE auto-complete and validation):
    ```json
    {
      "$schema": "../profile-schema.json",
@@ -17,9 +27,9 @@ This guide explains how to create custom MCP tool profiles for any OpenAPI-compl
    }
    ```
 
-3. **Define your tools** (see sections below)
+4. **Define your tools** (see sections below)
 
-4. **Validate** (no API access required):
+5. **Validate** (no API access required):
    ```bash
    # Validate profile structure only
    npm run validate -- profiles/<my-api-name>-profile.json
@@ -28,7 +38,7 @@ This guide explains how to create custom MCP tool profiles for any OpenAPI-compl
    npm run validate -- profiles/<my-api-name>-profile.json path/to/openapi.yaml
    ```
 
-5. **Test with real API**:
+6. **Test with real API**:
    ```bash
    npm run build
    export MCP4_PROFILE_PATH=./profiles/<my-api-name>-profile.json
