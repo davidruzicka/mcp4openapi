@@ -635,6 +635,44 @@ describe('MCPServer', () => {
     });
   });
 
+  describe('resolvePath encoding', () => {
+    it('encodes slashes and percent escapes when path contains slash', () => {
+      const localServer = new MCPServer();
+      (localServer as any).profile = {
+        profile_name: 'test',
+        description: 'test profile',
+        tools: [],
+        interceptors: { auth: [] },
+        parameter_aliases: { id: ['project_id'] },
+      };
+
+      const result = (localServer as any).resolvePath(
+        '/projects/{id}',
+        { project_id: 'group/mcp%2Fapp' }
+      );
+
+      expect(result).toBe('/projects/group%2Fmcp%252Fapp');
+    });
+
+    it('encodes raw slashes in path parameters', () => {
+      const localServer = new MCPServer();
+      (localServer as any).profile = {
+        profile_name: 'test',
+        description: 'test profile',
+        tools: [],
+        interceptors: { auth: [] },
+        parameter_aliases: { id: ['project_id'] },
+      };
+
+      const result = (localServer as any).resolvePath(
+        '/projects/{id}',
+        { project_id: 'group/mcp/app' }
+      );
+
+      expect(result).toBe('/projects/group%2Fmcp%2Fapp');
+    });
+  });
+
   describe('executeProxyDownload wiring', () => {
     const originalEnv = { ...process.env };
 

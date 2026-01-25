@@ -13,7 +13,6 @@
   - [3. OpenAPI Operation Filter for Default Profile](#3-openapi-operation-filter-for-default-profile)
   - [4. Response Caching](#4-response-caching)
   - [5. Request Deduplication](#5-request-deduplication)
-  - [6. Improve project_id encoding](#6-improve-project_id-encoding)
   - [7. Strengthen ReDoS Protection in Regex Compiler](#7-strengthen-redos-protection-in-regex-compiler)
   - [8. Limit HTTP profile server cache growth](#8-limit-http-profile-server-cache-growth)
   - [9. Break MCPServer-HttpTransport circular dependency](#9-break-mcpserver-httptransport-circular-dependency)
@@ -166,17 +165,6 @@ Prevent multiple identical in-flight requests (thundering herd):
 - Return cached result to all callers
 
 **Estimated effort**: 2-3 hours
-
-### 6. Improve project_id encoding
-**Problem**: Path parameters such as `project_id` are always URL-encoded by `encodePathSegment()`. If callers pass values that already contain URL-encoded segments (e.g. `group/mcp%2Fapp`), the current logic double-encodes them (`%25`). GitLab then fails to resolve the project.
-
-**Goal**: Accept combined identifiers and encode missing parts only without double-encoding or throw error message with clear guidance.
-
-**Ideas** (need evaluation):
-- Detect existing `%` sequences and attempt `decodeURIComponent` before deciding whether to re-encode.
-- Replace `/` characters only with `%2F`.
-
-**Estimated effort**: 1-2 hours
 
 ### 7. Strengthen ReDoS Protection in Regex Compiler
 **Problem**: `RegexCompiler` accepts user input from HTTP headers (`X-Mcp4-Tools`) and environment variables. While `RegexValidator` provides partial protection (length limits, nested quantifiers, ambiguous alternation), it doesn't cover all ReDoS attack vectors. A malicious user could craft regex patterns that pass validation but still cause exponential backtracking.
