@@ -17,7 +17,7 @@ Reference canonical sources; never duplicate rules.
 | `docs/MULTI-AUTH.md`          | Multi-auth support               | Multiple auth methods with priority              | Multi-auth configuration                         |
 | `src/errors.ts`               | Error types                      | Error codes, error handling                      | Always define new typed error instead of throwing generic one. Use typed errors, never ad-hoc strings           |
 | `TODO.md`                     | Future work & backlog            | P1/P2/P3 prioritized tasks                       | Remove items when implemented                   |
-| `.github/copilot-instructions.md` | Development patterns          | Schema sync, test patterns, file structure       | Development workflow & conventions              |
+| `docs/PROFILE-TEST-GUIDE.md`  | Profile testing strategies       | Profile test coverage, behavior validation        | Use for writing profile tests                   |
 
 ## Directives
 
@@ -80,7 +80,7 @@ Check diff coverage (codecov style): `node scripts/check-diff-coverage.js` (run 
 
 ### Code Organization
 
-- Source: `src/{feature}.ts` with `src/{feature}.test.ts`
+- Source: `src/{feature}.ts` or `src/{feature}/`
 - Types: `src/types/{domain}.ts`
 - Testing utilities: `src/testing/`
 - Profiles: `profiles/{api-name}/`
