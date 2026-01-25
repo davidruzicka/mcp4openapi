@@ -123,6 +123,39 @@ describe('MCPServer', () => {
     });
   });
 
+  describe('extractBody', () => {
+    it('uses root array body from body/items/single array param', () => {
+      const operation: any = {
+        operationId: 'test',
+        method: 'POST',
+        path: '/test',
+        parameters: [],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'array',
+                items: { type: 'object' },
+              },
+            },
+          },
+        },
+      };
+
+      const toolDef: any = { metadata_params: ['action'] };
+
+      const fromBody = (server as any).extractBody(operation, { action: 'create', body: [{ a: 1 }] }, toolDef);
+      expect(fromBody).toEqual([{ a: 1 }]);
+
+      const fromItems = (server as any).extractBody(operation, { action: 'create', items: [{ b: 2 }] }, toolDef);
+      expect(fromItems).toEqual([{ b: 2 }]);
+
+      const fromSingleArray = (server as any).extractBody(operation, { action: 'create', users: [{ c: 3 }] }, toolDef);
+      expect(fromSingleArray).toEqual([{ c: 3 }]);
+    });
+  });
+
   describe('global tool filtering', () => {
     const specPath = path.join(process.cwd(), 'profiles/gitlab/openapi.yaml');
     let profilePath: string;
@@ -957,6 +990,28 @@ describe('MCPServer', () => {
             },
           },
         ],
+      });
+    });
+
+    it('should support quoted field names with spaces', () => {
+      const server = new MCPServer();
+      const data = {
+        'Credentials Risk Report': {
+          sections: [
+            { title: 'Section 1', risk: 'credentials', extra: 'ignore' }
+          ],
+          ignored: 'ignore'
+        },
+        other: 'ignore'
+      };
+
+      const result = (server as any).filterFields(data, ['\"Credentials Risk Report\"(sections(title))']);
+      expect(result).toEqual({
+        'Credentials Risk Report': {
+          sections: [
+            { title: 'Section 1' }
+          ]
+        }
       });
     });
 
