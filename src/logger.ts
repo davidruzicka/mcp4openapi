@@ -53,6 +53,14 @@ function resolveLogLevel(explicitLevel?: LogLevel): LogLevel {
     : LogLevel.INFO;
 }
 
+/**
+ * Sanitize log message to prevent log injection
+ * Replaces newlines with escaped string representation
+ */
+export function sanitizeLogMessage(message: string): string {
+  return message.replace(/\n/g, '\\n').replace(/\r/g, '\\r');
+}
+
 function redactSensitiveContext(
   data: Record<string, unknown>,
   authConfig?: AuthInterceptor
@@ -153,7 +161,8 @@ export class ConsoleLogger implements Logger {
     const timestamp = new Date().toISOString();
     const redacted = context ? redactSensitiveContext(context, this.authConfig) : undefined;
     const ctx = redacted ? ` ${JSON.stringify(redacted)}` : '';
-    console.error(`[${timestamp}] ${level}: ${message}${ctx}`);
+    const safeMessage = sanitizeLogMessage(message);
+    console.error(`[${timestamp}] ${level}: ${safeMessage}${ctx}`);
   }
 }
 
