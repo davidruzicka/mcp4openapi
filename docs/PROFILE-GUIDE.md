@@ -142,6 +142,30 @@ Maps user actions to OpenAPI operations.
 - `action` parameter: Enum of available actions
 - `required_for`: Conditional parameter requirements
 
+#### Root Array Request Bodies
+
+Some OpenAPI operations define the request body as a root array (not an object). To send these, pass one of:
+- `body`: the full array payload
+- `items`: the full array payload
+- a single array parameter in the tool arguments (only one array arg is allowed for root array bodies)
+
+Example:
+```json
+{
+  "name": "manage_users",
+  "operations": { "create": "post_/users" },
+  "parameters": {
+    "action": { "type": "string", "enum": ["create"], "required": true },
+    "users": {
+      "type": "array",
+      "description": "Array of users to create",
+      "items": { "type": "object", "properties": {} },
+      "required_for": ["create"]
+    }
+  }
+}
+```
+
 ### 2. Composite Tool (Multi-step)
 
 Chains multiple API calls and returns aggregated results.
@@ -1040,6 +1064,20 @@ export interface ToolDefinition {
         "list": ["id", "name", "path", "web_url"]
       }]
     }
+  }
+}
+```
+
+**Field names with spaces**: Use double quotes around the base field name.
+
+Examples:
+```json
+{
+  "response_fields": {
+    "get": [
+      "\"Credentials Risk Report\"",
+      "\"Credentials Risk Report\"(sections(title))"
+    ]
   }
 }
 ```

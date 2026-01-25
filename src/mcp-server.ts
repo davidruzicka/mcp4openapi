@@ -38,7 +38,7 @@ import { SchemaValidator } from './schema-validator.js';
 import type { Profile, ToolDefinition, AuthInterceptor, OAuthConfig, ProxyDownloadOperation } from './types/profile.js';
 import type { Logger } from './logger.js';
 import { ConsoleLogger, JsonLogger } from './logger.js';
-import type { OperationInfo } from './types/openapi.js';
+import type { OperationInfo, SchemaInfo } from './types/openapi.js';
 import { isInitializeRequest, isToolCallRequest } from './jsonrpc-validator.js';
 import { generateNameWarnings, type NameWarningOptions } from './naming-warnings.js';
 import { NamingStrategy, type OperationForNaming } from './naming.js';
@@ -133,23 +133,16 @@ export class MCPServer {
     target: Record<string, true | Record<string, unknown>>,
     selector: string
   ): void {
-    const baseName = selector.split('(')[0].trim();
+    const parsed = this.parseFieldSelector(selector);
+    const baseName = parsed.baseName;
     if (!baseName) return;
     if (!isSafePropertyName(baseName)) return;
-
-    const openParen = selector.indexOf('(');
-    if (openParen === -1) {
+    if (!parsed.inner) {
       target[baseName] = true;
       return;
     }
 
-    const closeParen = selector.lastIndexOf(')');
-    if (closeParen === -1 || closeParen <= openParen) {
-      target[baseName] = true;
-      return;
-    }
-
-    const inner = selector.slice(openParen + 1, closeParen).trim();
+    const inner = parsed.inner;
     const subSelectors = this.splitTopLevel(inner);
     const subTree: Record<string, true | Record<string, unknown>> = Object.create(null);
     for (const sub of subSelectors) {
@@ -164,6 +157,69 @@ export class MCPServer {
     }
 
     this.mergeSelectionTrees(existing as Record<string, true | Record<string, unknown>>, subTree);
+  }
+
+  private parseFieldSelector(selector: string): { baseName: string; inner?: string } {
+    const trimmed = selector.trim();
+    if (!trimmed) return { baseName: '' };
+
+    if (trimmed.startsWith('"')) {
+      const parsedQuoted = this.parseQuotedBase(trimmed);
+      if (parsedQuoted) {
+        const { baseName, rest } = parsedQuoted;
+        const remaining = rest.trim();
+        if (!remaining) {
+          return { baseName };
+        }
+        if (remaining.startsWith('(') && remaining.endsWith(')')) {
+          const inner = remaining.slice(1, -1).trim();
+          return inner ? { baseName, inner } : { baseName };
+        }
+        return { baseName };
+      }
+    }
+
+    const openParen = trimmed.indexOf('(');
+    if (openParen === -1) {
+      return { baseName: trimmed };
+    }
+
+    const closeParen = trimmed.lastIndexOf(')');
+    if (closeParen === -1 || closeParen <= openParen) {
+      return { baseName: trimmed.slice(0, openParen).trim() };
+    }
+
+    const baseName = trimmed.slice(0, openParen).trim();
+    const inner = trimmed.slice(openParen + 1, closeParen).trim();
+    return inner ? { baseName, inner } : { baseName };
+  }
+
+  private parseQuotedBase(input: string): { baseName: string; rest: string } | undefined {
+    let escaped = false;
+    let base = '';
+
+    for (let i = 1; i < input.length; i += 1) {
+      const ch = input[i];
+      if (escaped) {
+        base += ch;
+        escaped = false;
+        continue;
+      }
+
+      if (ch === '\\') {
+        escaped = true;
+        continue;
+      }
+
+      if (ch === '"') {
+        const rest = input.slice(i + 1);
+        return { baseName: base, rest };
+      }
+
+      base += ch;
+    }
+
+    return undefined;
   }
 
   private mergeSelectionTrees(
@@ -192,12 +248,34 @@ export class MCPServer {
     const result: string[] = [];
     let depth = 0;
     let current = '';
+    let inQuote = false;
+    let escaped = false;
 
     for (const ch of input) {
-      if (ch === '(') depth += 1;
-      if (ch === ')') depth = Math.max(0, depth - 1);
+      if (escaped) {
+        current += ch;
+        escaped = false;
+        continue;
+      }
 
-      if (ch === ',' && depth === 0) {
+      if (ch === '\\' && inQuote) {
+        current += ch;
+        escaped = true;
+        continue;
+      }
+
+      if (ch === '"') {
+        inQuote = !inQuote;
+        current += ch;
+        continue;
+      }
+
+      if (!inQuote) {
+        if (ch === '(') depth += 1;
+        if (ch === ')') depth = Math.max(0, depth - 1);
+      }
+
+      if (!inQuote && ch === ',' && depth === 0) {
         const trimmed = current.trim();
         if (trimmed) result.push(trimmed);
         current = '';
@@ -1017,7 +1095,7 @@ export class MCPServer {
     operation: OperationInfo,
     args: Record<string, unknown>,
     toolDef: ToolDefinition
-  ): Record<string, unknown> | undefined {
+  ): unknown | undefined {
     // Metadata fields from tool definition (or defaults)
     const metadataList = toolDef.metadata_params || ['action', 'resource_type'];
     const metadata = new Set(metadataList);
@@ -1030,17 +1108,51 @@ export class MCPServer {
       }
     }
     
-    // Get body schema properties to check if path/query params should also be in body
+    // Get body schema and properties to check if path/query params should also be in body
+    let bodySchema: SchemaInfo | undefined;
     const bodySchemaProps = new Set<string>();
     if (operation.requestBody?.content) {
-      // Check all content types (typically application/json)
-      for (const mediaType of Object.values(operation.requestBody.content)) {
-        if (mediaType.schema?.properties) {
-          for (const propName of Object.keys(mediaType.schema.properties)) {
-            bodySchemaProps.add(propName);
+      // Prefer application/json but accept any schema present
+      const jsonSchema = operation.requestBody.content['application/json']?.schema;
+      bodySchema = jsonSchema;
+
+      if (!bodySchema) {
+        for (const mediaType of Object.values(operation.requestBody.content)) {
+          if (mediaType.schema) {
+            bodySchema = mediaType.schema;
+            break;
           }
         }
       }
+
+      if (bodySchema?.type === 'object' && bodySchema.properties) {
+        for (const propName of Object.keys(bodySchema.properties)) {
+          bodySchemaProps.add(propName);
+        }
+      }
+    }
+
+    // Root array body support
+    if (bodySchema?.type === 'array') {
+      const explicit = args['body'] ?? args['items'];
+      if (explicit !== undefined) {
+        return explicit;
+      }
+
+      const arrayCandidates: unknown[] = [];
+      for (const [key, value] of Object.entries(args)) {
+        if (metadata.has(key)) continue;
+        if (pathOrQuery.has(key)) continue;
+        if (Array.isArray(value)) {
+          arrayCandidates.push(value);
+        }
+      }
+
+      if (arrayCandidates.length === 1) {
+        return arrayCandidates[0];
+      }
+
+      return undefined;
     }
     
     const body: Record<string, unknown> = {};
