@@ -1344,6 +1344,71 @@ describe('HttpTransport security behavior (no listen)', () => {
     await transport.stop();
   });
 
+  it('accepts custom auth header based on profile auth config', async () => {
+    const transport = createTransport();
+    const profileState = createProfileState(transport as any);
+    profileState.context.authConfigs = [
+      {
+        type: 'custom-header',
+        header_name: 'X-N8N-API-KEY',
+        value_from_env: 'N8N_API_TOKEN',
+      },
+    ];
+
+    const req: any = {
+      headers: {
+        'x-n8n-api-key': 'n8n-test-token',
+      },
+    };
+
+    const info = (transport as any).extractAuthToken(req, profileState);
+    expect(info).toEqual({ type: 'api-token', token: 'n8n-test-token' });
+    await transport.stop();
+  });
+
+  it('updates session auth token on non-init requests when header is present', async () => {
+    const transport = createTransport();
+    transport.setMessageHandler(async () => ({ result: 'ok' }));
+    const profileState = createProfileState(transport as any);
+    profileState.context.authConfigs = [
+      {
+        type: 'custom-header',
+        header_name: 'X-N8N-API-KEY',
+        value_from_env: 'N8N_API_TOKEN',
+      },
+    ];
+
+    profileState.sessions.set('s1', {
+      id: 's1',
+      createdAt: Date.now(),
+      lastActivityAt: Date.now(),
+      sseStreams: new Map(),
+      authToken: undefined,
+      messageQueue: [],
+    });
+
+    const res = createMockResponse();
+    await (transport as any).handlePost(
+      {
+        method: 'POST',
+        path: '/mcp',
+        url: '/mcp',
+        sessionId: 's1',
+        headers: {
+          accept: 'application/json',
+          'x-n8n-api-key': 'n8n-test-token',
+          'mcp-session-id': 's1',
+        },
+        body: { jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} },
+      } as any,
+      res
+    );
+
+    const session = profileState.sessions.get('s1');
+    expect(session?.authToken).toBe('n8n-test-token');
+    await transport.stop();
+  });
+
   it('enforces Accept header rules for GET/POST in handlePost', async () => {
     const transport = createTransport();
     transport.setMessageHandler(async () => ({ result: 'ok' }));

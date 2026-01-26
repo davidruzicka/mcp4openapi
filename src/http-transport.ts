@@ -30,7 +30,7 @@ import { MetricsCollector } from './metrics.js';
 import { ExternalOAuthProvider } from './oauth-provider.js';
 import type { AuthInterceptor, OAuthConfig } from './types/profile.js';
 import { HTTP_STATUS, MIME_TYPES, OAUTH_PATHS, TIMEOUTS, OAUTH_RATE_LIMIT } from './constants.js';
-import { escapeHtmlSafe } from './validation-utils.js';
+import { escapeHtmlSafe, isSafePropertyName } from './validation-utils.js';
 import type { OAuthTokens } from '@modelcontextprotocol/sdk/shared/auth.js';
 import {
   AuthenticationError,
@@ -1709,7 +1709,29 @@ export class HttpTransport {
       return { type: 'bearer', token };
     }
     
-    // 3. Check X-API-Token header (for custom implementations)
+    // 3. Check configured custom header (if any)
+    const authConfigs = profileState.context.authConfigs;
+    if (authConfigs) {
+      const configs = Array.isArray(authConfigs) ? authConfigs : [authConfigs];
+      const sortedConfigs = configs.sort((a, b) => (a.priority || 0) - (b.priority || 0));
+      const customHeaderConfig = sortedConfigs.find(c => c.type === 'custom-header' && c.header_name);
+      if (customHeaderConfig && customHeaderConfig.header_name) {
+        if (!isSafePropertyName(customHeaderConfig.header_name)) {
+          throw new ValidationError(`Invalid custom auth header name: ${customHeaderConfig.header_name}`);
+        }
+        const headerKey = customHeaderConfig.header_name.toLowerCase();
+        const headerValue = req.headers[headerKey];
+        if (headerValue) {
+          if (typeof headerValue !== 'string') {
+            throw new ValidationError(`${customHeaderConfig.header_name} must be a string`);
+          }
+          this.validateToken(headerValue, customHeaderConfig.header_name);
+          return { type: 'api-token', token: headerValue };
+        }
+      }
+    }
+
+    // 4. Check X-API-Token header (for custom implementations)
     const apiTokenHeader = req.headers['x-api-token'];
     if (apiTokenHeader) {
       if (typeof apiTokenHeader !== 'string') {
@@ -1825,6 +1847,19 @@ export class HttpTransport {
           }
         }
         this.updateSessionActivity(profileState, sessionId);
+        const authInfo = this.extractAuthToken(req, profileState);
+        if (authInfo.token && authInfo.type !== 'oauth') {
+          const previousToken = session.authToken;
+          if (!previousToken || previousToken !== authInfo.token) {
+            session.authToken = authInfo.token;
+            this.logger.info('Session auth token updated', {
+              profileId: profileState.profileId,
+              sessionId,
+              authType: authInfo.type,
+              replaced: !!previousToken,
+            });
+          }
+        }
       } else if (!isInitialization && !sessionId) {
         this.logger.debug('Session validation failed: non-init request without sessionId');
         res.status(HTTP_STATUS.BAD_REQUEST).json({ error: 'Bad Request', message: 'Mcp-Session-Id header required (except for initialization)' });
