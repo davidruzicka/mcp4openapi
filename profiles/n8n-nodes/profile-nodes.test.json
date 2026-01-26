@@ -1,0 +1,91 @@
+{
+  "$schema": "../../src/testing/test-schema.ts",
+  "profile_name": "n8n-node-list",
+  "scenarios": [
+    {
+      "name": "n8n_nodes - list_full",
+      "tool": "n8n_nodes",
+      "arguments": {
+        "action": "list_full"
+      },
+      "mocks": [
+        {
+          "operationId": "getNodes",
+          "response": {
+            "body": [
+              {
+                "displayName": "Action Network",
+                "group": [
+                  "transform"
+                ],
+                "version": 1,
+                "description": "Consume the Action Network API",
+                "usableAsTool": true
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "request": {
+          "method": "GET",
+          "path": "/types/nodes.json"
+        }
+      }
+    },
+    {
+      "name": "n8n_nodes - list_summary",
+      "tool": "n8n_nodes",
+      "arguments": {
+        "action": "list_summary"
+      },
+      "mocks": [
+        {
+          "operationId": "getNodes",
+          "response": {
+            "body": [
+              {
+                "displayName": "Action Network",
+                "group": [
+                  "transform"
+                ],
+                "version": 1,
+                "subtitle": "={{$parameter[\"resource\"] + \": \" + $parameter[\"operation\"]}}",
+                "description": "Consume the Action Network API",
+                "defaults": {
+                  "name": "Action Network"
+                },
+                "usableAsTool": true,
+                "inputs": [
+                  "main"
+                ],
+                "outputs": [
+                  "main"
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "request": {
+          "method": "GET",
+          "path": "/types/nodes.json"
+        },
+        "response_fields": {
+          "displayName": "Action Network",
+          "group": [
+            "transform"
+          ],
+          "description": "Consume the Action Network API",
+          "usableAsTool": true
+        }
+      }
+    }
+  ],
+  "coverage": {
+    "require_all_actions": true
+  }
+}

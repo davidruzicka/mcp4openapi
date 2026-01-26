@@ -1,0 +1,1033 @@
+{
+  "$schema": "../../profile-schema.json",
+  "profile_name": "n8n",
+  "profile_id": "n8n",
+  "profile_aliases": [
+    "n8n-default"
+  ],
+  "openapi_spec_path": "./openapi.yaml",
+  "description": "MCP tools for the n8n Public API (aggregated by domain)",
+  "parameter_aliases": {
+    "id": [
+      "credential_id",
+      "execution_id",
+      "tag_id",
+      "user_id",
+      "variable_id",
+      "workflow_id"
+    ],
+    "projectId": [
+      "project_id"
+    ],
+    "userId": [
+      "user_id"
+    ],
+    "workflowId": [
+      "workflow_id"
+    ],
+    "versionId": [
+      "version_id"
+    ],
+    "credentialTypeName": [
+      "credential_type_name"
+    ],
+    "includeData": [
+      "include_data"
+    ],
+    "includeRole": [
+      "include_role"
+    ]
+  },
+  "tools": [
+    {
+      "name": "audit",
+      "description": "Generate a security audit for the n8n instance. Note: audit responses use keys with spaces, so response_fields filtering is not applied.",
+      "metadata_params": [
+        "action"
+      ],
+      "operations": {
+        "generate": "post_/audit"
+      },
+      "parameters": {
+        "action": {
+          "type": "string",
+          "enum": [
+            "generate"
+          ],
+          "description": "Action to perform",
+          "required": true
+        },
+        "additionalOptions": {
+          "type": "object",
+          "description": "Property additionalOptions",
+          "required": false,
+          "properties": {}
+        }
+      },
+      "response_fields": {
+        "generate": [
+          "\"Credentials Risk Report\"",
+          "\"Database Risk Report\"",
+          "\"Nodes Risk Report\"",
+          "\"Filesystem Risk Report\"",
+          "\"Instance Risk Report\""
+        ]
+      }
+    },
+    {
+      "name": "manage_credentials",
+      "description": "Create, update, delete, transfer, and inspect credentials.",
+      "metadata_params": [
+        "action"
+      ],
+      "operations": {
+        "create": "post_/credentials",
+        "update": "updateCredential",
+        "delete": "deleteCredential",
+        "transfer": "put_/credentials/{id}/transfer",
+        "get_schema": "get_/credentials/schema/{credentialTypeName}"
+      },
+      "parameters": {
+        "action": {
+          "type": "string",
+          "enum": [
+            "create",
+            "update",
+            "delete",
+            "transfer",
+            "get_schema"
+          ],
+          "description": "Action to perform",
+          "required": true
+        },
+        "id": {
+          "type": "string",
+          "description": "Property id",
+          "required": false,
+          "required_for": [
+            "update",
+            "delete",
+            "transfer"
+          ]
+        },
+        "name": {
+          "type": "string",
+          "description": "Property name",
+          "required": false,
+          "required_for": [
+            "create"
+          ]
+        },
+        "type": {
+          "type": "string",
+          "description": "Property type",
+          "required": false,
+          "required_for": [
+            "create"
+          ]
+        },
+        "data": {
+          "type": "object",
+          "description": "Credential data (object). Required when creating or changing credential type.",
+          "required": false,
+          "properties": {},
+          "required_for": [
+            "create"
+          ]
+        },
+        "isResolvable": {
+          "type": "boolean",
+          "description": "Property isResolvable",
+          "required": false
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Property createdAt",
+          "required": false
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "Property updatedAt",
+          "required": false
+        },
+        "isGlobal": {
+          "type": "boolean",
+          "description": "Property isGlobal",
+          "required": false
+        },
+        "isPartialData": {
+          "type": "boolean",
+          "description": "Property isPartialData",
+          "required": false
+        },
+        "destinationProjectId": {
+          "type": "string",
+          "description": "Property destinationProjectId",
+          "required": false,
+          "required_for": [
+            "transfer"
+          ]
+        },
+        "credentialTypeName": {
+          "type": "string",
+          "description": "The credential type name that you want to get the schema for",
+          "required": false,
+          "required_for": [
+            "get_schema"
+          ]
+        }
+      },
+      "response_fields": {
+        "create": [
+          "id",
+          "name",
+          "type",
+          "createdAt",
+          "updatedAt"
+        ],
+        "update": [
+          "id",
+          "name",
+          "type",
+          "createdAt",
+          "updatedAt"
+        ],
+        "delete": [
+          "id",
+          "name",
+          "type",
+          "createdAt",
+          "updatedAt",
+          "isResolvable"
+        ]
+      }
+    },
+    {
+      "name": "manage_executions",
+      "description": "List, inspect, delete, and retry workflow executions.",
+      "metadata_params": [
+        "action"
+      ],
+      "operations": {
+        "list": "get_/executions",
+        "get": "get_/executions/{id}",
+        "delete": "delete_/executions/{id}",
+        "retry": "post_/executions/{id}/retry"
+      },
+      "parameters": {
+        "action": {
+          "type": "string",
+          "enum": [
+            "list",
+            "get",
+            "delete",
+            "retry"
+          ],
+          "description": "Action to perform",
+          "required": true
+        },
+        "includeData": {
+          "type": "boolean",
+          "description": "Whether or not to include the execution's detailed data.",
+          "required": false
+        },
+        "status": {
+          "type": "string",
+          "description": "Status to filter the executions by.",
+          "required": false
+        },
+        "workflowId": {
+          "type": "string",
+          "description": "Workflow to filter the executions by.",
+          "required": false
+        },
+        "projectId": {
+          "type": "string",
+          "description": "Parameter projectId",
+          "required": false
+        },
+        "limit": {
+          "type": "number",
+          "description": "The maximum number of items to return.",
+          "required": false
+        },
+        "cursor": {
+          "type": "string",
+          "description": "Paginate by setting the cursor parameter to the nextCursor attribute returned by the previous request's response. Default value fetches the first \"page\" of the collection. See pagination for more detail.",
+          "required": false
+        },
+        "id": {
+          "type": "number",
+          "description": "The ID of the execution.",
+          "required": false,
+          "required_for": [
+            "get",
+            "delete",
+            "retry"
+          ]
+        },
+        "loadWorkflow": {
+          "type": "boolean",
+          "description": "Property loadWorkflow",
+          "required": false
+        }
+      },
+      "response_fields": {
+        "list": [
+          "data(id,status,mode,startedAt,stoppedAt,workflowId,finished,retryOf,retrySuccessId)",
+          "nextCursor"
+        ],
+        "get": [
+          "id",
+          "status",
+          "mode",
+          "startedAt",
+          "stoppedAt",
+          "workflowId",
+          "finished",
+          "retryOf",
+          "retrySuccessId"
+        ],
+        "delete": [
+          "id",
+          "status",
+          "mode",
+          "startedAt",
+          "stoppedAt",
+          "workflowId",
+          "finished",
+          "retryOf",
+          "retrySuccessId"
+        ],
+        "retry": [
+          "id",
+          "status",
+          "mode",
+          "startedAt",
+          "stoppedAt",
+          "workflowId",
+          "finished",
+          "retryOf",
+          "retrySuccessId"
+        ]
+      }
+    },
+    {
+      "name": "manage_projects",
+      "description": "Manage projects and project membership.",
+      "metadata_params": [
+        "action"
+      ],
+      "operations": {
+        "list": "get_/projects",
+        "create": "post_/projects",
+        "update": "put_/projects/{projectId}",
+        "delete": "delete_/projects/{projectId}",
+        "add_users": "post_/projects/{projectId}/users",
+        "remove_user": "delete_/projects/{projectId}/users/{userId}",
+        "update_user_role": "patch_/projects/{projectId}/users/{userId}"
+      },
+      "parameters": {
+        "action": {
+          "type": "string",
+          "enum": [
+            "list",
+            "create",
+            "update",
+            "delete",
+            "add_users",
+            "remove_user",
+            "update_user_role"
+          ],
+          "description": "Action to perform",
+          "required": true
+        },
+        "limit": {
+          "type": "number",
+          "description": "The maximum number of items to return.",
+          "required": false
+        },
+        "cursor": {
+          "type": "string",
+          "description": "Paginate by setting the cursor parameter to the nextCursor attribute returned by the previous request's response. Default value fetches the first \"page\" of the collection. See pagination for more detail.",
+          "required": false
+        },
+        "id": {
+          "type": "string",
+          "description": "Property id",
+          "required": false
+        },
+        "name": {
+          "type": "string",
+          "description": "Property name",
+          "required": false,
+          "required_for": [
+            "create",
+            "update"
+          ]
+        },
+        "type": {
+          "type": "string",
+          "description": "Property type",
+          "required": false
+        },
+        "projectId": {
+          "type": "string",
+          "description": "The ID of the project.",
+          "required": false,
+          "required_for": [
+            "update",
+            "delete",
+            "add_users",
+            "remove_user",
+            "update_user_role"
+          ]
+        },
+        "relations": {
+          "type": "array",
+          "description": "Array of user relations to add: [{ userId, role }]",
+          "required": false,
+          "items": {
+            "type": "object",
+            "properties": {
+              "userId": {
+                "type": "string"
+              },
+              "role": {
+                "type": "string"
+              }
+            }
+          },
+          "required_for": [
+            "add_users"
+          ]
+        },
+        "userId": {
+          "type": "string",
+          "description": "The ID of the user.",
+          "required": false,
+          "required_for": [
+            "remove_user",
+            "update_user_role"
+          ]
+        },
+        "role": {
+          "type": "string",
+          "description": "Property role",
+          "required": false,
+          "required_for": [
+            "update_user_role"
+          ]
+        }
+      },
+      "response_fields": {
+        "list": [
+          "data(id,name,type)",
+          "nextCursor"
+        ]
+      }
+    },
+    {
+      "name": "source_control",
+      "description": "Sync source control changes from the remote repository.",
+      "metadata_params": [
+        "action"
+      ],
+      "operations": {
+        "pull": "post_/source-control/pull"
+      },
+      "parameters": {
+        "action": {
+          "type": "string",
+          "enum": [
+            "pull"
+          ],
+          "description": "Action to perform",
+          "required": true
+        },
+        "force": {
+          "type": "boolean",
+          "description": "Property force",
+          "required": false
+        },
+        "variables": {
+          "type": "object",
+          "description": "Property variables",
+          "required": false,
+          "properties": {}
+        }
+      },
+      "response_fields": {
+        "pull": [
+          "variables(added,changed)",
+          "credentials(id,name,type)",
+          "workflows(id,name)",
+          "tags(tags(id,name),mappings(workflowId,tagId))"
+        ]
+      }
+    },
+    {
+      "name": "manage_tags",
+      "description": "Create, update, delete, and list tags.",
+      "metadata_params": [
+        "action"
+      ],
+      "operations": {
+        "list": "get_/tags",
+        "create": "post_/tags",
+        "get": "get_/tags/{id}",
+        "update": "put_/tags/{id}",
+        "delete": "delete_/tags/{id}"
+      },
+      "parameters": {
+        "action": {
+          "type": "string",
+          "enum": [
+            "list",
+            "create",
+            "get",
+            "update",
+            "delete"
+          ],
+          "description": "Action to perform",
+          "required": true
+        },
+        "limit": {
+          "type": "number",
+          "description": "The maximum number of items to return.",
+          "required": false
+        },
+        "cursor": {
+          "type": "string",
+          "description": "Paginate by setting the cursor parameter to the nextCursor attribute returned by the previous request's response. Default value fetches the first \"page\" of the collection. See pagination for more detail.",
+          "required": false
+        },
+        "id": {
+          "type": "string",
+          "description": "Property id",
+          "required": false,
+          "required_for": [
+            "get",
+            "update",
+            "delete"
+          ]
+        },
+        "name": {
+          "type": "string",
+          "description": "Property name",
+          "required": false,
+          "required_for": [
+            "create",
+            "update"
+          ]
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Property createdAt",
+          "required": false
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "Property updatedAt",
+          "required": false
+        }
+      },
+      "response_fields": {
+        "list": [
+          "data(id,name,createdAt,updatedAt)",
+          "nextCursor"
+        ],
+        "get": [
+          "id",
+          "name",
+          "createdAt",
+          "updatedAt"
+        ],
+        "create": [
+          "id",
+          "name",
+          "createdAt",
+          "updatedAt"
+        ],
+        "update": [
+          "id",
+          "name",
+          "createdAt",
+          "updatedAt"
+        ],
+        "delete": [
+          "id",
+          "name",
+          "createdAt",
+          "updatedAt"
+        ]
+      }
+    },
+    {
+      "name": "manage_users",
+      "description": "Create, update, delete, and list users.",
+      "metadata_params": [
+        "action"
+      ],
+      "operations": {
+        "list": "get_/users",
+        "create": "post_/users",
+        "get": "get_/users/{id}",
+        "delete": "delete_/users/{id}",
+        "update_role": "patch_/users/{id}/role"
+      },
+      "parameters": {
+        "action": {
+          "type": "string",
+          "enum": [
+            "list",
+            "create",
+            "get",
+            "delete",
+            "update_role"
+          ],
+          "description": "Action to perform",
+          "required": true
+        },
+        "limit": {
+          "type": "number",
+          "description": "The maximum number of items to return.",
+          "required": false
+        },
+        "cursor": {
+          "type": "string",
+          "description": "Paginate by setting the cursor parameter to the nextCursor attribute returned by the previous request's response. Default value fetches the first \"page\" of the collection. See pagination for more detail.",
+          "required": false
+        },
+        "includeRole": {
+          "type": "boolean",
+          "description": "Whether to include the user's role or not.",
+          "required": false
+        },
+        "projectId": {
+          "type": "string",
+          "description": "Parameter projectId",
+          "required": false
+        },
+        "id": {
+          "type": "string",
+          "description": "The ID or email of the user.",
+          "required": false,
+          "required_for": [
+            "get",
+            "delete",
+            "update_role"
+          ]
+        },
+        "newRoleName": {
+          "type": "string",
+          "description": "Property newRoleName",
+          "required": false,
+          "required_for": [
+            "update_role"
+          ]
+        },
+        "users": {
+          "type": "array",
+          "description": "Array of users to create: [{ email, role }].",
+          "items": {
+            "type": "object",
+            "properties": {}
+          },
+          "required_for": [
+            "create"
+          ]
+        }
+      },
+      "response_fields": {
+        "list": [
+          "data(id,email,firstName,lastName,role,isPending)",
+          "nextCursor"
+        ],
+        "get": [
+          "id",
+          "email",
+          "firstName",
+          "lastName",
+          "role",
+          "isPending",
+          "createdAt",
+          "updatedAt"
+        ],
+        "create": [
+          "user(id,email,inviteAcceptUrl,emailSent)",
+          "error"
+        ]
+      }
+    },
+    {
+      "name": "manage_variables",
+      "description": "Create, update, delete, and list variables.",
+      "metadata_params": [
+        "action"
+      ],
+      "operations": {
+        "list": "get_/variables",
+        "create": "post_/variables",
+        "update": "put_/variables/{id}",
+        "delete": "delete_/variables/{id}"
+      },
+      "parameters": {
+        "action": {
+          "type": "string",
+          "enum": [
+            "list",
+            "create",
+            "update",
+            "delete"
+          ],
+          "description": "Action to perform",
+          "required": true
+        },
+        "limit": {
+          "type": "number",
+          "description": "The maximum number of items to return.",
+          "required": false
+        },
+        "cursor": {
+          "type": "string",
+          "description": "Paginate by setting the cursor parameter to the nextCursor attribute returned by the previous request's response. Default value fetches the first \"page\" of the collection. See pagination for more detail.",
+          "required": false
+        },
+        "projectId": {
+          "type": "string",
+          "description": "Parameter projectId",
+          "required": false
+        },
+        "state": {
+          "type": "string",
+          "description": "Parameter state",
+          "required": false
+        },
+        "id": {
+          "type": "string",
+          "description": "Property id",
+          "required": false,
+          "required_for": [
+            "update",
+            "delete"
+          ]
+        },
+        "key": {
+          "type": "string",
+          "description": "Property key",
+          "required": false,
+          "required_for": [
+            "create",
+            "update"
+          ]
+        },
+        "value": {
+          "type": "string",
+          "description": "Property value",
+          "required": false,
+          "required_for": [
+            "create",
+            "update"
+          ]
+        },
+        "type": {
+          "type": "string",
+          "description": "Property type",
+          "required": false
+        }
+      },
+      "response_fields": {
+        "list": [
+          "data(id,key,value,type,project(id,name,type))",
+          "nextCursor"
+        ]
+      }
+    },
+    {
+      "name": "manage_workflows",
+      "description": "Create, update, delete, publish, transfer, and list workflows.",
+      "metadata_params": [
+        "action"
+      ],
+      "operations": {
+        "list": "get_/workflows",
+        "create": "post_/workflows",
+        "get": "get_/workflows/{id}",
+        "update": "put_/workflows/{id}",
+        "delete": "delete_/workflows/{id}",
+        "get_version": "get_/workflows/{id}/{versionId}",
+        "activate": "post_/workflows/{id}/activate",
+        "deactivate": "post_/workflows/{id}/deactivate",
+        "get_tags": "get_/workflows/{id}/tags",
+        "update_tags": "put_/workflows/{id}/tags",
+        "transfer": "put_/workflows/{id}/transfer"
+      },
+      "parameters": {
+        "action": {
+          "type": "string",
+          "enum": [
+            "list",
+            "create",
+            "get",
+            "update",
+            "delete",
+            "get_version",
+            "activate",
+            "deactivate",
+            "get_tags",
+            "update_tags",
+            "transfer"
+          ],
+          "description": "Action to perform",
+          "required": true
+        },
+        "active": {
+          "type": "boolean",
+          "description": "Parameter active",
+          "required": false
+        },
+        "tags": {
+          "type": "array",
+          "description": "Workflow tags (array of tag objects). Read-only on create/update; use update_tags action to modify.",
+          "required": false,
+          "items": {
+            "type": "object",
+            "properties": {}
+          }
+        },
+        "name": {
+          "type": "string",
+          "description": "Parameter name",
+          "required": false,
+          "required_for": [
+            "create",
+            "update"
+          ]
+        },
+        "projectId": {
+          "type": "string",
+          "description": "Parameter projectId",
+          "required": false
+        },
+        "excludePinnedData": {
+          "type": "boolean",
+          "description": "Set this to avoid retrieving pinned data",
+          "required": false
+        },
+        "limit": {
+          "type": "number",
+          "description": "The maximum number of items to return.",
+          "required": false
+        },
+        "cursor": {
+          "type": "string",
+          "description": "Paginate by setting the cursor parameter to the nextCursor attribute returned by the previous request's response. Default value fetches the first \"page\" of the collection. See pagination for more detail.",
+          "required": false
+        },
+        "id": {
+          "type": "string",
+          "description": "Property id",
+          "required": false,
+          "required_for": [
+            "get",
+            "update",
+            "delete",
+            "get_version",
+            "activate",
+            "deactivate",
+            "get_tags",
+            "update_tags",
+            "transfer"
+          ]
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Property createdAt",
+          "required": false
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "Property updatedAt",
+          "required": false
+        },
+        "nodes": {
+          "type": "array",
+          "description": "Workflow nodes array. Each node should follow n8n node schema (id, name, type, typeVersion, position, parameters, etc.).",
+          "required": false,
+          "items": {
+            "type": "object",
+            "properties": {}
+          },
+          "required_for": [
+            "create",
+            "update"
+          ]
+        },
+        "connections": {
+          "type": "object",
+          "description": "Connections map keyed by node name, following n8n workflow schema.",
+          "required": false,
+          "properties": {},
+          "required_for": [
+            "create",
+            "update"
+          ]
+        },
+        "settings": {
+          "type": "object",
+          "description": "Workflow settings object (timezone, executionTimeout, etc.).",
+          "required": false,
+          "properties": {},
+          "required_for": [
+            "create",
+            "update"
+          ]
+        },
+        "staticData": {
+          "type": "string",
+          "description": "Property staticData",
+          "required": false
+        },
+        "shared": {
+          "type": "array",
+          "description": "Property shared",
+          "required": false,
+          "items": {
+            "type": "object",
+            "properties": {}
+          }
+        },
+        "activeVersion": {
+          "type": "object",
+          "description": "Property activeVersion",
+          "required": false,
+          "properties": {}
+        },
+        "versionId": {
+          "type": "string",
+          "description": "The version ID to retrieve",
+          "required": false,
+          "required_for": [
+            "get_version"
+          ]
+        },
+        "description": {
+          "type": "string",
+          "description": "Property description",
+          "required": false
+        },
+        "destinationProjectId": {
+          "type": "string",
+          "description": "Property destinationProjectId",
+          "required": false,
+          "required_for": [
+            "transfer"
+          ]
+        },
+        "tag_ids": {
+          "type": "array",
+          "description": "Tag IDs to apply to the workflow: [{ id }].",
+          "items": {
+            "type": "object",
+            "properties": {}
+          },
+          "required_for": [
+            "update_tags"
+          ]
+        }
+      },
+      "response_fields": {
+        "list": [
+          "data(id,name,active,createdAt,updatedAt,tags(id,name),settings(timezone,executionTimeout))",
+          "nextCursor"
+        ],
+        "get": [
+          "id",
+          "name",
+          "active",
+          "createdAt",
+          "updatedAt",
+          "tags(id,name)",
+          "settings(timezone,executionTimeout)"
+        ],
+        "create": [
+          "id",
+          "name",
+          "active",
+          "createdAt",
+          "updatedAt",
+          "tags(id,name)",
+          "settings(timezone,executionTimeout)"
+        ],
+        "update": [
+          "id",
+          "name",
+          "active",
+          "createdAt",
+          "updatedAt",
+          "tags(id,name)",
+          "settings(timezone,executionTimeout)"
+        ],
+        "delete": [
+          "id",
+          "name",
+          "active",
+          "createdAt",
+          "updatedAt",
+          "tags(id,name)",
+          "settings(timezone,executionTimeout)"
+        ],
+        "activate": [
+          "id",
+          "name",
+          "active",
+          "createdAt",
+          "updatedAt",
+          "tags(id,name)",
+          "settings(timezone,executionTimeout)"
+        ],
+        "deactivate": [
+          "id",
+          "name",
+          "active",
+          "createdAt",
+          "updatedAt",
+          "tags(id,name)",
+          "settings(timezone,executionTimeout)"
+        ],
+        "get_version": [
+          "versionId",
+          "workflowId",
+          "name",
+          "createdAt",
+          "updatedAt",
+          "authors"
+        ],
+        "get_tags": [
+          "id",
+          "name",
+          "createdAt",
+          "updatedAt"
+        ],
+        "update_tags": [
+          "id",
+          "name",
+          "createdAt",
+          "updatedAt"
+        ]
+      }
+    }
+  ],
+  "interceptors": {
+    "auth": {
+      "type": "custom-header",
+      "header_name": "X-N8N-API-KEY",
+      "value_from_env": "N8N_API_TOKEN"
+    },
+    "base_url": {
+      "value_from_env": "N8N_API_BASE_URL",
+      "default": "http://localhost:5678/api/v1"
+    }
+  }
+}

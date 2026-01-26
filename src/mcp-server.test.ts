@@ -94,6 +94,37 @@ describe('MCPServer', () => {
       expect(server['profile']!.tools.length).toBeGreaterThan(0);
     });
 
+    it('should create global client when profile has no auth', async () => {
+      const specPath = path.join(process.cwd(), 'profiles/n8n-nodes/openapi.yaml');
+      const profilePath = path.join(os.tmpdir(), `profile-no-auth-${Date.now()}-${Math.random()}.json`);
+      delete process.env.MCP4_API_TOKEN;
+
+      const profile = {
+        profile_name: 'no-auth-profile',
+        description: 'No auth profile',
+        tools: [
+          {
+            name: 'n8n_nodes',
+            description: 'List n8n nodes',
+            metadata_params: ['action'],
+            operations: { list_full: 'getNodes' },
+            parameters: {
+              action: { type: 'string', enum: ['list_full'], description: 'Action', required: true },
+            },
+          },
+        ],
+      };
+
+      try {
+        await fs.writeFile(profilePath, JSON.stringify(profile), 'utf-8');
+        await server.initialize(specPath, profilePath);
+        const hasGlobalClient = (server as any).httpClientFactory.hasGlobalClient();
+        expect(hasGlobalClient).toBe(true);
+      } finally {
+        await fs.unlink(profilePath);
+      }
+    });
+
     it('should create global client when OAuth is higher priority than env auth', async () => {
       const specPath = path.join(process.cwd(), 'profiles/gitlab/openapi.yaml');
       const profilePath = path.join(process.cwd(), 'profiles/gitlab/developer-profile-oauth.json');
@@ -120,6 +151,68 @@ describe('MCPServer', () => {
       await expect((server as any).getHttpClientForSession()).rejects.toThrow(
         /HasEnvToken\(GITLAB_TOKEN\): false/
       );
+    });
+  });
+
+  describe('extractBody', () => {
+    it('uses root array body from body/items/single array param', () => {
+      const operation: any = {
+        operationId: 'test',
+        method: 'POST',
+        path: '/test',
+        parameters: [],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'array',
+                items: { type: 'object' },
+              },
+            },
+          },
+        },
+      };
+
+      const toolDef: any = { metadata_params: ['action'] };
+
+      const fromBody = (server as any).extractBody(operation, { action: 'create', body: [{ a: 1 }] }, toolDef);
+      expect(fromBody).toEqual([{ a: 1 }]);
+
+      const fromItems = (server as any).extractBody(operation, { action: 'create', items: [{ b: 2 }] }, toolDef);
+      expect(fromItems).toEqual([{ b: 2 }]);
+
+      const fromSingleArray = (server as any).extractBody(operation, { action: 'create', users: [{ c: 3 }] }, toolDef);
+      expect(fromSingleArray).toEqual([{ c: 3 }]);
+    });
+
+    it('returns undefined when root array body has multiple array candidates', () => {
+      const operation: any = {
+        operationId: 'test',
+        method: 'POST',
+        path: '/test',
+        parameters: [],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'array',
+                items: { type: 'object' },
+              },
+            },
+          },
+        },
+      };
+
+      const toolDef: any = { metadata_params: ['action'] };
+      const result = (server as any).extractBody(
+        operation,
+        { action: 'create', itemsA: [{ a: 1 }], itemsB: [{ b: 2 }] },
+        toolDef
+      );
+
+      expect(result).toBeUndefined();
     });
   });
 
@@ -958,6 +1051,52 @@ describe('MCPServer', () => {
           },
         ],
       });
+    });
+
+    it('should support quoted field names with spaces', () => {
+      const server = new MCPServer();
+      const data = {
+        'Credentials Risk Report': {
+          sections: [
+            { title: 'Section 1', risk: 'credentials', extra: 'ignore' }
+          ],
+          ignored: 'ignore'
+        },
+        other: 'ignore'
+      };
+
+      const result = (server as any).filterFields(data, ['\"Credentials Risk Report\"(sections(title))']);
+      expect(result).toEqual({
+        'Credentials Risk Report': {
+          sections: [
+            { title: 'Section 1' }
+          ]
+        }
+      });
+    });
+
+    it('should handle quoted bases with trailing junk', () => {
+      const server = new MCPServer();
+      const parsed = (server as any).parseFieldSelector('"some field" trailing');
+      expect(parsed).toEqual({ baseName: 'some field' });
+    });
+
+    it('should handle escaped quotes in quoted bases', () => {
+      const server = new MCPServer();
+      const parsed = (server as any).parseFieldSelector('"a \\"b\\""');
+      expect(parsed).toEqual({ baseName: 'a "b"' });
+    });
+
+    it('returns undefined for unterminated quoted base', () => {
+      const server = new MCPServer();
+      const parsed = (server as any).parseQuotedBase('"unterminated');
+      expect(parsed).toBeUndefined();
+    });
+
+    it('splits top-level selectors while respecting quoted commas and escapes', () => {
+      const server = new MCPServer();
+      const parts = (server as any).splitTopLevel('"a, b",c,"d \\"e\\"",f(g,h),"i(j,k)"');
+      expect(parts).toEqual(['"a, b"', 'c', '"d \\"e\\""', 'f(g,h)', '"i(j,k)"']);
     });
 
     it('should merge repeated selectors for the same base field', () => {
