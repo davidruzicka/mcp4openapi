@@ -154,6 +154,35 @@ describe('MCPServer', () => {
       const fromSingleArray = (server as any).extractBody(operation, { action: 'create', users: [{ c: 3 }] }, toolDef);
       expect(fromSingleArray).toEqual([{ c: 3 }]);
     });
+
+    it('returns undefined when root array body has multiple array candidates', () => {
+      const operation: any = {
+        operationId: 'test',
+        method: 'POST',
+        path: '/test',
+        parameters: [],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'array',
+                items: { type: 'object' },
+              },
+            },
+          },
+        },
+      };
+
+      const toolDef: any = { metadata_params: ['action'] };
+      const result = (server as any).extractBody(
+        operation,
+        { action: 'create', itemsA: [{ a: 1 }], itemsB: [{ b: 2 }] },
+        toolDef
+      );
+
+      expect(result).toBeUndefined();
+    });
   });
 
   describe('global tool filtering', () => {
@@ -1013,6 +1042,30 @@ describe('MCPServer', () => {
           ]
         }
       });
+    });
+
+    it('should handle quoted bases with trailing junk', () => {
+      const server = new MCPServer();
+      const parsed = (server as any).parseFieldSelector('"some field" trailing');
+      expect(parsed).toEqual({ baseName: 'some field' });
+    });
+
+    it('should handle escaped quotes in quoted bases', () => {
+      const server = new MCPServer();
+      const parsed = (server as any).parseFieldSelector('"a \\"b\\""');
+      expect(parsed).toEqual({ baseName: 'a "b"' });
+    });
+
+    it('returns undefined for unterminated quoted base', () => {
+      const server = new MCPServer();
+      const parsed = (server as any).parseQuotedBase('"unterminated');
+      expect(parsed).toBeUndefined();
+    });
+
+    it('splits top-level selectors while respecting quoted commas and escapes', () => {
+      const server = new MCPServer();
+      const parts = (server as any).splitTopLevel('"a, b",c,"d \\"e\\"",f(g,h),"i(j,k)"');
+      expect(parts).toEqual(['"a, b"', 'c', '"d \\"e\\""', 'f(g,h)', '"i(j,k)"']);
     });
 
     it('should merge repeated selectors for the same base field', () => {
