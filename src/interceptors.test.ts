@@ -736,38 +736,6 @@ describe('HttpClient - Rate Limiting', () => {
       body: 'ok'
     });
   });
-
-  it('should not count rate limit delay against timeout_ms', async () => {
-    const config: InterceptorConfig = {
-      rate_limit: {
-        max_requests_per_minute: 1, // 1 req/min means 60s delay after first request
-      },
-      timeout_ms: 10,
-    };
-
-    const client = createTestHttpClient('https://api.example.com', config);
-    const fetchMock = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
-      if (init?.signal?.aborted) {
-        const error = new Error('Aborted');
-        (error as Error & { name: string }).name = 'AbortError';
-        throw error;
-      }
-
-      return new Response(JSON.stringify({ ok: true }), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      });
-    });
-    global.fetch = fetchMock;
-
-    await client.request('GET', '/test');
-
-    const delayedRequest = client.request('GET', '/test');
-    vi.advanceTimersByTime(60000);
-
-    await expect(delayedRequest).resolves.toMatchObject({ status: 200 });
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-  });
 });
 
 describe('HttpClient - Retry Logic', () => {

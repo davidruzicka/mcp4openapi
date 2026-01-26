@@ -407,6 +407,10 @@ export class HttpClient {
       url += '?' + searchParams.toString();
     }
 
+    const timeoutMs = this.interceptors.config.timeout_ms || 60000; // Default 60s
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
     const ctx: RequestContext = {
       method,
       url,
@@ -416,15 +420,11 @@ export class HttpClient {
       },
       body: options.body,
       operationId: options.operationId,
+      signal: controller.signal,
     };
 
-    return await this.interceptors.execute(ctx, async () => {
-      const timeoutMs = this.interceptors.config.timeout_ms || 60000; // Default 60s
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-      ctx.signal = controller.signal;
-
-      try {
+    try {
+      return await this.interceptors.execute(ctx, async () => {
         // Why no body for GET/HEAD: HTTP spec forbids request body for these methods
         const fetchOptions: RequestInit = {
           method: ctx.method,
@@ -490,9 +490,9 @@ export class HttpClient {
         }
 
         return responseContext;
-      } finally {
-        clearTimeout(timeoutId);
-      }
-    });
+      });
+    } finally {
+      clearTimeout(timeoutId);
+    }
   }
 }
