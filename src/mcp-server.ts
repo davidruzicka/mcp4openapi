@@ -441,8 +441,8 @@ export class MCPServer {
     const envVarName = envAuthConfig?.value_from_env;
     const envToken = envVarName ? process.env[envVarName] : undefined;
 
-    if (envAuthConfig && envToken) {
-      // Token available in env - create global client (stdio transport)
+    if ((envAuthConfig && envToken) || authConfigs.length === 0) {
+      // Token available in env (stdio) or no auth required - create global client
       const httpClient = this.httpClientFactory.createGlobalClient({
         profile: this.profile,
         baseUrl,
