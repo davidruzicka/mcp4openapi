@@ -1,0 +1,983 @@
+{
+  "$schema": "../../src/testing/test-schema.ts",
+  "profile_name": "n8n",
+  "variables": {
+    "id": "id-123",
+    "projectId": "project-123",
+    "destinationProjectId": "project-456",
+    "userId": "user-123",
+    "versionId": "version-123",
+    "credentialTypeName": "n8nApi",
+    "name": "test-name",
+    "type": "test-type",
+    "key": "test-key",
+    "value": "test-value",
+    "createdAt": "2024-01-01T00:00:00Z",
+    "updatedAt": "2024-01-02T00:00:00Z",
+    "tagId": "tag-123",
+    "tagName": "Production"
+  },
+  "scenarios": [
+    {
+      "name": "audit - generate",
+      "tool": "audit",
+      "arguments": {
+        "action": "generate"
+      },
+      "mocks": [
+        {
+          "operationId": "post_/audit",
+          "response": {
+            "body": {}
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "manage_credentials - create",
+      "tool": "manage_credentials",
+      "arguments": {
+        "action": "create",
+        "id": "{{id}}",
+        "name": "{{name}}",
+        "type": "{{type}}",
+        "data": {
+          "token": "secret"
+        },
+        "isResolvable": true,
+        "createdAt": "{{createdAt}}",
+        "updatedAt": "{{updatedAt}}"
+      },
+      "mocks": [
+        {
+          "operationId": "post_/credentials",
+          "response": {
+            "body": {}
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "manage_credentials - update",
+      "tool": "manage_credentials",
+      "arguments": {
+        "action": "update",
+        "id": "{{id}}",
+        "name": "{{name}}",
+        "type": "{{type}}",
+        "data": {
+          "token": "secret"
+        },
+        "isResolvable": true,
+        "isGlobal": false,
+        "isPartialData": true
+      },
+      "mocks": [
+        {
+          "operationId": "updateCredential",
+          "response": {
+            "body": {}
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "manage_credentials - delete",
+      "tool": "manage_credentials",
+      "arguments": {
+        "action": "delete",
+        "id": "{{id}}"
+      },
+      "mocks": [
+        {
+          "operationId": "deleteCredential",
+          "response": {
+            "body": {}
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "manage_credentials - transfer",
+      "tool": "manage_credentials",
+      "arguments": {
+        "action": "transfer",
+        "id": "{{id}}",
+        "destinationProjectId": "{{destinationProjectId}}"
+      },
+      "mocks": [
+        {
+          "operationId": "put_/credentials/{id}/transfer",
+          "response": {
+            "body": {}
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "manage_credentials - get_schema",
+      "tool": "manage_credentials",
+      "arguments": {
+        "action": "get_schema",
+        "credentialTypeName": "{{credentialTypeName}}"
+      },
+      "mocks": [
+        {
+          "operationId": "get_/credentials/schema/{credentialTypeName}",
+          "response": {
+            "body": {}
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "manage_executions - list",
+      "tool": "manage_executions",
+      "arguments": {
+        "action": "list"
+      },
+      "mocks": [
+        {
+          "operationId": "get_/executions",
+          "response": {
+            "body": {}
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "manage_executions - get",
+      "tool": "manage_executions",
+      "arguments": {
+        "action": "get",
+        "id": "{{id}}"
+      },
+      "mocks": [
+        {
+          "operationId": "get_/executions/{id}",
+          "response": {
+            "body": {}
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "manage_executions - delete",
+      "tool": "manage_executions",
+      "arguments": {
+        "action": "delete",
+        "id": "{{id}}"
+      },
+      "mocks": [
+        {
+          "operationId": "delete_/executions/{id}",
+          "response": {
+            "body": {}
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "manage_executions - retry",
+      "tool": "manage_executions",
+      "arguments": {
+        "action": "retry",
+        "id": "{{id}}"
+      },
+      "mocks": [
+        {
+          "operationId": "post_/executions/{id}/retry",
+          "response": {
+            "body": {}
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "manage_projects - list",
+      "tool": "manage_projects",
+      "arguments": {
+        "action": "list"
+      },
+      "mocks": [
+        {
+          "operationId": "get_/projects",
+          "response": {
+            "body": {}
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "manage_projects - create",
+      "tool": "manage_projects",
+      "arguments": {
+        "action": "create",
+        "id": "{{id}}",
+        "name": "{{name}}",
+        "type": "{{type}}"
+      },
+      "mocks": [
+        {
+          "operationId": "post_/projects",
+          "response": {
+            "body": {}
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "manage_projects - update",
+      "tool": "manage_projects",
+      "arguments": {
+        "action": "update",
+        "id": "{{id}}",
+        "name": "{{name}}",
+        "type": "{{type}}",
+        "projectId": "{{projectId}}"
+      },
+      "mocks": [
+        {
+          "operationId": "put_/projects/{projectId}",
+          "response": {
+            "body": {}
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "manage_projects - delete",
+      "tool": "manage_projects",
+      "arguments": {
+        "action": "delete",
+        "projectId": "{{projectId}}"
+      },
+      "mocks": [
+        {
+          "operationId": "delete_/projects/{projectId}",
+          "response": {
+            "body": {}
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "manage_projects - add_users",
+      "tool": "manage_projects",
+      "arguments": {
+        "action": "add_users",
+        "projectId": "{{projectId}}",
+        "relations": [
+          {
+            "userId": "{{userId}}",
+            "role": "project:viewer"
+          }
+        ]
+      },
+      "mocks": [
+        {
+          "operationId": "post_/projects/{projectId}/users",
+          "response": {
+            "body": {}
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "manage_projects - remove_user",
+      "tool": "manage_projects",
+      "arguments": {
+        "action": "remove_user",
+        "projectId": "{{projectId}}",
+        "userId": "{{userId}}"
+      },
+      "mocks": [
+        {
+          "operationId": "delete_/projects/{projectId}/users/{userId}",
+          "response": {
+            "body": {}
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "manage_projects - update_user_role",
+      "tool": "manage_projects",
+      "arguments": {
+        "action": "update_user_role",
+        "projectId": "{{projectId}}",
+        "userId": "{{userId}}",
+        "role": "project:viewer"
+      },
+      "mocks": [
+        {
+          "operationId": "patch_/projects/{projectId}/users/{userId}",
+          "response": {
+            "body": {}
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "source_control - pull",
+      "tool": "source_control",
+      "arguments": {
+        "action": "pull",
+        "force": true,
+        "variables": {
+          "foo": "bar"
+        }
+      },
+      "mocks": [
+        {
+          "operationId": "post_/source-control/pull",
+          "response": {
+            "body": {}
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "manage_tags - list",
+      "tool": "manage_tags",
+      "arguments": {
+        "action": "list"
+      },
+      "mocks": [
+        {
+          "operationId": "get_/tags",
+          "response": {
+            "body": {}
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "manage_tags - create",
+      "tool": "manage_tags",
+      "arguments": {
+        "action": "create",
+        "id": "{{id}}",
+        "name": "{{name}}",
+        "createdAt": "{{createdAt}}",
+        "updatedAt": "{{updatedAt}}"
+      },
+      "mocks": [
+        {
+          "operationId": "post_/tags",
+          "response": {
+            "body": {}
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "manage_tags - get",
+      "tool": "manage_tags",
+      "arguments": {
+        "action": "get",
+        "id": "{{id}}"
+      },
+      "mocks": [
+        {
+          "operationId": "get_/tags/{id}",
+          "response": {
+            "body": {}
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "manage_tags - update",
+      "tool": "manage_tags",
+      "arguments": {
+        "action": "update",
+        "id": "{{id}}",
+        "name": "{{name}}",
+        "createdAt": "{{createdAt}}",
+        "updatedAt": "{{updatedAt}}"
+      },
+      "mocks": [
+        {
+          "operationId": "put_/tags/{id}",
+          "response": {
+            "body": {}
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "manage_tags - delete",
+      "tool": "manage_tags",
+      "arguments": {
+        "action": "delete",
+        "id": "{{id}}"
+      },
+      "mocks": [
+        {
+          "operationId": "delete_/tags/{id}",
+          "response": {
+            "body": {}
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "manage_users - list",
+      "tool": "manage_users",
+      "arguments": {
+        "action": "list"
+      },
+      "mocks": [
+        {
+          "operationId": "get_/users",
+          "response": {
+            "body": {}
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "manage_users - create",
+      "tool": "manage_users",
+      "arguments": {
+        "action": "create",
+        "users": [
+          {
+            "email": "user1@example.com",
+            "role": "global:member"
+          }
+        ]
+      },
+      "mocks": [
+        {
+          "operationId": "post_/users",
+          "response": {
+            "body": {}
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "manage_users - get",
+      "tool": "manage_users",
+      "arguments": {
+        "action": "get",
+        "id": "{{id}}"
+      },
+      "mocks": [
+        {
+          "operationId": "get_/users/{id}",
+          "response": {
+            "body": {}
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "manage_users - delete",
+      "tool": "manage_users",
+      "arguments": {
+        "action": "delete",
+        "id": "{{id}}"
+      },
+      "mocks": [
+        {
+          "operationId": "delete_/users/{id}",
+          "response": {
+            "body": {}
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "manage_users - update_role",
+      "tool": "manage_users",
+      "arguments": {
+        "action": "update_role",
+        "id": "{{id}}",
+        "newRoleName": "global:member"
+      },
+      "mocks": [
+        {
+          "operationId": "patch_/users/{id}/role",
+          "response": {
+            "body": {}
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "manage_variables - list",
+      "tool": "manage_variables",
+      "arguments": {
+        "action": "list"
+      },
+      "mocks": [
+        {
+          "operationId": "get_/variables",
+          "response": {
+            "body": {}
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "manage_variables - create",
+      "tool": "manage_variables",
+      "arguments": {
+        "action": "create",
+        "projectId": "{{projectId}}",
+        "id": "{{id}}",
+        "key": "{{key}}",
+        "value": "{{value}}",
+        "type": "{{type}}"
+      },
+      "mocks": [
+        {
+          "operationId": "post_/variables",
+          "response": {
+            "body": {}
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "manage_variables - update",
+      "tool": "manage_variables",
+      "arguments": {
+        "action": "update",
+        "projectId": "{{projectId}}",
+        "id": "{{id}}",
+        "key": "{{key}}",
+        "value": "{{value}}",
+        "type": "{{type}}"
+      },
+      "mocks": [
+        {
+          "operationId": "put_/variables/{id}",
+          "response": {
+            "body": {}
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "manage_variables - delete",
+      "tool": "manage_variables",
+      "arguments": {
+        "action": "delete",
+        "id": "{{id}}"
+      },
+      "mocks": [
+        {
+          "operationId": "delete_/variables/{id}",
+          "response": {
+            "body": {}
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "manage_workflows - list",
+      "tool": "manage_workflows",
+      "arguments": {
+        "action": "list"
+      },
+      "mocks": [
+        {
+          "operationId": "get_/workflows",
+          "response": {
+            "body": {}
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "manage_workflows - create",
+      "tool": "manage_workflows",
+      "arguments": {
+        "action": "create",
+        "active": true,
+        "tags": [
+          {
+            "id": "{{tagId}}",
+            "name": "{{tagName}}"
+          }
+        ],
+        "name": "{{name}}",
+        "id": "{{id}}",
+        "createdAt": "{{createdAt}}",
+        "updatedAt": "{{updatedAt}}",
+        "nodes": [
+          {
+            "id": "node-1",
+            "name": "Start",
+            "type": "n8n-nodes-base.start",
+            "typeVersion": 1,
+            "position": [
+              0,
+              0
+            ]
+          }
+        ],
+        "connections": {},
+        "settings": {
+          "timezone": "UTC",
+          "executionTimeout": 3600
+        },
+        "staticData": "{}",
+        "shared": [
+          {
+            "role": "workflow:owner",
+            "workflowId": "{{id}}",
+            "projectId": "{{projectId}}"
+          }
+        ],
+        "activeVersion": {
+          "versionId": "{{versionId}}",
+          "workflowId": "{{id}}",
+          "nodes": [],
+          "connections": {},
+          "authors": "1"
+        }
+      },
+      "mocks": [
+        {
+          "operationId": "post_/workflows",
+          "response": {
+            "body": {}
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "manage_workflows - get",
+      "tool": "manage_workflows",
+      "arguments": {
+        "action": "get",
+        "id": "{{id}}"
+      },
+      "mocks": [
+        {
+          "operationId": "get_/workflows/{id}",
+          "response": {
+            "body": {}
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "manage_workflows - update",
+      "tool": "manage_workflows",
+      "arguments": {
+        "action": "update",
+        "active": true,
+        "tags": [
+          {
+            "id": "{{tagId}}",
+            "name": "{{tagName}}"
+          }
+        ],
+        "name": "{{name}}",
+        "id": "{{id}}",
+        "createdAt": "{{createdAt}}",
+        "updatedAt": "{{updatedAt}}",
+        "nodes": [
+          {
+            "id": "node-1",
+            "name": "Start",
+            "type": "n8n-nodes-base.start",
+            "typeVersion": 1,
+            "position": [
+              0,
+              0
+            ]
+          }
+        ],
+        "connections": {},
+        "settings": {
+          "timezone": "UTC",
+          "executionTimeout": 3600
+        },
+        "staticData": "{}",
+        "shared": [
+          {
+            "role": "workflow:owner",
+            "workflowId": "{{id}}",
+            "projectId": "{{projectId}}"
+          }
+        ],
+        "activeVersion": {
+          "versionId": "{{versionId}}",
+          "workflowId": "{{id}}",
+          "nodes": [],
+          "connections": {},
+          "authors": "1"
+        }
+      },
+      "mocks": [
+        {
+          "operationId": "put_/workflows/{id}",
+          "response": {
+            "body": {}
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "manage_workflows - delete",
+      "tool": "manage_workflows",
+      "arguments": {
+        "action": "delete",
+        "id": "{{id}}"
+      },
+      "mocks": [
+        {
+          "operationId": "delete_/workflows/{id}",
+          "response": {
+            "body": {}
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "manage_workflows - get_version",
+      "tool": "manage_workflows",
+      "arguments": {
+        "action": "get_version",
+        "id": "{{id}}",
+        "versionId": "{{versionId}}"
+      },
+      "mocks": [
+        {
+          "operationId": "get_/workflows/{id}/{versionId}",
+          "response": {
+            "body": {}
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "manage_workflows - activate",
+      "tool": "manage_workflows",
+      "arguments": {
+        "action": "activate",
+        "id": "{{id}}"
+      },
+      "mocks": [
+        {
+          "operationId": "post_/workflows/{id}/activate",
+          "response": {
+            "body": {}
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "manage_workflows - deactivate",
+      "tool": "manage_workflows",
+      "arguments": {
+        "action": "deactivate",
+        "id": "{{id}}"
+      },
+      "mocks": [
+        {
+          "operationId": "post_/workflows/{id}/deactivate",
+          "response": {
+            "body": {}
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "manage_workflows - get_tags",
+      "tool": "manage_workflows",
+      "arguments": {
+        "action": "get_tags",
+        "id": "{{id}}"
+      },
+      "mocks": [
+        {
+          "operationId": "get_/workflows/{id}/tags",
+          "response": {
+            "body": {}
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "manage_workflows - update_tags",
+      "tool": "manage_workflows",
+      "arguments": {
+        "action": "update_tags",
+        "id": "{{id}}",
+        "tag_ids": [
+          {
+            "id": "{{tagId}}"
+          }
+        ]
+      },
+      "mocks": [
+        {
+          "operationId": "put_/workflows/{id}/tags",
+          "response": {
+            "body": {}
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "manage_workflows - transfer",
+      "tool": "manage_workflows",
+      "arguments": {
+        "action": "transfer",
+        "id": "{{id}}",
+        "destinationProjectId": "{{destinationProjectId}}"
+      },
+      "mocks": [
+        {
+          "operationId": "put_/workflows/{id}/transfer",
+          "response": {
+            "body": {}
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    }
+  ],
+  "coverage": {
+    "require_all_actions": true,
+    "skip_actions": {},
+    "require_request_assertions": false,
+    "skip_request_assertions": {}
+  }
+}
