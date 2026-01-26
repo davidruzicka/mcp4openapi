@@ -348,6 +348,8 @@ Parameters that control tool behavior but aren't sent to the API:
 
 ### Authentication
 
+Authentication is optional. If the API is public, you can omit `interceptors.auth` (or set it to an empty array) and the server will make unauthenticated requests.
+
 #### Bearer Token (Recommended)
 
 ```json

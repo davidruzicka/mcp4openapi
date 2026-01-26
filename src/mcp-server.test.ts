@@ -94,6 +94,37 @@ describe('MCPServer', () => {
       expect(server['profile']!.tools.length).toBeGreaterThan(0);
     });
 
+    it('should create global client when profile has no auth', async () => {
+      const specPath = path.join(process.cwd(), 'profiles/n8n-nodes/openapi.yaml');
+      const profilePath = path.join(os.tmpdir(), `profile-no-auth-${Date.now()}-${Math.random()}.json`);
+      delete process.env.MCP4_API_TOKEN;
+
+      const profile = {
+        profile_name: 'no-auth-profile',
+        description: 'No auth profile',
+        tools: [
+          {
+            name: 'n8n_nodes',
+            description: 'List n8n nodes',
+            metadata_params: ['action'],
+            operations: { list_full: 'getNodes' },
+            parameters: {
+              action: { type: 'string', enum: ['list_full'], description: 'Action', required: true },
+            },
+          },
+        ],
+      };
+
+      try {
+        await fs.writeFile(profilePath, JSON.stringify(profile), 'utf-8');
+        await server.initialize(specPath, profilePath);
+        const hasGlobalClient = (server as any).httpClientFactory.hasGlobalClient();
+        expect(hasGlobalClient).toBe(true);
+      } finally {
+        await fs.unlink(profilePath);
+      }
+    });
+
     it('should create global client when OAuth is higher priority than env auth', async () => {
       const specPath = path.join(process.cwd(), 'profiles/gitlab/openapi.yaml');
       const profilePath = path.join(process.cwd(), 'profiles/gitlab/developer-profile-oauth.json');
