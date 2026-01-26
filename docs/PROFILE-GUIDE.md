@@ -9,7 +9,17 @@ This guide explains how to create custom MCP tool profiles for any OpenAPI-compl
    touch profiles/<my-api-name>-profile.json
    ```
 
-2. **Add JSON Schema reference** (for IDE auto-complete and validation):
+2. **Confirm required inputs up front** (ask explicitly if missing):
+   - Profile name/id/aliases and the OpenAPI spec location
+   - Auth type and env var names (use profile-specific env vars, not MCP4_* generics)
+   - Base URL env var and default (needed for multi-profile runs and tests)
+   - Desired tool aggregation (which endpoints are grouped under each tool and action)
+   - Parameter aliases (id, projectId, workflowId, etc.)
+   - Response fields policy (which fields to return per action)
+   - Test expectations (request assertions required or not, and any must-cover actions)
+   - **Explicitly ask**: Which env var should be used for the base URL, and what default should be set? Missing this is a common cause of profile test failures (relative base URL like `/api/v1`).
+
+3. **Add JSON Schema reference** (for IDE auto-complete and validation):
    ```json
    {
      "$schema": "../profile-schema.json",
@@ -17,9 +27,9 @@ This guide explains how to create custom MCP tool profiles for any OpenAPI-compl
    }
    ```
 
-3. **Define your tools** (see sections below)
+4. **Define your tools** (see sections below)
 
-4. **Validate** (no API access required):
+5. **Validate** (no API access required):
    ```bash
    # Validate profile structure only
    npm run validate -- profiles/<my-api-name>-profile.json
@@ -28,7 +38,7 @@ This guide explains how to create custom MCP tool profiles for any OpenAPI-compl
    npm run validate -- profiles/<my-api-name>-profile.json path/to/openapi.yaml
    ```
 
-5. **Test with real API**:
+6. **Test with real API**:
    ```bash
    npm run build
    export MCP4_PROFILE_PATH=./profiles/<my-api-name>-profile.json
@@ -131,6 +141,31 @@ Maps user actions to OpenAPI operations.
 - `operations`: Maps each action to an OpenAPI `operationId`
 - `action` parameter: Enum of available actions
 - `required_for`: Conditional parameter requirements
+- Parameters are defined at the tool level. `required_for` enforces required inputs but does not hide parameters for other actions. If you need action-specific parameter sets, split actions into separate tools.
+
+#### Root Array Request Bodies
+
+Some OpenAPI operations define the request body as a root array (not an object). To send these, pass one of:
+- `body`: the full array payload
+- `items`: the full array payload
+- a single array parameter in the tool arguments (only one array arg is allowed for root array bodies)
+
+Example:
+```json
+{
+  "name": "manage_users",
+  "operations": { "create": "post_/users" },
+  "parameters": {
+    "action": { "type": "string", "enum": ["create"], "required": true },
+    "users": {
+      "type": "array",
+      "description": "Array of users to create",
+      "items": { "type": "object", "properties": {} },
+      "required_for": ["create"]
+    }
+  }
+}
+```
 
 ### 2. Composite Tool (Multi-step)
 
@@ -312,6 +347,8 @@ Parameters that control tool behavior but aren't sent to the API:
 ## Interceptors
 
 ### Authentication
+
+Authentication is optional. If the API is public, you can omit `interceptors.auth` (or set it to an empty array) and the server will make unauthenticated requests.
 
 #### Bearer Token (Recommended)
 
@@ -1030,6 +1067,20 @@ export interface ToolDefinition {
         "list": ["id", "name", "path", "web_url"]
       }]
     }
+  }
+}
+```
+
+**Field names with spaces**: Use double quotes around the base field name.
+
+Examples:
+```json
+{
+  "response_fields": {
+    "get": [
+      "\"Credentials Risk Report\"",
+      "\"Credentials Risk Report\"(sections(title))"
+    ]
   }
 }
 ```

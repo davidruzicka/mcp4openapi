@@ -204,6 +204,43 @@ describe('SchemaValidator', () => {
     expect(invalidResult.errors![0].path).toBe('tags[1]');
   });
 
+  it('validates root array bodies', () => {
+    const operation: OperationInfo = {
+      operationId: 'test',
+      method: 'POST',
+      path: '/test',
+      parameters: [],
+      requestBody: {
+        required: true,
+        content: {
+          'application/json': {
+            schema: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  email: { type: 'string', format: 'email' },
+                },
+                required: ['email'],
+              },
+            },
+          },
+        },
+      },
+    };
+
+    const validResult = validator.validateRequestBody(operation, [
+      { email: 'test@example.com' },
+    ]);
+    expect(validResult.valid).toBe(true);
+
+    const invalidResult = validator.validateRequestBody(operation, [
+      { email: 'not-an-email' },
+    ]);
+    expect(invalidResult.valid).toBe(false);
+    expect(invalidResult.errors![0].path).toBe('[0].email');
+  });
+
   it('validates email format', () => {
     const operation: OperationInfo = {
       operationId: 'test',
