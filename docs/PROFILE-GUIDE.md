@@ -141,6 +141,7 @@ Maps user actions to OpenAPI operations.
 - `operations`: Maps each action to an OpenAPI `operationId`
 - `action` parameter: Enum of available actions
 - `required_for`: Conditional parameter requirements
+- Parameters are defined at the tool level. `required_for` enforces required inputs but does not hide parameters for other actions. If you need action-specific parameter sets, split actions into separate tools.
 
 #### Root Array Request Bodies
 

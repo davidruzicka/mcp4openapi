@@ -399,14 +399,7 @@
         "update_user_role": "patch_/users/{id}/role",
         "create_variable": "post_/variables",
         "update_variable": "put_/variables/{id}",
-        "delete_variable": "delete_/variables/{id}",
-        "create_workflow": "post_/workflows",
-        "update_workflow": "put_/workflows/{id}",
-        "delete_workflow": "delete_/workflows/{id}",
-        "activate_workflow": "post_/workflows/{id}/activate",
-        "deactivate_workflow": "post_/workflows/{id}/deactivate",
-        "update_workflow_tags": "put_/workflows/{id}/tags",
-        "transfer_workflow": "put_/workflows/{id}/transfer"
+        "delete_variable": "delete_/variables/{id}"
       },
       "parameters": {
         "additionalOptions": {
@@ -431,13 +424,7 @@
             "delete_user",
             "update_user_role",
             "update_variable",
-            "delete_variable",
-            "update_workflow",
-            "delete_workflow",
-            "activate_workflow",
-            "deactivate_workflow",
-            "update_workflow_tags",
-            "transfer_workflow"
+            "delete_variable"
           ],
           "required": false
         },
@@ -449,9 +436,7 @@
             "create_project",
             "update_project",
             "create_tag",
-            "update_tag",
-            "create_workflow",
-            "update_workflow"
+            "update_tag"
           ],
           "required": false
         },
@@ -496,8 +481,7 @@
           "type": "string",
           "description": "Property destinationProjectId",
           "required_for": [
-            "transfer_credential",
-            "transfer_workflow"
+            "transfer_credential"
           ],
           "required": false
         },
@@ -648,39 +632,6 @@
           "type": "boolean",
           "description": "Set this to avoid retrieving pinned data"
         },
-        "nodes": {
-          "type": "array",
-          "description": "Workflow nodes array. Each node should follow n8n node schema (id, name, type, typeVersion, position, parameters, etc.).",
-          "items": {
-            "type": "object",
-            "properties": {}
-          },
-          "required_for": [
-            "create_workflow",
-            "update_workflow"
-          ],
-          "required": false
-        },
-        "connections": {
-          "type": "object",
-          "description": "Connections map keyed by node name, following n8n workflow schema.",
-          "properties": {},
-          "required_for": [
-            "create_workflow",
-            "update_workflow"
-          ],
-          "required": false
-        },
-        "settings": {
-          "type": "object",
-          "description": "Workflow settings object (timezone, executionTimeout, etc.).",
-          "properties": {},
-          "required_for": [
-            "create_workflow",
-            "update_workflow"
-          ],
-          "required": false
-        },
         "staticData": {
           "type": "string",
           "description": "Property staticData"
@@ -705,18 +656,6 @@
         "description": {
           "type": "string",
           "description": "Property description"
-        },
-        "tag_ids": {
-          "type": "array",
-          "description": "Tag IDs to apply to the workflow: [{ id }].",
-          "items": {
-            "type": "object",
-            "properties": {}
-          },
-          "required_for": [
-            "update_workflow_tags"
-          ],
-          "required": false
         },
         "action": {
           "type": "string",
@@ -743,14 +682,7 @@
             "update_user_role",
             "create_variable",
             "update_variable",
-            "delete_variable",
-            "create_workflow",
-            "update_workflow",
-            "delete_workflow",
-            "activate_workflow",
-            "deactivate_workflow",
-            "update_workflow_tags",
-            "transfer_workflow"
+            "delete_variable"
           ],
           "description": "Action to perform",
           "required": true
@@ -835,7 +767,136 @@
         "create_users": [
           "user(id,email,inviteAcceptUrl,emailSent)",
           "error"
-        ],
+        ]
+      }
+    },
+    {
+      "name": "modify_n8n_workflows",
+      "description": "Write access to n8n workflows (create/update/delete/activate/deactivate/transfer).",
+      "metadata_params": [
+        "action"
+      ],
+      "operations": {
+        "create_workflow": "post_/workflows",
+        "update_workflow": "put_/workflows/{id}",
+        "delete_workflow": "delete_/workflows/{id}",
+        "activate_workflow": "post_/workflows/{id}/activate",
+        "deactivate_workflow": "post_/workflows/{id}/deactivate",
+        "update_workflow_tags": "put_/workflows/{id}/tags",
+        "transfer_workflow": "put_/workflows/{id}/transfer"
+      },
+      "parameters": {
+        "id": {
+          "type": [
+            "string",
+            "number"
+          ],
+          "description": "Property id",
+          "required_for": [
+            "update_workflow",
+            "delete_workflow",
+            "activate_workflow",
+            "deactivate_workflow",
+            "update_workflow_tags",
+            "transfer_workflow"
+          ],
+          "required": false
+        },
+        "name": {
+          "type": "string",
+          "description": "Property name",
+          "required_for": [
+            "create_workflow",
+            "update_workflow"
+          ],
+          "required": false
+        },
+        "destinationProjectId": {
+          "type": "string",
+          "description": "Property destinationProjectId",
+          "required_for": [
+            "transfer_workflow"
+          ],
+          "required": false
+        },
+        "nodes": {
+          "type": "array",
+          "description": "Workflow nodes array. Each node should follow n8n node schema (id, name, type, typeVersion, position, parameters, etc.).",
+          "items": {
+            "type": "object",
+            "properties": {}
+          },
+          "required_for": [
+            "create_workflow",
+            "update_workflow"
+          ],
+          "required": false
+        },
+        "connections": {
+          "type": "object",
+          "description": "Connections map keyed by node name, following n8n workflow schema.",
+          "properties": {},
+          "required_for": [
+            "create_workflow",
+            "update_workflow"
+          ],
+          "required": false
+        },
+        "settings": {
+          "type": "object",
+          "description": "Workflow settings object (timezone, executionTimeout, etc.).",
+          "properties": {},
+          "required_for": [
+            "create_workflow",
+            "update_workflow"
+          ],
+          "required": false
+        },
+        "staticData": {
+          "type": "string",
+          "description": "Property staticData"
+        },
+        "shared": {
+          "type": "array",
+          "description": "Property shared",
+          "items": {
+            "type": "object",
+            "properties": {}
+          }
+        },
+        "activeVersion": {
+          "type": "object",
+          "description": "Property activeVersion",
+          "properties": {}
+        },
+        "tag_ids": {
+          "type": "array",
+          "description": "Tag IDs to apply to the workflow: [{ id }].",
+          "items": {
+            "type": "object",
+            "properties": {}
+          },
+          "required_for": [
+            "update_workflow_tags"
+          ],
+          "required": false
+        },
+        "action": {
+          "type": "string",
+          "enum": [
+            "create_workflow",
+            "update_workflow",
+            "delete_workflow",
+            "activate_workflow",
+            "deactivate_workflow",
+            "update_workflow_tags",
+            "transfer_workflow"
+          ],
+          "description": "Action to perform",
+          "required": true
+        }
+      },
+      "response_fields": {
         "create_workflow": [
           "id",
           "name",
