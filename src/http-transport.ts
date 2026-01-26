@@ -1679,16 +1679,13 @@ export class HttpTransport {
     req: McpRequest,
     profileState: ProfileRuntimeState
   ): { type: 'bearer' | 'oauth' | 'api-token' | 'none', token?: string, sessionId?: string } {
-    // 1. Check for OAuth session first (highest priority for authenticated sessions)
     const sessionId = req.sessionId || req.headers['mcp-session-id'] as string | undefined;
-    if (sessionId && profileState.sessions.has(sessionId)) {
-      const session = profileState.sessions.get(sessionId);
-      if (session && session.authToken) {
-        return { type: 'oauth', token: session.authToken, sessionId };
-      }
-    }
+    const session = sessionId ? profileState.sessions.get(sessionId) : undefined;
+    const authConfigs = profileState.context.authConfigs;
+    const configs = authConfigs ? (Array.isArray(authConfigs) ? authConfigs : [authConfigs]) : [];
+    const hasOAuth = !!profileState.oauthProvider || configs.some(config => config.type === 'oauth');
     
-    // 2. Check Authorization: Bearer header
+    // 1. Check Authorization: Bearer header
     const authHeader = req.headers.authorization;
     if (authHeader) {
       // Defense against ReDoS: Check length before regex
@@ -1709,10 +1706,8 @@ export class HttpTransport {
       return { type: 'bearer', token };
     }
     
-    // 3. Check configured custom header (if any)
-    const authConfigs = profileState.context.authConfigs;
-    if (authConfigs) {
-      const configs = Array.isArray(authConfigs) ? authConfigs : [authConfigs];
+    // 2. Check configured custom header (if any)
+    if (configs.length > 0) {
       const sortedConfigs = configs.sort((a, b) => (a.priority || 0) - (b.priority || 0));
       const customHeaderConfig = sortedConfigs.find(c => c.type === 'custom-header' && c.header_name);
       if (customHeaderConfig && customHeaderConfig.header_name) {
@@ -1731,7 +1726,7 @@ export class HttpTransport {
       }
     }
 
-    // 4. Check X-API-Token header (for custom implementations)
+    // 3. Check X-API-Token header (for custom implementations)
     const apiTokenHeader = req.headers['x-api-token'];
     if (apiTokenHeader) {
       if (typeof apiTokenHeader !== 'string') {
@@ -1739,6 +1734,11 @@ export class HttpTransport {
       }
       this.validateToken(apiTokenHeader, 'X-API-Token');
       return { type: 'api-token', token: apiTokenHeader };
+    }
+
+    // 4. Fall back to session token (OAuth only when configured)
+    if (session && session.authToken) {
+      return { type: hasOAuth ? 'oauth' : 'api-token', token: session.authToken, sessionId };
     }
     
     return { type: 'none' };

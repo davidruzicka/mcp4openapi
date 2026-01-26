@@ -1294,9 +1294,10 @@ describe('HttpTransport security behavior (no listen)', () => {
     }
   });
 
-  it('extracts OAuth token from session when session exists', async () => {
+  it('extracts OAuth token from session when session exists and OAuth is configured', async () => {
     const transport = createTransport();
     const profileState = createProfileState(transport as any);
+    profileState.oauthProvider = {} as any;
     profileState.sessions.set('s1', {
       id: 's1',
       createdAt: Date.now(),
@@ -1309,6 +1310,54 @@ describe('HttpTransport security behavior (no listen)', () => {
     const req: any = { headers: { }, sessionId: 's1' };
     const info = (transport as any).extractAuthToken(req, profileState);
     expect(info).toEqual({ type: 'oauth', token: 'oauth-token', sessionId: 's1' });
+    await transport.stop();
+  });
+
+  it('extracts session token as api-token when OAuth is not configured', async () => {
+    const transport = createTransport();
+    const profileState = createProfileState(transport as any);
+    profileState.sessions.set('s1', {
+      id: 's1',
+      createdAt: Date.now(),
+      lastActivityAt: Date.now(),
+      sseStreams: new Map(),
+      authToken: 'session-token',
+      messageQueue: [],
+    });
+
+    const req: any = { headers: { }, sessionId: 's1' };
+    const info = (transport as any).extractAuthToken(req, profileState);
+    expect(info).toEqual({ type: 'api-token', token: 'session-token', sessionId: 's1' });
+    await transport.stop();
+  });
+
+  it('prefers header token over session token when both are present', async () => {
+    const transport = createTransport();
+    const profileState = createProfileState(transport as any);
+    profileState.context.authConfigs = [
+      {
+        type: 'custom-header',
+        header_name: 'X-N8N-API-KEY',
+        value_from_env: 'N8N_API_TOKEN',
+      },
+    ];
+    profileState.sessions.set('s1', {
+      id: 's1',
+      createdAt: Date.now(),
+      lastActivityAt: Date.now(),
+      sseStreams: new Map(),
+      authToken: 'session-token',
+      messageQueue: [],
+    });
+
+    const req: any = {
+      headers: {
+        'x-n8n-api-key': 'header-token',
+      },
+      sessionId: 's1',
+    };
+    const info = (transport as any).extractAuthToken(req, profileState);
+    expect(info).toEqual({ type: 'api-token', token: 'header-token' });
     await transport.stop();
   });
 
@@ -1383,7 +1432,7 @@ describe('HttpTransport security behavior (no listen)', () => {
       createdAt: Date.now(),
       lastActivityAt: Date.now(),
       sseStreams: new Map(),
-      authToken: undefined,
+      authToken: 'old-token',
       messageQueue: [],
     });
 
