@@ -868,7 +868,7 @@
     },
     {
       "name": "modify_n8n - create_workflow",
-      "tool": "modify_n8n",
+      "tool": "modify_n8n_workflows",
       "arguments": {
         "action": "create_workflow",
         "name": "{{name}}",
@@ -908,7 +908,7 @@
     },
     {
       "name": "modify_n8n - update_workflow",
-      "tool": "modify_n8n",
+      "tool": "modify_n8n_workflows",
       "arguments": {
         "action": "update_workflow",
         "id": "{{id}}",
@@ -949,7 +949,7 @@
     },
     {
       "name": "modify_n8n - delete_workflow",
-      "tool": "modify_n8n",
+      "tool": "modify_n8n_workflows",
       "arguments": {
         "action": "delete_workflow",
         "id": "{{id}}"
@@ -972,7 +972,7 @@
     },
     {
       "name": "modify_n8n - activate_workflow",
-      "tool": "modify_n8n",
+      "tool": "modify_n8n_workflows",
       "arguments": {
         "action": "activate_workflow",
         "id": "{{id}}"
@@ -995,7 +995,7 @@
     },
     {
       "name": "modify_n8n - deactivate_workflow",
-      "tool": "modify_n8n",
+      "tool": "modify_n8n_workflows",
       "arguments": {
         "action": "deactivate_workflow",
         "id": "{{id}}"
@@ -1018,7 +1018,7 @@
     },
     {
       "name": "modify_n8n - update_workflow_tags",
-      "tool": "modify_n8n",
+      "tool": "modify_n8n_workflows",
       "arguments": {
         "action": "update_workflow_tags",
         "id": "{{id}}",
@@ -1046,7 +1046,7 @@
     },
     {
       "name": "modify_n8n - transfer_workflow",
-      "tool": "modify_n8n",
+      "tool": "modify_n8n_workflows",
       "arguments": {
         "action": "transfer_workflow",
         "id": "{{id}}",
