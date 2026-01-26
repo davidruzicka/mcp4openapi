@@ -351,6 +351,13 @@
           "description": "How to serialize array query parameters",
           "default": "repeat",
           "examples": ["brackets"]
+        },
+        "timeout_ms": {
+          "type": "number",
+          "description": "Request timeout in milliseconds",
+          "default": 60000,
+          "minimum": 1000,
+          "examples": [30000, 60000]
         }
       }
     },

@@ -30,7 +30,7 @@ import { MetricsCollector } from './metrics.js';
 import { ExternalOAuthProvider } from './oauth-provider.js';
 import type { AuthInterceptor, OAuthConfig } from './types/profile.js';
 import { HTTP_STATUS, MIME_TYPES, OAUTH_PATHS, TIMEOUTS, OAUTH_RATE_LIMIT } from './constants.js';
-import { escapeHtmlSafe, isSafePropertyName } from './validation-utils.js';
+import { escapeHtmlSafe } from './validation-utils.js';
 import type { OAuthTokens } from '@modelcontextprotocol/sdk/shared/auth.js';
 import {
   AuthenticationError,
@@ -1679,13 +1679,16 @@ export class HttpTransport {
     req: McpRequest,
     profileState: ProfileRuntimeState
   ): { type: 'bearer' | 'oauth' | 'api-token' | 'none', token?: string, sessionId?: string } {
+    // 1. Check for OAuth session first (highest priority for authenticated sessions)
     const sessionId = req.sessionId || req.headers['mcp-session-id'] as string | undefined;
-    const session = sessionId ? profileState.sessions.get(sessionId) : undefined;
-    const authConfigs = profileState.context.authConfigs;
-    const configs = authConfigs ? (Array.isArray(authConfigs) ? authConfigs : [authConfigs]) : [];
-    const hasOAuth = !!profileState.oauthProvider || configs.some(config => config.type === 'oauth');
+    if (sessionId && profileState.sessions.has(sessionId)) {
+      const session = profileState.sessions.get(sessionId);
+      if (session && session.authToken) {
+        return { type: 'oauth', token: session.authToken, sessionId };
+      }
+    }
     
-    // 1. Check Authorization: Bearer header
+    // 2. Check Authorization: Bearer header
     const authHeader = req.headers.authorization;
     if (authHeader) {
       // Defense against ReDoS: Check length before regex
@@ -1706,26 +1709,6 @@ export class HttpTransport {
       return { type: 'bearer', token };
     }
     
-    // 2. Check configured custom header (if any)
-    if (configs.length > 0) {
-      const sortedConfigs = configs.sort((a, b) => (a.priority || 0) - (b.priority || 0));
-      const customHeaderConfig = sortedConfigs.find(c => c.type === 'custom-header' && c.header_name);
-      if (customHeaderConfig && customHeaderConfig.header_name) {
-        if (!isSafePropertyName(customHeaderConfig.header_name)) {
-          throw new ValidationError(`Invalid custom auth header name: ${customHeaderConfig.header_name}`);
-        }
-        const headerKey = customHeaderConfig.header_name.toLowerCase();
-        const headerValue = req.headers[headerKey];
-        if (headerValue) {
-          if (typeof headerValue !== 'string') {
-            throw new ValidationError(`${customHeaderConfig.header_name} must be a string`);
-          }
-          this.validateToken(headerValue, customHeaderConfig.header_name);
-          return { type: 'api-token', token: headerValue };
-        }
-      }
-    }
-
     // 3. Check X-API-Token header (for custom implementations)
     const apiTokenHeader = req.headers['x-api-token'];
     if (apiTokenHeader) {
@@ -1734,11 +1717,6 @@ export class HttpTransport {
       }
       this.validateToken(apiTokenHeader, 'X-API-Token');
       return { type: 'api-token', token: apiTokenHeader };
-    }
-
-    // 4. Fall back to session token (OAuth only when configured)
-    if (session && session.authToken) {
-      return { type: hasOAuth ? 'oauth' : 'api-token', token: session.authToken, sessionId };
     }
     
     return { type: 'none' };
@@ -1847,19 +1825,6 @@ export class HttpTransport {
           }
         }
         this.updateSessionActivity(profileState, sessionId);
-        const authInfo = this.extractAuthToken(req, profileState);
-        if (authInfo.token && authInfo.type !== 'oauth') {
-          const previousToken = session.authToken;
-          if (!previousToken || previousToken !== authInfo.token) {
-            session.authToken = authInfo.token;
-            this.logger.info('Session auth token updated', {
-              profileId: profileState.profileId,
-              sessionId,
-              authType: authInfo.type,
-              replaced: !!previousToken,
-            });
-          }
-        }
       } else if (!isInitialization && !sessionId) {
         this.logger.debug('Session validation failed: non-init request without sessionId');
         res.status(HTTP_STATUS.BAD_REQUEST).json({ error: 'Bad Request', message: 'Mcp-Session-Id header required (except for initialization)' });

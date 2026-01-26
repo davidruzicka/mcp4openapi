@@ -28,7 +28,7 @@ export class SchemaValidator {
    */
   validateRequestBody(
     operation: OperationInfo,
-    body: unknown
+    body: Record<string, unknown>
   ): ValidationResult {
     if (!operation.requestBody?.content['application/json']?.schema) {
       return { valid: true };
