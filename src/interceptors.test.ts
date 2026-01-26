@@ -1264,3 +1264,96 @@ describe('HttpClient - Multipart Support', () => {
     expect(options.headers).toHaveProperty('Content-Type', 'application/octet-stream');
   });
 });
+
+describe('HttpClient - Request Timeout', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('should timeout request if it takes longer than configured timeout_ms', async () => {
+    const config: InterceptorConfig = {
+      timeout_ms: 1000, // 1s timeout
+    };
+
+    const client = createTestHttpClient('https://api.example.com', config);
+
+    // Mock fetch that hangs
+    global.fetch = async (url: RequestInfo | URL, init?: RequestInit) => {
+      const signal = init?.signal;
+      if (signal) {
+        if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
+        signal.addEventListener('abort', () => {
+          // Do nothing in mock, the promise will reject from outside if not handled
+        });
+      }
+
+      // Return a promise that never resolves (until we advance timers)
+      // But since we use fake timers, we need to simulate the abort signal triggering rejection
+      return new Promise((resolve, reject) => {
+        if (signal) {
+          signal.addEventListener('abort', () => {
+            reject(new DOMException('The user aborted a request.', 'AbortError'));
+          });
+        }
+      });
+    };
+
+    const requestPromise = client.request('GET', '/timeout');
+
+    // Advance time by 1001ms
+    vi.advanceTimersByTime(1001);
+
+    await expect(requestPromise).rejects.toThrow('The user aborted a request.');
+  });
+
+  it('should use default timeout of 60s if not configured', async () => {
+    const config: InterceptorConfig = {}; // No timeout_ms
+
+    const client = createTestHttpClient('https://api.example.com', config);
+
+    global.fetch = async (url: RequestInfo | URL, init?: RequestInit) => {
+      const signal = init?.signal;
+      return new Promise((resolve, reject) => {
+        if (signal) {
+          signal.addEventListener('abort', () => {
+            reject(new DOMException('The user aborted a request.', 'AbortError'));
+          });
+        }
+      });
+    };
+
+    const requestPromise = client.request('GET', '/default-timeout');
+
+    // Advance time by 59s - should not timeout yet
+    vi.advanceTimersByTime(59000);
+    // Promise is still pending... we can't easily check pending state in vitest without waiting
+
+    // Advance time by another 2s (total 61s)
+    vi.advanceTimersByTime(2000);
+
+    await expect(requestPromise).rejects.toThrow('The user aborted a request.');
+  });
+
+  it('should pass signal to fetch', async () => {
+    const config: InterceptorConfig = {
+      timeout_ms: 5000,
+    };
+
+    const client = createTestHttpClient('https://api.example.com', config);
+
+    const mockFetch = vi.fn().mockImplementation(async (url, init) => {
+      return new Response(JSON.stringify({ ok: true }), { status: 200 });
+    });
+    global.fetch = mockFetch;
+
+    await client.request('GET', '/test');
+
+    const [, options] = mockFetch.mock.calls[0] as [string, RequestInit];
+    expect(options.signal).toBeDefined();
+    expect(options.signal).toBeInstanceOf(AbortSignal);
+  });
+});

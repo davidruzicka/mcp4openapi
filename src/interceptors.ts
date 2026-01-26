@@ -22,6 +22,7 @@ export interface RequestContext {
   headers: Record<string, string>;
   body?: unknown;
   operationId?: string; // For per-endpoint rate limiting
+  signal?: AbortSignal;
 }
 
 export interface ResponseContext {
@@ -406,6 +407,10 @@ export class HttpClient {
       url += '?' + searchParams.toString();
     }
 
+    const timeoutMs = this.interceptors.config.timeout_ms || 60000; // Default 60s
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
     const ctx: RequestContext = {
       method,
       url,
@@ -415,73 +420,79 @@ export class HttpClient {
       },
       body: options.body,
       operationId: options.operationId,
+      signal: controller.signal,
     };
 
-    return this.interceptors.execute(ctx, async () => {
-      // Why no body for GET/HEAD: HTTP spec forbids request body for these methods
-      const fetchOptions: RequestInit = {
-        method: ctx.method,
-        headers: ctx.headers,
-      };
+    try {
+      return await this.interceptors.execute(ctx, async () => {
+        // Why no body for GET/HEAD: HTTP spec forbids request body for these methods
+        const fetchOptions: RequestInit = {
+          method: ctx.method,
+          headers: ctx.headers,
+          signal: ctx.signal,
+        };
 
-      if (ctx.method !== 'GET' && ctx.method !== 'HEAD' && ctx.body) {
-        if (ctx.body instanceof FormData) {
-          // FormData: let fetch set Content-Type with boundary automatically
-          delete ctx.headers['Content-Type'];
-          fetchOptions.body = ctx.body;
-        } else if (ctx.body instanceof Blob || ctx.body instanceof ArrayBuffer) {
-          // Binary data: keep existing Content-Type or use octet-stream
-          if (!ctx.headers['Content-Type']) {
-            ctx.headers['Content-Type'] = 'application/octet-stream';
+        if (ctx.method !== 'GET' && ctx.method !== 'HEAD' && ctx.body) {
+          if (ctx.body instanceof FormData) {
+            // FormData: let fetch set Content-Type with boundary automatically
+            delete ctx.headers['Content-Type'];
+            fetchOptions.body = ctx.body;
+          } else if (ctx.body instanceof Blob || ctx.body instanceof ArrayBuffer) {
+            // Binary data: keep existing Content-Type or use octet-stream
+            if (!ctx.headers['Content-Type']) {
+              ctx.headers['Content-Type'] = 'application/octet-stream';
+            }
+            fetchOptions.body = ctx.body;
+          } else {
+            // JSON (default)
+            fetchOptions.body = JSON.stringify(ctx.body);
           }
-          fetchOptions.body = ctx.body;
-        } else {
-          // JSON (default)
-          fetchOptions.body = JSON.stringify(ctx.body);
-        }
-      }
-
-      const response = await fetch(ctx.url, fetchOptions);
-
-      const body = response.headers.get('content-type')?.includes('application/json')
-        ? await response.json()
-        : await response.text();
-
-      const responseContext = {
-        status: response.status,
-        headers: Object.fromEntries(response.headers.entries()),
-        body,
-      };
-
-      // Why throw on non-2xx: Allows caller to handle errors with try/catch
-      // Use structured errors for better client handling
-      if (response.status < HTTP_STATUS.OK || response.status >= HTTP_STATUS.MULTIPLE_CHOICES) {
-        // Extract error message from response body (common formats)
-        let errorMessage = `HTTP ${response.status}`;
-        if (typeof body === 'object' && body !== null) {
-          const errorObj = body as Record<string, unknown>;
-          errorMessage = (errorObj.error_description || errorObj.error || errorObj.message || errorMessage) as string;
-        } else if (typeof body === 'string' && body.length > 0) {
-          errorMessage = body;
         }
 
-        // Throw specific error types based on HTTP status
-        if (response.status === HTTP_STATUS.UNAUTHORIZED) {
-          throw new AuthenticationError(errorMessage, { statusCode: response.status });
-        } else if (response.status === HTTP_STATUS.FORBIDDEN) {
-          throw new AuthorizationError(errorMessage);
-        } else if (response.status === HTTP_STATUS.TOO_MANY_REQUESTS) {
-          const retryAfter = response.headers.get('retry-after');
-          throw new RateLimitError(errorMessage, retryAfter ? parseInt(retryAfter, 10) : undefined);
-        } else if (response.status === HTTP_STATUS.NOT_FOUND) {
-          throw new NetworkError(`Resource not found: ${errorMessage}`, response.status);
-        } else {
-          // Generic network error for other status codes (includes 5xx)
-          throw new NetworkError(errorMessage, response.status, { body });
-        }
-      }
+        const response = await fetch(ctx.url, fetchOptions);
 
-      return responseContext;
-    });
+        const body = response.headers.get('content-type')?.includes('application/json')
+          ? await response.json()
+          : await response.text();
+
+        const responseContext = {
+          status: response.status,
+          headers: Object.fromEntries(response.headers.entries()),
+          body,
+        };
+
+        // Why throw on non-2xx: Allows caller to handle errors with try/catch
+        // Use structured errors for better client handling
+        if (response.status < HTTP_STATUS.OK || response.status >= HTTP_STATUS.MULTIPLE_CHOICES) {
+          // Extract error message from response body (common formats)
+          let errorMessage = `HTTP ${response.status}`;
+          if (typeof body === 'object' && body !== null) {
+            const errorObj = body as Record<string, unknown>;
+            errorMessage = (errorObj.error_description || errorObj.error || errorObj.message || errorMessage) as string;
+          } else if (typeof body === 'string' && body.length > 0) {
+            errorMessage = body;
+          }
+
+          // Throw specific error types based on HTTP status
+          if (response.status === HTTP_STATUS.UNAUTHORIZED) {
+            throw new AuthenticationError(errorMessage, { statusCode: response.status });
+          } else if (response.status === HTTP_STATUS.FORBIDDEN) {
+            throw new AuthorizationError(errorMessage);
+          } else if (response.status === HTTP_STATUS.TOO_MANY_REQUESTS) {
+            const retryAfter = response.headers.get('retry-after');
+            throw new RateLimitError(errorMessage, retryAfter ? parseInt(retryAfter, 10) : undefined);
+          } else if (response.status === HTTP_STATUS.NOT_FOUND) {
+            throw new NetworkError(`Resource not found: ${errorMessage}`, response.status);
+          } else {
+            // Generic network error for other status codes (includes 5xx)
+            throw new NetworkError(errorMessage, response.status, { body });
+          }
+        }
+
+        return responseContext;
+      });
+    } finally {
+      clearTimeout(timeoutId);
+    }
   }
 }
