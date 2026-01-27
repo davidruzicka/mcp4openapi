@@ -37,3 +37,16 @@ Logging untrusted input to a text-based stream (like console/file) requires sani
 **Prevention:**
 1.  Sanitize all log messages in text-based loggers by escaping newlines (e.g., replacing `\n` with `\\n`).
 2.  Prefer structured logging (JSON) in production environments where log integrity is critical.
+
+## 2026-02-06 - [MEDIUM] Timing Attack in PKCE Verification
+
+**Vulnerability:**
+The PKCE code challenge verification used a simple string comparison (`hash !== codeChallenge`) which is susceptible to timing attacks (CWE-208). Additionally, `randomUUID()` was used for generating security-critical tokens (OAuth state, authorization codes), which leaks structure bits and is not intended for high-entropy secrets.
+
+**Learning:**
+Security-critical comparisons (hashes, signatures, secrets) must always be constant-time to prevent side-channel timing attacks. `randomUUID()` should be reserved for identifiers, not secrets.
+
+**Prevention:**
+1.  Use `crypto.timingSafeEqual` for all secret comparisons.
+2.  Ensure buffers being compared have equal lengths before calling `timingSafeEqual`.
+3.  Use `crypto.randomBytes(n).toString('hex')` for generating high-entropy secrets.

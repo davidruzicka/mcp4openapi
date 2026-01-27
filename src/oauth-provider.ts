@@ -13,7 +13,7 @@
  *   4. Client -> MCP (Token) -> MCP returns stored tokens
  */
 
-import { randomUUID, createHash } from 'node:crypto';
+import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { isIP } from 'node:net';
 import { Request, Response } from 'express';
 import type {
@@ -566,7 +566,7 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
       throw new Error('Redirect URI host not allowed');
     }
 
-    const stateToken = randomUUID();
+    const stateToken = randomBytes(32).toString('hex');
     
     this.stateStore.set(stateToken, {
       clientRedirectUri: params.redirectUri,
@@ -661,7 +661,7 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
         );
 
         // Generate Internal Code
-        const internalCode = randomUUID();
+        const internalCode = randomBytes(32).toString('hex');
 
         // Store Internal Code -> Tokens mapping
         const client = await this._clientsStore.getClient(storedState.clientId);
@@ -785,9 +785,12 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
         throw new Error('code_verifier is required for PKCE');
       }
       
-      // Verify code challenge (S256 method)
+      // Verify code challenge (S256 method) with constant-time comparison
       const hash = createHash('sha256').update(codeVerifier).digest('base64url');
-      if (hash !== codeData.params.codeChallenge) {
+      const hashBuffer = Buffer.from(hash);
+      const challengeBuffer = Buffer.from(codeData.params.codeChallenge);
+
+      if (hashBuffer.length !== challengeBuffer.length || !timingSafeEqual(hashBuffer, challengeBuffer)) {
         throw new Error('Invalid code_verifier');
       }
     }
