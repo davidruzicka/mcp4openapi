@@ -1,8 +1,8 @@
 {
   "$schema": "../../../profile-schema.json",
-  "profile_name": "gitlab-default",
-  "profile_id": "gitlab",
-  "profile_aliases": ["gitlab-default", "gitlab-developer"],
+  "profile_name": "gitlab-pat",
+  "profile_id": "gitlab-pat",
+  "profile_aliases": ["gitlab-pat"],
   "openapi_spec_path": "./openapi.yaml",
   "description": "Developer-focused tools for common GitLab workflows",
   
@@ -1458,20 +1458,8 @@
     "array_format": "brackets",
     "auth": [
       {
-        "type": "oauth",
-        "priority": 0,
-        "validation_endpoint": "user",
-        "oauth_config": {
-          "issuer": "${env:GITLAB_OAUTH_ISSUER}",
-          "client_id": "${env:GITLAB_OAUTH_CLIENT_ID}",
-          "client_secret": "${env:GITLAB_OAUTH_CLIENT_SECRET}",
-          "scopes": ["api", "read_repository"],
-          "redirect_uri": "${env:GITLAB_OAUTH_REDIRECT_URI}"
-        }
-      },
-      {
         "type": "bearer",
-        "priority": 1,
+        "priority": 0,
         "value_from_env": "GITLAB_TOKEN",
         "validation_endpoint": "personal_access_tokens/self"
       }

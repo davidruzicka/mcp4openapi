@@ -1156,6 +1156,140 @@
       }
     },
     {
+      "name": "Issues - List Notes",
+      "tool": "manage_issues",
+      "arguments": {
+        "action": "list_notes",
+        "project_id": "{{projectId}}",
+        "issue_iid": 1
+      },
+      "mocks": [
+        {
+          "operationId": "getApiV4ProjectsIdIssuesIssueIidNotes",
+          "response": {
+            "body": [
+              {
+                "id": 201,
+                "body": "Note"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": [
+          {
+            "id": 201
+          }
+        ]
+      }
+    },
+    {
+      "name": "Issues - Create Note",
+      "tool": "manage_issues",
+      "arguments": {
+        "action": "create_note",
+        "project_id": "{{projectId}}",
+        "issue_iid": 1,
+        "body": "New Note"
+      },
+      "mocks": [
+        {
+          "operationId": "postApiV4ProjectsIdIssuesIssueIidNotes",
+          "response": {
+            "status": 201,
+            "body": {
+              "id": 202,
+              "body": "New Note"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": {
+          "id": 202
+        }
+      }
+    },
+    {
+      "name": "Issues - Get Note",
+      "tool": "manage_issues",
+      "arguments": {
+        "action": "get_note",
+        "project_id": "{{projectId}}",
+        "issue_iid": 1,
+        "note_id": 202
+      },
+      "mocks": [
+        {
+          "operationId": "getApiV4ProjectsIdIssuesIssueIidNotesNoteId",
+          "response": {
+            "body": {
+              "id": 202,
+              "body": "New Note"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": {
+          "id": 202
+        }
+      }
+    },
+    {
+      "name": "Issues - Update Note",
+      "tool": "manage_issues",
+      "arguments": {
+        "action": "update_note",
+        "project_id": "{{projectId}}",
+        "issue_iid": 1,
+        "note_id": 202,
+        "body": "Updated Note"
+      },
+      "mocks": [
+        {
+          "operationId": "putApiV4ProjectsIdIssuesIssueIidNotesNoteId",
+          "response": {
+            "body": {
+              "id": 202,
+              "body": "Updated Note"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": {
+          "id": 202
+        }
+      }
+    },
+    {
+      "name": "Issues - Delete Note",
+      "tool": "manage_issues",
+      "arguments": {
+        "action": "delete_note",
+        "project_id": "{{projectId}}",
+        "issue_iid": 1,
+        "note_id": 202
+      },
+      "mocks": [
+        {
+          "operationId": "deleteApiV4ProjectsIdIssuesIssueIidNotesNoteId",
+          "response": {
+            "status": 204
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
       "name": "Issues - Create",
       "tool": "manage_issues",
       "arguments": {
@@ -1447,7 +1581,7 @@
       },
       "mocks": [
         {
-          "operationId": "getApiV4ProjectsIdJobsJobId",
+          "operationId": "getSingleJob",
           "response": {
             "body": {
               "id": 1234,
@@ -2464,11 +2598,12 @@
         "action": "resolve_discussion",
         "project_id": "{{projectId}}",
         "merge_request_iid": 1,
-        "discussion_id": "disc-1"
+        "discussion_id": "disc-1",
+        "resolved": true
       },
       "mocks": [
         {
-          "operationId": "putApiV4ProjectsIdMergeRequestsMergeRequestIidDiscussionsDiscussionIdResolve",
+          "operationId": "putApiV4ProjectsIdMergeRequestsMergeRequestIidDiscussionsDiscussionId",
           "response": {
             "status": 200,
             "body": {
@@ -2488,11 +2623,12 @@
         "action": "unresolve_discussion",
         "project_id": "{{projectId}}",
         "merge_request_iid": 1,
-        "discussion_id": "disc-1"
+        "discussion_id": "disc-1",
+        "resolved": false
       },
       "mocks": [
         {
-          "operationId": "putApiV4ProjectsIdMergeRequestsMergeRequestIidDiscussionsDiscussionIdResolve",
+          "operationId": "putApiV4ProjectsIdMergeRequestsMergeRequestIidDiscussionsDiscussionId",
           "response": {
             "status": 200,
             "body": {
@@ -2652,7 +2788,7 @@
       },
       "mocks": [
         {
-          "operationId": "getApiV4ProjectsIdJobsJobId",
+          "operationId": "getSingleJob",
           "response": {
             "status": 200,
             "body": {
