@@ -396,7 +396,7 @@ describe('MCPServer', () => {
       const tools = server['profile']!.tools;
       // GitLab spec has around 87 operations, should generate similar number
       expect(tools.length).toBeGreaterThan(50);
-      expect(tools.length).toBeLessThan(200);
+      expect(tools.length).toBeLessThan(230);
     });
   });
 

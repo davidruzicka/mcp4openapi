@@ -85,13 +85,13 @@
       "operations": {
         "run_pipeline": "postApiV4ProjectsIdPipeline",
         "get_pipeline": "getApiV4ProjectsIdPipelinesPipelineId",
-        "get_job": "getApiV4ProjectsIdJobsJobId",
+        "get_job": "getSingleJob",
         "retry_job": "postApiV4ProjectsIdJobsJobIdRetry",
         "play_job": "triggerManualJob",
         "cancel_job": "postApiV4ProjectsIdJobsJobIdCancel",
         "download_job_artifacts": {
           "type": "proxy_download",
-          "metadata_endpoint": "getApiV4ProjectsIdJobsJobId",
+          "metadata_endpoint": "getSingleJob",
           "download_endpoint": "getApiV4ProjectsIdJobsJobIdArtifacts"
         }
       },
@@ -418,7 +418,7 @@
 
     {
       "name": "manage_merge_requests",
-      "description": "Work with merge requests. Actions: 'list' (all MRs in project), 'get' (single MR details), 'create' (create new MR), 'update' (update MR), 'delete' (delete MR - admins only), 'list_notes' (get all comments), 'get_note' (single comment), 'create_note' (add comment), 'update_note' (edit comment), 'delete_note' (remove comment), 'download_note_attachment' (download note attachment via proxy), 'list_discussions', 'get_discussion', 'create_discussion', 'delete_discussion', 'resolve_discussion', 'unresolve_discussion', 'get_approvals', 'approve', 'unapprove', 'get_changes' (file diffs), 'list_versions' (list diff versions), 'get_version' (specific diff version), 'list_award_emoji', 'get_award_emoji', 'create_award_emoji', 'delete_award_emoji', 'list_note_award_emoji', 'get_note_award_emoji', 'create_note_award_emoji', 'delete_note_award_emoji'. Use 'list' to see all merge requests, filter by state (opened, closed, merged, all). For all actions that target a specific MR (including 'get_changes', 'list_versions', 'get_version'), pass 'merge_request_iid'.",
+      "description": "Work with merge requests. Actions: 'list' (all MRs in project), 'get' (single MR details), 'create' (create new MR), 'update' (update MR), 'delete' (delete MR - admins only), 'list_notes' (get all comments), 'get_note' (single comment), 'create_note' (add comment), 'update_note' (edit comment), 'delete_note' (remove comment), 'download_note_attachment' (download note attachment via proxy), 'list_discussions', 'get_discussion', 'create_discussion', 'reply_discussion', 'delete_discussion', 'set_discussion_resolved', 'get_approvals', 'approve', 'unapprove', 'get_changes' (file diffs), 'list_versions' (list diff versions), 'get_version' (specific diff version), 'list_award_emoji', 'get_award_emoji', 'create_award_emoji', 'delete_award_emoji', 'list_note_award_emoji', 'get_note_award_emoji', 'create_note_award_emoji', 'delete_note_award_emoji'. Use 'list' to see all merge requests, filter by state (opened, closed, merged, all). For all actions that target a specific MR (including 'get_changes', 'list_versions', 'get_version'), pass 'merge_request_iid'.",
       "metadata_params": ["action", "project_id", "merge_request_iid", "note_id", "award_id", "discussion_id", "version_id"],
       "operations": {
         "list": "getApiV4ProjectsIdMergeRequests",
@@ -439,9 +439,9 @@
         "list_discussions": "getApiV4ProjectsIdMergeRequestsMergeRequestIidDiscussions",
         "create_discussion": "postApiV4ProjectsIdMergeRequestsMergeRequestIidDiscussions",
         "get_discussion": "getApiV4ProjectsIdMergeRequestsMergeRequestIidDiscussionsDiscussionId",
+        "reply_discussion": "postApiV4ProjectsIdMergeRequestsMergeRequestIidDiscussionsDiscussionIdNotes",
         "delete_discussion": "deleteApiV4ProjectsIdMergeRequestsMergeRequestIidDiscussionsDiscussionId",
-        "resolve_discussion": "putApiV4ProjectsIdMergeRequestsMergeRequestIidDiscussionsDiscussionIdResolve",
-        "unresolve_discussion": "putApiV4ProjectsIdMergeRequestsMergeRequestIidDiscussionsDiscussionIdResolve",
+        "set_discussion_resolved": "putApiV4ProjectsIdMergeRequestsMergeRequestIidDiscussionsDiscussionId",
         "get_approvals": "getApiV4ProjectsIdMergeRequestsMergeRequestIidApprovals",
         "approve": "postApiV4ProjectsIdMergeRequestsMergeRequestIidApprove",
         "unapprove": "postApiV4ProjectsIdMergeRequestsMergeRequestIidUnapprove",
@@ -468,8 +468,8 @@
         "list_discussions": ["id", "notes", "resolved"],
         "get_discussion": ["id", "notes", "resolved"],
         "create_discussion": ["id", "notes", "resolved"],
-        "resolve_discussion": ["id", "notes", "resolved"],
-        "unresolve_discussion": ["id", "notes", "resolved"],
+        "reply_discussion": ["id", "notes", "resolved"],
+        "set_discussion_resolved": ["id", "notes", "resolved"],
         "get_approvals": ["approvals_required", "approvals_left", "approved_by"],
         "approve": ["approvals_required", "approvals_left", "approved_by"],
         "unapprove": ["approvals_required", "approvals_left", "approved_by"],
@@ -486,7 +486,7 @@
       "parameters": {
         "action": {
           "type": "string",
-          "enum": ["list", "get", "create", "update", "delete", "list_notes", "get_note", "create_note", "update_note", "delete_note", "download_note_attachment", "list_discussions", "get_discussion", "create_discussion", "delete_discussion", "resolve_discussion", "unresolve_discussion", "get_approvals", "approve", "unapprove", "get_changes", "list_versions", "get_version", "list_award_emoji", "get_award_emoji", "create_award_emoji", "delete_award_emoji", "list_note_award_emoji", "get_note_award_emoji", "create_note_award_emoji", "delete_note_award_emoji"],
+          "enum": ["list", "get", "create", "update", "delete", "list_notes", "get_note", "create_note", "update_note", "delete_note", "download_note_attachment", "list_discussions", "get_discussion", "create_discussion", "reply_discussion", "delete_discussion", "set_discussion_resolved", "get_approvals", "approve", "unapprove", "get_changes", "list_versions", "get_version", "list_award_emoji", "get_award_emoji", "create_award_emoji", "delete_award_emoji", "list_note_award_emoji", "get_note_award_emoji", "create_note_award_emoji", "delete_note_award_emoji"],
           "description": "Action to perform",
           "required": true
         },
@@ -499,12 +499,17 @@
         "merge_request_iid": {
           "type": "integer",
           "description": "The internal ID of the merge request",
-          "required_for": ["get", "update", "delete", "list_notes", "get_note", "create_note", "update_note", "delete_note", "download_note_attachment", "list_discussions", "get_discussion", "create_discussion", "delete_discussion", "resolve_discussion", "unresolve_discussion", "get_approvals", "approve", "unapprove", "get_changes", "list_versions", "get_version", "list_award_emoji", "get_award_emoji", "create_award_emoji", "delete_award_emoji", "list_note_award_emoji", "get_note_award_emoji", "create_note_award_emoji", "delete_note_award_emoji"]
+          "required_for": ["get", "update", "delete", "list_notes", "get_note", "create_note", "update_note", "delete_note", "download_note_attachment", "list_discussions", "get_discussion", "create_discussion", "reply_discussion", "delete_discussion", "set_discussion_resolved", "get_approvals", "approve", "unapprove", "get_changes", "list_versions", "get_version", "list_award_emoji", "get_award_emoji", "create_award_emoji", "delete_award_emoji", "list_note_award_emoji", "get_note_award_emoji", "create_note_award_emoji", "delete_note_award_emoji"]
         },
         "discussion_id": {
           "type": "string",
           "description": "The ID of the discussion",
-          "required_for": ["get_discussion", "delete_discussion", "resolve_discussion", "unresolve_discussion"]
+          "required_for": ["get_discussion", "reply_discussion", "delete_discussion", "set_discussion_resolved"]
+        },
+        "resolved": {
+          "type": "boolean",
+          "description": "Resolve or unresolve discussion",
+          "required_for": ["set_discussion_resolved"]
         },
         "version_id": {
           "type": "integer",
@@ -635,7 +640,7 @@
         "body": {
           "type": "string",
           "description": "The content of the note or discussion",
-          "required_for": ["create_note", "update_note", "create_discussion"],
+          "required_for": ["create_note", "update_note", "create_discussion", "reply_discussion"],
           "minLength": 1,
           "example": "This looks good to me!"
         },
@@ -668,7 +673,7 @@
 
     {
       "name": "get_merge_request_with_details",
-      "description": "Get merge request with all notes (comments) in a single call. Fetches MR details and all associated notes to reduce API roundtrips.",
+      "description": "Get merge request with discussions and award emoji in a single call. Fetches MR details, discussions, and MR award emoji to reduce API roundtrips.",
       "composite": true,
       "partial_results": true,
       "metadata_params": ["project_id", "merge_request_iid"],
@@ -678,8 +683,13 @@
           "store_as": "merge_request"
         },
         {
-          "call": "GET /projects/{id}/merge_requests/{merge_request_iid}/notes",
-          "store_as": "merge_request.notes",
+          "call": "GET /projects/{id}/merge_requests/{merge_request_iid}/discussions",
+          "store_as": "merge_request.discussions",
+          "depends_on": ["merge_request"]
+        },
+        {
+          "call": "GET /projects/{id}/merge_requests/{merge_request_iid}/award_emoji",
+          "store_as": "merge_request.award_emoji",
           "depends_on": ["merge_request"]
         }
       ],
@@ -1039,22 +1049,31 @@
 
     {
       "name": "manage_issues",
-      "description": "Work with issues. Actions: 'list' (all issues in project), 'get' (single issue details), 'create' (create new issue), 'delete' (delete issue - admins only). Use 'list' to see all issues, filter by state (opened, closed, all). For 'get' and 'delete', pass 'issue_iid'. For 'create', pass 'title'.",
-      "metadata_params": ["action", "project_id", "issue_iid"],
+      "description": "Work with issues. Actions: 'list' (all issues in project), 'get' (single issue details), 'create' (create new issue), 'delete' (delete issue - admins only), 'list_notes' (get all comments), 'get_note' (single comment), 'create_note' (add comment), 'update_note' (edit comment), 'delete_note' (remove comment). Use 'list' to see all issues, filter by state (opened, closed, all). For actions that target a specific issue, pass 'issue_iid'. For 'create', pass 'title'. For note actions, pass 'body' and/or 'note_id' as required.",
+      "metadata_params": ["action", "project_id", "issue_iid", "note_id"],
       "operations": {
         "list": "getApiV4ProjectsIdIssues",
         "get": "getApiV4ProjectsIdIssuesIssueIid",
         "create": "postApiV4ProjectsIdIssues",
-        "delete": "deleteApiV4ProjectsIdIssuesIssueIid"
+        "delete": "deleteApiV4ProjectsIdIssuesIssueIid",
+        "list_notes": "getApiV4ProjectsIdIssuesIssueIidNotes",
+        "get_note": "getApiV4ProjectsIdIssuesIssueIidNotesNoteId",
+        "create_note": "postApiV4ProjectsIdIssuesIssueIidNotes",
+        "update_note": "putApiV4ProjectsIdIssuesIssueIidNotesNoteId",
+        "delete_note": "deleteApiV4ProjectsIdIssuesIssueIidNotesNoteId"
       },
       "response_fields": {
         "list": ["id", "iid", "title", "description", "state", "web_url", "author", "created_at", "updated_at"],
-        "create": ["id", "iid", "title", "description", "state", "web_url", "author", "created_at"]
+        "create": ["id", "iid", "title", "description", "state", "web_url", "author", "created_at"],
+        "list_notes": ["id", "body", "author", "created_at", "updated_at", "system", "confidential"],
+        "get_note": ["id", "body", "author", "created_at", "updated_at", "system", "confidential", "attachment"],
+        "create_note": ["id", "body", "author", "created_at", "system", "confidential"],
+        "update_note": ["id", "body", "author", "created_at", "updated_at", "system", "confidential"]
       },
       "parameters": {
         "action": {
           "type": "string",
-          "enum": ["list", "get", "create", "delete"],
+          "enum": ["list", "get", "create", "delete", "list_notes", "get_note", "create_note", "update_note", "delete_note"],
           "description": "Action to perform",
           "required": true
         },
@@ -1067,7 +1086,12 @@
         "issue_iid": {
           "type": "integer",
           "description": "The internal ID of the issue",
-          "required_for": ["get", "delete"]
+          "required_for": ["get", "delete", "list_notes", "get_note", "create_note", "update_note", "delete_note"]
+        },
+        "note_id": {
+          "type": "integer",
+          "description": "The ID of the note",
+          "required_for": ["get_note", "update_note", "delete_note"]
         },
         "state": {
           "type": "string",
@@ -1090,6 +1114,12 @@
           "type": "string",
           "description": "The description of the issue (optional for create)",
           "example": "This implements the new feature requested by the team."
+        },
+        "body": {
+          "type": "string",
+          "description": "The content of the note",
+          "required_for": ["create_note", "update_note"],
+          "example": "Looks good to me."
         },
         "assignee_id": {
           "type": "integer",
@@ -1122,7 +1152,7 @@
         },
         "confidential": {
           "type": "boolean",
-          "description": "Whether the issue should be confidential (optional for create)",
+          "description": "Whether the issue should be confidential (optional for create). For notes, use with create_note.",
           "default": false,
           "example": false
         },
@@ -1136,6 +1166,12 @@
           "type": "integer",
           "description": "Items per page (recommended max 100)",
           "default": 20
+        },
+        "sort": {
+          "type": "string",
+          "enum": ["asc", "desc"],
+          "description": "Return notes sorted in created order",
+          "default": "desc"
         }
       }
     },
