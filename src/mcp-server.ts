@@ -15,7 +15,7 @@ import {
 import { OpenAPIParser } from './openapi-parser.js';
 import { ProfileLoader } from './profile-loader.js';
 import { ToolGenerator } from './tool-generator.js';
-import { normalizeArguments } from './argument-normalizer.js';
+import { applyParameterDefaults, normalizeArguments } from './argument-normalizer.js';
 import { CompositeExecutor } from './composite-executor.js';
 import { ProxyDownloadExecutor } from './proxy-executor.js';
 import { enforceFiltering, parseFilteringHeader, type FilteringRules } from './filtering.js';
@@ -778,7 +778,8 @@ export class MCPServer {
           throw new OperationNotFoundError(request.params.name);
         }
 
-        const args = request.params.arguments || {};
+        const rawArgs = request.params.arguments || {};
+        const args = applyParameterDefaults(toolDef, rawArgs);
         
         // Validate arguments
         this.toolGenerator.validateArguments(toolDef, args);
@@ -1323,7 +1324,7 @@ export class MCPServer {
     const req = message as Record<string, unknown>;
     const params = req.params as Record<string, unknown>;
     const toolName = params.name as string;
-    const args = params.arguments as Record<string, unknown>;
+    const rawArgs = (params.arguments as Record<string, unknown>) || {};
 
     // Check OAuth authentication for tool operations
     if (this.httpTransport && this.httpTransport.hasOAuthProvider(profileId)) {
@@ -1348,12 +1349,15 @@ export class MCPServer {
       }
     }
 
+    let args: Record<string, unknown> = rawArgs;
+
     try {
       // Find tool definition
       const toolDef = this.profile?.tools.find(t => t.name === toolName);
       if (!toolDef) {
         throw new ResourceNotFoundError(toolName, 'Tool');
       }
+      args = applyParameterDefaults(toolDef, rawArgs);
 
       const toolFilter = this.getToolFilterForSession(sessionId, profileId);
       if (toolFilter && !toolFilter.allowedToolNames.has(toolName)) {

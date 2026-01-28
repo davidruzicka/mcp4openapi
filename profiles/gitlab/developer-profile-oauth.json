@@ -1,5 +1,5 @@
 {
-  "$schema": "../../../profile-schema.json",
+  "$schema": "../../profile-schema.json",
   "profile_name": "gitlab-default",
   "profile_id": "gitlab",
   "profile_aliases": ["gitlab-default", "gitlab-developer"],
@@ -61,7 +61,7 @@
         "per_page": {
           "type": "integer",
           "description": "Items per page (recommended max 100)",
-          "default": 20
+          "default": 50
         },
         "search": {
           "type": "string",
@@ -399,7 +399,7 @@
         "per_page": {
           "type": "integer",
           "description": "Items per page (recommended max 100)",
-          "default": 20
+          "default": 50
         },
         "search": {
           "type": "string",
@@ -619,7 +619,7 @@
         "per_page": {
           "type": "integer",
           "description": "Items per page (recommended max 100)",
-          "default": 20
+          "default": 50
         },
         "note_id": {
           "type": "integer",
@@ -673,7 +673,7 @@
 
     {
       "name": "get_merge_request_with_details",
-      "description": "Get merge request with discussions and award emoji in a single call. Fetches MR details, discussions, and MR award emoji to reduce API roundtrips.",
+      "description": "Get merge request with discussions and award emoji in a single call. Fetches MR details, discussions, and MR award emoji. Discussions are paginated - use page/per_page (default 50, max 100).",
       "composite": true,
       "partial_results": true,
       "metadata_params": ["project_id", "merge_request_iid"],
@@ -713,13 +713,13 @@
         },
         "page": {
           "type": "integer",
-          "description": "Page number for notes pagination",
+          "description": "Page number for discussions pagination",
           "default": 1
         },
         "per_page": {
           "type": "integer",
-          "description": "Number of notes per page",
-          "default": 20
+          "description": "Number of discussions per page (max 100)",
+          "default": 50
         }
       }
     },
@@ -749,7 +749,7 @@
         "per_page": {
           "type": "integer",
           "description": "Items per page (recommended max 100)",
-          "default": 20
+          "default": 50
         }
       }
     },
@@ -779,7 +779,7 @@
         "per_page": {
           "type": "integer",
           "description": "Items per page (recommended max 100)",
-          "default": 20
+          "default": 50
         }
       }
     },
@@ -837,7 +837,7 @@
         "per_page": {
           "type": "integer",
           "description": "Items per page (recommended max 100)",
-          "default": 20
+          "default": 50
         }
       }
     },
@@ -867,7 +867,7 @@
         "per_page": {
           "type": "integer",
           "description": "Items per page (recommended max 100)",
-          "default": 20
+          "default": 50
         }
       }
     },
@@ -1104,6 +1104,11 @@
           "description": "Page number for pagination",
           "default": 1
         },
+        "per_page": {
+          "type": "integer",
+          "description": "Items per page (recommended max 100)",
+          "default": 50
+        },
         "title": {
           "type": "string",
           "description": "The title of the issue (required for create)",
@@ -1161,11 +1166,6 @@
           "description": "The weight of the issue (optional for create)",
           "minimum": 0,
           "example": 5
-        },
-        "per_page": {
-          "type": "integer",
-          "description": "Items per page (recommended max 100)",
-          "default": 20
         },
         "sort": {
           "type": "string",
@@ -1227,7 +1227,7 @@
         "per_page": {
           "type": "integer",
           "description": "Items per page (recommended max 100)",
-          "default": 20
+          "default": 50
         }
       }
     },
@@ -1345,7 +1345,7 @@
         "per_page": {
           "type": "integer",
           "description": "Items per page (recommended max 100)",
-          "default": 20
+          "default": 50
         },
         "order": {
           "type": "string",
