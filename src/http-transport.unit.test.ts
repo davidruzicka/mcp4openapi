@@ -25,6 +25,21 @@ describe('HttpTransport unit', () => {
     return state;
   };
 
+  const withGet = (req: any) => {
+    if (typeof req.get === 'function') {
+      return req;
+    }
+    const headers = req.headers ?? {};
+    return {
+      ...req,
+      headers,
+      get(name: string) {
+        const key = name.toLowerCase();
+        return headers[key] ?? headers[name];
+      },
+    };
+  };
+
   beforeEach(async () => {
     const config = {
       host: '127.0.0.1',
@@ -718,7 +733,7 @@ describe('HttpTransport unit', () => {
       );
 
       const checker = (localTransport as any).isAllowedOriginForRequest.bind(localTransport);
-      const req: any = { path: '/mcp', query: {} };
+      const req: any = withGet({ path: '/mcp', query: {} });
       expect(await checker('http://example.com', req)).toBe(false);
 
       await localTransport.stop();
@@ -738,7 +753,7 @@ describe('HttpTransport unit', () => {
       );
 
       const checkerRouting = (routingTransport as any).isAllowedOriginForRequest.bind(routingTransport);
-      const reqNoProfile: any = { path: '/mcp', query: {} };
+      const reqNoProfile: any = withGet({ path: '/mcp', query: {} });
       expect(await checkerRouting('http://example.com', reqNoProfile)).toBe(false);
 
       await routingTransport.stop();
@@ -878,7 +893,7 @@ describe('HttpTransport unit', () => {
         },
       }));
 
-      const req: any = { path: '/profile/gitlab/oauth/authorize', query: {}, headers: {} };
+      const req: any = withGet({ path: '/profile/gitlab/oauth/authorize', query: {}, headers: {} });
       const isAllowed = await (localTransport as any).isAllowedOriginForRequest('http://oauth.example.com', req);
       expect(isAllowed).toBe(true);
 
@@ -910,7 +925,7 @@ describe('HttpTransport unit', () => {
         },
       }));
 
-      const req: any = { path: '/profile/gitlab/oauth/authorize', query: {}, headers: {} };
+      const req: any = withGet({ path: '/profile/gitlab/oauth/authorize', query: {}, headers: {} });
       const isAllowed = await (localTransport as any).isAllowedOriginForRequest('http://oauth.example.com', req);
       expect(isAllowed).toBe(false);
       expect(warnSpy).toHaveBeenCalledWith(
@@ -951,7 +966,7 @@ describe('HttpTransport unit', () => {
       );
       expect(originLayer).toBeDefined();
 
-      const req: any = { headers: { origin: 'http://evil.example.com' }, ip: '127.0.0.1' };
+      const req: any = withGet({ headers: { origin: 'http://evil.example.com' }, ip: '127.0.0.1' });
       const res: any = {
         statusCode: 200,
         body: undefined,
@@ -1064,7 +1079,7 @@ describe('HttpTransport unit', () => {
         logger
       );
 
-      const req: any = { headers: {}, path: '/mcp' };
+      const req: any = withGet({ headers: {}, path: '/mcp' });
       const state = await (localTransport as any).getProfileStateForRequest(req);
       expect(state).toBeNull();
 

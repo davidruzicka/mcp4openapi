@@ -6,6 +6,17 @@ import { TIMEOUTS } from './constants.js';
 import { ConfigurationError } from './errors.js';
 import type { HttpTransportConfig } from './types/http-transport.js';
 
+function parseTrustProxy(value: string): boolean | number | string {
+  const normalized = value.trim().toLowerCase();
+  if (normalized === 'true') return true;
+  if (normalized === 'false') return false;
+  const numeric = Number.parseInt(value, 10);
+  if (!Number.isNaN(numeric) && String(numeric) === value.trim()) {
+    return numeric;
+  }
+  return value;
+}
+
 export function buildHttpTransportBaseConfig(host: string, port: number): HttpTransportConfig {
   return {
     host,
@@ -24,6 +35,9 @@ export function buildHttpTransportBaseConfig(host: string, port: number): HttpTr
     rateLimitMetricsMax: parseInt(process.env.MCP4_HTTP_RATE_LIMIT_METRICS_MAX || '10', 10),
     maxTokenLength: process.env.MCP4_TOKEN_MAX_LENGTH
       ? parseInt(process.env.MCP4_TOKEN_MAX_LENGTH, 10)
+      : undefined,
+    trustProxy: process.env.MCP4_TRUST_PROXY
+      ? parseTrustProxy(process.env.MCP4_TRUST_PROXY)
       : undefined,
     sslCertFile: process.env.MCP4_SSL_CERT_FILE,
     sslKeyFile: process.env.MCP4_SSL_KEY_FILE,
