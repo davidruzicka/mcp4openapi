@@ -271,11 +271,8 @@
       "expect": {
         "success": true,
         "request": {
-          "method": "POST",
-          "path": "/projects/{{projectId}}/merge_requests/1/discussions/disc-1/notes",
-          "body": {
-            "body": "Reply body"
-          }
+          "method": "DELETE",
+          "path": "/projects/{{projectId}}/merge_requests/1"
         }
       }
     },
@@ -435,6 +432,13 @@
             }
           },
           "success": true
+        },
+        "request": {
+          "method": "GET",
+          "path": "/projects/{{projectId}}/merge_requests/1/discussions",
+          "query": {
+            "per_page": 50
+          }
         }
       }
     },

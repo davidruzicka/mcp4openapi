@@ -4434,6 +4434,16 @@ paths:
           description: The internal ID of the merge request
           schema:
             type: integer
+        - name: page
+          in: query
+          description: Page number for pagination
+          schema:
+            type: integer
+        - name: per_page
+          in: query
+          description: Items per page
+          schema:
+            type: integer
       responses:
         "200":
           description: Successful response

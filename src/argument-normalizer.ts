@@ -29,6 +29,21 @@ export function normalizeArguments(
   return normalized
 }
 
+export function applyParameterDefaults(
+  toolDef: ToolDefinition,
+  args: Record<string, unknown>
+): NormalizedArguments {
+  const normalized: NormalizedArguments = { ...args }
+
+  for (const [paramName, paramDef] of Object.entries(toolDef.parameters)) {
+    if (normalized[paramName] === undefined && paramDef.default !== undefined) {
+      normalized[paramName] = paramDef.default
+    }
+  }
+
+  return normalized
+}
+
 function normalizeObjectEntries(
   paramDef: ParameterDefinition,
   value: unknown
