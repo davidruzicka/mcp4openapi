@@ -513,9 +513,9 @@ export class HttpTransport {
 
     const resource = req.query?.resource;
     if (typeof resource === 'string') {
-      const profileId = this.resolveProfileIdFromResourceUrl(resource);
-      if (profileId) {
-        return profileId;
+      const info = this.resolveProfileInfoFromResourceUrl(resource);
+      if (info?.profileId) {
+        return info.profileId;
       }
     }
 
@@ -869,7 +869,9 @@ export class HttpTransport {
     return normalized === '' ? '/' : normalized;
   }
 
-  private resolveProfileIdFromResourceUrl(resource: string): string | null {
+  private resolveProfileInfoFromResourceUrl(
+    resource: string
+  ): { profileId: string; forceProfilePrefix: boolean } | null {
     let url: URL;
     try {
       url = new URL(resource);
@@ -879,7 +881,11 @@ export class HttpTransport {
 
     const path = this.normalizeResourcePath(url.pathname);
     if (path === '/mcp') {
-      return this.getDefaultProfileId() ?? null;
+      const defaultProfileId = this.getDefaultProfileId();
+      if (!defaultProfileId) {
+        return null;
+      }
+      return { profileId: defaultProfileId, forceProfilePrefix: false };
     }
 
     if (!this.config.profileRoutingEnabled) {
@@ -892,10 +898,14 @@ export class HttpTransport {
     }
 
     try {
-      return decodeURIComponent(match[1]);
+      return { profileId: decodeURIComponent(match[1]), forceProfilePrefix: true };
     } catch {
       return null;
     }
+  }
+
+  private resolveProfileIdFromResourceUrl(resource: string): string | null {
+    return this.resolveProfileInfoFromResourceUrl(resource)?.profileId ?? null;
   }
 
   public getOAuthProtectedResourceUrl(profileId?: string): string {
@@ -1045,8 +1055,8 @@ export class HttpTransport {
         return;
       }
 
-      const profileId = this.resolveProfileIdFromResourceUrl(resource);
-      if (!profileId) {
+      const info = this.resolveProfileInfoFromResourceUrl(resource);
+      if (!info?.profileId) {
         res.status(HTTP_STATUS.NOT_FOUND).json({
           error: 'Not Found',
           message: 'OAuth metadata unavailable for requested resource',
@@ -1054,7 +1064,8 @@ export class HttpTransport {
         return;
       }
 
-      (req as McpRequest).profileId = profileId;
+      (req as McpRequest).profileId = info.profileId;
+      (req as McpRequest).forceProfilePrefix = info.forceProfilePrefix;
       next();
     };
 
@@ -1222,7 +1233,8 @@ export class HttpTransport {
 
     const profileId = profileState.profileId;
     const isProfileScoped = typeof req.params?.profileId === 'string';
-    const urlOptions = isProfileScoped ? { forceProfilePrefix: true } : undefined;
+    const forceProfilePrefix = isProfileScoped || (req as McpRequest).forceProfilePrefix === true;
+    const urlOptions = forceProfilePrefix ? { forceProfilePrefix: true } : undefined;
     const serverUrl = new URL(this.buildProfileUrl(profileId, '/mcp', urlOptions));
     const issuerUrl = this.getProfileIssuerUrl(profileId, urlOptions);
 
@@ -1446,7 +1458,8 @@ export class HttpTransport {
     try {
       const profileId = profileState.profileId;
       const isProfileScoped = typeof req.params?.profileId === 'string';
-      const urlOptions = isProfileScoped ? { forceProfilePrefix: true } : undefined;
+      const forceProfilePrefix = isProfileScoped || (req as McpRequest).forceProfilePrefix === true;
+      const urlOptions = forceProfilePrefix ? { forceProfilePrefix: true } : undefined;
       const issuer = this.getProfileIssuerUrl(profileId, urlOptions);
 
       res.json({

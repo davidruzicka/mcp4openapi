@@ -88,4 +88,5 @@ export interface HttpProfileContext {
 export interface McpRequest extends ExpressRequest {
   sessionId?: string;
   profileId?: string;
+  forceProfilePrefix?: boolean;
 }
