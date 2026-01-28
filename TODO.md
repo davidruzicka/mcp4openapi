@@ -18,6 +18,8 @@
   - [9. Break MCPServer-HttpTransport circular dependency](#9-break-mcpserver-httptransport-circular-dependency)
   - [10. Split HttpTransport into smaller modules](#10-split-httptransport-into-smaller-modules)
   - [11. Reduce usage of any casts in HTTP transport](#11-reduce-usage-of-any-casts-in-http-transport)
+  - [12. Avoid HTTP profile hint collisions across shared IPs](#12-avoid-http-profile-hint-collisions-across-shared-ips)
+  - [13. Prevent unbounded growth of HTTP profile hint cache](#13-prevent-unbounded-growth-of-http-profile-hint-cache)
 
 ## P1: Correctness and Core Features
 
@@ -273,3 +275,35 @@ Prevent multiple identical in-flight requests (thundering herd):
 - `src/http-transport.test.ts`
 
 **Estimated effort**: 2-4 hours
+
+### 12. Avoid HTTP profile hint collisions across shared IPs
+**Problem**: Profile hint keys are derived from IP and user-agent only, so different clients behind the same NAT with identical user agents can overwrite each other's hints. This can misroute profile resolution for OAuth endpoints or origin checks when profile routing has no default profile.
+
+**Goal**: Make profile hint association more robust to shared IPs and identical user-agent strings.
+
+**Implementation options**:
+- Include additional request entropy in the key (e.g., TLS session ID, `X-Forwarded-For` chain hash, or a server-generated hint cookie).
+- Set a hint cookie on first profile-routed request and use that as the primary key.
+- Add a short-lived per-profile routing token embedded in OAuth metadata links.
+
+**Files to modify**:
+- `src/http-transport.ts` - profile hint keying and lookup logic
+- `docs/HTTP-TRANSPORT.md` - document new hint mechanism (if user-facing)
+
+**Estimated effort**: 2-4 hours
+
+### 13. Prevent unbounded growth of HTTP profile hint cache
+**Problem**: Profile hints are stored per client but only cleaned up on subsequent lookups, so many one-off clients can cause the cache to grow without bound in long-running servers.
+
+**Goal**: Bound memory usage for profile hint cache.
+
+**Implementation options**:
+- Periodic cleanup timer that removes expired hints.
+- Cap the cache size with LRU eviction.
+- Combine TTL + size cap with logging when evictions occur.
+
+**Files to modify**:
+- `src/http-transport.ts` - add cache eviction or cleanup
+- `README.md` - document any new env vars or limits
+
+**Estimated effort**: 1-2 hours

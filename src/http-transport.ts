@@ -79,6 +79,8 @@ export class HttpTransport {
   private profileStates: Map<string, ProfileRuntimeState> = new Map();
   private oauthRedirectHostCache: Map<string, string[]> = new Map();
   private warnedMissingOAuthRedirectEnvVars: Set<string> = new Set();
+  private profileHintsByClient: Map<string, { profileId: string; lastSeen: number }> = new Map();
+  private static readonly PROFILE_HINT_TTL_MS = 10 * 60 * 1000;
 
   constructor(config: HttpTransportConfig, logger: Logger) {
     // Freeze config to prevent runtime mutation of security-critical settings (allowedOrigins, rate limits, etc.)
@@ -94,6 +96,9 @@ export class HttpTransport {
     }
     
     this.app = express();
+    if (this.config.trustProxy !== undefined) {
+      this.app.set('trust proxy', this.config.trustProxy);
+    }
     this.setupMiddleware();
     this.setupRoutes();
   }
@@ -208,6 +213,17 @@ export class HttpTransport {
         },
         ip: req.ip
       });
+      next();
+    });
+
+    // Capture profile hints for clients using profile routing
+    this.app.use((req: Request, _res: Response, next: NextFunction) => {
+      if (this.config.profileRoutingEnabled) {
+        const profileId = this.resolveProfileIdFromPath(req.path);
+        if (profileId) {
+          this.storeProfileHint(req, profileId);
+        }
+      }
       next();
     });
 
@@ -505,6 +521,29 @@ export class HttpTransport {
     }
   }
 
+  private getClientHintKey(req: Request): string {
+    const userAgent = req.get('user-agent') || '';
+    return `${req.ip}|${userAgent}`;
+  }
+
+  private storeProfileHint(req: Request, profileId: string): void {
+    const key = this.getClientHintKey(req);
+    this.profileHintsByClient.set(key, { profileId, lastSeen: Date.now() });
+  }
+
+  private resolveProfileIdFromHint(req: Request): string | null {
+    const key = this.getClientHintKey(req);
+    const hint = this.profileHintsByClient.get(key);
+    if (!hint) {
+      return null;
+    }
+    if (Date.now() - hint.lastSeen > HttpTransport.PROFILE_HINT_TTL_MS) {
+      this.profileHintsByClient.delete(key);
+      return null;
+    }
+    return hint.profileId;
+  }
+
   private resolveProfileIdForOriginCheck(req: Request): string | null {
     const pathProfileId = this.resolveProfileIdFromPath(req.path);
     if (pathProfileId) {
@@ -519,7 +558,7 @@ export class HttpTransport {
       }
     }
 
-    return this.getDefaultProfileId() ?? null;
+    return this.getDefaultProfileId() ?? this.resolveProfileIdFromHint(req) ?? null;
   }
 
   private async primeOAuthRedirectHosts(profileId: string): Promise<void> {
@@ -1066,6 +1105,21 @@ export class HttpTransport {
 
       (req as McpRequest).profileId = info.profileId;
       (req as McpRequest).forceProfilePrefix = info.forceProfilePrefix;
+      this.storeProfileHint(req, info.profileId);
+      next();
+    };
+
+    const attachProfileFromHint: RequestHandler = (req: Request, res: Response, next: NextFunction) => {
+      const profileId = this.resolveProfileIdFromHint(req);
+      if (!profileId) {
+        res.status(HTTP_STATUS.NOT_FOUND).json({
+          error: 'Not Found',
+          message: 'OAuth metadata unavailable for requested resource',
+        });
+        return;
+      }
+      (req as McpRequest).profileId = profileId;
+      (req as McpRequest).forceProfilePrefix = true;
       next();
     };
 
@@ -1080,11 +1134,64 @@ export class HttpTransport {
 
     if (profileRoutingEnabled) {
       this.app.get(
+        '/.well-known/oauth-protected-resource',
+        attachProfileFromResourceQuery,
+        oauthRateLimiter,
+        withProfileState((req, res, profileState) => this.handleOAuthProtectedResource(req, res, profileState))
+      );
+
+      this.app.get(
         '/.well-known/oauth-protected-resource/profile/:profileId/mcp',
         attachProfileId,
         oauthRateLimiter,
         withProfileState((req, res, profileState) => this.handleOAuthProtectedResource(req, res, profileState))
       );
+
+      if (!defaultProfileId) {
+        this.app.get(
+          OAUTH_PATHS.WELL_KNOWN_AUTHORIZATION_SERVER,
+          attachProfileFromHint,
+          oauthRateLimiter,
+          withProfileState((req, res, profileState) => this.handleOAuthAuthorizationServerMetadata(req, res, profileState))
+        );
+
+        this.app.get(
+          '/.well-known/openid-configuration',
+          attachProfileFromHint,
+          oauthRateLimiter,
+          withProfileState((req, res, profileState) => this.handleOAuthAuthorizationServerMetadata(req, res, profileState))
+        );
+
+        this.app.post(
+          OAUTH_PATHS.REGISTER,
+          attachProfileFromHint,
+          oauthRateLimiter,
+          express.json(),
+          withProfileState((req, res, profileState) => this.handleOAuthRegister(req, res, profileState))
+        );
+
+        this.app.get(
+          OAUTH_PATHS.AUTHORIZE,
+          attachProfileFromHint,
+          oauthRateLimiter,
+          withProfileState((req, res, profileState) => this.handleOAuthAuthorize(req, res, profileState))
+        );
+
+        this.app.post(
+          OAUTH_PATHS.TOKEN,
+          attachProfileFromHint,
+          oauthRateLimiter,
+          express.urlencoded({ extended: false, limit: '50kb' }),
+          withProfileState((req, res, profileState) => this.handleOAuthToken(req, res, profileState))
+        );
+
+        this.app.get(
+          OAUTH_PATHS.CALLBACK,
+          attachProfileFromHint,
+          oauthRateLimiter,
+          withProfileState((req, res, profileState) => this.handleOAuthCallback(req, res, profileState))
+        );
+      }
     }
 
     // Security: Rate limiting setup (for MCP endpoints)

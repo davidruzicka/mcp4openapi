@@ -139,6 +139,14 @@ Root protected resource metadata also supports a `resource` query parameter for 
 
 If no default profile is configured, use the `resource` query parameter to resolve metadata.
 
+### Reverse Proxy Support
+
+If you run behind a reverse proxy that sets `X-Forwarded-For`, enable Express trust proxy so rate limiting and OAuth flows work correctly:
+
+```bash
+export MCP4_TRUST_PROXY=1
+```
+
 ## MCP Protocol Compliance
 
 This implementation follows **MCP Specification 2025-03-26** for Streamable HTTP transport.

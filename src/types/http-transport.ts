@@ -61,6 +61,7 @@ export interface HttpTransportConfig {
   rateLimitOAuthMax?: number; // Max OAuth requests per window (default: 10)
   rateLimitOAuthWindowMs?: number; // OAuth rate limit window in ms (default: 10 minutes)
   maxTokenLength?: number; // Maximum token length in characters (default: 1000)
+  trustProxy?: boolean | number | string; // Express trust proxy setting
   oauthConfig?: OAuthConfig; // OAuth 2.0 configuration (optional)
   baseUrl?: string; // Base URL for API (for token validation)
   authConfigs?: AuthInterceptor[]; // Auth configurations (for token validation)
