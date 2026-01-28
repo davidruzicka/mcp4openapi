@@ -2574,6 +2574,81 @@ describeIfListen('HttpTransport', () => {
       await routingTransport.stop();
     });
 
+    it('serves OAuth metadata via well-known path suffix', async () => {
+      const routingTransport = new HttpTransport(
+        {
+          host: '127.0.0.1',
+          port: 0,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: false,
+          metricsPath: '/metrics',
+          profileRoutingEnabled: true,
+        },
+        logger
+      );
+      routingTransport.setProfileContextProvider(async (id) => ({
+        profileId: id,
+        oauthConfig: {
+          authorization_endpoint: 'https://auth.example.com/oauth/authorize',
+          token_endpoint: 'https://auth.example.com/oauth/token',
+          client_id: 'client',
+          client_secret: 'secret',
+          redirect_uri: 'http://localhost:3003/oauth/callback',
+          scopes: ['api'],
+        },
+      }));
+
+      const routingApp = (routingTransport as any).app;
+      const response = await request(routingApp).get('/.well-known/oauth-authorization-server/profile/gitlab');
+
+      expect(response.status).toBe(200);
+      expect(response.body.issuer).toContain('/profile/gitlab');
+      expect(response.body.authorization_endpoint).toContain('/profile/gitlab/oauth/authorize');
+      expect(response.body.token_endpoint).toContain('/profile/gitlab/oauth/token');
+
+      await routingTransport.stop();
+    });
+
+    it('serves OpenID configuration aliases for profile routing', async () => {
+      const routingTransport = new HttpTransport(
+        {
+          host: '127.0.0.1',
+          port: 0,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: false,
+          metricsPath: '/metrics',
+          profileRoutingEnabled: true,
+        },
+        logger
+      );
+      routingTransport.setProfileContextProvider(async (id) => ({
+        profileId: id,
+        oauthConfig: {
+          authorization_endpoint: 'https://auth.example.com/oauth/authorize',
+          token_endpoint: 'https://auth.example.com/oauth/token',
+          client_id: 'client',
+          client_secret: 'secret',
+          redirect_uri: 'http://localhost:3003/oauth/callback',
+          scopes: ['api'],
+        },
+      }));
+
+      const routingApp = (routingTransport as any).app;
+      const responseProfilePath = await request(routingApp).get('/profile/gitlab/.well-known/openid-configuration');
+      const responseSuffixPath = await request(routingApp).get('/.well-known/openid-configuration/profile/gitlab');
+
+      expect(responseProfilePath.status).toBe(200);
+      expect(responseProfilePath.body.issuer).toContain('/profile/gitlab');
+      expect(responseSuffixPath.status).toBe(200);
+      expect(responseSuffixPath.body.issuer).toContain('/profile/gitlab');
+
+      await routingTransport.stop();
+    });
+
     it('keeps profile prefix for default profile OAuth metadata', async () => {
       const routingTransport = new HttpTransport(
         {

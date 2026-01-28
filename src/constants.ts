@@ -63,6 +63,7 @@ export const OAUTH_PATHS = {
   CALLBACK: '/oauth/callback',
   REGISTER: '/oauth/register',
   WELL_KNOWN_AUTHORIZATION_SERVER: '/.well-known/oauth-authorization-server',
+  WELL_KNOWN_OPENID_CONFIGURATION: '/.well-known/openid-configuration',
   WELL_KNOWN_PROTECTED_RESOURCE: '/.well-known/oauth-protected-resource/mcp',
 } as const;
 
@@ -88,4 +89,3 @@ export const OAUTH_RATE_LIMIT = {
   MAX_REQUESTS: 10,                              // Max OAuth requests per window
   WINDOW_MS: 10 * TIME.MS_PER_MINUTE,            // 10 minutes window
 } as const;
-
