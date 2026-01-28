@@ -1057,6 +1057,11 @@ export class HttpTransport {
         ...withProfile((req, res, profileState) => this.handleOAuthAuthorizationServerMetadata(req, res, profileState))
       );
 
+      this.app.get(
+        `${basePath}${OAUTH_PATHS.WELL_KNOWN_OPENID_CONFIGURATION}`,
+        ...withProfile((req, res, profileState) => this.handleOAuthAuthorizationServerMetadata(req, res, profileState))
+      );
+
       this.app.post(
         `${basePath}${OAUTH_PATHS.REGISTER}`,
         ...middlewares,
@@ -1156,7 +1161,7 @@ export class HttpTransport {
         );
 
         this.app.get(
-          '/.well-known/openid-configuration',
+          OAUTH_PATHS.WELL_KNOWN_OPENID_CONFIGURATION,
           attachProfileFromHint,
           oauthRateLimiter,
           withProfileState((req, res, profileState) => this.handleOAuthAuthorizationServerMetadata(req, res, profileState))
@@ -1192,6 +1197,20 @@ export class HttpTransport {
           withProfileState((req, res, profileState) => this.handleOAuthCallback(req, res, profileState))
         );
       }
+
+      this.app.get(
+        `${OAUTH_PATHS.WELL_KNOWN_AUTHORIZATION_SERVER}/profile/:profileId`,
+        attachProfileId,
+        oauthRateLimiter,
+        withProfileState((req, res, profileState) => this.handleOAuthAuthorizationServerMetadata(req, res, profileState))
+      );
+
+      this.app.get(
+        `${OAUTH_PATHS.WELL_KNOWN_OPENID_CONFIGURATION}/profile/:profileId`,
+        attachProfileId,
+        oauthRateLimiter,
+        withProfileState((req, res, profileState) => this.handleOAuthAuthorizationServerMetadata(req, res, profileState))
+      );
     }
 
     // Security: Rate limiting setup (for MCP endpoints)
