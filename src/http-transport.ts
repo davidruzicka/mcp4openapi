@@ -1078,6 +1078,15 @@ export class HttpTransport {
       );
     }
 
+    if (profileRoutingEnabled) {
+      this.app.get(
+        '/.well-known/oauth-protected-resource/profile/:profileId/mcp',
+        attachProfileId,
+        oauthRateLimiter,
+        withProfileState((req, res, profileState) => this.handleOAuthProtectedResource(req, res, profileState))
+      );
+    }
+
     // Security: Rate limiting setup (for MCP endpoints)
     const windowMs = this.config.rateLimitWindowMs || TIMEOUTS.RATE_LIMIT_WINDOW_MS;
     const maxRequests = this.config.rateLimitMaxRequests || 100; // 100 req/min
