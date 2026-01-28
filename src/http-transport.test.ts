@@ -2686,6 +2686,43 @@ describeIfListen('HttpTransport', () => {
       await routingTransport.stop();
     });
 
+    it('serves protected resource metadata using well-known profile path', async () => {
+      const routingTransport = new HttpTransport(
+        {
+          host: '127.0.0.1',
+          port: 0,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: false,
+          metricsPath: '/metrics',
+          profileRoutingEnabled: true,
+        },
+        logger
+      );
+      routingTransport.setProfileContextProvider(async (id) => ({
+        profileId: id,
+        oauthConfig: {
+          authorization_endpoint: 'https://auth.example.com/oauth/authorize',
+          token_endpoint: 'https://auth.example.com/oauth/token',
+          client_id: 'client',
+          client_secret: 'secret',
+          redirect_uri: 'http://localhost:3003/oauth/callback',
+          scopes: ['api'],
+        },
+      }));
+
+      const routingApp = (routingTransport as any).app;
+      const response = await request(routingApp)
+        .get('/.well-known/oauth-protected-resource/profile/gitlab/mcp');
+
+      expect(response.status).toBe(200);
+      expect(response.body.resource).toContain('/profile/gitlab/mcp');
+      expect(response.body.authorization_servers?.[0]).toContain('/profile/gitlab');
+
+      await routingTransport.stop();
+    });
+
     it('forces profile prefix when resource query targets default profile path', async () => {
       const routingTransport = new HttpTransport(
         {
