@@ -8,6 +8,7 @@
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 import type { ToolDefinition, ParameterDefinition, ParameterType } from './types/profile.js';
 import type { OpenAPIParser } from './openapi-parser.js';
+import { ValidationError } from './errors.js';
 
 export class ToolGenerator {
   constructor(private parser: OpenAPIParser) {}
@@ -206,7 +207,12 @@ export class ToolGenerator {
     
     if (base64Content) {
       // Convert base64 to Blob
-      const binaryString = atob(base64Content);
+      let binaryString: string;
+      try {
+        binaryString = atob(base64Content);
+      } catch (error) {
+        throw new ValidationError('Invalid base64 content');
+      }
       const bytes = new Uint8Array(binaryString.length);
       for (let i = 0; i < binaryString.length; i++) {
         bytes[i] = binaryString.charCodeAt(i);
