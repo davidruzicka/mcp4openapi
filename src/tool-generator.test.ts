@@ -6,6 +6,7 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import { ToolGenerator } from './tool-generator.js';
 import { OpenAPIParser } from './openapi-parser.js';
 import { ProfileLoader } from './profile-loader.js';
+import { ValidationError } from './errors.js';
 import type { Profile } from './types/profile.js';
 import path from 'path';
 
@@ -305,6 +306,13 @@ describe('ToolGenerator', () => {
       // No base64Content means FormData stays empty
       const entries = Array.from(formData.entries());
       expect(entries.length).toBe(0);
+    });
+
+    it('should throw ValidationError for invalid base64 content', () => {
+      const args = { base64Content: 'invalid-base64!' };
+      expect(() => {
+        generator.buildFormDataBody(args);
+      }).toThrow(ValidationError);
     });
 
     it('should build FormData with binary content (non-ASCII)', () => {
