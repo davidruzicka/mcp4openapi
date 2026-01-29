@@ -7,6 +7,7 @@
  * Security: Profile-aware token redaction prevents sensitive data leakage.
  */
 
+import { stripVTControlCharacters } from 'node:util';
 import type { AuthInterceptor } from '../types/profile.js';
 import { escapeRegExp, redactHeader, redactQueryParam, redactParam } from '../validation/validation-utils.js';
 
@@ -55,10 +56,31 @@ function resolveLogLevel(explicitLevel?: LogLevel): LogLevel {
 
 /**
  * Sanitize log message to prevent log injection
- * Replaces newlines with escaped string representation
+ * Strips ANSI codes and escapes control characters
  */
 export function sanitizeLogMessage(message: string): string {
-  return message.replace(/\n/g, '\\n').replace(/\r/g, '\\r');
+  // 1. Strip ANSI escape codes
+  let safe = stripVTControlCharacters(message);
+
+  // 2. Escape control characters (0x00-0x1F, 0x7F)
+  // We use a replacement function to handle various control characters
+  safe = safe.replace(/[\x00-\x1F\x7F]/g, (char) => {
+    switch (char) {
+      case '\n': return '\\n';
+      case '\r': return '\\r';
+      case '\t': return '\\t';
+      case '\b': return '\\b';
+      case '\f': return '\\f';
+      case '\v': return '\\v';
+      case '\0': return '\\0';
+      default:
+        // Hex escape for other control chars (e.g. \x07)
+        const hex = char.charCodeAt(0).toString(16).padStart(2, '0');
+        return `\\x${hex}`;
+    }
+  });
+
+  return safe;
 }
 
 function redactSensitiveContext(
