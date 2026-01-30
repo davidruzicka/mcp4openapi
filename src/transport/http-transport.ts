@@ -103,6 +103,10 @@ export class HttpTransport {
     this.setupRoutes();
   }
 
+  getMetricsCollector(): MetricsCollector | null {
+    return this.metrics;
+  }
+
   /**
    * Setup Express middleware
    * 
