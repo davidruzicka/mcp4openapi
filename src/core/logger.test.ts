@@ -109,6 +109,47 @@ describe('ConsoleLogger', () => {
       expect.stringContaining('User login\\n[2026-01-01] ERROR: Fake error')
     );
   });
+
+  it('strips ANSI escape codes', () => {
+    const logger = new ConsoleLogger(LogLevel.INFO);
+    // \x1B[31mRed\x1B[0m
+    logger.info('\x1B[31mRed\x1B[0m Message');
+
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('Red Message')
+    );
+    expect(consoleErrorSpy).not.toHaveBeenCalledWith(
+      expect.stringContaining('\x1B')
+    );
+  });
+
+  it('escapes control characters like backspace', () => {
+    const logger = new ConsoleLogger(LogLevel.INFO);
+    logger.info('Hello\bWorld');
+
+    // Should become "Hello\bWorld" literal
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('Hello\\bWorld')
+    );
+  });
+
+  it('escapes tabs', () => {
+    const logger = new ConsoleLogger(LogLevel.INFO);
+    logger.info('Col1\tCol2');
+
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('Col1\\tCol2')
+    );
+  });
+
+  it('escapes arbitrary control characters to hex', () => {
+    const logger = new ConsoleLogger(LogLevel.INFO);
+    logger.info('Beep\x07');
+
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('Beep\\x07')
+    );
+  });
 });
 
 describe('JsonLogger', () => {
