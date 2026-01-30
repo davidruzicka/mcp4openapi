@@ -2,7 +2,7 @@
  * Operation resolver - resolves operations from OpenAPI spec
  */
 
-import type { OpenAPIParser } from '../../openapi-parser.js';
+import type { OpenAPIParser } from '../../openapi/openapi-parser.js';
 import type { OperationInfo } from '../../types/openapi.js';
 import type { OperationResolver } from '../types.js';
 

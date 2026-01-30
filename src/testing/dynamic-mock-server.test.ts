@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { DynamicMockEngine } from './dynamic-mock-server.js';
-import { OpenAPIParser } from '../openapi-parser.js';
+import { OpenAPIParser } from '../openapi/openapi-parser.js';
 
 const parserStub = {
   getOperation: (operationId: string) => ({
