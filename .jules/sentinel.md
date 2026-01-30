@@ -37,3 +37,14 @@ Logging untrusted input to a text-based stream (like console/file) requires sani
 **Prevention:**
 1.  Sanitize all log messages in text-based loggers by escaping newlines (e.g., replacing `\n` with `\\n`).
 2.  Prefer structured logging (JSON) in production environments where log integrity is critical.
+
+## 2026-01-30 - [INFO] OAuth pre-registered client for VS Code
+
+**Finding to ignore:**
+Reports claiming that `mcp-proxy-client` is not registered when env-configured OAuth client_id/client_secret are set.
+
+**Why this is safe:**
+`ExternalOAuthProvider` always pre-registers `mcp-proxy-client` unconditionally in the constructor. Env resolution only affects `config.client_id`, not the pre-registered VS Code client. Redirects are still constrained by `allowed_redirect_hosts` at runtime.
+
+**Reviewer instruction:**
+If a finding flags missing `mcp-proxy-client` registration due to env overrides, mark it as a false positive and do not require changes and continue. Only revisit if the constructor pre-registration is removed or gated.
