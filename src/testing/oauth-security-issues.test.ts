@@ -7,11 +7,11 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import request from 'supertest';
-import { HttpTransport } from '../http-transport.js';
-import { ConsoleLogger, LogLevel } from '../logger.js';
+import { HttpTransport } from '../transport/http-transport.js';
+import { ConsoleLogger, LogLevel } from '../core/logger.js';
 import type { Express } from 'express';
 import type { OAuthConfig } from '../types/profile.js';
-import { ExternalOAuthProvider } from '../oauth-provider.js';
+import { ExternalOAuthProvider } from '../auth/oauth-provider.js';
 import { describeIfListen } from './listen-support.js';
 
 describeIfListen('OAuth Security Issues - Proof Tests', () => {

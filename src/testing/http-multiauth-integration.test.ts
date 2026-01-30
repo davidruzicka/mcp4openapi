@@ -10,8 +10,8 @@
 
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import request from 'supertest';
-import { HttpTransport } from '../http-transport.js';
-import { ConsoleLogger } from '../logger.js';
+import { HttpTransport } from '../transport/http-transport.js';
+import { ConsoleLogger } from '../core/logger.js';
 import type { Express } from 'express';
 import type { OAuthConfig } from '../types/profile.js';
 import { describeIfListen } from './listen-support.js';

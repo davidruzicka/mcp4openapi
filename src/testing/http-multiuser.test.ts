@@ -8,8 +8,8 @@
  */
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { HttpTransport } from '../http-transport.js';
-import { ConsoleLogger, LogLevel } from '../logger.js';
+import { HttpTransport } from '../transport/http-transport.js';
+import { ConsoleLogger, LogLevel } from '../core/logger.js';
 import type { Express } from 'express';
 import { describeIfListen } from './listen-support.js';
 

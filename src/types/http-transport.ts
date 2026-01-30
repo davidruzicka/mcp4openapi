@@ -8,7 +8,7 @@
 import type { Request as ExpressRequest, Response } from 'express';
 import type { OAuthConfig, AuthInterceptor } from './profile.js';
 import type { SessionToolFilterRequest, SessionToolFilterCompat as SessionToolFilter } from '../tool-filter/index.js';
-import type { OpenAPIParser } from '../openapi-parser.js';
+import type { OpenAPIParser } from '../openapi/openapi-parser.js';
 
 export type { SessionToolFilter, SessionToolFilterRequest };
 

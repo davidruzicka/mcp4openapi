@@ -1,6 +1,6 @@
 import { http, HttpResponse, delay, RequestHandler } from 'msw';
 import { setupServer, SetupServerApi } from 'msw/node';
-import { OpenAPIParser } from '../openapi-parser.js';
+import { OpenAPIParser } from '../openapi/openapi-parser.js';
 import { MockDefinition } from './test-schema.js';
 
 export interface CapturedRequest {

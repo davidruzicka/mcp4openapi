@@ -4,7 +4,7 @@
 
 import type { ToolDefinition } from '../../types/profile.js';
 import type { ToolFilterConfig } from '../types.js';
-import type { Logger } from '../../logger.js';
+import type { Logger } from '../../core/logger.js';
 import type { OperationDetector } from '../operation/operation-detector.js';
 import { FilterEngine } from './filter-engine.js';
 import { ExactMatchRule, RegexMatchRule, CategoryMatchRule } from './filter-rules.js';

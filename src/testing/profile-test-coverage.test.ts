@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import fs from 'fs';
 import path from 'path';
 import { loadTestDefinitionSync, validateTestAgainstProfile } from './test-loader.js';
-import { ProfileLoader } from '../profile-loader.js';
+import { ProfileLoader } from '../profile/profile-loader.js';
 
 const profilesDir = path.join(process.cwd(), 'profiles');
 
