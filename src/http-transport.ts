@@ -29,7 +29,7 @@ import { isInitializeRequest } from './jsonrpc-validator.js';
 import { MetricsCollector } from './metrics.js';
 import { ExternalOAuthProvider } from './oauth-provider.js';
 import type { AuthInterceptor, OAuthConfig } from './types/profile.js';
-import { HTTP_STATUS, MIME_TYPES, OAUTH_PATHS, TIMEOUTS, OAUTH_RATE_LIMIT } from './constants.js';
+import { HTTP_STATUS, MIME_TYPES, OAUTH_PATHS, TIMEOUTS, OAUTH_RATE_LIMIT, PROXY_CREDENTIALS } from './constants.js';
 import { escapeHtmlSafe, isSafePropertyName } from './validation-utils.js';
 import type { OAuthTokens } from '@modelcontextprotocol/sdk/shared/auth.js';
 import {
@@ -1630,8 +1630,8 @@ export class HttpTransport {
         redirect_uris,
       });
 
-      const clientId = 'mcp-proxy-client';
-      const clientSecret = 'mcp-proxy-secret';
+      const clientId = PROXY_CREDENTIALS.CLIENT_ID;
+      const clientSecret = PROXY_CREDENTIALS.CLIENT_SECRET;
 
       const client = {
         client_id: clientId,
@@ -2895,7 +2895,7 @@ export class HttpTransport {
       if (!client && profileState.oauthProvider) {
         await profileState.oauthProvider.ensureEndpointsInitialized();
         // Try common client IDs
-        const defaultClientIds = ['mcp-proxy-client'];
+        const defaultClientIds = [PROXY_CREDENTIALS.CLIENT_ID];
         if (profileState.context.oauthConfig?.client_id) {
           defaultClientIds.unshift(profileState.context.oauthConfig.client_id);
         }

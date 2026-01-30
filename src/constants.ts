@@ -89,3 +89,14 @@ export const OAUTH_RATE_LIMIT = {
   MAX_REQUESTS: 10,                              // Max OAuth requests per window
   WINDOW_MS: 10 * TIME.MS_PER_MINUTE,            // 10 minutes window
 } as const;
+
+/**
+ * Proxy credentials
+ *
+ * Why: Centralized credentials for the internal proxy client.
+ * Allows override via environment variables for security.
+ */
+export const PROXY_CREDENTIALS = {
+  CLIENT_ID: process.env.MCP_PROXY_CLIENT_ID || 'mcp-proxy-client',
+  CLIENT_SECRET: process.env.MCP_PROXY_CLIENT_SECRET || 'mcp-proxy-secret',
+} as const;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { HTTP_STATUS, MIME_TYPES, OAUTH_PATHS, OAUTH_RATE_LIMIT, TIME, TIMEOUTS } from './constants.js';
+import { HTTP_STATUS, MIME_TYPES, OAUTH_PATHS, OAUTH_RATE_LIMIT, TIME, TIMEOUTS, PROXY_CREDENTIALS } from './constants.js';
 
 describe('constants', () => {
   describe('TIME', () => {
@@ -75,6 +75,13 @@ describe('constants', () => {
     it('should align window duration with rate limit expectations', () => {
       const averageRequestsPerMinute = (OAUTH_RATE_LIMIT.MAX_REQUESTS * TIME.MS_PER_MINUTE) / OAUTH_RATE_LIMIT.WINDOW_MS;
       expect(averageRequestsPerMinute).toBeCloseTo(1);
+    });
+  });
+
+  describe('PROXY_CREDENTIALS', () => {
+    it('should have default values', () => {
+      expect(PROXY_CREDENTIALS.CLIENT_ID).toBe('mcp-proxy-client');
+      expect(PROXY_CREDENTIALS.CLIENT_SECRET).toBe('mcp-proxy-secret');
     });
   });
 });
