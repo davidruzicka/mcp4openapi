@@ -6,6 +6,7 @@
  */
 
 import { InterceptorChain, HttpClient } from './interceptors.js';
+import type { MetricsCollector } from '../core/metrics.js';
 import type { Profile } from '../types/profile.js';
 import { ConfigurationError, AuthenticationError } from '../core/errors.js';
 
@@ -22,13 +23,14 @@ export interface HttpClientConfig {
 export class HttpClientFactory {
   private globalClient?: HttpClient;
   private sessionClients = new Map<string, HttpClient>();
+  private metrics: MetricsCollector | null = null;
 
   /**
    * Create global HTTP client (for stdio transport)
    */
   createGlobalClient(config: HttpClientConfig): HttpClient {
     const interceptors = this.createInterceptorChain(config);
-    const client = new HttpClient(config.baseUrl, interceptors);
+    const client = new HttpClient(config.baseUrl, interceptors, this.metrics);
     this.globalClient = client;
     return client;
   }
@@ -45,7 +47,7 @@ export class HttpClientFactory {
 
     // Create new client for session
     const interceptors = this.createInterceptorChain(config);
-    const newClient = new HttpClient(config.baseUrl, interceptors);
+    const newClient = new HttpClient(config.baseUrl, interceptors, this.metrics);
 
     // Double-check for race condition
     const existingClient = this.sessionClients.get(sessionId);
@@ -98,6 +100,16 @@ export class HttpClientFactory {
    */
   hasSessionClient(sessionId: string): boolean {
     return this.sessionClients.has(sessionId);
+  }
+
+  setMetricsCollector(metrics: MetricsCollector | null): void {
+    this.metrics = metrics;
+    if (this.globalClient) {
+      this.globalClient.setMetricsCollector(metrics);
+    }
+    for (const client of this.sessionClients.values()) {
+      client.setMetricsCollector(metrics);
+    }
   }
 
   /**
