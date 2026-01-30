@@ -1,9 +1,9 @@
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import request from 'supertest';
-import { MCPServer } from '../mcp-server.js';
+import { MCPServer } from '../mcp/mcp-server.js';
 import path from 'path';
-import { HttpTransport } from '../http-transport.js';
+import { HttpTransport } from '../transport/http-transport.js';
 import { describeIfListen } from './listen-support.js';
 import { createServer, Server } from 'http';
 import { AddressInfo } from 'net';

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { OpenAPIOperationResolver } from './operation-resolver.js';
-import type { OpenAPIParser } from '../../openapi-parser.js';
+import type { OpenAPIParser } from '../../openapi/openapi-parser.js';
 import type { OperationInfo } from '../../types/openapi.js';
 
 describe('OpenAPIOperationResolver', () => {

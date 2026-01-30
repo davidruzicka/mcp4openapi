@@ -1,17 +1,17 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { MCPServer } from '../mcp-server.js';
-import { HttpClient } from '../interceptors.js';
-import { OpenAPIParser } from '../openapi-parser.js';
-import { ProfileLoader } from '../profile-loader.js';
-import { ToolGenerator } from '../tool-generator.js';
-import { ValidationError } from '../errors.js';
+import { MCPServer } from '../mcp/mcp-server.js';
+import { HttpClient } from '../transport/interceptors.js';
+import { OpenAPIParser } from '../openapi/openapi-parser.js';
+import { ProfileLoader } from '../profile/profile-loader.js';
+import { ToolGenerator } from '../tooling/tool-generator.js';
+import { ValidationError } from '../core/errors.js';
 import path from 'path';
 import type { Profile } from '../types/profile.js';
 
 // Mock HttpClient
-vi.mock('../interceptors.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../interceptors.js')>();
+vi.mock('../transport/interceptors.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../transport/interceptors.js')>();
   return {
     ...actual,
     HttpClient: class MockHttpClient {
@@ -34,7 +34,7 @@ describe('Parameter Mapping Integration', () => {
   beforeEach(async () => {
     // Setup spy on HttpClient.prototype.request
     // We need to access the prototype of the mocked class
-    const { HttpClient } = await import('../interceptors.js');
+    const { HttpClient } = await import('../transport/interceptors.js');
     requestSpy = vi.spyOn(HttpClient.prototype, 'request');
   });
 

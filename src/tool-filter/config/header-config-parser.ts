@@ -4,7 +4,7 @@
 
 import type { SessionToolFilterRequest, CompiledRegex } from '../types.js';
 import type { RegexCompiler } from '../regex/regex-compiler.js';
-import { ValidationError, ConfigurationError } from '../errors.js';
+import { ValidationError, ConfigurationError } from '../../core/errors.js';
 
 const MAX_HEADER_ENTRY_LENGTH = 255;
 const DEFAULT_MAX_ENTRIES = 100;
