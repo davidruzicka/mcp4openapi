@@ -104,6 +104,12 @@ export class HttpClientFactory {
 
   setMetricsCollector(metrics: MetricsCollector | null): void {
     this.metrics = metrics;
+    if (this.globalClient) {
+      this.globalClient.setMetricsCollector(metrics);
+    }
+    for (const client of this.sessionClients.values()) {
+      client.setMetricsCollector(metrics);
+    }
   }
 
   /**

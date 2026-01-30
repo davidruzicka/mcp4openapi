@@ -337,6 +337,10 @@ export class HttpClient {
     this.metrics = metrics || null;
   }
 
+  setMetricsCollector(metrics: MetricsCollector | null): void {
+    this.metrics = metrics;
+  }
+
   /**
    * Get base URL (for testing)
    */
