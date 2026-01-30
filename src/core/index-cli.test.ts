@@ -243,6 +243,82 @@ describe('CLI main flow', () => {
     expect(process.env.MCP4_OAUTH_TOKEN_URL).toBe('https://issuer.example.com/token');
   });
 
+  it('does not autodiscover when explicit OAuth URLs are set', async () => {
+    process.env.MCP4_OAUTH_CLIENT_ID = 'client';
+    process.env.MCP4_OAUTH_CLIENT_SECRET = 'secret';
+    process.env.MCP4_OAUTH_REDIRECT_URI = 'http://localhost/callback';
+    process.env.MCP4_OAUTH_AUTHORIZATION_URL = 'https://explicit.example.com/auth';
+    process.env.MCP4_OAUTH_TOKEN_URL = 'https://explicit.example.com/token';
+    process.env.MCP4_TRANSPORT = 'stdio';
+
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+
+    mockCliConfig();
+    mockStartupValidation();
+    mockTransportConfig();
+    mockProfileRegistry();
+    mockServerManager();
+    mockMcpServer();
+    mockStartupProfile({
+      specPath: 'spec.yaml',
+      profilePath: undefined,
+      profileId: undefined,
+      defaultProfile: undefined,
+      hasExplicitSpecPath: true,
+    });
+
+    const { main } = await import('./index.js');
+
+    await main();
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(process.env.MCP4_OAUTH_AUTHORIZATION_URL).toBe('https://explicit.example.com/auth');
+    expect(process.env.MCP4_OAUTH_TOKEN_URL).toBe('https://explicit.example.com/token');
+  });
+
+  it('handles invalid metadata endpoint URLs', async () => {
+    process.env.MCP4_OAUTH_CLIENT_ID = 'client';
+    process.env.MCP4_OAUTH_CLIENT_SECRET = 'secret';
+    process.env.MCP4_OAUTH_REDIRECT_URI = 'http://localhost/callback';
+    process.env.MCP4_OAUTH_ISSUER = 'https://issuer.example.com';
+    process.env.MCP4_TRANSPORT = 'stdio';
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        authorization_endpoint: 'not a url',
+        token_endpoint: 'also not a url',
+      }),
+    }));
+
+    mockLogger();
+    mockCliConfig();
+    mockStartupValidation();
+    mockTransportConfig();
+    mockProfileRegistry();
+    mockServerManager();
+    mockMcpServer();
+    mockStartupProfile({
+      specPath: 'spec.yaml',
+      profilePath: undefined,
+      profileId: undefined,
+      defaultProfile: undefined,
+      hasExplicitSpecPath: true,
+    });
+
+    const { main } = await import('./index.js');
+    const { __getLastLogger } = await import('./logger.js');
+
+    await main();
+
+    const logger = __getLastLogger();
+    const authCall = logger.info.mock.calls.find((call: any[]) => call[0] === 'OAuth autodiscovery: set authorization_endpoint');
+    const tokenCall = logger.info.mock.calls.find((call: any[]) => call[0] === 'OAuth autodiscovery: set token_endpoint');
+    expect(authCall?.[1]).toEqual({ authorizationEndpointOrigin: undefined });
+    expect(tokenCall?.[1]).toEqual({ tokenEndpointOrigin: undefined });
+  });
+
   it('falls back to standard OAuth paths when metadata fetch fails', async () => {
     process.env.MCP4_OAUTH_CLIENT_ID = 'client';
     process.env.MCP4_OAUTH_CLIENT_SECRET = 'secret';
@@ -406,6 +482,47 @@ describe('CLI main flow', () => {
     expect(exitSpy).toHaveBeenCalledWith(1);
   });
 
+  it('logs session cleanup failures', async () => {
+    process.env.MCP4_TRANSPORT = 'http';
+    process.env.MCP4_HTTP_PROFILE_ROUTING = 'true';
+    process.env.MCP4_OPENAPI_SPEC_PATH = 'spec.yaml';
+
+    mockLogger();
+    mockCliConfig();
+    mockStartupValidation();
+    mockTransportConfig();
+    mockProfileRegistry();
+
+    mockServerManager({
+      getServer: async () => {
+        throw new Error('cleanup failed');
+      },
+    });
+
+    const httpTransportInstances = mockHttpTransport();
+    mockMcpServer();
+    mockStartupProfile({
+      specPath: 'spec.yaml',
+      profilePath: undefined,
+      profileId: undefined,
+      defaultProfile: { profileId: 'default' },
+      hasExplicitSpecPath: true,
+    });
+
+    const { main } = await import('./index.js');
+    const { __getLastLogger } = await import('./logger.js');
+
+    await main();
+
+    const httpTransport = httpTransportInstances[0];
+    const sessionHandler = httpTransport.onSessionDestroyed.mock.calls[0][0];
+    await sessionHandler('default', 'session');
+
+    const logger = __getLastLogger();
+    const errorCall = logger.error.mock.calls.find((call: any[]) => call[0] === 'Session cleanup failed');
+    expect(errorCall).toBeDefined();
+  });
+
   it('runs HTTP transport without routing when disabled', async () => {
     process.env.MCP4_TRANSPORT = 'http';
     process.env.MCP4_HTTP_PROFILE_ROUTING = 'false';
@@ -433,6 +550,50 @@ describe('CLI main flow', () => {
     expect(runHttp).toHaveBeenCalled();
   });
 
+  it('handles shutdown for stdio path', async () => {
+    process.env.MCP4_TRANSPORT = 'stdio';
+    process.env.MCP4_OPENAPI_SPEC_PATH = 'spec.yaml';
+
+    const { stop } = mockMcpServer();
+
+    mockCliConfig();
+    mockStartupValidation();
+    mockTransportConfig();
+    mockProfileRegistry();
+    mockServerManager();
+    mockStartupProfile({
+      specPath: 'spec.yaml',
+      profilePath: undefined,
+      profileId: undefined,
+      defaultProfile: undefined,
+      hasExplicitSpecPath: true,
+    });
+
+    const onHandlers: Record<string, () => void> = {};
+    vi.spyOn(process, 'on').mockImplementation(((event: string, handler: () => void) => {
+      onHandlers[event] = handler;
+      return process;
+    }) as never);
+
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {
+      if (code === 0) {
+        return undefined as never;
+      }
+      throw new Error(`exit ${code}`);
+    }) as never);
+
+    stop.mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error('stop failed'));
+
+    const { main } = await import('./index.js');
+
+    await main();
+
+    await onHandlers.SIGTERM();
+    expect(exitSpy).toHaveBeenCalledWith(0);
+
+    await expect(onHandlers.SIGINT()).rejects.toThrow('exit 1');
+    expect(exitSpy).toHaveBeenCalledWith(1);
+  });
   it('exits on fatal server initialization error', async () => {
     process.env.MCP4_TRANSPORT = 'stdio';
     process.env.MCP4_OPENAPI_SPEC_PATH = 'spec.yaml';
