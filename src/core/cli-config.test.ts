@@ -46,11 +46,22 @@ describe('cli-config', () => {
     expect(Object.keys(parsed)).toHaveLength(0);
   });
 
+  it('parses -l as list-profiles', () => {
+    const parsed = parseCliArgs(['-l']);
+    expect(parsed['list-profiles']).toBe('true');
+  });
+
   it('applies CLI args to env using MCP4 mapping', () => {
     const parsed = parseCliArgs(['--profile', 'gitlab', '--profiles-dir', 'profiles']);
     applyCliEnvOverrides(parsed);
     expect(process.env.MCP4_PROFILE).toBe('gitlab');
     expect(process.env.MCP4_PROFILES_DIR).toBe('profiles');
+  });
+
+  it('ignores list-profiles in env overrides', () => {
+    const parsed = parseCliArgs(['-l']);
+    expect(() => applyCliEnvOverrides(parsed)).not.toThrow();
+    expect(process.env.MCP4_LIST_PROFILES).toBeUndefined();
   });
 
   it('throws for CLI args without known MCP4 env vars', () => {

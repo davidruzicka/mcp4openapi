@@ -123,12 +123,19 @@ If profile defines `profile_id` (or `profile_name` or `profile_alias`), you can 
 npx mcp4openapi --profile (profile-id/name/alias)
 ```
 
+List available profiles with:
+
+```bash
+npx mcp4openapi --list-profiles
+npx mcp4openapi -l
+```
+
 Predefined profiles in the `profiles/` directory contains names for easy reference:
 - GitLab profile: `gitlab`
 - YouTrack profile: `youtrack`
 - SemGrep profile: `semgrep`
 
-Profiles are resolved from `./profiles` path by default. Override with `--profiles-dir` or `MCP4_PROFILES_DIR`.
+Profiles are resolved from `./profiles` path by default. If that directory is missing, the bundled npm package profiles are used. Override with `--profiles-dir` or `MCP4_PROFILES_DIR`.
 
 ##### ⚠️ Prerequisites
 

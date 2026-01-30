@@ -69,10 +69,18 @@ const KNOWN_ENV_VARS = new Set([
   'MCP4_METRICS_PATH',
 ]);
 
+const NON_ENV_FLAGS = new Set([
+  'list-profiles',
+]);
+
 export function parseCliArgs(argv: string[]): Record<string, string> {
   const args: Record<string, string> = {};
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
+    if (arg === '-l') {
+      args['list-profiles'] = 'true';
+      continue;
+    }
     if (!arg.startsWith('--')) continue;
     const raw = arg.slice(2);
     if (!raw) continue;
@@ -98,6 +106,9 @@ export function applyCliEnvOverrides(args: Record<string, string>): void {
   const entries = Object.entries(args);
   const unknown: string[] = [];
   for (const [key] of entries) {
+    if (NON_ENV_FLAGS.has(key)) {
+      continue;
+    }
     const envVar = flagToEnvVar(key);
     if (!KNOWN_ENV_VARS.has(envVar)) {
       unknown.push(key);
@@ -107,6 +118,9 @@ export function applyCliEnvOverrides(args: Record<string, string>): void {
     throw new UnknownCliFlagError(unknown);
   }
   for (const [key, value] of entries) {
+    if (NON_ENV_FLAGS.has(key)) {
+      continue;
+    }
     const envVar = flagToEnvVar(key);
     process.env[envVar] = value;
   }
