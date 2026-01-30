@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
@@ -206,6 +206,18 @@ describe('profile-resolver', () => {
   it('uses default profiles directory when profilesDir is empty', async () => {
     const resolved = await resolveProfileById('gitlab');
     expect(resolved.profileId).toBe('gitlab');
+  });
+
+  it('falls back to bundled profiles when cwd profiles directory is missing', async () => {
+    const tempDir = await createTempDir();
+    const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(tempDir);
+
+    try {
+      const resolved = await resolveProfileById('gitlab');
+      expect(resolved.profileId).toBe('gitlab');
+    } finally {
+      cwdSpy.mockRestore();
+    }
   });
 
   it('resolves absolute openapi_spec_path values', async () => {

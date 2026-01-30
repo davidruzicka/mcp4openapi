@@ -15,6 +15,7 @@ import { buildHttpTransportBaseConfig } from '../transport/http-transport-config
 import { ProfileRegistry } from '../profile/profile-registry.js';
 import { MCPServerManager } from '../mcp/mcp-server-manager.js';
 import { getHttpProfileRoutingErrorMessage } from '../profile/startup-validation.js';
+import { listProfiles } from '../profile/profile-resolver.js';
 import { resolveStartupProfile } from '../profile/startup-profile.js';
 
 /**
@@ -75,6 +76,28 @@ export async function main() {
   // Create logger early so startup/autodiscovery logs are structured and redacted consistently
   const logFormat = process.env.MCP4_LOG_FORMAT || 'console';
   const logger = logFormat === 'json' ? new JsonLogger() : new ConsoleLogger();
+
+  const profilesDir = process.env.MCP4_PROFILES_DIR;
+  if (cliArgs['list-profiles'] === 'true') {
+    const profiles = await listProfiles(profilesDir);
+    if (profiles.length === 0) {
+      console.log('No profiles found.');
+      return;
+    }
+    console.log('Available profiles:');
+    for (const profile of profiles) {
+      const details: string[] = [];
+      if (profile.profileName !== profile.profileId) {
+        details.push(`name: ${profile.profileName}`);
+      }
+      if (profile.profileAliases.length > 0) {
+        details.push(`aliases: ${profile.profileAliases.join(', ')}`);
+      }
+      const detailSuffix = details.length > 0 ? ` (${details.join(', ')})` : '';
+      console.log(`- ${profile.profileId}${detailSuffix}`);
+    }
+    return;
+  }
 
   // OAuth Configuration Priority:
   // 1. Explicit env vars (MCP4_OAUTH_AUTHORIZATION_URL, MCP4_OAUTH_TOKEN_URL)
@@ -158,7 +181,6 @@ export async function main() {
     }
   }
 
-  const profilesDir = process.env.MCP4_PROFILES_DIR;
   const specPathOverride = process.env.MCP4_OPENAPI_SPEC_PATH;
   const {
     specPath,

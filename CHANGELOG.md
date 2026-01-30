@@ -5,6 +5,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- Metrics collection for external API calls and errors.
+- Validation for base64 input in tool generator.
+- Profile routing with trust proxy support, plus profile-scoped OAuth metadata and protected-resource endpoints (including RFC 8414 path-suffix routes).
+- n8n OpenAPI specification and MCP profiles, plus node list metadata API and workflow management updates.
+- Support for custom authentication headers based on profile configuration.
+- Support for root array request bodies and quoted field names in MCPServer.
+- Bundled profiles in the npm package and CLI listing via `--list-profiles`/`-l`.
+- Missing defense-in-depth security headers.
+
+### Changed
+- Refactor: group src files by domain folders.
+- Update GitLab profile and API to support pagination and default parameter values.
+- Prioritize header tokens over session tokens.
+- Update hono dependency to 4.11.7.
+- Profile resolution now falls back to bundled profiles when `./profiles` is missing.
+- docs: update PROFILE-GUIDE.md to clarify required inputs for MCP tool profiles.
+- docs: update AGENTS.md to replace multi-auth section with profile testing strategies.
+- docs: add finding regarding OAuth pre-registered client for VS Code and clarify false positive handling.
+- docs: update README to include MCP architecture diagram and improve profile descriptions.
+- docs: add CLAUDE.md and GEMINI.md files referencing @AGENTS.md.
+
+### Fixed
+- ConsoleLogger sanitization to prevent log injection (strip ANSI escape codes and escape control characters).
+- Path segments encoding.
+- Preserve profile-scoped OAuth metadata from resource URL.
+
 ## [0.2.8] - 2025-12-20
 
 ### Added
@@ -118,7 +147,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Schema validation for request bodies
 - Structured logging (console/JSON)
 
-[Unreleased]: https://github.com/davidruzicka/mcp4openapi/compare/v0.2.7...HEAD
+[Unreleased]: https://github.com/davidruzicka/mcp4openapi/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/davidruzicka/mcp4openapi/compare/v0.2.8...v0.3.0
 [0.2.8]: https://github.com/davidruzicka/mcp4openapi/compare/v0.2.7...v0.2.8
 [0.2.7]: https://github.com/davidruzicka/mcp4openapi/compare/v0.2.6...v0.2.7
 [0.2.6]: https://github.com/davidruzicka/mcp4openapi/compare/v0.2.5...v0.2.6

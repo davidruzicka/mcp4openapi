@@ -13,6 +13,7 @@
   },
   "files": [
     "dist",
+    "profiles",
     "profile-schema.json",
     "README.md",
     "LICENSE.md"

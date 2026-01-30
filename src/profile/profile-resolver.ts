@@ -4,8 +4,10 @@
  * Why: Allow selecting profiles by ID or alias without hardcoding paths.
  */
 
-import fs from 'node:fs/promises';
+import fs from 'node:fs';
+import fsPromises from 'node:fs/promises';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { ConfigurationError } from '../core/errors.js';
 
 export interface ResolvedProfile {
@@ -14,6 +16,12 @@ export interface ResolvedProfile {
   profileAliases?: string[];
   profilePath: string;
   specPath: string;
+}
+
+export interface ListedProfile {
+  profileId: string;
+  profileName: string;
+  profileAliases: string[];
 }
 
 interface ProfileIndexEntry {
@@ -28,7 +36,33 @@ const DEFAULT_PROFILES_DIR = 'profiles';
 
 function normalizeProfilesDir(profilesDir?: string): string {
   const base = profilesDir && profilesDir.trim().length > 0 ? profilesDir : DEFAULT_PROFILES_DIR;
-  return path.isAbsolute(base) ? base : path.resolve(process.cwd(), base);
+  if (path.isAbsolute(base)) return base;
+
+  if (base !== DEFAULT_PROFILES_DIR) {
+    return path.resolve(process.cwd(), base);
+  }
+
+  const cwdProfiles = path.resolve(process.cwd(), DEFAULT_PROFILES_DIR);
+  if (fs.existsSync(cwdProfiles)) return cwdProfiles;
+
+  const moduleDir = path.dirname(fileURLToPath(import.meta.url));
+  const packageRoot = findPackageRoot(moduleDir);
+  if (packageRoot) {
+    const packageProfiles = path.join(packageRoot, DEFAULT_PROFILES_DIR);
+    if (fs.existsSync(packageProfiles)) return packageProfiles;
+  }
+
+  return cwdProfiles;
+}
+
+function findPackageRoot(startDir: string): string | null {
+  let current = startDir;
+  while (true) {
+    if (fs.existsSync(path.join(current, 'package.json'))) return current;
+    const parent = path.dirname(current);
+    if (parent === current) return null;
+    current = parent;
+  }
 }
 
 function isProfileJson(data: unknown): data is { profile_name: string; tools: unknown[] } {
@@ -68,7 +102,7 @@ function resolveSpecPath(profilePath: string, specPathRaw?: string, overrideSpec
 }
 
 async function loadProfileIndexEntry(profilePath: string): Promise<ProfileIndexEntry | null> {
-  const raw = await fs.readFile(profilePath, 'utf-8');
+  const raw = await fsPromises.readFile(profilePath, 'utf-8');
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
@@ -102,7 +136,7 @@ async function loadProfileIndexEntry(profilePath: string): Promise<ProfileIndexE
 }
 
 async function collectProfileFiles(dir: string): Promise<string[]> {
-  const entries = await fs.readdir(dir, { withFileTypes: true });
+  const entries = await fsPromises.readdir(dir, { withFileTypes: true });
   const files: string[] = [];
 
   for (const entry of entries) {
@@ -179,6 +213,16 @@ export async function resolveProfileById(
     profilePath: match.profilePath,
     specPath,
   };
+}
+
+export async function listProfiles(profilesDir?: string): Promise<ListedProfile[]> {
+  const resolvedDir = normalizeProfilesDir(profilesDir);
+  const profiles = await buildProfileIndex(resolvedDir);
+  return profiles.map(profile => ({
+    profileId: profile.profileId,
+    profileName: profile.profileName,
+    profileAliases: profile.aliases,
+  }));
 }
 
 export async function resolveProfileFromPath(
