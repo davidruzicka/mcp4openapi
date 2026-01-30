@@ -7,6 +7,7 @@
 
 import type { InterceptorConfig } from '../types/profile.js';
 import { TIME, HTTP_STATUS } from '../core/constants.js';
+import { MetricsCollector } from '../core/metrics.js';
 import {
   AuthenticationError,
   AuthorizationError,
@@ -324,13 +325,20 @@ export class InterceptorChain {
 export class HttpClient {
   private baseUrl: string;
   private interceptors: InterceptorChain;
+  private metrics: MetricsCollector | null;
 
   constructor(
     baseUrl: string,
-    interceptors: InterceptorChain
+    interceptors: InterceptorChain,
+    metrics?: MetricsCollector | null
   ) {
     this.baseUrl = baseUrl;
     this.interceptors = interceptors;
+    this.metrics = metrics || null;
+  }
+
+  setMetricsCollector(metrics: MetricsCollector | null): void {
+    this.metrics = metrics;
   }
 
   /**
@@ -417,7 +425,13 @@ export class HttpClient {
       operationId: options.operationId,
     };
 
+    const metrics = this.metrics;
+    const operation = options.operationId || 'unknown';
+
     return this.interceptors.execute(ctx, async () => {
+      const start = Date.now();
+      let recorded = false;
+
       // Why no body for GET/HEAD: HTTP spec forbids request body for these methods
       const fetchOptions: RequestInit = {
         method: ctx.method,
@@ -441,47 +455,71 @@ export class HttpClient {
         }
       }
 
-      const response = await fetch(ctx.url, fetchOptions);
+      try {
+        const response = await fetch(ctx.url, fetchOptions);
 
-      const body = response.headers.get('content-type')?.includes('application/json')
-        ? await response.json()
-        : await response.text();
+        const body = response.headers.get('content-type')?.includes('application/json')
+          ? await response.json()
+          : await response.text();
 
-      const responseContext = {
-        status: response.status,
-        headers: Object.fromEntries(response.headers.entries()),
-        body,
-      };
-
-      // Why throw on non-2xx: Allows caller to handle errors with try/catch
-      // Use structured errors for better client handling
-      if (response.status < HTTP_STATUS.OK || response.status >= HTTP_STATUS.MULTIPLE_CHOICES) {
-        // Extract error message from response body (common formats)
-        let errorMessage = `HTTP ${response.status}`;
-        if (typeof body === 'object' && body !== null) {
-          const errorObj = body as Record<string, unknown>;
-          errorMessage = (errorObj.error_description || errorObj.error || errorObj.message || errorMessage) as string;
-        } else if (typeof body === 'string' && body.length > 0) {
-          errorMessage = body;
+        const durationSeconds = (Date.now() - start) / 1000;
+        if (metrics) {
+          metrics.recordApiCall(operation, response.status, durationSeconds);
+          recorded = true;
         }
 
-        // Throw specific error types based on HTTP status
-        if (response.status === HTTP_STATUS.UNAUTHORIZED) {
-          throw new AuthenticationError(errorMessage, { statusCode: response.status });
-        } else if (response.status === HTTP_STATUS.FORBIDDEN) {
-          throw new AuthorizationError(errorMessage);
-        } else if (response.status === HTTP_STATUS.TOO_MANY_REQUESTS) {
-          const retryAfter = response.headers.get('retry-after');
-          throw new RateLimitError(errorMessage, retryAfter ? parseInt(retryAfter, 10) : undefined);
-        } else if (response.status === HTTP_STATUS.NOT_FOUND) {
-          throw new NetworkError(`Resource not found: ${errorMessage}`, response.status);
-        } else {
-          // Generic network error for other status codes (includes 5xx)
-          throw new NetworkError(errorMessage, response.status, { body });
+        const responseContext = {
+          status: response.status,
+          headers: Object.fromEntries(response.headers.entries()),
+          body,
+        };
+
+        // Why throw on non-2xx: Allows caller to handle errors with try/catch
+        // Use structured errors for better client handling
+        if (response.status < HTTP_STATUS.OK || response.status >= HTTP_STATUS.MULTIPLE_CHOICES) {
+          // Extract error message from response body (common formats)
+          let errorMessage = `HTTP ${response.status}`;
+          if (typeof body === 'object' && body !== null) {
+            const errorObj = body as Record<string, unknown>;
+            errorMessage = (errorObj.error_description || errorObj.error || errorObj.message || errorMessage) as string;
+          } else if (typeof body === 'string' && body.length > 0) {
+            errorMessage = body;
+          }
+
+          // Throw specific error types based on HTTP status
+          if (response.status === HTTP_STATUS.UNAUTHORIZED) {
+            throw new AuthenticationError(errorMessage, { statusCode: response.status });
+          } else if (response.status === HTTP_STATUS.FORBIDDEN) {
+            throw new AuthorizationError(errorMessage);
+          } else if (response.status === HTTP_STATUS.TOO_MANY_REQUESTS) {
+            const retryAfter = response.headers.get('retry-after');
+            throw new RateLimitError(errorMessage, retryAfter ? parseInt(retryAfter, 10) : undefined);
+          } else if (response.status === HTTP_STATUS.NOT_FOUND) {
+            throw new NetworkError(`Resource not found: ${errorMessage}`, response.status);
+          } else {
+            // Generic network error for other status codes (includes 5xx)
+            throw new NetworkError(errorMessage, response.status, { body });
+          }
         }
+
+        return responseContext;
+      } catch (error) {
+        if (metrics) {
+          const durationSeconds = (Date.now() - start) / 1000;
+          if (!recorded) {
+            metrics.recordApiCall(operation, 0, durationSeconds);
+          }
+          metrics.recordApiCallError(operation, this.getErrorType(error));
+        }
+        throw error;
       }
-
-      return responseContext;
     });
+  }
+
+  private getErrorType(error: unknown): string {
+    if (error instanceof Error) {
+      return error.name;
+    }
+    return 'UnknownError';
   }
 }
