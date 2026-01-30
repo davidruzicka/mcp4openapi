@@ -9,9 +9,11 @@ vi.mock('./interceptors.js', () => ({
     interceptors,
     token,
   })),
-  HttpClient: vi.fn().mockImplementation((baseUrl, interceptors) => ({
+  HttpClient: vi.fn().mockImplementation((baseUrl, interceptors, metrics) => ({
     baseUrl,
     interceptors,
+    metrics,
+    setMetricsCollector: vi.fn(),
   })),
 }));
 
@@ -105,6 +107,29 @@ describe('HttpClientFactory', () => {
     it('should return false if session client did not exist', () => {
       const removed = factory.cleanupSessionClient('non-existent');
       expect(removed).toBe(false);
+    });
+  });
+
+  describe('setMetricsCollector', () => {
+    it('should update existing clients when metrics collector is set', () => {
+      process.env.TEST_TOKEN = 'test-token';
+
+      const globalClient = factory.createGlobalClient({
+        profile: mockProfile,
+        baseUrl: 'https://api.example.com',
+      });
+
+      const sessionClient = factory.getOrCreateSessionClient('session-1', {
+        profile: mockProfile,
+        baseUrl: 'https://api.example.com',
+        sessionToken: 'session-token',
+      });
+
+      const metrics = { enabled: true } as any;
+      factory.setMetricsCollector(metrics);
+
+      expect((globalClient as any).setMetricsCollector).toHaveBeenCalledWith(metrics);
+      expect((sessionClient as any).setMetricsCollector).toHaveBeenCalledWith(metrics);
     });
   });
 

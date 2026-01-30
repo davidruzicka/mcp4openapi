@@ -1303,4 +1303,24 @@ describe('HttpClient - API metrics', () => {
     expect(output).toContain('test_api_call_errors_total');
     expect(output).toContain('error_type="NetworkError"');
   });
+
+  it('records UnknownError for non-Error failures', async () => {
+    const metrics = new MetricsCollector({ enabled: true, prefix: 'test_' });
+    const interceptors = new InterceptorChain({});
+    const client = new HttpClient('https://api.example.com', interceptors, metrics);
+
+    global.fetch = async () => {
+      throw 'boom';
+    };
+
+    await expect(client.request('GET', '/test', { operationId: 'get_test' }))
+      .rejects
+      .toEqual('boom');
+
+    const output = await metrics.getMetrics();
+    expect(output).toContain('test_api_calls_total');
+    expect(output).toContain('status="unknown"');
+    expect(output).toContain('test_api_call_errors_total');
+    expect(output).toContain('error_type="UnknownError"');
+  });
 });
