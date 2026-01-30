@@ -68,7 +68,7 @@ function resolveHttpHostPort(): { host: string; port: number } {
   return { host, port };
 }
 
-async function main() {
+export async function main() {
   const cliArgs = parseCliArgs(process.argv.slice(2));
   applyCliEnvOverrides(cliArgs);
 
@@ -285,5 +285,3 @@ async function main() {
     process.exit(1);
   }
 }
-
-main();
