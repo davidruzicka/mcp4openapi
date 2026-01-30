@@ -21,7 +21,7 @@ import { resolveStartupProfile } from '../profile/startup-profile.js';
  * Fetch OAuth Authorization Server Metadata (RFC 8414)
  * Returns authorization_endpoint and token_endpoint
  */
-async function fetchOAuthMetadata(issuerUrl: string): Promise<{ authorization_endpoint: string; token_endpoint: string } | null> {
+export async function fetchOAuthMetadata(issuerUrl: string): Promise<{ authorization_endpoint: string; token_endpoint: string } | null> {
   try {
     // Use URL constructor to properly handle trailing slashes
     const metadataUrl = new URL(OAUTH_PATHS.WELL_KNOWN_AUTHORIZATION_SERVER, issuerUrl).toString();
@@ -48,7 +48,7 @@ async function fetchOAuthMetadata(issuerUrl: string): Promise<{ authorization_en
  * Derive OAuth issuer from API base URL
  * Example: https://www.gitlab.com/api/v4 -> https://www.gitlab.com
  */
-function deriveIssuerFromBaseUrl(baseUrl: string): string | null {
+export function deriveIssuerFromBaseUrl(baseUrl: string): string | null {
   try {
     const url = new URL(baseUrl);
     return url.origin;
@@ -57,7 +57,7 @@ function deriveIssuerFromBaseUrl(baseUrl: string): string | null {
   }
 }
 
-function resolveHttpHostPort(): { host: string; port: number } {
+export function resolveHttpHostPort(): { host: string; port: number } {
   const host = process.env.MCP4_HOST || '127.0.0.1';
   const port = parseInt(process.env.MCP4_PORT || '3003', 10);
 
