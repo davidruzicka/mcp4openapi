@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { EnvConfigParser } from './env-config-parser.js';
 import { RegexCompiler } from '../regex/regex-compiler.js';
 import { RegexValidator } from '../regex/regex-validator.js';
-import { ConfigurationError } from '../errors.js';
+import { ConfigurationError } from '../../core/errors.js';
 
 describe('EnvConfigParser', () => {
   const validator = new RegexValidator();

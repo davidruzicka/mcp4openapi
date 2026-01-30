@@ -5,7 +5,7 @@
  * Provides consistent mocking and client creation patterns
  */
 
-import { HttpClient, InterceptorChain } from '../interceptors.js';
+import { HttpClient, InterceptorChain } from '../transport/interceptors.js';
 import type { InterceptorConfig } from '../types/profile.js';
 
 // Request input type for fetch mocking

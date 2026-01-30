@@ -3,7 +3,7 @@
  */
 
 import type { ToolDefinition } from '../../types/profile.js';
-import type { Logger } from '../../logger.js';
+import type { Logger } from '../../core/logger.js';
 import type { EnvConfigParser } from '../config/env-config-parser.js';
 import type { HeaderConfigParser } from '../config/header-config-parser.js';
 import type { OperationDetector } from '../operation/operation-detector.js';

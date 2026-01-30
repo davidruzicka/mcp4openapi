@@ -10,7 +10,7 @@ import {
 } from './test-http-utils.js';
 
 // Mock dependencies
-vi.mock('../interceptors.js', () => ({
+vi.mock('../transport/interceptors.js', () => ({
   InterceptorChain: vi.fn().mockImplementation((config) => ({
     config,
   })),

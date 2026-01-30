@@ -4,7 +4,7 @@
 
 import type { ToolFilterConfig, CompiledRegex } from '../types.js';
 import type { RegexCompiler } from '../regex/regex-compiler.js';
-import { ConfigurationError } from '../errors.js';
+import { ConfigurationError } from '../../core/errors.js';
 
 /**
  * Parses tool filter configuration from environment variables

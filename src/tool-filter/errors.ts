@@ -2,7 +2,7 @@
  * Tool filter specific errors
  */
 
-import { ConfigurationError as BaseConfigError, ValidationError as BaseValidationError } from '../errors.js';
+import { ConfigurationError as BaseConfigError, ValidationError as BaseValidationError } from '../core/errors.js';
 
 /**
  * Invalid regex pattern error

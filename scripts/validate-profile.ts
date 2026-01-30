@@ -10,9 +10,9 @@
 import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { ProfileLoader } from '../src/profile-loader.js';
-import { OpenAPIParser } from '../src/openapi-parser.js';
-import { ToolGenerator } from '../src/tool-generator.js';
+import { ProfileLoader } from '../src/profile/profile-loader.js';
+import { OpenAPIParser } from '../src/openapi/openapi-parser.js';
+import { ToolGenerator } from '../src/tooling/tool-generator.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -354,4 +354,3 @@ main().catch((e) => {
   console.error('Fatal error:', e);
   process.exit(1);
 });
-

@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { HeaderConfigParser } from './header-config-parser.js';
 import { RegexCompiler } from '../regex/regex-compiler.js';
 import { RegexValidator } from '../regex/regex-validator.js';
-import { ValidationError, ConfigurationError } from '../errors.js';
+import { ValidationError, ConfigurationError } from '../../core/errors.js';
 
 describe('HeaderConfigParser (X-Mcp4-Tools)', () => {
   const validator = new RegexValidator();
@@ -94,4 +94,3 @@ describe('HeaderConfigParser - MCP4_TOOL_FILTER_SESSION_MAX_TOOLS', () => {
     expect(() => parser.parse('get_user')).toThrow(ConfigurationError);
   });
 });
-

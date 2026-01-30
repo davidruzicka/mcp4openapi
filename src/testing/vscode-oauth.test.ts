@@ -8,9 +8,9 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { ExternalOAuthProvider } from '../oauth-provider.js';
+import { ExternalOAuthProvider } from '../auth/oauth-provider.js';
 import type { OAuthConfig } from '../types/profile.js';
-import { ConsoleLogger, LogLevel } from '../logger.js';
+import { ConsoleLogger, LogLevel } from '../core/logger.js';
 
 describe('VS Code OAuth Flow', () => {
   let provider: ExternalOAuthProvider;
