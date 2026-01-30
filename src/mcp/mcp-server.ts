@@ -1226,6 +1226,8 @@ export class MCPServer {
     }
 
     this.httpTransport = new HttpTransport(config, this.logger);
+    const metricsCollector = this.httpTransport.getMetricsCollector?.() || null;
+    this.httpClientFactory.setMetricsCollector(metricsCollector);
 
     this.recordGlobalToolFilterMetrics();
     
@@ -1246,6 +1248,8 @@ export class MCPServer {
 
   public attachHttpTransport(transport: HttpTransport): void {
     this.httpTransport = transport;
+    const metricsCollector = this.httpTransport.getMetricsCollector?.() || null;
+    this.httpClientFactory.setMetricsCollector(metricsCollector);
   }
 
   public handleSessionDestroyed(profileId: string, sessionId: string): void {

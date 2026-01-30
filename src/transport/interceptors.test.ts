@@ -6,9 +6,10 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { HttpClient, InterceptorChain } from './interceptors.js';
-import { createTestHttpClient, setupFetchMock, setupErrorFetchMock, setupNetworkErrorFetchMock, setupRateLimitFetchMock } from '../testing/test-http-utils.js';
+import { createTestHttpClient, setupFetchMock, setupErrorFetchMock, setupNetworkErrorFetchMock, setupRateLimitFetchMock, restoreFetch } from '../testing/test-http-utils.js';
 import type { InterceptorConfig } from '../types/profile.js';
 import { AuthenticationError, AuthorizationError, RateLimitError, NetworkError } from '../core/errors.js';
+import { MetricsCollector } from '../core/metrics.js';
 
 describe('HttpClient - Auth Interceptors', () => {
   const originalEnv = { ...process.env };
@@ -1262,5 +1263,44 @@ describe('HttpClient - Multipart Support', () => {
 
     const [, options] = mockFetch.mock.calls[0] as [string, RequestInit];
     expect(options.headers).toHaveProperty('Content-Type', 'application/octet-stream');
+  });
+});
+
+describe('HttpClient - API metrics', () => {
+  afterEach(() => {
+    restoreFetch();
+  });
+
+  it('records API call metrics on success', async () => {
+    const metrics = new MetricsCollector({ enabled: true, prefix: 'test_' });
+    const interceptors = new InterceptorChain({});
+    const client = new HttpClient('https://api.example.com', interceptors, metrics);
+
+    setupFetchMock({ ok: true }, { status: 200, headers: { 'Content-Type': 'application/json' } });
+
+    await client.request('GET', '/test', { operationId: 'get_test' });
+
+    const output = await metrics.getMetrics();
+    expect(output).toContain('test_api_calls_total');
+    expect(output).toContain('operation="get_test"');
+    expect(output).toContain('status="2xx"');
+  });
+
+  it('records API call error metrics on failure', async () => {
+    const metrics = new MetricsCollector({ enabled: true, prefix: 'test_' });
+    const interceptors = new InterceptorChain({});
+    const client = new HttpClient('https://api.example.com', interceptors, metrics);
+
+    setupErrorFetchMock(500, 'boom');
+
+    await expect(client.request('GET', '/test', { operationId: 'get_test' }))
+      .rejects
+      .toThrow(NetworkError);
+
+    const output = await metrics.getMetrics();
+    expect(output).toContain('test_api_calls_total');
+    expect(output).toContain('status="5xx"');
+    expect(output).toContain('test_api_call_errors_total');
+    expect(output).toContain('error_type="NetworkError"');
   });
 });
