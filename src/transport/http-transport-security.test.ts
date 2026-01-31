@@ -133,7 +133,7 @@ describe('HttpTransport security behavior (no listen)', () => {
     const response = await request(app).get('/health');
 
     expect(response.headers['x-powered-by']).toBeUndefined();
-    expect(response.headers['content-security-policy']).toBe("default-src 'self'; frame-ancestors 'none'");
+    expect(response.headers['content-security-policy']).toBe("default-src 'self'; frame-ancestors 'none'; object-src 'none'; base-uri 'self'");
     expect(response.headers['x-content-type-options']).toBe('nosniff');
     expect(response.headers['x-frame-options']).toBe('DENY');
     expect(response.headers['referrer-policy']).toBe('no-referrer');
