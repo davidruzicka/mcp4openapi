@@ -116,7 +116,7 @@ export class HttpTransport {
     // Security: standard headers
     this.app.disable('x-powered-by');
     this.app.use((req: Request, res: Response, next: NextFunction) => {
-      res.setHeader('Content-Security-Policy', "default-src 'self'; frame-ancestors 'none'");
+      res.setHeader('Content-Security-Policy', "default-src 'self'; frame-ancestors 'none'; object-src 'none'; base-uri 'self'");
       res.setHeader('X-Frame-Options', 'DENY');
       res.setHeader('X-Content-Type-Options', 'nosniff');
       res.setHeader('Referrer-Policy', 'no-referrer');
