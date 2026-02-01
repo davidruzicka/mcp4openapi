@@ -1009,6 +1009,7 @@ export class HttpTransport {
         return;
       }
       const limiter = getOAuthRateLimiter(profileState);
+      // codeql[js/unvalidated-dynamic-method-call] limiter is a RequestHandler from createRateLimiter.
       return limiter(req, res, next);
     };
 
