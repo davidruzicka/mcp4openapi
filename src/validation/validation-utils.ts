@@ -33,17 +33,6 @@ export function isSafePropertyName(name: string): boolean {
 }
 
 /**
- * Encode path segment if it contains special characters (like slashes)
- * 
- * Why: GitLab and other APIs require path parameters (like project paths)
- * to be URL-encoded when used in URL path.
- */
-export function encodePathSegment(value: unknown): string {
-  const val = String(value);
-  return val.includes('/') ? encodeURIComponent(val) : val;
-}
-
-/**
  * Escape special regex characters in a string.
  * Prevents ReDoS attacks when using dynamic strings in RegExp.
  */

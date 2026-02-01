@@ -42,7 +42,7 @@ import type { OperationInfo, SchemaInfo } from '../types/openapi.js';
 import { isInitializeRequest, isToolCallRequest } from '../validation/jsonrpc-validator.js';
 import { generateNameWarnings, type NameWarningOptions } from '../core/naming-warnings.js';
 import { NamingStrategy, type OperationForNaming } from '../core/naming.js';
-import { encodePathSegment, isSafePropertyName } from '../validation/validation-utils.js';
+import { isSafePropertyName } from '../validation/validation-utils.js';
 import {
   ToolFilterService,
   EnvConfigParser,
@@ -1000,6 +1000,17 @@ export class MCPServer {
   }
 
   /**
+   * Encode path segment if it contains special characters (like slashes)
+   *
+   * Why: GitLab and other APIs require path parameters (like project paths)
+   * to be URL-encoded when used in URL path.
+   */
+  private encodePathSegment(value: unknown): string {
+    const val = String(value);
+    return val.includes('/') ? encodeURIComponent(val) : val;
+  }
+
+  /**
    * Resolve path parameters using profile aliases
    * 
    * Why aliases: Different tools may use different parameter names for same path param.
@@ -1011,14 +1022,14 @@ export class MCPServer {
     return template.replace(/\{(\w+)\}/g, (_, key) => {
       // Try direct match first
       if (args[key] !== undefined) {
-        return encodePathSegment(args[key]);
+        return this.encodePathSegment(args[key]);
       }
 
       // Try aliases from profile
       const possibleAliases = aliases[key] || [];
       for (const alias of possibleAliases) {
         if (args[alias] !== undefined) {
-          return encodePathSegment(args[alias]);
+          return this.encodePathSegment(args[alias]);
         }
       }
 
