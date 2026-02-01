@@ -10,7 +10,7 @@ import type { HttpClient } from '../transport/interceptors.js';
 import type { OperationInfo } from '../types/openapi.js';
 import { OpenAPIParser } from '../openapi/openapi-parser.js';
 import { DAGExecutor, type ExecutionLevel } from './dag-executor.js';
-import { encodePathSegment, isSafePropertyName } from '../validation/validation-utils.js';
+import { isSafePropertyName } from '../validation/validation-utils.js';
 
 export interface CompositeResult {
   data: Record<string, unknown>;
@@ -171,14 +171,14 @@ export class CompositeExecutor {
     return template.replace(/\{(\w+)\}/g, (_, key) => {
       // Try direct match first
       if (args[key] !== undefined) {
-        return encodePathSegment(args[key]);
+        return encodeURIComponent(String(args[key]));
       }
 
       // Try aliases from profile
       const possibleAliases = this.parameterAliases[key] || [];
       for (const alias of possibleAliases) {
         if (args[alias] !== undefined) {
-          return encodePathSegment(args[alias]);
+          return encodeURIComponent(String(args[alias]));
         }
       }
 
