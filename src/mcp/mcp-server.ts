@@ -1001,8 +1001,8 @@ export class MCPServer {
 
   /**
    * Encode path segment if it contains special characters (like slashes)
-   * 
-   * Why: GitLab and other APIs require path parameters (like project paths) 
+   *
+   * Why: GitLab and other APIs require path parameters (like project paths)
    * to be URL-encoded when used in URL path.
    */
   private encodePathSegment(value: unknown): string {

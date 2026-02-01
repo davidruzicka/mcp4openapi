@@ -48,3 +48,16 @@ Reports claiming that `mcp-proxy-client` is not registered when env-configured O
 
 **Reviewer instruction:**
 If a finding flags missing `mcp-proxy-client` registration due to env overrides, mark it as a false positive and do not require changes and continue. Only revisit if the constructor pre-registration is removed or gated.
+
+## 2025-05-23 - [HIGH] Path Traversal in Composite Tool Execution
+
+**Vulnerability:**
+The `CompositeExecutor` substituted user-provided arguments directly into API path templates without URL encoding.
+Example: `GET /projects/{id}` with `id` = `../admin` resolved to `GET /projects/../admin` -> `GET /admin`, allowing access to unintended API endpoints.
+
+**Learning:**
+String replacement for path parameters is dangerous if the input is not strictly validated or encoded. Clients often trust the server to handle encoding, but the server must ensure that substitutions into templates (especially for external APIs) are safe.
+
+**Prevention:**
+1.  Always use `encodeURIComponent()` when substituting user input into path segments.
+2.  Validate that path parameters do not contain path traversal characters (like `..` or `/`) even before encoding, if strict validation is possible.
