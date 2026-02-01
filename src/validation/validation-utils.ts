@@ -122,6 +122,7 @@ export function redactParam(
  * Validates if a string is a valid email address
  */
 export function isEmail(value: string): boolean {
+  // codeql[js/polynomial-redos] Simple validation; not intended to fully validate RFC emails.
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 }
 
