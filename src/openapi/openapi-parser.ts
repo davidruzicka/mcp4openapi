@@ -355,11 +355,11 @@ export class OpenAPIParser {
       target.maxLength = Math.min(target.maxLength ?? Number.POSITIVE_INFINITY, source.maxLength);
     }
     if (source.pattern) {
-      if (target.pattern) {
-        // Combine patterns using lookaheads to enforce both
-        target.pattern = `(?=${target.pattern})(?=${source.pattern})`;
-      } else {
+      if (!target.pattern) {
         target.pattern = source.pattern;
+      } else if (target.pattern !== source.pattern) {
+        // Combine patterns using lookaheads to enforce both anywhere in the string.
+        target.pattern = `^(?=[\\s\\S]*${target.pattern})(?=[\\s\\S]*${source.pattern})[\\s\\S]*$`;
       }
     }
 

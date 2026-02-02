@@ -1,5 +1,5 @@
 
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { ToolGenerator } from './tool-generator.js';
 import { OpenAPIParser } from '../openapi/openapi-parser.js';
 import type { ToolDefinition } from '../types/profile.js';
@@ -85,7 +85,7 @@ describe('ToolGenerator Validation', () => {
     // Should throw ValidationError instead of crashing
     expect(() => generator.validateArguments(toolDef, { badPattern: 'abc' })).toThrowError(ValidationError);
     expect(() => generator.validateArguments(toolDef, { badPattern: 'abc' })).toThrow(
-      /Invalid regex pattern/
+      'Invalid pattern for badPattern.'
     );
   });
 
