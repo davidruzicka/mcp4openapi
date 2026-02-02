@@ -540,6 +540,9 @@ export class ProfileLoader {
         type: this.mapOpenAPISchemaToParameterType(param.schema),
         description: param.description || `Parameter ${param.name}`,
         required: param.required,
+        minLength: param.schema.minLength,
+        maxLength: param.schema.maxLength,
+        pattern: param.schema.pattern,
       };
     }
 
@@ -620,10 +623,14 @@ export class ProfileLoader {
     if (schema.type === 'object' && schema.properties) {
       for (const [propName, propSchema] of Object.entries(schema.properties)) {
         const isRequired = schema.required?.includes(propName) || required;
+        const info = propSchema as SchemaInfo;
         parameters[propName] = {
-          type: this.mapOpenAPISchemaToParameterType(propSchema as SchemaInfo),
+          type: this.mapOpenAPISchemaToParameterType(info),
           description: `Property ${propName}`,
           required: isRequired,
+          minLength: info.minLength,
+          maxLength: info.maxLength,
+          pattern: info.pattern,
         };
       }
     }
