@@ -90,6 +90,18 @@ export class ToolGenerator {
       schema.default = param.default;
     }
 
+    if (type === 'string') {
+      if (param.minLength !== undefined) {
+        schema.minLength = param.minLength;
+      }
+      if (param.maxLength !== undefined) {
+        schema.maxLength = param.maxLength;
+      }
+      if (param.pattern !== undefined) {
+        schema.pattern = param.pattern;
+      }
+    }
+
     if (type === 'array' && param.items) {
       schema.items = { type: param.items.type };
     }
@@ -132,6 +144,28 @@ export class ToolGenerator {
         throw new Error(
           `Invalid value for ${name}. Must be one of: ${param.enum.join(', ')}`
         );
+      }
+
+      // Validate string constraints
+      if (value !== undefined && typeof value === 'string') {
+        if (param.minLength !== undefined && value.length < param.minLength) {
+          throw new Error(
+            `Invalid value for ${name}. Length must be at least ${param.minLength}`
+          );
+        }
+        if (param.maxLength !== undefined && value.length > param.maxLength) {
+          throw new Error(
+            `Invalid value for ${name}. Length must be at most ${param.maxLength}`
+          );
+        }
+        if (param.pattern !== undefined) {
+          const regex = new RegExp(param.pattern);
+          if (!regex.test(value)) {
+            throw new Error(
+              `Invalid value for ${name}. Must match pattern: ${param.pattern}`
+            );
+          }
+        }
       }
     }
   }

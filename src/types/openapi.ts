@@ -47,6 +47,9 @@ export interface SchemaInfo {
   type?: string;
   format?: string;
   enum?: unknown[];
+  minLength?: number;
+  maxLength?: number;
+  pattern?: string;
   items?: SchemaInfo;
   properties?: Record<string, SchemaInfo>;
   required?: string[];

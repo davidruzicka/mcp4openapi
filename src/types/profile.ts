@@ -53,6 +53,9 @@ export interface ParameterDefinition {
   required?: boolean;
   required_for?: string[]; // Which actions require this parameter
   enum?: string[];
+  minLength?: number;
+  maxLength?: number;
+  pattern?: string;
   items?: { type: string };
   properties?: Record<string, unknown>; // For object type (empty {} = free-form object)
   default?: unknown;

@@ -253,6 +253,9 @@ export class OpenAPIParser {
       format: schema.format,
       enum: schema.enum,
       default: schema.default,
+      minLength: schema.minLength,
+      maxLength: schema.maxLength,
+      pattern: schema.pattern,
     };
 
     if (schema.allOf && schema.allOf.length > 0) {
@@ -343,6 +346,9 @@ export class OpenAPIParser {
     if (!target.format && source.format) target.format = source.format;
     if (!target.enum && source.enum) target.enum = source.enum;
     if (target.default === undefined && source.default !== undefined) target.default = source.default;
+    if (target.minLength === undefined && source.minLength !== undefined) target.minLength = source.minLength;
+    if (target.maxLength === undefined && source.maxLength !== undefined) target.maxLength = source.maxLength;
+    if (!target.pattern && source.pattern) target.pattern = source.pattern;
 
     if (source.required) {
       target.required = Array.from(new Set([...(target.required ?? []), ...source.required]));
@@ -372,6 +378,9 @@ export class OpenAPIParser {
       format: schema.format,
       enum: schema.enum ? [...schema.enum] : undefined,
       default: schema.default,
+      minLength: schema.minLength,
+      maxLength: schema.maxLength,
+      pattern: schema.pattern,
       ref: schema.ref,
       circular: schema.circular,
     };
