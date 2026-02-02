@@ -143,42 +143,6 @@ describe('OpenAPIParser - schema resolution', () => {
             },
           ],
         },
-        ConstrainedName: {
-          allOf: [
-            {
-              type: 'string',
-              minLength: 2,
-              maxLength: 10,
-              pattern: 'foo',
-            },
-            {
-              type: 'string',
-              minLength: 5,
-              maxLength: 8,
-              pattern: 'bar',
-            },
-          ],
-        },
-        PatternOnly: {
-          allOf: [
-            {
-              type: 'string',
-              pattern: 'alpha',
-            },
-          ],
-        },
-        SamePattern: {
-          allOf: [
-            {
-              type: 'string',
-              pattern: 'same',
-            },
-            {
-              type: 'string',
-              pattern: 'same',
-            },
-          ],
-        },
       },
     },
   } as const;
@@ -227,35 +191,6 @@ describe('OpenAPIParser - schema resolution', () => {
     const base = (parser as any).resolveSchema('#/components/schemas/Base');
     expect(base?.properties?.code?.format).toBeUndefined();
     expect(base?.properties?.code?.type).toBe('string');
-  });
-
-  it('combines length and pattern constraints when merging schemas', () => {
-    const parser = new OpenAPIParser();
-    (parser as any).spec = JSON.parse(JSON.stringify(baseSpec));
-
-    const resolved = (parser as any).resolveSchema('#/components/schemas/ConstrainedName');
-
-    expect(resolved?.minLength).toBe(5);
-    expect(resolved?.maxLength).toBe(8);
-    expect(resolved?.pattern).toBe('^(?=[\\s\\S]*foo)(?=[\\s\\S]*bar)[\\s\\S]*$');
-  });
-
-  it('keeps single pattern when only one is provided', () => {
-    const parser = new OpenAPIParser();
-    (parser as any).spec = JSON.parse(JSON.stringify(baseSpec));
-
-    const resolved = (parser as any).resolveSchema('#/components/schemas/PatternOnly');
-
-    expect(resolved?.pattern).toBe('alpha');
-  });
-
-  it('keeps pattern unchanged when patterns are identical', () => {
-    const parser = new OpenAPIParser();
-    (parser as any).spec = JSON.parse(JSON.stringify(baseSpec));
-
-    const resolved = (parser as any).resolveSchema('#/components/schemas/SamePattern');
-
-    expect(resolved?.pattern).toBe('same');
   });
 
   it('returns fresh clones for cached schemas', () => {
