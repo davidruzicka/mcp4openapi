@@ -114,4 +114,53 @@ describe('ToolGenerator Validation', () => {
       pattern: '^[a-z]+$',
     });
   });
+
+  it('generates array items and object properties', () => {
+    const toolDef: ToolDefinition = {
+      name: 'test_tool',
+      description: 'Test tool',
+      parameters: {
+        ids: {
+          type: 'array',
+          description: 'Ids',
+          items: { type: 'string' },
+        },
+        metadata: {
+          type: 'object',
+          description: 'Metadata',
+          properties: { foo: 'bar' },
+        },
+      },
+    };
+
+    const tool = generator.generateTool(toolDef);
+    const props = tool.inputSchema.properties as any;
+
+    expect(props.ids).toMatchObject({
+      type: 'array',
+      description: 'Ids',
+      items: { type: 'string' },
+    });
+    expect(props.metadata).toMatchObject({
+      type: 'object',
+      description: 'Metadata',
+      properties: { foo: 'bar' },
+    });
+  });
+
+  it('skips string constraint checks for non-string values', () => {
+    const toolDef: ToolDefinition = {
+      name: 'test_tool',
+      description: 'Test tool',
+      parameters: {
+        count: {
+          type: 'string',
+          description: 'Count',
+          minLength: 2,
+        },
+      },
+    };
+
+    expect(() => generator.validateArguments(toolDef, { count: 123 })).not.toThrow();
+  });
 });

@@ -159,6 +159,26 @@ describe('OpenAPIParser - schema resolution', () => {
             },
           ],
         },
+        PatternOnly: {
+          allOf: [
+            {
+              type: 'string',
+              pattern: 'alpha',
+            },
+          ],
+        },
+        SamePattern: {
+          allOf: [
+            {
+              type: 'string',
+              pattern: 'same',
+            },
+            {
+              type: 'string',
+              pattern: 'same',
+            },
+          ],
+        },
       },
     },
   } as const;
@@ -218,6 +238,24 @@ describe('OpenAPIParser - schema resolution', () => {
     expect(resolved?.minLength).toBe(5);
     expect(resolved?.maxLength).toBe(8);
     expect(resolved?.pattern).toBe('^(?=[\\s\\S]*foo)(?=[\\s\\S]*bar)[\\s\\S]*$');
+  });
+
+  it('keeps single pattern when only one is provided', () => {
+    const parser = new OpenAPIParser();
+    (parser as any).spec = JSON.parse(JSON.stringify(baseSpec));
+
+    const resolved = (parser as any).resolveSchema('#/components/schemas/PatternOnly');
+
+    expect(resolved?.pattern).toBe('alpha');
+  });
+
+  it('keeps pattern unchanged when patterns are identical', () => {
+    const parser = new OpenAPIParser();
+    (parser as any).spec = JSON.parse(JSON.stringify(baseSpec));
+
+    const resolved = (parser as any).resolveSchema('#/components/schemas/SamePattern');
+
+    expect(resolved?.pattern).toBe('same');
   });
 
   it('returns fresh clones for cached schemas', () => {
