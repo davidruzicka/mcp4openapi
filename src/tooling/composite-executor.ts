@@ -254,7 +254,8 @@ export class CompositeExecutor {
     if (!isSafePropertyName(finalKey)) {
       throw new Error(`Invalid property name in path: ${finalKey}`);
     }
-    // codeql[js/prototype-pollution-utility] Guarded by isSafePropertyName above.
+    // codeql[js/prototype-pollution-utility]
+    // Guarded by isSafePropertyName above.
     current[finalKey] = value;
   }
 }
