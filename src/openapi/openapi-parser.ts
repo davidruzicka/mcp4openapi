@@ -346,9 +346,19 @@ export class OpenAPIParser {
     if (!target.format && source.format) target.format = source.format;
     if (!target.enum && source.enum) target.enum = source.enum;
     if (target.default === undefined && source.default !== undefined) target.default = source.default;
-    if (target.minLength === undefined && source.minLength !== undefined) target.minLength = source.minLength;
-    if (target.maxLength === undefined && source.maxLength !== undefined) target.maxLength = source.maxLength;
-    if (!target.pattern && source.pattern) target.pattern = source.pattern;
+    if (source.minLength !== undefined) {
+      target.minLength = target.minLength === undefined
+        ? source.minLength
+        : Math.max(target.minLength, source.minLength);
+    }
+    if (source.maxLength !== undefined) {
+      target.maxLength = target.maxLength === undefined
+        ? source.maxLength
+        : Math.min(target.maxLength, source.maxLength);
+    }
+    if (source.pattern) {
+      target.pattern = this.mergePattern(target.pattern, source.pattern);
+    }
 
     if (source.required) {
       target.required = Array.from(new Set([...(target.required ?? []), ...source.required]));
@@ -370,6 +380,13 @@ export class OpenAPIParser {
     if (source.items) {
       target.items = target.items ?? source.items;
     }
+  }
+
+  private mergePattern(targetPattern: string | undefined, sourcePattern: string): string {
+    if (!targetPattern) return sourcePattern;
+    if (targetPattern === sourcePattern) return targetPattern;
+
+    return `^(?=[\\s\\S]*${targetPattern})(?=[\\s\\S]*${sourcePattern})[\\s\\S]*$`;
   }
 
   private cloneSchemaInfo(schema: SchemaInfo): SchemaInfo {
@@ -511,4 +528,3 @@ export class OpenAPIParser {
     }
   }
 }
-
