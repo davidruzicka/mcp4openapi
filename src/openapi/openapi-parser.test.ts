@@ -143,6 +143,22 @@ describe('OpenAPIParser - schema resolution', () => {
             },
           ],
         },
+        ConstrainedName: {
+          allOf: [
+            {
+              type: 'string',
+              minLength: 2,
+              maxLength: 10,
+              pattern: 'foo',
+            },
+            {
+              type: 'string',
+              minLength: 5,
+              maxLength: 8,
+              pattern: 'bar',
+            },
+          ],
+        },
       },
     },
   } as const;
@@ -191,6 +207,17 @@ describe('OpenAPIParser - schema resolution', () => {
     const base = (parser as any).resolveSchema('#/components/schemas/Base');
     expect(base?.properties?.code?.format).toBeUndefined();
     expect(base?.properties?.code?.type).toBe('string');
+  });
+
+  it('combines length and pattern constraints when merging schemas', () => {
+    const parser = new OpenAPIParser();
+    (parser as any).spec = JSON.parse(JSON.stringify(baseSpec));
+
+    const resolved = (parser as any).resolveSchema('#/components/schemas/ConstrainedName');
+
+    expect(resolved?.minLength).toBe(5);
+    expect(resolved?.maxLength).toBe(8);
+    expect(resolved?.pattern).toBe('^(?=[\\s\\S]*foo)(?=[\\s\\S]*bar)[\\s\\S]*$');
   });
 
   it('returns fresh clones for cached schemas', () => {
@@ -681,4 +708,3 @@ paths: {}`;
     }
   });
 });
-

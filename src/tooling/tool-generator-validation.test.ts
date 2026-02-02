@@ -1,8 +1,9 @@
 
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { ToolGenerator } from './tool-generator.js';
 import { OpenAPIParser } from '../openapi/openapi-parser.js';
 import type { ToolDefinition } from '../types/profile.js';
+import { ValidationError } from '../core/errors.js';
 
 describe('ToolGenerator Validation', () => {
   const parser = {} as OpenAPIParser;
@@ -24,6 +25,7 @@ describe('ToolGenerator Validation', () => {
     expect(() => generator.validateArguments(toolDef, { shortParam: 'abc' })).toThrow(
       'Invalid value for shortParam. Length must be at least 5'
     );
+    expect(() => generator.validateArguments(toolDef, { shortParam: 'abc' })).toThrow(ValidationError);
     expect(() => generator.validateArguments(toolDef, { shortParam: 'abcde' })).not.toThrow();
   });
 
@@ -43,6 +45,7 @@ describe('ToolGenerator Validation', () => {
     expect(() => generator.validateArguments(toolDef, { longParam: 'abcdef' })).toThrow(
       'Invalid value for longParam. Length must be at most 5'
     );
+    expect(() => generator.validateArguments(toolDef, { longParam: 'abcdef' })).toThrow(ValidationError);
     expect(() => generator.validateArguments(toolDef, { longParam: 'abcde' })).not.toThrow();
   });
 
@@ -62,7 +65,27 @@ describe('ToolGenerator Validation', () => {
     expect(() => generator.validateArguments(toolDef, { patternParam: '123' })).toThrow(
       'Invalid value for patternParam. Must match pattern: ^[a-z]+$'
     );
+    expect(() => generator.validateArguments(toolDef, { patternParam: '123' })).toThrow(ValidationError);
     expect(() => generator.validateArguments(toolDef, { patternParam: 'abc' })).not.toThrow();
+  });
+
+  it('rejects invalid regex patterns', () => {
+    const toolDef: ToolDefinition = {
+      name: 'test_tool',
+      description: 'Test tool',
+      parameters: {
+        badPattern: {
+          type: 'string',
+          description: 'Bad pattern',
+          pattern: '[',
+        },
+      },
+    };
+
+    expect(() => generator.validateArguments(toolDef, { badPattern: 'abc' })).toThrow(ValidationError);
+    expect(() => generator.validateArguments(toolDef, { badPattern: 'abc' })).toThrow(
+      'Invalid pattern for badPattern.'
+    );
   });
 
   it('generates correct JSON schema', () => {
