@@ -45,7 +45,7 @@ describe('OpenAPIParser Merging', () => {
     const target: SchemaInfo = { pattern: '^[a-z]+$' };
     const source: SchemaInfo = { pattern: '.{5,}' };
     mergeSchemaInfo(target, source);
-    expect(target.pattern).toBe('(?=^[a-z]+$)(?=.{5,})');
+    expect(target.pattern).toBe('^(?=[\\s\\S]*^[a-z]+$)(?=[\\s\\S]*.{5,})[\\s\\S]*$');
 
     const target2: SchemaInfo = {};
     const source2: SchemaInfo = { pattern: '^[0-9]+$' };

@@ -159,24 +159,20 @@ export class ToolGenerator {
           );
         }
         if (param.pattern !== undefined) {
+          let regex: RegExp;
           try {
-            const regex = new RegExp(param.pattern);
-            if (!regex.test(value)) {
-              throw new ValidationError(
-                `Invalid value for ${name}. Must match pattern: ${param.pattern}`
-              );
-            }
+            regex = new RegExp(param.pattern);
           } catch (error) {
-            // Log warning but don't fail validation if pattern is invalid (fail-open for broken specs)
-            // Ideally we should warn, but we don't have logger here.
-            // Rethrowing as ValidationError would block valid inputs if spec is bad.
-            // But we should probably block if we can't validate.
-            // However, the prompt implies "safely handles invalid regexes".
-            // Let's treat invalid regex as a schema error that prevents validation, so we skip it or fail?
-            // "Runtime validation now uses ValidationError (instead of Error) and safely handles invalid regexes."
-            // This usually means "don't crash the server".
+            const reason = error instanceof Error ? error.message : String(error);
             throw new ValidationError(
-              `Invalid regex pattern for parameter '${name}': ${param.pattern}. ${(error as Error).message}`
+              `Invalid pattern for ${name}.`,
+              { paramName: name, pattern: param.pattern, reason }
+            );
+          }
+          if (!regex.test(value)) {
+            throw new ValidationError(
+              `Invalid value for ${name}. Must match pattern: ${param.pattern}`,
+              { paramName: name, pattern: param.pattern }
             );
           }
         }
