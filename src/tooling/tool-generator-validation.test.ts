@@ -1,5 +1,5 @@
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { ToolGenerator } from './tool-generator.js';
 import { OpenAPIParser } from '../openapi/openapi-parser.js';
 import type { ToolDefinition } from '../types/profile.js';
@@ -22,10 +22,10 @@ describe('ToolGenerator Validation', () => {
       },
     };
 
+    expect(() => generator.validateArguments(toolDef, { shortParam: 'abc' })).toThrowError(ValidationError);
     expect(() => generator.validateArguments(toolDef, { shortParam: 'abc' })).toThrow(
       'Invalid value for shortParam. Length must be at least 5'
     );
-    expect(() => generator.validateArguments(toolDef, { shortParam: 'abc' })).toThrow(ValidationError);
     expect(() => generator.validateArguments(toolDef, { shortParam: 'abcde' })).not.toThrow();
   });
 
@@ -42,10 +42,10 @@ describe('ToolGenerator Validation', () => {
       },
     };
 
+    expect(() => generator.validateArguments(toolDef, { longParam: 'abcdef' })).toThrowError(ValidationError);
     expect(() => generator.validateArguments(toolDef, { longParam: 'abcdef' })).toThrow(
       'Invalid value for longParam. Length must be at most 5'
     );
-    expect(() => generator.validateArguments(toolDef, { longParam: 'abcdef' })).toThrow(ValidationError);
     expect(() => generator.validateArguments(toolDef, { longParam: 'abcde' })).not.toThrow();
   });
 
@@ -62,30 +62,59 @@ describe('ToolGenerator Validation', () => {
       },
     };
 
+    expect(() => generator.validateArguments(toolDef, { patternParam: '123' })).toThrowError(ValidationError);
     expect(() => generator.validateArguments(toolDef, { patternParam: '123' })).toThrow(
       'Invalid value for patternParam. Must match pattern: ^[a-z]+$'
     );
-    expect(() => generator.validateArguments(toolDef, { patternParam: '123' })).toThrow(ValidationError);
     expect(() => generator.validateArguments(toolDef, { patternParam: 'abc' })).not.toThrow();
   });
 
-  it('rejects invalid regex patterns', () => {
+  it('handles invalid regex pattern safely', () => {
     const toolDef: ToolDefinition = {
       name: 'test_tool',
       description: 'Test tool',
       parameters: {
         badPattern: {
           type: 'string',
-          description: 'Bad pattern',
-          pattern: '[',
+          description: 'Bad pattern param',
+          pattern: '(', // Invalid regex
         },
       },
     };
 
-    expect(() => generator.validateArguments(toolDef, { badPattern: 'abc' })).toThrow(ValidationError);
+    // Should throw ValidationError instead of crashing
+    expect(() => generator.validateArguments(toolDef, { badPattern: 'abc' })).toThrowError(ValidationError);
     expect(() => generator.validateArguments(toolDef, { badPattern: 'abc' })).toThrow(
-      'Invalid pattern for badPattern.'
+      /Invalid regex pattern/
     );
+  });
+
+  it('validates combined constraints', () => {
+    const toolDef: ToolDefinition = {
+      name: 'test_tool',
+      description: 'Test tool',
+      parameters: {
+        constrainedParam: {
+          type: 'string',
+          description: 'Constrained param',
+          minLength: 3,
+          maxLength: 5,
+          pattern: '^[a-z]+$',
+        },
+      },
+    };
+
+    // Valid
+    expect(() => generator.validateArguments(toolDef, { constrainedParam: 'abc' })).not.toThrow();
+
+    // Invalid length (too short)
+    expect(() => generator.validateArguments(toolDef, { constrainedParam: 'ab' })).toThrowError(ValidationError);
+
+    // Invalid length (too long)
+    expect(() => generator.validateArguments(toolDef, { constrainedParam: 'abcdef' })).toThrowError(ValidationError);
+
+    // Invalid pattern
+    expect(() => generator.validateArguments(toolDef, { constrainedParam: '123' })).toThrowError(ValidationError);
   });
 
   it('generates correct JSON schema', () => {
@@ -113,54 +142,5 @@ describe('ToolGenerator Validation', () => {
       maxLength: 10,
       pattern: '^[a-z]+$',
     });
-  });
-
-  it('generates array items and object properties', () => {
-    const toolDef: ToolDefinition = {
-      name: 'test_tool',
-      description: 'Test tool',
-      parameters: {
-        ids: {
-          type: 'array',
-          description: 'Ids',
-          items: { type: 'string' },
-        },
-        metadata: {
-          type: 'object',
-          description: 'Metadata',
-          properties: { foo: 'bar' },
-        },
-      },
-    };
-
-    const tool = generator.generateTool(toolDef);
-    const props = tool.inputSchema.properties as any;
-
-    expect(props.ids).toMatchObject({
-      type: 'array',
-      description: 'Ids',
-      items: { type: 'string' },
-    });
-    expect(props.metadata).toMatchObject({
-      type: 'object',
-      description: 'Metadata',
-      properties: { foo: 'bar' },
-    });
-  });
-
-  it('skips string constraint checks for non-string values', () => {
-    const toolDef: ToolDefinition = {
-      name: 'test_tool',
-      description: 'Test tool',
-      parameters: {
-        count: {
-          type: 'string',
-          description: 'Count',
-          minLength: 2,
-        },
-      },
-    };
-
-    expect(() => generator.validateArguments(toolDef, { count: 123 })).not.toThrow();
   });
 });

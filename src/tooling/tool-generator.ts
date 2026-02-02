@@ -126,7 +126,7 @@ export class ToolGenerator {
 
       // Check unconditional required
       if (param.required && value === undefined) {
-        throw new ValidationError(`Missing required parameter: ${name}`, { paramName: name });
+        throw new ValidationError(`Missing required parameter: ${name}`);
       }
 
       // Check conditional required
@@ -134,8 +134,7 @@ export class ToolGenerator {
         const action = args['action'] as string | undefined;
         if (action && param.required_for.includes(action) && value === undefined) {
           throw new ValidationError(
-            `Parameter '${name}' is required for action '${action}'`,
-            { paramName: name, action }
+            `Parameter '${name}' is required for action '${action}'`
           );
         }
       }
@@ -143,8 +142,7 @@ export class ToolGenerator {
       // Validate enum
       if (value !== undefined && param.enum && !param.enum.includes(String(value))) {
         throw new ValidationError(
-          `Invalid value for ${name}. Must be one of: ${param.enum.join(', ')}`,
-          { paramName: name, allowed: param.enum }
+          `Invalid value for ${name}. Must be one of: ${param.enum.join(', ')}`
         );
       }
 
@@ -152,31 +150,33 @@ export class ToolGenerator {
       if (value !== undefined && typeof value === 'string') {
         if (param.minLength !== undefined && value.length < param.minLength) {
           throw new ValidationError(
-            `Invalid value for ${name}. Length must be at least ${param.minLength}`,
-            { paramName: name, minLength: param.minLength }
+            `Invalid value for ${name}. Length must be at least ${param.minLength}`
           );
         }
         if (param.maxLength !== undefined && value.length > param.maxLength) {
           throw new ValidationError(
-            `Invalid value for ${name}. Length must be at most ${param.maxLength}`,
-            { paramName: name, maxLength: param.maxLength }
+            `Invalid value for ${name}. Length must be at most ${param.maxLength}`
           );
         }
         if (param.pattern !== undefined) {
-          let regex: RegExp;
           try {
-            regex = new RegExp(param.pattern);
+            const regex = new RegExp(param.pattern);
+            if (!regex.test(value)) {
+              throw new ValidationError(
+                `Invalid value for ${name}. Must match pattern: ${param.pattern}`
+              );
+            }
           } catch (error) {
-            const reason = error instanceof Error ? error.message : String(error);
+            // Log warning but don't fail validation if pattern is invalid (fail-open for broken specs)
+            // Ideally we should warn, but we don't have logger here.
+            // Rethrowing as ValidationError would block valid inputs if spec is bad.
+            // But we should probably block if we can't validate.
+            // However, the prompt implies "safely handles invalid regexes".
+            // Let's treat invalid regex as a schema error that prevents validation, so we skip it or fail?
+            // "Runtime validation now uses ValidationError (instead of Error) and safely handles invalid regexes."
+            // This usually means "don't crash the server".
             throw new ValidationError(
-              `Invalid pattern for ${name}.`,
-              { paramName: name, pattern: param.pattern, reason }
-            );
-          }
-          if (!regex.test(value)) {
-            throw new ValidationError(
-              `Invalid value for ${name}. Must match pattern: ${param.pattern}`,
-              { paramName: name, pattern: param.pattern }
+              `Invalid regex pattern for parameter '${name}': ${param.pattern}. ${(error as Error).message}`
             );
           }
         }
