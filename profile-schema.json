@@ -248,6 +248,20 @@
           },
           "minItems": 1
         },
+        "minLength": {
+          "type": "integer",
+          "description": "Minimum length for string parameters",
+          "minimum": 0
+        },
+        "maxLength": {
+          "type": "integer",
+          "description": "Maximum length for string parameters",
+          "minimum": 0
+        },
+        "pattern": {
+          "type": "string",
+          "description": "Regex pattern for string parameters"
+        },
         "items": {
           "type": "object",
           "description": "Item type for array parameters",

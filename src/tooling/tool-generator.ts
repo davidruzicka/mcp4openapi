@@ -90,6 +90,18 @@ export class ToolGenerator {
       schema.default = param.default;
     }
 
+    if (type === 'string') {
+      if (param.minLength !== undefined) {
+        schema.minLength = param.minLength;
+      }
+      if (param.maxLength !== undefined) {
+        schema.maxLength = param.maxLength;
+      }
+      if (param.pattern !== undefined) {
+        schema.pattern = param.pattern;
+      }
+    }
+
     if (type === 'array' && param.items) {
       schema.items = { type: param.items.type };
     }
@@ -114,14 +126,14 @@ export class ToolGenerator {
 
       // Check unconditional required
       if (param.required && value === undefined) {
-        throw new Error(`Missing required parameter: ${name}`);
+        throw new ValidationError(`Missing required parameter: ${name}`);
       }
 
       // Check conditional required
       if (param.required_for && param.required_for.length > 0) {
         const action = args['action'] as string | undefined;
         if (action && param.required_for.includes(action) && value === undefined) {
-          throw new Error(
+          throw new ValidationError(
             `Parameter '${name}' is required for action '${action}'`
           );
         }
@@ -129,9 +141,41 @@ export class ToolGenerator {
 
       // Validate enum
       if (value !== undefined && param.enum && !param.enum.includes(String(value))) {
-        throw new Error(
+        throw new ValidationError(
           `Invalid value for ${name}. Must be one of: ${param.enum.join(', ')}`
         );
+      }
+
+      // Validate string constraints
+      if (value !== undefined && typeof value === 'string') {
+        if (param.minLength !== undefined && value.length < param.minLength) {
+          throw new ValidationError(
+            `Invalid value for ${name}. Length must be at least ${param.minLength}`
+          );
+        }
+        if (param.maxLength !== undefined && value.length > param.maxLength) {
+          throw new ValidationError(
+            `Invalid value for ${name}. Length must be at most ${param.maxLength}`
+          );
+        }
+        if (param.pattern !== undefined) {
+          let regex: RegExp;
+          try {
+            regex = new RegExp(param.pattern);
+          } catch (error) {
+            const reason = error instanceof Error ? error.message : String(error);
+            throw new ValidationError(
+              `Invalid pattern for ${name}.`,
+              { paramName: name, pattern: param.pattern, reason }
+            );
+          }
+          if (!regex.test(value)) {
+            throw new ValidationError(
+              `Invalid value for ${name}. Must match pattern: ${param.pattern}`,
+              { paramName: name, pattern: param.pattern }
+            );
+          }
+        }
       }
     }
   }

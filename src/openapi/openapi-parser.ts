@@ -253,6 +253,9 @@ export class OpenAPIParser {
       format: schema.format,
       enum: schema.enum,
       default: schema.default,
+      minLength: schema.minLength,
+      maxLength: schema.maxLength,
+      pattern: schema.pattern,
     };
 
     if (schema.allOf && schema.allOf.length > 0) {
@@ -344,6 +347,22 @@ export class OpenAPIParser {
     if (!target.enum && source.enum) target.enum = source.enum;
     if (target.default === undefined && source.default !== undefined) target.default = source.default;
 
+    // Merge constraints strictly (strictest applies)
+    if (source.minLength !== undefined) {
+      target.minLength = Math.max(target.minLength ?? 0, source.minLength);
+    }
+    if (source.maxLength !== undefined) {
+      target.maxLength = Math.min(target.maxLength ?? Number.POSITIVE_INFINITY, source.maxLength);
+    }
+    if (source.pattern) {
+      if (!target.pattern) {
+        target.pattern = source.pattern;
+      } else if (target.pattern !== source.pattern) {
+        // Combine patterns using lookaheads to enforce both anywhere in the string.
+        target.pattern = `^(?=[\\s\\S]*${target.pattern})(?=[\\s\\S]*${source.pattern})[\\s\\S]*$`;
+      }
+    }
+
     if (source.required) {
       target.required = Array.from(new Set([...(target.required ?? []), ...source.required]));
     }
@@ -372,6 +391,9 @@ export class OpenAPIParser {
       format: schema.format,
       enum: schema.enum ? [...schema.enum] : undefined,
       default: schema.default,
+      minLength: schema.minLength,
+      maxLength: schema.maxLength,
+      pattern: schema.pattern,
       ref: schema.ref,
       circular: schema.circular,
     };
@@ -502,4 +524,3 @@ export class OpenAPIParser {
     }
   }
 }
-
