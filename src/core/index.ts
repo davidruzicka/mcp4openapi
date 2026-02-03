@@ -237,6 +237,7 @@ export async function main() {
       const manager = new MCPServerManager(registry, logger, httpTransport);
 
       httpTransport.setProfileContextProvider(async (id) => manager.getProfileContext(id));
+      httpTransport.setProfileIndexProvider(async () => registry.listProfilesForIndex());
 
       httpTransport.setMessageHandler(async (message, sessionId, profileId) => {
         if (!profileId) {

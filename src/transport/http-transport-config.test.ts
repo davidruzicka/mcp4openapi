@@ -19,6 +19,7 @@ const ENV_KEYS = [
   'MCP4_SSL_KEY_FILE',
   'MCP4_OAUTH_SESSION_TIMEOUT_MS',
   'MCP4_OAUTH_REFRESH_THRESHOLD_MS',
+  'MCP4_HTTP_PROFILE_INDEX',
 ];
 
 describe('buildHttpTransportBaseConfig', () => {
@@ -55,6 +56,7 @@ describe('buildHttpTransportBaseConfig', () => {
     expect(config.sslKeyFile).toBeUndefined();
     expect(config.oauthSessionTimeoutMs).toBeUndefined();
     expect(config.oauthRefreshThresholdMs).toBeUndefined();
+    expect(config.profileIndexEnabled).toBe(false);
   });
 
   it('reads env overrides when provided', () => {
@@ -73,6 +75,7 @@ describe('buildHttpTransportBaseConfig', () => {
     process.env.MCP4_SSL_KEY_FILE = '/tmp/key.pem';
     process.env.MCP4_OAUTH_SESSION_TIMEOUT_MS = '86400000';
     process.env.MCP4_OAUTH_REFRESH_THRESHOLD_MS = '120000';
+    process.env.MCP4_HTTP_PROFILE_INDEX = 'true';
 
     const config = buildHttpTransportBaseConfig('0.0.0.0', 8080);
 
@@ -93,6 +96,7 @@ describe('buildHttpTransportBaseConfig', () => {
     expect(config.sslKeyFile).toBe('/tmp/key.pem');
     expect(config.oauthSessionTimeoutMs).toBe(86400000);
     expect(config.oauthRefreshThresholdMs).toBe(120000);
+    expect(config.profileIndexEnabled).toBe(true);
   });
 
   it('throws on invalid oauth session timeout', () => {

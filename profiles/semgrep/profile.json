@@ -4,7 +4,7 @@
   "profile_id": "semgrep",
   "profile_aliases": ["semgrep-default"],
   "openapi_spec_path": "./openapi.yaml",
-  "description": "MCP tools for Semgrep security platform workflows. Reduces 20 API operations to 10 MCP tools.",
+  "description": "Comprehensive operation-style tool set (manage_projects, manage_findings, get_deployment, ...).",
   
   "parameter_aliases": {
     "deploymentId": ["deployment_id"],

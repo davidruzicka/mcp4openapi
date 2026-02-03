@@ -54,6 +54,13 @@ import {
   parseSessionToolFilterHeader,
 } from '../tool-filter/index.js';
 import type { SessionToolFilter, SessionToolFilterRequest } from '../types/http-transport.js';
+import type { ListedProfileDetails } from '../profile/profile-resolver.js';
+import {
+  buildProfileIndexPayload,
+  loadProfileIndexTemplate,
+  parseAcceptLanguage,
+  renderProfileIndexHtml,
+} from './profile-index.js';
 
 import type { OpenAPIParser } from '../openapi/openapi-parser.js';
 const DEFAULT_MAX_TOKEN_LENGTH = 1000;
@@ -81,6 +88,7 @@ export class HttpTransport {
   private warnedMissingOAuthRedirectEnvVars: Set<string> = new Set();
   private profileHintsByClient: Map<string, { profileId: string; lastSeen: number }> = new Map();
   private static readonly PROFILE_HINT_TTL_MS = 10 * 60 * 1000;
+  private profileIndexProvider: (() => Promise<ListedProfileDetails[]>) | null = null;
 
   constructor(config: HttpTransportConfig, logger: Logger) {
     // Freeze config to prevent runtime mutation of security-critical settings (allowedOrigins, rate limits, etc.)
@@ -105,6 +113,10 @@ export class HttpTransport {
 
   getMetricsCollector(): MetricsCollector | null {
     return this.metrics;
+  }
+
+  setProfileIndexProvider(provider: (() => Promise<ListedProfileDetails[]>) | null): void {
+    this.profileIndexProvider = provider;
   }
 
   /**
@@ -1335,6 +1347,12 @@ export class HttpTransport {
       }
     });
 
+    if (this.config.profileIndexEnabled) {
+      this.app.get('/', async (req: Request, res: Response) => {
+        await this.handleProfileIndex(req, res);
+      });
+    }
+
     // Debug: SSE route registered
     this.logger.info('SSE routes registered successfully');
 
@@ -1360,6 +1378,69 @@ export class HttpTransport {
     const prefix = this.getProfilePrefix(profileId, options);
     return `${origin}${prefix}`;
   }
+
+  private getRequestOrigin(req: Request): string {
+    const hostHeader = req.get('host');
+    if (hostHeader) {
+      return `${req.protocol}://${hostHeader}`;
+    }
+    return this.getServerOrigin();
+  }
+
+  private async handleProfileIndex(req: Request, res: Response): Promise<void> {
+    if (!this.config.profileRoutingEnabled || !this.config.profileIndexEnabled) {
+      res.status(HTTP_STATUS.NOT_FOUND).json({
+        error: 'Not Found',
+        message: 'Endpoint GET / not found',
+      });
+      return;
+    }
+
+    if (!this.profileIndexProvider) {
+      res.status(HTTP_STATUS.NOT_FOUND).json({
+        error: 'Not Found',
+        message: 'Profile index not available',
+      });
+      return;
+    }
+
+    const accept = req.headers.accept || '';
+    const prefersJson = accept.includes('application/json') && !accept.includes('text/html');
+    const locale = parseAcceptLanguage(req.headers['accept-language'] as string | undefined);
+
+    let profiles: ListedProfileDetails[];
+    try {
+      profiles = await this.profileIndexProvider();
+    } catch (error) {
+      this.logger.error('Failed to load profile index', error instanceof Error ? error : new Error(String(error)));
+      res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+        error: 'Internal Server Error',
+        message: 'Failed to load profile index',
+      });
+      return;
+    }
+
+    const origin = this.getRequestOrigin(req);
+    const { payload, templateData } = buildProfileIndexPayload(profiles, origin, locale);
+
+    if (prefersJson) {
+      res.json(payload);
+      return;
+    }
+
+    const template = await loadProfileIndexTemplate();
+    const nonce = crypto.randomBytes(16).toString('base64');
+    const html = renderProfileIndexHtml(template, templateData, nonce);
+
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader(
+      'Content-Security-Policy',
+      `default-src 'self'; frame-ancestors 'none'; object-src 'none'; base-uri 'self'; script-src 'self' 'nonce-${nonce}'; style-src 'self' 'nonce-${nonce}'`
+    );
+    res.send(html);
+  }
+
 
   private async handleOAuthProtectedResource(
     req: Request,

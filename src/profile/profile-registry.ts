@@ -2,7 +2,13 @@
  * Profile registry for resolving profiles by ID or alias.
  */
 
-import { resolveProfileById, type ResolvedProfile } from './profile-resolver.js';
+import {
+  resolveProfileById,
+  listProfilesDetailed,
+  resolveProfileDetailsFromPath,
+  type ResolvedProfile,
+  type ListedProfileDetails,
+} from './profile-resolver.js';
 
 export interface ProfileRegistryOptions {
   profilesDir?: string;
@@ -36,5 +42,29 @@ export class ProfileRegistry {
     }
 
     return resolveProfileById(profileId, this.profilesDir, { specPathOverride: this.specPathOverride });
+  }
+
+  async listProfilesForIndex(): Promise<ListedProfileDetails[]> {
+    const profiles = await listProfilesDetailed(this.profilesDir);
+    if (!this.defaultProfile) {
+      return profiles;
+    }
+
+    const existing = profiles.find(profile =>
+      profile.profileId === this.defaultProfile!.profileId ||
+      profile.profileName === this.defaultProfile!.profileName ||
+      profile.profileAliases.includes(this.defaultProfile!.profileId)
+    );
+
+    if (existing) {
+      return profiles;
+    }
+
+    const defaultDetails = await resolveProfileDetailsFromPath(this.defaultProfile.profilePath);
+    if (defaultDetails) {
+      return [defaultDetails, ...profiles];
+    }
+
+    return profiles;
   }
 }
