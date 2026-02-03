@@ -4,7 +4,7 @@
   "profile_id": "gitlab",
   "profile_aliases": ["gitlab-default", "gitlab-developer"],
   "openapi_spec_path": "./openapi.yaml",
-  "description": "Developer-focused, operation-style tools (manage_merge_requests, manage_issues, manage_projects, etc.) for common GitLab workflows. Reduces 127 API operations into 26 MCP tools.",
+  "description": "Comprehensive operation-style tool set (manage_merge_requests, manage_issues, manage_projects, ...).",
   
   "parameter_aliases": {
     "id": ["project_id", "group_id", "resource_id"],

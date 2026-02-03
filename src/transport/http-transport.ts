@@ -12,8 +12,6 @@ import express, { Request, Response, NextFunction, RequestHandler } from 'expres
 import type { Server } from 'http';
 import https from 'https';
 import fs from 'fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import crypto from 'crypto';
 import { isIP } from 'node:net';
 import rateLimit from 'express-rate-limit';
@@ -57,6 +55,12 @@ import {
 } from '../tool-filter/index.js';
 import type { SessionToolFilter, SessionToolFilterRequest } from '../types/http-transport.js';
 import type { ListedProfileDetails } from '../profile/profile-resolver.js';
+import {
+  buildProfileIndexPayload,
+  loadProfileIndexTemplate,
+  parseAcceptLanguage,
+  renderProfileIndexHtml,
+} from './profile-index.js';
 
 import type { OpenAPIParser } from '../openapi/openapi-parser.js';
 const DEFAULT_MAX_TOKEN_LENGTH = 1000;
@@ -85,7 +89,6 @@ export class HttpTransport {
   private profileHintsByClient: Map<string, { profileId: string; lastSeen: number }> = new Map();
   private static readonly PROFILE_HINT_TTL_MS = 10 * 60 * 1000;
   private profileIndexProvider: (() => Promise<ListedProfileDetails[]>) | null = null;
-  private profileIndexTemplate: string | null = null;
 
   constructor(config: HttpTransportConfig, logger: Logger) {
     // Freeze config to prevent runtime mutation of security-critical settings (allowedOrigins, rate limits, etc.)
@@ -1384,49 +1387,6 @@ export class HttpTransport {
     return this.getServerOrigin();
   }
 
-  private async loadProfileIndexTemplate(): Promise<string> {
-    if (this.profileIndexTemplate) {
-      return this.profileIndexTemplate;
-    }
-
-    const moduleDir = path.dirname(fileURLToPath(import.meta.url));
-    let current = moduleDir;
-    while (true) {
-      if (fs.existsSync(path.join(current, 'package.json'))) {
-        break;
-      }
-      const parent = path.dirname(current);
-      if (parent === current) {
-        break;
-      }
-      current = parent;
-    }
-    const templatePath = path.join(current, 'html', 'profile-index.html');
-    const template = await fs.promises.readFile(templatePath, 'utf-8');
-    this.profileIndexTemplate = template;
-    return template;
-  }
-
-  private safeJsonForHtml(value: unknown): string {
-    return JSON.stringify(value).replace(/</g, '\\u003c');
-  }
-
-  private renderTemplate(template: string, replacements: Record<string, string>): string {
-    let rendered = template;
-    for (const [key, value] of Object.entries(replacements)) {
-      const pattern = new RegExp(`{{\\s*${key}\\s*}}`, 'g');
-      rendered = rendered.replace(pattern, value);
-    }
-    return rendered;
-  }
-
-  private parseAcceptLanguage(headerValue?: string): 'cs' | 'en' {
-    if (!headerValue) return 'en';
-    const normalized = headerValue.toLowerCase();
-    if (normalized.includes('cs')) return 'cs';
-    return 'en';
-  }
-
   private async handleProfileIndex(req: Request, res: Response): Promise<void> {
     if (!this.config.profileRoutingEnabled || !this.config.profileIndexEnabled) {
       res.status(HTTP_STATUS.NOT_FOUND).json({
@@ -1446,7 +1406,7 @@ export class HttpTransport {
 
     const accept = req.headers.accept || '';
     const prefersJson = accept.includes('application/json') && !accept.includes('text/html');
-    const locale = this.parseAcceptLanguage(req.headers['accept-language']);
+    const locale = parseAcceptLanguage(req.headers['accept-language'] as string | undefined);
 
     let profiles: ListedProfileDetails[];
     try {
@@ -1461,39 +1421,16 @@ export class HttpTransport {
     }
 
     const origin = this.getRequestOrigin(req);
-    const enrichedProfiles = profiles.map(profile => {
-      const { snippets, authTabs } = this.buildProfileSnippets(profile, locale);
-      return {
-        ...profile,
-        mcpUrl: `${origin}/profile/${encodeURIComponent(profile.profileId)}/mcp`,
-        sseUrl: `${origin}/profile/${encodeURIComponent(profile.profileId)}/sse`,
-        snippets,
-        authTabs,
-      };
-    });
-
-    const payload = {
-      profiles: enrichedProfiles,
-      origin,
-    };
+    const { payload, templateData } = buildProfileIndexPayload(profiles, origin, locale);
 
     if (prefersJson) {
       res.json(payload);
       return;
     }
 
-    const template = await this.loadProfileIndexTemplate();
-    const i18n = this.buildProfileIndexI18n(locale);
+    const template = await loadProfileIndexTemplate();
     const nonce = crypto.randomBytes(16).toString('base64');
-    const html = this.renderTemplate(template, {
-      lang: locale,
-      title: escapeHtmlSafe(i18n.title),
-      subtitle: escapeHtmlSafe(i18n.subtitle),
-      noscript: escapeHtmlSafe(i18n.noscript),
-      nonce: escapeHtmlSafe(nonce),
-      profile_data: this.safeJsonForHtml(enrichedProfiles),
-      i18n_data: this.safeJsonForHtml(i18n),
-    });
+    const html = renderProfileIndexHtml(template, templateData, nonce);
 
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.setHeader('Cache-Control', 'no-store');
@@ -1504,360 +1441,6 @@ export class HttpTransport {
     res.send(html);
   }
 
-  private buildProfileIndexI18n(locale: 'cs' | 'en') {
-    if (locale === 'cs') {
-      return {
-        title: 'MCP profily',
-        subtitle: 'Přehled dostupných MCP profilů a rychlé návody k připojení.',
-        noscript: 'Pro zobrazení návodu je potřeba zapnout JavaScript.',
-        profileLabel: 'Profil',
-        endpointLabel: 'Endpointy',
-        envVarsLabel: 'Proměnné prostředí',
-        envNote: 'Hodnoty proměnných prostředí lze zadat přes env. Parametry CLI podporují pouze MCP4_* (např. --api-base-url).',
-        noEnvVars: 'V profilu nejsou detekované žádné proměnné prostředí.',
-        noDescription: 'Bez popisu.',
-        noProfiles: 'Žádné profily nebyly nalezeny.',
-        copy: 'Kopírovat',
-        copied: 'Zkopírováno',
-        copyFailed: 'Nelze zkopírovat',
-        snippetLabels: {
-          minimal: 'Minimální připojení',
-          vscode: 'VS Code + Copilot',
-          cursor: 'Cursor',
-          claude: 'Claude Code',
-          jetbrains: 'JetBrains IDEs + Copilot',
-        },
-        authLabels: {
-          oauth: 'OAuth',
-          bearer: 'Bearer',
-          query: 'Token (query)',
-          customHeader: 'Vlastní hlavička',
-          none: 'Bez autentizace',
-        },
-        authHeaderPrefix: 'Hlavička',
-        authQueryPrefix: 'Parametr',
-      };
-    }
-
-    return {
-      title: 'MCP profiles',
-      subtitle: 'Available MCP profiles and quick connection guides.',
-      noscript: 'Enable JavaScript to view the instructions.',
-      profileLabel: 'Profile',
-      endpointLabel: 'Endpoints',
-      envVarsLabel: 'Environment variables',
-      envNote: 'Values can be provided via env vars. CLI parameters only support MCP4_* (for example --api-base-url).',
-      noEnvVars: 'No environment variables detected for this profile.',
-      noDescription: 'No description.',
-      noProfiles: 'No profiles were found.',
-      copy: 'Copy',
-      copied: 'Copied',
-      copyFailed: 'Copy failed',
-      snippetLabels: {
-        minimal: 'Minimal connection',
-        vscode: 'VS Code + Copilot',
-        cursor: 'Cursor',
-        claude: 'Claude Code',
-        jetbrains: 'JetBrains IDEs + Copilot',
-      },
-      authLabels: {
-        oauth: 'OAuth',
-        bearer: 'Bearer',
-        query: 'Token (query)',
-        customHeader: 'Custom header',
-        none: 'No auth',
-      },
-      authHeaderPrefix: 'Header',
-      authQueryPrefix: 'Query param',
-    };
-  }
-
-  private isSensitiveEnvVar(name: string): boolean {
-    const upper = name.toUpperCase();
-    return /(SECRET|PASSWORD|PASS|TOKEN|KEY)/.test(upper);
-  }
-
-  private createInputId(name: string, used: Set<string>): string {
-    const base = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
-    let id = base || 'secret';
-    let counter = 1;
-    while (used.has(id)) {
-      counter += 1;
-      id = `${base}-${counter}`;
-    }
-    used.add(id);
-    return id;
-  }
-
-  private buildInputs(envVars: string[]): Array<{ id: string; description: string }> {
-    const used = new Set<string>();
-    return envVars.map(name => ({
-      id: this.createInputId(name, used),
-      description: name,
-    }));
-  }
-
-  private buildEnvValue(
-    name: string,
-    inputMap: Map<string, string>,
-    useInput: boolean,
-    mode: 'vscode' | 'cursor' | 'jetbrains' | 'cli'
-  ): string {
-    if (useInput) {
-      const id = inputMap.get(name);
-      if (id) {
-        if (mode === 'jetbrains') {
-          return `{$input:${id}}`;
-        }
-        return `\${input:${id}}`;
-      }
-    }
-    if (mode === 'cursor') {
-      return `\${env:${name}}`;
-    }
-    return `\${${name}}`;
-  }
-
-  private buildInputsBlock(inputs: Array<{ id: string; description: string }>, indent: string): string[] {
-    if (inputs.length === 0) {
-      return [];
-    }
-    const lines: string[] = [];
-    lines.push(`${indent}\"inputs\": [`);
-    inputs.forEach((input, index) => {
-      const suffix = index === inputs.length - 1 ? '' : ',';
-      lines.push(`${indent}  {`);
-      lines.push(`${indent}    \"type\": \"promptString\",`);
-      lines.push(`${indent}    \"id\": \"${input.id}\",`);
-      lines.push(`${indent}    \"description\": \"${input.description}\",`);
-      lines.push(`${indent}    \"password\": true`);
-      lines.push(`${indent}  }${suffix}`);
-    });
-    lines.push(`${indent}]`);
-    return lines;
-  }
-
-  private appendComma(lines: string[]): void {
-    if (lines.length === 0) return;
-    lines[lines.length - 1] = `${lines[lines.length - 1]},`;
-  }
-
-  private buildProfileSnippets(
-    profile: ListedProfileDetails,
-    locale: 'cs' | 'en'
-  ): {
-    snippets: Array<{ key: string; label: string; content: string; authKey: string; format: 'json' | 'cli' }>;
-    authTabs: Array<{ key: string; label: string }>;
-  } {
-    const labels = this.buildProfileIndexI18n(locale);
-    const authMethods = profile.authMethods && profile.authMethods.length > 0
-      ? profile.authMethods
-      : [{ type: 'none' as const }];
-
-    const snippets: Array<{ key: string; label: string; content: string; authKey: string; format: 'json' | 'cli' }> = [];
-    const authTabs: Array<{ key: string; label: string }> = [];
-    for (const auth of authMethods) {
-      const authLabel = this.buildAuthLabel(auth, labels);
-      const suffix = authLabel ? ` - ${authLabel}` : '';
-      const authKey = auth.type;
-      authTabs.push({ key: authKey, label: authLabel || auth.type });
-      const snippetContext = this.buildConnectionSnippets(auth, labels);
-
-      snippets.push({
-        key: `vscode-${auth.type}`,
-        label: `${labels.snippetLabels.vscode}${suffix}`,
-        content: snippetContext.vscode,
-        authKey,
-        format: 'json',
-      });
-      snippets.push({
-        key: `cursor-${auth.type}`,
-        label: `${labels.snippetLabels.cursor}${suffix}`,
-        content: snippetContext.cursor,
-        authKey,
-        format: 'json',
-      });
-      snippets.push({
-        key: `jetbrains-${auth.type}`,
-        label: `${labels.snippetLabels.jetbrains}${suffix}`,
-        content: snippetContext.jetbrains,
-        authKey,
-        format: 'json',
-      });
-      snippets.push({
-        key: `claude-${auth.type}`,
-        label: `${labels.snippetLabels.claude}${suffix}`,
-        content: snippetContext.claude,
-        authKey,
-        format: 'cli',
-      });
-    }
-
-    return { snippets, authTabs };
-  }
-
-  private buildAuthLabel(
-    auth: { type: string; headerName?: string; queryParam?: string },
-    labels: ReturnType<HttpTransport['buildProfileIndexI18n']>
-  ): string {
-    if (auth.type === 'oauth') return labels.authLabels.oauth;
-    if (auth.type === 'bearer') return labels.authLabels.bearer;
-    if (auth.type === 'query') {
-      const suffix = auth.queryParam ? `: ${auth.queryParam}` : '';
-      return `${labels.authLabels.query}${suffix}`.trim();
-    }
-    if (auth.type === 'custom-header') {
-      const suffix = auth.headerName ? `: ${auth.headerName}` : '';
-      return `${labels.authLabels.customHeader}${suffix}`.trim();
-    }
-    return labels.authLabels.none;
-  }
-
-  private buildConnectionSnippets(
-    auth: { type: string; headerName?: string; queryParam?: string; valueFromEnv?: string },
-    labels: ReturnType<HttpTransport['buildProfileIndexI18n']>
-  ): { vscode: string; cursor: string; jetbrains: string; claude: string } {
-    const tokenEnv = auth.valueFromEnv || (auth.type === 'oauth' || auth.type === 'none' ? undefined : 'MCP4_API_TOKEN');
-    const inputMap = new Map<string, string>();
-    if (tokenEnv && this.isSensitiveEnvVar(tokenEnv)) {
-      const input = this.buildInputs([tokenEnv])[0];
-      inputMap.set(tokenEnv, input.id);
-    }
-
-    const headerName = auth.type === 'custom-header'
-      ? (auth.headerName || 'X-API-Token')
-      : 'Authorization';
-    const queryParam = auth.type === 'query' ? (auth.queryParam || 'api_key') : undefined;
-
-    const vscodeToken = tokenEnv
-      ? this.buildEnvValue(tokenEnv, inputMap, this.isSensitiveEnvVar(tokenEnv), 'vscode')
-      : '<token>';
-    const cursorToken = tokenEnv
-      ? this.buildEnvValue(tokenEnv, inputMap, false, 'cursor')
-      : '<token>';
-    const jetbrainsToken = tokenEnv
-      ? this.buildEnvValue(tokenEnv, inputMap, this.isSensitiveEnvVar(tokenEnv), 'jetbrains')
-      : '<token>';
-    const cliToken = tokenEnv
-      ? this.buildEnvValue(tokenEnv, inputMap, false, 'cli')
-      : '<token>';
-
-    const vscodeHeaderValue = auth.type === 'bearer' ? `Bearer ${vscodeToken}` : vscodeToken;
-    const cursorHeaderValue = auth.type === 'bearer' ? `Bearer ${cursorToken}` : cursorToken;
-    const jetbrainsHeaderValue = auth.type === 'bearer' ? `Bearer ${jetbrainsToken}` : jetbrainsToken;
-    const cliHeaderValue = auth.type === 'bearer' ? `Bearer ${cliToken}` : cliToken;
-
-    const headersBlock = auth.type === 'oauth' || auth.type === 'none' || auth.type === 'query'
-      ? []
-      : [
-          '      \"headers\": {',
-          `        \"${headerName}\": \"${vscodeHeaderValue}\"`,
-          '      }',
-        ];
-
-    const vscodeUrl = auth.type === 'query'
-      ? `__PROFILE_URL__?${queryParam}=${vscodeToken}`
-      : '__PROFILE_URL__';
-    const cursorUrl = auth.type === 'query'
-      ? `__PROFILE_URL__?${queryParam}=${cursorToken}`
-      : '__PROFILE_URL__';
-    const jetbrainsUrl = auth.type === 'query'
-      ? `__PROFILE_URL__?${queryParam}=${jetbrainsToken}`
-      : '__PROFILE_URL__';
-    const claudeUrl = auth.type === 'query'
-      ? `__PROFILE_URL__?${queryParam}=${cliToken}`
-      : '__PROFILE_URL__';
-
-    const vscodeLines: string[] = [
-      '{',
-      '  \"servers\": {',
-      '    \"__PROFILE_ID__\": {',
-      '      \"type\": \"http\",',
-      `      \"url\": \"${vscodeUrl}\"`,
-    ];
-    if (headersBlock.length > 0) {
-      this.appendComma(vscodeLines);
-      vscodeLines.push(...headersBlock);
-    }
-    vscodeLines.push('    }', '  }');
-    if (tokenEnv && inputMap.has(tokenEnv)) {
-      const inputsBlock = this.buildInputsBlock([{ id: inputMap.get(tokenEnv)!, description: tokenEnv }], '  ');
-      if (inputsBlock.length > 0) {
-        this.appendComma(vscodeLines);
-        vscodeLines.push(...inputsBlock);
-      }
-    }
-    vscodeLines.push('}');
-
-    const cursorLines: string[] = [
-      '{',
-      '  \"mcpServers\": {',
-      '    \"__PROFILE_ID__\": {',
-    ];
-    if (auth.type === 'query') {
-      cursorLines.push('      \"type\": \"http\",');
-      cursorLines.push(`      \"url\": \"${cursorUrl}\"`);
-    } else if (headersBlock.length > 0) {
-      cursorLines.push('      \"command\": \"npx\",');
-      cursorLines.push('      \"args\": [');
-      cursorLines.push('        \"-y\",');
-      cursorLines.push('        \"mcp-remote\",');
-      cursorLines.push(`        \"${cursorUrl}\",`);
-      cursorLines.push('        \"--header\",');
-      cursorLines.push(`        \"${headerName}: ${cursorHeaderValue}\"`);
-      cursorLines.push('      ],');
-      if (tokenEnv) {
-        cursorLines.push('      \"env\": {');
-        cursorLines.push(`        \"${tokenEnv}\": \"${this.buildEnvValue(tokenEnv, inputMap, false, 'cursor')}\"`);
-        cursorLines.push('      }');
-      }
-    } else {
-      cursorLines.push('      \"type\": \"http\",');
-      cursorLines.push('      \"url\": \"__PROFILE_URL__\"');
-    }
-    cursorLines.push('    }', '  }', '}');
-
-    const jetbrainsLines: string[] = [
-      '{',
-      '  \"servers\": {',
-      '    \"__PROFILE_ID__\": {',
-      '      \"type\": \"http\",',
-      `      \"url\": \"${jetbrainsUrl}\"`,
-    ];
-    if (headersBlock.length > 0) {
-      this.appendComma(jetbrainsLines);
-      jetbrainsLines.push('      \"requestInit\": {');
-      jetbrainsLines.push('        \"headers\": {');
-      jetbrainsLines.push(`          \"${headerName}\": \"${jetbrainsHeaderValue}\"`);
-      jetbrainsLines.push('        }');
-      jetbrainsLines.push('      }');
-    }
-    jetbrainsLines.push('    }', '  }', '}');
-
-    return {
-      vscode: vscodeLines.join('\n'),
-      cursor: cursorLines.join('\n'),
-      jetbrains: jetbrainsLines.join('\n'),
-      claude: this.buildClaudeSnippet(auth, headerName, cliHeaderValue, claudeUrl),
-    };
-  }
-
-  private buildClaudeSnippet(
-    auth: { type: string },
-    headerName: string,
-    headerValue: string,
-    url: string
-  ): string {
-    const lines: string[] = [];
-    const base = `claude mcp add __PROFILE_ID__ --transport http ${url}`;
-    if (auth.type !== 'oauth' && auth.type !== 'none' && auth.type !== 'query') {
-      lines.push(`${base} \\`);
-      lines.push(`  --header \"${headerName}: ${headerValue}\"`);
-    } else {
-      lines.push(base);
-    }
-    return lines.join('\n');
-  }
 
   private async handleOAuthProtectedResource(
     req: Request,

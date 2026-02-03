@@ -6,7 +6,7 @@
     "n8n-optimized"
   ],
   "openapi_spec_path": "./openapi.yaml",
-  "description": "Operation-style tools grouped by read/write operations for the n8n Public API. Reduces 43 API operations into 3 MCP tools.",
+  "description": "Comprehensive operation-style tool set (manage_credentials, manage_executions, manage_projects, ...).",
   "parameter_aliases": {
     "id": [
       "credential_id",

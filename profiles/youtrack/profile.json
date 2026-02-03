@@ -4,7 +4,7 @@
   "profile_id": "youtrack",
   "profile_aliases": ["youtrack-optimized"],
   "openapi_spec_path": "./openapi.json",
-  "description": "Access-style content tools (retrieve_content, update_content, etc.) with granular permission control. Reduces 66 API operations into 6 MCP tools.",
+  "description": "Minimal tool set grouped by read/write actions.",
 
   "parameter_aliases": {
     "id": ["issue_id", "project_id", "article_id", "agile_id", "user_id", "tag_id"],

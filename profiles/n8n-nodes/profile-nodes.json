@@ -1,7 +1,7 @@
 {
   "$schema": "../../profile-schema.json",
   "profile_name": "n8n-node-list",
-  "description": "Access-style metadata tools (list_full, list_summary) for n8n nodes. Reduces 2 API operations into 1 MCP tool.",
+  "description": "Single-purpose tool for fetching the list of supported n8n nodes from an n8n instance.",
   "openapi_spec_path": "./openapi.yaml",
   "interceptors": {
     "base_url": {
