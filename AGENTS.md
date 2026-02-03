@@ -25,6 +25,19 @@ Reference canonical sources; never duplicate rules.
 - Keep changes consistent with the current test migration: prefer schema-driven profile tests over hardcoded mocks.
 - Run `npm run typecheck` before finishing work.
 - Offer to run `npm audit` (and update dependencies if needed) before finishing work (requires escalated permissions, can't run in sandbox).
+- Update CHANGELOG.md for more than minimal changes. Prefer user-perspective messages. Always compress lines.
+    - don't use multi-line for one change from a user perspective:
+    ```markdown
+    ### Added
+    - GitLab OpenAPI coverage for global issues listing and additional merge request operations (merge, commits, diffs, raw diffs, pipelines).
+    - GitLab optimized OAuth profile with CRUD-style tools plus GLQL, along with full profile test coverage.
+    - GitLab issue update operation wired into profiles and tests.
+    ```
+    - instead of this use one-line message:
+    ```markdown
+    ### Added
+    - Expanded GitLab profiles/OpenAPI coverage for global issues and merge request workflow(merge, commits, diffs, raw diffs, pipelines).
+    ```
 
 ### Schema Synchronization (CRITICAL)
 
