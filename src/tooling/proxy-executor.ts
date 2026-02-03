@@ -233,6 +233,8 @@ export class ProxyDownloadExecutor {
       if (!isSafePropertyName(part)) {
         return null;
       }
+      // nosemgrep: javascript.lang.security.audit.prototype-pollution.prototype-pollution-loop.prototype-pollution-loop
+      // Read-only access, guarded by isSafePropertyName(part) above.
       current = (current as Record<string, unknown>)[part];
     }
 
@@ -259,6 +261,8 @@ export class ProxyDownloadExecutor {
       if (!isSafePropertyName(part)) {
         return undefined;
       }
+      // nosemgrep: javascript.lang.security.audit.prototype-pollution.prototype-pollution-loop.prototype-pollution-loop
+      // Read-only access, guarded by isSafePropertyName(part) above.
       current = (current as Record<string, unknown>)[part];
     }
     return current;

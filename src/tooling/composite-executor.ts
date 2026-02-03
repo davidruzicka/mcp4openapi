@@ -245,8 +245,11 @@ export class CompositeExecutor {
       
       if (!current[part]) {
         // nosemgrep: javascript.lang.security.audit.prototype-pollution.prototype-pollution-loop.prototype-pollution-loop
+        // Guarded by isSafePropertyName(part) above; safe dynamic key after validation.
         current[part] = {};
       }
+      // nosemgrep: javascript.lang.security.audit.prototype-pollution.prototype-pollution-loop.prototype-pollution-loop
+      // Guarded by isSafePropertyName(part) above; safe dynamic key after validation.
       current = current[part] as Record<string, unknown>;
     }
 
