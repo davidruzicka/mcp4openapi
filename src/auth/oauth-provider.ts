@@ -13,7 +13,7 @@
  *   4. Client -> MCP (Token) -> MCP returns stored tokens
  */
 
-import { randomUUID, createHash } from 'node:crypto';
+import { randomUUID, createHash, timingSafeEqual } from 'node:crypto';
 import { isIP } from 'node:net';
 import { Request, Response } from 'express';
 import type {
@@ -787,7 +787,12 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
       
       // Verify code challenge (S256 method)
       const hash = createHash('sha256').update(codeVerifier).digest('base64url');
-      if (hash !== codeData.params.codeChallenge) {
+
+      // Use constant-time comparison to prevent timing attacks
+      const hashBuffer = Buffer.from(hash);
+      const challengeBuffer = Buffer.from(codeData.params.codeChallenge);
+
+      if (hashBuffer.length !== challengeBuffer.length || !timingSafeEqual(hashBuffer, challengeBuffer)) {
         throw new Error('Invalid code_verifier');
       }
     }
