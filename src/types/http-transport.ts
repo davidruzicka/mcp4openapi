@@ -52,6 +52,7 @@ export interface HttpTransportConfig {
   metricsEnabled: boolean;
   metricsPath: string;
   profileRoutingEnabled?: boolean;
+  profileIndexEnabled?: boolean;
   defaultProfileId?: string;
   allowedOrigins?: string[]; // Allowed origins/CIDR ranges
   rateLimitEnabled?: boolean; // Enable rate limiting (default: true)

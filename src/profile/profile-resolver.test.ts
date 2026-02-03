@@ -3,7 +3,13 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 
-import { resolveProfileById, resolveProfileFromPath } from './profile-resolver.js';
+import {
+  resolveProfileById,
+  resolveProfileFromPath,
+  listProfilesDetailed,
+  resolveProfileDetailsFromPath,
+  listProfiles,
+} from './profile-resolver.js';
 
 async function writeJson(filePath: string, data: unknown): Promise<void> {
   await fs.mkdir(path.dirname(filePath), { recursive: true });
@@ -66,6 +72,100 @@ describe('profile-resolver', () => {
     });
 
     await expect(resolveProfileById('missing', profilesDir)).rejects.toThrow('openapi_spec_path');
+  });
+
+  it('extracts env vars and auth methods for profile index', async () => {
+    const root = await createTempDir();
+    const profilesDir = path.join(root, 'profiles');
+    const profilePath = path.join(profilesDir, 'sample.json');
+
+    await writeJson(profilePath, {
+      profile_name: 'sample',
+      profile_id: 'sample',
+      openapi_spec_path: './openapi.yaml',
+      description: 'Sample',
+      interceptors: {
+        auth: [
+          {
+            type: 'bearer',
+            value_from_env: 'API_TOKEN',
+          },
+          {
+            type: 'oauth',
+            oauth_config: {
+              issuer: '${env:OAUTH_ISSUER}',
+            },
+          },
+          {
+            type: 'custom-header',
+            header_name: 'X-API-KEY',
+            value_from_env: 'CUSTOM_KEY',
+          },
+          {
+            type: 'query',
+            query_param: 'api_key',
+            value_from_env: 'QUERY_TOKEN',
+          },
+        ],
+      },
+      tools: [],
+    });
+
+    const profiles = await listProfilesDetailed(profilesDir);
+    expect(profiles).toHaveLength(1);
+    expect(profiles[0].envVars).toEqual(['API_TOKEN', 'CUSTOM_KEY', 'OAUTH_ISSUER', 'QUERY_TOKEN']);
+    expect(profiles[0].authMethods).toEqual([
+      { type: 'bearer', headerName: undefined, queryParam: undefined, valueFromEnv: 'API_TOKEN' },
+      { type: 'oauth', headerName: undefined, queryParam: undefined, valueFromEnv: undefined },
+      { type: 'custom-header', headerName: 'X-API-KEY', queryParam: undefined, valueFromEnv: 'CUSTOM_KEY' },
+      { type: 'query', headerName: undefined, queryParam: 'api_key', valueFromEnv: 'QUERY_TOKEN' },
+    ]);
+
+    const resolved = await resolveProfileDetailsFromPath(profilePath);
+    expect(resolved?.profileId).toBe('sample');
+  });
+
+  it('extracts env vars from single auth interceptor and ignores unknown auth types', async () => {
+    const root = await createTempDir();
+    const profilesDir = path.join(root, 'profiles');
+    const profilePath = path.join(profilesDir, 'single.json');
+
+    await writeJson(profilePath, {
+      profile_name: 'single-auth',
+      openapi_spec_path: './openapi.yaml',
+      interceptors: {
+        auth: {
+          type: 'bearer',
+          value_from_env: 'SINGLE_TOKEN',
+        },
+      },
+      tools: [],
+    });
+
+    await writeJson(path.join(profilesDir, 'invalid.json'), {
+      profile_name: 'invalid-auth',
+      openapi_spec_path: './openapi.yaml',
+      interceptors: {
+        auth: {
+          type: 'unknown',
+        },
+      },
+      tools: [],
+    });
+
+    const profiles = await listProfilesDetailed(profilesDir);
+    const single = profiles.find(profile => profile.profileName === 'single-auth');
+    const invalid = profiles.find(profile => profile.profileName === 'invalid-auth');
+
+    expect(single?.envVars).toEqual(['SINGLE_TOKEN']);
+    expect(single?.authMethods).toEqual([
+      { type: 'bearer', headerName: undefined, queryParam: undefined, valueFromEnv: 'SINGLE_TOKEN' },
+    ]);
+    expect(invalid?.authMethods).toEqual([]);
+  });
+
+  it('throws when listing profiles in missing directory', async () => {
+    await expect(listProfilesDetailed(path.join(os.tmpdir(), 'missing-profiles'))).rejects.toThrow('Profiles directory not found');
   });
 
   it('accepts openapi_spec_path override when profile is missing it', async () => {
@@ -138,6 +238,14 @@ describe('profile-resolver', () => {
     await expect(resolveProfileById('broken', profilesDir)).rejects.toThrow('Failed to parse profile JSON');
   });
 
+  it('throws when resolving profile details from invalid JSON', async () => {
+    const root = await createTempDir();
+    const profilePath = path.join(root, 'broken.json');
+    await fs.writeFile(profilePath, '{', 'utf-8');
+
+    await expect(resolveProfileDetailsFromPath(profilePath)).rejects.toThrow('Failed to parse profile JSON');
+  });
+
   it('matches profiles by profile_name when profile_id differs', async () => {
     const root = await createTempDir();
     const profilesDir = path.join(root, 'profiles');
@@ -182,6 +290,42 @@ describe('profile-resolver', () => {
     const resolved = await resolveProfileById('fallback-name', profilesDir);
     expect(resolved.profileId).toBe('fallback-name');
     expect(resolved.profileName).toBe('fallback-name');
+  });
+
+  it('falls back to profile_name for profile index when profile_id is missing', async () => {
+    const root = await createTempDir();
+    const profilesDir = path.join(root, 'profiles');
+    const profilePath = path.join(profilesDir, 'fallback.json');
+
+    await writeJson(profilePath, {
+      profile_name: 'fallback-index',
+      openapi_spec_path: './openapi.yaml',
+      profile_aliases: ['alias', 123],
+      tools: [],
+    });
+
+    const profiles = await listProfilesDetailed(profilesDir);
+    expect(profiles).toHaveLength(1);
+    expect(profiles[0].profileId).toBe('fallback-index');
+    expect(profiles[0].profileAliases).toEqual(['alias']);
+  });
+
+  it('skips files that are not valid profiles when listing details', async () => {
+    const root = await createTempDir();
+    const profilesDir = path.join(root, 'profiles');
+    const validPath = path.join(profilesDir, 'valid.json');
+    const invalidPath = path.join(profilesDir, 'invalid.json');
+
+    await writeJson(validPath, {
+      profile_name: 'valid',
+      profile_id: 'valid',
+      openapi_spec_path: './openapi.yaml',
+      tools: [],
+    });
+    await writeJson(invalidPath, { profile_name: 'invalid' });
+
+    const profiles = await listProfilesDetailed(profilesDir);
+    expect(profiles.map(profile => profile.profileId)).toEqual(['valid']);
   });
 
   it('resolves relative profilesDir paths', async () => {
@@ -303,5 +447,28 @@ describe('profile-resolver', () => {
 
     const resolved = await resolveProfileFromPath(profilePath);
     expect(resolved.specPath).toBe(specPath);
+  });
+
+  it('lists profiles with aliases for index summaries', async () => {
+    const root = await createTempDir();
+    const profilesDir = path.join(root, 'profiles');
+    const profilePath = path.join(profilesDir, 'profile.json');
+
+    await writeJson(profilePath, {
+      profile_name: 'list-profile',
+      profile_id: 'list-profile',
+      profile_aliases: ['alias-one', 'alias-two'],
+      openapi_spec_path: './openapi.yaml',
+      tools: [],
+    });
+
+    const listed = await listProfiles(profilesDir);
+    expect(listed).toEqual([
+      {
+        profileId: 'list-profile',
+        profileName: 'list-profile',
+        profileAliases: ['alias-one', 'alias-two'],
+      },
+    ]);
   });
 });

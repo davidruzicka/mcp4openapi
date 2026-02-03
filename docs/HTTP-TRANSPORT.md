@@ -100,6 +100,7 @@ Enable profile-specific routes to serve multiple profiles from one HTTP server:
 ```bash
 export MCP4_TRANSPORT=http
 export MCP4_HTTP_PROFILE_ROUTING=true
+export MCP4_HTTP_PROFILE_INDEX=true
 export MCP4_PROFILES_DIR=./profiles
 export MCP4_HOST=127.0.0.1
 export MCP4_PORT=3003
@@ -111,6 +112,7 @@ CLI alternative:
 npx mcp4openapi \
   --transport http \
   --http-profile-routing true \
+  --http-profile-index true \
   --profiles-dir ./profiles \
   --host 127.0.0.1 \
   --port 3003
@@ -121,6 +123,7 @@ Routes:
 - `GET /profile/:profileId/mcp`
 - `DELETE /profile/:profileId/mcp`
 - Legacy alias: `POST|GET|DELETE /profile/:profileId/sse`
+- Optional HTML profile index: `GET /` (when `MCP4_HTTP_PROFILE_INDEX=true`)
 
 Default profile behavior:
 - If `MCP4_PROFILE_PATH` (or `--profile-path`) is set, `/mcp` and `/sse` stay available.

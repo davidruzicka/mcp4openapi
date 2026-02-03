@@ -120,6 +120,7 @@ function mockHttpTransport() {
     start = vi.fn().mockResolvedValue(undefined);
     stop = vi.fn().mockResolvedValue(undefined);
     setProfileContextProvider = vi.fn();
+    setProfileIndexProvider = vi.fn();
     setMessageHandler = vi.fn();
     onSessionDestroyed = vi.fn();
 
@@ -460,6 +461,7 @@ describe('CLI main flow', () => {
     const httpTransport = httpTransportInstances[0];
     expect(httpTransport.start).toHaveBeenCalled();
     expect(httpTransport.setProfileContextProvider).toHaveBeenCalled();
+    expect(httpTransport.setProfileIndexProvider).toHaveBeenCalled();
     expect(httpTransport.setMessageHandler).toHaveBeenCalled();
     expect(httpTransport.onSessionDestroyed).toHaveBeenCalled();
 

@@ -4,7 +4,7 @@
   "profile_id": "youtrack",
   "profile_aliases": ["youtrack-optimized"],
   "openapi_spec_path": "./openapi.json",
-  "description": "YouTrack issue tracker — 6 tools with granular permission control",
+  "description": "Minimal tool set grouped by read/write actions.",
 
   "parameter_aliases": {
     "id": ["issue_id", "project_id", "article_id", "agile_id", "user_id", "tag_id"],

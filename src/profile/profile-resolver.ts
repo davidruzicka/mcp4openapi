@@ -24,6 +24,22 @@ export interface ListedProfile {
   profileAliases: string[];
 }
 
+export interface ListedProfileDetails {
+  profileId: string;
+  profileName: string;
+  profileAliases: string[];
+  description?: string;
+  envVars: string[];
+  authMethods: ProfileAuthMethod[];
+}
+
+export interface ProfileAuthMethod {
+  type: 'bearer' | 'query' | 'custom-header' | 'oauth';
+  headerName?: string;
+  queryParam?: string;
+  valueFromEnv?: string;
+}
+
 interface ProfileIndexEntry {
   profileId: string;
   profileName: string;
@@ -69,6 +85,73 @@ function isProfileJson(data: unknown): data is { profile_name: string; tools: un
   if (!data || typeof data !== 'object') return false;
   const obj = data as Record<string, unknown>;
   return typeof obj.profile_name === 'string' && Array.isArray(obj.tools);
+}
+
+function collectEnvVarsFromString(value: string, envVars: Set<string>): void {
+  const regex = /\$\{env:([A-Za-z0-9_]+)\}/g;
+  let match: RegExpExecArray | null;
+  while ((match = regex.exec(value)) !== null) {
+    envVars.add(match[1]);
+  }
+}
+
+function collectEnvVarsFromAuth(auth: Record<string, unknown>, envVars: Set<string>): void {
+  if (typeof auth.value_from_env === 'string' && auth.value_from_env.trim().length > 0) {
+    envVars.add(auth.value_from_env.trim());
+  }
+
+  const oauthConfig = auth.oauth_config;
+  if (oauthConfig && typeof oauthConfig === 'object') {
+    for (const value of Object.values(oauthConfig)) {
+      if (typeof value === 'string') {
+        collectEnvVarsFromString(value, envVars);
+      }
+    }
+  }
+}
+
+function extractEnvVars(profile: Record<string, unknown>): string[] {
+  const envVars = new Set<string>();
+  const interceptors = profile.interceptors;
+  if (interceptors && typeof interceptors === 'object') {
+    const auth = (interceptors as Record<string, unknown>).auth;
+    if (Array.isArray(auth)) {
+      for (const entry of auth) {
+        if (entry && typeof entry === 'object') {
+          collectEnvVarsFromAuth(entry as Record<string, unknown>, envVars);
+        }
+      }
+    } else if (auth && typeof auth === 'object') {
+      collectEnvVarsFromAuth(auth as Record<string, unknown>, envVars);
+    }
+  }
+
+  return Array.from(envVars).sort((a, b) => a.localeCompare(b));
+}
+
+function extractAuthMethods(profile: Record<string, unknown>): ProfileAuthMethod[] {
+  const methods: ProfileAuthMethod[] = [];
+  const interceptors = profile.interceptors;
+  if (!interceptors || typeof interceptors !== 'object') {
+    return methods;
+  }
+  const auth = (interceptors as Record<string, unknown>).auth;
+  const entries = Array.isArray(auth) ? auth : auth ? [auth] : [];
+  for (const entry of entries) {
+    if (!entry || typeof entry !== 'object') continue;
+    const record = entry as Record<string, unknown>;
+    const type = record.type;
+    if (type !== 'bearer' && type !== 'query' && type !== 'custom-header' && type !== 'oauth') {
+      continue;
+    }
+    methods.push({
+      type,
+      headerName: typeof record.header_name === 'string' ? record.header_name : undefined,
+      queryParam: typeof record.query_param === 'string' ? record.query_param : undefined,
+      valueFromEnv: typeof record.value_from_env === 'string' ? record.value_from_env : undefined,
+    });
+  }
+  return methods;
 }
 
 function isHttpUrl(value: string): boolean {
@@ -132,6 +215,42 @@ async function loadProfileIndexEntry(profilePath: string): Promise<ProfileIndexE
     aliases,
     profilePath,
     specPathRaw: typeof profile.openapi_spec_path === 'string' ? profile.openapi_spec_path : undefined,
+  };
+}
+
+async function loadProfileDetails(profilePath: string): Promise<ListedProfileDetails | null> {
+  const raw = await fsPromises.readFile(profilePath, 'utf-8');
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (error) {
+    throw new ConfigurationError('Failed to parse profile JSON', {
+      profilePath,
+      error: String(error),
+    });
+  }
+
+  if (!isProfileJson(parsed)) {
+    return null;
+  }
+
+  const profile = parsed as Record<string, unknown>;
+  const profileName = profile.profile_name as string;
+  const profileId = typeof profile.profile_id === 'string' && profile.profile_id.trim().length > 0
+    ? profile.profile_id
+    : profileName;
+  const aliases = Array.isArray(profile.profile_aliases)
+    ? profile.profile_aliases.filter((alias): alias is string => typeof alias === 'string')
+    : [];
+  const description = typeof profile.description === 'string' ? profile.description : undefined;
+
+  return {
+    profileId,
+    profileName,
+    profileAliases: aliases,
+    description,
+    envVars: extractEnvVars(profile),
+    authMethods: extractAuthMethods(profile),
   };
 }
 
@@ -223,6 +342,32 @@ export async function listProfiles(profilesDir?: string): Promise<ListedProfile[
     profileName: profile.profileName,
     profileAliases: profile.aliases,
   }));
+}
+
+export async function listProfilesDetailed(profilesDir?: string): Promise<ListedProfileDetails[]> {
+  const resolvedDir = normalizeProfilesDir(profilesDir);
+  let entries: string[];
+  try {
+    entries = await collectProfileFiles(resolvedDir);
+  } catch (error) {
+    throw new ConfigurationError('Profiles directory not found', {
+      profilesDir: resolvedDir,
+      error: String(error),
+    });
+  }
+
+  const profiles: ListedProfileDetails[] = [];
+  for (const filePath of entries) {
+    const entry = await loadProfileDetails(filePath);
+    if (entry) profiles.push(entry);
+  }
+
+  return profiles;
+}
+
+export async function resolveProfileDetailsFromPath(profilePath: string): Promise<ListedProfileDetails | null> {
+  const resolvedPath = path.isAbsolute(profilePath) ? profilePath : path.resolve(process.cwd(), profilePath);
+  return loadProfileDetails(resolvedPath);
 }
 
 export async function resolveProfileFromPath(
