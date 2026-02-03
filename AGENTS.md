@@ -79,6 +79,11 @@ Reference canonical sources; never duplicate rules.
 Run specific tests: `npm test -- -t "pattern"`.
 Check diff coverage (codecov style): `node scripts/check-diff-coverage.js` (run after `npm test -- --coverage`).
 
+### GitHub repository
+
+Owner: davidruzicka
+Repository name: mcp4openapi
+
 ### Code Organization
 
 - Source: `src/{feature}.ts` or `src/{feature}/`
@@ -174,12 +179,12 @@ npm start              # run server
 
 **Required:**
 - `MCP4_OPENAPI_SPEC_PATH`: Path/URL to OpenAPI spec
-- `MCP4_API_TOKEN`: API token (default env var name)
+- `MCP4_API_TOKEN`: API token (default env var name, vary)
 
 **Optional:**
 - `MCP4_PROFILE_PATH`: Profile JSON path (default: auto-generate)
 - `MCP4_TRANSPORT`: `stdio` (default) or `http`
-- `MCP4_API_BASE_URL`: Override OpenAPI server URL
+- `MCP4_API_BASE_URL`: Override OpenAPI server URL (default env name, vary)
 
 See `README.md` for complete list.
 
