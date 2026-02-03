@@ -1,7 +1,7 @@
 {
   "$schema": "../../profile-schema.json",
   "profile_name": "gitlab-optimized-oauth",
-  "profile_id": "gitlab-optimized-oauth",
+  "profile_id": "gitlab-optimized",
   "profile_aliases": ["gitlab-optimized-oauth"],
   "openapi_spec_path": "./openapi.yaml",
   "description": "Minimal CRUD-style tool set grouped by read/write actions. Special operations like GLQL are separate.",
