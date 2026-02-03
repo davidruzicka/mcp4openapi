@@ -1,0 +1,1083 @@
+{
+  "$schema": "../../profile-schema.json",
+  "profile_name": "grafana-optimized",
+  "profile_id": "grafana",
+  "profile_aliases": ["grafana-optimized"],
+  "openapi_spec_path": "./openapi.json",
+  "description": "CRUD-oriented tools for core Grafana resources (dashboards, folders, datasources, annotations, snapshots, users, teams, service accounts, search).",
+
+  "parameter_aliases": {
+    "uid": ["dashboard_uid", "datasource_uid", "folder_uid", "public_dashboard_uid"],
+    "dashboardUid": ["dashboard_uid"],
+    "folder_uid": ["folderUid"],
+    "folder_id": ["folderId"],
+    "DashboardID": ["dashboard_id"],
+    "DashboardVersionID": ["dashboard_version_id"],
+    "annotation_id": ["annotationId"],
+    "serviceAccountId": ["service_account_id"],
+    "tokenId": ["token_id"],
+    "team_id": ["teamId"],
+    "user_id": ["userId"],
+    "datasource_proxy_route": ["proxy_route"],
+    "accessToken": ["access_token"],
+    "sourceUID": ["source_uid"],
+    "correlationUID": ["correlation_uid"],
+    "panelId": ["panel_id"],
+    "perpage": ["per_page"],
+    "Disabled": ["disabled"],
+    "dashboardUID": ["dashboard_uid"],
+    "dashboardId": ["dashboard_id"],
+    "folderUIDs": ["folder_uids"],
+    "dashboardUIDs": ["dashboard_uids"]
+  },
+
+  "tools": [
+    {
+      "name": "create_content",
+      "description": "Create Grafana resources. Actions: 'create_dashboard', 'import_dashboard', 'create_folder', 'create_datasource', 'create_annotation', 'create_graphite_annotation', 'create_snapshot', 'create_service_account', 'create_service_account_token', 'create_team', 'add_team_member', 'create_public_dashboard', 'create_correlation'.",
+      "metadata_params": ["action"],
+      "operations": {
+        "create_dashboard": "postDashboard",
+        "import_dashboard": "importDashboard",
+        "create_folder": "createFolder",
+        "create_datasource": "addDataSource",
+        "create_annotation": "postAnnotation",
+        "create_graphite_annotation": "postGraphiteAnnotation",
+        "create_snapshot": "createDashboardSnapshot",
+        "create_service_account": "createServiceAccount",
+        "create_service_account_token": "createToken",
+        "create_team": "createTeam",
+        "add_team_member": "addTeamMember",
+        "create_public_dashboard": "createPublicDashboard",
+        "create_correlation": "createCorrelation"
+      },
+      "parameters": {
+        "action": {
+          "type": "string",
+          "enum": ["create_dashboard", "import_dashboard", "create_folder", "create_datasource", "create_annotation", "create_graphite_annotation", "create_snapshot", "create_service_account", "create_service_account_token", "create_team", "add_team_member", "create_public_dashboard", "create_correlation"],
+          "description": "Action to perform",
+          "required": true
+        },
+        "dashboard": {
+          "type": "object",
+          "description": "Dashboard definition (Grafana JSON).",
+          "required_for": ["create_dashboard", "import_dashboard"],
+          "properties": {}
+        },
+        "folderUid": {
+          "type": "string",
+          "description": "Target folder UID",
+          "required_for": []
+        },
+        "folderId": {
+          "type": "integer",
+          "description": "Deprecated: use folderUid",
+          "required_for": []
+        },
+        "overwrite": {
+          "type": "boolean",
+          "description": "Overwrite existing dashboard/folder",
+          "required_for": []
+        },
+        "message": {
+          "type": "string",
+          "description": "Commit message for dashboard update",
+          "required_for": []
+        },
+        "isFolder": {
+          "type": "boolean",
+          "description": "Create folder instead of dashboard",
+          "required_for": []
+        },
+        "inputs": {
+          "type": "array",
+          "description": "Import inputs (for import_dashboard)",
+          "items": { "type": "object", "properties": {} },
+          "required_for": []
+        },
+        "path": {
+          "type": "string",
+          "description": "Dashboard path (for import_dashboard)",
+          "required_for": []
+        },
+        "pluginId": {
+          "type": "string",
+          "description": "Plugin ID (for import_dashboard)",
+          "required_for": []
+        },
+        "title": {
+          "type": "string",
+          "description": "Folder title",
+          "required_for": ["create_folder"]
+        },
+        "description": {
+          "type": "string",
+          "description": "Folder or correlation description",
+          "required_for": []
+        },
+        "uid": {
+          "type": "string",
+          "description": "Resource UID",
+          "required_for": []
+        },
+        "parentUid": {
+          "type": "string",
+          "description": "Parent folder UID",
+          "required_for": []
+        },
+        "name": {
+          "type": "string",
+          "description": "Name for datasources, service accounts, tokens, teams, snapshots",
+          "required_for": ["create_datasource", "create_service_account", "create_service_account_token", "create_team"]
+        },
+        "type": {
+          "type": "string",
+          "description": "Datasource or correlation type",
+          "required_for": ["create_datasource", "create_correlation"]
+        },
+        "url": {
+          "type": "string",
+          "description": "Datasource URL",
+          "required_for": []
+        },
+        "access": {
+          "type": "string",
+          "description": "Datasource access mode",
+          "required_for": []
+        },
+        "basicAuth": {
+          "type": "boolean",
+          "description": "Enable basic auth",
+          "required_for": []
+        },
+        "basicAuthUser": {
+          "type": "string",
+          "description": "Basic auth user",
+          "required_for": []
+        },
+        "database": {
+          "type": "string",
+          "description": "Datasource database",
+          "required_for": []
+        },
+        "isDefault": {
+          "type": "boolean",
+          "description": "Make datasource default",
+          "required_for": []
+        },
+        "jsonData": {
+          "type": "object",
+          "description": "Datasource JSON config",
+          "required_for": [],
+          "properties": {}
+        },
+        "secureJsonData": {
+          "type": "object",
+          "description": "Datasource secure JSON config",
+          "required_for": [],
+          "properties": {}
+        },
+        "user": {
+          "type": "string",
+          "description": "Datasource user",
+          "required_for": []
+        },
+        "withCredentials": {
+          "type": "boolean",
+          "description": "Use credentials for datasource",
+          "required_for": []
+        },
+        "dashboardId": {
+          "type": "integer",
+          "description": "Dashboard ID for annotations",
+          "required_for": []
+        },
+        "dashboardUID": {
+          "type": "string",
+          "description": "Dashboard UID for annotations",
+          "required_for": []
+        },
+        "panelId": {
+          "type": "integer",
+          "description": "Panel ID for annotations",
+          "required_for": []
+        },
+        "tags": {
+          "type": "array",
+          "description": "Annotation tags",
+          "items": { "type": "string" },
+          "required_for": []
+        },
+        "text": {
+          "type": "string",
+          "description": "Annotation text",
+          "required_for": ["create_annotation"]
+        },
+        "time": {
+          "type": "integer",
+          "description": "Annotation start time (ms)",
+          "required_for": []
+        },
+        "timeEnd": {
+          "type": "integer",
+          "description": "Annotation end time (ms)",
+          "required_for": []
+        },
+        "data": {
+          "type": "object",
+          "description": "Annotation data payload",
+          "required_for": [],
+          "properties": {}
+        },
+        "what": {
+          "type": "string",
+          "description": "Graphite annotation title",
+          "required_for": ["create_graphite_annotation"]
+        },
+        "when": {
+          "type": "integer",
+          "description": "Graphite annotation timestamp (ms)",
+          "required_for": ["create_graphite_annotation"]
+        },
+        "apiVersion": {
+          "type": "string",
+          "description": "Snapshot API version",
+          "required_for": []
+        },
+        "kind": {
+          "type": "string",
+          "description": "Snapshot kind",
+          "required_for": []
+        },
+        "expires": {
+          "type": "integer",
+          "description": "Snapshot expiration in seconds",
+          "required_for": []
+        },
+        "external": {
+          "type": "boolean",
+          "description": "Store snapshot externally",
+          "required_for": []
+        },
+        "key": {
+          "type": "string",
+          "description": "Snapshot key",
+          "required_for": []
+        },
+        "deleteKey": {
+          "type": "string",
+          "description": "Snapshot delete key",
+          "required_for": []
+        },
+        "role": {
+          "type": "string",
+          "description": "Service account role (Viewer, Editor, Admin)",
+          "required_for": ["create_service_account"]
+        },
+        "isDisabled": {
+          "type": "boolean",
+          "description": "Disable service account",
+          "required_for": []
+        },
+        "secondsToLive": {
+          "type": "integer",
+          "description": "Token TTL in seconds",
+          "required_for": []
+        },
+        "email": {
+          "type": "string",
+          "description": "Team email",
+          "required_for": []
+        },
+        "userId": {
+          "type": "integer",
+          "description": "User ID for team membership",
+          "required_for": ["add_team_member"]
+        },
+        "accessToken": {
+          "type": "string",
+          "description": "Public dashboard access token",
+          "required_for": []
+        },
+        "annotationsEnabled": {
+          "type": "boolean",
+          "description": "Enable public annotations",
+          "required_for": []
+        },
+        "isEnabled": {
+          "type": "boolean",
+          "description": "Enable public dashboard",
+          "required_for": []
+        },
+        "share": {
+          "type": "string",
+          "description": "Public dashboard share type",
+          "required_for": []
+        },
+        "timeSelectionEnabled": {
+          "type": "boolean",
+          "description": "Enable time selection",
+          "required_for": []
+        },
+        "label": {
+          "type": "string",
+          "description": "Correlation label",
+          "required_for": []
+        },
+        "targetUID": {
+          "type": "string",
+          "description": "Target data source UID for correlation",
+          "required_for": []
+        },
+        "config": {
+          "type": "object",
+          "description": "Correlation config",
+          "required_for": [],
+          "properties": {}
+        }
+      }
+    },
+
+    {
+      "name": "retrieve_content",
+      "description": "Retrieve Grafana resources. Actions: 'search', 'list_dashboards_tags', 'get_dashboard_home', 'get_dashboard_by_uid', 'get_dashboard_versions_by_uid', 'get_dashboard_version_by_uid', 'list_public_dashboards', 'get_public_dashboard', 'view_public_dashboard', 'get_public_annotations', 'list_folders', 'get_folder_by_uid', 'get_folder_by_id', 'get_folder_counts', 'list_datasources', 'get_datasource_by_id', 'get_datasource_by_uid', 'get_datasource_by_name', 'get_datasource_id_by_name', 'check_datasource_health_by_id', 'check_datasource_health_by_uid', 'get_datasource_resource_by_id', 'get_datasource_resource_by_uid', 'query_metrics', 'get_annotations', 'get_annotation_by_id', 'get_annotation_tags', 'get_snapshot', 'search_snapshots', 'get_snapshot_sharing_options', 'list_service_accounts', 'get_service_account', 'list_service_account_tokens', 'search_users', 'search_users_paged', 'get_user_by_id', 'get_user_by_login_or_email', 'get_user_orgs', 'get_user_teams', 'search_teams', 'get_team_by_id', 'list_team_members', 'get_team_preferences', 'get_dashboard_permissions_by_uid', 'get_dashboard_permissions_by_id', 'get_folder_permissions', 'get_correlations', 'get_correlations_by_source_uid', 'get_correlation'.",
+      "metadata_params": ["action"],
+      "operations": {
+        "search": "search",
+        "list_dashboards_tags": "getDashboardTags",
+        "get_dashboard_home": "getHomeDashboard",
+        "get_dashboard_by_uid": "getDashboardByUID",
+        "get_dashboard_versions_by_uid": "getDashboardVersionsByUID",
+        "get_dashboard_version_by_uid": "getDashboardVersionByUID",
+        "list_public_dashboards": "listPublicDashboards",
+        "get_public_dashboard": "getPublicDashboard",
+        "view_public_dashboard": "viewPublicDashboard",
+        "get_public_annotations": "getPublicAnnotations",
+        "list_folders": "getFolders",
+        "get_folder_by_uid": "getFolderByUID",
+        "get_folder_by_id": "getFolderByID",
+        "get_folder_counts": "getFolderDescendantCounts",
+        "list_datasources": "getDataSources",
+        "get_datasource_by_id": "getDataSourceByID",
+        "get_datasource_by_uid": "getDataSourceByUID",
+        "get_datasource_by_name": "getDataSourceByName",
+        "get_datasource_id_by_name": "getDataSourceIdByName",
+        "check_datasource_health_by_id": "checkDatasourceHealthByID",
+        "check_datasource_health_by_uid": "checkDatasourceHealthWithUID",
+        "get_datasource_resource_by_id": "callDatasourceResourceByID",
+        "get_datasource_resource_by_uid": "callDatasourceResourceWithUID",
+        "query_metrics": "queryMetricsWithExpressions",
+        "get_annotations": "getAnnotations",
+        "get_annotation_by_id": "getAnnotationByID",
+        "get_annotation_tags": "getAnnotationTags",
+        "get_snapshot": "getDashboardSnapshot",
+        "search_snapshots": "searchDashboardSnapshots",
+        "get_snapshot_sharing_options": "getSharingOptions",
+        "list_service_accounts": "searchOrgServiceAccountsWithPaging",
+        "get_service_account": "retrieveServiceAccount",
+        "list_service_account_tokens": "listTokens",
+        "search_users": "searchUsers",
+        "search_users_paged": "searchUsersWithPaging",
+        "get_user_by_id": "getUserByID",
+        "get_user_by_login_or_email": "getUserByLoginOrEmail",
+        "get_user_orgs": "getUserOrgList",
+        "get_user_teams": "getUserTeams",
+        "search_teams": "searchTeams",
+        "get_team_by_id": "getTeamByID",
+        "list_team_members": "getTeamMembers",
+        "get_team_preferences": "getTeamPreferences",
+        "get_dashboard_permissions_by_uid": "getDashboardPermissionsListByUID",
+        "get_dashboard_permissions_by_id": "getDashboardPermissionsListByID",
+        "get_folder_permissions": "getFolderPermissionList",
+        "get_correlations": "getCorrelations",
+        "get_correlations_by_source_uid": "getCorrelationsBySourceUID",
+        "get_correlation": "getCorrelation"
+      },
+      "parameters": {
+        "action": {
+          "type": "string",
+          "enum": ["search", "list_dashboards_tags", "get_dashboard_home", "get_dashboard_by_uid", "get_dashboard_versions_by_uid", "get_dashboard_version_by_uid", "list_public_dashboards", "get_public_dashboard", "view_public_dashboard", "get_public_annotations", "list_folders", "get_folder_by_uid", "get_folder_by_id", "get_folder_counts", "list_datasources", "get_datasource_by_id", "get_datasource_by_uid", "get_datasource_by_name", "get_datasource_id_by_name", "check_datasource_health_by_id", "check_datasource_health_by_uid", "get_datasource_resource_by_id", "get_datasource_resource_by_uid", "query_metrics", "get_annotations", "get_annotation_by_id", "get_annotation_tags", "get_snapshot", "search_snapshots", "get_snapshot_sharing_options", "list_service_accounts", "get_service_account", "list_service_account_tokens", "search_users", "search_users_paged", "get_user_by_id", "get_user_by_login_or_email", "get_user_orgs", "get_user_teams", "search_teams", "get_team_by_id", "list_team_members", "get_team_preferences", "get_dashboard_permissions_by_uid", "get_dashboard_permissions_by_id", "get_folder_permissions", "get_correlations", "get_correlations_by_source_uid", "get_correlation"],
+          "description": "Action to perform",
+          "required": true
+        },
+        "uid": {
+          "type": "string",
+          "description": "Resource UID",
+          "required_for": ["get_dashboard_by_uid", "get_dashboard_versions_by_uid", "get_dashboard_version_by_uid", "get_folder_by_uid", "get_folder_counts", "get_datasource_by_uid", "check_datasource_health_by_uid", "get_datasource_resource_by_uid", "get_dashboard_permissions_by_uid"]
+        },
+        "dashboardUid": {
+          "type": "string",
+          "description": "Dashboard UID",
+          "required_for": ["get_public_dashboard"]
+        },
+        "folder_uid": {
+          "type": "string",
+          "description": "Folder UID",
+          "required_for": ["get_folder_permissions"]
+        },
+        "folder_id": {
+          "type": "string",
+          "description": "Folder ID",
+          "required_for": ["get_folder_by_id"]
+        },
+        "DashboardID": {
+          "type": "string",
+          "description": "Dashboard ID",
+          "required_for": ["get_dashboard_permissions_by_id"]
+        },
+        "DashboardVersionID": {
+          "type": "string",
+          "description": "Dashboard version ID",
+          "required_for": ["get_dashboard_version_by_uid"]
+        },
+        "annotation_id": {
+          "type": "string",
+          "description": "Annotation ID",
+          "required_for": ["get_annotation_by_id"]
+        },
+        "id": {
+          "type": "string",
+          "description": "Datasource ID",
+          "required_for": ["get_datasource_by_id", "check_datasource_health_by_id", "get_datasource_resource_by_id"]
+        },
+        "name": {
+          "type": "string",
+          "description": "Datasource name",
+          "required_for": ["get_datasource_by_name", "get_datasource_id_by_name"]
+        },
+        "key": {
+          "type": "string",
+          "description": "Snapshot key",
+          "required_for": ["get_snapshot"]
+        },
+        "serviceAccountId": {
+          "type": "string",
+          "description": "Service account ID",
+          "required_for": ["get_service_account", "list_service_account_tokens"]
+        },
+        "user_id": {
+          "type": "string",
+          "description": "User ID",
+          "required_for": ["get_user_by_id", "get_user_orgs", "get_user_teams"]
+        },
+        "team_id": {
+          "type": "string",
+          "description": "Team ID",
+          "required_for": ["get_team_by_id", "list_team_members", "get_team_preferences"]
+        },
+        "accessToken": {
+          "type": "string",
+          "description": "Public dashboard access token",
+          "required_for": ["view_public_dashboard", "get_public_annotations"]
+        },
+        "datasource_proxy_route": {
+          "type": "string",
+          "description": "Datasource proxy route",
+          "required_for": ["get_datasource_resource_by_id", "get_datasource_resource_by_uid"]
+        },
+        "sourceUID": {
+          "type": "string",
+          "description": "Source datasource UID for correlations",
+          "required_for": ["get_correlations_by_source_uid", "get_correlation"]
+        },
+        "correlationUID": {
+          "type": "string",
+          "description": "Correlation UID",
+          "required_for": ["get_correlation"]
+        },
+        "query": {
+          "type": "string",
+          "description": "Search query",
+          "required_for": []
+        },
+        "tag": {
+          "type": "string",
+          "description": "Search tag",
+          "required_for": []
+        },
+        "type": {
+          "type": "string",
+          "description": "Search type",
+          "required_for": []
+        },
+        "dashboardIds": {
+          "type": "string",
+          "description": "Dashboard IDs (comma-separated)",
+          "required_for": []
+        },
+        "dashboardUIDs": {
+          "type": "string",
+          "description": "Dashboard UIDs (comma-separated)",
+          "required_for": []
+        },
+        "folderIds": {
+          "type": "string",
+          "description": "Folder IDs (comma-separated)",
+          "required_for": []
+        },
+        "folderUIDs": {
+          "type": "string",
+          "description": "Folder UIDs (comma-separated)",
+          "required_for": []
+        },
+        "starred": {
+          "type": "boolean",
+          "description": "Only starred dashboards",
+          "required_for": []
+        },
+        "limit": {
+          "type": "integer",
+          "description": "Limit results",
+          "required_for": []
+        },
+        "page": {
+          "type": "integer",
+          "description": "Page number",
+          "required_for": []
+        },
+        "perpage": {
+          "type": "integer",
+          "description": "Items per page",
+          "required_for": []
+        },
+        "permission": {
+          "type": "string",
+          "description": "Permission filter",
+          "required_for": []
+        },
+        "sort": {
+          "type": "string",
+          "description": "Sort option",
+          "required_for": []
+        },
+        "deleted": {
+          "type": "boolean",
+          "description": "Include deleted items",
+          "required_for": []
+        },
+        "from": {
+          "type": "integer",
+          "description": "Annotations start time (ms)",
+          "required_for": []
+        },
+        "to": {
+          "type": "integer",
+          "description": "Annotations end time (ms)",
+          "required_for": []
+        },
+        "userId": {
+          "type": "integer",
+          "description": "Annotation user ID",
+          "required_for": []
+        },
+        "alertId": {
+          "type": "integer",
+          "description": "Annotation alert ID",
+          "required_for": []
+        },
+        "alertUID": {
+          "type": "string",
+          "description": "Annotation alert UID",
+          "required_for": []
+        },
+        "dashboardId": {
+          "type": "integer",
+          "description": "Annotation dashboard ID",
+          "required_for": []
+        },
+        "dashboardUID": {
+          "type": "string",
+          "description": "Annotation dashboard UID",
+          "required_for": []
+        },
+        "panelId": {
+          "type": "integer",
+          "description": "Annotation panel ID",
+          "required_for": []
+        },
+        "tags": {
+          "type": "string",
+          "description": "Annotation tags",
+          "required_for": []
+        },
+        "matchAny": {
+          "type": "boolean",
+          "description": "Match any tag",
+          "required_for": []
+        },
+        "Disabled": {
+          "type": "boolean",
+          "description": "Include disabled service accounts",
+          "required_for": []
+        },
+        "expiredTokens": {
+          "type": "boolean",
+          "description": "Include expired tokens",
+          "required_for": []
+        },
+        "start": {
+          "type": "integer",
+          "description": "Pagination start offset",
+          "required_for": []
+        }
+      }
+    },
+
+    {
+      "name": "update_content",
+      "description": "Update Grafana resources. Actions: 'update_dashboard', 'update_folder', 'move_folder', 'update_folder_permissions', 'update_datasource_by_id', 'update_datasource_by_uid', 'update_annotation', 'patch_annotation', 'update_service_account', 'update_team', 'set_team_memberships', 'update_team_member', 'update_team_preferences', 'update_user', 'update_public_dashboard', 'update_dashboard_permissions_by_uid', 'update_dashboard_permissions_by_id', 'restore_dashboard_version', 'update_correlation'.",
+      "metadata_params": ["action"],
+      "operations": {
+        "update_dashboard": "postDashboard",
+        "update_folder": "updateFolder",
+        "move_folder": "moveFolder",
+        "update_folder_permissions": "updateFolderPermissions",
+        "update_datasource_by_id": "updateDataSourceByID",
+        "update_datasource_by_uid": "updateDataSourceByUID",
+        "update_annotation": "updateAnnotation",
+        "patch_annotation": "patchAnnotation",
+        "update_service_account": "updateServiceAccount",
+        "update_team": "updateTeam",
+        "set_team_memberships": "setTeamMemberships",
+        "update_team_member": "updateTeamMember",
+        "update_team_preferences": "updateTeamPreferences",
+        "update_user": "updateUser",
+        "update_public_dashboard": "updatePublicDashboard",
+        "update_dashboard_permissions_by_uid": "updateDashboardPermissionsByUID",
+        "update_dashboard_permissions_by_id": "updateDashboardPermissionsByID",
+        "restore_dashboard_version": "restoreDashboardVersionByUID",
+        "update_correlation": "updateCorrelation"
+      },
+      "parameters": {
+        "action": {
+          "type": "string",
+          "enum": ["update_dashboard", "update_folder", "move_folder", "update_folder_permissions", "update_datasource_by_id", "update_datasource_by_uid", "update_annotation", "patch_annotation", "update_service_account", "update_team", "set_team_memberships", "update_team_member", "update_team_preferences", "update_user", "update_public_dashboard", "update_dashboard_permissions_by_uid", "update_dashboard_permissions_by_id", "restore_dashboard_version", "update_correlation"],
+          "description": "Action to perform",
+          "required": true
+        },
+        "uid": {
+          "type": "string",
+          "description": "Dashboard or datasource UID",
+          "required_for": ["update_datasource_by_uid", "update_public_dashboard", "update_dashboard_permissions_by_uid", "restore_dashboard_version"]
+        },
+        "dashboardUid": {
+          "type": "string",
+          "description": "Dashboard UID for public dashboard update",
+          "required_for": ["update_public_dashboard"]
+        },
+        "folder_uid": {
+          "type": "string",
+          "description": "Folder UID",
+          "required_for": ["update_folder", "move_folder", "update_folder_permissions"]
+        },
+        "DashboardID": {
+          "type": "string",
+          "description": "Dashboard ID",
+          "required_for": ["update_dashboard_permissions_by_id"]
+        },
+        "annotation_id": {
+          "type": "string",
+          "description": "Annotation ID",
+          "required_for": ["update_annotation", "patch_annotation"]
+        },
+        "id": {
+          "type": "string",
+          "description": "Datasource ID",
+          "required_for": ["update_datasource_by_id"]
+        },
+        "serviceAccountId": {
+          "type": "string",
+          "description": "Service account ID",
+          "required_for": ["update_service_account"]
+        },
+        "team_id": {
+          "type": "string",
+          "description": "Team ID",
+          "required_for": ["update_team", "set_team_memberships", "update_team_member", "update_team_preferences"]
+        },
+        "user_id": {
+          "type": "string",
+          "description": "User ID",
+          "required_for": ["update_team_member", "update_user"]
+        },
+        "sourceUID": {
+          "type": "string",
+          "description": "Source datasource UID for correlation",
+          "required_for": ["update_correlation"]
+        },
+        "correlationUID": {
+          "type": "string",
+          "description": "Correlation UID",
+          "required_for": ["update_correlation"]
+        },
+        "dashboard": {
+          "type": "object",
+          "description": "Dashboard definition (Grafana JSON)",
+          "required_for": ["update_dashboard"],
+          "properties": {}
+        },
+        "folderUid": {
+          "type": "string",
+          "description": "Target folder UID",
+          "required_for": []
+        },
+        "folderId": {
+          "type": "integer",
+          "description": "Deprecated: use folderUid",
+          "required_for": []
+        },
+        "overwrite": {
+          "type": "boolean",
+          "description": "Overwrite existing dashboard/folder",
+          "required_for": []
+        },
+        "message": {
+          "type": "string",
+          "description": "Commit message for dashboard update",
+          "required_for": []
+        },
+        "title": {
+          "type": "string",
+          "description": "Folder title",
+          "required_for": []
+        },
+        "description": {
+          "type": "string",
+          "description": "Folder or correlation description",
+          "required_for": []
+        },
+        "parentUid": {
+          "type": "string",
+          "description": "Parent folder UID",
+          "required_for": ["move_folder"]
+        },
+        "name": {
+          "type": "string",
+          "description": "Name for datasources, service accounts, teams",
+          "required_for": []
+        },
+        "type": {
+          "type": "string",
+          "description": "Datasource or correlation type",
+          "required_for": []
+        },
+        "url": {
+          "type": "string",
+          "description": "Datasource URL",
+          "required_for": []
+        },
+        "access": {
+          "type": "string",
+          "description": "Datasource access mode",
+          "required_for": []
+        },
+        "basicAuth": {
+          "type": "boolean",
+          "description": "Enable basic auth",
+          "required_for": []
+        },
+        "basicAuthUser": {
+          "type": "string",
+          "description": "Basic auth user",
+          "required_for": []
+        },
+        "database": {
+          "type": "string",
+          "description": "Datasource database",
+          "required_for": []
+        },
+        "isDefault": {
+          "type": "boolean",
+          "description": "Make datasource default",
+          "required_for": []
+        },
+        "jsonData": {
+          "type": "object",
+          "description": "Datasource JSON config",
+          "required_for": [],
+          "properties": {}
+        },
+        "secureJsonData": {
+          "type": "object",
+          "description": "Datasource secure JSON config",
+          "required_for": [],
+          "properties": {}
+        },
+        "user": {
+          "type": "string",
+          "description": "Datasource user",
+          "required_for": []
+        },
+        "withCredentials": {
+          "type": "boolean",
+          "description": "Use credentials for datasource",
+          "required_for": []
+        },
+        "version": {
+          "type": "integer",
+          "description": "Optimistic locking version",
+          "required_for": []
+        },
+        "text": {
+          "type": "string",
+          "description": "Annotation text",
+          "required_for": []
+        },
+        "tags": {
+          "type": "array",
+          "description": "Annotation tags",
+          "items": { "type": "string" },
+          "required_for": []
+        },
+        "time": {
+          "type": "integer",
+          "description": "Annotation start time (ms)",
+          "required_for": []
+        },
+        "timeEnd": {
+          "type": "integer",
+          "description": "Annotation end time (ms)",
+          "required_for": []
+        },
+        "data": {
+          "type": "object",
+          "description": "Annotation data payload",
+          "required_for": [],
+          "properties": {}
+        },
+        "role": {
+          "type": "string",
+          "description": "Service account role",
+          "required_for": []
+        },
+        "isDisabled": {
+          "type": "boolean",
+          "description": "Disable service account",
+          "required_for": []
+        },
+        "email": {
+          "type": "string",
+          "description": "Team email",
+          "required_for": []
+        },
+        "admins": {
+          "type": "array",
+          "description": "Team admin user IDs",
+          "items": { "type": "string" },
+          "required_for": []
+        },
+        "members": {
+          "type": "array",
+          "description": "Team member user IDs",
+          "items": { "type": "string" },
+          "required_for": []
+        },
+        "permission": {
+          "type": "string",
+          "description": "Team member permission",
+          "required_for": []
+        },
+        "homeDashboardId": {
+          "type": "integer",
+          "description": "Home dashboard ID for preferences",
+          "required_for": []
+        },
+        "homeDashboardUID": {
+          "type": "string",
+          "description": "Home dashboard UID for preferences",
+          "required_for": []
+        },
+        "language": {
+          "type": "string",
+          "description": "Preferred language",
+          "required_for": []
+        },
+        "regionalFormat": {
+          "type": "string",
+          "description": "Regional format",
+          "required_for": []
+        },
+        "theme": {
+          "type": "string",
+          "description": "Theme (light, dark, system)",
+          "required_for": []
+        },
+        "timezone": {
+          "type": "string",
+          "description": "Timezone",
+          "required_for": []
+        },
+        "weekStart": {
+          "type": "string",
+          "description": "Week start",
+          "required_for": []
+        },
+        "accessToken": {
+          "type": "string",
+          "description": "Public dashboard access token",
+          "required_for": []
+        },
+        "annotationsEnabled": {
+          "type": "boolean",
+          "description": "Enable public annotations",
+          "required_for": []
+        },
+        "isEnabled": {
+          "type": "boolean",
+          "description": "Enable public dashboard",
+          "required_for": []
+        },
+        "share": {
+          "type": "string",
+          "description": "Public dashboard share type",
+          "required_for": []
+        },
+        "timeSelectionEnabled": {
+          "type": "boolean",
+          "description": "Enable time selection",
+          "required_for": []
+        },
+        "items": {
+          "type": "array",
+          "description": "ACL items for dashboard/folder permissions",
+          "items": { "type": "object", "properties": {} },
+          "required_for": ["update_dashboard_permissions_by_uid", "update_dashboard_permissions_by_id", "update_folder_permissions"]
+        },
+        "label": {
+          "type": "string",
+          "description": "Correlation label",
+          "required_for": []
+        },
+        "targetUID": {
+          "type": "string",
+          "description": "Target data source UID for correlation",
+          "required_for": []
+        },
+        "config": {
+          "type": "object",
+          "description": "Correlation config",
+          "required_for": [],
+          "properties": {}
+        }
+      }
+    },
+
+    {
+      "name": "delete_content",
+      "description": "Delete Grafana resources. Actions: 'delete_dashboard', 'delete_folder', 'delete_datasource_by_id', 'delete_datasource_by_uid', 'delete_datasource_by_name', 'delete_annotation', 'delete_snapshot', 'delete_snapshot_by_delete_key', 'delete_service_account', 'delete_service_account_token', 'delete_team', 'remove_team_member', 'delete_public_dashboard', 'delete_correlation', 'delete_datasource_proxy_by_id', 'delete_datasource_proxy_by_uid'.",
+      "metadata_params": ["action"],
+      "operations": {
+        "delete_dashboard": "deleteDashboardByUID",
+        "delete_folder": "deleteFolder",
+        "delete_datasource_by_id": "deleteDataSourceByID",
+        "delete_datasource_by_uid": "deleteDataSourceByUID",
+        "delete_datasource_by_name": "deleteDataSourceByName",
+        "delete_annotation": "deleteAnnotationByID",
+        "delete_snapshot": "deleteDashboardSnapshot",
+        "delete_snapshot_by_delete_key": "deleteDashboardSnapshotByDeleteKey",
+        "delete_service_account": "deleteServiceAccount",
+        "delete_service_account_token": "deleteToken",
+        "delete_team": "deleteTeamByID",
+        "remove_team_member": "removeTeamMember",
+        "delete_public_dashboard": "deletePublicDashboard",
+        "delete_correlation": "deleteCorrelation",
+        "delete_datasource_proxy_by_id": "datasourceProxyDELETEcalls",
+        "delete_datasource_proxy_by_uid": "datasourceProxyDELETEByUIDcalls"
+      },
+      "parameters": {
+        "action": {
+          "type": "string",
+          "enum": ["delete_dashboard", "delete_folder", "delete_datasource_by_id", "delete_datasource_by_uid", "delete_datasource_by_name", "delete_annotation", "delete_snapshot", "delete_snapshot_by_delete_key", "delete_service_account", "delete_service_account_token", "delete_team", "remove_team_member", "delete_public_dashboard", "delete_correlation", "delete_datasource_proxy_by_id", "delete_datasource_proxy_by_uid"],
+          "description": "Action to perform",
+          "required": true
+        },
+        "uid": {
+          "type": "string",
+          "description": "Dashboard or datasource UID",
+          "required_for": ["delete_dashboard", "delete_datasource_by_uid", "delete_public_dashboard", "delete_datasource_proxy_by_uid"]
+        },
+        "dashboardUid": {
+          "type": "string",
+          "description": "Dashboard UID for public dashboard deletion",
+          "required_for": ["delete_public_dashboard"]
+        },
+        "folder_uid": {
+          "type": "string",
+          "description": "Folder UID",
+          "required_for": ["delete_folder"]
+        },
+        "id": {
+          "type": "string",
+          "description": "Datasource ID",
+          "required_for": ["delete_datasource_by_id", "delete_datasource_proxy_by_id"]
+        },
+        "name": {
+          "type": "string",
+          "description": "Datasource name",
+          "required_for": ["delete_datasource_by_name"]
+        },
+        "annotation_id": {
+          "type": "string",
+          "description": "Annotation ID",
+          "required_for": ["delete_annotation"]
+        },
+        "key": {
+          "type": "string",
+          "description": "Snapshot key",
+          "required_for": ["delete_snapshot"]
+        },
+        "deleteKey": {
+          "type": "string",
+          "description": "Snapshot delete key",
+          "required_for": ["delete_snapshot_by_delete_key"]
+        },
+        "serviceAccountId": {
+          "type": "string",
+          "description": "Service account ID",
+          "required_for": ["delete_service_account", "delete_service_account_token"]
+        },
+        "tokenId": {
+          "type": "string",
+          "description": "Service account token ID",
+          "required_for": ["delete_service_account_token"]
+        },
+        "team_id": {
+          "type": "string",
+          "description": "Team ID",
+          "required_for": ["delete_team", "remove_team_member"]
+        },
+        "user_id": {
+          "type": "string",
+          "description": "User ID",
+          "required_for": ["remove_team_member"]
+        },
+        "sourceUID": {
+          "type": "string",
+          "description": "Source datasource UID for correlation",
+          "required_for": ["delete_correlation"]
+        },
+        "correlationUID": {
+          "type": "string",
+          "description": "Correlation UID",
+          "required_for": ["delete_correlation"]
+        },
+        "datasource_proxy_route": {
+          "type": "string",
+          "description": "Datasource proxy route",
+          "required_for": ["delete_datasource_proxy_by_id", "delete_datasource_proxy_by_uid"]
+        }
+      }
+    }
+  ],
+
+  "interceptors": {
+    "auth": {
+      "type": "bearer",
+      "value_from_env": "GRAFANA_TOKEN"
+    },
+    "base_url": {
+      "value_from_env": "GRAFANA_API_BASE_URL",
+      "default": "http://localhost:3000/api"
+    }
+  }
+}

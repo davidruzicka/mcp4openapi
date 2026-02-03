@@ -1,0 +1,235 @@
+{
+  "$schema": "../../src/testing/test-schema.ts",
+  "profile_name": "grafana-optimized",
+  "scenarios": [
+    {
+      "name": "Create Folder",
+      "tool": "create_content",
+      "arguments": {
+        "action": "create_folder",
+        "title": "Team Dashboards",
+        "uid": "team-dashboards",
+        "description": "Team folder"
+      },
+      "mocks": [
+        {
+          "operationId": "createFolder",
+          "response": {
+            "body": {
+              "uid": "team-dashboards",
+              "title": "Team Dashboards"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": {
+          "uid": "team-dashboards"
+        },
+        "request": {
+          "method": "POST",
+          "path": "/folders",
+          "body": {
+            "title": "Team Dashboards",
+            "uid": "team-dashboards",
+            "description": "Team folder"
+          }
+        }
+      }
+    },
+    {
+      "name": "Search Dashboards",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "search",
+        "query": "cpu"
+      },
+      "mocks": [
+        {
+          "operationId": "search",
+          "response": {
+            "body": [
+              {
+                "id": 1,
+                "title": "CPU Utilization"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": [
+          {
+            "title": "CPU Utilization"
+          }
+        ],
+        "request": {
+          "method": "GET",
+          "path": "/search",
+          "query": {
+            "query": "cpu"
+          }
+        }
+      }
+    },
+    {
+      "name": "Update Folder",
+      "tool": "update_content",
+      "arguments": {
+        "action": "update_folder",
+        "folder_uid": "team-dashboards",
+        "title": "Team Dashboards",
+        "description": "Updated description"
+      },
+      "mocks": [
+        {
+          "operationId": "updateFolder",
+          "response": {
+            "body": {
+              "uid": "team-dashboards",
+              "title": "Team Dashboards"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": {
+          "uid": "team-dashboards"
+        },
+        "request": {
+          "method": "PUT",
+          "path": "/folders/team-dashboards",
+          "body": {
+            "title": "Team Dashboards",
+            "description": "Updated description"
+          }
+        }
+      }
+    },
+    {
+      "name": "Delete Folder",
+      "tool": "delete_content",
+      "arguments": {
+        "action": "delete_folder",
+        "folder_uid": "team-dashboards"
+      },
+      "mocks": [
+        {
+          "operationId": "deleteFolder",
+          "response": {
+            "body": {}
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "request": {
+          "method": "DELETE",
+          "path": "/folders/team-dashboards"
+        }
+      }
+    }
+  ],
+  "coverage": {
+    "require_all_actions": true,
+    "require_request_assertions": true,
+    "skip_actions": {
+      "create_content.create_dashboard": "Not covered in minimal smoke test.",
+      "create_content.import_dashboard": "Not covered in minimal smoke test.",
+      "create_content.create_datasource": "Not covered in minimal smoke test.",
+      "create_content.create_annotation": "Not covered in minimal smoke test.",
+      "create_content.create_graphite_annotation": "Not covered in minimal smoke test.",
+      "create_content.create_snapshot": "Not covered in minimal smoke test.",
+      "create_content.create_service_account": "Not covered in minimal smoke test.",
+      "create_content.create_service_account_token": "Not covered in minimal smoke test.",
+      "create_content.create_team": "Not covered in minimal smoke test.",
+      "create_content.add_team_member": "Not covered in minimal smoke test.",
+      "create_content.create_public_dashboard": "Not covered in minimal smoke test.",
+      "create_content.create_correlation": "Not covered in minimal smoke test.",
+      "retrieve_content.list_dashboards_tags": "Not covered in minimal smoke test.",
+      "retrieve_content.get_dashboard_home": "Not covered in minimal smoke test.",
+      "retrieve_content.get_dashboard_by_uid": "Not covered in minimal smoke test.",
+      "retrieve_content.get_dashboard_versions_by_uid": "Not covered in minimal smoke test.",
+      "retrieve_content.get_dashboard_version_by_uid": "Not covered in minimal smoke test.",
+      "retrieve_content.list_public_dashboards": "Not covered in minimal smoke test.",
+      "retrieve_content.get_public_dashboard": "Not covered in minimal smoke test.",
+      "retrieve_content.view_public_dashboard": "Not covered in minimal smoke test.",
+      "retrieve_content.get_public_annotations": "Not covered in minimal smoke test.",
+      "retrieve_content.list_folders": "Not covered in minimal smoke test.",
+      "retrieve_content.get_folder_by_uid": "Not covered in minimal smoke test.",
+      "retrieve_content.get_folder_by_id": "Not covered in minimal smoke test.",
+      "retrieve_content.get_folder_counts": "Not covered in minimal smoke test.",
+      "retrieve_content.list_datasources": "Not covered in minimal smoke test.",
+      "retrieve_content.get_datasource_by_id": "Not covered in minimal smoke test.",
+      "retrieve_content.get_datasource_by_uid": "Not covered in minimal smoke test.",
+      "retrieve_content.get_datasource_by_name": "Not covered in minimal smoke test.",
+      "retrieve_content.get_datasource_id_by_name": "Not covered in minimal smoke test.",
+      "retrieve_content.check_datasource_health_by_id": "Not covered in minimal smoke test.",
+      "retrieve_content.check_datasource_health_by_uid": "Not covered in minimal smoke test.",
+      "retrieve_content.get_datasource_resource_by_id": "Not covered in minimal smoke test.",
+      "retrieve_content.get_datasource_resource_by_uid": "Not covered in minimal smoke test.",
+      "retrieve_content.query_metrics": "Not covered in minimal smoke test.",
+      "retrieve_content.get_annotations": "Not covered in minimal smoke test.",
+      "retrieve_content.get_annotation_by_id": "Not covered in minimal smoke test.",
+      "retrieve_content.get_annotation_tags": "Not covered in minimal smoke test.",
+      "retrieve_content.get_snapshot": "Not covered in minimal smoke test.",
+      "retrieve_content.search_snapshots": "Not covered in minimal smoke test.",
+      "retrieve_content.get_snapshot_sharing_options": "Not covered in minimal smoke test.",
+      "retrieve_content.list_service_accounts": "Not covered in minimal smoke test.",
+      "retrieve_content.get_service_account": "Not covered in minimal smoke test.",
+      "retrieve_content.list_service_account_tokens": "Not covered in minimal smoke test.",
+      "retrieve_content.search_users": "Not covered in minimal smoke test.",
+      "retrieve_content.search_users_paged": "Not covered in minimal smoke test.",
+      "retrieve_content.get_user_by_id": "Not covered in minimal smoke test.",
+      "retrieve_content.get_user_by_login_or_email": "Not covered in minimal smoke test.",
+      "retrieve_content.get_user_orgs": "Not covered in minimal smoke test.",
+      "retrieve_content.get_user_teams": "Not covered in minimal smoke test.",
+      "retrieve_content.search_teams": "Not covered in minimal smoke test.",
+      "retrieve_content.get_team_by_id": "Not covered in minimal smoke test.",
+      "retrieve_content.list_team_members": "Not covered in minimal smoke test.",
+      "retrieve_content.get_team_preferences": "Not covered in minimal smoke test.",
+      "retrieve_content.get_dashboard_permissions_by_uid": "Not covered in minimal smoke test.",
+      "retrieve_content.get_dashboard_permissions_by_id": "Not covered in minimal smoke test.",
+      "retrieve_content.get_folder_permissions": "Not covered in minimal smoke test.",
+      "retrieve_content.get_correlations": "Not covered in minimal smoke test.",
+      "retrieve_content.get_correlations_by_source_uid": "Not covered in minimal smoke test.",
+      "retrieve_content.get_correlation": "Not covered in minimal smoke test.",
+      "update_content.update_dashboard": "Not covered in minimal smoke test.",
+      "update_content.move_folder": "Not covered in minimal smoke test.",
+      "update_content.update_folder_permissions": "Not covered in minimal smoke test.",
+      "update_content.update_datasource_by_id": "Not covered in minimal smoke test.",
+      "update_content.update_datasource_by_uid": "Not covered in minimal smoke test.",
+      "update_content.update_annotation": "Not covered in minimal smoke test.",
+      "update_content.patch_annotation": "Not covered in minimal smoke test.",
+      "update_content.update_service_account": "Not covered in minimal smoke test.",
+      "update_content.update_team": "Not covered in minimal smoke test.",
+      "update_content.set_team_memberships": "Not covered in minimal smoke test.",
+      "update_content.update_team_member": "Not covered in minimal smoke test.",
+      "update_content.update_team_preferences": "Not covered in minimal smoke test.",
+      "update_content.update_user": "Not covered in minimal smoke test.",
+      "update_content.update_public_dashboard": "Not covered in minimal smoke test.",
+      "update_content.update_dashboard_permissions_by_uid": "Not covered in minimal smoke test.",
+      "update_content.update_dashboard_permissions_by_id": "Not covered in minimal smoke test.",
+      "update_content.restore_dashboard_version": "Not covered in minimal smoke test.",
+      "update_content.update_correlation": "Not covered in minimal smoke test.",
+      "delete_content.delete_dashboard": "Not covered in minimal smoke test.",
+      "delete_content.delete_datasource_by_id": "Not covered in minimal smoke test.",
+      "delete_content.delete_datasource_by_uid": "Not covered in minimal smoke test.",
+      "delete_content.delete_datasource_by_name": "Not covered in minimal smoke test.",
+      "delete_content.delete_annotation": "Not covered in minimal smoke test.",
+      "delete_content.delete_snapshot": "Not covered in minimal smoke test.",
+      "delete_content.delete_snapshot_by_delete_key": "Not covered in minimal smoke test.",
+      "delete_content.delete_service_account": "Not covered in minimal smoke test.",
+      "delete_content.delete_service_account_token": "Not covered in minimal smoke test.",
+      "delete_content.delete_team": "Not covered in minimal smoke test.",
+      "delete_content.remove_team_member": "Not covered in minimal smoke test.",
+      "delete_content.delete_public_dashboard": "Not covered in minimal smoke test.",
+      "delete_content.delete_correlation": "Not covered in minimal smoke test.",
+      "delete_content.delete_datasource_proxy_by_id": "Not covered in minimal smoke test.",
+      "delete_content.delete_datasource_proxy_by_uid": "Not covered in minimal smoke test."
+    }
+  }
+}
