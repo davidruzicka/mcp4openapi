@@ -87,7 +87,7 @@
     "supertest": "^7.1.4",
     "ts-to-zod": "^5.0.1",
     "typescript": "^5.9.3",
-    "typescript-json-schema": "^0.65.1",
+    "typescript-json-schema": "^0.67.1",
     "vite": "^6.0.5",
     "vitest": "^3.2.4"
   },
