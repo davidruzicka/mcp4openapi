@@ -6,7 +6,7 @@
     "n8n-optimized"
   ],
   "openapi_spec_path": "./openapi.yaml",
-  "description": "Comprehensive operation-style tool set (manage_credentials, manage_executions, manage_projects, ...).",
+  "description": "Minimal tool set grouped by CRUD actions, with non-CRUD operations in a separate tool.",
   "parameter_aliases": {
     "id": [
       "credential_id",
@@ -40,8 +40,8 @@
   },
   "tools": [
     {
-      "name": "retrieve_n8n",
-      "description": "Read-only access to n8n resources (list/get).",
+      "name": "retrieve_content",
+      "description": "Read-only access to n8n resources (list/get only).",
       "metadata_params": [
         "action"
       ],
@@ -59,6 +59,82 @@
         "get_workflow": "get_/workflows/{id}",
         "get_workflow_version": "get_/workflows/{id}/{versionId}",
         "get_workflow_tags": "get_/workflows/{id}/tags"
+      },
+      "response_fields": {
+        "list_executions": [
+          "data(id,status,mode,startedAt,stoppedAt,workflowId,finished,retryOf,retrySuccessId)",
+          "nextCursor"
+        ],
+        "get_execution": [
+          "id",
+          "status",
+          "mode",
+          "startedAt",
+          "stoppedAt",
+          "workflowId",
+          "finished",
+          "retryOf",
+          "retrySuccessId"
+        ],
+        "list_projects": [
+          "data(id,name,type)",
+          "nextCursor"
+        ],
+        "list_tags": [
+          "data(id,name,createdAt,updatedAt)",
+          "nextCursor"
+        ],
+        "get_tag": [
+          "id",
+          "name",
+          "createdAt",
+          "updatedAt"
+        ],
+        "list_users": [
+          "data(id,email,firstName,lastName,role,isPending)",
+          "nextCursor"
+        ],
+        "get_user": [
+          "id",
+          "email",
+          "firstName",
+          "lastName",
+          "role",
+          "isPending",
+          "createdAt",
+          "updatedAt"
+        ],
+        "list_variables": [
+          "data(id,key,value,type,project(id,name,type))",
+          "nextCursor"
+        ],
+        "list_workflows": [
+          "data(id,name,active,createdAt,updatedAt,tags(id,name),settings(timezone,executionTimeout))",
+          "nextCursor"
+        ],
+        "get_workflow": [
+          "id",
+          "name",
+          "active",
+          "createdAt",
+          "updatedAt",
+          "tags(id,name)",
+          "settings(timezone,executionTimeout)"
+        ],
+        "get_workflow_version": [
+          "versionId",
+          "workflowId",
+          "name",
+          "createdAt",
+          "updatedAt",
+          "authors"
+        ],
+        "get_workflow_tags": [
+          "id",
+          "name",
+          "createdAt",
+          "updatedAt"
+        ]
       },
       "parameters": {
         "id": {
@@ -276,76 +352,72 @@
           "type": "string",
           "enum": [
             "get_credential_schema",
-            "list_executions",
             "get_execution",
+            "get_tag",
+            "get_user",
+            "get_workflow",
+            "get_workflow_tags",
+            "get_workflow_version",
+            "list_executions",
             "list_projects",
             "list_tags",
-            "get_tag",
             "list_users",
-            "get_user",
             "list_variables",
-            "list_workflows",
-            "get_workflow",
-            "get_workflow_version",
-            "get_workflow_tags"
+            "list_workflows"
           ],
           "description": "Action to perform",
           "required": true
+        },
+        "additionalOptions": {
+          "type": "object",
+          "description": "Property additionalOptions",
+          "properties": {}
+        },
+        "force": {
+          "type": "boolean",
+          "description": "Property force"
+        },
+        "variables": {
+          "type": "object",
+          "description": "Property variables",
+          "properties": {}
         }
+      }
+    },
+    {
+      "name": "create_content",
+      "description": "Create n8n resources (create only).",
+      "metadata_params": [
+        "action"
+      ],
+      "operations": {
+        "create_credential": "post_/credentials",
+        "create_project": "post_/projects",
+        "add_project_users": "post_/projects/{projectId}/users",
+        "create_tag": "post_/tags",
+        "create_users": "post_/users",
+        "create_variable": "post_/variables",
+        "create_workflow": "post_/workflows"
       },
       "response_fields": {
-        "list_executions": [
-          "data(id,status,mode,startedAt,stoppedAt,workflowId,finished,retryOf,retrySuccessId)",
-          "nextCursor"
-        ],
-        "get_execution": [
+        "create_credential": [
           "id",
-          "status",
-          "mode",
-          "startedAt",
-          "stoppedAt",
-          "workflowId",
-          "finished",
-          "retryOf",
-          "retrySuccessId"
+          "name",
+          "type",
+          "createdAt",
+          "updatedAt"
         ],
-        "list_projects": [
-          "data(id,name,type)",
-          "nextCursor"
-        ],
-        "list_tags": [
-          "data(id,name,createdAt,updatedAt)",
-          "nextCursor"
-        ],
-        "get_tag": [
+        "create_tag": [
           "id",
           "name",
           "createdAt",
           "updatedAt"
         ],
-        "list_users": [
-          "data(id,email,firstName,lastName,role,isPending)",
-          "nextCursor"
+        "create_users": [
+          "user(id,email,inviteAcceptUrl,emailSent)",
+          "error"
         ],
-        "get_user": [
-          "id",
-          "email",
-          "firstName",
-          "lastName",
-          "role",
-          "isPending",
-          "createdAt",
-          "updatedAt"
-        ],
-        "list_variables": [
-          "data(id,key,value,type,project(id,name,type))",
-          "nextCursor"
-        ],
-        "list_workflows": [
-          "data(id,name,active,createdAt,updatedAt,tags(id,name),settings(timezone,executionTimeout))",
-          "nextCursor"
-        ],
-        "get_workflow": [
+        "create_workflow": [
           "id",
           "name",
           "active",
@@ -353,100 +425,25 @@
           "updatedAt",
           "tags(id,name)",
           "settings(timezone,executionTimeout)"
-        ],
-        "get_workflow_version": [
-          "versionId",
-          "workflowId",
-          "name",
-          "createdAt",
-          "updatedAt",
-          "authors"
-        ],
-        "get_workflow_tags": [
-          "id",
-          "name",
-          "createdAt",
-          "updatedAt"
         ]
-      }
-    },
-    {
-      "name": "modify_n8n",
-      "description": "Write access to n8n resources (create/update/delete/activate/deactivate/transfer).",
-      "metadata_params": [
-        "action"
-      ],
-      "operations": {
-        "generate_audit": "post_/audit",
-        "create_credential": "post_/credentials",
-        "update_credential": "updateCredential",
-        "delete_credential": "deleteCredential",
-        "transfer_credential": "put_/credentials/{id}/transfer",
-        "delete_execution": "delete_/executions/{id}",
-        "retry_execution": "post_/executions/{id}/retry",
-        "create_project": "post_/projects",
-        "update_project": "put_/projects/{projectId}",
-        "delete_project": "delete_/projects/{projectId}",
-        "add_project_users": "post_/projects/{projectId}/users",
-        "remove_project_user": "delete_/projects/{projectId}/users/{userId}",
-        "update_project_user_role": "patch_/projects/{projectId}/users/{userId}",
-        "pull_source_control": "post_/source-control/pull",
-        "create_tag": "post_/tags",
-        "update_tag": "put_/tags/{id}",
-        "delete_tag": "delete_/tags/{id}",
-        "create_users": "post_/users",
-        "delete_user": "delete_/users/{id}",
-        "update_user_role": "patch_/users/{id}/role",
-        "create_variable": "post_/variables",
-        "update_variable": "put_/variables/{id}",
-        "delete_variable": "delete_/variables/{id}"
       },
       "parameters": {
-        "additionalOptions": {
-          "type": "object",
-          "description": "Property additionalOptions",
-          "properties": {}
-        },
-        "id": {
-          "type": [
-            "string",
-            "number"
-          ],
-          "description": "Property id",
-          "required_for": [
-            "update_credential",
-            "delete_credential",
-            "transfer_credential",
-            "delete_execution",
-            "retry_execution",
-            "update_tag",
-            "delete_tag",
-            "delete_user",
-            "update_user_role",
-            "update_variable",
-            "delete_variable"
-          ],
-          "required": false
-        },
         "name": {
           "type": "string",
           "description": "Property name",
           "required_for": [
             "create_credential",
             "create_project",
-            "update_project",
             "create_tag",
-            "update_tag"
-          ],
-          "required": false
+            "create_workflow"
+          ]
         },
         "type": {
           "type": "string",
           "description": "Property type",
           "required_for": [
             "create_credential"
-          ],
-          "required": false
+          ]
         },
         "data": {
           "type": "object",
@@ -454,8 +451,7 @@
           "properties": {},
           "required_for": [
             "create_credential"
-          ],
-          "required": false
+          ]
         },
         "isResolvable": {
           "type": "boolean",
@@ -479,15 +475,7 @@
         },
         "destinationProjectId": {
           "type": "string",
-          "description": "Property destinationProjectId",
-          "required_for": [
-            "transfer_credential"
-          ],
-          "required": false
-        },
-        "credentialTypeName": {
-          "type": "string",
-          "description": "The credential type name that you want to get the schema for"
+          "description": "Property destinationProjectId"
         },
         "includeData": {
           "type": "boolean",
@@ -505,13 +493,8 @@
           "type": "string",
           "description": "Parameter projectId",
           "required_for": [
-            "update_project",
-            "delete_project",
-            "add_project_users",
-            "remove_project_user",
-            "update_project_user_role"
-          ],
-          "required": false
+            "add_project_users"
+          ]
         },
         "limit": {
           "type": "number",
@@ -541,34 +524,15 @@
           },
           "required_for": [
             "add_project_users"
-          ],
-          "required": false
+          ]
         },
         "userId": {
           "type": "string",
-          "description": "The ID of the user.",
-          "required_for": [
-            "remove_project_user",
-            "update_project_user_role"
-          ],
-          "required": false
+          "description": "The ID of the user."
         },
         "role": {
           "type": "string",
-          "description": "Property role",
-          "required_for": [
-            "update_project_user_role"
-          ],
-          "required": false
-        },
-        "force": {
-          "type": "boolean",
-          "description": "Property force"
-        },
-        "variables": {
-          "type": "object",
-          "description": "Property variables",
-          "properties": {}
+          "description": "Property role"
         },
         "includeRole": {
           "type": "boolean",
@@ -576,11 +540,7 @@
         },
         "newRoleName": {
           "type": "string",
-          "description": "Property newRoleName",
-          "required_for": [
-            "update_user_role"
-          ],
-          "required": false
+          "description": "Property newRoleName"
         },
         "users": {
           "type": "array",
@@ -591,8 +551,7 @@
           },
           "required_for": [
             "create_users"
-          ],
-          "required": false
+          ]
         },
         "state": {
           "type": "string",
@@ -602,19 +561,15 @@
           "type": "string",
           "description": "Property key",
           "required_for": [
-            "create_variable",
-            "update_variable"
-          ],
-          "required": false
+            "create_variable"
+          ]
         },
         "value": {
           "type": "string",
           "description": "Property value",
           "required_for": [
-            "create_variable",
-            "update_variable"
-          ],
-          "required": false
+            "create_variable"
+          ]
         },
         "active": {
           "type": "boolean",
@@ -631,6 +586,33 @@
         "excludePinnedData": {
           "type": "boolean",
           "description": "Set this to avoid retrieving pinned data"
+        },
+        "nodes": {
+          "type": "array",
+          "description": "Workflow nodes array. Each node should follow n8n node schema (id, name, type, typeVersion, position, parameters, etc.).",
+          "items": {
+            "type": "object",
+            "properties": {}
+          },
+          "required_for": [
+            "create_workflow"
+          ]
+        },
+        "connections": {
+          "type": "object",
+          "description": "Connections map keyed by node name, following n8n workflow schema.",
+          "properties": {},
+          "required_for": [
+            "create_workflow"
+          ]
+        },
+        "settings": {
+          "type": "object",
+          "description": "Workflow settings object (timezone, executionTimeout, etc.).",
+          "properties": {},
+          "required_for": [
+            "create_workflow"
+          ]
         },
         "staticData": {
           "type": "string",
@@ -649,60 +631,73 @@
           "description": "Property activeVersion",
           "properties": {}
         },
-        "versionId": {
-          "type": "string",
-          "description": "The version ID to retrieve"
-        },
         "description": {
           "type": "string",
           "description": "Property description"
         },
+        "tag_ids": {
+          "type": "array",
+          "description": "Tag IDs to apply to the workflow: [{ id }].",
+          "items": {
+            "type": "object",
+            "properties": {}
+          }
+        },
         "action": {
           "type": "string",
           "enum": [
-            "generate_audit",
-            "create_credential",
-            "update_credential",
-            "delete_credential",
-            "transfer_credential",
-            "delete_execution",
-            "retry_execution",
-            "create_project",
-            "update_project",
-            "delete_project",
             "add_project_users",
-            "remove_project_user",
-            "update_project_user_role",
-            "pull_source_control",
+            "create_credential",
+            "create_project",
             "create_tag",
-            "update_tag",
-            "delete_tag",
             "create_users",
-            "delete_user",
-            "update_user_role",
             "create_variable",
-            "update_variable",
-            "delete_variable"
+            "create_workflow"
           ],
           "description": "Action to perform",
           "required": true
+        },
+        "additionalOptions": {
+          "type": "object",
+          "description": "Property additionalOptions",
+          "properties": {}
+        },
+        "credentialTypeName": {
+          "type": "string",
+          "description": "The credential type name that you want to get the schema for"
+        },
+        "force": {
+          "type": "boolean",
+          "description": "Property force"
+        },
+        "variables": {
+          "type": "object",
+          "description": "Property variables",
+          "properties": {}
+        },
+        "versionId": {
+          "type": "string",
+          "description": "The version ID to retrieve"
         }
+      }
+    },
+    {
+      "name": "update_content",
+      "description": "Update n8n resources (update only).",
+      "metadata_params": [
+        "action"
+      ],
+      "operations": {
+        "update_credential": "updateCredential",
+        "update_project": "put_/projects/{projectId}",
+        "update_project_user_role": "patch_/projects/{projectId}/users/{userId}",
+        "update_tag": "put_/tags/{id}",
+        "update_user_role": "patch_/users/{id}/role",
+        "update_variable": "put_/variables/{id}",
+        "update_workflow": "put_/workflows/{id}",
+        "update_workflow_tags": "put_/workflows/{id}/tags"
       },
       "response_fields": {
-        "generate_audit": [
-          "\"Credentials Risk Report\"",
-          "\"Database Risk Report\"",
-          "\"Nodes Risk Report\"",
-          "\"Filesystem Risk Report\"",
-          "\"Instance Risk Report\""
-        ],
-        "create_credential": [
-          "id",
-          "name",
-          "type",
-          "createdAt",
-          "updatedAt"
-        ],
         "update_credential": [
           "id",
           "name",
@@ -710,6 +705,316 @@
           "createdAt",
           "updatedAt"
         ],
+        "update_tag": [
+          "id",
+          "name",
+          "createdAt",
+          "updatedAt"
+        ],
+        "update_workflow": [
+          "id",
+          "name",
+          "active",
+          "createdAt",
+          "updatedAt",
+          "tags(id,name)",
+          "settings(timezone,executionTimeout)"
+        ],
+        "update_workflow_tags": [
+          "id",
+          "name",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "parameters": {
+        "name": {
+          "type": "string",
+          "description": "Property name",
+          "required_for": [
+            "update_project",
+            "update_tag",
+            "update_workflow"
+          ]
+        },
+        "type": {
+          "type": "string",
+          "description": "Property type"
+        },
+        "data": {
+          "type": "object",
+          "description": "Credential data (object). Required when creating or changing credential type.",
+          "properties": {}
+        },
+        "isResolvable": {
+          "type": "boolean",
+          "description": "Property isResolvable"
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Property createdAt"
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "Property updatedAt"
+        },
+        "isGlobal": {
+          "type": "boolean",
+          "description": "Property isGlobal"
+        },
+        "isPartialData": {
+          "type": "boolean",
+          "description": "Property isPartialData"
+        },
+        "destinationProjectId": {
+          "type": "string",
+          "description": "Property destinationProjectId"
+        },
+        "includeData": {
+          "type": "boolean",
+          "description": "Whether or not to include the execution's detailed data."
+        },
+        "status": {
+          "type": "string",
+          "description": "Status to filter the executions by."
+        },
+        "workflowId": {
+          "type": "string",
+          "description": "Workflow to filter the executions by."
+        },
+        "projectId": {
+          "type": "string",
+          "description": "Parameter projectId",
+          "required_for": [
+            "update_project",
+            "update_project_user_role"
+          ]
+        },
+        "limit": {
+          "type": "number",
+          "description": "The maximum number of items to return."
+        },
+        "cursor": {
+          "type": "string",
+          "description": "Paginate by setting the cursor parameter to the nextCursor attribute returned by the previous request's response. Default value fetches the first \"page\" of the collection. See pagination for more detail."
+        },
+        "loadWorkflow": {
+          "type": "boolean",
+          "description": "Property loadWorkflow"
+        },
+        "relations": {
+          "type": "array",
+          "description": "Array of user relations to add: [{ userId, role }]",
+          "items": {
+            "type": "object",
+            "properties": {
+              "userId": {
+                "type": "string"
+              },
+              "role": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "userId": {
+          "type": "string",
+          "description": "The ID of the user.",
+          "required_for": [
+            "update_project_user_role"
+          ]
+        },
+        "role": {
+          "type": "string",
+          "description": "Property role",
+          "required_for": [
+            "update_project_user_role"
+          ]
+        },
+        "includeRole": {
+          "type": "boolean",
+          "description": "Whether to include the user's role or not."
+        },
+        "newRoleName": {
+          "type": "string",
+          "description": "Property newRoleName",
+          "required_for": [
+            "update_user_role"
+          ]
+        },
+        "users": {
+          "type": "array",
+          "description": "Array of users to create: [{ email, role }].",
+          "items": {
+            "type": "object",
+            "properties": {}
+          }
+        },
+        "state": {
+          "type": "string",
+          "description": "Parameter state"
+        },
+        "key": {
+          "type": "string",
+          "description": "Property key",
+          "required_for": [
+            "update_variable"
+          ]
+        },
+        "value": {
+          "type": "string",
+          "description": "Property value",
+          "required_for": [
+            "update_variable"
+          ]
+        },
+        "active": {
+          "type": "boolean",
+          "description": "Parameter active"
+        },
+        "tags": {
+          "type": "array",
+          "description": "Workflow tags (array of tag objects). Read-only on create/update; use update_tags action to modify.",
+          "items": {
+            "type": "object",
+            "properties": {}
+          }
+        },
+        "excludePinnedData": {
+          "type": "boolean",
+          "description": "Set this to avoid retrieving pinned data"
+        },
+        "nodes": {
+          "type": "array",
+          "description": "Workflow nodes array. Each node should follow n8n node schema (id, name, type, typeVersion, position, parameters, etc.).",
+          "items": {
+            "type": "object",
+            "properties": {}
+          },
+          "required_for": [
+            "update_workflow"
+          ]
+        },
+        "connections": {
+          "type": "object",
+          "description": "Connections map keyed by node name, following n8n workflow schema.",
+          "properties": {},
+          "required_for": [
+            "update_workflow"
+          ]
+        },
+        "settings": {
+          "type": "object",
+          "description": "Workflow settings object (timezone, executionTimeout, etc.).",
+          "properties": {},
+          "required_for": [
+            "update_workflow"
+          ]
+        },
+        "staticData": {
+          "type": "string",
+          "description": "Property staticData"
+        },
+        "shared": {
+          "type": "array",
+          "description": "Property shared",
+          "items": {
+            "type": "object",
+            "properties": {}
+          }
+        },
+        "activeVersion": {
+          "type": "object",
+          "description": "Property activeVersion",
+          "properties": {}
+        },
+        "description": {
+          "type": "string",
+          "description": "Property description"
+        },
+        "tag_ids": {
+          "type": "array",
+          "description": "Tag IDs to apply to the workflow: [{ id }].",
+          "items": {
+            "type": "object",
+            "properties": {}
+          },
+          "required_for": [
+            "update_workflow_tags"
+          ]
+        },
+        "action": {
+          "type": "string",
+          "enum": [
+            "update_credential",
+            "update_project",
+            "update_project_user_role",
+            "update_tag",
+            "update_user_role",
+            "update_variable",
+            "update_workflow",
+            "update_workflow_tags"
+          ],
+          "description": "Action to perform",
+          "required": true
+        },
+        "additionalOptions": {
+          "type": "object",
+          "description": "Property additionalOptions",
+          "properties": {}
+        },
+        "id": {
+          "type": [
+            "string",
+            "number"
+          ],
+          "description": "Property id",
+          "required_for": [
+            "update_credential",
+            "update_tag",
+            "update_user_role",
+            "update_variable",
+            "update_workflow",
+            "update_workflow_tags"
+          ],
+          "required": false
+        },
+        "credentialTypeName": {
+          "type": "string",
+          "description": "The credential type name that you want to get the schema for"
+        },
+        "force": {
+          "type": "boolean",
+          "description": "Property force"
+        },
+        "variables": {
+          "type": "object",
+          "description": "Property variables",
+          "properties": {}
+        },
+        "versionId": {
+          "type": "string",
+          "description": "The version ID to retrieve"
+        }
+      }
+    },
+    {
+      "name": "delete_content",
+      "description": "Delete n8n resources (delete only).",
+      "metadata_params": [
+        "action"
+      ],
+      "operations": {
+        "delete_credential": "deleteCredential",
+        "delete_execution": "delete_/executions/{id}",
+        "delete_project": "delete_/projects/{projectId}",
+        "remove_project_user": "delete_/projects/{projectId}/users/{userId}",
+        "delete_tag": "delete_/tags/{id}",
+        "delete_user": "delete_/users/{id}",
+        "delete_variable": "delete_/variables/{id}",
+        "delete_workflow": "delete_/workflows/{id}"
+      },
+      "response_fields": {
         "delete_credential": [
           "id",
           "name",
@@ -729,95 +1034,161 @@
           "retryOf",
           "retrySuccessId"
         ],
-        "retry_execution": [
-          "id",
-          "status",
-          "mode",
-          "startedAt",
-          "stoppedAt",
-          "workflowId",
-          "finished",
-          "retryOf",
-          "retrySuccessId"
-        ],
-        "pull_source_control": [
-          "variables(added,changed)",
-          "credentials(id,name,type)",
-          "workflows(id,name)",
-          "tags(tags(id,name),mappings(workflowId,tagId))"
-        ],
-        "create_tag": [
-          "id",
-          "name",
-          "createdAt",
-          "updatedAt"
-        ],
-        "update_tag": [
-          "id",
-          "name",
-          "createdAt",
-          "updatedAt"
-        ],
         "delete_tag": [
           "id",
           "name",
           "createdAt",
           "updatedAt"
         ],
-        "create_users": [
-          "user(id,email,inviteAcceptUrl,emailSent)",
-          "error"
+        "delete_workflow": [
+          "id",
+          "name",
+          "active",
+          "createdAt",
+          "updatedAt",
+          "tags(id,name)",
+          "settings(timezone,executionTimeout)"
         ]
-      }
-    },
-    {
-      "name": "modify_n8n_workflows",
-      "description": "Write access to n8n workflows (create/update/delete/activate/deactivate/transfer).",
-      "metadata_params": [
-        "action"
-      ],
-      "operations": {
-        "create_workflow": "post_/workflows",
-        "update_workflow": "put_/workflows/{id}",
-        "delete_workflow": "delete_/workflows/{id}",
-        "activate_workflow": "post_/workflows/{id}/activate",
-        "deactivate_workflow": "post_/workflows/{id}/deactivate",
-        "update_workflow_tags": "put_/workflows/{id}/tags",
-        "transfer_workflow": "put_/workflows/{id}/transfer"
       },
       "parameters": {
-        "id": {
-          "type": [
-            "string",
-            "number"
-          ],
-          "description": "Property id",
-          "required_for": [
-            "update_workflow",
-            "delete_workflow",
-            "activate_workflow",
-            "deactivate_workflow",
-            "update_workflow_tags",
-            "transfer_workflow"
-          ],
-          "required": false
-        },
         "name": {
           "type": "string",
-          "description": "Property name",
-          "required_for": [
-            "create_workflow",
-            "update_workflow"
-          ],
-          "required": false
+          "description": "Property name"
+        },
+        "type": {
+          "type": "string",
+          "description": "Property type"
+        },
+        "data": {
+          "type": "object",
+          "description": "Credential data (object). Required when creating or changing credential type.",
+          "properties": {}
+        },
+        "isResolvable": {
+          "type": "boolean",
+          "description": "Property isResolvable"
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Property createdAt"
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "Property updatedAt"
+        },
+        "isGlobal": {
+          "type": "boolean",
+          "description": "Property isGlobal"
+        },
+        "isPartialData": {
+          "type": "boolean",
+          "description": "Property isPartialData"
         },
         "destinationProjectId": {
           "type": "string",
-          "description": "Property destinationProjectId",
+          "description": "Property destinationProjectId"
+        },
+        "includeData": {
+          "type": "boolean",
+          "description": "Whether or not to include the execution's detailed data."
+        },
+        "status": {
+          "type": "string",
+          "description": "Status to filter the executions by."
+        },
+        "workflowId": {
+          "type": "string",
+          "description": "Workflow to filter the executions by."
+        },
+        "projectId": {
+          "type": "string",
+          "description": "Parameter projectId",
           "required_for": [
-            "transfer_workflow"
-          ],
-          "required": false
+            "delete_project",
+            "remove_project_user"
+          ]
+        },
+        "limit": {
+          "type": "number",
+          "description": "The maximum number of items to return."
+        },
+        "cursor": {
+          "type": "string",
+          "description": "Paginate by setting the cursor parameter to the nextCursor attribute returned by the previous request's response. Default value fetches the first \"page\" of the collection. See pagination for more detail."
+        },
+        "loadWorkflow": {
+          "type": "boolean",
+          "description": "Property loadWorkflow"
+        },
+        "relations": {
+          "type": "array",
+          "description": "Array of user relations to add: [{ userId, role }]",
+          "items": {
+            "type": "object",
+            "properties": {
+              "userId": {
+                "type": "string"
+              },
+              "role": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "userId": {
+          "type": "string",
+          "description": "The ID of the user.",
+          "required_for": [
+            "remove_project_user"
+          ]
+        },
+        "role": {
+          "type": "string",
+          "description": "Property role"
+        },
+        "includeRole": {
+          "type": "boolean",
+          "description": "Whether to include the user's role or not."
+        },
+        "newRoleName": {
+          "type": "string",
+          "description": "Property newRoleName"
+        },
+        "users": {
+          "type": "array",
+          "description": "Array of users to create: [{ email, role }].",
+          "items": {
+            "type": "object",
+            "properties": {}
+          }
+        },
+        "state": {
+          "type": "string",
+          "description": "Parameter state"
+        },
+        "key": {
+          "type": "string",
+          "description": "Property key"
+        },
+        "value": {
+          "type": "string",
+          "description": "Property value"
+        },
+        "active": {
+          "type": "boolean",
+          "description": "Parameter active"
+        },
+        "tags": {
+          "type": "array",
+          "description": "Workflow tags (array of tag objects). Read-only on create/update; use update_tags action to modify.",
+          "items": {
+            "type": "object",
+            "properties": {}
+          }
+        },
+        "excludePinnedData": {
+          "type": "boolean",
+          "description": "Set this to avoid retrieving pinned data"
         },
         "nodes": {
           "type": "array",
@@ -825,32 +1196,17 @@
           "items": {
             "type": "object",
             "properties": {}
-          },
-          "required_for": [
-            "create_workflow",
-            "update_workflow"
-          ],
-          "required": false
+          }
         },
         "connections": {
           "type": "object",
           "description": "Connections map keyed by node name, following n8n workflow schema.",
-          "properties": {},
-          "required_for": [
-            "create_workflow",
-            "update_workflow"
-          ],
-          "required": false
+          "properties": {}
         },
         "settings": {
           "type": "object",
           "description": "Workflow settings object (timezone, executionTimeout, etc.).",
-          "properties": {},
-          "required_for": [
-            "create_workflow",
-            "update_workflow"
-          ],
-          "required": false
+          "properties": {}
         },
         "staticData": {
           "type": "string",
@@ -869,60 +1225,112 @@
           "description": "Property activeVersion",
           "properties": {}
         },
+        "description": {
+          "type": "string",
+          "description": "Property description"
+        },
         "tag_ids": {
           "type": "array",
           "description": "Tag IDs to apply to the workflow: [{ id }].",
           "items": {
             "type": "object",
             "properties": {}
-          },
-          "required_for": [
-            "update_workflow_tags"
-          ],
-          "required": false
+          }
         },
         "action": {
           "type": "string",
           "enum": [
-            "create_workflow",
-            "update_workflow",
+            "delete_credential",
+            "delete_execution",
+            "delete_project",
+            "delete_tag",
+            "delete_user",
+            "delete_variable",
             "delete_workflow",
-            "activate_workflow",
-            "deactivate_workflow",
-            "update_workflow_tags",
-            "transfer_workflow"
+            "remove_project_user"
           ],
           "description": "Action to perform",
           "required": true
+        },
+        "additionalOptions": {
+          "type": "object",
+          "description": "Property additionalOptions",
+          "properties": {}
+        },
+        "id": {
+          "type": [
+            "string",
+            "number"
+          ],
+          "description": "Property id",
+          "required_for": [
+            "delete_credential",
+            "delete_execution",
+            "delete_tag",
+            "delete_user",
+            "delete_variable",
+            "delete_workflow"
+          ],
+          "required": false
+        },
+        "credentialTypeName": {
+          "type": "string",
+          "description": "The credential type name that you want to get the schema for"
+        },
+        "force": {
+          "type": "boolean",
+          "description": "Property force"
+        },
+        "variables": {
+          "type": "object",
+          "description": "Property variables",
+          "properties": {}
+        },
+        "versionId": {
+          "type": "string",
+          "description": "The version ID to retrieve"
         }
+      }
+    },
+    {
+      "name": "run_n8n_operations",
+      "description": "Execute non-CRUD n8n operations (audit, retries, transfers, activation, source control).",
+      "metadata_params": [
+        "action"
+      ],
+      "operations": {
+        "generate_audit": "post_/audit",
+        "transfer_credential": "put_/credentials/{id}/transfer",
+        "retry_execution": "post_/executions/{id}/retry",
+        "pull_source_control": "post_/source-control/pull",
+        "activate_workflow": "post_/workflows/{id}/activate",
+        "deactivate_workflow": "post_/workflows/{id}/deactivate",
+        "transfer_workflow": "put_/workflows/{id}/transfer"
       },
       "response_fields": {
-        "create_workflow": [
-          "id",
-          "name",
-          "active",
-          "createdAt",
-          "updatedAt",
-          "tags(id,name)",
-          "settings(timezone,executionTimeout)"
+        "generate_audit": [
+          "\"Credentials Risk Report\"",
+          "\"Database Risk Report\"",
+          "\"Nodes Risk Report\"",
+          "\"Filesystem Risk Report\"",
+          "\"Instance Risk Report\""
         ],
-        "update_workflow": [
+        "retry_execution": [
           "id",
-          "name",
-          "active",
-          "createdAt",
-          "updatedAt",
-          "tags(id,name)",
-          "settings(timezone,executionTimeout)"
+          "status",
+          "mode",
+          "startedAt",
+          "stoppedAt",
+          "workflowId",
+          "finished",
+          "retryOf",
+          "retrySuccessId"
         ],
-        "delete_workflow": [
-          "id",
-          "name",
-          "active",
-          "createdAt",
-          "updatedAt",
-          "tags(id,name)",
-          "settings(timezone,executionTimeout)"
+        "pull_source_control": [
+          "variables(added,changed)",
+          "credentials(id,name,type)",
+          "workflows(id,name)",
+          "tags(tags(id,name),mappings(workflowId,tagId))"
         ],
         "activate_workflow": [
           "id",
@@ -941,13 +1349,243 @@
           "updatedAt",
           "tags(id,name)",
           "settings(timezone,executionTimeout)"
-        ],
-        "update_workflow_tags": [
-          "id",
-          "name",
-          "createdAt",
-          "updatedAt"
         ]
+      },
+      "parameters": {
+        "name": {
+          "type": "string",
+          "description": "Property name"
+        },
+        "type": {
+          "type": "string",
+          "description": "Property type"
+        },
+        "data": {
+          "type": "object",
+          "description": "Credential data (object). Required when creating or changing credential type.",
+          "properties": {}
+        },
+        "isResolvable": {
+          "type": "boolean",
+          "description": "Property isResolvable"
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Property createdAt"
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "Property updatedAt"
+        },
+        "isGlobal": {
+          "type": "boolean",
+          "description": "Property isGlobal"
+        },
+        "isPartialData": {
+          "type": "boolean",
+          "description": "Property isPartialData"
+        },
+        "destinationProjectId": {
+          "type": "string",
+          "description": "Property destinationProjectId",
+          "required_for": [
+            "transfer_credential",
+            "transfer_workflow"
+          ]
+        },
+        "includeData": {
+          "type": "boolean",
+          "description": "Whether or not to include the execution's detailed data."
+        },
+        "status": {
+          "type": "string",
+          "description": "Status to filter the executions by."
+        },
+        "workflowId": {
+          "type": "string",
+          "description": "Workflow to filter the executions by."
+        },
+        "projectId": {
+          "type": "string",
+          "description": "Parameter projectId"
+        },
+        "limit": {
+          "type": "number",
+          "description": "The maximum number of items to return."
+        },
+        "cursor": {
+          "type": "string",
+          "description": "Paginate by setting the cursor parameter to the nextCursor attribute returned by the previous request's response. Default value fetches the first \"page\" of the collection. See pagination for more detail."
+        },
+        "loadWorkflow": {
+          "type": "boolean",
+          "description": "Property loadWorkflow"
+        },
+        "relations": {
+          "type": "array",
+          "description": "Array of user relations to add: [{ userId, role }]",
+          "items": {
+            "type": "object",
+            "properties": {
+              "userId": {
+                "type": "string"
+              },
+              "role": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "userId": {
+          "type": "string",
+          "description": "The ID of the user."
+        },
+        "role": {
+          "type": "string",
+          "description": "Property role"
+        },
+        "includeRole": {
+          "type": "boolean",
+          "description": "Whether to include the user's role or not."
+        },
+        "newRoleName": {
+          "type": "string",
+          "description": "Property newRoleName"
+        },
+        "users": {
+          "type": "array",
+          "description": "Array of users to create: [{ email, role }].",
+          "items": {
+            "type": "object",
+            "properties": {}
+          }
+        },
+        "state": {
+          "type": "string",
+          "description": "Parameter state"
+        },
+        "key": {
+          "type": "string",
+          "description": "Property key"
+        },
+        "value": {
+          "type": "string",
+          "description": "Property value"
+        },
+        "active": {
+          "type": "boolean",
+          "description": "Parameter active"
+        },
+        "tags": {
+          "type": "array",
+          "description": "Workflow tags (array of tag objects). Read-only on create/update; use update_tags action to modify.",
+          "items": {
+            "type": "object",
+            "properties": {}
+          }
+        },
+        "excludePinnedData": {
+          "type": "boolean",
+          "description": "Set this to avoid retrieving pinned data"
+        },
+        "nodes": {
+          "type": "array",
+          "description": "Workflow nodes array. Each node should follow n8n node schema (id, name, type, typeVersion, position, parameters, etc.).",
+          "items": {
+            "type": "object",
+            "properties": {}
+          }
+        },
+        "connections": {
+          "type": "object",
+          "description": "Connections map keyed by node name, following n8n workflow schema.",
+          "properties": {}
+        },
+        "settings": {
+          "type": "object",
+          "description": "Workflow settings object (timezone, executionTimeout, etc.).",
+          "properties": {}
+        },
+        "staticData": {
+          "type": "string",
+          "description": "Property staticData"
+        },
+        "shared": {
+          "type": "array",
+          "description": "Property shared",
+          "items": {
+            "type": "object",
+            "properties": {}
+          }
+        },
+        "activeVersion": {
+          "type": "object",
+          "description": "Property activeVersion",
+          "properties": {}
+        },
+        "description": {
+          "type": "string",
+          "description": "Property description"
+        },
+        "tag_ids": {
+          "type": "array",
+          "description": "Tag IDs to apply to the workflow: [{ id }].",
+          "items": {
+            "type": "object",
+            "properties": {}
+          }
+        },
+        "action": {
+          "type": "string",
+          "enum": [
+            "activate_workflow",
+            "deactivate_workflow",
+            "generate_audit",
+            "pull_source_control",
+            "retry_execution",
+            "transfer_credential",
+            "transfer_workflow"
+          ],
+          "description": "Action to perform",
+          "required": true
+        },
+        "additionalOptions": {
+          "type": "object",
+          "description": "Property additionalOptions",
+          "properties": {}
+        },
+        "id": {
+          "type": [
+            "string",
+            "number"
+          ],
+          "description": "Property id",
+          "required_for": [
+            "transfer_credential",
+            "retry_execution",
+            "activate_workflow",
+            "deactivate_workflow",
+            "transfer_workflow"
+          ],
+          "required": false
+        },
+        "credentialTypeName": {
+          "type": "string",
+          "description": "The credential type name that you want to get the schema for"
+        },
+        "force": {
+          "type": "boolean",
+          "description": "Property force"
+        },
+        "variables": {
+          "type": "object",
+          "description": "Property variables",
+          "properties": {}
+        },
+        "versionId": {
+          "type": "string",
+          "description": "The version ID to retrieve"
+        }
       }
     }
   ],
