@@ -434,11 +434,14 @@ export MCP4_TOOLNAME_MAX=30
 - `MCP4_TOKEN_MAX_LENGTH`: Maximum token length in characters (default: `1000`)
 - `MCP4_FILTER_MAX_VALUES`: Max values per filtering key (default: `10`)
 - `MCP4_HTTP_PROFILE_ROUTING`: Enable profile routing (`/profile/:id/mcp`). If enabled without a default profile, `/mcp` is not registered.
+- `MCP4_ALLOW_PROFILES`: Comma-separated profile ids/names/aliases allowed for routed profiles.
+- `MCP4_ALLOW_PROFILES_REGEX`: Regex for allowed profile ids/names/aliases (applies only when routing is enabled).
 
 **Profile routing example**:
 ```bash
 export MCP4_TRANSPORT=http
 export MCP4_HTTP_PROFILE_ROUTING=true
+export MCP4_ALLOW_PROFILES=gitlab-optimized,youtrack-optimized
 export MCP4_PROFILES_DIR=./profiles
 npx mcp4openapi
 ```
@@ -447,6 +450,7 @@ CLI alternative:
 ```bash
 npx mcp4openapi --transport http \
   --http-profile-routing true \
+  --allow-profiles gitlab,github \
   --profiles-dir ./profiles
 ```
 

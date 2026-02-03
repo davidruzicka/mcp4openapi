@@ -101,6 +101,7 @@ Enable profile-specific routes to serve multiple profiles from one HTTP server:
 export MCP4_TRANSPORT=http
 export MCP4_HTTP_PROFILE_ROUTING=true
 export MCP4_HTTP_PROFILE_INDEX=true
+export MCP4_ALLOW_PROFILES=gitlab,github
 export MCP4_PROFILES_DIR=./profiles
 export MCP4_HOST=127.0.0.1
 export MCP4_PORT=3003
@@ -113,6 +114,7 @@ npx mcp4openapi \
   --transport http \
   --http-profile-routing true \
   --http-profile-index true \
+  --allow-profiles gitlab,github \
   --profiles-dir ./profiles \
   --host 127.0.0.1 \
   --port 3003
@@ -128,6 +130,10 @@ Routes:
 Default profile behavior:
 - If `MCP4_PROFILE_PATH` (or `--profile-path`) is set, `/mcp` and `/sse` stay available.
 - If no default profile is configured, `/mcp` is not registered and you must use `/profile/:profileId/mcp`.
+
+Allowlist controls (only when routing is enabled):
+- `MCP4_ALLOW_PROFILES`: Comma-separated profile ids/names/aliases that can be routed.
+- `MCP4_ALLOW_PROFILES_REGEX`: Regex pattern that can match profile ids/names/aliases.
 
 OAuth and metadata endpoints are scoped per profile when routing is enabled:
 - `/.well-known/oauth-protected-resource/mcp` -> `/profile/:profileId/.well-known/oauth-protected-resource/mcp`

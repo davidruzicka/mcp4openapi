@@ -17,6 +17,7 @@ import { MCPServerManager } from '../mcp/mcp-server-manager.js';
 import { getHttpProfileRoutingErrorMessage } from '../profile/startup-validation.js';
 import { listProfiles } from '../profile/profile-resolver.js';
 import { resolveStartupProfile } from '../profile/startup-profile.js';
+import { isProfileAllowed, parseProfileAllowlistConfig } from '../profile/profile-allowlist.js';
 
 /**
  * Fetch OAuth Authorization Server Metadata (RFC 8414)
@@ -197,7 +198,20 @@ export async function main() {
 
   const transport = process.env.MCP4_TRANSPORT || 'stdio';
   const httpProfileRoutingEnabled = process.env.MCP4_HTTP_PROFILE_ROUTING === 'true';
-  const hasDefaultProfile = !!defaultProfile;
+  const profileAllowlistConfig = httpProfileRoutingEnabled
+    ? parseProfileAllowlistConfig({
+      allowNames: process.env.MCP4_ALLOW_PROFILES,
+      allowNameRegex: process.env.MCP4_ALLOW_PROFILES_REGEX,
+    })
+    : null;
+  const isDefaultAllowed = defaultProfile ? isProfileAllowed(defaultProfile, profileAllowlistConfig) : false;
+  const defaultProfileForRouting = defaultProfile && isDefaultAllowed ? defaultProfile : undefined;
+  if (defaultProfile && httpProfileRoutingEnabled && profileAllowlistConfig && !isDefaultAllowed) {
+    logger.warn('Default profile excluded by allowlist; /mcp will be disabled', {
+      profileId: defaultProfile.profileId,
+    });
+  }
+  const hasDefaultProfile = !!defaultProfileForRouting;
   const hasSpecPath = !!specPath;
 
   const routingError = getHttpProfileRoutingErrorMessage({
@@ -226,13 +240,14 @@ export async function main() {
       const httpTransport = new HttpTransport({
         ...baseConfig,
         profileRoutingEnabled: true,
-        defaultProfileId: defaultProfile?.profileId,
+        defaultProfileId: defaultProfileForRouting?.profileId,
       }, logger);
 
       const registry = new ProfileRegistry({
         profilesDir,
-        defaultProfile,
+        defaultProfile: defaultProfileForRouting,
         specPathOverride: hasExplicitSpecPath ? specPathOverride : undefined,
+        allowlist: profileAllowlistConfig,
       });
       const manager = new MCPServerManager(registry, logger, httpTransport);
 
