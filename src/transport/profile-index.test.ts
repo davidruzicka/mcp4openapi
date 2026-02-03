@@ -1,8 +1,11 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   buildProfileIndexPayload,
   parseAcceptLanguage,
   renderProfileIndexHtml,
+  loadProfileIndexTemplate,
+  __test__,
+  resolveTemplateRoot,
 } from './profile-index.js';
 import type { ListedProfileDetails } from '../profile/profile-resolver.js';
 
@@ -125,5 +128,44 @@ describe('profile index helpers', () => {
     expect(html).toContain('MCP profiles');
     expect(html).toContain('nonce123');
     expect(html).toContain('"profileId":"demo"');
+  });
+
+  it('builds Czech i18n labels via payload', () => {
+    const profiles: ListedProfileDetails[] = [
+      {
+        profileId: 'demo',
+        profileName: 'demo',
+        profileAliases: [],
+        description: 'Demo',
+        envVars: [],
+        authMethods: [],
+      },
+    ];
+
+    const { templateData } = buildProfileIndexPayload(profiles, 'http://localhost:3003', 'cs');
+    expect(templateData.title).toContain('MCP profily');
+  });
+
+  it('loads and caches the profile index template', async () => {
+    const first = await loadProfileIndexTemplate();
+    const second = await loadProfileIndexTemplate();
+    expect(first.length).toBeGreaterThan(0);
+    expect(second).toBe(first);
+  });
+
+  it('resolves template root when no package.json is found', () => {
+    const root = resolveTemplateRoot('/', () => false);
+    expect(root).toBe('/');
+  });
+
+  it('exposes helpers for empty inputs', () => {
+    expect(__test__.buildInputsBlock([], '  ')).toEqual([]);
+    expect(__test__.safeJsonForHtml({ a: '<tag>' })).toContain('\\u003c');
+  });
+
+  it('deduplicates input ids when names normalize to same slug', () => {
+    const inputs = __test__.buildInputs(['API TOKEN', 'api-token']);
+    expect(inputs[0].id).toBe('api-token');
+    expect(inputs[1].id).toBe('api-token-2');
   });
 });
