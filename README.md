@@ -134,6 +134,9 @@ Predefined profiles in the `profiles/` directory contains names for easy referen
 - GitLab profile: `gitlab`
 - YouTrack profile: `youtrack`
 - SemGrep profile: `semgrep`
+- Grafana profile: `grafana`
+- n8n profile: `n8n`
+- n8n simple node listing profile: `n8n-nodes`
 
 Profiles are resolved from `./profiles` path by default. If that directory is missing, the bundled npm package profiles are used. Override with `--profiles-dir` or `MCP4_PROFILES_DIR`.
 
