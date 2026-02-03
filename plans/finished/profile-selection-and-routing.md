@@ -67,7 +67,7 @@
   - [x] Require `MCP4_HTTP_PROFILE_ROUTING=true` when no default profile is set.
   - [x] Fail fast if no default profile and routing flag off with:
         "HTTP profile routing is disabled and no default profile is configured.\nSet MCP4_HTTP_PROFILE_ROUTING=true to enable /profile/:id/mcp routes, or provide MCP4_PROFILE_PATH (or --profile-path) to serve /mcp."
-  - [ ] Tests:
+  - [x] Tests:
         - [x] Default profile set -> `/mcp` exists.
         - [x] No default + routing flag on -> `/mcp` missing, `/profile/:id/mcp` works.
         - [x] No default + routing flag off -> startup fails with the error above.
