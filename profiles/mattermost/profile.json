@@ -1,0 +1,463 @@
+{
+  "$schema": "../../profile-schema.json",
+  "profile_name": "mattermost",
+  "profile_id": "mattermost",
+  "profile_aliases": ["mattermost-default"],
+  "openapi_spec_path": "./openapi.yaml",
+  "description": "CRUD tools for Mattermost users, teams, channels, posts, files, reactions, and threads.",
+
+  "parameter_aliases": {
+    "id": ["user_id", "team_id", "channel_id", "post_id", "file_id", "thread_id"],
+    "user_id": ["user", "uid"],
+    "team_id": ["team"],
+    "channel_id": ["channel"],
+    "post_id": ["post"],
+    "file_id": ["file"],
+    "thread_id": ["thread"]
+  },
+
+  "tools": [
+    {
+      "name": "create_content",
+      "description": "Create Mattermost content. Actions: 'create_user', 'create_team', 'create_channel', 'create_post', 'upload_file', 'save_reaction'.",
+      "metadata_params": ["action"],
+      "operations": {
+        "create_user": "CreateUser",
+        "create_team": "CreateTeam",
+        "create_channel": "CreateChannel",
+        "create_post": "CreatePost",
+        "upload_file": "UploadFile",
+        "save_reaction": "SaveReaction"
+      },
+      "parameters": {
+        "action": {
+          "type": "string",
+          "enum": ["create_user", "create_team", "create_channel", "create_post", "upload_file", "save_reaction"],
+          "description": "Action to perform",
+          "required": true
+        },
+        "email": {
+          "type": "string",
+          "description": "User email",
+          "required_for": ["create_user"]
+        },
+        "username": {
+          "type": "string",
+          "description": "User username",
+          "required_for": ["create_user"]
+        },
+        "password": {
+          "type": "string",
+          "description": "User password",
+          "required_for": ["create_user"]
+        },
+        "first_name": {
+          "type": "string",
+          "description": "User first name"
+        },
+        "last_name": {
+          "type": "string",
+          "description": "User last name"
+        },
+        "nickname": {
+          "type": "string",
+          "description": "User nickname"
+        },
+        "locale": {
+          "type": "string",
+          "description": "User locale"
+        },
+        "name": {
+          "type": "string",
+          "description": "Team or channel name",
+          "required_for": ["create_team", "create_channel"]
+        },
+        "display_name": {
+          "type": "string",
+          "description": "Display name",
+          "required_for": ["create_team", "create_channel"]
+        },
+        "type": {
+          "type": "string",
+          "description": "Team or channel type (e.g., O for open, P for private)",
+          "required_for": ["create_team", "create_channel"]
+        },
+        "description": {
+          "type": "string",
+          "description": "Team description"
+        },
+        "team_id": {
+          "type": "string",
+          "description": "Team ID",
+          "required_for": ["create_channel"]
+        },
+        "purpose": {
+          "type": "string",
+          "description": "Channel purpose"
+        },
+        "header": {
+          "type": "string",
+          "description": "Channel header"
+        },
+        "channel_id": {
+          "type": "string",
+          "description": "Channel ID",
+          "required_for": ["create_post", "upload_file"]
+        },
+        "message": {
+          "type": "string",
+          "description": "Post message",
+          "required_for": ["create_post"]
+        },
+        "root_id": {
+          "type": "string",
+          "description": "Root post ID for threads"
+        },
+        "file_ids": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "File IDs to attach to a post"
+        },
+        "props": {
+          "type": "object",
+          "description": "Post props (custom JSON)",
+          "properties": {}
+        },
+        "files": {
+          "type": "string",
+          "description": "Binary file contents (multipart/form-data)",
+          "required_for": ["upload_file"]
+        },
+        "filename": {
+          "type": "string",
+          "description": "File name (optional for upload)"
+        },
+        "client_ids": {
+          "type": "string",
+          "description": "Client IDs for upload correlation"
+        },
+        "post_id": {
+          "type": "string",
+          "description": "Post ID",
+          "required_for": ["save_reaction"]
+        },
+        "user_id": {
+          "type": "string",
+          "description": "User ID",
+          "required_for": ["save_reaction"]
+        },
+        "emoji_name": {
+          "type": "string",
+          "description": "Emoji name",
+          "required_for": ["save_reaction"]
+        }
+      }
+    },
+
+    {
+      "name": "retrieve_content",
+      "description": "Retrieve Mattermost content. Actions: 'list_users', 'get_user', 'list_teams', 'get_team', 'list_channels', 'get_channel', 'list_posts_for_channel', 'get_post', 'get_post_thread', 'get_user_threads', 'get_user_thread', 'get_file_infos_for_post', 'get_file_info', 'get_file', 'get_file_thumbnail', 'get_file_preview', 'get_file_link', 'get_reactions'.",
+      "metadata_params": ["action"],
+      "operations": {
+        "list_users": "GetUsers",
+        "get_user": "GetUser",
+        "list_teams": "GetAllTeams",
+        "get_team": "GetTeam",
+        "list_channels": "GetAllChannels",
+        "get_channel": "GetChannel",
+        "list_posts_for_channel": "GetPostsForChannel",
+        "get_post": "GetPost",
+        "get_post_thread": "GetPostThread",
+        "get_user_threads": "GetUserThreads",
+        "get_user_thread": "GetUserThread",
+        "get_file_infos_for_post": "GetFileInfosForPost",
+        "get_file_info": "GetFileInfo",
+        "get_file": "GetFile",
+        "get_file_thumbnail": "GetFileThumbnail",
+        "get_file_preview": "GetFilePreview",
+        "get_file_link": "GetFileLink",
+        "get_reactions": "GetReactions"
+      },
+      "response_fields": {
+        "list_users": ["id", "username", "email", "first_name", "last_name", "nickname", "create_at", "update_at"],
+        "get_user": ["id", "username", "email", "first_name", "last_name", "nickname", "create_at", "update_at"],
+        "list_teams": ["id", "name", "display_name", "type", "description", "create_at", "update_at"],
+        "get_team": ["id", "name", "display_name", "type", "description", "create_at", "update_at"],
+        "list_channels": ["id", "team_id", "name", "display_name", "type", "purpose", "header", "create_at", "update_at", "delete_at"],
+        "get_channel": ["id", "team_id", "name", "display_name", "type", "purpose", "header", "create_at", "update_at", "delete_at"],
+        "list_posts_for_channel": ["order", "posts"],
+        "get_post": ["id", "channel_id", "message", "user_id", "root_id", "create_at", "update_at", "delete_at"],
+        "get_post_thread": ["order", "posts"],
+        "get_user_threads": ["threads", "total", "unread_mentions_per_channel", "unread_replies_per_channel"],
+        "get_user_thread": ["id", "reply_count", "participants", "last_reply_at", "last_viewed_at", "post"]
+      },
+      "parameters": {
+        "action": {
+          "type": "string",
+          "enum": ["list_users", "get_user", "list_teams", "get_team", "list_channels", "get_channel", "list_posts_for_channel", "get_post", "get_post_thread", "get_user_threads", "get_user_thread", "get_file_infos_for_post", "get_file_info", "get_file", "get_file_thumbnail", "get_file_preview", "get_file_link", "get_reactions"],
+          "description": "Action to perform",
+          "required": true
+        },
+        "user_id": {
+          "type": "string",
+          "description": "User ID",
+          "required_for": ["get_user", "get_user_threads", "get_user_thread"]
+        },
+        "team_id": {
+          "type": "string",
+          "description": "Team ID",
+          "required_for": ["get_user_threads", "get_user_thread"]
+        },
+        "channel_id": {
+          "type": "string",
+          "description": "Channel ID",
+          "required_for": ["list_posts_for_channel"]
+        },
+        "post_id": {
+          "type": "string",
+          "description": "Post ID",
+          "required_for": ["get_post", "get_post_thread", "get_file_infos_for_post", "get_reactions"]
+        },
+        "thread_id": {
+          "type": "string",
+          "description": "Thread ID",
+          "required_for": ["get_user_thread"]
+        },
+        "file_id": {
+          "type": "string",
+          "description": "File ID",
+          "required_for": ["get_file_info", "get_file", "get_file_thumbnail", "get_file_preview", "get_file_link"]
+        },
+        "page": {
+          "type": "integer",
+          "description": "Page number (0-indexed)",
+          "default": 0
+        },
+        "per_page": {
+          "type": "integer",
+          "description": "Items per page",
+          "default": 60
+        },
+        "since": {
+          "type": "integer",
+          "description": "Filter by updated timestamp (threads)"
+        }
+      }
+    },
+
+    {
+      "name": "update_content",
+      "description": "Update Mattermost content. Actions: 'update_user', 'patch_user', 'update_team', 'update_channel', 'update_post', 'update_threads_read', 'update_thread_read', 'set_thread_unread', 'start_following_thread', 'move_thread'.",
+      "metadata_params": ["action"],
+      "operations": {
+        "update_user": "UpdateUser",
+        "patch_user": "PatchUser",
+        "update_team": "UpdateTeam",
+        "update_channel": "UpdateChannel",
+        "update_post": "UpdatePost",
+        "update_threads_read": "UpdateThreadsReadForUser",
+        "update_thread_read": "UpdateThreadReadForUser",
+        "set_thread_unread": "SetThreadUnreadByPostId",
+        "start_following_thread": "StartFollowingThread",
+        "move_thread": "MoveThread"
+      },
+      "response_fields": {
+        "update_user": ["id", "username", "email", "first_name", "last_name", "nickname", "create_at", "update_at"],
+        "patch_user": ["id", "username", "email", "first_name", "last_name", "nickname", "create_at", "update_at"],
+        "update_team": ["id", "name", "display_name", "type", "description", "create_at", "update_at"],
+        "update_channel": ["id", "team_id", "name", "display_name", "type", "purpose", "header", "create_at", "update_at", "delete_at"],
+        "update_post": ["id", "channel_id", "message", "user_id", "root_id", "create_at", "update_at", "delete_at"]
+      },
+      "parameters": {
+        "action": {
+          "type": "string",
+          "enum": ["update_user", "patch_user", "update_team", "update_channel", "update_post", "update_threads_read", "update_thread_read", "set_thread_unread", "start_following_thread", "move_thread"],
+          "description": "Action to perform",
+          "required": true
+        },
+        "user_id": {
+          "type": "string",
+          "description": "User ID",
+          "required_for": ["update_user", "patch_user", "update_threads_read", "update_thread_read", "set_thread_unread", "start_following_thread"]
+        },
+        "team_id": {
+          "type": "string",
+          "description": "Team ID",
+          "required_for": ["update_team", "update_threads_read", "update_thread_read", "set_thread_unread", "start_following_thread"]
+        },
+        "channel_id": {
+          "type": "string",
+          "description": "Channel ID",
+          "required_for": ["update_channel", "move_thread"]
+        },
+        "post_id": {
+          "type": "string",
+          "description": "Post ID",
+          "required_for": ["update_post", "set_thread_unread", "move_thread"]
+        },
+        "thread_id": {
+          "type": "string",
+          "description": "Thread ID",
+          "required_for": ["update_thread_read", "set_thread_unread", "start_following_thread"]
+        },
+        "timestamp": {
+          "type": "string",
+          "description": "Read timestamp",
+          "required_for": ["update_thread_read"]
+        },
+        "message": {
+          "type": "string",
+          "description": "Updated post message",
+          "required_for": ["update_post"]
+        },
+        "id": {
+          "type": "string",
+          "description": "Resource ID",
+          "required_for": ["update_user", "update_team", "update_channel", "update_post"]
+        },
+        "props": {
+          "type": "object",
+          "description": "Post props (custom JSON)",
+          "properties": {}
+        },
+        "email": {
+          "type": "string",
+          "description": "User email"
+        },
+        "username": {
+          "type": "string",
+          "description": "User username",
+          "required_for": ["update_user"]
+        },
+        "first_name": {
+          "type": "string",
+          "description": "User first name"
+        },
+        "last_name": {
+          "type": "string",
+          "description": "User last name"
+        },
+        "nickname": {
+          "type": "string",
+          "description": "User nickname"
+        },
+        "display_name": {
+          "type": "string",
+          "description": "Display name"
+        },
+        "name": {
+          "type": "string",
+          "description": "Name"
+        },
+        "type": {
+          "type": "string",
+          "description": "Team or channel type (e.g., O for open, P for private)"
+        },
+        "description": {
+          "type": "string",
+          "description": "Description",
+          "required_for": ["update_team"]
+        },
+        "company_name": {
+          "type": "string",
+          "description": "Company name",
+          "required_for": ["update_team"]
+        },
+        "allowed_domains": {
+          "type": "string",
+          "description": "Allowed domains (comma-separated)",
+          "required_for": ["update_team"]
+        },
+        "invite_id": {
+          "type": "string",
+          "description": "Invite ID",
+          "required_for": ["update_team"]
+        },
+        "allow_open_invite": {
+          "type": "string",
+          "description": "Allow open invite (string per OpenAPI spec)",
+          "required_for": ["update_team"]
+        },
+        "purpose": {
+          "type": "string",
+          "description": "Channel purpose"
+        },
+        "header": {
+          "type": "string",
+          "description": "Channel header"
+        }
+      }
+    },
+
+    {
+      "name": "delete_content",
+      "description": "Delete Mattermost content. Actions: 'delete_user', 'delete_team', 'delete_channel', 'delete_post', 'delete_reaction', 'stop_following_thread'.",
+      "metadata_params": ["action"],
+      "operations": {
+        "delete_user": "DeleteUser",
+        "delete_team": "SoftDeleteTeam",
+        "delete_channel": "DeleteChannel",
+        "delete_post": "DeletePost",
+        "delete_reaction": "DeleteReaction",
+        "stop_following_thread": "StopFollowingThread"
+      },
+      "parameters": {
+        "action": {
+          "type": "string",
+          "enum": ["delete_user", "delete_team", "delete_channel", "delete_post", "delete_reaction", "stop_following_thread"],
+          "description": "Action to perform",
+          "required": true
+        },
+        "user_id": {
+          "type": "string",
+          "description": "User ID",
+          "required_for": ["delete_user", "delete_reaction", "stop_following_thread"]
+        },
+        "team_id": {
+          "type": "string",
+          "description": "Team ID",
+          "required_for": ["delete_team", "stop_following_thread"]
+        },
+        "channel_id": {
+          "type": "string",
+          "description": "Channel ID",
+          "required_for": ["delete_channel"]
+        },
+        "post_id": {
+          "type": "string",
+          "description": "Post ID",
+          "required_for": ["delete_post", "delete_reaction"]
+        },
+        "emoji_name": {
+          "type": "string",
+          "description": "Emoji name",
+          "required_for": ["delete_reaction"]
+        },
+        "thread_id": {
+          "type": "string",
+          "description": "Thread ID",
+          "required_for": ["stop_following_thread"]
+        }
+      }
+    }
+  ],
+
+  "interceptors": {
+    "auth": {
+      "type": "bearer",
+      "value_from_env": "MATTERMOST_TOKEN"
+    },
+    "base_url": {
+      "value_from_env": "MATTERMOST_API_BASE_URL",
+      "default": "http://localhost:8065/api/v4"
+    },
+    "rate_limit": {
+      "max_requests_per_minute": 600
+    },
+    "retry": {
+      "max_attempts": 3,
+      "backoff_ms": [1000, 2000, 4000],
+      "retry_on_status": [429, 500, 502, 503, 504]
+    }
+  }
+}

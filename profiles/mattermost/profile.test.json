@@ -1,0 +1,607 @@
+{
+  "$schema": "../../src/testing/test-schema.ts",
+  "profile_name": "mattermost",
+  "variables": {
+    "userId": "user-123",
+    "teamId": "team-123",
+    "channelId": "channel-123",
+    "postId": "post-123",
+    "threadId": "thread-123",
+    "fileId": "file-123",
+    "emojiName": "thumbsup",
+    "timestamp": "1700000000000"
+  },
+  "scenarios": [
+    {
+      "name": "Create User",
+      "tool": "create_content",
+      "arguments": {
+        "action": "create_user",
+        "email": "user@example.com",
+        "username": "user",
+        "password": "Password123!"
+      },
+      "mocks": [
+        {
+          "operationId": "CreateUser",
+          "response": { "body": { "id": "{{userId}}", "username": "user" } }
+        }
+      ],
+      "expect": { "success": true }
+    },
+    {
+      "name": "Create Team",
+      "tool": "create_content",
+      "arguments": {
+        "action": "create_team",
+        "name": "team",
+        "display_name": "Team",
+        "type": "O"
+      },
+      "mocks": [
+        {
+          "operationId": "CreateTeam",
+          "response": { "body": { "id": "{{teamId}}", "name": "team" } }
+        }
+      ],
+      "expect": { "success": true }
+    },
+    {
+      "name": "Create Channel",
+      "tool": "create_content",
+      "arguments": {
+        "action": "create_channel",
+        "team_id": "{{teamId}}",
+        "name": "channel",
+        "display_name": "Channel",
+        "type": "O"
+      },
+      "mocks": [
+        {
+          "operationId": "CreateChannel",
+          "response": { "body": { "id": "{{channelId}}", "name": "channel" } }
+        }
+      ],
+      "expect": { "success": true }
+    },
+    {
+      "name": "Create Post",
+      "tool": "create_content",
+      "arguments": {
+        "action": "create_post",
+        "channel_id": "{{channelId}}",
+        "message": "Hello"
+      },
+      "mocks": [
+        {
+          "operationId": "CreatePost",
+          "response": { "body": { "id": "{{postId}}", "message": "Hello" } }
+        }
+      ],
+      "expect": { "success": true }
+    },
+    {
+      "name": "Upload File",
+      "tool": "create_content",
+      "arguments": {
+        "action": "upload_file",
+        "channel_id": "{{channelId}}",
+        "files": "test",
+        "filename": "test.txt"
+      },
+      "mocks": [
+        {
+          "operationId": "UploadFile",
+          "response": { "body": { "file_infos": [{ "id": "{{fileId}}" }] } }
+        }
+      ],
+      "expect": { "success": true }
+    },
+    {
+      "name": "Save Reaction",
+      "tool": "create_content",
+      "arguments": {
+        "action": "save_reaction",
+        "post_id": "{{postId}}",
+        "user_id": "{{userId}}",
+        "emoji_name": "{{emojiName}}"
+      },
+      "mocks": [
+        {
+          "operationId": "SaveReaction",
+          "response": { "body": { "post_id": "{{postId}}", "emoji_name": "{{emojiName}}" } }
+        }
+      ],
+      "expect": { "success": true }
+    },
+
+    {
+      "name": "List Users",
+      "tool": "retrieve_content",
+      "arguments": { "action": "list_users" },
+      "mocks": [
+        {
+          "operationId": "GetUsers",
+          "response": { "body": [{ "id": "{{userId}}" }] }
+        }
+      ],
+      "expect": { "success": true }
+    },
+    {
+      "name": "Get User",
+      "tool": "retrieve_content",
+      "arguments": { "action": "get_user", "user_id": "{{userId}}" },
+      "mocks": [
+        {
+          "operationId": "GetUser",
+          "response": { "body": { "id": "{{userId}}" } }
+        }
+      ],
+      "expect": { "success": true }
+    },
+    {
+      "name": "List Teams",
+      "tool": "retrieve_content",
+      "arguments": { "action": "list_teams" },
+      "mocks": [
+        {
+          "operationId": "GetAllTeams",
+          "response": { "body": [{ "id": "{{teamId}}" }] }
+        }
+      ],
+      "expect": { "success": true }
+    },
+    {
+      "name": "Get Team",
+      "tool": "retrieve_content",
+      "arguments": { "action": "get_team", "team_id": "{{teamId}}" },
+      "mocks": [
+        {
+          "operationId": "GetTeam",
+          "response": { "body": { "id": "{{teamId}}" } }
+        }
+      ],
+      "expect": { "success": true }
+    },
+    {
+      "name": "List Channels",
+      "tool": "retrieve_content",
+      "arguments": { "action": "list_channels" },
+      "mocks": [
+        {
+          "operationId": "GetAllChannels",
+          "response": { "body": [{ "id": "{{channelId}}" }] }
+        }
+      ],
+      "expect": { "success": true }
+    },
+    {
+      "name": "Get Channel",
+      "tool": "retrieve_content",
+      "arguments": { "action": "get_channel", "channel_id": "{{channelId}}" },
+      "mocks": [
+        {
+          "operationId": "GetChannel",
+          "response": { "body": { "id": "{{channelId}}" } }
+        }
+      ],
+      "expect": { "success": true }
+    },
+    {
+      "name": "List Posts For Channel",
+      "tool": "retrieve_content",
+      "arguments": { "action": "list_posts_for_channel", "channel_id": "{{channelId}}" },
+      "mocks": [
+        {
+          "operationId": "GetPostsForChannel",
+          "response": { "body": { "order": ["{{postId}}"], "posts": { "{{postId}}": { "id": "{{postId}}" } } } }
+        }
+      ],
+      "expect": { "success": true }
+    },
+    {
+      "name": "Get Post",
+      "tool": "retrieve_content",
+      "arguments": { "action": "get_post", "post_id": "{{postId}}" },
+      "mocks": [
+        {
+          "operationId": "GetPost",
+          "response": { "body": { "id": "{{postId}}" } }
+        }
+      ],
+      "expect": { "success": true }
+    },
+    {
+      "name": "Get Post Thread",
+      "tool": "retrieve_content",
+      "arguments": { "action": "get_post_thread", "post_id": "{{postId}}" },
+      "mocks": [
+        {
+          "operationId": "GetPostThread",
+          "response": { "body": { "order": ["{{postId}}"], "posts": { "{{postId}}": { "id": "{{postId}}" } } } }
+        }
+      ],
+      "expect": { "success": true }
+    },
+    {
+      "name": "Get User Threads",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "get_user_threads",
+        "user_id": "{{userId}}",
+        "team_id": "{{teamId}}"
+      },
+      "mocks": [
+        {
+          "operationId": "GetUserThreads",
+          "response": { "body": { "threads": [] } }
+        }
+      ],
+      "expect": { "success": true }
+    },
+    {
+      "name": "Get User Thread",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "get_user_thread",
+        "user_id": "{{userId}}",
+        "team_id": "{{teamId}}",
+        "thread_id": "{{threadId}}"
+      },
+      "mocks": [
+        {
+          "operationId": "GetUserThread",
+          "response": { "body": { "id": "{{threadId}}" } }
+        }
+      ],
+      "expect": { "success": true }
+    },
+    {
+      "name": "Get File Infos For Post",
+      "tool": "retrieve_content",
+      "arguments": { "action": "get_file_infos_for_post", "post_id": "{{postId}}" },
+      "mocks": [
+        {
+          "operationId": "GetFileInfosForPost",
+          "response": { "body": [{ "id": "{{fileId}}" }] }
+        }
+      ],
+      "expect": { "success": true }
+    },
+    {
+      "name": "Get File Info",
+      "tool": "retrieve_content",
+      "arguments": { "action": "get_file_info", "file_id": "{{fileId}}" },
+      "mocks": [
+        {
+          "operationId": "GetFileInfo",
+          "response": { "body": { "id": "{{fileId}}" } }
+        }
+      ],
+      "expect": { "success": true }
+    },
+    {
+      "name": "Get File",
+      "tool": "retrieve_content",
+      "arguments": { "action": "get_file", "file_id": "{{fileId}}" },
+      "mocks": [
+        {
+          "operationId": "GetFile",
+          "response": { "body": "file" }
+        }
+      ],
+      "expect": { "success": true }
+    },
+    {
+      "name": "Get File Thumbnail",
+      "tool": "retrieve_content",
+      "arguments": { "action": "get_file_thumbnail", "file_id": "{{fileId}}" },
+      "mocks": [
+        {
+          "operationId": "GetFileThumbnail",
+          "response": { "body": "thumb" }
+        }
+      ],
+      "expect": { "success": true }
+    },
+    {
+      "name": "Get File Preview",
+      "tool": "retrieve_content",
+      "arguments": { "action": "get_file_preview", "file_id": "{{fileId}}" },
+      "mocks": [
+        {
+          "operationId": "GetFilePreview",
+          "response": { "body": "preview" }
+        }
+      ],
+      "expect": { "success": true }
+    },
+    {
+      "name": "Get File Link",
+      "tool": "retrieve_content",
+      "arguments": { "action": "get_file_link", "file_id": "{{fileId}}" },
+      "mocks": [
+        {
+          "operationId": "GetFileLink",
+          "response": { "body": { "link": "https://example.com/file" } }
+        }
+      ],
+      "expect": { "success": true }
+    },
+    {
+      "name": "Get Reactions",
+      "tool": "retrieve_content",
+      "arguments": { "action": "get_reactions", "post_id": "{{postId}}" },
+      "mocks": [
+        {
+          "operationId": "GetReactions",
+          "response": { "body": [{ "post_id": "{{postId}}", "emoji_name": "{{emojiName}}" }] }
+        }
+      ],
+      "expect": { "success": true }
+    },
+
+    {
+      "name": "Update User",
+      "tool": "update_content",
+      "arguments": {
+        "action": "update_user",
+        "user_id": "{{userId}}",
+        "id": "{{userId}}",
+        "username": "user",
+        "email": "new@example.com"
+      },
+      "mocks": [
+        {
+          "operationId": "UpdateUser",
+          "response": { "body": { "id": "{{userId}}", "email": "new@example.com" } }
+        }
+      ],
+      "expect": { "success": true }
+    },
+    {
+      "name": "Patch User",
+      "tool": "update_content",
+      "arguments": {
+        "action": "patch_user",
+        "user_id": "{{userId}}",
+        "email": "patch@example.com"
+      },
+      "mocks": [
+        {
+          "operationId": "PatchUser",
+          "response": { "body": { "id": "{{userId}}", "email": "patch@example.com" } }
+        }
+      ],
+      "expect": { "success": true }
+    },
+    {
+      "name": "Update Team",
+      "tool": "update_content",
+      "arguments": {
+        "action": "update_team",
+        "team_id": "{{teamId}}",
+        "id": "{{teamId}}",
+        "display_name": "Team Updated",
+        "description": "Updated description",
+        "company_name": "Example Co",
+        "allowed_domains": "example.com",
+        "invite_id": "invite-123",
+        "allow_open_invite": "true"
+      },
+      "mocks": [
+        {
+          "operationId": "UpdateTeam",
+          "response": { "body": { "id": "{{teamId}}", "display_name": "Team Updated" } }
+        }
+      ],
+      "expect": { "success": true }
+    },
+    {
+      "name": "Update Channel",
+      "tool": "update_content",
+      "arguments": {
+        "action": "update_channel",
+        "channel_id": "{{channelId}}",
+        "id": "{{channelId}}",
+        "display_name": "Channel Updated"
+      },
+      "mocks": [
+        {
+          "operationId": "UpdateChannel",
+          "response": { "body": { "id": "{{channelId}}", "display_name": "Channel Updated" } }
+        }
+      ],
+      "expect": { "success": true }
+    },
+    {
+      "name": "Update Post",
+      "tool": "update_content",
+      "arguments": {
+        "action": "update_post",
+        "post_id": "{{postId}}",
+        "id": "{{postId}}",
+        "message": "Updated"
+      },
+      "mocks": [
+        {
+          "operationId": "UpdatePost",
+          "response": { "body": { "id": "{{postId}}", "message": "Updated" } }
+        }
+      ],
+      "expect": { "success": true }
+    },
+    {
+      "name": "Update Threads Read",
+      "tool": "update_content",
+      "arguments": {
+        "action": "update_threads_read",
+        "user_id": "{{userId}}",
+        "team_id": "{{teamId}}"
+      },
+      "mocks": [
+        {
+          "operationId": "UpdateThreadsReadForUser",
+          "response": { "status": 200, "body": {} }
+        }
+      ],
+      "expect": { "success": true }
+    },
+    {
+      "name": "Update Thread Read",
+      "tool": "update_content",
+      "arguments": {
+        "action": "update_thread_read",
+        "user_id": "{{userId}}",
+        "team_id": "{{teamId}}",
+        "thread_id": "{{threadId}}",
+        "timestamp": "{{timestamp}}"
+      },
+      "mocks": [
+        {
+          "operationId": "UpdateThreadReadForUser",
+          "response": { "status": 200, "body": {} }
+        }
+      ],
+      "expect": { "success": true }
+    },
+    {
+      "name": "Set Thread Unread",
+      "tool": "update_content",
+      "arguments": {
+        "action": "set_thread_unread",
+        "user_id": "{{userId}}",
+        "team_id": "{{teamId}}",
+        "thread_id": "{{threadId}}",
+        "post_id": "{{postId}}"
+      },
+      "mocks": [
+        {
+          "operationId": "SetThreadUnreadByPostId",
+          "response": { "status": 200, "body": {} }
+        }
+      ],
+      "expect": { "success": true }
+    },
+    {
+      "name": "Start Following Thread",
+      "tool": "update_content",
+      "arguments": {
+        "action": "start_following_thread",
+        "user_id": "{{userId}}",
+        "team_id": "{{teamId}}",
+        "thread_id": "{{threadId}}"
+      },
+      "mocks": [
+        {
+          "operationId": "StartFollowingThread",
+          "response": { "status": 200, "body": {} }
+        }
+      ],
+      "expect": { "success": true }
+    },
+    {
+      "name": "Move Thread",
+      "tool": "update_content",
+      "arguments": {
+        "action": "move_thread",
+        "post_id": "{{postId}}",
+        "channel_id": "{{channelId}}"
+      },
+      "mocks": [
+        {
+          "operationId": "MoveThread",
+          "response": { "status": 200, "body": {} }
+        }
+      ],
+      "expect": { "success": true }
+    },
+
+    {
+      "name": "Delete User",
+      "tool": "delete_content",
+      "arguments": { "action": "delete_user", "user_id": "{{userId}}" },
+      "mocks": [
+        {
+          "operationId": "DeleteUser",
+          "response": { "status": 200, "body": {} }
+        }
+      ],
+      "expect": { "success": true }
+    },
+    {
+      "name": "Delete Team",
+      "tool": "delete_content",
+      "arguments": { "action": "delete_team", "team_id": "{{teamId}}" },
+      "mocks": [
+        {
+          "operationId": "SoftDeleteTeam",
+          "response": { "status": 200, "body": {} }
+        }
+      ],
+      "expect": { "success": true }
+    },
+    {
+      "name": "Delete Channel",
+      "tool": "delete_content",
+      "arguments": { "action": "delete_channel", "channel_id": "{{channelId}}" },
+      "mocks": [
+        {
+          "operationId": "DeleteChannel",
+          "response": { "status": 200, "body": {} }
+        }
+      ],
+      "expect": { "success": true }
+    },
+    {
+      "name": "Delete Post",
+      "tool": "delete_content",
+      "arguments": { "action": "delete_post", "post_id": "{{postId}}" },
+      "mocks": [
+        {
+          "operationId": "DeletePost",
+          "response": { "status": 200, "body": {} }
+        }
+      ],
+      "expect": { "success": true }
+    },
+    {
+      "name": "Delete Reaction",
+      "tool": "delete_content",
+      "arguments": {
+        "action": "delete_reaction",
+        "user_id": "{{userId}}",
+        "post_id": "{{postId}}",
+        "emoji_name": "{{emojiName}}"
+      },
+      "mocks": [
+        {
+          "operationId": "DeleteReaction",
+          "response": { "status": 200, "body": {} }
+        }
+      ],
+      "expect": { "success": true }
+    },
+    {
+      "name": "Stop Following Thread",
+      "tool": "delete_content",
+      "arguments": {
+        "action": "stop_following_thread",
+        "user_id": "{{userId}}",
+        "team_id": "{{teamId}}",
+        "thread_id": "{{threadId}}"
+      },
+      "mocks": [
+        {
+          "operationId": "StopFollowingThread",
+          "response": { "status": 200, "body": {} }
+        }
+      ],
+      "expect": { "success": true }
+    }
+  ],
+  "coverage": {
+    "require_all_actions": true,
+    "skip_actions": {}
+  }
+}
