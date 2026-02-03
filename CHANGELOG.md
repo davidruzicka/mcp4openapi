@@ -7,7 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Changed
-- Added stricter string constraints, safer pattern handling, and updated related tests.
+- Added optional HTTP profile index page for routed profiles, including connection snippets and auth-aware guidance.
+- Updated bundled profile descriptions to clarify access-style vs operation-style tools and show concrete API-to-tool reduction counts.
 
 ## [0.3.0] - 2026-01-31
 
