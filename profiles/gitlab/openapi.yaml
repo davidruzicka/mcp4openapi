@@ -3066,6 +3066,302 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/API_Error"
+  /projects/{id}/issues/{issue_iid}/notes/{note_id}/award_emoji:
+    get:
+      tags:
+        - issues
+      summary: List award emoji on issue note
+      description: List award emoji for a specific issue note
+      operationId: getApiV4ProjectsIdIssuesIssueIidNotesNoteIdAwardEmoji
+      parameters:
+        - $ref: "#/components/parameters/ProjectIdOrPath"
+        - name: issue_iid
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: note_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/API_Entities_AwardEmoji"
+    post:
+      tags:
+        - issues
+      summary: Add award emoji to issue note
+      description: Add award emoji to a specific issue note
+      operationId: postApiV4ProjectsIdIssuesIssueIidNotesNoteIdAwardEmoji
+      parameters:
+        - $ref: "#/components/parameters/ProjectIdOrPath"
+        - name: issue_iid
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: note_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+              properties:
+                name:
+                  type: string
+                  description: Emoji name
+                  example: thumbs_up
+      responses:
+        "201":
+          description: Award emoji added
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/API_Entities_AwardEmoji"
+  /projects/{id}/issues/{issue_iid}/notes/{note_id}/award_emoji/{award_id}:
+    get:
+      tags:
+        - issues
+      summary: Get award emoji on issue note
+      description: Get a specific award emoji for an issue note
+      operationId: getApiV4ProjectsIdIssuesIssueIidNotesNoteIdAwardEmojiAwardId
+      parameters:
+        - $ref: "#/components/parameters/ProjectIdOrPath"
+        - name: issue_iid
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: note_id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: award_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/API_Entities_AwardEmoji"
+    delete:
+      tags:
+        - issues
+      summary: Delete award emoji from issue note
+      description: Delete a specific award emoji from an issue note
+      operationId: deleteApiV4ProjectsIdIssuesIssueIidNotesNoteIdAwardEmojiAwardId
+      parameters:
+        - $ref: "#/components/parameters/ProjectIdOrPath"
+        - name: issue_iid
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: note_id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: award_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Award emoji removed
+  /projects/{id}/issues/{issue_iid}/discussions:
+    get:
+      tags:
+        - issues
+      summary: List issue discussions
+      description: List discussions for an issue
+      operationId: getApiV4ProjectsIdIssuesIssueIidDiscussions
+      parameters:
+        - $ref: "#/components/parameters/ProjectIdOrPath"
+        - name: issue_iid
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/API_Entities_Discussion"
+    post:
+      tags:
+        - issues
+      summary: Create issue discussion
+      description: Create a discussion on an issue
+      operationId: postApiV4ProjectsIdIssuesIssueIidDiscussions
+      parameters:
+        - $ref: "#/components/parameters/ProjectIdOrPath"
+        - name: issue_iid
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - body
+              properties:
+                body:
+                  type: string
+                  description: Discussion body
+                  example: Please review this change.
+      responses:
+        "201":
+          description: Discussion created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/API_Entities_Discussion"
+  /projects/{id}/issues/{issue_iid}/discussions/{discussion_id}:
+    get:
+      tags:
+        - issues
+      summary: Get issue discussion
+      description: Get a single discussion from an issue
+      operationId: getApiV4ProjectsIdIssuesIssueIidDiscussionsDiscussionId
+      parameters:
+        - $ref: "#/components/parameters/ProjectIdOrPath"
+        - name: issue_iid
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: discussion_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/API_Entities_Discussion"
+    delete:
+      tags:
+        - issues
+      summary: Delete issue discussion
+      description: Delete a discussion from an issue
+      operationId: deleteApiV4ProjectsIdIssuesIssueIidDiscussionsDiscussionId
+      parameters:
+        - $ref: "#/components/parameters/ProjectIdOrPath"
+        - name: issue_iid
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: discussion_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Discussion deleted
+    put:
+      tags:
+        - issues
+      summary: Resolve or unresolve issue discussion
+      description: Resolve or unresolve a discussion on an issue
+      operationId: putApiV4ProjectsIdIssuesIssueIidDiscussionsDiscussionId
+      parameters:
+        - $ref: "#/components/parameters/ProjectIdOrPath"
+        - name: issue_iid
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: discussion_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: resolved
+          in: query
+          required: true
+          schema:
+            type: boolean
+          description: Resolve (true) or reopen (false) the discussion
+      responses:
+        "200":
+          description: Discussion updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/API_Entities_Discussion"
+  /projects/{id}/issues/{issue_iid}/discussions/{discussion_id}/notes:
+    post:
+      tags:
+        - issues
+      summary: Reply to issue discussion
+      description: Add a reply to an issue discussion
+      operationId: postApiV4ProjectsIdIssuesIssueIidDiscussionsDiscussionIdNotes
+      parameters:
+        - $ref: "#/components/parameters/ProjectIdOrPath"
+        - name: issue_iid
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: discussion_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - body
+              properties:
+                body:
+                  type: string
+                  description: Reply body
+                  example: Thanks for the update.
+      responses:
+        "201":
+          description: Reply created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/API_Entities_Discussion"
   /groups:
     get:
       tags:
@@ -3126,6 +3422,76 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/API_Entities_BasicGroupDetails"
+  /groups/{id}/labels:
+    get:
+      tags:
+        - labels
+      summary: List group labels
+      description: List labels for a group
+      operationId: getApiV4GroupsIdLabels
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The ID or URL-encoded path of the group
+          schema:
+            type: string
+        - name: page
+          in: query
+          description: Page number
+          schema:
+            type: integer
+            default: 1
+        - name: per_page
+          in: query
+          description: Number of items per page
+          schema:
+            type: integer
+            default: 20
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/API_Entities_Label"
+  /groups/{id}/milestones:
+    get:
+      tags:
+        - milestones
+      summary: List group milestones
+      description: List milestones for a group
+      operationId: getApiV4GroupsIdMilestones
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The ID or URL-encoded path of the group
+          schema:
+            type: string
+        - name: page
+          in: query
+          description: Page number
+          schema:
+            type: integer
+            default: 1
+        - name: per_page
+          in: query
+          description: Number of items per page
+          schema:
+            type: integer
+            default: 20
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/API_Entities_Milestone"
   /groups/{id}/projects:
     get:
       tags:
@@ -3234,6 +3600,41 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/API_Entities_Pipeline"
+  /projects/{id}/pipelines:
+    get:
+      tags:
+        - pipelines
+      summary: List pipelines
+      description: List pipelines for a project, optionally filtered by ref
+      operationId: getApiV4ProjectsIdPipelines
+      parameters:
+        - $ref: "#/components/parameters/ProjectIdOrPath"
+        - name: ref
+          in: query
+          description: Filter by branch or tag name
+          schema:
+            type: string
+        - name: page
+          in: query
+          description: Page number
+          schema:
+            type: integer
+            default: 1
+        - name: per_page
+          in: query
+          description: Number of items per page
+          schema:
+            type: integer
+            default: 20
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/API_Entities_Pipeline"
   /projects/{id}/pipelines/{pipeline_id}:
     get:
       tags:
@@ -3255,6 +3656,41 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/API_Entities_Pipeline"
+  /projects/{id}/pipelines/{pipeline_id}/jobs:
+    get:
+      tags:
+        - jobs
+      summary: List jobs for pipeline
+      description: List jobs for a specific pipeline
+      operationId: getApiV4ProjectsIdPipelinesPipelineIdJobs
+      parameters:
+        - $ref: "#/components/parameters/ProjectIdOrPath"
+        - name: pipeline_id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: page
+          in: query
+          description: Page number
+          schema:
+            type: integer
+            default: 1
+        - name: per_page
+          in: query
+          description: Number of items per page
+          schema:
+            type: integer
+            default: 20
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/API_Entities_Job"
   /projects/{id}/jobs/{job_id}/retry:
     post:
       tags:
@@ -3619,6 +4055,133 @@ paths:
       responses:
         "204":
           description: Member removed
+  /projects/{id}/variables:
+    get:
+      tags:
+        - project_variables
+      summary: List project variables
+      description: List variables for a project
+      operationId: getApiV4ProjectsIdVariables
+      parameters:
+        - $ref: "#/components/parameters/ProjectIdOrPath"
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+    post:
+      tags:
+        - project_variables
+      summary: Create project variable
+      description: Create a new variable for a project
+      operationId: postApiV4ProjectsIdVariables
+      parameters:
+        - $ref: "#/components/parameters/ProjectIdOrPath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - key
+                - value
+              properties:
+                key:
+                  type: string
+                value:
+                  type: string
+                protected:
+                  type: boolean
+                masked:
+                  type: boolean
+                environment_scope:
+                  type: string
+      responses:
+        "201":
+          description: Variable created
+          content:
+            application/json:
+              schema:
+                type: object
+  /projects/{id}/variables/{key}:
+    get:
+      tags:
+        - project_variables
+      summary: Get project variable
+      description: Get a variable for a project
+      operationId: getApiV4ProjectsIdVariablesKey
+      parameters:
+        - $ref: "#/components/parameters/ProjectIdOrPath"
+        - name: key
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+    put:
+      tags:
+        - project_variables
+      summary: Update project variable
+      description: Update a variable for a project
+      operationId: putApiV4ProjectsIdVariablesKey
+      parameters:
+        - $ref: "#/components/parameters/ProjectIdOrPath"
+        - name: key
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - value
+              properties:
+                value:
+                  type: string
+                protected:
+                  type: boolean
+                masked:
+                  type: boolean
+                environment_scope:
+                  type: string
+      responses:
+        "200":
+          description: Variable updated
+          content:
+            application/json:
+              schema:
+                type: object
+    delete:
+      tags:
+        - project_variables
+      summary: Delete project variable
+      description: Delete a variable for a project
+      operationId: deleteApiV4ProjectsIdVariablesKey
+      parameters:
+        - $ref: "#/components/parameters/ProjectIdOrPath"
+        - name: key
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Variable deleted
   /projects/{id}/hooks:
     get:
       tags:
@@ -3670,6 +4233,63 @@ paths:
               schema:
                 $ref: "#/components/schemas/API_Entities_Hook"
   /projects/{id}/hooks/{hook_id}:
+    get:
+      tags:
+        - hooks
+      summary: Get project hook
+      description: Get a webhook for a project
+      operationId: getApiV4ProjectsIdHooksHookId
+      parameters:
+        - $ref: "#/components/parameters/ProjectIdOrPath"
+        - name: hook_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/API_Entities_Hook"
+    put:
+      tags:
+        - hooks
+      summary: Update project hook
+      description: Update a webhook for a project
+      operationId: putApiV4ProjectsIdHooksHookId
+      parameters:
+        - $ref: "#/components/parameters/ProjectIdOrPath"
+        - name: hook_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - url
+              properties:
+                url:
+                  type: string
+                push_events:
+                  type: boolean
+                issues_events:
+                  type: boolean
+                merge_requests_events:
+                  type: boolean
+      responses:
+        "200":
+          description: Hook updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/API_Entities_Hook"
     delete:
       tags:
         - hooks
@@ -4689,6 +5309,198 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/API_Entities_Approval"
+  /projects/{id}/merge_requests/{merge_request_iid}/merge:
+    put:
+      tags:
+        - merge_requests
+      summary: Merge (accept) merge request
+      description: Merge a merge request
+      operationId: putApiV4ProjectsIdMergeRequestsMergeRequestIidMerge
+      parameters:
+        - $ref: "#/components/parameters/ProjectIdOrPath"
+        - name: merge_request_iid
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                merge_commit_message:
+                  type: string
+                  description: Custom merge commit message
+                squash:
+                  type: boolean
+                  description: Whether to squash commits on merge
+                squash_commit_message:
+                  type: string
+                  description: Custom squash commit message
+                should_remove_source_branch:
+                  type: boolean
+                  description: Remove source branch after merge
+                merge_when_pipeline_succeeds:
+                  type: boolean
+                  description: Merge when pipeline succeeds
+      responses:
+        "200":
+          description: Merge request merged
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/API_Entities_MergeRequestBasic"
+        "405":
+          description: Merge not allowed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/API_Error"
+  /projects/{id}/merge_requests/{merge_request_iid}/commits:
+    get:
+      tags:
+        - merge_requests
+      summary: List merge request commits
+      description: List commits for a merge request
+      operationId: getApiV4ProjectsIdMergeRequestsMergeRequestIidCommits
+      parameters:
+        - $ref: "#/components/parameters/ProjectIdOrPath"
+        - name: merge_request_iid
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/API_Entities_Commit"
+  /projects/{id}/merge_requests/{merge_request_iid}/diffs:
+    get:
+      tags:
+        - merge_requests
+      summary: List merge request diffs
+      description: List diffs for a merge request
+      operationId: getApiV4ProjectsIdMergeRequestsMergeRequestIidDiffs
+      parameters:
+        - $ref: "#/components/parameters/ProjectIdOrPath"
+        - name: merge_request_iid
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    old_path:
+                      type: string
+                    new_path:
+                      type: string
+                    a_mode:
+                      type: string
+                    b_mode:
+                      type: string
+                    new_file:
+                      type: boolean
+                    renamed_file:
+                      type: boolean
+                    deleted_file:
+                      type: boolean
+                    diff:
+                      type: string
+  /projects/{id}/merge_requests/{merge_request_iid}/raw_diffs:
+    get:
+      tags:
+        - merge_requests
+      summary: Get merge request raw diffs
+      description: Get raw diffs for a merge request
+      operationId: getApiV4ProjectsIdMergeRequestsMergeRequestIidRawDiffs
+      parameters:
+        - $ref: "#/components/parameters/ProjectIdOrPath"
+        - name: merge_request_iid
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Successful response
+          content:
+            text/plain:
+              schema:
+                type: string
+  /projects/{id}/merge_requests/{merge_request_iid}/pipelines:
+    get:
+      tags:
+        - merge_requests
+      summary: List merge request pipelines
+      description: List pipelines for a merge request
+      operationId: getApiV4ProjectsIdMergeRequestsMergeRequestIidPipelines
+      parameters:
+        - $ref: "#/components/parameters/ProjectIdOrPath"
+        - name: merge_request_iid
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/API_Entities_Pipeline"
+    post:
+      tags:
+        - merge_requests
+      summary: Create merge request pipeline
+      description: Create a pipeline for a merge request
+      operationId: postApiV4ProjectsIdMergeRequestsMergeRequestIidPipelines
+      parameters:
+        - $ref: "#/components/parameters/ProjectIdOrPath"
+        - name: merge_request_iid
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                variables:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      key:
+                        type: string
+                      value:
+                        type: string
+      responses:
+        "201":
+          description: Pipeline created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/API_Entities_Pipeline"
   /projects/{id}/merge_requests/{merge_request_iid}/changes:
     get:
       tags:
@@ -5702,6 +6514,83 @@ paths:
             application/json:
               schema:
                 type: object
+  /issues:
+    get:
+      tags:
+        - issues
+      summary: List all issues
+      description: Get all issues across projects
+      operationId: getApiV4Issues
+      parameters:
+        - name: state
+          in: query
+          description: Return issues with the specified state
+          schema:
+            type: string
+            enum:
+              - opened
+              - closed
+              - all
+        - name: search
+          in: query
+          description: Search issues by title or description
+          schema:
+            type: string
+        - name: labels
+          in: query
+          description: Comma-separated list of labels to filter by
+          schema:
+            type: string
+        - name: milestone
+          in: query
+          description: Milestone title to filter by
+          schema:
+            type: string
+        - name: assignee_id
+          in: query
+          description: Filter by assignee ID
+          schema:
+            type: integer
+        - name: assignee_username
+          in: query
+          description: Filter by assignee username
+          schema:
+            type: string
+        - name: author_id
+          in: query
+          description: Filter by author ID
+          schema:
+            type: integer
+        - name: scope
+          in: query
+          description: Filter issues by scope
+          schema:
+            type: string
+            enum:
+              - created_by_me
+              - assigned_to_me
+              - all
+        - name: page
+          in: query
+          description: Page number
+          schema:
+            type: integer
+            default: 1
+        - name: per_page
+          in: query
+          description: Number of items per page
+          schema:
+            type: integer
+            default: 20
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/API_Entities_IssueBasic"
   /projects/{id}/issues:
     get:
       tags:
@@ -5877,6 +6766,114 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/API_Entities_IssueBasic"
+    put:
+      tags:
+        - issues
+      summary: Update issue
+      description: Update an existing issue
+      operationId: putApiV4ProjectsIdIssuesIssueIid
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The ID or URL-encoded path of the project
+          schema:
+            type: string
+        - name: issue_iid
+          in: path
+          required: true
+          description: The internal ID of the issue
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title:
+                  type: string
+                  description: The title of the issue
+                  minLength: 1
+                  maxLength: 255
+                  example: Implement new feature
+                description:
+                  type: string
+                  description: The description of the issue (max 1MB)
+                  maxLength: 1048576
+                  example: This implements the new feature requested by the team.
+                assignee_id:
+                  type: integer
+                  description: The ID of the user to assign the issue to
+                  minimum: 1
+                  maximum: 2147483647
+                  example: 123
+                assignee_ids:
+                  type: array
+                  items:
+                    type: integer
+                    minimum: 1
+                    maximum: 2147483647
+                  description: The IDs of the users to assign the issue to
+                  example:
+                    - 123
+                    - 456
+                milestone_id:
+                  type: integer
+                  description: The ID of the milestone to assign the issue to
+                  minimum: 1
+                  maximum: 2147483647
+                  example: 42
+                labels:
+                  type: string
+                  description: Labels to be added to the issue (comma-separated)
+                  example: bug,feature,frontend
+                state_event:
+                  type: string
+                  enum:
+                    - close
+                    - reopen
+                  description: Change issue state
+                  example: close
+                due_date:
+                  type: string
+                  format: date
+                  description: The due date of the issue
+                  example: 2016-03-11
+                confidential:
+                  type: boolean
+                  description: Whether the issue should be confidential
+                  example: false
+                discussion_locked:
+                  type: boolean
+                  description: Whether the issue discussion is locked
+                  example: false
+                weight:
+                  type: integer
+                  description: The weight of the issue
+                  minimum: 0
+                  maximum: 100
+                  example: 5
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/API_Entities_IssueBasic"
+        "400":
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/API_Error"
+        "403":
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/API_Error"
     delete:
       tags:
         - issues
@@ -5911,6 +6908,90 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/API_Error"
+  /projects/{id}/repository/tree:
+    get:
+      tags:
+        - repository
+      summary: List repository tree
+      description: List files and directories in a repository tree
+      operationId: getApiV4ProjectsIdRepositoryTree
+      parameters:
+        - $ref: "#/components/parameters/ProjectIdOrPath"
+        - name: path
+          in: query
+          description: Directory path within repository
+          schema:
+            type: string
+        - name: ref
+          in: query
+          description: Branch or tag name
+          schema:
+            type: string
+        - name: page
+          in: query
+          description: Page number
+          schema:
+            type: integer
+            default: 1
+        - name: per_page
+          in: query
+          description: Number of items per page
+          schema:
+            type: integer
+            default: 20
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: string
+                    name:
+                      type: string
+                    type:
+                      type: string
+                    path:
+                      type: string
+                    mode:
+                      type: string
+  /projects/{id}/repository/compare:
+    get:
+      tags:
+        - repository
+      summary: Compare repository refs
+      description: Compare two refs (branches, tags, or SHAs)
+      operationId: getApiV4ProjectsIdRepositoryCompare
+      parameters:
+        - $ref: "#/components/parameters/ProjectIdOrPath"
+        - name: from
+          in: query
+          required: true
+          description: Source ref
+          schema:
+            type: string
+        - name: to
+          in: query
+          required: true
+          description: Target ref
+          schema:
+            type: string
+        - name: straight
+          in: query
+          description: Limit comparison to commits reachable from target
+          schema:
+            type: boolean
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
   /projects/{id}/repository/commits:
     get:
       tags:
@@ -5987,6 +7068,34 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/API_Error"
+  /projects/{id}/repository/commits/{sha}:
+    get:
+      tags:
+        - repository
+      summary: Get commit by SHA
+      description: Get a single commit by SHA
+      operationId: getApiV4ProjectsIdRepositoryCommitsSha
+      parameters:
+        - $ref: "#/components/parameters/ProjectIdOrPath"
+        - name: sha
+          in: path
+          required: true
+          description: Commit SHA
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/API_Entities_Commit"
+        "404":
+          description: Commit not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/API_Error"
   /projects/{id}/repository/files/{file_path}:
     get:
       tags:
@@ -6021,6 +7130,124 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/API_Error"
+    post:
+      tags:
+        - repository_files
+      summary: Create file in repository
+      description: Create a new file in the repository
+      operationId: postApiV4ProjectsIdRepositoryFilesFilePath
+      parameters:
+        - $ref: "#/components/parameters/ProjectIdOrPath"
+        - name: file_path
+          in: path
+          required: true
+          description: URL-encoded full path to the file (e.g., src%2Findex.js)
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - branch
+                - content
+                - commit_message
+              properties:
+                branch:
+                  type: string
+                  description: Branch name
+                  example: main
+                content:
+                  type: string
+                  description: File content
+                commit_message:
+                  type: string
+                  description: Commit message
+      responses:
+        "201":
+          description: File created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/API_Entities_RepositoryFile"
+    put:
+      tags:
+        - repository_files
+      summary: Update file in repository
+      description: Update an existing file in the repository
+      operationId: putApiV4ProjectsIdRepositoryFilesFilePath
+      parameters:
+        - $ref: "#/components/parameters/ProjectIdOrPath"
+        - name: file_path
+          in: path
+          required: true
+          description: URL-encoded full path to the file (e.g., src%2Findex.js)
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - branch
+                - content
+                - commit_message
+              properties:
+                branch:
+                  type: string
+                  description: Branch name
+                  example: main
+                content:
+                  type: string
+                  description: File content
+                commit_message:
+                  type: string
+                  description: Commit message
+      responses:
+        "200":
+          description: File updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/API_Entities_RepositoryFile"
+    delete:
+      tags:
+        - repository_files
+      summary: Delete file from repository
+      description: Delete a file from the repository
+      operationId: deleteApiV4ProjectsIdRepositoryFilesFilePath
+      parameters:
+        - $ref: "#/components/parameters/ProjectIdOrPath"
+        - name: file_path
+          in: path
+          required: true
+          description: URL-encoded full path to the file (e.g., src%2Findex.js)
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - branch
+                - commit_message
+              properties:
+                branch:
+                  type: string
+                  description: Branch name
+                  example: main
+                commit_message:
+                  type: string
+                  description: Commit message
+      responses:
+        "204":
+          description: File deleted
   /projects/{id}/repository/files/{file_path}/raw:
     get:
       tags:
@@ -6076,6 +7303,34 @@ paths:
       responses:
         "200":
           description: Artifacts archive
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+  /projects/{id}/jobs/{job_id}/artifacts/{artifact_path}:
+    get:
+      tags:
+        - jobs
+      summary: Download single job artifact file
+      description: Download a single file from job artifacts
+      operationId: getApiV4ProjectsIdJobsJobIdArtifactsArtifactPath
+      parameters:
+        - $ref: "#/components/parameters/ProjectIdOrPath"
+        - name: job_id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: artifact_path
+          in: path
+          required: true
+          description: Path to artifact file
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Artifact file content
           content:
             application/octet-stream:
               schema:

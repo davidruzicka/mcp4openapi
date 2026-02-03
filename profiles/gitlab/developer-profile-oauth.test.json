@@ -4,7 +4,19 @@
   "variables": {
     "projectId": "12345",
     "groupId": "36173",
-    "awardId": 7
+    "awardId": 7,
+    "issueIid": 1,
+    "mergeRequestIid": 2,
+    "noteId": 10,
+    "discussionId": "discussion-1",
+    "pipelineId": 1001,
+    "jobId": 2002,
+    "hookId": 9001,
+    "variableKey": "DEPLOY_ENV",
+    "filePath": "README.md",
+    "ref": "main",
+    "fromRef": "main",
+    "toRef": "feature-branch"
   },
   "scenarios": [
     {
@@ -1170,6 +1182,43 @@
       }
     },
     {
+      "name": "Issues - List Global",
+      "tool": "manage_issues",
+      "arguments": {
+        "action": "list_global",
+        "state": "opened"
+      },
+      "mocks": [
+        {
+          "operationId": "getApiV4Issues",
+          "response": {
+            "body": [
+              {
+                "id": 11,
+                "iid": 2,
+                "title": "Global Bug"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": [
+          {
+            "title": "Global Bug"
+          }
+        ],
+        "request": {
+          "method": "GET",
+          "path": "/issues",
+          "query": {
+            "state": "opened"
+          }
+        }
+      }
+    },
+    {
       "name": "Issues - Get",
       "tool": "manage_issues",
       "arguments": {
@@ -1353,6 +1402,34 @@
         "success": true,
         "result": {
           "title": "New Bug"
+        }
+      }
+    },
+    {
+      "name": "Issues - Update",
+      "tool": "manage_issues",
+      "arguments": {
+        "action": "update",
+        "project_id": "{{projectId}}",
+        "issue_iid": 1,
+        "title": "Updated Bug"
+      },
+      "mocks": [
+        {
+          "operationId": "putApiV4ProjectsIdIssuesIssueIid",
+          "response": {
+            "body": {
+              "id": 1,
+              "iid": 1,
+              "title": "Updated Bug"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": {
+          "title": "Updated Bug"
         }
       }
     },
@@ -2776,21 +2853,140 @@
       }
     },
     {
-      "name": "Merge Requests - Get Changes",
+      "name": "Merge Requests - Merge",
       "tool": "manage_merge_requests",
       "arguments": {
-        "action": "get_changes",
+        "action": "merge",
         "project_id": "{{projectId}}",
         "merge_request_iid": 1
       },
       "mocks": [
         {
-          "operationId": "getApiV4ProjectsIdMergeRequestsMergeRequestIidChanges",
+          "operationId": "putApiV4ProjectsIdMergeRequestsMergeRequestIidMerge",
           "response": {
             "status": 200,
             "body": {
-              "id": 1
+              "id": 1,
+              "iid": 1
             }
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Merge Requests - List Commits",
+      "tool": "manage_merge_requests",
+      "arguments": {
+        "action": "list_commits",
+        "project_id": "{{projectId}}",
+        "merge_request_iid": 1
+      },
+      "mocks": [
+        {
+          "operationId": "getApiV4ProjectsIdMergeRequestsMergeRequestIidCommits",
+          "response": {
+            "status": 200,
+            "body": [
+              {
+                "id": "abc123",
+                "title": "Commit"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Merge Requests - List Raw Diffs",
+      "tool": "manage_merge_requests",
+      "arguments": {
+        "action": "list_raw_diffs",
+        "project_id": "{{projectId}}",
+        "merge_request_iid": 1
+      },
+      "mocks": [
+        {
+          "operationId": "getApiV4ProjectsIdMergeRequestsMergeRequestIidRawDiffs",
+          "response": {
+            "status": 200,
+            "body": "diff --git a/file.txt b/file.txt"
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Merge Requests - List Pipelines",
+      "tool": "manage_merge_requests",
+      "arguments": {
+        "action": "list_pipelines",
+        "project_id": "{{projectId}}",
+        "merge_request_iid": 1
+      },
+      "mocks": [
+        {
+          "operationId": "getApiV4ProjectsIdMergeRequestsMergeRequestIidPipelines",
+          "response": {
+            "status": 200,
+            "body": [
+              {
+                "id": 100,
+                "status": "success"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Merge Requests - Create Pipeline",
+      "tool": "manage_merge_requests",
+      "arguments": {
+        "action": "create_pipeline",
+        "project_id": "{{projectId}}",
+        "merge_request_iid": 1
+      },
+      "mocks": [
+        {
+          "operationId": "postApiV4ProjectsIdMergeRequestsMergeRequestIidPipelines",
+          "response": {
+            "status": 201,
+            "body": {
+              "id": 101,
+              "status": "running"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Merge Requests - List Diffs",
+      "tool": "manage_merge_requests",
+      "arguments": {
+        "action": "list_diffs",
+        "project_id": "{{projectId}}",
+        "merge_request_iid": 1
+      },
+      "mocks": [
+        {
+          "operationId": "getApiV4ProjectsIdMergeRequestsMergeRequestIidDiffs",
+          "response": {
+            "status": 200,
+            "body": []
           }
         }
       ],
@@ -3394,6 +3590,814 @@
             "body": {
               "id": 1
             }
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Projects - List Members",
+      "tool": "manage_projects",
+      "arguments": {
+        "action": "list_members",
+        "project_id": "{{projectId}}"
+      },
+      "mocks": [
+        {
+          "operationId": "getApiV4ProjectsIdMembers",
+          "response": {
+            "body": [
+              {
+                "id": 101,
+                "name": "Member"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": [
+          {
+            "id": 101
+          }
+        ]
+      }
+    },
+    {
+      "name": "Project Hooks - Get",
+      "tool": "manage_project_hooks",
+      "arguments": {
+        "action": "get_hook",
+        "project_id": "{{projectId}}",
+        "hook_id": "{{hookId}}"
+      },
+      "mocks": [
+        {
+          "operationId": "getApiV4ProjectsIdHooksHookId",
+          "response": {
+            "body": {
+              "id": 9001,
+              "url": "https://example.com/hook"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": {
+          "id": 9001
+        }
+      }
+    },
+    {
+      "name": "Project Hooks - Update",
+      "tool": "manage_project_hooks",
+      "arguments": {
+        "action": "update_hook",
+        "project_id": "{{projectId}}",
+        "hook_id": "{{hookId}}",
+        "url": "https://example.com/hook-updated"
+      },
+      "mocks": [
+        {
+          "operationId": "putApiV4ProjectsIdHooksHookId",
+          "response": {
+            "body": {
+              "id": 9001,
+              "url": "https://example.com/hook-updated"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": {
+          "id": 9001
+        }
+      }
+    },
+    {
+      "name": "Project Variables - List",
+      "tool": "manage_project_variables",
+      "arguments": {
+        "action": "list",
+        "project_id": "{{projectId}}"
+      },
+      "mocks": [
+        {
+          "operationId": "getApiV4ProjectsIdVariables",
+          "response": {
+            "body": [
+              {
+                "key": "DEPLOY_ENV",
+                "value": "staging"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": [
+          {
+            "key": "DEPLOY_ENV"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Project Variables - Get",
+      "tool": "manage_project_variables",
+      "arguments": {
+        "action": "get",
+        "project_id": "{{projectId}}",
+        "key": "{{variableKey}}"
+      },
+      "mocks": [
+        {
+          "operationId": "getApiV4ProjectsIdVariablesKey",
+          "response": {
+            "body": {
+              "key": "DEPLOY_ENV",
+              "value": "staging"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": {
+          "key": "DEPLOY_ENV"
+        }
+      }
+    },
+    {
+      "name": "Project Variables - Create",
+      "tool": "manage_project_variables",
+      "arguments": {
+        "action": "create",
+        "project_id": "{{projectId}}",
+        "key": "{{variableKey}}",
+        "value": "staging"
+      },
+      "mocks": [
+        {
+          "operationId": "postApiV4ProjectsIdVariables",
+          "response": {
+            "status": 201,
+            "body": {
+              "key": "DEPLOY_ENV",
+              "value": "staging"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": {
+          "key": "DEPLOY_ENV"
+        }
+      }
+    },
+    {
+      "name": "Project Variables - Update",
+      "tool": "manage_project_variables",
+      "arguments": {
+        "action": "update",
+        "project_id": "{{projectId}}",
+        "key": "{{variableKey}}",
+        "value": "production"
+      },
+      "mocks": [
+        {
+          "operationId": "putApiV4ProjectsIdVariablesKey",
+          "response": {
+            "body": {
+              "key": "DEPLOY_ENV",
+              "value": "production"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": {
+          "key": "DEPLOY_ENV"
+        }
+      }
+    },
+    {
+      "name": "Project Variables - Delete",
+      "tool": "manage_project_variables",
+      "arguments": {
+        "action": "delete",
+        "project_id": "{{projectId}}",
+        "key": "{{variableKey}}"
+      },
+      "mocks": [
+        {
+          "operationId": "deleteApiV4ProjectsIdVariablesKey",
+          "response": {
+            "status": 204
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Labels - List Group Labels",
+      "tool": "manage_labels_milestones",
+      "arguments": {
+        "action": "list_group_labels",
+        "group_id": "{{groupId}}"
+      },
+      "mocks": [
+        {
+          "operationId": "getApiV4GroupsIdLabels",
+          "response": {
+            "body": [
+              {
+                "id": 1,
+                "name": "team"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": [
+          {
+            "name": "team"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Milestones - List Group Milestones",
+      "tool": "manage_labels_milestones",
+      "arguments": {
+        "action": "list_group_milestones",
+        "group_id": "{{groupId}}"
+      },
+      "mocks": [
+        {
+          "operationId": "getApiV4GroupsIdMilestones",
+          "response": {
+            "body": [
+              {
+                "id": 2,
+                "iid": 2,
+                "title": "v2"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": [
+          {
+            "title": "v2"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Pipelines - List",
+      "tool": "manage_pipelines_jobs",
+      "arguments": {
+        "action": "list_pipelines",
+        "project_id": "{{projectId}}",
+        "ref": "{{ref}}"
+      },
+      "mocks": [
+        {
+          "operationId": "getApiV4ProjectsIdPipelines",
+          "response": {
+            "body": [
+              {
+                "id": 1001,
+                "status": "success"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": [
+          {
+            "id": 1001
+          }
+        ]
+      }
+    },
+    {
+      "name": "Pipelines - List Jobs",
+      "tool": "manage_pipelines_jobs",
+      "arguments": {
+        "action": "list_pipeline_jobs",
+        "project_id": "{{projectId}}",
+        "pipeline_id": "{{pipelineId}}"
+      },
+      "mocks": [
+        {
+          "operationId": "getApiV4ProjectsIdPipelinesPipelineIdJobs",
+          "response": {
+            "body": [
+              {
+                "id": 2002,
+                "status": "success"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": [
+          {
+            "id": 2002
+          }
+        ]
+      }
+    },
+    {
+      "name": "Jobs - Download Artifact File",
+      "tool": "manage_pipelines_jobs",
+      "arguments": {
+        "action": "download_job_artifact",
+        "project_id": "{{projectId}}",
+        "job_id": "{{jobId}}",
+        "artifact_path": "reports/coverage.xml"
+      },
+      "mocks": [
+        {
+          "operationId": "getSingleJob",
+          "response": {
+            "body": {
+              "id": 2002,
+              "artifacts_file": {
+                "filename": "artifacts.zip"
+              }
+            }
+          }
+        },
+        {
+          "operationId": "getApiV4ProjectsIdJobsJobIdArtifactsArtifactPath",
+          "response": {
+            "status": 200,
+            "body": "<xml/>",
+            "headers": {
+              "content-type": "application/xml"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": {
+          "fileName": "artifacts.zip"
+        }
+      }
+    },
+    {
+      "name": "Issues - List Discussions",
+      "tool": "manage_issues",
+      "arguments": {
+        "action": "list_discussions",
+        "project_id": "{{projectId}}",
+        "issue_iid": "{{issueIid}}"
+      },
+      "mocks": [
+        {
+          "operationId": "getApiV4ProjectsIdIssuesIssueIidDiscussions",
+          "response": {
+            "body": [
+              {
+                "id": "discussion-1",
+                "resolved": false
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": [
+          {
+            "id": "discussion-1"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Issues - Get Discussion",
+      "tool": "manage_issues",
+      "arguments": {
+        "action": "get_discussion",
+        "project_id": "{{projectId}}",
+        "issue_iid": "{{issueIid}}",
+        "discussion_id": "{{discussionId}}"
+      },
+      "mocks": [
+        {
+          "operationId": "getApiV4ProjectsIdIssuesIssueIidDiscussionsDiscussionId",
+          "response": {
+            "body": {
+              "id": "discussion-1",
+              "resolved": false
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": {
+          "id": "discussion-1"
+        }
+      }
+    },
+    {
+      "name": "Issues - Create Discussion",
+      "tool": "manage_issues",
+      "arguments": {
+        "action": "create_discussion",
+        "project_id": "{{projectId}}",
+        "issue_iid": "{{issueIid}}",
+        "body": "Discussion"
+      },
+      "mocks": [
+        {
+          "operationId": "postApiV4ProjectsIdIssuesIssueIidDiscussions",
+          "response": {
+            "status": 201,
+            "body": {
+              "id": "discussion-1",
+              "resolved": false
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": {
+          "id": "discussion-1"
+        }
+      }
+    },
+    {
+      "name": "Issues - Reply Discussion",
+      "tool": "manage_issues",
+      "arguments": {
+        "action": "reply_discussion",
+        "project_id": "{{projectId}}",
+        "issue_iid": "{{issueIid}}",
+        "discussion_id": "{{discussionId}}",
+        "body": "Reply"
+      },
+      "mocks": [
+        {
+          "operationId": "postApiV4ProjectsIdIssuesIssueIidDiscussionsDiscussionIdNotes",
+          "response": {
+            "status": 201,
+            "body": {
+              "id": "discussion-1",
+              "notes": []
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": {
+          "id": "discussion-1"
+        }
+      }
+    },
+    {
+      "name": "Issues - Delete Discussion",
+      "tool": "manage_issues",
+      "arguments": {
+        "action": "delete_discussion",
+        "project_id": "{{projectId}}",
+        "issue_iid": "{{issueIid}}",
+        "discussion_id": "{{discussionId}}"
+      },
+      "mocks": [
+        {
+          "operationId": "deleteApiV4ProjectsIdIssuesIssueIidDiscussionsDiscussionId",
+          "response": {
+            "status": 204
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Issues - Resolve Discussion",
+      "tool": "manage_issues",
+      "arguments": {
+        "action": "set_discussion_resolved",
+        "project_id": "{{projectId}}",
+        "issue_iid": "{{issueIid}}",
+        "discussion_id": "{{discussionId}}",
+        "resolved": true
+      },
+      "mocks": [
+        {
+          "operationId": "putApiV4ProjectsIdIssuesIssueIidDiscussionsDiscussionId",
+          "response": {
+            "body": {
+              "id": "discussion-1",
+              "resolved": true
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": {
+          "resolved": true
+        }
+      }
+    },
+    {
+      "name": "Issues - List Note Award Emoji",
+      "tool": "manage_issues",
+      "arguments": {
+        "action": "list_note_award_emoji",
+        "project_id": "{{projectId}}",
+        "issue_iid": "{{issueIid}}",
+        "note_id": "{{noteId}}"
+      },
+      "mocks": [
+        {
+          "operationId": "getApiV4ProjectsIdIssuesIssueIidNotesNoteIdAwardEmoji",
+          "response": {
+            "body": [
+              {
+                "id": 7,
+                "name": "thumbsup"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": [
+          {
+            "id": 7
+          }
+        ]
+      }
+    },
+    {
+      "name": "Issues - Get Note Award Emoji",
+      "tool": "manage_issues",
+      "arguments": {
+        "action": "get_note_award_emoji",
+        "project_id": "{{projectId}}",
+        "issue_iid": "{{issueIid}}",
+        "note_id": "{{noteId}}",
+        "award_id": "{{awardId}}"
+      },
+      "mocks": [
+        {
+          "operationId": "getApiV4ProjectsIdIssuesIssueIidNotesNoteIdAwardEmojiAwardId",
+          "response": {
+            "body": {
+              "id": 7,
+              "name": "thumbsup"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": {
+          "id": 7
+        }
+      }
+    },
+    {
+      "name": "Issues - Create Note Award Emoji",
+      "tool": "manage_issues",
+      "arguments": {
+        "action": "create_note_award_emoji",
+        "project_id": "{{projectId}}",
+        "issue_iid": "{{issueIid}}",
+        "note_id": "{{noteId}}",
+        "name": "thumbsup"
+      },
+      "mocks": [
+        {
+          "operationId": "postApiV4ProjectsIdIssuesIssueIidNotesNoteIdAwardEmoji",
+          "response": {
+            "status": 201,
+            "body": {
+              "id": 7,
+              "name": "thumbsup"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": {
+          "id": 7
+        }
+      }
+    },
+    {
+      "name": "Issues - Delete Note Award Emoji",
+      "tool": "manage_issues",
+      "arguments": {
+        "action": "delete_note_award_emoji",
+        "project_id": "{{projectId}}",
+        "issue_iid": "{{issueIid}}",
+        "note_id": "{{noteId}}",
+        "award_id": "{{awardId}}"
+      },
+      "mocks": [
+        {
+          "operationId": "deleteApiV4ProjectsIdIssuesIssueIidNotesNoteIdAwardEmojiAwardId",
+          "response": {
+            "status": 204
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Repository Commits - Compare",
+      "tool": "repository_commits",
+      "arguments": {
+        "action": "compare",
+        "project_id": "{{projectId}}",
+        "from": "{{fromRef}}",
+        "to": "{{toRef}}"
+      },
+      "mocks": [
+        {
+          "operationId": "getApiV4ProjectsIdRepositoryCompare",
+          "response": {
+            "body": {
+              "compare_timeout": false,
+              "commits": []
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": {
+          "compare_timeout": false
+        }
+      }
+    },
+    {
+      "name": "Repository Commits - Get Commit",
+      "tool": "repository_commits",
+      "arguments": {
+        "action": "get_commit",
+        "project_id": "{{projectId}}",
+        "sha": "abc123"
+      },
+      "mocks": [
+        {
+          "operationId": "getApiV4ProjectsIdRepositoryCommitsSha",
+          "response": {
+            "body": {
+              "id": "abc123",
+              "title": "Commit"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": {
+          "id": "abc123"
+        }
+      }
+    },
+    {
+      "name": "Repository Files - List Tree",
+      "tool": "repository_files",
+      "arguments": {
+        "action": "list_tree",
+        "project_id": "{{projectId}}",
+        "path": "src"
+      },
+      "mocks": [
+        {
+          "operationId": "getApiV4ProjectsIdRepositoryTree",
+          "response": {
+            "body": [
+              {
+                "id": "abc",
+                "name": "index.js",
+                "type": "blob"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": [
+          {
+            "name": "index.js"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Repository Files - Create",
+      "tool": "repository_files",
+      "arguments": {
+        "action": "create_file",
+        "project_id": "{{projectId}}",
+        "file_path": "{{filePath}}",
+        "branch": "{{ref}}",
+        "content": "Hello",
+        "commit_message": "Add file"
+      },
+      "mocks": [
+        {
+          "operationId": "postApiV4ProjectsIdRepositoryFilesFilePath",
+          "response": {
+            "status": 201,
+            "body": {
+              "file_name": "README.md",
+              "file_path": "README.md"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": {
+          "file_name": "README.md"
+        }
+      }
+    },
+    {
+      "name": "Repository Files - Update",
+      "tool": "repository_files",
+      "arguments": {
+        "action": "update_file",
+        "project_id": "{{projectId}}",
+        "file_path": "{{filePath}}",
+        "branch": "{{ref}}",
+        "content": "Updated",
+        "commit_message": "Update file"
+      },
+      "mocks": [
+        {
+          "operationId": "putApiV4ProjectsIdRepositoryFilesFilePath",
+          "response": {
+            "body": {
+              "file_name": "README.md",
+              "file_path": "README.md"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": {
+          "file_name": "README.md"
+        }
+      }
+    },
+    {
+      "name": "Repository Files - Delete",
+      "tool": "repository_files",
+      "arguments": {
+        "action": "delete_file",
+        "project_id": "{{projectId}}",
+        "file_path": "{{filePath}}",
+        "branch": "{{ref}}",
+        "commit_message": "Remove file"
+      },
+      "mocks": [
+        {
+          "operationId": "deleteApiV4ProjectsIdRepositoryFilesFilePath",
+          "response": {
+            "status": 204
           }
         }
       ],

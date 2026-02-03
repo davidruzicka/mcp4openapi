@@ -80,11 +80,13 @@
 
     {
       "name": "manage_pipelines_jobs",
-      "description": "Run and inspect pipelines/jobs. Actions: 'run_pipeline', 'get_pipeline', 'get_job', 'retry_job', 'cancel_job', 'play_job', 'download_job_artifacts' (proxy download). For 'run_pipeline', pass 'ref'. For 'get_pipeline', pass 'pipeline_id'. For job actions, pass 'job_id'.",
+      "description": "Run and inspect pipelines/jobs. Actions: 'list_pipelines', 'run_pipeline', 'get_pipeline', 'list_pipeline_jobs', 'get_job', 'retry_job', 'cancel_job', 'play_job', 'download_job_artifacts' (proxy download), 'download_job_artifact' (single file). For 'list_pipelines', optionally pass 'ref'. For 'run_pipeline', pass 'ref'. For 'get_pipeline' and 'list_pipeline_jobs', pass 'pipeline_id'. For job actions, pass 'job_id'. For 'download_job_artifact', pass 'artifact_path'.",
       "metadata_params": ["action", "project_id", "pipeline_id", "job_id"],
       "operations": {
+        "list_pipelines": "getApiV4ProjectsIdPipelines",
         "run_pipeline": "postApiV4ProjectsIdPipeline",
         "get_pipeline": "getApiV4ProjectsIdPipelinesPipelineId",
+        "list_pipeline_jobs": "getApiV4ProjectsIdPipelinesPipelineIdJobs",
         "get_job": "getSingleJob",
         "retry_job": "postApiV4ProjectsIdJobsJobIdRetry",
         "play_job": "triggerManualJob",
@@ -93,17 +95,24 @@
           "type": "proxy_download",
           "metadata_endpoint": "getSingleJob",
           "download_endpoint": "getApiV4ProjectsIdJobsJobIdArtifacts"
+        },
+        "download_job_artifact": {
+          "type": "proxy_download",
+          "metadata_endpoint": "getSingleJob",
+          "download_endpoint": "getApiV4ProjectsIdJobsJobIdArtifactsArtifactPath"
         }
       },
       "response_fields": {
+        "list_pipelines": ["id", "status", "ref", "web_url"],
         "run_pipeline": ["id", "status", "ref", "web_url"],
         "get_pipeline": ["id", "status", "ref", "web_url"],
+        "list_pipeline_jobs": ["id", "status", "stage", "name", "ref", "web_url"],
         "get_job": ["id", "status", "stage", "name", "ref", "web_url"]
       },
       "parameters": {
         "action": {
           "type": "string",
-          "enum": ["run_pipeline", "get_pipeline", "get_job", "retry_job", "cancel_job", "play_job", "download_job_artifacts"],
+          "enum": ["list_pipelines", "run_pipeline", "get_pipeline", "list_pipeline_jobs", "get_job", "retry_job", "cancel_job", "play_job", "download_job_artifacts", "download_job_artifact"],
           "description": "Pipeline/job action to perform",
           "required": true
         },
@@ -115,51 +124,65 @@
         "pipeline_id": {
           "type": "integer",
           "description": "Pipeline ID",
-          "required_for": ["get_pipeline"]
+          "required_for": ["get_pipeline", "list_pipeline_jobs"]
         },
         "job_id": {
           "type": "integer",
           "description": "Job ID",
-          "required_for": ["get_job", "retry_job", "cancel_job", "play_job", "download_job_artifacts"]
+          "required_for": ["get_job", "retry_job", "cancel_job", "play_job", "download_job_artifacts", "download_job_artifact"]
         },
         "ref": {
           "type": "string",
           "description": "Branch or tag to run pipeline on",
           "required_for": ["run_pipeline"]
+        },
+        "artifact_path": {
+          "type": "string",
+          "description": "Path to a file inside the job artifacts archive",
+          "required_for": ["download_job_artifact"]
         }
       }
     },
 
     {
       "name": "manage_labels_milestones",
-      "description": "Manage project labels and milestones. Actions: 'list_labels', 'create_label', 'delete_label', 'list_milestones', 'create_milestone', 'update_milestone'. For 'create_label', pass 'name' and 'color'. For 'delete_label', pass 'name'. For 'create_milestone' and 'update_milestone', pass 'title'. For 'update_milestone', also pass 'milestone_id'.",
-      "metadata_params": ["action", "project_id", "milestone_id"],
+      "description": "Manage project and group labels/milestones. Actions: 'list_labels', 'list_group_labels', 'create_label', 'delete_label', 'list_milestones', 'list_group_milestones', 'create_milestone', 'update_milestone'. For 'create_label', pass 'name' and 'color'. For 'delete_label', pass 'name'. For 'create_milestone' and 'update_milestone', pass 'title'. For 'update_milestone', also pass 'milestone_id'. For group list actions, pass 'group_id'.",
+      "metadata_params": ["action", "project_id", "group_id", "milestone_id"],
       "operations": {
         "list_labels": "getApiV4ProjectsIdLabels",
+        "list_group_labels": "getApiV4GroupsIdLabels",
         "create_label": "postApiV4ProjectsIdLabels",
         "delete_label": "deleteApiV4ProjectsIdLabels",
         "list_milestones": "getApiV4ProjectsIdMilestones",
+        "list_group_milestones": "getApiV4GroupsIdMilestones",
         "create_milestone": "postApiV4ProjectsIdMilestones",
         "update_milestone": "putApiV4ProjectsIdMilestonesMilestoneId"
       },
       "response_fields": {
         "list_labels": ["id", "name", "color", "description"],
+        "list_group_labels": ["id", "name", "color", "description"],
         "create_label": ["id", "name", "color", "description"],
         "list_milestones": ["id", "iid", "title", "state"],
+        "list_group_milestones": ["id", "iid", "title", "state"],
         "create_milestone": ["id", "iid", "title", "state"],
         "update_milestone": ["id", "iid", "title", "state"]
       },
       "parameters": {
         "action": {
           "type": "string",
-          "enum": ["list_labels", "create_label", "delete_label", "list_milestones", "create_milestone", "update_milestone"],
+          "enum": ["list_labels", "list_group_labels", "create_label", "delete_label", "list_milestones", "list_group_milestones", "create_milestone", "update_milestone"],
           "description": "Action to perform",
           "required": true
         },
         "project_id": {
           "type": "string",
           "description": "Project ID",
-          "required": true
+          "required_for": ["list_labels", "create_label", "delete_label", "list_milestones", "create_milestone", "update_milestone"]
+        },
+        "group_id": {
+          "type": "string",
+          "description": "Group ID",
+          "required_for": ["list_group_labels", "list_group_milestones"]
         },
         "name": {
           "type": "string",
@@ -282,21 +305,25 @@
 
     {
       "name": "manage_project_hooks",
-      "description": "Manage project webhooks. Actions: 'list_hooks', 'create_hook', 'delete_hook'. For 'create_hook', pass 'url'. For 'delete_hook', pass 'hook_id'.",
+      "description": "Manage project webhooks. Actions: 'list_hooks', 'get_hook', 'create_hook', 'update_hook', 'delete_hook'. For 'create_hook' and 'update_hook', pass 'url'. For 'get_hook' and 'delete_hook', pass 'hook_id'.",
       "metadata_params": ["action", "project_id", "hook_id"],
       "operations": {
         "list_hooks": "getApiV4ProjectsIdHooks",
+        "get_hook": "getApiV4ProjectsIdHooksHookId",
         "create_hook": "postApiV4ProjectsIdHooks",
+        "update_hook": "putApiV4ProjectsIdHooksHookId",
         "delete_hook": "deleteApiV4ProjectsIdHooksHookId"
       },
       "response_fields": {
         "list_hooks": ["id", "url", "push_events", "issues_events", "merge_requests_events"],
-        "create_hook": ["id", "url", "push_events", "issues_events", "merge_requests_events"]
+        "get_hook": ["id", "url", "push_events", "issues_events", "merge_requests_events"],
+        "create_hook": ["id", "url", "push_events", "issues_events", "merge_requests_events"],
+        "update_hook": ["id", "url", "push_events", "issues_events", "merge_requests_events"]
       },
       "parameters": {
         "action": {
           "type": "string",
-          "enum": ["list_hooks", "create_hook", "delete_hook"],
+          "enum": ["list_hooks", "get_hook", "create_hook", "update_hook", "delete_hook"],
           "description": "Action to perform",
           "required": true
         },
@@ -308,12 +335,12 @@
         "hook_id": {
           "type": "integer",
           "description": "Hook ID",
-          "required_for": ["delete_hook"]
+          "required_for": ["get_hook", "update_hook", "delete_hook"]
         },
         "url": {
           "type": "string",
           "description": "Hook URL",
-          "required_for": ["create_hook"]
+          "required_for": ["create_hook", "update_hook"]
         },
         "push_events": {
           "type": "boolean",
@@ -326,6 +353,54 @@
         "merge_requests_events": {
           "type": "boolean",
           "description": "Enable merge requests events"
+        }
+      }
+    },
+
+    {
+      "name": "manage_project_variables",
+      "description": "Manage project variables. Actions: 'list', 'get', 'create', 'update', 'delete'. For 'get', 'update', and 'delete', pass 'key'. For 'create' and 'update', pass 'value'.",
+      "metadata_params": ["action", "project_id"],
+      "operations": {
+        "list": "getApiV4ProjectsIdVariables",
+        "get": "getApiV4ProjectsIdVariablesKey",
+        "create": "postApiV4ProjectsIdVariables",
+        "update": "putApiV4ProjectsIdVariablesKey",
+        "delete": "deleteApiV4ProjectsIdVariablesKey"
+      },
+      "parameters": {
+        "action": {
+          "type": "string",
+          "enum": ["list", "get", "create", "update", "delete"],
+          "description": "Action to perform",
+          "required": true
+        },
+        "project_id": {
+          "type": "string",
+          "description": "Project ID",
+          "required": true
+        },
+        "key": {
+          "type": "string",
+          "description": "Variable key",
+          "required_for": ["get", "update", "delete"]
+        },
+        "value": {
+          "type": "string",
+          "description": "Variable value",
+          "required_for": ["create", "update"]
+        },
+        "protected": {
+          "type": "boolean",
+          "description": "Whether the variable is protected"
+        },
+        "masked": {
+          "type": "boolean",
+          "description": "Whether the variable is masked"
+        },
+        "environment_scope": {
+          "type": "string",
+          "description": "Environment scope for the variable"
         }
       }
     },
@@ -369,26 +444,28 @@
 
     {
       "name": "manage_projects",
-      "description": "Work with GitLab projects. Actions: 'list' (all projects), 'get' (project details), 'search' (search projects). Use 'list' to discover projects, 'search' to find specific ones. For 'get', pass 'project_id'.",
+      "description": "Work with GitLab projects. Actions: 'list' (all projects), 'get' (project details), 'list_members' (project members). Use 'list' to discover projects. For 'get' and 'list_members', pass 'project_id'.",
       "metadata_params": ["action", "project_id"],
       "operations": {
         "list": "getApiV4Projects",
-        "get": "getApiV4ProjectsId"
+        "get": "getApiV4ProjectsId",
+        "list_members": "getApiV4ProjectsIdMembers"
       },
       "response_fields": {
-        "list": ["id", "name", "path", "path_with_namespace", "description", "visibility", "web_url", "last_activity_at", "star_count", "forks_count", "avatar_url", "namespace"]
+        "list": ["id", "name", "path", "path_with_namespace", "description", "visibility", "web_url", "last_activity_at", "star_count", "forks_count", "avatar_url", "namespace"],
+        "list_members": ["id", "name", "username", "access_level"]
       },
       "parameters": {
         "action": {
           "type": "string",
-          "enum": ["list", "get"],
+          "enum": ["list", "get", "list_members"],
           "description": "Action to perform",
           "required": true
         },
         "project_id": {
           "type": "string",
           "description": "Project ID. Use numeric ID (e.g. '123') or URL-encoded path (e.g. 'group%2Fproject').",
-          "required_for": ["get"],
+          "required_for": ["get", "list_members"],
           "example": "123"
         },
         "page": {
@@ -418,7 +495,7 @@
 
     {
       "name": "manage_merge_requests",
-      "description": "Work with merge requests. Actions: 'list' (all MRs in project), 'get' (single MR details), 'create' (create new MR), 'update' (update MR), 'delete' (delete MR - admins only), 'list_notes' (get all comments), 'get_note' (single comment), 'create_note' (add comment), 'update_note' (edit comment), 'delete_note' (remove comment), 'download_note_attachment' (download note attachment via proxy), 'list_discussions', 'get_discussion', 'create_discussion', 'reply_discussion', 'delete_discussion', 'set_discussion_resolved', 'get_approvals', 'approve', 'unapprove', 'get_changes' (file diffs), 'list_versions' (list diff versions), 'get_version' (specific diff version), 'list_award_emoji', 'get_award_emoji', 'create_award_emoji', 'delete_award_emoji', 'list_note_award_emoji', 'get_note_award_emoji', 'create_note_award_emoji', 'delete_note_award_emoji'. Use 'list' to see all merge requests, filter by state (opened, closed, merged, all). For all actions that target a specific MR (including 'get_changes', 'list_versions', 'get_version'), pass 'merge_request_iid'.",
+      "description": "Work with merge requests. Actions: 'list' (all MRs in project), 'get' (single MR details), 'create' (create new MR), 'update' (update MR), 'delete' (delete MR - admins only), 'merge' (accept MR), 'list_commits', 'list_diffs', 'list_raw_diffs', 'list_pipelines', 'create_pipeline', 'list_notes' (get all comments), 'get_note' (single comment), 'create_note' (add comment), 'update_note' (edit comment), 'delete_note' (remove comment), 'download_note_attachment' (download note attachment via proxy), 'list_discussions', 'get_discussion', 'create_discussion', 'reply_discussion', 'delete_discussion', 'set_discussion_resolved', 'get_approvals', 'approve', 'unapprove', 'list_versions' (list diff versions), 'get_version' (specific diff version), 'list_award_emoji', 'get_award_emoji', 'create_award_emoji', 'delete_award_emoji', 'list_note_award_emoji', 'get_note_award_emoji', 'create_note_award_emoji', 'delete_note_award_emoji'. Use 'list' to see all merge requests, filter by state (opened, closed, merged, all). For actions that target a specific MR, pass 'merge_request_iid'.",
       "metadata_params": ["action", "project_id", "merge_request_iid", "note_id", "award_id", "discussion_id", "version_id"],
       "operations": {
         "list": "getApiV4ProjectsIdMergeRequests",
@@ -426,6 +503,12 @@
         "create": "postApiV4ProjectsIdMergeRequests",
         "update": "putApiV4ProjectsIdMergeRequestsMergeRequestIid",
         "delete": "deleteApiV4ProjectsIdMergeRequestsMergeRequestIid",
+        "merge": "putApiV4ProjectsIdMergeRequestsMergeRequestIidMerge",
+        "list_commits": "getApiV4ProjectsIdMergeRequestsMergeRequestIidCommits",
+        "list_diffs": "getApiV4ProjectsIdMergeRequestsMergeRequestIidDiffs",
+        "list_raw_diffs": "getApiV4ProjectsIdMergeRequestsMergeRequestIidRawDiffs",
+        "list_pipelines": "getApiV4ProjectsIdMergeRequestsMergeRequestIidPipelines",
+        "create_pipeline": "postApiV4ProjectsIdMergeRequestsMergeRequestIidPipelines",
         "list_notes": "getApiV4ProjectsIdMergeRequestsMergeRequestIidNotes",
         "get_note": "getApiV4ProjectsIdMergeRequestsMergeRequestIidNotesNoteId",
         "create_note": "postApiV4ProjectsIdMergeRequestsMergeRequestIidNotes",
@@ -445,7 +528,6 @@
         "get_approvals": "getApiV4ProjectsIdMergeRequestsMergeRequestIidApprovals",
         "approve": "postApiV4ProjectsIdMergeRequestsMergeRequestIidApprove",
         "unapprove": "postApiV4ProjectsIdMergeRequestsMergeRequestIidUnapprove",
-        "get_changes": "getApiV4ProjectsIdMergeRequestsMergeRequestIidChanges",
         "list_versions": "getApiV4ProjectsIdMergeRequestsMergeRequestIidVersions",
         "get_version": "getApiV4ProjectsIdMergeRequestsMergeRequestIidVersionsVersionId",
         "list_award_emoji": "getApiV4ProjectsIdMergeRequestsMergeRequestIidAwardEmoji",
@@ -461,6 +543,11 @@
         "list": ["id", "iid", "title", "description", "state", "web_url", "author", "created_at", "updated_at"],
         "create": ["id", "iid", "title", "description", "state", "web_url", "author", "created_at"],
         "update": ["id", "iid", "title", "description", "state", "web_url", "author", "created_at", "updated_at"],
+        "merge": ["id", "iid", "title", "description", "state", "web_url", "author", "created_at", "updated_at"],
+        "list_commits": ["id", "short_id", "title", "message", "author_name", "authored_date", "committed_date"],
+        "list_diffs": ["old_path", "new_path", "new_file", "renamed_file", "deleted_file", "diff"],
+        "list_pipelines": ["id", "status", "ref", "sha", "web_url"],
+        "create_pipeline": ["id", "status", "ref", "sha", "web_url"],
         "list_notes": ["id", "body", "author", "created_at", "updated_at", "system", "confidential"],
         "get_note": ["id", "body", "author", "created_at", "updated_at", "system", "confidential", "attachment"],
         "create_note": ["id", "body", "author", "created_at", "system", "confidential"],
@@ -473,7 +560,6 @@
         "get_approvals": ["approvals_required", "approvals_left", "approved_by"],
         "approve": ["approvals_required", "approvals_left", "approved_by"],
         "unapprove": ["approvals_required", "approvals_left", "approved_by"],
-        "get_changes": ["id", "iid", "title", "state", "changes"],
         "list_versions": ["id", "short_commit_id", "created_at", "real_size", "commits_count", "head_commit_sha", "base_commit_sha", "start_commit_sha"],
         "get_version": ["id", "head_commit_sha", "base_commit_sha", "start_commit_sha", "real_size", "created_at", "diffs"],
         "list_award_emoji": ["id", "name", "user", "created_at", "updated_at", "awardable_id", "awardable_type"],
@@ -486,7 +572,7 @@
       "parameters": {
         "action": {
           "type": "string",
-          "enum": ["list", "get", "create", "update", "delete", "list_notes", "get_note", "create_note", "update_note", "delete_note", "download_note_attachment", "list_discussions", "get_discussion", "create_discussion", "reply_discussion", "delete_discussion", "set_discussion_resolved", "get_approvals", "approve", "unapprove", "get_changes", "list_versions", "get_version", "list_award_emoji", "get_award_emoji", "create_award_emoji", "delete_award_emoji", "list_note_award_emoji", "get_note_award_emoji", "create_note_award_emoji", "delete_note_award_emoji"],
+          "enum": ["list", "get", "create", "update", "delete", "merge", "list_commits", "list_diffs", "list_raw_diffs", "list_pipelines", "create_pipeline", "list_notes", "get_note", "create_note", "update_note", "delete_note", "download_note_attachment", "list_discussions", "get_discussion", "create_discussion", "reply_discussion", "delete_discussion", "set_discussion_resolved", "get_approvals", "approve", "unapprove", "list_versions", "get_version", "list_award_emoji", "get_award_emoji", "create_award_emoji", "delete_award_emoji", "list_note_award_emoji", "get_note_award_emoji", "create_note_award_emoji", "delete_note_award_emoji"],
           "description": "Action to perform",
           "required": true
         },
@@ -499,7 +585,7 @@
         "merge_request_iid": {
           "type": "integer",
           "description": "The internal ID of the merge request",
-          "required_for": ["get", "update", "delete", "list_notes", "get_note", "create_note", "update_note", "delete_note", "download_note_attachment", "list_discussions", "get_discussion", "create_discussion", "reply_discussion", "delete_discussion", "set_discussion_resolved", "get_approvals", "approve", "unapprove", "get_changes", "list_versions", "get_version", "list_award_emoji", "get_award_emoji", "create_award_emoji", "delete_award_emoji", "list_note_award_emoji", "get_note_award_emoji", "create_note_award_emoji", "delete_note_award_emoji"]
+          "required_for": ["get", "update", "delete", "merge", "list_commits", "list_diffs", "list_raw_diffs", "list_pipelines", "create_pipeline", "list_notes", "get_note", "create_note", "update_note", "delete_note", "download_note_attachment", "list_discussions", "get_discussion", "create_discussion", "reply_discussion", "delete_discussion", "set_discussion_resolved", "get_approvals", "approve", "unapprove", "list_versions", "get_version", "list_award_emoji", "get_award_emoji", "create_award_emoji", "delete_award_emoji", "list_note_award_emoji", "get_note_award_emoji", "create_note_award_emoji", "delete_note_award_emoji"]
         },
         "discussion_id": {
           "type": "string",
@@ -1049,55 +1135,121 @@
 
     {
       "name": "manage_issues",
-      "description": "Work with issues. Actions: 'list' (all issues in project), 'get' (single issue details), 'create' (create new issue), 'delete' (delete issue - admins only), 'list_notes' (get all comments), 'get_note' (single comment), 'create_note' (add comment), 'update_note' (edit comment), 'delete_note' (remove comment). Use 'list' to see all issues, filter by state (opened, closed, all). For actions that target a specific issue, pass 'issue_iid'. For 'create', pass 'title'. For note actions, pass 'body' and/or 'note_id' as required.",
+      "description": "Work with issues. Actions: 'list' (all issues in project), 'list_global' (issues across projects), 'get' (single issue details), 'create' (create new issue), 'update' (update issue), 'delete' (delete issue - admins only), 'list_notes' (get all comments), 'get_note' (single comment), 'create_note' (add comment), 'update_note' (edit comment), 'delete_note' (remove comment), 'list_discussions', 'get_discussion', 'create_discussion', 'reply_discussion', 'delete_discussion', 'set_discussion_resolved', 'list_note_award_emoji', 'get_note_award_emoji', 'create_note_award_emoji', 'delete_note_award_emoji'. Use 'list' to see all issues, filter by state (opened, closed, all). For actions that target a specific issue, pass 'issue_iid'. For 'create', pass 'title'. For note and discussion actions, pass 'body' and/or 'note_id' or 'discussion_id' as required.",
       "metadata_params": ["action", "project_id", "issue_iid", "note_id"],
       "operations": {
         "list": "getApiV4ProjectsIdIssues",
+        "list_global": "getApiV4Issues",
         "get": "getApiV4ProjectsIdIssuesIssueIid",
         "create": "postApiV4ProjectsIdIssues",
+        "update": "putApiV4ProjectsIdIssuesIssueIid",
         "delete": "deleteApiV4ProjectsIdIssuesIssueIid",
         "list_notes": "getApiV4ProjectsIdIssuesIssueIidNotes",
         "get_note": "getApiV4ProjectsIdIssuesIssueIidNotesNoteId",
         "create_note": "postApiV4ProjectsIdIssuesIssueIidNotes",
         "update_note": "putApiV4ProjectsIdIssuesIssueIidNotesNoteId",
-        "delete_note": "deleteApiV4ProjectsIdIssuesIssueIidNotesNoteId"
+        "delete_note": "deleteApiV4ProjectsIdIssuesIssueIidNotesNoteId",
+        "list_discussions": "getApiV4ProjectsIdIssuesIssueIidDiscussions",
+        "get_discussion": "getApiV4ProjectsIdIssuesIssueIidDiscussionsDiscussionId",
+        "create_discussion": "postApiV4ProjectsIdIssuesIssueIidDiscussions",
+        "reply_discussion": "postApiV4ProjectsIdIssuesIssueIidDiscussionsDiscussionIdNotes",
+        "delete_discussion": "deleteApiV4ProjectsIdIssuesIssueIidDiscussionsDiscussionId",
+        "set_discussion_resolved": "putApiV4ProjectsIdIssuesIssueIidDiscussionsDiscussionId",
+        "list_note_award_emoji": "getApiV4ProjectsIdIssuesIssueIidNotesNoteIdAwardEmoji",
+        "get_note_award_emoji": "getApiV4ProjectsIdIssuesIssueIidNotesNoteIdAwardEmojiAwardId",
+        "create_note_award_emoji": "postApiV4ProjectsIdIssuesIssueIidNotesNoteIdAwardEmoji",
+        "delete_note_award_emoji": "deleteApiV4ProjectsIdIssuesIssueIidNotesNoteIdAwardEmojiAwardId"
       },
       "response_fields": {
         "list": ["id", "iid", "title", "description", "state", "web_url", "author", "created_at", "updated_at"],
+        "list_global": ["id", "iid", "title", "description", "state", "web_url", "author", "created_at", "updated_at"],
         "create": ["id", "iid", "title", "description", "state", "web_url", "author", "created_at"],
+        "update": ["id", "iid", "title", "description", "state", "web_url", "author", "created_at", "updated_at"],
         "list_notes": ["id", "body", "author", "created_at", "updated_at", "system", "confidential"],
         "get_note": ["id", "body", "author", "created_at", "updated_at", "system", "confidential", "attachment"],
         "create_note": ["id", "body", "author", "created_at", "system", "confidential"],
-        "update_note": ["id", "body", "author", "created_at", "updated_at", "system", "confidential"]
+        "update_note": ["id", "body", "author", "created_at", "updated_at", "system", "confidential"],
+        "list_discussions": ["id", "notes", "resolved"],
+        "get_discussion": ["id", "notes", "resolved"],
+        "create_discussion": ["id", "notes", "resolved"],
+        "reply_discussion": ["id", "notes", "resolved"],
+        "set_discussion_resolved": ["id", "notes", "resolved"],
+        "list_note_award_emoji": ["id", "name", "user", "created_at"],
+        "get_note_award_emoji": ["id", "name", "user", "created_at"],
+        "create_note_award_emoji": ["id", "name", "user", "created_at"]
       },
       "parameters": {
         "action": {
           "type": "string",
-          "enum": ["list", "get", "create", "delete", "list_notes", "get_note", "create_note", "update_note", "delete_note"],
+          "enum": ["list", "list_global", "get", "create", "update", "delete", "list_notes", "get_note", "create_note", "update_note", "delete_note", "list_discussions", "get_discussion", "create_discussion", "reply_discussion", "delete_discussion", "set_discussion_resolved", "list_note_award_emoji", "get_note_award_emoji", "create_note_award_emoji", "delete_note_award_emoji"],
           "description": "Action to perform",
           "required": true
         },
         "project_id": {
           "type": "string",
           "description": "Project ID. Use numeric ID (e.g. '123') or URL-encoded path (e.g. 'group%2Fproject').",
-          "required": true,
+          "required_for": ["list", "get", "create", "update", "delete", "list_notes", "get_note", "create_note", "update_note", "delete_note", "list_discussions", "get_discussion", "create_discussion", "reply_discussion", "delete_discussion", "set_discussion_resolved", "list_note_award_emoji", "get_note_award_emoji", "create_note_award_emoji", "delete_note_award_emoji"],
           "example": "123"
         },
         "issue_iid": {
           "type": "integer",
           "description": "The internal ID of the issue",
-          "required_for": ["get", "delete", "list_notes", "get_note", "create_note", "update_note", "delete_note"]
+          "required_for": ["get", "update", "delete", "list_notes", "get_note", "create_note", "update_note", "delete_note", "list_discussions", "get_discussion", "create_discussion", "reply_discussion", "delete_discussion", "set_discussion_resolved", "list_note_award_emoji", "get_note_award_emoji", "create_note_award_emoji", "delete_note_award_emoji"]
         },
         "note_id": {
           "type": "integer",
           "description": "The ID of the note",
-          "required_for": ["get_note", "update_note", "delete_note"]
+          "required_for": ["get_note", "update_note", "delete_note", "list_note_award_emoji", "get_note_award_emoji", "create_note_award_emoji", "delete_note_award_emoji"]
+        },
+        "discussion_id": {
+          "type": "string",
+          "description": "The ID of the discussion",
+          "required_for": ["get_discussion", "reply_discussion", "delete_discussion", "set_discussion_resolved"]
+        },
+        "award_id": {
+          "type": "integer",
+          "description": "The ID of the award emoji",
+          "required_for": ["get_note_award_emoji", "delete_note_award_emoji"]
+        },
+        "name": {
+          "type": "string",
+          "description": "Emoji name (for award emoji actions)",
+          "required_for": ["create_note_award_emoji"]
         },
         "state": {
           "type": "string",
           "enum": ["opened", "closed", "all"],
           "description": "Filter by issue state",
           "default": "opened"
+        },
+        "search": {
+          "type": "string",
+          "description": "Search issues by title or description (for list_global)"
+        },
+        "labels": {
+          "type": "string",
+          "description": "Filter by labels (comma-separated, for list_global)"
+        },
+        "milestone": {
+          "type": "string",
+          "description": "Filter by milestone title (for list_global)"
+        },
+        "assignee_id": {
+          "type": "integer",
+          "description": "Filter by assignee ID (for list_global)"
+        },
+        "assignee_username": {
+          "type": "string",
+          "description": "Filter by assignee username (for list_global)"
+        },
+        "author_id": {
+          "type": "integer",
+          "description": "Filter by author ID (for list_global)"
+        },
+        "scope": {
+          "type": "string",
+          "enum": ["created_by_me", "assigned_to_me", "all"],
+          "description": "Issue scope (for list_global)"
         },
         "page": {
           "type": "integer",
@@ -1120,11 +1272,21 @@
           "description": "The description of the issue (optional for create)",
           "example": "This implements the new feature requested by the team."
         },
+        "state_event": {
+          "type": "string",
+          "enum": ["close", "reopen"],
+          "description": "Change issue state (for update)"
+        },
         "body": {
           "type": "string",
           "description": "The content of the note",
           "required_for": ["create_note", "update_note"],
           "example": "Looks good to me."
+        },
+        "resolved": {
+          "type": "boolean",
+          "description": "Resolve or unresolve discussion",
+          "required_for": ["set_discussion_resolved"]
         },
         "assignee_id": {
           "type": "integer",
@@ -1289,18 +1451,21 @@
 
     {
       "name": "repository_commits",
-      "description": "List repository commits with optional filters like ref and file path. Actions: 'list'.",
+      "description": "Repository commits and comparisons. Actions: 'list', 'get_commit', 'compare'.",
       "metadata_params": ["action", "project_id"],
       "operations": {
-        "list": "getApiV4ProjectsIdRepositoryCommits"
+        "list": "getApiV4ProjectsIdRepositoryCommits",
+        "get_commit": "getApiV4ProjectsIdRepositoryCommitsSha",
+        "compare": "getApiV4ProjectsIdRepositoryCompare"
       },
       "response_fields": {
-        "list": ["id", "short_id", "title", "message", "author_name", "author_email", "authored_date", "committed_date", "web_url"]
+        "list": ["id", "short_id", "title", "message", "author_name", "author_email", "authored_date", "committed_date", "web_url"],
+        "get_commit": ["id", "short_id", "title", "message", "author_name", "author_email", "authored_date", "committed_date", "web_url"]
       },
       "parameters": {
         "action": {
           "type": "string",
-          "enum": ["list"],
+          "enum": ["list", "get_commit", "compare"],
           "description": "Action to perform",
           "required": true
         },
@@ -1350,17 +1515,36 @@
         "order": {
           "type": "string",
           "description": "Order commits, for example default or topo"
+        },
+        "sha": {
+          "type": "string",
+          "description": "Commit SHA",
+          "required_for": ["get_commit"]
+        },
+        "from": {
+          "type": "string",
+          "description": "Source ref for compare",
+          "required_for": ["compare"]
+        },
+        "to": {
+          "type": "string",
+          "description": "Target ref for compare",
+          "required_for": ["compare"]
         }
       }
     },
 
     {
       "name": "repository_files",
-      "description": "Fetch repository file contents. Actions: 'get_file' (metadata + base64 content) and 'get_raw' (raw content as text/binary). Use 'get_file' when you need encoding and metadata, 'get_raw' for direct file contents.",
+      "description": "Repository files and tree. Actions: 'list_tree', 'get_file' (metadata + base64 content), 'get_raw' (raw content), 'create_file', 'update_file', 'delete_file'.",
       "metadata_params": ["action", "project_id", "file_path"],
       "operations": {
+        "list_tree": "getApiV4ProjectsIdRepositoryTree",
         "get_file": "getApiV4ProjectsIdRepositoryFilesFilePath",
-        "get_raw": "getApiV4ProjectsIdRepositoryFilesFilePathRaw"
+        "get_raw": "getApiV4ProjectsIdRepositoryFilesFilePathRaw",
+        "create_file": "postApiV4ProjectsIdRepositoryFilesFilePath",
+        "update_file": "putApiV4ProjectsIdRepositoryFilesFilePath",
+        "delete_file": "deleteApiV4ProjectsIdRepositoryFilesFilePath"
       },
       "response_fields": {
         "get_file": ["file_name", "file_path", "size", "encoding", "content", "ref", "blob_id", "commit_id", "last_commit_id"]
@@ -1368,7 +1552,7 @@
       "parameters": {
         "action": {
           "type": "string",
-          "enum": ["get_file", "get_raw"],
+          "enum": ["list_tree", "get_file", "get_raw", "create_file", "update_file", "delete_file"],
           "description": "Action to perform",
           "required": true
         },
@@ -1381,13 +1565,31 @@
         "file_path": {
           "type": "string",
           "description": "URL-encoded full path to the file, e.g., 'src%2Findex.js'. Use %2F instead of '/'.",
-          "required": true
+          "required_for": ["get_file", "get_raw", "create_file", "update_file", "delete_file"]
         },
         "ref": {
           "type": "string",
-          "description": "Branch name, tag, or commit SHA to read from",
-          "required": true,
-          "example": "main"
+          "description": "Branch name, tag, or commit SHA to read from (for list_tree/get_file/get_raw)",
+          "required_for": ["get_file", "get_raw"]
+        },
+        "path": {
+          "type": "string",
+          "description": "Directory path within the repository (for list_tree)"
+        },
+        "branch": {
+          "type": "string",
+          "description": "Branch name for file operations",
+          "required_for": ["create_file", "update_file", "delete_file"]
+        },
+        "content": {
+          "type": "string",
+          "description": "File content",
+          "required_for": ["create_file", "update_file"]
+        },
+        "commit_message": {
+          "type": "string",
+          "description": "Commit message",
+          "required_for": ["create_file", "update_file", "delete_file"]
         }
       }
     },
