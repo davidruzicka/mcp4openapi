@@ -26,6 +26,7 @@ export function buildHttpTransportBaseConfig(host: string, port: number): HttpTr
     heartbeatIntervalMs: parseInt(process.env.MCP4_HEARTBEAT_INTERVAL_MS || String(TIMEOUTS.HEARTBEAT_INTERVAL_MS), 10),
     metricsEnabled: process.env.MCP4_METRICS_ENABLED === 'true',
     metricsPath: process.env.MCP4_METRICS_PATH || '/metrics',
+    profileIndexEnabled: process.env.MCP4_HTTP_PROFILE_INDEX === 'true',
     allowedOrigins: process.env.MCP4_ALLOWED_ORIGINS
       ? process.env.MCP4_ALLOWED_ORIGINS.split(',').map(o => o.trim())
       : undefined,

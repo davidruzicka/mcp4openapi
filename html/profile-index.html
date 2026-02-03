@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="{{lang}}">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{{title}}</title>
+    <style nonce="{{nonce}}">
+      :root {
+        color-scheme: light;
+        --bg: #f6f2ea;
+        --bg-accent: #efe7da;
+        --ink: #1f1f1f;
+        --muted: #615d56;
+        --card: #ffffff;
+        --accent: #b15a2b;
+        --accent-2: #2b5aa3;
+        --border: #e1d8cc;
+        --shadow: 0 12px 40px rgba(0, 0, 0, 0.08);
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: "Space Grotesk", "Avenir Next", "Segoe UI", sans-serif;
+        color: var(--ink);
+        background: radial-gradient(1200px 600px at 10% -20%, #fbe5d6 0%, transparent 60%),
+          radial-gradient(800px 600px at 90% 0%, #dbe9ff 0%, transparent 55%),
+          var(--bg);
+      }
+      header {
+        padding: 48px 40px 32px;
+      }
+      h1 {
+        font-size: 36px;
+        margin: 0 0 8px;
+        letter-spacing: -0.02em;
+      }
+      p {
+        margin: 0;
+        color: var(--muted);
+        line-height: 1.6;
+      }
+      main {
+        display: grid;
+        grid-template-columns: minmax(240px, 320px) minmax(0, 1fr);
+        gap: 24px;
+        padding: 0 40px 48px;
+      }
+      .panel {
+        background: var(--card);
+        border-radius: 16px;
+        border: 1px solid var(--border);
+        box-shadow: var(--shadow);
+        padding: 24px;
+      }
+      .profiles {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+      .profile-item {
+        padding: 12px 14px;
+        border-radius: 12px;
+        border: 1px solid transparent;
+        background: var(--bg-accent);
+        cursor: pointer;
+        transition: border-color 0.2s ease, transform 0.2s ease;
+      }
+      .profile-item:hover {
+        border-color: var(--accent);
+        transform: translateY(-1px);
+      }
+      .profile-item.active {
+        border-color: var(--accent);
+        background: #fff5ec;
+      }
+      .profile-title {
+        font-weight: 600;
+        margin-bottom: 4px;
+      }
+      .profile-subtitle {
+        font-size: 13px;
+        color: var(--muted);
+      }
+      .detail-grid {
+        display: grid;
+        gap: 18px;
+      }
+      .tab-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-bottom: 8px;
+      }
+      .tab {
+        border: 1px solid var(--border);
+        background: #fff;
+        padding: 6px 12px;
+        border-radius: 999px;
+        cursor: pointer;
+        font-size: 13px;
+        color: var(--muted);
+      }
+      .tab.active {
+        color: var(--accent);
+        border-color: var(--accent);
+        background: #fff5ec;
+        font-weight: 600;
+      }
+      .detail-card {
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 16px;
+        background: #fff;
+      }
+      .detail-card h3 {
+        margin: 0 0 8px;
+        font-size: 16px;
+      }
+      .tag-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 8px;
+      }
+      .tag {
+        background: #f1efe9;
+        color: #2d2b28;
+        border-radius: 999px;
+        padding: 4px 10px;
+        font-size: 12px;
+        border: 1px solid var(--border);
+      }
+      code, pre {
+        font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+      }
+      pre {
+        background: #0f172a;
+        color: #e2e8f0;
+        padding: 14px;
+        border-radius: 12px;
+        overflow-x: auto;
+        line-height: 1.6;
+      }
+      .snippets {
+        display: grid;
+        gap: 16px;
+      }
+      .snippet-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+      }
+      .snippet-meta {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .format-pill {
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        padding: 2px 8px;
+        font-size: 11px;
+        color: var(--muted);
+        background: #f7f4ef;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+      }
+      .copy-btn {
+        border: 1px solid var(--border);
+        background: #fff;
+        color: var(--accent-2);
+        border-radius: 999px;
+        padding: 6px 12px;
+        cursor: pointer;
+        font-size: 12px;
+      }
+      .notice {
+        background: #fff8f1;
+        border: 1px solid #f6d5bd;
+        padding: 12px;
+        border-radius: 12px;
+        color: #7a3f1e;
+      }
+      @media (max-width: 960px) {
+        main {
+          grid-template-columns: 1fr;
+          padding: 0 20px 40px;
+        }
+        header {
+          padding: 36px 20px 24px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>{{title}}</h1>
+      <p>{{subtitle}}</p>
+    </header>
+    <main>
+      <section class="panel">
+        <div class="profiles" id="profile-list"></div>
+      </section>
+      <section class="panel">
+        <div class="detail-grid" id="profile-detail">
+          <noscript>
+            <div class="notice">{{noscript}}</div>
+          </noscript>
+        </div>
+      </section>
+    </main>
+
+    <script type="application/json" id="profile-data" nonce="{{nonce}}">{{profile_data}}</script>
+    <script type="application/json" id="i18n-data" nonce="{{nonce}}">{{i18n_data}}</script>
+
+    <script nonce="{{nonce}}">
+      const profileData = JSON.parse(document.getElementById('profile-data').textContent || '[]');
+      const i18n = JSON.parse(document.getElementById('i18n-data').textContent || '{}');
+
+      const listEl = document.getElementById('profile-list');
+      const detailEl = document.getElementById('profile-detail');
+
+      function escapeHtml(value) {
+        return String(value)
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#039;');
+      }
+
+      function renderTags(items) {
+        if (!items || items.length === 0) {
+          return `<div class="profile-subtitle">${escapeHtml(i18n.noEnvVars || '')}</div>`;
+        }
+        const tags = items.map(item => `<span class="tag">${escapeHtml(item)}</span>`).join('');
+        return `<div class="tag-list">${tags}</div>`;
+      }
+
+      function buildSnippet(template, profile) {
+        return template
+          .replace(/__PROFILE_ID__/g, profile.profileId)
+          .replace(/__PROFILE_NAME__/g, profile.profileName)
+          .replace(/__PROFILE_URL__/g, profile.mcpUrl)
+          .replace(/__PROFILE_SSE_URL__/g, profile.sseUrl);
+      }
+
+      function renderSnippets(profile, activeAuth) {
+        const blocks = [];
+        const order = ['vscode', 'cursor', 'jetbrains', 'claude'];
+        const snippets = profile.snippets || {};
+        for (const entry of snippets) {
+          if (!entry || !entry.key) continue;
+          if (activeAuth && entry.authKey && entry.authKey !== activeAuth) continue;
+          if (!order.some(prefix => entry.key.startsWith(prefix))) continue;
+          const title = entry.label || entry.key;
+          const format = entry.format || '';
+          const snippet = buildSnippet(entry.content, profile);
+          const encodedSnippet = encodeURIComponent(snippet);
+          blocks.push(`
+            <div class="detail-card">
+              <div class="snippet-header">
+                <h3>${escapeHtml(title)}</h3>
+                <div class="snippet-meta">
+                  ${format ? `<span class="format-pill">${escapeHtml(format)}</span>` : ''}
+                  <button class="copy-btn" data-copy="${encodedSnippet}">${escapeHtml(i18n.copy || '')}</button>
+                </div>
+              </div>
+              <pre><code>${escapeHtml(snippet)}</code></pre>
+            </div>
+          `);
+        }
+        return blocks.join('');
+      }
+
+      function buildProfileTitle(profile) {
+        const parts = [profile.profileId, profile.profileName, ...(profile.profileAliases || [])];
+        const seen = new Set();
+        const unique = [];
+        for (const part of parts) {
+          if (!part) continue;
+          const key = String(part);
+          if (seen.has(key)) continue;
+          seen.add(key);
+          unique.push(key);
+        }
+        if (unique.length === 0) return '';
+        if (unique.length === 1) return unique[0];
+        return `${unique[0]} (${unique.slice(1).join(', ')})`;
+      }
+
+      function renderDetail(profile) {
+        const title = buildProfileTitle(profile);
+        const description = profile.description || i18n.noDescription || '';
+        const authTabs = profile.authTabs || [];
+        const activeAuth = authTabs.length > 0 ? authTabs[0].key : null;
+        detailEl.innerHTML = `
+          <div class="detail-card">
+            <h3>${escapeHtml(i18n.profileLabel || '')}</h3>
+            <div class="profile-title">${escapeHtml(title)}</div>
+            <div class="profile-subtitle">${escapeHtml(description)}</div>
+          </div>
+          <div class="detail-card">
+            <h3>${escapeHtml(i18n.endpointLabel || '')}</h3>
+            <p><strong>MCP</strong>: ${escapeHtml(profile.mcpUrl)}</p>
+            <p><strong>SSE</strong>: ${escapeHtml(profile.sseUrl)}</p>
+          </div>
+          <div class="detail-card">
+            <div class="tab-row" id="auth-tabs">
+              ${authTabs.map(tab => `
+                <button class="tab${tab.key === activeAuth ? ' active' : ''}" data-auth="${escapeHtml(tab.key)}">
+                  ${escapeHtml(tab.label)}
+                </button>
+              `).join('')}
+            </div>
+            <div class="snippets" id="snippet-list">
+              ${renderSnippets(profile, activeAuth)}
+            </div>
+          </div>
+        `;
+
+        const tabRow = detailEl.querySelector('#auth-tabs');
+        const snippetList = detailEl.querySelector('#snippet-list');
+        if (tabRow && snippetList) {
+          tabRow.addEventListener('click', event => {
+            const target = event.target;
+            if (!(target instanceof HTMLElement)) return;
+            const authKey = target.getAttribute('data-auth');
+            if (!authKey) return;
+            tabRow.querySelectorAll('.tab').forEach(tab => {
+              tab.classList.toggle('active', tab.getAttribute('data-auth') === authKey);
+            });
+            snippetList.innerHTML = renderSnippets(profile, authKey);
+          });
+        }
+      }
+
+      function renderList(activeId) {
+        listEl.innerHTML = '';
+        profileData.forEach(profile => {
+          const title = buildProfileTitle(profile);
+          const item = document.createElement('div');
+          item.className = 'profile-item' + (profile.profileId === activeId ? ' active' : '');
+          item.innerHTML = `
+            <div class="profile-title">${escapeHtml(title)}</div>
+            <div class="profile-subtitle">${escapeHtml(profile.description || i18n.noDescription || '')}</div>
+          `;
+          item.addEventListener('click', () => {
+            renderList(profile.profileId);
+            renderDetail(profile);
+          });
+          listEl.appendChild(item);
+        });
+      }
+
+      if (profileData.length > 0) {
+        renderList(profileData[0].profileId);
+        renderDetail(profileData[0]);
+      } else {
+        detailEl.innerHTML = `<div class="notice">${escapeHtml(i18n.noProfiles || '')}</div>`;
+      }
+
+      document.addEventListener('click', event => {
+        const target = event.target;
+        if (!(target instanceof HTMLElement)) return;
+        if (!target.matches('[data-copy]')) return;
+        const text = target.getAttribute('data-copy');
+        if (!text) return;
+        const decoded = decodeURIComponent(text);
+        navigator.clipboard?.writeText(decoded).then(() => {
+          target.textContent = i18n.copied || '';
+          setTimeout(() => { target.textContent = i18n.copy || ''; }, 1200);
+        }).catch(() => {
+          target.textContent = i18n.copyFailed || '';
+          setTimeout(() => { target.textContent = i18n.copy || ''; }, 1200);
+        });
+      });
+    </script>
+  </body>
+</html>

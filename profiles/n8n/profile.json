@@ -6,7 +6,7 @@
     "n8n-default"
   ],
   "openapi_spec_path": "./openapi.yaml",
-  "description": "MCP tools for the n8n Public API (aggregated by domain)",
+  "description": "Operation-style tools (manage_credentials, manage_executions, manage_projects, etc.) for the n8n Public API. Reduces 43 API operations into 9 MCP tools.",
   "parameter_aliases": {
     "id": [
       "credential_id",
