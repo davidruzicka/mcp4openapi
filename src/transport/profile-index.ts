@@ -80,21 +80,25 @@ export async function loadProfileIndexTemplate(): Promise<string> {
   }
 
   const moduleDir = path.dirname(fileURLToPath(import.meta.url));
-  let current = moduleDir;
-  while (true) {
-    if (fs.existsSync(path.join(current, 'package.json'))) {
-      break;
-    }
-    const parent = path.dirname(current);
-    if (parent === current) {
-      break;
-    }
-    current = parent;
-  }
-  const templatePath = path.join(current, 'html', 'profile-index.html');
+  const rootDir = resolveTemplateRoot(moduleDir);
+  const templatePath = path.join(rootDir, 'html', 'profile-index.html');
   const template = await fs.promises.readFile(templatePath, 'utf-8');
   cachedTemplate = template;
   return template;
+}
+
+export function resolveTemplateRoot(startDir: string, existsSyncFn: (path: string) => boolean = fs.existsSync): string {
+  let current = startDir;
+  while (true) {
+    if (existsSyncFn(path.join(current, 'package.json'))) {
+      return current;
+    }
+    const parent = path.dirname(current);
+    if (parent === current) {
+      return current;
+    }
+    current = parent;
+  }
 }
 
 export function safeJsonForHtml(value: unknown): string {
@@ -498,3 +502,12 @@ function buildClaudeSnippet(
   }
   return lines.join('\n');
 }
+
+export const __test__ = {
+  buildInputs,
+  buildInputsBlock,
+  buildEnvValue,
+  buildProfileIndexI18n,
+  renderTemplate,
+  safeJsonForHtml,
+};
