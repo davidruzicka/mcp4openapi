@@ -256,6 +256,75 @@ describeIfListen('HttpTransport', () => {
     });
   });
 
+  describe('profile index', () => {
+    let indexTransport: HttpTransport;
+    let indexApp: Express;
+
+    beforeEach(async () => {
+      const config = {
+        host: '127.0.0.1',
+        port: 0,
+        sessionTimeoutMs: 1800000,
+        heartbeatEnabled: false,
+        heartbeatIntervalMs: 30000,
+        metricsEnabled: false,
+        metricsPath: '/metrics',
+        profileRoutingEnabled: true,
+        profileIndexEnabled: true,
+      };
+      indexTransport = new HttpTransport(config, logger);
+      indexApp = (indexTransport as any).app;
+    });
+
+    afterEach(async () => {
+      await indexTransport.stop();
+    });
+
+    it('returns 404 when no profile index provider is configured', async () => {
+      const response = await request(indexApp).get('/');
+      expect(response.status).toBe(404);
+    });
+
+    it('returns HTML index by default', async () => {
+      indexTransport.setProfileIndexProvider(async () => ([
+        {
+          profileId: 'alpha',
+          profileName: 'Alpha',
+          profileAliases: ['a1'],
+          description: 'First profile',
+          envVars: ['MCP4_API_TOKEN'],
+        },
+      ]));
+
+      const response = await request(indexApp).get('/');
+      expect(response.status).toBe(200);
+      expect(response.headers['content-type']).toContain('text/html');
+      expect(response.text).toContain('alpha');
+      expect(response.text).toContain('First profile');
+    });
+
+    it('returns JSON when application/json is requested', async () => {
+      indexTransport.setProfileIndexProvider(async () => ([
+        {
+          profileId: 'beta',
+          profileName: 'Beta',
+          profileAliases: [],
+          description: 'Second profile',
+          envVars: [],
+        },
+      ]));
+
+      const response = await request(indexApp)
+        .get('/')
+        .set('Accept', 'application/json');
+
+      expect(response.status).toBe(200);
+      expect(response.body.profiles).toHaveLength(1);
+      expect(response.body.profiles[0].profileId).toBe('beta');
+      expect(response.body.profiles[0].mcpUrl).toContain('/profile/beta/mcp');
+    });
+  });
+
   describe('Security - Origin Validation', () => {
     it('should accept requests from localhost', async () => {
       transport.setMessageHandler(async (msg) => ({ result: 'ok' }));
