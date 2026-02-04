@@ -72,6 +72,20 @@ describe('SSRFValidator', () => {
       await expect(validator.validate('http://local.test')).rejects.toThrow('Hostname resolves to disallowed IP');
     });
 
+    it('should allow public IPv6 addresses', async () => {
+      await expect(validator.validate('http://[2001:4860:4860::8888]')).resolves.not.toThrow();
+    });
+
+    it('should allow domains resolving to public IPv6', async () => {
+      (lookup as any).mockResolvedValue([{ address: '2606:2800:220:1:248:1893:25c8:1946', family: 6 }]);
+      await expect(validator.validate('http://ipv6.example.com')).resolves.not.toThrow();
+    });
+
+    it('should block domains resolving to private IPv6', async () => {
+      (lookup as any).mockResolvedValue([{ address: 'fc00::1', family: 6 }]);
+      await expect(validator.validate('http://private.ipv6')).rejects.toThrow('Hostname resolves to disallowed IP');
+    });
+
     it('should allow private IPs if allowPrivateNetwork is true', async () => {
       await expect(
         validator.validate('http://127.0.0.1', { allowPrivateNetwork: true })
