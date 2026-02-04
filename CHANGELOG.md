@@ -9,9 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Added HTTP profile routing allowlist controls (`MCP4_ALLOW_PROFILES`, `MCP4_ALLOW_PROFILES_REGEX`) for allowed profile ids/names/aliases with optional regex matching.
+- GitLab profiles now expose common list filters for projects, issues, merge requests, and issue notes (including owned and membership for projects).
 
 ### Changes
 - Docker image now bundles profiles and HTML assets.
+
+### Fixed
+- GitLab GLQL request schema now uses glql_yaml to match API requirements.
 
 ## [0.3.2] - 2026-02-03
 

@@ -81,7 +81,8 @@
       "name": "Projects - List",
       "tool": "manage_projects",
       "arguments": {
-        "action": "list"
+        "action": "list",
+        "membership": true
       },
       "mocks": [
         {
@@ -137,7 +138,9 @@
       "tool": "manage_merge_requests",
       "arguments": {
         "action": "list",
-        "project_id": "{{projectId}}"
+        "project_id": "{{projectId}}",
+        "state": "opened",
+        "reviewer_id": 123
       },
       "mocks": [
         {
@@ -1116,7 +1119,7 @@
       "tool": "run_glql",
       "arguments": {
         "action": "query",
-        "query": "{ projects { nodes { id name } } }"
+        "glql_yaml": "{ projects { nodes { id name } } }"
       },
       "mocks": [
         {
@@ -1149,7 +1152,9 @@
       "arguments": {
         "action": "list",
         "project_id": "{{projectId}}",
-        "state": ["opened", "closed"]
+        "state": ["opened", "closed"],
+        "labels": "bug",
+        "updated_after": "2024-01-01T00:00:00Z"
       },
       "mocks": [
         {
@@ -1176,7 +1181,9 @@
           "method": "GET",
           "path": "/projects/{{projectId}}/issues",
           "query": {
-            "state[]": ["opened", "closed"]
+            "state[]": ["opened", "closed"],
+            "labels": "bug",
+            "updated_after": "2024-01-01T00:00:00Z"
           }
         }
       }
@@ -1186,7 +1193,9 @@
       "tool": "manage_issues",
       "arguments": {
         "action": "list_global",
-        "state": "opened"
+        "state": "opened",
+        "scope": "all",
+        "search": "security"
       },
       "mocks": [
         {
@@ -1213,7 +1222,9 @@
           "method": "GET",
           "path": "/issues",
           "query": {
-            "state": "opened"
+            "state": "opened",
+            "scope": "all",
+            "search": "security"
           }
         }
       }
@@ -1250,7 +1261,9 @@
       "arguments": {
         "action": "list_notes",
         "project_id": "{{projectId}}",
-        "issue_iid": 1
+        "issue_iid": 1,
+        "activity_filter": "only_comments",
+        "sort": "asc"
       },
       "mocks": [
         {
@@ -1271,7 +1284,15 @@
           {
             "id": 201
           }
-        ]
+        ],
+        "request": {
+          "method": "GET",
+          "path": "/projects/{{projectId}}/issues/1/notes",
+          "query": {
+            "activity_filter": "only_comments",
+            "sort": "asc"
+          }
+        }
       }
     },
     {

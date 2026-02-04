@@ -41,6 +41,46 @@
       }
     },
     {
+      "name": "Projects - List owned",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "list_projects",
+        "owned": true
+      },
+      "mocks": [
+        {
+          "operationId": "getApiV4Projects",
+          "response": {
+            "body": [{"id": 456, "name": "my-project", "path_with_namespace": "me/my-project"}]
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": [{"id": 456}]
+      }
+    },
+    {
+      "name": "Projects - List membership",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "list_projects",
+        "membership": true
+      },
+      "mocks": [
+        {
+          "operationId": "getApiV4Projects",
+          "response": {
+            "body": [{"id": 789, "name": "team-project", "path_with_namespace": "team/team-project"}]
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": [{"id": 789}]
+      }
+    },
+    {
       "name": "Projects - Get",
       "tool": "retrieve_content",
       "arguments": {
@@ -1540,7 +1580,7 @@
       "tool": "run_glql",
       "arguments": {
         "action": "query",
-        "query": "{ projects { nodes { id name } } }"
+        "glql_yaml": "{ projects { nodes { id name } } }"
       },
       "mocks": [
         {

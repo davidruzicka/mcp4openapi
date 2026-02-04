@@ -125,6 +125,16 @@
           "description": "Action to perform",
           "required": true
         },
+        "owned": {
+          "type": "boolean",
+          "description": "Limit by projects explicitly owned by the current user",
+          "required_for": ["list_projects"]
+        },
+        "membership": {
+          "type": "boolean",
+          "description": "Limit by projects that the current user is a member of",
+          "required_for": ["list_projects"]
+        },
         "project_id": {
           "type": "string",
           "description": "Project ID. Use numeric ID (e.g. '123') or URL-encoded path (e.g. 'group%2Fproject').",
@@ -223,38 +233,136 @@
         },
         "state": {
           "type": "string",
-          "enum": ["opened", "closed", "merged", "all"],
+          "enum": ["opened", "closed", "merged", "locked", "all"],
           "description": "Filter by issue or merge request state",
-          "default": "opened"
-        },
-        "search": {
-          "type": "string",
-          "description": "Search issues by title or description (for list_issues_global)"
-        },
-        "labels": {
-          "type": "string",
-          "description": "Filter by labels (comma-separated, for list_issues_global)"
-        },
-        "milestone": {
-          "type": "string",
-          "description": "Filter by milestone title (for list_issues_global)"
-        },
-        "assignee_id": {
-          "type": "integer",
-          "description": "Filter by assignee ID (for list_issues_global)"
-        },
-        "assignee_username": {
-          "type": "string",
-          "description": "Filter by assignee username (for list_issues_global)"
-        },
-        "author_id": {
-          "type": "integer",
-          "description": "Filter by author ID (for list_issues_global)"
+          "default": "opened",
+          "required_for": ["list_issues", "list_issues_global", "list_merge_requests"]
         },
         "scope": {
           "type": "string",
-          "enum": ["created_by_me", "assigned_to_me", "all"],
-          "description": "Issue scope (for list_issues_global)"
+          "enum": ["created_by_me", "assigned_to_me", "reviews_for_me", "all"],
+          "description": "Filter by scope (issues or merge requests)",
+          "required_for": ["list_issues", "list_issues_global", "list_merge_requests"]
+        },
+        "search": {
+          "type": "string",
+          "description": "Search projects, issues, or merge requests by title or description",
+          "required_for": ["list_projects", "list_issues", "list_issues_global", "list_merge_requests"]
+        },
+        "in": {
+          "type": "string",
+          "description": "Search scope for issues or merge requests (title, description, or title,description)",
+          "required_for": ["list_issues", "list_issues_global", "list_merge_requests"]
+        },
+        "labels": {
+          "type": "string",
+          "description": "Filter by labels (comma-separated)",
+          "required_for": ["list_issues", "list_issues_global", "list_merge_requests"]
+        },
+        "milestone": {
+          "type": "string",
+          "description": "Filter by milestone title",
+          "required_for": ["list_issues", "list_issues_global", "list_merge_requests"]
+        },
+        "milestone_id": {
+          "type": "string",
+          "description": "Filter by milestone ID or special values like None/Any (issues)",
+          "required_for": ["list_issues", "list_issues_global"]
+        },
+        "assignee_id": {
+          "type": "integer",
+          "description": "Filter by assignee ID",
+          "required_for": ["list_issues", "list_issues_global", "list_merge_requests"]
+        },
+        "assignee_username": {
+          "type": "string",
+          "description": "Filter by assignee username (single or comma-separated)",
+          "required_for": ["list_merge_requests"]
+        },
+        "author_id": {
+          "type": "integer",
+          "description": "Filter by author ID",
+          "required_for": ["list_issues", "list_issues_global", "list_merge_requests"]
+        },
+        "author_username": {
+          "type": "string",
+          "description": "Filter by author username",
+          "required_for": ["list_merge_requests"]
+        },
+        "reviewer_id": {
+          "type": "integer",
+          "description": "Filter by reviewer ID (merge requests)",
+          "required_for": ["list_merge_requests"]
+        },
+        "reviewer_username": {
+          "type": "string",
+          "description": "Filter by reviewer username (merge requests)",
+          "required_for": ["list_merge_requests"]
+        },
+        "source_branch": {
+          "type": "string",
+          "description": "Filter by source branch (merge requests)",
+          "required_for": ["list_merge_requests"]
+        },
+        "target_branch": {
+          "type": "string",
+          "description": "Filter by target branch (merge requests)",
+          "required_for": ["list_merge_requests"]
+        },
+        "wip": {
+          "type": "string",
+          "description": "Filter draft merge requests (yes or no)",
+          "required_for": ["list_merge_requests"]
+        },
+        "view": {
+          "type": "string",
+          "description": "Return simplified merge request fields (simple)",
+          "required_for": ["list_merge_requests"]
+        },
+        "confidential": {
+          "type": "boolean",
+          "description": "Filter confidential issues",
+          "required_for": ["list_issues", "list_issues_global"]
+        },
+        "my_reaction_emoji": {
+          "type": "string",
+          "description": "Filter by your reaction emoji",
+          "required_for": ["list_issues", "list_issues_global", "list_merge_requests"]
+        },
+        "non_archived": {
+          "type": "boolean",
+          "description": "Return items only from non-archived projects",
+          "required_for": ["list_issues", "list_issues_global", "list_merge_requests"]
+        },
+        "order_by": {
+          "type": "string",
+          "description": "Order results by supported fields",
+          "required_for": ["list_projects", "list_merge_requests", "list_issue_notes", "list_merge_request_notes"]
+        },
+        "sort": {
+          "type": "string",
+          "description": "Sort results in asc or desc order",
+          "required_for": ["list_issues", "list_issues_global", "list_merge_requests", "list_issue_notes", "list_merge_request_notes"]
+        },
+        "updated_after": {
+          "type": "string",
+          "description": "Return items updated on or after the given time (ISO 8601)",
+          "required_for": ["list_issues", "list_issues_global", "list_merge_requests"]
+        },
+        "updated_before": {
+          "type": "string",
+          "description": "Return items updated on or before the given time (ISO 8601)",
+          "required_for": ["list_issues", "list_issues_global", "list_merge_requests"]
+        },
+        "with_labels_details": {
+          "type": "boolean",
+          "description": "Include extra label details in list responses",
+          "required_for": ["list_merge_requests"]
+        },
+        "activity_filter": {
+          "type": "string",
+          "description": "Filter issue notes by activity type (all_notes, only_comments, only_activity)",
+          "required_for": ["list_issue_notes"]
         },
         "page": {
           "type": "integer",
@@ -265,6 +373,41 @@
           "type": "integer",
           "description": "Items per page (recommended max 100)",
           "default": 50
+        },
+        "archived": {
+          "type": "boolean",
+          "description": "Limit by archived status",
+          "required_for": ["list_projects"]
+        },
+        "id_after": {
+          "type": "integer",
+          "description": "Limit results to projects with IDs greater than the specified ID",
+          "required_for": ["list_projects"]
+        },
+        "id_before": {
+          "type": "integer",
+          "description": "Limit results to projects with IDs less than the specified ID",
+          "required_for": ["list_projects"]
+        },
+        "min_access_level": {
+          "type": "integer",
+          "description": "Limit to projects with at least the specified access level",
+          "required_for": ["list_projects"]
+        },
+        "owned": {
+          "type": "boolean",
+          "description": "Limit to projects owned by current user",
+          "required_for": ["list_projects"]
+        },
+        "membership": {
+          "type": "boolean",
+          "description": "Limit to projects current user is a member of",
+          "required_for": ["list_projects"]
+        },
+        "simple": {
+          "type": "boolean",
+          "description": "Return only limited fields for each project",
+          "required_for": ["list_projects"]
         }
       }
     },
@@ -714,11 +857,11 @@
           "description": "Action to perform",
           "required": true
         },
-        "query": {
+        "glql_yaml": {
           "type": "string",
-          "description": "GLQL query string",
+          "description": "GLQL YAML payload. Example:\nfields: id,title,author\ngroup: my-group\nlimit: 10\nsort: created desc\nquery: state = opened\nDocs: https://docs.gitlab.com/api/glql/",
           "required_for": ["query"],
-          "example": "{ projects { nodes { id name } } }"
+          "example": "fields: id,title,author\ngroup: my-group\nlimit: 10\nsort: created desc\nquery: state = opened"
         }
       }
     }

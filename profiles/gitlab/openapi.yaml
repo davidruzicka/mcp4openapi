@@ -6505,7 +6505,7 @@ paths:
             schema:
               type: object
               properties:
-                query:
+                glql_yaml:
                   type: string
       responses:
         "200":

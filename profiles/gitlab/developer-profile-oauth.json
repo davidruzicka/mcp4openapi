@@ -480,15 +480,48 @@
         },
         "search": {
           "type": "string",
-          "description": "Search for projects by name or description"
+          "description": "Search for projects by name or description",
+          "required_for": ["list"]
+        },
+        "archived": {
+          "type": "boolean",
+          "description": "Limit by archived status",
+          "required_for": ["list"]
+        },
+        "id_after": {
+          "type": "integer",
+          "description": "Limit results to projects with IDs greater than the specified ID",
+          "required_for": ["list"]
+        },
+        "id_before": {
+          "type": "integer",
+          "description": "Limit results to projects with IDs less than the specified ID",
+          "required_for": ["list"]
+        },
+        "min_access_level": {
+          "type": "integer",
+          "description": "Limit to projects with at least the specified access level",
+          "required_for": ["list"]
+        },
+        "order_by": {
+          "type": "string",
+          "description": "Order results by supported fields",
+          "required_for": ["list"]
         },
         "owned": {
           "type": "boolean",
-          "description": "Limit to projects owned by current user"
+          "description": "Limit to projects owned by current user",
+          "required_for": ["list"]
         },
         "membership": {
           "type": "boolean",
-          "description": "Limit to projects current user is a member of"
+          "description": "Limit to projects current user is a member of",
+          "required_for": ["list"]
+        },
+        "simple": {
+          "type": "boolean",
+          "description": "Return only limited fields for each project",
+          "required_for": ["list"]
         }
       }
     },
@@ -695,7 +728,116 @@
           "type": "string",
           "enum": ["opened", "closed", "merged", "all"],
           "description": "Filter by merge request state",
-          "default": "opened"
+          "default": "opened",
+          "required_for": ["list"]
+        },
+        "scope": {
+          "type": "string",
+          "enum": ["created_by_me", "assigned_to_me", "reviews_for_me", "all"],
+          "description": "Filter by merge request scope",
+          "required_for": ["list"]
+        },
+        "search": {
+          "type": "string",
+          "description": "Search merge requests by title or description",
+          "required_for": ["list"]
+        },
+        "in": {
+          "type": "string",
+          "description": "Search scope (title, description, or title,description)",
+          "required_for": ["list"]
+        },
+        "labels": {
+          "type": "string",
+          "description": "Filter by labels (comma-separated)",
+          "required_for": ["list"]
+        },
+        "milestone": {
+          "type": "string",
+          "description": "Filter by milestone title",
+          "required_for": ["list"]
+        },
+        "assignee_id": {
+          "type": "integer",
+          "description": "Filter by assignee ID",
+          "required_for": ["list"]
+        },
+        "assignee_username": {
+          "type": "string",
+          "description": "Filter by assignee username (single or comma-separated)",
+          "required_for": ["list"]
+        },
+        "author_id": {
+          "type": "integer",
+          "description": "Filter by author ID",
+          "required_for": ["list"]
+        },
+        "author_username": {
+          "type": "string",
+          "description": "Filter by author username",
+          "required_for": ["list"]
+        },
+        "reviewer_id": {
+          "type": "integer",
+          "description": "Filter by reviewer ID",
+          "required_for": ["list"]
+        },
+        "reviewer_username": {
+          "type": "string",
+          "description": "Filter by reviewer username",
+          "required_for": ["list"]
+        },
+        "source_branch": {
+          "type": "string",
+          "description": "Filter by source branch",
+          "required_for": ["list"]
+        },
+        "target_branch": {
+          "type": "string",
+          "description": "Filter by target branch",
+          "required_for": ["list"]
+        },
+        "wip": {
+          "type": "string",
+          "description": "Filter draft merge requests (yes or no)",
+          "required_for": ["list"]
+        },
+        "view": {
+          "type": "string",
+          "description": "Return simplified merge request fields (simple)",
+          "required_for": ["list"]
+        },
+        "my_reaction_emoji": {
+          "type": "string",
+          "description": "Filter by your reaction emoji",
+          "required_for": ["list"]
+        },
+        "with_labels_details": {
+          "type": "boolean",
+          "description": "Include extra label details in list responses",
+          "required_for": ["list"]
+        },
+        "order_by": {
+          "type": "string",
+          "description": "Order results by supported fields",
+          "required_for": ["list", "list_notes"]
+        },
+        "sort": {
+          "type": "string",
+          "enum": ["asc", "desc"],
+          "description": "Sort results in asc or desc order",
+          "default": "desc",
+          "required_for": ["list", "list_notes"]
+        },
+        "updated_after": {
+          "type": "string",
+          "description": "Return merge requests updated on or after the given time (ISO 8601)",
+          "required_for": ["list"]
+        },
+        "updated_before": {
+          "type": "string",
+          "description": "Return merge requests updated on or before the given time (ISO 8601)",
+          "required_for": ["list"]
         },
         "page": {
           "type": "integer",
@@ -735,12 +877,6 @@
           "description": "Whether the note should be confidential",
           "default": false,
           "example": false
-        },
-        "sort": {
-          "type": "string",
-          "enum": ["asc", "desc"],
-          "description": "Return notes sorted in created order",
-          "default": "desc"
         },
         "state_event": {
           "type": "string",
@@ -1124,11 +1260,11 @@
           "description": "Action to perform",
           "required": true
         },
-        "query": {
+        "glql_yaml": {
           "type": "string",
-          "description": "GLQL query string",
+          "description": "GLQL YAML payload. Example:\nfields: id,title,author\ngroup: my-group\nlimit: 10\nsort: created desc\nquery: state = opened\nDocs: https://docs.gitlab.com/api/glql/",
           "required_for": ["query"],
-          "example": "{ projects { nodes { id name } } }"
+          "example": "fields: id,title,author\ngroup: my-group\nlimit: 10\nsort: created desc\nquery: state = opened"
         }
       }
     },
@@ -1220,36 +1356,89 @@
           "type": "string",
           "enum": ["opened", "closed", "all"],
           "description": "Filter by issue state",
-          "default": "opened"
+          "default": "opened",
+          "required_for": ["list", "list_global"]
         },
         "search": {
           "type": "string",
-          "description": "Search issues by title or description (for list_global)"
+          "description": "Search issues by title or description",
+          "required_for": ["list", "list_global"]
+        },
+        "in": {
+          "type": "string",
+          "description": "Search scope (title, description, or title,description)",
+          "required_for": ["list", "list_global"]
         },
         "labels": {
           "type": "string",
-          "description": "Filter by labels (comma-separated, for list_global)"
+          "description": "Filter by labels (comma-separated)",
+          "required_for": ["list", "list_global", "create", "update"]
         },
         "milestone": {
           "type": "string",
-          "description": "Filter by milestone title (for list_global)"
+          "description": "Filter by milestone title",
+          "required_for": ["list", "list_global"]
+        },
+        "milestone_id": {
+          "type": "string",
+          "description": "Filter by milestone ID or special values like None/Any",
+          "required_for": ["list", "list_global", "create", "update"]
         },
         "assignee_id": {
           "type": "integer",
-          "description": "Filter by assignee ID (for list_global)"
-        },
-        "assignee_username": {
-          "type": "string",
-          "description": "Filter by assignee username (for list_global)"
+          "description": "Filter by assignee ID",
+          "required_for": ["list", "list_global", "create"]
         },
         "author_id": {
           "type": "integer",
-          "description": "Filter by author ID (for list_global)"
+          "description": "Filter by author ID",
+          "required_for": ["list", "list_global"]
         },
         "scope": {
           "type": "string",
           "enum": ["created_by_me", "assigned_to_me", "all"],
-          "description": "Issue scope (for list_global)"
+          "description": "Issue scope",
+          "required_for": ["list", "list_global"]
+        },
+        "confidential": {
+          "type": "boolean",
+          "description": "Filter confidential issues",
+          "required_for": ["list", "list_global", "create", "update"]
+        },
+        "my_reaction_emoji": {
+          "type": "string",
+          "description": "Filter by your reaction emoji",
+          "required_for": ["list", "list_global"]
+        },
+        "non_archived": {
+          "type": "boolean",
+          "description": "Return issues only from non-archived projects",
+          "required_for": ["list", "list_global"]
+        },
+        "order_by": {
+          "type": "string",
+          "description": "Order results by supported fields",
+          "required_for": ["list_notes"]
+        },
+        "sort": {
+          "type": "string",
+          "description": "Sort results in asc or desc order",
+          "required_for": ["list", "list_global", "list_notes"]
+        },
+        "updated_after": {
+          "type": "string",
+          "description": "Return issues updated on or after the given time (ISO 8601)",
+          "required_for": ["list", "list_global"]
+        },
+        "updated_before": {
+          "type": "string",
+          "description": "Return issues updated on or before the given time (ISO 8601)",
+          "required_for": ["list", "list_global"]
+        },
+        "activity_filter": {
+          "type": "string",
+          "description": "Filter issue notes by activity type (all_notes, only_comments, only_activity)",
+          "required_for": ["list_notes"]
         },
         "page": {
           "type": "integer",
@@ -1288,11 +1477,6 @@
           "description": "Resolve or unresolve discussion",
           "required_for": ["set_discussion_resolved"]
         },
-        "assignee_id": {
-          "type": "integer",
-          "description": "The ID of the user to assign the issue to (optional for create)",
-          "example": 123
-        },
         "assignee_ids": {
           "type": "array",
           "items": {
@@ -1301,39 +1485,17 @@
           "description": "The IDs of the users to assign the issue to (optional for create)",
           "example": [123, 456]
         },
-        "labels": {
-          "type": "string",
-          "description": "Labels to be added to the issue (comma-separated, optional for create)",
-          "example": "bug,feature,frontend"
-        },
-        "milestone_id": {
-          "type": "integer",
-          "description": "The ID of the milestone to assign the issue to (optional for create)",
-          "example": 42
-        },
         "due_date": {
           "type": "string",
           "format": "date",
           "description": "The due date of the issue (optional for create)",
           "example": "2024-12-31"
         },
-        "confidential": {
-          "type": "boolean",
-          "description": "Whether the issue should be confidential (optional for create). For notes, use with create_note.",
-          "default": false,
-          "example": false
-        },
         "weight": {
           "type": "integer",
           "description": "The weight of the issue (optional for create)",
           "minimum": 0,
           "example": 5
-        },
-        "sort": {
-          "type": "string",
-          "enum": ["asc", "desc"],
-          "description": "Return notes sorted in created order",
-          "default": "desc"
         }
       }
     },
