@@ -61,3 +61,16 @@ String replacement for path parameters is dangerous if the input is not strictly
 **Prevention:**
 1.  Always use `encodeURIComponent()` when substituting user input into path segments.
 2.  Validate that path parameters do not contain path traversal characters (like `..` or `/`) even before encoding, if strict validation is possible.
+
+## 2026-02-04 - [HIGH] SSRF in OAuth Provider
+
+**Vulnerability:**
+The `ExternalOAuthProvider` was performing direct `fetch()` calls to URLs provided in configuration (`authorization_endpoint`, `token_endpoint`, etc.) without validation. This could allow Server-Side Request Forgery (SSRF) if a malicious profile pointed these endpoints to internal network resources (e.g., `http://127.0.0.1/admin`).
+
+**Learning:**
+Any outbound request based on user-supplied or configuration-supplied URLs must be validated against SSRF risks. Assuming that configuration is trusted is risky, especially when profiles can be shared or downloaded.
+
+**Prevention:**
+1.  Implemented `SSRFValidator` to check hostnames and IPs against a blocklist of private ranges.
+2.  Integrated `SSRFValidator` into all outbound requests in `ExternalOAuthProvider`.
+3.  Ensured tests mock this validation to avoid external dependencies or blocking legitimate test domains.

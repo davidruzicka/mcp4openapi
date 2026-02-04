@@ -3,6 +3,30 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+
+// Mock DNS lookup to bypass SSRF validation for test domains
+// Must be hoisted before imports
+vi.mock('node:dns/promises', () => {
+  return {
+    lookup: vi.fn().mockImplementation(async (hostname: string) => {
+      if (hostname.endsWith('.example.com')) {
+        return [{ address: '93.184.216.34', family: 4 }];
+      }
+      throw new Error(`getaddrinfo ENOTFOUND ${hostname}`);
+    }),
+  };
+});
+
+// Mock SSRFValidator to bypass validation for existing tests
+// Must be hoisted before imports
+vi.mock('../security/ssrf-validator.js', () => {
+  return {
+    SSRFValidator: class {
+      async validate() { return; }
+    }
+  };
+});
+
 import { ExternalOAuthProvider, InMemoryClientsStore } from './oauth-provider.js';
 import type { OAuthConfig } from '../types/profile.js';
 import type { Logger } from '../core/logger.js';
@@ -710,7 +734,7 @@ describe('ExternalOAuthProvider', () => {
     it('should throw error for invalid authorization code', async () => {
       const client: OAuthClientInformationFull = {
         client_id: 'test-client',
-        redirect_uris: ['http://localhost:3003/callback'],
+        redirect_uris: ['http://localhost:3003/oauth/callback'],
         grant_types: ['authorization_code'],
         response_types: ['code'],
       };
@@ -729,7 +753,7 @@ describe('ExternalOAuthProvider', () => {
     it('should throw error for invalid authorization code', async () => {
       const client: OAuthClientInformationFull = {
         client_id: 'test-client',
-        redirect_uris: ['http://localhost:3003/callback'],
+        redirect_uris: ['http://localhost:3003/oauth/callback'],
         grant_types: ['authorization_code'],
         response_types: ['code'],
       };
@@ -1176,6 +1200,18 @@ describe('ExternalOAuthProvider', () => {
       await expect(provider.verifyAccessToken('some-token'))
         .rejects.toThrow('Token introspection failed: 500');
     });
+
+    it('should throw on introspection endpoint SSRF failure', async () => {
+      // Access the mock class via the provider instance (since it's a private property, we cast to any)
+      const mockValidator = (provider as any).ssrfValidator;
+      mockValidator.validate = vi.fn().mockRejectedValue(new Error('SSRF blocked'));
+
+      await expect(provider.verifyAccessToken('some-token'))
+        .rejects.toThrow('SSRF blocked');
+
+      // Restore default mock behavior
+      mockValidator.validate = vi.fn().mockResolvedValue(undefined);
+    });
   });
 
   describe('revokeToken', () => {
@@ -1219,6 +1255,61 @@ describe('ExternalOAuthProvider', () => {
           method: 'POST',
         })
       );
+    });
+
+    it('should log warning when revocation fails', async () => {
+      const configWithRevocation: OAuthConfig = {
+        ...config,
+        revocation_endpoint: 'https://oauth.example.com/revoke',
+      };
+
+      provider = new ExternalOAuthProvider(configWithRevocation, mockLogger);
+
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: false,
+        status: 500,
+      });
+
+      const client: OAuthClientInformationFull = {
+        client_id: 'test-client',
+        redirect_uris: ['http://localhost:3003/callback'],
+        grant_types: ['authorization_code'],
+        response_types: ['code'],
+      };
+
+      // Should not throw even on failure
+      await expect(
+        provider.revokeToken(client, { token: 'test-token' })
+      ).resolves.not.toThrow();
+
+      expect(mockLogger.warn).toHaveBeenCalledWith('Token revocation failed', { status: 500 });
+    });
+
+    it('should fail if revocation endpoint triggers SSRF', async () => {
+      const configWithRevocation: OAuthConfig = {
+        ...config,
+        revocation_endpoint: 'https://oauth.example.com/revoke',
+      };
+
+      provider = new ExternalOAuthProvider(configWithRevocation, mockLogger);
+
+      // Access the mock class via the provider instance (since it's a private property, we cast to any)
+      const mockValidator = (provider as any).ssrfValidator;
+      mockValidator.validate = vi.fn().mockRejectedValue(new Error('SSRF blocked'));
+
+      const client: OAuthClientInformationFull = {
+        client_id: 'test-client',
+        redirect_uris: ['http://localhost:3003/callback'],
+        grant_types: ['authorization_code'],
+        response_types: ['code'],
+      };
+
+      await expect(
+        provider.revokeToken(client, { token: 'test-token' })
+      ).rejects.toThrow('SSRF blocked');
+
+      // Restore default mock behavior
+      mockValidator.validate = vi.fn().mockResolvedValue(undefined);
     });
   });
 
@@ -1325,6 +1416,103 @@ describe('ExternalOAuthProvider', () => {
       await expect(
         provider.exchangeAuthorizationCode(client, code, undefined, 'http://localhost:3003/callback')
       ).rejects.toThrow('No tokens associated with this code');
+    });
+  });
+
+  describe('cleanup', () => {
+    beforeEach(() => {
+      provider = new ExternalOAuthProvider(config, mockLogger);
+    });
+
+    it('should remove expired states', () => {
+      // Add expired state
+      const expiredState = 'expired-state';
+      (provider as any).stateStore.set(expiredState, {
+        clientRedirectUri: 'http://localhost',
+        codeChallenge: 'challenge',
+        clientId: 'client',
+        createdAt: Date.now() - 11 * 60 * 1000, // 11 minutes ago (timeout is 10 min)
+      });
+
+      // Add valid state
+      const validState = 'valid-state';
+      (provider as any).stateStore.set(validState, {
+        clientRedirectUri: 'http://localhost',
+        codeChallenge: 'challenge',
+        clientId: 'client',
+        createdAt: Date.now() - 5 * 60 * 1000, // 5 minutes ago
+      });
+
+      provider.cleanup();
+
+      expect((provider as any).stateStore.has(expiredState)).toBe(false);
+      expect((provider as any).stateStore.has(validState)).toBe(true);
+    });
+
+    it('should remove expired authorization codes', () => {
+      const client: OAuthClientInformationFull = {
+        client_id: 'client',
+        redirect_uris: [],
+        grant_types: [],
+        response_types: [],
+      };
+
+      // Add expired code
+      const expiredCode = 'expired-code';
+      (provider as any).authorizationCodes.set(expiredCode, {
+        client,
+        params: {},
+        createdAt: Date.now() - 6 * 60 * 1000, // 6 minutes ago (timeout is 5 min)
+        tokens: {},
+      });
+
+      // Add valid code
+      const validCode = 'valid-code';
+      (provider as any).authorizationCodes.set(validCode, {
+        client,
+        params: {},
+        createdAt: Date.now() - 2 * 60 * 1000, // 2 minutes ago
+        tokens: {},
+      });
+
+      provider.cleanup();
+
+      expect((provider as any).authorizationCodes.has(expiredCode)).toBe(false);
+      expect((provider as any).authorizationCodes.has(validCode)).toBe(true);
+    });
+
+    it('should remove expired access tokens', () => {
+      // Add expired token
+      const expiredToken = 'expired-token';
+      (provider as any).accessTokens.set(expiredToken, {
+        token: expiredToken,
+        clientId: 'client',
+        scopes: [],
+        expiresAt: Date.now() - 1000, // Expired 1 second ago
+      });
+
+      // Add valid token (future expiration)
+      const validToken = 'valid-token';
+      (provider as any).accessTokens.set(validToken, {
+        token: validToken,
+        clientId: 'client',
+        scopes: [],
+        expiresAt: Date.now() + 3600 * 1000, // Expires in 1 hour
+      });
+
+      // Add token without expiration (should remain)
+      const noExpiryToken = 'no-expiry-token';
+      (provider as any).accessTokens.set(noExpiryToken, {
+        token: noExpiryToken,
+        clientId: 'client',
+        scopes: [],
+      });
+
+      provider.cleanup();
+
+      expect((provider as any).accessTokens.has(expiredToken)).toBe(false);
+      expect((provider as any).accessTokens.has(validToken)).toBe(true);
+      expect((provider as any).accessTokens.has(noExpiryToken)).toBe(true);
     });
   });
 
@@ -1508,103 +1696,6 @@ describe('ExternalOAuthProvider', () => {
           mockRes
         )
       ).rejects.toThrow('MCP4_OAUTH_REDIRECT_URI must be configured');
-    });
-  });
-
-  describe('cleanup', () => {
-    beforeEach(() => {
-      provider = new ExternalOAuthProvider(config, mockLogger);
-    });
-
-    it('should remove expired states', () => {
-      // Add expired state
-      const expiredState = 'expired-state';
-      (provider as any).stateStore.set(expiredState, {
-        clientRedirectUri: 'http://localhost',
-        codeChallenge: 'challenge',
-        clientId: 'client',
-        createdAt: Date.now() - 11 * 60 * 1000, // 11 minutes ago (timeout is 10 min)
-      });
-
-      // Add valid state
-      const validState = 'valid-state';
-      (provider as any).stateStore.set(validState, {
-        clientRedirectUri: 'http://localhost',
-        codeChallenge: 'challenge',
-        clientId: 'client',
-        createdAt: Date.now() - 5 * 60 * 1000, // 5 minutes ago
-      });
-
-      provider.cleanup();
-
-      expect((provider as any).stateStore.has(expiredState)).toBe(false);
-      expect((provider as any).stateStore.has(validState)).toBe(true);
-    });
-
-    it('should remove expired authorization codes', () => {
-      const client: OAuthClientInformationFull = {
-        client_id: 'client',
-        redirect_uris: [],
-        grant_types: [],
-        response_types: [],
-      };
-
-      // Add expired code
-      const expiredCode = 'expired-code';
-      (provider as any).authorizationCodes.set(expiredCode, {
-        client,
-        params: {},
-        createdAt: Date.now() - 6 * 60 * 1000, // 6 minutes ago (timeout is 5 min)
-        tokens: {},
-      });
-
-      // Add valid code
-      const validCode = 'valid-code';
-      (provider as any).authorizationCodes.set(validCode, {
-        client,
-        params: {},
-        createdAt: Date.now() - 2 * 60 * 1000, // 2 minutes ago
-        tokens: {},
-      });
-
-      provider.cleanup();
-
-      expect((provider as any).authorizationCodes.has(expiredCode)).toBe(false);
-      expect((provider as any).authorizationCodes.has(validCode)).toBe(true);
-    });
-
-    it('should remove expired access tokens', () => {
-      // Add expired token
-      const expiredToken = 'expired-token';
-      (provider as any).accessTokens.set(expiredToken, {
-        token: expiredToken,
-        clientId: 'client',
-        scopes: [],
-        expiresAt: Date.now() - 1000, // Expired 1 second ago
-      });
-
-      // Add valid token (future expiration)
-      const validToken = 'valid-token';
-      (provider as any).accessTokens.set(validToken, {
-        token: validToken,
-        clientId: 'client',
-        scopes: [],
-        expiresAt: Date.now() + 3600 * 1000, // Expires in 1 hour
-      });
-
-      // Add token without expiration (should remain)
-      const noExpiryToken = 'no-expiry-token';
-      (provider as any).accessTokens.set(noExpiryToken, {
-        token: noExpiryToken,
-        clientId: 'client',
-        scopes: [],
-      });
-
-      provider.cleanup();
-
-      expect((provider as any).accessTokens.has(expiredToken)).toBe(false);
-      expect((provider as any).accessTokens.has(validToken)).toBe(true);
-      expect((provider as any).accessTokens.has(noExpiryToken)).toBe(true);
     });
   });
 
