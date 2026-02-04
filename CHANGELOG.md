@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changes
 - Docker image now bundles profiles and HTML assets.
+- Hardened OAuth outbound requests with pinned DNS SSRF validation (toggleable), expanded IP block coverage, and new SSRF-related env vars.
 
 ## [0.3.2] - 2026-02-03
 

@@ -301,6 +301,8 @@ echo 'export NODE_EXTRA_CA_CERTS="$HOME/ca-bundle.pem"' >> $HOME/.bash_profile
 - `MCP4_OPENAPI_SPEC_PATH`: Path or URL to OpenAPI spec (YAML/JSON, supports local files and HTTP/HTTPS URLs). Required when profile does not provide `openapi_spec_path`. In HTTP profile routing, this acts as a global fallback for profiles without `openapi_spec_path`.
 - `MCP4_TRANSPORT`: `stdio` (default) or `http`
 - `MCP4_API_BASE_URL`: Override OpenAPI server URL
+- `MCP4_SSRF_PIN_DNS`: Enable pinned DNS validation for OAuth outbound requests (`true|false`, default: `true`). Set to `false` to use standard `fetch` behavior (follows redirects, uses system DNS) at the cost of SSRF rebinding protection.
+- `MCP4_SSRF_ALLOW_PRIVATE_NETWORK`: Allow OAuth outbound requests to private/loopback/link-local IPs (`true|false`, default: `false`).
 
 **Profile auth env vars**: Use profile-specific names for `value_from_env` (for example, `GITLAB_TOKEN`, `YOUTRACK_TOKEN`) instead of the generic `MCP4_API_TOKEN`.
 
