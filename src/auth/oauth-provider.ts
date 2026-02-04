@@ -214,7 +214,9 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
       // Use URL constructor to properly handle trailing slashes
       const metadataUrl = new URL(OAUTH_PATHS.WELL_KNOWN_AUTHORIZATION_SERVER, issuerUrl).toString();
 
-      await this.ssrfValidator.validate(metadataUrl);
+      await this.ssrfValidator.validate(metadataUrl, {
+        allowPrivateNetwork: process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK === 'true'
+      });
 
       const response = await fetch(metadataUrl, {
         headers: { 'Accept': 'application/json' },
@@ -856,7 +858,9 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
 
     this.logger.debug('Exchanging code with external provider', { tokenUrl });
 
-    await this.ssrfValidator.validate(tokenUrl);
+    await this.ssrfValidator.validate(tokenUrl, {
+      allowPrivateNetwork: process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK === 'true'
+    });
 
     const response = await fetch(tokenUrl, {
       method: 'POST',
@@ -893,7 +897,9 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
 
     const tokenUrl = this.config.token_endpoint!;
     
-    await this.ssrfValidator.validate(tokenUrl);
+    await this.ssrfValidator.validate(tokenUrl, {
+      allowPrivateNetwork: process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK === 'true'
+    });
 
     const body = new URLSearchParams({
       grant_type: 'refresh_token',
@@ -978,7 +984,9 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
       throw new Error('Introspection endpoint not configured');
     }
 
-    await this.ssrfValidator.validate(introspectionUrl);
+    await this.ssrfValidator.validate(introspectionUrl, {
+      allowPrivateNetwork: process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK === 'true'
+    });
 
     const body = new URLSearchParams({ token });
 
@@ -1039,7 +1047,9 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
     const revocationUrl = this.config.revocation_endpoint;
     if (!revocationUrl) return;
 
-    await this.ssrfValidator.validate(revocationUrl);
+    await this.ssrfValidator.validate(revocationUrl, {
+      allowPrivateNetwork: process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK === 'true'
+    });
 
     const body = new URLSearchParams({ token });
 

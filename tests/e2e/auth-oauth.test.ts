@@ -167,6 +167,7 @@ describeIfListen('E2E: OAuth 2.0 authentication', () => {
           GITLAB_OAUTH_ISSUER: mockServer.oauthUrl,
           MCP4_ALLOWED_ORIGINS: 'anysphere.cursor-mcp',
           MCP4_LOG_LEVEL: 'ERROR',
+          MCP4_SSRF_ALLOW_PRIVATE_NETWORK: 'true',
         },
       });
 
