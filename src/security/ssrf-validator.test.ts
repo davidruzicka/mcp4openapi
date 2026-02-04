@@ -55,6 +55,18 @@ describe('SSRFValidator', () => {
       }
     });
 
+    it('should block IPv4-mapped IPv6 addresses for private IPs', async () => {
+      const privateIps = [
+        'http://[::ffff:127.0.0.1]',
+        'http://[::ffff:10.0.0.1]',
+        'http://[::ffff:192.168.1.1]',
+      ];
+
+      for (const ip of privateIps) {
+        await expect(validator.validate(ip)).rejects.toThrow('IP address not allowed');
+      }
+    });
+
     it('should block private IPv6 addresses', async () => {
       const privateIps = [
         'http://[::1]',

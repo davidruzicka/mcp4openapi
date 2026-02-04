@@ -14,8 +14,6 @@
  */
 
 import { randomUUID, createHash, timingSafeEqual } from 'node:crypto';
-import * as http from 'node:http';
-import * as https from 'node:https';
 import { isIP } from 'node:net';
 import { Request, Response } from 'express';
 import type {
@@ -34,7 +32,6 @@ import type { Logger } from '../core/logger.js';
 import { OAUTH_PATHS, OAUTH_RATE_LIMIT } from '../core/constants.js';
 import { escapeHtmlSafe } from '../validation/validation-utils.js';
 import { SSRFValidator } from '../security/ssrf-validator.js';
-import type { SSRFOptions, SSRFResolvedTarget } from '../security/ssrf-validator.js';
 
 /**
  * In-memory store for OAuth client registrations
@@ -93,7 +90,6 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
   private logger: Logger;
   private _clientsStore: InMemoryClientsStore;
   private ssrfValidator: SSRFValidator;
-  private pinnedDnsWarningLogged = false;
   
   // In-memory storage
   private authorizationCodes = new Map<string, AuthorizationCodeData>();
@@ -217,10 +213,15 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
     try {
       // Use URL constructor to properly handle trailing slashes
       const metadataUrl = new URL(OAUTH_PATHS.WELL_KNOWN_AUTHORIZATION_SERVER, issuerUrl).toString();
-      const response = await this.fetchWithPinnedDns(metadataUrl, {
+
+      await this.ssrfValidator.validate(metadataUrl, {
+        allowPrivateNetwork: process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK === 'true'
+      });
+
+      const response = await fetch(metadataUrl, {
         headers: { 'Accept': 'application/json' },
         signal: AbortSignal.timeout(5000), // 5 second timeout
-      }, this.getSsrfOptions());
+      });
       
       if (!response.ok) {
         return null;
@@ -856,14 +857,19 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
     }
 
     this.logger.debug('Exchanging code with external provider', { tokenUrl });
-    const response = await this.fetchWithPinnedDns(tokenUrl, {
+
+    await this.ssrfValidator.validate(tokenUrl, {
+      allowPrivateNetwork: process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK === 'true'
+    });
+
+    const response = await fetch(tokenUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
         'Accept': 'application/json',
       },
       body: body.toString(),
-    }, this.getSsrfOptions());
+    });
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -890,6 +896,11 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
     this.logger.info('Exchanging refresh token', { clientId: client.client_id });
 
     const tokenUrl = this.config.token_endpoint!;
+
+    await this.ssrfValidator.validate(tokenUrl, {
+      allowPrivateNetwork: process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK === 'true'
+    });
+
     const body = new URLSearchParams({
       grant_type: 'refresh_token',
       refresh_token: refreshToken,
@@ -907,14 +918,14 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
       body.set('client_secret', this.config.client_secret);
     }
 
-    const response = await this.fetchWithPinnedDns(tokenUrl, {
+    const response = await fetch(tokenUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
         'Accept': 'application/json',
       },
       body: body.toString(),
-    }, this.getSsrfOptions());
+    });
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -972,6 +983,11 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
     if (!introspectionUrl) {
       throw new Error('Introspection endpoint not configured');
     }
+
+    await this.ssrfValidator.validate(introspectionUrl, {
+      allowPrivateNetwork: process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK === 'true'
+    });
+
     const body = new URLSearchParams({ token });
 
     if (this.config.client_id) {
@@ -982,14 +998,14 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
       body.set('client_secret', this.config.client_secret);
     }
 
-    const response = await this.fetchWithPinnedDns(introspectionUrl, {
+    const response = await fetch(introspectionUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
         'Accept': 'application/json',
       },
       body: body.toString(),
-    }, this.getSsrfOptions());
+    });
 
     if (!response.ok) {
       throw new Error(`Token introspection failed: ${response.status}`);
@@ -1030,6 +1046,11 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
   private async revokeTokenWithProvider(token: string): Promise<void> {
     const revocationUrl = this.config.revocation_endpoint;
     if (!revocationUrl) return;
+
+    await this.ssrfValidator.validate(revocationUrl, {
+      allowPrivateNetwork: process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK === 'true'
+    });
+
     const body = new URLSearchParams({ token });
 
     if (this.config.client_id) {
@@ -1040,13 +1061,13 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
       body.set('client_secret', this.config.client_secret);
     }
 
-    const response = await this.fetchWithPinnedDns(revocationUrl, {
+    const response = await fetch(revocationUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
       },
       body: body.toString(),
-    }, this.getSsrfOptions());
+    });
 
     if (!response.ok) {
       this.logger.warn('Token revocation failed', { status: response.status });
@@ -1082,157 +1103,5 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
         this.accessTokens.delete(token);
       }
     }
-  }
-
-  private getSsrfOptions(): SSRFOptions {
-    return {
-      allowPrivateNetwork: process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK === 'true',
-    };
-  }
-
-  private async fetchWithPinnedDns(
-    url: string,
-    init: RequestInit,
-    options: SSRFOptions
-  ): Promise<{ ok: boolean; status: number; json: () => Promise<any>; text: () => Promise<string>; }> {
-    const fetchFn: any = globalThis.fetch;
-    const isFetchMocked = typeof fetchFn === 'function' && typeof fetchFn.mock !== 'undefined';
-
-    if (!this.isPinnedDnsEnabled()) {
-      if (!this.pinnedDnsWarningLogged) {
-        this.logger.warn('Pinned DNS SSRF protection is disabled. Outbound OAuth requests will use system DNS resolution and follow redirects.', {
-          how_to_fix: 'Set MCP4_SSRF_PIN_DNS=true to enable pinned DNS SSRF protection.',
-        });
-        this.pinnedDnsWarningLogged = true;
-      }
-      await this.ssrfValidator.validate(url, options);
-      return fetchFn(url, init);
-    }
-
-    if (isFetchMocked) {
-      await this.ssrfValidator.resolveAndValidate(url, options);
-      return fetchFn(url, init);
-    }
-
-    const resolved = await this.ssrfValidator.resolveAndValidate(url, options);
-    return this.fetchWithResolvedAddresses(url, init, resolved);
-  }
-
-  private async fetchWithResolvedAddresses(
-    url: string,
-    init: RequestInit,
-    resolved: SSRFResolvedTarget
-  ): Promise<{ ok: boolean; status: number; json: () => Promise<any>; text: () => Promise<string>; }> {
-    let lastError: unknown;
-
-    for (const address of resolved.addresses) {
-      try {
-        return await this.fetchViaPinnedAddress(url, init, resolved.hostname, address);
-      } catch (error) {
-        lastError = error;
-        this.logger.warn('Pinned DNS fetch attempt failed', {
-          hostname: resolved.hostname,
-          address,
-          error: error instanceof Error ? error.message : String(error),
-        });
-      }
-    }
-
-    if (lastError instanceof Error) {
-      throw lastError;
-    }
-    throw new Error('Pinned DNS fetch failed');
-  }
-
-  private async fetchViaPinnedAddress(
-    url: string,
-    init: RequestInit,
-    hostname: string,
-    address: string
-  ): Promise<{ ok: boolean; status: number; json: () => Promise<any>; text: () => Promise<string>; }> {
-    const parsedUrl = new URL(url);
-    const isHttps = parsedUrl.protocol === 'https:';
-    const port = parsedUrl.port ? Number(parsedUrl.port) : (isHttps ? 443 : 80);
-    const path = `${parsedUrl.pathname}${parsedUrl.search}`;
-    const headers = new Headers(init.headers);
-    if (!headers.has('host')) {
-      headers.set('host', parsedUrl.host);
-    }
-    const headersObj = Object.fromEntries(headers.entries());
-    const requestOptions: http.RequestOptions & { servername?: string } = {
-      protocol: parsedUrl.protocol,
-      hostname: address,
-      port,
-      path,
-      method: init.method || 'GET',
-      headers: headersObj,
-      servername: hostname,
-    };
-
-    const body = this.normalizeRequestBody(init.body);
-
-    return new Promise((resolve, reject) => {
-      const requester = isHttps ? https.request : http.request;
-      const req = requester(requestOptions, (res) => {
-        const chunks: Buffer[] = [];
-        res.on('data', (chunk: Buffer) => chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));
-        res.on('end', () => {
-          const buffer = Buffer.concat(chunks);
-          const text = buffer.toString('utf8');
-          const status = res.statusCode || 0;
-          if (status >= 300 && status < 400) {
-            this.logger.warn('Pinned DNS fetch received redirect but will not follow it', {
-              url,
-              status,
-              location: res.headers.location,
-            });
-          }
-          resolve({
-            ok: status >= 200 && status < 300,
-            status,
-            json: async () => (text ? JSON.parse(text) : {}),
-            text: async () => text,
-          });
-        });
-      });
-
-      req.on('error', reject);
-
-      const signal = init.signal;
-      if (signal) {
-        if (signal.aborted) {
-          req.destroy(new Error('Request aborted'));
-          return;
-        }
-        const onAbort = () => req.destroy(new Error('Request aborted'));
-        signal.addEventListener('abort', onAbort, { once: true });
-        req.once('close', () => signal.removeEventListener('abort', onAbort));
-      }
-
-      if (body !== undefined) {
-        req.write(body);
-      }
-      req.end();
-    });
-  }
-
-  private normalizeRequestBody(body: RequestInit['body']): string | Buffer | undefined {
-    if (body === undefined || body === null) {
-      return undefined;
-    }
-    if (typeof body === 'string') {
-      return body;
-    }
-    if (body instanceof URLSearchParams) {
-      return body.toString();
-    }
-    if (body instanceof Uint8Array) {
-      return Buffer.from(body);
-    }
-    return String(body);
-  }
-
-  private isPinnedDnsEnabled(): boolean {
-    return process.env.MCP4_SSRF_PIN_DNS !== 'false';
   }
 }

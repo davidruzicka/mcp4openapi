@@ -3,16 +3,6 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import * as http from 'node:http';
-import { EventEmitter } from 'node:events';
-
-vi.mock('node:http', async () => {
-  const actual = await vi.importActual<typeof import('node:http')>('node:http');
-  return {
-    ...actual,
-    request: vi.fn(),
-  };
-});
 
 // Mock DNS lookup to bypass SSRF validation for test domains
 // Must be hoisted before imports
@@ -33,10 +23,6 @@ vi.mock('../security/ssrf-validator.js', () => {
   return {
     SSRFValidator: class {
       async validate() { return; }
-      async resolveAndValidate(url: string) {
-        const hostname = new URL(url).hostname;
-        return { hostname, addresses: [hostname] };
-      }
     }
   };
 });
@@ -569,86 +555,6 @@ describe('ExternalOAuthProvider', () => {
       await expect(
         provider.verifyAccessToken('invalid-token')
       ).rejects.toThrow('Token is not active');
-    });
-  });
-
-  describe('pinned DNS logging', () => {
-    const originalEnv = process.env.MCP4_SSRF_PIN_DNS;
-
-    beforeEach(() => {
-      process.env.MCP4_SSRF_PIN_DNS = 'false';
-    });
-
-    afterEach(() => {
-      if (originalEnv === undefined) {
-        delete process.env.MCP4_SSRF_PIN_DNS;
-      } else {
-        process.env.MCP4_SSRF_PIN_DNS = originalEnv;
-      }
-    });
-
-    it('logs once when pinned DNS is disabled', async () => {
-      provider = new ExternalOAuthProvider(config, mockLogger);
-      global.fetch = vi.fn().mockResolvedValue({ ok: false, status: 500 });
-
-      await expect((provider as any).fetchOAuthMetadata('https://issuer.example.com')).resolves.toBeNull();
-      await expect((provider as any).fetchOAuthMetadata('https://issuer.example.com')).resolves.toBeNull();
-
-      expect(mockLogger.warn).toHaveBeenCalledWith(
-        'Pinned DNS SSRF protection is disabled. Outbound OAuth requests will use system DNS resolution and follow redirects.',
-        expect.objectContaining({
-          how_to_fix: 'Set MCP4_SSRF_PIN_DNS=true to enable pinned DNS SSRF protection.',
-        })
-      );
-
-      const warnCalls = (mockLogger.warn as any).mock.calls.filter((call: any[]) =>
-        call[0]?.startsWith('Pinned DNS SSRF protection is disabled')
-      );
-      expect(warnCalls.length).toBe(1);
-    });
-
-    it('logs when pinned DNS receives a redirect response', async () => {
-      delete process.env.MCP4_SSRF_PIN_DNS;
-      const originalFetch = (global as any).fetch;
-      delete (global as any).fetch;
-      provider = new ExternalOAuthProvider(config, mockLogger);
-
-      const mockValidator = (provider as any).ssrfValidator;
-      mockValidator.resolveAndValidate = vi.fn().mockResolvedValue({
-        hostname: 'oauth.example.com',
-        addresses: ['127.0.0.1'],
-      });
-
-      const requestSpy = (http.request as any).mockImplementation(((options: any, callback: any) => {
-        const res: any = new EventEmitter();
-        res.statusCode = 302;
-        res.headers = { location: 'https://oauth.example.com/redirected' };
-        process.nextTick(() => {
-          callback(res);
-          res.emit('data', Buffer.from(''));
-          res.emit('end');
-        });
-        const req: any = new EventEmitter();
-        req.write = vi.fn();
-        req.end = vi.fn();
-        req.destroy = vi.fn();
-        return req;
-      }) as any);
-
-      await expect((provider as any).fetchOAuthMetadata('http://issuer.example.com')).resolves.toBeNull();
-
-      expect(mockLogger.warn).toHaveBeenCalledWith(
-        'Pinned DNS fetch received redirect but will not follow it',
-        expect.objectContaining({
-          status: 302,
-          location: 'https://oauth.example.com/redirected',
-        })
-      );
-
-      requestSpy.mockReset();
-      if (originalFetch !== undefined) {
-        (global as any).fetch = originalFetch;
-      }
     });
   });
 
@@ -1298,13 +1204,13 @@ describe('ExternalOAuthProvider', () => {
     it('should throw on introspection endpoint SSRF failure', async () => {
       // Access the mock class via the provider instance (since it's a private property, we cast to any)
       const mockValidator = (provider as any).ssrfValidator;
-      mockValidator.resolveAndValidate = vi.fn().mockRejectedValue(new Error('SSRF blocked'));
+      mockValidator.validate = vi.fn().mockRejectedValue(new Error('SSRF blocked'));
 
       await expect(provider.verifyAccessToken('some-token'))
         .rejects.toThrow('SSRF blocked');
 
       // Restore default mock behavior
-      mockValidator.resolveAndValidate = vi.fn().mockResolvedValue({ hostname: 'oauth.example.com', addresses: ['127.0.0.1'] });
+      mockValidator.validate = vi.fn().mockResolvedValue(undefined);
     });
   });
 
@@ -1389,7 +1295,7 @@ describe('ExternalOAuthProvider', () => {
 
       // Access the mock class via the provider instance (since it's a private property, we cast to any)
       const mockValidator = (provider as any).ssrfValidator;
-      mockValidator.resolveAndValidate = vi.fn().mockRejectedValue(new Error('SSRF blocked'));
+      mockValidator.validate = vi.fn().mockRejectedValue(new Error('SSRF blocked'));
 
       const client: OAuthClientInformationFull = {
         client_id: 'test-client',
@@ -1403,7 +1309,7 @@ describe('ExternalOAuthProvider', () => {
       ).rejects.toThrow('SSRF blocked');
 
       // Restore default mock behavior
-      mockValidator.resolveAndValidate = vi.fn().mockResolvedValue({ hostname: 'oauth.example.com', addresses: ['127.0.0.1'] });
+      mockValidator.validate = vi.fn().mockResolvedValue(undefined);
     });
   });
 
