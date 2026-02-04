@@ -621,6 +621,33 @@ describe('ExternalOAuthProvider', () => {
 
       expect(mockLogger.warn).toHaveBeenCalledWith('Token revocation failed', { status: 500 });
     });
+
+    it('should fail if revocation endpoint triggers SSRF', async () => {
+      const configWithRevocation: OAuthConfig = {
+        ...config,
+        revocation_endpoint: 'https://oauth.example.com/revoke',
+      };
+
+      provider = new ExternalOAuthProvider(configWithRevocation, mockLogger);
+
+      // Access the mock class via the provider instance (since it's a private property, we cast to any)
+      const mockValidator = (provider as any).ssrfValidator;
+      mockValidator.validate = vi.fn().mockRejectedValue(new Error('SSRF blocked'));
+
+      const client: OAuthClientInformationFull = {
+        client_id: 'test-client',
+        redirect_uris: ['http://localhost:3003/callback'],
+        grant_types: ['authorization_code'],
+        response_types: ['code'],
+      };
+
+      await expect(
+        provider.revokeToken(client, { token: 'test-token' })
+      ).rejects.toThrow('SSRF blocked');
+
+      // Restore default mock behavior
+      mockValidator.validate = vi.fn().mockResolvedValue(undefined);
+    });
   });
 
   describe('authorize flow', () => {
@@ -1186,6 +1213,18 @@ describe('ExternalOAuthProvider', () => {
 
       await expect(provider.verifyAccessToken('some-token'))
         .rejects.toThrow('Token introspection failed: 500');
+    });
+
+    it('should throw on introspection endpoint SSRF failure', async () => {
+      // Access the mock class via the provider instance (since it's a private property, we cast to any)
+      const mockValidator = (provider as any).ssrfValidator;
+      mockValidator.validate = vi.fn().mockRejectedValue(new Error('SSRF blocked'));
+
+      await expect(provider.verifyAccessToken('some-token'))
+        .rejects.toThrow('SSRF blocked');
+
+      // Restore default mock behavior
+      mockValidator.validate = vi.fn().mockResolvedValue(undefined);
     });
   });
 
