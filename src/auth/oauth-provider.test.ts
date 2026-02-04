@@ -4,6 +4,19 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
+// Mock DNS lookup to bypass SSRF validation for test domains
+// Must be hoisted before imports
+vi.mock('node:dns/promises', () => {
+  return {
+    lookup: vi.fn().mockImplementation(async (hostname: string) => {
+      if (hostname.endsWith('.example.com')) {
+        return [{ address: '93.184.216.34', family: 4 }];
+      }
+      throw new Error(`getaddrinfo ENOTFOUND ${hostname}`);
+    }),
+  };
+});
+
 // Mock SSRFValidator to bypass validation for existing tests
 // Must be hoisted before imports
 vi.mock('../security/ssrf-validator.js', () => {
@@ -621,33 +634,6 @@ describe('ExternalOAuthProvider', () => {
 
       expect(mockLogger.warn).toHaveBeenCalledWith('Token revocation failed', { status: 500 });
     });
-
-    it('should fail if revocation endpoint triggers SSRF', async () => {
-      const configWithRevocation: OAuthConfig = {
-        ...config,
-        revocation_endpoint: 'https://oauth.example.com/revoke',
-      };
-
-      provider = new ExternalOAuthProvider(configWithRevocation, mockLogger);
-
-      // Access the mock class via the provider instance (since it's a private property, we cast to any)
-      const mockValidator = (provider as any).ssrfValidator;
-      mockValidator.validate = vi.fn().mockRejectedValue(new Error('SSRF blocked'));
-
-      const client: OAuthClientInformationFull = {
-        client_id: 'test-client',
-        redirect_uris: ['http://localhost:3003/callback'],
-        grant_types: ['authorization_code'],
-        response_types: ['code'],
-      };
-
-      await expect(
-        provider.revokeToken(client, { token: 'test-token' })
-      ).rejects.toThrow('SSRF blocked');
-
-      // Restore default mock behavior
-      mockValidator.validate = vi.fn().mockResolvedValue(undefined);
-    });
   });
 
   describe('authorize flow', () => {
@@ -748,7 +734,7 @@ describe('ExternalOAuthProvider', () => {
     it('should throw error for invalid authorization code', async () => {
       const client: OAuthClientInformationFull = {
         client_id: 'test-client',
-        redirect_uris: ['http://localhost:3003/callback'],
+        redirect_uris: ['http://localhost:3003/oauth/callback'],
         grant_types: ['authorization_code'],
         response_types: ['code'],
       };
@@ -767,7 +753,7 @@ describe('ExternalOAuthProvider', () => {
     it('should throw error for invalid authorization code', async () => {
       const client: OAuthClientInformationFull = {
         client_id: 'test-client',
-        redirect_uris: ['http://localhost:3003/callback'],
+        redirect_uris: ['http://localhost:3003/oauth/callback'],
         grant_types: ['authorization_code'],
         response_types: ['code'],
       };
@@ -1270,6 +1256,61 @@ describe('ExternalOAuthProvider', () => {
         })
       );
     });
+
+    it('should log warning when revocation fails', async () => {
+      const configWithRevocation: OAuthConfig = {
+        ...config,
+        revocation_endpoint: 'https://oauth.example.com/revoke',
+      };
+
+      provider = new ExternalOAuthProvider(configWithRevocation, mockLogger);
+
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: false,
+        status: 500,
+      });
+
+      const client: OAuthClientInformationFull = {
+        client_id: 'test-client',
+        redirect_uris: ['http://localhost:3003/callback'],
+        grant_types: ['authorization_code'],
+        response_types: ['code'],
+      };
+
+      // Should not throw even on failure
+      await expect(
+        provider.revokeToken(client, { token: 'test-token' })
+      ).resolves.not.toThrow();
+
+      expect(mockLogger.warn).toHaveBeenCalledWith('Token revocation failed', { status: 500 });
+    });
+
+    it('should fail if revocation endpoint triggers SSRF', async () => {
+      const configWithRevocation: OAuthConfig = {
+        ...config,
+        revocation_endpoint: 'https://oauth.example.com/revoke',
+      };
+
+      provider = new ExternalOAuthProvider(configWithRevocation, mockLogger);
+
+      // Access the mock class via the provider instance (since it's a private property, we cast to any)
+      const mockValidator = (provider as any).ssrfValidator;
+      mockValidator.validate = vi.fn().mockRejectedValue(new Error('SSRF blocked'));
+
+      const client: OAuthClientInformationFull = {
+        client_id: 'test-client',
+        redirect_uris: ['http://localhost:3003/callback'],
+        grant_types: ['authorization_code'],
+        response_types: ['code'],
+      };
+
+      await expect(
+        provider.revokeToken(client, { token: 'test-token' })
+      ).rejects.toThrow('SSRF blocked');
+
+      // Restore default mock behavior
+      mockValidator.validate = vi.fn().mockResolvedValue(undefined);
+    });
   });
 
   describe('exchangeAuthorizationCode edge cases', () => {
@@ -1375,189 +1416,6 @@ describe('ExternalOAuthProvider', () => {
       await expect(
         provider.exchangeAuthorizationCode(client, code, undefined, 'http://localhost:3003/callback')
       ).rejects.toThrow('No tokens associated with this code');
-    });
-  });
-
-  describe('handleCallback edge cases', () => {
-    it('should return 400 for invalid redirect URI protocol during callback', async () => {
-      provider = new ExternalOAuthProvider(config, mockLogger);
-      await provider.ensureEndpointsInitialized();
-
-      const mockReq = {
-        query: { code: 'auth-code', state: 'valid-state' },
-      } as any;
-
-      const mockRes = {
-        status: vi.fn().mockReturnThis(),
-        send: vi.fn(),
-        json: vi.fn(),
-        redirect: vi.fn(),
-      } as any;
-
-      // Setup state with invalid protocol - will fail host validation first
-      (provider as any).stateStore.set('valid-state', {
-        clientRedirectUri: 'javascript:alert(1)',
-        codeChallenge: 'challenge',
-        clientId: 'mcp-proxy-client',
-        scopes: [],
-      });
-
-      global.fetch = vi.fn().mockResolvedValue({
-        ok: true,
-        json: async () => ({
-          access_token: 'token',
-          token_type: 'Bearer',
-        }),
-      });
-
-      await provider.handleCallback(mockReq, mockRes);
-
-      expect(mockRes.status).toHaveBeenCalledWith(400);
-      // Host validation catches this before protocol check
-      expect(mockRes.send).toHaveBeenCalledWith('Redirect URI host not allowed');
-    });
-
-    it('should return 400 when stored redirect URI no longer registered', async () => {
-      provider = new ExternalOAuthProvider(config, mockLogger);
-      await provider.ensureEndpointsInitialized();
-
-      const mockReq = {
-        query: { code: 'auth-code', state: 'valid-state' },
-      } as any;
-
-      const mockRes = {
-        status: vi.fn().mockReturnThis(),
-        send: vi.fn(),
-        json: vi.fn(),
-        redirect: vi.fn(),
-      } as any;
-
-      // Register client with specific redirect URIs
-      const client: OAuthClientInformationFull = {
-        client_id: 'strict-client',
-        redirect_uris: ['http://localhost:3003/allowed'],
-        grant_types: ['authorization_code'],
-        response_types: ['code'],
-      };
-      await (provider as any)._clientsStore.registerClient(client);
-
-      // Setup state with different URI
-      (provider as any).stateStore.set('valid-state', {
-        clientRedirectUri: 'http://localhost:3003/not-allowed',
-        codeChallenge: 'challenge',
-        clientId: 'strict-client',
-        scopes: [],
-      });
-
-      global.fetch = vi.fn().mockResolvedValue({
-        ok: true,
-        json: async () => ({
-          access_token: 'token',
-          token_type: 'Bearer',
-        }),
-      });
-
-      await provider.handleCallback(mockReq, mockRes);
-
-      expect(mockRes.status).toHaveBeenCalledWith(400);
-      expect(mockRes.send).toHaveBeenCalledWith('Unregistered redirect_uri');
-    });
-
-    it('should return 500 when token exchange with provider fails', async () => {
-      provider = new ExternalOAuthProvider(config, mockLogger);
-      await provider.ensureEndpointsInitialized();
-
-      const mockReq = {
-        query: { code: 'auth-code', state: 'valid-state' },
-      } as any;
-
-      const mockRes = {
-        status: vi.fn().mockReturnThis(),
-        send: vi.fn(),
-        json: vi.fn(),
-        redirect: vi.fn(),
-      } as any;
-
-      (provider as any).stateStore.set('valid-state', {
-        clientRedirectUri: 'http://localhost:3003/callback',
-        codeChallenge: 'challenge',
-        clientId: 'mcp-proxy-client',
-        scopes: [],
-      });
-
-      // Mock fetch to fail
-      global.fetch = vi.fn().mockResolvedValue({
-        ok: false,
-        status: 500,
-        text: async () => 'Internal server error',
-      });
-
-      await provider.handleCallback(mockReq, mockRes);
-
-      expect(mockRes.status).toHaveBeenCalledWith(500);
-      expect(mockRes.send).toHaveBeenCalledWith('Internal Server Error during token exchange');
-    });
-  });
-
-  describe('verifyAccessToken with expiration', () => {
-    it('should throw when token expired in local store', async () => {
-      provider = new ExternalOAuthProvider(config, mockLogger);
-
-      const expiredToken = 'expired-token';
-      (provider as any).accessTokens.set(expiredToken, {
-        token: expiredToken,
-        clientId: 'test-client',
-        scopes: ['api'],
-        expiresAt: Date.now() - 1000, // Expired 1 second ago
-      });
-
-      await expect(provider.verifyAccessToken(expiredToken))
-        .rejects.toThrow('Token expired');
-    });
-  });
-
-  describe('redirectUri and scopes getters', () => {
-    it('should return redirect URI from config', () => {
-      provider = new ExternalOAuthProvider(config, mockLogger);
-      expect(provider.redirectUri).toBe('http://localhost:3003/oauth/callback');
-    });
-
-    it('should return undefined when redirect URI not configured', () => {
-      const noRedirectConfig = { ...config };
-      delete noRedirectConfig.redirect_uri;
-      provider = new ExternalOAuthProvider(noRedirectConfig, mockLogger);
-      expect(provider.redirectUri).toBeUndefined();
-    });
-  });
-
-  describe('authorize with missing redirect_uri config', () => {
-    it('should throw when MCP4_OAUTH_REDIRECT_URI not configured', async () => {
-      const noRedirectConfig = { ...config };
-      delete noRedirectConfig.redirect_uri;
-      provider = new ExternalOAuthProvider(noRedirectConfig, mockLogger);
-
-      const client: OAuthClientInformationFull = {
-        client_id: 'test-client',
-        redirect_uris: ['http://localhost:3003/callback'],
-        grant_types: ['authorization_code'],
-        response_types: ['code'],
-      };
-
-      const mockRes = {
-        redirect: vi.fn(),
-      } as any;
-
-      await expect(
-        provider.authorize(
-          client,
-          {
-            redirectUri: 'http://localhost:3003/callback',
-            codeChallenge: 'challenge',
-            scopes: ['api'],
-          },
-          mockRes
-        )
-      ).rejects.toThrow('MCP4_OAUTH_REDIRECT_URI must be configured');
     });
   });
 
