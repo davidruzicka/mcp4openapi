@@ -48,6 +48,8 @@ describe('SSRFValidator', () => {
         'http://192.168.1.1',
         'http://172.16.0.1',
         'http://169.254.169.254',
+        'http://198.18.0.1',
+        'http://192.0.0.1',
       ];
 
       for (const ip of privateIps) {
@@ -70,6 +72,7 @@ describe('SSRFValidator', () => {
     it('should block private IPv6 addresses', async () => {
       const privateIps = [
         'http://[::1]',
+        'http://[::]',
         'http://[fe80::1]',
         'http://[fc00::1]',
       ];
