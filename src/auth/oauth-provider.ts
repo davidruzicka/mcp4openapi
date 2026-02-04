@@ -31,6 +31,7 @@ import type { OAuthConfig } from '../types/profile.js';
 import type { Logger } from '../core/logger.js';
 import { OAUTH_PATHS, OAUTH_RATE_LIMIT } from '../core/constants.js';
 import { escapeHtmlSafe } from '../validation/validation-utils.js';
+import { SSRFValidator } from '../security/ssrf-validator.js';
 
 /**
  * In-memory store for OAuth client registrations
@@ -88,6 +89,7 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
   private config: OAuthConfig;
   private logger: Logger;
   private _clientsStore: InMemoryClientsStore;
+  private ssrfValidator: SSRFValidator;
   
   // In-memory storage
   private authorizationCodes = new Map<string, AuthorizationCodeData>();
@@ -100,6 +102,7 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
   constructor(config: OAuthConfig, logger: Logger) {
     this.config = config;
     this.logger = logger;
+    this.ssrfValidator = new SSRFValidator(logger);
     this._clientsStore = new InMemoryClientsStore();
     
     // Resolve environment variables in OAuth config
@@ -210,6 +213,9 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
     try {
       // Use URL constructor to properly handle trailing slashes
       const metadataUrl = new URL(OAUTH_PATHS.WELL_KNOWN_AUTHORIZATION_SERVER, issuerUrl).toString();
+
+      await this.ssrfValidator.validate(metadataUrl);
+
       const response = await fetch(metadataUrl, {
         headers: { 'Accept': 'application/json' },
         signal: AbortSignal.timeout(5000), // 5 second timeout
@@ -850,6 +856,8 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
 
     this.logger.debug('Exchanging code with external provider', { tokenUrl });
 
+    await this.ssrfValidator.validate(tokenUrl);
+
     const response = await fetch(tokenUrl, {
       method: 'POST',
       headers: {
@@ -885,6 +893,8 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
 
     const tokenUrl = this.config.token_endpoint!;
     
+    await this.ssrfValidator.validate(tokenUrl);
+
     const body = new URLSearchParams({
       grant_type: 'refresh_token',
       refresh_token: refreshToken,
@@ -968,6 +978,8 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
       throw new Error('Introspection endpoint not configured');
     }
 
+    await this.ssrfValidator.validate(introspectionUrl);
+
     const body = new URLSearchParams({ token });
 
     if (this.config.client_id) {
@@ -1026,6 +1038,8 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
   private async revokeTokenWithProvider(token: string): Promise<void> {
     const revocationUrl = this.config.revocation_endpoint;
     if (!revocationUrl) return;
+
+    await this.ssrfValidator.validate(revocationUrl);
 
     const body = new URLSearchParams({ token });
 

@@ -3,6 +3,17 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+
+// Mock SSRFValidator to bypass validation for existing tests
+// Must be hoisted before imports
+vi.mock('../security/ssrf-validator.js', () => {
+  return {
+    SSRFValidator: class {
+      async validate() { return; }
+    }
+  };
+});
+
 import { ExternalOAuthProvider, InMemoryClientsStore } from './oauth-provider.js';
 import type { OAuthConfig } from '../types/profile.js';
 import type { Logger } from '../core/logger.js';
