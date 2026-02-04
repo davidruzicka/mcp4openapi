@@ -15,15 +15,16 @@ services:
       - /tmp:size=64M
     ports:
       - "3003:3003"
-    volumes:
-      # Mount your profiles directory
-      - ./profiles:/app/profiles:ro
     environment:
-      # Required
-      - MCP4_OPENAPI_SPEC_PATH=/app/profiles/gitlab/openapi.yaml
-      - MCP4_PROFILE_PATH=/app/profiles/gitlab/developer-profile-oauth.json
-      - MCP4_API_TOKEN=${MCP4_API_TOKEN}
-      - MCP4_API_BASE_URL=${MCP4_API_BASE_URL:-https://gitlab.com/api/v4}
+      # Profiles
+      - MCP4_HTTP_PROFILE_ROUTING=true
+      - MCP4_HTTP_PROFILE_INDEX=true
+      #- GITLAB_API_BASE_URL=
+      #- YOUTRACK_API_BASE_URL=
+      #- N8N_API_BASE_URL=
+      #- GRAFANA_API_BASE_URL=
+      #- SEMGREP_API_BASE_URL=
+      #- MATTERMOST_API_BASE_URL=
       
       # Transport
       - MCP4_TRANSPORT=http
@@ -62,8 +63,5 @@ services:
         reservations:
           cpus: '0.5'
           memory: 256M
-
-networks:
-  default:
-    name: mcp-network
+    
 

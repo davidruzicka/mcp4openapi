@@ -36,8 +36,9 @@ COPY --from=builder /app/dist ./dist
 # Copy profile schema for validation
 COPY profile-schema.json ./
 
-# Create directory for profiles (mount point)
-RUN mkdir -p /app/profiles
+# Copy bundled profiles and static HTML
+COPY profiles/ /app/profiles/
+COPY html/ /app/html/
 
 # Non-root user for security
 # Why: UID/GID 1000:1000 matches default host user, avoids permission issues with mounted volumes
@@ -68,4 +69,3 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
 
 # Start server
 CMD ["node", "dist/index.js"]
-
