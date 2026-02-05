@@ -56,6 +56,63 @@ describe('ToolGenerator', () => {
     expect(actionProperty?.enum).toContain('create');
   });
 
+  it('should default maxLength when pattern is set without maxLength', () => {
+    const toolDef = {
+      name: 'test_pattern_default_max',
+      description: 'Test pattern default max length',
+      parameters: {
+        patternParam: {
+          type: 'string' as const,
+          description: 'Pattern param',
+          pattern: '^[a-z]+$'
+        }
+      }
+    };
+
+    const tool = generator.generateTool(toolDef);
+    const patternProperty = tool.inputSchema.properties?.patternParam as { maxLength?: number; pattern?: string };
+
+    expect(patternProperty.pattern).toBe('^[a-z]+$');
+    expect(patternProperty.maxLength).toBe(4096);
+  });
+
+  it('should not set maxLength when pattern and maxLength are missing', () => {
+    const toolDef = {
+      name: 'test_no_pattern_no_max',
+      description: 'Test no pattern and no max length',
+      parameters: {
+        plainParam: {
+          type: 'string' as const,
+          description: 'Plain param'
+        }
+      }
+    };
+
+    const tool = generator.generateTool(toolDef);
+    const plainProperty = tool.inputSchema.properties?.plainParam as { maxLength?: number };
+
+    expect(plainProperty.maxLength).toBeUndefined();
+  });
+
+  it('should respect explicit maxLength without pattern', () => {
+    const toolDef = {
+      name: 'test_explicit_max_no_pattern',
+      description: 'Test explicit max length without pattern',
+      parameters: {
+        maxOnly: {
+          type: 'string' as const,
+          description: 'Max only param',
+          maxLength: 20
+        }
+      }
+    };
+
+    const tool = generator.generateTool(toolDef);
+    const maxOnlyProperty = tool.inputSchema.properties?.maxOnly as { maxLength?: number };
+
+    expect(maxOnlyProperty.maxLength).toBe(20);
+  });
+
   it('should validate required parameters', () => {
     const toolDef = profile.tools.find(t => t.name === 'manage_project_badges');
     expect(toolDef).toBeDefined();
