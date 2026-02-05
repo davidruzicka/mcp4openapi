@@ -10,6 +10,8 @@ import type { ToolDefinition, ParameterDefinition, ParameterType } from '../type
 import type { OpenAPIParser } from '../openapi/openapi-parser.js';
 import { ValidationError } from '../core/errors.js';
 
+const DEFAULT_REGEX_MAX_LENGTH = 4096;
+
 export class ToolGenerator {
   constructor(private parser: OpenAPIParser) {}
 
@@ -94,11 +96,12 @@ export class ToolGenerator {
       if (param.minLength !== undefined) {
         schema.minLength = param.minLength;
       }
-      if (param.maxLength !== undefined) {
-        schema.maxLength = param.maxLength;
-      }
       if (param.pattern !== undefined) {
         schema.pattern = param.pattern;
+      }
+      const maxLength = param.maxLength ?? (param.pattern !== undefined ? DEFAULT_REGEX_MAX_LENGTH : undefined);
+      if (maxLength !== undefined) {
+        schema.maxLength = maxLength;
       }
     }
 
@@ -158,6 +161,15 @@ export class ToolGenerator {
             `Invalid value for ${name}. Length must be at most ${param.maxLength}`
           );
         }
+
+        // Security: Enforce safe max length for regex validation if not explicitly set
+        // Why: Prevent ReDoS on large inputs when maxLength is missing
+        if (param.pattern !== undefined && param.maxLength === undefined && value.length > DEFAULT_REGEX_MAX_LENGTH) {
+          throw new ValidationError(
+            `Invalid value for ${name}. Value too long for pattern matching (max ${DEFAULT_REGEX_MAX_LENGTH} chars when maxLength is not set)`
+          );
+        }
+
         if (param.pattern !== undefined) {
           let regex: RegExp;
           try {
