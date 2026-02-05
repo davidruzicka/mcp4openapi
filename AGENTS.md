@@ -22,6 +22,8 @@ Reference canonical sources; never duplicate rules.
 ## Directives
 
 - **Never duplicate validation or business rules. Always reference canonical docs.**
+- Prefer data-oriented programming.
+- Prefer test-driven development.
 - Keep changes consistent with the current test migration: prefer schema-driven profile tests over hardcoded mocks.
 - Run `npm run typecheck` before finishing work.
 - Offer to run `npm audit` (and update dependencies if needed) before finishing work (requires escalated permissions, can't run in sandbox).
@@ -168,6 +170,7 @@ npm start              # run server
 
 ## Avoid
 
+- Removing or disabling failing tests
 - Duplicating validation or business rules (reference canonical docs)
 - Returning ORM/raw API responses
 - Broad catch-all exceptions (use specific error types)
