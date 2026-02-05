@@ -140,7 +140,8 @@
         "action": "list",
         "project_id": "{{projectId}}",
         "state": "opened",
-        "reviewer_id": 123
+        "reviewer_id": 123,
+        "created_after": "2024-01-02T00:00:00Z"
       },
       "mocks": [
         {
@@ -162,7 +163,16 @@
           {
             "iid": 1
           }
-        ]
+        ],
+        "request": {
+          "method": "GET",
+          "path": "/projects/{{projectId}}/merge_requests",
+          "query": {
+            "state": "opened",
+            "reviewer_id": 123,
+            "created_after": "2024-01-02T00:00:00Z"
+          }
+        }
       }
     },
     {

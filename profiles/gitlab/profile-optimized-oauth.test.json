@@ -211,7 +211,8 @@
       "arguments": {
         "action": "list_merge_requests",
         "project_id": "{{projectId}}",
-        "state": "opened"
+        "state": "opened",
+        "created_after": "2024-01-02T00:00:00Z"
       },
       "mocks": [
         {
@@ -223,7 +224,15 @@
       ],
       "expect": {
         "success": true,
-        "result": [{"title": "MR"}]
+        "result": [{"title": "MR"}],
+        "request": {
+          "method": "GET",
+          "path": "/projects/{{projectId}}/merge_requests",
+          "query": {
+            "state": "opened",
+            "created_after": "2024-01-02T00:00:00Z"
+          }
+        }
       }
     },
     {

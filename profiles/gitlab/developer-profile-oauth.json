@@ -480,48 +480,39 @@
         },
         "search": {
           "type": "string",
-          "description": "Search for projects by name or description",
-          "required_for": ["list"]
+          "description": "Search for projects by name or description"
         },
         "archived": {
           "type": "boolean",
-          "description": "Limit by archived status",
-          "required_for": ["list"]
+          "description": "Limit by archived status"
         },
         "id_after": {
           "type": "integer",
-          "description": "Limit results to projects with IDs greater than the specified ID",
-          "required_for": ["list"]
+          "description": "Limit results to projects with IDs greater than the specified ID"
         },
         "id_before": {
           "type": "integer",
-          "description": "Limit results to projects with IDs less than the specified ID",
-          "required_for": ["list"]
+          "description": "Limit results to projects with IDs less than the specified ID"
         },
         "min_access_level": {
           "type": "integer",
-          "description": "Limit to projects with at least the specified access level",
-          "required_for": ["list"]
+          "description": "Limit to projects with at least the specified access level"
         },
         "order_by": {
           "type": "string",
-          "description": "Order results by supported fields",
-          "required_for": ["list"]
+          "description": "Order results by supported fields"
         },
         "owned": {
           "type": "boolean",
-          "description": "Limit to projects owned by current user",
-          "required_for": ["list"]
+          "description": "Limit to projects owned by current user"
         },
         "membership": {
           "type": "boolean",
-          "description": "Limit to projects current user is a member of",
-          "required_for": ["list"]
+          "description": "Limit to projects current user is a member of"
         },
         "simple": {
           "type": "boolean",
-          "description": "Return only limited fields for each project",
-          "required_for": ["list"]
+          "description": "Return only limited fields for each project"
         }
       }
     },
@@ -728,116 +719,102 @@
           "type": "string",
           "enum": ["opened", "closed", "merged", "all"],
           "description": "Filter by merge request state",
-          "default": "opened",
-          "required_for": ["list"]
+          "default": "opened"
         },
         "scope": {
           "type": "string",
           "enum": ["created_by_me", "assigned_to_me", "reviews_for_me", "all"],
-          "description": "Filter by merge request scope",
-          "required_for": ["list"]
+          "description": "Filter by merge request scope"
         },
         "search": {
           "type": "string",
-          "description": "Search merge requests by title or description",
-          "required_for": ["list"]
+          "description": "Search merge requests by title or description"
         },
         "in": {
           "type": "string",
-          "description": "Search scope (title, description, or title,description)",
-          "required_for": ["list"]
+          "description": "Search scope (title, description, or title,description)"
         },
         "labels": {
           "type": "string",
-          "description": "Filter by labels (comma-separated)",
-          "required_for": ["list"]
+          "description": "Filter by labels (comma-separated)"
         },
         "milestone": {
           "type": "string",
-          "description": "Filter by milestone title",
-          "required_for": ["list"]
+          "description": "Filter by milestone title"
         },
         "assignee_id": {
           "type": "integer",
-          "description": "Filter by assignee ID",
-          "required_for": ["list"]
+          "description": "Filter by assignee ID"
         },
         "assignee_username": {
           "type": "string",
-          "description": "Filter by assignee username (single or comma-separated)",
-          "required_for": ["list"]
+          "description": "Filter by assignee username (single or comma-separated)"
         },
         "author_id": {
           "type": "integer",
-          "description": "Filter by author ID",
-          "required_for": ["list"]
+          "description": "Filter by author ID"
         },
         "author_username": {
           "type": "string",
-          "description": "Filter by author username",
-          "required_for": ["list"]
+          "description": "Filter by author username"
         },
         "reviewer_id": {
           "type": "integer",
-          "description": "Filter by reviewer ID",
-          "required_for": ["list"]
+          "description": "Filter by reviewer ID"
         },
         "reviewer_username": {
           "type": "string",
-          "description": "Filter by reviewer username",
-          "required_for": ["list"]
+          "description": "Filter by reviewer username"
         },
         "source_branch": {
           "type": "string",
-          "description": "Filter by source branch",
-          "required_for": ["list"]
+          "description": "Filter by source branch"
         },
         "target_branch": {
           "type": "string",
-          "description": "Filter by target branch",
-          "required_for": ["list"]
+          "description": "Filter by target branch"
         },
         "wip": {
           "type": "string",
-          "description": "Filter draft merge requests (yes or no)",
-          "required_for": ["list"]
+          "description": "Filter draft merge requests (yes or no)"
         },
         "view": {
           "type": "string",
-          "description": "Return simplified merge request fields (simple)",
-          "required_for": ["list"]
+          "description": "Return simplified merge request fields (simple)"
         },
         "my_reaction_emoji": {
           "type": "string",
-          "description": "Filter by your reaction emoji",
-          "required_for": ["list"]
+          "description": "Filter by your reaction emoji"
         },
         "with_labels_details": {
           "type": "boolean",
-          "description": "Include extra label details in list responses",
-          "required_for": ["list"]
+          "description": "Include extra label details in list responses"
         },
         "order_by": {
           "type": "string",
-          "description": "Order results by supported fields",
-          "required_for": ["list", "list_notes"]
+          "description": "Order results by supported fields"
         },
         "sort": {
           "type": "string",
           "enum": ["asc", "desc"],
           "description": "Sort results in asc or desc order",
-          "default": "desc",
-          "required_for": ["list", "list_notes"]
+          "default": "desc"
         },
         "updated_after": {
           "type": "string",
-          "description": "Return merge requests updated on or after the given time (ISO 8601)",
-          "required_for": ["list"]
+          "description": "Return merge requests updated on or after the given time (ISO 8601)"
         },
         "updated_before": {
           "type": "string",
-          "description": "Return merge requests updated on or before the given time (ISO 8601)",
-          "required_for": ["list"]
+          "description": "Return merge requests updated on or before the given time (ISO 8601)"
+        },
+        "created_after": {
+          "type": "string",
+          "description": "Return merge requests created on or after the given time (ISO 8601)"
+        },
+        "created_before": {
+          "type": "string",
+          "description": "Return merge requests created on or before the given time (ISO 8601)"
         },
         "page": {
           "type": "integer",
@@ -1356,84 +1333,69 @@
           "type": "string",
           "enum": ["opened", "closed", "all"],
           "description": "Filter by issue state",
-          "default": "opened",
-          "required_for": ["list", "list_global"]
+          "default": "opened"
         },
         "search": {
           "type": "string",
-          "description": "Search issues by title or description",
-          "required_for": ["list", "list_global"]
+          "description": "Search issues by title or description"
         },
         "in": {
           "type": "string",
-          "description": "Search scope (title, description, or title,description)",
-          "required_for": ["list", "list_global"]
+          "description": "Search scope (title, description, or title,description)"
         },
         "labels": {
           "type": "string",
-          "description": "Filter by labels (comma-separated)",
-          "required_for": ["list", "list_global", "create", "update"]
+          "description": "Filter by labels (comma-separated)"
         },
         "milestone": {
           "type": "string",
-          "description": "Filter by milestone title",
-          "required_for": ["list", "list_global"]
+          "description": "Filter by milestone title"
         },
         "milestone_id": {
           "type": "string",
-          "description": "Filter by milestone ID or special values like None/Any",
-          "required_for": ["list", "list_global", "create", "update"]
+          "description": "Filter by milestone ID or special values like None/Any"
         },
         "assignee_id": {
           "type": "integer",
-          "description": "Filter by assignee ID",
-          "required_for": ["list", "list_global", "create"]
+          "description": "Filter by assignee ID"
         },
         "author_id": {
           "type": "integer",
-          "description": "Filter by author ID",
-          "required_for": ["list", "list_global"]
+          "description": "Filter by author ID"
         },
         "scope": {
           "type": "string",
           "enum": ["created_by_me", "assigned_to_me", "all"],
-          "description": "Issue scope",
-          "required_for": ["list", "list_global"]
+          "description": "Issue scope"
         },
         "confidential": {
           "type": "boolean",
-          "description": "Filter confidential issues",
-          "required_for": ["list", "list_global", "create", "update"]
+          "description": "Filter confidential issues"
         },
         "my_reaction_emoji": {
           "type": "string",
-          "description": "Filter by your reaction emoji",
-          "required_for": ["list", "list_global"]
+          "description": "Filter by your reaction emoji"
         },
         "non_archived": {
           "type": "boolean",
-          "description": "Return issues only from non-archived projects",
-          "required_for": ["list", "list_global"]
+          "description": "Return issues only from non-archived projects"
         },
         "order_by": {
           "type": "string",
-          "description": "Order results by supported fields",
-          "required_for": ["list_notes"]
+          "description": "Order results by supported fields"
         },
         "sort": {
           "type": "string",
           "description": "Sort results in asc or desc order",
-          "required_for": ["list", "list_global", "list_notes"]
+          "required_for": ["list_notes"]
         },
         "updated_after": {
           "type": "string",
-          "description": "Return issues updated on or after the given time (ISO 8601)",
-          "required_for": ["list", "list_global"]
+          "description": "Return issues updated on or after the given time (ISO 8601)"
         },
         "updated_before": {
           "type": "string",
-          "description": "Return issues updated on or before the given time (ISO 8601)",
-          "required_for": ["list", "list_global"]
+          "description": "Return issues updated on or before the given time (ISO 8601)"
         },
         "activity_filter": {
           "type": "string",
