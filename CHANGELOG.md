@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Refactored SSRF IP range checks to use CIDR matching via ipaddr.js.
+- Updated @modelcontextprotocol/sdk to 1.26.0 (security fix).
+
 ## [0.3.4] - 2026-02-05
 
 ### Fixed

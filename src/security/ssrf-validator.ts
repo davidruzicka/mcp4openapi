@@ -1,5 +1,6 @@
 import { isIP } from 'node:net';
 import { lookup } from 'node:dns/promises';
+import ipaddr from 'ipaddr.js';
 import { ValidationError } from '../core/errors.js';
 import type { Logger } from '../core/logger.js';
 
@@ -141,69 +142,51 @@ export class SSRFValidator {
   }
 
   private isDisallowedIPv4(ip: string): boolean {
-    const parts = ip.split('.').map(p => Number(p));
-    if (parts.length !== 4 || parts.some(p => !Number.isInteger(p) || p < 0 || p > 255)) return true;
-    const [a, b] = parts;
-    if (a === 127) return true; // loopback
-    if (a === 10) return true; // private
-    if (a === 172 && b >= 16 && b <= 31) return true; // private
-    if (a === 192 && b === 168) return true; // private
-    if (a === 169 && b === 254) return true; // link-local
-    if (a === 0) return true; // "this network"
-    return false;
+    let addr: ipaddr.IPv4;
+    try {
+      const parsed = ipaddr.parse(ip);
+      if (parsed.kind() !== 'ipv4') return true;
+      addr = parsed as ipaddr.IPv4;
+    } catch {
+      return true;
+    }
+
+    return IPV4_CIDR_BLOCKS.some(block => addr.match(block));
   }
 
   private isDisallowedIPv6(ip: string): boolean {
-    const normalized = ip.toLowerCase();
-
-    // Check for IPv4-mapped IPv6 address (::ffff:127.0.0.1)
-    // Note: URL constructor normalizes '::ffff:127.0.0.1' to '::ffff:7f00:1' (hex)
-    if (normalized.startsWith('::ffff:') || normalized.startsWith('0:0:0:0:0:ffff:')) {
-      const remainder = normalized.split('ffff:')[1];
-      if (remainder) {
-        if (remainder.includes('.')) {
-          return this.isDisallowedIPv4(remainder);
-        }
-
-        // Handle hex encoded IPv4 (e.g., 7f00:1)
-        const parts = remainder.split(':');
-        let high = 0;
-        let low = 0;
-
-        if (parts.length === 2) {
-          high = parseInt(parts[0] || '0', 16);
-          low = parseInt(parts[1] || '0', 16);
-        } else if (parts.length === 1) {
-          low = parseInt(parts[0] || '0', 16);
-        }
-
-        // 127.0.0.0/8 (Loopback) -> 0x7f000000 - 0x7fffffff
-        if ((high >>> 8) === 127) return true;
-
-        // 10.0.0.0/8 (Private) -> 0x0a000000 - 0x0affffff
-        if ((high >>> 8) === 10) return true;
-
-        // 0.0.0.0/8 (Current network) -> 0x00000000 - 0x00ffffff
-        if ((high >>> 8) === 0) return true;
-
-        // 169.254.0.0/16 (Link-local) -> 0xa9fe0000 - 0xa9feffff
-        if (high === 0xa9fe) return true;
-
-        // 192.168.0.0/16 (Private) -> 0xc0a80000 - 0xc0a8ffff
-        if (high === 0xc0a8) return true;
-
-        // 172.16.0.0/12 (Private) -> 0xac100000 - 0xac1fffff
-        // 172 = 0xac, 16 = 0x10, 31 = 0x1f
-        if ((high >>> 8) === 172 && (high & 0xff) >= 16 && (high & 0xff) <= 31) return true;
-      }
+    let addr: ipaddr.IPv6;
+    try {
+      const parsed = ipaddr.parse(ip);
+      if (parsed.kind() !== 'ipv6') return true;
+      addr = parsed as ipaddr.IPv6;
+    } catch {
+      return true;
     }
 
-    if (normalized === '::1' || normalized === '0:0:0:0:0:0:0:1') return true; // loopback
-    if (normalized === '::' || normalized === '0:0:0:0:0:0:0:0') return true; // unspecified
-    if (normalized.startsWith('fe8') || normalized.startsWith('fe9') || normalized.startsWith('fea') || normalized.startsWith('feb')) {
-      return true; // link-local fe80::/10 (approx by prefix)
+    if (addr.isIPv4MappedAddress()) {
+      const ipv4 = addr.toIPv4Address();
+      return IPV4_CIDR_BLOCKS.some(block => ipv4.match(block));
     }
-    if (normalized.startsWith('fc') || normalized.startsWith('fd')) return true; // unique local fc00::/7 (approx by prefix)
-    return false;
+
+    return IPV6_CIDR_BLOCKS.some(block => addr.match(block));
   }
 }
+
+const IPV4_CIDR_BLOCKS: Array<[ipaddr.IPv4, number]> = [
+  '127.0.0.0/8', // loopback
+  '10.0.0.0/8', // private
+  '172.16.0.0/12', // private
+  '192.168.0.0/16', // private
+  '169.254.0.0/16', // link-local
+  '192.0.0.0/24', // IETF protocol assignments
+  '0.0.0.0/8', // "this network"
+  '198.18.0.0/15', // benchmark testing
+].map(cidr => ipaddr.parseCIDR(cidr) as [ipaddr.IPv4, number]);
+
+const IPV6_CIDR_BLOCKS: Array<[ipaddr.IPv6, number]> = [
+  '::1/128', // loopback
+  '::/128', // unspecified
+  'fe80::/10', // link-local
+  'fc00::/7', // unique local
+].map(cidr => ipaddr.parseCIDR(cidr) as [ipaddr.IPv6, number]);
