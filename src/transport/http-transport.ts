@@ -1246,6 +1246,7 @@ export class HttpTransport {
           OAUTH_PATHS.AUTHORIZE,
           attachProfileFromHint,
           oauthRateLimiter,
+          // codeql[js/missing-rate-limiting] OAuth limiter is explicitly applied above.
           withProfileState((req, res, profileState) => this.handleOAuthAuthorize(req, res, profileState))
         );
 
@@ -1254,6 +1255,7 @@ export class HttpTransport {
           attachProfileFromHint,
           oauthRateLimiter,
           express.urlencoded({ extended: false, limit: '50kb' }),
+          // codeql[js/missing-rate-limiting] OAuth limiter is explicitly applied above.
           withProfileState((req, res, profileState) => this.handleOAuthToken(req, res, profileState))
         );
 
