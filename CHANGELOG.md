@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Defaulted generated string schemas to a 4096 maxLength when pattern is set without maxLength to reduce ReDoS risk.
 - Hardened OAuth/bootstrap security
 - Changed OAuth default limits to 10 requests per 1 minute while keeping OAuth state timeout at 10 minutes.
+- Added nightly and manual MCP security scanning workflow with SARIF upload to GitHub Security tab.
 
 ## [0.3.4] - 2026-02-05
 

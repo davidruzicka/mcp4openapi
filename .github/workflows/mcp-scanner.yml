@@ -1,0 +1,31 @@
+name: MCP Scanner
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '25 2 * * *'
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  mcp-scan:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run MCP Sentinel scan
+        run: |
+          docker run --rm \
+            -v "${{ github.workspace }}:/workspace" \
+            ghcr.io/beejak/mcp-sentinel:2.6.0 \
+            scan /workspace --output sarif --output-file /workspace/mcp-scan.sarif --fail-on high
+
+      - name: Upload SARIF
+        if: ${{ always() && hashFiles('mcp-scan.sarif') != '' }}
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: mcp-scan.sarif
