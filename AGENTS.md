@@ -42,6 +42,7 @@ Reference canonical sources; never duplicate rules.
     - Expanded GitLab profiles/OpenAPI coverage for global issues and merge request workflow(merge, commits, diffs, raw diffs, pipelines).
     ```
 - When a block of work is done, propose a Conventional Commits-style commit message.
+- All code comments, MR/PR descriptions and notes, commit messages, and documentation must be written in English.
 
 ### Schema Synchronization (CRITICAL)
 
