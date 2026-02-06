@@ -40,6 +40,7 @@ Reference canonical sources; never duplicate rules.
     ### Added
     - Expanded GitLab profiles/OpenAPI coverage for global issues and merge request workflow(merge, commits, diffs, raw diffs, pipelines).
     ```
+- When a block of work is done, propose a Conventional Commits-style commit message.
 
 ### Schema Synchronization (CRITICAL)
 
