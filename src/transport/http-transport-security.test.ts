@@ -407,6 +407,51 @@ describe('HttpTransport security behavior (no listen)', () => {
     await transport.stop();
   });
 
+  it('serves profile-scoped authorization server metadata when profile routing is enabled (no network)', async () => {
+    const transport = new HttpTransport(
+      {
+        host: '127.0.0.1',
+        port: 0,
+        sessionTimeoutMs: 1800000,
+        heartbeatEnabled: false,
+        heartbeatIntervalMs: 30000,
+        metricsEnabled: false,
+        metricsPath: '/metrics',
+        profileRoutingEnabled: true,
+        oauthConfig: {
+          issuer: 'https://auth.example.com',
+          client_id: 'test-client',
+          client_secret: 'test-secret',
+          scopes: ['read'],
+        },
+      } as any,
+      new ConsoleLogger()
+    );
+
+    createProfileState(transport as any, 'default').oauthProvider = {
+      scopes: ['read'],
+    };
+
+    const app = (transport as any).app;
+    const handler = getExpressRouteHandler(app, 'get', '/profile/:profileId/.well-known/oauth-authorization-server');
+    const req: any = {
+      params: { profileId: 'default' },
+      profileId: 'default',
+      forceProfilePrefix: true,
+      query: {},
+      headers: {},
+    };
+    const res = createMockResponse();
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body.issuer).toContain('/profile/default');
+    expect(res.body.authorization_endpoint).toContain('/profile/default/oauth/authorize');
+    expect(res.body.token_endpoint).toContain('/profile/default/oauth/token');
+
+    await transport.stop();
+  });
+
   it('rejects /oauth/authorize when redirect_uri is missing (no network)', async () => {
     const transport = new HttpTransport(
       {
@@ -780,6 +825,105 @@ describe('HttpTransport security behavior (no listen)', () => {
     await transport.stop();
   });
 
+  it('returns invalid_client for /oauth/token when confidential client_secret is missing (no network)', async () => {
+    const transport = new HttpTransport(
+      {
+        host: '127.0.0.1',
+        port: 0,
+        sessionTimeoutMs: 1800000,
+        heartbeatEnabled: false,
+        heartbeatIntervalMs: 30000,
+        metricsEnabled: false,
+        metricsPath: '/metrics',
+        oauthConfig: {
+          issuer: 'https://auth.example.com',
+          client_id: 'test-client',
+          client_secret: 'test-secret',
+          scopes: ['read'],
+        },
+      } as any,
+      new ConsoleLogger()
+    );
+
+    createProfileState(transport as any).oauthProvider = {
+      ensureEndpointsInitialized: async () => {},
+      clientsStore: {
+        getClient: async () => ({
+          client_id: 'test-client',
+          client_secret: 'server-secret',
+          scope: 'read',
+        }),
+      },
+      exchangeAuthorizationCode: async () => ({}),
+    };
+
+    const app = (transport as any).app;
+    const handler = getExpressRouteHandler(app, 'post', '/oauth/token');
+    const req: any = {
+      body: { grant_type: 'authorization_code', code: 'abc', client_id: 'test-client' },
+      headers: {},
+    };
+    const res = createMockResponse();
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(400);
+    expect(res.body).toMatchObject({ error: 'invalid_client' });
+
+    await transport.stop();
+  });
+
+  it('returns invalid_client for /oauth/token when confidential client_secret is wrong (no network)', async () => {
+    const transport = new HttpTransport(
+      {
+        host: '127.0.0.1',
+        port: 0,
+        sessionTimeoutMs: 1800000,
+        heartbeatEnabled: false,
+        heartbeatIntervalMs: 30000,
+        metricsEnabled: false,
+        metricsPath: '/metrics',
+        oauthConfig: {
+          issuer: 'https://auth.example.com',
+          client_id: 'test-client',
+          client_secret: 'test-secret',
+          scopes: ['read'],
+        },
+      } as any,
+      new ConsoleLogger()
+    );
+
+    createProfileState(transport as any).oauthProvider = {
+      ensureEndpointsInitialized: async () => {},
+      clientsStore: {
+        getClient: async () => ({
+          client_id: 'test-client',
+          client_secret: 'server-secret',
+          scope: 'read',
+        }),
+      },
+      exchangeAuthorizationCode: async () => ({}),
+    };
+
+    const app = (transport as any).app;
+    const handler = getExpressRouteHandler(app, 'post', '/oauth/token');
+    const req: any = {
+      body: {
+        grant_type: 'authorization_code',
+        code: 'abc',
+        client_id: 'test-client',
+        client_secret: 'wrong-secret',
+      },
+      headers: {},
+    };
+    const res = createMockResponse();
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(400);
+    expect(res.body).toMatchObject({ error: 'invalid_client' });
+
+    await transport.stop();
+  });
+
   it('handles /oauth/token authorization_code when provider is missing (no network)', async () => {
     const transport = new HttpTransport(
       {
@@ -837,13 +981,27 @@ describe('HttpTransport security behavior (no listen)', () => {
     const tokens = { access_token: 'access', token_type: 'Bearer', expires_in: 3600 };
     createProfileState(transport as any).oauthProvider = {
       ensureEndpointsInitialized: async () => {},
-      clientsStore: { getClient: async () => ({ client_id: 'test-client', scope: 'read' }) },
+      clientsStore: {
+        getClient: async () => ({
+          client_id: 'test-client',
+          client_secret: 'server-secret',
+          scope: 'read',
+        }),
+      },
       exchangeAuthorizationCode: async () => tokens,
     };
 
     const app = (transport as any).app;
     const handler = getExpressRouteHandler(app, 'post', '/oauth/token');
-    const req: any = { body: { grant_type: 'authorization_code', code: 'abc', client_id: 'test-client' }, headers: {} };
+    const req: any = {
+      body: {
+        grant_type: 'authorization_code',
+        code: 'abc',
+        client_id: 'test-client',
+        client_secret: 'server-secret',
+      },
+      headers: {},
+    };
     const res = createMockResponse();
     await handler(req, res);
 
@@ -875,7 +1033,13 @@ describe('HttpTransport security behavior (no listen)', () => {
 
     createProfileState(transport as any).oauthProvider = {
       ensureEndpointsInitialized: async () => {},
-      clientsStore: { getClient: async () => ({ client_id: 'test-client', scope: 'read' }) },
+      clientsStore: {
+        getClient: async () => ({
+          client_id: 'test-client',
+          client_secret: 'server-secret',
+          scope: 'read',
+        }),
+      },
       exchangeAuthorizationCode: async () => {
         throw new Error('bad code');
       },
@@ -883,7 +1047,15 @@ describe('HttpTransport security behavior (no listen)', () => {
 
     const app = (transport as any).app;
     const handler = getExpressRouteHandler(app, 'post', '/oauth/token');
-    const req: any = { body: { grant_type: 'authorization_code', code: 'abc', client_id: 'test-client' }, headers: {} };
+    const req: any = {
+      body: {
+        grant_type: 'authorization_code',
+        code: 'abc',
+        client_id: 'test-client',
+        client_secret: 'server-secret',
+      },
+      headers: {},
+    };
     const res = createMockResponse();
     await handler(req, res);
 
@@ -917,7 +1089,13 @@ describe('HttpTransport security behavior (no listen)', () => {
 
     createProfileState(transport as any).oauthProvider = {
       ensureEndpointsInitialized: async () => {},
-      clientsStore: { getClient: async () => ({ client_id: 'test-client', scope: 'read' }) },
+      clientsStore: {
+        getClient: async () => ({
+          client_id: 'test-client',
+          client_secret: 'server-secret',
+          scope: 'read',
+        }),
+      },
       exchangeRefreshToken: async () => {
         throw new Error('bad refresh');
       },
@@ -925,7 +1103,15 @@ describe('HttpTransport security behavior (no listen)', () => {
 
     const app = (transport as any).app;
     const handler = getExpressRouteHandler(app, 'post', '/oauth/token');
-    const req: any = { body: { grant_type: 'refresh_token', refresh_token: 'rt', client_id: 'test-client' }, headers: {} };
+    const req: any = {
+      body: {
+        grant_type: 'refresh_token',
+        refresh_token: 'rt',
+        client_id: 'test-client',
+        client_secret: 'server-secret',
+      },
+      headers: {},
+    };
     const res = createMockResponse();
     await handler(req, res);
 
@@ -1149,8 +1335,17 @@ describe('HttpTransport security behavior (no listen)', () => {
     await handler(req, res);
 
     expect(res.statusCode).toBe(201);
-    expect(res.body).toHaveProperty('client_id', 'mcp-proxy-client');
+    expect(typeof res.body.client_id).toBe('string');
+    expect(res.body.client_id).toMatch(/^mcp-client-/);
+    expect(typeof res.body.client_secret).toBe('string');
+    expect(res.body.client_secret.length).toBeGreaterThan(20);
     expect(registerClient).toHaveBeenCalled();
+    expect(registerClient).toHaveBeenCalledWith(
+      expect.objectContaining({
+        client_id: res.body.client_id,
+        client_secret: res.body.client_secret,
+      })
+    );
 
     await transport.stop();
   });
@@ -1189,7 +1384,54 @@ describe('HttpTransport security behavior (no listen)', () => {
     await handler(req, res);
 
     expect(res.statusCode).toBe(201);
-    expect(res.body).toHaveProperty('client_id', 'mcp-proxy-client');
+    expect(typeof res.body.client_id).toBe('string');
+    expect(res.body.client_id).toMatch(/^mcp-client-/);
+    expect(typeof res.body.client_secret).toBe('string');
+
+    await transport.stop();
+  });
+
+  it('returns unique credentials for consecutive /oauth/register calls (no network)', async () => {
+    const transport = new HttpTransport(
+      {
+        host: '127.0.0.1',
+        port: 0,
+        sessionTimeoutMs: 1800000,
+        heartbeatEnabled: false,
+        heartbeatIntervalMs: 30000,
+        metricsEnabled: false,
+        metricsPath: '/metrics',
+        oauthConfig: {
+          issuer: 'https://auth.example.com',
+          client_id: 'test-client',
+          client_secret: 'test-secret',
+          scopes: ['read'],
+        },
+      } as any,
+      new ConsoleLogger()
+    );
+
+    createProfileState(transport as any).oauthProvider = {
+      scopes: ['read'],
+      clientsStore: {
+        registerClient: async () => {},
+      },
+    };
+
+    const app = (transport as any).app;
+    const handler = getExpressRouteHandler(app, 'post', '/oauth/register');
+    const req: any = { body: { redirect_uris: ['http://localhost/cb'] }, headers: {} };
+
+    const first = createMockResponse();
+    await handler(req, first);
+
+    const second = createMockResponse();
+    await handler(req, second);
+
+    expect(first.statusCode).toBe(201);
+    expect(second.statusCode).toBe(201);
+    expect(first.body.client_id).not.toBe(second.body.client_id);
+    expect(first.body.client_secret).not.toBe(second.body.client_secret);
 
     await transport.stop();
   });
@@ -1719,6 +1961,31 @@ describe('HttpTransport security behavior (no listen)', () => {
     expect(ok).toBe(true);
     expect(transport.getSessionToken('default', sessionId)).toBe('new-access');
     expect(profileState.oauthTokensByAccessToken.has('new-access')).toBe(true);
+
+    await transport.stop();
+  });
+
+  it('does not refresh OAuth token when expiration is beyond threshold', async () => {
+    const transport = createTransport({
+      oauthConfig: { issuer: 'https://auth.example.com', client_id: 'test-client', client_secret: 'test-secret', scopes: ['read'] },
+      oauthRefreshThresholdMs: 60 * 1000,
+    });
+
+    const profileState = createProfileState(transport as any);
+    const sessionId = (transport as any).createSession(
+      profileState,
+      'stable-access',
+      'stable-refresh',
+      Date.now() + (5 * 60 * 1000),
+      ['read'],
+      'mcp-proxy-client'
+    );
+
+    const refreshSpy = vi.spyOn(transport as any, 'refreshAccessToken').mockResolvedValue(true);
+
+    const ok = await transport.ensureValidSessionToken('default', sessionId);
+    expect(ok).toBe(true);
+    expect(refreshSpy).not.toHaveBeenCalled();
 
     await transport.stop();
   });

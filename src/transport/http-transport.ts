@@ -31,7 +31,7 @@ import { ExternalOAuthProvider } from '../auth/oauth-provider.js';
 import type { AuthInterceptor, OAuthConfig } from '../types/profile.js';
 import { HTTP_STATUS, MIME_TYPES, OAUTH_PATHS, TIMEOUTS, OAUTH_RATE_LIMIT, PROXY_CREDENTIALS } from '../core/constants.js';
 import { escapeHtmlSafe, isSafePropertyName } from '../validation/validation-utils.js';
-import type { OAuthTokens } from '@modelcontextprotocol/sdk/shared/auth.js';
+import type { OAuthClientInformationFull, OAuthTokens } from '@modelcontextprotocol/sdk/shared/auth.js';
 import {
   AuthenticationError,
   AuthorizationError,
@@ -1554,7 +1554,7 @@ export class HttpTransport {
     try {
       res.setHeader('Cache-Control', 'no-store');
 
-      const { grant_type, code, redirect_uri, client_id, code_verifier, refresh_token } = req.body;
+      const { grant_type, code, redirect_uri, client_id, client_secret, code_verifier, refresh_token } = req.body;
 
       this.logger.debug('OAuth token request', {
         profileId: profileState.profileId,
@@ -1572,9 +1572,13 @@ export class HttpTransport {
         }
 
         await profileState.oauthProvider.ensureEndpointsInitialized();
-        const client = await profileState.oauthProvider.clientsStore.getClient(client_id);
+        const client = await this.validateOAuthClientCredentials(
+          profileState,
+          client_id,
+          client_secret,
+          res
+        );
         if (!client) {
-          res.status(HTTP_STATUS.BAD_REQUEST).json({ error: 'invalid_client' });
           return;
         }
 
@@ -1597,9 +1601,13 @@ export class HttpTransport {
         }
 
         await profileState.oauthProvider.ensureEndpointsInitialized();
-        const client = await profileState.oauthProvider.clientsStore.getClient(client_id);
+        const client = await this.validateOAuthClientCredentials(
+          profileState,
+          client_id,
+          client_secret,
+          res
+        );
         if (!client) {
-          res.status(HTTP_STATUS.BAD_REQUEST).json({ error: 'invalid_client' });
           return;
         }
 
@@ -1618,6 +1626,47 @@ export class HttpTransport {
         error_description: 'Token exchange failed',
       });
     }
+  }
+
+  private compareSecretsConstantTime(expectedSecret: string, providedSecret: string): boolean {
+    const expectedBuffer = Buffer.from(expectedSecret, 'utf8');
+    const providedBuffer = Buffer.from(providedSecret, 'utf8');
+    if (expectedBuffer.length !== providedBuffer.length) {
+      return false;
+    }
+    return crypto.timingSafeEqual(expectedBuffer, providedBuffer);
+  }
+
+  private async validateOAuthClientCredentials(
+    profileState: ProfileRuntimeState,
+    clientId: unknown,
+    clientSecret: unknown,
+    res: Response
+  ): Promise<OAuthClientInformationFull | null> {
+    if (!profileState.oauthProvider || typeof clientId !== 'string' || clientId.trim().length === 0) {
+      res.status(HTTP_STATUS.BAD_REQUEST).json({ error: 'invalid_client' });
+      return null;
+    }
+
+    const client = await profileState.oauthProvider.clientsStore.getClient(clientId);
+    if (!client) {
+      res.status(HTTP_STATUS.BAD_REQUEST).json({ error: 'invalid_client' });
+      return null;
+    }
+
+    // Confidential clients must present matching client_secret.
+    if (typeof client.client_secret === 'string' && client.client_secret.length > 0) {
+      if (typeof clientSecret !== 'string' || clientSecret.length === 0) {
+        res.status(HTTP_STATUS.BAD_REQUEST).json({ error: 'invalid_client' });
+        return null;
+      }
+      if (!this.compareSecretsConstantTime(client.client_secret, clientSecret)) {
+        res.status(HTTP_STATUS.BAD_REQUEST).json({ error: 'invalid_client' });
+        return null;
+      }
+    }
+
+    return client;
   }
 
   private async handleOAuthCallback(
@@ -1716,8 +1765,8 @@ export class HttpTransport {
         redirect_uris,
       });
 
-      const clientId = PROXY_CREDENTIALS.CLIENT_ID;
-      const clientSecret = PROXY_CREDENTIALS.CLIENT_SECRET;
+      const clientId = `mcp-client-${crypto.randomUUID()}`;
+      const clientSecret = crypto.randomBytes(32).toString('base64url');
 
       const client = {
         client_id: clientId,

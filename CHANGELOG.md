@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Refactored SSRF IP range checks to use CIDR matching via ipaddr.js.
 - Updated @modelcontextprotocol/sdk to 1.26.0 (security fix).
 - Defaulted generated string schemas to a 4096 maxLength when pattern is set without maxLength to reduce ReDoS risk.
+- Hardened OAuth/bootstrap security
 
 ## [0.3.4] - 2026-02-05
 

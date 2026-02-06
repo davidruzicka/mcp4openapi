@@ -18,6 +18,14 @@ import { getHttpProfileRoutingErrorMessage } from '../profile/startup-validation
 import { listProfiles } from '../profile/profile-resolver.js';
 import { resolveStartupProfile } from '../profile/startup-profile.js';
 import { isProfileAllowed, parseProfileAllowlistConfig } from '../profile/profile-allowlist.js';
+import { SSRFValidator } from '../security/ssrf-validator.js';
+
+const bootstrapUrlValidator = new SSRFValidator({
+  debug: () => {},
+  info: () => {},
+  warn: () => {},
+  error: () => {},
+});
 
 /**
  * Fetch OAuth Authorization Server Metadata (RFC 8414)
@@ -27,6 +35,13 @@ export async function fetchOAuthMetadata(issuerUrl: string): Promise<{ authoriza
   try {
     // Use URL constructor to properly handle trailing slashes
     const metadataUrl = new URL(OAUTH_PATHS.WELL_KNOWN_AUTHORIZATION_SERVER, issuerUrl).toString();
+
+    if (process.env.MCP4_TRUST_BOOTSTRAP_URLS !== 'true') {
+      await bootstrapUrlValidator.validate(metadataUrl, {
+        allowPrivateNetwork: process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK === 'true',
+      });
+    }
+
     const response = await fetch(metadataUrl, {
       headers: { 'Accept': 'application/json' },
       signal: AbortSignal.timeout(5000), // 5 second timeout

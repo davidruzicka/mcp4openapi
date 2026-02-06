@@ -9,8 +9,18 @@ import fs from 'fs/promises';
 import { parse as parseYaml } from 'yaml';
 import type { OpenAPIV3 } from 'openapi-types';
 import { ConfigurationError } from '../core/errors.js';
+import { SSRFValidator } from '../security/ssrf-validator.js';
 import { isSafePropertyName } from '../validation/validation-utils.js';
 import type { OpenAPIIndex, OperationInfo, ParameterInfo, PathInfo, RequestBodyInfo, SchemaInfo } from '../types/openapi.js';
+
+// Parser has no injected logger, but bootstrap URL validation must still run.
+// Use a no-op logger to enforce SSRF checks without adding transport/logging side effects here.
+const bootstrapUrlValidator = new SSRFValidator({
+  debug: () => {},
+  info: () => {},
+  warn: () => {},
+  error: () => {},
+});
 
 export class OpenAPIParser {
   private spec?: OpenAPIV3.Document;
@@ -34,6 +44,12 @@ export class OpenAPIParser {
     if (isUrl) {
       // Load from HTTP/HTTPS URL
       try {
+        if (process.env.MCP4_TRUST_BOOTSTRAP_URLS !== 'true') {
+          await bootstrapUrlValidator.validate(specPath, {
+            allowPrivateNetwork: process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK === 'true',
+          });
+        }
+
         const response = await fetch(specPath, {
           signal: AbortSignal.timeout(30000), // 30 second timeout
           headers: {
