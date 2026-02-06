@@ -25,6 +25,7 @@ Reference canonical sources; never duplicate rules.
 - Prefer data-oriented programming.
 - Prefer test-driven development.
 - Keep changes consistent with the current test migration: prefer schema-driven profile tests over hardcoded mocks.
+- If the user corrects or revises a prior response or implementation, activate the auto-update-skills skill and follow its workflow.
 - Run `npm run typecheck` before finishing work.
 - Offer to run `npm audit` (and update dependencies if needed) before finishing work (requires escalated permissions, can't run in sandbox).
 - Update CHANGELOG.md for more than minimal changes. Prefer user-perspective messages. Always compress lines.
