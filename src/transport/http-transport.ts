@@ -860,10 +860,24 @@ export class HttpTransport {
       standardHeaders: true, // Return rate limit info in `RateLimit-*` headers
       legacyHeaders: false, // Disable deprecated `X-RateLimit-*` headers
       handler: (req: Request, res: Response) => {
+        const rateInfo = (req as Request & {
+          rateLimit?: {
+            limit?: number;
+            current?: number;
+            remaining?: number;
+            resetTime?: Date;
+          };
+        }).rateLimit;
         this.logger.warn(options.logMessage, {
           ip: req.ip,
           path: req.path,
           method: req.method,
+          limit: rateInfo?.limit,
+          current: rateInfo?.current,
+          remaining: rateInfo?.remaining,
+          resetMs: rateInfo?.resetTime instanceof Date
+            ? Math.max(0, rateInfo.resetTime.getTime() - Date.now())
+            : undefined,
         });
 
         res.status(HTTP_STATUS.TOO_MANY_REQUESTS).json({
@@ -1022,7 +1036,32 @@ export class HttpTransport {
       }
       const limiter = getOAuthRateLimiter(profileState);
       // codeql[js/unvalidated-dynamic-method-call] limiter is a RequestHandler from createRateLimiter.
-      return limiter(req, res, next);
+      return limiter(req, res, (err?: unknown) => {
+        if (err) {
+          next(err as Error);
+          return;
+        }
+        const rateInfo = (req as Request & {
+          rateLimit?: {
+            limit?: number;
+            current?: number;
+            remaining?: number;
+            resetTime?: Date;
+          };
+        }).rateLimit;
+        this.logger.debug('OAuth rate limit state', {
+          profileId: profileState.profileId,
+          path: req.path,
+          method: req.method,
+          limit: rateInfo?.limit,
+          current: rateInfo?.current,
+          remaining: rateInfo?.remaining,
+          resetMs: rateInfo?.resetTime instanceof Date
+            ? Math.max(0, rateInfo.resetTime.getTime() - Date.now())
+            : undefined,
+        });
+        next();
+      });
     };
 
     const withProfileState = (handler: (req: Request, res: Response, profileState: ProfileRuntimeState) => Promise<void> | void): RequestHandler => {
@@ -1066,7 +1105,9 @@ export class HttpTransport {
 
       this.app.get(
         `${basePath}${OAUTH_PATHS.CALLBACK}`,
-        ...withProfile((req, res, profileState) => this.handleOAuthCallback(req, res, profileState))
+        ...middlewares,
+        oauthRateLimiter,
+        withProfileState((req, res, profileState) => this.handleOAuthCallback(req, res, profileState))
       );
 
       this.app.get(
@@ -1516,8 +1557,12 @@ export class HttpTransport {
       }
 
       await profileState.oauthProvider.ensureEndpointsInitialized();
-      const client = await profileState.oauthProvider.clientsStore.getClient(client_id);
+      const client = await this.resolveOAuthClientForRequest(profileState, client_id);
       if (!client) {
+        this.logger.warn('OAuth authorize rejected invalid client_id', {
+          profileId: profileState.profileId,
+          client_id,
+        });
         res.status(HTTP_STATUS.BAD_REQUEST).send('Invalid client_id');
         return;
       }
@@ -1525,7 +1570,7 @@ export class HttpTransport {
       const scopeStr = (scope as string || '').trim();
       const params = {
         responseType: response_type,
-        clientId: client_id,
+        clientId: client.client_id,
         redirectUri: redirect_uri,
         scope: scopeStr ? scopeStr.split(' ') : [],
         state: state as string,
@@ -1637,6 +1682,32 @@ export class HttpTransport {
     return crypto.timingSafeEqual(expectedBuffer, providedBuffer);
   }
 
+  private isProxyCompatibilityClient(clientId: string): boolean {
+    return clientId === 'mcp-proxy-client' || clientId === PROXY_CREDENTIALS.CLIENT_ID;
+  }
+
+  private async resolveOAuthClientForRequest(
+    profileState: ProfileRuntimeState,
+    clientId: string
+  ): Promise<OAuthClientInformationFull | undefined> {
+    if (!profileState.oauthProvider) {
+      return undefined;
+    }
+
+    const client = await profileState.oauthProvider.clientsStore.getClient(clientId);
+    if (client) {
+      return client;
+    }
+
+    // Compatibility fallback: allow legacy hardcoded VS Code client id
+    // even when MCP_PROXY_CLIENT_ID is overridden in environment.
+    if (clientId === 'mcp-proxy-client' && PROXY_CREDENTIALS.CLIENT_ID !== 'mcp-proxy-client') {
+      return profileState.oauthProvider.clientsStore.getClient(PROXY_CREDENTIALS.CLIENT_ID);
+    }
+
+    return undefined;
+  }
+
   private async validateOAuthClientCredentials(
     profileState: ProfileRuntimeState,
     clientId: unknown,
@@ -1648,10 +1719,15 @@ export class HttpTransport {
       return null;
     }
 
-    const client = await profileState.oauthProvider.clientsStore.getClient(clientId);
+    const client = await this.resolveOAuthClientForRequest(profileState, clientId);
     if (!client) {
       res.status(HTTP_STATUS.BAD_REQUEST).json({ error: 'invalid_client' });
       return null;
+    }
+
+    // Keep VS Code proxy compatibility client public for token exchange.
+    if (this.isProxyCompatibilityClient(client.client_id)) {
+      return client;
     }
 
     // Confidential clients must present matching client_secret.

@@ -29,7 +29,7 @@ import type {
 import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
 import type { OAuthConfig } from '../types/profile.js';
 import type { Logger } from '../core/logger.js';
-import { OAUTH_PATHS, OAUTH_RATE_LIMIT, PROXY_CREDENTIALS } from '../core/constants.js';
+import { OAUTH_CLEANUP, OAUTH_PATHS, PROXY_CREDENTIALS } from '../core/constants.js';
 import { escapeHtmlSafe } from '../validation/validation-utils.js';
 import { SSRFValidator } from '../security/ssrf-validator.js';
 
@@ -1082,7 +1082,7 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
     const now = Date.now();
 
     // 1. Cleanup expired states (10 minutes)
-    const STATE_TIMEOUT = OAUTH_RATE_LIMIT.WINDOW_MS;
+    const STATE_TIMEOUT = OAUTH_CLEANUP.STATE_TIMEOUT_MS;
     for (const [state, data] of this.stateStore.entries()) {
       if (now - data.createdAt > STATE_TIMEOUT) {
         this.stateStore.delete(state);

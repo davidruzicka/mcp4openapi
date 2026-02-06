@@ -533,13 +533,13 @@ See [docs/OAUTH.md](./docs/OAUTH.md) for complete setup guide including OAuth ap
 
 **OAuth Rate Limiting** (stricter limits for OAuth endpoints):
 - `MCP4_OAUTH_RATE_LIMIT_MAX`: Max OAuth requests per window (default: `10`)
-- `MCP4_OAUTH_RATE_LIMIT_WINDOW_MS`: OAuth rate limit window (default: `600000` = 10 minutes)
+- `MCP4_OAUTH_RATE_LIMIT_WINDOW_MS`: OAuth rate limit window (default: `60000` = 1 minute)
 
 **Configuration Priority**: Profile > Environment variables > Defaults
 
 **Defaults**: 
 - 100 requests/minute for MCP endpoints, 10 requests/minute for metrics
-- 10 requests/10 minutes for OAuth endpoints (`/oauth/authorize`, `/oauth/token`, `/oauth/callback`)
+- 10 requests/1 minute for OAuth endpoints (`/oauth/authorize`, `/oauth/token`, `/oauth/callback`)
 
 Returns `429 Too Many Requests` when exceeded.
 

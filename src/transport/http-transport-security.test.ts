@@ -691,6 +691,52 @@ describe('HttpTransport security behavior (no listen)', () => {
     await transport.stop();
   });
 
+  it('attaches OAuth rate limiter middleware to /oauth/callback', async () => {
+    const transport = new HttpTransport(
+      {
+        host: '127.0.0.1',
+        port: 0,
+        sessionTimeoutMs: 1800000,
+        heartbeatEnabled: false,
+        heartbeatIntervalMs: 30000,
+        metricsEnabled: false,
+        metricsPath: '/metrics',
+        rateLimitEnabled: true,
+        rateLimitOAuthMax: 1,
+        rateLimitOAuthWindowMs: 10 * 60 * 1000,
+        oauthConfig: {
+          issuer: 'https://auth.example.com',
+          client_id: 'test-client',
+          client_secret: 'test-secret',
+          scopes: ['read'],
+        },
+      } as any,
+      new ConsoleLogger()
+    );
+
+    const app = (transport as any).app;
+    const stack = app?.router?.stack || app?._router?.stack;
+    const findRouteHandlers = (method: string, path: string): any[] => {
+      for (const layer of stack) {
+        if (!layer?.route) continue;
+        if (layer.route.path !== path) continue;
+        if (!layer.route.methods?.[method]) continue;
+        return layer.route.stack || [];
+      }
+      return [];
+    };
+
+    const authorizeHandlers = findRouteHandlers('get', '/oauth/authorize');
+    const callbackHandlers = findRouteHandlers('get', '/oauth/callback');
+
+    // authorize should keep at least limiter + route handler
+    expect(authorizeHandlers.length).toBeGreaterThan(1);
+    // callback should include limiter + route handler
+    expect(callbackHandlers.length).toBeGreaterThan(1);
+
+    await transport.stop();
+  });
+
   it('rejects /oauth/token unsupported grant type (no network)', async () => {
     const transport = new HttpTransport(
       {
@@ -920,6 +966,74 @@ describe('HttpTransport security behavior (no listen)', () => {
 
     expect(res.statusCode).toBe(400);
     expect(res.body).toMatchObject({ error: 'invalid_client' });
+
+    await transport.stop();
+  });
+
+  it('allows /oauth/token without client_secret for proxy compatibility client (no network)', async () => {
+    const transport = new HttpTransport(
+      {
+        host: '127.0.0.1',
+        port: 0,
+        sessionTimeoutMs: 1800000,
+        heartbeatEnabled: false,
+        heartbeatIntervalMs: 30000,
+        metricsEnabled: false,
+        metricsPath: '/metrics',
+        oauthConfig: {
+          issuer: 'https://auth.example.com',
+          client_id: 'test-client',
+          client_secret: 'test-secret',
+          scopes: ['read'],
+        },
+      } as any,
+      new ConsoleLogger()
+    );
+
+    createProfileState(transport as any).oauthProvider = {
+      ensureEndpointsInitialized: async () => {},
+      clientsStore: {
+        getClient: async (id: string) => {
+          if (id !== 'mcp-proxy-client') return undefined;
+          return {
+            client_id: 'mcp-proxy-client',
+            client_secret: 'proxy-secret',
+            redirect_uris: ['http://localhost/cb'],
+            grant_types: ['authorization_code', 'refresh_token'],
+            response_types: ['code'],
+            scope: 'read',
+          } as any;
+        },
+      },
+      exchangeAuthorizationCode: async () => ({
+        access_token: 'access-123',
+        refresh_token: 'refresh-123',
+        token_type: 'Bearer',
+        expires_in: 3600,
+      }),
+      exchangeRefreshToken: async () => { throw new Error('not used'); },
+    };
+
+    const app = (transport as any).app;
+    const handler = getExpressRouteHandler(app, 'post', '/oauth/token');
+    const req: any = {
+      body: {
+        grant_type: 'authorization_code',
+        code: 'abc',
+        client_id: 'mcp-proxy-client',
+        redirect_uri: 'http://localhost/cb',
+      },
+      headers: {},
+    };
+    const res = createMockResponse();
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toMatchObject({
+      access_token: 'access-123',
+      refresh_token: 'refresh-123',
+      token_type: 'Bearer',
+    });
 
     await transport.stop();
   });

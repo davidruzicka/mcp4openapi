@@ -454,7 +454,7 @@ Browser-based authentication with PKCE flow (HTTP transport only):
 ```
 
 - **Autodiscovery**: `issuer` auto-derives authorization/token endpoints (RFC 8414)
-- **Rate limiting**: Custom rate limits for OAuth endpoints (default: 10 requests per 10 minutes)
+- **Rate limiting**: Custom rate limits for OAuth endpoints (default: 10 requests per 1 minute)
 - **Scopes**: Optional, API-specific permissions
 - See [OAuth Guide](./OAUTH.md) for complete setup
 
