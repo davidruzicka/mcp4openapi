@@ -77,6 +77,16 @@ describe('cli-config', () => {
     expect(process.env.MCP4_OAUTH_TOKEN_URL).toBe('https://auth/token');
   });
 
+  it('allows bootstrap SSRF control env vars', () => {
+    const parsed = parseCliArgs([
+      '--ssrf-allow-private-network', 'true',
+      '--trust-bootstrap-urls', 'true',
+    ]);
+    applyCliEnvOverrides(parsed);
+    expect(process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK).toBe('true');
+    expect(process.env.MCP4_TRUST_BOOTSTRAP_URLS).toBe('true');
+  });
+
   it('throws for mixed known and unknown flags', () => {
     const parsed = parseCliArgs(['--profile', 'gitlab', '--unknown', 'value']);
     expect(() => applyCliEnvOverrides(parsed)).toThrow(UnknownCliFlagError);

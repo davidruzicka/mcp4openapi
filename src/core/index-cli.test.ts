@@ -141,6 +141,7 @@ function mockHttpTransport() {
 describe('CLI main flow', () => {
   beforeEach(() => {
     process.env = { ...originalEnv };
+    process.env.MCP4_TRUST_BOOTSTRAP_URLS = 'true';
     vi.resetModules();
   });
 

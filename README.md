@@ -301,6 +301,8 @@ echo 'export NODE_EXTRA_CA_CERTS="$HOME/ca-bundle.pem"' >> $HOME/.bash_profile
 - `MCP4_OPENAPI_SPEC_PATH`: Path or URL to OpenAPI spec (YAML/JSON, supports local files and HTTP/HTTPS URLs). Required when profile does not provide `openapi_spec_path`. In HTTP profile routing, this acts as a global fallback for profiles without `openapi_spec_path`.
 - `MCP4_TRANSPORT`: `stdio` (default) or `http`
 - `MCP4_API_BASE_URL`: Override OpenAPI server URL
+- `MCP4_TRUST_BOOTSTRAP_URLS`: Set to `true` to skip SSRF checks for bootstrap URL fetches (remote OpenAPI spec loading and OAuth metadata discovery). Default is secure mode (`false`).
+- `MCP4_SSRF_ALLOW_PRIVATE_NETWORK`: Set to `true` to allow private/loopback/link-local targets in SSRF validation paths, including bootstrap URL checks.
 
 **Profile auth env vars**: Use profile-specific names for `value_from_env` (for example, `GITLAB_TOKEN`, `YOUTRACK_TOKEN`) instead of the generic `MCP4_API_TOKEN`.
 
@@ -531,13 +533,13 @@ See [docs/OAUTH.md](./docs/OAUTH.md) for complete setup guide including OAuth ap
 
 **OAuth Rate Limiting** (stricter limits for OAuth endpoints):
 - `MCP4_OAUTH_RATE_LIMIT_MAX`: Max OAuth requests per window (default: `10`)
-- `MCP4_OAUTH_RATE_LIMIT_WINDOW_MS`: OAuth rate limit window (default: `600000` = 10 minutes)
+- `MCP4_OAUTH_RATE_LIMIT_WINDOW_MS`: OAuth rate limit window (default: `60000` = 1 minute)
 
 **Configuration Priority**: Profile > Environment variables > Defaults
 
 **Defaults**: 
 - 100 requests/minute for MCP endpoints, 10 requests/minute for metrics
-- 10 requests/10 minutes for OAuth endpoints (`/oauth/authorize`, `/oauth/token`, `/oauth/callback`)
+- 10 requests/1 minute for OAuth endpoints (`/oauth/authorize`, `/oauth/token`, `/oauth/callback`)
 
 Returns `429 Too Many Requests` when exceeded.
 

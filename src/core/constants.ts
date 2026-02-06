@@ -87,7 +87,16 @@ export const TIMEOUTS = {
  */
 export const OAUTH_RATE_LIMIT = {
   MAX_REQUESTS: 10,                              // Max OAuth requests per window
-  WINDOW_MS: 10 * TIME.MS_PER_MINUTE,            // 10 minutes window
+  WINDOW_MS: TIME.MS_PER_MINUTE,                 // 1 minute window
+} as const;
+
+/**
+ * OAuth state/code cleanup defaults
+ *
+ * Why: Keep OAuth state lifetime independent from request rate limiting.
+ */
+export const OAUTH_CLEANUP = {
+  STATE_TIMEOUT_MS: 10 * TIME.MS_PER_MINUTE,     // 10 minutes
 } as const;
 
 /**

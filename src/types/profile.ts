@@ -192,10 +192,10 @@ export interface AuthInterceptor {
   oauth_config?: OAuthConfig;
   
   // OAuth rate limiting (only for oauth type)
-  // Overrides default OAuth rate limits (10 requests per 10 minutes)
+  // Overrides default OAuth rate limits (10 requests per 1 minute)
   oauth_rate_limit?: {
     max_requests: number;  // Max requests per window (default: 10)
-    window_ms: number;     // Window in milliseconds (default: 10 * 60 * 1000 = 10 minutes)
+    window_ms: number;     // Window in milliseconds (default: 60 * 1000 = 1 minute)
   };
   
   // Optional token validation

@@ -295,11 +295,11 @@ You can configure OAuth rate limiting directly in your profile file:
 **Configuration Priority**:
 1. Profile `oauth_rate_limit` (highest priority)
 2. Environment variables (`MCP4_OAUTH_RATE_LIMIT_MAX`, `MCP4_OAUTH_RATE_LIMIT_WINDOW_MS`)
-3. Defaults (10 requests per 10 minutes per IP)
+3. Defaults (10 requests per 1 minute per IP)
 
 **Recommendations**:
 - **Development**: 10-20 requests per minute per IP
-- **Production**: 10-15 requests per 10 minutes per IP (stricter for security)
+- **Production**: 10-15 requests per minute per IP
 - **High-traffic**: Adjust based on your OAuth provider's rate limits
 
 ### SSL/TLS Support
@@ -493,14 +493,14 @@ export MCP4_HTTP_RATE_LIMIT_WINDOW_MS=60000   # 1 minute window
 **OAuth Rate Limiting** (stricter limits for `/oauth/authorize`, `/oauth/token`, `/oauth/callback`):
 ```bash
 export MCP4_OAUTH_RATE_LIMIT_MAX=10           # Max OAuth requests per window (default: 10)
-export MCP4_OAUTH_RATE_LIMIT_WINDOW_MS=600000  # OAuth rate limit window (default: 10 minutes)
+export MCP4_OAUTH_RATE_LIMIT_WINDOW_MS=60000   # OAuth rate limit window (default: 1 minute)
 ```
 
 **Configuration Priority**: Profile > Environment variables > Defaults
 
 **Defaults**:
 - General endpoints: 100 requests/minute
-- OAuth endpoints: 10 requests/10 minutes
+- OAuth endpoints: 10 requests/1 minute
 ```
 
 ## Token Lifetime & Auto-Refresh

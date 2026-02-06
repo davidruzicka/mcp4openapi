@@ -5,6 +5,7 @@
 import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from 'vitest';
 import { OpenAPIParser } from './openapi-parser.js';
 import { ConfigurationError } from '../core/errors.js';
+import { SSRFValidator } from '../security/ssrf-validator.js';
 import path from 'path';
 
 describe('OpenAPIParser', () => {
@@ -434,10 +435,12 @@ describe('OpenAPIParser - HTTP URL loading', () => {
 
   beforeEach(() => {
     originalFetch = global.fetch;
+    process.env.MCP4_TRUST_BOOTSTRAP_URLS = 'true';
   });
 
   afterEach(() => {
     global.fetch = originalFetch;
+    delete process.env.MCP4_TRUST_BOOTSTRAP_URLS;
     vi.restoreAllMocks();
   });
 
@@ -633,6 +636,63 @@ paths: {}`;
     await expect(parser.load('https://example.com/unreachable.yaml')).rejects.toThrow(
       'Failed to load OpenAPI spec from URL'
     );
+  });
+
+  it('should block localhost/private OpenAPI URL by default', async () => {
+    delete process.env.MCP4_TRUST_BOOTSTRAP_URLS;
+    const fetchSpy = vi.fn();
+    global.fetch = fetchSpy as any;
+
+    const parser = new OpenAPIParser();
+    await expect(parser.load('http://127.0.0.1/openapi.yaml')).rejects.toThrow(ConfigurationError);
+    await expect(parser.load('http://127.0.0.1/openapi.yaml')).rejects.toThrow(
+      'Failed to load OpenAPI spec from URL'
+    );
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('should allow localhost/private OpenAPI URL when trust override is enabled', async () => {
+    process.env.MCP4_TRUST_BOOTSTRAP_URLS = 'true';
+    const yamlContent = `openapi: 3.0.0
+info:
+  title: Local Test API
+  version: 1.0.0
+paths:
+  /test:
+    get:
+      operationId: getLocalTest
+      responses:
+        '200':
+          description: Success`;
+
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      text: async () => yamlContent,
+      headers: new Headers({
+        'content-type': 'application/yaml',
+      }),
+    } as Response);
+
+    const parser = new OpenAPIParser();
+    await parser.load('http://127.0.0.1/openapi.yaml');
+
+    expect(parser.getOperation('getLocalTest')).toBeDefined();
+  });
+
+  it('should surface bootstrap SSRF validation failures (DNS/timeout path)', async () => {
+    delete process.env.MCP4_TRUST_BOOTSTRAP_URLS;
+    const validateSpy = vi
+      .spyOn(SSRFValidator.prototype, 'validate')
+      .mockRejectedValueOnce(new Error('DNS lookup timeout after 1000ms'));
+    const fetchSpy = vi.fn();
+    global.fetch = fetchSpy as any;
+
+    const parser = new OpenAPIParser();
+    await expect(parser.load('https://example.com/spec.yaml')).rejects.toThrow(ConfigurationError);
+    expect(validateSpy).toHaveBeenCalled();
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 
   it('should still load from local file path', async () => {
