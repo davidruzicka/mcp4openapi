@@ -1035,8 +1035,14 @@ export class HttpTransport {
         return;
       }
       const limiter = getOAuthRateLimiter(profileState);
-      // codeql[js/unvalidated-dynamic-method-call] limiter is a RequestHandler from createRateLimiter.
-      return limiter(req, res, (err?: unknown) => {
+      // Defensive runtime guard: keeps behavior safe even if limiter map is corrupted
+      // and avoids static-analysis false positives around dynamic call targets.
+      if (typeof limiter !== 'function') {
+        next(new Error('Invalid OAuth rate limiter handler'));
+        return;
+      }
+      try {
+        return limiter(req, res, (err?: unknown) => {
         if (err) {
           next(err as Error);
           return;
@@ -1062,6 +1068,9 @@ export class HttpTransport {
         });
         next();
       });
+      } catch (error) {
+        next(error instanceof Error ? error : new Error(String(error)));
+      }
     };
 
     const withProfileState = (handler: (req: Request, res: Response, profileState: ProfileRuntimeState) => Promise<void> | void): RequestHandler => {
