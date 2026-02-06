@@ -89,3 +89,14 @@ export const OAUTH_RATE_LIMIT = {
   MAX_REQUESTS: 10,                              // Max OAuth requests per window
   WINDOW_MS: 10 * TIME.MS_PER_MINUTE,            // 10 minutes window
 } as const;
+
+/**
+ * Proxy Credentials for local proxy mode (VS Code compatibility)
+ *
+ * Why: Centralized credentials allow overrides via environment variables
+ * and prevent hardcoded secrets in the codebase.
+ */
+export const PROXY_CREDENTIALS = {
+  CLIENT_ID: process.env.MCP_PROXY_CLIENT_ID || 'mcp-proxy-client',
+  CLIENT_SECRET: process.env.MCP_PROXY_CLIENT_SECRET || 'mcp-proxy-secret',
+} as const;
