@@ -20,6 +20,7 @@ import { resolveStartupProfile } from '../profile/startup-profile.js';
 import { isProfileAllowed, parseProfileAllowlistConfig } from '../profile/profile-allowlist.js';
 import { SSRFValidator } from '../security/ssrf-validator.js';
 
+// Bootstrap SSRF checks run before runtime logger setup, so use a no-op logger here.
 const bootstrapUrlValidator = new SSRFValidator({
   debug: () => {},
   info: () => {},
