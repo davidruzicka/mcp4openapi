@@ -29,7 +29,7 @@ import type {
 import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
 import type { OAuthConfig } from '../types/profile.js';
 import type { Logger } from '../core/logger.js';
-import { OAUTH_PATHS, OAUTH_RATE_LIMIT } from '../core/constants.js';
+import { OAUTH_PATHS, OAUTH_RATE_LIMIT, PROXY_CREDENTIALS } from '../core/constants.js';
 import { escapeHtmlSafe } from '../validation/validation-utils.js';
 import { SSRFValidator } from '../security/ssrf-validator.js';
 
@@ -112,8 +112,8 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
     // VS Code doesn't call /oauth/register endpoint before calling /oauth/authorize
     // This client has empty redirect_uris, allowing any redirect URI (validated at runtime)
     const proxyClient: OAuthClientInformationFull = {
-      client_id: 'mcp-proxy-client',
-      client_secret: 'mcp-proxy-secret',
+      client_id: PROXY_CREDENTIALS.CLIENT_ID,
+      client_secret: PROXY_CREDENTIALS.CLIENT_SECRET,
       redirect_uris: [], // Empty = allow any redirect URI
       grant_types: ['authorization_code', 'refresh_token'],
       response_types: ['code'],

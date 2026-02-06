@@ -11,6 +11,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { ExternalOAuthProvider } from '../auth/oauth-provider.js';
 import type { OAuthConfig } from '../types/profile.js';
 import { ConsoleLogger, LogLevel } from '../core/logger.js';
+import { PROXY_CREDENTIALS } from '../core/constants.js';
 
 describe('VS Code OAuth Flow', () => {
   let provider: ExternalOAuthProvider;
@@ -35,15 +36,15 @@ describe('VS Code OAuth Flow', () => {
 
   it('should pre-register mcp-proxy-client during initialization', async () => {
     // Verify that mcp-proxy-client is available without prior registration
-    const client = await provider.clientsStore.getClient('mcp-proxy-client');
+    const client = await provider.clientsStore.getClient(PROXY_CREDENTIALS.CLIENT_ID);
     
     expect(client).toBeTruthy();
-    expect(client?.client_id).toBe('mcp-proxy-client');
-    expect(client?.client_secret).toBe('mcp-proxy-secret');
+    expect(client?.client_id).toBe(PROXY_CREDENTIALS.CLIENT_ID);
+    expect(client?.client_secret).toBe(PROXY_CREDENTIALS.CLIENT_SECRET);
   });
 
   it('should allow any redirect_uri for pre-registered mcp-proxy-client', async () => {
-    const client = await provider.clientsStore.getClient('mcp-proxy-client');
+    const client = await provider.clientsStore.getClient(PROXY_CREDENTIALS.CLIENT_ID);
     
     expect(client).toBeTruthy();
     // redirect_uris should be empty array, allowing any URI
@@ -51,7 +52,7 @@ describe('VS Code OAuth Flow', () => {
   });
 
   it('should have correct grant types for mcp-proxy-client', async () => {
-    const client = await provider.clientsStore.getClient('mcp-proxy-client');
+    const client = await provider.clientsStore.getClient(PROXY_CREDENTIALS.CLIENT_ID);
     
     expect(client).toBeTruthy();
     expect(client?.grant_types).toContain('authorization_code');
