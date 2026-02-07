@@ -270,6 +270,12 @@ export class HttpTransport {
             });
             return;
           }
+
+          // nosemgrep: javascript.express.security.cors-misconfiguration.cors-misconfiguration
+          res.setHeader('Access-Control-Allow-Origin', origin);
+          res.setHeader('Vary', 'Origin');
+          res.setHeader('Access-Control-Expose-Headers', 'Mcp-Session-Id');
+
           next();
         })
         .catch((error) => {
@@ -1328,8 +1334,6 @@ export class HttpTransport {
             res.setHeader('Access-Control-Allow-Origin', origin);
             res.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
             res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept, Mcp-Session-Id');
-            // We do not allow credentials; prevents cookie-based attacks by default
-            res.setHeader('Access-Control-Allow-Credentials', 'false');
             res.setHeader('Access-Control-Max-Age', '86400'); // 24 hours cache
             return res.status(HTTP_STATUS.OK).send();
           }
