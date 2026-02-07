@@ -1,10 +1,10 @@
-
 import request from 'supertest';
 import { HttpTransport } from './http-transport.js';
 import { ConsoleLogger } from '../core/logger.js';
-import { describe, it, expect } from 'vitest';
+import { it, expect } from 'vitest';
+import { describeIfListen } from '../testing/listen-support.js';
 
-describe('CORS Headers', () => {
+describeIfListen('CORS Headers', () => {
   it('should return Access-Control-Allow-Origin on POST request', async () => {
     const transport = new HttpTransport(
       {
