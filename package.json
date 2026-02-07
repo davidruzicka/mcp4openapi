@@ -32,6 +32,8 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint . --ext .ts,.js,.mjs,.cjs",
     "generate-schemas": "node scripts/generate-schemas.js",
+    "sync-profile-schema": "node scripts/sync-profile-schema.js",
+    "check-schema-sync": "node scripts/check-profile-schema-sync.js",
     "validate": "npm run build && node dist/scripts/validate-profile.js",
     "validate:schema": "npm run build && node dist/scripts/validate-schema.js",
     "prepublishOnly": "npm run build"

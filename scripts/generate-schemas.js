@@ -4,9 +4,9 @@
  * Generate Zod schemas from TypeScript types
  *
  * Single source of truth: src/types/profile.ts
- * Generated: src/generated-schemas.ts (for runtime validation)
- *
- * Manual maintenance: profile-schema.json (for IDE autocomplete)
+ * Generated:
+ * - src/generated-schemas.ts (for runtime validation)
+ * - profile-schema.json (for IDE autocomplete and schema validation)
  */
 
 import { execSync } from 'child_process';
@@ -16,10 +16,6 @@ import { fileURLToPath } from 'url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 console.log('🔄 Generating schemas from TypeScript types...');
-
-// Skip JSON Schema generation - maintain manually for IDE support
-// JSON Schema provides better IDE autocomplete than generated versions
-console.log('⏭️  Skipping JSON Schema generation (maintained manually for IDE support)');
 
 // Generate Zod schemas
 console.log('🔧 Generating Zod schemas...');
@@ -36,9 +32,16 @@ try {
   process.exit(1);
 }
 
+// Generate JSON Schema for IDE validation
+console.log('🔧 Synchronizing profile-schema.json...');
+try {
+  execSync('node scripts/sync-profile-schema.js', {
+    stdio: 'inherit',
+    cwd: path.join(__dirname, '..')
+  });
+} catch (error) {
+  console.error('❌ Failed to synchronize profile-schema.json:', error.message);
+  process.exit(1);
+}
+
 console.log('🎉 Schema generation completed!');
-console.log('');
-console.log('📋 Manual steps:');
-console.log('1. Review generated Zod schemas');
-console.log('2. Update profile-schema.json manually if needed');
-console.log('3. Test that everything still works');

@@ -1,116 +1,113 @@
 {
-  "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://github.com/davidruzicka/mcp4openapi/profile-schema.json",
-  "title": "MCP Profile",
   "description": "Configuration schema for MCP from OpenAPI tool profiles",
   "type": "object",
-  "required": ["profile_name", "tools"],
   "properties": {
     "profile_name": {
       "type": "string",
       "description": "Unique identifier for this profile",
-      "examples": ["gitlab-developer", "github-readonly", "custom-api"]
+      "examples": [
+        "gitlab-developer",
+        "github-readonly",
+        "custom-api"
+      ]
     },
     "profile_id": {
       "type": "string",
       "description": "Short ID used for selecting a profile via MCP4_PROFILE or --profile",
-      "examples": ["gitlab", "semgrep", "youtrack"]
+      "examples": [
+        "gitlab",
+        "semgrep",
+        "youtrack"
+      ]
     },
     "profile_aliases": {
       "type": "array",
-      "description": "Alternate IDs that can be used to select this profile via MCP4_PROFILE or --profile",
       "items": {
         "type": "string"
       },
-      "examples": [["gitlab-developer", "gitlab-default"]]
+      "description": "Alternate IDs that can be used to select this profile via MCP4_PROFILE or --profile",
+      "examples": [
+        [
+          "gitlab-developer",
+          "gitlab-default"
+        ]
+      ]
     },
     "openapi_spec_path": {
       "type": "string",
       "description": "OpenAPI spec path used when launching by profile without MCP4_OPENAPI_SPEC_PATH",
-      "examples": ["./openapi.yaml", "../specs/openapi.json"]
+      "examples": [
+        "./openapi.yaml",
+        "../specs/openapi.json"
+      ]
     },
     "description": {
       "type": "string",
       "description": "Human-readable description of what this profile provides"
     },
-    "parameter_aliases": {
-      "type": "object",
-      "description": "Map parameter names to their aliases (e.g., 'id' -> ['project_id', 'group_id'])",
-      "additionalProperties": {
-        "type": "array",
-        "items": {
-          "type": "string"
-        }
+    "tools": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/Tool"
       },
+      "description": "List of MCP tools defined in this profile"
+    },
+    "interceptors": {
+      "$ref": "#/definitions/Interceptors"
+    },
+    "parameter_aliases": {
+      "$ref": "#/definitions/Record%3Cstring%2Cstring%5B%5D%3E",
+      "description": "Map parameter names to their aliases (e.g., 'id' -> ['project_id', 'group_id'])",
       "examples": [
         {
-          "id": ["project_id", "group_id", "resource_id"]
+          "id": [
+            "project_id",
+            "group_id",
+            "resource_id"
+          ]
         }
       ]
     },
     "resource_name": {
       "type": "string",
       "description": "OAuth 2.0 Protected Resource name (overrides OpenAPI info.title). Defaults to 'MCP Server' if not specified.",
-      "examples": ["GitLab Production API", "GitHub Enterprise API"]
+      "examples": [
+        "GitLab Production API",
+        "GitHub Enterprise API"
+      ]
     },
     "resource_documentation": {
       "type": "string",
-      "format": "uri",
       "description": "OAuth 2.0 Protected Resource documentation URL (overrides OpenAPI externalDocs.url). Omitted if not specified.",
-      "examples": ["https://docs.gitlab.com/ee/api/", "https://docs.github.com/rest"]
-    },
-    "tools": {
-      "type": "array",
-      "description": "List of MCP tools defined in this profile",
-      "minItems": 1,
-      "items": {
-        "$ref": "#/definitions/Tool"
-      }
-    },
-    "interceptors": {
-      "$ref": "#/definitions/Interceptors"
+      "examples": [
+        "https://docs.gitlab.com/ee/api/",
+        "https://docs.github.com/rest"
+      ]
     }
   },
+  "required": [
+    "profile_name",
+    "tools"
+  ],
   "definitions": {
     "Tool": {
       "type": "object",
-      "required": ["name", "description", "parameters"],
       "properties": {
         "name": {
           "type": "string",
           "description": "Tool name (must be unique, lowercase with underscores)",
-          "pattern": "^[a-z][a-z0-9_]*$",
-          "examples": ["manage_project_badges", "get_merge_request_with_details"]
+          "examples": [
+            "manage_project_badges",
+            "get_merge_request_with_details"
+          ]
         },
         "description": {
           "type": "string",
-          "description": "Clear description of what this tool does (shown to LLM)",
-          "minLength": 10
-        },
-        "composite": {
-          "type": "boolean",
-          "description": "If true, this tool chains multiple API calls",
-          "default": false
-        },
-        "partial_results": {
-          "type": "boolean",
-          "description": "If true, return partial results even if some steps fail (composite only)",
-          "default": false
+          "description": "Clear description of what this tool does (shown to LLM)"
         },
         "operations": {
-          "type": "object",
+          "$ref": "#/definitions/Record%3Cstring%2COperationDefinition%3E",
           "description": "Map action names to OpenAPI operationIds or proxy download operations",
-          "additionalProperties": {
-            "oneOf": [
-              {
-                "type": "string",
-                "description": "OpenAPI operation ID"
-              },
-              {
-                "$ref": "#/definitions/ProxyDownloadOperation"
-              }
-            ]
-          },
           "examples": [
             {
               "list": "getApiV4ProjectsIdBadges",
@@ -124,19 +121,58 @@
             }
           ]
         },
-        "response_fields": {
-          "type": "object",
-          "description": "Define which fields to include in response for each action (reduces verbosity)",
-          "additionalProperties": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
+        "composite": {
+          "type": "boolean",
+          "description": "If true, this tool chains multiple API calls",
+          "default": false
+        },
+        "steps": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/CompositeStep"
           },
+          "description": "Steps for composite tool execution"
+        },
+        "partial_results": {
+          "type": "boolean",
+          "description": "If true, return partial results even if some steps fail (composite only)",
+          "default": false
+        },
+        "parameters": {
+          "$ref": "#/definitions/Record%3Cstring%2CParameterDefinition%3E",
+          "description": "Input parameters for this tool"
+        },
+        "metadata_params": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Parameter names that are metadata (not sent in API request body)",
+          "examples": [
+            [
+              "action",
+              "resource_type"
+            ]
+          ]
+        },
+        "response_fields": {
+          "$ref": "#/definitions/Record%3Cstring%2Cstring%5B%5D%3E",
+          "description": "Define which fields to include in response for each action (reduces verbosity)",
           "examples": [
             {
-              "list": ["id", "name", "path", "web_url"],
-              "get": ["id", "name", "description", "web_url", "created_at"]
+              "list": [
+                "id",
+                "name",
+                "path",
+                "web_url"
+              ],
+              "get": [
+                "id",
+                "name",
+                "description",
+                "web_url",
+                "created_at"
+              ]
             }
           ]
         },
@@ -144,33 +180,18 @@
           "type": "boolean",
           "description": "If true, send response_fields as 'fields' query parameter (e.g. for YouTrack)",
           "default": false
-        },
-        "steps": {
-          "type": "array",
-          "description": "Steps for composite tool execution",
-          "items": {
-            "$ref": "#/definitions/CompositeStep"
-          }
-        },
-        "parameters": {
-          "type": "object",
-          "description": "Input parameters for this tool",
-          "additionalProperties": {
-            "$ref": "#/definitions/Parameter"
-          }
-        },
-        "metadata_params": {
-          "type": "array",
-          "description": "Parameter names that are metadata (not sent in API request body)",
-          "items": {
-            "type": "string"
-          },
-          "examples": [["action", "resource_type"]]
         }
       },
+      "required": [
+        "description",
+        "name",
+        "parameters"
+      ],
       "oneOf": [
         {
-          "required": ["operations"],
+          "required": [
+            "operations"
+          ],
           "properties": {
             "operations": {
               "type": "object",
@@ -189,7 +210,10 @@
           }
         },
         {
-          "required": ["steps", "composite"],
+          "required": [
+            "steps",
+            "composite"
+          ],
           "properties": {
             "composite": {
               "const": true
@@ -201,22 +225,521 @@
         }
       ]
     },
+    "Record<string,OperationDefinition>": {
+      "type": "object"
+    },
+    "CompositeStep": {
+      "type": "object",
+      "properties": {
+        "call": {
+          "type": "string",
+          "description": "OpenAPI operationId to call",
+          "examples": [
+            "getApiV4ProjectsIdMergeRequestsMergeRequestIid"
+          ]
+        },
+        "store_as": {
+          "type": "string",
+          "description": "JSON path where to store result (e.g., 'merge_request', 'merge_request.comments')",
+          "examples": [
+            "merge_request",
+            "merge_request.comments",
+            "user.profile"
+          ]
+        },
+        "depends_on": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "call",
+        "store_as"
+      ]
+    },
+    "Record<string,ParameterDefinition>": {
+      "type": "object"
+    },
+    "Record<string,string[]>": {
+      "type": "object"
+    },
+    "Interceptors": {
+      "type": "object",
+      "properties": {
+        "auth": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Auth"
+            },
+            {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/Auth"
+              }
+            }
+          ],
+          "oneOf": [
+            {
+              "$ref": "#/definitions/Auth"
+            },
+            {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/Auth"
+              },
+              "minItems": 1,
+              "description": "Multiple authentication methods (tried in order of priority)"
+            }
+          ]
+        },
+        "base_url": {
+          "$ref": "#/definitions/BaseUrl"
+        },
+        "rate_limit": {
+          "$ref": "#/definitions/RateLimit"
+        },
+        "retry": {
+          "$ref": "#/definitions/Retry"
+        },
+        "array_format": {
+          "enum": [
+            "brackets",
+            "indices",
+            "repeat",
+            "comma"
+          ],
+          "type": "string",
+          "description": "How to serialize array query parameters",
+          "default": "repeat",
+          "examples": [
+            "brackets"
+          ]
+        }
+      },
+      "description": "HTTP interceptor configuration (auth, rate limiting, retry)"
+    },
+    "Auth": {
+      "description": "Auth interceptor configuration\n\n- bearer: Standard HTTP Bearer token (Authorization: Bearer <token>)\n- query: API key in query string (?api_key=<token>)\n- custom-header: Custom header name (e.g., X-API-Key: <token>)\n- oauth: OAuth 2.0 Authorization Code Flow with PKCE (HTTP transport only)\n\nMulti-auth support:\n- When multiple auth methods are provided as array, they are tried in order\n- priority field determines the order (lower = higher priority)\n- First successful authentication is used\n\nToken validation (optional):\n- validation_endpoint: API endpoint to verify token validity (e.g., \"/api/v4/user\")\n- Validates token during initialization to fail fast with invalid tokens\n- Improves UX by rejecting bad tokens immediately, not after first tool call",
+      "type": "object",
+      "properties": {
+        "type": {
+          "enum": [
+            "bearer",
+            "query",
+            "custom-header",
+            "oauth"
+          ],
+          "type": "string",
+          "description": "Authentication type"
+        },
+        "priority": {
+          "type": "number",
+          "description": "Priority for multi-auth (lower = higher priority). Default: 0. Used when multiple auth methods are configured.",
+          "default": 0,
+          "examples": [
+            0,
+            1,
+            2
+          ]
+        },
+        "header_name": {
+          "type": "string",
+          "description": "Custom header name (required for custom-header type)",
+          "examples": [
+            "X-API-Key",
+            "X-Auth-Token"
+          ]
+        },
+        "query_param": {
+          "type": "string",
+          "description": "Query parameter name (required for query type)",
+          "examples": [
+            "api_key",
+            "token"
+          ]
+        },
+        "value_from_env": {
+          "type": "string",
+          "description": "Environment variable name containing the auth token (required for bearer, query, custom-header)",
+          "examples": [
+            "MCP4_API_TOKEN",
+            "GITLAB_TOKEN"
+          ]
+        },
+        "oauth_config": {
+          "description": "OAuth 2.0 configuration\n\nSupports Authorization Code Flow with PKCE (RFC 7636)\nOnly available in HTTP transport mode\n\nClient registration can be:\n- Static: pre-registered client_id and client_secret\n- Dynamic: RFC 7591 dynamic client registration",
+          "$ref": "#/definitions/OAuthConfig"
+        },
+        "oauth_rate_limit": {
+          "type": "object",
+          "properties": {
+            "max_requests": {
+              "type": "number",
+              "description": "Maximum number of OAuth requests allowed per window",
+              "examples": [
+                10,
+                20,
+                50
+              ]
+            },
+            "window_ms": {
+              "type": "number",
+              "description": "Rate limit window in milliseconds",
+              "examples": [
+                900000,
+                1800000,
+                3600000
+              ]
+            }
+          },
+          "required": [
+            "max_requests",
+            "window_ms"
+          ],
+          "description": "OAuth rate limiting configuration. Overrides default OAuth rate limits (10 requests per 15 minutes)."
+        },
+        "validation_endpoint": {
+          "type": "string"
+        },
+        "validation_method": {
+          "enum": [
+            "GET",
+            "HEAD"
+          ],
+          "type": "string"
+        },
+        "validation_timeout_ms": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "enum": [
+                  "bearer",
+                  "query",
+                  "custom-header"
+                ]
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "value_from_env"
+            ],
+            "properties": {
+              "value_from_env": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "custom-header"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "header_name"
+            ],
+            "properties": {
+              "header_name": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "query"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "query_param"
+            ],
+            "properties": {
+              "query_param": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "oauth"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "oauth_config"
+            ],
+            "properties": {
+              "oauth_config": {
+                "$ref": "#/definitions/OAuthConfig"
+              },
+              "oauth_rate_limit": {
+                "type": "object",
+                "description": "OAuth rate limiting configuration. Overrides default OAuth rate limits (10 requests per 15 minutes).",
+                "properties": {
+                  "max_requests": {
+                    "type": "number",
+                    "description": "Maximum number of OAuth requests allowed per window",
+                    "minimum": 1
+                  },
+                  "window_ms": {
+                    "type": "number",
+                    "description": "Rate limit window in milliseconds",
+                    "minimum": 1000
+                  }
+                },
+                "required": [
+                  "max_requests",
+                  "window_ms"
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    "OAuthConfig": {
+      "description": "OAuth 2.0 configuration. Must provide EITHER 'issuer' (endpoints auto-derived) OR both 'authorization_endpoint' and 'token_endpoint' (explicit).",
+      "type": "object",
+      "properties": {
+        "issuer": {
+          "description": "OAuth 2.0 issuer URL (RFC 8414). When provided, authorization_endpoint and token_endpoint are auto-derived via /.well-known/oauth-authorization-server or standard paths. Supports ${env:VAR} syntax.",
+          "type": "string",
+          "examples": [
+            "https://gitlab.example.com",
+            "${env:MCP4_OAUTH_ISSUER}"
+          ]
+        },
+        "authorization_endpoint": {
+          "description": "OAuth 2.0 authorization endpoint. Optional if issuer is provided. Supports ${env:VAR} syntax.",
+          "type": "string",
+          "examples": [
+            "https://gitlab.example.com/oauth/authorize",
+            "${env:OAUTH_AUTHORIZATION_URL}"
+          ]
+        },
+        "token_endpoint": {
+          "description": "OAuth 2.0 token endpoint. Optional if issuer is provided. Supports ${env:VAR} syntax.",
+          "type": "string",
+          "examples": [
+            "https://gitlab.example.com/oauth/token",
+            "${env:OAUTH_TOKEN_URL}"
+          ]
+        },
+        "client_id": {
+          "description": "Pre-registered OAuth client ID (supports ${env:VAR} syntax). Optional for dynamic registration.",
+          "type": "string",
+          "examples": [
+            "${env:MCP4_OAUTH_CLIENT_ID}"
+          ]
+        },
+        "client_secret": {
+          "description": "Pre-registered OAuth client secret (supports ${env:VAR} syntax). Optional for public clients.",
+          "type": "string",
+          "examples": [
+            "${env:MCP4_OAUTH_CLIENT_SECRET}"
+          ]
+        },
+        "scopes": {
+          "description": "OAuth 2.0 scopes to request. Optional - if not provided, no scopes will be requested (some APIs don't require scopes)",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "examples": [
+            [
+              "api",
+              "read_user"
+            ],
+            [
+              "read_repository",
+              "write_repository"
+            ]
+          ]
+        },
+        "redirect_uri": {
+          "description": "OAuth callback URI. Defaults to http://{MCP4_HOST}:{MCP4_PORT}/oauth/callback",
+          "type": "string",
+          "examples": [
+            "https://<your-mcp-server-host>/oauth/callback"
+          ]
+        },
+        "registration_endpoint": {
+          "description": "Client registration endpoint for dynamic registration (RFC 7591)",
+          "type": "string",
+          "examples": [
+            "https://gitlab.example.com/oauth/register"
+          ]
+        },
+        "introspection_endpoint": {
+          "description": "Token introspection endpoint (RFC 7662)",
+          "type": "string",
+          "examples": [
+            "https://gitlab.example.com/oauth/introspect"
+          ]
+        },
+        "revocation_endpoint": {
+          "description": "Token revocation endpoint (RFC 7009)",
+          "type": "string",
+          "examples": [
+            "https://gitlab.example.com/oauth/revoke"
+          ]
+        },
+        "allowed_redirect_hosts": {
+          "description": "Optional: Allowed redirect hosts for OAuth callbacks\nUsed to prevent open redirect vulnerabilities\n\nSupports wildcards: \"*.example.com\" matches any subdomain\nDefaults to [\"localhost\", \"127.0.0.1\"] for security\n\nCan reference MCP4_ALLOWED_ORIGINS environment variable",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "BaseUrl": {
+      "type": "object",
+      "properties": {
+        "value_from_env": {
+          "type": "string",
+          "description": "Environment variable name containing the base URL",
+          "examples": [
+            "MCP4_API_BASE_URL"
+          ]
+        },
+        "default": {
+          "type": "string",
+          "description": "Default base URL if environment variable is not set",
+          "examples": [
+            "https://www.gitlab.com/api/v4"
+          ]
+        }
+      },
+      "required": [
+        "value_from_env"
+      ]
+    },
+    "RateLimit": {
+      "type": "object",
+      "properties": {
+        "max_requests_per_minute": {
+          "type": "number",
+          "description": "Maximum number of requests per minute (token bucket algorithm)",
+          "examples": [
+            600,
+            60,
+            30
+          ]
+        },
+        "overrides": {
+          "$ref": "#/definitions/Record%3Cstring%2C%7Bmax_requests_per_minute%3Anumber%3B%7D%3E"
+        }
+      },
+      "required": [
+        "max_requests_per_minute"
+      ]
+    },
+    "Record<string,{max_requests_per_minute:number;}>": {
+      "type": "object"
+    },
+    "Retry": {
+      "type": "object",
+      "properties": {
+        "max_attempts": {
+          "type": "number",
+          "description": "Maximum number of retry attempts",
+          "examples": [
+            3
+          ]
+        },
+        "backoff_ms": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          },
+          "description": "Backoff delays in milliseconds (one per attempt)",
+          "examples": [
+            [
+              1000,
+              2000,
+              4000
+            ]
+          ]
+        },
+        "retry_on_status": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          },
+          "description": "HTTP status codes that trigger retry",
+          "examples": [
+            [
+              429,
+              502,
+              503,
+              504
+            ]
+          ]
+        }
+      },
+      "required": [
+        "backoff_ms",
+        "max_attempts",
+        "retry_on_status"
+      ]
+    },
     "Parameter": {
       "type": "object",
-      "required": ["type", "description"],
+      "required": [
+        "type",
+        "description"
+      ],
       "properties": {
         "type": {
           "description": "Parameter data type",
           "oneOf": [
             {
               "type": "string",
-              "enum": ["string", "integer", "number", "boolean", "array", "object"]
+              "enum": [
+                "string",
+                "integer",
+                "number",
+                "boolean",
+                "array",
+                "object"
+              ]
             },
             {
               "type": "array",
               "items": {
                 "type": "string",
-                "enum": ["string", "integer", "number", "boolean", "array", "object"]
+                "enum": [
+                  "string",
+                  "integer",
+                  "number",
+                  "boolean",
+                  "array",
+                  "object"
+                ]
               },
               "minItems": 1
             }
@@ -238,7 +761,12 @@
           "items": {
             "type": "string"
           },
-          "examples": [["create", "update"]]
+          "examples": [
+            [
+              "create",
+              "update"
+            ]
+          ]
         },
         "enum": {
           "type": "array",
@@ -285,7 +813,10 @@
         "object_entries_to_array": {
           "type": "object",
           "description": "Convert an object map into an array of objects using key/value fields",
-          "required": ["key_field", "value_field"],
+          "required": [
+            "key_field",
+            "value_field"
+          ],
           "properties": {
             "key_field": {
               "type": "string",
@@ -304,7 +835,9 @@
         "array_item_to_object": {
           "type": "object",
           "description": "Convert primitive array items into objects using the provided field",
-          "required": ["key_field"],
+          "required": [
+            "key_field"
+          ],
           "properties": {
             "key_field": {
               "type": "string",
@@ -314,329 +847,12 @@
         }
       }
     },
-    "CompositeStep": {
-      "type": "object",
-      "required": ["call", "store_as"],
-      "properties": {
-        "call": {
-          "type": "string",
-          "description": "OpenAPI operationId to call",
-          "examples": ["getApiV4ProjectsIdMergeRequestsMergeRequestIid"]
-        },
-        "store_as": {
-          "type": "string",
-          "description": "JSON path where to store result (e.g., 'merge_request', 'merge_request.comments')",
-          "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*(\\.[a-zA-Z_][a-zA-Z0-9_]*)*$",
-          "examples": ["merge_request", "merge_request.comments", "user.profile"]
-        }
-      }
-    },
-    "Interceptors": {
-      "type": "object",
-      "description": "HTTP interceptor configuration (auth, rate limiting, retry)",
-      "properties": {
-        "auth": {
-          "oneOf": [
-            {
-              "$ref": "#/definitions/Auth"
-            },
-            {
-              "type": "array",
-              "items": {
-                "$ref": "#/definitions/Auth"
-              },
-              "minItems": 1,
-              "description": "Multiple authentication methods (tried in order of priority)"
-            }
-          ]
-        },
-        "base_url": {
-          "$ref": "#/definitions/BaseUrl"
-        },
-        "rate_limit": {
-          "$ref": "#/definitions/RateLimit"
-        },
-        "retry": {
-          "$ref": "#/definitions/Retry"
-        },
-        "array_format": {
-          "type": "string",
-          "enum": ["brackets", "indices", "repeat", "comma"],
-          "description": "How to serialize array query parameters",
-          "default": "repeat",
-          "examples": ["brackets"]
-        }
-      }
-    },
-    "Auth": {
-      "type": "object",
-      "required": ["type"],
-      "properties": {
-        "type": {
-          "type": "string",
-          "enum": ["bearer", "query", "custom-header", "oauth"],
-          "description": "Authentication type"
-        },
-        "priority": {
-          "type": "integer",
-          "description": "Priority for multi-auth (lower = higher priority). Default: 0. Used when multiple auth methods are configured.",
-          "default": 0,
-          "minimum": 0,
-          "examples": [0, 1, 2]
-        },
-        "value_from_env": {
-          "type": "string",
-          "description": "Environment variable name containing the auth token (required for bearer, query, custom-header)",
-          "pattern": "^[A-Z][A-Z0-9_]*$",
-          "examples": ["MCP4_API_TOKEN", "GITLAB_TOKEN"]
-        },
-        "header_name": {
-          "type": "string",
-          "description": "Custom header name (required for custom-header type)",
-          "examples": ["X-API-Key", "X-Auth-Token"]
-        },
-        "query_param": {
-          "type": "string",
-          "description": "Query parameter name (required for query type)",
-          "examples": ["api_key", "token"]
-        },
-        "oauth_config": {
-          "$ref": "#/definitions/OAuthConfig"
-        },
-        "oauth_rate_limit": {
-          "type": "object",
-          "description": "OAuth rate limiting configuration. Overrides default OAuth rate limits (10 requests per 15 minutes).",
-          "properties": {
-            "max_requests": {
-              "type": "number",
-              "description": "Maximum number of OAuth requests allowed per window",
-              "minimum": 1,
-              "examples": [10, 20, 50]
-            },
-            "window_ms": {
-              "type": "number",
-              "description": "Rate limit window in milliseconds",
-              "minimum": 1000,
-              "examples": [900000, 1800000, 3600000]
-            }
-          },
-          "required": ["max_requests", "window_ms"]
-        }
-      },
-      "allOf": [
-        {
-          "if": {
-            "properties": {
-              "type": {
-                "enum": ["bearer", "query", "custom-header"]
-              }
-            }
-          },
-          "then": {
-            "required": ["value_from_env"],
-            "properties": {
-              "value_from_env": {
-                "type": "string"
-              }
-            }
-          }
-        },
-        {
-          "if": {
-            "properties": {
-              "type": {
-                "const": "custom-header"
-              }
-            }
-          },
-          "then": {
-            "required": ["header_name"],
-            "properties": {
-              "header_name": {
-                "type": "string"
-              }
-            }
-          }
-        },
-        {
-          "if": {
-            "properties": {
-              "type": {
-                "const": "query"
-              }
-            }
-          },
-          "then": {
-            "required": ["query_param"],
-            "properties": {
-              "query_param": {
-                "type": "string"
-              }
-            }
-          }
-        },
-        {
-          "if": {
-            "properties": {
-              "type": {
-                "const": "oauth"
-              }
-            }
-          },
-          "then": {
-            "required": ["oauth_config"],
-            "properties": {
-              "oauth_config": {
-                "$ref": "#/definitions/OAuthConfig"
-              },
-              "oauth_rate_limit": {
-                "type": "object",
-                "description": "OAuth rate limiting configuration. Overrides default OAuth rate limits (10 requests per 15 minutes).",
-                "properties": {
-                  "max_requests": {
-                    "type": "number",
-                    "description": "Maximum number of OAuth requests allowed per window",
-                    "minimum": 1
-                  },
-                  "window_ms": {
-                    "type": "number",
-                    "description": "Rate limit window in milliseconds",
-                    "minimum": 1000
-                  }
-                },
-                "required": ["max_requests", "window_ms"]
-              }
-            }
-          }
-        }
-      ]
-    },
-    "OAuthConfig": {
-      "type": "object",
-      "description": "OAuth 2.0 configuration. Must provide EITHER 'issuer' (endpoints auto-derived) OR both 'authorization_endpoint' and 'token_endpoint' (explicit).",
-      "properties": {
-        "issuer": {
-          "type": "string",
-          "description": "OAuth 2.0 issuer URL (RFC 8414). When provided, authorization_endpoint and token_endpoint are auto-derived via /.well-known/oauth-authorization-server or standard paths. Supports ${env:VAR} syntax.",
-          "examples": ["https://gitlab.example.com", "${env:MCP4_OAUTH_ISSUER}"]
-        },
-        "authorization_endpoint": {
-          "type": "string",
-          "description": "OAuth 2.0 authorization endpoint. Optional if issuer is provided. Supports ${env:VAR} syntax.",
-          "examples": ["https://gitlab.example.com/oauth/authorize", "${env:OAUTH_AUTHORIZATION_URL}"]
-        },
-        "token_endpoint": {
-          "type": "string",
-          "description": "OAuth 2.0 token endpoint. Optional if issuer is provided. Supports ${env:VAR} syntax.",
-          "examples": ["https://gitlab.example.com/oauth/token", "${env:OAUTH_TOKEN_URL}"]
-        },
-        "client_id": {
-          "type": "string",
-          "description": "Pre-registered OAuth client ID (supports ${env:VAR} syntax). Optional for dynamic registration.",
-          "examples": ["${env:MCP4_OAUTH_CLIENT_ID}"]
-        },
-        "client_secret": {
-          "type": "string",
-          "description": "Pre-registered OAuth client secret (supports ${env:VAR} syntax). Optional for public clients.",
-          "examples": ["${env:MCP4_OAUTH_CLIENT_SECRET}"]
-        },
-        "scopes": {
-          "type": "array",
-          "description": "OAuth 2.0 scopes to request. Optional - if not provided, no scopes will be requested (some APIs don't require scopes)",
-          "items": {
-            "type": "string"
-          },
-          "examples": [["api", "read_user"], ["read_repository", "write_repository"]]
-        },
-        "redirect_uri": {
-          "type": "string",
-          "description": "OAuth callback URI. Defaults to http://{MCP4_HOST}:{MCP4_PORT}/oauth/callback",
-          "examples": ["https://<your-mcp-server-host>/oauth/callback"]
-        },
-        "registration_endpoint": {
-          "type": "string",
-          "description": "Client registration endpoint for dynamic registration (RFC 7591)",
-          "examples": ["https://gitlab.example.com/oauth/register"]
-        },
-        "introspection_endpoint": {
-          "type": "string",
-          "description": "Token introspection endpoint (RFC 7662)",
-          "examples": ["https://gitlab.example.com/oauth/introspect"]
-        },
-        "revocation_endpoint": {
-          "type": "string",
-          "description": "Token revocation endpoint (RFC 7009)",
-          "examples": ["https://gitlab.example.com/oauth/revoke"]
-        }
-      }
-    },
-    "BaseUrl": {
-      "type": "object",
-      "required": ["value_from_env"],
-      "properties": {
-        "value_from_env": {
-          "type": "string",
-          "description": "Environment variable name containing the base URL",
-          "pattern": "^[A-Z][A-Z0-9_]*$",
-          "examples": ["MCP4_API_BASE_URL"]
-        },
-        "default": {
-          "type": "string",
-          "format": "uri",
-          "description": "Default base URL if environment variable is not set",
-          "examples": ["https://www.gitlab.com/api/v4"]
-        }
-      }
-    },
-    "RateLimit": {
-      "type": "object",
-      "required": ["max_requests_per_minute"],
-      "properties": {
-        "max_requests_per_minute": {
-          "type": "integer",
-          "minimum": 1,
-          "description": "Maximum number of requests per minute (token bucket algorithm)",
-          "examples": [600, 60, 30]
-        }
-      }
-    },
-    "Retry": {
-      "type": "object",
-      "required": ["max_attempts", "backoff_ms", "retry_on_status"],
-      "properties": {
-        "max_attempts": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 10,
-          "description": "Maximum number of retry attempts",
-          "examples": [3]
-        },
-        "backoff_ms": {
-          "type": "array",
-          "description": "Backoff delays in milliseconds (one per attempt)",
-          "items": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "minItems": 1,
-          "examples": [[1000, 2000, 4000]]
-        },
-        "retry_on_status": {
-          "type": "array",
-          "description": "HTTP status codes that trigger retry",
-          "items": {
-            "type": "integer",
-            "minimum": 400,
-            "maximum": 599
-          },
-          "minItems": 1,
-          "examples": [[429, 502, 503, 504]]
-        }
-      }
-    },
     "ProxyDownloadOperation": {
       "type": "object",
-      "required": ["type", "metadata_endpoint"],
+      "required": [
+        "type",
+        "metadata_endpoint"
+      ],
       "properties": {
         "type": {
           "const": "proxy_download",
@@ -697,5 +913,8 @@
         }
       }
     }
-  }
+  },
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/davidruzicka/mcp4openapi/profile-schema.json",
+  "title": "MCP Profile"
 }

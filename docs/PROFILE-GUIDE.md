@@ -1031,15 +1031,15 @@ See working examples in `profiles/`:
 **When adding new fields to `ToolDefinition` or `Profile` types:**
 
 1. **Update TypeScript types** in `src/types/profile.ts`
-2. **Run `npm run build`** (auto-generates Zod schemas + compiles)
-3. **Optionally update JSON Schema** in `profile-schema.json` (for better IDE support)
+2. **Run `npm run generate-schemas`** (auto-generates Zod + JSON Schema)
+3. **Run `npm run check-schema-sync`** to verify there is no drift
 
-**Note:** `npm run generate-schemas` runs automatically during build, so you don't need to remember it!
+**Note:** `npm run generate-schemas` also runs automatically during `npm run build`.
 
 **Why this approach?**
 - **TypeScript types**: Single source of truth, full type safety
 - **Zod schemas**: Auto-generated from TypeScript, runtime validation
-- **JSON Schema**: Manual maintenance for rich IDE autocomplete (examples, descriptions)
+- **JSON Schema**: Auto-generated from TypeScript, metadata preserved from existing schema where possible
 
 **Example: Adding `response_fields`**
 
@@ -1053,22 +1053,8 @@ export interface ToolDefinition {
 // 2. Run: npm run build
 // → Auto-generates src/generated-schemas.ts with proper Zod validation
 
-// 3. Optional: Update profile-schema.json for better IDE experience
-{
-  "properties": {
-    "response_fields": {
-      "type": "object",
-      "description": "Response field filtering per action",
-      "additionalProperties": {
-        "type": "array",
-        "items": { "type": "string" }
-      },
-      "examples": [{
-        "list": ["id", "name", "path", "web_url"]
-      }]
-    }
-  }
-}
+// 3. Optional: if metadata is needed, adjust descriptions/examples and run:
+// npm run sync-profile-schema
 ```
 
 **Field names with spaces**: Use double quotes around the base field name.
@@ -1085,7 +1071,7 @@ Examples:
 }
 ```
 
-**Debugging tip:** If a profile field is ignored at runtime, run `npm run generate-schemas` to ensure Zod schemas are up-to-date!
+**Debugging tip:** If a profile field is ignored at runtime, run `npm run generate-schemas` and `npm run check-schema-sync`.
 
 ## Next Steps
 
