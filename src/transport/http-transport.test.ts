@@ -427,7 +427,7 @@ describeIfListen('HttpTransport', () => {
       expect(response.headers['access-control-allow-origin']).toBe('https://example.com');
       expect(response.headers['access-control-allow-methods']).toContain('POST');
       expect(response.headers['access-control-allow-headers']).toContain('Content-Type');
-      expect(response.headers['access-control-allow-credentials']).toBe('false');
+      expect(response.headers['access-control-allow-credentials']).toBeUndefined();
     });
 
     it('should accept wildcard subdomain match', async () => {
