@@ -1050,8 +1050,8 @@ describeIfListen('HttpTransport', () => {
 
     it('should handle batch requests', async () => {
       transport.setMessageHandler(async (_msg) => {
-        if (Array.isArray(msg)) {
-          return msg.map((m: any) => ({ id: m.id, result: 'ok' }));
+        if (Array.isArray(_msg)) {
+          return _msg.map((m: any) => ({ id: m.id, result: 'ok' }));
         }
         return { result: 'ok' };
       });
@@ -1385,6 +1385,7 @@ describeIfListen('HttpTransport', () => {
       };
 
       oauthTransport = new HttpTransport(oauthConfig, logger);
+      oauthApp = (oauthTransport as any).app;
     });
 
     afterEach(async () => {
@@ -1501,6 +1502,7 @@ describeIfListen('HttpTransport', () => {
       };
 
       oauthTransport = new HttpTransport(oauthConfig, logger);
+      oauthApp = (oauthTransport as any).app;
     });
 
     afterEach(async () => {
@@ -3025,7 +3027,6 @@ describeIfListen('HttpTransport', () => {
       };
 
       oauthTransport = new HttpTransport(oauthConfig, logger);
-      oauthApp = (oauthTransport as any).app;
     });
 
     afterEach(async () => {

@@ -2265,6 +2265,8 @@ describe('MCPServer', () => {
   describe('setupHandlers (MCP SDK)', () => {
     it('ListTools handler should wrap errors with correlation ID when uninitialized', async () => {
       const setHandlerSpy = vi.spyOn(MCPProtocolServer.prototype as any, 'setRequestHandler');
+      const server = new MCPServer();
+
       const listCall = setHandlerSpy.mock.calls.find(call => {
         const schema: any = call[0];
         return schema?.shape?.method?.value === 'tools/list';
