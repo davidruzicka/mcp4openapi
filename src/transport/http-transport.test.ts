@@ -2441,6 +2441,46 @@ describeIfListen('HttpTransport', () => {
       await routingTransport.stop();
     });
 
+    it('supports deprecated /profile/:id/sse alias for initialization', async () => {
+      const routingTransport = new HttpTransport(
+        {
+          host: '127.0.0.1',
+          port: 0,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: false,
+          metricsPath: '/metrics',
+          profileRoutingEnabled: true,
+        },
+        logger
+      );
+      routingTransport.setProfileContextProvider(async (id) => ({ profileId: id }));
+      routingTransport.setMessageHandler(async (_message) => ({
+        protocolVersion: '2025-03-26',
+        serverInfo: { name: 'test' },
+      }));
+
+      const routingApp = (routingTransport as any).app;
+      const response = await request(routingApp)
+        .post('/profile/gitlab/sse')
+        .set('Accept', 'text/event-stream')
+        .send({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'initialize',
+          params: {},
+        });
+
+      expect(response.status).toBe(200);
+      expect(response.headers['content-type']).toContain('text/event-stream');
+      expect(response.headers['mcp-session-id']).toBeDefined();
+      expect(response.text).toContain('id:');
+      expect(response.text).toContain('data:');
+
+      await routingTransport.stop();
+    });
+
     it('returns 404 for /mcp when routing enabled without default profile', async () => {
       const routingTransport = new HttpTransport(
         {
