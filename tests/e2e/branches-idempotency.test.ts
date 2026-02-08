@@ -28,6 +28,7 @@ describeIfListen('Branch Protect/Unprotect Idempotency E2E', () => {
     GITLAB_OAUTH_CLIENT_ID: 'test-client-id',
     GITLAB_OAUTH_CLIENT_SECRET: 'test-client-secret',
     GITLAB_OAUTH_REDIRECT_URI: 'http://127.0.0.1/oauth/callback',
+    MCP4_SSRF_ALLOW_PRIVATE_NETWORK: 'true',
   };
 
   beforeAll(async () => {
