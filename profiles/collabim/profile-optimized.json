@@ -1,0 +1,302 @@
+{
+  "$schema": "../../profile-schema.json",
+  "profile_name": "collabim-optimized",
+  "profile_id": "collabim-optimized",
+  "profile_aliases": ["collabim-optimized", "collabim-crud"],
+  "openapi_spec_path": "./openapi.json",
+  "description": "CRUD-oriented optimized profile for Collabim API with grouped read/create/update/delete tools.",
+  "parameter_aliases": {
+    "id": ["activity_id", "project_id"],
+    "itemsPerPage": ["items_per_page"],
+    "nameLike": ["name_like"],
+    "projectId": ["project_id"],
+    "createdById": ["created_by_id"],
+    "categoryId": ["category_id"],
+    "stateId": ["state_id"],
+    "typeId": ["type_id"],
+    "urlLike": ["url_like"],
+    "webId": ["web_id"],
+    "targetPageId": ["target_page_id"],
+    "projectKeywordIds": ["project_keyword_ids"],
+    "tagName": ["tag_name"],
+    "searchEngineId": ["search_engine_id"],
+    "getXDays": ["get_x_days"],
+    "addedOnFrom": ["added_on_from"],
+    "addedOnTo": ["added_on_to"],
+    "onlyFirstAndLastPositionStats": ["only_first_and_last_position_stats"]
+  },
+  "interceptors": {
+    "auth": {
+      "type": "custom-header",
+      "header_name": "Authorization",
+      "value_from_env": "COLLABIM_API_KEY"
+    },
+    "base_url": {
+      "value_from_env": "COLLABIM_API_BASE_URL",
+      "default": "https://api.oncollabim.com"
+    }
+  },
+  "tools": [
+    {
+      "name": "retrieve_content",
+      "description": "Read-only access to Collabim data. Actions: 'get_project', 'list_projects', 'get_project_widget', 'get_project_widget_json', 'list_activities', 'get_activity', 'list_keywords', 'get_keyword_positions', 'get_aggregated_keyword_positions', 'get_position_distribution', 'get_market_dominator', 'get_indexed_pages', 'get_market_share', 'get_holy_grail_stats', 'get_holy_grail_aio_stats', 'get_holy_grail_aio_data', 'get_heureka_tree', 'get_website_system'.",
+      "metadata_params": ["action"],
+      "operations": {
+        "get_project": "get_/projects/{id}",
+        "list_projects": "get_/projects",
+        "get_project_widget": "get_/projects/{id}/widget/{type}",
+        "get_project_widget_json": "get_/projects/{id}/widget/{type}/json",
+        "list_activities": "get_/activities",
+        "get_activity": "get_/activities/{id}",
+        "list_keywords": "get_/keywords",
+        "get_keyword_positions": "get_/keyword-positions",
+        "get_aggregated_keyword_positions": "get_/aggregated-keywords-positions",
+        "get_position_distribution": "get_/position-distribution",
+        "get_market_dominator": "get_/market-dominator",
+        "get_indexed_pages": "get_/indexed-pages",
+        "get_market_share": "get_/market-share",
+        "get_holy_grail_stats": "get_/holy-grail-stats/{domain}",
+        "get_holy_grail_aio_stats": "get_/holy-grail-aio-stats/{domain}",
+        "get_holy_grail_aio_data": "get_/holy-grail-aio-data/{domain}",
+        "get_heureka_tree": "get_/category-downloader/heureka-tree",
+        "get_website_system": "get_/website-system"
+      },
+      "parameters": {
+        "action": {
+          "type": "string",
+          "enum": [
+            "get_project",
+            "list_projects",
+            "get_project_widget",
+            "get_project_widget_json",
+            "list_activities",
+            "get_activity",
+            "list_keywords",
+            "get_keyword_positions",
+            "get_aggregated_keyword_positions",
+            "get_position_distribution",
+            "get_market_dominator",
+            "get_indexed_pages",
+            "get_market_share",
+            "get_holy_grail_stats",
+            "get_holy_grail_aio_stats",
+            "get_holy_grail_aio_data",
+            "get_heureka_tree",
+            "get_website_system"
+          ],
+          "description": "Action to perform",
+          "required": true
+        },
+        "id": {
+          "type": "integer",
+          "description": "Activity or project ID",
+          "required_for": ["get_project", "get_project_widget", "get_project_widget_json", "get_activity"]
+        },
+        "type": {
+          "type": "string",
+          "description": "Project widget type",
+          "required_for": ["get_project_widget", "get_project_widget_json"]
+        },
+        "domain": {
+          "type": "string",
+          "description": "Domain used by holy grail endpoints",
+          "required_for": ["get_holy_grail_stats", "get_holy_grail_aio_stats", "get_holy_grail_aio_data"]
+        },
+        "format": {
+          "type": "string",
+          "description": "Optional response format for get_holy_grail_aio_data"
+        },
+        "active": {
+          "type": "boolean",
+          "description": "Filter active projects"
+        },
+        "itemsPerPage": {
+          "type": ["integer", "string"],
+          "description": "Items per page"
+        },
+        "nameLike": {
+          "type": "string",
+          "description": "Project name contains"
+        },
+        "page": {
+          "type": ["integer", "string"],
+          "description": "Page number"
+        },
+        "addedOnFrom": {
+          "type": "string",
+          "description": "Activity date lower bound"
+        },
+        "addedOnTo": {
+          "type": "string",
+          "description": "Activity date upper bound"
+        },
+        "categoryId": {
+          "type": "integer",
+          "description": "Activity category ID"
+        },
+        "createdById": {
+          "type": "integer",
+          "description": "Activity creator ID"
+        },
+        "noCategory": {
+          "type": "boolean",
+          "description": "Include only items without category"
+        },
+        "projectId": {
+          "type": "integer",
+          "description": "Project ID filter",
+          "required_for": [
+            "get_keyword_positions",
+            "get_aggregated_keyword_positions",
+            "get_position_distribution",
+            "get_market_dominator",
+            "get_indexed_pages",
+            "get_market_share"
+          ]
+        },
+        "stateId": {
+          "type": "integer",
+          "description": "Activity state ID"
+        },
+        "typeId": {
+          "type": "integer",
+          "description": "Activity type ID"
+        },
+        "urlLike": {
+          "type": "string",
+          "description": "URL substring filter"
+        },
+        "webId": {
+          "type": "integer",
+          "description": "Web ID"
+        },
+        "keyword": {
+          "type": "string",
+          "description": "Exact keyword"
+        },
+        "keywordLike": {
+          "type": "string",
+          "description": "Keyword contains"
+        },
+        "starred": {
+          "type": "boolean",
+          "description": "Only starred keywords"
+        },
+        "tags": {
+          "type": "string",
+          "description": "Tags filter"
+        },
+        "targetPageId": {
+          "type": "integer",
+          "description": "Target page ID"
+        },
+        "from": {
+          "type": "string",
+          "description": "Start date",
+          "required_for": [
+            "get_keyword_positions",
+            "get_aggregated_keyword_positions",
+            "get_position_distribution",
+            "get_market_dominator",
+            "get_indexed_pages",
+            "get_market_share"
+          ]
+        },
+        "to": {
+          "type": "string",
+          "description": "End date",
+          "required_for": [
+            "get_keyword_positions",
+            "get_aggregated_keyword_positions",
+            "get_position_distribution",
+            "get_market_dominator",
+            "get_indexed_pages",
+            "get_market_share"
+          ]
+        },
+        "getXDays": {
+          "type": "integer",
+          "description": "Shortcut: fetch the last N days"
+        },
+        "onlyFirstAndLastPositionStats": {
+          "type": "boolean",
+          "description": "Only include first/last position stats",
+          "required_for": ["get_keyword_positions"]
+        },
+        "projectKeywordIds": {
+          "type": "integer",
+          "description": "Specific project keyword ID"
+        },
+        "tagName": {
+          "type": "string",
+          "description": "Tag name filter"
+        },
+        "searchEngineId": {
+          "type": "integer",
+          "description": "Search engine ID"
+        }
+      }
+    },
+    {
+      "name": "create_content",
+      "description": "Create Collabim resources and start one-time analyses. Actions: 'create_account', 'create_user_key', 'start_keyword_measuring', 'get_keyword_measuring_status'.",
+      "metadata_params": ["action"],
+      "operations": {
+        "create_account": "post_/accounts/new",
+        "create_user_key": "post_/user-key",
+        "start_keyword_measuring": "post_/ota/keyword-measuring",
+        "get_keyword_measuring_status": "post_/ota/keyword-measuring/status"
+      },
+      "parameters": {
+        "action": {
+          "type": "string",
+          "enum": ["create_account", "create_user_key", "start_keyword_measuring", "get_keyword_measuring_status"],
+          "description": "Action to perform",
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "update_content",
+      "description": "Update existing Collabim resources. Actions: 'update_activity'.",
+      "metadata_params": ["action"],
+      "operations": {
+        "update_activity": "put_/activities/{id}"
+      },
+      "parameters": {
+        "action": {
+          "type": "string",
+          "enum": ["update_activity"],
+          "description": "Action to perform",
+          "required": true
+        },
+        "id": {
+          "type": "integer",
+          "description": "Activity ID",
+          "required_for": ["update_activity"]
+        }
+      }
+    },
+    {
+      "name": "delete_content",
+      "description": "Delete Collabim resources. Actions: 'delete_activity'.",
+      "metadata_params": ["action"],
+      "operations": {
+        "delete_activity": "delete_/activities/{id}"
+      },
+      "parameters": {
+        "action": {
+          "type": "string",
+          "enum": ["delete_activity"],
+          "description": "Action to perform",
+          "required": true
+        },
+        "id": {
+          "type": "integer",
+          "description": "Activity ID",
+          "required_for": ["delete_activity"]
+        }
+      }
+    }
+  ]
+}

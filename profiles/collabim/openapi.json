@@ -1,0 +1,1215 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Collabim API",
+    "version": "1.0.0",
+    "description": "Generated from API Blueprint exported from Apiary."
+  },
+  "servers": [
+    {
+      "url": "https://api.oncollabim.com"
+    }
+  ],
+  "security": [
+    {
+      "ApiKeyAuth": []
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "ApiKeyAuth": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "Authorization"
+      }
+    }
+  },
+  "paths": {
+    "/projects/{id}": {
+      "get": {
+        "operationId": "get_/projects/{id}",
+        "summary": "Get project info",
+        "tags": [
+          "Project info"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "project ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "201": {
+            "description": "Created"
+          },
+          "204": {
+            "description": "No content"
+          }
+        }
+      }
+    },
+    "/projects": {
+      "get": {
+        "operationId": "get_/projects",
+        "summary": "Get project list",
+        "tags": [
+          "Project list"
+        ],
+        "parameters": [
+          {
+            "name": "active",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            },
+            "description": "Query parameter active"
+          },
+          {
+            "name": "itemsPerPage",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Query parameter itemsPerPage"
+          },
+          {
+            "name": "nameLike",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Query parameter nameLike"
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Query parameter page"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "201": {
+            "description": "Created"
+          },
+          "204": {
+            "description": "No content"
+          }
+        }
+      }
+    },
+    "/projects/{id}/widget/{type}": {
+      "get": {
+        "operationId": "get_/projects/{id}/widget/{type}",
+        "summary": "Get project widget",
+        "tags": [
+          "Project widget"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "project ID"
+          },
+          {
+            "name": "type",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "widget type"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "201": {
+            "description": "Created"
+          },
+          "204": {
+            "description": "No content"
+          }
+        }
+      }
+    },
+    "/projects/{id}/widget/{type}/json": {
+      "get": {
+        "operationId": "get_/projects/{id}/widget/{type}/json",
+        "summary": "Get project widget as JSON",
+        "tags": [
+          "Project widget as JSON"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "project ID"
+          },
+          {
+            "name": "type",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "widget type"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "201": {
+            "description": "Created"
+          },
+          "204": {
+            "description": "No content"
+          }
+        }
+      }
+    },
+    "/activities": {
+      "get": {
+        "operationId": "get_/activities",
+        "summary": "Get Activity list",
+        "tags": [
+          "Activity list"
+        ],
+        "parameters": [
+          {
+            "name": "addedOnFrom",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Query parameter addedOnFrom"
+          },
+          {
+            "name": "addedOnTo",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Query parameter addedOnTo"
+          },
+          {
+            "name": "categoryId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Query parameter categoryId"
+          },
+          {
+            "name": "createdById",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Query parameter createdById"
+          },
+          {
+            "name": "itemsPerPage",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Query parameter itemsPerPage"
+          },
+          {
+            "name": "noCategory",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            },
+            "description": "Query parameter noCategory"
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Query parameter page"
+          },
+          {
+            "name": "projectId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Query parameter projectId"
+          },
+          {
+            "name": "stateId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Query parameter stateId"
+          },
+          {
+            "name": "typeId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Query parameter typeId"
+          },
+          {
+            "name": "urlLike",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Query parameter urlLike"
+          },
+          {
+            "name": "webId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Query parameter webId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "201": {
+            "description": "Created"
+          },
+          "204": {
+            "description": "No content"
+          }
+        }
+      }
+    },
+    "/activities/{id}": {
+      "get": {
+        "operationId": "get_/activities/{id}",
+        "summary": "Get activity",
+        "tags": [
+          "Single activity"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "activity ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "201": {
+            "description": "Created"
+          },
+          "204": {
+            "description": "No content"
+          }
+        }
+      },
+      "put": {
+        "operationId": "put_/activities/{id}",
+        "summary": "Update activity",
+        "tags": [
+          "Single activity"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "activity ID"
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "201": {
+            "description": "Created"
+          },
+          "204": {
+            "description": "No content"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "delete_/activities/{id}",
+        "summary": "Delete activity",
+        "tags": [
+          "Single activity"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "activity ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "201": {
+            "description": "Created"
+          },
+          "204": {
+            "description": "No content"
+          }
+        }
+      }
+    },
+    "/keywords": {
+      "get": {
+        "operationId": "get_/keywords",
+        "summary": "Get keyword list",
+        "tags": [
+          "Keyword list"
+        ],
+        "parameters": [
+          {
+            "name": "itemsPerPage",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Query parameter itemsPerPage"
+          },
+          {
+            "name": "keyword",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Query parameter keyword"
+          },
+          {
+            "name": "keywordLike",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Query parameter keywordLike"
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Query parameter page"
+          },
+          {
+            "name": "projectId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Query parameter projectId"
+          },
+          {
+            "name": "starred",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            },
+            "description": "Query parameter starred"
+          },
+          {
+            "name": "tags",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Query parameter tags"
+          },
+          {
+            "name": "targetPageId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Query parameter targetPageId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "201": {
+            "description": "Created"
+          },
+          "204": {
+            "description": "No content"
+          }
+        }
+      }
+    },
+    "/keyword-positions": {
+      "get": {
+        "operationId": "get_/keyword-positions",
+        "summary": "By last X days",
+        "tags": [
+          "Keyword positions"
+        ],
+        "parameters": [
+          {
+            "name": "from",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Query parameter from"
+          },
+          {
+            "name": "getXDays",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Query parameter getXDays"
+          },
+          {
+            "name": "onlyFirstAndLastPositionStats",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "boolean"
+            },
+            "description": "Query parameter onlyFirstAndLastPositionStats"
+          },
+          {
+            "name": "projectId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Query parameter projectId"
+          },
+          {
+            "name": "projectKeywordIds",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Query parameter projectKeywordIds"
+          },
+          {
+            "name": "tags",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Query parameter tags"
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Query parameter to"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "201": {
+            "description": "Created"
+          },
+          "204": {
+            "description": "No content"
+          }
+        }
+      }
+    },
+    "/aggregated-keywords-positions": {
+      "get": {
+        "operationId": "get_/aggregated-keywords-positions",
+        "summary": "By last X days",
+        "tags": [
+          "Keyword aggregated positions"
+        ],
+        "parameters": [
+          {
+            "name": "from",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Query parameter from"
+          },
+          {
+            "name": "getXDays",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Query parameter getXDays"
+          },
+          {
+            "name": "projectId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Query parameter projectId"
+          },
+          {
+            "name": "tags",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Query parameter tags"
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Query parameter to"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "201": {
+            "description": "Created"
+          },
+          "204": {
+            "description": "No content"
+          }
+        }
+      }
+    },
+    "/position-distribution": {
+      "get": {
+        "operationId": "get_/position-distribution",
+        "summary": "By last X days",
+        "tags": [
+          "Position distribution"
+        ],
+        "parameters": [
+          {
+            "name": "from",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Query parameter from"
+          },
+          {
+            "name": "getXDays",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Query parameter getXDays"
+          },
+          {
+            "name": "projectId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Query parameter projectId"
+          },
+          {
+            "name": "tagName",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Query parameter tagName"
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Query parameter to"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "201": {
+            "description": "Created"
+          },
+          "204": {
+            "description": "No content"
+          }
+        }
+      }
+    },
+    "/market-dominator": {
+      "get": {
+        "operationId": "get_/market-dominator",
+        "summary": "By last X days",
+        "tags": [
+          "MARKET dominator"
+        ],
+        "parameters": [
+          {
+            "name": "from",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Query parameter from"
+          },
+          {
+            "name": "getXDays",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Query parameter getXDays"
+          },
+          {
+            "name": "projectId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Query parameter projectId"
+          },
+          {
+            "name": "tagName",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Query parameter tagName"
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Query parameter to"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "201": {
+            "description": "Created"
+          },
+          "204": {
+            "description": "No content"
+          }
+        }
+      }
+    },
+    "/indexed-pages": {
+      "get": {
+        "operationId": "get_/indexed-pages",
+        "summary": "By last X days",
+        "tags": [
+          "Indexed pages"
+        ],
+        "parameters": [
+          {
+            "name": "from",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Query parameter from"
+          },
+          {
+            "name": "projectId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Query parameter projectId"
+          },
+          {
+            "name": "searchEngineId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Query parameter searchEngineId"
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Query parameter to"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "201": {
+            "description": "Created"
+          },
+          "204": {
+            "description": "No content"
+          }
+        }
+      }
+    },
+    "/market-share": {
+      "get": {
+        "operationId": "get_/market-share",
+        "summary": "Get market share",
+        "tags": [
+          "Market share"
+        ],
+        "parameters": [
+          {
+            "name": "from",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Query parameter from"
+          },
+          {
+            "name": "getXDays",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Query parameter getXDays"
+          },
+          {
+            "name": "projectId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Query parameter projectId"
+          },
+          {
+            "name": "searchEngineId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Query parameter searchEngineId"
+          },
+          {
+            "name": "tagName",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Query parameter tagName"
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Query parameter to"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "201": {
+            "description": "Created"
+          },
+          "204": {
+            "description": "No content"
+          }
+        }
+      }
+    },
+    "/accounts/new": {
+      "post": {
+        "operationId": "post_/accounts/new",
+        "summary": "Registration",
+        "tags": [
+          "New account"
+        ],
+        "parameters": [],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "201": {
+            "description": "Created"
+          },
+          "204": {
+            "description": "No content"
+          }
+        }
+      }
+    },
+    "/user-key": {
+      "post": {
+        "operationId": "post_/user-key",
+        "summary": "Retrieve user API key",
+        "tags": [
+          "User key"
+        ],
+        "parameters": [],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "201": {
+            "description": "Created"
+          },
+          "204": {
+            "description": "No content"
+          }
+        }
+      }
+    },
+    "/holy-grail-stats/{domain}": {
+      "get": {
+        "operationId": "get_/holy-grail-stats/{domain}",
+        "summary": "Get holy grail stats for domain",
+        "tags": [
+          "Holy grail stats"
+        ],
+        "parameters": [
+          {
+            "name": "domain",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "domain for statistics"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "201": {
+            "description": "Created"
+          },
+          "204": {
+            "description": "No content"
+          }
+        }
+      }
+    },
+    "/holy-grail-aio-stats/{domain}": {
+      "get": {
+        "operationId": "get_/holy-grail-aio-stats/{domain}",
+        "summary": "Get Holy Grail AIO stats",
+        "tags": [
+          "Holy Grail for AIO Stats"
+        ],
+        "parameters": [
+          {
+            "name": "domain",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "doména pre štatistiky"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "201": {
+            "description": "Created"
+          },
+          "204": {
+            "description": "No content"
+          }
+        }
+      }
+    },
+    "/holy-grail-aio-data/{domain}": {
+      "get": {
+        "operationId": "get_/holy-grail-aio-data/{domain}",
+        "summary": "Get comprehensive Holy Grail AIO data",
+        "tags": [
+          "Holy Grail for AIO Data"
+        ],
+        "parameters": [
+          {
+            "name": "domain",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "doména pre dáta"
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Query parameter format"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "201": {
+            "description": "Created"
+          },
+          "204": {
+            "description": "No content"
+          }
+        }
+      }
+    },
+    "/google-ai-overviews/{domain}": {},
+    "/category-downloader/heureka-tree": {
+      "get": {
+        "operationId": "get_/category-downloader/heureka-tree",
+        "summary": "Get XLSX with actual HEUREKA categories",
+        "tags": [
+          "HEUREKA categories"
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "201": {
+            "description": "Created"
+          },
+          "204": {
+            "description": "No content"
+          }
+        }
+      }
+    },
+    "/ota/keyword-measuring": {
+      "post": {
+        "operationId": "post_/ota/keyword-measuring",
+        "summary": "Send keyword batch for measuring",
+        "tags": [
+          "One time analyses keyword measuring"
+        ],
+        "parameters": [],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "201": {
+            "description": "Created"
+          },
+          "204": {
+            "description": "No content"
+          }
+        }
+      }
+    },
+    "/ota/keyword-measuring/status": {
+      "post": {
+        "operationId": "post_/ota/keyword-measuring/status",
+        "summary": "Get keyword batch results",
+        "tags": [
+          "One time analyses keyword measuring - results"
+        ],
+        "parameters": [],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "201": {
+            "description": "Created"
+          },
+          "204": {
+            "description": "No content"
+          }
+        }
+      }
+    },
+    "/website-system": {
+      "get": {
+        "operationId": "get_/website-system",
+        "summary": "Website System Detection",
+        "tags": [
+          "Website system"
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          },
+          "201": {
+            "description": "Created"
+          },
+          "204": {
+            "description": "No content"
+          }
+        }
+      }
+    }
+  }
+}

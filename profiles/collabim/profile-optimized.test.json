@@ -1,0 +1,158 @@
+{
+  "$schema": "../../src/testing/test-schema.ts",
+  "profile_name": "collabim-optimized",
+  "variables": {
+    "id": 123,
+    "projectId": 456,
+    "domain": "example.com",
+    "from": "2026-01-01",
+    "to": "2026-01-31"
+  },
+  "scenarios": [
+    {
+      "name": "Retrieve - Get project",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "get_project",
+        "id": "{{projectId}}"
+      },
+      "mocks": [
+        {
+          "operationId": "get_/projects/{id}",
+          "response": {
+            "body": {
+              "id": 456,
+              "name": "Test project"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "request": {
+          "method": "GET",
+          "path": "/projects/{{projectId}}",
+          "headers": {
+            "authorization": "test-token"
+          }
+        }
+      }
+    },
+    {
+      "name": "Retrieve - Get keyword positions",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "get_keyword_positions",
+        "projectId": "{{projectId}}",
+        "from": "{{from}}",
+        "to": "{{to}}",
+        "onlyFirstAndLastPositionStats": true
+      },
+      "mocks": [
+        {
+          "operationId": "get_/keyword-positions",
+          "response": {
+            "body": []
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "request": {
+          "method": "GET",
+          "path": "/keyword-positions",
+          "query": {
+            "projectId": 456,
+            "from": "2026-01-01",
+            "to": "2026-01-31",
+            "onlyFirstAndLastPositionStats": true
+          }
+        }
+      }
+    },
+    {
+      "name": "Create - Start keyword measuring",
+      "tool": "create_content",
+      "arguments": {
+        "action": "start_keyword_measuring"
+      },
+      "mocks": [
+        {
+          "operationId": "post_/ota/keyword-measuring",
+          "response": {
+            "body": {
+              "status": "accepted"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "request": {
+          "method": "POST",
+          "path": "/ota/keyword-measuring"
+        }
+      }
+    },
+    {
+      "name": "Update - Update activity",
+      "tool": "update_content",
+      "arguments": {
+        "action": "update_activity",
+        "id": "{{id}}"
+      },
+      "mocks": [
+        {
+          "operationId": "put_/activities/{id}",
+          "response": {
+            "body": {
+              "id": 123
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "request": {
+          "method": "PUT",
+          "path": "/activities/{{id}}"
+        }
+      }
+    },
+    {
+      "name": "Delete - Delete activity",
+      "tool": "delete_content",
+      "arguments": {
+        "action": "delete_activity",
+        "id": "{{id}}"
+      },
+      "mocks": [
+        {
+          "operationId": "delete_/activities/{id}",
+          "response": {
+            "status": 200,
+            "body": {}
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "request": {
+          "method": "DELETE",
+          "path": "/activities/{{id}}"
+        }
+      }
+    },
+    {
+      "name": "Validation - Missing required id for update activity",
+      "tool": "update_content",
+      "arguments": {
+        "action": "update_activity"
+      },
+      "expect": {
+        "success": false,
+        "error_message_regex": "id"
+      }
+    }
+  ]
+}
