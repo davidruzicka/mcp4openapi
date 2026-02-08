@@ -1,0 +1,167 @@
+{
+  "$schema": "../../src/testing/test-schema.ts",
+  "profile_name": "github_security",
+  "variables": {
+    "owner": "davidruzicka",
+    "repo": "mcp4openapi",
+    "alertNumber": 101
+  },
+  "scenarios": [
+    {
+      "name": "Code Scanning - List Alerts",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "list_alerts",
+        "owner": "{{owner}}",
+        "repo": "{{repo}}",
+        "state": "open",
+        "severity": "high",
+        "tool_name": "CodeQL"
+      },
+      "mocks": [
+        {
+          "operationId": "listCodeScanningAlerts",
+          "response": {
+            "body": [
+              {
+                "number": 101,
+                "state": "open",
+                "rule": { "id": "js/sql-injection", "severity": "high" },
+                "tool": { "name": "CodeQL" }
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": [
+          { "number": 101, "state": "open" }
+        ],
+        "request": {
+          "method": "GET",
+          "path": "/repos/{{owner}}/{{repo}}/code-scanning/alerts",
+          "query": {
+            "state": "open",
+            "severity": "high",
+            "tool_name": "CodeQL"
+          }
+        }
+      }
+    },
+    {
+      "name": "Code Scanning - Get Alert",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "get_alert",
+        "owner": "{{owner}}",
+        "repo": "{{repo}}",
+        "alert_number": "{{alertNumber}}"
+      },
+      "mocks": [
+        {
+          "operationId": "getCodeScanningAlert",
+          "response": {
+            "body": {
+              "number": 101,
+              "state": "open",
+              "rule": { "id": "js/sql-injection", "severity": "high" },
+              "tool": { "name": "CodeQL" }
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": { "number": 101, "state": "open" },
+        "request": {
+          "method": "GET",
+          "path": "/repos/{{owner}}/{{repo}}/code-scanning/alerts/{{alertNumber}}"
+        }
+      }
+    },
+    {
+      "name": "Code Scanning - List Alert Instances",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "list_alert_instances",
+        "owner": "{{owner}}",
+        "repo": "{{repo}}",
+        "alert_number": "{{alertNumber}}"
+      },
+      "mocks": [
+        {
+          "operationId": "listCodeScanningAlertInstances",
+          "response": {
+            "body": [
+              {
+                "ref": "refs/heads/main",
+                "state": "open",
+                "commit_sha": "abc123",
+                "message": { "text": "Unsafe eval call" },
+                "location": { "path": "src/app.js", "start_line": 42 }
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": [
+          { "ref": "refs/heads/main", "state": "open" }
+        ],
+        "request": {
+          "method": "GET",
+          "path": "/repos/{{owner}}/{{repo}}/code-scanning/alerts/{{alertNumber}}/instances"
+        }
+      }
+    },
+    {
+      "name": "Code Scanning - Update Alert",
+      "tool": "update_content",
+      "arguments": {
+        "action": "update_alert",
+        "owner": "{{owner}}",
+        "repo": "{{repo}}",
+        "alert_number": "{{alertNumber}}",
+        "state": "dismissed",
+        "dismissed_reason": "false positive",
+        "dismissed_comment": "Accepted as non-exploitable in this context."
+      },
+      "mocks": [
+        {
+          "operationId": "updateCodeScanningAlert",
+          "response": {
+            "body": {
+              "number": 101,
+              "state": "dismissed",
+              "dismissed_reason": "false positive",
+              "dismissed_comment": "Accepted as non-exploitable in this context."
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": {
+          "number": 101,
+          "state": "dismissed",
+          "dismissed_reason": "false positive"
+        },
+        "request": {
+          "method": "PATCH",
+          "path": "/repos/{{owner}}/{{repo}}/code-scanning/alerts/{{alertNumber}}",
+          "body": {
+            "state": "dismissed",
+            "dismissed_reason": "false positive",
+            "dismissed_comment": "Accepted as non-exploitable in this context."
+          }
+        }
+      }
+    }
+  ],
+  "coverage": {
+    "require_all_actions": true,
+    "skip_actions": {}
+  }
+}

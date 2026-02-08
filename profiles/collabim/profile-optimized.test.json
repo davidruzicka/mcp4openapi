@@ -154,5 +154,29 @@
         "error_message_regex": "id"
       }
     }
-  ]
+  ],
+  "coverage": {
+    "require_all_actions": true,
+    "skip_actions": {
+      "retrieve_content.list_projects": "Not required for minimal optimized profile regression checks.",
+      "retrieve_content.get_project_widget": "Not required for minimal optimized profile regression checks.",
+      "retrieve_content.get_project_widget_json": "Not required for minimal optimized profile regression checks.",
+      "retrieve_content.list_activities": "Not required for minimal optimized profile regression checks.",
+      "retrieve_content.get_activity": "Not required for minimal optimized profile regression checks.",
+      "retrieve_content.list_keywords": "Not required for minimal optimized profile regression checks.",
+      "retrieve_content.get_aggregated_keyword_positions": "Not required for minimal optimized profile regression checks.",
+      "retrieve_content.get_position_distribution": "Not required for minimal optimized profile regression checks.",
+      "retrieve_content.get_market_dominator": "Not required for minimal optimized profile regression checks.",
+      "retrieve_content.get_indexed_pages": "Not required for minimal optimized profile regression checks.",
+      "retrieve_content.get_market_share": "Not required for minimal optimized profile regression checks.",
+      "retrieve_content.get_holy_grail_stats": "Not required for minimal optimized profile regression checks.",
+      "retrieve_content.get_holy_grail_aio_stats": "Not required for minimal optimized profile regression checks.",
+      "retrieve_content.get_holy_grail_aio_data": "Not required for minimal optimized profile regression checks.",
+      "retrieve_content.get_heureka_tree": "Not required for minimal optimized profile regression checks.",
+      "retrieve_content.get_website_system": "Not required for minimal optimized profile regression checks.",
+      "create_content.create_account": "Not required for minimal optimized profile regression checks.",
+      "create_content.create_user_key": "Not required for minimal optimized profile regression checks.",
+      "create_content.get_keyword_measuring_status": "Not required for minimal optimized profile regression checks."
+    }
+  }
 }

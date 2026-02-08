@@ -1,0 +1,144 @@
+{
+  "$schema": "../../profile-schema.json",
+  "profile_name": "github_security",
+  "profile_id": "github-security",
+  "profile_aliases": ["github_security"],
+  "openapi_spec_path": "./openapi.yaml",
+  "description": "GitHub Code Scanning alert operations for triage and remediation workflows.",
+  "parameter_aliases": {
+    "alert_number": ["alertNumber"],
+    "tool_name": ["tool"]
+  },
+  "tools": [
+    {
+      "name": "retrieve_content",
+      "description": "Read-only access to GitHub code scanning alerts. Actions: 'list_alerts', 'get_alert', 'list_alert_instances'.",
+      "metadata_params": ["action"],
+      "operations": {
+        "list_alerts": "listCodeScanningAlerts",
+        "get_alert": "getCodeScanningAlert",
+        "list_alert_instances": "listCodeScanningAlertInstances"
+      },
+      "response_fields": {
+        "list_alerts": ["number", "state", "rule", "tool", "html_url", "created_at", "updated_at", "dismissed_reason"],
+        "get_alert": ["number", "state", "rule", "tool", "html_url", "created_at", "updated_at", "dismissed_reason", "dismissed_comment", "most_recent_instance"],
+        "list_alert_instances": ["ref", "analysis_key", "environment", "category", "state", "commit_sha", "message", "location"]
+      },
+      "parameters": {
+        "action": {
+          "type": "string",
+          "enum": ["list_alerts", "get_alert", "list_alert_instances"],
+          "description": "Action to perform",
+          "required": true
+        },
+        "owner": {
+          "type": "string",
+          "description": "Repository owner",
+          "required": true
+        },
+        "repo": {
+          "type": "string",
+          "description": "Repository name",
+          "required": true
+        },
+        "alert_number": {
+          "type": "integer",
+          "description": "Alert number",
+          "required_for": ["get_alert", "list_alert_instances"]
+        },
+        "state": {
+          "type": "string",
+          "enum": ["open", "closed", "dismissed", "fixed"],
+          "description": "Filter by alert state"
+        },
+        "ref": {
+          "type": "string",
+          "description": "Filter by ref (branch)"
+        },
+        "severity": {
+          "type": "string",
+          "enum": ["critical", "high", "medium", "low", "warning", "note", "error"],
+          "description": "Filter by severity"
+        },
+        "tool_name": {
+          "type": "string",
+          "description": "Filter by analysis tool name"
+        },
+        "page": {
+          "type": "integer",
+          "description": "Page number",
+          "default": 1
+        },
+        "per_page": {
+          "type": "integer",
+          "description": "Items per page",
+          "default": 30
+        }
+      }
+    },
+    {
+      "name": "update_content",
+      "description": "Update GitHub code scanning alerts. Actions: 'update_alert'.",
+      "metadata_params": ["action"],
+      "operations": {
+        "update_alert": "updateCodeScanningAlert"
+      },
+      "response_fields": {
+        "update_alert": ["number", "state", "dismissed_reason", "dismissed_comment", "updated_at"]
+      },
+      "parameters": {
+        "action": {
+          "type": "string",
+          "enum": ["update_alert"],
+          "description": "Action to perform",
+          "required": true
+        },
+        "owner": {
+          "type": "string",
+          "description": "Repository owner",
+          "required": true
+        },
+        "repo": {
+          "type": "string",
+          "description": "Repository name",
+          "required": true
+        },
+        "alert_number": {
+          "type": "integer",
+          "description": "Alert number to update",
+          "required_for": ["update_alert"]
+        },
+        "state": {
+          "type": "string",
+          "enum": ["open", "dismissed"],
+          "description": "New alert state",
+          "required_for": ["update_alert"]
+        },
+        "dismissed_reason": {
+          "type": "string",
+          "enum": ["false positive", "won't fix", "used in tests"],
+          "description": "Dismiss reason when state is dismissed"
+        },
+        "dismissed_comment": {
+          "type": "string",
+          "description": "Comment for dismissal"
+        }
+      }
+    }
+  ],
+  "interceptors": {
+    "auth": {
+      "type": "bearer",
+      "value_from_env": "GITHUB_TOKEN"
+    },
+    "base_url": {
+      "value_from_env": "GITHUB_API_BASE_URL",
+      "default": "https://api.github.com"
+    },
+    "retry": {
+      "max_attempts": 3,
+      "backoff_ms": [1000, 2000, 4000],
+      "retry_on_status": [429, 502, 503, 504]
+    }
+  }
+}
