@@ -29,7 +29,7 @@
     "auth": {
       "type": "custom-header",
       "header_name": "Authorization",
-      "value_from_env": "COLLABIM_API_KEY"
+      "value_from_env": "COLLABIM_TOKEN"
     },
     "base_url": {
       "value_from_env": "COLLABIM_API_BASE_URL",
