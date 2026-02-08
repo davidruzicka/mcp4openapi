@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.6] - 2026-02-08
+
+### Changed
+- Use COLLABIM_TOKEN as auth environment variable in profile configuration.
+
 ## [0.3.5] - 2026-02-08
 
 ### Added
