@@ -1798,6 +1798,10 @@ describeIfListen('HttpTransport', () => {
     });
 
     it('should allow initialization when validation endpoint returns 2xx', async () => {
+      // Enable private network access for tests to allow 127.0.0.1 validation
+      const originalAllowPrivateNetwork = process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK;
+      process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK = 'true';
+
       const tokenTransport = new HttpTransport(
         {
           host: '127.0.0.1',
@@ -1807,7 +1811,7 @@ describeIfListen('HttpTransport', () => {
           heartbeatIntervalMs: 30000,
           metricsEnabled: false,
           metricsPath: '/metrics',
-          baseUrl: 'https://api.example.com',
+          baseUrl: 'http://127.0.0.1', // Use IP to avoid DNS lookup issues
           authConfigs: [
             {
               type: 'bearer',
@@ -1835,6 +1839,11 @@ describeIfListen('HttpTransport', () => {
         expect(response.headers['mcp-session-id']).toBeDefined();
       } finally {
         global.fetch = originalFetch;
+        if (originalAllowPrivateNetwork === undefined) {
+          delete process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK;
+        } else {
+          process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK = originalAllowPrivateNetwork;
+        }
         await tokenTransport.stop();
       }
     });

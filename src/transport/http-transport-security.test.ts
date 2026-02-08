@@ -1592,6 +1592,10 @@ describe('HttpTransport security behavior (no listen)', () => {
   });
 
   it('validates auth tokens for bearer/custom-header/query and handles fetch failures', async () => {
+    // Allow private network for testing
+    const originalAllowPrivateNetwork = process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK;
+    process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK = 'true';
+
     const transport = createTransport();
     const originalFetch = global.fetch;
 
@@ -1617,7 +1621,7 @@ describe('HttpTransport security behavior (no listen)', () => {
         (transport as any).validateAuthToken(
           { type: 'bearer', validation_endpoint: '/bearer' },
           'token123',
-          'https://api.example.com'
+          'http://127.0.0.1'
         )
       ).resolves.toBe(true);
 
@@ -1625,7 +1629,7 @@ describe('HttpTransport security behavior (no listen)', () => {
         (transport as any).validateAuthToken(
           { type: 'custom-header', header_name: 'X-API-Key', validation_endpoint: '/header' },
           'token123',
-          'https://api.example.com'
+          'http://127.0.0.1'
         )
       ).resolves.toBe(true);
 
@@ -1633,7 +1637,7 @@ describe('HttpTransport security behavior (no listen)', () => {
         (transport as any).validateAuthToken(
           { type: 'query', query_param: 'api_key', validation_endpoint: '/query' },
           'token123',
-          'https://api.example.com'
+          'http://127.0.0.1'
         )
       ).resolves.toBe(true);
 
@@ -1641,11 +1645,16 @@ describe('HttpTransport security behavior (no listen)', () => {
         (transport as any).validateAuthToken(
           { type: 'bearer', validation_endpoint: '/fail' },
           'token123',
-          'https://api.example.com'
+          'http://127.0.0.1'
         )
       ).resolves.toBe(false);
     } finally {
       global.fetch = originalFetch;
+      if (originalAllowPrivateNetwork === undefined) {
+        delete process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK;
+      } else {
+        process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK = originalAllowPrivateNetwork;
+      }
       await transport.stop();
     }
   });

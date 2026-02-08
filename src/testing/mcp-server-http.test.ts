@@ -18,6 +18,8 @@ describeIfListen('MCPServer HTTP Integration', () => {
 
   beforeAll(async () => {
     originalEnv = { ...process.env };
+    // Enable private network access for tests
+    process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK = 'true';
     originalEnvKeys = new Set(Object.keys(process.env));
     mockApiServer = createServer((req, res) => {
       if (!req.url) {

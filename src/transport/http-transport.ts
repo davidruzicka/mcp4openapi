@@ -28,6 +28,7 @@ import type {
 import { isInitializeRequest } from '../validation/jsonrpc-validator.js';
 import { MetricsCollector } from '../core/metrics.js';
 import { ExternalOAuthProvider } from '../auth/oauth-provider.js';
+import { SSRFValidator } from '../security/ssrf-validator.js';
 import type { AuthInterceptor, OAuthConfig } from '../types/profile.js';
 import { HTTP_STATUS, MIME_TYPES, OAUTH_PATHS, TIMEOUTS, OAUTH_RATE_LIMIT, PROXY_CREDENTIALS } from '../core/constants.js';
 import { escapeHtmlSafe, isSafePropertyName } from '../validation/validation-utils.js';
@@ -89,11 +90,13 @@ export class HttpTransport {
   private profileHintsByClient: Map<string, { profileId: string; lastSeen: number }> = new Map();
   private static readonly PROFILE_HINT_TTL_MS = 10 * 60 * 1000;
   private profileIndexProvider: (() => Promise<ListedProfileDetails[]>) | null = null;
+  private ssrfValidator: SSRFValidator;
 
   constructor(config: HttpTransportConfig, logger: Logger) {
     // Freeze config to prevent runtime mutation of security-critical settings (allowedOrigins, rate limits, etc.)
     this.config = Object.freeze({ ...config });
     this.logger = logger;
+    this.ssrfValidator = new SSRFValidator(logger);
     
     // Initialize metrics if enabled
     if (config.metricsEnabled) {
@@ -1986,6 +1989,11 @@ export class HttpTransport {
         authType: authConfig.type,
       });
 
+      // Validate URL against SSRF rules before fetching
+      await this.ssrfValidator.validate(url.toString(), {
+        allowPrivateNetwork: process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK === 'true'
+      });
+
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), timeout);
 
@@ -1993,6 +2001,7 @@ export class HttpTransport {
         method,
         headers,
         signal: controller.signal,
+        redirect: 'error', // Prevent redirects to avoid SSRF bypass
       });
 
       clearTimeout(timeoutId);
