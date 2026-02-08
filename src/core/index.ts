@@ -19,6 +19,7 @@ import { listProfiles } from '../profile/profile-resolver.js';
 import { resolveStartupProfile } from '../profile/startup-profile.js';
 import { isProfileAllowed, parseProfileAllowlistConfig } from '../profile/profile-allowlist.js';
 import { SSRFValidator } from '../security/ssrf-validator.js';
+import { parseOAuthMetadataEndpoints } from '../auth/oauth-metadata.js';
 
 // Bootstrap SSRF checks run before runtime logger setup, so use a no-op logger here.
 const bootstrapUrlValidator = new SSRFValidator({
@@ -52,12 +53,8 @@ export async function fetchOAuthMetadata(issuerUrl: string): Promise<{ authoriza
       return null;
     }
     
-    const metadata = await response.json() as any;
-    return {
-      authorization_endpoint: metadata.authorization_endpoint,
-      token_endpoint: metadata.token_endpoint,
-    };
-  } catch (error) {
+    return parseOAuthMetadataEndpoints(await response.json());
+  } catch {
     return null;
   }
 }
@@ -202,7 +199,6 @@ export async function main() {
   const {
     specPath,
     profilePath,
-    profileId,
     defaultProfile,
     hasExplicitSpecPath,
   } = await resolveStartupProfile({

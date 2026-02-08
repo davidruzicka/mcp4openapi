@@ -99,7 +99,7 @@ export class SchemaValidator {
     // Enum validation
     // Note: Using 'as any' here is safe - we're checking if value exists in enum array
     // TypeScript doesn't know the enum values at compile time
-    if (schema.enum && !schema.enum.includes(data as any)) {
+    if (schema.enum && !schema.enum.includes(data)) {
       errors.push({
         path: path || '(root)',
         message: `Value must be one of: ${schema.enum.join(', ')}`,

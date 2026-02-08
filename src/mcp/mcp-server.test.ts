@@ -10,7 +10,6 @@ import fs from 'fs/promises';
 import os from 'os';
 import { MCPServer } from './mcp-server.js';
 import { HttpTransport } from '../transport/http-transport.js';
-import { ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { JsonLogger } from '../core/logger.js';
 import { Server as MCPProtocolServer } from '@modelcontextprotocol/sdk/server/index.js';
 import { parseSessionToolFilterHeader } from '../tool-filter/index.js';
@@ -35,6 +34,8 @@ type ToolCallResponse = {
     data?: any;
   };
 };
+
+type RequestHandler = (request: unknown) => Promise<unknown>;
 
 const asToolCallResponse = (value: unknown): ToolCallResponse => value as ToolCallResponse;
 
@@ -1785,9 +1786,9 @@ describe('MCPServer', () => {
     it('CallTool request handler returns a user-friendly error when server is not initialized', async () => {
       const server = new MCPServer();
 
-      const handlers: Array<{ schema: unknown; handler: Function }> = [];
+      const handlers: Array<{ schema: unknown; handler: RequestHandler }> = [];
       const originalSet = (server as any).server.setRequestHandler.bind((server as any).server);
-      (server as any).server.setRequestHandler = (schema: unknown, handler: Function) => {
+      (server as any).server.setRequestHandler = (schema: unknown, handler: RequestHandler) => {
         handlers.push({ schema, handler });
         return originalSet(schema, handler);
       };
@@ -1921,9 +1922,9 @@ describe('MCPServer', () => {
     it('covers CallTool handler tool-not-found and simple tool execution branches', async () => {
       const s = new MCPServer();
 
-      const handlers: Array<{ schema: unknown; handler: Function }> = [];
+      const handlers: Array<{ schema: unknown; handler: RequestHandler }> = [];
       const originalSet = (s as any).server.setRequestHandler.bind((s as any).server);
-      (s as any).server.setRequestHandler = (schema: unknown, handler: Function) => {
+      (s as any).server.setRequestHandler = (schema: unknown, handler: RequestHandler) => {
         handlers.push({ schema, handler });
         return originalSet(schema, handler);
       };
@@ -2264,8 +2265,6 @@ describe('MCPServer', () => {
   describe('setupHandlers (MCP SDK)', () => {
     it('ListTools handler should wrap errors with correlation ID when uninitialized', async () => {
       const setHandlerSpy = vi.spyOn(MCPProtocolServer.prototype as any, 'setRequestHandler');
-      const server = new MCPServer();
-
       const listCall = setHandlerSpy.mock.calls.find(call => {
         const schema: any = call[0];
         return schema?.shape?.method?.value === 'tools/list';

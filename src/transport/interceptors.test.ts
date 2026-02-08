@@ -6,7 +6,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { HttpClient, InterceptorChain } from './interceptors.js';
-import { createTestHttpClient, setupFetchMock, setupErrorFetchMock, setupNetworkErrorFetchMock, setupRateLimitFetchMock, restoreFetch } from '../testing/test-http-utils.js';
+import { createTestHttpClient, setupFetchMock, setupErrorFetchMock, restoreFetch } from '../testing/test-http-utils.js';
 import type { InterceptorConfig } from '../types/profile.js';
 import { AuthenticationError, AuthorizationError, RateLimitError, NetworkError } from '../core/errors.js';
 import { MetricsCollector } from '../core/metrics.js';
@@ -55,8 +55,8 @@ describe('HttpClient - Auth Interceptors', () => {
     const client = new HttpClient('https://api.example.com', interceptors);
 
     let capturedHeaders: Record<string, string> = {};
-    global.fetch = async (url: RequestInfo | URL, init?: RequestInit) => {
-      capturedHeaders = init?.headers as Record<string, string>;
+    global.fetch = async (_url: RequestInfo | URL, _init?: RequestInit) => {
+      capturedHeaders = _init?.headers as Record<string, string>;
       return new Response(JSON.stringify({ ok: true }), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
@@ -131,7 +131,7 @@ describe('HttpClient - Auth Interceptors', () => {
     const client = new HttpClient('https://api.example.com', interceptors);
 
     let capturedUrl = '';
-    global.fetch = async (url: RequestInfo | URL, init?: RequestInit) => {
+    global.fetch = async (url: RequestInfo | URL, _init?: RequestInit) => {
       capturedUrl = url.toString();
       return new Response(JSON.stringify({ ok: true }), {
         status: 200,

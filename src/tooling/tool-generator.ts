@@ -266,7 +266,7 @@ export class ToolGenerator {
       let binaryString: string;
       try {
         binaryString = atob(base64Content);
-      } catch (error) {
+      } catch {
         throw new ValidationError('Invalid base64 content');
       }
       const bytes = new Uint8Array(binaryString.length);

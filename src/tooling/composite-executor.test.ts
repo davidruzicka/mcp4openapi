@@ -225,9 +225,7 @@ describe('CompositeExecutor', () => {
     });
 
     it('handles errors in parallel execution', async () => {
-      let callCount = 0;
       httpClient.request = vi.fn(async (method: string, path: string) => {
-        callCount++;
         if (path === '/projects/fail') {
           throw new Error('API failure');
         }

@@ -72,7 +72,10 @@ export function parseSessionToolFilterHeader(headerValue: string): SessionToolFi
 export function applySessionToolFilter(
   tools: ToolDefinition[],
   request: SessionToolFilterRequest,
-  resolver?: { getOperationById?: (id: string) => any; getOperationForCall?: (call: string) => any }
+  resolver?: {
+    getOperationById?: (id: string) => ReturnType<OperationResolver['getOperationById']>;
+    getOperationForCall?: (call: string) => ReturnType<OperationResolver['getOperationForCall']>;
+  }
 ): SessionToolFilter {
   const detector = resolver
     ? new OperationDetector(

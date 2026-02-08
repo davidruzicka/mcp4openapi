@@ -55,7 +55,7 @@ describeIfListen('OAuth Security Issues - Proof Tests', () => {
   describe('Issue #1: Missing Rate Limiting on OAuth Endpoints', () => {
     it('should HAVE rate limiting on /oauth/authorize (AFTER FIX)', async () => {
       // Make many rapid requests - rate limiting should reject some
-      const requests = Array.from({ length: 15 }, (_, i) =>
+      const requests = Array.from({ length: 15 }, (_, _i) =>
         request(app)
           .get('/oauth/authorize')
           .query({

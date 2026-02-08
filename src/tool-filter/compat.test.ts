@@ -47,8 +47,8 @@ describe('compat functions', () => {
     it('works with resolver', () => {
       const request = parseSessionToolFilterHeader('get_user');
       const resolver = {
-        getOperationById: (id: string) => undefined,
-        getOperationForCall: (call: string) => undefined
+        getOperationById: (_id: string) => undefined,
+        getOperationForCall: (_call: string) => undefined
       };
       
       const result = applySessionToolFilter(tools, request, resolver);

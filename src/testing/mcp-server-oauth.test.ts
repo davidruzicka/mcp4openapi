@@ -1,5 +1,5 @@
 
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { it, expect, beforeAll, afterAll } from 'vitest';
 import request from 'supertest';
 import { MCPServer } from '../mcp/mcp-server.js';
 import path from 'path';

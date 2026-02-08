@@ -8,7 +8,7 @@
  * - 401 when no auth provided
  */
 
-import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import request from 'supertest';
 import { HttpTransport } from '../transport/http-transport.js';
 import { ConsoleLogger } from '../core/logger.js';

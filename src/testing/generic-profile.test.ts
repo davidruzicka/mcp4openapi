@@ -5,7 +5,6 @@ import { MCPServer } from '../mcp/mcp-server.js';
 import { OpenAPIParser } from '../openapi/openapi-parser.js';
 import { DynamicMockEngine } from './dynamic-mock-server.js';
 import { loadTestDefinitionSync, validateTestAgainstProfile } from './test-loader.js';
-import { ProfileTestDefinition } from './test-schema.js';
 import { processTemplate } from './template-utils.js';
 import { Profile } from '../types/profile.js';
 import { ProfileLoader } from '../profile/profile-loader.js';

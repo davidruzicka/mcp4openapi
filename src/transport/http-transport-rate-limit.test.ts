@@ -3,7 +3,6 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import type { Server as HttpServer } from 'http';
 import { HttpTransport } from './http-transport.js';
 import { ConsoleLogger } from '../core/logger.js';
 import type { HttpTransportConfig } from '../types/http-transport.js';
@@ -17,7 +16,6 @@ function getNextPort(): number {
 
 describeIfListen('HttpTransport Rate Limiting', () => {
   let transport: HttpTransport;
-  let server: HttpServer | null = null;
   let testPort: number;
 
   afterEach(async () => {
@@ -44,7 +42,7 @@ describeIfListen('HttpTransport Rate Limiting', () => {
       };
 
       transport = new HttpTransport(config, new ConsoleLogger());
-      transport.setMessageHandler(async (message: unknown) => {
+      transport.setMessageHandler(async (_message: unknown) => {
         return { jsonrpc: '2.0', result: { success: true }, id: 1 };
       });
 
@@ -190,7 +188,7 @@ describeIfListen('HttpTransport Rate Limiting', () => {
       };
 
       transport = new HttpTransport(config, new ConsoleLogger());
-      transport.setMessageHandler(async (message: unknown) => {
+      transport.setMessageHandler(async (_message: unknown) => {
         return { jsonrpc: '2.0', result: { success: true }, id: 1 };
       });
 

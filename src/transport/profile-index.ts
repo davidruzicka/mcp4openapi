@@ -302,7 +302,7 @@ function buildProfileSnippets(profile: ListedProfileDetails, labels: ProfileInde
     const suffix = authLabel ? ` - ${authLabel}` : '';
     const authKey = auth.type;
     authTabs.push({ key: authKey, label: authLabel || auth.type });
-    const snippetContext = buildConnectionSnippets(auth, labels);
+    const snippetContext = buildConnectionSnippets(auth);
 
     snippets.push({
       key: `vscode-${auth.type}`,
@@ -338,8 +338,7 @@ function buildProfileSnippets(profile: ListedProfileDetails, labels: ProfileInde
 }
 
 function buildConnectionSnippets(
-  auth: RenderAuthMethod,
-  labels: ProfileIndexI18n
+  auth: RenderAuthMethod
 ): { vscode: string; cursor: string; jetbrains: string; claude: string } {
   const tokenEnv = auth.type === 'none'
     ? undefined
