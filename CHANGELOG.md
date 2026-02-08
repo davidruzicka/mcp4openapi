@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.7] - 2026-02-08
+
 ### Added
 - Added a new GitHub Security profile for code scanning alerts (list/get/instances/update) with dedicated OpenAPI spec and profile test coverage.
 - Added missing Collabim profile test definition and aligned optimized Collabim test coverage rules so the profile coverage gate passes.
