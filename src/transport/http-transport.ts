@@ -1957,6 +1957,11 @@ export class HttpTransport {
     }
 
     const url = this.buildUrl(authConfig.validation_endpoint, baseUrl);
+    const baseUrlObj = new URL(baseUrl);
+    const absoluteEndpoint =
+      authConfig.validation_endpoint.startsWith('http://') ||
+      authConfig.validation_endpoint.startsWith('https://');
+    const allowedHosts = [baseUrlObj.hostname, ...(authConfig.validation_allowed_hosts || [])];
     const headers: Record<string, string> = {};
     const method = authConfig.validation_method || 'GET';
     const timeout = authConfig.validation_timeout_ms || 5000;
@@ -1989,9 +1994,20 @@ export class HttpTransport {
         authType: authConfig.type,
       });
 
+      if (
+        absoluteEndpoint &&
+        url.origin !== baseUrlObj.origin &&
+        !this.isAllowedValidationHost(url.hostname, authConfig.validation_allowed_hosts)
+      ) {
+        throw new ValidationError(
+          `validation_endpoint host '${url.hostname}' is not allowed (must match base_url origin or validation_allowed_hosts)`
+        );
+      }
+
       // Validate URL against SSRF rules before fetching
       await this.ssrfValidator.validate(url.toString(), {
-        allowPrivateNetwork: process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK === 'true'
+        allowPrivateNetwork: process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK === 'true',
+        allowedHosts,
       });
 
       const controller = new AbortController();
@@ -2020,6 +2036,24 @@ export class HttpTransport {
       });
       return false;
     }
+  }
+
+  private isAllowedValidationHost(hostname: string, allowedHosts?: string[]): boolean {
+    if (!allowedHosts || allowedHosts.length === 0) {
+      return false;
+    }
+
+    const lower = hostname.toLowerCase();
+    return allowedHosts.some(patternRaw => {
+      const pattern = patternRaw.toLowerCase().trim();
+      if (!pattern) return false;
+      if (pattern.startsWith('*.')) {
+        const suffix = pattern.slice(2);
+        if (!suffix) return false;
+        return lower.endsWith(`.${suffix}`);
+      }
+      return lower === pattern;
+    });
   }
 
   /**

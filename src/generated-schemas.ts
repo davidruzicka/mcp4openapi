@@ -108,7 +108,8 @@ export const authInterceptorSchema = z.object({
     }).optional(),
     validation_endpoint: z.string().optional(),
     validation_method: z.union([z.literal("GET"), z.literal("HEAD")]).optional(),
-    validation_timeout_ms: z.number().optional()
+    validation_timeout_ms: z.number().optional(),
+    validation_allowed_hosts: z.array(z.string()).optional()
 });
 
 export const interceptorConfigSchema = z.object({

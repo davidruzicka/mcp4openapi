@@ -412,6 +412,12 @@
         },
         "validation_timeout_ms": {
           "type": "number"
+        },
+        "validation_allowed_hosts": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         }
       },
       "required": [

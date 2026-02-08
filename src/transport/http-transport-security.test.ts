@@ -1614,6 +1614,7 @@ describe('HttpTransport security behavior (no listen)', () => {
         if (urlString.includes('bearer')) {
           expect(init?.headers?.Authorization).toBe('Bearer token123');
         }
+        expect(init?.redirect).toBe('error');
         return { status: 204 } as any;
       });
 
@@ -1648,6 +1649,63 @@ describe('HttpTransport security behavior (no listen)', () => {
           'http://127.0.0.1'
         )
       ).resolves.toBe(false);
+    } finally {
+      global.fetch = originalFetch;
+      if (originalAllowPrivateNetwork === undefined) {
+        delete process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK;
+      } else {
+        process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK = originalAllowPrivateNetwork;
+      }
+      await transport.stop();
+    }
+  });
+
+  it('blocks absolute validation endpoint on untrusted host and does not call fetch', async () => {
+    const transport = createTransport();
+    const fetchMock = vi.fn(async () => ({ status: 204 }) as any);
+    const originalFetch = global.fetch;
+
+    try {
+      global.fetch = fetchMock as any;
+
+      await expect(
+        (transport as any).validateAuthToken(
+          { type: 'bearer', validation_endpoint: 'https://evil.example/validate' },
+          'token123',
+          'https://api.example.com'
+        )
+      ).resolves.toBe(false);
+
+      expect(fetchMock).not.toHaveBeenCalled();
+    } finally {
+      global.fetch = originalFetch;
+      await transport.stop();
+    }
+  });
+
+  it('allows absolute validation endpoint on trusted host from validation_allowed_hosts', async () => {
+    const transport = createTransport();
+    const originalFetch = global.fetch;
+    const originalAllowPrivateNetwork = process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK;
+
+    try {
+      process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK = 'true';
+      global.fetch = vi.fn(async (_url: any, init?: any) => {
+        expect(init?.redirect).toBe('error');
+        return { status: 204 } as any;
+      });
+
+      await expect(
+        (transport as any).validateAuthToken(
+          {
+            type: 'bearer',
+            validation_endpoint: 'http://127.0.0.1/validate',
+            validation_allowed_hosts: ['127.0.0.1'],
+          },
+          'token123',
+          'https://api.example.com'
+        )
+      ).resolves.toBe(true);
     } finally {
       global.fetch = originalFetch;
       if (originalAllowPrivateNetwork === undefined) {
