@@ -15,7 +15,6 @@ import fs from 'fs';
 import crypto from 'crypto';
 import { isIP } from 'node:net';
 import rateLimit from 'express-rate-limit';
-import { mcpAuthRouter } from '@modelcontextprotocol/sdk/server/auth/router.js';
 import type { Logger } from '../core/logger.js';
 import type {
   SessionData,
@@ -62,8 +61,6 @@ import {
   parseAcceptLanguage,
   renderProfileIndexHtml,
 } from './profile-index.js';
-
-import type { OpenAPIParser } from '../openapi/openapi-parser.js';
 const DEFAULT_MAX_TOKEN_LENGTH = 1000;
 
 interface ProfileRuntimeState {
@@ -73,6 +70,18 @@ interface ProfileRuntimeState {
   toolFilterService?: ToolFilterService;
   oauthTokensByAccessToken: Map<string, { refreshToken?: string; expiresAt?: number; clientId: string; scopes: string[] }>;
   sessions: Map<string, SessionData>;
+}
+
+interface RequestWithStartTime extends Request {
+  startTime?: number;
+}
+
+interface OAuthRequiredErrorResponse {
+  error?: {
+    data?: {
+      oauth_required?: boolean;
+    };
+  };
 }
 
 export class HttpTransport {
@@ -186,26 +195,30 @@ export class HttpTransport {
 
     // Metrics: Track request start time
     this.app.use((req: Request, res: Response, next: NextFunction) => {
-      (req as any).startTime = Date.now();
+      (req as RequestWithStartTime).startTime = Date.now();
 
       // Log response
       const originalSend = res.send;
       const originalJson = res.json;
       const logger = this.logger;
 
-      res.send = function(body: any) {
+      res.send = function(body: unknown) {
         logger.debug('Outgoing response', {
           method: req.method,
           url: req.url,
           status: res.statusCode,
           contentType: res.get('content-type'),
-          bodyLength: body ? body.length : 0,
+          bodyLength: typeof body === 'string'
+            ? body.length
+            : Buffer.isBuffer(body)
+              ? body.length
+              : 0,
           bodyPreview: typeof body === 'string' ? body.substring(0, 200) : '[object]'
         });
         return originalSend.call(this, body);
       };
 
-      res.json = function(body: any) {
+      res.json = function(body: unknown) {
         logger.debug('Outgoing JSON response', {
           method: req.method,
           url: req.url,
@@ -1096,7 +1109,6 @@ export class HttpTransport {
     const registerOAuthRoutes = (basePath: string, includeProfileParam: boolean, includeProtectedResource: boolean): void => {
       const middlewares: RequestHandler[] = includeProfileParam ? [attachProfileId] : [];
 
-      const withOAuthRateLimit = [ ...middlewares, oauthRateLimiter ];
       const withProfile = (handler: (req: Request, res: Response, profileState: ProfileRuntimeState) => Promise<void> | void): RequestHandler[] => {
         return [ ...middlewares, oauthRateLimiter, withProfileState(handler) ];
       };
@@ -1356,19 +1368,19 @@ export class HttpTransport {
 
       // Legacy alias endpoints - deprecated
       // Why: Backward compatibility for clients using /sse during migration
-      this.app.post(`${pathPrefix}/sse`, ...middlewares, mcpRateLimiter, (req: Request, res: Response, next: NextFunction) => {
+      this.app.post(`${pathPrefix}/sse`, ...middlewares, mcpRateLimiter, (req: Request, res: Response) => {
         this.logger.warn('Deprecated endpoint used: POST /sse. Please migrate to POST /mcp');
         this.logger.info('Handling POST /sse request');
-        return (this.handlePost as any)(req, res, next);
+        return this.handlePost(req as McpRequest, res);
       });
-      this.app.get(`${pathPrefix}/sse`, ...middlewares, mcpRateLimiter, (req: Request, res: Response, next: NextFunction) => {
+      this.app.get(`${pathPrefix}/sse`, ...middlewares, mcpRateLimiter, (req: Request, res: Response) => {
         this.logger.warn('Deprecated endpoint used: GET /sse. Please migrate to GET /mcp');
         this.logger.info(`Handling GET /sse request from: ${req.ip}`);
-        return (this.handleGet as any)(req as any, res, next);
+        return this.handleGet(req as McpRequest, res);
       });
-      this.app.delete(`${pathPrefix}/sse`, ...middlewares, mcpRateLimiter, (req: Request, res: Response, next: NextFunction) => {
+      this.app.delete(`${pathPrefix}/sse`, ...middlewares, mcpRateLimiter, (req: Request, res: Response) => {
         this.logger.warn('Deprecated endpoint used: DELETE /sse. Please migrate to DELETE /mcp');
-        return (this.handleDelete as any)(req as any, res, next);
+        return this.handleDelete(req as McpRequest, res);
       });
 
       if (isDefault) {
@@ -1518,7 +1530,14 @@ export class HttpTransport {
     const serverUrl = new URL(this.buildProfileUrl(profileId, '/mcp', urlOptions));
     const issuerUrl = this.getProfileIssuerUrl(profileId, urlOptions);
 
-    const metadata: any = {
+    const metadata: {
+      resource: string;
+      authorization_servers: string[];
+      bearer_methods_supported: string[];
+      scopes_supported?: string[];
+      resource_name?: string;
+      resource_documentation?: string;
+    } = {
       resource: serverUrl.href,
       authorization_servers: [issuerUrl],
       bearer_methods_supported: ['header'],
@@ -1871,7 +1890,13 @@ export class HttpTransport {
         scope: (profileState.oauthProvider.scopes || []).join(' '),
       };
 
-      await (profileState.oauthProvider.clientsStore as any).registerClient(client);
+      const registerClient = profileState.oauthProvider.clientsStore.registerClient?.bind(
+        profileState.oauthProvider.clientsStore
+      );
+      if (!registerClient) {
+        throw new Error('OAuth clients store does not support registration');
+      }
+      await registerClient(client);
 
       res.status(HTTP_STATUS.CREATED).json({
         client_id: clientId,
@@ -1893,9 +1918,7 @@ export class HttpTransport {
    * 
    * Why: Prometheus scraping endpoint
    */
-  private async handleMetrics(req: Request, res: Response): Promise<void> {
-    const startTime = Date.now();
-    
+  private async handleMetrics(_req: Request, res: Response): Promise<void> {
     try {
       if (!this.metrics) {
         res.status(HTTP_STATUS.NOT_FOUND).json({ error: 'Not Found', message: 'Metrics disabled' });
@@ -2242,7 +2265,11 @@ export class HttpTransport {
 
       // Check if this is initialization (no session ID yet)
       const isInitialization = isInitializeRequest(body);
-      this.logger.debug('Session validation', { isInitialization, sessionId, bodyMethod: (body as any)?.method });
+      const bodyMethod =
+        typeof body === 'object' && body !== null && 'method' in body
+          ? (body as { method?: unknown }).method
+          : undefined;
+      this.logger.debug('Session validation', { isInitialization, sessionId, bodyMethod });
 
       // Validate session (except for initialization)
       if (!isInitialization && sessionId) {
@@ -2401,15 +2428,15 @@ export class HttpTransport {
         this.logger.debug('MessageHandler response', { response });
 
         // Debug: Check OAuth conditions
+        const responseObj = response as OAuthRequiredErrorResponse;
         this.logger.debug('Checking OAuth conditions', {
-          responseError: (response as any).error,
+          responseError: responseObj.error,
           hasOAuthProvider: !!profileState.oauthProvider,
           oauthProviderType: typeof profileState.oauthProvider
         });
 
 
         // Check if response contains OAuth error and add WWW-Authenticate header
-        const responseObj = response as any;
         if (responseObj.error && responseObj.error.data && responseObj.error.data.oauth_required) {
           const resourceMetadataUrl = this.getOAuthProtectedResourceUrl(requestProfileId);
           res.setHeader('WWW-Authenticate', `Bearer resource_metadata="${resourceMetadataUrl}", scope="api"`);
@@ -2423,7 +2450,7 @@ export class HttpTransport {
         if (wantsOnlySSE) {
           // Return SSE response only when client explicitly wants text/event-stream only
           this.logger.debug('Sending SSE response', { response, newSessionId });
-          this.startSSEResponse(res, response, newSessionId, sessionId);
+          this.startSSEResponse(res, response, newSessionId);
         } else {
           // Return JSON response (default for requests)
           if (newSessionId) {
@@ -2607,8 +2634,7 @@ export class HttpTransport {
   private startSSEResponse(
     res: Response,
     response: unknown,
-    newSessionId: string | undefined,
-    sessionId: string | undefined
+    newSessionId: string | undefined
   ): void {
     res.setHeader('Content-Type', MIME_TYPES.EVENT_STREAM);
     res.setHeader('Cache-Control', 'no-cache');
@@ -2720,7 +2746,7 @@ export class HttpTransport {
     };
 
     // Send to all active streams for this session
-    for (const [streamId, streamState] of session.sseStreams) {
+    for (const streamState of session.sseStreams.values()) {
       if (streamState.active) {
         // Queue for resumability
         streamState.messageQueue.push(queuedMessage);
