@@ -370,9 +370,10 @@ Adds: `Authorization: Bearer <token>`
 - `validation_endpoint`: API endpoint to verify token (relative to base URL, e.g., `user` or `personal_access_tokens/self`)
 - `validation_method`: HTTP method for validation (`GET` or `HEAD`, default: `GET`)
 - `validation_timeout_ms`: Timeout in milliseconds (default: `5000`)
+- `validation_allowed_hosts`: Optional host allowlist for absolute `validation_endpoint` URLs
 - Validates token during initialization to fail fast with invalid tokens
 - Improves UX by rejecting bad tokens immediately, not after first tool call
-- **Note**: Endpoint is relative to `base_url` from interceptors or `MCP4_API_BASE_URL` environment variable
+- **Note**: Relative endpoints use `base_url`; absolute endpoints must match `base_url` origin unless host is in `validation_allowed_hosts`
 
 #### Custom Header
 

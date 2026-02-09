@@ -5,8 +5,6 @@
  * Provides consistent parameter parsing and validation
  */
 
-import type { HttpHandler } from 'msw';
-
 /**
  * Parse URL from MSW request
  */
@@ -69,4 +67,3 @@ export function applyPagination<T>(
   const offset = calculateOffset(page, perPage);
   return data.slice(offset, offset + perPage);
 }
-

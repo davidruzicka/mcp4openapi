@@ -13,6 +13,19 @@ const testGlobals = {
   vi: "readonly",
 };
 
+const nodeGlobals = {
+  AbortController: "readonly",
+  AbortSignal: "readonly",
+  Buffer: "readonly",
+  URL: "readonly",
+  console: "readonly",
+  process: "readonly",
+  setInterval: "readonly",
+  clearInterval: "readonly",
+  setTimeout: "readonly",
+  clearTimeout: "readonly",
+};
+
 export default [
   {
     ignores: ["coverage/**", "dist/**", "node_modules/**"],
@@ -23,6 +36,20 @@ export default [
     languageOptions: {
       ecmaVersion: "latest",
       sourceType: "module",
+      globals: nodeGlobals,
+    },
+  },
+  {
+    files: ["scripts/**/*.js", "scripts/**/*.mjs", "scripts/**/*.cjs"],
+    rules: {
+      "no-unused-vars": [
+        "error",
+        {
+          argsIgnorePattern: "^_",
+          varsIgnorePattern: "^_|^__dirname$",
+          caughtErrors: "none",
+        },
+      ],
     },
   },
   {
@@ -51,7 +78,13 @@ export default [
   {
     files: ["**/*.test.ts", "**/__tests__/**/*.ts", "src/testing/**/*.ts", "tests/**/*.ts"],
     languageOptions: {
-      globals: testGlobals,
+      globals: {
+        ...testGlobals,
+        ...nodeGlobals,
+      },
+    },
+    rules: {
+      "@typescript-eslint/no-explicit-any": "off",
     },
   },
 ];

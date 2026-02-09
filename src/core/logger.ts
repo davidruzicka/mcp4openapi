@@ -9,7 +9,7 @@
 
 import { stripVTControlCharacters } from 'node:util';
 import type { AuthInterceptor } from '../types/profile.js';
-import { escapeRegExp, redactHeader, redactQueryParam, redactParam } from '../validation/validation-utils.js';
+import { redactHeader, redactQueryParam, redactParam } from '../validation/validation-utils.js';
 
 const WELL_KNOWN_SECRET_KEYS = new Set([
   'access_token',

@@ -416,11 +416,6 @@ describe('ExternalOAuthProvider', () => {
 
       await provider.authorize(client, params, mockRes as Response);
 
-      // Extract authorization code from redirect URL
-      const redirectCall = (mockRes.redirect as any).mock.calls[0][0];
-      const url = new URL(redirectCall);
-      const state = url.searchParams.get('state');
-
       // Since we don't expose the internal code, we test the error case
       await expect(
         provider.challengeForAuthorizationCode(client, 'invalid-code')

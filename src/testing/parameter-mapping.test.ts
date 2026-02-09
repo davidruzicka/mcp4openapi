@@ -6,7 +6,6 @@ import { OpenAPIParser } from '../openapi/openapi-parser.js';
 import { ProfileLoader } from '../profile/profile-loader.js';
 import { ToolGenerator } from '../tooling/tool-generator.js';
 import { ValidationError } from '../core/errors.js';
-import path from 'path';
 import type { Profile } from '../types/profile.js';
 
 // Mock HttpClient
@@ -15,7 +14,7 @@ vi.mock('../transport/interceptors.js', async (importOriginal) => {
   return {
     ...actual,
     HttpClient: class MockHttpClient {
-      async request(method: string, url: string, options: any) {
+      async request(_method: string, _url: string, _options: any) {
         return {
           data: { id: 'test' },
           status: 200,
@@ -65,36 +64,7 @@ describe('Parameter Mapping Integration', () => {
         }
       ]
     };
-
-    // 2. Setup minimal OpenAPI spec
-    const openApiSpec = {
-      openapi: '3.0.0',
-      info: { title: 'Test API', version: '1.0.0' },
-      paths: {
-        '/items': {
-          get: {
-            operationId: 'listItems',
-            parameters: [
-              {
-                name: '$skip',
-                in: 'query',
-                schema: { type: 'integer' }
-              },
-              {
-                name: '$top',
-                in: 'query',
-                schema: { type: 'integer' }
-              }
-            ],
-            responses: {
-              '200': { description: 'OK' }
-            }
-          }
-        }
-      }
-    };
-
-    // 3. Initialize server components
+    // 2. Initialize server components
     const parser = new OpenAPIParser();
     // Mock getOperation
     vi.spyOn(parser, 'getOperation').mockReturnValue({
@@ -152,9 +122,9 @@ describe('Parameter Mapping Integration', () => {
       }
     );
 
-    // 5. Verify request URL contains mapped parameters
+    // 4. Verify request URL contains mapped parameters
     expect(requestSpy).toHaveBeenCalled();
-    const [method, url, options] = requestSpy.mock.calls[0];
+    const [_method, url, options] = requestSpy.mock.calls[0];
     
     // Expecting: /items?$skip=10&$top=5
     // Note: URLSearchParams might encode $ as %24, but HttpClient usually handles it.

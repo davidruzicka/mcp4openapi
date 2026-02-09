@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
+import { it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { resolve } from 'path';
 import { McpProcess, JsonRpcResponse } from './utils/mcp-process.js';
 import { startStandaloneMockServer, getAvailablePort, MockServerInstance } from './utils/mock-server.js';
@@ -28,6 +28,7 @@ describeIfListen('Branch Protect/Unprotect Idempotency E2E', () => {
     GITLAB_OAUTH_CLIENT_ID: 'test-client-id',
     GITLAB_OAUTH_CLIENT_SECRET: 'test-client-secret',
     GITLAB_OAUTH_REDIRECT_URI: 'http://127.0.0.1/oauth/callback',
+    MCP4_SSRF_ALLOW_PRIVATE_NETWORK: 'true',
   };
 
   beforeAll(async () => {

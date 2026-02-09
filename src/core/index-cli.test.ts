@@ -63,7 +63,7 @@ function mockServerManager(options?: {
 }
 
 function mockLogger() {
-  let lastLogger: any;
+  const loggerInstances: any[] = [];
   class TestLogger {
     info = vi.fn();
     warn = vi.fn();
@@ -74,16 +74,16 @@ function mockLogger() {
     ConsoleLogger: class extends TestLogger {
       constructor() {
         super();
-        lastLogger = this;
+        loggerInstances.push(this);
       }
     },
     JsonLogger: class extends TestLogger {
       constructor() {
         super();
-        lastLogger = this;
+        loggerInstances.push(this);
       }
     },
-    __getLastLogger: () => lastLogger,
+    __getLastLogger: () => loggerInstances.at(-1),
   }));
 }
 

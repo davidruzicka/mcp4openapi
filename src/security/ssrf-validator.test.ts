@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { SSRFValidator } from './ssrf-validator.js';
-import { ValidationError } from '../core/errors.js';
 import type { Logger } from '../core/logger.js';
 
 // Mock DNS lookup

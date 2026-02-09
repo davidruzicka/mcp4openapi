@@ -49,7 +49,7 @@ describeIfListen('HTTP Multi-User Mode (No MCP4_API_TOKEN)', () => {
     baseUrl = `http://127.0.0.1:${address.port}`;
     
     // Set up simple mock message handler
-    httpTransport.setMessageHandler(async (message: unknown, sessionId?: string) => {
+    httpTransport.setMessageHandler(async (message: unknown, _sessionId?: string) => {
       const msg = message as any;
       
       if (msg.method === 'initialize') {

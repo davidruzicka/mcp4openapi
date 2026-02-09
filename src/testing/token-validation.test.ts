@@ -20,8 +20,12 @@ describeIfListen('Token Validation Integration', () => {
   let mockApiPort: number;
   let validationCallCount = 0;
   let lastValidationToken: string | undefined;
+  let originalAllowPrivateNetwork: string | undefined;
 
   beforeAll(async () => {
+    originalAllowPrivateNetwork = process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK;
+    process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK = 'true';
+
     // Setup mock API server for validation endpoint
     const mockApp = (await import('express')).default();
     mockApp.use((await import('express')).default.json());
@@ -155,6 +159,11 @@ describeIfListen('Token Validation Integration', () => {
 
   afterAll(() => {
     mockApiServer.close();
+    if (originalAllowPrivateNetwork === undefined) {
+      delete process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK;
+    } else {
+      process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK = originalAllowPrivateNetwork;
+    }
   });
 
   describe('Valid Token', () => {

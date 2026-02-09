@@ -174,6 +174,7 @@ export interface InterceptorConfig {
  * 
  * Token validation (optional):
  * - validation_endpoint: API endpoint to verify token validity (e.g., "/api/v4/user")
+ * - validation_allowed_hosts: optional host allowlist for absolute validation_endpoint URLs
  * - Validates token during initialization to fail fast with invalid tokens
  * - Improves UX by rejecting bad tokens immediately, not after first tool call
  */
@@ -202,6 +203,7 @@ export interface AuthInterceptor {
   validation_endpoint?: string;  // API endpoint to verify token (e.g., "/api/v4/user")
   validation_method?: 'GET' | 'HEAD';  // HTTP method for validation (default: GET)
   validation_timeout_ms?: number;  // Timeout in milliseconds (default: 5000)
+  validation_allowed_hosts?: string[]; // Optional allowlist for absolute validation endpoint hosts
 }
 
 /**

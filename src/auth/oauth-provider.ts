@@ -32,6 +32,7 @@ import type { Logger } from '../core/logger.js';
 import { OAUTH_CLEANUP, OAUTH_PATHS, PROXY_CREDENTIALS } from '../core/constants.js';
 import { escapeHtmlSafe } from '../validation/validation-utils.js';
 import { SSRFValidator } from '../security/ssrf-validator.js';
+import { parseOAuthMetadataEndpoints } from './oauth-metadata.js';
 
 /**
  * In-memory store for OAuth client registrations
@@ -227,11 +228,7 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
         return null;
       }
       
-      const metadata = await response.json() as any;
-      return {
-        authorization_endpoint: metadata.authorization_endpoint,
-        token_endpoint: metadata.token_endpoint,
-      };
+      return parseOAuthMetadataEndpoints(await response.json());
     } catch (error) {
       this.logger.debug('OAuth metadata fetch failed', { issuerUrl, error });
       return null;

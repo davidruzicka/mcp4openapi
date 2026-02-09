@@ -584,7 +584,7 @@ export class McpProcess extends EventEmitter {
     this.process = null;
     this.isReady = false;
 
-    for (const [id, { reject }] of this.pendingRequests) {
+    for (const [_id, { reject }] of this.pendingRequests) {
       reject(new Error('Process exited'));
     }
     this.pendingRequests.clear();

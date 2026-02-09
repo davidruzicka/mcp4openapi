@@ -28,16 +28,15 @@ import {
   AuthorizationError,
   RateLimitError,
   NetworkError,
-  generateCorrelationId,
-  isMCPError
+  generateCorrelationId
 } from '../core/errors.js';
-import { TIMEOUTS, OAUTH_RATE_LIMIT } from '../core/constants.js';
-import { InterceptorChain, HttpClient } from '../transport/interceptors.js';
+import { OAUTH_RATE_LIMIT } from '../core/constants.js';
+import { HttpClient } from '../transport/interceptors.js';
 import { HttpClientFactory } from '../transport/http-client-factory.js';
 import { SchemaValidator } from '../validation/schema-validator.js';
 import type { Profile, ToolDefinition, AuthInterceptor, OAuthConfig, ProxyDownloadOperation } from '../types/profile.js';
 import type { Logger } from '../core/logger.js';
-import { ConsoleLogger, JsonLogger } from '../core/logger.js';
+import { ConsoleLogger, JsonLogger, LogLevel } from '../core/logger.js';
 import type { OperationInfo, SchemaInfo } from '../types/openapi.js';
 import { isInitializeRequest, isToolCallRequest } from '../validation/jsonrpc-validator.js';
 import { generateNameWarnings, type NameWarningOptions } from '../core/naming-warnings.js';
@@ -55,7 +54,6 @@ import {
   applySessionToolFilter,
   type SessionToolFilterCompat as SessionToolFilter,
   type SessionToolFilterRequest,
-  type ToolFilterConfig,
 } from '../tool-filter/index.js';
 import type { HttpProfileContext } from '../types/http-transport.js';
 import type { HttpTransport } from '../transport/http-transport.js';
@@ -70,7 +68,7 @@ export class MCPServer {
   private compositeExecutor?: CompositeExecutor;
   private schemaValidator: SchemaValidator;
   private logger: Logger;
-  private httpTransport: any = null;
+  private httpTransport: HttpTransport | null = null;
   private stdioFiltering?: FilteringRules;
   private toolFilterService?: ToolFilterService;
   private globalToolFilterSummary?: {
@@ -467,7 +465,7 @@ export class MCPServer {
   private createLoggerWithAuth(authConfig: AuthInterceptor): Logger {
     const logFormat = process.env.MCP4_LOG_FORMAT || 'console';
     const logLevel = this.logger instanceof ConsoleLogger || this.logger instanceof JsonLogger
-      ? (this.logger as any).level
+      ? (this.logger as unknown as { level?: LogLevel }).level
       : undefined;
     
     return logFormat === 'json'
@@ -1298,7 +1296,12 @@ export class MCPServer {
       this.applySessionToolFiltering(sessionId, profileId);
     }
 
-    const result: any = {
+    const result: {
+      protocolVersion: string;
+      serverInfo: { name: string; version: string };
+      capabilities: { tools: Record<string, never> };
+      sessionId?: string;
+    } = {
       protocolVersion: '2025-03-26',
       serverInfo: {
         name: 'mcp4openapi',

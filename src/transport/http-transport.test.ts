@@ -10,7 +10,7 @@ import type { Express } from 'express';
 import fs from 'fs';
 import https from 'https';
 import { HttpTransport } from './http-transport.js';
-import { ConsoleLogger, LogLevel, type Logger } from '../core/logger.js';
+import { ConsoleLogger, type Logger } from '../core/logger.js';
 import { describeIfListen } from '../testing/listen-support.js';
 import { parseSessionToolFilterHeader } from '../tool-filter/index.js';
 
@@ -327,7 +327,7 @@ describeIfListen('HttpTransport', () => {
 
   describe('Security - Origin Validation', () => {
     it('should accept requests from localhost', async () => {
-      transport.setMessageHandler(async (msg) => ({ result: 'ok' }));
+      transport.setMessageHandler(async (_msg) => ({ result: 'ok' }));
 
       const response = await request(app)
         .post('/mcp')
@@ -339,7 +339,7 @@ describeIfListen('HttpTransport', () => {
     });
 
     it('should accept requests from 127.0.0.1', async () => {
-      transport.setMessageHandler(async (msg) => ({ result: 'ok' }));
+      transport.setMessageHandler(async (_msg) => ({ result: 'ok' }));
 
       const response = await request(app)
         .post('/mcp')
@@ -400,7 +400,7 @@ describeIfListen('HttpTransport', () => {
 
       customTransport = new HttpTransport(config, logger);
       customApp = (customTransport as any).app;
-      customTransport.setMessageHandler(async (msg) => ({ result: 'ok' }));
+      customTransport.setMessageHandler(async (_msg) => ({ result: 'ok' }));
     });
 
     afterEach(async () => {
@@ -651,7 +651,7 @@ describeIfListen('HttpTransport', () => {
 
   describe('POST - Initialize Request', () => {
     it('should create session on initialization', async () => {
-      transport.setMessageHandler(async (msg) => ({
+      transport.setMessageHandler(async (_msg) => ({
         protocolVersion: '2025-03-26',
         serverInfo: { name: 'test' },
       }));
@@ -672,7 +672,7 @@ describeIfListen('HttpTransport', () => {
     });
 
     it('should support SSE response for initialization', async () => {
-      transport.setMessageHandler(async (msg) => ({
+      transport.setMessageHandler(async (_msg) => ({
         protocolVersion: '2025-03-26',
         serverInfo: { name: 'test' },
       }));
@@ -698,7 +698,7 @@ describeIfListen('HttpTransport', () => {
 
   describe('POST - Request with Session', () => {
     it('should require session ID for non-initialization requests', async () => {
-      transport.setMessageHandler(async (msg) => ({ result: 'ok' }));
+      transport.setMessageHandler(async (_msg) => ({ result: 'ok' }));
 
       const response = await request(app)
         .post('/mcp')
@@ -715,7 +715,7 @@ describeIfListen('HttpTransport', () => {
     });
 
     it('should reject invalid session ID', async () => {
-      transport.setMessageHandler(async (msg) => ({ result: 'ok' }));
+      transport.setMessageHandler(async (_msg) => ({ result: 'ok' }));
 
       const response = await request(app)
         .post('/mcp')
@@ -733,7 +733,7 @@ describeIfListen('HttpTransport', () => {
     });
 
     it('should process request with valid session', async () => {
-      transport.setMessageHandler(async (msg) => ({ result: 'ok' }));
+      transport.setMessageHandler(async (_msg) => ({ result: 'ok' }));
 
       // First initialize to get session
       const initResponse = await request(app)
@@ -765,7 +765,7 @@ describeIfListen('HttpTransport', () => {
 
   describe('POST - Notifications', () => {
     it('should return 202 for notification-only messages', async () => {
-      transport.setMessageHandler(async (msg) => ({ result: 'ok' }));
+      transport.setMessageHandler(async (_msg) => ({ result: 'ok' }));
 
       // Initialize first
       const initResponse = await request(app)
@@ -797,7 +797,7 @@ describeIfListen('HttpTransport', () => {
 
   describe('POST - Accept Header Validation', () => {
     it('should reject requests with invalid Accept headers', async () => {
-      transport.setMessageHandler(async (msg) => ({ result: 'ok' }));
+      transport.setMessageHandler(async (_msg) => ({ result: 'ok' }));
 
       const response = await request(app)
         .post('/mcp')
@@ -814,7 +814,7 @@ describeIfListen('HttpTransport', () => {
     });
 
     it('should accept requests without Accept header for backward compatibility', async () => {
-      transport.setMessageHandler(async (msg) => ({ result: 'ok' }));
+      transport.setMessageHandler(async (_msg) => ({ result: 'ok' }));
 
       const response = await request(app)
         .post('/mcp')
@@ -830,7 +830,7 @@ describeIfListen('HttpTransport', () => {
     });
 
     it('should accept requests with valid Accept headers', async () => {
-      transport.setMessageHandler(async (msg) => ({ result: 'ok' }));
+      transport.setMessageHandler(async (_msg) => ({ result: 'ok' }));
 
       const response = await request(app)
         .post('/mcp')
@@ -911,7 +911,7 @@ describeIfListen('HttpTransport', () => {
 
   describe('Legacy /sse alias (deprecated)', () => {
     it('should support SSE response for initialization via POST /sse', async () => {
-      transport.setMessageHandler(async (msg) => ({
+      transport.setMessageHandler(async (_msg) => ({
         protocolVersion: '2025-03-26',
         serverInfo: { name: 'test' },
       }));
@@ -944,7 +944,7 @@ describeIfListen('HttpTransport', () => {
     });
 
     it('should delete session via DELETE /sse', async () => {
-      transport.setMessageHandler(async (msg) => ({ result: 'ok' }));
+      transport.setMessageHandler(async (_msg) => ({ result: 'ok' }));
 
       // Create session
       const initResponse = await request(app)
@@ -967,7 +967,7 @@ describeIfListen('HttpTransport', () => {
 
   describe('DELETE - Session Termination', () => {
     it('should delete existing session', async () => {
-      transport.setMessageHandler(async (msg) => ({ result: 'ok' }));
+      transport.setMessageHandler(async (_msg) => ({ result: 'ok' }));
 
       // Create session
       const initResponse = await request(app)
@@ -1033,7 +1033,7 @@ describeIfListen('HttpTransport', () => {
 
   describe('Message Type Detection', () => {
     it('should detect request message', async () => {
-      transport.setMessageHandler(async (msg) => ({ result: 'ok' }));
+      transport.setMessageHandler(async (_msg) => ({ result: 'ok' }));
 
       const response = await request(app)
         .post('/mcp')
@@ -1049,9 +1049,9 @@ describeIfListen('HttpTransport', () => {
     });
 
     it('should handle batch requests', async () => {
-      transport.setMessageHandler(async (msg) => {
-        if (Array.isArray(msg)) {
-          return msg.map((m: any) => ({ id: m.id, result: 'ok' }));
+      transport.setMessageHandler(async (_msg) => {
+        if (Array.isArray(_msg)) {
+          return _msg.map((m: any) => ({ id: m.id, result: 'ok' }));
         }
         return { result: 'ok' };
       });
@@ -1085,7 +1085,7 @@ describeIfListen('HttpTransport', () => {
 
   describe('Error Handling', () => {
     it('should handle message handler errors', async () => {
-      transport.setMessageHandler(async (msg) => {
+      transport.setMessageHandler(async (_msg) => {
         throw new Error('Test error');
       });
 
@@ -1121,7 +1121,7 @@ describeIfListen('HttpTransport', () => {
 
   describe('Session Lifecycle', () => {
     it('should track session activity', async () => {
-      transport.setMessageHandler(async (msg) => ({ result: 'ok' }));
+      transport.setMessageHandler(async (_msg) => ({ result: 'ok' }));
 
       // Create session
       const initResponse = await request(app)
@@ -1144,7 +1144,7 @@ describeIfListen('HttpTransport', () => {
     });
 
     it('should update lastActivityAt on requests', async () => {
-      transport.setMessageHandler(async (msg) => {
+      transport.setMessageHandler(async (_msg) => {
         // Simulate slow operation
         await new Promise(resolve => setTimeout(resolve, 100));
         return { result: 'ok' };
@@ -1200,7 +1200,7 @@ describeIfListen('HttpTransport', () => {
 
       metricsTransport = new HttpTransport(config, logger);
       metricsApp = (metricsTransport as any).app;
-      metricsTransport.setMessageHandler(async (msg) => ({ result: 'ok' }));
+      metricsTransport.setMessageHandler(async (_msg) => ({ result: 'ok' }));
     });
 
     afterEach(async () => {
@@ -1737,7 +1737,7 @@ describeIfListen('HttpTransport', () => {
 
       const tokenTransport = new HttpTransport(configWithMaxLength, logger);
       const tokenApp = (tokenTransport as any).app;
-      tokenTransport.setMessageHandler(async (msg) => ({ result: 'ok' }));
+      tokenTransport.setMessageHandler(async (_msg) => ({ result: 'ok' }));
 
       // Token within limit
       const validToken = 'Bearer ' + 'a'.repeat(400);
@@ -1798,6 +1798,10 @@ describeIfListen('HttpTransport', () => {
     });
 
     it('should allow initialization when validation endpoint returns 2xx', async () => {
+      // Enable private network access for tests to allow 127.0.0.1 validation
+      const originalAllowPrivateNetwork = process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK;
+      process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK = 'true';
+
       const tokenTransport = new HttpTransport(
         {
           host: '127.0.0.1',
@@ -1807,7 +1811,7 @@ describeIfListen('HttpTransport', () => {
           heartbeatIntervalMs: 30000,
           metricsEnabled: false,
           metricsPath: '/metrics',
-          baseUrl: 'https://api.example.com',
+          baseUrl: 'http://127.0.0.1', // Use IP to avoid DNS lookup issues
           authConfigs: [
             {
               type: 'bearer',
@@ -1835,6 +1839,11 @@ describeIfListen('HttpTransport', () => {
         expect(response.headers['mcp-session-id']).toBeDefined();
       } finally {
         global.fetch = originalFetch;
+        if (originalAllowPrivateNetwork === undefined) {
+          delete process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK;
+        } else {
+          process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK = originalAllowPrivateNetwork;
+        }
         await tokenTransport.stop();
       }
     });
@@ -1880,7 +1889,7 @@ describeIfListen('HttpTransport', () => {
         destroyedSessions.push(`${profileId}:${sessionId}`);
       });
 
-      transport.setMessageHandler(async (msg) => ({ result: 'ok' }));
+      transport.setMessageHandler(async (_msg) => ({ result: 'ok' }));
 
       // Create session
       const initResponse = await request(app)
@@ -1905,7 +1914,7 @@ describeIfListen('HttpTransport', () => {
 
   describe('MCP-Session-Id header validation', () => {
     it('should return error for invalid session ID format in tool call', async () => {
-      transport.setMessageHandler(async (msg) => ({ result: 'ok' }));
+      transport.setMessageHandler(async (_msg) => ({ result: 'ok' }));
 
       const response = await request(app)
         .post('/mcp')
@@ -1921,7 +1930,7 @@ describeIfListen('HttpTransport', () => {
 
   describe('Content-Type handling', () => {
     it('should handle requests without Content-Type header', async () => {
-      transport.setMessageHandler(async (msg) => ({ result: 'ok' }));
+      transport.setMessageHandler(async (_msg) => ({ result: 'ok' }));
 
       // This may fail at JSON parsing level but shouldn't crash
       const response = await request(app)
@@ -2194,7 +2203,7 @@ describeIfListen('HttpTransport', () => {
 
     it('should return true for session without expiration info', async () => {
       // Create a session
-      transport.setMessageHandler(async (msg) => ({
+      transport.setMessageHandler(async (_msg) => ({
         jsonrpc: '2.0',
         id: 1,
         result: { protocolVersion: '2025-03-26', capabilities: {}, serverInfo: { name: 'test', version: '1.0' } },
@@ -2428,6 +2437,46 @@ describeIfListen('HttpTransport', () => {
       expect(response.status).toBe(200);
       const [, , profileId] = handler.mock.calls[0];
       expect(profileId).toBe('gitlab');
+
+      await routingTransport.stop();
+    });
+
+    it('supports deprecated /profile/:id/sse alias for initialization', async () => {
+      const routingTransport = new HttpTransport(
+        {
+          host: '127.0.0.1',
+          port: 0,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: false,
+          metricsPath: '/metrics',
+          profileRoutingEnabled: true,
+        },
+        logger
+      );
+      routingTransport.setProfileContextProvider(async (id) => ({ profileId: id }));
+      routingTransport.setMessageHandler(async (_message) => ({
+        protocolVersion: '2025-03-26',
+        serverInfo: { name: 'test' },
+      }));
+
+      const routingApp = (routingTransport as any).app;
+      const response = await request(routingApp)
+        .post('/profile/gitlab/sse')
+        .set('Accept', 'text/event-stream')
+        .send({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'initialize',
+          params: {},
+        });
+
+      expect(response.status).toBe(200);
+      expect(response.headers['content-type']).toContain('text/event-stream');
+      expect(response.headers['mcp-session-id']).toBeDefined();
+      expect(response.text).toContain('id:');
+      expect(response.text).toContain('data:');
 
       await routingTransport.stop();
     });
@@ -3005,7 +3054,6 @@ describeIfListen('HttpTransport', () => {
 
   describe('isAllowedOrigin with OAuth redirect URI', () => {
     let oauthTransport: HttpTransport;
-    let oauthApp: Express;
 
     beforeEach(async () => {
       const oauthConfig = {
@@ -3019,7 +3067,6 @@ describeIfListen('HttpTransport', () => {
       };
 
       oauthTransport = new HttpTransport(oauthConfig, logger);
-      oauthApp = (oauthTransport as any).app;
     });
 
     afterEach(async () => {

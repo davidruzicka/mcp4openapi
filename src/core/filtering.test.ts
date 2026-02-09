@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
 import type { ToolDefinition } from '../types/profile.js';
 import type { OperationInfo } from '../types/openapi.js';
 import { AuthorizationError, ValidationError } from './errors.js';

@@ -1591,7 +1591,48 @@ describe('HttpTransport security behavior (no listen)', () => {
     await transport.stop();
   });
 
+  it('returns 500 from /oauth/register when clients store has no registerClient', async () => {
+    const transport = new HttpTransport(
+      {
+        host: '127.0.0.1',
+        port: 0,
+        sessionTimeoutMs: 1800000,
+        heartbeatEnabled: false,
+        heartbeatIntervalMs: 30000,
+        metricsEnabled: false,
+        metricsPath: '/metrics',
+        oauthConfig: {
+          issuer: 'https://auth.example.com',
+          client_id: 'test-client',
+          client_secret: 'test-secret',
+          scopes: ['read'],
+        },
+      } as any,
+      new ConsoleLogger()
+    );
+
+    createProfileState(transport as any).oauthProvider = {
+      scopes: ['read'],
+      clientsStore: {},
+    };
+
+    const app = (transport as any).app;
+    const handler = getExpressRouteHandler(app, 'post', '/oauth/register');
+    const req: any = { body: { redirect_uris: ['http://localhost/cb'] }, headers: {} };
+    const res = createMockResponse();
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(500);
+    expect(res.body).toMatchObject({ error: 'server_error', error_description: 'Registration failed' });
+
+    await transport.stop();
+  });
+
   it('validates auth tokens for bearer/custom-header/query and handles fetch failures', async () => {
+    // Allow private network for testing
+    const originalAllowPrivateNetwork = process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK;
+    process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK = 'true';
+
     const transport = createTransport();
     const originalFetch = global.fetch;
 
@@ -1610,6 +1651,7 @@ describe('HttpTransport security behavior (no listen)', () => {
         if (urlString.includes('bearer')) {
           expect(init?.headers?.Authorization).toBe('Bearer token123');
         }
+        expect(init?.redirect).toBe('error');
         return { status: 204 } as any;
       });
 
@@ -1617,7 +1659,7 @@ describe('HttpTransport security behavior (no listen)', () => {
         (transport as any).validateAuthToken(
           { type: 'bearer', validation_endpoint: '/bearer' },
           'token123',
-          'https://api.example.com'
+          'http://127.0.0.1'
         )
       ).resolves.toBe(true);
 
@@ -1625,7 +1667,7 @@ describe('HttpTransport security behavior (no listen)', () => {
         (transport as any).validateAuthToken(
           { type: 'custom-header', header_name: 'X-API-Key', validation_endpoint: '/header' },
           'token123',
-          'https://api.example.com'
+          'http://127.0.0.1'
         )
       ).resolves.toBe(true);
 
@@ -1633,7 +1675,7 @@ describe('HttpTransport security behavior (no listen)', () => {
         (transport as any).validateAuthToken(
           { type: 'query', query_param: 'api_key', validation_endpoint: '/query' },
           'token123',
-          'https://api.example.com'
+          'http://127.0.0.1'
         )
       ).resolves.toBe(true);
 
@@ -1641,13 +1683,173 @@ describe('HttpTransport security behavior (no listen)', () => {
         (transport as any).validateAuthToken(
           { type: 'bearer', validation_endpoint: '/fail' },
           'token123',
-          'https://api.example.com'
+          'http://127.0.0.1'
         )
       ).resolves.toBe(false);
     } finally {
       global.fetch = originalFetch;
+      if (originalAllowPrivateNetwork === undefined) {
+        delete process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK;
+      } else {
+        process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK = originalAllowPrivateNetwork;
+      }
       await transport.stop();
     }
+  });
+
+  it('blocks absolute validation endpoint on untrusted host and does not call fetch', async () => {
+    const transport = createTransport();
+    const fetchMock = vi.fn(async () => ({ status: 204 }) as any);
+    const originalFetch = global.fetch;
+
+    try {
+      global.fetch = fetchMock as any;
+
+      await expect(
+        (transport as any).validateAuthToken(
+          { type: 'bearer', validation_endpoint: 'https://evil.example/validate' },
+          'token123',
+          'https://api.example.com'
+        )
+      ).resolves.toBe(false);
+
+      expect(fetchMock).not.toHaveBeenCalled();
+    } finally {
+      global.fetch = originalFetch;
+      await transport.stop();
+    }
+  });
+
+  it('allows absolute validation endpoint on trusted host from validation_allowed_hosts', async () => {
+    const transport = createTransport();
+    const originalFetch = global.fetch;
+    const originalAllowPrivateNetwork = process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK;
+
+    try {
+      process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK = 'true';
+      global.fetch = vi.fn(async (_url: any, init?: any) => {
+        expect(init?.redirect).toBe('error');
+        return { status: 204 } as any;
+      });
+
+      await expect(
+        (transport as any).validateAuthToken(
+          {
+            type: 'bearer',
+            validation_endpoint: 'http://127.0.0.1/validate',
+            validation_allowed_hosts: ['127.0.0.1'],
+          },
+          'token123',
+          'https://api.example.com'
+        )
+      ).resolves.toBe(true);
+    } finally {
+      global.fetch = originalFetch;
+      if (originalAllowPrivateNetwork === undefined) {
+        delete process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK;
+      } else {
+        process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK = originalAllowPrivateNetwork;
+      }
+      await transport.stop();
+    }
+  });
+
+  it('allows absolute validation endpoint when validation_allowed_hosts uses wildcard', async () => {
+    const transport = createTransport();
+    const originalFetch = global.fetch;
+    const originalAllowPrivateNetwork = process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK;
+
+    try {
+      process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK = 'true';
+      global.fetch = vi.fn(async () => ({ status: 204 }) as any);
+
+      await expect(
+        (transport as any).validateAuthToken(
+          {
+            type: 'bearer',
+            validation_endpoint: 'http://auth.allowed.example.com/validate',
+            validation_allowed_hosts: ['*.allowed.example.com'],
+          },
+          'token123',
+          'https://api.example.com'
+        )
+      ).resolves.toBe(true);
+    } finally {
+      global.fetch = originalFetch;
+      if (originalAllowPrivateNetwork === undefined) {
+        delete process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK;
+      } else {
+        process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK = originalAllowPrivateNetwork;
+      }
+      await transport.stop();
+    }
+  });
+
+  it('matches allowed validation hosts for exact and wildcard patterns', async () => {
+    const transport = createTransport();
+    const isAllowedValidationHost = (transport as any).isAllowedValidationHost.bind(transport);
+
+    expect(isAllowedValidationHost('api.example.com', undefined)).toBe(false);
+    expect(isAllowedValidationHost('api.example.com', [])).toBe(false);
+    expect(isAllowedValidationHost('api.example.com', ['api.example.com'])).toBe(true);
+    expect(isAllowedValidationHost('sub.example.com', ['*.example.com'])).toBe(true);
+    expect(isAllowedValidationHost('example.com', ['*.example.com'])).toBe(false);
+    expect(isAllowedValidationHost('sub.example.com', ['*.'])).toBe(false);
+
+    await transport.stop();
+  });
+
+  it('starts SSE response without Mcp-Session-Id when session is not created', async () => {
+    const transport = createTransport();
+    const res = createMockSseResponse();
+
+    (transport as any).startSSEResponse(res, { ok: true }, undefined);
+
+    expect(res.headers['content-type']).toBe('text/event-stream');
+    expect(res.headers['mcp-session-id']).toBeUndefined();
+    expect(res.write).toHaveBeenCalled();
+    expect(res.end).toHaveBeenCalled();
+
+    await transport.stop();
+  });
+
+  it('queues outbound SSE messages only for active streams', async () => {
+    const transport = createTransport();
+    const profileState = createProfileState(transport as any, 'default');
+    const sessionId = 'session-1';
+
+    const activeStream = {
+      streamId: 'active',
+      lastEventId: 0,
+      messageQueue: [] as Array<{ eventId: number; data: unknown; timestamp: number }>,
+      active: true,
+      response: createMockSseResponse(),
+    };
+    const inactiveStream = {
+      streamId: 'inactive',
+      lastEventId: 0,
+      messageQueue: [] as Array<{ eventId: number; data: unknown; timestamp: number }>,
+      active: false,
+      response: createMockSseResponse(),
+    };
+
+    profileState.sessions.set(sessionId, {
+      id: sessionId,
+      createdAt: Date.now(),
+      lastActivityAt: Date.now(),
+      sseStreams: new Map([
+        ['active', activeStream as any],
+        ['inactive', inactiveStream as any],
+      ]),
+      messageQueue: [],
+    });
+
+    (transport as any).sendToClient('default', sessionId, { type: 'ping' });
+
+    expect(activeStream.messageQueue).toHaveLength(1);
+    expect(inactiveStream.messageQueue).toHaveLength(0);
+
+    await transport.stop();
   });
 
   it('extracts OAuth token from session when session exists and OAuth is configured', async () => {

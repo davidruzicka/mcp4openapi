@@ -15,7 +15,6 @@ import fs from 'fs';
 import crypto from 'crypto';
 import { isIP } from 'node:net';
 import rateLimit from 'express-rate-limit';
-import { mcpAuthRouter } from '@modelcontextprotocol/sdk/server/auth/router.js';
 import type { Logger } from '../core/logger.js';
 import type {
   SessionData,
@@ -28,6 +27,7 @@ import type {
 import { isInitializeRequest } from '../validation/jsonrpc-validator.js';
 import { MetricsCollector } from '../core/metrics.js';
 import { ExternalOAuthProvider } from '../auth/oauth-provider.js';
+import { SSRFValidator } from '../security/ssrf-validator.js';
 import type { AuthInterceptor, OAuthConfig } from '../types/profile.js';
 import { HTTP_STATUS, MIME_TYPES, OAUTH_PATHS, TIMEOUTS, OAUTH_RATE_LIMIT, PROXY_CREDENTIALS } from '../core/constants.js';
 import { escapeHtmlSafe, isSafePropertyName } from '../validation/validation-utils.js';
@@ -61,8 +61,6 @@ import {
   parseAcceptLanguage,
   renderProfileIndexHtml,
 } from './profile-index.js';
-
-import type { OpenAPIParser } from '../openapi/openapi-parser.js';
 const DEFAULT_MAX_TOKEN_LENGTH = 1000;
 
 interface ProfileRuntimeState {
@@ -72,6 +70,18 @@ interface ProfileRuntimeState {
   toolFilterService?: ToolFilterService;
   oauthTokensByAccessToken: Map<string, { refreshToken?: string; expiresAt?: number; clientId: string; scopes: string[] }>;
   sessions: Map<string, SessionData>;
+}
+
+interface RequestWithStartTime extends Request {
+  startTime?: number;
+}
+
+interface OAuthRequiredErrorResponse {
+  error?: {
+    data?: {
+      oauth_required?: boolean;
+    };
+  };
 }
 
 export class HttpTransport {
@@ -89,11 +99,13 @@ export class HttpTransport {
   private profileHintsByClient: Map<string, { profileId: string; lastSeen: number }> = new Map();
   private static readonly PROFILE_HINT_TTL_MS = 10 * 60 * 1000;
   private profileIndexProvider: (() => Promise<ListedProfileDetails[]>) | null = null;
+  private ssrfValidator: SSRFValidator;
 
   constructor(config: HttpTransportConfig, logger: Logger) {
     // Freeze config to prevent runtime mutation of security-critical settings (allowedOrigins, rate limits, etc.)
     this.config = Object.freeze({ ...config });
     this.logger = logger;
+    this.ssrfValidator = new SSRFValidator(logger);
     
     // Initialize metrics if enabled
     if (config.metricsEnabled) {
@@ -183,26 +195,30 @@ export class HttpTransport {
 
     // Metrics: Track request start time
     this.app.use((req: Request, res: Response, next: NextFunction) => {
-      (req as any).startTime = Date.now();
+      (req as RequestWithStartTime).startTime = Date.now();
 
       // Log response
       const originalSend = res.send;
       const originalJson = res.json;
       const logger = this.logger;
 
-      res.send = function(body: any) {
+      res.send = function(body: unknown) {
         logger.debug('Outgoing response', {
           method: req.method,
           url: req.url,
           status: res.statusCode,
           contentType: res.get('content-type'),
-          bodyLength: body ? body.length : 0,
+          bodyLength: typeof body === 'string'
+            ? body.length
+            : Buffer.isBuffer(body)
+              ? body.length
+              : 0,
           bodyPreview: typeof body === 'string' ? body.substring(0, 200) : '[object]'
         });
         return originalSend.call(this, body);
       };
 
-      res.json = function(body: any) {
+      res.json = function(body: unknown) {
         logger.debug('Outgoing JSON response', {
           method: req.method,
           url: req.url,
@@ -1093,7 +1109,6 @@ export class HttpTransport {
     const registerOAuthRoutes = (basePath: string, includeProfileParam: boolean, includeProtectedResource: boolean): void => {
       const middlewares: RequestHandler[] = includeProfileParam ? [attachProfileId] : [];
 
-      const withOAuthRateLimit = [ ...middlewares, oauthRateLimiter ];
       const withProfile = (handler: (req: Request, res: Response, profileState: ProfileRuntimeState) => Promise<void> | void): RequestHandler[] => {
         return [ ...middlewares, oauthRateLimiter, withProfileState(handler) ];
       };
@@ -1353,19 +1368,19 @@ export class HttpTransport {
 
       // Legacy alias endpoints - deprecated
       // Why: Backward compatibility for clients using /sse during migration
-      this.app.post(`${pathPrefix}/sse`, ...middlewares, mcpRateLimiter, (req: Request, res: Response, next: NextFunction) => {
+      this.app.post(`${pathPrefix}/sse`, ...middlewares, mcpRateLimiter, (req: Request, res: Response) => {
         this.logger.warn('Deprecated endpoint used: POST /sse. Please migrate to POST /mcp');
         this.logger.info('Handling POST /sse request');
-        return (this.handlePost as any)(req, res, next);
+        return this.handlePost(req as McpRequest, res);
       });
-      this.app.get(`${pathPrefix}/sse`, ...middlewares, mcpRateLimiter, (req: Request, res: Response, next: NextFunction) => {
+      this.app.get(`${pathPrefix}/sse`, ...middlewares, mcpRateLimiter, (req: Request, res: Response) => {
         this.logger.warn('Deprecated endpoint used: GET /sse. Please migrate to GET /mcp');
         this.logger.info(`Handling GET /sse request from: ${req.ip}`);
-        return (this.handleGet as any)(req as any, res, next);
+        return this.handleGet(req as McpRequest, res);
       });
-      this.app.delete(`${pathPrefix}/sse`, ...middlewares, mcpRateLimiter, (req: Request, res: Response, next: NextFunction) => {
+      this.app.delete(`${pathPrefix}/sse`, ...middlewares, mcpRateLimiter, (req: Request, res: Response) => {
         this.logger.warn('Deprecated endpoint used: DELETE /sse. Please migrate to DELETE /mcp');
-        return (this.handleDelete as any)(req as any, res, next);
+        return this.handleDelete(req as McpRequest, res);
       });
 
       if (isDefault) {
@@ -1515,7 +1530,14 @@ export class HttpTransport {
     const serverUrl = new URL(this.buildProfileUrl(profileId, '/mcp', urlOptions));
     const issuerUrl = this.getProfileIssuerUrl(profileId, urlOptions);
 
-    const metadata: any = {
+    const metadata: {
+      resource: string;
+      authorization_servers: string[];
+      bearer_methods_supported: string[];
+      scopes_supported?: string[];
+      resource_name?: string;
+      resource_documentation?: string;
+    } = {
       resource: serverUrl.href,
       authorization_servers: [issuerUrl],
       bearer_methods_supported: ['header'],
@@ -1868,7 +1890,13 @@ export class HttpTransport {
         scope: (profileState.oauthProvider.scopes || []).join(' '),
       };
 
-      await (profileState.oauthProvider.clientsStore as any).registerClient(client);
+      const registerClient = profileState.oauthProvider.clientsStore.registerClient?.bind(
+        profileState.oauthProvider.clientsStore
+      );
+      if (!registerClient) {
+        throw new Error('OAuth clients store does not support registration');
+      }
+      await registerClient(client);
 
       res.status(HTTP_STATUS.CREATED).json({
         client_id: clientId,
@@ -1890,9 +1918,7 @@ export class HttpTransport {
    * 
    * Why: Prometheus scraping endpoint
    */
-  private async handleMetrics(req: Request, res: Response): Promise<void> {
-    const startTime = Date.now();
-    
+  private async handleMetrics(_req: Request, res: Response): Promise<void> {
     try {
       if (!this.metrics) {
         res.status(HTTP_STATUS.NOT_FOUND).json({ error: 'Not Found', message: 'Metrics disabled' });
@@ -1954,6 +1980,11 @@ export class HttpTransport {
     }
 
     const url = this.buildUrl(authConfig.validation_endpoint, baseUrl);
+    const baseUrlObj = new URL(baseUrl);
+    const absoluteEndpoint =
+      authConfig.validation_endpoint.startsWith('http://') ||
+      authConfig.validation_endpoint.startsWith('https://');
+    const allowedHosts = [baseUrlObj.hostname, ...(authConfig.validation_allowed_hosts || [])];
     const headers: Record<string, string> = {};
     const method = authConfig.validation_method || 'GET';
     const timeout = authConfig.validation_timeout_ms || 5000;
@@ -1986,6 +2017,22 @@ export class HttpTransport {
         authType: authConfig.type,
       });
 
+      if (
+        absoluteEndpoint &&
+        url.origin !== baseUrlObj.origin &&
+        !this.isAllowedValidationHost(url.hostname, authConfig.validation_allowed_hosts)
+      ) {
+        throw new ValidationError(
+          `validation_endpoint host '${url.hostname}' is not allowed (must match base_url origin or validation_allowed_hosts)`
+        );
+      }
+
+      // Validate URL against SSRF rules before fetching
+      await this.ssrfValidator.validate(url.toString(), {
+        allowPrivateNetwork: process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK === 'true',
+        allowedHosts,
+      });
+
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), timeout);
 
@@ -1993,6 +2040,7 @@ export class HttpTransport {
         method,
         headers,
         signal: controller.signal,
+        redirect: 'error', // Prevent redirects to avoid SSRF bypass
       });
 
       clearTimeout(timeoutId);
@@ -2011,6 +2059,24 @@ export class HttpTransport {
       });
       return false;
     }
+  }
+
+  private isAllowedValidationHost(hostname: string, allowedHosts?: string[]): boolean {
+    if (!allowedHosts || allowedHosts.length === 0) {
+      return false;
+    }
+
+    const lower = hostname.toLowerCase();
+    return allowedHosts.some(patternRaw => {
+      const pattern = patternRaw.toLowerCase().trim();
+      if (!pattern) return false;
+      if (pattern.startsWith('*.')) {
+        const suffix = pattern.slice(2);
+        if (!suffix) return false;
+        return lower.endsWith(`.${suffix}`);
+      }
+      return lower === pattern;
+    });
   }
 
   /**
@@ -2199,7 +2265,11 @@ export class HttpTransport {
 
       // Check if this is initialization (no session ID yet)
       const isInitialization = isInitializeRequest(body);
-      this.logger.debug('Session validation', { isInitialization, sessionId, bodyMethod: (body as any)?.method });
+      const bodyMethod =
+        typeof body === 'object' && body !== null && 'method' in body
+          ? (body as { method?: unknown }).method
+          : undefined;
+      this.logger.debug('Session validation', { isInitialization, sessionId, bodyMethod });
 
       // Validate session (except for initialization)
       if (!isInitialization && sessionId) {
@@ -2358,15 +2428,15 @@ export class HttpTransport {
         this.logger.debug('MessageHandler response', { response });
 
         // Debug: Check OAuth conditions
+        const responseObj = response as OAuthRequiredErrorResponse;
         this.logger.debug('Checking OAuth conditions', {
-          responseError: (response as any).error,
+          responseError: responseObj.error,
           hasOAuthProvider: !!profileState.oauthProvider,
           oauthProviderType: typeof profileState.oauthProvider
         });
 
 
         // Check if response contains OAuth error and add WWW-Authenticate header
-        const responseObj = response as any;
         if (responseObj.error && responseObj.error.data && responseObj.error.data.oauth_required) {
           const resourceMetadataUrl = this.getOAuthProtectedResourceUrl(requestProfileId);
           res.setHeader('WWW-Authenticate', `Bearer resource_metadata="${resourceMetadataUrl}", scope="api"`);
@@ -2380,7 +2450,7 @@ export class HttpTransport {
         if (wantsOnlySSE) {
           // Return SSE response only when client explicitly wants text/event-stream only
           this.logger.debug('Sending SSE response', { response, newSessionId });
-          this.startSSEResponse(res, response, newSessionId, sessionId);
+          this.startSSEResponse(res, response, newSessionId);
         } else {
           // Return JSON response (default for requests)
           if (newSessionId) {
@@ -2564,8 +2634,7 @@ export class HttpTransport {
   private startSSEResponse(
     res: Response,
     response: unknown,
-    newSessionId: string | undefined,
-    sessionId: string | undefined
+    newSessionId: string | undefined
   ): void {
     res.setHeader('Content-Type', MIME_TYPES.EVENT_STREAM);
     res.setHeader('Cache-Control', 'no-cache');
@@ -2677,7 +2746,7 @@ export class HttpTransport {
     };
 
     // Send to all active streams for this session
-    for (const [streamId, streamState] of session.sseStreams) {
+    for (const streamState of session.sseStreams.values()) {
       if (streamState.active) {
         // Queue for resumability
         streamState.messageQueue.push(queuedMessage);

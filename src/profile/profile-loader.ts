@@ -16,11 +16,10 @@
 import fs from 'fs/promises';
 import type { Profile, ParameterType } from '../types/profile.js';
 import { ValidationError, ConfigurationError } from '../core/errors.js';
-import { ZodError } from 'zod';
 import { profileSchema, authInterceptorSchema } from '../generated-schemas.js';
 import type { OpenAPIParser } from '../openapi/openapi-parser.js';
 import type { OperationInfo, SchemaInfo } from '../types/openapi.js';
-import { shortenToolName, NamingStrategy, levenshteinDistance, type OperationForNaming, type ShortenResult } from '../core/naming.js';
+import { shortenToolName, NamingStrategy, levenshteinDistance, type OperationForNaming } from '../core/naming.js';
 import { normalizeToolName } from '../tool-filter/utils.js';
 
 // Schemas are now auto-generated from TypeScript types!
@@ -80,7 +79,7 @@ export class ProfileLoader {
         }
 
         // Additional OAuth validation: must have issuer OR both endpoints
-        const authEntry = entry as any;
+        const authEntry = result.data;
         if (authEntry.type === 'oauth' && authEntry.oauth_config) {
           const config = authEntry.oauth_config;
           const hasIssuer = !!config.issuer;

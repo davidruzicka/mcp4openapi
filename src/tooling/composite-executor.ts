@@ -9,7 +9,7 @@ import type { CompositeStep } from '../types/profile.js';
 import type { HttpClient } from '../transport/interceptors.js';
 import type { OperationInfo } from '../types/openapi.js';
 import { OpenAPIParser } from '../openapi/openapi-parser.js';
-import { DAGExecutor, type ExecutionLevel } from './dag-executor.js';
+import { DAGExecutor } from './dag-executor.js';
 import { isSafePropertyName } from '../validation/validation-utils.js';
 
 export interface CompositeResult {

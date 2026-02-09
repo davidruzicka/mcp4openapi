@@ -123,6 +123,9 @@ npx mcp4openapi \
 | `validation_endpoint` | `string` | No | - | API endpoint to validate token |
 | `validation_method` | `string` | No | `GET` | HTTP method (`GET` or `HEAD`) |
 | `validation_timeout_ms` | `number` | No | `5000` | Timeout in milliseconds |
+| `validation_allowed_hosts` | `string[]` | No | - | Additional hosts allowed for absolute `validation_endpoint` URLs |
+
+By default, absolute `validation_endpoint` must match `base_url` origin. Use `validation_allowed_hosts` only when validation must call a different trusted host.
 
 ### GitLab API Endpoint `/api/v4/personal_access_tokens/self`:
 

@@ -7,7 +7,7 @@ function normalizeToStrings(value: string | number | boolean | Array<string | nu
   return values.map(entry => String(entry)).sort();
 }
 
-function findMatchingRequest(
+function _findMatchingRequest(
   requests: CapturedRequest[],
   expectation: RequestExpectation
 ): CapturedRequest | undefined {
