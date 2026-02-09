@@ -113,6 +113,26 @@ describe('ToolGenerator', () => {
     expect(maxOnlyProperty.maxLength).toBe(20);
   });
 
+  it('should cap explicit maxLength to regex safety limit when pattern is present', () => {
+    const toolDef = {
+      name: 'test_explicit_max_with_pattern',
+      description: 'Test explicit max length with pattern',
+      parameters: {
+        cappedParam: {
+          type: 'string' as const,
+          description: 'Capped param',
+          pattern: '^[a-z]+$',
+          maxLength: 10000
+        }
+      }
+    };
+
+    const tool = generator.generateTool(toolDef);
+    const cappedProperty = tool.inputSchema.properties?.cappedParam as { maxLength?: number };
+
+    expect(cappedProperty.maxLength).toBe(4096);
+  });
+
   it('should validate required parameters', () => {
     const toolDef = profile.tools.find(t => t.name === 'manage_project_badges');
     expect(toolDef).toBeDefined();

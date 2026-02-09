@@ -29,7 +29,7 @@ describe('ToolGenerator ReDoS Protection', () => {
     // Should now throw ValidationError due to security check
     expect(() => generator.validateArguments(toolDef, { patternParam: longString })).toThrowError(ValidationError);
     expect(() => generator.validateArguments(toolDef, { patternParam: longString })).toThrow(
-      'Value too long for pattern matching (max 4096 chars when maxLength is not set)'
+      'Value too long for pattern matching (max 4096 chars)'
     );
   });
 
@@ -53,7 +53,7 @@ describe('ToolGenerator ReDoS Protection', () => {
     expect(() => generator.validateArguments(toolDef, { patternParam: safeString })).not.toThrow();
   });
 
-  it('respects explicit maxLength even if larger than default', () => {
+  it('enforces regex safety cap even if maxLength is set larger than default', () => {
     const toolDef: ToolDefinition = {
       name: 'test_tool',
       description: 'Test tool',
@@ -69,10 +69,12 @@ describe('ToolGenerator ReDoS Protection', () => {
 
     const largeString = 'a'.repeat(5000);
 
-    // Should NOT throw because maxLength is explicitly set
-    expect(() => generator.validateArguments(toolDef, { explicitParam: largeString })).not.toThrow();
+    // Should NOW throw because we enforce safe cap for regex validation
+    expect(() => generator.validateArguments(toolDef, { explicitParam: largeString })).toThrow(
+      'Value too long for pattern matching (max 4096 chars)'
+    );
 
-    // But if it exceeds explicit maxLength, it should throw standard error
+    // But if it exceeds explicit maxLength, it should throw standard error (caught earlier)
     const tooLargeString = 'a'.repeat(10001);
     expect(() => generator.validateArguments(toolDef, { explicitParam: tooLargeString })).toThrow(
       'Length must be at most 10000'

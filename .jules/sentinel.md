@@ -74,3 +74,15 @@ Any outbound request based on user-supplied or configuration-supplied URLs must 
 1.  Implemented `SSRFValidator` to check hostnames and IPs against a blocklist of private ranges.
 2.  Integrated `SSRFValidator` into all outbound requests in `ExternalOAuthProvider`.
 3.  Ensured tests mock this validation to avoid external dependencies or blocking legitimate test domains.
+
+## 2026-02-09 - [HIGH] ReDoS in Tool Argument Validation
+
+**Vulnerability:**
+`ToolGenerator` constructed regular expressions directly from profile definitions (`new RegExp(param.pattern)`) and executed them on user input. It lacked validation for ReDoS-vulnerable patterns and trusted the `maxLength` from the profile (which could be excessively large), allowing attackers to cause denial of service via catastrophic backtracking.
+
+**Learning:**
+Never trust regex patterns from configuration (profiles) without validation, and never trust input length limits that exceed safe bounds for regex execution. Even "safe" regexes can be slow on very large strings.
+
+**Prevention:**
+1.  Enforce a hard cap (e.g., 4096 chars) on input strings validated against any regex, regardless of schema `maxLength`.
+2.  Validate all regex patterns using a `RegexValidator` (checking for nested quantifiers, ambiguous alternation) before usage.
