@@ -9,11 +9,17 @@ import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 import type { ToolDefinition, ParameterDefinition, ParameterType } from '../types/profile.js';
 import type { OpenAPIParser } from '../openapi/openapi-parser.js';
 import { ValidationError } from '../core/errors.js';
+import { RegexValidator } from '../tool-filter/regex/regex-validator.js';
 
 const DEFAULT_REGEX_MAX_LENGTH = 4096;
+const DEFAULT_REGEX_PATTERN_MAX_LENGTH = 1024;
 
 export class ToolGenerator {
-  constructor(private parser: OpenAPIParser) {}
+  private regexValidator: RegexValidator;
+
+  constructor(private parser: OpenAPIParser) {
+    this.regexValidator = new RegexValidator(DEFAULT_REGEX_PATTERN_MAX_LENGTH);
+  }
 
   /**
    * Generate MCP tool from profile definition
@@ -162,15 +168,24 @@ export class ToolGenerator {
           );
         }
 
-        // Security: Enforce safe max length for regex validation if not explicitly set
-        // Why: Prevent ReDoS on large inputs when maxLength is missing
-        if (param.pattern !== undefined && param.maxLength === undefined && value.length > DEFAULT_REGEX_MAX_LENGTH) {
+        // Security: Enforce safe max length for regex validation even if maxLength is set higher
+        // Why: Prevent ReDoS on large inputs. Even valid regexes can be slow on large inputs.
+        if (param.pattern !== undefined && value.length > DEFAULT_REGEX_MAX_LENGTH) {
           throw new ValidationError(
-            `Invalid value for ${name}. Value too long for pattern matching (max ${DEFAULT_REGEX_MAX_LENGTH} chars when maxLength is not set)`
+            `Invalid value for ${name}. Value too long for pattern matching (max ${DEFAULT_REGEX_MAX_LENGTH} chars)`
           );
         }
 
         if (param.pattern !== undefined) {
+          // Validate regex pattern for ReDoS vulnerabilities
+          const validation = this.regexValidator.validate(param.pattern);
+          if (!validation.valid) {
+            throw new ValidationError(
+              `Invalid pattern for ${name}. Unsafe regex: ${validation.error}`,
+              { paramName: name, pattern: param.pattern, reason: validation.error }
+            );
+          }
+
           let regex: RegExp;
           try {
             regex = new RegExp(param.pattern);
