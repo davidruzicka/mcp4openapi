@@ -107,8 +107,9 @@
           "description": "Optional response format for get_holy_grail_aio_data"
         },
         "active": {
-          "type": "boolean",
-          "description": "Filter active projects"
+          "type": "integer",
+          "enum": [0, 1],
+          "description": "Project status filter: 1 = active, 0 = archived"
         },
         "itemsPerPage": {
           "type": ["integer", "string"],

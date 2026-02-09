@@ -69,9 +69,10 @@
             "in": "query",
             "required": false,
             "schema": {
-              "type": "boolean"
+              "type": "integer",
+              "enum": [0, 1]
             },
-            "description": "Query parameter active"
+            "description": "Project status filter: 1 = active, 0 = archived"
           },
           {
             "name": "itemsPerPage",

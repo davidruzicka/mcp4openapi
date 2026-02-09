@@ -1,0 +1,1793 @@
+FORMAT: 1A
+HOST: https://api.oncollabim.com/
+
+# Collabim API
+
+Base URL for all API requests is https://api.oncollabim.com. Always use https (secure) instead of http.
+
+Authorization \<userKey> HTTP header is used for user authentication. User API key could be found in your profile settings in application after logging in. Api key can be also used as a query parameter (Example: https://api.oncollabim.com/projects?apiKey=\<apiKey>).
+
+Use query parameter <code>page</code> for results pagination (example: https://api.oncollabim.com/activities?page=\<page>). Use parameter <code>format</code> to get results in <strong>csv</strong> (example: https://api.oncollabim.com/projects?format=csv).
+
+List of Collabim supported search engines is available <a href="https://tracker.collabim.cz/public/search-engines">here</a>.
+
+### POSTMAN Collection
+
+We have already prepared POSTMAN collection for our API, the actual version could be <a href="https://drive.google.com/file/d/1ChEbab7QY4oTRbCsHmmI76wCJHNaEzbf/view?usp=sharing">downloaded here</a>. The ENV settings (params) could be <a href="https://drive.google.com/file/d/1Sse-ALd3Xyw7hvwStek1H9MlcYslu_Co/view?usp=sharing">downloaded here</a>.
+
+## Project info [/projects/{id}]
+
+To get attributes for single project use end-point <code>/projects/{projectId}</code>
+
++ Parameters
+    + id: `1` (number, required) - project ID
+    
+### Get project info [GET]
+
++ Request
+    + Headers
+
+            Accept: application/collabim+json
+            Authorization: <userKey>
+
++ Response 200 (application/json)
+
+    + Body
+
+            {
+                "data": {
+                    "id": 1,
+                    "name": "url.cz",
+                    "webSiteUrl": "http://www.url.cz/",
+                    "active": 1,
+                    "tags": [
+                        "tag1"
+                    ]
+                }
+            }
+            
+## Project list [/projects{?nameLike,active,page,itemsPerPage}]
+
+This end point <code>/projects</code> displays list of all your projects.
+    
+### Get project list [GET]
+
++ Parameters
+    + nameLike: `project name` (string, optional) - Displays projects whose name contains string specified in filter.
+    + active: `0` (boolean, optional) - Displays active (1) or archived (0) projects.
+    + page: `1` (number, optional) - Displays 10 projects per page. Default value is 1.
+    + itemsPerPage: `20` (number, optional) - Change number of results per page. Default is 20.
+
++ Request
+    + Headers
+
+            Accept: application/collabim+json
+            Authorization: <userKey>
+
++ Response 200 (application/json)
+
+    + Body
+
+            {
+                "data": [
+                    {
+                        "id": 1,
+                        "name": "web1.cz",
+                        "webSiteUrl": "http://web1.cz/",
+                        "active": 1
+                    },
+                    {
+                        "id": 2,
+                        "name": "web2.cz",
+                        "webSiteUrl": "http://web2.cz/",
+                        "active": 1
+                    },
+                    {
+                        "id": 3,
+                        "name": "web3.cz",
+                        "webSiteUrl": "http://web3.cz/",
+                        "active": 1
+                    }
+                ]
+            }
+            
+            
+## Project widget [/projects/{id}/widget/{type}]
+
+End-point <code>/projects/{projectId}/widget/{widgetType}</code> returns Collabim widget as a HTML.
+
++ Parameters
+    + id: `1` (number, required) - project ID
+    + type: `fullWidget` (enum[string], required) - widget type
+        + Members:
+            + fullWidget 
+            
+### Get project widget [GET]
+
++ Request
+    + Headers
+
+            Accept: application/collabim+json
+            Authorization: <userKey>
+            
++ Response 200 (text/html)
+
+## Project widget as JSON [/projects/{id}/widget/{type}/json]
+
+If you would like to get Collabim widget as json use <code>/projects/{projectId}/widget/{widgetType}/json</code>.
+
++ Parameters
+    + id: `1` (number, required) - project ID
+    + type: `fullWidget` (enum[string], required) - widget type
+        + Members:
+            + fullWidget 
+            
+### Get project widget as JSON [GET]
+
++ Request
+    + Headers
+
+            Accept: application/collabim+json
+            Authorization: <userKey>
+            
++ Response 200 (application/json)
+
+    + Body
+
+            {
+                "keywordsStats": [
+                    {
+                    "keyword": "keyword 1",
+                        "positions": [
+                            {
+                                "searchEngine": "Google CZ",
+                                "position": 10,
+                                "positionDifference": -1,
+                                "added": "2018-02-25"
+                            },
+                            {
+                                "searchEngine": "Seznam.cz",
+                                "position": 255,
+                                "positionDifference": 0,
+                                "added": "2018-02-25"
+                            },
+                            {
+                                "searchEngine": "Google CZ - obrázky",
+                                "position": 255,
+                                "positionDifference": 0,
+                                "added": "2018-02-25"
+                            }
+                        ]
+                    },
+                    {
+                    "keyword": "keyword 2",
+                        "positions": [
+                            {
+                                "searchEngine": "Google CZ",
+                                "position": 10,
+                                "positionDifference": -1,
+                                "added": "2018-02-25"
+                            },
+                            {
+                                "searchEngine": "Seznam.cz",
+                                "position": 255,
+                                "positionDifference": 0,
+                                "added": "2018-02-25"
+                            },
+                            {
+                                "searchEngine": "Google CZ - obrázky",
+                                "position": 255,
+                                "positionDifference": 0,
+                                "added": "2018-02-25"
+                            }
+                        ]
+                    },
+                ],
+                "topCompetitors": [
+                    {
+                        "url": "http://www.url1.cz"
+                    },
+                    {
+                        "url": "http://www.url2.cz"
+                    },
+                    {
+                        "url": "http://url3.cz"
+                    },
+                    {
+                        "url": "http://www.url4.cz"
+                    },
+                    {
+                        "url": "http://www.url5.cz"
+                    }
+                ],
+                "backlinkVerificationList": [
+                    {
+                        "resultName": "NOT found",
+                        "pageWithLinkUrl": "http://cs.wikipedia.org/wiki/term1"
+                    },
+                    {
+                        "resultName": "NOT found",
+                        "pageWithLinkUrl": "http://www.idnes.cz/example2"
+                    }
+                ],
+                "backlinkProblemsCount": 26,
+                "projectStats": [
+                    {
+                        "searchEngineName": "Google CZ",
+                        "ci": -0.0448313,
+                        "added": "2018-02-25"
+                    },
+                    {
+                        "searchEngineName": "Seznam.cz",
+                        "ci": 0.021863,
+                        "added": "2018-02-25"
+                    },
+                    {
+                        "searchEngineName": "Google CZ - obrázky",
+                        "ci": 0.163015,
+                        "added": "2018-02-25"
+                    }
+                ]
+            }
+
+## Activity list [/activities{?projectId,typeId,stateId,createdById,categoryId,noCategory,addedOnFrom,addedOnTo,urlLike,webId,page,itemsPerPage}]
+    
+GET method for <code>/activities</code> returns list of activities up to limit 7000.
+    
+### Get Activity list [GET]
+
++ Parameters
+    + projectId: `1` (number, optional) - Displays activities assigned to specified project.
+    + typeId: `1` (number, optional) - Displays activities of a specified type only (backlinks, articles etc.)
+    + stateId: `1` (number, optional) - Displays activities in a specified state only (completed, queued, postponed etc.)
+    + createdById: `1` (number, optional) - Displays activities created by a specified person only.
+    + categoryId: `1` (number, optional) - Displays activities assigned to a specified category only. This filter must NOT be combined with noCategory filter.
+    + noCategory: `1`  (boolean, optional) - Displays activities that are not given any category. This filter must NOT be combined with categoryId filter.
+    + addedOnFrom: `2020-01-01` (date, optional) - Displays activities that were created after given date. (YYYY-MM-DD)
+    + addedOnTo: `2020-01-01` (date, optional) - Displays activities that were created before given date. (YYYY-MM-DD)
+    + urlLike: `http://www.url.cz/` (string, optional)' - Display activities whose web URL or page with link URL contains specified string.
+    + webId: `1` (number, optional) - Displays activities assigned to a specified website only.
+
++ Request
+    + Headers
+        
+            Accept: application/collabim+json
+            Authorization: <userKey>
+
++ Response 200 (application/json)
+
+    + Body
+    
+            {
+                "data": [
+                    {
+                        "id": 1,
+                        "stateId": 1,
+                        "typeId": 1,
+                        "anchorText": null,
+                        "webId": 1,
+                        "webSiteUrl": "http://www.url.cz/",
+                        "webNote": null,
+                        "webPrice": 1500,
+                        "pageWithLinkUrl": "http://www.url.cz/",
+                        "targetPage": "",
+                        "categoryId": null,
+                        "addedOn": "2020-01-01",
+                        "projectId": 1,
+                        "stateName": "completed",
+                        "typeName": "Backlink",
+                        "categoryName": null,
+                        "projectName": "http://www.url.cz/",
+                        "activityNote": null
+                    }
+                ]
+            }
+
+## Single activity [/activities/{id}]
+
+GET method on <code>/activities/{activityId}</code> displays attributes of activity with {activityId}. PUT method updates attributes of activity with this id and DELETE method deletes this activity.
+
+You can update these attributes: projectId (integer), typeId (integer), stateId (integer), categoryId (integer), createdById (integer), webId (integer), note (string), pageWithLinkUrl (string) and webSiteUrl (string).
+
+**stateId** enum:
+* 1 queued
+* 3 contacted
+* 4 completed
+* 5 no deal
+* 6 uninteresting
+* 7 postponed
+* 9 not responding
+
+**typeId** enum:
+* 1 Other
+* 2 Backlink
+* 3 Directory registration
+* 5 Article
+* 7 Banner
+* 11 Discussion post
+
++ Parameters
+    + id: `1` (number, required) - activity ID
+
+### Get activity [GET]
+
++ Request
+    + Headers
+    
+            Accept: application/collabim+json
+            Authorization: <userKey>
+            
++ Response 200 (application/json)
+
+    + Body
+    
+            {
+                "data": {
+                    "id": 1,
+                    "stateId": 1,
+                    "anchorText": "anchor-text",
+                    "typeId": 1,
+                    "webId": 1,
+                    "webSiteUrl": "http://www.url.cz/",
+                    "webNote": null,
+                    "webPrice": 1500,
+                    "pageWithLinkUrl": "http://www.url.cz/",
+                    "categoryId": null,
+                    "addedOn": "2020-01-01",
+                    "projectId": 1,
+                    "stateName": "completed",
+                    "typeName": "Backlink",
+                    "categoryName": null,
+                    "projectName": "http://www.url.cz/",
+                    "activityNote": null
+                }
+            }
+
+### Update activity [PUT]
+
++ Request
+
+    + Body
+    
+            {
+                "stateId": 1,
+                "anchorText": "",
+                "typeId": 2,
+                "webId": 348482,
+                "webSiteUrl": "https://www.bydlo.cz",
+                "webNote": "test 22222 - new",
+                "webPrice": {},
+                "pageWithLinkUrl": "http://bydlo.cz",
+                "targetPage": "https://www.bydlo.cz/",
+                "categoryId": {},
+                "addedOn": "2020-08-13",
+                "projectId": 93111,
+                "stateName": "queued",
+                "typeName": "Backlink",
+                "categoryName": {},
+                "projectName": "alza.cz",
+                "activityNote": ""
+            }
+        
+    + Headers
+    
+            Accept: application/collabim+json
+            Authorization: <userKey>
+            
++ Response 200 (application/json)
+
+### Delete activity [DELETE]
+
++ Request
+    + Headers
+    
+            Accept: application/collabim+json
+            Authorization: <userKey>
+            
++ Response 200 (application/json)
+
+## Keyword list [/keywords{?projectId,keyword,keywordLike,tags,targetPageId,starred,page,itemsPerPage}]
+
+<code>/keywords</code> displays list of your keywords. Also see the <a href="https://docs.google.com/document/pub?id=1Hhk4z27OZloN00z22kn8kz-ZIJ3efdBCzAo0Z2gjE6s">list of supported search engines</a>.
+
+### Get keyword list [GET]
+
++ Parameters
+    + projectId: `1` (number, optional) - Displays keywords assigned to specified project.
+    + keyword: `my keyword` (string, optional) - Displays keyword with specified text only (exact match).
+    + keywordLike: `my keyword` (string, optional) - Displays keywords whose name contains specified string.
+    + tags: `my tag` (string, optional) - Displays keywords assigned with at least one of given tags.
+    + targetPageId: `1` (number, optional) - Displays keywords assigned to specified target page.
+    + starred: `0` (boolean, optional) - Displays keywords marked with a star (1) or keywords without star (0)
+    + page: `1` (number, optional) - Displays 10 projects per page. Default value is 1.
+    + itemsPerPage: `10` (number, optional) - Change number of results per page. Default is 10.
+
++ Request
+    + Headers
+    
+            Accept: application/collabim+json
+            Authorization: <userKey>
+            
++ Response 200 (application/json)
+
+    + Body
+
+            {
+                "data": [
+                    {
+                        "id": 1,
+                        "keyword": "my keyword",
+                        "searchesGoogleCurrent": 1,
+                        "searchesGoogleYear": 1,
+                        "searchesSeznamCurrent": 1,
+                        "searchesSeznamYear": 1,
+                        "svGoogle": 1,
+                        "svGoogleLocal": 1,
+                        "svSeznam": 1,
+                        "positions": [
+                            {
+                                "searchEngineId": 1,
+                                "position": 1,
+                                "positionDifference": 1,
+                                "snippetTitle": "My website",
+                                "snippetBody": "Description of my website",
+                                "targetPageUrl": "http://www.url.cz/",
+                                "totalNumberOfResults": 10,
+                                "searchEngineName": "Google CZ"
+                            }
+                        ],
+                        "starred": 0,
+                        "tags": [
+                            "my tag",
+                            "my another tag"
+                        ],
+                        "targetPageId": null,
+                        "visits": null,
+                        "bounceRate": null,
+                        "pagesPerVisit": null,
+                        "transactions": null,
+                        "ecommerceConversionRate": null,
+                        "impressions": null,
+                        "clicks": null,
+                        "ctr": null,
+                        "avgPositionGwt": null,
+                        "note": null,
+                        "targetPageUrl": "http://www.url.cz/",
+                        "targetPageTitle": "My website"
+                    }
+                ]
+            }
+
+## Keyword positions [/keyword-positions{?projectId,projectKeywordIds,lastXDays,tags,getXDays}]
+
+<code>/keyword-positions</code> displays history of positions for given keywords. Limit of project keywords dynamically depends on day interval by the following calculation: <strong>7000 / day interval</strong> (lastXDays). Also see the <a href="https://docs.google.com/document/pub?id=1Hhk4z27OZloN00z22kn8kz-ZIJ3efdBCzAo0Z2gjE6s">list of supported search engines</a>.
+
+### By last X days [GET]
+
++ Parameters
+    + projectId: `1` (number, required) - Select positions for given project only
+    + lastXDays: `30` (number, required) - Return position to given days back
+    + projectKeywordIds: `1,2` (integer list, optional) - Return keywords with given IDs only (You have to fill atleast on of projectKeywordIds or tags parameter)
+    + tags: `my tag` (string, optional) - Displays keywords assigned with at least one of given tags (You have to fill atleast on of projectKeywordIds or tags parameter)
+    + getXDays: `15` (number, optional) - Return position for only given X days
+
++ Request
+    + Headers
+    
+            Accept: application/collabim+json
+            Authorization: <userKey>
+        
++ Response 200 (application/json)
+
+    + Body
+    
+            {
+                "data": [
+                    {
+                        "projectKeywordId": 1,
+                        "text": "my keyword",
+                        "positions": [
+                            {
+                                "searchEngineId": 1,
+                                "position": 1,
+                                "date":"2020-01-01",
+                                "searchEngineName": "Google CZ"
+                            },
+                            {
+                                "searchEngineId": 2,
+                                "position": 2,
+                                "date":"2020-01-01",
+                                "searchEngineName": "Google CZ"
+                            },
+                            {
+                                "searchEngineId": 3,
+                                "position": 3,
+                                "date":"2020-01-01",
+                                "searchEngineName": "Google CZ"
+                            }
+                        ]
+                    },
+                    {
+                        "projectKeywordId": 2,
+                        "text":"my another keyword",
+                        "positions": [
+                            {
+                                "searchEngineId": 1,
+                                "position": 1,
+                                "date":"2020-01-01",
+                                "searchEngineName": "Google CZ"
+                            },
+                            {
+                                "searchEngineId": 2,
+                                "position": 2,
+                                "date":"2020-01-01",
+                                "searchEngineName": "Google CZ"
+                            },
+                            {
+                                "searchEngineId": 3,
+                                "position": 3,
+                                "date":"2020-01-01",
+                                "searchEngineName": "Google CZ"
+                            }
+                        ]
+                    }
+                ]
+            }
+            
+## Keyword positions [/keyword-positions{?projectId,projectKeywordIds,from,to,tags,getXDays}]
+
+<code>/keyword-positions</code> displays history of positions for given keywords. Limit of project keywords dynamically depends on day interval by the following calculation: <strong>7000 / day interval</strong> (difference between from and to). Also see the <a href="https://docs.google.com/document/pub?id=1Hhk4z27OZloN00z22kn8kz-ZIJ3efdBCzAo0Z2gjE6s">list of supported search engines</a>.
+
+### By interval - from, to [GET]
+
++ Parameters
+    + projectId: `1` (number, required) - Select positions for given project only
+    + projectKeywordIds: `1,2` (integer list, optional) - Return keywords with given IDs only (You have to fill atleast on of projectKeywordIds or tags parameter)
+    + tags: `my tag` (string, optional) - Displays keywords assigned with at least one of given tags (You have to fill atleast on of projectKeywordIds or tags parameter)
+    + from: `2020-01-01` (date, required) - Return positions from given date only (YYYY-MM-DD)
+    + to: `2020-01-01` (date, required) - Return positions from given date only (YYYY-MM-DD)
+    + getXDays: `15` (number, optional) - Return position for only given X days
+
++ Request
+    + Headers
+    
+            Accept: application/collabim+json
+            Authorization: <userKey>
+        
++ Response 200 (application/json)
+
+    + Body
+    
+            {
+                "data": [
+                    {
+                        "projectKeywordId": 1,
+                        "text": "my keyword",
+                        "positions": [
+                            {
+                                "searchEngineId": 1,
+                                "position": 1,
+                                "date":"2020-01-01",
+                                "searchEngineName": "Google CZ"
+                            },
+                            {
+                                "searchEngineId": 2,
+                                "position": 2,
+                                "date":"2020-01-01",
+                                "searchEngineName": "Google CZ"
+                            },
+                            {
+                                "searchEngineId": 3,
+                                "position": 3,
+                                "date":"2020-01-01",
+                                "searchEngineName": "Google CZ"
+                            }
+                        ]
+                    },
+                    {
+                        "projectKeywordId": 2,
+                        "text":"my another keyword",
+                        "positions": [
+                            {
+                                "searchEngineId": 1,
+                                "position": 1,
+                                "date":"2020-01-01",
+                                "searchEngineName": "Google CZ"
+                            },
+                            {
+                                "searchEngineId": 2,
+                                "position": 2,
+                                "date":"2020-01-01",
+                                "searchEngineName": "Google CZ"
+                            },
+                            {
+                                "searchEngineId": 3,
+                                "position": 3,
+                                "date":"2020-01-01",
+                                "searchEngineName": "Google CZ"
+                            }
+                        ]
+                    }
+                ]
+            }
+            
+## First and last keyword position [/keyword-positions{?projectId,projectKeywordIds,lastXDays,tags,onlyFirstAndLastPositionStats,getXDays}]
+
+Returns only first and last keyword position. See also <code>Keyword positions</code>.
+
+### By last X days [GET]
+
++ Parameters
+    + projectId: `1` (number, required) - Select positions for given project only
+    + projectKeywordIds: `1,2` (integer list, optional) - Return keywords with given IDs only (You have to fill atleast on of projectKeywordIds or tags parameter)
+    + lastXDays: `30` (number, required) - Return position to given days back
+    + tags: `my tag` (string, optional) - Displays keywords assigned with at least one of given tags (You have to fill atleast on of projectKeywordIds or tags parameter)
+    + onlyFirstAndLastPositionStats: `1` (boolean, required) - Display only first and last keyword position
+    + getXDays: `15` (number, optional) - Return position for only given X days
+
++ Request
+    + Headers
+    
+            Accept: application/collabim+json
+            Authorization: <userKey>
+        
++ Response 200 (application/json)
+
+    + Body
+    
+            {
+                "data": [
+                    {
+                        "projectKeywordId": 1,
+                        "text": "my keyword",
+                        "positions": [
+                            {
+                                "searchEngineId": 1,
+                                "position": 1,
+                                "date":"2020-01-01",
+                                "searchEngineName": "Google CZ"
+                            },
+                            {
+                                "searchEngineId": 2,
+                                "position": 2,
+                                "date":"2020-01-01",
+                                "searchEngineName": "Google CZ"
+                            },
+                            {
+                                "searchEngineId": 3,
+                                "position": 3,
+                                "date":"2020-01-01",
+                                "searchEngineName": "Google CZ"
+                            }
+                        ]
+                    },
+                    {
+                        "projectKeywordId": 2,
+                        "text":"my another keyword",
+                        "positions": [
+                            {
+                                "searchEngineId": 1,
+                                "position": 1,
+                                "date":"2020-01-01",
+                                "searchEngineName": "Google CZ"
+                            },
+                            {
+                                "searchEngineId": 2,
+                                "position": 2,
+                                "date":"2020-01-01",
+                                "searchEngineName": "Google CZ"
+                            },
+                            {
+                                "searchEngineId": 3,
+                                "position": 3,
+                                "date":"2020-01-01",
+                                "searchEngineName": "Google CZ"
+                            }
+                        ]
+                    }
+                ]
+            }
+            
+## First and last keyword position [/keyword-positions{?projectId,projectKeywordIds,from,to,tags,onlyFirstAndLastPositionStats,getXDays}]
+
+Returns only first and last keyword position. See also <code>Keyword positions</code>.
+
+### By interval - from, to [GET]
+
++ Parameters
+    + projectId: `1` (number, required) - Select positions for given project only
+    + projectKeywordIds: `1,2` (integer list, optional) - Return keywords with given IDs only (You have to fill atleast on of projectKeywordIds or tags parameter)
+    + from: `2020-01-01` (date, required) - Return positions from given date only (YYYY-MM-DD)
+    + to: `2020-01-01` (date, required) - Return positions from given date only (YYYY-MM-DD)
+    + tags: `my tag` (string, optional) - Displays keywords assigned with at least one of given tags (You have to fill atleast on of projectKeywordIds or tags parameter)
+    + onlyFirstAndLastPositionStats: `1` (boolean, required) - Display only first and last keyword position
+    + getXDays: `15` (number, optional) - Return position for only given X days
+
++ Request
+    + Headers
+    
+            Accept: application/collabim+json
+            Authorization: <userKey>
+        
++ Response 200 (application/json)
+
+    + Body
+    
+            {
+                "data": [
+                    {
+                        "projectKeywordId": 1,
+                        "text": "my keyword",
+                        "positions": [
+                            {
+                                "searchEngineId": 1,
+                                "position": 1,
+                                "date":"2020-01-01",
+                                "searchEngineName": "Google CZ"
+                            },
+                            {
+                                "searchEngineId": 2,
+                                "position": 2,
+                                "date":"2020-01-01",
+                                "searchEngineName": "Google CZ"
+                            },
+                            {
+                                "searchEngineId": 3,
+                                "position": 3,
+                                "date":"2020-01-01",
+                                "searchEngineName": "Google CZ"
+                            }
+                        ]
+                    },
+                    {
+                        "projectKeywordId": 2,
+                        "text":"my another keyword",
+                        "positions": [
+                            {
+                                "searchEngineId": 1,
+                                "position": 1,
+                                "date":"2020-01-01",
+                                "searchEngineName": "Google CZ"
+                            },
+                            {
+                                "searchEngineId": 2,
+                                "position": 2,
+                                "date":"2020-01-01",
+                                "searchEngineName": "Google CZ"
+                            },
+                            {
+                                "searchEngineId": 3,
+                                "position": 3,
+                                "date":"2020-01-01",
+                                "searchEngineName": "Google CZ"
+                            }
+                        ]
+                    }
+                ]
+            }
+            
+
+## Keyword aggregated positions [/aggregated-keywords-positions{?projectId,lastXDays,tags,getXDays}]
+
+<code>/aggregated-keyword-positions</code> displays aggregated positions for all keywords in given project. Also see the <a href="https://docs.google.com/document/pub?id=1Hhk4z27OZloN00z22kn8kz-ZIJ3efdBCzAo0Z2gjE6s">list of supported search engines</a>.
+
+### By last X days [GET]
+
++ Parameters
+    + projectId: `1` (number, required) - Select positions for given project only
+    + lastXDays: `30` (number, required) - Return position to given days back
+    + tags: `my tag` (string, optional) - Displays keywords assigned with at least one of given tags
+    + getXDays: `15` (number, optional) - Return position for only given X days
+
++ Request
+    + Headers
+    
+            Accept: application/collabim+json
+            Authorization: <userKey>
+        
++ Response 200 (application/json)
+
+    + Body
+    
+            {
+                "data": [
+                    {
+                        "projectKeywordId": 1,
+                        "text": "my keyword",
+                        "positions": [
+                            {
+                                "searchEngineId": 1,
+                                "position": 1,
+                                "date":"2020-01-01",
+                                "searchEngineName": "Google CZ"
+                            },
+                            {
+                                "searchEngineId": 2,
+                                "position": 2,
+                                "date":"2020-01-01",
+                                "searchEngineName": "Google CZ"
+                            },
+                            {
+                                "searchEngineId": 3,
+                                "position": 3,
+                                "date":"2020-01-01",
+                                "searchEngineName": "Google CZ"
+                            }
+                        ]
+                    },
+                    {
+                        "projectKeywordId": 2,
+                        "text":"my another keyword",
+                        "positions": [
+                            {
+                                "searchEngineId": 1,
+                                "position": 1,
+                                "date":"2020-01-01",
+                                "searchEngineName": "Google CZ"
+                            },
+                            {
+                                "searchEngineId": 2,
+                                "position": 2,
+                                "date":"2020-01-01",
+                                "searchEngineName": "Google CZ"
+                            },
+                            {
+                                "searchEngineId": 3,
+                                "position": 3,
+                                "date":"2020-01-01",
+                                "searchEngineName": "Google CZ"
+                            }
+                        ]
+                    }
+                ]
+            }
+
+            
+## Keyword aggregated positions [/aggregated-keywords-positions{?projectId,from,to,tags,getXDays}]
+
+<code>/aggregated-keyword-positions</code> displays aggregated positions for all keywords in given project. Also see the <a href="https://docs.google.com/document/pub?id=1Hhk4z27OZloN00z22kn8kz-ZIJ3efdBCzAo0Z2gjE6s">list of supported search engines</a>.
+
+### By interval - from, to [GET]
+
++ Parameters
+    + projectId: `1` (number, required) - Select positions for given project only
+    + from: `2020-01-01` (date, required) - Return positions from given date only (YYYY-MM-DD)
+    + to: `2020-01-01` (date, required) - Return positions from given date only (YYYY-MM-DD)
+    + tags: `my tag` (string, optional) - Displays keywords assigned with at least one of given tags
+    + getXDays: `15` (number, optional) - Return position for only given X days
+
++ Request
+    + Headers
+    
+            Accept: application/collabim+json
+            Authorization: <userKey>
+        
++ Response 200 (application/json)
+
+    + Body
+    
+            {
+                "data": [
+                    {
+                        "projectKeywordId": 1,
+                        "text": "my keyword",
+                        "positions": [
+                            {
+                                "searchEngineId": 1,
+                                "position": 1,
+                                "date":"2020-01-01",
+                                "searchEngineName": "Google CZ"
+                            },
+                            {
+                                "searchEngineId": 2,
+                                "position": 2,
+                                "date":"2020-01-01",
+                                "searchEngineName": "Google CZ"
+                            },
+                            {
+                                "searchEngineId": 3,
+                                "position": 3,
+                                "date":"2020-01-01",
+                                "searchEngineName": "Google CZ"
+                            }
+                        ]
+                    },
+                    {
+                        "projectKeywordId": 2,
+                        "text":"my another keyword",
+                        "positions": [
+                            {
+                                "searchEngineId": 1,
+                                "position": 1,
+                                "date":"2020-01-01",
+                                "searchEngineName": "Google CZ"
+                            },
+                            {
+                                "searchEngineId": 2,
+                                "position": 2,
+                                "date":"2020-01-01",
+                                "searchEngineName": "Google CZ"
+                            },
+                            {
+                                "searchEngineId": 3,
+                                "position": 3,
+                                "date":"2020-01-01",
+                                "searchEngineName": "Google CZ"
+                            }
+                        ]
+                    }
+                ]
+            }
+
+## Position distribution [/position-distribution{?projectId,tagName,lastXDays,getXDays}]
+
+<code>/position-distribution</code> returns position distribution for given project.
+
+### By last X days [GET]
+
++ Parameters
+    + projectId: `1` (number, required) - Select position distribution for given project
+    + lastXDays: `30` (number, required) - Return position distribution for given days back
+    + getXDays: `15` (number, optional) - Return position distribution for only given X days
+    + tagName: `tag` (string, optional) - Select position distribution for given tag only
+    
++ Request
+    + Headers
+    
+            Accept: application/collabim+json
+            Authorization: <userKey>
+        
++ Response 200 (application/json)
+
+    + Body
+    
+            {
+                "data": [
+                    {
+                        "projectId": "1",
+                        "tagId": "1",
+                        "addedOn": "2020-01-01",
+                        "searchEngineId": "1",
+                        "countTop3": "1",
+                        "count4to10": "1",
+                        "count11to20": "1",
+                        "count21plus": "1",
+                        "projectName": "My Project",
+                        "searchEngineName": "Google CZ",
+                        "tagName": "tag"
+                    }
+                ]
+            }
+
+## Position distribution [/position-distribution{?projectId,tagName,from,to,getXDays}]
+
+<code>/position-distribution</code> returns position distribution for given project.
+
+### By interval - from, to [GET]
+
++ Parameters
+    + projectId: `1` (number, required) - Select position distribution for given project
+    + from: `2020-01-01` (date, required) - Return position distribution from given date only (YYYY-MM-DD)
+    + to: `2020-01-30` (date, required) - Return position distribution to given date only (YYYY-MM-DD)
+    + getXDays: `15` (number, optional) - Return position distribution for only given X days
+    + tagName: `tag` (string, optional) - Select position distribution for given tag only
+    
++ Request
+    + Headers
+    
+            Accept: application/collabim+json
+            Authorization: <userKey>
+        
++ Response 200 (application/json)
+
+    + Body
+    
+            {
+                "data": [
+                    {
+                        "projectId": "1",
+                        "tagId": "1",
+                        "addedOn": "2020-01-01",
+                        "searchEngineId": "1",
+                        "countTop3": "1",
+                        "count4to10": "1",
+                        "count11to20": "1",
+                        "count21plus": "1",
+                        "projectName": "My Project",
+                        "searchEngineName": "Google CZ",
+                        "tagName": "tag"
+                    }
+                ]
+            }
+
+
+
+## MARKET dominator [/market-dominator{?projectId,tagName,lastXDays,getXDays}]
+
+<code>/market-dominator</code> returns market dominator values for given project.
+
+### By last X days [GET]
+
++ Parameters
+    + projectId: `1` (number, required) - Select position distribution for given project
+    + lastXDays: `30` (number, required) - Return position distribution for given days back
+    + getXDays: `15` (number, optional) - Return position distribution for only given X days
+    + tagName: `tag` (string, optional) - Select position distribution for given tag only
+    
++ Request
+    + Headers
+    
+            Accept: application/collabim+json
+            Authorization: <userKey>
+        
++ Response 200 (application/json)
+
+    + Body
+    
+            {
+                "data": [
+                    {
+                        "addedOn": "2022-10-18",
+                        "searchEngineId": 1,
+                        "searchEngineName": "Google CZ",
+                        "searchesTotal": 257335,
+                        "theoreticalVisitsTop3": 823,
+                        "theoreticalVisits4to10": 500,
+                        "theoreticalVisits11to20": 784,
+                        "theoreticalVisits21plus": 413
+                    }
+                ]
+            }
+
+## MARKET dominator [/market-dominator{?projectId,tagName,from,to,getXDays}]
+
+<code>/market-dominator</code> returns market dominator values for given project.
+
+### By interval - from, to [GET]
+
++ Parameters
+    + projectId: `1` (number, required) - Select position distribution for given project
+    + from: `2020-01-01` (date, required) - Return position distribution from given date only (YYYY-MM-DD)
+    + to: `2020-01-30` (date, required) - Return position distribution to given date only (YYYY-MM-DD)
+    + getXDays: `15` (number, optional) - Return position distribution for only given X days
+    + tagName: `tag` (string, optional) - Select position distribution for given tag only
+    
++ Request
+    + Headers
+    
+            Accept: application/collabim+json
+            Authorization: <userKey>
+        
++ Response 200 (application/json)
+
+    + Body
+    
+            {
+                "data": [
+                    {
+                        "addedOn": "2022-10-18",
+                        "searchEngineId": 1,
+                        "searchEngineName": "Google CZ",
+                        "searchesTotal": 257335,
+                        "theoreticalVisitsTop3": 823,
+                        "theoreticalVisits4to10": 500,
+                        "theoreticalVisits11to20": 784,
+                        "theoreticalVisits21plus": 413
+                    }
+                ]
+            }
+
+
+## Indexed pages [/indexed-pages{?projectId,searchEngineId,lastXDays}]
+
+<code>/indexed-pages</code> displays indexed pages for given project. Also see the <a href="https://docs.google.com/document/pub?id=1Hhk4z27OZloN00z22kn8kz-ZIJ3efdBCzAo0Z2gjE6s">list of supported search engines</a>. You can get indexed pages for date interval (from - to) or for lastXDays.
+
+### By last X days [GET]
+
++ Parameters
+    + projectId: `1` (number, required) - Show indexed pages stats for given project only
+    + searchEngineId: `1` (number, optional) - Show indexed pages stats for given search engine
+    + lastXDays: `30` (number, required) - Return position to given days back
+
++ Request
+    + Headers
+        
+            Accept: application/collabim+json
+            Authorization: <userKey>
+        
++ Response 200 (application/json)
+
+    + Body
+
+            {
+                "data": [
+                    {
+                        "date": "2020-01-01",
+                        "searchEngineId": 1,
+                        "indexedPages": 3,
+                        "searchEngineName": "Google CZ"
+                    },
+                    {
+                        "date":"2020-01-01",
+                        "searchEngineId": 2,
+                        "indexedPages": 3,
+                        "searchEngineName": "Google CZ"
+                    },
+                    {
+                        "date":"2020-01-01",
+                        "searchEngineId": 3,
+                        "indexedPages": 3,
+                        "searchEngineName": "Google CZ"
+                    }
+                ]
+            }
+
+## Indexed pages [/indexed-pages{?projectId,searchEngineId,from,to}]
+
+<code>/indexed-pages</code> displays indexed pages for given project. Also see the <a href="https://docs.google.com/document/pub?id=1Hhk4z27OZloN00z22kn8kz-ZIJ3efdBCzAo0Z2gjE6s">list of supported search engines</a>. You can get indexed pages for date interval (from - to) or for lastXDays.
+
+### By interval - from, to [GET]
+
++ Parameters
+    + projectId: `1` (number, required) - Show indexed pages stats for given project only
+    + searchEngineId: `1` (number, optional) - Show indexed pages stats for given search engine
+    + from: `2020-01-01` (date, required) - Show indexed pages stats from given date only (YYYY-MM-DD)
+    + to: `2020-01-01` (date, required) - Show indexed pages stats to given date only (YYYY-MM-DD)
+
++ Request
+    + Headers
+        
+            Accept: aplication/collabim+json
+            Authorization: <userKey>
+        
++ Response 200 (application/json)
+
+    + Body
+
+            {
+                "data": [
+                    {
+                        "date": "2020-01-01",
+                        "searchEngineId": 1,
+                        "indexedPages": 3,
+                        "searchEngineName": "Google CZ"
+                    },
+                    {
+                        "date":"2020-01-01",
+                        "searchEngineId": 2,
+                        "indexedPages": 3,
+                        "searchEngineName": "Google CZ"
+                    },
+                    {
+                        "date":"2020-01-01",
+                        "searchEngineId": 3,
+                        "indexedPages": 3,
+                        "searchEngineName": "Google CZ"
+                    }
+                ]
+            }
+
+## Market share [/market-share{?projectId,searchEngineId,tagName}]
+
+This endpoint <code>/market-share</code> returns data from market share graph. Also see the <a href="https://docs.google.com/document/pub?id=1Hhk4z27OZloN00z22kn8kz-ZIJ3efdBCzAo0Z2gjE6s">list of supported search engines</a>.
+
+### Get market share [GET]
+
++ Parameters
+    + projectId: `1` (number, required) - Show market share data for given project
+    + searchEngineId: `1` (number, required) - Show market share data for given search engine
+    + tagName: `my-tag` (string, optional) - Show market share data for given tag name only 
+    
++ Request
+    + Headers
+        
+            Accept: application/collabim+json
+            Authorization: <userKey>
+            
++ Response 200 (application/json)
+
+    + Body
+
+            {
+                "data": [
+                    {
+                        "name": "e-shop.cz",
+                        "data": [
+                            {
+                                "date": "2020-01-01",
+                                "count": 1,
+                                "tagId": 1,
+                                "tagName": "tag"
+                            }
+                        ]
+                    }
+                ]
+            }
+            
+## Market share history [/market-share{?projectId,searchEngineId,lastXDays,getXDays,tagName}]
+
+Use <code>/market-share</code> endpoint with parameters <strong>lastXDays</strong> to get market share history in given date interval.
+
+### By last X days [GET]
+
++ Parameters
+    + projectId: `1` (number, required) - Show market share data for given project
+    + searchEngineId: `1` (number, required) - Show market share data for given search engine
+    + lastXDays: `30` (number, required) - Return market share data for given days back
+    + getXDays: `15` (number, optional) - Return market share data for only given X days
+    + tagName: `my-tag` (string, optional) - Show market share data for given tag name only 
+    
++ Request
+    + Headers
+        
+            Accept: application/collabim+json
+            Authorization: <userKey>
+            
++ Response 200 (application/json)
+
+    + Body
+
+            {
+                "data": [
+                    {
+                        "name": "e-shop.cz",
+                        "data": [
+                            {
+                                "date": "2020-01-01",
+                                "count": 1,
+                                "tagId": 1,
+                                "tagName": "tag"
+                            }
+                        ]
+                    }
+                ]
+            }
+            
+## Market share history [/market-share{?projectId,searchEngineId,from,to,getXDays,tagName}]
+
+Use <code>/market-share</code> endpoint with parameters <strong>from</strong> and <strong>to</strong> to get market share history in given date interval.
+
+### By interval - from, to [GET]
+
++ Parameters
+    + projectId: `1` (number, required) - Show market share data for given project
+    + searchEngineId: `1` (number, required) - Show market share data for given search engine
+    + from: `2020-01-01` (date, required) - Return market share data from given date only (YYYY-MM-DD)
+    + to: `2020-01-30` (date, required) - Return market share data to given date only (YYYY-MM-DD)
+    + getXDays: `15` (number, optional) - Return market share data for only given X days
+    + tagName: `my-tag` (string, optional) - Show market share data for given tag name only 
+    
++ Request
+    + Headers
+        
+            Accept: application/collabim+json
+            Authorization: <userKey>
+            
++ Response 200 (application/json)
+
+    + Body
+
+            {
+                "data": [
+                    {
+                        "name": "e-shop.cz",
+                        "data": [
+                            {
+                                "date": "2020-01-01",
+                                "count": 1,
+                                "tagId": 1,
+                                "tagName": "tag"
+                            }
+                        ]
+                    }
+                ]
+            }
+
+## New account [/accounts/new]
+
+You can create new Collabim acount using API - for cooperation with affil partners only. If you desire to use this endpoint, please contact us. 
+
+Locale enum:
+* cs_CZ - Czech
+* sk_SK - Slovak
+* ru_RU - Russian
+* en_US - English (default)
+
+Available country codes: https://bit.ly/2rfsKth
+
+### Registration [POST]
+
++ Attributes
+    + planNumber: `1` (number, required) - Our internal plan ID. Contact us for plan informations.
+    + locale: `cs_CZ` (string, required) - Sets language for created account. Available locale codes: cs_CZ, sk_SK, ru_RU, en_US.
+    + email: `email@example.com` (string, required) - Email to be registered as owner of an account.
+    + password: `u76Cdsofm8xy` (string, required) - Password is optional. Password reset will be send if needed.
+    + siteAddress: `e-shop.cz` (string, required) - Website that belongs to client. Eshop URL for example. Could be empty.
+    + keywords: `shirt,hat,leggings` (string, required) - Keywords that will be automatically added to project after account creation. Could be empty.
+    + promoCode: `partner` (string, required) - Promo code of the partner, contact us for more informations.
+    + approvedTermsDate: `2020-12-10` (string, required) - Approved terms of use date. Terms can be found here: https://www.collabim.cz/podminky-sluzby.html or in English here: https://www.collabim.com/terms-of-use.html
+    + country: `CZ` (string, optional) - Country of account. If not specified we will _try_ to get it from locale. Available country codes can be found here:  https://bit.ly/2rfsKth.
+    + phone: `+420783927092` (string, optional) - Phone number of account owner.
+
+
++ Request
+    + Headers
+    
+            Accept: application/collabim+json
+            Authorization: <partner-token>
+    
++ Request (application/json)
+
+        {
+            "api_registration_form": {
+                "planNumber": "2",
+                "locale": "cs_CZ",
+                "email": "email@example.com",
+                "password": "u76Cdsofm8xy",
+                "siteAddress": "e-shop.cz",
+                "keywords": "jedna,dva,tri",
+                "promoCode": "partner",
+                "approvedTermsDate": "2020-12-10",
+                "country": "CZ",
+                "phone": "+420123456789"
+            }
+        }
+
++ Response 200 (application/json)
+
+    + Body
+
+            {
+                "siteAddress": "z345_cz",
+                "projectId": 50,
+                "userKey": "f7fcc9d173432e7a0c90fca1860ea4932c68b558"
+            }
+            
++ Response 400 (application/json)
+
+    + Body
+
+            {
+                "email": "This value should not be blank."
+            }
+            
++ Response 401 (application/json)
+
+    + Body
+
+            {
+                "message": "Unathorized access, please contact our support."
+            }
+            
+## User key [/user-key]
+
+For cooperation with affil partners only. If you desire to use this endpoint, please contact us.
+
+Available country codes: https://bit.ly/2rfsKth
+
+
+### Retrieve user API key [POST]
+
++ Request
+    + Headers
+
+            Accept: application/collabim+json
+            Content-Type: application/json
+            Authorization: <authToken>
+
+    + Body
+
+            {
+                "api_login_form": {
+                    "siteAddress": "test",
+                    "email": "owner@example.com",
+                    "password": "heslo123"
+                }
+            }
+
++ Response 200 (application/json)
+
+    + Body
+
+            {
+                "userKey": "6af88353248c4884a0576bc05bdf2341419d0110"
+            }
+            
+## Holy grail stats [/holy-grail-stats/{domain}]
+
++ Parameters
+    + domain: `collabim.cz` (string, required) - domain for statistics
+
+### Get holy grail stats for domain [GET]
+
++ Request
+    + Headers
+    
+            Accept: application/collabim+json
+            Authorization: <userKey>
+            
++ Response 200 (application/json)
+
+    + Body
+    
+            {
+                "domainStats": {
+                    "allKeywordsCount": 1000,
+                    "statsPerSearchEngine": {
+                        "Seznam.cz": 450,
+                        "Google CZ": 350,
+                        "Google SK": 200
+                    }
+                }
+            }
+
+## Holy Grail for AIO Stats [/holy-grail-aio-stats/{domain}]
+
+Endpoint returns All-in-One (AIO) Holy Grail statistics for a specified domain, focusing on publicly available data.
+
++ Parameters
+    + domain: `collabim.cz` (string, required) - doména pre štatistiky
+
+### Get Holy Grail AIO stats [GET]
+
++ Request
+    + Headers
+    
+            Accept: application/collabim+json
+            Authorization: <userKey>
+            
++ Response 200 (application/json)
+
+    + Body
+    
+            {
+                "domainStats": {
+                    "allKeywordsCount": 850
+                }
+            }
+
+## Holy Grail for AIO Data [/holy-grail-aio-data/{domain}{?format}]
+
+The endpoint returns complete Holy Grail AIO data for further processing and analysis in JSON or CSV format.
+
++ Parameters
+    + domain: `collabim.cz` (string, required) - doména pre dáta
+
+### Get comprehensive Holy Grail AIO data [GET]
+
++ Parameters
+    + format: `json` (enum[string], optional) - Formát výstupu (json alebo csv)
+        + Members:
+            + json
+            + csv
+
++ Request
+    + Headers
+    
+            Accept: application/collabim+json
+            Authorization: <userKey>
+            
++ Response 200 (application/json)
+
+    + Body
+    
+            {
+                "data": [
+                    {
+                        "keyword": "seo nástroje",
+                        "domain": "collabim.cz",
+                        "search_engine": "Google CZ",
+                        "date": "2024-01-15",
+                        "aio_mainbox_position": 3,
+                        "aio_sidebar_position": 1,
+                        "aio_top_results": 0,
+                        "path": "/seo-nastroje",
+                        "google_search_volume": 5400,
+                        "words_count": 15
+                    },
+                    {
+                        "keyword": "analýza konkurencie",
+                        "domain": "collabim.cz",
+                        "search_engine": "Google CZ",
+                        "date": "2024-01-15",
+                        "aio_mainbox_position": 5,
+                        "aio_sidebar_position": 2,
+                        "aio_top_results": 1,
+                        "path": "/analyza-konkurencie",
+                        "google_search_volume": 3200,
+                        "words_count": 12
+                    }
+                ]
+            }
+
+## Google AI Overviews [/google-ai-overviews/{domain}]
+
+A comprehensive endpoint for Google AIO, returning AI overviews data, competitor data, and market share. Usage of only domain and projectId returns data from AI measurement, other queries returns data for AIO Market Share and Competitors
+
++ Parameters
+    + domain: `collabim.cz` (string, required) - doména pre analýzu
+
+### Get comprehensive Google AI Overviews [GET /google-ai-overviews/{domain}{?projectId,searchEngineId,from,to,lastXDays,getXDays,tagName,format}]
+
++ Parameters
+    + projectId: `123` (number, optional) - Project ID (if not specified, domain is used)
+    + searchEngineId: `1` (number, optional) - Search engine ID
+    + from: `2024-01-01` (string, optional) - Start date for historical data (YYYY-MM-DD)
+    + to: `2024-01-31` (string, optional) - End date for historical data (YYYY-MM-DD)
+    + lastXDays: `30` (number, optional) - Number of days back for historical data
+    + getXDays: `15` (number, optional) - Number of days to return
+    + tagName: `priority` (string, optional) - Tag name for filtering
+    + format: `json` (enum[string], optional) - Output format
+        + Members:
+            + json
+            + csv
+
++ Request
+    + Headers
+    
+            Accept: application/collabim+json
+            Authorization: <userKey>
+
++ Response 200 (application/json)
+    + Body
+    
+            {
+                "data": {
+                    "google_ai_overviews": [
+                        {
+                            "keyword": "seo tools",
+                            "domain": "collabim.cz",
+                            "search_engine_name": "Google CZ",
+                            "link_position": 1,
+                            "total_link_positions": 5,
+                            "result_position": 3,
+                            "total_result_positions": 10,
+                            "recommended_position": "no",
+                            "snippet_title": "Collabim - Advanced SEO Tools",
+                            "href": "https://collabim.cz/seo-tools",
+                            "is_present_in_ai_results": "yes"
+                        }
+                    ],
+                    "competitors_aio": [
+                        {
+                            "keyword": "seo tools",
+                            "search_volume": 5400,
+                            "project_link_position": 1,
+                            "project_result_position": 3,
+                            "project_total_result_positions": 10,
+                            "project_recommended_position": 0,
+                            "project_position": 3.5,
+                            "target_pane": "main",
+                            "competitor_123_link_position": 2,
+                            "competitor_123_result_position": 4,
+                            "competitor_123_total_result_positions": 8,
+                            "competitor_123_recommended_position": 1,
+                            "competitor_123_position": 4.2,
+                            "competitor_123_path": "/seo-tools",
+                            "wildcard_competitor1.cz_link_position": 3,
+                            "wildcard_competitor1.cz_result_position": 5,
+                            "wildcard_competitor1.cz_total_result_positions": 12,
+                            "wildcard_competitor1.cz_recommended_position": 0,
+                            "wildcard_competitor1.cz_position": 5.5,
+                            "wildcard_competitor1.cz_path": "/seo"
+                        }
+                    ],
+                    "aio_market_share": {
+                        "project": "collabim.cz",
+                        "search_engine": "Google CZ",
+                        "data": [
+                            {
+                                "date": "2024-01-15",
+                                "visibility_index": 45.8,
+                                "market_share_percentage": 15.3,
+                                "top3_keywords": 75,
+                                "top10_keywords": 250
+                            }
+                        ]
+                    }
+                }
+            }
+
+## HEUREKA categories [/category-downloader/heureka-tree]
+
+### Get XLSX with actual HEUREKA categories [GET]
+
++ Request
+    + Headers
+    
+            Accept: application/collabim+json
+            Authorization: <userKey>
+            
++ Response 200 (binary file)
+
+            
+## One time analyses keyword measuring [/ota/keyword-measuring]
+
+This is a special service, available only for business partners. If you would like to use this, feel free to contact us for pricing. 
+
+Available Google GEO location codes: https://goo.gl/t7UAww
+
+Available Search engines: https://goo.gl/mKTAZB
+
+Priority enum:
+* 0 - standard queue, till 24 hours
+* 1 - priority queue, ASAP
+
+Result type:
+* json - json with results
+* html - pure html from search engine
+
+### Send keyword batch for measuring [POST]
+
++ Request
+    + Headers
+
+            Accept: application/collabim+json
+            Content-Type: application/json
+            Authorization: <businessPartnerAuthToken>
+
+    + Body
+
+            {
+                "keyword_measuring_form": {
+                    "searchEngine": 1,
+                    "geoId": 123,
+                    "priority": 0,
+                    "desiredResultType": "html",
+                    "keywords": [
+                        "keyword 1",
+                        "keyword 2",
+                        "keyword 3"
+                    ]
+                }
+            }
+
++ Response 200 (application/json)
+
+    + Body
+
+            {
+                "batchId": "123456"
+            }
+            
++ Response 401 (application/json)
+
+    + Body
+
+            {
+                "message": "Unathorized access, please contact our support."
+            }
+## One time analyses keyword measuring - results [/ota/keyword-measuring/status]
+
+### Get keyword batch results [POST]
+
++ Request
+    + Headers
+
+            Accept: application/collabim+json
+            Content-Type: application/json
+            Authorization: <businessPartnerAuthToken>
+            
+    + Body
+
+            {
+                "keyword_measuring_status_form": {
+                    "batchId": 123456
+                }
+            }
+
+
++ Response 200 (application/json)
+
+    + Body
+
+            {
+                "batchId": 123456,
+                "searchEngine": 1,
+                "geoId": 123,
+                "priority": 0,
+                "desiredResultType": "html",
+                "keywords": [
+                    "keyword 1": "url1",
+                    "keyword 2": "url2",
+                    "keyword 3": "url3"
+                ]
+            }
+            
++ Response 418 (application/json)
+
+    + Body
+
+            {
+                "message": "Keyword batch not ready yet."
+            }
+            
++ Response 401 (application/json)
+
+    + Body
+
+            {
+                "message": "Unathorized access, please contact our support."
+            }
+            
+
+## Website system [/website-system]
+
+You can detect what website system specific URL uses. This endpoint is pooling based! If you desire to use this endpoint, please contact us.
+
+**List of possible systems returned by endpoint:**
+
+wordpress, shoptet, eshop-rychle, byznys-web, upgates, fast-centrik, oxy-shop, webovy-servis, webnode, woocommerce, jzshop, shopion, webczech, wexbo, shoptec, open-servis, presta-shop, mio-web, magento, shop5, bizbox, ebrana, webmium, animato, 4shop, solidpixels, simplia, rocketoo, shopsys, simple-shop, fapi, smart-emailing, clipsan, web-eshop, binargon, clickeshop, shop_sun, webareal
+
+
+### Website System Detection [GET]
+
++ Attributes
+    + url: `https://example-eshop.com` (string, required) - URL for which you want to detect website system.
+
+
++ Request
+    + Headers
+    
+            Accept: application/collabim+json
+            Authorization: <partner-token>
+
++ Response 200 (application/json)
+
+    + Body
+
+            {
+                "status": "success",
+                "domain": "www.bezvapotisk.cz",
+                "lastMeasured": "2021-04-19 16:35:13",
+                "systems": [
+                    "shoptet",
+                    "There can be many systems from list above."
+                ]
+            }
+            
++ Response 200 (application/json)
+
+    + Body
+
+            {
+                "status": "processing",
+                "message": "We are currently detecting website system for requested domain. Please make this request later again."
+            }
+
++ Response 200 (application/json)
+
+    + Body
+
+            {
+                "status": "error",
+                "message": "Detection failed, try again after 30 minutes, reason: Particular reason."
+            }
+
+
++ Response 200 (application/json)
+
+    + Body
+
+            {
+                "status": "error",
+                "message": "Detection failed, try again after 30 minutes, reason: Unexpected failure, does this domain exist?"
+            }
+
++ Response 400 (application/json)
+
+    + Body
+
+            {
+                "status": "error",
+                "message": "Parameter `url` is required."
+            }
+            
+
++ Response 401 (application/json)
+
+    + Body
+
+            {
+                "message": "Unathorized access, please contact our support."
+            }
