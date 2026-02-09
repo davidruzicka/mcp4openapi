@@ -105,7 +105,9 @@ export class ToolGenerator {
       if (param.pattern !== undefined) {
         schema.pattern = param.pattern;
       }
-      const maxLength = param.maxLength ?? (param.pattern !== undefined ? DEFAULT_REGEX_MAX_LENGTH : undefined);
+      const maxLength = param.pattern !== undefined
+        ? Math.min(param.maxLength ?? DEFAULT_REGEX_MAX_LENGTH, DEFAULT_REGEX_MAX_LENGTH)
+        : param.maxLength;
       if (maxLength !== undefined) {
         schema.maxLength = maxLength;
       }
