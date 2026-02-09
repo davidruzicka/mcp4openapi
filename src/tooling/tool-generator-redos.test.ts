@@ -55,6 +55,56 @@ describe('ToolGenerator ReDoS Protection', () => {
     }).toThrow(/Unsafe regex/);
   });
 
+  it('should reject unsafe regex patterns (ambiguous alternation)', () => {
+    const parser = new OpenAPIParser();
+    const generator = new ToolGenerator(parser);
+
+    const toolDef = {
+      name: 'test_redos_ambiguous_alternation',
+      description: 'Test ReDoS ambiguous alternation',
+      parameters: {
+        unsafeParam: {
+          type: 'string' as const,
+          description: 'Unsafe param',
+          pattern: '^(a|a)+$', // Ambiguous alternation
+          required: true
+        }
+      }
+    };
+
+    const shortString = 'aaa';
+
+    expect(() => {
+      generator.validateArguments(toolDef as any, { unsafeParam: shortString });
+    }).toThrow(/Unsafe regex/);
+  });
+
+  it('should reject regex patterns exceeding length limit (1024)', () => {
+    const parser = new OpenAPIParser();
+    const generator = new ToolGenerator(parser);
+
+    const longPattern = '^' + 'a'.repeat(1030) + '$';
+
+    const toolDef = {
+      name: 'test_redos_long_pattern',
+      description: 'Test ReDoS long pattern',
+      parameters: {
+        longPatternParam: {
+          type: 'string' as const,
+          description: 'Long pattern param',
+          pattern: longPattern,
+          required: true
+        }
+      }
+    };
+
+    const shortString = 'a';
+
+    expect(() => {
+      generator.validateArguments(toolDef as any, { longPatternParam: shortString });
+    }).toThrow(/Unsafe regex: Pattern exceeds/);
+  });
+
   it('should allow safe patterns with short inputs', () => {
     const parser = new OpenAPIParser();
     const generator = new ToolGenerator(parser);
@@ -77,5 +127,30 @@ describe('ToolGenerator ReDoS Protection', () => {
     expect(() => {
       generator.validateArguments(toolDef as any, { safeParam: safeString });
     }).not.toThrow();
+  });
+
+  it('should handle invalid regex syntax gracefully', () => {
+    const parser = new OpenAPIParser();
+    const generator = new ToolGenerator(parser);
+
+    const toolDef = {
+      name: 'test_invalid_syntax',
+      description: 'Test invalid syntax',
+      parameters: {
+        invalidParam: {
+          type: 'string' as const,
+          description: 'Invalid param',
+          pattern: '[', // Invalid regex syntax (unclosed bracket)
+          required: true
+        }
+      }
+    };
+
+    const shortString = 'a';
+
+    // Should catch SyntaxError from new RegExp() and rethrow as ValidationError
+    expect(() => {
+      generator.validateArguments(toolDef as any, { invalidParam: shortString });
+    }).toThrow(/Invalid pattern/);
   });
 });
