@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.8] - 2026-02-10
+
 ### Changed
 - Hardened HttpClient security with SSRF validation across redirect hops, configurable request timeout (timeout_ms, default 30s), and cross-origin auth-header stripping.
 
