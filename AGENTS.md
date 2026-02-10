@@ -65,7 +65,7 @@ Reference canonical sources; never duplicate rules.
 - Use `npm run validate` to check profiles (no API access required)
 - Reference `docs/PROFILE-GUIDE.md` for structure and patterns
 - Validate operations exist in OpenAPI spec: `npm run validate -- profile.json openapi.yaml`
-- Test incrementally: validate → build → test with real API
+- Test incrementally: validate -> build -> test with real API
 
 ### TODO.md Maintenance
 
@@ -133,65 +133,38 @@ Each interceptor is independently testable. Configuration in profile `intercepto
 ### Adding New Profile Field
 
 1. Update `src/types/profile.ts` (TypeScript interface)
-2. Run `npm run generate-schemas` (auto-generates Zod)
-3. Run `npm run check-schema-sync` to verify generated schemas are in sync
-4. Add tests in `src/profile/profile-loader.test.ts`
-5. Update `docs/PROFILE-GUIDE.md` if user-facing
+2. Follow `Schema Synchronization (CRITICAL)` exactly (generate + sync check + tests)
+3. Add tests in `src/profile/profile-loader.test.ts`
+4. Update `docs/PROFILE-GUIDE.md` if user-facing
 
 ### New Feature Steps
 
 1. Define types in `src/types/` if needed
 2. Implement core logic (parser, loader, generator, executor)
-3. Add typed errors in `src/core/errors.ts` if needed
-4. Write tests (unit → integration → e2e)
+3. Add typed errors in `src/core/errors.ts` if needed (see `Error Handling`)
+4. Write tests (unit -> integration -> e2e) (see `Testing Patterns`)
 5. Update documentation (`IMPLEMENTATION.md` for architecture, `docs/` for user-facing)
-6. **Remove completed item from `TODO.md`** - if feature was listed there
+6. **Remove completed item from `TODO.md`** - if feature was listed there (see `TODO.md Maintenance`)
 
 ALWAYS implement one feature at a time with tests passing before proceeding.
 
-### Profile Validation
-
-```bash
-# Structure only
-npm run validate -- profiles/my-profile.json
-
-# Structure + OpenAPI operation check
-npm run validate -- profiles/my-profile.json openapi.yaml
-```
-
-Checks: JSON syntax, schema compliance, logical consistency, operation existence.
-
-### Build & Test
-
-```bash
-npm run build          # generate-schemas + tsc
-npm test               # typecheck + vitest
-npm run validate       # profile validation
-npm start              # run server
-```
-
 ## Avoid
 
-- Removing or disabling failing tests
-- Duplicating validation or business rules (reference canonical docs)
 - Returning ORM/raw API responses
-- Broad catch-all exceptions (use specific error types)
 - Duplicating constraint tables
 - Hard-coding API assumptions (all customization via profiles)
-- Skipping schema sync (always run `npm run generate-schemas` after type changes)
 - Ignoring Zod strict mode (unknown properties are silently removed)
 - Never use the Unicode em dash (`—`) or en dash (`–`) – always use ASCII hyphen-minus (`-`) in documentation or code comments
 - Never recommend implementation of the HSTS security HTTP header (not applicable here)
+- For test, validation, and typed-error requirements, follow `Testing Patterns`, `Schema Synchronization (CRITICAL)`, and `Error Handling`.
 
 ## Critical Gotchas
 
-1. **Schema Sync**: TypeScript → Zod → JSON Schema must match. Missing Zod field = runtime failure.
-2. **Profile Validation**: Operations must exist in OpenAPI spec. Use `npm run validate` with spec path.
-3. **Parameter Aliases**: Required for generic OpenAPI path params (e.g., `{id}` → `project_id`).
-4. **Metadata Params**: Mark control parameters (e.g., `action`, `resource_type`) that don't go to API.
-5. **Token Redaction**: Logger automatically redacts tokens based on profile auth type (bearer/query/custom-header).
-6. **OAuth Sessions**: Extended timeout (24h default) vs static token sessions (30min).
-7. **Composite Dependencies**: `depends_on` must reference `store_as` values; circular deps detected at load time.
+1. **Parameter Aliases**: Required for generic OpenAPI path params (e.g., `{id}` → `project_id`).
+2. **Metadata Params**: Mark control parameters (e.g., `action`, `resource_type`) that don't go to API.
+3. **Token Redaction**: Logger automatically redacts tokens based on profile auth type (bearer/query/custom-header).
+4. **OAuth Sessions**: Extended timeout (24h default) vs static token sessions (30min).
+5. **Composite Dependencies**: `depends_on` must reference `store_as` values; circular deps detected at load time.
 
 ## Environment Variables
 
@@ -257,7 +230,6 @@ When selecting code for context, prioritize these files based on task:
 
 ### Architecture Understanding
 - Start with `IMPLEMENTATION.md` for system overview
-- Reference `.github/instructions/` for repository coding instructions
 - Check `README.md` for user-facing features
 
 Follow these to keep generation consistent & maintainable.
