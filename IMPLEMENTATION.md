@@ -9,27 +9,27 @@
          │
          ▼
 ┌─────────────────┐
-│  MCP Server     │  mcp-server.ts - coordinates all components
+│  MCP Server     │  src/mcp/mcp-server.ts - coordinates all components
 └────────┬────────┘
          │
-         ├──────────► OpenAPI Parser (openapi-parser.ts)
+         ├──────────► OpenAPI Parser (src/openapi/openapi-parser.ts)
          │            - Loads & indexes OpenAPI spec
          │            - Resolves $ref parameters
          │            - Fast operation lookup
          │
-         ├──────────► Profile Loader (profile-loader.ts)
+         ├──────────► Profile Loader (src/profile/profile-loader.ts)
          │            - Validates profile JSON with Zod (auto-generated)
          │            - Checks semantic rules
          │            - Default profile generation
          │            - Zod schemas auto-generated from TypeScript types
          │
-         ├──────────► Tool Generator (tool-generator.ts)
+         ├──────────► Tool Generator (src/tooling/tool-generator.ts)
          │            - Generates MCP tools from profile
          │            - Creates JSON Schema for parameters
          │            - Validates conditional requirements
          │            - Maps actions to operations
          │
-         ├──────────► HTTP Client + Interceptors (interceptors.ts)
+         ├──────────► HTTP Client + Interceptors (src/transport/interceptors.ts)
          │            - Auth (header/query/bearer from env)
          │            - Rate limiting (token bucket)
          │            - Retry (exponential backoff)
@@ -41,7 +41,7 @@
          │            - Session filtering (HTTP headers)
          │            - ReDoS protection & validation
          │
-         └──────────► Composite Executor (composite-executor.ts)
+         └──────────► Composite Executor (src/tooling/composite-executor.ts)
                       - Chains API calls
                       - Merges results into nested structure
                       - Path parameter resolution
@@ -171,7 +171,7 @@ tool-filter/
 - **Default profile behavior**: `/mcp` remains available only when a default profile is configured (via `MCP4_PROFILE_PATH` or `--profile-path`).
 - **OAuth metadata per profile**: `/.well-known/oauth-authorization-server` and `/.well-known/oauth-protected-resource/mcp` are available under `/profile/:profileId/` when routing is enabled.
 
-### 5. Conditional Parameter Requirements
+### 6. Conditional Parameter Requirements
 
 **Why**: `badge_id` only needed for get/update/delete, not list/create
 
@@ -181,7 +181,7 @@ tool-filter/
 
 **Validation**: Runtime check in `validateArguments()`
 
-### 6. Interceptor Chain Pattern
+### 7. Interceptor Chain Pattern
 
 **Why**: Separate auth, rate-limiting, retry concerns from business logic
 
@@ -194,7 +194,7 @@ tool-filter/
 - Easy to add new interceptors (logging, metrics)
 - Configuration-driven (no code changes)
 
-### 7. Composite Tools for Reducing Roundtrips
+### 8. Composite Tools for Reducing Roundtrips
 
 **Why**: Fetching MR + comments + changes requires 3 calls
 
@@ -212,7 +212,7 @@ tool-filter/
 
 **Result**: Single JSON with nested structure
 
-### 8. $ref Resolution in OpenAPI
+### 9. $ref Resolution in OpenAPI
 
 **Why**: GitLab spec uses shared parameters (`ProjectIdOrPath`)
 
@@ -220,7 +220,7 @@ tool-filter/
 
 **Impact**: Properly extracts `id` path parameter that was previously missed
 
-### 9. Resource Type Discrimination
+### 10. Resource Type Discrimination
 
 **Why**: Same operation on different resources (project badges vs group badges)
 
@@ -236,7 +236,7 @@ tool-filter/
 
 **Lookup**: `mapActionToOperation()` tries `{action}_{resource_type}` first, falls back to `{action}`
 
-### 10. Token Bucket Rate Limiting
+### 11. Token Bucket Rate Limiting
 
 **Why**: Allow bursts while enforcing average rate
 
@@ -246,7 +246,7 @@ tool-filter/
 
 **Better than**: Simple per-request delays (poor UX, doesn't prevent bursts)
 
-### 11. Exponential Backoff Retry
+### 12. Exponential Backoff Retry
 
 **Why**: Reduces server load during outages
 
@@ -256,7 +256,7 @@ tool-filter/
 
 **Better than**: Linear backoff (thundering herd problem)
 
-### 12. Dual Transport Support (stdio + HTTP)
+### 13. Dual Transport Support (stdio + HTTP)
 
 **Why**: stdio for local development, HTTP for remote/production access
 
@@ -280,111 +280,57 @@ tool-filter/
 
 ```
 src/
-├── types/
-│   ├── profile.ts       - Profile configuration types
-│   ├── openapi.ts       - Simplified OpenAPI types
-│   └── http-transport.ts - HTTP transport types
+├── auth/                - OAuth provider and metadata handling
+├── core/                - Core runtime (errors, logger, metrics, constants, startup)
+├── mcp/                 - MCP server and server manager
+├── openapi/             - OpenAPI parsing and operation indexing
+├── profile/             - Profile loading, registry, startup profile resolution
+├── security/            - Security validators (e.g. SSRF checks)
+├── testing/             - Integration utilities and dynamic mock server
 ├── tool-filter/         - Modular tool filtering architecture
-│   ├── types.ts         - Shared filtering types
-│   ├── errors.ts        - Custom filter error classes
-│   ├── regex/
-│   │   ├── regex-validator.ts  - ReDoS protection
-│   │   └── regex-compiler.ts   - Auto-anchoring compiler
-│   ├── operation/
-│   │   ├── operation-classifier.ts - Classify operations (list/read/modify)
-│   │   ├── operation-resolver.ts   - Operation lookup interface
-│   │   └── operation-detector.ts   - Detect tool categories
-│   ├── filter/
-│   │   ├── filter-rules.ts         - Rule interfaces (Strategy pattern)
-│   │   ├── filter-engine.ts        - Rule orchestration
-│   │   ├── global-tool-filter.ts   - Environment-based filtering
-│   │   └── session-tool-filter.ts  - HTTP header-based filtering
-│   ├── config/
-│   │   ├── env-config-parser.ts    - Parse MCP4_TOOL_FILTER_* vars
-│   │   └── header-config-parser.ts - Parse X-Mcp4-Tools header
-│   ├── integration/
-│   │   └── tool-filter-service.ts  - Facade for all filtering
-│   ├── index.ts         - Public API
-│   └── README.md        - Module documentation
-├── openapi-parser.ts    - OpenAPI spec parser & indexer
-├── profile-loader.ts    - Profile JSON loader & validator (operation keys validation)
-├── tool-generator.ts    - MCP tool generator
-├── interceptors.ts      - HTTP interceptor chain
-├── composite-executor.ts - Multi-step API call executor
-├── schema-validator.ts  - Request body validation
-├── http-transport.ts    - HTTP Streamable transport (787 lines)
-├── http-client-factory.ts - HTTP client management & session handling
-├── jsonrpc-validator.ts - JSON-RPC message validation utilities
-├── validation-utils.ts  - Security utilities (prototype pollution, regex escape, redaction)
-├── metrics.ts           - Prometheus metrics collector (264 lines)
-├── logger.ts            - Pluggable logger (console/JSON)
-├── constants.ts         - Time & HTTP status constants
-├── mcp-server.ts        - Main MCP server
-├── index.ts             - CLI entry point
-├── testing/
-│   ├── fixtures.ts      - Test data fixtures
-│   ├── mock-utils.ts    - Mock server URL parsing utilities
-│   ├── test-http-utils.ts - HTTP client test utilities
-│   ├── mock-gitlab-server.ts - MSW mock server for GitLab API
-│   ├── test-types.ts    - Test-specific types
-│   └── *.test.ts        - Test suites (261 tests)
-└── *.test.ts            - Additional test suites
+├── tooling/             - Tool generation, composite and DAG executors
+├── transport/           - HTTP transport, config, interceptors, client factory
+├── types/               - Shared domain and transport types
+├── validation/          - JSON-RPC and schema validation utilities
+├── generated-schemas.ts - Auto-generated Zod schemas
+└── index.ts             - Runtime entrypoint
 
-profiles/gitlab/
-├── openapi.yaml         - GitLab OpenAPI spec
-└── developer-profile-oauth.json - Example profile
+profiles/
+├── gitlab/              - GitLab OpenAPI/profile variants
+├── github-security/     - GitHub code scanning profile
+├── collabim/            - Collabim profile and converted OpenAPI
+├── semgrep/             - Semgrep profile
+└── ...                  - Other API profiles
 
 scripts/
 ├── validate-profile.ts  - Profile validation CLI
-└── validate-schema.ts   - Schema meta-validation
-
-docs/
-├── HTTP-TRANSPORT.md    - HTTP transport guide (603 lines)
-└── PROFILE-GUIDE.md     - Profile creation guide (622 lines)
+├── validate-schema.ts   - Schema meta-validation
+└── check-schema-sync.ts - Schema drift verification
 ```
 
-## Test Coverage (1,316+ tests, 100% passing)
+## Test Coverage
 
-### **Unit Tests**:
-- **OpenAPI Parser** (8 tests) - spec parsing, $ref resolution
-- **Profile Loader** (9 tests) - validation, logic checks, operation keys validation
-- **Tool Generator** (7 tests) - MCP tool generation, JSON schema
-- **Tool Filter Module** (50+ tests) - modular filtering architecture
-  - Regex validation (8 tests) - ReDoS protection, auto-anchoring
-  - Operation classification (12 tests) - list/read/modify detection
-  - Filter rules (15 tests) - exact, regex, category matching
-  - Config parsers (10 tests) - env vars, HTTP headers
-  - Filter engine (8 tests) - rule precedence, Unicode normalization
-  - Integration (5 tests) - ToolFilterService, end-to-end
-- **Interceptors** (10 tests) - auth, rate-limit, retry, array serialization
-- **Composite Executor** (11 tests) - multi-step execution, partial results, **prototype pollution protection**
-- **Schema Validator** (9 tests) - request body validation
-- **Logger** (17 tests) - console/JSON output, log levels, **profile-aware token redaction** (bearer/query/custom-header)
-- **HTTP Transport** (35 tests) - POST/GET/DELETE, sessions, SSE, origin validation, CIDR
-- **Metrics** (16 tests) - HTTP, sessions, tools, API calls
-- **HTTP Client Factory** (13 tests) - client creation, session management
-- **JSON-RPC Validator** (18 tests) - message type validation
-- **Validation Utils** (4 tests) - email, URI, **prototype pollution prevention**, **regex escaping**
-- **OAuth Provider** (16 tests) - OAuth flow, **redirect URI validation**
+### **Unit Tests**
+- OpenAPI parser: spec parsing and parameter resolution
+- Profile loader and registry: schema + semantic validation
+- Tool generation and composite execution (including DAG executor)
+- Transport/interceptors/client factory
+- Validation and security utilities
+- OAuth provider and metadata handling
+- Core services (logger, metrics, constants, startup)
 
-### **Integration Tests** (30 tests):
-- **GitLab API** (21 tests) - badges, branches, access requests, jobs
-- **HTTP Protocol** (9 tests) - full request/response cycle, tool execution
+### **Integration Tests**
+- HTTP protocol and MCP transport behavior
+- End-to-end tool execution across profile-driven mappings
 
-### **E2E Tests** (21 tests):
-- **HTTP Transport** (6 tests) - session management, SSE streaming
-- **Stdio Transport** (5 tests) - local MCP communication
-- **Bearer Auth** (3 tests) - token authentication
-- **OAuth Auth** (6 tests) - OAuth 2.0 flow, token refresh
-- **Idempotency** (1 test) - branch operations
+### **E2E Tests**
+- HTTP and stdio transports
+- Bearer and OAuth authentication flows
+- Session lifecycle and streaming behavior
 
-### **Validation Tests** (19 tests):
-- **Profile Schema** (10 tests) - JSON Schema validation, compilation
-- **Validation CLI** (9 tests) - profile validation script
-
-### **Test Utilities** (19 tests):
-- **Mock Utils** (12 tests) - URL parsing, pagination utilities
-- **Test HTTP Utils** (7 tests) - HTTP client test setup, mocking
+### **Validation and Utility Tests**
+- Profile schema validation and CLI validation script
+- Testing utilities and mock infrastructure
 
 ## Key Test Improvements
 
@@ -414,11 +360,11 @@ docs/
 
 ## Known Limitations
 
-1. **$ref Resolution**: Schema $refs not fully resolved (parameters are handled)
-2. **Pagination**: No auto-pagination yet (would require detecting Link headers)
-3. **Response Validation**: Doesn't validate response bodies against OpenAPI schemas (only requests)
-4. **IPv6 CIDR**: Origin validation supports only IPv4 CIDR ranges
-5. **Parallel Composite Steps**: All steps execute sequentially (no DAG-based parallelization yet)
+1. **$ref Resolution**: Schema $refs are not fully resolved (parameter refs are handled).
+2. **Pagination**: No auto-pagination yet (would require Link-header traversal per API).
+3. **Response Validation**: Response bodies are not validated against OpenAPI schemas (requests are validated).
+4. **IPv6 CIDR**: Origin validation is primarily focused on IPv4 CIDR ranges.
+5. **Composite Execution**: DAG-based dependency execution exists, but automatic dependency inference and full parallel optimization are still limited.
 
 ## Production Readiness
 
