@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.9] - 2026-02-10
+
+### Fixed
+- Fixed some Collabim optimized profile filter parameter types to use boolean values instead of numeric enums.
+
 ## [0.3.8] - 2026-02-10
 
 ### Changed

@@ -107,9 +107,8 @@
           "description": "Optional response format for get_holy_grail_aio_data"
         },
         "active": {
-          "type": "integer",
-          "enum": [0, 1],
-          "description": "Project status filter: 1 = active, 0 = archived"
+          "type": "boolean",
+          "description": "Project status filter: true = active, false = archived"
         },
         "itemsPerPage": {
           "type": ["integer", "string"],
@@ -140,9 +139,8 @@
           "description": "Activity creator ID"
         },
         "noCategory": {
-          "type": "integer",
-          "enum": [0, 1],
-          "description": "Category filter: 1 = without category, 0 = with category"
+          "type": "boolean",
+          "description": "Category filter: true = without category, false = with category"
         },
         "projectId": {
           "type": "integer",
@@ -181,9 +179,8 @@
           "description": "Keyword contains"
         },
         "starred": {
-          "type": "integer",
-          "enum": [0, 1],
-          "description": "Star filter: 1 = starred keywords, 0 = non-starred keywords"
+          "type": "boolean",
+          "description": "Star filter: true = starred keywords, false = non-starred keywords"
         },
         "tags": {
           "type": "string",
@@ -222,9 +219,8 @@
           "description": "Shortcut: fetch the last N days"
         },
         "onlyFirstAndLastPositionStats": {
-          "type": "integer",
-          "enum": [0, 1],
-          "description": "Stats scope filter: 1 = first and last positions only, 0 = full stats",
+          "type": "boolean",
+          "description": "Stats scope filter: true = first and last positions only, false = full stats",
           "required_for": ["get_keyword_positions"]
         },
         "projectKeywordIds": {
