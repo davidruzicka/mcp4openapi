@@ -319,8 +319,7 @@
         },
         "timeout_ms": {
           "type": "number",
-          "description": "Request timeout in milliseconds",
-          "minimum": 1
+          "description": "Request timeout in milliseconds"
         }
       },
       "description": "HTTP interceptor configuration (auth, rate limiting, retry)"

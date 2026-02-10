@@ -40,6 +40,7 @@ describeIfListen('E2E: stdio transport', () => {
       profilePath,
       apiBaseUrl: mockServer.gitlabApiUrl,
       apiToken: 'test-token',
+      env: { MCP4_SSRF_ALLOW_PRIVATE_NETWORK: 'true' },
     });
 
     await mcp.start();
@@ -58,6 +59,7 @@ describeIfListen('E2E: stdio transport', () => {
       profilePath,
       apiBaseUrl: mockServer.gitlabApiUrl,
       apiToken: 'test-token',
+      env: { MCP4_SSRF_ALLOW_PRIVATE_NETWORK: 'true' },
     });
 
     await mcp.start();
@@ -80,6 +82,7 @@ describeIfListen('E2E: stdio transport', () => {
       profilePath,
       apiBaseUrl: mockServer.gitlabApiUrl,
       apiToken: 'test-token',
+      env: { MCP4_SSRF_ALLOW_PRIVATE_NETWORK: 'true' },
     });
 
     await mcp.start();
@@ -108,6 +111,7 @@ describeIfListen('E2E: stdio transport', () => {
       profilePath,
       apiBaseUrl: mockServer.gitlabApiUrl,
       apiToken: 'test-token',
+      env: { MCP4_SSRF_ALLOW_PRIVATE_NETWORK: 'true' },
     });
 
     await mcp.start();
@@ -127,6 +131,7 @@ describeIfListen('E2E: stdio transport', () => {
       // No profilePath - should auto-generate tools
       apiBaseUrl: mockServer.gitlabApiUrl,
       apiToken: 'test-token',
+      env: { MCP4_SSRF_ALLOW_PRIVATE_NETWORK: 'true' },
     });
 
     await mcp.start();

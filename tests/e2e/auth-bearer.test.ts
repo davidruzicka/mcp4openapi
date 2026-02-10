@@ -36,6 +36,7 @@ describeIfListen('E2E: Bearer token authentication', () => {
       profilePath,
       apiBaseUrl: mockServer.gitlabApiUrl,
       apiToken: 'valid-bearer-token',
+      env: { MCP4_SSRF_ALLOW_PRIVATE_NETWORK: 'true' },
     });
 
     await mcp.start();
@@ -53,6 +54,7 @@ describeIfListen('E2E: Bearer token authentication', () => {
       profilePath,
       apiBaseUrl: mockServer.gitlabApiUrl,
       // No apiToken
+      env: { MCP4_SSRF_ALLOW_PRIVATE_NETWORK: 'true' },
     });
 
     await mcp.start();
@@ -73,6 +75,7 @@ describeIfListen('E2E: Bearer token authentication', () => {
       env: {
         CUSTOM_TOKEN: 'my-custom-token',
         MCP4_AUTH_ENV_VAR: 'CUSTOM_TOKEN',
+        MCP4_SSRF_ALLOW_PRIVATE_NETWORK: 'true',
       },
     });
 
