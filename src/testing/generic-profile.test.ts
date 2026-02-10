@@ -114,6 +114,7 @@ testFiles.forEach(testFile => {
     let mockEngine: DynamicMockEngine;
     let parser: OpenAPIParser;
     let profile: Profile;
+    let originalAllowPrivateNetwork: string | undefined;
 
     beforeAll(async () => {
       const files = fs.readdirSync(testDir);
@@ -151,6 +152,8 @@ testFiles.forEach(testFile => {
 
       process.env.MCP4_API_TOKEN = 'test-token';
       process.env.MCP4_API_BASE_URL = baseUrl;
+      originalAllowPrivateNetwork = process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK;
+      process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK = 'true';
       configureProfileEnv(profile, baseUrl);
 
       server = new MCPServer();
@@ -159,6 +162,11 @@ testFiles.forEach(testFile => {
 
     afterAll(() => {
       mockEngine?.stop();
+      if (originalAllowPrivateNetwork === undefined) {
+        delete process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK;
+      } else {
+        process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK = originalAllowPrivateNetwork;
+      }
     });
 
     beforeEach(() => {
