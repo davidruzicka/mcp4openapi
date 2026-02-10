@@ -1,0 +1,5 @@
+prefix_rule(pattern=["npm", "audit"], decision="allow")
+prefix_rule(pattern=["npm", "run", "typecheck"], decision="allow")
+prefix_rule(pattern=["npm", "test"], decision="allow")
+prefix_rule(pattern=["npm", "run", "e2e"], decision="allow")
+prefix_rule(pattern=["node", "scripts/check-diff-coverage.js"], decision="allow")
