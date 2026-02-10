@@ -253,9 +253,10 @@
             "in": "query",
             "required": false,
             "schema": {
-              "type": "boolean"
+              "type": "integer",
+              "enum": [0, 1]
             },
-            "description": "Query parameter noCategory"
+            "description": "Category filter: 1 = without category, 0 = with category"
           },
           {
             "name": "page",
@@ -483,9 +484,10 @@
             "in": "query",
             "required": false,
             "schema": {
-              "type": "boolean"
+              "type": "integer",
+              "enum": [0, 1]
             },
-            "description": "Query parameter starred"
+            "description": "Star filter: 1 = starred keywords, 0 = non-starred keywords"
           },
           {
             "name": "tags",
@@ -550,9 +552,10 @@
             "in": "query",
             "required": true,
             "schema": {
-              "type": "boolean"
+              "type": "integer",
+              "enum": [0, 1]
             },
-            "description": "Query parameter onlyFirstAndLastPositionStats"
+            "description": "Stats scope filter: 1 = first and last positions only, 0 = full stats"
           },
           {
             "name": "projectId",

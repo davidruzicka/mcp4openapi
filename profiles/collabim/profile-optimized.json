@@ -140,8 +140,9 @@
           "description": "Activity creator ID"
         },
         "noCategory": {
-          "type": "boolean",
-          "description": "Include only items without category"
+          "type": "integer",
+          "enum": [0, 1],
+          "description": "Category filter: 1 = without category, 0 = with category"
         },
         "projectId": {
           "type": "integer",
@@ -180,8 +181,9 @@
           "description": "Keyword contains"
         },
         "starred": {
-          "type": "boolean",
-          "description": "Only starred keywords"
+          "type": "integer",
+          "enum": [0, 1],
+          "description": "Star filter: 1 = starred keywords, 0 = non-starred keywords"
         },
         "tags": {
           "type": "string",
@@ -220,8 +222,9 @@
           "description": "Shortcut: fetch the last N days"
         },
         "onlyFirstAndLastPositionStats": {
-          "type": "boolean",
-          "description": "Only include first/last position stats",
+          "type": "integer",
+          "enum": [0, 1],
+          "description": "Stats scope filter: 1 = first and last positions only, 0 = full stats",
           "required_for": ["get_keyword_positions"]
         },
         "projectKeywordIds": {
