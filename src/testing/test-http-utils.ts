@@ -7,9 +7,24 @@
 
 import { HttpClient, InterceptorChain } from '../transport/interceptors.js';
 import type { InterceptorConfig } from '../types/profile.js';
+import type { Logger } from '../core/logger.js';
+import { SSRFValidator } from '../security/ssrf-validator.js';
 
 // Request input type for fetch mocking
 type RequestInput = any;
+
+// Mock logger to suppress output during tests
+const mockLogger: Logger = {
+  debug: () => {},
+  info: () => {},
+  warn: () => {},
+  error: () => {},
+};
+
+// Mock SSRF validator that allows everything
+const mockSSRFValidator = {
+  validate: async () => {},
+} as unknown as SSRFValidator;
 
 /**
  * Create HTTP client with interceptors for testing
@@ -19,7 +34,7 @@ export function createTestHttpClient(
   interceptors: InterceptorConfig = {}
 ): HttpClient {
   const interceptorChain = new InterceptorChain(interceptors);
-  return new HttpClient(baseUrl, interceptorChain);
+  return new HttpClient(baseUrl, interceptorChain, null, mockLogger, mockSSRFValidator);
 }
 
 /**

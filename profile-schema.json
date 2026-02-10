@@ -316,6 +316,18 @@
           "examples": [
             "brackets"
           ]
+        },
+        "timeout_ms": {
+          "type": "number",
+          "description": "Request timeout in milliseconds"
+        },
+        "redirect_auth_policy": {
+          "enum": [
+            "never",
+            "same-origin"
+          ],
+          "type": "string",
+          "default": "same-origin"
         }
       },
       "description": "HTTP interceptor configuration (auth, rate limiting, retry)"

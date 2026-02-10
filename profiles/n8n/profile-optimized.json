@@ -1593,7 +1593,7 @@
     "auth": {
       "type": "custom-header",
       "header_name": "X-N8N-API-KEY",
-      "value_from_env": "N8N_API_TOKEN"
+      "value_from_env": "N8N_TOKEN"
     },
     "base_url": {
       "value_from_env": "N8N_API_BASE_URL",

@@ -444,6 +444,7 @@ export class MCPServer {
       const httpClient = this.httpClientFactory.createGlobalClient({
         profile: this.profile,
         baseUrl,
+        logger: this.logger,
       });
       this.compositeExecutor = new CompositeExecutor(this.parser, httpClient, this.profile.parameter_aliases);
     } else {
@@ -697,6 +698,7 @@ export class MCPServer {
       profile: this.profile,
       baseUrl: this.getBaseUrl(),
       sessionToken: authToken,
+      logger: this.logger,
     });
   }
 

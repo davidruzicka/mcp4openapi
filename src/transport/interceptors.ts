@@ -6,7 +6,7 @@
  */
 
 import type { InterceptorConfig } from '../types/profile.js';
-import { TIME, HTTP_STATUS } from '../core/constants.js';
+import { TIME, HTTP_STATUS, TIMEOUTS } from '../core/constants.js';
 import { MetricsCollector } from '../core/metrics.js';
 import {
   AuthenticationError,
@@ -16,6 +16,8 @@ import {
   RateLimitError,
 } from '../core/errors.js';
 import { isSafePropertyName } from '../validation/validation-utils.js';
+import { SSRFValidator } from '../security/ssrf-validator.js';
+import { Logger, ConsoleLogger } from '../core/logger.js';
 
 export interface RequestContext {
   method: string;
@@ -326,15 +328,21 @@ export class HttpClient {
   private baseUrl: string;
   private interceptors: InterceptorChain;
   private metrics: MetricsCollector | null;
+  private logger: Logger;
+  private ssrfValidator: SSRFValidator;
 
   constructor(
     baseUrl: string,
     interceptors: InterceptorChain,
-    metrics?: MetricsCollector | null
+    metrics?: MetricsCollector | null,
+    logger?: Logger,
+    ssrfValidator?: SSRFValidator
   ) {
     this.baseUrl = baseUrl;
     this.interceptors = interceptors;
     this.metrics = metrics || null;
+    this.logger = logger || new ConsoleLogger();
+    this.ssrfValidator = ssrfValidator || new SSRFValidator(this.logger);
   }
 
   setMetricsCollector(metrics: MetricsCollector | null): void {
@@ -404,6 +412,7 @@ export class HttpClient {
     body?: unknown;
     headers?: Record<string, string>;
     operationId?: string; // For per-endpoint rate limiting
+    timeout_ms?: number;
   } = {}): Promise<ResponseContext> {
     let url = this.baseUrl + path;
 
@@ -427,6 +436,11 @@ export class HttpClient {
 
     const metrics = this.metrics;
     const operation = options.operationId || 'unknown';
+    const timeout = options.timeout_ms
+      ?? this.interceptors.config.timeout_ms
+      ?? TIMEOUTS.HTTP_REQUEST_TIMEOUT_MS;
+    const redirectAuthPolicy = this.interceptors.config.redirect_auth_policy ?? 'same-origin';
+    const sensitiveHeaders = this.getSensitiveRedirectHeaderNames();
 
     return this.interceptors.execute(ctx, async () => {
       const start = Date.now();
@@ -436,6 +450,7 @@ export class HttpClient {
       const fetchOptions: RequestInit = {
         method: ctx.method,
         headers: ctx.headers,
+        redirect: 'manual', // Handle redirects manually for SSRF protection
       };
 
       if (ctx.method !== 'GET' && ctx.method !== 'HEAD' && ctx.body) {
@@ -455,8 +470,82 @@ export class HttpClient {
         }
       }
 
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), timeout);
+      fetchOptions.signal = controller.signal;
+
       try {
-        const response = await fetch(ctx.url, fetchOptions);
+        // SSRF: Validate initial URL
+        await this.ssrfValidator.validate(ctx.url, {
+          allowPrivateNetwork: process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK === 'true',
+        });
+
+        let currentUrl = ctx.url;
+        let currentMethod = fetchOptions.method ?? ctx.method;
+        let currentBody = fetchOptions.body;
+        let currentHeaders = { ...(fetchOptions.headers as Record<string, string>) };
+        let response: Response | undefined;
+        let redirectCount = 0;
+        const maxRedirects = 5;
+
+        // Redirect loop
+        while (redirectCount <= maxRedirects) {
+          const hopOptions: RequestInit = {
+            ...fetchOptions,
+            method: currentMethod,
+            headers: currentHeaders,
+          };
+
+          if (currentBody !== undefined) {
+            hopOptions.body = currentBody;
+          } else {
+            delete hopOptions.body;
+          }
+
+          response = await fetch(currentUrl, hopOptions);
+
+          if (response.status >= 300 && response.status < 400) {
+            const location = response.headers.get('location');
+            if (!location) {
+              throw new NetworkError(`Redirect without Location header: HTTP ${response.status}`);
+            }
+
+            // Resolve relative URLs
+            const nextUrl = new URL(location, currentUrl).toString();
+
+            // SSRF: Validate redirect target
+            await this.ssrfValidator.validate(nextUrl, {
+              allowPrivateNetwork: process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK === 'true',
+            });
+
+            const shouldStripSensitiveHeaders = redirectAuthPolicy === 'never'
+              || !this.isSameOrigin(currentUrl, nextUrl);
+            if (shouldStripSensitiveHeaders) {
+              currentHeaders = this.stripSensitiveHeaders(currentHeaders, sensitiveHeaders);
+            }
+
+            currentUrl = nextUrl;
+            redirectCount++;
+
+            // Handle method change on redirect (303, or 301/302 from POST)
+            if (response.status === 303 || ((response.status === 301 || response.status === 302) && currentMethod === 'POST')) {
+              currentMethod = 'GET';
+              currentBody = undefined;
+            }
+
+            continue;
+          }
+
+          break; // Not a redirect
+        }
+
+        if (!response) {
+          throw new NetworkError('Request failed: no response');
+        }
+
+        if (redirectCount > maxRedirects) {
+          throw new NetworkError(`Too many redirects (max ${maxRedirects})`);
+        }
 
         const body = response.headers.get('content-type')?.includes('application/json')
           ? await response.json()
@@ -511,9 +600,53 @@ export class HttpClient {
           }
           metrics.recordApiCallError(operation, this.getErrorType(error));
         }
+
+        if (error instanceof Error && error.name === 'AbortError') {
+           throw new NetworkError(`Request timeout after ${timeout}ms`, 408);
+        }
+
         throw error;
+      } finally {
+        clearTimeout(timeoutId);
       }
     });
+  }
+
+  private getSensitiveRedirectHeaderNames(): Set<string> {
+    const sensitiveHeaders = new Set(['authorization', 'proxy-authorization', 'cookie']);
+    const authConfigRaw = this.interceptors.config.auth;
+
+    if (!authConfigRaw) {
+      return sensitiveHeaders;
+    }
+
+    const authConfigs = Array.isArray(authConfigRaw) ? authConfigRaw : [authConfigRaw];
+    for (const authConfig of authConfigs) {
+      if (authConfig.type === 'custom-header' && authConfig.header_name) {
+        sensitiveHeaders.add(authConfig.header_name.toLowerCase());
+      }
+    }
+
+    return sensitiveHeaders;
+  }
+
+  private stripSensitiveHeaders(
+    headers: Record<string, string>,
+    sensitiveHeaders: Set<string>
+  ): Record<string, string> {
+    const sanitizedHeaders: Record<string, string> = {};
+
+    for (const [headerName, headerValue] of Object.entries(headers)) {
+      if (!sensitiveHeaders.has(headerName.toLowerCase())) {
+        sanitizedHeaders[headerName] = headerValue;
+      }
+    }
+
+    return sanitizedHeaders;
+  }
+
+  private isSameOrigin(sourceUrl: string, targetUrl: string): boolean {
+    return new URL(sourceUrl).origin === new URL(targetUrl).origin;
   }
 
   private getErrorType(error: unknown): string {

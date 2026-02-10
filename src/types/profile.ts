@@ -157,6 +157,8 @@ export interface InterceptorConfig {
   rate_limit?: RateLimitConfig;
   retry?: RetryConfig;
   array_format?: 'brackets' | 'indices' | 'repeat' | 'comma'; // default: 'repeat'
+  timeout_ms?: number; // Request timeout in milliseconds
+  redirect_auth_policy?: 'same-origin' | 'never'; // default: 'same-origin'
 }
 
 /**
