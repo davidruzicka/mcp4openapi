@@ -117,7 +117,8 @@ export const interceptorConfigSchema = z.object({
     base_url: baseUrlConfigSchema.optional(),
     rate_limit: rateLimitConfigSchema.optional(),
     retry: retryConfigSchema.optional(),
-    array_format: z.union([z.literal("brackets"), z.literal("indices"), z.literal("repeat"), z.literal("comma")]).optional()
+    array_format: z.union([z.literal("brackets"), z.literal("indices"), z.literal("repeat"), z.literal("comma")]).optional(),
+    timeout_ms: z.number().optional()
 });
 
 export const profileSchema = z.object({

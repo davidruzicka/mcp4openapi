@@ -77,6 +77,7 @@ export const TIMEOUTS = {
   HEARTBEAT_INTERVAL_MS: 30 * TIME.MS_PER_SECOND, // 30 seconds
   RATE_LIMIT_WINDOW_MS: TIME.MS_PER_MINUTE,     // 1 minute
   CLEANUP_INTERVAL_MS: TIME.MS_PER_MINUTE,      // 1 minute
+  HTTP_REQUEST_TIMEOUT_MS: 30 * TIME.MS_PER_SECOND, // 30 seconds
 } as const;
 
 /**

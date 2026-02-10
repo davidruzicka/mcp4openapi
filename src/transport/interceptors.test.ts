@@ -10,6 +10,11 @@ import { createTestHttpClient, setupFetchMock, setupErrorFetchMock, restoreFetch
 import type { InterceptorConfig } from '../types/profile.js';
 import { AuthenticationError, AuthorizationError, RateLimitError, NetworkError } from '../core/errors.js';
 import { MetricsCollector } from '../core/metrics.js';
+import type { SSRFValidator } from '../security/ssrf-validator.js';
+
+const mockSSRFValidator = {
+  validate: async () => {},
+} as unknown as SSRFValidator;
 
 describe('HttpClient - Auth Interceptors', () => {
   const originalEnv = { ...process.env };
@@ -52,7 +57,7 @@ describe('HttpClient - Auth Interceptors', () => {
     };
 
     const interceptors = new InterceptorChain(config);
-    const client = new HttpClient('https://api.example.com', interceptors);
+    const client = new HttpClient('https://api.example.com', interceptors, null, undefined, mockSSRFValidator);
 
     let capturedHeaders: Record<string, string> = {};
     global.fetch = async (_url: RequestInfo | URL, _init?: RequestInit) => {
@@ -80,7 +85,7 @@ describe('HttpClient - Auth Interceptors', () => {
     };
 
     const interceptors = new InterceptorChain(config);
-    const client = new HttpClient('https://api.example.com', interceptors);
+    const client = new HttpClient('https://api.example.com', interceptors, null, undefined, mockSSRFValidator);
 
     global.fetch = async () => {
       return new Response(JSON.stringify({ ok: true }), {
@@ -128,7 +133,7 @@ describe('HttpClient - Auth Interceptors', () => {
     };
 
     const interceptors = new InterceptorChain(config);
-    const client = new HttpClient('https://api.example.com', interceptors);
+    const client = new HttpClient('https://api.example.com', interceptors, null, undefined, mockSSRFValidator);
 
     let capturedUrl = '';
     global.fetch = async (url: RequestInfo | URL, _init?: RequestInit) => {
@@ -215,7 +220,7 @@ describe('HttpClient - accessors', () => {
     };
 
     const chain = new InterceptorChain(config);
-    const client = new HttpClient('https://example.test', chain);
+    const client = new HttpClient('https://example.test', chain, null, undefined, mockSSRFValidator);
 
     expect(client.getBaseUrl()).toBe('https://example.test');
     expect(client.getInterceptorsConfig()).toEqual(config);
@@ -750,7 +755,7 @@ describe('HttpClient - Retry Logic', () => {
     };
 
     const interceptors = new InterceptorChain(config);
-    const client = new HttpClient('https://api.example.com', interceptors);
+    const client = new HttpClient('https://api.example.com', interceptors, null, undefined, mockSSRFValidator);
 
     let attemptCount = 0;
     global.fetch = async () => {
@@ -799,7 +804,7 @@ describe('HttpClient - Array Serialization', () => {
     };
 
     const interceptors = new InterceptorChain(config);
-    const client = new HttpClient('https://api.example.com', interceptors);
+    const client = new HttpClient('https://api.example.com', interceptors, null, undefined, mockSSRFValidator);
 
     let capturedUrl = '';
     global.fetch = async (url: RequestInfo | URL) => {
@@ -822,7 +827,7 @@ describe('HttpClient - Array Serialization', () => {
     };
 
     const interceptors = new InterceptorChain(config);
-    const client = new HttpClient('https://api.example.com', interceptors);
+    const client = new HttpClient('https://api.example.com', interceptors, null, undefined, mockSSRFValidator);
 
     let capturedUrl = '';
     global.fetch = async (url: RequestInfo | URL) => {
@@ -844,7 +849,7 @@ describe('HttpClient - Array Serialization', () => {
     };
 
     const interceptors = new InterceptorChain(config);
-    const client = new HttpClient('https://api.example.com', interceptors);
+    const client = new HttpClient('https://api.example.com', interceptors, null, undefined, mockSSRFValidator);
 
     let capturedUrl = '';
     global.fetch = async (url: RequestInfo | URL) => {
@@ -867,7 +872,7 @@ describe('HttpClient - Array Serialization', () => {
     };
 
     const interceptors = new InterceptorChain(config);
-    const client = new HttpClient('https://api.example.com', interceptors);
+    const client = new HttpClient('https://api.example.com', interceptors, null, undefined, mockSSRFValidator);
 
     let capturedUrl = '';
     global.fetch = async (url: RequestInfo | URL) => {
@@ -1274,7 +1279,7 @@ describe('HttpClient - API metrics', () => {
   it('records API call metrics on success', async () => {
     const metrics = new MetricsCollector({ enabled: true, prefix: 'test_' });
     const interceptors = new InterceptorChain({});
-    const client = new HttpClient('https://api.example.com', interceptors, metrics);
+    const client = new HttpClient('https://api.example.com', interceptors, metrics, undefined, mockSSRFValidator);
 
     setupFetchMock({ ok: true }, { status: 200, headers: { 'Content-Type': 'application/json' } });
 
@@ -1289,7 +1294,7 @@ describe('HttpClient - API metrics', () => {
   it('records API call error metrics on failure', async () => {
     const metrics = new MetricsCollector({ enabled: true, prefix: 'test_' });
     const interceptors = new InterceptorChain({});
-    const client = new HttpClient('https://api.example.com', interceptors, metrics);
+    const client = new HttpClient('https://api.example.com', interceptors, metrics, undefined, mockSSRFValidator);
 
     setupErrorFetchMock(500, 'boom');
 
@@ -1307,7 +1312,7 @@ describe('HttpClient - API metrics', () => {
   it('records UnknownError for non-Error failures', async () => {
     const metrics = new MetricsCollector({ enabled: true, prefix: 'test_' });
     const interceptors = new InterceptorChain({});
-    const client = new HttpClient('https://api.example.com', interceptors, metrics);
+    const client = new HttpClient('https://api.example.com', interceptors, metrics, undefined, mockSSRFValidator);
 
     global.fetch = async () => {
       throw 'boom';

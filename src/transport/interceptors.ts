@@ -6,7 +6,7 @@
  */
 
 import type { InterceptorConfig } from '../types/profile.js';
-import { TIME, HTTP_STATUS } from '../core/constants.js';
+import { TIME, HTTP_STATUS, TIMEOUTS } from '../core/constants.js';
 import { MetricsCollector } from '../core/metrics.js';
 import {
   AuthenticationError,
@@ -14,8 +14,11 @@ import {
   ConfigurationError,
   NetworkError,
   RateLimitError,
+  ValidationError,
 } from '../core/errors.js';
 import { isSafePropertyName } from '../validation/validation-utils.js';
+import { SSRFValidator } from '../security/ssrf-validator.js';
+import { Logger, ConsoleLogger } from '../core/logger.js';
 
 export interface RequestContext {
   method: string;
@@ -326,15 +329,21 @@ export class HttpClient {
   private baseUrl: string;
   private interceptors: InterceptorChain;
   private metrics: MetricsCollector | null;
+  private logger: Logger;
+  private ssrfValidator: SSRFValidator;
 
   constructor(
     baseUrl: string,
     interceptors: InterceptorChain,
-    metrics?: MetricsCollector | null
+    metrics?: MetricsCollector | null,
+    logger?: Logger,
+    ssrfValidator?: SSRFValidator
   ) {
     this.baseUrl = baseUrl;
     this.interceptors = interceptors;
     this.metrics = metrics || null;
+    this.logger = logger || new ConsoleLogger();
+    this.ssrfValidator = ssrfValidator || new SSRFValidator(this.logger);
   }
 
   setMetricsCollector(metrics: MetricsCollector | null): void {
@@ -404,6 +413,7 @@ export class HttpClient {
     body?: unknown;
     headers?: Record<string, string>;
     operationId?: string; // For per-endpoint rate limiting
+    timeout_ms?: number;
   } = {}): Promise<ResponseContext> {
     let url = this.baseUrl + path;
 
@@ -427,6 +437,9 @@ export class HttpClient {
 
     const metrics = this.metrics;
     const operation = options.operationId || 'unknown';
+    const timeout = options.timeout_ms
+      ?? this.interceptors.config.timeout_ms
+      ?? TIMEOUTS.HTTP_REQUEST_TIMEOUT_MS;
 
     return this.interceptors.execute(ctx, async () => {
       const start = Date.now();
@@ -436,6 +449,7 @@ export class HttpClient {
       const fetchOptions: RequestInit = {
         method: ctx.method,
         headers: ctx.headers,
+        redirect: 'manual', // Handle redirects manually for SSRF protection
       };
 
       if (ctx.method !== 'GET' && ctx.method !== 'HEAD' && ctx.body) {
@@ -455,8 +469,61 @@ export class HttpClient {
         }
       }
 
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), timeout);
+      fetchOptions.signal = controller.signal;
+
       try {
-        const response = await fetch(ctx.url, fetchOptions);
+        // SSRF: Validate initial URL
+        await this.ssrfValidator.validate(ctx.url, {
+          allowPrivateNetwork: process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK === 'true',
+        });
+
+        let currentUrl = ctx.url;
+        let response: Response | undefined;
+        let redirectCount = 0;
+        const maxRedirects = 5;
+
+        // Redirect loop
+        while (redirectCount <= maxRedirects) {
+          response = await fetch(currentUrl, fetchOptions);
+
+          if (response.status >= 300 && response.status < 400) {
+            const location = response.headers.get('location');
+            if (!location) {
+              throw new NetworkError(`Redirect without Location header: HTTP ${response.status}`);
+            }
+
+            // Resolve relative URLs
+            const nextUrl = new URL(location, currentUrl).toString();
+
+            // SSRF: Validate redirect target
+            await this.ssrfValidator.validate(nextUrl, {
+              allowPrivateNetwork: process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK === 'true',
+            });
+
+            currentUrl = nextUrl;
+            redirectCount++;
+
+            // Handle method change on redirect (303, or 301/302 from POST)
+            if (response.status === 303 || ((response.status === 301 || response.status === 302) && fetchOptions.method === 'POST')) {
+              fetchOptions.method = 'GET';
+              delete fetchOptions.body;
+            }
+
+            continue;
+          }
+
+          break; // Not a redirect
+        }
+
+        if (!response) {
+          throw new NetworkError('Request failed: no response');
+        }
+
+        if (redirectCount > maxRedirects) {
+          throw new NetworkError(`Too many redirects (max ${maxRedirects})`);
+        }
 
         const body = response.headers.get('content-type')?.includes('application/json')
           ? await response.json()
@@ -511,7 +578,14 @@ export class HttpClient {
           }
           metrics.recordApiCallError(operation, this.getErrorType(error));
         }
+
+        if (error instanceof Error && error.name === 'AbortError') {
+           throw new NetworkError(`Request timeout after ${timeout}ms`, 408);
+        }
+
         throw error;
+      } finally {
+        clearTimeout(timeoutId);
       }
     });
   }

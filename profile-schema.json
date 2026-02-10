@@ -316,6 +316,11 @@
           "examples": [
             "brackets"
           ]
+        },
+        "timeout_ms": {
+          "type": "number",
+          "description": "Request timeout in milliseconds",
+          "minimum": 1
         }
       },
       "description": "HTTP interceptor configuration (auth, rate limiting, retry)"
