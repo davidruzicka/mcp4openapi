@@ -1221,6 +1221,7 @@ export class HttpTransport {
         OAUTH_PATHS.WELL_KNOWN_PROTECTED_RESOURCE,
         attachProfileFromResourceQuery,
         oauthRateLimiter,
+        // lgtm[js/missing-rate-limiting] Rate limiting is applied by oauthRateLimiter middleware above.
         withProfileState((req, res, profileState) => this.handleOAuthProtectedResource(req, res, profileState))
       );
     }
@@ -1230,6 +1231,7 @@ export class HttpTransport {
         '/.well-known/oauth-protected-resource',
         attachProfileFromResourceQuery,
         oauthRateLimiter,
+        // lgtm[js/missing-rate-limiting] Rate limiting is applied by oauthRateLimiter middleware above.
         withProfileState((req, res, profileState) => this.handleOAuthProtectedResource(req, res, profileState))
       );
 
@@ -1237,6 +1239,7 @@ export class HttpTransport {
         '/.well-known/oauth-protected-resource/profile/:profileId/mcp',
         attachProfileId,
         oauthRateLimiter,
+        // lgtm[js/missing-rate-limiting] Rate limiting is applied by oauthRateLimiter middleware above.
         withProfileState((req, res, profileState) => this.handleOAuthProtectedResource(req, res, profileState))
       );
 
@@ -1245,6 +1248,7 @@ export class HttpTransport {
           OAUTH_PATHS.WELL_KNOWN_AUTHORIZATION_SERVER,
           attachProfileFromHint,
           oauthRateLimiter,
+          // lgtm[js/missing-rate-limiting] Rate limiting is applied by oauthRateLimiter middleware above.
           withProfileState((req, res, profileState) => this.handleOAuthAuthorizationServerMetadata(req, res, profileState))
         );
 
@@ -1252,6 +1256,7 @@ export class HttpTransport {
           OAUTH_PATHS.WELL_KNOWN_OPENID_CONFIGURATION,
           attachProfileFromHint,
           oauthRateLimiter,
+          // lgtm[js/missing-rate-limiting] Rate limiting is applied by oauthRateLimiter middleware above.
           withProfileState((req, res, profileState) => this.handleOAuthAuthorizationServerMetadata(req, res, profileState))
         );
 
@@ -1260,6 +1265,7 @@ export class HttpTransport {
           attachProfileFromHint,
           oauthRateLimiter,
           express.json(),
+          // lgtm[js/missing-rate-limiting] Rate limiting is applied by oauthRateLimiter middleware above.
           withProfileState((req, res, profileState) => this.handleOAuthRegister(req, res, profileState))
         );
 
@@ -1284,6 +1290,7 @@ export class HttpTransport {
           OAUTH_PATHS.CALLBACK,
           attachProfileFromHint,
           oauthRateLimiter,
+          // lgtm[js/missing-rate-limiting] Rate limiting is applied by oauthRateLimiter middleware above.
           withProfileState((req, res, profileState) => this.handleOAuthCallback(req, res, profileState))
         );
       }
@@ -1292,6 +1299,7 @@ export class HttpTransport {
         `${OAUTH_PATHS.WELL_KNOWN_AUTHORIZATION_SERVER}/profile/:profileId`,
         attachProfileId,
         oauthRateLimiter,
+        // lgtm[js/missing-rate-limiting] Rate limiting is applied by oauthRateLimiter middleware above.
         withProfileState((req, res, profileState) => this.handleOAuthAuthorizationServerMetadata(req, res, profileState))
       );
 
@@ -1299,6 +1307,7 @@ export class HttpTransport {
         `${OAUTH_PATHS.WELL_KNOWN_OPENID_CONFIGURATION}/profile/:profileId`,
         attachProfileId,
         oauthRateLimiter,
+        // lgtm[js/missing-rate-limiting] Rate limiting is applied by oauthRateLimiter middleware above.
         withProfileState((req, res, profileState) => this.handleOAuthAuthorizationServerMetadata(req, res, profileState))
       );
     }
