@@ -1271,6 +1271,100 @@ describe('HttpClient - Multipart Support', () => {
   });
 });
 
+describe('HttpClient - Redirect auth header policy', () => {
+  beforeEach(() => {
+    process.env.MCP4_API_TOKEN = 'redirect-test-token';
+  });
+
+  afterEach(() => {
+    restoreFetch();
+    delete process.env.MCP4_API_TOKEN;
+  });
+
+  it('strips sensitive headers on cross-origin redirect by default', async () => {
+    const config: InterceptorConfig = {
+      auth: { type: 'bearer', value_from_env: 'MCP4_API_TOKEN' },
+    };
+    const client = createTestHttpClient('https://api.example.com', config);
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(
+        new Response(null, {
+          status: 302,
+          headers: { location: 'https://evil.example/collect' },
+        })
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        })
+      );
+    global.fetch = fetchMock;
+
+    await client.request('GET', '/start');
+
+    const [, redirectedOptions] = fetchMock.mock.calls[1] as [string, RequestInit];
+    const redirectedHeaders = redirectedOptions.headers as Record<string, string>;
+    expect(redirectedHeaders.Authorization).toBeUndefined();
+  });
+
+  it('keeps sensitive headers on same-origin redirect with same-origin policy', async () => {
+    const config: InterceptorConfig = {
+      auth: { type: 'bearer', value_from_env: 'MCP4_API_TOKEN' },
+      redirect_auth_policy: 'same-origin',
+    };
+    const client = createTestHttpClient('https://api.example.com', config);
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(
+        new Response(null, {
+          status: 302,
+          headers: { location: '/next' },
+        })
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        })
+      );
+    global.fetch = fetchMock;
+
+    await client.request('GET', '/start');
+
+    const [, redirectedOptions] = fetchMock.mock.calls[1] as [string, RequestInit];
+    const redirectedHeaders = redirectedOptions.headers as Record<string, string>;
+    expect(redirectedHeaders.Authorization).toBe('Bearer redirect-test-token');
+  });
+
+  it('strips sensitive headers even on same-origin redirect with never policy', async () => {
+    const config: InterceptorConfig = {
+      auth: { type: 'bearer', value_from_env: 'MCP4_API_TOKEN' },
+      redirect_auth_policy: 'never',
+    };
+    const client = createTestHttpClient('https://api.example.com', config);
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(
+        new Response(null, {
+          status: 302,
+          headers: { location: '/next' },
+        })
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        })
+      );
+    global.fetch = fetchMock;
+
+    await client.request('GET', '/start');
+
+    const [, redirectedOptions] = fetchMock.mock.calls[1] as [string, RequestInit];
+    const redirectedHeaders = redirectedOptions.headers as Record<string, string>;
+    expect(redirectedHeaders.Authorization).toBeUndefined();
+  });
+});
+
 describe('HttpClient - API metrics', () => {
   afterEach(() => {
     restoreFetch();

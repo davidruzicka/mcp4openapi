@@ -14,7 +14,6 @@ import {
   ConfigurationError,
   NetworkError,
   RateLimitError,
-  ValidationError,
 } from '../core/errors.js';
 import { isSafePropertyName } from '../validation/validation-utils.js';
 import { SSRFValidator } from '../security/ssrf-validator.js';
@@ -440,6 +439,8 @@ export class HttpClient {
     const timeout = options.timeout_ms
       ?? this.interceptors.config.timeout_ms
       ?? TIMEOUTS.HTTP_REQUEST_TIMEOUT_MS;
+    const redirectAuthPolicy = this.interceptors.config.redirect_auth_policy ?? 'same-origin';
+    const sensitiveHeaders = this.getSensitiveRedirectHeaderNames();
 
     return this.interceptors.execute(ctx, async () => {
       const start = Date.now();
@@ -480,13 +481,28 @@ export class HttpClient {
         });
 
         let currentUrl = ctx.url;
+        let currentMethod = fetchOptions.method ?? ctx.method;
+        let currentBody = fetchOptions.body;
+        let currentHeaders = { ...(fetchOptions.headers as Record<string, string>) };
         let response: Response | undefined;
         let redirectCount = 0;
         const maxRedirects = 5;
 
         // Redirect loop
         while (redirectCount <= maxRedirects) {
-          response = await fetch(currentUrl, fetchOptions);
+          const hopOptions: RequestInit = {
+            ...fetchOptions,
+            method: currentMethod,
+            headers: currentHeaders,
+          };
+
+          if (currentBody !== undefined) {
+            hopOptions.body = currentBody;
+          } else {
+            delete hopOptions.body;
+          }
+
+          response = await fetch(currentUrl, hopOptions);
 
           if (response.status >= 300 && response.status < 400) {
             const location = response.headers.get('location');
@@ -502,13 +518,19 @@ export class HttpClient {
               allowPrivateNetwork: process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK === 'true',
             });
 
+            const shouldStripSensitiveHeaders = redirectAuthPolicy === 'never'
+              || !this.isSameOrigin(currentUrl, nextUrl);
+            if (shouldStripSensitiveHeaders) {
+              currentHeaders = this.stripSensitiveHeaders(currentHeaders, sensitiveHeaders);
+            }
+
             currentUrl = nextUrl;
             redirectCount++;
 
             // Handle method change on redirect (303, or 301/302 from POST)
-            if (response.status === 303 || ((response.status === 301 || response.status === 302) && fetchOptions.method === 'POST')) {
-              fetchOptions.method = 'GET';
-              delete fetchOptions.body;
+            if (response.status === 303 || ((response.status === 301 || response.status === 302) && currentMethod === 'POST')) {
+              currentMethod = 'GET';
+              currentBody = undefined;
             }
 
             continue;
@@ -588,6 +610,43 @@ export class HttpClient {
         clearTimeout(timeoutId);
       }
     });
+  }
+
+  private getSensitiveRedirectHeaderNames(): Set<string> {
+    const sensitiveHeaders = new Set(['authorization', 'proxy-authorization', 'cookie']);
+    const authConfigRaw = this.interceptors.config.auth;
+
+    if (!authConfigRaw) {
+      return sensitiveHeaders;
+    }
+
+    const authConfigs = Array.isArray(authConfigRaw) ? authConfigRaw : [authConfigRaw];
+    for (const authConfig of authConfigs) {
+      if (authConfig.type === 'custom-header' && authConfig.header_name) {
+        sensitiveHeaders.add(authConfig.header_name.toLowerCase());
+      }
+    }
+
+    return sensitiveHeaders;
+  }
+
+  private stripSensitiveHeaders(
+    headers: Record<string, string>,
+    sensitiveHeaders: Set<string>
+  ): Record<string, string> {
+    const sanitizedHeaders: Record<string, string> = {};
+
+    for (const [headerName, headerValue] of Object.entries(headers)) {
+      if (!sensitiveHeaders.has(headerName.toLowerCase())) {
+        sanitizedHeaders[headerName] = headerValue;
+      }
+    }
+
+    return sanitizedHeaders;
+  }
+
+  private isSameOrigin(sourceUrl: string, targetUrl: string): boolean {
+    return new URL(sourceUrl).origin === new URL(targetUrl).origin;
   }
 
   private getErrorType(error: unknown): string {

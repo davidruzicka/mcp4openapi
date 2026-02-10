@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Hardened HttpClient redirect handling by stripping sensitive auth headers on cross-origin redirects.
+
 ## [0.3.7] - 2026-02-08
 
 ### Added

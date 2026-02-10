@@ -470,6 +470,31 @@ Browser-based authentication with PKCE flow (HTTP transport only):
 }
 ```
 
+### Request Timeout
+
+```json
+{
+  "timeout_ms": 30000
+}
+```
+
+- `timeout_ms` sets HTTP request timeout for tool calls in milliseconds.
+- Default is `30000`.
+
+### Redirect Auth Policy
+
+```json
+{
+  "redirect_auth_policy": "same-origin"
+}
+```
+
+Options:
+- `same-origin` (default): Keep sensitive auth headers only for redirects to the same origin. Strip them on cross-origin redirects.
+- `never`: Always strip sensitive auth headers on redirect hops, even for same-origin redirects.
+
+Sensitive headers include `Authorization`, `Proxy-Authorization`, `Cookie`, and configured custom auth headers.
+
 ### Rate Limiting
 
 ```json
