@@ -26,6 +26,7 @@ Reference canonical sources; never duplicate rules.
 - Prefer test-driven development - for generated theory (aka potential failure, bug or security finding) create failing test confirming it.
 - Keep changes consistent with the current test migration: prefer schema-driven profile tests over hardcoded mocks.
 - If the user corrects or revises a prior response or implementation, activate the auto-update-skills skill and follow its workflow.
+- If repeated tool request request failures require a correction to succeed, activate the `auto-update-skills` skill and follow its workflow.
 - Run `npm run typecheck` before finishing work (doesn't required for non-code changes).
 - Offer to run `npm audit` (and update dependencies if needed) before finishing work when you decide from time to time.
 - Update CHANGELOG.md for more than minimal changes. Prefer user-perspective messages. Always compress lines.
