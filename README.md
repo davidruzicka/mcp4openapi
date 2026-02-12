@@ -20,6 +20,7 @@ Configure everything via MCP profiles, reduce LLM context pollution, and get pro
 1. **Less Context Pollution**: Fewer tools with filtered response fields through profiles = more relevant context for LLM
 2. **Multi-Environment**: Same server, different profiles (dev/staging/prod)
 3. **Custom Workflows**: Composite tools for common multi-step operations
+4. **Reusable Prompts**: Profile-defined MCP prompts (`prompts/list`, `prompts/get`) for repeated LLM tasks
 
 More about MCP profiles: [docs/PROFILE-GUIDE.md](https://github.com/davidruzicka/mcp4openapi/blob/main/docs/PROFILE-GUIDE.md).
 
@@ -30,6 +31,7 @@ More about MCP profiles: [docs/PROFILE-GUIDE.md](https://github.com/davidruzicka
 - **Profiles**: Create JSON configuration transforming API to MCP tools LLM friendly in [MCP profiles](docs/PROFILE-GUIDE.md)
 - **Tool Aggregation**: Reduce tool clutter - group related operations in MCP profiles
 - **Composite Actions**: Chain API calls into workflows in MCP profiles for saving context and requests with repetitive complex operations
+- **Prompt Definitions**: Add reusable MCP prompts directly in profiles
 - **OAuth 2.0**: Browser-based authentication flow for HTTP transport (see [docs/OAUTH.md](./docs/OAUTH.md))
 - **Multi-Auth**: Support multiple auth methods (OAuth + Bearer e.g.) with priority-based fallback (see [docs/MULTI-AUTH.md](./docs/MULTI-AUTH.md))
 - **Multipart uploads**: HttpClient handles `multipart/form-data` (file attachments and mixed fields)

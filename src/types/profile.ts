@@ -13,6 +13,7 @@ export interface Profile {
   openapi_spec_path?: string;
   description?: string;
   tools: ToolDefinition[];
+  prompts?: PromptDefinition[];
   interceptors?: InterceptorConfig;
   parameter_aliases?: Record<string, string[]>; // e.g., {"id": ["resource_id", "project_id"]}
   
@@ -43,6 +44,31 @@ export interface ToolDefinition {
   
   // Whether to send response_fields as 'fields' query parameter (e.g. for YouTrack)
   send_response_fields_as_param?: boolean;
+}
+
+export interface PromptDefinition {
+  name: string;
+  description?: string;
+  arguments?: PromptArgumentDefinition[];
+  messages: PromptMessageTemplate[];
+}
+
+export interface PromptArgumentDefinition {
+  name: string;
+  description?: string;
+  required?: boolean;
+}
+
+export type PromptMessageRole = 'user' | 'assistant';
+
+export interface PromptMessageTemplate {
+  role: PromptMessageRole;
+  content: PromptContentTemplate;
+}
+
+export interface PromptContentTemplate {
+  type: 'text';
+  text: string;
 }
 
 export type ParameterType = 'string' | 'integer' | 'number' | 'boolean' | 'array' | 'object'

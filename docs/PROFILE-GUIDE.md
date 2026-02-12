@@ -59,6 +59,7 @@ This guide explains how to create custom MCP tool profiles for any OpenAPI-compl
   "resource_name": "My API",
   "resource_documentation": "https://docs.example.com/api",
   "tools": [ ... ],
+  "prompts": [ ... ],
   "interceptors": { ... }
 }
 ```
@@ -75,6 +76,7 @@ This guide explains how to create custom MCP tool profiles for any OpenAPI-compl
 - **`resource_name`** (optional): OAuth 2.0 resource name (overrides OpenAPI `info.title`, defaults to `"MCP Server"`)
 - **`resource_documentation`** (optional): OAuth 2.0 resource documentation URL (overrides OpenAPI `externalDocs.url`)
 - **`tools`** (required): Array of tool definitions
+- **`prompts`** (optional): Array of MCP prompt definitions exposed via `prompts/list` and `prompts/get`
 - **`interceptors`** (optional): Auth, rate limiting, retry configuration
 
 **Profile selection**: If you set `profile_id` (or `profile_aliases`) and `openapi_spec_path`, you can launch the server with `--profile <id>` or `MCP4_PROFILE=<id>` without setting `--openapi-spec-path` or `MCP4_OPENAPI_SPEC_PATH`.
@@ -248,6 +250,40 @@ Use `proxy_download` operations when an API returns a URL for binary content tha
 **Download size precedence**
 
 `max_size_bytes_from_env` → `MCP4_PROXY_MAX_BYTES` → `max_size_bytes` → default (10 MB). Invalid env values raise a `ValidationError`.
+
+### 4. Prompt definitions
+
+Prompts let you expose reusable MCP prompts directly from a profile.
+
+**Example: prompt with required argument**
+
+```json
+{
+  "name": "summarize_issue",
+  "description": "Create a short issue summary",
+  "arguments": [
+    {
+      "name": "issue_title",
+      "description": "Issue title",
+      "required": true
+    }
+  ],
+  "messages": [
+    {
+      "role": "user",
+      "content": {
+        "type": "text",
+        "text": "Summarize this issue in 3 bullet points: {{issue_title}}"
+      }
+    }
+  ]
+}
+```
+
+**Key points**:
+- Placeholders use `{{argument_name}}` syntax.
+- Required arguments must be present in `prompts/get` arguments.
+- Prompt names must be unique and must not conflict with tool names.
 
 ## Parameters
 

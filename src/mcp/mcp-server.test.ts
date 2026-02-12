@@ -1321,6 +1321,73 @@ describe('MCPServer', () => {
       expect(response.error.code).toBe(-32601);
       expect(response.error.message).toContain('Method not found');
     });
+
+    it('should return prompts list for prompts/list method', async () => {
+      (server as any).profile.prompts = [
+        {
+          name: 'summarize_issue',
+          description: 'Summarize issue context',
+          arguments: [{ name: 'issue_title', required: true }],
+          messages: [{ role: 'user', content: { type: 'text', text: 'Summarize: {{issue_title}}' } }],
+        },
+      ];
+
+      const response = await (server as any).handleOtherRequest({
+        jsonrpc: '2.0',
+        id: '3',
+        method: 'prompts/list',
+        params: {},
+      }, 'test-session');
+
+      expect(response.result.prompts).toHaveLength(1);
+      expect(response.result.prompts[0].name).toBe('summarize_issue');
+      expect(response.result.prompts[0].arguments[0].name).toBe('issue_title');
+    });
+
+    it('should return rendered prompt for prompts/get method', async () => {
+      (server as any).profile.prompts = [
+        {
+          name: 'summarize_issue',
+          description: 'Summarize issue context',
+          arguments: [{ name: 'issue_title', required: true }],
+          messages: [{ role: 'user', content: { type: 'text', text: 'Summarize: {{issue_title}}' } }],
+        },
+      ];
+
+      const response = await (server as any).handleOtherRequest({
+        jsonrpc: '2.0',
+        id: '4',
+        method: 'prompts/get',
+        params: { name: 'summarize_issue', arguments: { issue_title: 'Bug report' } },
+      }, 'test-session');
+
+      expect(response.result.messages).toHaveLength(1);
+      expect(response.result.messages[0].content.text).toContain('Bug report');
+    });
+
+    it('should return -32602 for prompts/get without valid name', async () => {
+      const response = await (server as any).handleOtherRequest({
+        jsonrpc: '2.0',
+        id: '5',
+        method: 'prompts/get',
+        params: {},
+      }, 'test-session');
+
+      expect(response.error.code).toBe(-32602);
+      expect(response.error.message).toContain('requires string parameter "name"');
+    });
+
+    it('should return -32601 for prompts/get when prompt is missing', async () => {
+      const response = await (server as any).handleOtherRequest({
+        jsonrpc: '2.0',
+        id: '6',
+        method: 'prompts/get',
+        params: { name: 'missing_prompt' },
+      }, 'test-session');
+
+      expect(response.error.code).toBe(-32601);
+      expect(response.error.message).toContain('Prompt not found');
+    });
   });
 
   describe('session tool filtering', () => {
@@ -1795,10 +1862,14 @@ describe('MCPServer', () => {
 
       // Install handlers and call the CallTool handler without initializing profile/compositeExecutor.
       (server as any).setupHandlers();
-      const callToolHandler = handlers[1].handler;
+      const callToolHandler = handlers.find(entry => {
+        const schema: any = entry.schema;
+        return schema?.shape?.method?.value === 'tools/call';
+      })?.handler;
+      expect(callToolHandler).toBeDefined();
 
       await expect(
-        callToolHandler({ params: { name: 'any', arguments: {} } })
+        callToolHandler!({ params: { name: 'any', arguments: {} } })
       ).rejects.toThrow('Server not initialized');
     });
 
@@ -1929,7 +2000,11 @@ describe('MCPServer', () => {
         return originalSet(schema, handler);
       };
       (s as any).setupHandlers();
-      const callToolHandler = handlers[1].handler;
+      const callToolHandler = handlers.find(entry => {
+        const schema: any = entry.schema;
+        return schema?.shape?.method?.value === 'tools/call';
+      })?.handler;
+      expect(callToolHandler).toBeDefined();
 
       // Setup minimal initialized state
       (s as any).profile = {
@@ -1942,11 +2017,11 @@ describe('MCPServer', () => {
       (s as any).toolGenerator = { validateArguments: () => {} };
 
       // Unknown tool => OperationNotFoundError path
-      await expect(callToolHandler({ params: { name: 'missing', arguments: {} } })).rejects.toThrow();
+      await expect(callToolHandler!({ params: { name: 'missing', arguments: {} } })).rejects.toThrow();
 
       // Existing tool => executeSimpleTool branch
       (s as any).executeSimpleTool = async () => ({ ok: true });
-      const res = await callToolHandler({ params: { name: 't', arguments: {} } });
+      const res = await callToolHandler!({ params: { name: 't', arguments: {} } });
       expect(res.content[0].text).toContain('"ok": true');
     });
 
@@ -1975,6 +2050,8 @@ describe('MCPServer', () => {
       expect(response.result.protocolVersion).toBe('2025-03-26');
       expect(response.result.serverInfo.name).toBe('mcp4openapi');
       expect(response.result.capabilities.tools).toBeDefined();
+      expect(response.result.capabilities.prompts).toBeDefined();
+      expect(response.result.capabilities.prompts.listChanged).toBe(false);
       expect(response.result.sessionId).toBe('test-session');
     });
 
@@ -2292,6 +2369,57 @@ describe('MCPServer', () => {
       expect(result).toHaveProperty('tools');
       expect(Array.isArray(result.tools)).toBe(true);
       expect(result.tools.length).toBeGreaterThan(0);
+    });
+
+    it('ListPrompts handler should return configured prompts when initialized', async () => {
+      const setHandlerSpy = vi.spyOn(MCPProtocolServer.prototype as any, 'setRequestHandler');
+      const server = new MCPServer();
+      const specPath = path.join(process.cwd(), 'profiles/gitlab/openapi.yaml');
+      await server.initialize(specPath);
+      (server as any).profile.prompts = [
+        {
+          name: 'summarize_issue',
+          description: 'Summarize issue context',
+          arguments: [{ name: 'issue_title', required: true }],
+          messages: [{ role: 'user', content: { type: 'text', text: 'Summarize: {{issue_title}}' } }],
+        },
+      ];
+
+      const listCall = setHandlerSpy.mock.calls.find(call => {
+        const schema: any = call[0];
+        return schema?.shape?.method?.value === 'prompts/list';
+      });
+      expect(listCall).toBeDefined();
+
+      const listHandler = listCall![1] as () => Promise<any>;
+      const result = await listHandler();
+      expect(result.prompts).toHaveLength(1);
+      expect(result.prompts[0].name).toBe('summarize_issue');
+    });
+
+    it('GetPrompt handler should render prompt text from arguments', async () => {
+      const setHandlerSpy = vi.spyOn(MCPProtocolServer.prototype as any, 'setRequestHandler');
+      const server = new MCPServer();
+      const specPath = path.join(process.cwd(), 'profiles/gitlab/openapi.yaml');
+      await server.initialize(specPath);
+      (server as any).profile.prompts = [
+        {
+          name: 'summarize_issue',
+          description: 'Summarize issue context',
+          arguments: [{ name: 'issue_title', required: true }],
+          messages: [{ role: 'user', content: { type: 'text', text: 'Summarize: {{issue_title}}' } }],
+        },
+      ];
+
+      const getCall = setHandlerSpy.mock.calls.find(call => {
+        const schema: any = call[0];
+        return schema?.shape?.method?.value === 'prompts/get';
+      });
+      expect(getCall).toBeDefined();
+
+      const getHandler = getCall![1] as (req: any) => Promise<any>;
+      const result = await getHandler({ params: { name: 'summarize_issue', arguments: { issue_title: 'Fix login' } } });
+      expect(result.messages[0].content.text).toContain('Fix login');
     });
 
     it('CallTool handler should return composite result with _metadata', async () => {

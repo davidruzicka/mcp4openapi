@@ -14,7 +14,7 @@
  */
 
 import fs from 'fs/promises';
-import type { Profile, ParameterType } from '../types/profile.js';
+import type { Profile, ParameterType, PromptDefinition } from '../types/profile.js';
 import { ValidationError, ConfigurationError } from '../core/errors.js';
 import { profileSchema, authInterceptorSchema } from '../generated-schemas.js';
 import type { OpenAPIParser } from '../openapi/openapi-parser.js';
@@ -211,6 +211,98 @@ export class ProfileLoader {
         this.validateCompositeStepsDAG(tool.name, tool.steps);
       }
     }
+
+    if (profile.prompts) {
+      this.validatePrompts(profile.prompts, profile.tools);
+    }
+  }
+
+  private validatePrompts(
+    prompts: PromptDefinition[],
+    tools: import('../types/profile.js').ToolDefinition[]
+  ): void {
+    const promptNames = new Set<string>();
+    const toolNames = new Set(tools.map(tool => tool.name));
+
+    for (const prompt of prompts) {
+      if (promptNames.has(prompt.name)) {
+        throw new ValidationError(
+          `Duplicate prompt name '${prompt.name}'`,
+          { promptName: prompt.name }
+        );
+      }
+      promptNames.add(prompt.name);
+
+      if (toolNames.has(prompt.name)) {
+        throw new ValidationError(
+          `Prompt '${prompt.name}' conflicts with existing tool name`,
+          { promptName: prompt.name }
+        );
+      }
+
+      if (prompt.messages.length === 0) {
+        throw new ValidationError(
+          `Prompt '${prompt.name}' must have at least one message`,
+          { promptName: prompt.name }
+        );
+      }
+
+      if (!prompt.arguments || prompt.arguments.length === 0) {
+        continue;
+      }
+
+      const argumentNames = new Set<string>();
+      const requiredArguments = new Set<string>();
+
+      for (const argument of prompt.arguments) {
+        if (argumentNames.has(argument.name)) {
+          throw new ValidationError(
+            `Prompt '${prompt.name}' has duplicate argument '${argument.name}'`,
+            { promptName: prompt.name, argumentName: argument.name }
+          );
+        }
+        argumentNames.add(argument.name);
+
+        if (argument.required) {
+          requiredArguments.add(argument.name);
+        }
+      }
+
+      if (requiredArguments.size === 0) {
+        continue;
+      }
+
+      const templateVariables = new Set<string>();
+      for (const message of prompt.messages) {
+        if (message.content.type !== 'text') {
+          continue;
+        }
+
+        for (const variableName of this.extractPromptTemplateVariables(message.content.text)) {
+          templateVariables.add(variableName);
+        }
+      }
+
+      for (const argumentName of requiredArguments) {
+        if (!templateVariables.has(argumentName)) {
+          throw new ValidationError(
+            `Prompt '${prompt.name}' defines required argument '${argumentName}' but no message references it as '{{${argumentName}}}'`,
+            { promptName: prompt.name, argumentName, templateVariables: Array.from(templateVariables) }
+          );
+        }
+      }
+    }
+  }
+
+  private extractPromptTemplateVariables(template: string): string[] {
+    const variableNames: string[] = [];
+    const tokenPattern = /\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}/g;
+
+    for (const match of template.matchAll(tokenPattern)) {
+      variableNames.push(match[1]);
+    }
+
+    return variableNames;
   }
 
   /**
