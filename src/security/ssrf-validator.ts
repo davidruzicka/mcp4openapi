@@ -21,6 +21,8 @@ export interface SSRFOptions {
 /**
  * Validates URLs to prevent Server-Side Request Forgery (SSRF) attacks.
  * Checks against private IP ranges and DNS resolution.
+ *
+ * Used by: ExternalOAuthProvider, ProxyDownloadExecutor, HttpTransport
  */
 export class SSRFValidator {
   constructor(private logger: Logger) {}

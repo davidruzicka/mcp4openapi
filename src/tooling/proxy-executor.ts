@@ -10,13 +10,8 @@ import type { ProxyDownloadOperation } from '../types/profile.js';
 import type { ResponseContext, AuthCredentials } from '../transport/interceptors.js';
 import { NetworkError, ValidationError } from '../core/errors.js';
 import { isSafePropertyName } from '../validation/validation-utils.js';
-import { isIP } from 'node:net';
-import { lookup } from 'node:dns/promises';
-
-export interface DebugLogger {
-  debug(message: string, context?: Record<string, unknown>): void;
-  warn?(message: string, context?: Record<string, unknown>): void;
-}
+import { SSRFValidator } from '../security/ssrf-validator.js';
+import type { Logger } from '../core/logger.js';
 
 export interface HttpClient {
   request(
@@ -51,11 +46,22 @@ const DEFAULT_MAX_SIZE = 10 * 1024 * 1024; // 10MB
 const DEFAULT_TIMEOUT = 30000; // 30s
 const MAX_REDIRECTS = 5;
 
+const NOOP_LOGGER: Logger = {
+  debug: () => {},
+  info: () => {},
+  warn: () => {},
+  error: () => {},
+};
+
 export class ProxyDownloadExecutor {
+  private ssrfValidator: SSRFValidator;
+
   constructor(
     private httpClient: HttpClient,
-    private logger: DebugLogger = { debug: () => {} }
-  ) {}
+    private logger: Logger = NOOP_LOGGER
+  ) {
+    this.ssrfValidator = new SSRFValidator(logger);
+  }
 
   /**
    * Execute proxy download operation
@@ -501,147 +507,10 @@ export class ProxyDownloadExecutor {
   }
 
   private async enforceAllowedDownloadTarget(targetUrl: string, operation: ProxyDownloadOperation): Promise<void> {
-    const url = new URL(targetUrl);
-    const hostnameRaw = url.hostname.toLowerCase();
-    const hostname = hostnameRaw.startsWith('[') && hostnameRaw.endsWith(']')
-      ? hostnameRaw.slice(1, -1)
-      : hostnameRaw;
-    const allowPrivateNetwork = operation.allow_private_network ?? false;
-
-    if (operation.allowed_hosts && operation.allowed_hosts.length > 0) {
-      if (!this.isAllowedHost(hostname, operation.allowed_hosts)) {
-        this.logger.warn?.('proxy_download blocked: host not in allowlist', {
-          hostname,
-          allowed_hosts: operation.allowed_hosts,
-          how_to_fix: "Add hostname to allowed_hosts, or use same-origin download endpoint.",
-        });
-        throw new ValidationError(
-          `Download host not in allowlist: '${hostname}' (allowed_hosts: ${operation.allowed_hosts.join(', ')})`
-        );
-      }
-    }
-
-    if (allowPrivateNetwork) return;
-
-    if (hostname === 'localhost') {
-      this.logger.warn?.('proxy_download blocked: localhost target', {
-        hostname,
-        how_to_fix: "If you really need localhost, set allow_private_network=true (and consider allowed_hosts).",
-      });
-      throw new ValidationError('Download hostname not allowed');
-    }
-
-    const ipVersion = isIP(hostname);
-    if (ipVersion === 4) {
-      if (this.isDisallowedIPv4(hostname)) {
-        this.logger.warn?.('proxy_download blocked: private/loopback/link-local IPv4 target', {
-          hostname,
-          how_to_fix: "If you really need private IPs, set allow_private_network=true (and consider allowed_hosts).",
-        });
-        throw new ValidationError('Download IP not allowed');
-      }
-    } else if (ipVersion === 6) {
-      if (this.isDisallowedIPv6(hostname)) {
-        this.logger.warn?.('proxy_download blocked: private/loopback/link-local IPv6 target', {
-          hostname,
-          how_to_fix: "If you really need private IPs, set allow_private_network=true (and consider allowed_hosts).",
-        });
-        throw new ValidationError('Download IP not allowed');
-      }
-    } else {
-      // Hostname: resolve to all IPs and block if any are private/loopback/link-local (SSRF defense)
-      const addresses = await this.lookupAllIpAddresses(hostname);
-      const disallowed = addresses.find(address => {
-        const family = isIP(address);
-        if (family === 4) return this.isDisallowedIPv4(address);
-        if (family === 6) return this.isDisallowedIPv6(address);
-        return false;
-      });
-
-      if (disallowed) {
-        this.logger.warn?.('proxy_download blocked: hostname resolves to private/loopback/link-local IP', {
-          hostname,
-          resolved_addresses: addresses,
-          how_to_fix:
-            "If this hostname must be allowed, set allow_private_network=true and restrict with allowed_hosts.",
-        });
-        throw new ValidationError('Download hostname resolves to disallowed IP');
-      }
-    }
-  }
-
-  private async lookupAllIpAddresses(hostname: string): Promise<string[]> {
-    const timeoutMs = 1000;
-
-    let results: Array<{ address: string }> = [];
-    try {
-      results = (await Promise.race([
-        lookup(hostname, { all: true, verbatim: true }) as Promise<Array<{ address: string }>>,
-        new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error(`DNS lookup timeout after ${timeoutMs}ms`)), timeoutMs)
-        ),
-      ])) as Array<{ address: string }>;
-    } catch (error) {
-      this.logger.warn?.('proxy_download blocked: DNS lookup failed', {
-        hostname,
-        error: error instanceof Error ? error.message : String(error),
-        how_to_fix:
-          "If you need to allow internal hostnames, set allow_private_network=true and restrict with allowed_hosts.",
-      });
-      throw new ValidationError(`DNS lookup failed for hostname '${hostname}'`);
-    }
-
-    const addresses = results.map(r => r.address).filter(Boolean);
-    if (addresses.length === 0) {
-      this.logger.warn?.('proxy_download blocked: DNS lookup returned no addresses', {
-        hostname,
-        how_to_fix:
-          "If you need to allow internal hostnames, set allow_private_network=true and restrict with allowed_hosts.",
-      });
-      throw new ValidationError(`DNS lookup returned no addresses for hostname '${hostname}'`);
-    }
-
-    return addresses;
-  }
-
-  private isAllowedHost(hostname: string, allowedHosts: string[]): boolean {
-    const lower = hostname.toLowerCase();
-    return allowedHosts.some(patternRaw => {
-      const pattern = patternRaw.toLowerCase().trim();
-      if (!pattern) return false;
-
-      if (pattern.startsWith('*.')) {
-        const suffix = pattern.slice(2);
-        if (!suffix) return false;
-        return lower.endsWith(`.${suffix}`);
-      }
-
-      return lower === pattern;
+    await this.ssrfValidator.validate(targetUrl, {
+      allowPrivateNetwork: operation.allow_private_network,
+      allowedHosts: operation.allowed_hosts,
     });
-  }
-
-  private isDisallowedIPv4(ip: string): boolean {
-    const parts = ip.split('.').map(p => Number(p));
-    if (parts.length !== 4 || parts.some(p => !Number.isInteger(p) || p < 0 || p > 255)) return true;
-    const [a, b] = parts;
-    if (a === 127) return true; // loopback
-    if (a === 10) return true; // private
-    if (a === 172 && b >= 16 && b <= 31) return true; // private
-    if (a === 192 && b === 168) return true; // private
-    if (a === 169 && b === 254) return true; // link-local
-    if (a === 0) return true; // "this network"
-    return false;
-  }
-
-  private isDisallowedIPv6(ip: string): boolean {
-    const normalized = ip.toLowerCase();
-    if (normalized === '::1' || normalized === '0:0:0:0:0:0:0:1') return true; // loopback
-    if (normalized === '::' || normalized === '0:0:0:0:0:0:0:0') return true; // unspecified
-    if (normalized.startsWith('fe8') || normalized.startsWith('fe9') || normalized.startsWith('fea') || normalized.startsWith('feb')) {
-      return true; // link-local fe80::/10 (approx by prefix)
-    }
-    if (normalized.startsWith('fc') || normalized.startsWith('fd')) return true; // unique local fc00::/7 (approx by prefix)
-    return false;
   }
 
   /**
