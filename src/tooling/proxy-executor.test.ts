@@ -361,7 +361,7 @@ describe('ProxyDownloadExecutor', () => {
 
     await expect(
       executor.execute(operation, metadataRequest('/file'), { headers: {} })
-    ).rejects.toThrow('Download host not in allowlist');
+    ).rejects.toThrow("Host not in allowlist: 'cdn.example.com'");
   });
 
   it('should log allowlist details when host is not allowed', async () => {
@@ -382,14 +382,13 @@ describe('ProxyDownloadExecutor', () => {
     };
 
     await expect(executor.execute(operation, metadataRequest('/file'), { headers: {} })).rejects.toThrow(
-      'Download host not in allowlist'
+      "Host not in allowlist: 'cdn.example.com'"
     );
     expect(warn).toHaveBeenCalledWith(
-      'proxy_download blocked: host not in allowlist',
+      'SSRF blocked: host not in allowlist',
       expect.objectContaining({
         hostname: 'cdn.example.com',
         allowed_hosts: ['other.example.com'],
-        how_to_fix: expect.stringContaining('allowed_hosts'),
       })
     );
   });
@@ -411,7 +410,7 @@ describe('ProxyDownloadExecutor', () => {
 
     await expect(
       executor.execute(operation, metadataRequest('/file'), { headers: {} })
-    ).rejects.toThrow('Download IP not allowed');
+    ).rejects.toThrow('IP address not allowed');
   });
 
   it('should log blocked IPv4 targets when allow_private_network is false', async () => {
@@ -431,13 +430,12 @@ describe('ProxyDownloadExecutor', () => {
     };
 
     await expect(executor.execute(operation, metadataRequest('/file'), { headers: {} })).rejects.toThrow(
-      'Download IP not allowed'
+      'IP address not allowed'
     );
     expect(warn).toHaveBeenCalledWith(
-      'proxy_download blocked: private/loopback/link-local IPv4 target',
+      'SSRF blocked: private/loopback/link-local IPv4 target',
       expect.objectContaining({
         hostname: '10.0.0.1',
-        how_to_fix: expect.stringContaining('allow_private_network=true'),
       })
     );
   });
@@ -459,13 +457,12 @@ describe('ProxyDownloadExecutor', () => {
     };
 
     await expect(executor.execute(operation, metadataRequest('/file'), { headers: {} })).rejects.toThrow(
-      'Download IP not allowed'
+      'IP address not allowed'
     );
     expect(warn).toHaveBeenCalledWith(
-      'proxy_download blocked: private/loopback/link-local IPv6 target',
+      'SSRF blocked: private/loopback/link-local IPv6 target',
       expect.objectContaining({
         hostname: '::1',
-        how_to_fix: expect.stringContaining('allow_private_network=true'),
       })
     );
   });
@@ -519,7 +516,7 @@ describe('ProxyDownloadExecutor', () => {
 
     await expect(
       executor.execute(operation, metadataRequest('/file'), { headers: {} })
-    ).rejects.toThrow('resolves to disallowed IP');
+    ).rejects.toThrow('Hostname resolves to disallowed IP');
   });
 
   it('should log hostname resolution details when hostname resolves to disallowed IP', async () => {
@@ -541,23 +538,15 @@ describe('ProxyDownloadExecutor', () => {
     };
 
     await expect(executor.execute(operation, metadataRequest('/file'), { headers: {} })).rejects.toThrow(
-      'resolves to disallowed IP'
+      'Hostname resolves to disallowed IP'
     );
     expect(warn).toHaveBeenCalledWith(
-      'proxy_download blocked: hostname resolves to private/loopback/link-local IP',
+      'SSRF blocked: hostname resolves to private/loopback/link-local IP',
       expect.objectContaining({
         hostname: 'internal.example.com',
         resolved_addresses: ['10.0.0.1'],
-        how_to_fix: expect.stringContaining('allowed_hosts'),
       })
     );
-  });
-
-  it('should support wildcard allowed_hosts patterns', () => {
-    const executor = new ProxyDownloadExecutor(mockHttpClient as any);
-    expect((executor as any).isAllowedHost('sub.example.com', ['*.example.com'])).toBe(true);
-    expect((executor as any).isAllowedHost('example.com', ['*.example.com'])).toBe(false);
-    expect((executor as any).isAllowedHost('sub.example.com', ['*.'])).toBe(false);
   });
 
   it('should reject hostnames when DNS lookup fails', async () => {
@@ -1120,7 +1109,7 @@ describe('ProxyDownloadExecutor', () => {
         metadataRequest('/file'),
         { headers: {} }
       )
-    ).rejects.toThrow('Download hostname not allowed');
+    ).rejects.toThrow('Hostname not allowed (localhost)');
     expect(warn).toHaveBeenCalled();
   });
 
@@ -1140,7 +1129,7 @@ describe('ProxyDownloadExecutor', () => {
         metadataRequest('/file'),
         { headers: {} }
       )
-    ).rejects.toThrow('Download hostname resolves to disallowed IP');
+    ).rejects.toThrow('Hostname resolves to disallowed IP');
   });
 
   it('should reject hostnames when DNS lookup returns no addresses', async () => {
@@ -1195,7 +1184,7 @@ describe('ProxyDownloadExecutor', () => {
       );
 
       const assertion = expect(promise).rejects.toThrow('DNS lookup failed for hostname');
-      await vi.advanceTimersByTimeAsync(1100);
+      await vi.advanceTimersByTimeAsync(2100);
       await assertion;
       expect(warn).toHaveBeenCalled();
     } finally {

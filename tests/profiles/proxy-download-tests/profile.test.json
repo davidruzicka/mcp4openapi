@@ -55,7 +55,7 @@
       ],
       "expect": {
         "success": false,
-        "error_message_regex": "Download host not in allowlist"
+        "error_message_regex": "Host not in allowlist"
       }
     },
     {
