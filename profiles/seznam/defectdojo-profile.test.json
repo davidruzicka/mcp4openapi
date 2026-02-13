@@ -1,0 +1,109 @@
+{
+  "$schema": "../../src/testing/test-schema.ts",
+  "profile_name": "defectdojo",
+  "variables": {
+    "reportToken": "token-123"
+  },
+  "scenarios": [
+    {
+      "name": "DefectDojo - Healthcheck",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "healthcheck"
+      },
+      "mocks": [
+        {
+          "operationId": "get_/healthcheck",
+          "response": {
+            "body": {
+              "status": "ok"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": {
+          "status": "ok"
+        },
+        "request": {
+          "method": "GET",
+          "path": "/healthcheck"
+        }
+      }
+    },
+    {
+      "name": "DefectDojo - Get Reports",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "get_reports",
+        "token": "{{reportToken}}",
+        "source": "sast,sca"
+      },
+      "mocks": [
+        {
+          "operationId": "get_/reports/{token}",
+          "response": {
+            "body": {
+              "reports": [
+                {
+                  "source": "sast",
+                  "name": "javascript.lang.security.audit.path-traversal",
+                  "severity": "high",
+                  "product": "api-gateway"
+                }
+              ]
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": {
+          "reports": [
+            {
+              "source": "sast",
+              "name": "javascript.lang.security.audit.path-traversal"
+            }
+          ]
+        },
+        "request": {
+          "method": "GET",
+          "path": "/reports/{{reportToken}}",
+          "query": {
+            "source": "sast,sca"
+          }
+        }
+      }
+    },
+    {
+      "name": "DefectDojo - Get Metrics",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "get_reports_metrics"
+      },
+      "mocks": [
+        {
+          "operationId": "get_/reports/metrics",
+          "response": {
+            "body": "# HELP security_findings Count of vulnerabilities by severity, source, and product name\n# TYPE security_findings gauge\nsecurity_findings{product_name=\"email\",finding_severity=\"HIGH\",finding_source=\"SAST\"} 5"
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": "# HELP security_findings Count of vulnerabilities by severity, source, and product name\n# TYPE security_findings gauge\nsecurity_findings{product_name=\"email\",finding_severity=\"HIGH\",finding_source=\"SAST\"} 5",
+        "request": {
+          "method": "GET",
+          "path": "/reports/metrics"
+        }
+      }
+    }
+  ],
+  "coverage": {
+    "require_all_actions": true,
+    "require_request_assertions": true,
+    "skip_actions": {},
+    "skip_request_assertions": {}
+  }
+}

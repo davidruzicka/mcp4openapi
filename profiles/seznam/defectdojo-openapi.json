@@ -1,0 +1,206 @@
+{
+    "openapi": "3.0.0",
+    "info": {
+        "title": "DefectDojo Robot API",
+        "version": "2.2.0",
+        "description": "API for Mattermost DefectDojo bot"
+    },
+    "components": {
+        "securitySchemes": {
+            "Bearer": {
+                "type": "http",
+                "scheme": "bearer"
+            }
+        }
+    },
+    "paths": {
+        "/healthcheck": {
+            "get": {
+                "summary": "Health Check",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "status": {
+                                            "type": "string",
+                                            "example": "ok"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/reports/{token}": {
+            "get": {
+                "summary": "Get reports for a given token",
+                "parameters": [
+                    {
+                        "name": "token",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "source",
+                        "in": "query",
+                        "description": "The source of the finding. Can be 'sast' (Semgrep Code), 'sca' (Semgrep Supply Chain), or 'defectdojo' (Manual Pentests), or multiple sources separated by commas.",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "reports": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "source": {
+                                                        "type": "string",
+                                                        "description": "Finding source: 'sast', 'sca', 'secrets', or 'defectdojo'."
+                                                    },
+                                                    "name": {
+                                                        "type": "string",
+                                                        "description": "Rule/check ID from scanner.",
+                                                        "example": "javascript.lang.security.audit.path-traversal"
+                                                    },
+                                                    "product": {
+                                                        "type": "string"
+                                                    },
+                                                    "severity": {
+                                                        "type": "string",
+                                                        "description": "Severity: critical, high, medium, low, info."
+                                                    },
+                                                    "dd_finding_url": {
+                                                        "type": "string"
+                                                    },
+                                                    "gitlab_pipeline_url": {
+                                                        "type": "string"
+                                                    },
+                                                    "gitlab_project_path": {
+                                                        "type": "string"
+                                                    },
+                                                    "file_path": {
+                                                        "type": "string",
+                                                        "description": "Path to the vulnerable file.",
+                                                        "example": "src/scripts/utils.js"
+                                                    },
+                                                    "start_line": {
+                                                        "type": "integer",
+                                                        "example": 31
+                                                    },
+                                                    "start_col": {
+                                                        "type": "integer",
+                                                        "example": 36
+                                                    },
+                                                    "end_line": {
+                                                        "type": "integer",
+                                                        "example": 31
+                                                    },
+                                                    "end_col": {
+                                                        "type": "integer",
+                                                        "example": 40
+                                                    },
+                                                    "message": {
+                                                        "type": "string",
+                                                        "description": "Human-readable vulnerability description.",
+                                                        "example": "Detected possible user input going into a path.join function."
+                                                    },
+                                                    "code_snippet": {
+                                                        "type": "string",
+                                                        "description": "Code containing the vulnerability."
+                                                    },
+                                                    "fingerprint": {
+                                                        "type": "string",
+                                                        "description": "Unique fingerprint for deduplication."
+                                                    },
+                                                    "extra_metadata": {
+                                                        "type": "object",
+                                                        "description": "Full Semgrep metadata (cwe, owasp, references, etc.). For SCA includes cve, ghsa, sca-fix-versions."
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "error": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/reports/metrics": {
+            "get": {
+                "summary": "Fetch security Prometheus metrics for a specified product associated with a token from the Authorization header.",
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Metrics data returned successfully.",
+                        "content": {
+                            "application/openmetrics-text": {
+                                "schema": {
+                                    "type": "string",
+                                    "description": "OpenMetrics formatted text data",
+                                    "example": "# HELP security_findings Count of vulnerabilities by severity, source, and product name\n# TYPE security_findings gauge\nsecurity_findings{gitlab_project_path=\"\",product_id=\"2\",product_name=\"email\",finding_severity=\"CRITICAL\",finding_source=\"DEFECTDOJO\"} 1.0\nsecurity_findings{gitlab_project_path=\"email/userweb\",product_id=\"2\",product_name=\"email\",finding_severity=\"HIGH\",finding_source=\"SAST\"} 5.0\n"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Authorization header is missing or invalid.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "error": {
+                                            "type": "string",
+                                            "description": "Error message indicating the missing or invalid authorization header."
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
