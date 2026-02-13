@@ -58,6 +58,10 @@ function assertErrorExpectation(
 function resolveOpenApiSpecPath(testDir: string, files: string[], profile: Profile): string {
   const configuredSpecPath = profile.openapi_spec_path?.trim();
   if (configuredSpecPath) {
+    if (/^https?:\/\//i.test(configuredSpecPath)) {
+      return configuredSpecPath;
+    }
+
     const resolvedPath = path.isAbsolute(configuredSpecPath)
       ? configuredSpecPath
       : path.resolve(testDir, configuredSpecPath);
@@ -98,6 +102,17 @@ describe('generic profile error expectations', () => {
 });
 
 describe('resolveOpenApiSpecPath', () => {
+  it('keeps http(s) openapi_spec_path as remote URL', () => {
+    const profile: Profile = {
+      profile_name: 'remote-profile',
+      openapi_spec_path: 'https://example.com/openapi.json',
+      tools: []
+    };
+
+    const resolved = resolveOpenApiSpecPath('/tmp', [], profile);
+    expect(resolved).toBe('https://example.com/openapi.json');
+  });
+
   it('uses openapi_spec_path from profile when provided', () => {
     const tempDir = fs.mkdtempSync(path.join(process.cwd(), 'tmp-openapi-resolution-'));
     const specPath = path.join(tempDir, 'defectdojo-openapi.json');
