@@ -22,6 +22,7 @@ description: Use when implementing or refactoring TypeScript files (`.ts`) in th
 - Use kebab-case filenames unless told otherwise.
 - Keep tests, types, and helpers near implementation when it improves discoverability.
 - Reuse shared utilities before adding new ones.
+- Prefer existing helpers in `src/validation/validation-utils.ts` for reusable validation/security checks (for example own-property checks) instead of ad-hoc inline logic.
 
 ## Naming and style
 - Use PascalCase for classes, interfaces, enums, and type aliases; camelCase for everything else.
@@ -85,6 +86,7 @@ description: Use when implementing or refactoring TypeScript files (`.ts`) in th
 - Expand integration/E2E tests when behavior crosses module boundaries.
 - Run targeted test scripts for quick feedback.
 - Avoid brittle timing assertions; use fake timers or injected clocks.
+- When a reusable validation helper is missing, add it to `validation-utils` and include both success and failure tests before reusing it at call sites.
 
 ## Performance and reliability
 - Lazy-load heavy dependencies and dispose when done.
