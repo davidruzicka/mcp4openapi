@@ -300,6 +300,20 @@
         const description = profile.description || i18n.noDescription || '';
         const authTabs = profile.authTabs || [];
         const activeAuth = authTabs.length > 0 ? authTabs[0].key : null;
+        const apiEndpointValue = profile.apiEndpoint || '';
+        const apiEndpointSource = profile.apiEndpointSource || 'unavailable';
+        const apiEndpointEnvVar = profile.apiEndpointEnvVar || '';
+        const apiEndpointSourceText = apiEndpointSource === 'env'
+          ? `${i18n.apiEndpointSourceEnv || 'Source: env'}${apiEndpointEnvVar ? ` (${apiEndpointEnvVar})` : ''}`
+          : apiEndpointSource === 'default'
+            ? `${i18n.apiEndpointSourceDefault || 'Source: default'}${apiEndpointEnvVar ? ` (${apiEndpointEnvVar})` : ''}`
+            : apiEndpointSource === 'env-unset'
+              ? `${i18n.apiEndpointEnvNotSet || 'Environment variable is not set'}${apiEndpointEnvVar ? ` (${apiEndpointEnvVar})` : ''}`
+              : (i18n.apiEndpointUnavailable || 'API endpoint is not configured in the profile.');
+        const apiEndpointHtml = apiEndpointValue
+          ? `<p><strong>${escapeHtml(i18n.apiEndpointLabel || 'API endpoint')}</strong>: ${escapeHtml(apiEndpointValue)}</p>
+             <p class="profile-subtitle">${escapeHtml(apiEndpointSourceText)}</p>`
+          : `<p><strong>${escapeHtml(i18n.apiEndpointLabel || 'API endpoint')}</strong>: ${escapeHtml(apiEndpointSourceText)}</p>`;
         detailEl.innerHTML = `
           <div class="detail-card">
             <h3>${escapeHtml(i18n.profileLabel || '')}</h3>
@@ -310,6 +324,7 @@
             <h3>${escapeHtml(i18n.endpointLabel || '')}</h3>
             <p><strong>MCP</strong>: ${escapeHtml(profile.mcpUrl)}</p>
             <p><strong>SSE</strong>: ${escapeHtml(profile.sseUrl)}</p>
+            ${apiEndpointHtml}
           </div>
           <div class="detail-card">
             <div class="tab-row" id="auth-tabs">

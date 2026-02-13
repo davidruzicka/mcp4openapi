@@ -53,6 +53,69 @@ describe('profile index helpers', () => {
     expect(claude?.content).toContain('Authorization: Bearer ${GITLAB_TOKEN}');
   });
 
+  it('resolves API endpoint from env var over default', () => {
+    process.env.GITLAB_API_BASE_URL = 'https://env.gitlab.example.com';
+    const endpoint = __test__.resolveApiEndpoint({
+      profileId: 'gitlab',
+      profileName: 'gitlab',
+      profileAliases: [],
+      envVars: ['GITLAB_API_BASE_URL'],
+      authMethods: [],
+      apiBaseUrl: {
+        valueFromEnv: 'GITLAB_API_BASE_URL',
+        defaultValue: 'https://default.gitlab.example.com',
+      },
+    });
+
+    expect(endpoint).toEqual({
+      value: 'https://env.gitlab.example.com',
+      source: 'env',
+      envVar: 'GITLAB_API_BASE_URL',
+    });
+    delete process.env.GITLAB_API_BASE_URL;
+  });
+
+  it('uses default API endpoint when env var is not set', () => {
+    delete process.env.MISSING_BASE_URL;
+    const endpoint = __test__.resolveApiEndpoint({
+      profileId: 'demo',
+      profileName: 'demo',
+      profileAliases: [],
+      envVars: [],
+      authMethods: [],
+      apiBaseUrl: {
+        valueFromEnv: 'MISSING_BASE_URL',
+        defaultValue: 'https://default.example.com',
+      },
+    });
+
+    expect(endpoint).toEqual({
+      value: 'https://default.example.com',
+      source: 'default',
+      envVar: 'MISSING_BASE_URL',
+    });
+  });
+
+  it('marks endpoint as env-unset when only env var is configured', () => {
+    delete process.env.ONLY_ENV_BASE_URL;
+    const endpoint = __test__.resolveApiEndpoint({
+      profileId: 'demo',
+      profileName: 'demo',
+      profileAliases: [],
+      envVars: [],
+      authMethods: [],
+      apiBaseUrl: {
+        valueFromEnv: 'ONLY_ENV_BASE_URL',
+      },
+    });
+
+    expect(endpoint).toEqual({
+      value: null,
+      source: 'env-unset',
+      envVar: 'ONLY_ENV_BASE_URL',
+    });
+  });
+
   it('uses query parameters for query auth snippets', () => {
     const profiles: ListedProfileDetails[] = [
       {
@@ -128,6 +191,30 @@ describe('profile index helpers', () => {
     expect(html).toContain('MCP profiles');
     expect(html).toContain('nonce123');
     expect(html).toContain('"profileId":"demo"');
+  });
+
+  it('includes resolved API endpoint in payload', () => {
+    process.env.DEMO_API_BASE_URL = 'https://api.demo.example.com';
+    const profiles: ListedProfileDetails[] = [
+      {
+        profileId: 'demo',
+        profileName: 'demo',
+        profileAliases: [],
+        description: 'Demo',
+        envVars: ['DEMO_API_BASE_URL'],
+        authMethods: [],
+        apiBaseUrl: {
+          valueFromEnv: 'DEMO_API_BASE_URL',
+          defaultValue: 'https://fallback.demo.example.com',
+        },
+      },
+    ];
+
+    const { payload } = buildProfileIndexPayload(profiles, 'http://localhost:3003', 'en');
+    expect(payload.profiles[0].apiEndpoint).toBe('https://api.demo.example.com');
+    expect(payload.profiles[0].apiEndpointSource).toBe('env');
+    expect(payload.profiles[0].apiEndpointEnvVar).toBe('DEMO_API_BASE_URL');
+    delete process.env.DEMO_API_BASE_URL;
   });
 
   it('builds Czech i18n labels via payload', () => {

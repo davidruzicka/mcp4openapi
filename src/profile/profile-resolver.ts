@@ -31,6 +31,12 @@ export interface ListedProfileDetails {
   description?: string;
   envVars: string[];
   authMethods: ProfileAuthMethod[];
+  apiBaseUrl?: ProfileApiBaseUrl;
+}
+
+export interface ProfileApiBaseUrl {
+  valueFromEnv?: string;
+  defaultValue?: string;
 }
 
 export interface ProfileAuthMethod {
@@ -114,7 +120,8 @@ function extractEnvVars(profile: Record<string, unknown>): string[] {
   const envVars = new Set<string>();
   const interceptors = profile.interceptors;
   if (interceptors && typeof interceptors === 'object') {
-    const auth = (interceptors as Record<string, unknown>).auth;
+    const interceptorsRecord = interceptors as Record<string, unknown>;
+    const auth = interceptorsRecord.auth;
     if (Array.isArray(auth)) {
       for (const entry of auth) {
         if (entry && typeof entry === 'object') {
@@ -124,9 +131,46 @@ function extractEnvVars(profile: Record<string, unknown>): string[] {
     } else if (auth && typeof auth === 'object') {
       collectEnvVarsFromAuth(auth as Record<string, unknown>, envVars);
     }
+
+    const baseUrl = interceptorsRecord.base_url;
+    if (baseUrl && typeof baseUrl === 'object') {
+      const baseUrlValueFromEnv = (baseUrl as Record<string, unknown>).value_from_env;
+      if (typeof baseUrlValueFromEnv === 'string' && baseUrlValueFromEnv.trim().length > 0) {
+        envVars.add(baseUrlValueFromEnv.trim());
+      }
+    }
   }
 
   return Array.from(envVars).sort((a, b) => a.localeCompare(b));
+}
+
+function extractApiBaseUrl(profile: Record<string, unknown>): ProfileApiBaseUrl | undefined {
+  const interceptors = profile.interceptors;
+  if (!interceptors || typeof interceptors !== 'object') {
+    return undefined;
+  }
+
+  const baseUrl = (interceptors as Record<string, unknown>).base_url;
+  if (!baseUrl || typeof baseUrl !== 'object') {
+    return undefined;
+  }
+
+  const baseUrlRecord = baseUrl as Record<string, unknown>;
+  const valueFromEnv = typeof baseUrlRecord.value_from_env === 'string' && baseUrlRecord.value_from_env.trim().length > 0
+    ? baseUrlRecord.value_from_env.trim()
+    : undefined;
+  const defaultValue = typeof baseUrlRecord.default === 'string' && baseUrlRecord.default.trim().length > 0
+    ? baseUrlRecord.default.trim()
+    : undefined;
+
+  if (!valueFromEnv && !defaultValue) {
+    return undefined;
+  }
+
+  return {
+    valueFromEnv,
+    defaultValue,
+  };
 }
 
 function extractAuthMethods(profile: Record<string, unknown>): ProfileAuthMethod[] {
@@ -251,6 +295,7 @@ async function loadProfileDetails(profilePath: string): Promise<ListedProfileDet
     description,
     envVars: extractEnvVars(profile),
     authMethods: extractAuthMethods(profile),
+    apiBaseUrl: extractApiBaseUrl(profile),
   };
 }
 

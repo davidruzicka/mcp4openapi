@@ -85,6 +85,10 @@ describe('profile-resolver', () => {
       openapi_spec_path: './openapi.yaml',
       description: 'Sample',
       interceptors: {
+        base_url: {
+          value_from_env: 'SAMPLE_API_BASE_URL',
+          default: 'https://api.example.com',
+        },
         auth: [
           {
             type: 'bearer',
@@ -113,13 +117,17 @@ describe('profile-resolver', () => {
 
     const profiles = await listProfilesDetailed(profilesDir);
     expect(profiles).toHaveLength(1);
-    expect(profiles[0].envVars).toEqual(['API_TOKEN', 'CUSTOM_KEY', 'OAUTH_ISSUER', 'QUERY_TOKEN']);
+    expect(profiles[0].envVars).toEqual(['API_TOKEN', 'CUSTOM_KEY', 'OAUTH_ISSUER', 'QUERY_TOKEN', 'SAMPLE_API_BASE_URL']);
     expect(profiles[0].authMethods).toEqual([
       { type: 'bearer', headerName: undefined, queryParam: undefined, valueFromEnv: 'API_TOKEN' },
       { type: 'oauth', headerName: undefined, queryParam: undefined, valueFromEnv: undefined },
       { type: 'custom-header', headerName: 'X-API-KEY', queryParam: undefined, valueFromEnv: 'CUSTOM_KEY' },
       { type: 'query', headerName: undefined, queryParam: 'api_key', valueFromEnv: 'QUERY_TOKEN' },
     ]);
+    expect(profiles[0].apiBaseUrl).toEqual({
+      valueFromEnv: 'SAMPLE_API_BASE_URL',
+      defaultValue: 'https://api.example.com',
+    });
 
     const resolved = await resolveProfileDetailsFromPath(profilePath);
     expect(resolved?.profileId).toBe('sample');

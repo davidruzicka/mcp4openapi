@@ -12,6 +12,11 @@ interface ProfileIndexI18n {
   noscript: string;
   profileLabel: string;
   endpointLabel: string;
+  apiEndpointLabel: string;
+  apiEndpointSourceEnv: string;
+  apiEndpointSourceDefault: string;
+  apiEndpointEnvNotSet: string;
+  apiEndpointUnavailable: string;
   envVarsLabel: string;
   envNote: string;
   noEnvVars: string;
@@ -56,6 +61,9 @@ type RenderAuthMethod = ProfileAuthMethod | { type: 'none' };
 interface ProfileIndexProfile extends ListedProfileDetails {
   mcpUrl: string;
   sseUrl: string;
+  apiEndpoint: string | null;
+  apiEndpointSource: 'env' | 'default' | 'env-unset' | 'unavailable';
+  apiEndpointEnvVar: string | null;
   snippets: ProfileIndexSnippet[];
   authTabs: ProfileIndexTab[];
 }
@@ -122,6 +130,11 @@ export function buildProfileIndexI18n(locale: ProfileIndexLocale): ProfileIndexI
       noscript: 'Pro zobrazení návodu je potřeba zapnout JavaScript.',
       profileLabel: 'Profil',
       endpointLabel: 'Endpointy',
+      apiEndpointLabel: 'API endpoint',
+      apiEndpointSourceEnv: 'Zdroj: env',
+      apiEndpointSourceDefault: 'Zdroj: default',
+      apiEndpointEnvNotSet: 'Proměnná není nastavena',
+      apiEndpointUnavailable: 'Endpoint není v profilu nakonfigurován.',
       envVarsLabel: 'Proměnné prostředí',
       envNote: 'Hodnoty proměnných prostředí lze zadat přes env. Parametry CLI podporují pouze MCP4_* (např. --api-base-url).',
       noEnvVars: 'V profilu nejsou detekované žádné proměnné prostředí.',
@@ -155,6 +168,11 @@ export function buildProfileIndexI18n(locale: ProfileIndexLocale): ProfileIndexI
     noscript: 'Enable JavaScript to view the instructions.',
     profileLabel: 'Profile',
     endpointLabel: 'Endpoints',
+    apiEndpointLabel: 'API endpoint',
+    apiEndpointSourceEnv: 'Source: env',
+    apiEndpointSourceDefault: 'Source: default',
+    apiEndpointEnvNotSet: 'Environment variable is not set',
+    apiEndpointUnavailable: 'API endpoint is not configured in the profile.',
     envVarsLabel: 'Environment variables',
     envNote: 'Values can be provided via env vars. CLI parameters only support MCP4_* (for example --api-base-url).',
     noEnvVars: 'No environment variables detected for this profile.',
@@ -190,10 +208,14 @@ export function buildProfileIndexPayload(
   const i18n = buildProfileIndexI18n(locale);
   const enriched = profiles.map(profile => {
     const { snippets, authTabs } = buildProfileSnippets(profile, i18n);
+    const apiEndpointInfo = resolveApiEndpoint(profile);
     return {
       ...profile,
       mcpUrl: `${origin}/profile/${encodeURIComponent(profile.profileId)}/mcp`,
       sseUrl: `${origin}/profile/${encodeURIComponent(profile.profileId)}/sse`,
+      apiEndpoint: apiEndpointInfo.value,
+      apiEndpointSource: apiEndpointInfo.source,
+      apiEndpointEnvVar: apiEndpointInfo.envVar,
       snippets,
       authTabs,
     };
@@ -214,6 +236,50 @@ export function buildProfileIndexPayload(
   };
 
   return { payload, templateData };
+}
+
+function resolveApiEndpoint(
+  profile: ListedProfileDetails
+): { value: string | null; source: 'env' | 'default' | 'env-unset' | 'unavailable'; envVar: string | null } {
+  const valueFromEnv = profile.apiBaseUrl?.valueFromEnv?.trim();
+  const defaultValue = profile.apiBaseUrl?.defaultValue?.trim();
+
+  if (valueFromEnv) {
+    const envValue = process.env[valueFromEnv]?.trim();
+    if (envValue) {
+      return {
+        value: envValue,
+        source: 'env',
+        envVar: valueFromEnv,
+      };
+    }
+    if (defaultValue) {
+      return {
+        value: defaultValue,
+        source: 'default',
+        envVar: valueFromEnv,
+      };
+    }
+    return {
+      value: null,
+      source: 'env-unset',
+      envVar: valueFromEnv,
+    };
+  }
+
+  if (defaultValue) {
+    return {
+      value: defaultValue,
+      source: 'default',
+      envVar: null,
+    };
+  }
+
+  return {
+    value: null,
+    source: 'unavailable',
+    envVar: null,
+  };
 }
 
 export function renderProfileIndexHtml(template: string, templateData: Record<string, string>, nonce: string): string {
@@ -507,6 +573,7 @@ export const __test__ = {
   buildInputsBlock,
   buildEnvValue,
   buildProfileIndexI18n,
+  resolveApiEndpoint,
   renderTemplate,
   safeJsonForHtml,
 };
