@@ -1428,7 +1428,7 @@ export class HttpTransport {
     });
 
     if (this.config.profileIndexEnabled) {
-      this.app.get('/', async (req: Request, res: Response) => {
+      this.app.get('/', mcpRateLimiter, async (req: Request, res: Response) => {
         await this.handleProfileIndex(req, res);
       });
     }

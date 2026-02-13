@@ -169,6 +169,144 @@ describeIfListen('HttpTransport Rate Limiting', () => {
       const newResponse = await fetch(`http://127.0.0.1:${testPort}/health`);
       expect(newResponse.status).toBe(200);
     });
+
+    it('should apply rate limiting to profile index endpoint', async () => {
+      // Reconfigure transport with profile index enabled
+      await transport.stop();
+
+      const config: HttpTransportConfig = {
+        host: '127.0.0.1',
+        port: testPort,
+        sessionTimeoutMs: 300000,
+        heartbeatEnabled: false,
+        metricsEnabled: false,
+        metricsPath: '/metrics',
+        rateLimitEnabled: true,
+        rateLimitWindowMs: 1000,
+        rateLimitMaxRequests: 5,
+        profileIndexEnabled: true,
+        profileRoutingEnabled: true,
+      };
+
+      transport = new HttpTransport(config, new ConsoleLogger());
+      // Mock profile index provider
+      transport.setProfileIndexProvider(async () => []);
+
+      await transport.start();
+
+      const responses: Response[] = [];
+
+      // Make 7 requests (over limit of 5)
+      for (let i = 0; i < 7; i++) {
+        const response = await fetch(`http://127.0.0.1:${testPort}/`);
+        responses.push(response);
+      }
+
+      // First 5 should succeed
+      for (let i = 0; i < 5; i++) {
+        expect(responses[i].status).toBe(200);
+      }
+
+      // Last 2 should be rate limited
+      for (let i = 5; i < 7; i++) {
+        expect(responses[i].status).toBe(429);
+      }
+    });
+
+    it('should return 404 for profile index endpoint when profile routing is disabled', async () => {
+      await transport.stop();
+
+      const config: HttpTransportConfig = {
+        host: '127.0.0.1',
+        port: testPort,
+        sessionTimeoutMs: 300000,
+        heartbeatEnabled: false,
+        metricsEnabled: false,
+        metricsPath: '/metrics',
+        rateLimitEnabled: true,
+        rateLimitWindowMs: 1000,
+        rateLimitMaxRequests: 5,
+        profileIndexEnabled: true,
+        profileRoutingEnabled: false,
+      };
+
+      transport = new HttpTransport(config, new ConsoleLogger());
+      transport.setProfileIndexProvider(async () => []);
+      await transport.start();
+
+      const response = await fetch(`http://127.0.0.1:${testPort}/`);
+      expect(response.status).toBe(404);
+    });
+
+    it('should reset profile index rate limit after window expires', async () => {
+      await transport.stop();
+
+      const config: HttpTransportConfig = {
+        host: '127.0.0.1',
+        port: testPort,
+        sessionTimeoutMs: 300000,
+        heartbeatEnabled: false,
+        metricsEnabled: false,
+        metricsPath: '/metrics',
+        rateLimitEnabled: true,
+        rateLimitWindowMs: 300,
+        rateLimitMaxRequests: 1,
+        profileIndexEnabled: true,
+        profileRoutingEnabled: true,
+      };
+
+      transport = new HttpTransport(config, new ConsoleLogger());
+      transport.setProfileIndexProvider(async () => []);
+      await transport.start();
+
+      const firstResponse = await fetch(`http://127.0.0.1:${testPort}/`);
+      expect(firstResponse.status).toBe(200);
+
+      const blockedResponse = await fetch(`http://127.0.0.1:${testPort}/`);
+      expect(blockedResponse.status).toBe(429);
+
+      await new Promise(resolve => setTimeout(resolve, 350));
+
+      const resetResponse = await fetch(`http://127.0.0.1:${testPort}/`);
+      expect(resetResponse.status).toBe(200);
+    });
+
+    it('should share rate limit bucket between profile index and health endpoints', async () => {
+      await transport.stop();
+
+      const config: HttpTransportConfig = {
+        host: '127.0.0.1',
+        port: testPort,
+        sessionTimeoutMs: 300000,
+        heartbeatEnabled: false,
+        metricsEnabled: false,
+        metricsPath: '/metrics',
+        rateLimitEnabled: true,
+        rateLimitWindowMs: 1000,
+        rateLimitMaxRequests: 5,
+        profileIndexEnabled: true,
+        profileRoutingEnabled: true,
+      };
+
+      transport = new HttpTransport(config, new ConsoleLogger());
+      transport.setProfileIndexProvider(async () => []);
+      await transport.start();
+
+      const responses: Response[] = [];
+      for (let i = 0; i < 3; i++) {
+        responses.push(await fetch(`http://127.0.0.1:${testPort}/`));
+      }
+      for (let i = 0; i < 3; i++) {
+        responses.push(await fetch(`http://127.0.0.1:${testPort}/health`));
+      }
+
+      expect(responses[0].status).toBe(200);
+      expect(responses[1].status).toBe(200);
+      expect(responses[2].status).toBe(200);
+      expect(responses[3].status).toBe(200);
+      expect(responses[4].status).toBe(200);
+      expect(responses[5].status).toBe(429);
+    });
   });
 
   describe('Rate limiting disabled', () => {
@@ -208,6 +346,85 @@ describeIfListen('HttpTransport Rate Limiting', () => {
       for (const response of responses) {
         expect(response.status).toBe(200);
       }
+    });
+
+    it('should allow unlimited requests to profile index when rate limiting is disabled', async () => {
+      await transport.stop();
+
+      const config: HttpTransportConfig = {
+        host: '127.0.0.1',
+        port: testPort,
+        sessionTimeoutMs: 300000,
+        heartbeatEnabled: false,
+        metricsEnabled: false,
+        metricsPath: '/metrics',
+        rateLimitEnabled: false,
+        rateLimitWindowMs: 1000,
+        rateLimitMaxRequests: 1,
+        profileIndexEnabled: true,
+        profileRoutingEnabled: true,
+      };
+
+      transport = new HttpTransport(config, new ConsoleLogger());
+      transport.setProfileIndexProvider(async () => []);
+      await transport.start();
+
+      const responses: Response[] = [];
+      for (let i = 0; i < 20; i++) {
+        responses.push(await fetch(`http://127.0.0.1:${testPort}/`));
+      }
+
+      for (const response of responses) {
+        expect(response.status).toBe(200);
+      }
+    });
+  });
+
+  describe('Profile index disabled', () => {
+    it('should return 404 for root endpoint when profile index is disabled and profile routing is enabled', async () => {
+      testPort = getNextPort();
+      const config: HttpTransportConfig = {
+        host: '127.0.0.1',
+        port: testPort,
+        sessionTimeoutMs: 300000,
+        heartbeatEnabled: false,
+        metricsEnabled: false,
+        metricsPath: '/metrics',
+        rateLimitEnabled: true,
+        rateLimitWindowMs: 1000,
+        rateLimitMaxRequests: 5,
+        profileIndexEnabled: false,
+        profileRoutingEnabled: true,
+      };
+
+      transport = new HttpTransport(config, new ConsoleLogger());
+      await transport.start();
+
+      const response = await fetch(`http://127.0.0.1:${testPort}/`);
+      expect(response.status).toBe(404);
+    });
+
+    it('should return 404 for root endpoint when profile index is disabled and profile routing is disabled', async () => {
+      testPort = getNextPort();
+      const config: HttpTransportConfig = {
+        host: '127.0.0.1',
+        port: testPort,
+        sessionTimeoutMs: 300000,
+        heartbeatEnabled: false,
+        metricsEnabled: false,
+        metricsPath: '/metrics',
+        rateLimitEnabled: true,
+        rateLimitWindowMs: 1000,
+        rateLimitMaxRequests: 5,
+        profileIndexEnabled: false,
+        profileRoutingEnabled: false,
+      };
+
+      transport = new HttpTransport(config, new ConsoleLogger());
+      await transport.start();
+
+      const response = await fetch(`http://127.0.0.1:${testPort}/`);
+      expect(response.status).toBe(404);
     });
   });
 });
