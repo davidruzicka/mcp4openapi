@@ -55,6 +55,32 @@ function assertErrorExpectation(
   }
 }
 
+function resolveOpenApiSpecPath(testDir: string, files: string[], profile: Profile): string {
+  const configuredSpecPath = profile.openapi_spec_path?.trim();
+  if (configuredSpecPath) {
+    const resolvedPath = path.isAbsolute(configuredSpecPath)
+      ? configuredSpecPath
+      : path.resolve(testDir, configuredSpecPath);
+
+    if (!fs.existsSync(resolvedPath)) {
+      throw new Error(
+        `Configured openapi_spec_path '${configuredSpecPath}' not found for profile '${profile.profile_name}' (resolved: ${resolvedPath})`
+      );
+    }
+
+    return resolvedPath;
+  }
+
+  const fallbackSpec = files.find((file) => file.startsWith('openapi.'));
+  if (!fallbackSpec) {
+    throw new Error(
+      `Could not find OpenAPI spec for ${testDir}. Provide openapi_spec_path in profile or add an openapi.* file.`
+    );
+  }
+
+  return path.join(testDir, fallbackSpec);
+}
+
 describe('generic profile error expectations', () => {
   it('matches error_code against error.code', () => {
     const error = new Error('Validation failed');
@@ -68,6 +94,64 @@ describe('generic profile error expectations', () => {
     (error as any).code = 'VALIDATION_ERROR';
 
     expect(() => assertErrorExpectation(error, { error_code: 'AUTH_ERROR' })).toThrow();
+  });
+});
+
+describe('resolveOpenApiSpecPath', () => {
+  it('uses openapi_spec_path from profile when provided', () => {
+    const tempDir = fs.mkdtempSync(path.join(process.cwd(), 'tmp-openapi-resolution-'));
+    const specPath = path.join(tempDir, 'defectdojo-openapi.json');
+    fs.writeFileSync(specPath, JSON.stringify({ openapi: '3.0.0', paths: {} }));
+
+    const profile: Profile = {
+      profile_name: 'defectdojo',
+      openapi_spec_path: './defectdojo-openapi.json',
+      tools: []
+    };
+
+    try {
+      const resolved = resolveOpenApiSpecPath(tempDir, fs.readdirSync(tempDir), profile);
+      expect(resolved).toBe(specPath);
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it('falls back to openapi.* when openapi_spec_path is missing', () => {
+    const tempDir = fs.mkdtempSync(path.join(process.cwd(), 'tmp-openapi-resolution-'));
+    const fallbackSpecPath = path.join(tempDir, 'openapi.yaml');
+    fs.writeFileSync(fallbackSpecPath, 'openapi: "3.0.0"\npaths: {}\n');
+
+    const profile: Profile = {
+      profile_name: 'fallback-profile',
+      tools: []
+    };
+
+    try {
+      const resolved = resolveOpenApiSpecPath(tempDir, fs.readdirSync(tempDir), profile);
+      expect(resolved).toBe(fallbackSpecPath);
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it('throws when configured openapi_spec_path does not exist', () => {
+    const tempDir = fs.mkdtempSync(path.join(process.cwd(), 'tmp-openapi-resolution-'));
+    fs.writeFileSync(path.join(tempDir, 'openapi.json'), JSON.stringify({ openapi: '3.0.0', paths: {} }));
+
+    const profile: Profile = {
+      profile_name: 'broken-profile',
+      openapi_spec_path: './missing-openapi.json',
+      tools: []
+    };
+
+    try {
+      expect(() => resolveOpenApiSpecPath(tempDir, fs.readdirSync(tempDir), profile)).toThrow(
+        /Configured openapi_spec_path/
+      );
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
   });
 });
 
@@ -131,17 +215,12 @@ testFiles.forEach(testFile => {
         }
       }
 
-      const openApiSpec = files.find(f => f.startsWith('openapi.'));
-      if (!openApiSpec) {
-        throw new Error(`Could not find openapi.* in ${testDir}`);
-      }
-
       const fullProfilePath = path.join(testDir, profileJsonName);
-      const fullSpecPath = path.join(testDir, openApiSpec);
 
       const profileLoader = new ProfileLoader();
       profile = await profileLoader.load(fullProfilePath);
       validateTestAgainstProfile(testDef, profile);
+      const fullSpecPath = resolveOpenApiSpecPath(testDir, files, profile);
 
       parser = new OpenAPIParser();
       await parser.load(fullSpecPath);
