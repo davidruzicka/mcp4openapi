@@ -6,6 +6,7 @@ import {
   redactQueryParam, 
   redactParam,
   isSafePropertyName,
+  hasOwnKey,
   escapeRegExp,
   escapeHtmlSafe
 } from './validation-utils.js';
@@ -117,6 +118,14 @@ describe('Validation Utils', () => {
       expect(isSafePropertyName('hasOwnProperty')).toBe(false);
       expect(isSafePropertyName('toString')).toBe(false);
       expect(isSafePropertyName('valueOf')).toBe(false);
+    });
+  });
+
+  describe('hasOwnKey', () => {
+    it('returns true only for own keys', () => {
+      const obj = { name: 'alice' } as Record<string, unknown>;
+      expect(hasOwnKey(obj, 'name')).toBe(true);
+      expect(hasOwnKey(obj, 'toString')).toBe(false);
     });
   });
 

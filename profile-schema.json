@@ -52,6 +52,12 @@
       },
       "description": "List of MCP tools defined in this profile"
     },
+    "prompts": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/PromptDefinition"
+      }
+    },
     "interceptors": {
       "$ref": "#/definitions/Interceptors"
     },
@@ -264,6 +270,88 @@
     },
     "Record<string,string[]>": {
       "type": "object"
+    },
+    "PromptDefinition": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "arguments": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/PromptArgumentDefinition"
+          }
+        },
+        "messages": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/PromptMessageTemplate"
+          }
+        }
+      },
+      "required": [
+        "messages",
+        "name"
+      ]
+    },
+    "PromptArgumentDefinition": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "required": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "name"
+      ]
+    },
+    "PromptMessageTemplate": {
+      "type": "object",
+      "properties": {
+        "role": {
+          "$ref": "#/definitions/PromptMessageRole"
+        },
+        "content": {
+          "$ref": "#/definitions/PromptContentTemplate"
+        }
+      },
+      "required": [
+        "content",
+        "role"
+      ]
+    },
+    "PromptMessageRole": {
+      "enum": [
+        "assistant",
+        "user"
+      ],
+      "type": "string"
+    },
+    "PromptContentTemplate": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "text"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "text",
+        "type"
+      ]
     },
     "Interceptors": {
       "type": "object",

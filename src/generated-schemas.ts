@@ -7,6 +7,19 @@ export const compositeStepSchema = z.object({
     depends_on: z.array(z.string()).optional()
 });
 
+export const promptArgumentDefinitionSchema = z.object({
+    name: z.string(),
+    description: z.string().optional(),
+    required: z.boolean().optional()
+});
+
+export const promptMessageRoleSchema = z.union([z.literal("user"), z.literal("assistant")]);
+
+export const promptContentTemplateSchema = z.object({
+    type: z.literal("text"),
+    text: z.string()
+});
+
 export const parameterTypeSchema = z.union([z.literal("string"), z.literal("integer"), z.literal("number"), z.literal("boolean"), z.literal("array"), z.literal("object")]);
 
 export const parameterDefinitionSchema = z.object({
@@ -95,6 +108,11 @@ export const toolDefinitionSchema = z.object({
     send_response_fields_as_param: z.boolean().optional()
 });
 
+export const promptMessageTemplateSchema = z.object({
+    role: promptMessageRoleSchema,
+    content: promptContentTemplateSchema
+});
+
 export const authInterceptorSchema = z.object({
     type: z.union([z.literal("bearer"), z.literal("query"), z.literal("custom-header"), z.literal("oauth")]),
     priority: z.number().optional(),
@@ -110,6 +128,13 @@ export const authInterceptorSchema = z.object({
     validation_method: z.union([z.literal("GET"), z.literal("HEAD")]).optional(),
     validation_timeout_ms: z.number().optional(),
     validation_allowed_hosts: z.array(z.string()).optional()
+});
+
+export const promptDefinitionSchema = z.object({
+    name: z.string(),
+    description: z.string().optional(),
+    arguments: z.array(promptArgumentDefinitionSchema).optional(),
+    messages: z.array(promptMessageTemplateSchema)
 });
 
 export const interceptorConfigSchema = z.object({
@@ -129,6 +154,7 @@ export const profileSchema = z.object({
     openapi_spec_path: z.string().optional(),
     description: z.string().optional(),
     tools: z.array(toolDefinitionSchema),
+    prompts: z.array(promptDefinitionSchema).optional(),
     interceptors: interceptorConfigSchema.optional(),
     parameter_aliases: z.record(z.string(), z.array(z.string())).optional(),
     resource_name: z.string().optional(),

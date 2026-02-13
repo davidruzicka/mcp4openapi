@@ -10,6 +10,8 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
+  ListPromptsRequestSchema,
+  GetPromptRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
 
 import { OpenAPIParser } from '../openapi/openapi-parser.js';
@@ -58,6 +60,7 @@ import {
 import type { HttpProfileContext } from '../types/http-transport.js';
 import type { HttpTransport } from '../transport/http-transport.js';
 import { buildHttpTransportBaseConfig } from '../transport/http-transport-config.js';
+import { renderPrompt } from '../prompt/prompt-renderer.js';
 
 export class MCPServer {
   private server: Server;
@@ -385,6 +388,7 @@ export class MCPServer {
       {
         capabilities: {
           tools: {},
+          prompts: {},
         },
       }
     );
@@ -762,6 +766,39 @@ export class MCPServer {
         const correlationId = generateCorrelationId();
         this.logger.error('ListTools handler error', err as Error, { correlationId });
         // Always return generic error to clients
+        throw new Error(`Internal error (correlation ID: ${correlationId})`);
+      }
+    });
+
+    this.server.setRequestHandler(ListPromptsRequestSchema, async () => {
+      try {
+        return {
+          prompts: this.listPrompts(),
+        };
+      } catch (err) {
+        const correlationId = generateCorrelationId();
+        this.logger.error('ListPrompts handler error', err as Error, { correlationId });
+        throw new Error(`Internal error (correlation ID: ${correlationId})`);
+      }
+    });
+
+    this.server.setRequestHandler(GetPromptRequestSchema, async (request) => {
+      try {
+        if (!this.profile) {
+          throw new ConfigurationError('Server not initialized. Call initialize() first.');
+        }
+
+        return this.renderPromptByName(request.params.name, request.params.arguments || {});
+      } catch (err) {
+        if (err instanceof ValidationError || err instanceof ResourceNotFoundError) {
+          throw err;
+        }
+
+        const correlationId = generateCorrelationId();
+        this.logger.error('GetPrompt handler error', err as Error, {
+          correlationId,
+          promptName: request.params.name,
+        });
         throw new Error(`Internal error (correlation ID: ${correlationId})`);
       }
     });
@@ -1301,7 +1338,10 @@ export class MCPServer {
     const result: {
       protocolVersion: string;
       serverInfo: { name: string; version: string };
-      capabilities: { tools: Record<string, never> };
+      capabilities: {
+        tools: Record<string, never>;
+        prompts: { listChanged: boolean };
+      };
       sessionId?: string;
     } = {
       protocolVersion: '2025-03-26',
@@ -1311,6 +1351,9 @@ export class MCPServer {
       },
       capabilities: {
         tools: {},
+        prompts: {
+          listChanged: false,
+        },
       },
     };
 
@@ -1539,6 +1582,58 @@ export class MCPServer {
       };
     }
 
+    if (req.method === 'prompts/list') {
+      return {
+        jsonrpc: '2.0',
+        id: req.id,
+        result: {
+          prompts: this.listPrompts(),
+        },
+      };
+    }
+
+    if (req.method === 'prompts/get') {
+      try {
+        const params = (req.params || {}) as Record<string, unknown>;
+        const name = params.name;
+        if (typeof name !== 'string' || !name.trim()) {
+          throw new ValidationError('prompts/get requires string parameter "name"');
+        }
+
+        const argumentsValue = params.arguments;
+        if (argumentsValue !== undefined && (typeof argumentsValue !== 'object' || Array.isArray(argumentsValue) || argumentsValue === null)) {
+          throw new ValidationError('prompts/get parameter "arguments" must be an object when provided');
+        }
+
+        const promptResult = this.renderPromptByName(
+          name,
+          (argumentsValue as Record<string, unknown>) || {}
+        );
+
+        return {
+          jsonrpc: '2.0',
+          id: req.id,
+          result: promptResult,
+        };
+      } catch (error) {
+        let code = -32603;
+        if (error instanceof ValidationError) {
+          code = -32602;
+        } else if (error instanceof ResourceNotFoundError) {
+          code = -32601;
+        }
+
+        return {
+          jsonrpc: '2.0',
+          id: req.id,
+          error: {
+            code,
+            message: (error as Error).message,
+          },
+        };
+      }
+    }
+
     // Unknown method
     return {
       jsonrpc: '2.0',
@@ -1547,6 +1642,48 @@ export class MCPServer {
         code: -32601,
         message: `Method not found: ${req.method}`,
       },
+    };
+  }
+
+  private listPrompts(): Array<{
+    name: string;
+    description?: string;
+    arguments?: Array<{
+      name: string;
+      description?: string;
+      required?: boolean;
+    }>;
+  }> {
+    return (this.profile?.prompts || []).map((prompt) => ({
+      name: prompt.name,
+      description: prompt.description,
+      arguments: prompt.arguments?.map((argument) => ({
+        name: argument.name,
+        description: argument.description,
+        required: argument.required,
+      })),
+    }));
+  }
+
+  private renderPromptByName(name: string, args: Record<string, unknown>): {
+    description?: string;
+    messages: Array<{
+      role: 'user' | 'assistant';
+      content: {
+        type: 'text';
+        text: string;
+      };
+    }>;
+  } {
+    const prompt = this.profile?.prompts?.find((promptItem) => promptItem.name === name);
+    if (!prompt) {
+      throw new ResourceNotFoundError(name, 'Prompt');
+    }
+
+    const rendered = renderPrompt(prompt, args);
+    return {
+      description: rendered.description,
+      messages: rendered.messages,
     };
   }
 

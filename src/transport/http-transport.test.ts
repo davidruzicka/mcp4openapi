@@ -1051,9 +1051,13 @@ describeIfListen('HttpTransport', () => {
     it('should handle batch requests', async () => {
       transport.setMessageHandler(async (_msg) => {
         if (Array.isArray(_msg)) {
-          return _msg.map((m: any) => ({ id: m.id, result: 'ok' }));
+          return _msg.map((m: any) => ({
+            jsonrpc: '2.0',
+            id: m.id,
+            result: { method: m.method },
+          }));
         }
-        return { result: 'ok' };
+        return { jsonrpc: '2.0', id: (_msg as any).id, result: { method: (_msg as any).method } };
       });
 
       // Initialize first
@@ -1076,10 +1080,54 @@ describeIfListen('HttpTransport', () => {
         .send([
           { jsonrpc: '2.0', id: 2, method: 'tools/list' },
           { jsonrpc: '2.0', id: 3, method: 'prompts/list' },
+          { jsonrpc: '2.0', id: 4, method: 'prompts/get', params: { name: 'summarize_issue', arguments: { issue_title: 'X' } } },
         ]);
 
       expect(response.status).toBe(200);
       expect(Array.isArray(response.body)).toBe(true);
+      expect(response.body).toHaveLength(3);
+      expect(response.body[0].result.method).toBe('tools/list');
+      expect(response.body[1].result.method).toBe('prompts/list');
+      expect(response.body[2].result.method).toBe('prompts/get');
+    });
+
+    it('should handle single prompts/get request', async () => {
+      transport.setMessageHandler(async (_msg) => ({
+        jsonrpc: '2.0',
+        id: (_msg as any).id,
+        result: { method: (_msg as any).method, params: (_msg as any).params },
+      }));
+
+      const initResponse = await request(app)
+        .post('/mcp')
+        .set('Accept', 'application/json, text/event-stream')
+        .send({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'initialize',
+        });
+
+      const sessionId = initResponse.headers['mcp-session-id'];
+
+      const response = await request(app)
+        .post('/mcp')
+        .set('Accept', 'application/json, text/event-stream')
+        .set('Mcp-Session-Id', sessionId)
+        .send({
+          jsonrpc: '2.0',
+          id: 2,
+          method: 'prompts/get',
+          params: {
+            name: 'summarize_issue',
+            arguments: {
+              issue_title: 'Fix auth flow',
+            },
+          },
+        });
+
+      expect(response.status).toBe(200);
+      expect(response.body.result.method).toBe('prompts/get');
+      expect(response.body.result.params.name).toBe('summarize_issue');
     });
   });
 

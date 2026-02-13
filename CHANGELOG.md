@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Added profile-defined MCP prompt support (`prompts/list`, `prompts/get`) with prompt schema types, runtime rendering, and HTTP/SDK test coverage.
+
 ## [0.3.9] - 2026-02-10
 
 ### Fixed
