@@ -228,6 +228,244 @@ describe('ProfileLoader', () => {
     });
   });
 
+  describe('prompt validation', () => {
+    it('accepts valid prompts and extracts required template variables', async () => {
+      const loader = new ProfileLoader();
+      const fs = await import('fs/promises');
+      const tmpPath = `/tmp/profile-prompts-valid-${Date.now()}-${Math.random()}.json`;
+      await fs.writeFile(
+        tmpPath,
+        JSON.stringify({
+          profile_name: 'test',
+          tools: [
+            {
+              name: 'tool_a',
+              description: 'Tool A',
+              parameters: {},
+              operations: { execute: 'op' },
+            },
+          ],
+          prompts: [
+            {
+              name: 'summarize_issue',
+              arguments: [{ name: 'issue_title', required: true }],
+              messages: [
+                {
+                  role: 'user',
+                  content: { type: 'text', text: 'Summarize {{ issue_title }}' },
+                },
+              ],
+            },
+          ],
+          interceptors: {},
+        }),
+        'utf-8'
+      );
+
+      const profile = await loader.load(tmpPath);
+      expect(profile.prompts).toHaveLength(1);
+    });
+
+    it('accepts prompts without arguments', async () => {
+      const loader = new ProfileLoader();
+      const fs = await import('fs/promises');
+      const tmpPath = `/tmp/profile-prompts-no-args-${Date.now()}-${Math.random()}.json`;
+      await fs.writeFile(
+        tmpPath,
+        JSON.stringify({
+          profile_name: 'test',
+          tools: [
+            {
+              name: 'tool_a',
+              description: 'Tool A',
+              parameters: {},
+              operations: { execute: 'op' },
+            },
+          ],
+          prompts: [
+            {
+              name: 'plain_prompt',
+              messages: [
+                {
+                  role: 'user',
+                  content: { type: 'text', text: 'Hello world' },
+                },
+              ],
+            },
+          ],
+          interceptors: {},
+        }),
+        'utf-8'
+      );
+
+      await expect(loader.load(tmpPath)).resolves.toBeDefined();
+    });
+
+    it('accepts prompts with non-required arguments only', async () => {
+      const loader = new ProfileLoader();
+      const fs = await import('fs/promises');
+      const tmpPath = `/tmp/profile-prompts-optional-args-${Date.now()}-${Math.random()}.json`;
+      await fs.writeFile(
+        tmpPath,
+        JSON.stringify({
+          profile_name: 'test',
+          tools: [
+            {
+              name: 'tool_a',
+              description: 'Tool A',
+              parameters: {},
+              operations: { execute: 'op' },
+            },
+          ],
+          prompts: [
+            {
+              name: 'optional_prompt',
+              arguments: [{ name: 'note', required: false }],
+              messages: [
+                {
+                  role: 'user',
+                  content: { type: 'text', text: 'Optional note {{note}}' },
+                },
+              ],
+            },
+          ],
+          interceptors: {},
+        }),
+        'utf-8'
+      );
+
+      await expect(loader.load(tmpPath)).resolves.toBeDefined();
+    });
+
+    it('rejects duplicate prompt names', async () => {
+      const loader = new ProfileLoader();
+      const fs = await import('fs/promises');
+      const tmpPath = `/tmp/profile-prompts-dup-name-${Date.now()}-${Math.random()}.json`;
+      await fs.writeFile(
+        tmpPath,
+        JSON.stringify({
+          profile_name: 'test',
+          tools: [{ name: 'tool_a', description: 'Tool A', parameters: {}, operations: { execute: 'op' } }],
+          prompts: [
+            { name: 'same_name', messages: [{ role: 'user', content: { type: 'text', text: 'A' } }] },
+            { name: 'same_name', messages: [{ role: 'user', content: { type: 'text', text: 'B' } }] },
+          ],
+          interceptors: {},
+        }),
+        'utf-8'
+      );
+
+      await expect(loader.load(tmpPath)).rejects.toThrow("Duplicate prompt name 'same_name'");
+    });
+
+    it('rejects prompt name conflict with tool name', async () => {
+      const loader = new ProfileLoader();
+      const fs = await import('fs/promises');
+      const tmpPath = `/tmp/profile-prompts-tool-conflict-${Date.now()}-${Math.random()}.json`;
+      await fs.writeFile(
+        tmpPath,
+        JSON.stringify({
+          profile_name: 'test',
+          tools: [{ name: 'conflict_name', description: 'Tool A', parameters: {}, operations: { execute: 'op' } }],
+          prompts: [
+            { name: 'conflict_name', messages: [{ role: 'user', content: { type: 'text', text: 'A' } }] },
+          ],
+          interceptors: {},
+        }),
+        'utf-8'
+      );
+
+      await expect(loader.load(tmpPath)).rejects.toThrow("conflicts with existing tool name");
+    });
+
+    it('rejects prompts without messages', async () => {
+      const loader = new ProfileLoader();
+      const fs = await import('fs/promises');
+      const tmpPath = `/tmp/profile-prompts-empty-messages-${Date.now()}-${Math.random()}.json`;
+      await fs.writeFile(
+        tmpPath,
+        JSON.stringify({
+          profile_name: 'test',
+          tools: [{ name: 'tool_a', description: 'Tool A', parameters: {}, operations: { execute: 'op' } }],
+          prompts: [{ name: 'empty_messages', messages: [] }],
+          interceptors: {},
+        }),
+        'utf-8'
+      );
+
+      await expect(loader.load(tmpPath)).rejects.toThrow("must have at least one message");
+    });
+
+    it('rejects duplicate prompt argument names', async () => {
+      const loader = new ProfileLoader();
+      const fs = await import('fs/promises');
+      const tmpPath = `/tmp/profile-prompts-dup-arg-${Date.now()}-${Math.random()}.json`;
+      await fs.writeFile(
+        tmpPath,
+        JSON.stringify({
+          profile_name: 'test',
+          tools: [{ name: 'tool_a', description: 'Tool A', parameters: {}, operations: { execute: 'op' } }],
+          prompts: [
+            {
+              name: 'dup_arg_prompt',
+              arguments: [
+                { name: 'issue_title', required: true },
+                { name: 'issue_title', required: false },
+              ],
+              messages: [{ role: 'user', content: { type: 'text', text: 'Title {{issue_title}}' } }],
+            },
+          ],
+          interceptors: {},
+        }),
+        'utf-8'
+      );
+
+      await expect(loader.load(tmpPath)).rejects.toThrow("duplicate argument 'issue_title'");
+    });
+
+    it('rejects required arguments not referenced in templates', async () => {
+      const loader = new ProfileLoader();
+      const fs = await import('fs/promises');
+      const tmpPath = `/tmp/profile-prompts-missing-ref-${Date.now()}-${Math.random()}.json`;
+      await fs.writeFile(
+        tmpPath,
+        JSON.stringify({
+          profile_name: 'test',
+          tools: [{ name: 'tool_a', description: 'Tool A', parameters: {}, operations: { execute: 'op' } }],
+          prompts: [
+            {
+              name: 'missing_ref_prompt',
+              arguments: [{ name: 'issue_title', required: true }],
+              messages: [{ role: 'user', content: { type: 'text', text: 'No variables here' } }],
+            },
+          ],
+          interceptors: {},
+        }),
+        'utf-8'
+      );
+
+      await expect(loader.load(tmpPath)).rejects.toThrow("no message references it as '{{issue_title}}'");
+    });
+
+    it('private validatePrompts skips non-text content and still enforces required argument references', () => {
+      const loader = new ProfileLoader();
+      const prompts = [
+        {
+          name: 'non_text_prompt',
+          arguments: [{ name: 'issue_title', required: true }],
+          messages: [
+            { role: 'user', content: { type: 'image', data: 'abc' } },
+          ],
+        },
+      ] as any;
+
+      const tools = [{ name: 'tool_a' }] as any;
+      expect(() => (loader as any).validatePrompts(prompts, tools)).toThrow(
+        "no message references it as '{{issue_title}}'"
+      );
+    });
+  });
+
   describe('auth interceptor validation', () => {
     it('should accept array-form auth interceptors', async () => {
       const loader = new ProfileLoader();

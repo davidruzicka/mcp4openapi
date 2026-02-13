@@ -1377,6 +1377,18 @@ describe('MCPServer', () => {
       expect(response.error.message).toContain('requires string parameter "name"');
     });
 
+    it('should return -32602 for prompts/get when arguments is not an object', async () => {
+      const response = await (server as any).handleOtherRequest({
+        jsonrpc: '2.0',
+        id: '7',
+        method: 'prompts/get',
+        params: { name: 'summarize_issue', arguments: 'bad-args' },
+      }, 'test-session');
+
+      expect(response.error.code).toBe(-32602);
+      expect(response.error.message).toContain('parameter "arguments" must be an object');
+    });
+
     it('should return -32601 for prompts/get when prompt is missing', async () => {
       const response = await (server as any).handleOtherRequest({
         jsonrpc: '2.0',
@@ -2397,6 +2409,21 @@ describe('MCPServer', () => {
       expect(result.prompts[0].name).toBe('summarize_issue');
     });
 
+    it('ListPrompts handler should wrap unexpected errors with correlation ID', async () => {
+      const setHandlerSpy = vi.spyOn(MCPProtocolServer.prototype as any, 'setRequestHandler');
+      const server = new MCPServer();
+      (server as any).listPrompts = () => {
+        throw new Error('boom');
+      };
+
+      const listCall = setHandlerSpy.mock.calls.find(call => {
+        const schema: any = call[0];
+        return schema?.shape?.method?.value === 'prompts/list';
+      });
+      const listHandler = listCall![1] as () => Promise<any>;
+      await expect(listHandler()).rejects.toThrow(/correlation ID/);
+    });
+
     it('GetPrompt handler should render prompt text from arguments', async () => {
       const setHandlerSpy = vi.spyOn(MCPProtocolServer.prototype as any, 'setRequestHandler');
       const server = new MCPServer();
@@ -2420,6 +2447,20 @@ describe('MCPServer', () => {
       const getHandler = getCall![1] as (req: any) => Promise<any>;
       const result = await getHandler({ params: { name: 'summarize_issue', arguments: { issue_title: 'Fix login' } } });
       expect(result.messages[0].content.text).toContain('Fix login');
+    });
+
+    it('GetPrompt handler should wrap configuration errors with correlation ID when uninitialized', async () => {
+      const setHandlerSpy = vi.spyOn(MCPProtocolServer.prototype as any, 'setRequestHandler');
+      const server = new MCPServer();
+
+      const getCall = setHandlerSpy.mock.calls.find(call => {
+        const schema: any = call[0];
+        return schema?.shape?.method?.value === 'prompts/get';
+      });
+      const getHandler = getCall![1] as (req: any) => Promise<any>;
+
+      await expect(getHandler({ params: { name: 'summarize_issue', arguments: {} } }))
+        .rejects.toThrow(/correlation ID/);
     });
 
     it('GetPrompt handler should preserve ValidationError for missing required args', async () => {
@@ -2461,6 +2502,33 @@ describe('MCPServer', () => {
 
       await expect(getHandler({ params: { name: 'missing_prompt', arguments: {} } }))
         .rejects.toBeInstanceOf(ResourceNotFoundError);
+    });
+
+    it('GetPrompt handler should wrap unexpected runtime errors with correlation ID', async () => {
+      const setHandlerSpy = vi.spyOn(MCPProtocolServer.prototype as any, 'setRequestHandler');
+      const server = new MCPServer();
+      const specPath = path.join(process.cwd(), 'profiles/gitlab/openapi.yaml');
+      await server.initialize(specPath);
+      (server as any).profile.prompts = [
+        {
+          name: 'summarize_issue',
+          description: 'Summarize issue context',
+          arguments: [{ name: 'issue_title', required: true }],
+          messages: [{ role: 'user', content: { type: 'text', text: 'Summarize: {{issue_title}}' } }],
+        },
+      ];
+      (server as any).renderPromptByName = () => {
+        throw new Error('boom');
+      };
+
+      const getCall = setHandlerSpy.mock.calls.find(call => {
+        const schema: any = call[0];
+        return schema?.shape?.method?.value === 'prompts/get';
+      });
+      const getHandler = getCall![1] as (req: any) => Promise<any>;
+
+      await expect(getHandler({ params: { name: 'summarize_issue', arguments: { issue_title: 'X' } } }))
+        .rejects.toThrow(/correlation ID/);
     });
 
     it('CallTool handler should return composite result with _metadata', async () => {
