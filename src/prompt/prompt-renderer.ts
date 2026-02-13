@@ -1,4 +1,5 @@
 import { ValidationError } from '../core/errors.js';
+import { hasOwnKey } from '../validation/validation-utils.js';
 import type {
   PromptDefinition,
   PromptMessageRole,
@@ -53,7 +54,9 @@ function getMissingRequiredArguments(
     .filter((argumentDefinition) => argumentDefinition.required)
     .map((argumentDefinition) => argumentDefinition.name);
 
-  return requiredArgumentNames.filter((argumentName) => !(argumentName in args));
+  return requiredArgumentNames.filter(
+    (argumentName) => !hasOwnKey(args, argumentName)
+  );
 }
 
 function renderTextTemplate(template: string, args: Record<string, unknown>): string {

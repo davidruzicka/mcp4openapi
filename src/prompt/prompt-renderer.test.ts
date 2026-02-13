@@ -83,4 +83,19 @@ describe('renderPrompt', () => {
     expect(rendered.messages[0].content.text).toContain('priority .');
     expect(rendered.messages[0].content.text).toContain('Assignee: .');
   });
+
+  it('does not treat inherited prototype properties as provided required arguments', () => {
+    const prototypeKeyPrompt: PromptDefinition = {
+      name: 'prototype_key_prompt',
+      arguments: [{ name: 'constructor', required: true }],
+      messages: [
+        {
+          role: 'user',
+          content: { type: 'text', text: 'Constructor: {{constructor}}' },
+        },
+      ],
+    };
+
+    expect(() => renderPrompt(prototypeKeyPrompt, {})).toThrow(ValidationError);
+  });
 });

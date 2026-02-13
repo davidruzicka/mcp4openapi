@@ -2422,6 +2422,47 @@ describe('MCPServer', () => {
       expect(result.messages[0].content.text).toContain('Fix login');
     });
 
+    it('GetPrompt handler should preserve ValidationError for missing required args', async () => {
+      const setHandlerSpy = vi.spyOn(MCPProtocolServer.prototype as any, 'setRequestHandler');
+      const server = new MCPServer();
+      const specPath = path.join(process.cwd(), 'profiles/gitlab/openapi.yaml');
+      await server.initialize(specPath);
+      (server as any).profile.prompts = [
+        {
+          name: 'summarize_issue',
+          description: 'Summarize issue context',
+          arguments: [{ name: 'issue_title', required: true }],
+          messages: [{ role: 'user', content: { type: 'text', text: 'Summarize: {{issue_title}}' } }],
+        },
+      ];
+
+      const getCall = setHandlerSpy.mock.calls.find(call => {
+        const schema: any = call[0];
+        return schema?.shape?.method?.value === 'prompts/get';
+      });
+      const getHandler = getCall![1] as (req: any) => Promise<any>;
+
+      await expect(getHandler({ params: { name: 'summarize_issue', arguments: {} } }))
+        .rejects.toBeInstanceOf(ValidationError);
+    });
+
+    it('GetPrompt handler should preserve ResourceNotFoundError for missing prompt', async () => {
+      const setHandlerSpy = vi.spyOn(MCPProtocolServer.prototype as any, 'setRequestHandler');
+      const server = new MCPServer();
+      const specPath = path.join(process.cwd(), 'profiles/gitlab/openapi.yaml');
+      await server.initialize(specPath);
+      (server as any).profile.prompts = [];
+
+      const getCall = setHandlerSpy.mock.calls.find(call => {
+        const schema: any = call[0];
+        return schema?.shape?.method?.value === 'prompts/get';
+      });
+      const getHandler = getCall![1] as (req: any) => Promise<any>;
+
+      await expect(getHandler({ params: { name: 'missing_prompt', arguments: {} } }))
+        .rejects.toBeInstanceOf(ResourceNotFoundError);
+    });
+
     it('CallTool handler should return composite result with _metadata', async () => {
       const setHandlerSpy = vi.spyOn(MCPProtocolServer.prototype as any, 'setRequestHandler');
       const server = new MCPServer();

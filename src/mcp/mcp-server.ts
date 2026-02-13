@@ -790,6 +790,10 @@ export class MCPServer {
 
         return this.renderPromptByName(request.params.name, request.params.arguments || {});
       } catch (err) {
+        if (err instanceof ValidationError || err instanceof ResourceNotFoundError) {
+          throw err;
+        }
+
         const correlationId = generateCorrelationId();
         this.logger.error('GetPrompt handler error', err as Error, {
           correlationId,

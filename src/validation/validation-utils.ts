@@ -33,6 +33,16 @@ export function isSafePropertyName(name: string): boolean {
 }
 
 /**
+ * Check whether object has an own property key (prototype-safe).
+ */
+export function hasOwnKey(
+  obj: Record<string, unknown>,
+  key: string
+): boolean {
+  return Object.prototype.hasOwnProperty.call(obj, key);
+}
+
+/**
  * Escape special regex characters in a string.
  * Prevents ReDoS attacks when using dynamic strings in RegExp.
  */
