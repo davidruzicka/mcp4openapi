@@ -169,6 +169,49 @@ describeIfListen('HttpTransport Rate Limiting', () => {
       const newResponse = await fetch(`http://127.0.0.1:${testPort}/health`);
       expect(newResponse.status).toBe(200);
     });
+
+    it('should apply rate limiting to profile index endpoint', async () => {
+      // Reconfigure transport with profile index enabled
+      await transport.stop();
+
+      const config: HttpTransportConfig = {
+        host: '127.0.0.1',
+        port: testPort,
+        sessionTimeoutMs: 300000,
+        heartbeatEnabled: false,
+        metricsEnabled: false,
+        metricsPath: '/metrics',
+        rateLimitEnabled: true,
+        rateLimitWindowMs: 1000,
+        rateLimitMaxRequests: 5,
+        profileIndexEnabled: true,
+        profileRoutingEnabled: true,
+      };
+
+      transport = new HttpTransport(config, new ConsoleLogger());
+      // Mock profile index provider
+      transport.setProfileIndexProvider(async () => []);
+
+      await transport.start();
+
+      const responses: Response[] = [];
+
+      // Make 7 requests (over limit of 5)
+      for (let i = 0; i < 7; i++) {
+        const response = await fetch(`http://127.0.0.1:${testPort}/`);
+        responses.push(response);
+      }
+
+      // First 5 should succeed
+      for (let i = 0; i < 5; i++) {
+        expect(responses[i].status).toBe(200);
+      }
+
+      // Last 2 should be rate limited
+      for (let i = 5; i < 7; i++) {
+        expect(responses[i].status).toBe(429);
+      }
+    });
   });
 
   describe('Rate limiting disabled', () => {
