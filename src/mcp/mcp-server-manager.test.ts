@@ -50,86 +50,97 @@ describe('MCPServerManager', () => {
   });
 
   it('routes HTTP requests through manager for profile routing', async () => {
-    const logger = new ConsoleLogger();
-    const registry = new ProfileRegistry({
-      profilesDir: path.join(process.cwd(), 'profiles'),
-    });
-    const httpTransport = new HttpTransport(
-      {
-        host: '127.0.0.1',
-        port: 0,
-        sessionTimeoutMs: 1800000,
-        heartbeatEnabled: false,
-        heartbeatIntervalMs: 30000,
-        metricsEnabled: false,
-        metricsPath: '/metrics',
-        profileRoutingEnabled: true,
-      },
-      logger
-    );
-    const manager = new MCPServerManager(registry, logger, httpTransport);
+    const previousYouTrackToken = process.env.YOUTRACK_TOKEN;
+    process.env.YOUTRACK_TOKEN = previousYouTrackToken ?? 'test-youtrack-token';
 
-    httpTransport.setProfileContextProvider(async (id) => manager.getProfileContext(id));
-    httpTransport.setMessageHandler(async (message, sessionId, profileId) => {
-      if (!profileId) {
-        throw new Error('Profile ID missing');
-      }
-      const server = await manager.getServer(profileId);
-      return server.handleHttpMessage(message, sessionId, profileId);
-    });
-
-    const req: any = {
-      method: 'POST',
-      path: '/profile/youtrack/mcp',
-      url: '/profile/youtrack/mcp',
-      headers: {
-        accept: 'application/json',
-        host: 'localhost',
-      },
-      profileId: 'youtrack',
-      body: {
-        jsonrpc: '2.0',
-        id: 1,
-        method: 'initialize',
-        params: {
-          protocolVersion: '2025-03-26',
-          clientInfo: { name: 'test', version: '1.0.0' },
+    try {
+      const logger = new ConsoleLogger();
+      const registry = new ProfileRegistry({
+        profilesDir: path.join(process.cwd(), 'profiles'),
+      });
+      const httpTransport = new HttpTransport(
+        {
+          host: '127.0.0.1',
+          port: 0,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: false,
+          metricsPath: '/metrics',
+          profileRoutingEnabled: true,
         },
-      },
-    };
-    const res: any = {
-      statusCode: 200,
-      headers: {} as Record<string, string>,
-      headersSent: false,
-      setHeader: (key: string, value: string) => {
-        res.headers[key.toLowerCase()] = value;
-      },
-      status: (code: number) => {
-        res.statusCode = code;
-        return res;
-      },
-      json: (body: unknown) => {
-        res.body = body;
-        res.headersSent = true;
-        return res;
-      },
-      send: (body?: unknown) => {
-        res.body = body;
-        res.headersSent = true;
-        return res;
-      },
-      end: () => {
-        res.headersSent = true;
-      },
-      get: () => undefined,
-    };
+        logger
+      );
+      const manager = new MCPServerManager(registry, logger, httpTransport);
 
-    await (httpTransport as any).handlePost(req, res);
+      httpTransport.setProfileContextProvider(async (id) => manager.getProfileContext(id));
+      httpTransport.setMessageHandler(async (message, sessionId, profileId) => {
+        if (!profileId) {
+          throw new Error('Profile ID missing');
+        }
+        const server = await manager.getServer(profileId);
+        return server.handleHttpMessage(message, sessionId, profileId);
+      });
 
-    expect(res.statusCode).toBe(200);
-    expect(res.body?.result?.serverInfo?.name).toBe('mcp4openapi');
+      const req: any = {
+        method: 'POST',
+        path: '/profile/youtrack/mcp',
+        url: '/profile/youtrack/mcp',
+        headers: {
+          accept: 'application/json',
+          host: 'localhost',
+        },
+        profileId: 'youtrack',
+        body: {
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'initialize',
+          params: {
+            protocolVersion: '2025-03-26',
+            clientInfo: { name: 'test', version: '1.0.0' },
+          },
+        },
+      };
+      const res: any = {
+        statusCode: 200,
+        headers: {} as Record<string, string>,
+        headersSent: false,
+        setHeader: (key: string, value: string) => {
+          res.headers[key.toLowerCase()] = value;
+        },
+        status: (code: number) => {
+          res.statusCode = code;
+          return res;
+        },
+        json: (body: unknown) => {
+          res.body = body;
+          res.headersSent = true;
+          return res;
+        },
+        send: (body?: unknown) => {
+          res.body = body;
+          res.headersSent = true;
+          return res;
+        },
+        end: () => {
+          res.headersSent = true;
+        },
+        get: () => undefined,
+      };
 
-    await httpTransport.stop();
+      await (httpTransport as any).handlePost(req, res);
+
+      expect(res.statusCode).toBe(200);
+      expect(res.body?.result?.serverInfo?.name).toBe('mcp4openapi');
+
+      await httpTransport.stop();
+    } finally {
+      if (previousYouTrackToken === undefined) {
+        delete process.env.YOUTRACK_TOKEN;
+      } else {
+        process.env.YOUTRACK_TOKEN = previousYouTrackToken;
+      }
+    }
   });
 
   it('routes HTTP requests through manager when profile id is an alias of default profile', async () => {
