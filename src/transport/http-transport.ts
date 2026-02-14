@@ -2361,6 +2361,19 @@ export class HttpTransport {
 
           // Allow initialization without token for non-OAuth scenarios
           
+          // Enforce authentication if auth is configured
+          if (profileState.context.authConfigs && profileState.context.authConfigs.length > 0 && !authInfo.token) {
+            this.logger.debug('Auth configured but no token provided, rejecting initialization', {
+              profileId: requestProfileId,
+              authConfigsCount: profileState.context.authConfigs.length
+            });
+            res.status(HTTP_STATUS.UNAUTHORIZED).json({
+              error: 'Unauthorized',
+              message: 'Authentication required'
+            });
+            return;
+          }
+
           // Validate token if auth is configured and token is provided
           if (authInfo && authInfo.token && profileState.context.authConfigs && profileState.context.baseUrl) {
             // Find matching auth config based on priority (authConfigs is sorted)
