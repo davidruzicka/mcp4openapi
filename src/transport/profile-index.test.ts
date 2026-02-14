@@ -23,13 +23,17 @@ describe('profile index helpers', () => {
         profileName: 'gitlab',
         profileAliases: [],
         description: 'GitLab',
-        envVars: ['GITLAB_TOKEN'],
+        envVars: ['GITLAB_API_BASE_URL', 'GITLAB_TOKEN'],
         authMethods: [
           {
             type: 'bearer',
             valueFromEnv: 'GITLAB_TOKEN',
           },
         ],
+        apiBaseUrl: {
+          valueFromEnv: 'GITLAB_API_BASE_URL',
+          defaultValue: 'https://gitlab.com/api/v4',
+        },
       },
     ];
 
@@ -39,9 +43,22 @@ describe('profile index helpers', () => {
     const vscode = profile.snippets.find(s => s.key === 'vscode-bearer');
     const cursor = profile.snippets.find(s => s.key === 'cursor-bearer');
     const jetbrains = profile.snippets.find(s => s.key === 'jetbrains-bearer');
-    const claude = profile.snippets.find(s => s.key === 'claude-bearer');
+    const claudeJson = profile.snippets.find(s => s.key === 'claude-json-bearer');
+    const claudeCli = profile.snippets.find(s => s.key === 'claude-cli-bearer');
+    const vscodeLocal = profile.snippets.find(s => s.key === 'vscode-local-bearer');
+    const cursorLocal = profile.snippets.find(s => s.key === 'cursor-local-bearer');
+    const jetbrainsLocal = profile.snippets.find(s => s.key === 'jetbrains-local-bearer');
+    const claudeLocalJson = profile.snippets.find(s => s.key === 'claude-local-json-bearer');
+    const claudeLocalCli = profile.snippets.find(s => s.key === 'claude-local-cli-bearer');
+    const codexToml = profile.snippets.find(s => s.key === 'codex-toml-bearer');
+    const codexCli = profile.snippets.find(s => s.key === 'codex-cli-bearer');
+    const codexLocalToml = profile.snippets.find(s => s.key === 'codex-local-toml-bearer');
 
     expect(profile.mcpUrl).toBe('http://localhost:3003/profile/gitlab/mcp');
+    expect(profile.modeTabs).toEqual([
+      { key: 'remote', label: 'Remote HTTP' },
+      { key: 'local', label: 'Local stdio' },
+    ]);
     expect(vscode?.content).toContain('"url": "__PROFILE_URL__"');
     expect(vscode?.content).toContain('"Authorization": "Bearer ${input:gitlab-token}"');
     expect(cursor?.content).toContain('"mcp-remote"');
@@ -49,8 +66,52 @@ describe('profile index helpers', () => {
     expect(cursor?.content).toContain('"GITLAB_TOKEN": "${env:GITLAB_TOKEN}"');
     expect(jetbrains?.content).toContain('"requestInit"');
     expect(jetbrains?.content).toContain('"Authorization": "Bearer {$input:gitlab-token}"');
-    expect(claude?.content).toContain('claude mcp add __PROFILE_ID__ --transport http __PROFILE_URL__');
-    expect(claude?.content).toContain('Authorization: Bearer ${GITLAB_TOKEN}');
+    expect(claudeJson?.format).toBe('json');
+    expect(claudeJson?.content).toContain('"mcpServers"');
+    expect(claudeJson?.content).toContain('"type": "http"');
+    expect(claudeJson?.content).toContain('"url": "__PROFILE_URL__"');
+    expect(claudeJson?.content).toContain('"Authorization": "Bearer ${GITLAB_TOKEN}"');
+    expect(claudeCli?.format).toBe('cli');
+    expect(claudeCli?.content).toContain('claude mcp add -s user __PROFILE_ID__ --transport http __PROFILE_URL__');
+    expect(claudeCli?.content).toContain('Authorization: Bearer \\${GITLAB_TOKEN}');
+    expect(vscodeLocal?.mode).toBe('local');
+    expect(vscodeLocal?.content).toContain('"type": "stdio"');
+    expect(vscodeLocal?.content).toContain('"mcp4openapi"');
+    expect(vscodeLocal?.content).toContain('"--profile"');
+    expect(vscodeLocal?.content).toContain('"GITLAB_TOKEN": "${input:gitlab-token}"');
+    expect(vscodeLocal?.content).toContain('"GITLAB_API_BASE_URL": "https://gitlab.com/api/v4"');
+    expect(cursorLocal?.mode).toBe('local');
+    expect(cursorLocal?.content).toContain('"GITLAB_TOKEN": "${env:GITLAB_TOKEN}"');
+    expect(cursorLocal?.content).toContain('"GITLAB_API_BASE_URL": "https://gitlab.com/api/v4"');
+    expect(cursorLocal?.content).not.toContain('${input:gitlab-token}');
+    expect(jetbrainsLocal?.mode).toBe('local');
+    expect(jetbrainsLocal?.content).toContain('"GITLAB_TOKEN": "{$input:gitlab-token}"');
+    expect(claudeLocalJson?.mode).toBe('local');
+    expect(claudeLocalJson?.format).toBe('json');
+    expect(claudeLocalJson?.content).toContain('"mcpServers"');
+    expect(claudeLocalJson?.content).toContain('"command": "npx"');
+    expect(claudeLocalJson?.content).toContain('"GITLAB_TOKEN": "${GITLAB_TOKEN}"');
+    expect(claudeLocalJson?.content).not.toContain('${env:GITLAB_TOKEN}');
+    expect(claudeLocalCli?.mode).toBe('local');
+    expect(claudeLocalCli?.format).toBe('cli');
+    expect(claudeLocalCli?.content).toContain('claude mcp add -s user __PROFILE_ID__ -- npx -y mcp4openapi --profile __PROFILE_ID__');
+    expect(claudeLocalCli?.content).not.toContain('export ');
+    expect(codexToml?.format).toBe('toml');
+    expect(codexToml?.content).toContain('[mcp_servers.__PROFILE_ID__]');
+    expect(codexToml?.content).toContain('transport = "http"');
+    expect(codexToml?.content).toContain('env_vars = ["GITLAB_TOKEN"]');
+    expect(codexToml?.content).toContain('bearer_token_env_var = "GITLAB_TOKEN"');
+    expect(codexToml?.content).not.toContain('Authorization =');
+    expect(codexCli?.format).toBe('cli');
+    expect(codexCli?.content).toContain('codex mcp add --url "__PROFILE_URL__"');
+    expect(codexCli?.content).toContain('__PROFILE_ID__');
+    expect(codexCli?.content).toContain('--bearer-token-env-var GITLAB_TOKEN');
+    expect(codexLocalToml?.format).toBe('toml');
+    expect(codexLocalToml?.content).toContain('command = "npx"');
+    expect(codexLocalToml?.content).toContain('env_vars = ["GITLAB_TOKEN"]');
+    expect(codexLocalToml?.content).not.toContain('GITLAB_TOKEN = "${GITLAB_TOKEN}"');
+    expect(codexLocalToml?.content).toContain('GITLAB_API_BASE_URL = "https://gitlab.com/api/v4"');
+    expect(profile.snippets.find(s => s.key === 'codex-local-cli-bearer')).toBeUndefined();
   });
 
   it('resolves API endpoint from env var over default', () => {
@@ -140,7 +201,9 @@ describe('profile index helpers', () => {
     const vscode = profile.snippets.find(s => s.key === 'vscode-query');
     const cursor = profile.snippets.find(s => s.key === 'cursor-query');
     const jetbrains = profile.snippets.find(s => s.key === 'jetbrains-query');
-    const claude = profile.snippets.find(s => s.key === 'claude-query');
+    const claudeJson = profile.snippets.find(s => s.key === 'claude-json-query');
+    const claudeCli = profile.snippets.find(s => s.key === 'claude-cli-query');
+    const codexToml = profile.snippets.find(s => s.key === 'codex-toml-query');
 
     expect(profile.mcpUrl).toBe('http://localhost:3003/profile/youtrack/mcp');
     expect(vscode?.content).toContain('"url": "__PROFILE_URL__?api_key=${input:yt-token}"');
@@ -148,7 +211,82 @@ describe('profile index helpers', () => {
     expect(cursor?.content).toContain('"url": "__PROFILE_URL__?api_key=${env:YT_TOKEN}"');
     expect(cursor?.content).not.toContain('"mcp-remote"');
     expect(jetbrains?.content).toContain('"url": "__PROFILE_URL__?api_key={$input:yt-token}"');
-    expect(claude?.content).toContain('__PROFILE_URL__?api_key=${YT_TOKEN}');
+    expect(claudeJson?.content).toContain('"url": "__PROFILE_URL__?api_key=${YT_TOKEN}"');
+    expect(claudeCli?.content).toContain('__PROFILE_URL__?api_key=\\${YT_TOKEN}');
+    expect(codexToml?.content).toContain('env_vars = ["YT_TOKEN"]');
+    expect(codexToml?.content).toContain('url = "__PROFILE_URL__?api_key=${YT_TOKEN}"');
+    expect(profile.snippets.find(s => s.key === 'codex-cli-query')).toBeUndefined();
+  });
+
+  it('omits empty Codex local TOML env table when only env_vars are needed', () => {
+    const profiles: ListedProfileDetails[] = [
+      {
+        profileId: 'collabim-optimized',
+        profileName: 'collabim-optimized',
+        profileAliases: [],
+        description: 'Collabim',
+        envVars: ['COLLABIM_TOKEN'],
+        authMethods: [
+          {
+            type: 'bearer',
+            valueFromEnv: 'COLLABIM_TOKEN',
+          },
+        ],
+      },
+    ];
+
+    const { payload } = buildProfileIndexPayload(profiles, 'http://localhost:3003', 'en');
+    const [profile] = payload.profiles;
+    const codexLocalToml = profile.snippets.find(s => s.key === 'codex-local-toml-bearer');
+
+    expect(codexLocalToml?.content).toContain('env_vars = ["COLLABIM_TOKEN"]');
+    expect(codexLocalToml?.content).not.toContain('[mcp_servers.__PROFILE_ID__.env]');
+  });
+
+  it('ignores oauth-only env vars in local stdio snippets for oauth auth', () => {
+    const profiles: ListedProfileDetails[] = [
+      {
+        profileId: 'gitlab-optimized-oauth',
+        profileName: 'gitlab-optimized-oauth',
+        profileAliases: [],
+        description: 'GitLab OAuth',
+        envVars: ['MCP4_OAUTH_CLIENT_ID', 'MCP4_OAUTH_CLIENT_SECRET', 'GITLAB_API_BASE_URL'],
+        oauthEnvVars: ['MCP4_OAUTH_CLIENT_ID', 'MCP4_OAUTH_CLIENT_SECRET'],
+        authMethods: [
+          {
+            type: 'oauth',
+          },
+        ],
+        apiBaseUrl: {
+          valueFromEnv: 'GITLAB_API_BASE_URL',
+          defaultValue: 'https://gitlab.com/api/v4',
+        },
+      },
+    ];
+
+    const { payload } = buildProfileIndexPayload(profiles, 'http://localhost:3003', 'en');
+    const [profile] = payload.profiles;
+
+    const vscodeLocal = profile.snippets.find(s => s.key === 'vscode-local-oauth');
+    const cursorLocal = profile.snippets.find(s => s.key === 'cursor-local-oauth');
+    const claudeLocalJson = profile.snippets.find(s => s.key === 'claude-local-json-oauth');
+    const codexLocalToml = profile.snippets.find(s => s.key === 'codex-local-toml-oauth');
+
+    expect(vscodeLocal?.content).toContain('"GITLAB_API_BASE_URL": "https://gitlab.com/api/v4"');
+    expect(vscodeLocal?.content).not.toContain('MCP4_OAUTH_CLIENT_ID');
+    expect(vscodeLocal?.content).not.toContain('MCP4_OAUTH_CLIENT_SECRET');
+
+    expect(cursorLocal?.content).toContain('"GITLAB_API_BASE_URL": "https://gitlab.com/api/v4"');
+    expect(cursorLocal?.content).not.toContain('MCP4_OAUTH_CLIENT_ID');
+    expect(cursorLocal?.content).not.toContain('MCP4_OAUTH_CLIENT_SECRET');
+
+    expect(claudeLocalJson?.content).toContain('"GITLAB_API_BASE_URL": "https://gitlab.com/api/v4"');
+    expect(claudeLocalJson?.content).not.toContain('MCP4_OAUTH_CLIENT_ID');
+    expect(claudeLocalJson?.content).not.toContain('MCP4_OAUTH_CLIENT_SECRET');
+
+    expect(codexLocalToml?.content).toContain('GITLAB_API_BASE_URL = "https://gitlab.com/api/v4"');
+    expect(codexLocalToml?.content).not.toContain('MCP4_OAUTH_CLIENT_ID');
+    expect(codexLocalToml?.content).not.toContain('MCP4_OAUTH_CLIENT_SECRET');
   });
 
   it('labels custom headers without duplicate prefix', () => {

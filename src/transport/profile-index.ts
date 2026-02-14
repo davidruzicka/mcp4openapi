@@ -13,6 +13,10 @@ interface ProfileIndexI18n {
   profileLabel: string;
   endpointLabel: string;
   apiEndpointLabel: string;
+  sseDeprecatedLabel: string;
+  apiEndpointDefaultTag: string;
+  apiEndpointVariableLabel: string;
+  apiEndpointUnavailableInline: string;
   apiEndpointSourceEnv: string;
   apiEndpointSourceDefault: string;
   apiEndpointEnvNotSet: string;
@@ -30,7 +34,10 @@ interface ProfileIndexI18n {
     vscode: string;
     cursor: string;
     claude: string;
+    codex: string;
     jetbrains: string;
+    modeRemote: string;
+    modeLocal: string;
   };
   authLabels: {
     oauth: string;
@@ -39,6 +46,9 @@ interface ProfileIndexI18n {
     customHeader: string;
     none: string;
   };
+  authSectionLabel: string;
+  authEnvVarsLabel: string;
+  authEnvVarsNone: string;
   authHeaderPrefix: string;
   authQueryPrefix: string;
 }
@@ -48,7 +58,8 @@ interface ProfileIndexSnippet {
   label: string;
   content: string;
   authKey: string;
-  format: 'json' | 'cli';
+  mode: 'remote' | 'local';
+  format: 'json' | 'cli' | 'toml';
 }
 
 interface ProfileIndexTab {
@@ -62,10 +73,12 @@ interface ProfileIndexProfile extends ListedProfileDetails {
   mcpUrl: string;
   sseUrl: string;
   apiEndpoint: string | null;
+  apiEndpointDefaultValue: string | null;
   apiEndpointSource: 'env' | 'default' | 'env-unset' | 'unavailable';
   apiEndpointEnvVar: string | null;
   snippets: ProfileIndexSnippet[];
   authTabs: ProfileIndexTab[];
+  modeTabs: ProfileIndexTab[];
 }
 
 export interface ProfileIndexPayload {
@@ -131,6 +144,10 @@ export function buildProfileIndexI18n(locale: ProfileIndexLocale): ProfileIndexI
       profileLabel: 'Profil',
       endpointLabel: 'Endpointy',
       apiEndpointLabel: 'API endpoint',
+      sseDeprecatedLabel: '(zastaralé)',
+      apiEndpointDefaultTag: '(default)',
+      apiEndpointVariableLabel: 'proměnná',
+      apiEndpointUnavailableInline: 'není nakonfigurován',
       apiEndpointSourceEnv: 'Zdroj: env',
       apiEndpointSourceDefault: 'Zdroj: default',
       apiEndpointEnvNotSet: 'Proměnná není nastavena',
@@ -148,7 +165,10 @@ export function buildProfileIndexI18n(locale: ProfileIndexLocale): ProfileIndexI
         vscode: 'VS Code + Copilot',
         cursor: 'Cursor',
         claude: 'Claude Code',
+        codex: 'Codex',
         jetbrains: 'JetBrains IDEs + Copilot',
+        modeRemote: 'Remote HTTP',
+        modeLocal: 'Local stdio',
       },
       authLabels: {
         oauth: 'OAuth',
@@ -157,6 +177,9 @@ export function buildProfileIndexI18n(locale: ProfileIndexLocale): ProfileIndexI
         customHeader: 'Vlastní hlavička',
         none: 'Bez autentizace',
       },
+      authSectionLabel: 'Autentizace:',
+      authEnvVarsLabel: 'Proměnná prostředí:',
+      authEnvVarsNone: 'Bez proměnné prostředí',
       authHeaderPrefix: 'Hlavička',
       authQueryPrefix: 'Parametr',
     };
@@ -169,6 +192,10 @@ export function buildProfileIndexI18n(locale: ProfileIndexLocale): ProfileIndexI
     profileLabel: 'Profile',
     endpointLabel: 'Endpoints',
     apiEndpointLabel: 'API endpoint',
+    sseDeprecatedLabel: '(deprecated)',
+    apiEndpointDefaultTag: '(default)',
+    apiEndpointVariableLabel: 'variable',
+    apiEndpointUnavailableInline: 'is not configured',
     apiEndpointSourceEnv: 'Source: env',
     apiEndpointSourceDefault: 'Source: default',
     apiEndpointEnvNotSet: 'Environment variable is not set',
@@ -186,7 +213,10 @@ export function buildProfileIndexI18n(locale: ProfileIndexLocale): ProfileIndexI
       vscode: 'VS Code + Copilot',
       cursor: 'Cursor',
       claude: 'Claude Code',
+      codex: 'Codex',
       jetbrains: 'JetBrains IDEs + Copilot',
+      modeRemote: 'Remote HTTP',
+      modeLocal: 'Local stdio',
     },
     authLabels: {
       oauth: 'OAuth',
@@ -195,6 +225,9 @@ export function buildProfileIndexI18n(locale: ProfileIndexLocale): ProfileIndexI
       customHeader: 'Custom header',
       none: 'No auth',
     },
+    authSectionLabel: 'Authentication:',
+    authEnvVarsLabel: 'Environment variable:',
+    authEnvVarsNone: 'No environment variable required',
     authHeaderPrefix: 'Header',
     authQueryPrefix: 'Query param',
   };
@@ -207,17 +240,19 @@ export function buildProfileIndexPayload(
 ): { payload: ProfileIndexPayload; templateData: Record<string, string> } {
   const i18n = buildProfileIndexI18n(locale);
   const enriched = profiles.map(profile => {
-    const { snippets, authTabs } = buildProfileSnippets(profile, i18n);
+    const { snippets, authTabs, modeTabs } = buildProfileSnippets(profile, i18n);
     const apiEndpointInfo = resolveApiEndpoint(profile);
     return {
       ...profile,
       mcpUrl: `${origin}/profile/${encodeURIComponent(profile.profileId)}/mcp`,
       sseUrl: `${origin}/profile/${encodeURIComponent(profile.profileId)}/sse`,
       apiEndpoint: apiEndpointInfo.value,
+      apiEndpointDefaultValue: profile.apiBaseUrl?.defaultValue || null,
       apiEndpointSource: apiEndpointInfo.source,
       apiEndpointEnvVar: apiEndpointInfo.envVar,
       snippets,
       authTabs,
+      modeTabs,
     };
   });
 
@@ -321,6 +356,12 @@ function buildEnvValue(
   useInput: boolean,
   mode: 'vscode' | 'cursor' | 'jetbrains' | 'cli'
 ): string {
+  if (mode === 'cli') {
+    return `\${${name}}`;
+  }
+  if (mode === 'cursor') {
+    return `\${env:${name}}`;
+  }
   if (useInput) {
     const id = inputMap.get(name);
     if (id) {
@@ -329,9 +370,6 @@ function buildEnvValue(
       }
       return `\${input:${id}}`;
     }
-  }
-  if (mode === 'cursor') {
-    return `\${env:${name}}`;
   }
   return `\${${name}}`;
 }
@@ -355,57 +393,151 @@ function buildAuthLabel(auth: RenderAuthMethod, labels: ProfileIndexI18n): strin
   return labels.authLabels.none;
 }
 
-function buildProfileSnippets(profile: ListedProfileDetails, labels: ProfileIndexI18n): { snippets: ProfileIndexSnippet[]; authTabs: ProfileIndexTab[] } {
+function buildProfileSnippets(
+  profile: ListedProfileDetails,
+  labels: ProfileIndexI18n
+): { snippets: ProfileIndexSnippet[]; authTabs: ProfileIndexTab[]; modeTabs: ProfileIndexTab[] } {
   const authMethods: RenderAuthMethod[] = profile.authMethods && profile.authMethods.length > 0
     ? profile.authMethods
     : [{ type: 'none' }];
 
   const snippets: ProfileIndexSnippet[] = [];
   const authTabs: ProfileIndexTab[] = [];
+  const modeTabs: ProfileIndexTab[] = [
+    { key: 'remote', label: labels.snippetLabels.modeRemote },
+    { key: 'local', label: labels.snippetLabels.modeLocal },
+  ];
 
   for (const auth of authMethods) {
     const authLabel = buildAuthLabel(auth, labels);
     const suffix = authLabel ? ` - ${authLabel}` : '';
     const authKey = auth.type;
     authTabs.push({ key: authKey, label: authLabel || auth.type });
-    const snippetContext = buildConnectionSnippets(auth);
+    const remoteSnippetContext = buildConnectionSnippets(auth);
+    const localSnippetContext = buildLocalConnectionSnippets(profile, auth);
 
     snippets.push({
       key: `vscode-${auth.type}`,
       label: `${labels.snippetLabels.vscode}${suffix}`,
-      content: snippetContext.vscode,
+      content: remoteSnippetContext.vscode,
       authKey,
+      mode: 'remote',
       format: 'json',
     });
     snippets.push({
       key: `cursor-${auth.type}`,
       label: `${labels.snippetLabels.cursor}${suffix}`,
-      content: snippetContext.cursor,
+      content: remoteSnippetContext.cursor,
       authKey,
+      mode: 'remote',
       format: 'json',
     });
     snippets.push({
       key: `jetbrains-${auth.type}`,
       label: `${labels.snippetLabels.jetbrains}${suffix}`,
-      content: snippetContext.jetbrains,
+      content: remoteSnippetContext.jetbrains,
       authKey,
+      mode: 'remote',
       format: 'json',
     });
     snippets.push({
-      key: `claude-${auth.type}`,
+      key: `claude-json-${auth.type}`,
       label: `${labels.snippetLabels.claude}${suffix}`,
-      content: snippetContext.claude,
+      content: remoteSnippetContext.claudeJson,
       authKey,
+      mode: 'remote',
+      format: 'json',
+    });
+    snippets.push({
+      key: `claude-cli-${auth.type}`,
+      label: `${labels.snippetLabels.claude}${suffix}`,
+      content: remoteSnippetContext.claudeCli,
+      authKey,
+      mode: 'remote',
       format: 'cli',
+    });
+    snippets.push({
+      key: `codex-toml-${auth.type}`,
+      label: `${labels.snippetLabels.codex}${suffix}`,
+      content: remoteSnippetContext.codexToml,
+      authKey,
+      mode: 'remote',
+      format: 'toml',
+    });
+    if (auth.type === 'oauth' || auth.type === 'bearer') {
+      snippets.push({
+        key: `codex-cli-${auth.type}`,
+        label: `${labels.snippetLabels.codex}${suffix}`,
+        content: remoteSnippetContext.codexCli,
+        authKey,
+        mode: 'remote',
+        format: 'cli',
+      });
+    }
+    snippets.push({
+      key: `vscode-local-${auth.type}`,
+      label: `${labels.snippetLabels.vscode}${suffix}`,
+      content: localSnippetContext.vscode,
+      authKey,
+      mode: 'local',
+      format: 'json',
+    });
+    snippets.push({
+      key: `cursor-local-${auth.type}`,
+      label: `${labels.snippetLabels.cursor}${suffix}`,
+      content: localSnippetContext.cursor,
+      authKey,
+      mode: 'local',
+      format: 'json',
+    });
+    snippets.push({
+      key: `jetbrains-local-${auth.type}`,
+      label: `${labels.snippetLabels.jetbrains}${suffix}`,
+      content: localSnippetContext.jetbrains,
+      authKey,
+      mode: 'local',
+      format: 'json',
+    });
+    snippets.push({
+      key: `claude-local-json-${auth.type}`,
+      label: `${labels.snippetLabels.claude}${suffix}`,
+      content: localSnippetContext.claudeJson,
+      authKey,
+      mode: 'local',
+      format: 'json',
+    });
+    snippets.push({
+      key: `claude-local-cli-${auth.type}`,
+      label: `${labels.snippetLabels.claude}${suffix}`,
+      content: localSnippetContext.claudeCli,
+      authKey,
+      mode: 'local',
+      format: 'cli',
+    });
+    snippets.push({
+      key: `codex-local-toml-${auth.type}`,
+      label: `${labels.snippetLabels.codex}${suffix}`,
+      content: localSnippetContext.codexToml,
+      authKey,
+      mode: 'local',
+      format: 'toml',
     });
   }
 
-  return { snippets, authTabs };
+  return { snippets, authTabs, modeTabs };
 }
 
 function buildConnectionSnippets(
   auth: RenderAuthMethod
-): { vscode: string; cursor: string; jetbrains: string; claude: string } {
+): {
+  vscode: string;
+  cursor: string;
+  jetbrains: string;
+  claudeJson: string;
+  claudeCli: string;
+    codexToml: string;
+    codexCli: string;
+} {
   const tokenEnv = auth.type === 'none'
     ? undefined
     : auth.valueFromEnv || (auth.type === 'oauth' ? undefined : 'MCP4_API_TOKEN');
@@ -529,8 +661,240 @@ function buildConnectionSnippets(
     vscode: vscodeLines.join('\n'),
     cursor: cursorLines.join('\n'),
     jetbrains: jetbrainsLines.join('\n'),
-    claude: buildClaudeSnippet(auth, headerName, cliHeaderValue, claudeUrl),
+    claudeJson: buildClaudeJsonSnippet(auth, headerName, cliHeaderValue, claudeUrl),
+    claudeCli: buildClaudeSnippet(auth, headerName, cliHeaderValue, claudeUrl),
+    codexToml: buildCodexRemoteTomlSnippet(auth, headerName, cliHeaderValue, claudeUrl, tokenEnv),
+    codexCli: buildCodexRemoteCliSnippet(auth, headerName, cliHeaderValue, claudeUrl, tokenEnv),
   };
+}
+
+function buildLocalConnectionSnippets(
+  profile: ListedProfileDetails,
+  auth: RenderAuthMethod
+): {
+  vscode: string;
+  cursor: string;
+  jetbrains: string;
+  claudeJson: string;
+  claudeCli: string;
+    codexToml: string;
+    codexCli: string;
+} {
+  const localEnvVarNames = resolveLocalEnvVarNames(profile, auth);
+  const sensitiveEnvVars = localEnvVarNames.filter(isSensitiveEnvVar);
+  const inputMap = new Map<string, string>();
+  if (sensitiveEnvVars.length > 0) {
+    const inputDefs = buildInputs(sensitiveEnvVars);
+    for (let index = 0; index < sensitiveEnvVars.length; index += 1) {
+      const envVarName = sensitiveEnvVars[index];
+      const inputDef = inputDefs[index];
+      if (inputDef) {
+        inputMap.set(envVarName, inputDef.id);
+      }
+    }
+  }
+
+  const args = ['-y', 'mcp4openapi', '--profile', '__PROFILE_ID__'];
+  const vscodeEnv = buildLocalEnvMap(profile, localEnvVarNames, inputMap, 'vscode');
+  const cursorEnv = buildLocalEnvMap(profile, localEnvVarNames, inputMap, 'cursor');
+  const jetbrainsEnv = buildLocalEnvMap(profile, localEnvVarNames, inputMap, 'jetbrains');
+  const claudeEnv = buildLocalEnvMap(profile, localEnvVarNames, inputMap, 'cli');
+
+  const vscodeServer: Record<string, unknown> = {
+    type: 'stdio',
+    command: 'npx',
+    args,
+  };
+  if (Object.keys(vscodeEnv).length > 0) {
+    vscodeServer.env = vscodeEnv;
+  }
+
+  const vscodeConfig: Record<string, unknown> = {
+    servers: {
+      __PROFILE_ID__: vscodeServer,
+    },
+  };
+  if (sensitiveEnvVars.length > 0) {
+    vscodeConfig.inputs = buildInputs(sensitiveEnvVars).map(input => ({
+      type: 'promptString',
+      id: input.id,
+      description: input.description,
+      password: true,
+    }));
+  }
+
+  const cursorConfig = {
+    mcpServers: {
+      __PROFILE_ID__: {
+        command: 'npx',
+        args,
+        ...(Object.keys(cursorEnv).length > 0 ? { env: cursorEnv } : {}),
+      },
+    },
+  };
+
+  const jetbrainsConfig = {
+    servers: {
+      __PROFILE_ID__: {
+        type: 'stdio',
+        command: 'npx',
+        args,
+        ...(Object.keys(jetbrainsEnv).length > 0 ? { env: jetbrainsEnv } : {}),
+      },
+    },
+  };
+
+  const claudeJsonConfig = {
+    mcpServers: {
+      __PROFILE_ID__: {
+        command: 'npx',
+        args,
+        ...(Object.keys(claudeEnv).length > 0 ? { env: claudeEnv } : {}),
+      },
+    },
+  };
+
+  return {
+    vscode: JSON.stringify(vscodeConfig, null, 2),
+    cursor: JSON.stringify(cursorConfig, null, 2),
+    jetbrains: JSON.stringify(jetbrainsConfig, null, 2),
+    claudeJson: JSON.stringify(claudeJsonConfig, null, 2),
+    claudeCli: buildLocalClaudeSnippet(profile),
+    codexToml: buildCodexLocalTomlSnippet(localEnvVarNames, claudeEnv),
+    codexCli: buildLocalCodexSnippet(localEnvVarNames, claudeEnv),
+  };
+}
+
+function buildLocalEnvMap(
+  profile: ListedProfileDetails,
+  envVarNames: string[],
+  inputMap: Map<string, string>,
+  mode: 'vscode' | 'cursor' | 'jetbrains' | 'cli'
+): Record<string, string> {
+  const envMap: Record<string, string> = {};
+  const baseUrlVar = profile.apiBaseUrl?.valueFromEnv;
+  const baseUrlDefault = profile.apiBaseUrl?.defaultValue;
+
+  for (const envVar of envVarNames) {
+    if (baseUrlVar && envVar === baseUrlVar && baseUrlDefault) {
+      envMap[envVar] = baseUrlDefault;
+      continue;
+    }
+    envMap[envVar] = buildEnvValue(envVar, inputMap, isSensitiveEnvVar(envVar), mode);
+  }
+
+  return envMap;
+}
+
+function buildLocalClaudeSnippet(profile: ListedProfileDetails): string {
+  void profile;
+  return 'claude mcp add -s user __PROFILE_ID__ -- npx -y mcp4openapi --profile __PROFILE_ID__';
+}
+
+function buildLocalCodexSnippet(envVarNames: string[], envMap: Record<string, string>): string {
+  const parts = ['codex mcp add __PROFILE_ID__'];
+  for (const envVar of envVarNames) {
+    const value = envMap[envVar];
+    if (!value) continue;
+    parts.push(`--env "${envVar}=${value}"`);
+  }
+  parts.push('-- npx -y mcp4openapi --profile __PROFILE_ID__');
+  return parts.join(' ');
+}
+
+function buildCodexRemoteCliSnippet(
+  auth: RenderAuthMethod,
+  headerName: string,
+  headerValue: string,
+  url: string,
+  tokenEnv?: string
+): string {
+  const lines: string[] = [];
+  const baseParts = ['codex mcp add', '--url', `"${url}"`];
+  if (auth.type === 'bearer' && tokenEnv) {
+    baseParts.push('--bearer-token-env-var', tokenEnv);
+  }
+  baseParts.push('__PROFILE_ID__');
+  const base = baseParts.join(' ');
+  if (auth.type !== 'oauth' && auth.type !== 'none' && auth.type !== 'query' && auth.type !== 'bearer') {
+    lines.push(`${base} --header "${headerName}: ${headerValue}"`);
+  } else {
+    lines.push(base);
+  }
+  return lines.join('\n');
+}
+
+function buildCodexRemoteTomlSnippet(
+  auth: RenderAuthMethod,
+  headerName: string,
+  headerValue: string,
+  url: string,
+  tokenEnv?: string
+): string {
+  const envVars = tokenEnv ? [tokenEnv] : [];
+  const lines: string[] = [
+    '[mcp_servers.__PROFILE_ID__]',
+    'transport = "http"',
+    `url = "${url}"`,
+  ];
+  if (envVars.length > 0) {
+    lines.push(`env_vars = ${formatTomlArray(envVars)}`);
+  }
+  if (auth.type === 'bearer' && tokenEnv) {
+    lines.push(`bearer_token_env_var = "${tokenEnv}"`);
+  } else if (auth.type !== 'oauth' && auth.type !== 'none' && auth.type !== 'query') {
+    lines.push('');
+    lines.push(`http_headers = { "${headerName}" = "${headerValue}" }`);
+  }
+  return lines.join('\n');
+}
+
+function buildCodexLocalTomlSnippet(
+  envVarNames: string[],
+  envMap: Record<string, string>
+): string {
+  const args = ['-y', 'mcp4openapi', '--profile', '__PROFILE_ID__'];
+  const envVars = envVarNames.filter(envVar => {
+    const value = envMap[envVar];
+    return value === `\${${envVar}}`;
+  });
+  const envVarSet = new Set(envVars);
+  const lines: string[] = [
+    '[mcp_servers.__PROFILE_ID__]',
+    'command = "npx"',
+    `args = ${formatTomlArray(args)}`,
+  ];
+  if (envVars.length > 0) {
+    lines.push(`env_vars = ${formatTomlArray(envVars)}`);
+  }
+  const explicitEnvEntries: string[] = [];
+  for (const envVar of envVarNames) {
+    if (envVarSet.has(envVar)) {
+      continue;
+    }
+    const value = envMap[envVar];
+    if (!value) continue;
+    explicitEnvEntries.push(`${envVar} = "${value}"`);
+  }
+  if (explicitEnvEntries.length > 0) {
+    lines.push('');
+    lines.push('[mcp_servers.__PROFILE_ID__.env]');
+    lines.push(...explicitEnvEntries);
+  }
+  return lines.join('\n');
+}
+
+function resolveLocalEnvVarNames(profile: ListedProfileDetails, auth: RenderAuthMethod): string[] {
+  if (auth.type !== 'oauth') {
+    return [...profile.envVars];
+  }
+  const oauthOnly = new Set(profile.oauthEnvVars || []);
+  return profile.envVars.filter(envVar => !oauthOnly.has(envVar));
+}
+
+function formatTomlArray(values: string[]): string {
+  const quoted = values.map(value => `"${value}"`);
+  return `[${quoted.join(', ')}]`;
 }
 
 function buildInputsBlock(inputs: Array<{ id: string; description: string }>, indent: string): string[] {
@@ -559,12 +923,41 @@ function buildClaudeSnippet(
   url: string
 ): string {
   const lines: string[] = [];
-  const base = `claude mcp add __PROFILE_ID__ --transport http ${url}`;
+  const escapedUrl = escapeEnvExpansionForCli(url);
+  const escapedHeaderValue = escapeEnvExpansionForCli(headerValue);
+  const base = `claude mcp add -s user __PROFILE_ID__ --transport http ${escapedUrl}`;
   if (auth.type !== 'oauth' && auth.type !== 'none' && auth.type !== 'query') {
-    lines.push(`${base} \\\n  --header \"${headerName}: ${headerValue}\"`);
+    lines.push(`${base} \\\n  --header \"${headerName}: ${escapedHeaderValue}\"`);
   } else {
     lines.push(base);
   }
+  return lines.join('\n');
+}
+
+function escapeEnvExpansionForCli(value: string): string {
+  return value.replace(/\$\{/g, '\\${');
+}
+
+function buildClaudeJsonSnippet(
+  auth: RenderAuthMethod,
+  headerName: string,
+  headerValue: string,
+  url: string
+): string {
+  const lines: string[] = [
+    '{',
+    '  "mcpServers": {',
+    '    "__PROFILE_ID__": {',
+    '      "type": "http",',
+    `      "url": "${url}"`,
+  ];
+  if (auth.type !== 'oauth' && auth.type !== 'none' && auth.type !== 'query') {
+    appendComma(lines);
+    lines.push('      "headers": {');
+    lines.push(`        "${headerName}": "${headerValue}"`);
+    lines.push('      }');
+  }
+  lines.push('    }', '  }', '}');
   return lines.join('\n');
 }
 

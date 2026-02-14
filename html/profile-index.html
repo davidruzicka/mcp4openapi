@@ -58,12 +58,20 @@
         gap: 12px;
       }
       .profile-item {
+        width: 100%;
+        text-align: left;
         padding: 12px 14px;
         border-radius: 12px;
         border: 1px solid transparent;
         background: var(--bg-accent);
         cursor: pointer;
         transition: border-color 0.2s ease, transform 0.2s ease;
+      }
+      .profile-item:focus-visible,
+      .tab:focus-visible,
+      .copy-btn:focus-visible {
+        outline: 3px solid #1d4ed8;
+        outline-offset: 2px;
       }
       .profile-item:hover {
         border-color: var(--accent);
@@ -86,6 +94,9 @@
         -webkit-line-clamp: 2;
         -webkit-box-orient: vertical;
       }
+      #auth-label {
+        margin: 6px 0 12px;
+      }
       .detail-grid {
         display: grid;
         gap: 18px;
@@ -95,6 +106,9 @@
         flex-wrap: wrap;
         gap: 8px;
         margin-bottom: 8px;
+      }
+      .snippet-format-tabs {
+        margin-bottom: 0;
       }
       .tab {
         border: 1px solid var(--border);
@@ -161,6 +175,21 @@
         align-items: center;
         gap: 8px;
       }
+      .config-info {
+        font-size: 13px;
+        color: var(--muted);
+        margin: 8px 0 10px;
+      }
+      kbd {
+        border: 1px solid var(--border);
+        border-bottom-width: 2px;
+        border-radius: 6px;
+        padding: 1px 6px;
+        font-size: 12px;
+        font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+        background: #f7f4ef;
+        color: #2d2b28;
+      }
       .format-pill {
         border: 1px solid var(--border);
         border-radius: 999px;
@@ -187,6 +216,17 @@
         border-radius: 12px;
         color: #7a3f1e;
       }
+      .sr-only {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border: 0;
+      }
       @media (max-width: 960px) {
         main {
           grid-template-columns: 1fr;
@@ -205,7 +245,8 @@
     </header>
     <main>
       <section class="panel">
-        <div class="profiles" id="profile-list"></div>
+        <h2 class="sr-only">Profiles</h2>
+        <div class="profiles" id="profile-list" role="listbox" aria-label="Profiles"></div>
       </section>
       <section class="panel">
         <div class="detail-grid" id="profile-detail">
@@ -251,32 +292,204 @@
           .replace(/__PROFILE_SSE_URL__/g, profile.sseUrl);
       }
 
-      function renderSnippets(profile, activeAuth) {
+      function renderSnippets(profile, activeAuth, activeMode) {
         const blocks = [];
-        const order = ['vscode', 'cursor', 'jetbrains', 'claude'];
-        const snippets = profile.snippets || {};
+        const order = ['vscode', 'cursor', 'jetbrains', 'claude', 'codex'];
+        const snippets = profile.snippets || [];
+        const groups = new Map();
+        const isCzech = (i18n.profileLabel || '') === 'Profil';
+
+        const buildClientConfigInfo = client => {
+          if (client === 'vscode') {
+            return isCzech
+              ? 'Otevři command palette pomocí <kbd>Ctrl+Shift+P</kbd> (Mac: <kbd>Cmd+Shift+P</kbd>), vyhledej <strong>MCP</strong> a zvol <code>MCP: Open User Configuration</code>.'
+              : 'Open command palette with <kbd>Ctrl+Shift+P</kbd> (Mac: <kbd>Cmd+Shift+P</kbd>), search for <strong>MCP</strong>, then choose <code>MCP: Open User Configuration</code>.';
+          }
+          if (client === 'cursor') {
+            return isCzech
+              ? 'Otevři command palette pomocí <kbd>Ctrl+Shift+P</kbd> (Mac: <kbd>Cmd+Shift+P</kbd>), vyhledej <strong>MCP</strong>, otevři <code>View: Open MCP Settings</code> a dole klikni na <code>New MCP Server</code>.'
+              : 'Open command palette with <kbd>Ctrl+Shift+P</kbd> (Mac: <kbd>Cmd+Shift+P</kbd>), search for <strong>MCP</strong>, open <code>View: Open MCP Settings</code>, then click <code>New MCP Server</code>.';
+          }
+          if (client === 'jetbrains') {
+            return isCzech
+              ? 'Otevři akce přes <kbd>Ctrl+Shift+A</kbd> (Mac: <kbd>Cmd+Shift+A</kbd>), vyhledej <strong>MCP</strong>, otevři <code>Model Context Protocol (MCP)</code> a klikni na <code>Configure</code>.'
+              : 'Open actions with <kbd>Ctrl+Shift+A</kbd> (Mac: <kbd>Cmd+Shift+A</kbd>), search for <strong>MCP</strong>, open <code>Model Context Protocol (MCP)</code>, then click <code>Configure</code>.';
+          }
+          if (client === 'claude') {
+            return isCzech
+              ? 'Uživatelská (globální) konfigurace je v <code>~/.claude.json</code>.'
+              : 'User (global) configuration is in <code>~/.claude.json</code>.';
+          }
+          if (client === 'codex') {
+            return isCzech
+              ? 'Uživatelská (globální) konfigurace je v <code>~/.codex/config.toml</code>.'
+              : 'User (global) configuration is in <code>~/.codex/config.toml</code>.';
+          }
+          return '';
+        };
+
         for (const entry of snippets) {
           if (!entry || !entry.key) continue;
           if (activeAuth && entry.authKey && entry.authKey !== activeAuth) continue;
-          if (!order.some(prefix => entry.key.startsWith(prefix))) continue;
-          const title = entry.label || entry.key;
-          const format = entry.format || '';
-          const snippet = buildSnippet(entry.content, profile);
-          const encodedSnippet = encodeURIComponent(snippet);
+          if (activeMode && entry.mode && entry.mode !== activeMode) continue;
+          const client = order.find(prefix => entry.key.startsWith(prefix));
+          if (!client) continue;
+          const existing = groups.get(client) || [];
+          existing.push(entry);
+          groups.set(client, existing);
+        }
+
+        let cardIndex = 0;
+        for (const client of order) {
+          const entries = groups.get(client);
+          if (!entries || entries.length === 0) continue;
+
+          const rawTitle = entries[0].label || entries[0].key || client;
+          const title = activeMode === 'local'
+            ? rawTitle.replace(/\s-\s.+$/, '')
+            : rawTitle;
+          const formatOrder = ['toml', 'json', 'cli'];
+          entries.sort((a, b) => {
+            const left = formatOrder.indexOf(a.format || '');
+            const right = formatOrder.indexOf(b.format || '');
+            return (left === -1 ? 99 : left) - (right === -1 ? 99 : right);
+          });
+
+          const groupId = `snippet-format-${client}-${cardIndex}`;
+          cardIndex += 1;
+          const hasFormatTabs = entries.length > 1;
+          const tabsHtml = `
+            <div class="tab-row snippet-format-tabs" role="tablist" aria-label="Snippet format">
+              ${entries.map((entry, index) => `
+                <button
+                  class="tab${index === 0 ? ' active' : ''}"
+                  type="button"
+                  role="tab"
+                  aria-selected="${index === 0 ? 'true' : 'false'}"
+                  tabindex="${index === 0 ? '0' : '-1'}"
+                  data-format-group="${escapeHtml(groupId)}"
+                  data-format-tab="${escapeHtml(entry.format || `format-${index}`)}"
+                >
+                  ${escapeHtml((entry.format || 'text').toUpperCase())}
+                </button>
+              `).join('')}
+            </div>
+          `;
+
+          const panelHtml = entries.map((entry, index) => {
+            const format = entry.format || '';
+            const snippet = buildSnippet(entry.content, profile);
+            const encodedSnippet = encodeURIComponent(snippet);
+            const hiddenAttr = hasFormatTabs && index > 0 ? ' hidden' : '';
+            return `
+              <div data-format-panel-group="${escapeHtml(groupId)}" data-format-panel="${escapeHtml(format || `format-${index}`)}" data-copy="${encodedSnippet}"${hiddenAttr}>
+                <pre><code>${escapeHtml(snippet)}</code></pre>
+              </div>
+            `;
+          }).join('');
+
+          const firstSnippet = buildSnippet(entries[0].content, profile);
+          const firstEncodedSnippet = encodeURIComponent(firstSnippet);
+          const configInfo = buildClientConfigInfo(client);
+
           blocks.push(`
             <div class="detail-card">
               <div class="snippet-header">
                 <h3>${escapeHtml(title)}</h3>
                 <div class="snippet-meta">
-                  ${format ? `<span class="format-pill">${escapeHtml(format)}</span>` : ''}
-                  <button class="copy-btn" data-copy="${encodedSnippet}">${escapeHtml(i18n.copy || '')}</button>
+                  ${tabsHtml}
+                  <button class="copy-btn" data-copy="${firstEncodedSnippet}" data-copy-group="${escapeHtml(groupId)}">${escapeHtml(i18n.copy || '')}</button>
                 </div>
               </div>
-              <pre><code>${escapeHtml(snippet)}</code></pre>
+              ${configInfo ? `<div class="config-info">${configInfo}</div>` : ''}
+              ${panelHtml}
             </div>
           `);
         }
         return blocks.join('');
+      }
+
+      function wireSnippetFormatTabs(snippetList) {
+        if (!snippetList) return;
+        if (snippetList.dataset.formatTabsWired === '1') return;
+        snippetList.dataset.formatTabsWired = '1';
+
+        const activateFormat = (groupId, formatKey) => {
+          const tabs = Array.from(snippetList.querySelectorAll(`[data-format-group="${groupId}"]`));
+          tabs.forEach(tab => {
+            const isActive = tab.getAttribute('data-format-tab') === formatKey;
+            tab.classList.toggle('active', isActive);
+            tab.setAttribute('aria-selected', isActive ? 'true' : 'false');
+            tab.setAttribute('tabindex', isActive ? '0' : '-1');
+          });
+
+          const panels = Array.from(snippetList.querySelectorAll(`[data-format-panel-group="${groupId}"]`));
+          let activeCopyPayload = '';
+          panels.forEach(panel => {
+            const isActive = panel.getAttribute('data-format-panel') === formatKey;
+            if (isActive) {
+              panel.removeAttribute('hidden');
+              activeCopyPayload = panel.getAttribute('data-copy') || '';
+            } else {
+              panel.setAttribute('hidden', '');
+            }
+          });
+          const groupCopyButton = snippetList.querySelector(`[data-copy-group="${groupId}"]`);
+          if (groupCopyButton instanceof HTMLElement && activeCopyPayload) {
+            groupCopyButton.setAttribute('data-copy', activeCopyPayload);
+          }
+        };
+
+        snippetList.addEventListener('click', event => {
+          const target = event.target;
+          if (!(target instanceof HTMLElement)) return;
+          const groupId = target.getAttribute('data-format-group');
+          const formatKey = target.getAttribute('data-format-tab');
+          if (!groupId || !formatKey) return;
+          activateFormat(groupId, formatKey);
+        });
+
+        snippetList.addEventListener('keydown', event => {
+          const target = event.target;
+          if (!(target instanceof HTMLElement)) return;
+          const groupId = target.getAttribute('data-format-group');
+          const formatKey = target.getAttribute('data-format-tab');
+          if (!groupId || !formatKey) return;
+
+          const tabs = Array.from(snippetList.querySelectorAll(`[data-format-group="${groupId}"]`));
+          if (tabs.length === 0) return;
+          const currentIndex = tabs.findIndex(tab => tab === target);
+          if (currentIndex === -1) return;
+
+          const focusAt = index => {
+            const nextTab = tabs[index];
+            if (!nextTab) return;
+            nextTab.focus();
+            const nextFormat = nextTab.getAttribute('data-format-tab');
+            if (!nextFormat) return;
+            activateFormat(groupId, nextFormat);
+          };
+
+          if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
+            event.preventDefault();
+            focusAt((currentIndex + 1) % tabs.length);
+            return;
+          }
+          if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
+            event.preventDefault();
+            focusAt((currentIndex - 1 + tabs.length) % tabs.length);
+            return;
+          }
+          if (event.key === 'Home') {
+            event.preventDefault();
+            focusAt(0);
+            return;
+          }
+          if (event.key === 'End') {
+            event.preventDefault();
+            focusAt(tabs.length - 1);
+          }
+        });
       }
 
       function buildProfileTitle(profile) {
@@ -300,20 +513,25 @@
         const description = profile.description || i18n.noDescription || '';
         const authTabs = profile.authTabs || [];
         const activeAuth = authTabs.length > 0 ? authTabs[0].key : null;
-        const apiEndpointValue = profile.apiEndpoint || '';
-        const apiEndpointSource = profile.apiEndpointSource || 'unavailable';
+        const modeTabs = profile.modeTabs || [];
+        const activeMode = modeTabs.length > 0 ? modeTabs[0].key : 'remote';
+        const authEnvVars = Array.from(
+          new Set((profile.authMethods || [])
+            .map(method => method && method.valueFromEnv)
+            .filter(Boolean))
+        );
+        const authEnvText = authEnvVars.length > 0
+          ? `${i18n.authEnvVarsLabel || 'Environment variable:'} ${authEnvVars.join(', ')}`
+          : (i18n.authEnvVarsNone || 'No environment variable required');
         const apiEndpointEnvVar = profile.apiEndpointEnvVar || '';
-        const apiEndpointSourceText = apiEndpointSource === 'env'
-          ? `${i18n.apiEndpointSourceEnv || 'Source: env'}${apiEndpointEnvVar ? ` (${apiEndpointEnvVar})` : ''}`
-          : apiEndpointSource === 'default'
-            ? `${i18n.apiEndpointSourceDefault || 'Source: default'}${apiEndpointEnvVar ? ` (${apiEndpointEnvVar})` : ''}`
-            : apiEndpointSource === 'env-unset'
-              ? `${i18n.apiEndpointEnvNotSet || 'Environment variable is not set'}${apiEndpointEnvVar ? ` (${apiEndpointEnvVar})` : ''}`
-              : (i18n.apiEndpointUnavailable || 'API endpoint is not configured in the profile.');
-        const apiEndpointHtml = apiEndpointValue
-          ? `<p><strong>${escapeHtml(i18n.apiEndpointLabel || 'API endpoint')}</strong>: ${escapeHtml(apiEndpointValue)}</p>
-             <p class="profile-subtitle">${escapeHtml(apiEndpointSourceText)}</p>`
-          : `<p><strong>${escapeHtml(i18n.apiEndpointLabel || 'API endpoint')}</strong>: ${escapeHtml(apiEndpointSourceText)}</p>`;
+        const apiEndpointDefaultValue = profile.apiEndpointDefaultValue || '';
+        let apiEndpointValueText = `${i18n.apiEndpointUnavailableInline || 'is not configured'}`;
+        if (apiEndpointEnvVar && apiEndpointDefaultValue) {
+          apiEndpointValueText = `${i18n.apiEndpointDefaultTag || '(default)'} ${apiEndpointDefaultValue}, ${i18n.apiEndpointVariableLabel || 'variable'}: ${apiEndpointEnvVar}`;
+        } else if (apiEndpointEnvVar) {
+          apiEndpointValueText = `${i18n.apiEndpointVariableLabel || 'variable'} ${apiEndpointEnvVar}`;
+        }
+        const apiEndpointHtml = `<p><strong>${escapeHtml(i18n.apiEndpointLabel || 'API endpoint')}</strong>: ${escapeHtml(apiEndpointValueText)}</p>`;
         detailEl.innerHTML = `
           <div class="detail-card">
             <h3>${escapeHtml(i18n.profileLabel || '')}</h3>
@@ -323,60 +541,228 @@
           <div class="detail-card">
             <h3>${escapeHtml(i18n.endpointLabel || '')}</h3>
             <p><strong>MCP</strong>: ${escapeHtml(profile.mcpUrl)}</p>
-            <p><strong>SSE</strong>: ${escapeHtml(profile.sseUrl)}</p>
+            <p><strong>SSE</strong> ${escapeHtml(i18n.sseDeprecatedLabel || '(deprecated)')}: ${escapeHtml(profile.sseUrl)}</p>
             ${apiEndpointHtml}
           </div>
           <div class="detail-card">
-            <div class="tab-row" id="auth-tabs">
-              ${authTabs.map(tab => `
-                <button class="tab${tab.key === activeAuth ? ' active' : ''}" data-auth="${escapeHtml(tab.key)}">
+            <div class="tab-row" id="mode-tabs" role="tablist" aria-label="Connection mode">
+              ${modeTabs.map(tab => `
+                <button
+                  class="tab${tab.key === activeMode ? ' active' : ''}"
+                  data-mode="${escapeHtml(tab.key)}"
+                  role="tab"
+                  aria-selected="${tab.key === activeMode ? 'true' : 'false'}"
+                  tabindex="${tab.key === activeMode ? '0' : '-1'}"
+                >
                   ${escapeHtml(tab.label)}
                 </button>
               `).join('')}
             </div>
-            <div class="snippets" id="snippet-list">
-              ${renderSnippets(profile, activeAuth)}
+            <p class="profile-subtitle" id="auth-label">
+              <strong>${escapeHtml(i18n.authSectionLabel || 'Authentication:')}</strong>
+              ${escapeHtml(authEnvText)}
+            </p>
+            <div class="tab-row" id="auth-tabs" role="tablist" aria-label="Authentication methods">
+              ${authTabs.map(tab => `
+                <button
+                  class="tab${tab.key === activeAuth ? ' active' : ''}"
+                  id="auth-tab-${escapeHtml(tab.key)}"
+                  data-auth="${escapeHtml(tab.key)}"
+                  role="tab"
+                  aria-selected="${tab.key === activeAuth ? 'true' : 'false'}"
+                  tabindex="${tab.key === activeAuth ? '0' : '-1'}"
+                >
+                  ${escapeHtml(tab.label)}
+                </button>
+              `).join('')}
+            </div>
+            <div class="snippets" id="snippet-list" role="tabpanel" aria-live="polite">
+              ${renderSnippets(profile, activeAuth, activeMode)}
             </div>
           </div>
         `;
 
+        const modeRow = detailEl.querySelector('#mode-tabs');
+        const authLabel = detailEl.querySelector('#auth-label');
         const tabRow = detailEl.querySelector('#auth-tabs');
         const snippetList = detailEl.querySelector('#snippet-list');
-        if (tabRow && snippetList) {
+        if (modeRow && authLabel && tabRow && snippetList) {
+          let currentMode = activeMode;
+
+          const setActiveMode = modeKey => {
+            currentMode = modeKey;
+            modeRow.querySelectorAll('.tab').forEach(tab => {
+              const isActive = tab.getAttribute('data-mode') === modeKey;
+              tab.classList.toggle('active', isActive);
+              tab.setAttribute('aria-selected', isActive ? 'true' : 'false');
+              tab.setAttribute('tabindex', isActive ? '0' : '-1');
+            });
+            const showAuthTabs = modeKey !== 'local';
+            const showAuthLabel = modeKey === 'local';
+            tabRow.style.display = showAuthTabs ? '' : 'none';
+            authLabel.style.display = showAuthLabel ? '' : 'none';
+            const currentAuth = (tabRow.querySelector('.tab.active') || tabRow.querySelector('.tab'))?.getAttribute('data-auth');
+            snippetList.innerHTML = renderSnippets(profile, currentAuth, currentMode);
+            wireSnippetFormatTabs(snippetList);
+          };
+
+          const setActiveTab = authKey => {
+            let activeTabId = null;
+            tabRow.querySelectorAll('.tab').forEach(tab => {
+              const isActive = tab.getAttribute('data-auth') === authKey;
+              tab.classList.toggle('active', isActive);
+              tab.setAttribute('aria-selected', isActive ? 'true' : 'false');
+              tab.setAttribute('tabindex', isActive ? '0' : '-1');
+              if (isActive) {
+                activeTabId = tab.id || null;
+              }
+            });
+            snippetList.innerHTML = renderSnippets(profile, authKey, currentMode);
+            wireSnippetFormatTabs(snippetList);
+            if (activeTabId) {
+              snippetList.setAttribute('aria-labelledby', activeTabId);
+            } else {
+              snippetList.removeAttribute('aria-labelledby');
+            }
+          };
+
+          modeRow.addEventListener('click', event => {
+            const target = event.target;
+            if (!(target instanceof HTMLElement)) return;
+            const modeKey = target.getAttribute('data-mode');
+            if (!modeKey) return;
+            setActiveMode(modeKey);
+          });
+
+          modeRow.addEventListener('keydown', event => {
+            const tabs = Array.from(modeRow.querySelectorAll('[role="tab"]'));
+            if (tabs.length === 0) return;
+
+            const currentIndex = tabs.findIndex(tab => tab === document.activeElement);
+            if (currentIndex === -1) return;
+
+            const focusModeTabAt = index => {
+              const nextTab = tabs[index];
+              if (!nextTab) return;
+              nextTab.focus();
+              const modeKey = nextTab.getAttribute('data-mode');
+              if (modeKey) setActiveMode(modeKey);
+            };
+
+            if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
+              event.preventDefault();
+              focusModeTabAt((currentIndex + 1) % tabs.length);
+              return;
+            }
+            if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
+              event.preventDefault();
+              focusModeTabAt((currentIndex - 1 + tabs.length) % tabs.length);
+              return;
+            }
+            if (event.key === 'Home') {
+              event.preventDefault();
+              focusModeTabAt(0);
+              return;
+            }
+            if (event.key === 'End') {
+              event.preventDefault();
+              focusModeTabAt(tabs.length - 1);
+            }
+          });
+
           tabRow.addEventListener('click', event => {
             const target = event.target;
             if (!(target instanceof HTMLElement)) return;
             const authKey = target.getAttribute('data-auth');
             if (!authKey) return;
-            tabRow.querySelectorAll('.tab').forEach(tab => {
-              tab.classList.toggle('active', tab.getAttribute('data-auth') === authKey);
-            });
-            snippetList.innerHTML = renderSnippets(profile, authKey);
+            setActiveTab(authKey);
           });
+
+          tabRow.addEventListener('keydown', event => {
+            const tabs = Array.from(tabRow.querySelectorAll('[role="tab"]'));
+            if (tabs.length === 0) return;
+
+            const currentIndex = tabs.findIndex(tab => tab === document.activeElement);
+            if (currentIndex === -1) return;
+
+            const focusTabAt = index => {
+              const nextTab = tabs[index];
+              if (!nextTab) return;
+              nextTab.focus();
+              const authKey = nextTab.getAttribute('data-auth');
+              if (authKey) setActiveTab(authKey);
+            };
+
+            if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
+              event.preventDefault();
+              focusTabAt((currentIndex + 1) % tabs.length);
+              return;
+            }
+            if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
+              event.preventDefault();
+              focusTabAt((currentIndex - 1 + tabs.length) % tabs.length);
+              return;
+            }
+            if (event.key === 'Home') {
+              event.preventDefault();
+              focusTabAt(0);
+              return;
+            }
+            if (event.key === 'End') {
+              event.preventDefault();
+              focusTabAt(tabs.length - 1);
+            }
+          });
+
+          const initialActiveTab = tabRow.querySelector('.tab.active');
+          if (initialActiveTab && initialActiveTab.id) {
+            snippetList.setAttribute('aria-labelledby', initialActiveTab.id);
+          }
+          setActiveMode(currentMode);
         }
       }
 
-      function renderList(activeId) {
+      function renderList(activeId, options) {
+        const opts = options || {};
         listEl.innerHTML = '';
         profileData.forEach(profile => {
           const title = buildProfileTitle(profile);
-          const item = document.createElement('div');
+          const item = document.createElement('button');
+          item.type = 'button';
           item.className = 'profile-item' + (profile.profileId === activeId ? ' active' : '');
+          item.setAttribute('role', 'option');
+          item.setAttribute('aria-selected', profile.profileId === activeId ? 'true' : 'false');
+          item.setAttribute('tabindex', profile.profileId === activeId ? '0' : '-1');
+          item.setAttribute('data-profile-id', profile.profileId);
+          item.id = `profile-option-${profile.profileId}`;
           item.innerHTML = `
             <div class="profile-title">${escapeHtml(title)}</div>
             <div class="profile-subtitle">${escapeHtml(profile.description || i18n.noDescription || '')}</div>
           `;
           item.addEventListener('click', () => {
-            renderList(profile.profileId);
-            renderDetail(profile);
+            selectProfile(profile.profileId, { focusListItem: true });
           });
           listEl.appendChild(item);
         });
+
+        if (opts.focusSelected) {
+          const selected = Array.from(listEl.querySelectorAll('[data-profile-id]'))
+            .find(node => node.getAttribute('data-profile-id') === activeId);
+          if (selected instanceof HTMLElement) {
+            selected.focus();
+          }
+        }
+      }
+
+      function selectProfile(profileId, options) {
+        const profile = profileData.find(item => item.profileId === profileId);
+        if (!profile) return;
+        renderList(profileId, { focusSelected: !!(options && options.focusListItem) });
+        renderDetail(profile);
       }
 
       if (profileData.length > 0) {
-        renderList(profileData[0].profileId);
-        renderDetail(profileData[0]);
+        selectProfile(profileData[0].profileId);
       } else {
         detailEl.innerHTML = `<div class="notice">${escapeHtml(i18n.noProfiles || '')}</div>`;
       }
@@ -395,6 +781,42 @@
           target.textContent = i18n.copyFailed || '';
           setTimeout(() => { target.textContent = i18n.copy || ''; }, 1200);
         });
+      });
+
+      listEl.addEventListener('keydown', event => {
+        const options = Array.from(listEl.querySelectorAll('[role="option"]'));
+        if (options.length === 0) return;
+
+        const currentIndex = options.findIndex(option => option === document.activeElement);
+        if (currentIndex === -1) return;
+
+        const activateAt = index => {
+          const next = options[index];
+          if (!next) return;
+          const nextProfileId = next.getAttribute('data-profile-id');
+          if (!nextProfileId) return;
+          selectProfile(nextProfileId, { focusListItem: true });
+        };
+
+        if (event.key === 'ArrowDown' || event.key === 'ArrowRight') {
+          event.preventDefault();
+          activateAt((currentIndex + 1) % options.length);
+          return;
+        }
+        if (event.key === 'ArrowUp' || event.key === 'ArrowLeft') {
+          event.preventDefault();
+          activateAt((currentIndex - 1 + options.length) % options.length);
+          return;
+        }
+        if (event.key === 'Home') {
+          event.preventDefault();
+          activateAt(0);
+          return;
+        }
+        if (event.key === 'End') {
+          event.preventDefault();
+          activateAt(options.length - 1);
+        }
       });
     </script>
   </body>

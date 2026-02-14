@@ -30,6 +30,7 @@ export interface ListedProfileDetails {
   profileAliases: string[];
   description?: string;
   envVars: string[];
+  oauthEnvVars?: string[];
   authMethods: ProfileAuthMethod[];
   apiBaseUrl?: ProfileApiBaseUrl;
 }
@@ -137,6 +138,31 @@ function extractEnvVars(profile: Record<string, unknown>): string[] {
       const baseUrlValueFromEnv = (baseUrl as Record<string, unknown>).value_from_env;
       if (typeof baseUrlValueFromEnv === 'string' && baseUrlValueFromEnv.trim().length > 0) {
         envVars.add(baseUrlValueFromEnv.trim());
+      }
+    }
+  }
+
+  return Array.from(envVars).sort((a, b) => a.localeCompare(b));
+}
+
+function extractOauthEnvVars(profile: Record<string, unknown>): string[] {
+  const envVars = new Set<string>();
+  const interceptors = profile.interceptors;
+  if (!interceptors || typeof interceptors !== 'object') {
+    return [];
+  }
+
+  const auth = (interceptors as Record<string, unknown>).auth;
+  const entries = Array.isArray(auth) ? auth : auth ? [auth] : [];
+  for (const entry of entries) {
+    if (!entry || typeof entry !== 'object') continue;
+    const record = entry as Record<string, unknown>;
+    if (record.type !== 'oauth') continue;
+    const oauthConfig = record.oauth_config;
+    if (!oauthConfig || typeof oauthConfig !== 'object') continue;
+    for (const value of Object.values(oauthConfig)) {
+      if (typeof value === 'string') {
+        collectEnvVarsFromString(value, envVars);
       }
     }
   }
@@ -294,6 +320,7 @@ async function loadProfileDetails(profilePath: string): Promise<ListedProfileDet
     profileAliases: aliases,
     description,
     envVars: extractEnvVars(profile),
+    oauthEnvVars: extractOauthEnvVars(profile),
     authMethods: extractAuthMethods(profile),
     apiBaseUrl: extractApiBaseUrl(profile),
   };

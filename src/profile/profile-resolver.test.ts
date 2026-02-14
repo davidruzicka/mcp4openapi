@@ -118,6 +118,7 @@ describe('profile-resolver', () => {
     const profiles = await listProfilesDetailed(profilesDir);
     expect(profiles).toHaveLength(1);
     expect(profiles[0].envVars).toEqual(['API_TOKEN', 'CUSTOM_KEY', 'OAUTH_ISSUER', 'QUERY_TOKEN', 'SAMPLE_API_BASE_URL']);
+    expect(profiles[0].oauthEnvVars).toEqual(['OAUTH_ISSUER']);
     expect(profiles[0].authMethods).toEqual([
       { type: 'bearer', headerName: undefined, queryParam: undefined, valueFromEnv: 'API_TOKEN' },
       { type: 'oauth', headerName: undefined, queryParam: undefined, valueFromEnv: undefined },

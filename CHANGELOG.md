@@ -13,7 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - Generic profile test runner now resolves OpenAPI spec from profile `openapi_spec_path` first and only falls back to `openapi.*` convention.
-- HTML profile index now shows the resolved API endpoint per profile (env override or profile default) alongside MCP/SSE endpoints.
+- HTML profile index now shows more specific set of configurations for each profile.
 
 ## [0.3.9] - 2026-02-10
 
