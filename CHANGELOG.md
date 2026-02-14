@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - Generic profile test runner now resolves OpenAPI spec from profile `openapi_spec_path` first and only falls back to `openapi.*` convention.
 - HTML profile index now shows more specific set of configurations for each profile.
+- HTTP initialize auth gate now preserves `value_from_env` server-token fallback while still rejecting unauthenticated init when no fallback token is available.
 
 ## [0.3.9] - 2026-02-10
 

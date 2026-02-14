@@ -2112,6 +2112,20 @@ export class HttpTransport {
     }
   }
 
+  private hasServerEnvAuthToken(authConfigs?: AuthInterceptor[]): boolean {
+    if (!authConfigs || authConfigs.length === 0) {
+      return false;
+    }
+
+    return authConfigs.some((config) => {
+      if (!config.value_from_env) {
+        return false;
+      }
+      const envValue = process.env[config.value_from_env];
+      return typeof envValue === 'string' && envValue.trim().length > 0;
+    });
+  }
+
   /**
    * Extract and validate auth token from request headers
    * 
@@ -2359,13 +2373,12 @@ export class HttpTransport {
             return;
           }
 
-          // Allow initialization without token for non-OAuth scenarios
-          
-          // Enforce authentication if auth is configured
-          if (profileState.context.authConfigs && profileState.context.authConfigs.length > 0 && !authInfo.token) {
+          // Require a client token only when auth is configured and server env fallback is unavailable
+          const authConfigs = profileState.context.authConfigs ?? [];
+          if (authConfigs.length > 0 && !authInfo.token && !this.hasServerEnvAuthToken(authConfigs)) {
             this.logger.debug('Auth configured but no token provided, rejecting initialization', {
               profileId: requestProfileId,
-              authConfigsCount: profileState.context.authConfigs.length
+              authConfigsCount: authConfigs.length
             });
             res.status(HTTP_STATUS.UNAUTHORIZED).json({
               error: 'Unauthorized',
