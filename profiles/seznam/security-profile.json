@@ -1,17 +1,16 @@
 {
   "$schema": "../../profile-schema.json",
-  "profile_name": "defectdojo",
-  "profile_id": "defectdojo",
-  "profile_aliases": ["defectdojo-default", "seznam-defectdojo"],
-  "openapi_spec_path": "./defectdojo-openapi.json",
-  "description": "Read-only profile for DefectDojo Robot API health, reports, and metrics retrieval.",
+  "profile_name": "seznam-security",
+  "profile_id": "seznam-security",
+  "openapi_spec_path": "./security-openapi.json",
+  "description": "Read-only profile for Vulnerability Management API health, reports, and metrics retrieval.",
   "parameter_aliases": {
     "token": ["report_token"]
   },
   "tools": [
     {
       "name": "retrieve_content",
-      "description": "Read-only access to DefectDojo robot endpoints. Actions: 'healthcheck', 'get_reports', 'get_reports_metrics'.",
+      "description": "Read-only access to Vulnerability Management API endpoints. Actions: 'healthcheck', 'get_reports', 'get_reports_metrics'.",
       "metadata_params": ["action"],
       "operations": {
         "healthcheck": "get_/healthcheck",
@@ -44,10 +43,10 @@
   "interceptors": {
     "auth": {
       "type": "bearer",
-      "value_from_env": "DEFECTDOJO_TOKEN"
+      "value_from_env": "SECURITY_TOKEN"
     },
     "base_url": {
-      "value_from_env": "DEFECTDOJO_API_BASE_URL"
+      "value_from_env": "SECURITY_API_BASE_URL"
     },
     "retry": {
       "max_attempts": 3,
