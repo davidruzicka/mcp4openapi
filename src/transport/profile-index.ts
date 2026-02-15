@@ -801,7 +801,7 @@ function buildLocalConnectionSnippets(
     jetbrains: JSON.stringify(jetbrainsConfig, null, 2),
     claudeJson: JSON.stringify(claudeJsonConfig, null, 2),
     claudeCli: buildLocalClaudeSnippet(profile),
-    geminiJson: buildLocalGeminiJsonSnippet(args, claudeEnv),
+    geminiJson: buildLocalGeminiJsonSnippet(args),
     geminiCli: buildLocalGeminiSnippet(profile),
     codexToml: buildCodexLocalTomlSnippet(localEnvVarNames, claudeEnv),
     codexCli: buildLocalCodexSnippet(localEnvVarNames, claudeEnv),
@@ -850,13 +850,12 @@ function buildLocalCodexSnippet(envVarNames: string[], envMap: Record<string, st
   return parts.join(' ');
 }
 
-function buildLocalGeminiJsonSnippet(args: string[], env: Record<string, string>): string {
+function buildLocalGeminiJsonSnippet(args: string[]): string {
   const config = {
     mcpServers: {
       __PROFILE_ID__: {
         command: 'npx',
         args,
-        ...(Object.keys(env).length > 0 ? { env } : {}),
       },
     },
   };

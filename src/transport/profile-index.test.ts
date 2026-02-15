@@ -110,7 +110,9 @@ describe('profile index helpers', () => {
     expect(geminiLocalJson?.mode).toBe('local');
     expect(geminiLocalJson?.content).toContain('"mcpServers"');
     expect(geminiLocalJson?.content).toContain('"command": "npx"');
-    expect(geminiLocalJson?.content).toContain('"GITLAB_TOKEN": "${GITLAB_TOKEN}"');
+    expect(geminiLocalJson?.content).toContain('"args": [');
+    expect(geminiLocalJson?.content).not.toContain('"env": {');
+    expect(geminiLocalJson?.content).not.toContain('GITLAB_TOKEN');
     expect(geminiLocalCli?.mode).toBe('local');
     expect(geminiLocalCli?.format).toBe('cli');
     expect(geminiLocalCli?.content).toContain('gemini mcp add -s user __PROFILE_ID__ -- npx -y mcp4openapi --profile __PROFILE_ID__');
@@ -351,7 +353,9 @@ describe('profile index helpers', () => {
     expect(cursorLocal?.content).not.toContain('MCP4_OAUTH_CLIENT_ID');
     expect(cursorLocal?.content).not.toContain('MCP4_OAUTH_CLIENT_SECRET');
 
-    expect(geminiLocalJson?.content).toContain('"GITLAB_TOKEN": "${GITLAB_TOKEN}"');
+    expect(geminiLocalJson?.content).toContain('"args": [');
+    expect(geminiLocalJson?.content).not.toContain('"env": {');
+    expect(geminiLocalJson?.content).not.toContain('GITLAB_TOKEN');
     expect(geminiLocalJson?.content).not.toContain('MCP4_OAUTH_CLIENT_ID');
     expect(geminiLocalJson?.content).not.toContain('MCP4_OAUTH_CLIENT_SECRET');
 

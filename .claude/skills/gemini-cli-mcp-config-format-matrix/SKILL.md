@@ -11,7 +11,8 @@ Generate correct Gemini CLI MCP configuration without mixing formats from other 
    - top-level `mcpServers` for server entries.
    - optional top-level `mcp` for global policies (`allowed`, `excluded`, optional `serverCommand`).
 2. For stdio servers, use server entry fields compatible with Gemini CLI:
-   - `command`, optional `args`, optional `env`, optional `cwd`, optional `timeout`, optional `trust`.
+   - `command`, optional `args`, optional `cwd`, optional `timeout`, optional `trust`.
+   - Do not generate `env` for Gemini snippets as a generic tunneling mechanism for host env vars.
 3. For streamable HTTP servers, use `httpUrl` in server entry.
 4. For HTTP auth headers, use Gemini-native header mapping:
    - JSON: `headers: { "Authorization": "Bearer ..." }`
@@ -27,6 +28,7 @@ Generate correct Gemini CLI MCP configuration without mixing formats from other 
    - `gemini mcp add -s user ...`
    - `gemini mcp list`
    - `gemini mcp remove <name>`
+9. Do not generate `--env` flags for Gemini CLI snippets.
 
 ## Output Patterns
 - Local stdio snippet: JSON `mcpServers.<name>.command` with optional `args` and `env`.
@@ -35,7 +37,7 @@ Generate correct Gemini CLI MCP configuration without mixing formats from other 
 ## JSON Examples (Gemini Docs Aligned)
 Use these as canonical formatting references for `settings.json`.
 
-### Stdio server with args, env
+### Stdio server with args
 ```json
 {
   "mcpServers": {
@@ -135,5 +137,7 @@ gemini mcp add -s user --transport http custom https://<mcp_server_host>/profile
 - Snippet format is valid JSON for `settings.json` (no comments, no trailing commas).
 - Transport key matches target mode (`command` for stdio, `httpUrl` for HTTP).
 - Auth is expressed with Gemini-supported `headers` or `--header`.
+- No `env` section is generated for Gemini snippets.
+- No `--env` flags are generated for Gemini CLI snippets.
 - No cross-client configuration keys appear in Gemini snippets.
 - No SSE transport snippet is generated.
