@@ -1,9 +1,9 @@
 {
     "openapi": "3.0.0",
     "info": {
-        "title": "DefectDojo Robot API",
+        "title": "Seznam Security Robot API",
         "version": "2.2.0",
-        "description": "API for Mattermost DefectDojo bot"
+        "description": "API for Seznam Security bot"
     },
     "components": {
         "securitySchemes": {

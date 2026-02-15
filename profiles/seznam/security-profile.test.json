@@ -1,12 +1,12 @@
 {
   "$schema": "../../src/testing/test-schema.ts",
-  "profile_name": "defectdojo",
+  "profile_name": "seznam-security",
   "variables": {
     "reportToken": "token-123"
   },
   "scenarios": [
     {
-      "name": "DefectDojo - Healthcheck",
+      "name": "Seznam Security - Healthcheck",
       "tool": "retrieve_content",
       "arguments": {
         "action": "healthcheck"
@@ -33,7 +33,7 @@
       }
     },
     {
-      "name": "DefectDojo - Get Reports",
+      "name": "Seznam Security - Get Reports",
       "tool": "retrieve_content",
       "arguments": {
         "action": "get_reports",
@@ -77,7 +77,7 @@
       }
     },
     {
-      "name": "DefectDojo - Get Metrics",
+      "name": "Seznam Security - Get Metrics",
       "tool": "retrieve_content",
       "arguments": {
         "action": "get_reports_metrics"
