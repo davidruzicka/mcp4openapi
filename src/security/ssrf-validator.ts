@@ -182,6 +182,8 @@ const IPV4_CIDR_BLOCKS: Array<[ipaddr.IPv4, number]> = [
   '192.0.0.0/24', // IETF protocol assignments
   '0.0.0.0/8', // "this network"
   '198.18.0.0/15', // benchmark testing
+  '224.0.0.0/4', // multicast
+  '240.0.0.0/4', // reserved
 ].map(cidr => ipaddr.parseCIDR(cidr) as [ipaddr.IPv4, number]);
 
 const IPV6_CIDR_BLOCKS: Array<[ipaddr.IPv6, number]> = [
@@ -189,4 +191,5 @@ const IPV6_CIDR_BLOCKS: Array<[ipaddr.IPv6, number]> = [
   '::/128', // unspecified
   'fe80::/10', // link-local
   'fc00::/7', // unique local
+  'ff00::/8', // multicast
 ].map(cidr => ipaddr.parseCIDR(cidr) as [ipaddr.IPv6, number]);

@@ -49,6 +49,8 @@ describe('SSRFValidator', () => {
         'http://169.254.169.254',
         'http://198.18.0.1',
         'http://192.0.0.1',
+        'http://224.0.0.1', // multicast
+        'http://240.0.0.1', // reserved
       ];
 
       for (const ip of privateIps) {
@@ -74,6 +76,7 @@ describe('SSRFValidator', () => {
         'http://[::]',
         'http://[fe80::1]',
         'http://[fc00::1]',
+        'http://[ff02::1]', // multicast
       ];
 
       for (const ip of privateIps) {

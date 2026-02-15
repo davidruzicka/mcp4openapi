@@ -86,3 +86,18 @@ Never trust regex patterns from configuration (profiles) without validation, and
 **Prevention:**
 1.  Enforce a hard cap (e.g., 4096 chars) on input strings validated against any regex, regardless of schema `maxLength`.
 2.  Validate all regex patterns using a `RegexValidator` (checking for nested quantifiers, ambiguous alternation) before usage.
+
+## 2026-02-15 - [MEDIUM] SSRF TOCTOU in Node.js `fetch`
+
+**Vulnerability:**
+The `SSRFValidator` resolves hostnames to verify they are not private IPs, but the subsequent `fetch()` call re-resolves the hostname. This creates a Time-of-Check Time-of-Use (TOCTOU) vulnerability where a DNS rebinding attack can bypass the check.
+
+**Learning:**
+In Node.js 18+ using the native `fetch` (based on `undici`), it is difficult to separate DNS resolution from the connection establishment while maintaining HTTPS certificate verification (SNI). Unlike `http.Agent` which allows custom lookup functions, `fetch` requires complex `Dispatcher` configuration which may not be accessible or exposed in high-level abstractions.
+
+**Prevention:**
+1.  Hardening the `SSRFValidator` to block all non-standard IP ranges (Multicast, Reserved) is a good defense-in-depth, but does not solve TOCTOU.
+2.  True mitigation requires either:
+    -   Using an HTTP client that supports "connect to IP, verify hostname" (e.g., `curl` style).
+    -   Implementing a custom `Dispatcher` for `undici`.
+    -   Disabling DNS rebinding at the resolver level (infrastructure).
