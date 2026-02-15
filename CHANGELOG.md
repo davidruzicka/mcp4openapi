@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Added profile-defined MCP prompt support (`prompts/list`, `prompts/get`) with prompt schema types, runtime rendering, and HTTP/SDK test coverage.
 - Added DefectDojo read-only profile and smoke test profile for healthcheck, token reports, and metrics endpoints.
+- Added Gemini CLI snippets to HTTP profile index for remote streamable HTTP and local stdio configuration (JSON + CLI).
 
 ### Changed
 - Generic profile test runner now resolves OpenAPI spec from profile `openapi_spec_path` first and only falls back to `openapi.*` convention.

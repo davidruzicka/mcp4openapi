@@ -50,6 +50,10 @@ describe('profile index helpers', () => {
     const jetbrainsLocal = profile.snippets.find(s => s.key === 'jetbrains-local-bearer');
     const claudeLocalJson = profile.snippets.find(s => s.key === 'claude-local-json-bearer');
     const claudeLocalCli = profile.snippets.find(s => s.key === 'claude-local-cli-bearer');
+    const geminiJson = profile.snippets.find(s => s.key === 'gemini-json-bearer');
+    const geminiCli = profile.snippets.find(s => s.key === 'gemini-cli-bearer');
+    const geminiLocalJson = profile.snippets.find(s => s.key === 'gemini-local-json-bearer');
+    const geminiLocalCli = profile.snippets.find(s => s.key === 'gemini-local-cli-bearer');
     const codexToml = profile.snippets.find(s => s.key === 'codex-toml-bearer');
     const codexCli = profile.snippets.find(s => s.key === 'codex-cli-bearer');
     const codexLocalToml = profile.snippets.find(s => s.key === 'codex-local-toml-bearer');
@@ -96,6 +100,20 @@ describe('profile index helpers', () => {
     expect(claudeLocalCli?.format).toBe('cli');
     expect(claudeLocalCli?.content).toContain('claude mcp add -s user __PROFILE_ID__ -- npx -y mcp4openapi --profile __PROFILE_ID__');
     expect(claudeLocalCli?.content).not.toContain('export ');
+    expect(geminiJson?.format).toBe('json');
+    expect(geminiJson?.content).toContain('"mcpServers"');
+    expect(geminiJson?.content).toContain('"httpUrl": "__PROFILE_URL__"');
+    expect(geminiJson?.content).toContain('"Authorization": "Bearer ${GITLAB_TOKEN}"');
+    expect(geminiCli?.format).toBe('cli');
+    expect(geminiCli?.content).toContain('gemini mcp add -s user --transport http __PROFILE_ID__ __PROFILE_URL__');
+    expect(geminiCli?.content).toContain('Authorization: Bearer \\${GITLAB_TOKEN}');
+    expect(geminiLocalJson?.mode).toBe('local');
+    expect(geminiLocalJson?.content).toContain('"mcpServers"');
+    expect(geminiLocalJson?.content).toContain('"command": "npx"');
+    expect(geminiLocalJson?.content).toContain('"GITLAB_TOKEN": "${GITLAB_TOKEN}"');
+    expect(geminiLocalCli?.mode).toBe('local');
+    expect(geminiLocalCli?.format).toBe('cli');
+    expect(geminiLocalCli?.content).toContain('gemini mcp add -s user __PROFILE_ID__ -- npx -y mcp4openapi --profile __PROFILE_ID__');
     expect(codexToml?.format).toBe('toml');
     expect(codexToml?.content).toContain('[mcp_servers.__PROFILE_ID__]');
     expect(codexToml?.content).toContain('transport = "http"');
@@ -203,6 +221,8 @@ describe('profile index helpers', () => {
     const jetbrains = profile.snippets.find(s => s.key === 'jetbrains-query');
     const claudeJson = profile.snippets.find(s => s.key === 'claude-json-query');
     const claudeCli = profile.snippets.find(s => s.key === 'claude-cli-query');
+    const geminiJson = profile.snippets.find(s => s.key === 'gemini-json-query');
+    const geminiCli = profile.snippets.find(s => s.key === 'gemini-cli-query');
     const codexToml = profile.snippets.find(s => s.key === 'codex-toml-query');
 
     expect(profile.mcpUrl).toBe('http://localhost:3003/profile/youtrack/mcp');
@@ -213,6 +233,9 @@ describe('profile index helpers', () => {
     expect(jetbrains?.content).toContain('"url": "__PROFILE_URL__?api_key={$input:yt-token}"');
     expect(claudeJson?.content).toContain('"url": "__PROFILE_URL__?api_key=${YT_TOKEN}"');
     expect(claudeCli?.content).toContain('__PROFILE_URL__?api_key=\\${YT_TOKEN}');
+    expect(geminiJson?.content).toContain('"httpUrl": "__PROFILE_URL__?api_key=${YT_TOKEN}"');
+    expect(geminiJson?.content).not.toContain('"headers"');
+    expect(geminiCli?.content).toContain('gemini mcp add -s user --transport http __PROFILE_ID__ __PROFILE_URL__?api_key=\\${YT_TOKEN}');
     expect(codexToml?.content).toContain('env_vars = ["YT_TOKEN"]');
     expect(codexToml?.content).toContain('url = "__PROFILE_URL__?api_key=${YT_TOKEN}"');
     expect(profile.snippets.find(s => s.key === 'codex-cli-query')).toBeUndefined();

@@ -24,7 +24,7 @@ Generate correct Gemini CLI MCP configuration without mixing formats from other 
 7. When server filtering is required, use Gemini fields:
    - `includeTools` / `excludeTools` on the server entry.
 8. When generating commands for management operations, use Gemini CLI verbs:
-   - `gemini mcp add ...`
+   - `gemini mcp add -s user ...`
    - `gemini mcp list`
    - `gemini mcp remove <name>`
 
@@ -128,7 +128,7 @@ gemini mcp add -s user --transport http custom https://<mcp_server_host>/profile
 
 ### Add streamable HTTP server with query token in URL
 ```bash
-gemini mcp add -s user --transport http custom https://<mcp_server_host>/profile/custom/mcp?token=\${QUERY_TOKEN}"
+gemini mcp add -s user --transport http custom https://<mcp_server_host>/profile/custom/mcp?token=\${QUERY_TOKEN}
 ```
 
 ## Validation Checklist

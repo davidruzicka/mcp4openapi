@@ -294,7 +294,7 @@
 
       function renderSnippets(profile, activeAuth, activeMode) {
         const blocks = [];
-        const order = ['vscode', 'cursor', 'jetbrains', 'claude', 'codex'];
+        const order = ['vscode', 'cursor', 'jetbrains', 'claude', 'gemini', 'codex'];
         const snippets = profile.snippets || [];
         const groups = new Map();
         const isCzech = (i18n.profileLabel || '') === 'Profil';
@@ -324,6 +324,11 @@
             return isCzech
               ? 'Uživatelská (globální) konfigurace je v <code>~/.codex/config.toml</code>.'
               : 'User (global) configuration is in <code>~/.codex/config.toml</code>.';
+          }
+          if (client === 'gemini') {
+            return isCzech
+              ? 'Uživatelská (globální) konfigurace je v <code>~/.gemini/settings.json</code>.'
+              : 'User (global) configuration is in <code>~/.gemini/settings.json</code>.';
           }
           return '';
         };

@@ -34,6 +34,7 @@ interface ProfileIndexI18n {
     vscode: string;
     cursor: string;
     claude: string;
+    gemini: string;
     codex: string;
     jetbrains: string;
     modeRemote: string;
@@ -165,6 +166,7 @@ export function buildProfileIndexI18n(locale: ProfileIndexLocale): ProfileIndexI
         vscode: 'VS Code + Copilot',
         cursor: 'Cursor',
         claude: 'Claude Code',
+        gemini: 'Gemini CLI',
         codex: 'Codex',
         jetbrains: 'JetBrains IDEs + Copilot',
         modeRemote: 'Remote HTTP',
@@ -213,6 +215,7 @@ export function buildProfileIndexI18n(locale: ProfileIndexLocale): ProfileIndexI
       vscode: 'VS Code + Copilot',
       cursor: 'Cursor',
       claude: 'Claude Code',
+      gemini: 'Gemini CLI',
       codex: 'Codex',
       jetbrains: 'JetBrains IDEs + Copilot',
       modeRemote: 'Remote HTTP',
@@ -457,6 +460,22 @@ function buildProfileSnippets(
       format: 'cli',
     });
     snippets.push({
+      key: `gemini-json-${auth.type}`,
+      label: `${labels.snippetLabels.gemini}${suffix}`,
+      content: remoteSnippetContext.geminiJson,
+      authKey,
+      mode: 'remote',
+      format: 'json',
+    });
+    snippets.push({
+      key: `gemini-cli-${auth.type}`,
+      label: `${labels.snippetLabels.gemini}${suffix}`,
+      content: remoteSnippetContext.geminiCli,
+      authKey,
+      mode: 'remote',
+      format: 'cli',
+    });
+    snippets.push({
       key: `codex-toml-${auth.type}`,
       label: `${labels.snippetLabels.codex}${suffix}`,
       content: remoteSnippetContext.codexToml,
@@ -515,6 +534,22 @@ function buildProfileSnippets(
       format: 'cli',
     });
     snippets.push({
+      key: `gemini-local-json-${auth.type}`,
+      label: `${labels.snippetLabels.gemini}${suffix}`,
+      content: localSnippetContext.geminiJson,
+      authKey,
+      mode: 'local',
+      format: 'json',
+    });
+    snippets.push({
+      key: `gemini-local-cli-${auth.type}`,
+      label: `${labels.snippetLabels.gemini}${suffix}`,
+      content: localSnippetContext.geminiCli,
+      authKey,
+      mode: 'local',
+      format: 'cli',
+    });
+    snippets.push({
       key: `codex-local-toml-${auth.type}`,
       label: `${labels.snippetLabels.codex}${suffix}`,
       content: localSnippetContext.codexToml,
@@ -535,8 +570,10 @@ function buildConnectionSnippets(
   jetbrains: string;
   claudeJson: string;
   claudeCli: string;
-    codexToml: string;
-    codexCli: string;
+  geminiJson: string;
+  geminiCli: string;
+  codexToml: string;
+  codexCli: string;
 } {
   const tokenEnv = auth.type === 'none'
     ? undefined
@@ -663,6 +700,8 @@ function buildConnectionSnippets(
     jetbrains: jetbrainsLines.join('\n'),
     claudeJson: buildClaudeJsonSnippet(auth, headerName, cliHeaderValue, claudeUrl),
     claudeCli: buildClaudeSnippet(auth, headerName, cliHeaderValue, claudeUrl),
+    geminiJson: buildGeminiRemoteJsonSnippet(auth, headerName, cliHeaderValue, claudeUrl),
+    geminiCli: buildGeminiRemoteCliSnippet(auth, headerName, cliHeaderValue, claudeUrl),
     codexToml: buildCodexRemoteTomlSnippet(auth, headerName, cliHeaderValue, claudeUrl, tokenEnv),
     codexCli: buildCodexRemoteCliSnippet(auth, headerName, cliHeaderValue, claudeUrl, tokenEnv),
   };
@@ -677,8 +716,10 @@ function buildLocalConnectionSnippets(
   jetbrains: string;
   claudeJson: string;
   claudeCli: string;
-    codexToml: string;
-    codexCli: string;
+  geminiJson: string;
+  geminiCli: string;
+  codexToml: string;
+  codexCli: string;
 } {
   const localEnvVarNames = resolveLocalEnvVarNames(profile, auth);
   const sensitiveEnvVars = localEnvVarNames.filter(isSensitiveEnvVar);
@@ -760,6 +801,8 @@ function buildLocalConnectionSnippets(
     jetbrains: JSON.stringify(jetbrainsConfig, null, 2),
     claudeJson: JSON.stringify(claudeJsonConfig, null, 2),
     claudeCli: buildLocalClaudeSnippet(profile),
+    geminiJson: buildLocalGeminiJsonSnippet(args, claudeEnv),
+    geminiCli: buildLocalGeminiSnippet(profile),
     codexToml: buildCodexLocalTomlSnippet(localEnvVarNames, claudeEnv),
     codexCli: buildLocalCodexSnippet(localEnvVarNames, claudeEnv),
   };
@@ -791,6 +834,11 @@ function buildLocalClaudeSnippet(profile: ListedProfileDetails): string {
   return 'claude mcp add -s user __PROFILE_ID__ -- npx -y mcp4openapi --profile __PROFILE_ID__';
 }
 
+function buildLocalGeminiSnippet(profile: ListedProfileDetails): string {
+  void profile;
+  return 'gemini mcp add -s user __PROFILE_ID__ -- npx -y mcp4openapi --profile __PROFILE_ID__';
+}
+
 function buildLocalCodexSnippet(envVarNames: string[], envMap: Record<string, string>): string {
   const parts = ['codex mcp add __PROFILE_ID__'];
   for (const envVar of envVarNames) {
@@ -800,6 +848,19 @@ function buildLocalCodexSnippet(envVarNames: string[], envMap: Record<string, st
   }
   parts.push('-- npx -y mcp4openapi --profile __PROFILE_ID__');
   return parts.join(' ');
+}
+
+function buildLocalGeminiJsonSnippet(args: string[], env: Record<string, string>): string {
+  const config = {
+    mcpServers: {
+      __PROFILE_ID__: {
+        command: 'npx',
+        args,
+        ...(Object.keys(env).length > 0 ? { env } : {}),
+      },
+    },
+  };
+  return JSON.stringify(config, null, 2);
 }
 
 function buildCodexRemoteCliSnippet(
@@ -934,6 +995,21 @@ function buildClaudeSnippet(
   return lines.join('\n');
 }
 
+function buildGeminiRemoteCliSnippet(
+  auth: RenderAuthMethod,
+  headerName: string,
+  headerValue: string,
+  url: string
+): string {
+  const escapedUrl = escapeEnvExpansionForCli(url);
+  const escapedHeaderValue = escapeEnvExpansionForCli(headerValue);
+  const base = `gemini mcp add -s user --transport http __PROFILE_ID__ ${escapedUrl}`;
+  if (auth.type !== 'oauth' && auth.type !== 'none' && auth.type !== 'query') {
+    return `${base} \\\n  --header "${headerName}: ${escapedHeaderValue}"`;
+  }
+  return base;
+}
+
 function escapeEnvExpansionForCli(value: string): string {
   return value.replace(/\$\{/g, '\\${');
 }
@@ -950,6 +1026,28 @@ function buildClaudeJsonSnippet(
     '    "__PROFILE_ID__": {',
     '      "type": "http",',
     `      "url": "${url}"`,
+  ];
+  if (auth.type !== 'oauth' && auth.type !== 'none' && auth.type !== 'query') {
+    appendComma(lines);
+    lines.push('      "headers": {');
+    lines.push(`        "${headerName}": "${headerValue}"`);
+    lines.push('      }');
+  }
+  lines.push('    }', '  }', '}');
+  return lines.join('\n');
+}
+
+function buildGeminiRemoteJsonSnippet(
+  auth: RenderAuthMethod,
+  headerName: string,
+  headerValue: string,
+  url: string
+): string {
+  const lines: string[] = [
+    '{',
+    '  "mcpServers": {',
+    '    "__PROFILE_ID__": {',
+    `      "httpUrl": "${url}"`,
   ];
   if (auth.type !== 'oauth' && auth.type !== 'none' && auth.type !== 'query') {
     appendComma(lines);
