@@ -891,7 +891,8 @@ function buildCodexRemoteTomlSnippet(
   url: string,
   tokenEnv?: string
 ): string {
-  const envVars = tokenEnv ? [tokenEnv] : [];
+  const includeEnvVars = Boolean(tokenEnv) && auth.type !== 'bearer';
+  const envVars = includeEnvVars && tokenEnv ? [tokenEnv] : [];
   const lines: string[] = [
     '[mcp_servers.__PROFILE_ID__]',
     'transport = "http"',

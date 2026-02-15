@@ -13,6 +13,7 @@ Generate correct Codex MCP snippets without mixing conventions from other client
 ## Rules
 1. For Codex TOML in `[mcp_servers.<name>]` sections:
     - with bearer auth, use `bearer_token_env_var = "<ENV_VAR_NAME>"` - do not encode bearer auth in TOML as `Authorization` header values.
+    - when `bearer_token_env_var` is set, do not duplicate the same variable in `env_vars`.
     - with custom header, use `http_headers = { "Header-Name" = "value" }`.
     - with custom header that uses environment variable as a value, use `env_http_headers = { "Header-Name" = "<ENV_VAR_NAME>" }`.
     - for environment variables mapping from host, use `env_vars =["<ENV_VAR_NAME>", ...]`.
@@ -32,5 +33,6 @@ Generate correct Codex MCP snippets without mixing conventions from other client
 
 ## Validation Checklist
 - Bearer TOML contains `bearer_token_env_var` and no embedded bearer header.
+- Bearer TOML does not duplicate the bearer variable in `env_vars`.
 - Non-bearer custom headers in TOML are emitted via `http_headers`.
 - Snippet tests cover bearer and query/custom-header paths.

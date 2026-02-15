@@ -119,7 +119,7 @@ describe('profile index helpers', () => {
     expect(codexToml?.format).toBe('toml');
     expect(codexToml?.content).toContain('[mcp_servers.__PROFILE_ID__]');
     expect(codexToml?.content).toContain('transport = "http"');
-    expect(codexToml?.content).toContain('env_vars = ["GITLAB_TOKEN"]');
+    expect(codexToml?.content).not.toContain('env_vars = ["GITLAB_TOKEN"]');
     expect(codexToml?.content).toContain('bearer_token_env_var = "GITLAB_TOKEN"');
     expect(codexToml?.content).not.toContain('Authorization =');
     expect(codexCli?.format).toBe('cli');
