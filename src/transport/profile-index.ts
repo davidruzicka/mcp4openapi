@@ -946,9 +946,7 @@ function buildCodexLocalTomlSnippet(
 }
 
 function resolveLocalEnvVarNames(profile: ListedProfileDetails, auth: RenderAuthMethod): string[] {
-  if (auth.type !== 'oauth') {
-    return [...profile.envVars];
-  }
+  void auth;
   const oauthOnly = new Set(profile.oauthEnvVars || []);
   return profile.envVars.filter(envVar => !oauthOnly.has(envVar));
 }

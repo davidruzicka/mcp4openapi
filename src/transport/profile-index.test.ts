@@ -312,6 +312,55 @@ describe('profile index helpers', () => {
     expect(codexLocalToml?.content).not.toContain('MCP4_OAUTH_CLIENT_SECRET');
   });
 
+  it('ignores oauth-only env vars in local stdio snippets for non-oauth auth too', () => {
+    const profiles: ListedProfileDetails[] = [
+      {
+        profileId: 'gitlab-mixed-auth',
+        profileName: 'gitlab-mixed-auth',
+        profileAliases: [],
+        description: 'GitLab mixed auth',
+        envVars: ['MCP4_OAUTH_CLIENT_ID', 'MCP4_OAUTH_CLIENT_SECRET', 'GITLAB_TOKEN', 'GITLAB_API_BASE_URL'],
+        oauthEnvVars: ['MCP4_OAUTH_CLIENT_ID', 'MCP4_OAUTH_CLIENT_SECRET'],
+        authMethods: [
+          {
+            type: 'bearer',
+            valueFromEnv: 'GITLAB_TOKEN',
+          },
+        ],
+        apiBaseUrl: {
+          valueFromEnv: 'GITLAB_API_BASE_URL',
+          defaultValue: 'https://gitlab.com/api/v4',
+        },
+      },
+    ];
+
+    const { payload } = buildProfileIndexPayload(profiles, 'http://localhost:3003', 'en');
+    const [profile] = payload.profiles;
+
+    const vscodeLocal = profile.snippets.find(s => s.key === 'vscode-local-bearer');
+    const cursorLocal = profile.snippets.find(s => s.key === 'cursor-local-bearer');
+    const geminiLocalJson = profile.snippets.find(s => s.key === 'gemini-local-json-bearer');
+    const codexLocalToml = profile.snippets.find(s => s.key === 'codex-local-toml-bearer');
+
+    expect(vscodeLocal?.content).toContain('"GITLAB_TOKEN": "${input:gitlab-token}"');
+    expect(vscodeLocal?.content).toContain('"GITLAB_API_BASE_URL": "https://gitlab.com/api/v4"');
+    expect(vscodeLocal?.content).not.toContain('MCP4_OAUTH_CLIENT_ID');
+    expect(vscodeLocal?.content).not.toContain('MCP4_OAUTH_CLIENT_SECRET');
+
+    expect(cursorLocal?.content).toContain('"GITLAB_TOKEN": "${env:GITLAB_TOKEN}"');
+    expect(cursorLocal?.content).not.toContain('MCP4_OAUTH_CLIENT_ID');
+    expect(cursorLocal?.content).not.toContain('MCP4_OAUTH_CLIENT_SECRET');
+
+    expect(geminiLocalJson?.content).toContain('"GITLAB_TOKEN": "${GITLAB_TOKEN}"');
+    expect(geminiLocalJson?.content).not.toContain('MCP4_OAUTH_CLIENT_ID');
+    expect(geminiLocalJson?.content).not.toContain('MCP4_OAUTH_CLIENT_SECRET');
+
+    expect(codexLocalToml?.content).toContain('env_vars = ["GITLAB_TOKEN"]');
+    expect(codexLocalToml?.content).toContain('GITLAB_API_BASE_URL = "https://gitlab.com/api/v4"');
+    expect(codexLocalToml?.content).not.toContain('MCP4_OAUTH_CLIENT_ID');
+    expect(codexLocalToml?.content).not.toContain('MCP4_OAUTH_CLIENT_SECRET');
+  });
+
   it('labels custom headers without duplicate prefix', () => {
     const profiles: ListedProfileDetails[] = [
       {
