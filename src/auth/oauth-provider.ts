@@ -313,12 +313,21 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
   }
 
   /**
-   * Check if redirect URI host is allowed
-   * Prevents open redirect vulnerabilities (CWE-601)
+   * Check if redirect URI host AND scheme are allowed
+   * Prevents open redirect vulnerabilities (CWE-601) and XSS (javascript: scheme)
    */
   private isAllowedRedirectHost(redirectUri: string): boolean {
     try {
       const url = new URL(redirectUri);
+
+      // Security: Validate protocol to prevent javascript: or data: schemes
+      // We block dangerous schemes that could lead to XSS or local file access
+      const protocol = url.protocol.toLowerCase();
+      const dangerousSchemes = ['javascript:', 'data:', 'vbscript:', 'file:'];
+      if (dangerousSchemes.includes(protocol)) {
+        return false;
+      }
+
       const hostname = url.hostname;
       
       // Default to localhost only if not configured
@@ -564,11 +573,11 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
 
     // Validate redirect host against allowlist to prevent open redirect
     if (!this.isAllowedRedirectHost(params.redirectUri)) {
-      this.logger.error('Redirect URI host not allowed', undefined, {
+      this.logger.error('Redirect URI not allowed', undefined, {
         providedUri: params.redirectUri,
         allowedHosts: this.config.allowed_redirect_hosts || ['localhost', '127.0.0.1'],
       });
-      throw new Error('Redirect URI host not allowed');
+      throw new Error('Redirect URI not allowed');
     }
 
     const stateToken = randomUUID();
@@ -686,11 +695,11 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
 
         // Re-validate redirect URI host + registration before redirect (defense-in-depth)
         if (!this.isAllowedRedirectHost(storedState.clientRedirectUri)) {
-            this.logger.error('Redirect URI host not allowed (callback)', undefined, {
+            this.logger.error('Redirect URI not allowed (callback)', undefined, {
                 storedUri: storedState.clientRedirectUri,
                 allowedHosts: this.config.allowed_redirect_hosts || ['localhost', '127.0.0.1'],
             });
-            res.status(400).send('Redirect URI host not allowed');
+            res.status(400).send('Redirect URI not allowed');
             return;
         }
         if (client.redirect_uris && client.redirect_uris.length > 0 && !client.redirect_uris.includes(storedState.clientRedirectUri)) {
