@@ -101,3 +101,16 @@ In Node.js 18+ using the native `fetch` (based on `undici`), it is difficult to 
     -   Using an HTTP client that supports "connect to IP, verify hostname" (e.g., `curl` style).
     -   Implementing a custom `Dispatcher` for `undici`.
     -   Disabling DNS rebinding at the resolver level (infrastructure).
+
+## 2026-02-17 - [HIGH] XSS via OAuth Redirect Scheme
+
+**Vulnerability:**
+The `ExternalOAuthProvider` validated redirect URIs by checking the hostname against an allowlist (typically including `localhost`), but failed to validate the URI scheme (protocol). This allowed an attacker to supply a redirect URI like `javascript://localhost/%0aalert(1)`. Since the hostname (`localhost`) matched the allowlist, the server would redirect the user to this malicious URI, triggering Cross-Site Scripting (XSS).
+
+**Learning:**
+Hostname validation is insufficient for URL security because it ignores the protocol. Many dangerous schemes (like `javascript:`, `data:`, `vbscript:`) can have valid or empty hostnames that pass standard hostname checks. `new URL('javascript://localhost').hostname` returns `'localhost'`, which is misleadingly safe.
+
+**Prevention:**
+1.  Always validate the `protocol` of a URL in addition to the hostname.
+2.  Explicitly block dangerous schemes (`javascript:`, `data:`, `vbscript:`, `file:`).
+3.  Prefer an allowlist of safe schemes (`http:`, `https:`) and known application schemes (e.g., `vscode:`, `cursor:`) over a blocklist if possible, but definitely block known bad ones.

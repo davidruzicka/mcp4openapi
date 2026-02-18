@@ -691,7 +691,74 @@ describe('ExternalOAuthProvider', () => {
           state: 'state123',
           scopes: ['api'],
         }, mockRes)
-      ).rejects.toThrow('Redirect URI host not allowed');
+      ).rejects.toThrow('Redirect URI not allowed');
+    });
+
+    it('should throw error when redirect scheme is not allowed', async () => {
+      const client: OAuthClientInformationFull = {
+        client_id: 'test-client-id',
+        redirect_uris: [], // Empty to bypass registration check (like mcp-proxy-client)
+        grant_types: ['authorization_code'],
+        response_types: ['code'],
+      };
+
+      const mockRes = {
+        redirect: vi.fn(),
+      } as unknown as Response;
+
+      await expect(
+        provider.authorize(client, {
+          redirectUri: 'javascript:alert(1)',
+          codeChallenge: 'challenge',
+          state: 'state123',
+          scopes: ['api'],
+        }, mockRes)
+      ).rejects.toThrow('Redirect URI not allowed');
+
+      await expect(
+        provider.authorize(client, {
+          redirectUri: 'data:text/html,base64,PHNjcmlwdD5hbGVydCgxKTwvc2NyaXB0Pg==',
+          codeChallenge: 'challenge',
+          state: 'state123',
+          scopes: ['api'],
+        }, mockRes)
+      ).rejects.toThrow('Redirect URI not allowed');
+
+      await expect(
+        provider.authorize(client, {
+          redirectUri: 'vbscript:msgbox("hello")',
+          codeChallenge: 'challenge',
+          state: 'state123',
+          scopes: ['api'],
+        }, mockRes)
+      ).rejects.toThrow('Redirect URI not allowed');
+
+      await expect(
+        provider.authorize(client, {
+          redirectUri: 'file:///etc/passwd',
+          codeChallenge: 'challenge',
+          state: 'state123',
+          scopes: ['api'],
+        }, mockRes)
+      ).rejects.toThrow('Redirect URI not allowed');
+
+      await expect(
+        provider.authorize(client, {
+          redirectUri: 'blob:https://localhost/12345678-1234-1234-1234-123456789abc',
+          codeChallenge: 'challenge',
+          state: 'state123',
+          scopes: ['api'],
+        }, mockRes)
+      ).rejects.toThrow('Redirect URI not allowed');
+
+      await expect(
+        provider.authorize(client, {
+          redirectUri: 'about:blank',
+          codeChallenge: 'challenge',
+          state: 'state123',
+          scopes: ['api'],
+        }, mockRes)
+      ).rejects.toThrow('Redirect URI not allowed');
     });
 
     it('should redirect to authorization endpoint with correct params', async () => {
@@ -1006,7 +1073,7 @@ describe('ExternalOAuthProvider', () => {
       await provider.handleCallback(mockReq, mockRes);
 
       expect(mockRes.status).toHaveBeenCalledWith(400);
-      expect(mockRes.send).toHaveBeenCalledWith('Redirect URI host not allowed');
+      expect(mockRes.send).toHaveBeenCalledWith('Redirect URI not allowed');
       expect(mockRes.redirect).not.toHaveBeenCalled();
     });
 
@@ -1527,7 +1594,7 @@ describe('ExternalOAuthProvider', () => {
         redirect: vi.fn(),
       } as any;
 
-      // Setup state with invalid protocol - will fail host validation first
+      // Setup state with invalid protocol - will fail protocol validation
       (provider as any).stateStore.set('valid-state', {
         clientRedirectUri: 'javascript:alert(1)',
         codeChallenge: 'challenge',
@@ -1546,8 +1613,8 @@ describe('ExternalOAuthProvider', () => {
       await provider.handleCallback(mockReq, mockRes);
 
       expect(mockRes.status).toHaveBeenCalledWith(400);
-      // Host validation catches this before protocol check
-      expect(mockRes.send).toHaveBeenCalledWith('Redirect URI host not allowed');
+      // Protocol validation catches this
+      expect(mockRes.send).toHaveBeenCalledWith('Redirect URI not allowed');
     });
 
     it('should return 400 when stored redirect URI no longer registered', async () => {
