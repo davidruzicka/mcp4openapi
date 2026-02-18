@@ -741,6 +741,24 @@ describe('ExternalOAuthProvider', () => {
           scopes: ['api'],
         }, mockRes)
       ).rejects.toThrow('Redirect URI not allowed');
+
+      await expect(
+        provider.authorize(client, {
+          redirectUri: 'blob:https://localhost/12345678-1234-1234-1234-123456789abc',
+          codeChallenge: 'challenge',
+          state: 'state123',
+          scopes: ['api'],
+        }, mockRes)
+      ).rejects.toThrow('Redirect URI not allowed');
+
+      await expect(
+        provider.authorize(client, {
+          redirectUri: 'about:blank',
+          codeChallenge: 'challenge',
+          state: 'state123',
+          scopes: ['api'],
+        }, mockRes)
+      ).rejects.toThrow('Redirect URI not allowed');
     });
 
     it('should redirect to authorization endpoint with correct params', async () => {

@@ -20,6 +20,7 @@
   - [11. Reduce usage of any casts in HTTP transport](#11-reduce-usage-of-any-casts-in-http-transport)
   - [12. Avoid HTTP profile hint collisions across shared IPs](#12-avoid-http-profile-hint-collisions-across-shared-ips)
   - [13. Prevent unbounded growth of HTTP profile hint cache](#13-prevent-unbounded-growth-of-http-profile-hint-cache)
+  - [14. Consider strict OAuth redirect scheme allowlist](#14-consider-strict-oauth-redirect-scheme-allowlist)
 
 ## P1: Correctness and Core Features
 
@@ -307,3 +308,21 @@ Prevent multiple identical in-flight requests (thundering herd):
 - `README.md` - document any new env vars or limits
 
 **Estimated effort**: 1-2 hours
+
+### 14. Consider strict OAuth redirect scheme allowlist
+**Current**: `ExternalOAuthProvider` uses a denylist for dangerous redirect URI schemes (`javascript:`, `data:`, `vbscript:`, `file:`, `blob:`, `about:`) while keeping compatibility with custom client schemes.
+
+**Goal**: Evaluate migrating to a strict allowlist-based scheme policy for stronger security guarantees.
+
+**Implementation options**:
+- Add `allowed_redirect_schemes` to OAuth profile config with secure defaults (`http`, `https`) and explicit custom scheme opt-in.
+- Keep denylist as fallback behavior during migration to avoid breaking existing clients.
+- Add compatibility tests for common deep-link clients and document migration guidance.
+
+**Files to modify**:
+- `src/types/profile.ts` - OAuth config type extension
+- `src/auth/oauth-provider.ts` - scheme validation logic
+- `src/auth/oauth-provider.test.ts` - allowlist and migration tests
+- `docs/OAUTH.md` and `README.md` - configuration guidance
+
+**Estimated effort**: 2-4 hours
