@@ -714,6 +714,33 @@ describe('ExternalOAuthProvider', () => {
           scopes: ['api'],
         }, mockRes)
       ).rejects.toThrow('Redirect URI not allowed');
+
+      await expect(
+        provider.authorize(client, {
+          redirectUri: 'data:text/html,base64,PHNjcmlwdD5hbGVydCgxKTwvc2NyaXB0Pg==',
+          codeChallenge: 'challenge',
+          state: 'state123',
+          scopes: ['api'],
+        }, mockRes)
+      ).rejects.toThrow('Redirect URI not allowed');
+
+      await expect(
+        provider.authorize(client, {
+          redirectUri: 'vbscript:msgbox("hello")',
+          codeChallenge: 'challenge',
+          state: 'state123',
+          scopes: ['api'],
+        }, mockRes)
+      ).rejects.toThrow('Redirect URI not allowed');
+
+      await expect(
+        provider.authorize(client, {
+          redirectUri: 'file:///etc/passwd',
+          codeChallenge: 'challenge',
+          state: 'state123',
+          scopes: ['api'],
+        }, mockRes)
+      ).rejects.toThrow('Redirect URI not allowed');
     });
 
     it('should redirect to authorization endpoint with correct params', async () => {

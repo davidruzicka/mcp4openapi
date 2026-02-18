@@ -323,7 +323,7 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
       // Security: Validate protocol to prevent javascript: or data: schemes
       // We block dangerous schemes that could lead to XSS or local file access
       const protocol = url.protocol.toLowerCase();
-      const dangerousSchemes = ['javascript:', 'data:', 'vbscript:', 'file:'];
+      const dangerousSchemes = ['javascript:', 'data:', 'vbscript:', 'file:', 'blob:', 'about:'];
       if (dangerousSchemes.includes(protocol)) {
         return false;
       }
