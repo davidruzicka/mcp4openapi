@@ -101,3 +101,16 @@ In Node.js 18+ using the native `fetch` (based on `undici`), it is difficult to 
     -   Using an HTTP client that supports "connect to IP, verify hostname" (e.g., `curl` style).
     -   Implementing a custom `Dispatcher` for `undici`.
     -   Disabling DNS rebinding at the resolver level (infrastructure).
+
+## 2026-02-18 - [HIGH] XSS via OAuth Open Redirect
+
+**Vulnerability:**
+The `ExternalOAuthProvider` allowed arbitrary schemes in `redirect_uri` (e.g., `javascript://localhost/...`) because `isAllowedRedirectHost` only validated the hostname. Since the internal `mcp-proxy-client` (used for VS Code compatibility) is pre-registered with empty `redirect_uris`, it relies entirely on runtime validation, which was insufficient.
+
+**Learning:**
+URL validation must check BOTH the hostname and the protocol/scheme. `new URL('javascript://localhost')` parses with hostname `localhost`, bypassing hostname-only allowlists.
+
+**Prevention:**
+1.  Explicitly validate `url.protocol` in all URL validation logic.
+2.  Block dangerous schemes like `javascript:`, `vbscript:`, `data:` at the framework level.
+3.  Prefer allowlisting schemes (e.g., `http:`, `https:`, `vscode:`) over blocklisting if possible, though blocklisting is a minimum requirement.

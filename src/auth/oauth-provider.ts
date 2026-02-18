@@ -319,6 +319,18 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
   private isAllowedRedirectHost(redirectUri: string): boolean {
     try {
       const url = new URL(redirectUri);
+
+      // Block dangerous protocols (XSS)
+      // javascript: and vbscript: can execute code
+      // data: can be used for phishing/XSS
+      if (
+        url.protocol === 'javascript:' ||
+        url.protocol === 'vbscript:' ||
+        url.protocol === 'data:'
+      ) {
+        return false;
+      }
+
       const hostname = url.hostname;
       
       // Default to localhost only if not configured
