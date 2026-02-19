@@ -82,6 +82,9 @@ describe('HttpTransport unit', () => {
       expect(getFilteringHeaderValue({ headers: { 'x-mcp4-params': ['project_id=1'] } })).toBe(
         'project_id=1'
       );
+      expect(
+        getFilteringHeaderValue({ headers: { 'x-mcp4-params': ['project_id=1,group_id=2'] } })
+      ).toBe('project_id=1,group_id=2');
     });
 
     it('exposes session filtering values', () => {

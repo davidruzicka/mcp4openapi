@@ -121,6 +121,62 @@ describe('http-tenant-config', () => {
     expect(() => buildTenantIndexForProfile(raw as any, profileContext, logger)).toThrow(/requires oauth auth_mode/i);
   });
 
+  it('filters inherited oauth auth when tenant auth_mode is token', () => {
+    const mixedProfileContext: HttpProfileContext = {
+      profileId: 'default',
+      baseUrl: 'https://api.default.example.com',
+      oauthConfig: {
+        authorization_endpoint: 'https://auth.example.com/oauth/authorize',
+        token_endpoint: 'https://auth.example.com/oauth/token',
+        client_id: 'oauth-client',
+        client_secret: 'oauth-secret',
+      },
+      authConfigs: [
+        { type: 'oauth' },
+        { type: 'custom-header', header_name: 'X-Tenant-Token', value_from_env: 'TENANT_TOKEN' },
+      ],
+    };
+
+    const raw = {
+      version: 1,
+      tenants: [
+        { tenant_id: 'team-a', api_base_url: 'https://team-a.example.com/api', auth_mode: 'token' as const },
+      ],
+    };
+
+    const index = buildTenantIndexForProfile(raw as any, mixedProfileContext, logger);
+    const resolved = resolveTenantFromHeaders(index, 'team-a', undefined);
+    expect(resolved?.tenantAuthConfigs).toEqual([
+      { type: 'custom-header', header_name: 'X-Tenant-Token', value_from_env: 'TENANT_TOKEN' },
+    ]);
+    expect(resolved?.tenantOAuthConfig).toBeUndefined();
+  });
+
+  it('uses profile oauth config for oauth auth_mode when interceptor config is inherited', () => {
+    const oauthProfileContext: HttpProfileContext = {
+      profileId: 'default',
+      baseUrl: 'https://api.default.example.com',
+      oauthConfig: {
+        authorization_endpoint: 'https://auth.example.com/oauth/authorize',
+        token_endpoint: 'https://auth.example.com/oauth/token',
+        client_id: 'oauth-client',
+        client_secret: 'oauth-secret',
+      },
+      authConfigs: [{ type: 'oauth' }],
+    };
+    const raw = {
+      version: 1,
+      tenants: [
+        { tenant_id: 'team-a', api_base_url: 'https://team-a.example.com/api', auth_mode: 'oauth' as const },
+      ],
+    };
+
+    const index = buildTenantIndexForProfile(raw as any, oauthProfileContext, logger);
+    const resolved = resolveTenantFromHeaders(index, 'team-a', undefined);
+    expect(resolved?.tenantAuthConfigs).toEqual([{ type: 'oauth' }]);
+    expect(resolved?.tenantOAuthConfig?.authorization_endpoint).toBe('https://auth.example.com/oauth/authorize');
+  });
+
   it('fails on invalid tenant id and insecure scheme by default', () => {
     const invalidId = {
       version: 1,

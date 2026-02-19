@@ -286,6 +286,170 @@ describeIfListen('HttpTransport', () => {
     });
   });
 
+  describe('tenant auth resolution', () => {
+    afterEach(() => {
+      delete process.env.MCP4_HTTP_TENANTS_JSON;
+    });
+
+    it('does not trigger OAuth challenge when tenant auth_mode is token in mixed-auth profile', async () => {
+      process.env.MCP4_HTTP_TENANTS_JSON = JSON.stringify({
+        version: 1,
+        tenants: [
+          {
+            tenant_id: 'team-token',
+            default: true,
+            api_base_url: 'https://team-token.example.com/api',
+            auth_mode: 'token',
+          },
+        ],
+      });
+
+      const tenantTransport = new HttpTransport(
+        {
+          host: '127.0.0.1',
+          port: 0,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: false,
+          metricsPath: '/metrics',
+          oauthConfig: {
+            authorization_endpoint: 'https://auth.example.com/oauth/authorize',
+            token_endpoint: 'https://auth.example.com/oauth/token',
+            client_id: 'oauth-client',
+            client_secret: 'oauth-secret',
+            scopes: ['api'],
+          },
+          authConfigs: [
+            {
+              type: 'oauth',
+              oauth_config: {
+                authorization_endpoint: 'https://auth.example.com/oauth/authorize',
+                token_endpoint: 'https://auth.example.com/oauth/token',
+                client_id: 'oauth-client',
+                client_secret: 'oauth-secret',
+                scopes: ['api'],
+              },
+            },
+            { type: 'custom-header', header_name: 'X-Profile-Token' },
+          ],
+          baseUrl: 'https://default.example.com/api',
+        },
+        logger,
+      );
+      tenantTransport.setMessageHandler(async () => ({ result: { ok: true } }));
+      const tenantApp = (tenantTransport as any).app;
+
+      const response = await request(tenantApp)
+        .post('/mcp')
+        .set('Accept', 'application/json')
+        .set('Content-Type', 'application/json')
+        .set('X-Mcp4-Tenant-Id', 'team-token')
+        .send({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} });
+
+      expect(response.status).toBe(401);
+      expect(response.headers['www-authenticate']).toBeUndefined();
+      expect(response.body.message).toBe('Authentication required');
+
+      await tenantTransport.stop();
+    });
+
+    it('accepts tenant-specific custom-header auth during initialize', async () => {
+      process.env.MCP4_HTTP_TENANTS_JSON = JSON.stringify({
+        version: 1,
+        tenants: [
+          {
+            tenant_id: 'team-custom',
+            default: true,
+            api_base_url: 'https://team-custom.example.com/api',
+            auth_mode: 'token',
+            auth: { type: 'custom-header', header_name: 'X-Tenant-Token' },
+          },
+        ],
+      });
+
+      const tenantTransport = new HttpTransport(
+        {
+          host: '127.0.0.1',
+          port: 0,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: false,
+          metricsPath: '/metrics',
+          authConfigs: [{ type: 'custom-header', header_name: 'X-Profile-Token' }],
+          baseUrl: 'https://default.example.com/api',
+        },
+        logger,
+      );
+      tenantTransport.setMessageHandler(async () => ({ result: { ok: true } }));
+      const tenantApp = (tenantTransport as any).app;
+
+      const response = await request(tenantApp)
+        .post('/mcp')
+        .set('Accept', 'application/json')
+        .set('Content-Type', 'application/json')
+        .set('X-Mcp4-Tenant-Id', 'team-custom')
+        .set('X-Tenant-Token', 'tenant-header-token')
+        .send({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} });
+
+      expect(response.status).toBe(200);
+      const sessionId = response.headers['mcp-session-id'];
+      expect(sessionId).toBeDefined();
+      expect(tenantTransport.getSessionToken('default', sessionId)).toBe('tenant-header-token');
+
+      await tenantTransport.stop();
+    });
+
+    it('prefers tenant custom-header over profile custom-header when both are present', async () => {
+      process.env.MCP4_HTTP_TENANTS_JSON = JSON.stringify({
+        version: 1,
+        tenants: [
+          {
+            tenant_id: 'team-custom',
+            default: true,
+            api_base_url: 'https://team-custom.example.com/api',
+            auth_mode: 'token',
+            auth: { type: 'custom-header', header_name: 'X-Tenant-Token' },
+          },
+        ],
+      });
+
+      const tenantTransport = new HttpTransport(
+        {
+          host: '127.0.0.1',
+          port: 0,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: false,
+          metricsPath: '/metrics',
+          authConfigs: [{ type: 'custom-header', header_name: 'X-Profile-Token' }],
+          baseUrl: 'https://default.example.com/api',
+        },
+        logger,
+      );
+      tenantTransport.setMessageHandler(async () => ({ result: { ok: true } }));
+      const tenantApp = (tenantTransport as any).app;
+
+      const response = await request(tenantApp)
+        .post('/mcp')
+        .set('Accept', 'application/json')
+        .set('Content-Type', 'application/json')
+        .set('X-Mcp4-Tenant-Id', 'team-custom')
+        .set('X-Profile-Token', 'profile-token')
+        .set('X-Tenant-Token', 'tenant-token')
+        .send({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} });
+
+      expect(response.status).toBe(200);
+      const sessionId = response.headers['mcp-session-id'];
+      expect(sessionId).toBeDefined();
+      expect(tenantTransport.getSessionToken('default', sessionId)).toBe('tenant-token');
+
+      await tenantTransport.stop();
+    });
+  });
+
   describe('DNS rebinding protection with localhost host config', () => {
     let localTransport: HttpTransport;
     let localApp: Express;
@@ -2477,6 +2641,45 @@ describeIfListen('HttpTransport', () => {
       const sessionId = (transport as any).createSession(profileState, 'access-token', 'refresh-token');
       const result = await (transport as any).refreshAccessToken('default', sessionId);
       expect(result).toBe(false);
+    });
+
+    it('reuses tenant OAuth provider instance per session and clears it on session destroy', () => {
+      const profileState = createProfileState(transport as any);
+      const tenantOAuthConfig = {
+        authorization_endpoint: 'https://auth.example.com/oauth/authorize',
+        token_endpoint: 'https://auth.example.com/oauth/token',
+        client_id: 'tenant-client',
+        client_secret: 'tenant-secret',
+      };
+      const sessionId = (transport as any).createSession(
+        profileState,
+        'access-token',
+        'refresh-token',
+        undefined,
+        ['api'],
+        'tenant-client',
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        {
+          tenantId: 'team-oauth',
+          tenantBaseUrl: 'https://team-oauth.example.com/api',
+          tenantAuthMode: 'oauth',
+          tenantOAuthConfig,
+          tenantAuthConfigs: [{ type: 'oauth', oauth_config: tenantOAuthConfig }],
+        },
+      );
+      const session = profileState.sessions.get(sessionId);
+      expect(session).toBeDefined();
+
+      const firstProvider = (transport as any).getOAuthProviderForSession(profileState, session);
+      const secondProvider = (transport as any).getOAuthProviderForSession(profileState, session);
+      expect(firstProvider).toBe(secondProvider);
+      expect((profileState as any).tenantOAuthProvidersBySessionId.get(sessionId)).toBe(firstProvider);
+
+      (transport as any).destroySession(profileState, sessionId);
+      expect((profileState as any).tenantOAuthProvidersBySessionId.has(sessionId)).toBe(false);
     });
 
     it('should handle token refresh without expires_in', async () => {

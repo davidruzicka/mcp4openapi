@@ -10,6 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Added HTTP tenant session override support with allowlisted tenant selectors (`X-Mcp4-Tenant-Id`, `X-Mcp4-Api-Base-Url`), session immutability checks, tenant config validation, and tenant-aware session HTTP client routing.
 
+### Fixed
+- Fixed tenant auth-mode resolution and tenant custom-header extraction order in HTTP initialize flow, restored `X-Mcp4-Params` single-array parsing, and reused tenant OAuth provider state across refreshes with session-scoped cleanup.
+
 ## [0.4.0] - 2026-02-16
 
 ### Added

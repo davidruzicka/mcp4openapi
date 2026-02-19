@@ -1,7 +1,7 @@
 import fs from 'fs';
 import type { Logger } from '../core/logger.js';
 import { ConfigurationError, ValidationError } from '../core/errors.js';
-import type { AuthInterceptor } from '../types/profile.js';
+import type { AuthInterceptor, OAuthConfig } from '../types/profile.js';
 import type {
   HttpTenantIndex,
   HttpTenantsConfig,
@@ -63,6 +63,13 @@ function getEffectiveAuth(tenantAuth: AuthInterceptor | AuthInterceptor[] | unde
   return profileAuth || [];
 }
 
+function filterAuthConfigsByMode(authMode: TenantAuthMode, authConfigs: AuthInterceptor[]): AuthInterceptor[] {
+  if (authMode === 'oauth') {
+    return authConfigs.filter((config) => config.type === 'oauth');
+  }
+  return authConfigs.filter((config) => config.type !== 'oauth');
+}
+
 function validateAuthMode(authMode: TenantAuthMode, authConfigs: AuthInterceptor[], tenantId: string): void {
   const hasOAuth = authConfigs.some((config) => config.type === 'oauth');
   const hasToken = authConfigs.some((config) => config.type !== 'oauth');
@@ -76,6 +83,32 @@ function validateAuthMode(authMode: TenantAuthMode, authConfigs: AuthInterceptor
   }
 }
 
+interface EffectiveTenantAuthContext {
+  authConfigs: AuthInterceptor[];
+  oauthConfig?: OAuthConfig;
+}
+
+export function resolveEffectiveTenantAuthContext(
+  authMode: TenantAuthMode,
+  tenantAuth: AuthInterceptor | AuthInterceptor[] | undefined,
+  profileAuth: AuthInterceptor[] | undefined,
+  profileOauthConfig: OAuthConfig | undefined,
+  tenantId: string,
+): EffectiveTenantAuthContext {
+  const inheritedAuthConfigs = getEffectiveAuth(tenantAuth, profileAuth);
+  validateAuthMode(authMode, inheritedAuthConfigs, tenantId);
+  const authConfigs = filterAuthConfigsByMode(authMode, inheritedAuthConfigs);
+  const oauthConfig = authMode === 'oauth'
+    ? authConfigs.find((config) => config.type === 'oauth')?.oauth_config || profileOauthConfig
+    : undefined;
+
+  if (authMode === 'oauth' && !oauthConfig) {
+    throw new ValidationError(`Tenant '${tenantId}' requires oauth auth_mode but no oauth configuration is available.`);
+  }
+
+  return { authConfigs, oauthConfig };
+}
+
 function buildResolvedContext(
   tenant: HttpTenantsConfig['tenants'][number],
   profileContext: HttpProfileContext,
@@ -84,17 +117,20 @@ function buildResolvedContext(
     throw new ValidationError(`Invalid tenant_id '${tenant.tenant_id}'.`);
   }
 
-  const tenantAuthConfigs = getEffectiveAuth(tenant.auth, profileContext.authConfigs);
-  validateAuthMode(tenant.auth_mode, tenantAuthConfigs, tenant.tenant_id);
-
-  const oauthConfig = tenantAuthConfigs.find((config) => config.type === 'oauth')?.oauth_config;
+  const effectiveAuthContext = resolveEffectiveTenantAuthContext(
+    tenant.auth_mode,
+    tenant.auth,
+    profileContext.authConfigs,
+    profileContext.oauthConfig,
+    tenant.tenant_id,
+  );
 
   return {
     tenantId: tenant.tenant_id,
     tenantBaseUrl: normalizeBaseUrl(tenant.api_base_url),
     tenantAuthMode: tenant.auth_mode,
-    tenantAuthConfigs,
-    tenantOAuthConfig: oauthConfig,
+    tenantAuthConfigs: effectiveAuthContext.authConfigs,
+    tenantOAuthConfig: tenant.auth_mode === 'oauth' ? effectiveAuthContext.oauthConfig : undefined,
   };
 }
 
