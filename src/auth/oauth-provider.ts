@@ -39,12 +39,36 @@ import { parseOAuthMetadataEndpoints } from './oauth-metadata.js';
  */
 export class InMemoryClientsStore implements OAuthRegisteredClientsStore {
   private clients = new Map<string, OAuthClientInformationFull>();
+  private readonly MAX_CLIENTS = 1000;
 
   async getClient(clientId: string): Promise<OAuthClientInformationFull | undefined> {
     return this.clients.get(clientId);
   }
 
   async registerClient(clientMetadata: OAuthClientInformationFull): Promise<OAuthClientInformationFull> {
+    // Only enforce limit for new clients
+    if (!this.clients.has(clientMetadata.client_id)) {
+      // Prevent unbounded growth (DoS protection)
+      if (this.clients.size >= this.MAX_CLIENTS) {
+        // Evict oldest dynamic client (prefixed with mcp-client-)
+        // Static clients (mcp-proxy-client, configured client_id) should be preserved
+        let evicted = false;
+        for (const [id] of this.clients) {
+          if (id.startsWith('mcp-client-')) {
+            this.clients.delete(id);
+            evicted = true;
+            break;
+          }
+        }
+
+        // If no dynamic client found to evict (unlikely), force evict oldest to respect limit
+        if (!evicted && this.clients.size >= this.MAX_CLIENTS) {
+          const firstKey = this.clients.keys().next().value;
+          if (firstKey) this.clients.delete(firstKey);
+        }
+      }
+    }
+
     this.clients.set(clientMetadata.client_id, clientMetadata);
     return clientMetadata;
   }
