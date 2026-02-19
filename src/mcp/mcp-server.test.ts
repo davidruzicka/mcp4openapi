@@ -401,6 +401,68 @@ describe('MCPServer', () => {
     });
   });
 
+
+  describe('session tenant client overrides', () => {
+    it('uses tenant base URL and tenant auth configs for session HTTP client', async () => {
+      const specPath = path.join(process.cwd(), 'profiles/gitlab/openapi.yaml');
+      await server.initialize(specPath);
+
+      const getOrCreateSessionClient = vi.fn().mockReturnValue({});
+      (server as any).httpClientFactory = {
+        hasGlobalClient: () => true,
+        getGlobalClient: () => ({}),
+        getOrCreateSessionClient,
+      };
+      (server as any).httpTransport = {
+        ensureValidSessionToken: vi.fn().mockResolvedValue(true),
+        getSessionToken: vi.fn().mockReturnValue('session-token'),
+        getSessionTenantContext: vi.fn().mockReturnValue({
+          tenantId: 'team-a',
+          tenantBaseUrl: 'https://team-a.example.com/api',
+          tenantAuthConfigs: [{ type: 'bearer', value_from_env: 'TEAM_A_TOKEN' }],
+        }),
+      };
+
+      await (server as any).getHttpClientForSession('session-1', 'default');
+
+      expect(getOrCreateSessionClient).toHaveBeenCalledWith(
+        'session-1',
+        expect.objectContaining({
+          baseUrl: 'https://team-a.example.com/api',
+          authConfigs: [{ type: 'bearer', value_from_env: 'TEAM_A_TOKEN' }],
+          sessionToken: 'session-token',
+        })
+      );
+    });
+
+    it('falls back to profile base URL when tenant context is missing', async () => {
+      const specPath = path.join(process.cwd(), 'profiles/gitlab/openapi.yaml');
+      await server.initialize(specPath);
+
+      const getOrCreateSessionClient = vi.fn().mockReturnValue({});
+      (server as any).httpClientFactory = {
+        hasGlobalClient: () => true,
+        getGlobalClient: () => ({}),
+        getOrCreateSessionClient,
+      };
+      (server as any).httpTransport = {
+        ensureValidSessionToken: vi.fn().mockResolvedValue(true),
+        getSessionToken: vi.fn().mockReturnValue('session-token'),
+        getSessionTenantContext: vi.fn().mockReturnValue(undefined),
+      };
+
+      await (server as any).getHttpClientForSession('session-2', 'default');
+
+      expect(getOrCreateSessionClient).toHaveBeenCalledWith(
+        'session-2',
+        expect.objectContaining({
+          baseUrl: (server as any).getBaseUrl(),
+          authConfigs: undefined,
+        })
+      );
+    });
+  });
+
   describe('error sanitization', () => {
     it('should successfully execute simple tool and return result', async () => {
       const server = new MCPServer();

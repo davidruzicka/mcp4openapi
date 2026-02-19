@@ -100,6 +100,21 @@ describe('HttpTransport unit', () => {
       expect(transport.getSessionFilteringHeader('default', sessionId)).toBe('project_id=1');
     });
 
+    it('handles tenant header arrays and invalid values', () => {
+      const getTenantIdHeaderValue = (transport as any).getTenantIdHeaderValue.bind(transport);
+      const getTenantBaseUrlHeaderValue = (transport as any).getTenantBaseUrlHeaderValue.bind(transport);
+
+      expect(getTenantIdHeaderValue({ headers: { 'x-mcp4-tenant-id': [] } })).toBeUndefined();
+      expect(() => getTenantIdHeaderValue({ headers: { 'x-mcp4-tenant-id': ['a', 'b'] } })).toThrow();
+      expect(() => getTenantIdHeaderValue({ headers: { 'x-mcp4-tenant-id': '   ' } })).toThrow();
+      expect(getTenantIdHeaderValue({ headers: { 'x-mcp4-tenant-id': ' team-a ' } })).toBe('team-a');
+      expect(() => getTenantIdHeaderValue({ headers: { 'x-mcp4-tenant-id': 'team-a,team-b' } })).toThrow();
+
+      expect(getTenantBaseUrlHeaderValue({ headers: { 'x-mcp4-api-base-url': [] } })).toBeUndefined();
+      expect(() => getTenantBaseUrlHeaderValue({ headers: { 'x-mcp4-api-base-url': ['a', 'b'] } })).toThrow();
+      expect(() => getTenantBaseUrlHeaderValue({ headers: { 'x-mcp4-api-base-url': `https://a.${String.fromCharCode(10)}example.com` } })).toThrow();
+    });
+
     it('handles tool filter header arrays', () => {
       const getToolFilterHeaderValue = (transport as any).getToolFilterHeaderValue.bind(transport);
       expect(getToolFilterHeaderValue({ headers: { 'x-mcp4-tools': [] } })).toBeUndefined();

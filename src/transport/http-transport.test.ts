@@ -107,6 +107,185 @@ describeIfListen('HttpTransport', () => {
     });
   });
 
+
+  describe('tenant session selection', () => {
+    const tenantConfig = {
+      version: 1,
+      tenants: [
+        {
+          tenant_id: 'team-a',
+          default: true,
+          api_base_url: 'https://team-a.example.com/api',
+          auth_mode: 'token',
+          auth: { type: 'bearer', value_from_env: 'TEAM_A_TOKEN' },
+        },
+        {
+          tenant_id: 'team-b',
+          api_base_url: 'https://team-b.example.com/api',
+          auth_mode: 'token',
+          auth: { type: 'bearer', value_from_env: 'TEAM_B_TOKEN' },
+        },
+      ],
+    };
+
+    beforeEach(() => {
+      process.env.MCP4_HTTP_TENANTS_JSON = JSON.stringify(tenantConfig);
+    });
+
+    afterEach(() => {
+      delete process.env.MCP4_HTTP_TENANTS_JSON;
+    });
+
+    it('stores tenant context from X-Mcp4-Tenant-Id header during initialize', async () => {
+      const tenantTransport = new HttpTransport(
+        {
+          host: '127.0.0.1',
+          port: 0,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: false,
+          metricsPath: '/metrics',
+          authConfigs: [{ type: 'bearer', value_from_env: 'FALLBACK_TOKEN' }],
+          baseUrl: 'https://default.example.com/api',
+        },
+        logger,
+      );
+      tenantTransport.setMessageHandler(async () => ({ result: { ok: true } }));
+      const tenantApp = (tenantTransport as any).app;
+
+      const initResponse = await request(tenantApp)
+        .post('/mcp')
+        .set('Accept', 'application/json')
+        .set('Content-Type', 'application/json')
+        .set('Authorization', 'Bearer session-token')
+        .set('X-Mcp4-Tenant-Id', 'team-b')
+        .send({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} });
+
+      expect(initResponse.status).toBe(200);
+      const sessionId = initResponse.headers['mcp-session-id'];
+      expect(sessionId).toBeDefined();
+
+      const tenantContext = tenantTransport.getSessionTenantContext('default', sessionId);
+      expect(tenantContext?.tenantId).toBe('team-b');
+      expect(tenantContext?.tenantBaseUrl).toBe('https://team-b.example.com/api');
+
+      await tenantTransport.stop();
+    });
+
+    it('rejects unknown tenant base url selector', async () => {
+      const tenantTransport = new HttpTransport(
+        {
+          host: '127.0.0.1',
+          port: 0,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: false,
+          metricsPath: '/metrics',
+          authConfigs: [{ type: 'bearer', value_from_env: 'FALLBACK_TOKEN' }],
+          baseUrl: 'https://default.example.com/api',
+        },
+        logger,
+      );
+      tenantTransport.setMessageHandler(async () => ({ result: { ok: true } }));
+      const tenantApp = (tenantTransport as any).app;
+
+      const response = await request(tenantApp)
+        .post('/mcp')
+        .set('Accept', 'application/json')
+        .set('Content-Type', 'application/json')
+        .set('Authorization', 'Bearer session-token')
+        .set('X-Mcp4-Api-Base-Url', ['https://team-a.example.com/api', 'https://team-b.example.com/api'])
+        .send({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} });
+
+      expect(response.status).toBe(400);
+      expect(response.body.message).toContain('Invalid X-Mcp4-Api-Base-Url header');
+
+      await tenantTransport.stop();
+    });
+
+    it('accepts equivalent tenant base URL selector on existing session', async () => {
+      const tenantTransport = new HttpTransport(
+        {
+          host: '127.0.0.1',
+          port: 0,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: false,
+          metricsPath: '/metrics',
+          authConfigs: [{ type: 'bearer', value_from_env: 'FALLBACK_TOKEN' }],
+          baseUrl: 'https://default.example.com/api',
+        },
+        logger,
+      );
+      tenantTransport.setMessageHandler(async () => ({ result: { ok: true } }));
+      const tenantApp = (tenantTransport as any).app;
+
+      const initResponse = await request(tenantApp)
+        .post('/mcp')
+        .set('Accept', 'application/json')
+        .set('Content-Type', 'application/json')
+        .set('Authorization', 'Bearer session-token')
+        .set('X-Mcp4-Api-Base-Url', 'https://team-a.example.com/api/')
+        .send({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} });
+      const sessionId = initResponse.headers['mcp-session-id'];
+
+      const response = await request(tenantApp)
+        .post('/mcp')
+        .set('Accept', 'application/json')
+        .set('Content-Type', 'application/json')
+        .set('Mcp-Session-Id', sessionId)
+        .set('X-Mcp4-Api-Base-Url', 'https://team-a.example.com/api')
+        .send({ jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} });
+
+      expect(response.status).toBe(200);
+      await tenantTransport.stop();
+    });
+
+    it('rejects tenant header mismatch on non-initialize request', async () => {
+      const tenantTransport = new HttpTransport(
+        {
+          host: '127.0.0.1',
+          port: 0,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: false,
+          metricsPath: '/metrics',
+          authConfigs: [{ type: 'bearer', value_from_env: 'FALLBACK_TOKEN' }],
+          baseUrl: 'https://default.example.com/api',
+        },
+        logger,
+      );
+      tenantTransport.setMessageHandler(async () => ({ result: { ok: true } }));
+      const tenantApp = (tenantTransport as any).app;
+
+      const initResponse = await request(tenantApp)
+        .post('/mcp')
+        .set('Accept', 'application/json')
+        .set('Content-Type', 'application/json')
+        .set('Authorization', 'Bearer session-token')
+        .set('X-Mcp4-Tenant-Id', 'team-a')
+        .send({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} });
+      const sessionId = initResponse.headers['mcp-session-id'];
+
+      const response = await request(tenantApp)
+        .post('/mcp')
+        .set('Accept', 'application/json')
+        .set('Content-Type', 'application/json')
+        .set('Mcp-Session-Id', sessionId)
+        .set('X-Mcp4-Tenant-Id', 'team-b')
+        .send({ jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} });
+
+      expect(response.status).toBe(400);
+      expect(response.body.message).toContain('Tenant selector header mismatch');
+
+      await tenantTransport.stop();
+    });
+  });
+
   describe('DNS rebinding protection with localhost host config', () => {
     let localTransport: HttpTransport;
     let localApp: Express;

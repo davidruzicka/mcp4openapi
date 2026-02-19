@@ -148,6 +148,51 @@ Root protected resource metadata also supports a `resource` query parameter for 
 
 If no default profile is configured, use the `resource` query parameter to resolve metadata.
 
+
+
+### Tenant Session Override (HTTP)
+
+You can configure per-session tenant selection using either:
+- `MCP4_HTTP_TENANTS_FILE=/path/to/tenants.json`
+- `MCP4_HTTP_TENANTS_JSON={...}`
+
+Header selectors (initialize request only):
+- `X-Mcp4-Tenant-Id`: select tenant by `tenant_id`.
+- `X-Mcp4-Api-Base-Url`: select tenant by allowlisted `api_base_url`.
+
+Resolution order at initialization:
+1. `X-Mcp4-Tenant-Id`
+2. `X-Mcp4-Api-Base-Url`
+3. configured default tenant (or first tenant if no explicit default)
+
+Session immutability:
+- On non-initialize requests, selector headers are optional.
+- If provided, they must match the tenant stored in session.
+- Mismatch returns `400 ValidationError`.
+
+Security and validation rules:
+- Tenant base URLs are allowlist-only; unknown selectors are rejected.
+- `https` is required by default (`http` only with `MCP4_HTTP_TENANTS_ALLOW_HTTP=true`).
+- Base URLs with credentials are rejected.
+- If two tenants share base URL but have different auth config, startup fails.
+
+Minimal tenant config example:
+
+```json
+{
+  "version": 1,
+  "tenants": [
+    {
+      "tenant_id": "team-a",
+      "default": true,
+      "api_base_url": "https://team-a.example.com/api",
+      "auth_mode": "token",
+      "auth": { "type": "bearer", "value_from_env": "TEAM_A_TOKEN" }
+    }
+  ]
+}
+```
+
 ### Reverse Proxy Support
 
 If you run behind a reverse proxy that sets `X-Forwarded-For`, enable Express trust proxy so rate limiting and OAuth flows work correctly:

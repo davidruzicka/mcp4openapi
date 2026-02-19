@@ -7,6 +7,7 @@
 
 import type { Request as ExpressRequest, Response } from 'express';
 import type { OAuthConfig, AuthInterceptor } from './profile.js';
+import type { HttpTenantIndex } from './http-tenants.js';
 import type { SessionToolFilterRequest, SessionToolFilterCompat as SessionToolFilter } from '../tool-filter/index.js';
 import type { OpenAPIParser } from '../openapi/openapi-parser.js';
 
@@ -27,6 +28,12 @@ export interface SessionData {
   toolFilterRequest?: SessionToolFilterRequest;
   toolFilter?: SessionToolFilter;
   toolFilterHeader?: string;
+  tenantId?: string;
+  tenantBaseUrl?: string;
+  tenantHeaderValue?: string;
+  tenantAuthMode?: 'oauth' | 'token';
+  tenantOAuthConfig?: OAuthConfig;
+  tenantAuthConfigs?: AuthInterceptor[];
 }
 
 export interface SSEStreamState {
@@ -73,6 +80,7 @@ export interface HttpTransportConfig {
   oauthSessionTimeoutMs?: number; // OAuth session timeout in ms (default: 24 hours, 0 = unlimited)
   oauthRefreshThresholdMs?: number; // Refresh token threshold in ms before expiration (default: 60 seconds)
   parser?: OpenAPIParser; // OpenAPI parser for operation resolution (optional, for category filtering)
+  tenantIndex?: HttpTenantIndex; // Preloaded tenant configuration index (optional)
 }
 
 export interface HttpProfileContext {

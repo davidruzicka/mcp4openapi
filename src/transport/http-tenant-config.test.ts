@@ -1,0 +1,194 @@
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { writeFile, unlink } from 'node:fs/promises';
+import type { HttpProfileContext } from '../types/http-transport.js';
+import { ConsoleLogger } from '../core/logger.js';
+import {
+  buildTenantIndexForProfile,
+  loadRawTenantsConfigFromEnv,
+  resolveTenantFromHeaders,
+} from './http-tenant-config.js';
+
+describe('http-tenant-config', () => {
+  const logger = new ConsoleLogger();
+  const originalEnv = { ...process.env };
+
+  const profileContext: HttpProfileContext = {
+    profileId: 'default',
+    baseUrl: 'https://api.default.example.com',
+    authConfigs: [{ type: 'bearer', value_from_env: 'TOKEN' }],
+  };
+
+  beforeEach(() => {
+    process.env = { ...originalEnv };
+    delete process.env.MCP4_HTTP_TENANTS_FILE;
+    delete process.env.MCP4_HTTP_TENANTS_JSON;
+    delete process.env.MCP4_HTTP_TENANTS_ALLOW_HTTP;
+  });
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
+  });
+
+  it('returns disabled index when tenant config is missing', () => {
+    const index = buildTenantIndexForProfile(null, profileContext, logger);
+    expect(index.enabled).toBe(false);
+    expect(resolveTenantFromHeaders(index, 'team-a', undefined)).toBeNull();
+  });
+
+  it('loads valid tenant config from env json and resolves by tenant id', () => {
+    process.env.MCP4_HTTP_TENANTS_JSON = JSON.stringify({
+      version: 1,
+      tenants: [
+        {
+          tenant_id: 'team-a',
+          default: true,
+          api_base_url: 'https://team-a.example.com/api',
+          auth_mode: 'token',
+          auth: { type: 'bearer', value_from_env: 'TEAM_A_TOKEN' },
+        },
+      ],
+    });
+
+    const raw = loadRawTenantsConfigFromEnv();
+    const index = buildTenantIndexForProfile(raw, profileContext, logger);
+    const resolved = resolveTenantFromHeaders(index, 'team-a', undefined);
+    expect(resolved?.tenantId).toBe('team-a');
+  });
+
+  it('loads config from file when both file and inline json are provided', async () => {
+    const tempFile = `.tmp-tenants-${Date.now()}.json`;
+    process.env.MCP4_HTTP_TENANTS_FILE = tempFile;
+    process.env.MCP4_HTTP_TENANTS_JSON = JSON.stringify({ version: 1, tenants: [] });
+    await writeFile(
+      tempFile,
+      JSON.stringify({
+        version: 1,
+        tenants: [
+          {
+            tenant_id: 'team-file',
+            default: true,
+            api_base_url: 'https://file.example.com/api',
+            auth_mode: 'token',
+            auth: { type: 'bearer', value_from_env: 'FILE_TOKEN' },
+          },
+        ],
+      }),
+      'utf8',
+    );
+
+    try {
+      const raw = loadRawTenantsConfigFromEnv();
+      expect(raw?.tenants[0].tenant_id).toBe('team-file');
+    } finally {
+      await unlink(tempFile);
+    }
+  });
+
+  it('fails on invalid tenant json payload', () => {
+    process.env.MCP4_HTTP_TENANTS_JSON = '{invalid-json';
+    expect(() => loadRawTenantsConfigFromEnv()).toThrow(/Invalid tenant JSON config/);
+  });
+
+  it('fails for duplicate tenant_id', () => {
+    const raw = {
+      version: 1,
+      tenants: [
+        { tenant_id: 'team-a', api_base_url: 'https://a.example.com/api', auth_mode: 'token', auth: { type: 'bearer', value_from_env: 'A' } },
+        { tenant_id: 'team-a', api_base_url: 'https://b.example.com/api', auth_mode: 'token', auth: { type: 'bearer', value_from_env: 'B' } },
+      ],
+    };
+    expect(() => buildTenantIndexForProfile(raw as any, profileContext, logger)).toThrow(/Duplicate tenant_id/);
+  });
+
+  it('fails when same base URL has different auth config', () => {
+    const raw = {
+      version: 1,
+      tenants: [
+        { tenant_id: 'team-a', api_base_url: 'https://same.example.com/api', auth_mode: 'token', auth: { type: 'bearer', value_from_env: 'A' } },
+        { tenant_id: 'team-b', api_base_url: 'https://same.example.com/api/', auth_mode: 'token', auth: { type: 'query', value_from_env: 'B' } },
+      ],
+    };
+    expect(() => buildTenantIndexForProfile(raw as any, profileContext, logger)).toThrow(/collision/i);
+  });
+
+  it('fails when oauth auth_mode does not provide oauth config', () => {
+    const raw = {
+      version: 1,
+      tenants: [
+        { tenant_id: 'team-a', api_base_url: 'https://team-a.example.com/api', auth_mode: 'oauth', auth: { type: 'bearer', value_from_env: 'A' } },
+      ],
+    };
+    expect(() => buildTenantIndexForProfile(raw as any, profileContext, logger)).toThrow(/requires oauth auth_mode/i);
+  });
+
+  it('fails on invalid tenant id and insecure scheme by default', () => {
+    const invalidId = {
+      version: 1,
+      tenants: [
+        { tenant_id: 'Invalid Tenant', api_base_url: 'https://ok.example.com/api', auth_mode: 'token', auth: { type: 'bearer', value_from_env: 'A' } },
+      ],
+    };
+    expect(() => buildTenantIndexForProfile(invalidId as any, profileContext, logger)).toThrow(/Invalid tenant_id/);
+
+    const invalidScheme = {
+      version: 1,
+      tenants: [
+        { tenant_id: 'team-a', api_base_url: 'http://insecure.example.com/api', auth_mode: 'token', auth: { type: 'bearer', value_from_env: 'A' } },
+      ],
+    };
+    expect(() => buildTenantIndexForProfile(invalidScheme as any, profileContext, logger)).toThrow(/must use https/);
+  });
+
+  it('allows http scheme only when MCP4_HTTP_TENANTS_ALLOW_HTTP=true', () => {
+    process.env.MCP4_HTTP_TENANTS_ALLOW_HTTP = 'true';
+    const raw = {
+      version: 1,
+      tenants: [
+        { tenant_id: 'team-a', default: true, api_base_url: 'http://insecure.example.com/api/', auth_mode: 'token', auth: { type: 'bearer', value_from_env: 'A' } },
+      ],
+    };
+
+    const index = buildTenantIndexForProfile(raw as any, profileContext, logger);
+    const resolved = resolveTenantFromHeaders(index, undefined, undefined);
+    expect(resolved?.tenantBaseUrl).toBe('http://insecure.example.com/api');
+  });
+
+  it('rejects unknown selectors and mismatched selector combination', () => {
+    const raw = {
+      version: 1,
+      tenants: [
+        { tenant_id: 'team-a', default: true, api_base_url: 'https://a.example.com/api', auth_mode: 'token', auth: { type: 'bearer', value_from_env: 'A' } },
+        { tenant_id: 'team-b', api_base_url: 'https://b.example.com/api', auth_mode: 'token', auth: { type: 'bearer', value_from_env: 'B' } },
+      ],
+    };
+
+    const index = buildTenantIndexForProfile(raw as any, profileContext, logger);
+    expect(() => resolveTenantFromHeaders(index, 'missing', undefined)).toThrow(/Unknown tenant id/);
+    expect(() => resolveTenantFromHeaders(index, undefined, 'https://missing.example.com/api')).toThrow(/Unknown tenant base URL/);
+    expect(() => resolveTenantFromHeaders(index, 'team-a', 'https://b.example.com/api')).toThrow(/mismatch/);
+  });
+
+  it('falls back to first tenant when default is not configured', () => {
+    const raw = {
+      version: 1,
+      tenants: [
+        { tenant_id: 'first', api_base_url: 'https://first.example.com/api', auth_mode: 'token', auth: { type: 'bearer', value_from_env: 'A' } },
+        { tenant_id: 'second', api_base_url: 'https://second.example.com/api', auth_mode: 'token', auth: { type: 'bearer', value_from_env: 'B' } },
+      ],
+    };
+
+    const index = buildTenantIndexForProfile(raw as any, profileContext, logger);
+    const resolved = resolveTenantFromHeaders(index, undefined, undefined);
+    expect(index.defaultTenantId).toBe('first');
+    expect(resolved?.tenantId).toBe('first');
+  });
+
+  it('requires selector when index is enabled without default tenant', () => {
+    const customIndex = {
+      enabled: true,
+      byTenantId: new Map(),
+      byBaseUrl: new Map(),
+    };
+    expect(() => resolveTenantFromHeaders(customIndex as any, undefined, undefined)).toThrow(/selector is required/i);
+  });
+});

@@ -696,11 +696,14 @@ export class MCPServer {
 
     // Get auth token from session (ensures token is valid/refreshed)
     const authToken = await this.getAuthTokenFromSession(sessionId, profileId);
+    const effectiveProfileId = profileId || this.getProfileIdValue();
+    const tenantContext = this.httpTransport?.getSessionTenantContext(effectiveProfileId, sessionId);
 
     // Create or get session client using factory
     return this.httpClientFactory.getOrCreateSessionClient(sessionId, {
       profile: this.profile,
-      baseUrl: this.getBaseUrl(),
+      baseUrl: tenantContext?.tenantBaseUrl || this.getBaseUrl(),
+      authConfigs: tenantContext?.tenantAuthConfigs,
       sessionToken: authToken,
       logger: this.logger,
     });
