@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Normalized profile route param handling to accept Express string-array params while preserving `McpRequest.profileId` as `string | undefined`.
 - Fixed Vitest v4 regressions in mocked constructor tests and MCP handler lookup tests to keep the suite stable after test-runner upgrades.
 - Fixed profile schema sync generation on Node runtimes without `fs.globSync` by falling back to tsconfig-based source discovery.
+- Fixed OSV scan gating by pinning direct `ajv` usage to `^8.18.0` and adding a temporary documented ignore for the unresolved `eslint` dev-only transitive `ajv@6.12.6` finding.
 
 ### Changed
 - Refreshed lockfile with latest non-breaking dependency updates available under current semver ranges.

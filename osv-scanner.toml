@@ -1,0 +1,4 @@
+[[IgnoredVulns]]
+id = "CVE-2025-69873"
+ignoreUntil = 2026-05-31
+reason = "Temporary exception for eslint transitive dev dependency (ajv@6.12.6); production dependency tree is clean and ajv is pinned to >=8.18.0."
