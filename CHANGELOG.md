@@ -12,6 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - Fixed tenant auth-mode resolution and tenant custom-header extraction order in HTTP initialize flow, restored `X-Mcp4-Params` single-array parsing, and reused tenant OAuth provider state across refreshes with session-scoped cleanup.
+- Normalized profile route param handling to accept Express string-array params while preserving `McpRequest.profileId` as `string | undefined`.
+
+### Changed
+- Refreshed lockfile with latest non-breaking dependency updates available under current semver ranges.
 
 ## [0.4.0] - 2026-02-16
 

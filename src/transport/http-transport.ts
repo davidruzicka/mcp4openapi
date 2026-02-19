@@ -1039,7 +1039,8 @@ export class HttpTransport {
     const profileRoutingEnabled = this.config.profileRoutingEnabled === true;
     const defaultProfileId = this.getDefaultProfileId();
     const attachProfileId: RequestHandler = (req: Request, _res: Response, next: NextFunction) => {
-      (req as McpRequest).profileId = req.params.profileId;
+      const profileParam = req.params.profileId;
+      (req as McpRequest).profileId = Array.isArray(profileParam) ? profileParam[0] : profileParam;
       next();
     };
 
