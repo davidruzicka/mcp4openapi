@@ -2414,14 +2414,22 @@ describe('MCPServer', () => {
   });
 
   describe('setupHandlers (MCP SDK)', () => {
+    const findHandlerCall = (setHandlerSpy: ReturnType<typeof vi.spyOn>, method: string) => {
+      return [...setHandlerSpy.mock.calls].reverse().find((call) => {
+        const schema: any = call[0];
+        return schema?.shape?.method?.value === method;
+      });
+    };
+
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
     it('ListTools handler should wrap errors with correlation ID when uninitialized', async () => {
       const setHandlerSpy = vi.spyOn(MCPProtocolServer.prototype as any, 'setRequestHandler');
-      const server = new MCPServer();
+      new MCPServer();
 
-      const listCall = setHandlerSpy.mock.calls.find(call => {
-        const schema: any = call[0];
-        return schema?.shape?.method?.value === 'tools/list';
-      });
+      const listCall = findHandlerCall(setHandlerSpy, 'tools/list');
       expect(listCall).toBeDefined();
 
       const listHandler = listCall![1] as () => Promise<unknown>;
@@ -2434,10 +2442,7 @@ describe('MCPServer', () => {
       const specPath = path.join(process.cwd(), 'profiles/gitlab/openapi.yaml');
       await server.initialize(specPath);
 
-      const listCall = setHandlerSpy.mock.calls.find(call => {
-        const schema: any = call[0];
-        return schema?.shape?.method?.value === 'tools/list';
-      });
+      const listCall = findHandlerCall(setHandlerSpy, 'tools/list');
       const listHandler = listCall![1] as () => Promise<any>;
       const result = await listHandler();
       expect(result).toHaveProperty('tools');
@@ -2459,10 +2464,7 @@ describe('MCPServer', () => {
         },
       ];
 
-      const listCall = setHandlerSpy.mock.calls.find(call => {
-        const schema: any = call[0];
-        return schema?.shape?.method?.value === 'prompts/list';
-      });
+      const listCall = findHandlerCall(setHandlerSpy, 'prompts/list');
       expect(listCall).toBeDefined();
 
       const listHandler = listCall![1] as () => Promise<any>;
@@ -2478,10 +2480,7 @@ describe('MCPServer', () => {
         throw new Error('boom');
       };
 
-      const listCall = setHandlerSpy.mock.calls.find(call => {
-        const schema: any = call[0];
-        return schema?.shape?.method?.value === 'prompts/list';
-      });
+      const listCall = findHandlerCall(setHandlerSpy, 'prompts/list');
       const listHandler = listCall![1] as () => Promise<any>;
       await expect(listHandler()).rejects.toThrow(/correlation ID/);
     });
@@ -2500,10 +2499,7 @@ describe('MCPServer', () => {
         },
       ];
 
-      const getCall = setHandlerSpy.mock.calls.find(call => {
-        const schema: any = call[0];
-        return schema?.shape?.method?.value === 'prompts/get';
-      });
+      const getCall = findHandlerCall(setHandlerSpy, 'prompts/get');
       expect(getCall).toBeDefined();
 
       const getHandler = getCall![1] as (req: any) => Promise<any>;
@@ -2513,12 +2509,9 @@ describe('MCPServer', () => {
 
     it('GetPrompt handler should wrap configuration errors with correlation ID when uninitialized', async () => {
       const setHandlerSpy = vi.spyOn(MCPProtocolServer.prototype as any, 'setRequestHandler');
-      const server = new MCPServer();
+      new MCPServer();
 
-      const getCall = setHandlerSpy.mock.calls.find(call => {
-        const schema: any = call[0];
-        return schema?.shape?.method?.value === 'prompts/get';
-      });
+      const getCall = findHandlerCall(setHandlerSpy, 'prompts/get');
       const getHandler = getCall![1] as (req: any) => Promise<any>;
 
       await expect(getHandler({ params: { name: 'summarize_issue', arguments: {} } }))
@@ -2539,10 +2532,7 @@ describe('MCPServer', () => {
         },
       ];
 
-      const getCall = setHandlerSpy.mock.calls.find(call => {
-        const schema: any = call[0];
-        return schema?.shape?.method?.value === 'prompts/get';
-      });
+      const getCall = findHandlerCall(setHandlerSpy, 'prompts/get');
       const getHandler = getCall![1] as (req: any) => Promise<any>;
 
       await expect(getHandler({ params: { name: 'summarize_issue', arguments: {} } }))
@@ -2556,10 +2546,7 @@ describe('MCPServer', () => {
       await server.initialize(specPath);
       (server as any).profile.prompts = [];
 
-      const getCall = setHandlerSpy.mock.calls.find(call => {
-        const schema: any = call[0];
-        return schema?.shape?.method?.value === 'prompts/get';
-      });
+      const getCall = findHandlerCall(setHandlerSpy, 'prompts/get');
       const getHandler = getCall![1] as (req: any) => Promise<any>;
 
       await expect(getHandler({ params: { name: 'missing_prompt', arguments: {} } }))
@@ -2583,10 +2570,7 @@ describe('MCPServer', () => {
         throw new Error('boom');
       };
 
-      const getCall = setHandlerSpy.mock.calls.find(call => {
-        const schema: any = call[0];
-        return schema?.shape?.method?.value === 'prompts/get';
-      });
+      const getCall = findHandlerCall(setHandlerSpy, 'prompts/get');
       const getHandler = getCall![1] as (req: any) => Promise<any>;
 
       await expect(getHandler({ params: { name: 'summarize_issue', arguments: { issue_title: 'X' } } }))
@@ -2618,10 +2602,7 @@ describe('MCPServer', () => {
       };
       (server as any).toolGenerator.validateArguments = () => {};
 
-      const callToolCall = setHandlerSpy.mock.calls.find(call => {
-        const schema: any = call[0];
-        return schema?.shape?.method?.value === 'tools/call';
-      });
+      const callToolCall = findHandlerCall(setHandlerSpy, 'tools/call');
       expect(callToolCall).toBeDefined();
       const callToolHandler = callToolCall![1] as (req: any) => Promise<any>;
       const response = await callToolHandler({ params: { name: 'composite_test', arguments: {} } });
@@ -2649,10 +2630,7 @@ describe('MCPServer', () => {
         throw new AuthorizationError('Forbidden');
       };
 
-      const callToolCall = setHandlerSpy.mock.calls.find(call => {
-        const schema: any = call[0];
-        return schema?.shape?.method?.value === 'tools/call';
-      });
+      const callToolCall = findHandlerCall(setHandlerSpy, 'tools/call');
       const callToolHandler = callToolCall![1] as (req: any) => Promise<any>;
       await expect(
         callToolHandler({ params: { name: 'simple_test', arguments: {} } })
