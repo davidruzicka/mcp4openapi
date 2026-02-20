@@ -35,6 +35,10 @@ describe('http-tenant-config', () => {
     expect(resolveTenantFromHeaders(index, 'team-a', undefined)).toBeNull();
   });
 
+  it('returns null when tenant env configuration is not provided', () => {
+    expect(loadRawTenantsConfigFromEnv()).toBeNull();
+  });
+
   it('applies tenants only to matching profile_ids and disables tenant index for unmatched profile', () => {
     const raw = {
       version: 1,
@@ -675,5 +679,418 @@ describe('http-tenant-config', () => {
     };
     expect(() => buildTenantIndexForProfile(partialWildcardPathSegment as any, profileContext, logger))
       .toThrow(/wildcard must be "\*" as a whole segment/i);
+  });
+
+  it('validates profile_ids entries as non-empty unique strings', () => {
+    const nonStringProfileId = {
+      version: 1,
+      tenants: [
+        {
+          tenant_id: 'team-a',
+          profile_ids: ['default', 42],
+          api_base_url: 'https://team-a.example.com/api',
+          auth_mode: 'token',
+          auth: { type: 'bearer', value_from_env: 'TEAM_A_TOKEN' },
+        },
+      ],
+    };
+    expect(() => buildTenantIndexForProfile(nonStringProfileId as any, profileContext, logger))
+      .toThrow(/profile_ids must contain non-empty strings/i);
+
+    const duplicateProfileId = {
+      version: 1,
+      tenants: [
+        {
+          tenant_id: 'team-a',
+          profile_ids: ['default', 'default'],
+          api_base_url: 'https://team-a.example.com/api',
+          auth_mode: 'token',
+          auth: { type: 'bearer', value_from_env: 'TEAM_A_TOKEN' },
+        },
+      ],
+    };
+    expect(() => buildTenantIndexForProfile(duplicateProfileId as any, profileContext, logger))
+      .toThrow(/profile_ids must not contain duplicates/i);
+  });
+
+  it('uses index-based tenant id in profile_ids validation when tenant_id is missing', () => {
+    const missingTenantId = {
+      version: 1,
+      tenants: [
+        {
+          tenant_id: '',
+          profile_ids: ['default', 'default'],
+          api_base_url: 'https://team-a.example.com/api',
+          auth_mode: 'token',
+          auth: { type: 'bearer', value_from_env: 'TEAM_A_TOKEN' },
+        },
+      ],
+    };
+
+    expect(() => buildTenantIndexForProfile(missingTenantId as any, profileContext, logger))
+      .toThrow(/Tenant 'index-0' profile_ids must not contain duplicates/i);
+  });
+
+  it('supports mask selectors with root path and no path segments', () => {
+    const raw = {
+      version: 1,
+      tenants: [
+        {
+          tenant_id: 'grafana-root',
+          profile_ids: ['default'],
+          api_base_url: 'mask:https://grafana.*.ops.iszn.cz/',
+          auth_mode: 'token',
+          auth: { type: 'bearer', value_from_env: 'GRAFANA_TOKEN' },
+        },
+      ],
+    };
+
+    const index = buildTenantIndexForProfile(raw as any, profileContext, logger);
+    const resolved = resolveTenantFromHeaders(index, 'grafana-root', 'https://grafana.team-a.ops.iszn.cz/');
+    expect(resolved?.tenantId).toBe('grafana-root');
+    expect(resolved?.tenantBaseUrl).toBe('https://grafana.team-a.ops.iszn.cz');
+  });
+
+  it('rejects query and fragment in exact and mask api_base_url selectors', () => {
+    const exactWithQuery = {
+      version: 1,
+      tenants: [
+        {
+          tenant_id: 'team-a',
+          profile_ids: ['default'],
+          api_base_url: 'https://team-a.example.com/api?x=1',
+          auth_mode: 'token',
+          auth: { type: 'bearer', value_from_env: 'TOKEN' },
+        },
+      ],
+    };
+    expect(() => buildTenantIndexForProfile(exactWithQuery as any, profileContext, logger))
+      .toThrow(/must not contain query or fragment/i);
+
+    const maskWithFragment = {
+      version: 1,
+      tenants: [
+        {
+          tenant_id: 'team-mask',
+          profile_ids: ['default'],
+          api_base_url: 'mask:https://grafana.ops.iszn.cz/api#section',
+          auth_mode: 'token',
+          auth: { type: 'bearer', value_from_env: 'TOKEN' },
+        },
+      ],
+    };
+    expect(() => buildTenantIndexForProfile(maskWithFragment as any, profileContext, logger))
+      .toThrow(/must not contain query or fragment/i);
+  });
+
+  it('rejects invalid mask selector variants', () => {
+    const invalidMaskUrl = {
+      version: 1,
+      tenants: [
+        {
+          tenant_id: 'mask-invalid-url',
+          profile_ids: ['default'],
+          api_base_url: 'mask:not-a-url',
+          auth_mode: 'token',
+          auth: { type: 'bearer', value_from_env: 'TOKEN' },
+        },
+      ],
+    };
+    expect(() => buildTenantIndexForProfile(invalidMaskUrl as any, profileContext, logger))
+      .toThrow(/Invalid tenant api_base_url/i);
+
+    const maskWithCredentials = {
+      version: 1,
+      tenants: [
+        {
+          tenant_id: 'mask-credentials',
+          profile_ids: ['default'],
+          api_base_url: 'mask:https://user:pass@grafana.ops.iszn.cz/api',
+          auth_mode: 'token',
+          auth: { type: 'bearer', value_from_env: 'TOKEN' },
+        },
+      ],
+    };
+    expect(() => buildTenantIndexForProfile(maskWithCredentials as any, profileContext, logger))
+      .toThrow(/must not contain credentials/i);
+
+    const maskWithInvalidProtocol = {
+      version: 1,
+      tenants: [
+        {
+          tenant_id: 'mask-protocol',
+          profile_ids: ['default'],
+          api_base_url: 'mask:ftp://grafana.ops.iszn.cz/api',
+          auth_mode: 'token',
+          auth: { type: 'bearer', value_from_env: 'TOKEN' },
+        },
+      ],
+    };
+    expect(() => buildTenantIndexForProfile(maskWithInvalidProtocol as any, profileContext, logger))
+      .toThrow(/must use https/i);
+
+    const maskWithInvalidHostLabel = {
+      version: 1,
+      tenants: [
+        {
+          tenant_id: 'mask-host-label',
+          profile_ids: ['default'],
+          api_base_url: 'mask:https://grafana._bad.ops.iszn.cz/api',
+          auth_mode: 'token',
+          auth: { type: 'bearer', value_from_env: 'TOKEN' },
+        },
+      ],
+    };
+    expect(() => buildTenantIndexForProfile(maskWithInvalidHostLabel as any, profileContext, logger))
+      .toThrow(/Invalid tenant mask host label/i);
+
+    const emptyMask = {
+      version: 1,
+      tenants: [
+        {
+          tenant_id: 'mask-empty',
+          profile_ids: ['default'],
+          api_base_url: 'mask:',
+          auth_mode: 'token',
+          auth: { type: 'bearer', value_from_env: 'TOKEN' },
+        },
+      ],
+    };
+    expect(() => buildTenantIndexForProfile(emptyMask as any, profileContext, logger))
+      .toThrow(/Invalid tenant api_base_url/i);
+  });
+
+  it('rejects empty parsed mask host labels via defensive guard', () => {
+    const originalURL = globalThis.URL;
+    class MockUrlWithEmptyHostLabels {
+      username = '';
+      password = '';
+      search = '';
+      hash = '';
+      protocol = 'https:';
+      pathname = '/api';
+      port = '';
+      hostname = {
+        toLowerCase: () => ({
+          split: () => [] as string[],
+        }),
+      } as any;
+    }
+    vi.stubGlobal('URL', MockUrlWithEmptyHostLabels as any);
+
+    const raw = {
+      version: 1,
+      tenants: [
+        {
+          tenant_id: 'mask-empty-host',
+          profile_ids: ['default'],
+          api_base_url: 'mask:https://grafana.ops.iszn.cz/api',
+          auth_mode: 'token',
+          auth: { type: 'bearer', value_from_env: 'TOKEN' },
+        },
+      ],
+    };
+
+    try {
+      expect(() => buildTenantIndexForProfile(raw as any, profileContext, logger))
+        .toThrow(/Invalid tenant mask host/i);
+    } finally {
+      vi.stubGlobal('URL', originalURL);
+    }
+  });
+
+  it('rejects non-matching mask selector dimensions in runtime resolution', () => {
+    const index = {
+      enabled: true,
+      byTenantId: new Map(),
+      byBaseUrl: new Map(),
+      selectorTypeByTenantId: new Map<string, 'exact' | 'mask'>(),
+      maskSelectors: [
+        {
+          tenantId: 'grafana',
+          selector: {
+            original: 'https://grafana.*.ops.iszn.cz/api',
+            normalizedMask: 'https://grafana.*.ops.iszn.cz/api',
+            scheme: 'https:',
+            hostLabels: ['grafana', '*', 'ops', 'iszn', 'cz'],
+            port: '',
+            path: '/api',
+            pathSegments: ['api'],
+          },
+          context: {
+            tenantId: 'grafana',
+            tenantBaseUrl: 'https://grafana.*.ops.iszn.cz/api',
+            tenantAuthMode: 'token',
+            tenantAuthConfigs: [{ type: 'bearer', value_from_env: 'TOKEN' }],
+            tenantSelectorType: 'mask',
+            tenantSelectorValue: 'mask:https://grafana.*.ops.iszn.cz/api',
+          },
+        },
+      ],
+    };
+
+    process.env.MCP4_HTTP_TENANTS_ALLOW_HTTP = 'true';
+    expect(() => resolveTenantFromHeaders(index as any, undefined, 'http://grafana.team-a.ops.iszn.cz/api'))
+      .toThrow(/Unknown tenant base URL selector/i);
+    expect(() => resolveTenantFromHeaders(index as any, undefined, 'https://grafana.team-a.ops.iszn.cz:8443/api'))
+      .toThrow(/Unknown tenant base URL selector/i);
+    expect(() => resolveTenantFromHeaders(index as any, undefined, 'https://grafana.ops.iszn.cz/api'))
+      .toThrow(/Unknown tenant base URL selector/i);
+    expect(() => resolveTenantFromHeaders(index as any, undefined, 'https://kibana.team-a.ops.iszn.cz/api'))
+      .toThrow(/Unknown tenant base URL selector/i);
+    expect(() => resolveTenantFromHeaders(index as any, undefined, 'https://grafana.team-a.ops.iszn.cz/v2'))
+      .toThrow(/Unknown tenant base URL selector/i);
+  });
+
+  it('returns false for non-intersecting mask combinations across mismatch dimensions', () => {
+    const scenarios = [
+      [
+        'mask:https://grafana.*.ops.iszn.cz/api',
+        'mask:http://grafana.*.ops.iszn.cz/api',
+      ],
+      [
+        'mask:https://grafana.*.ops.iszn.cz:443/api',
+        'mask:https://grafana.*.ops.iszn.cz:8443/api',
+      ],
+      [
+        'mask:https://grafana.*.ops.iszn.cz/api',
+        'mask:https://grafana.*.ops.iszn.cz/api/v1',
+      ],
+      [
+        'mask:https://grafana.*.ops.iszn.cz/api',
+        'mask:https://*.ops.iszn.cz/api',
+      ],
+      [
+        'mask:https://grafana.*.ops.iszn.cz/api',
+        'mask:https://kibana.*.ops.iszn.cz/api',
+      ],
+      [
+        'mask:https://monitoring.ops.iszn.cz/api/*',
+        'mask:https://monitoring.ops.iszn.cz/v1/*',
+      ],
+    ];
+
+    process.env.MCP4_HTTP_TENANTS_ALLOW_HTTP = 'true';
+    for (const [leftMask, rightMask] of scenarios) {
+      const raw = {
+        version: 1,
+        tenants: [
+          {
+            tenant_id: 'left',
+            profile_ids: ['default'],
+            api_base_url: leftMask,
+            auth_mode: 'token',
+            auth: { type: 'bearer', value_from_env: 'LEFT_TOKEN' },
+          },
+          {
+            tenant_id: 'right',
+            profile_ids: ['default'],
+            api_base_url: rightMask,
+            auth_mode: 'token',
+            auth: { type: 'bearer', value_from_env: 'RIGHT_TOKEN' },
+          },
+        ],
+      };
+      const index = buildTenantIndexForProfile(raw as any, profileContext, logger);
+      expect(index.enabled).toBe(true);
+      expect(index.byTenantId.size).toBe(2);
+    }
+  });
+
+  it('rejects selector collisions when exact tenant is added after overlapping mask', () => {
+    const raw = {
+      version: 1,
+      tenants: [
+        {
+          tenant_id: 'mask',
+          profile_ids: ['default'],
+          api_base_url: 'mask:https://grafana.*.ops.iszn.cz/api',
+          auth_mode: 'token',
+          auth: { type: 'bearer', value_from_env: 'MASK_TOKEN' },
+        },
+        {
+          tenant_id: 'exact',
+          profile_ids: ['default'],
+          api_base_url: 'https://grafana.team-a.ops.iszn.cz/api',
+          auth_mode: 'token',
+          auth: { type: 'bearer', value_from_env: 'EXACT_TOKEN' },
+        },
+      ],
+    };
+
+    expect(() => buildTenantIndexForProfile(raw as any, profileContext, logger))
+      .toThrow(/selector collision between exact/i);
+  });
+
+  it('covers defensive fallback branches for invalid concrete URL parsing and missing default mapping', () => {
+    const originalURL = globalThis.URL;
+    class MockUrlReturningInvalidNormalized {
+      username = '';
+      password = '';
+      search = '';
+      hash = '';
+      protocol = 'https:';
+      pathname = '/api';
+      hostname = 'grafana.team-a.ops.iszn.cz';
+      port = '';
+
+      constructor(raw: string) {
+        if (raw === 'not-a-url') {
+          throw new TypeError('invalid url');
+        }
+      }
+
+      toString() {
+        return 'not-a-url';
+      }
+    }
+
+    const runtimeMaskIndex = {
+      enabled: true,
+      byTenantId: new Map(),
+      byBaseUrl: new Map(),
+      selectorTypeByTenantId: new Map<string, 'exact' | 'mask'>(),
+      maskSelectors: [
+        {
+          tenantId: 'mask-a',
+          selector: {
+            original: 'https://grafana.*.ops.iszn.cz/api',
+            normalizedMask: 'https://grafana.*.ops.iszn.cz/api',
+            scheme: 'https:',
+            hostLabels: ['grafana', '*', 'ops', 'iszn', 'cz'],
+            port: '',
+            path: '/api',
+            pathSegments: ['api'],
+          },
+          context: {
+            tenantId: 'mask-a',
+            tenantBaseUrl: 'https://grafana.*.ops.iszn.cz/api',
+            tenantAuthMode: 'token',
+            tenantAuthConfigs: [{ type: 'bearer', value_from_env: 'TOKEN' }],
+            tenantSelectorType: 'mask',
+            tenantSelectorValue: 'mask:https://grafana.*.ops.iszn.cz/api',
+          },
+        },
+      ],
+    };
+
+    vi.stubGlobal('URL', MockUrlReturningInvalidNormalized as any);
+    try {
+      expect(() =>
+        resolveTenantFromHeaders(runtimeMaskIndex as any, undefined, 'https://grafana.team-a.ops.iszn.cz/api'),
+      ).toThrow(/Unknown tenant base URL selector/i);
+    } finally {
+      vi.stubGlobal('URL', originalURL);
+    }
+
+    const indexWithMissingDefaultMapping = {
+      enabled: true,
+      defaultTenantId: 'missing-default',
+      byTenantId: new Map(),
+      byBaseUrl: new Map(),
+      maskSelectors: [],
+      selectorTypeByTenantId: new Map(),
+    };
+    expect(resolveTenantFromHeaders(indexWithMissingDefaultMapping as any, undefined, undefined)).toBeNull();
   });
 });

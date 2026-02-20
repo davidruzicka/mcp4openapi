@@ -605,10 +605,7 @@ export function resolveTenantFromHeaders(
     }
 
     if (selectorType === 'mask') {
-      if (!byBaseUrl) {
-        throw new ValidationError('Unknown tenant base URL selector.');
-      }
-      return byBaseUrl;
+      return byBaseUrl as ResolvedTenantContext;
     }
 
     return byId;
