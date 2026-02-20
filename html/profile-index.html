@@ -356,6 +356,7 @@
       const listEl = document.getElementById('profile-list');
       const detailEl = document.getElementById('profile-detail');
       const tenantSelectionByProfile = new Map();
+      const PROFILE_DEFAULT_TENANT_SELECTION = '__profile-default__';
 
       function escapeHtml(value) {
         return String(value)
@@ -401,14 +402,22 @@
           .split('.')
           .map(label => (label === '*' ? '<your-part>' : label))
           .join('.');
-        return `${scheme}${exampleHost}${portSuffix}${path}`;
+        const examplePath = path
+          .split('/')
+          .map(segment => (segment === '*' ? '<your-part>' : segment))
+          .join('/');
+        return `${scheme}${exampleHost}${portSuffix}${examplePath}`;
       }
 
       function resolveTenantSelection(profile, selectedTenantId) {
         if (!selectedTenantId) return null;
+        if (selectedTenantId === PROFILE_DEFAULT_TENANT_SELECTION) return null;
         const tenantList = profile?.tenantSummary?.tenants || [];
         const selectedTenant = tenantList.find(item => item.tenantId === selectedTenantId);
         if (!selectedTenant) return null;
+        const localApiBaseUrl = selectedTenant.selectorType === 'mask'
+          ? buildMaskExampleBaseUrl(selectedTenant.selectorDisplay)
+          : selectedTenant.selectorDisplay;
         return {
           tenantId: selectedTenant.tenantId,
           selectorType: selectedTenant.selectorType,
@@ -416,6 +425,7 @@
           baseUrlExample: selectedTenant.selectorType === 'mask'
             ? buildMaskExampleBaseUrl(selectedTenant.selectorDisplay)
             : null,
+          localApiBaseUrl,
         };
       }
 
@@ -504,6 +514,111 @@
         return injectTenantHeaderIntoJsonSnippet(snippet, entry, tenantSelection);
       }
 
+      function injectTenantApiBaseUrlIntoJsonSnippet(snippet, entry, profile, tenantSelection) {
+        const apiBaseUrlEnvVar = profile?.apiEndpointEnvVar;
+        const tenantApiBaseUrl = tenantSelection?.localApiBaseUrl;
+        if (!apiBaseUrlEnvVar || !tenantApiBaseUrl) return snippet;
+
+        const key = entry?.key || '';
+        const isSupportedJsonSnippet = (
+          key.startsWith('vscode-local-') ||
+          key.startsWith('cursor-local-') ||
+          key.startsWith('jetbrains-local-') ||
+          key.startsWith('claude-local-json-') ||
+          key.startsWith('gemini-local-json-')
+        );
+        if (!isSupportedJsonSnippet) return snippet;
+
+        let parsed;
+        try {
+          parsed = JSON.parse(snippet);
+        } catch {
+          return snippet;
+        }
+
+        const root = key.startsWith('vscode-local-') || key.startsWith('jetbrains-local-')
+          ? parsed.servers
+          : parsed.mcpServers;
+        if (!root || typeof root !== 'object') return snippet;
+        const serverName = Object.keys(root)[0];
+        if (!serverName || !root[serverName] || typeof root[serverName] !== 'object') return snippet;
+        const server = root[serverName];
+        if (!server.env || typeof server.env !== 'object') {
+          server.env = {};
+        }
+        server.env[apiBaseUrlEnvVar] = tenantApiBaseUrl;
+
+        return JSON.stringify(parsed, null, 2);
+      }
+
+      function removeEnvVarFromCodexTomlEnvVars(snippet, envVarName) {
+        const lines = snippet.split('\n');
+        for (let index = 0; index < lines.length; index += 1) {
+          const line = lines[index];
+          const match = /^(\s*)env_vars\s*=\s*\[(.*)\]\s*$/.exec(line);
+          if (!match) continue;
+          const indentation = match[1] || '';
+          const rawValues = match[2].split(',').map(value => value.trim()).filter(Boolean);
+          const filteredValues = rawValues.filter(value => value !== `"${envVarName}"`);
+          if (filteredValues.length === 0) {
+            lines.splice(index, 1);
+            return lines.join('\n');
+          }
+          lines[index] = `${indentation}env_vars = [${filteredValues.join(', ')}]`;
+          return lines.join('\n');
+        }
+        return lines.join('\n');
+      }
+
+      function upsertCodexTomlEnvValue(snippet, envVarName, envVarValue) {
+        const sanitized = removeEnvVarFromCodexTomlEnvVars(snippet, envVarName);
+        const lines = sanitized.split('\n');
+        const sectionHeader = '[mcp_servers.__PROFILE_ID__.env]';
+        const sectionIndex = lines.findIndex(line => line.trim() === sectionHeader);
+        const envEntry = `${envVarName} = "${envVarValue}"`;
+
+        if (sectionIndex === -1) {
+          return `${sanitized}\n\n${sectionHeader}\n${envEntry}`;
+        }
+
+        let nextSectionIndex = lines.length;
+        for (let index = sectionIndex + 1; index < lines.length; index += 1) {
+          if (lines[index].trim().startsWith('[')) {
+            nextSectionIndex = index;
+            break;
+          }
+        }
+
+        const escapedEnvVarName = envVarName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const entryRegex = new RegExp(`^\\s*${escapedEnvVarName}\\s*=\\s*\".*\"\\s*$`);
+        for (let index = sectionIndex + 1; index < nextSectionIndex; index += 1) {
+          if (!entryRegex.test(lines[index])) continue;
+          lines[index] = envEntry;
+          return lines.join('\n');
+        }
+
+        lines.splice(nextSectionIndex, 0, envEntry);
+        return lines.join('\n');
+      }
+
+      function injectTenantApiBaseUrlIntoCodexToml(snippet, profile, tenantSelection) {
+        const apiBaseUrlEnvVar = profile?.apiEndpointEnvVar;
+        const tenantApiBaseUrl = tenantSelection?.localApiBaseUrl;
+        if (!apiBaseUrlEnvVar || !tenantApiBaseUrl) return snippet;
+        return upsertCodexTomlEnvValue(snippet, apiBaseUrlEnvVar, tenantApiBaseUrl);
+      }
+
+      function injectTenantApiBaseUrlForLocalSnippet(snippet, entry, profile, tenantSelection) {
+        if (!tenantSelection || entry?.mode !== 'local') {
+          return snippet;
+        }
+        const key = entry.key || '';
+        if (key.startsWith('codex-local-toml-')) {
+          return injectTenantApiBaseUrlIntoCodexToml(snippet, profile, tenantSelection);
+        }
+        return injectTenantApiBaseUrlIntoJsonSnippet(snippet, entry, profile, tenantSelection);
+      }
+
       function buildSnippet(template, profile, entry, selectedTenantId) {
         const rendered = template
           .replace(/__PROFILE_ID__/g, profile.profileId)
@@ -511,7 +626,8 @@
           .replace(/__PROFILE_URL__/g, profile.mcpUrl)
           .replace(/__PROFILE_SSE_URL__/g, profile.sseUrl);
         const tenantSelection = resolveTenantSelection(profile, selectedTenantId);
-        return injectTenantHeaderForSnippet(rendered, entry, tenantSelection);
+        const withTenantHeaders = injectTenantHeaderForSnippet(rendered, entry, tenantSelection);
+        return injectTenantApiBaseUrlForLocalSnippet(withTenantHeaders, entry, profile, tenantSelection);
       }
 
       function getClientLabel(client) {
@@ -529,6 +645,7 @@
         const snippets = profile.snippets || [];
         const groups = new Map();
         const isCzech = (i18n.profileLabel || '') === 'Profil';
+        const selectedTenant = resolveTenantSelection(profile, selectedTenantId);
 
         const buildClientConfigInfo = client => {
           if (client === 'vscode') {
@@ -568,7 +685,7 @@
           if (!entry || !entry.key) continue;
           if (activeAuth && entry.authKey && entry.authKey !== activeAuth) continue;
           if (activeMode && entry.mode && entry.mode !== activeMode) continue;
-          if (selectedTenantId && activeMode === 'remote' && profile.tenantSummary?.tenantsEnabled && !supportsTenantPicker(entry)) {
+          if (selectedTenant && activeMode === 'remote' && profile.tenantSummary?.tenantsEnabled && !supportsTenantPicker(entry)) {
             continue;
           }
           const client = order.find(prefix => entry.key.startsWith(prefix));
@@ -867,11 +984,20 @@
         const getModeLabel = modeKey => modeTabs.find(tab => tab.key === modeKey)?.label || modeKey;
         const tenantSummary = profile.tenantSummary;
         const tenantList = tenantSummary && tenantSummary.tenantsEnabled ? (tenantSummary.tenants || []) : [];
+        const profileDefaultSelectionAvailable = tenantSummary && tenantSummary.profileDefaultAvailable === true;
         const persistedTenantId = tenantSelectionByProfile.get(profile.profileId);
         const defaultTenant = tenantList.find(item => item.isDefault) || tenantList[0];
-        const initialTenantId = (persistedTenantId && tenantList.some(item => item.tenantId === persistedTenantId))
+        const persistedSelectionIsValid = typeof persistedTenantId === 'string' && (
+          persistedTenantId === PROFILE_DEFAULT_TENANT_SELECTION ||
+          tenantList.some(item => item.tenantId === persistedTenantId)
+        );
+        const initialTenantId = persistedSelectionIsValid
           ? persistedTenantId
-          : (defaultTenant ? defaultTenant.tenantId : null);
+          : (
+            profileDefaultSelectionAvailable
+              ? PROFILE_DEFAULT_TENANT_SELECTION
+              : (defaultTenant ? defaultTenant.tenantId : null)
+          );
         if (initialTenantId) {
           tenantSelectionByProfile.set(profile.profileId, initialTenantId);
         }
@@ -900,6 +1026,19 @@
               <p><strong>${escapeHtml(i18n.tenantHeaderLabel || 'Selection header')}</strong>: ${escapeHtml(tenantSummary.selectionHeaderName || 'X-Mcp4-Tenant-Id')}</p>
               <p class="profile-subtitle">${escapeHtml(i18n.tenantPickerScopeLabel || '')}</p>
               <div class="tenant-list" id="tenant-tabs" role="tablist" aria-label="Tenants">
+                ${profileDefaultSelectionAvailable ? `
+                  <button
+                    class="tenant-item${initialTenantId === PROFILE_DEFAULT_TENANT_SELECTION ? ' active' : ''}"
+                    type="button"
+                    role="tab"
+                    aria-selected="${initialTenantId === PROFILE_DEFAULT_TENANT_SELECTION ? 'true' : 'false'}"
+                    tabindex="${initialTenantId === PROFILE_DEFAULT_TENANT_SELECTION ? '0' : '-1'}"
+                    data-tenant-id="${PROFILE_DEFAULT_TENANT_SELECTION}"
+                  >
+                    <div class="tenant-title">${escapeHtml(i18n.tenantProfileDefaultLabel || 'Profile default (no tenant)')}</div>
+                    <div class="tenant-selector">${escapeHtml(i18n.tenantProfileDefaultNote || 'X-Mcp4-Tenant-Id will not be added to the snippet.')}</div>
+                  </button>
+                ` : ''}
                 ${tenantList.map(item => {
                   const isActive = item.tenantId === initialTenantId;
                   const defaultLabel = item.isDefault ? ` (${i18n.tenantDefaultLabel || 'default'})` : '';

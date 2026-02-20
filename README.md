@@ -476,10 +476,14 @@ If `MCP4_PROFILE_PATH` (or `--profile-path`) is set, `/mcp` remains available al
 Tenant selection is configured via `MCP4_HTTP_TENANTS_FILE` or `MCP4_HTTP_TENANTS_JSON` and supports both:
 - exact selectors: `https://team-a.example.com/api`
 - mask selectors: `mask:https://grafana.*.security.*.ops.iszn.cz/api`
+- mask path wildcards: `mask:https://monitoring.ops.iszn.cz/*/api` (`*` matches exactly one path segment)
 
 Selection headers (initialize request):
 - `X-Mcp4-Tenant-Id`: selects tenant by `tenant_id`
 - `X-Mcp4-Api-Base-Url`: selects concrete tenant endpoint by exact or `mask:` selector
+
+Required tenant scoping:
+- `profile_ids`: required non-empty array of profile ids where the tenant is active
 
 Resolution order:
 1. `X-Mcp4-Tenant-Id`
@@ -492,8 +496,9 @@ Rules:
 - If both tenant headers are provided, they must resolve to the same tenant.
 - On existing session requests, provided tenant headers must match stored tenant context.
 - Startup rejects selector collisions (exact/exact with incompatible auth, exact/mask overlap, mask/mask overlap) and runtime rejects ambiguous mask matches.
+- If no tenant headers are sent and profile default API base URL is available, tenant override is skipped and profile default config is used.
 
-When `MCP4_HTTP_PROFILE_INDEX=true`, the HTML profile index shows tenant availability per profile and provides interactive tenant picker for supported remote snippet formats that inject `X-Mcp4-Tenant-Id` into copied snippet output. For `mask:` tenants, copied snippets also include example `X-Mcp4-Api-Base-Url` with wildcard parts replaced by `<your-part>`.
+When `MCP4_HTTP_PROFILE_INDEX=true`, the HTML profile index shows tenant availability per profile and provides interactive tenant picker for supported remote snippet formats that inject `X-Mcp4-Tenant-Id` into copied snippet output. If profile default config is available, picker also offers a "no tenant" option that keeps snippets without tenant headers. For `mask:` tenants, copied snippets also include example `X-Mcp4-Api-Base-Url` with wildcard parts replaced by `<your-part>`. In `Local stdio` mode, tenant selection updates API base URL in snippets that support local env injection (using profile API endpoint env var).
 
 #### Parameter Filtering (HTTP: X-Mcp4-Params)
 

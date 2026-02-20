@@ -129,7 +129,9 @@ Routes:
   - Keeps current API endpoint display semantics (env/default source)
   - When tenant config is available for a profile, shows tenant availability and tenant list per profile
   - Includes interactive tenant picker for supported remote snippet formats and injects `X-Mcp4-Tenant-Id` into copied snippet output
+  - If profile default config is available, picker includes an explicit "no tenant" option that keeps snippet headers unchanged
   - For `mask:` tenant selection, picker also injects example `X-Mcp4-Api-Base-Url` with wildcard parts replaced by `<your-part>`
+  - In `Local stdio` mode, tenant selection injects tenant API base URL into snippet env config for supported local snippet formats
 
 Default profile behavior:
 - If `MCP4_PROFILE_PATH` (or `--profile-path`) is set, `/mcp` and `/sse` stay available.
@@ -164,6 +166,9 @@ You can configure per-session tenant selection using either:
 - exact: `https://team-a.example.com/api`
 - mask: `mask:https://grafana.*.security.*.ops.iszn.cz/api`
 
+Required tenant scoping:
+- `profile_ids`: required non-empty array of profile ids where the tenant is active
+
 Header selectors (initialize request only):
 - `X-Mcp4-Tenant-Id`: select tenant by `tenant_id`.
 - `X-Mcp4-Api-Base-Url`: select tenant by exact or mask selector.
@@ -184,6 +189,7 @@ Session immutability:
 - On non-initialize requests, selector headers are optional.
 - If provided, they must match the stored session tenant selection (tenant id and concrete base URL).
 - Mismatch returns `400 ValidationError`.
+- If no tenant headers are sent and profile default API base URL is available, tenant override is skipped and profile default config is used.
 
 Security and validation rules:
 - Tenant base URLs are allowlist-only; unknown selectors are rejected.
@@ -192,7 +198,8 @@ Security and validation rules:
 - `mask:` grammar:
   - wildcard `*` is allowed only as a full hostname label
   - literal hostname labels must match `[a-z0-9-]+`
-  - wildcard is not allowed in path (path must be literal)
+  - wildcard `*` is allowed in path only as a full path segment
+  - one `*` path segment matches exactly one concrete path segment
 - Startup fail-fast collision checks:
   - exact vs exact with incompatible auth
   - exact vs mask intersection
@@ -207,6 +214,7 @@ Tenant config example (exact + mask):
   "tenants": [
     {
       "tenant_id": "team-a",
+      "profile_ids": ["grafana", "grafana-optimized"],
       "default": true,
       "api_base_url": "https://team-a.example.com/api",
       "auth_mode": "token",
@@ -214,6 +222,7 @@ Tenant config example (exact + mask):
     },
     {
       "tenant_id": "grafana-security",
+      "profile_ids": ["grafana-security"],
       "api_base_url": "mask:https://grafana.*.security.*.ops.iszn.cz/api",
       "auth_mode": "token",
       "auth": { "type": "bearer", "value_from_env": "GRAFANA_SECURITY_TOKEN" }

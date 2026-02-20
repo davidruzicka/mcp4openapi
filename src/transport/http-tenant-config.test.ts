@@ -35,12 +35,52 @@ describe('http-tenant-config', () => {
     expect(resolveTenantFromHeaders(index, 'team-a', undefined)).toBeNull();
   });
 
+  it('applies tenants only to matching profile_ids and disables tenant index for unmatched profile', () => {
+    const raw = {
+      version: 1,
+      tenants: [
+        {
+          tenant_id: 'team-a',
+          default: true,
+          profile_ids: ['profile-a'],
+          api_base_url: 'https://team-a.example.com/api',
+          auth_mode: 'token',
+          auth: { type: 'bearer', value_from_env: 'TEAM_A_TOKEN' },
+        },
+        {
+          tenant_id: 'team-b',
+          default: true,
+          profile_ids: ['profile-b'],
+          api_base_url: 'https://team-b.example.com/api',
+          auth_mode: 'token',
+          auth: { type: 'bearer', value_from_env: 'TEAM_B_TOKEN' },
+        },
+      ],
+    };
+
+    const profileAIndex = buildTenantIndexForProfile(raw as any, { ...profileContext, profileId: 'profile-a' }, logger);
+    expect(profileAIndex.enabled).toBe(true);
+    expect(Array.from(profileAIndex.byTenantId.keys())).toEqual(['team-a']);
+    expect(resolveTenantFromHeaders(profileAIndex, undefined, undefined)?.tenantId).toBe('team-a');
+
+    const profileBIndex = buildTenantIndexForProfile(raw as any, { ...profileContext, profileId: 'profile-b' }, logger);
+    expect(profileBIndex.enabled).toBe(true);
+    expect(Array.from(profileBIndex.byTenantId.keys())).toEqual(['team-b']);
+    expect(resolveTenantFromHeaders(profileBIndex, undefined, undefined)?.tenantId).toBe('team-b');
+
+    const unmatchedIndex = buildTenantIndexForProfile(raw as any, { ...profileContext, profileId: 'profile-c' }, logger);
+    expect(unmatchedIndex.enabled).toBe(false);
+    expect(unmatchedIndex.byTenantId.size).toBe(0);
+    expect(resolveTenantFromHeaders(unmatchedIndex, undefined, undefined)).toBeNull();
+  });
+
   it('loads valid tenant config from env json and resolves by tenant id', () => {
     process.env.MCP4_HTTP_TENANTS_JSON = JSON.stringify({
       version: 1,
       tenants: [
         {
           tenant_id: 'team-a',
+          profile_ids: ['default'],
           default: true,
           api_base_url: 'https://team-a.example.com/api',
           auth_mode: 'token',
@@ -66,6 +106,7 @@ describe('http-tenant-config', () => {
         tenants: [
           {
             tenant_id: 'team-file',
+            profile_ids: ['default'],
             default: true,
             api_base_url: 'https://file.example.com/api',
             auth_mode: 'token',
@@ -94,12 +135,56 @@ describe('http-tenant-config', () => {
     expect(() => loadRawTenantsConfigFromEnv()).toThrow(/Tenant config must be an object/i);
   });
 
+  it('fails when tenant profile_ids is invalid', () => {
+    const missing = {
+      version: 1,
+      tenants: [
+        {
+          tenant_id: 'team-a',
+          api_base_url: 'https://team-a.example.com/api',
+          auth_mode: 'token',
+          auth: { type: 'bearer', value_from_env: 'TEAM_A_TOKEN' },
+        },
+      ],
+    };
+    expect(() => buildTenantIndexForProfile(missing as any, profileContext, logger)).toThrow(/profile_ids is required/i);
+
+    const nonArray = {
+      version: 1,
+      tenants: [
+        {
+          tenant_id: 'team-a',
+          profile_ids: 'profile-a',
+          api_base_url: 'https://team-a.example.com/api',
+          auth_mode: 'token',
+          auth: { type: 'bearer', value_from_env: 'TEAM_A_TOKEN' },
+        },
+      ],
+    };
+    expect(() => buildTenantIndexForProfile(nonArray as any, profileContext, logger)).toThrow(/profile_ids must be an array/i);
+
+    const emptyArray = {
+      version: 1,
+      tenants: [
+        {
+          tenant_id: 'team-a',
+          profile_ids: [],
+          api_base_url: 'https://team-a.example.com/api',
+          auth_mode: 'token',
+          auth: { type: 'bearer', value_from_env: 'TEAM_A_TOKEN' },
+        },
+      ],
+    };
+    expect(() => buildTenantIndexForProfile(emptyArray as any, profileContext, logger)).toThrow(/profile_ids must not be empty/i);
+  });
+
   it('fails when tenant config version is not supported', () => {
     process.env.MCP4_HTTP_TENANTS_JSON = JSON.stringify({
       version: 2,
       tenants: [
         {
           tenant_id: 'team-a',
+          profile_ids: ['default'],
           api_base_url: 'https://team-a.example.com/api',
           auth_mode: 'token',
           auth: { type: 'bearer', value_from_env: 'TEAM_A_TOKEN' },
@@ -121,8 +206,8 @@ describe('http-tenant-config', () => {
     const raw = {
       version: 1,
       tenants: [
-        { tenant_id: 'team-a', api_base_url: 'https://a.example.com/api', auth_mode: 'token', auth: { type: 'bearer', value_from_env: 'A' } },
-        { tenant_id: 'team-a', api_base_url: 'https://b.example.com/api', auth_mode: 'token', auth: { type: 'bearer', value_from_env: 'B' } },
+        { tenant_id: 'team-a', profile_ids: ['default'], api_base_url: 'https://a.example.com/api', auth_mode: 'token', auth: { type: 'bearer', value_from_env: 'A' } },
+        { tenant_id: 'team-a', profile_ids: ['default'], api_base_url: 'https://b.example.com/api', auth_mode: 'token', auth: { type: 'bearer', value_from_env: 'B' } },
       ],
     };
     expect(() => buildTenantIndexForProfile(raw as any, profileContext, logger)).toThrow(/Duplicate tenant_id/);
@@ -132,8 +217,8 @@ describe('http-tenant-config', () => {
     const raw = {
       version: 1,
       tenants: [
-        { tenant_id: 'team-a', api_base_url: 'https://same.example.com/api', auth_mode: 'token', auth: { type: 'bearer', value_from_env: 'A' } },
-        { tenant_id: 'team-b', api_base_url: 'https://same.example.com/api/', auth_mode: 'token', auth: { type: 'query', value_from_env: 'B' } },
+        { tenant_id: 'team-a', profile_ids: ['default'], api_base_url: 'https://same.example.com/api', auth_mode: 'token', auth: { type: 'bearer', value_from_env: 'A' } },
+        { tenant_id: 'team-b', profile_ids: ['default'], api_base_url: 'https://same.example.com/api/', auth_mode: 'token', auth: { type: 'query', value_from_env: 'B' } },
       ],
     };
     expect(() => buildTenantIndexForProfile(raw as any, profileContext, logger)).toThrow(/collision/i);
@@ -143,7 +228,7 @@ describe('http-tenant-config', () => {
     const raw = {
       version: 1,
       tenants: [
-        { tenant_id: 'team-a', api_base_url: 'https://team-a.example.com/api', auth_mode: 'oauth', auth: { type: 'bearer', value_from_env: 'A' } },
+        { tenant_id: 'team-a', profile_ids: ['default'], api_base_url: 'https://team-a.example.com/api', auth_mode: 'oauth', auth: { type: 'bearer', value_from_env: 'A' } },
       ],
     };
     expect(() => buildTenantIndexForProfile(raw as any, profileContext, logger)).toThrow(/requires oauth auth_mode/i);
@@ -168,7 +253,7 @@ describe('http-tenant-config', () => {
     const raw = {
       version: 1,
       tenants: [
-        { tenant_id: 'team-a', api_base_url: 'https://team-a.example.com/api', auth_mode: 'token' as const },
+        { tenant_id: 'team-a', profile_ids: ['default'], api_base_url: 'https://team-a.example.com/api', auth_mode: 'token' as const },
       ],
     };
 
@@ -195,7 +280,7 @@ describe('http-tenant-config', () => {
     const raw = {
       version: 1,
       tenants: [
-        { tenant_id: 'team-a', api_base_url: 'https://team-a.example.com/api', auth_mode: 'oauth' as const },
+        { tenant_id: 'team-a', profile_ids: ['default'], api_base_url: 'https://team-a.example.com/api', auth_mode: 'oauth' as const },
       ],
     };
 
@@ -209,7 +294,7 @@ describe('http-tenant-config', () => {
     const invalidId = {
       version: 1,
       tenants: [
-        { tenant_id: 'Invalid Tenant', api_base_url: 'https://ok.example.com/api', auth_mode: 'token', auth: { type: 'bearer', value_from_env: 'A' } },
+        { tenant_id: 'Invalid Tenant', profile_ids: ['default'], api_base_url: 'https://ok.example.com/api', auth_mode: 'token', auth: { type: 'bearer', value_from_env: 'A' } },
       ],
     };
     expect(() => buildTenantIndexForProfile(invalidId as any, profileContext, logger)).toThrow(/Invalid tenant_id/);
@@ -217,7 +302,7 @@ describe('http-tenant-config', () => {
     const invalidScheme = {
       version: 1,
       tenants: [
-        { tenant_id: 'team-a', api_base_url: 'http://insecure.example.com/api', auth_mode: 'token', auth: { type: 'bearer', value_from_env: 'A' } },
+        { tenant_id: 'team-a', profile_ids: ['default'], api_base_url: 'http://insecure.example.com/api', auth_mode: 'token', auth: { type: 'bearer', value_from_env: 'A' } },
       ],
     };
     expect(() => buildTenantIndexForProfile(invalidScheme as any, profileContext, logger)).toThrow(/must use https/);
@@ -227,7 +312,7 @@ describe('http-tenant-config', () => {
     const malformedUrl = {
       version: 1,
       tenants: [
-        { tenant_id: 'team-a', api_base_url: 'not-a-url', auth_mode: 'token', auth: { type: 'bearer', value_from_env: 'A' } },
+        { tenant_id: 'team-a', profile_ids: ['default'], api_base_url: 'not-a-url', auth_mode: 'token', auth: { type: 'bearer', value_from_env: 'A' } },
       ],
     };
     expect(() => buildTenantIndexForProfile(malformedUrl as any, profileContext, logger)).toThrow(/Invalid tenant api_base_url/i);
@@ -235,7 +320,7 @@ describe('http-tenant-config', () => {
     const credentialsUrl = {
       version: 1,
       tenants: [
-        { tenant_id: 'team-b', api_base_url: 'https://user:pass@example.com/api', auth_mode: 'token', auth: { type: 'bearer', value_from_env: 'B' } },
+        { tenant_id: 'team-b', profile_ids: ['default'], api_base_url: 'https://user:pass@example.com/api', auth_mode: 'token', auth: { type: 'bearer', value_from_env: 'B' } },
       ],
     };
     expect(() => buildTenantIndexForProfile(credentialsUrl as any, profileContext, logger)).toThrow(/must not contain credentials/i);
@@ -246,7 +331,7 @@ describe('http-tenant-config', () => {
     const raw = {
       version: 1,
       tenants: [
-        { tenant_id: 'team-a', default: true, api_base_url: 'http://insecure.example.com/api/', auth_mode: 'token', auth: { type: 'bearer', value_from_env: 'A' } },
+        { tenant_id: 'team-a', profile_ids: ['default'], default: true, api_base_url: 'http://insecure.example.com/api/', auth_mode: 'token', auth: { type: 'bearer', value_from_env: 'A' } },
       ],
     };
 
@@ -259,8 +344,8 @@ describe('http-tenant-config', () => {
     const raw = {
       version: 1,
       tenants: [
-        { tenant_id: 'team-a', default: true, api_base_url: 'https://a.example.com/api', auth_mode: 'token', auth: { type: 'bearer', value_from_env: 'A' } },
-        { tenant_id: 'team-b', api_base_url: 'https://b.example.com/api', auth_mode: 'token', auth: { type: 'bearer', value_from_env: 'B' } },
+        { tenant_id: 'team-a', profile_ids: ['default'], default: true, api_base_url: 'https://a.example.com/api', auth_mode: 'token', auth: { type: 'bearer', value_from_env: 'A' } },
+        { tenant_id: 'team-b', profile_ids: ['default'], api_base_url: 'https://b.example.com/api', auth_mode: 'token', auth: { type: 'bearer', value_from_env: 'B' } },
       ],
     };
 
@@ -274,8 +359,8 @@ describe('http-tenant-config', () => {
     const raw = {
       version: 1,
       tenants: [
-        { tenant_id: 'first', api_base_url: 'https://first.example.com/api', auth_mode: 'token', auth: { type: 'bearer', value_from_env: 'A' } },
-        { tenant_id: 'second', api_base_url: 'https://second.example.com/api', auth_mode: 'token', auth: { type: 'bearer', value_from_env: 'B' } },
+        { tenant_id: 'first', profile_ids: ['default'], api_base_url: 'https://first.example.com/api', auth_mode: 'token', auth: { type: 'bearer', value_from_env: 'A' } },
+        { tenant_id: 'second', profile_ids: ['default'], api_base_url: 'https://second.example.com/api', auth_mode: 'token', auth: { type: 'bearer', value_from_env: 'B' } },
       ],
     };
 
@@ -283,6 +368,21 @@ describe('http-tenant-config', () => {
     const resolved = resolveTenantFromHeaders(index, undefined, undefined);
     expect(index.defaultTenantId).toBe('first');
     expect(resolved?.tenantId).toBe('first');
+  });
+
+  it('returns profile default context when tenant selectors are omitted and profile default is allowed', () => {
+    const raw = {
+      version: 1,
+      tenants: [
+        { tenant_id: 'first', profile_ids: ['default'], api_base_url: 'https://first.example.com/api', auth_mode: 'token', auth: { type: 'bearer', value_from_env: 'A' } },
+      ],
+    };
+
+    const index = buildTenantIndexForProfile(raw as any, profileContext, logger);
+    const resolved = resolveTenantFromHeaders(index, undefined, undefined, {
+      allowProfileDefaultWithoutTenant: true,
+    });
+    expect(resolved).toBeNull();
   });
 
   it('requires selector when index is enabled without default tenant', () => {
@@ -312,7 +412,7 @@ describe('http-tenant-config', () => {
     const raw = {
       version: 1,
       tenants: [
-        { tenant_id: 'team-a', api_base_url: 'https://team-a.example.com/api', auth_mode: 'token' as const },
+        { tenant_id: 'team-a', profile_ids: ['default'], api_base_url: 'https://team-a.example.com/api', auth_mode: 'token' as const },
       ],
     };
 
@@ -329,7 +429,7 @@ describe('http-tenant-config', () => {
     const raw = {
       version: 1,
       tenants: [
-        { tenant_id: 'team-a', api_base_url: 'https://team-a.example.com/api', auth_mode: 'oauth' as const },
+        { tenant_id: 'team-a', profile_ids: ['default'], api_base_url: 'https://team-a.example.com/api', auth_mode: 'oauth' as const },
       ],
     };
 
@@ -342,8 +442,8 @@ describe('http-tenant-config', () => {
     const raw = {
       version: 1,
       tenants: [
-        { tenant_id: 'team-a', default: true, api_base_url: 'https://team-a.example.com/api', auth_mode: 'token', auth: { type: 'bearer', value_from_env: 'A' } },
-        { tenant_id: 'team-b', default: true, api_base_url: 'https://team-b.example.com/api', auth_mode: 'token', auth: { type: 'bearer', value_from_env: 'B' } },
+        { tenant_id: 'team-a', profile_ids: ['default'], default: true, api_base_url: 'https://team-a.example.com/api', auth_mode: 'token', auth: { type: 'bearer', value_from_env: 'A' } },
+        { tenant_id: 'team-b', profile_ids: ['default'], default: true, api_base_url: 'https://team-b.example.com/api', auth_mode: 'token', auth: { type: 'bearer', value_from_env: 'B' } },
       ],
     };
 
@@ -357,6 +457,7 @@ describe('http-tenant-config', () => {
       tenants: [
         {
           tenant_id: 'team-a',
+          profile_ids: ['default'],
           default: true,
           api_base_url: 'https://same.example.com/api',
           auth_mode: 'token',
@@ -364,6 +465,7 @@ describe('http-tenant-config', () => {
         },
         {
           tenant_id: 'team-b',
+          profile_ids: ['default'],
           api_base_url: 'https://same.example.com/api/',
           auth_mode: 'token',
           auth: { type: 'bearer', value_from_env: 'SHARED_TOKEN' },
@@ -393,6 +495,7 @@ describe('http-tenant-config', () => {
       tenants: [
         {
           tenant_id: 'grafana',
+          profile_ids: ['default'],
           api_base_url: 'mask:https://grafana.*.ops.iszn.cz/api',
           auth_mode: 'token',
           auth: { type: 'bearer', value_from_env: 'GRAFANA_TOKEN' },
@@ -420,12 +523,45 @@ describe('http-tenant-config', () => {
     expect(resolvedFromBoth?.tenantBaseUrl).toBe('https://grafana.security.ops.iszn.cz/api');
   });
 
+  it('resolves mask tenant when wildcard is used in path segment', () => {
+    const raw = {
+      version: 1,
+      tenants: [
+        {
+          tenant_id: 'reklama',
+          profile_ids: ['default'],
+          api_base_url: 'mask:https://monitoring.ops.iszn.cz/*/api',
+          auth_mode: 'token',
+          auth: { type: 'bearer', value_from_env: 'GRAFANA_TOKEN' },
+        },
+      ],
+    };
+
+    const index = buildTenantIndexForProfile(raw as any, profileContext, logger);
+    const resolved = resolveTenantFromHeaders(
+      index,
+      'reklama',
+      'https://monitoring.ops.iszn.cz/team-a/api',
+    );
+    expect(resolved?.tenantId).toBe('reklama');
+    expect(resolved?.tenantBaseUrl).toBe('https://monitoring.ops.iszn.cz/team-a/api');
+
+    expect(() =>
+      resolveTenantFromHeaders(
+        index,
+        undefined,
+        'https://monitoring.ops.iszn.cz/security/team-a/api',
+      ),
+    ).toThrow(/Unknown tenant base URL selector/i);
+  });
+
   it('rejects default fallback for mask tenant without concrete selector', () => {
     const raw = {
       version: 1,
       tenants: [
         {
           tenant_id: 'grafana',
+          profile_ids: ['default'],
           default: true,
           api_base_url: 'mask:https://grafana.*.ops.iszn.cz/api',
           auth_mode: 'token',
@@ -444,6 +580,7 @@ describe('http-tenant-config', () => {
       tenants: [
         {
           tenant_id: 'grafana-a',
+          profile_ids: ['default'],
           api_base_url: 'mask:https://grafana.*.ops.iszn.cz/api',
           auth_mode: 'token',
           auth: { type: 'bearer', value_from_env: 'GRAFANA_A_TOKEN' },
@@ -462,6 +599,7 @@ describe('http-tenant-config', () => {
         hostLabels: ['grafana', '*', 'ops', 'iszn', 'cz'],
         port: '',
         path: '/api',
+        pathSegments: ['api'],
       },
       context: {
         tenantId: 'grafana-b',
@@ -484,12 +622,14 @@ describe('http-tenant-config', () => {
       tenants: [
         {
           tenant_id: 'exact',
+          profile_ids: ['default'],
           api_base_url: 'https://grafana.team-a.ops.iszn.cz/api',
           auth_mode: 'token',
           auth: { type: 'bearer', value_from_env: 'EXACT_TOKEN' },
         },
         {
           tenant_id: 'mask',
+          profile_ids: ['default'],
           api_base_url: 'mask:https://grafana.*.ops.iszn.cz/api',
           auth_mode: 'token',
           auth: { type: 'bearer', value_from_env: 'MASK_TOKEN' },
@@ -503,13 +643,15 @@ describe('http-tenant-config', () => {
       tenants: [
         {
           tenant_id: 'mask-a',
-          api_base_url: 'mask:https://grafana.*.ops.iszn.cz/api',
+          profile_ids: ['default'],
+          api_base_url: 'mask:https://monitoring.ops.iszn.cz/*/api',
           auth_mode: 'token',
           auth: { type: 'bearer', value_from_env: 'MASK_A_TOKEN' },
         },
         {
           tenant_id: 'mask-b',
-          api_base_url: 'mask:https://grafana.team-a.ops.iszn.cz/api',
+          profile_ids: ['default'],
+          api_base_url: 'mask:https://monitoring.ops.iszn.cz/team-a/api',
           auth_mode: 'token',
           auth: { type: 'bearer', value_from_env: 'MASK_B_TOKEN' },
         },
@@ -519,17 +661,19 @@ describe('http-tenant-config', () => {
   });
 
   it('rejects invalid mask patterns', () => {
-    const wildcardPath = {
+    const partialWildcardPathSegment = {
       version: 1,
       tenants: [
         {
           tenant_id: 'mask-a',
-          api_base_url: 'mask:https://grafana.*.ops.iszn.cz/*',
+          profile_ids: ['default'],
+          api_base_url: 'mask:https://monitoring.ops.iszn.cz/team-*/api',
           auth_mode: 'token',
           auth: { type: 'bearer', value_from_env: 'MASK_A_TOKEN' },
         },
       ],
     };
-    expect(() => buildTenantIndexForProfile(wildcardPath as any, profileContext, logger)).toThrow(/path must be literal/i);
+    expect(() => buildTenantIndexForProfile(partialWildcardPathSegment as any, profileContext, logger))
+      .toThrow(/wildcard must be "\*" as a whole segment/i);
   });
 });

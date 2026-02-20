@@ -99,7 +99,7 @@ describe('profile index helpers', () => {
     expect(claudeLocalJson?.content).not.toContain('${env:GITLAB_TOKEN}');
     expect(claudeLocalCli?.mode).toBe('local');
     expect(claudeLocalCli?.format).toBe('cli');
-    expect(claudeLocalCli?.content).toContain('claude mcp add -s user __PROFILE_ID__ -- npx -y mcp4openapi --profile __PROFILE_ID__');
+    expect(claudeLocalCli?.content).toContain('claude mcp add -s user --env "GITLAB_API_BASE_URL=https://gitlab.com/api/v4" __PROFILE_ID__ -- npx -y mcp4openapi --profile __PROFILE_ID__');
     expect(claudeLocalCli?.content).not.toContain('export ');
     expect(geminiJson?.format).toBe('json');
     expect(geminiJson?.content).toContain('"mcpServers"');
@@ -112,11 +112,12 @@ describe('profile index helpers', () => {
     expect(geminiLocalJson?.content).toContain('"mcpServers"');
     expect(geminiLocalJson?.content).toContain('"command": "npx"');
     expect(geminiLocalJson?.content).toContain('"args": [');
-    expect(geminiLocalJson?.content).not.toContain('"env": {');
+    expect(geminiLocalJson?.content).toContain('"env": {');
+    expect(geminiLocalJson?.content).toContain('"GITLAB_API_BASE_URL": "https://gitlab.com/api/v4"');
     expect(geminiLocalJson?.content).not.toContain('GITLAB_TOKEN');
     expect(geminiLocalCli?.mode).toBe('local');
     expect(geminiLocalCli?.format).toBe('cli');
-    expect(geminiLocalCli?.content).toContain('gemini mcp add -s user __PROFILE_ID__ -- npx -y mcp4openapi --profile __PROFILE_ID__');
+    expect(geminiLocalCli?.content).toContain('gemini mcp add -s user -e "GITLAB_API_BASE_URL=https://gitlab.com/api/v4" __PROFILE_ID__ -- npx -y mcp4openapi --profile __PROFILE_ID__');
     expect(codexToml?.format).toBe('toml');
     expect(codexToml?.content).toContain('[mcp_servers.__PROFILE_ID__]');
     expect(codexToml?.content).toContain('transport = "http"');
@@ -355,7 +356,8 @@ describe('profile index helpers', () => {
     expect(cursorLocal?.content).not.toContain('MCP4_OAUTH_CLIENT_SECRET');
 
     expect(geminiLocalJson?.content).toContain('"args": [');
-    expect(geminiLocalJson?.content).not.toContain('"env": {');
+    expect(geminiLocalJson?.content).toContain('"env": {');
+    expect(geminiLocalJson?.content).toContain('"GITLAB_API_BASE_URL": "https://gitlab.com/api/v4"');
     expect(geminiLocalJson?.content).not.toContain('GITLAB_TOKEN');
     expect(geminiLocalJson?.content).not.toContain('MCP4_OAUTH_CLIENT_ID');
     expect(geminiLocalJson?.content).not.toContain('MCP4_OAUTH_CLIENT_SECRET');
@@ -483,6 +485,7 @@ describe('profile index helpers', () => {
         tenantSummary: {
           tenantsEnabled: true,
           selectionHeaderName: 'X-Mcp4-Tenant-Id',
+          profileDefaultAvailable: true,
           tenants: [
             {
               tenantId: 'team-a',
@@ -506,6 +509,7 @@ describe('profile index helpers', () => {
 
     expect(profile.tenantSummary?.tenantsEnabled).toBe(true);
     expect(profile.tenantSummary?.selectionHeaderName).toBe('X-Mcp4-Tenant-Id');
+    expect(profile.tenantSummary?.profileDefaultAvailable).toBe(true);
     expect(profile.tenantSummary?.tenants).toHaveLength(2);
     expect(profile.tenantSummary?.tenants[0].tenantId).toBe('team-a');
     expect(profile.tenantSummary?.tenants[1].selectorType).toBe('mask');
@@ -523,6 +527,7 @@ describe('profile index helpers', () => {
         tenantSummary: {
           tenantsEnabled: true,
           selectionHeaderName: 'X-Mcp4-Tenant-Id',
+          profileDefaultAvailable: true,
           tenants: [
             {
               tenantId: 'team-a',
@@ -541,7 +546,11 @@ describe('profile index helpers', () => {
 
     expect(html).toContain('"tenantSummary":{"tenantsEnabled":true');
     expect(html).toContain('"selectionHeaderName":"X-Mcp4-Tenant-Id"');
+    expect(html).toContain('"profileDefaultAvailable":true');
     expect(html).toContain('injectTenantHeaderIntoJsonSnippet');
+    expect(html).toContain('injectTenantApiBaseUrlIntoJsonSnippet');
+    expect(html).toContain('injectTenantApiBaseUrlIntoCodexToml');
+    expect(html).toContain('__profile-default__');
     expect(html).toContain('supportsTenantPicker');
     expect(html).toContain('buildMaskExampleBaseUrl');
     expect(html).toContain('getClientLabel');
@@ -556,6 +565,7 @@ describe('profile index helpers', () => {
     expect(html).toContain('key.startsWith(\'jetbrains-\')');
     expect(html).toContain('key.startsWith(\'claude-json-\')');
     expect(html).toContain('key.startsWith(\'gemini-json-\')');
+    expect(html).toContain('key.startsWith(\'gemini-local-json-\')');
     expect(html).toContain('key.startsWith(\'codex-toml-\')');
   });
 });

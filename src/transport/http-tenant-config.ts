@@ -35,11 +35,64 @@ interface BuiltTenantContext {
   maskSelector?: TenantMaskSelector;
 }
 
+function parseTenantProfileIds(tenant: HttpTenantsConfig['tenants'][number], tenantId: string): string[] {
+  const rawProfileIds = (tenant as { profile_ids?: unknown }).profile_ids;
+  if (rawProfileIds === undefined) {
+    throw new ValidationError(`Tenant '${tenantId}' profile_ids is required.`);
+  }
+  if (!Array.isArray(rawProfileIds)) {
+    throw new ValidationError(`Tenant '${tenantId}' profile_ids must be an array of profile ids.`);
+  }
+  if (rawProfileIds.length === 0) {
+    throw new ValidationError(`Tenant '${tenantId}' profile_ids must not be empty.`);
+  }
+
+  const normalizedProfileIds: string[] = [];
+  const seen = new Set<string>();
+  for (const value of rawProfileIds) {
+    if (typeof value !== 'string' || value.trim().length === 0) {
+      throw new ValidationError(`Tenant '${tenantId}' profile_ids must contain non-empty strings.`);
+    }
+    const profileId = value.trim();
+    if (seen.has(profileId)) {
+      throw new ValidationError(`Tenant '${tenantId}' profile_ids must not contain duplicates.`);
+    }
+    seen.add(profileId);
+    normalizedProfileIds.push(profileId);
+  }
+
+  return normalizedProfileIds;
+}
+
 function normalizePath(pathname: string): string {
   if (pathname === '/') {
     return '';
   }
   return pathname.replace(/\/$/, '');
+}
+
+function toPathSegments(pathname: string): string[] {
+  const normalizedPath = normalizePath(pathname);
+  if (!normalizedPath) {
+    return [];
+  }
+  return normalizedPath.slice(1).split('/');
+}
+
+function parseMaskPath(pathname: string): { path: string; pathSegments: string[] } {
+  const path = normalizePath(pathname);
+  const pathSegments = toPathSegments(pathname);
+
+  for (const segment of pathSegments) {
+    if (!segment.includes('*')) {
+      continue;
+    }
+    if (segment !== '*') {
+      throw new ValidationError('Tenant api_base_url mask path wildcard must be "*" as a whole segment.');
+    }
+  }
+
+  return { path, pathSegments };
 }
 
 function normalizeBaseUrl(raw: string): string {
@@ -100,11 +153,7 @@ function parseTenantMaskSelector(rawValue: string): TenantMaskSelector {
     }
   }
 
-  if (url.pathname.includes('*')) {
-    throw new ValidationError('Tenant api_base_url mask path must be literal (wildcards are not allowed in path).');
-  }
-
-  const path = normalizePath(url.pathname);
+  const { path, pathSegments } = parseMaskPath(url.pathname);
   const normalizedHost = hostLabels.join('.');
   const port = url.port;
   const portPart = port ? `:${port}` : '';
@@ -117,6 +166,7 @@ function parseTenantMaskSelector(rawValue: string): TenantMaskSelector {
     hostLabels,
     port,
     path,
+    pathSegments,
   };
 }
 
@@ -287,7 +337,7 @@ function maskMatchesBaseUrl(selector: TenantMaskSelector, normalizedBaseUrl: str
 
   const concreteScheme = concrete.protocol as 'http:' | 'https:';
   const concretePort = concrete.port;
-  const concretePath = normalizePath(concrete.pathname);
+  const concretePathSegments = toPathSegments(concrete.pathname);
   const concreteLabels = concrete.hostname.toLowerCase().split('.');
 
   if (selector.scheme !== concreteScheme) {
@@ -296,7 +346,7 @@ function maskMatchesBaseUrl(selector: TenantMaskSelector, normalizedBaseUrl: str
   if (selector.port !== concretePort) {
     return false;
   }
-  if (selector.path !== concretePath) {
+  if (selector.pathSegments.length !== concretePathSegments.length) {
     return false;
   }
   if (selector.hostLabels.length !== concreteLabels.length) {
@@ -311,6 +361,14 @@ function maskMatchesBaseUrl(selector: TenantMaskSelector, normalizedBaseUrl: str
     }
   }
 
+  for (let index = 0; index < selector.pathSegments.length; index += 1) {
+    const maskSegment = selector.pathSegments[index];
+    const concreteSegment = concretePathSegments[index];
+    if (maskSegment !== '*' && maskSegment !== concreteSegment) {
+      return false;
+    }
+  }
+
   return true;
 }
 
@@ -321,7 +379,7 @@ function masksIntersect(left: TenantMaskSelector, right: TenantMaskSelector): bo
   if (left.port !== right.port) {
     return false;
   }
-  if (left.path !== right.path) {
+  if (left.pathSegments.length !== right.pathSegments.length) {
     return false;
   }
   if (left.hostLabels.length !== right.hostLabels.length) {
@@ -332,6 +390,14 @@ function masksIntersect(left: TenantMaskSelector, right: TenantMaskSelector): bo
     const leftLabel = left.hostLabels[index];
     const rightLabel = right.hostLabels[index];
     if (leftLabel !== '*' && rightLabel !== '*' && leftLabel !== rightLabel) {
+      return false;
+    }
+  }
+
+  for (let index = 0; index < left.pathSegments.length; index += 1) {
+    const leftSegment = left.pathSegments[index];
+    const rightSegment = right.pathSegments[index];
+    if (leftSegment !== '*' && rightSegment !== '*' && leftSegment !== rightSegment) {
       return false;
     }
   }
@@ -385,6 +451,14 @@ export function buildTenantIndexForProfile(
 
   for (let i = 0; i < rawConfig.tenants.length; i += 1) {
     const tenant = rawConfig.tenants[i];
+    const tenantIdForValidation = typeof tenant.tenant_id === 'string' && tenant.tenant_id.length > 0
+      ? tenant.tenant_id
+      : `index-${i}`;
+    const tenantProfileIds = parseTenantProfileIds(tenant, tenantIdForValidation);
+    if (!tenantProfileIds.includes(profileContext.profileId)) {
+      continue;
+    }
+
     const built = buildResolvedContext(tenant, profileContext);
     const resolved = built.resolved;
 
@@ -457,8 +531,18 @@ export function buildTenantIndexForProfile(
     });
   }
 
-  if (!defaultTenantId && rawConfig.tenants.length > 0) {
-    defaultTenantId = rawConfig.tenants[0].tenant_id;
+  if (byTenantId.size === 0) {
+    return {
+      enabled: false,
+      byTenantId,
+      byBaseUrl,
+      maskSelectors,
+      selectorTypeByTenantId,
+    };
+  }
+
+  if (!defaultTenantId && byTenantId.size > 0) {
+    defaultTenantId = byTenantId.keys().next().value;
     logger.warn('No default tenant configured, using first tenant as fallback.', {
       profileId: profileContext.profileId,
       tenantId: defaultTenantId,
@@ -479,6 +563,9 @@ export function resolveTenantFromHeaders(
   tenantIndex: HttpTenantIndex,
   tenantIdHeader: string | undefined,
   tenantBaseUrlHeader: string | undefined,
+  options?: {
+    allowProfileDefaultWithoutTenant?: boolean;
+  },
 ): ResolvedTenantContext | null {
   if (!tenantIndex.enabled) {
     return null;
@@ -529,6 +616,10 @@ export function resolveTenantFromHeaders(
 
   if (byBaseUrl) {
     return byBaseUrl;
+  }
+
+  if (!tenantIdHeader && !tenantBaseUrlHeader && options?.allowProfileDefaultWithoutTenant) {
+    return null;
   }
 
   if (!tenantIndex.defaultTenantId) {

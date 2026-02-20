@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- Added HTTP tenant session override with deterministic exact and `mask:` selectors, startup/runtime collision guards, stricter session immutability by tenant URL, and profile-index tenant metadata with interactive header injection (`X-Mcp4-Tenant-Id`, plus example `X-Mcp4-Api-Base-Url` for `mask:` tenants) for supported remote snippets.
+- Added HTTP tenant session override with deterministic exact and `mask:` selectors, startup/runtime collision guards, path-segment wildcards (`*`) for mask URLs, required `profile_ids` tenant scoping, and profile-index tenant metadata with interactive header injection (`X-Mcp4-Tenant-Id`, plus example `X-Mcp4-Api-Base-Url` for `mask:` tenants) including explicit "no tenant" profile-default selection when available.
 
 ### Fixed
 - Fixed tenant auth-mode resolution and tenant custom-header extraction order in HTTP initialize flow, restored `X-Mcp4-Params` single-array parsing, and reused tenant OAuth provider state across refreshes with session-scoped cleanup.
@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Refreshed lockfile with latest non-breaking dependency updates available under current semver ranges.
 - Upgraded the dev test/lint toolchain to eslint 10 and Vitest 4, replaced `typescript-json-schema` with `ts-json-schema-generator`, and updated schema-sync generation scripts accordingly.
 - Updated Vitest configuration to v4 worker options (`maxWorkers`, `isolate`, `fileParallelism`) to remove deprecated `poolOptions` usage.
+- Extended local stdio profile-index snippets for Claude Code CLI and Gemini (JSON + CLI) to include API base URL env wiring, and enabled tenant API-base override injection for Gemini local JSON snippets.
 
 ## [0.4.0] - 2026-02-16
 

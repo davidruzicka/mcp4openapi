@@ -1551,7 +1551,7 @@ export class HttpTransport {
           continue;
         }
         const tenantIndex = buildTenantIndexForProfile(this.rawTenantConfig, context, this.logger);
-        const tenantSummary = this.buildProfileIndexTenantSummary(tenantIndex);
+        const tenantSummary = this.buildProfileIndexTenantSummary(tenantIndex, context);
         enriched.push({
           ...profile,
           tenantSummary,
@@ -1568,7 +1568,10 @@ export class HttpTransport {
     return enriched;
   }
 
-  private buildProfileIndexTenantSummary(tenantIndex: HttpTenantIndex): ProfileIndexTenantSummary | undefined {
+  private buildProfileIndexTenantSummary(
+    tenantIndex: HttpTenantIndex,
+    profileContext: HttpProfileContext,
+  ): ProfileIndexTenantSummary | undefined {
     if (!tenantIndex.enabled || tenantIndex.byTenantId.size === 0) {
       return undefined;
     }
@@ -1585,6 +1588,7 @@ export class HttpTransport {
     return {
       tenantsEnabled: true,
       selectionHeaderName: 'X-Mcp4-Tenant-Id',
+      profileDefaultAvailable: typeof profileContext.baseUrl === 'string' && profileContext.baseUrl.trim().length > 0,
       tenants,
     };
   }
@@ -2487,10 +2491,15 @@ export class HttpTransport {
         // Create session on initialization
         let newSessionId: string | undefined;
         if (isInitialization) {
+          const allowProfileDefaultWithoutTenant = typeof profileState.context.baseUrl === 'string'
+            && profileState.context.baseUrl.trim().length > 0;
           const resolvedTenant = resolveTenantFromHeaders(
             this.getTenantIndex(profileState),
             tenantIdHeaderValue,
             tenantBaseUrlHeaderValue,
+            {
+              allowProfileDefaultWithoutTenant,
+            },
           );
           const effectiveAuthContext = this.resolveEffectiveAuthContext(profileState, resolvedTenant);
           const authInfo = this.extractAuthToken(req, profileState, effectiveAuthContext.authConfigs);

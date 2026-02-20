@@ -114,6 +114,7 @@ describeIfListen('HttpTransport', () => {
       tenants: [
         {
           tenant_id: 'team-a',
+          profile_ids: ['default'],
           default: true,
           api_base_url: 'https://team-a.example.com/api',
           auth_mode: 'token',
@@ -121,6 +122,7 @@ describeIfListen('HttpTransport', () => {
         },
         {
           tenant_id: 'team-b',
+          profile_ids: ['default'],
           api_base_url: 'https://team-b.example.com/api',
           auth_mode: 'token',
           auth: { type: 'bearer', value_from_env: 'TEAM_B_TOKEN' },
@@ -291,6 +293,7 @@ describeIfListen('HttpTransport', () => {
         tenants: [
           {
             tenant_id: 'grafana',
+            profile_ids: ['default'],
             default: true,
             api_base_url: 'mask:https://grafana.*.ops.iszn.cz/api',
             auth_mode: 'token',
@@ -340,6 +343,7 @@ describeIfListen('HttpTransport', () => {
         tenants: [
           {
             tenant_id: 'grafana',
+            profile_ids: ['default'],
             default: true,
             api_base_url: 'mask:https://grafana.*.ops.iszn.cz/api',
             auth_mode: 'token',
@@ -385,6 +389,7 @@ describeIfListen('HttpTransport', () => {
         tenants: [
           {
             tenant_id: 'grafana',
+            profile_ids: ['default'],
             default: true,
             api_base_url: 'mask:https://grafana.*.ops.iszn.cz/api',
             auth_mode: 'token',
@@ -484,6 +489,7 @@ describeIfListen('HttpTransport', () => {
                   hostLabels: ['grafana', '*', 'ops', 'iszn', 'cz'],
                   port: '',
                   path: '/api',
+                  pathSegments: ['api'],
                 },
                 context: maskContext as any,
               },
@@ -528,6 +534,7 @@ describeIfListen('HttpTransport', () => {
         tenants: [
           {
             tenant_id: 'team-token',
+            profile_ids: ['default'],
             default: true,
             api_base_url: 'https://team-token.example.com/api',
             auth_mode: 'token',
@@ -591,6 +598,7 @@ describeIfListen('HttpTransport', () => {
         tenants: [
           {
             tenant_id: 'team-custom',
+            profile_ids: ['default'],
             default: true,
             api_base_url: 'https://team-custom.example.com/api',
             auth_mode: 'token',
@@ -638,6 +646,7 @@ describeIfListen('HttpTransport', () => {
         tenants: [
           {
             tenant_id: 'team-custom',
+            profile_ids: ['default'],
             default: true,
             api_base_url: 'https://team-custom.example.com/api',
             auth_mode: 'token',
@@ -909,12 +918,14 @@ describeIfListen('HttpTransport', () => {
           {
             tenant_id: 'team-a',
             default: true,
+            profile_ids: ['tenant-aware'],
             api_base_url: 'https://grafana.team-a.ops.iszn.cz/api',
             auth_mode: 'token',
             auth: { type: 'bearer', value_from_env: 'TEAM_A_TOKEN' },
           },
           {
             tenant_id: 'grafana-mask',
+            profile_ids: ['tenant-aware'],
             api_base_url: 'mask:https://grafana.*.security.ops.iszn.cz/api',
             auth_mode: 'token',
             auth: { type: 'bearer', value_from_env: 'GRAFANA_MASK_TOKEN' },
@@ -925,16 +936,11 @@ describeIfListen('HttpTransport', () => {
       indexTransport = createIndexTransport();
       indexApp = (indexTransport as any).app;
 
-      indexTransport.setProfileContextProvider(async (profileId: string) => {
-        if (profileId !== 'tenant-aware') {
-          return null;
-        }
-        return {
-          profileId,
-          baseUrl: 'https://default.example.com/api',
-          authConfigs: [{ type: 'bearer', value_from_env: 'DEFAULT_TOKEN' }],
-        };
-      });
+      indexTransport.setProfileContextProvider(async (profileId: string) => ({
+        profileId,
+        baseUrl: 'https://default.example.com/api',
+        authConfigs: [{ type: 'bearer', value_from_env: 'DEFAULT_TOKEN' }],
+      }));
       indexTransport.setProfileIndexProvider(async () => ([
         {
           profileId: 'tenant-aware',
@@ -961,6 +967,7 @@ describeIfListen('HttpTransport', () => {
       const withoutTenantData = response.body.profiles.find((profile: any) => profile.profileId === 'no-tenant-data');
       expect(withTenantData?.tenantSummary?.tenantsEnabled).toBe(true);
       expect(withTenantData?.tenantSummary?.selectionHeaderName).toBe('X-Mcp4-Tenant-Id');
+      expect(withTenantData?.tenantSummary?.profileDefaultAvailable).toBe(true);
       expect(withTenantData?.tenantSummary?.tenants).toEqual([
         expect.objectContaining({
           tenantId: 'grafana-mask',
@@ -984,6 +991,7 @@ describeIfListen('HttpTransport', () => {
         tenants: [
           {
             tenant_id: 'team-a',
+            profile_ids: ['tenant-aware'],
             default: true,
             api_base_url: 'https://grafana.team-a.ops.iszn.cz/api',
             auth_mode: 'token',
@@ -1017,8 +1025,10 @@ describeIfListen('HttpTransport', () => {
       expect(response.headers['content-type']).toContain('text/html');
       expect(response.text).toContain('tenant-tabs');
       expect(response.text).toContain('injectTenantHeaderIntoJsonSnippet');
+      expect(response.text).toContain('injectTenantApiBaseUrlIntoJsonSnippet');
       expect(response.text).toContain('X-Mcp4-Tenant-Id');
       expect(response.text).toContain('X-Mcp4-Api-Base-Url');
+      expect(response.text).toContain('__profile-default__');
       expect(response.text).toContain('<your-part>');
       expect(response.text).toContain('data-client-tab');
       expect(response.text).toContain('wireClientTabs');

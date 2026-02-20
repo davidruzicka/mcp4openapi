@@ -10,10 +10,12 @@ export interface TenantMaskSelector {
   hostLabels: string[];
   port: string;
   path: string;
+  pathSegments: string[];
 }
 
 export interface HttpTenantConfig {
   tenant_id: string;
+  profile_ids: string[];
   default?: boolean;
   api_base_url: string;
   auth_mode: TenantAuthMode;
