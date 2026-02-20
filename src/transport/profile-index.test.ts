@@ -541,8 +541,12 @@ describe('profile index helpers', () => {
     expect(html).toContain('"tenantSummary":{"tenantsEnabled":true');
     expect(html).toContain('"selectionHeaderName":"X-Mcp4-Tenant-Id"');
     expect(html).toContain('injectTenantHeaderIntoJsonSnippet');
+    expect(html).toContain('upsertCursorHeaderArgInArgs');
+    expect(html).toContain('ensureCursorMcpRemoteArgs');
     expect(html).toContain('injectTenantApiBaseUrlIntoJsonSnippet');
     expect(html).toContain('injectTenantApiBaseUrlIntoCodexToml');
+    expect(html).toContain('const sectionHeaderRegex = /^\\[mcp_servers\\.[^\\]]+\\.env\\]\\s*$/;');
+    expect(html).toContain('const fallbackSectionHeader = `[mcp_servers.${profileId}.env]`;');
     expect(html).toContain('__profile-default__');
     expect(html).toContain('supportsTenantPicker');
     expect(html).toContain('buildMaskExampleBaseUrl');
@@ -555,6 +559,8 @@ describe('profile index helpers', () => {
     expect(html).toContain('X-Mcp4-Api-Base-Url');
     expect(html).toContain('<your-part>');
     expect(html).toContain('key.startsWith(\'vscode-\')');
+    expect(html).toContain('key.startsWith(\'cursor-\')');
+    expect(html).toContain("upsertCursorHeaderArgInArgs(args, 'X-Mcp4-Tenant-Id'");
     expect(html).toContain('key.startsWith(\'jetbrains-\')');
     expect(html).toContain('key.startsWith(\'claude-json-\')');
     expect(html).toContain('key.startsWith(\'gemini-json-\')');

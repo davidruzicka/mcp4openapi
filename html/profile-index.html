@@ -302,6 +302,9 @@
         color: var(--muted);
         word-break: break-all;
       }
+      .tenant-mask-note {
+        margin-top: 10px;
+      }
       .sr-only {
         position: absolute;
         width: 1px;
@@ -380,6 +383,7 @@
         const key = entry.key || '';
         return (
           key.startsWith('vscode-') ||
+          key.startsWith('cursor-') ||
           key.startsWith('jetbrains-') ||
           key.startsWith('claude-json-') ||
           key.startsWith('gemini-json-') ||
@@ -429,6 +433,39 @@
         };
       }
 
+      function upsertCursorHeaderArgInArgs(args, headerName, headerValue) {
+        if (!Array.isArray(args)) return args;
+        const normalizedHeaderPrefix = `${headerName}:`.toLowerCase();
+        for (let index = 0; index < args.length - 1; index += 1) {
+          if (args[index] !== '--header') continue;
+          const headerArg = args[index + 1];
+          if (typeof headerArg !== 'string') continue;
+          if (!headerArg.toLowerCase().startsWith(normalizedHeaderPrefix)) continue;
+          args[index + 1] = `${headerName}: ${headerValue}`;
+          return args;
+        }
+        args.push('--header');
+        args.push(`${headerName}: ${headerValue}`);
+        return args;
+      }
+
+      function ensureCursorMcpRemoteArgs(server) {
+        if (!server || typeof server !== 'object') return null;
+        const currentArgs = Array.isArray(server.args) ? server.args : null;
+        const hasMcpRemoteArgs = currentArgs && currentArgs.some(arg => arg === 'mcp-remote');
+        if (hasMcpRemoteArgs) {
+          return currentArgs;
+        }
+
+        const cursorUrl = typeof server.url === 'string' ? server.url : '__PROFILE_URL__';
+        server.command = 'npx';
+        server.args = ['-y', 'mcp-remote', cursorUrl];
+        delete server.type;
+        delete server.url;
+        delete server.headers;
+        return server.args;
+      }
+
       function injectTenantHeaderIntoJsonSnippet(snippet, entry, tenantSelection) {
         let parsed;
         try {
@@ -447,7 +484,14 @@
         if (!serverName || !root[serverName] || typeof root[serverName] !== 'object') return snippet;
         const server = root[serverName];
 
-        if (key.startsWith('jetbrains-')) {
+        if (key.startsWith('cursor-')) {
+          const args = ensureCursorMcpRemoteArgs(server);
+          if (!Array.isArray(args)) return snippet;
+          upsertCursorHeaderArgInArgs(args, 'X-Mcp4-Tenant-Id', tenantSelection.tenantId);
+          if (tenantSelection.baseUrlExample) {
+            upsertCursorHeaderArgInArgs(args, 'X-Mcp4-Api-Base-Url', tenantSelection.baseUrlExample);
+          }
+        } else if (key.startsWith('jetbrains-')) {
           if (!server.requestInit || typeof server.requestInit !== 'object') {
             server.requestInit = {};
           }
@@ -570,15 +614,16 @@
         return lines.join('\n');
       }
 
-      function upsertCodexTomlEnvValue(snippet, envVarName, envVarValue) {
+      function upsertCodexTomlEnvValue(snippet, profileId, envVarName, envVarValue) {
         const sanitized = removeEnvVarFromCodexTomlEnvVars(snippet, envVarName);
         const lines = sanitized.split('\n');
-        const sectionHeader = '[mcp_servers.__PROFILE_ID__.env]';
-        const sectionIndex = lines.findIndex(line => line.trim() === sectionHeader);
+        const sectionHeaderRegex = /^\[mcp_servers\.[^\]]+\.env\]\s*$/;
+        const fallbackSectionHeader = `[mcp_servers.${profileId}.env]`;
+        const sectionIndex = lines.findIndex(line => sectionHeaderRegex.test(line.trim()));
         const envEntry = `${envVarName} = "${envVarValue}"`;
 
         if (sectionIndex === -1) {
-          return `${sanitized}\n\n${sectionHeader}\n${envEntry}`;
+          return `${sanitized}\n\n${fallbackSectionHeader}\n${envEntry}`;
         }
 
         let nextSectionIndex = lines.length;
@@ -604,8 +649,9 @@
       function injectTenantApiBaseUrlIntoCodexToml(snippet, profile, tenantSelection) {
         const apiBaseUrlEnvVar = profile?.apiEndpointEnvVar;
         const tenantApiBaseUrl = tenantSelection?.localApiBaseUrl;
-        if (!apiBaseUrlEnvVar || !tenantApiBaseUrl) return snippet;
-        return upsertCodexTomlEnvValue(snippet, apiBaseUrlEnvVar, tenantApiBaseUrl);
+        const profileId = profile?.profileId;
+        if (!apiBaseUrlEnvVar || !tenantApiBaseUrl || !profileId) return snippet;
+        return upsertCodexTomlEnvValue(snippet, profileId, apiBaseUrlEnvVar, tenantApiBaseUrl);
       }
 
       function injectTenantApiBaseUrlForLocalSnippet(snippet, entry, profile, tenantSelection) {
@@ -1051,7 +1097,7 @@
                   `;
                 }).join('')}
               </div>
-              ${tenantList.some(item => item.selectorType === 'mask') ? `<p class="profile-subtitle">${escapeHtml(i18n.tenantMaskNote || '')}</p>` : ''}
+              ${tenantList.some(item => item.selectorType === 'mask') ? `<p class="profile-subtitle tenant-mask-note">${escapeHtml(i18n.tenantMaskNote || '')}</p>` : ''}
             </div>
           `
           : '';
