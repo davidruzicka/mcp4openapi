@@ -114,3 +114,16 @@ Hostname validation is insufficient for URL security because it ignores the prot
 1.  Always validate the `protocol` of a URL in addition to the hostname.
 2.  Explicitly block dangerous schemes (`javascript:`, `data:`, `vbscript:`, `file:`).
 3.  Prefer an allowlist of safe schemes (`http:`, `https:`) and known application schemes (e.g., `vscode:`, `cursor:`) over a blocklist if possible, but definitely block known bad ones.
+
+## 2026-02-20 - [HIGH] DoS via Unbounded Memory Growth in Client Store
+
+**Vulnerability:**
+The `InMemoryClientsStore` in `src/auth/oauth-provider.ts` allowed unlimited registration of OAuth clients via `registerClient`. An attacker could exploit this by flooding the server with client registration requests (e.g., via the `POST /oauth/register` endpoint), causing the server to run out of memory and crash (Denial of Service).
+
+**Learning:**
+In-memory data structures (Maps, Sets, Arrays) that grow based on user input or external requests must always have a hard upper limit (capacity) and an eviction strategy. Without these limits, they are trivial vectors for memory exhaustion attacks.
+
+**Prevention:**
+1.  Implement a hard limit (e.g., `MAX_CLIENTS = 1000`) on the number of items stored in memory.
+2.  Implement an eviction strategy to remove old or less critical items when the limit is reached.
+3.  Prioritize keeping critical (static/configured) data over dynamic/ephemeral data during eviction.
