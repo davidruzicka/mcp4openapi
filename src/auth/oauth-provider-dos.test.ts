@@ -77,4 +77,47 @@ describe('InMemoryClientsStore DoS Protection', () => {
     const lastDynamic = await store.getClient('mcp-client-1099');
     expect(lastDynamic).toBeDefined();
   });
+
+  it('should fall back to FIFO eviction when no dynamic clients exist', async () => {
+    const store = new InMemoryClientsStore();
+    const limit = 1000;
+
+    // Fill the store with ONLY static clients
+    for (let i = 0; i < limit; i++) {
+      const client: OAuthClientInformationFull = {
+        client_id: `static-client-${i}`,
+        client_secret: 'secret',
+        redirect_uris: ['http://localhost'],
+        grant_types: ['authorization_code'],
+        response_types: ['code'],
+        scope: 'api',
+      };
+      await store.registerClient(client);
+    }
+
+    // Size should be 1000
+    expect((store as any).clients.size).toBe(1000);
+
+    // Add one more static client to trigger eviction
+    const newClient: OAuthClientInformationFull = {
+      client_id: `static-client-${limit}`,
+      client_secret: 'secret',
+      redirect_uris: ['http://localhost'],
+      grant_types: ['authorization_code'],
+      response_types: ['code'],
+      scope: 'api',
+    };
+    await store.registerClient(newClient);
+
+    // Size should remain 1000
+    expect((store as any).clients.size).toBe(1000);
+
+    // The oldest client (static-client-0) should be evicted (FIFO)
+    const evictedClient = await store.getClient('static-client-0');
+    expect(evictedClient).toBeUndefined();
+
+    // The newest client should exist
+    const newestClient = await store.getClient(`static-client-${limit}`);
+    expect(newestClient).toBeDefined();
+  });
 });
