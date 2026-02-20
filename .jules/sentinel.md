@@ -127,3 +127,6 @@ In-memory data structures (Maps, Sets, Arrays) that grow based on user input or 
 1.  Implement a hard limit (e.g., `MAX_CLIENTS = 1000`) on the number of items stored in memory.
 2.  Implement an eviction strategy to remove old or less critical items when the limit is reached.
 3.  Prioritize keeping critical (static/configured) data over dynamic/ephemeral data during eviction.
+
+**Note (2026-02-20):**
+The PR implementing this fix (PR 122) was closed as a duplicate of PR 120. Future work should check for existing PRs before implementation.
