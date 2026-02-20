@@ -8,6 +8,7 @@ import {
   resolveTemplateRoot,
 } from './profile-index.js';
 import type { ListedProfileDetails } from '../profile/profile-resolver.js';
+import type { ProfileIndexSourceProfile } from './profile-index.js';
 
 describe('profile index helpers', () => {
   it('detects locale from Accept-Language', () => {
@@ -468,5 +469,88 @@ describe('profile index helpers', () => {
     const inputs = __test__.buildInputs(['API TOKEN', 'api-token']);
     expect(inputs[0].id).toBe('api-token');
     expect(inputs[1].id).toBe('api-token-2');
+  });
+
+  it('includes per-profile tenant summary in payload', () => {
+    const profiles: ProfileIndexSourceProfile[] = [
+      {
+        profileId: 'grafana',
+        profileName: 'grafana',
+        profileAliases: [],
+        description: 'Grafana',
+        envVars: [],
+        authMethods: [],
+        tenantSummary: {
+          tenantsEnabled: true,
+          selectionHeaderName: 'X-Mcp4-Tenant-Id',
+          tenants: [
+            {
+              tenantId: 'team-a',
+              selectorType: 'exact',
+              selectorDisplay: 'https://grafana.team-a.ops.iszn.cz/api',
+              isDefault: true,
+            },
+            {
+              tenantId: 'team-mask',
+              selectorType: 'mask',
+              selectorDisplay: 'mask:https://grafana.*.ops.iszn.cz/api',
+              isDefault: false,
+            },
+          ],
+        },
+      },
+    ];
+
+    const { payload } = buildProfileIndexPayload(profiles, 'http://localhost:3003', 'en');
+    const [profile] = payload.profiles;
+
+    expect(profile.tenantSummary?.tenantsEnabled).toBe(true);
+    expect(profile.tenantSummary?.selectionHeaderName).toBe('X-Mcp4-Tenant-Id');
+    expect(profile.tenantSummary?.tenants).toHaveLength(2);
+    expect(profile.tenantSummary?.tenants[0].tenantId).toBe('team-a');
+    expect(profile.tenantSummary?.tenants[1].selectorType).toBe('mask');
+  });
+
+  it('renders tenant picker payload and tenant header injection script markers in HTML', async () => {
+    const profiles: ProfileIndexSourceProfile[] = [
+      {
+        profileId: 'grafana',
+        profileName: 'grafana',
+        profileAliases: [],
+        description: 'Grafana',
+        envVars: [],
+        authMethods: [],
+        tenantSummary: {
+          tenantsEnabled: true,
+          selectionHeaderName: 'X-Mcp4-Tenant-Id',
+          tenants: [
+            {
+              tenantId: 'team-a',
+              selectorType: 'exact',
+              selectorDisplay: 'https://grafana.team-a.ops.iszn.cz/api',
+              isDefault: true,
+            },
+          ],
+        },
+      },
+    ];
+
+    const { templateData } = buildProfileIndexPayload(profiles, 'http://localhost:3003', 'en');
+    const template = await loadProfileIndexTemplate();
+    const html = renderProfileIndexHtml(template, templateData, 'nonce123');
+
+    expect(html).toContain('"tenantSummary":{"tenantsEnabled":true');
+    expect(html).toContain('"selectionHeaderName":"X-Mcp4-Tenant-Id"');
+    expect(html).toContain('injectTenantHeaderIntoJsonSnippet');
+    expect(html).toContain('supportsTenantPicker');
+    expect(html).toContain('buildMaskExampleBaseUrl');
+    expect(html).toContain('X-Mcp4-Tenant-Id');
+    expect(html).toContain('X-Mcp4-Api-Base-Url');
+    expect(html).toContain('<your-part>');
+    expect(html).toContain('key.startsWith(\'vscode-\')');
+    expect(html).toContain('key.startsWith(\'jetbrains-\')');
+    expect(html).toContain('key.startsWith(\'claude-json-\')');
+    expect(html).toContain('key.startsWith(\'gemini-json-\')');
+    expect(html).toContain('key.startsWith(\'codex-toml-\')');
   });
 });

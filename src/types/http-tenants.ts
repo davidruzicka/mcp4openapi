@@ -1,6 +1,16 @@
 import type { AuthInterceptor, OAuthConfig } from './profile.js';
 
 export type TenantAuthMode = 'oauth' | 'token';
+export type TenantSelectorType = 'exact' | 'mask';
+
+export interface TenantMaskSelector {
+  original: string;
+  normalizedMask: string;
+  scheme: 'http:' | 'https:';
+  hostLabels: string[];
+  port: string;
+  path: string;
+}
 
 export interface HttpTenantConfig {
   tenant_id: string;
@@ -21,6 +31,14 @@ export interface ResolvedTenantContext {
   tenantAuthMode: TenantAuthMode;
   tenantAuthConfigs: AuthInterceptor[];
   tenantOAuthConfig?: OAuthConfig;
+  tenantSelectorType: TenantSelectorType;
+  tenantSelectorValue: string;
+}
+
+export interface TenantMaskSelectorEntry {
+  tenantId: string;
+  selector: TenantMaskSelector;
+  context: ResolvedTenantContext;
 }
 
 export interface HttpTenantIndex {
@@ -28,4 +46,6 @@ export interface HttpTenantIndex {
   defaultTenantId?: string;
   byTenantId: Map<string, ResolvedTenantContext>;
   byBaseUrl: Map<string, ResolvedTenantContext>;
+  maskSelectors: TenantMaskSelectorEntry[];
+  selectorTypeByTenantId: Map<string, TenantSelectorType>;
 }

@@ -438,13 +438,18 @@ export MCP4_TOOLNAME_MAX=30
 - `MCP4_TOKEN_MAX_LENGTH`: Maximum token length in characters (default: `1000`)
 - `MCP4_FILTER_MAX_VALUES`: Max values per filtering key (default: `10`)
 - `MCP4_HTTP_PROFILE_ROUTING`: Enable profile routing (`/profile/:id/mcp`). If enabled without a default profile, `/mcp` is not registered.
+- `MCP4_HTTP_PROFILE_INDEX`: Enable profile index on `GET /` for routed profiles.
 - `MCP4_ALLOW_PROFILES`: Comma-separated profile ids/names/aliases allowed for routed profiles.
 - `MCP4_ALLOW_PROFILES_REGEX`: Regex for allowed profile ids/names/aliases (applies only when routing is enabled).
+- `MCP4_HTTP_TENANTS_FILE`: Path to tenant selector config JSON.
+- `MCP4_HTTP_TENANTS_JSON`: Inline tenant selector config JSON.
+- `MCP4_HTTP_TENANTS_ALLOW_HTTP`: Allow `http` tenant selectors (default is `https` only).
 
 **Profile routing example**:
 ```bash
 export MCP4_TRANSPORT=http
 export MCP4_HTTP_PROFILE_ROUTING=true
+export MCP4_HTTP_PROFILE_INDEX=true
 export MCP4_ALLOW_PROFILES=gitlab-optimized,youtrack-optimized
 export MCP4_PROFILES_DIR=./profiles
 npx mcp4openapi
@@ -454,6 +459,7 @@ CLI alternative:
 ```bash
 npx mcp4openapi --transport http \
   --http-profile-routing true \
+  --http-profile-index true \
   --allow-profiles gitlab,github \
   --profiles-dir ./profiles
 ```
@@ -464,6 +470,30 @@ curl -X POST http://localhost:3003/profile/mcp-profile-name/mcp -H "Content-Type
 ```
 
 If `MCP4_PROFILE_PATH` (or `--profile-path`) is set, `/mcp` remains available alongside `/profile/:id/mcp`.
+
+#### HTTP Tenant Selectors (X-Mcp4-Tenant-Id / X-Mcp4-Api-Base-Url)
+
+Tenant selection is configured via `MCP4_HTTP_TENANTS_FILE` or `MCP4_HTTP_TENANTS_JSON` and supports both:
+- exact selectors: `https://team-a.example.com/api`
+- mask selectors: `mask:https://grafana.*.security.*.ops.iszn.cz/api`
+
+Selection headers (initialize request):
+- `X-Mcp4-Tenant-Id`: selects tenant by `tenant_id`
+- `X-Mcp4-Api-Base-Url`: selects concrete tenant endpoint by exact or `mask:` selector
+
+Resolution order:
+1. `X-Mcp4-Tenant-Id`
+2. exact `X-Mcp4-Api-Base-Url`
+3. `mask:` `X-Mcp4-Api-Base-Url`
+4. default tenant fallback
+
+Rules:
+- For `mask:` tenant selection, concrete `X-Mcp4-Api-Base-Url` is required.
+- If both tenant headers are provided, they must resolve to the same tenant.
+- On existing session requests, provided tenant headers must match stored tenant context.
+- Startup rejects selector collisions (exact/exact with incompatible auth, exact/mask overlap, mask/mask overlap) and runtime rejects ambiguous mask matches.
+
+When `MCP4_HTTP_PROFILE_INDEX=true`, the HTML profile index shows tenant availability per profile and provides interactive tenant picker for supported remote snippet formats that inject `X-Mcp4-Tenant-Id` into copied snippet output. For `mask:` tenants, copied snippets also include example `X-Mcp4-Api-Base-Url` with wildcard parts replaced by `<your-part>`.
 
 #### Parameter Filtering (HTTP: X-Mcp4-Params)
 

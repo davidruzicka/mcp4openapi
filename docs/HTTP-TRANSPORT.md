@@ -126,6 +126,10 @@ Routes:
 - `DELETE /profile/:profileId/mcp`
 - Legacy alias: `POST|GET|DELETE /profile/:profileId/sse`
 - Optional HTML profile index: `GET /` (when `MCP4_HTTP_PROFILE_INDEX=true`)
+  - Keeps current API endpoint display semantics (env/default source)
+  - When tenant config is available for a profile, shows tenant availability and tenant list per profile
+  - Includes interactive tenant picker for supported remote snippet formats and injects `X-Mcp4-Tenant-Id` into copied snippet output
+  - For `mask:` tenant selection, picker also injects example `X-Mcp4-Api-Base-Url` with wildcard parts replaced by `<your-part>`
 
 Default profile behavior:
 - If `MCP4_PROFILE_PATH` (or `--profile-path`) is set, `/mcp` and `/sse` stay available.
@@ -156,27 +160,46 @@ You can configure per-session tenant selection using either:
 - `MCP4_HTTP_TENANTS_FILE=/path/to/tenants.json`
 - `MCP4_HTTP_TENANTS_JSON={...}`
 
+`api_base_url` selector formats:
+- exact: `https://team-a.example.com/api`
+- mask: `mask:https://grafana.*.security.*.ops.iszn.cz/api`
+
 Header selectors (initialize request only):
 - `X-Mcp4-Tenant-Id`: select tenant by `tenant_id`.
-- `X-Mcp4-Api-Base-Url`: select tenant by allowlisted `api_base_url`.
+- `X-Mcp4-Api-Base-Url`: select tenant by exact or mask selector.
 
-Resolution order at initialization:
+Deterministic resolution order at initialization:
 1. `X-Mcp4-Tenant-Id`
-2. `X-Mcp4-Api-Base-Url`
-3. configured default tenant (or first tenant if no explicit default)
+2. exact match for `X-Mcp4-Api-Base-Url`
+3. `mask:` match for `X-Mcp4-Api-Base-Url`
+4. configured default tenant fallback (or first tenant if no explicit default)
+
+Mask selector behavior:
+- For exact selectors, `X-Mcp4-Tenant-Id` or `X-Mcp4-Api-Base-Url` is sufficient.
+- For mask selectors, concrete URL selection requires `X-Mcp4-Api-Base-Url`.
+- `X-Mcp4-Tenant-Id` for mask entries is optional guard; when both headers are provided, they must resolve to the same tenant.
+- Default fallback cannot resolve a mask tenant without concrete `X-Mcp4-Api-Base-Url`.
 
 Session immutability:
 - On non-initialize requests, selector headers are optional.
-- If provided, they must match the tenant stored in session.
+- If provided, they must match the stored session tenant selection (tenant id and concrete base URL).
 - Mismatch returns `400 ValidationError`.
 
 Security and validation rules:
 - Tenant base URLs are allowlist-only; unknown selectors are rejected.
 - `https` is required by default (`http` only with `MCP4_HTTP_TENANTS_ALLOW_HTTP=true`).
-- Base URLs with credentials are rejected.
-- If two tenants share base URL but have different auth config, startup fails.
+- Credentials, query, and fragment are rejected in selectors.
+- `mask:` grammar:
+  - wildcard `*` is allowed only as a full hostname label
+  - literal hostname labels must match `[a-z0-9-]+`
+  - wildcard is not allowed in path (path must be literal)
+- Startup fail-fast collision checks:
+  - exact vs exact with incompatible auth
+  - exact vs mask intersection
+  - mask vs mask intersection
+- Runtime ambiguity guard: if one concrete URL matches multiple mask tenants, request fails with `400 ValidationError`.
 
-Minimal tenant config example:
+Tenant config example (exact + mask):
 
 ```json
 {
@@ -188,6 +211,12 @@ Minimal tenant config example:
       "api_base_url": "https://team-a.example.com/api",
       "auth_mode": "token",
       "auth": { "type": "bearer", "value_from_env": "TEAM_A_TOKEN" }
+    },
+    {
+      "tenant_id": "grafana-security",
+      "api_base_url": "mask:https://grafana.*.security.*.ops.iszn.cz/api",
+      "auth_mode": "token",
+      "auth": { "type": "bearer", "value_from_env": "GRAFANA_SECURITY_TOKEN" }
     }
   ]
 }

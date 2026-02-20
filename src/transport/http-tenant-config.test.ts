@@ -290,6 +290,8 @@ describe('http-tenant-config', () => {
       enabled: true,
       byTenantId: new Map(),
       byBaseUrl: new Map(),
+      maskSelectors: [],
+      selectorTypeByTenantId: new Map(),
     };
     expect(() => resolveTenantFromHeaders(customIndex as any, undefined, undefined)).toThrow(/selector is required/i);
   });
@@ -383,5 +385,151 @@ describe('http-tenant-config', () => {
     } finally {
       warnSpy.mockRestore();
     }
+  });
+
+  it('resolves mask tenant from concrete base URL and requires concrete URL for tenant id selector', () => {
+    const raw = {
+      version: 1,
+      tenants: [
+        {
+          tenant_id: 'grafana',
+          api_base_url: 'mask:https://grafana.*.ops.iszn.cz/api',
+          auth_mode: 'token',
+          auth: { type: 'bearer', value_from_env: 'GRAFANA_TOKEN' },
+        },
+      ],
+    };
+
+    const index = buildTenantIndexForProfile(raw as any, profileContext, logger);
+    expect(() => resolveTenantFromHeaders(index, 'grafana', undefined)).toThrow(/requires X-Mcp4-Api-Base-Url/i);
+
+    const resolvedFromBaseUrl = resolveTenantFromHeaders(
+      index,
+      undefined,
+      'https://grafana.team-a.ops.iszn.cz/api',
+    );
+    expect(resolvedFromBaseUrl?.tenantId).toBe('grafana');
+    expect(resolvedFromBaseUrl?.tenantBaseUrl).toBe('https://grafana.team-a.ops.iszn.cz/api');
+
+    const resolvedFromBoth = resolveTenantFromHeaders(
+      index,
+      'grafana',
+      'https://grafana.security.ops.iszn.cz/api',
+    );
+    expect(resolvedFromBoth?.tenantId).toBe('grafana');
+    expect(resolvedFromBoth?.tenantBaseUrl).toBe('https://grafana.security.ops.iszn.cz/api');
+  });
+
+  it('rejects default fallback for mask tenant without concrete selector', () => {
+    const raw = {
+      version: 1,
+      tenants: [
+        {
+          tenant_id: 'grafana',
+          default: true,
+          api_base_url: 'mask:https://grafana.*.ops.iszn.cz/api',
+          auth_mode: 'token',
+          auth: { type: 'bearer', value_from_env: 'GRAFANA_TOKEN' },
+        },
+      ],
+    };
+
+    const index = buildTenantIndexForProfile(raw as any, profileContext, logger);
+    expect(() => resolveTenantFromHeaders(index, undefined, undefined)).toThrow(/default tenant 'grafana' uses mask selector/i);
+  });
+
+  it('rejects ambiguous mask base URL selector at runtime', () => {
+    const raw = {
+      version: 1,
+      tenants: [
+        {
+          tenant_id: 'grafana-a',
+          api_base_url: 'mask:https://grafana.*.ops.iszn.cz/api',
+          auth_mode: 'token',
+          auth: { type: 'bearer', value_from_env: 'GRAFANA_A_TOKEN' },
+        },
+      ],
+    };
+
+    const index = buildTenantIndexForProfile(raw as any, profileContext, logger);
+    // Force ambiguity guard path using a crafted runtime index.
+    index.maskSelectors.push({
+      tenantId: 'grafana-b',
+      selector: {
+        original: 'https://grafana.*.ops.iszn.cz/api',
+        normalizedMask: 'https://grafana.*.ops.iszn.cz/api',
+        scheme: 'https:',
+        hostLabels: ['grafana', '*', 'ops', 'iszn', 'cz'],
+        port: '',
+        path: '/api',
+      },
+      context: {
+        tenantId: 'grafana-b',
+        tenantBaseUrl: 'https://grafana.*.ops.iszn.cz/api',
+        tenantAuthMode: 'token',
+        tenantAuthConfigs: [{ type: 'bearer', value_from_env: 'GRAFANA_B_TOKEN' }],
+        tenantSelectorType: 'mask',
+        tenantSelectorValue: 'mask:https://grafana.*.ops.iszn.cz/api',
+      },
+    });
+
+    expect(() =>
+      resolveTenantFromHeaders(index, undefined, 'https://grafana.team-a.ops.iszn.cz/api'),
+    ).toThrow(/ambiguous/i);
+  });
+
+  it('rejects selector collisions between exact and mask tenants at startup', () => {
+    const exactVsMask = {
+      version: 1,
+      tenants: [
+        {
+          tenant_id: 'exact',
+          api_base_url: 'https://grafana.team-a.ops.iszn.cz/api',
+          auth_mode: 'token',
+          auth: { type: 'bearer', value_from_env: 'EXACT_TOKEN' },
+        },
+        {
+          tenant_id: 'mask',
+          api_base_url: 'mask:https://grafana.*.ops.iszn.cz/api',
+          auth_mode: 'token',
+          auth: { type: 'bearer', value_from_env: 'MASK_TOKEN' },
+        },
+      ],
+    };
+    expect(() => buildTenantIndexForProfile(exactVsMask as any, profileContext, logger)).toThrow(/selector collision/i);
+
+    const maskVsMask = {
+      version: 1,
+      tenants: [
+        {
+          tenant_id: 'mask-a',
+          api_base_url: 'mask:https://grafana.*.ops.iszn.cz/api',
+          auth_mode: 'token',
+          auth: { type: 'bearer', value_from_env: 'MASK_A_TOKEN' },
+        },
+        {
+          tenant_id: 'mask-b',
+          api_base_url: 'mask:https://grafana.team-a.ops.iszn.cz/api',
+          auth_mode: 'token',
+          auth: { type: 'bearer', value_from_env: 'MASK_B_TOKEN' },
+        },
+      ],
+    };
+    expect(() => buildTenantIndexForProfile(maskVsMask as any, profileContext, logger)).toThrow(/selector collision/i);
+  });
+
+  it('rejects invalid mask patterns', () => {
+    const wildcardPath = {
+      version: 1,
+      tenants: [
+        {
+          tenant_id: 'mask-a',
+          api_base_url: 'mask:https://grafana.*.ops.iszn.cz/*',
+          auth_mode: 'token',
+          auth: { type: 'bearer', value_from_env: 'MASK_A_TOKEN' },
+        },
+      ],
+    };
+    expect(() => buildTenantIndexForProfile(wildcardPath as any, profileContext, logger)).toThrow(/path must be literal/i);
   });
 });

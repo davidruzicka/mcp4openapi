@@ -63,6 +63,7 @@ import {
   parseAcceptLanguage,
   renderProfileIndexHtml,
 } from './profile-index.js';
+import type { ProfileIndexSourceProfile, ProfileIndexTenantSummary } from './profile-index.js';
 const DEFAULT_MAX_TOKEN_LENGTH = 1000;
 
 interface ProfileRuntimeState {
@@ -1514,8 +1515,9 @@ export class HttpTransport {
       return;
     }
 
+    const profilesWithTenantSummary = await this.enrichProfilesForIndexWithTenants(profiles);
     const origin = this.getRequestOrigin(req);
-    const { payload, templateData } = buildProfileIndexPayload(profiles, origin, locale);
+    const { payload, templateData } = buildProfileIndexPayload(profilesWithTenantSummary, origin, locale);
 
     if (prefersJson) {
       res.json(payload);
@@ -1533,6 +1535,58 @@ export class HttpTransport {
       `default-src 'self'; frame-ancestors 'none'; object-src 'none'; base-uri 'self'; script-src 'self' 'nonce-${nonce}'; style-src 'self' 'nonce-${nonce}'`
     );
     res.send(html);
+  }
+
+  private async enrichProfilesForIndexWithTenants(profiles: ListedProfileDetails[]): Promise<ProfileIndexSourceProfile[]> {
+    if (!this.rawTenantConfig || this.rawTenantConfig.tenants.length === 0 || !this.profileContextProvider) {
+      return profiles;
+    }
+
+    const enriched: ProfileIndexSourceProfile[] = [];
+    for (const profile of profiles) {
+      try {
+        const context = await this.profileContextProvider(profile.profileId);
+        if (!context) {
+          enriched.push(profile);
+          continue;
+        }
+        const tenantIndex = buildTenantIndexForProfile(this.rawTenantConfig, context, this.logger);
+        const tenantSummary = this.buildProfileIndexTenantSummary(tenantIndex);
+        enriched.push({
+          ...profile,
+          tenantSummary,
+        });
+      } catch (error) {
+        this.logger.warn('Failed to build tenant summary for profile index', {
+          profileId: profile.profileId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        enriched.push(profile);
+      }
+    }
+
+    return enriched;
+  }
+
+  private buildProfileIndexTenantSummary(tenantIndex: HttpTenantIndex): ProfileIndexTenantSummary | undefined {
+    if (!tenantIndex.enabled || tenantIndex.byTenantId.size === 0) {
+      return undefined;
+    }
+
+    const tenants = Array.from(tenantIndex.byTenantId.values())
+      .map((tenant) => ({
+        tenantId: tenant.tenantId,
+        selectorType: tenant.tenantSelectorType,
+        selectorDisplay: tenant.tenantSelectorValue,
+        isDefault: tenantIndex.defaultTenantId === tenant.tenantId,
+      }))
+      .sort((left, right) => left.tenantId.localeCompare(right.tenantId));
+
+    return {
+      tenantsEnabled: true,
+      selectionHeaderName: 'X-Mcp4-Tenant-Id',
+      tenants,
+    };
   }
 
 
@@ -2171,6 +2225,8 @@ export class HttpTransport {
       enabled: false,
       byTenantId: new Map(),
       byBaseUrl: new Map(),
+      maskSelectors: [],
+      selectorTypeByTenantId: new Map(),
     };
     return profileState.tenantIndex;
   }
@@ -2380,7 +2436,10 @@ export class HttpTransport {
             tenantIdHeaderValue,
             tenantBaseUrlHeaderValue,
           );
-          if (resolvedTenantForRequest?.tenantId !== session.tenantId) {
+          if (
+            resolvedTenantForRequest?.tenantId !== session.tenantId ||
+            resolvedTenantForRequest?.tenantBaseUrl !== session.tenantBaseUrl
+          ) {
             throw new ValidationError('Tenant selector header mismatch for existing session.');
           }
         }

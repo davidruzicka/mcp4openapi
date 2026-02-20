@@ -3,6 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { escapeHtmlSafe } from '../validation/validation-utils.js';
 import type { ListedProfileDetails, ProfileAuthMethod } from '../profile/profile-resolver.js';
+import type { TenantSelectorType } from '../types/http-tenants.js';
 
 export type ProfileIndexLocale = 'cs' | 'en';
 
@@ -52,6 +53,13 @@ interface ProfileIndexI18n {
   authEnvVarsNone: string;
   authHeaderPrefix: string;
   authQueryPrefix: string;
+  tenantSectionLabel: string;
+  tenantsAvailableLabel: string;
+  tenantHeaderLabel: string;
+  tenantDefaultLabel: string;
+  tenantSelectorLabel: string;
+  tenantMaskNote: string;
+  tenantPickerScopeLabel: string;
 }
 
 interface ProfileIndexSnippet {
@@ -70,6 +78,21 @@ interface ProfileIndexTab {
 
 type RenderAuthMethod = ProfileAuthMethod | { type: 'none' };
 
+export interface ProfileIndexTenantSummary {
+  tenantsEnabled: boolean;
+  selectionHeaderName: 'X-Mcp4-Tenant-Id';
+  tenants: Array<{
+    tenantId: string;
+    selectorType: TenantSelectorType;
+    selectorDisplay: string;
+    isDefault: boolean;
+  }>;
+}
+
+export interface ProfileIndexSourceProfile extends ListedProfileDetails {
+  tenantSummary?: ProfileIndexTenantSummary;
+}
+
 interface ProfileIndexProfile extends ListedProfileDetails {
   mcpUrl: string;
   sseUrl: string;
@@ -80,6 +103,7 @@ interface ProfileIndexProfile extends ListedProfileDetails {
   snippets: ProfileIndexSnippet[];
   authTabs: ProfileIndexTab[];
   modeTabs: ProfileIndexTab[];
+  tenantSummary?: ProfileIndexTenantSummary;
 }
 
 export interface ProfileIndexPayload {
@@ -184,6 +208,13 @@ export function buildProfileIndexI18n(locale: ProfileIndexLocale): ProfileIndexI
       authEnvVarsNone: 'Bez proměnné prostředí',
       authHeaderPrefix: 'Hlavička',
       authQueryPrefix: 'Parametr',
+      tenantSectionLabel: 'Tenanti',
+      tenantsAvailableLabel: 'Dostupní tenanti',
+      tenantHeaderLabel: 'Hlavička pro výběr',
+      tenantDefaultLabel: 'výchozí',
+      tenantSelectorLabel: 'Selektor',
+      tenantMaskNote: 'Tenant se selektorem mask: vyžaduje při inicializaci také konkrétní X-Mcp4-Api-Base-Url.',
+      tenantPickerScopeLabel: 'Interaktivní výběr tenanta je dostupný jen pro klienty s ověřenou podporou vlastních hlaviček.',
     };
   }
 
@@ -233,11 +264,18 @@ export function buildProfileIndexI18n(locale: ProfileIndexLocale): ProfileIndexI
     authEnvVarsNone: 'No environment variable required',
     authHeaderPrefix: 'Header',
     authQueryPrefix: 'Query param',
+    tenantSectionLabel: 'Tenants',
+    tenantsAvailableLabel: 'Available tenants',
+    tenantHeaderLabel: 'Selection header',
+    tenantDefaultLabel: 'default',
+    tenantSelectorLabel: 'Selector',
+    tenantMaskNote: 'Tenants configured with mask: also require concrete X-Mcp4-Api-Base-Url on initialization.',
+    tenantPickerScopeLabel: 'Interactive tenant picker is available only for clients with verified custom-header support.',
   };
 }
 
 export function buildProfileIndexPayload(
-  profiles: ListedProfileDetails[],
+  profiles: ProfileIndexSourceProfile[],
   origin: string,
   locale: ProfileIndexLocale
 ): { payload: ProfileIndexPayload; templateData: Record<string, string> } {
@@ -256,6 +294,7 @@ export function buildProfileIndexPayload(
       snippets,
       authTabs,
       modeTabs,
+      tenantSummary: profile.tenantSummary,
     };
   });
 

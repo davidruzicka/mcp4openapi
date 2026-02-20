@@ -216,6 +216,34 @@
         border-radius: 12px;
         color: #7a3f1e;
       }
+      .tenant-list {
+        display: grid;
+        gap: 8px;
+        margin-top: 10px;
+      }
+      .tenant-item {
+        width: 100%;
+        text-align: left;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background: #fff;
+        padding: 10px 12px;
+        cursor: pointer;
+      }
+      .tenant-item.active {
+        border-color: var(--accent);
+        background: #fff5ec;
+      }
+      .tenant-title {
+        font-size: 13px;
+        font-weight: 600;
+      }
+      .tenant-selector {
+        margin-top: 3px;
+        font-size: 12px;
+        color: var(--muted);
+        word-break: break-all;
+      }
       .sr-only {
         position: absolute;
         width: 1px;
@@ -266,6 +294,7 @@
 
       const listEl = document.getElementById('profile-list');
       const detailEl = document.getElementById('profile-detail');
+      const tenantSelectionByProfile = new Map();
 
       function escapeHtml(value) {
         return String(value)
@@ -284,15 +313,147 @@
         return `<div class="tag-list">${tags}</div>`;
       }
 
-      function buildSnippet(template, profile) {
-        return template
+      function supportsTenantPicker(entry) {
+        if (!entry || entry.mode !== 'remote') return false;
+        const key = entry.key || '';
+        return (
+          key.startsWith('vscode-') ||
+          key.startsWith('jetbrains-') ||
+          key.startsWith('claude-json-') ||
+          key.startsWith('gemini-json-') ||
+          key.startsWith('codex-toml-')
+        );
+      }
+
+      function buildMaskExampleBaseUrl(selectorDisplay) {
+        if (!selectorDisplay || typeof selectorDisplay !== 'string') return null;
+        if (!selectorDisplay.startsWith('mask:')) return null;
+        const rawMask = selectorDisplay.slice(5).trim();
+        const match = /^(https?:\/\/)([^\/?#]+)([^?#]*)$/.exec(rawMask);
+        if (!match) return null;
+        const scheme = match[1];
+        const hostWithPort = match[2];
+        const path = match[3] || '';
+        const host = hostWithPort.split(':')[0];
+        const portSuffix = hostWithPort.slice(host.length);
+        const exampleHost = host
+          .split('.')
+          .map(label => (label === '*' ? '<your-part>' : label))
+          .join('.');
+        return `${scheme}${exampleHost}${portSuffix}${path}`;
+      }
+
+      function resolveTenantSelection(profile, selectedTenantId) {
+        if (!selectedTenantId) return null;
+        const tenantList = profile?.tenantSummary?.tenants || [];
+        const selectedTenant = tenantList.find(item => item.tenantId === selectedTenantId);
+        if (!selectedTenant) return null;
+        return {
+          tenantId: selectedTenant.tenantId,
+          selectorType: selectedTenant.selectorType,
+          selectorDisplay: selectedTenant.selectorDisplay,
+          baseUrlExample: selectedTenant.selectorType === 'mask'
+            ? buildMaskExampleBaseUrl(selectedTenant.selectorDisplay)
+            : null,
+        };
+      }
+
+      function injectTenantHeaderIntoJsonSnippet(snippet, entry, tenantSelection) {
+        let parsed;
+        try {
+          parsed = JSON.parse(snippet);
+        } catch {
+          return snippet;
+        }
+
+        const key = entry.key || '';
+        const root = key.startsWith('vscode-') || key.startsWith('jetbrains-')
+          ? parsed.servers
+          : parsed.mcpServers;
+
+        if (!root || typeof root !== 'object') return snippet;
+        const serverName = Object.keys(root)[0];
+        if (!serverName || !root[serverName] || typeof root[serverName] !== 'object') return snippet;
+        const server = root[serverName];
+
+        if (key.startsWith('jetbrains-')) {
+          if (!server.requestInit || typeof server.requestInit !== 'object') {
+            server.requestInit = {};
+          }
+          if (!server.requestInit.headers || typeof server.requestInit.headers !== 'object') {
+            server.requestInit.headers = {};
+          }
+          server.requestInit.headers['X-Mcp4-Tenant-Id'] = tenantSelection.tenantId;
+          if (tenantSelection.baseUrlExample) {
+            server.requestInit.headers['X-Mcp4-Api-Base-Url'] = tenantSelection.baseUrlExample;
+          }
+        } else {
+          if (!server.headers || typeof server.headers !== 'object') {
+            server.headers = {};
+          }
+          server.headers['X-Mcp4-Tenant-Id'] = tenantSelection.tenantId;
+          if (tenantSelection.baseUrlExample) {
+            server.headers['X-Mcp4-Api-Base-Url'] = tenantSelection.baseUrlExample;
+          }
+        }
+
+        return JSON.stringify(parsed, null, 2);
+      }
+
+      function upsertCodexTomlHeader(snippet, headerName, headerValue) {
+        const headerEntry = `"${headerName}" = "${headerValue}"`;
+        const lines = snippet.split('\n');
+        const headersLineIndex = lines.findIndex(line => line.trim().startsWith('http_headers = {'));
+        if (headersLineIndex === -1) {
+          return `${snippet}\nhttp_headers = { ${headerEntry} }`;
+        }
+
+        const line = lines[headersLineIndex];
+        const escapedHeaderName = headerName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const existingHeaderRegex = new RegExp(`"${escapedHeaderName}"\\s*=\\s*"[^"]*"`);
+        if (existingHeaderRegex.test(line)) {
+          lines[headersLineIndex] = line.replace(existingHeaderRegex, headerEntry);
+          return lines.join('\n');
+        }
+
+        if (/\}\s*$/.test(line)) {
+          lines[headersLineIndex] = line.replace(/\}\s*$/, `, ${headerEntry} }`);
+          return lines.join('\n');
+        }
+
+        return `${snippet}\nhttp_headers = { ${headerEntry} }`;
+      }
+
+      function injectTenantHeaderIntoCodexToml(snippet, tenantSelection) {
+        let output = upsertCodexTomlHeader(snippet, 'X-Mcp4-Tenant-Id', tenantSelection.tenantId);
+        if (tenantSelection.baseUrlExample) {
+          output = upsertCodexTomlHeader(output, 'X-Mcp4-Api-Base-Url', tenantSelection.baseUrlExample);
+        }
+        return output;
+      }
+
+      function injectTenantHeaderForSnippet(snippet, entry, tenantSelection) {
+        if (!tenantSelection || !supportsTenantPicker(entry)) {
+          return snippet;
+        }
+        const key = entry.key || '';
+        if (key.startsWith('codex-toml-')) {
+          return injectTenantHeaderIntoCodexToml(snippet, tenantSelection);
+        }
+        return injectTenantHeaderIntoJsonSnippet(snippet, entry, tenantSelection);
+      }
+
+      function buildSnippet(template, profile, entry, selectedTenantId) {
+        const rendered = template
           .replace(/__PROFILE_ID__/g, profile.profileId)
           .replace(/__PROFILE_NAME__/g, profile.profileName)
           .replace(/__PROFILE_URL__/g, profile.mcpUrl)
           .replace(/__PROFILE_SSE_URL__/g, profile.sseUrl);
+        const tenantSelection = resolveTenantSelection(profile, selectedTenantId);
+        return injectTenantHeaderForSnippet(rendered, entry, tenantSelection);
       }
 
-      function renderSnippets(profile, activeAuth, activeMode) {
+      function renderSnippets(profile, activeAuth, activeMode, selectedTenantId) {
         const blocks = [];
         const order = ['vscode', 'cursor', 'jetbrains', 'claude', 'gemini', 'codex'];
         const snippets = profile.snippets || [];
@@ -337,6 +498,9 @@
           if (!entry || !entry.key) continue;
           if (activeAuth && entry.authKey && entry.authKey !== activeAuth) continue;
           if (activeMode && entry.mode && entry.mode !== activeMode) continue;
+          if (selectedTenantId && activeMode === 'remote' && profile.tenantSummary?.tenantsEnabled && !supportsTenantPicker(entry)) {
+            continue;
+          }
           const client = order.find(prefix => entry.key.startsWith(prefix));
           if (!client) continue;
           const existing = groups.get(client) || [];
@@ -383,7 +547,7 @@
 
           const panelHtml = entries.map((entry, index) => {
             const format = entry.format || '';
-            const snippet = buildSnippet(entry.content, profile);
+            const snippet = buildSnippet(entry.content, profile, entry, selectedTenantId);
             const encodedSnippet = encodeURIComponent(snippet);
             const hiddenAttr = hasFormatTabs && index > 0 ? ' hidden' : '';
             return `
@@ -393,7 +557,7 @@
             `;
           }).join('');
 
-          const firstSnippet = buildSnippet(entries[0].content, profile);
+          const firstSnippet = buildSnippet(entries[0].content, profile, entries[0], selectedTenantId);
           const firstEncodedSnippet = encodeURIComponent(firstSnippet);
           const configInfo = buildClientConfigInfo(client);
 
@@ -520,6 +684,16 @@
         const activeAuth = authTabs.length > 0 ? authTabs[0].key : null;
         const modeTabs = profile.modeTabs || [];
         const activeMode = modeTabs.length > 0 ? modeTabs[0].key : 'remote';
+        const tenantSummary = profile.tenantSummary;
+        const tenantList = tenantSummary && tenantSummary.tenantsEnabled ? (tenantSummary.tenants || []) : [];
+        const persistedTenantId = tenantSelectionByProfile.get(profile.profileId);
+        const defaultTenant = tenantList.find(item => item.isDefault) || tenantList[0];
+        const initialTenantId = (persistedTenantId && tenantList.some(item => item.tenantId === persistedTenantId))
+          ? persistedTenantId
+          : (defaultTenant ? defaultTenant.tenantId : null);
+        if (initialTenantId) {
+          tenantSelectionByProfile.set(profile.profileId, initialTenantId);
+        }
         const authEnvVars = Array.from(
           new Set((profile.authMethods || [])
             .map(method => method && method.valueFromEnv)
@@ -537,6 +711,36 @@
           apiEndpointValueText = `${i18n.apiEndpointVariableLabel || 'variable'} ${apiEndpointEnvVar}`;
         }
         const apiEndpointHtml = `<p><strong>${escapeHtml(i18n.apiEndpointLabel || 'API endpoint')}</strong>: ${escapeHtml(apiEndpointValueText)}</p>`;
+        const tenantCardHtml = tenantList.length > 0
+          ? `
+            <div class="detail-card">
+              <h3>${escapeHtml(i18n.tenantSectionLabel || 'Tenants')}</h3>
+              <p><strong>${escapeHtml(i18n.tenantsAvailableLabel || 'Available tenants')}</strong>: ${tenantList.length}</p>
+              <p><strong>${escapeHtml(i18n.tenantHeaderLabel || 'Selection header')}</strong>: ${escapeHtml(tenantSummary.selectionHeaderName || 'X-Mcp4-Tenant-Id')}</p>
+              <p class="profile-subtitle">${escapeHtml(i18n.tenantPickerScopeLabel || '')}</p>
+              <div class="tenant-list" id="tenant-tabs" role="tablist" aria-label="Tenants">
+                ${tenantList.map(item => {
+                  const isActive = item.tenantId === initialTenantId;
+                  const defaultLabel = item.isDefault ? ` (${i18n.tenantDefaultLabel || 'default'})` : '';
+                  return `
+                    <button
+                      class="tenant-item${isActive ? ' active' : ''}"
+                      type="button"
+                      role="tab"
+                      aria-selected="${isActive ? 'true' : 'false'}"
+                      tabindex="${isActive ? '0' : '-1'}"
+                      data-tenant-id="${escapeHtml(item.tenantId)}"
+                    >
+                      <div class="tenant-title">${escapeHtml(item.tenantId)}${escapeHtml(defaultLabel)}</div>
+                      <div class="tenant-selector">${escapeHtml(i18n.tenantSelectorLabel || 'Selector')}: ${escapeHtml(item.selectorDisplay)}</div>
+                    </button>
+                  `;
+                }).join('')}
+              </div>
+              ${tenantList.some(item => item.selectorType === 'mask') ? `<p class="profile-subtitle">${escapeHtml(i18n.tenantMaskNote || '')}</p>` : ''}
+            </div>
+          `
+          : '';
         detailEl.innerHTML = `
           <div class="detail-card">
             <h3>${escapeHtml(i18n.profileLabel || '')}</h3>
@@ -549,6 +753,7 @@
             <p><strong>SSE</strong> ${escapeHtml(i18n.sseDeprecatedLabel || '(deprecated)')}: ${escapeHtml(profile.sseUrl)}</p>
             ${apiEndpointHtml}
           </div>
+          ${tenantCardHtml}
           <div class="detail-card">
             <div class="tab-row" id="mode-tabs" role="tablist" aria-label="Connection mode">
               ${modeTabs.map(tab => `
@@ -582,7 +787,7 @@
               `).join('')}
             </div>
             <div class="snippets" id="snippet-list" role="tabpanel" aria-live="polite">
-              ${renderSnippets(profile, activeAuth, activeMode)}
+              ${renderSnippets(profile, activeAuth, activeMode, initialTenantId)}
             </div>
           </div>
         `;
@@ -591,8 +796,10 @@
         const authLabel = detailEl.querySelector('#auth-label');
         const tabRow = detailEl.querySelector('#auth-tabs');
         const snippetList = detailEl.querySelector('#snippet-list');
+        const tenantRow = detailEl.querySelector('#tenant-tabs');
         if (modeRow && authLabel && tabRow && snippetList) {
           let currentMode = activeMode;
+          let currentTenantId = initialTenantId;
 
           const setActiveMode = modeKey => {
             currentMode = modeKey;
@@ -607,7 +814,7 @@
             tabRow.style.display = showAuthTabs ? '' : 'none';
             authLabel.style.display = showAuthLabel ? '' : 'none';
             const currentAuth = (tabRow.querySelector('.tab.active') || tabRow.querySelector('.tab'))?.getAttribute('data-auth');
-            snippetList.innerHTML = renderSnippets(profile, currentAuth, currentMode);
+            snippetList.innerHTML = renderSnippets(profile, currentAuth, currentMode, currentTenantId);
             wireSnippetFormatTabs(snippetList);
           };
 
@@ -619,16 +826,32 @@
               tab.setAttribute('aria-selected', isActive ? 'true' : 'false');
               tab.setAttribute('tabindex', isActive ? '0' : '-1');
               if (isActive) {
-                activeTabId = tab.id || null;
-              }
-            });
-            snippetList.innerHTML = renderSnippets(profile, authKey, currentMode);
+                  activeTabId = tab.id || null;
+                }
+              });
+            snippetList.innerHTML = renderSnippets(profile, authKey, currentMode, currentTenantId);
             wireSnippetFormatTabs(snippetList);
             if (activeTabId) {
               snippetList.setAttribute('aria-labelledby', activeTabId);
             } else {
               snippetList.removeAttribute('aria-labelledby');
             }
+          };
+
+          const setActiveTenant = tenantId => {
+            currentTenantId = tenantId;
+            tenantSelectionByProfile.set(profile.profileId, tenantId);
+            if (tenantRow) {
+              tenantRow.querySelectorAll('[data-tenant-id]').forEach(tab => {
+                const isActive = tab.getAttribute('data-tenant-id') === tenantId;
+                tab.classList.toggle('active', isActive);
+                tab.setAttribute('aria-selected', isActive ? 'true' : 'false');
+                tab.setAttribute('tabindex', isActive ? '0' : '-1');
+              });
+            }
+            const currentAuth = (tabRow.querySelector('.tab.active') || tabRow.querySelector('.tab'))?.getAttribute('data-auth');
+            snippetList.innerHTML = renderSnippets(profile, currentAuth, currentMode, currentTenantId);
+            wireSnippetFormatTabs(snippetList);
           };
 
           modeRow.addEventListener('click', event => {
@@ -718,6 +941,54 @@
               focusTabAt(tabs.length - 1);
             }
           });
+
+          if (tenantRow) {
+            tenantRow.addEventListener('click', event => {
+              const target = event.target;
+              if (!(target instanceof HTMLElement)) return;
+              const tenantButton = target.closest('[data-tenant-id]');
+              if (!(tenantButton instanceof HTMLElement)) return;
+              const tenantId = tenantButton.getAttribute('data-tenant-id');
+              if (!tenantId) return;
+              setActiveTenant(tenantId);
+            });
+
+            tenantRow.addEventListener('keydown', event => {
+              const tabs = Array.from(tenantRow.querySelectorAll('[role="tab"]'));
+              if (tabs.length === 0) return;
+
+              const currentIndex = tabs.findIndex(tab => tab === document.activeElement);
+              if (currentIndex === -1) return;
+
+              const focusTabAt = index => {
+                const nextTab = tabs[index];
+                if (!nextTab) return;
+                nextTab.focus();
+                const tenantId = nextTab.getAttribute('data-tenant-id');
+                if (tenantId) setActiveTenant(tenantId);
+              };
+
+              if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
+                event.preventDefault();
+                focusTabAt((currentIndex + 1) % tabs.length);
+                return;
+              }
+              if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
+                event.preventDefault();
+                focusTabAt((currentIndex - 1 + tabs.length) % tabs.length);
+                return;
+              }
+              if (event.key === 'Home') {
+                event.preventDefault();
+                focusTabAt(0);
+                return;
+              }
+              if (event.key === 'End') {
+                event.preventDefault();
+                focusTabAt(tabs.length - 1);
+              }
+            });
+          }
 
           const initialActiveTab = tabRow.querySelector('.tab.active');
           if (initialActiveTab && initialActiveTab.id) {
