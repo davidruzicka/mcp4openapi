@@ -2064,8 +2064,8 @@ describeIfListen('HttpTransport', () => {
 
       // Check metrics
       const response1 = await request(metricsApp).get('/metrics');
-      expect(response1.text).toContain('mcp_sessions_created_total 1');
-      expect(response1.text).toContain('mcp_sessions_active 1');
+      expect(response1.text).toContain('mcp_sessions_created_total{profile_id="default",tenant_id="none"} 1');
+      expect(response1.text).toContain('mcp_sessions_active{profile_id="default",tenant_id="none"} 1');
 
       // Extract session ID
       const initResponse = await request(metricsApp)
@@ -2084,7 +2084,7 @@ describeIfListen('HttpTransport', () => {
 
       // Check metrics again
       const response2 = await request(metricsApp).get('/metrics');
-      expect(response2.text).toContain('mcp_sessions_destroyed_total');
+      expect(response2.text).toContain('mcp_sessions_destroyed_total{profile_id="default",tenant_id="none"}');
     });
 
     it('should use custom metrics path', async () => {

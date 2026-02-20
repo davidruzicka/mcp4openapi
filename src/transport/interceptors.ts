@@ -8,6 +8,7 @@
 import type { InterceptorConfig } from '../types/profile.js';
 import { TIME, HTTP_STATUS, TIMEOUTS } from '../core/constants.js';
 import { MetricsCollector } from '../core/metrics.js';
+import type { MetricsContextLabels } from '../core/metrics.js';
 import {
   AuthenticationError,
   AuthorizationError,
@@ -328,6 +329,7 @@ export class HttpClient {
   private baseUrl: string;
   private interceptors: InterceptorChain;
   private metrics: MetricsCollector | null;
+  private metricsContext: MetricsContextLabels;
   private logger: Logger;
   private ssrfValidator: SSRFValidator;
 
@@ -336,13 +338,15 @@ export class HttpClient {
     interceptors: InterceptorChain,
     metrics?: MetricsCollector | null,
     logger?: Logger,
-    ssrfValidator?: SSRFValidator
+    ssrfValidator?: SSRFValidator,
+    metricsContext?: MetricsContextLabels
   ) {
     this.baseUrl = baseUrl;
     this.interceptors = interceptors;
     this.metrics = metrics || null;
     this.logger = logger || new ConsoleLogger();
     this.ssrfValidator = ssrfValidator || new SSRFValidator(this.logger);
+    this.metricsContext = metricsContext || { profileId: 'unknown', tenantId: 'none' };
   }
 
   setMetricsCollector(metrics: MetricsCollector | null): void {
@@ -553,7 +557,7 @@ export class HttpClient {
 
         const durationSeconds = (Date.now() - start) / 1000;
         if (metrics) {
-          metrics.recordApiCall(operation, response.status, durationSeconds);
+          metrics.recordApiCall(operation, response.status, durationSeconds, this.metricsContext);
           recorded = true;
         }
 
@@ -596,9 +600,9 @@ export class HttpClient {
         if (metrics) {
           const durationSeconds = (Date.now() - start) / 1000;
           if (!recorded) {
-            metrics.recordApiCall(operation, 0, durationSeconds);
+            metrics.recordApiCall(operation, 0, durationSeconds, this.metricsContext);
           }
-          metrics.recordApiCallError(operation, this.getErrorType(error));
+          metrics.recordApiCallError(operation, this.getErrorType(error), this.metricsContext);
         }
 
         if (error instanceof Error && error.name === 'AbortError') {

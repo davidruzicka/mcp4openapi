@@ -14,9 +14,9 @@ describe('MetricsCollector', () => {
 
   describe('HTTP Metrics', () => {
     it('should record HTTP requests', async () => {
-      metrics.recordHttpRequest('POST', '/mcp', 200, 0.123);
-      metrics.recordHttpRequest('POST', '/mcp', 400, 0.045);
-      metrics.recordHttpRequest('GET', '/mcp', 200, 0.056);
+      metrics.recordHttpRequest('POST', '/mcp', 200, 0.123, { profileId: 'grafana', tenantId: 'team-a' });
+      metrics.recordHttpRequest('POST', '/mcp', 400, 0.045, { profileId: 'grafana', tenantId: 'team-a' });
+      metrics.recordHttpRequest('GET', '/mcp', 200, 0.056, { profileId: 'grafana', tenantId: 'none' });
       
       const output = await metrics.getMetrics();
       
@@ -24,6 +24,8 @@ describe('MetricsCollector', () => {
       expect(output).toContain('method="POST"');
       expect(output).toContain('path="/mcp"');
       expect(output).toContain('status="200"');
+      expect(output).toContain('profile_id="grafana"');
+      expect(output).toContain('tenant_id="team-a"');
     });
 
     it('should record HTTP request duration', async () => {
@@ -47,37 +49,46 @@ describe('MetricsCollector', () => {
 
   describe('Session Metrics', () => {
     it('should track sessions created', async () => {
-      metrics.recordSessionCreated();
-      metrics.recordSessionCreated();
+      metrics.recordSessionCreated({ profileId: 'grafana', tenantId: 'team-a' });
+      metrics.recordSessionCreated({ profileId: 'grafana', tenantId: 'team-a' });
       
       const output = await metrics.getMetrics();
       
-      expect(output).toContain('test_sessions_created_total 2');
+      expect(output).toContain('test_sessions_created_total{profile_id="grafana",tenant_id="team-a"} 2');
     });
 
     it('should track sessions destroyed', async () => {
-      metrics.recordSessionDestroyed();
+      metrics.recordSessionDestroyed({ profileId: 'grafana', tenantId: 'team-a' });
       
       const output = await metrics.getMetrics();
       
-      expect(output).toContain('test_sessions_destroyed_total 1');
+      expect(output).toContain('test_sessions_destroyed_total{profile_id="grafana",tenant_id="team-a"} 1');
     });
 
     it('should track active sessions', async () => {
-      metrics.recordSessionCreated();
-      metrics.recordSessionCreated();
-      metrics.recordSessionDestroyed();
+      metrics.recordSessionCreated({ profileId: 'grafana', tenantId: 'team-a' });
+      metrics.recordSessionCreated({ profileId: 'grafana', tenantId: 'team-a' });
+      metrics.recordSessionDestroyed({ profileId: 'grafana', tenantId: 'team-a' });
       
       const output = await metrics.getMetrics();
       
-      expect(output).toContain('test_sessions_active 1');
+      expect(output).toContain('test_sessions_active{profile_id="grafana",tenant_id="team-a"} 1');
+    });
+
+    it('uses fallback labels for missing profile and tenant context', async () => {
+      metrics.recordSessionCreated();
+      metrics.recordHttpRequest('GET', '/mcp', 200, 0.1);
+      const output = await metrics.getMetrics();
+      expect(output).toContain('test_sessions_created_total{profile_id="unknown",tenant_id="none"} 1');
+      expect(output).toContain('profile_id="unknown"');
+      expect(output).toContain('tenant_id="none"');
     });
   });
 
   describe('Tool Call Metrics', () => {
     it('should record tool calls', async () => {
-      metrics.recordToolCall('manage_badges', 'success', 0.5);
-      metrics.recordToolCall('manage_badges', 'error', 0.3);
+      metrics.recordToolCall('manage_badges', 'success', 0.5, { profileId: 'gitlab', tenantId: 'team-a' });
+      metrics.recordToolCall('manage_badges', 'error', 0.3, { profileId: 'gitlab', tenantId: 'team-a' });
       
       const output = await metrics.getMetrics();
       
@@ -85,6 +96,8 @@ describe('MetricsCollector', () => {
       expect(output).toContain('tool="manage_badges"');
       expect(output).toContain('status="success"');
       expect(output).toContain('status="error"');
+      expect(output).toContain('profile_id="gitlab"');
+      expect(output).toContain('tenant_id="team-a"');
     });
 
     it('should record tool call duration', async () => {
@@ -96,27 +109,31 @@ describe('MetricsCollector', () => {
     });
 
     it('should record tool call errors', async () => {
-      metrics.recordToolCallError('manage_badges', 'ValidationError');
-      metrics.recordToolCallError('manage_badges', 'APIError');
+      metrics.recordToolCallError('manage_badges', 'ValidationError', { profileId: 'gitlab', tenantId: 'team-a' });
+      metrics.recordToolCallError('manage_badges', 'APIError', { profileId: 'gitlab', tenantId: 'team-a' });
       
       const output = await metrics.getMetrics();
       
       expect(output).toContain('test_tool_call_errors_total');
       expect(output).toContain('error_type="ValidationError"');
       expect(output).toContain('error_type="APIError"');
+      expect(output).toContain('profile_id="gitlab"');
+      expect(output).toContain('tenant_id="team-a"');
     });
   });
 
   describe('API Call Metrics', () => {
     it('should record API calls', async () => {
-      metrics.recordApiCall('get_project_badges', 200, 0.2);
-      metrics.recordApiCall('create_badge', 201, 0.3);
+      metrics.recordApiCall('get_project_badges', 200, 0.2, { profileId: 'gitlab', tenantId: 'team-a' });
+      metrics.recordApiCall('create_badge', 201, 0.3, { profileId: 'gitlab', tenantId: 'team-a' });
       
       const output = await metrics.getMetrics();
       
       expect(output).toContain('test_api_calls_total');
       expect(output).toContain('operation="get_project_badges"');
       expect(output).toContain('status="2xx"');
+      expect(output).toContain('profile_id="gitlab"');
+      expect(output).toContain('tenant_id="team-a"');
     });
 
     it('should record API call duration', async () => {
@@ -128,12 +145,14 @@ describe('MetricsCollector', () => {
     });
 
     it('should record API call errors', async () => {
-      metrics.recordApiCallError('get_project_badges', 'NetworkError');
+      metrics.recordApiCallError('get_project_badges', 'NetworkError', { profileId: 'gitlab', tenantId: 'team-a' });
       
       const output = await metrics.getMetrics();
       
       expect(output).toContain('test_api_call_errors_total');
       expect(output).toContain('error_type="NetworkError"');
+      expect(output).toContain('profile_id="gitlab"');
+      expect(output).toContain('tenant_id="team-a"');
     });
 
     it('should group status codes (2xx, 4xx, 5xx)', async () => {
@@ -153,6 +172,14 @@ describe('MetricsCollector', () => {
       const output = await metrics.getMetrics();
       expect(output).toContain('operation="weird_status"');
       expect(output).toContain('status="unknown"');
+    });
+
+    it('uses fallback labels for tool and API metrics when context is missing', async () => {
+      metrics.recordToolCall('manage_badges', 'success', 0.2);
+      metrics.recordApiCall('get_project_badges', 200, 0.2);
+      const output = await metrics.getMetrics();
+      expect(output).toContain('test_tool_calls_total{tool="manage_badges",status="success",profile_id="unknown",tenant_id="none"} 1');
+      expect(output).toContain('test_api_calls_total{operation="get_project_badges",status="2xx",profile_id="unknown",tenant_id="none"} 1');
     });
   });
 
@@ -272,4 +299,3 @@ describe('MetricsCollector', () => {
     });
   });
 });
-

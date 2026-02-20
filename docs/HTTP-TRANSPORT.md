@@ -816,23 +816,23 @@ curl http://localhost:3003/metrics
 
 ```prometheus
 # HTTP metrics
-mcp_http_requests_total{method,path,status}
-mcp_http_request_duration_seconds{method,path,status}
+mcp_http_requests_total{method,path,status,profile_id,tenant_id}
+mcp_http_request_duration_seconds{method,path,status,profile_id,tenant_id}
 
 # Session metrics
-mcp_sessions_active
-mcp_sessions_created_total
-mcp_sessions_destroyed_total
+mcp_sessions_active{profile_id,tenant_id}
+mcp_sessions_created_total{profile_id,tenant_id}
+mcp_sessions_destroyed_total{profile_id,tenant_id}
 
 # Tool call metrics
-mcp_tool_calls_total{tool,status}
-mcp_tool_call_duration_seconds{tool,status}
-mcp_tool_call_errors_total{tool,error_type}
+mcp_tool_calls_total{tool,status,profile_id,tenant_id}
+mcp_tool_call_duration_seconds{tool,status,profile_id,tenant_id}
+mcp_tool_call_errors_total{tool,error_type,profile_id,tenant_id}
 
 # API call metrics (to backend)
-mcp_api_calls_total{operation,status}
-mcp_api_call_duration_seconds{operation,status}
-mcp_api_call_errors_total{operation,error_type}
+mcp_api_calls_total{operation,status,profile_id,tenant_id}
+mcp_api_call_duration_seconds{operation,status,profile_id,tenant_id}
+mcp_api_call_errors_total{operation,error_type,profile_id,tenant_id}
 ```
 
 **Prometheus scrape config**:

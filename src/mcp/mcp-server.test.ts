@@ -431,6 +431,10 @@ describe('MCPServer', () => {
           baseUrl: 'https://team-a.example.com/api',
           authConfigs: [{ type: 'bearer', value_from_env: 'TEAM_A_TOKEN' }],
           sessionToken: 'session-token',
+          metricsContext: {
+            profileId: 'default',
+            tenantId: 'team-a',
+          },
         })
       );
     });
@@ -458,6 +462,10 @@ describe('MCPServer', () => {
         expect.objectContaining({
           baseUrl: (server as any).getBaseUrl(),
           authConfigs: undefined,
+          metricsContext: {
+            profileId: 'default',
+            tenantId: 'none',
+          },
         })
       );
     });
@@ -618,6 +626,40 @@ describe('MCPServer', () => {
       const response = asToolCallResponse(await server.callToolRpc(simpleTool.name, {}, 'test-session', '1'));
       const error = response.error as { code?: number };
       expect(error.code).toBe(-32603);
+    });
+
+    it('records tool metrics with profile and tenant context on success', async () => {
+      const server = new MCPServer();
+      const specPath = path.join(process.cwd(), 'profiles/gitlab/openapi.yaml');
+      await server.initialize(specPath);
+
+      const simpleTool = (server as any).profile.tools.find((t: any) => !t.composite);
+      if (!simpleTool) return;
+
+      (server as any).executeSimpleTool = async () => ({ ok: true });
+      const metrics = {
+        recordToolCall: vi.fn(),
+        recordToolCallError: vi.fn(),
+      };
+      (server as any).httpTransport = {
+        hasOAuthProvider: () => false,
+        getMetricsCollector: () => metrics,
+        getSessionTenantContext: vi.fn().mockReturnValue({ tenantId: 'team-a' }),
+        getSessionFiltering: vi.fn().mockReturnValue(undefined),
+      };
+
+      await server.callToolRpc(simpleTool.name, {}, 'session-1', '1');
+
+      expect(metrics.recordToolCall).toHaveBeenCalledWith(
+        simpleTool.name,
+        'success',
+        expect.any(Number),
+        expect.objectContaining({
+          profileId: expect.any(String),
+          tenantId: 'team-a',
+        })
+      );
+      expect(metrics.recordToolCallError).not.toHaveBeenCalled();
     });
   });
 

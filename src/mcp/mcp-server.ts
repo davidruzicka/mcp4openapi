@@ -61,6 +61,7 @@ import type { HttpProfileContext } from '../types/http-transport.js';
 import type { HttpTransport } from '../transport/http-transport.js';
 import { buildHttpTransportBaseConfig } from '../transport/http-transport-config.js';
 import { renderPrompt } from '../prompt/prompt-renderer.js';
+import type { MetricsCollector, MetricsContextLabels } from '../core/metrics.js';
 
 export class MCPServer {
   private server: Server;
@@ -449,6 +450,7 @@ export class MCPServer {
         profile: this.profile,
         baseUrl,
         logger: this.logger,
+        metricsContext: this.resolveMetricsContext(undefined, undefined),
       });
       this.compositeExecutor = new CompositeExecutor(this.parser, httpClient, this.profile.parameter_aliases);
     } else {
@@ -706,6 +708,7 @@ export class MCPServer {
       authConfigs: tenantContext?.tenantAuthConfigs,
       sessionToken: authToken,
       logger: this.logger,
+      metricsContext: this.resolveMetricsContext(effectiveProfileId, sessionId),
     });
   }
 
@@ -808,14 +811,18 @@ export class MCPServer {
 
     // Execute tool
     this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
+      const toolName = request.params.name;
+      const startTime = Date.now();
+      const metrics = this.getMetricsCollector();
+      const metricsContext = this.resolveMetricsContext(undefined, undefined);
       try {
         if (!this.profile || !this.compositeExecutor) {
           throw new ConfigurationError('Server not initialized. Call initialize() first.');
         }
 
-        const toolDef = this.profile.tools.find(t => t.name === request.params.name);
+        const toolDef = this.profile.tools.find(t => t.name === toolName);
         if (!toolDef) {
-          throw new OperationNotFoundError(request.params.name);
+          throw new OperationNotFoundError(toolName);
         }
 
         const rawArgs = request.params.arguments || {};
@@ -848,6 +855,11 @@ export class MCPServer {
           result = await this.executeSimpleTool(toolDef, args);
         }
 
+        if (metrics) {
+          const durationSeconds = (Date.now() - startTime) / 1000;
+          metrics.recordToolCall(toolName, 'success', durationSeconds, metricsContext);
+        }
+
         return {
           content: [
             {
@@ -857,11 +869,16 @@ export class MCPServer {
           ],
         };
       } catch (err) {
+        if (metrics) {
+          const durationSeconds = (Date.now() - startTime) / 1000;
+          metrics.recordToolCall(toolName, 'error', durationSeconds, metricsContext);
+          metrics.recordToolCallError(toolName, this.getMetricsErrorType(err), metricsContext);
+        }
         // Generate correlation ID only on error (lazy)
         const correlationId = generateCorrelationId();
         this.logger.error('CallTool handler error', err as Error, { 
           correlationId,
-          toolName: request.params.name,
+          toolName,
           action: (request.params.arguments as Record<string, unknown>)?.action
         });
         
@@ -1380,11 +1397,19 @@ export class MCPServer {
     const params = req.params as Record<string, unknown>;
     const toolName = params.name as string;
     const rawArgs = (params.arguments as Record<string, unknown>) || {};
+    const startTime = Date.now();
+    const metrics = this.getMetricsCollector();
+    const metricsContext = this.resolveMetricsContext(profileId, sessionId);
 
     // Check OAuth authentication for tool operations
     if (this.httpTransport && this.httpTransport.hasOAuthProvider(profileId)) {
       const authToken = await this.getAuthTokenFromSession(sessionId || '', profileId);
       if (!authToken) {
+        if (metrics) {
+          const durationSeconds = (Date.now() - startTime) / 1000;
+          metrics.recordToolCall(toolName, 'error', durationSeconds, metricsContext);
+          metrics.recordToolCallError(toolName, 'AuthenticationRequired', metricsContext);
+        }
         // Return OAuth required error with WWW-Authenticate header
         // This should trigger the OAuth flow in the client
         const errorResponse = {
@@ -1457,6 +1482,11 @@ export class MCPServer {
         result = await this.executeSimpleTool(toolDef, args, sessionId, profileId);
       }
 
+      if (metrics) {
+        const durationSeconds = (Date.now() - startTime) / 1000;
+        metrics.recordToolCall(toolName, 'success', durationSeconds, metricsContext);
+      }
+
       return {
         jsonrpc: '2.0',
         id: req.id,
@@ -1470,6 +1500,11 @@ export class MCPServer {
         },
       };
     } catch (error) {
+      if (metrics) {
+        const durationSeconds = (Date.now() - startTime) / 1000;
+        metrics.recordToolCall(toolName, 'error', durationSeconds, metricsContext);
+        metrics.recordToolCallError(toolName, this.getMetricsErrorType(error), metricsContext);
+      }
       // Generate correlation ID only on error (lazy)
       const correlationId = generateCorrelationId();
       
@@ -1510,6 +1545,35 @@ export class MCPServer {
         },
       };
     }
+  }
+
+  private getMetricsCollector(): MetricsCollector | null {
+    return this.httpTransport?.getMetricsCollector?.() || null;
+  }
+
+  private resolveMetricsContext(profileId?: string, sessionId?: string): MetricsContextLabels {
+    let resolvedProfileId = profileId;
+    if (!resolvedProfileId && this.profile) {
+      resolvedProfileId = this.getProfileIdValue();
+    }
+
+    let resolvedTenantId: string | undefined;
+    if (this.httpTransport && resolvedProfileId && sessionId) {
+      const tenantContext = this.httpTransport.getSessionTenantContext?.(resolvedProfileId, sessionId);
+      resolvedTenantId = tenantContext?.tenantId;
+    }
+
+    return {
+      profileId: resolvedProfileId || 'unknown',
+      tenantId: resolvedTenantId || 'none',
+    };
+  }
+
+  private getMetricsErrorType(error: unknown): string {
+    if (error instanceof Error) {
+      return error.name;
+    }
+    return 'UnknownError';
   }
 
   private getFilteringForSession(sessionId?: string, profileId?: string): FilteringRules | undefined {

@@ -26,6 +26,7 @@ import type {
 } from '../types/http-transport.js';
 import { isInitializeRequest } from '../validation/jsonrpc-validator.js';
 import { MetricsCollector } from '../core/metrics.js';
+import type { MetricsContextLabels } from '../core/metrics.js';
 import { ExternalOAuthProvider } from '../auth/oauth-provider.js';
 import { SSRFValidator } from '../security/ssrf-validator.js';
 import type { AuthInterceptor, OAuthConfig } from '../types/profile.js';
@@ -1438,7 +1439,10 @@ export class HttpTransport {
 
       if (this.metrics) {
         const duration = (Date.now() - startTime) / 1000;
-        this.metrics.recordHttpRequest(req.method, req.path, res.statusCode, duration);
+        this.metrics.recordHttpRequest(req.method, req.path, res.statusCode, duration, {
+          profileId: 'unknown',
+          tenantId: 'none',
+        });
       }
     });
 
@@ -2358,6 +2362,8 @@ export class HttpTransport {
    */
   private async handlePost(req: McpRequest, res: Response): Promise<void> {
     const startTime = Date.now();
+    let metricsProfileState: ProfileRuntimeState | null = null;
+    let metricsTenantId: string | null = null;
     try {
       this.logger.debug('handlePost called', { method: req.method, path: req.path, sessionId: req.sessionId, accept: req.headers.accept });
       const profileState = await this.getProfileStateForRequest(req);
@@ -2365,6 +2371,7 @@ export class HttpTransport {
         this.respondProfileNotFound(res, req.profileId);
         return;
       }
+      metricsProfileState = profileState;
       const requestProfileId = req.profileId ?? profileState.profileId;
       const sessionId = req.sessionId;
       const body = req.body;
@@ -2419,6 +2426,7 @@ export class HttpTransport {
           res.status(HTTP_STATUS.NOT_FOUND).json({ error: 'Not Found', message: 'Session not found or expired' });
           return;
         }
+        metricsTenantId = session.tenantId || null;
         if (filteringHeader !== undefined) {
           if (!session.filteringHeader || session.filteringHeader !== filteringHeader) {
             throw new ValidationError('X-Mcp4-Params header mismatch for existing session.');
@@ -2437,6 +2445,7 @@ export class HttpTransport {
             tenantIdHeaderValue,
             tenantBaseUrlHeaderValue,
           );
+          metricsTenantId = resolvedTenantForRequest?.tenantId || metricsTenantId;
           if (
             resolvedTenantForRequest?.tenantId !== session.tenantId ||
             resolvedTenantForRequest?.tenantBaseUrl !== session.tenantBaseUrl
@@ -2493,6 +2502,7 @@ export class HttpTransport {
             tenantIdHeaderValue,
             tenantBaseUrlHeaderValue,
           );
+          metricsTenantId = resolvedTenant?.tenantId || null;
           const effectiveAuthContext = this.resolveEffectiveAuthContext(profileState, resolvedTenant);
           const authInfo = this.extractAuthToken(req, profileState, effectiveAuthContext.authConfigs);
           this.logger.debug('Auth token extracted', { authType: authInfo?.type, hasToken: !!authInfo?.token });
@@ -2672,13 +2682,25 @@ export class HttpTransport {
       // Record error metrics
       if (this.metrics) {
         const duration = (Date.now() - startTime) / 1000;
-        this.metrics.recordHttpRequest(req.method, req.path, status, duration);
+        this.metrics.recordHttpRequest(
+          req.method,
+          req.path,
+          status,
+          duration,
+          this.resolveMetricsContext(metricsProfileState, metricsTenantId)
+        );
       }
     } finally {
       // Record success metrics (if not already recorded in catch)
       if (this.metrics && res.statusCode !== 500) {
         const duration = (Date.now() - startTime) / 1000;
-        this.metrics.recordHttpRequest(req.method, req.path, res.statusCode, duration);
+        this.metrics.recordHttpRequest(
+          req.method,
+          req.path,
+          res.statusCode,
+          duration,
+          this.resolveMetricsContext(metricsProfileState, metricsTenantId)
+        );
       }
     }
   }
@@ -2690,12 +2712,15 @@ export class HttpTransport {
    */
   private async handleGet(req: McpRequest, res: Response): Promise<void> {
     const startTime = Date.now();
+    let metricsProfileState: ProfileRuntimeState | null = null;
+    let metricsTenantId: string | null = null;
     try {
       const profileState = await this.getProfileStateForRequest(req);
       if (!profileState) {
         this.respondProfileNotFound(res, req.profileId);
         return;
       }
+      metricsProfileState = profileState;
       const sessionId = req.sessionId;
       const lastEventId = req.headers['last-event-id'] as string | undefined;
 
@@ -2717,6 +2742,7 @@ export class HttpTransport {
         res.status(HTTP_STATUS.NOT_FOUND).json({ error: 'Not Found', message: 'Session not found or expired' });
         return;
       }
+      metricsTenantId = session.tenantId || null;
 
       this.updateSessionActivity(profileState, sessionId);
 
@@ -2726,7 +2752,13 @@ export class HttpTransport {
       // Record metrics for successful SSE start
       if (this.metrics) {
         const duration = (Date.now() - startTime) / 1000;
-        this.metrics.recordHttpRequest(req.method, req.path, 200, duration);
+        this.metrics.recordHttpRequest(
+          req.method,
+          req.path,
+          200,
+          duration,
+          this.resolveMetricsContext(metricsProfileState, metricsTenantId)
+        );
       }
     } catch (error) {
       const correlationId = generateCorrelationId();
@@ -2744,7 +2776,13 @@ export class HttpTransport {
       // Record error metrics
       if (this.metrics) {
         const duration = (Date.now() - startTime) / 1000;
-        this.metrics.recordHttpRequest(req.method, req.path, status, duration);
+        this.metrics.recordHttpRequest(
+          req.method,
+          req.path,
+          status,
+          duration,
+          this.resolveMetricsContext(metricsProfileState, metricsTenantId)
+        );
       }
     }
   }
@@ -2769,7 +2807,13 @@ export class HttpTransport {
       res.status(status).json({ error: 'Bad Request', message: 'Mcp-Session-Id header required' });
       if (this.metrics) {
         const duration = (Date.now() - startTime) / 1000;
-        this.metrics.recordHttpRequest(req.method, req.path, status, duration);
+        this.metrics.recordHttpRequest(
+          req.method,
+          req.path,
+          status,
+          duration,
+          this.resolveMetricsContext(undefined, null, profileId)
+        );
       }
       return;
     }
@@ -2786,7 +2830,13 @@ export class HttpTransport {
       res.status(status).json({ error: 'Not Found', message: 'Session not found' });
       if (this.metrics) {
         const duration = (Date.now() - startTime) / 1000;
-        this.metrics.recordHttpRequest(req.method, req.path, status, duration);
+        this.metrics.recordHttpRequest(
+          req.method,
+          req.path,
+          status,
+          duration,
+          this.resolveMetricsContext(profileState, null)
+        );
       }
       return;
     }
@@ -2797,7 +2847,13 @@ export class HttpTransport {
     
     if (this.metrics) {
       const duration = (Date.now() - startTime) / 1000;
-      this.metrics.recordHttpRequest(req.method, req.path, status, duration);
+      this.metrics.recordHttpRequest(
+        req.method,
+        req.path,
+        status,
+        duration,
+        this.resolveMetricsContext(profileState, session.tenantId || null)
+      );
     }
   }
 
@@ -3092,7 +3148,10 @@ export class HttpTransport {
 
     // Record metrics
     if (this.metrics) {
-      this.metrics.recordSessionCreated();
+      this.metrics.recordSessionCreated({
+        profileId: profileState.profileId,
+        tenantId: tenantContext?.tenantId || null,
+      });
     }
 
     return sessionId;
@@ -3150,7 +3209,10 @@ export class HttpTransport {
       
       // Record metrics
       if (this.metrics) {
-        this.metrics.recordSessionDestroyed();
+        this.metrics.recordSessionDestroyed({
+          profileId: profileState.profileId,
+          tenantId: session.tenantId || null,
+        });
         this.metrics.clearToolsSession(sessionId);
       }
     }
@@ -3378,6 +3440,19 @@ export class HttpTransport {
       return;
     }
     this.metrics.recordToolFilterRejection(tool, source);
+  }
+
+  private resolveMetricsContext(
+    profileState?: ProfileRuntimeState | null,
+    tenantId?: string | null,
+    profileId?: string | null
+  ): MetricsContextLabels {
+    const resolvedProfileId = profileState?.profileId || profileId || 'unknown';
+    const resolvedTenantId = tenantId || 'none';
+    return {
+      profileId: resolvedProfileId,
+      tenantId: resolvedTenantId,
+    };
   }
 
   /**

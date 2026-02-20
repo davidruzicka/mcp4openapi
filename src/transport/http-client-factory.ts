@@ -7,6 +7,7 @@
 
 import { InterceptorChain, HttpClient } from './interceptors.js';
 import type { MetricsCollector } from '../core/metrics.js';
+import type { MetricsContextLabels } from '../core/metrics.js';
 import type { Profile, AuthInterceptor } from '../types/profile.js';
 import type { Logger } from '../core/logger.js';
 import { ConfigurationError, AuthenticationError } from '../core/errors.js';
@@ -16,6 +17,7 @@ export interface HttpClientConfig {
   baseUrl: string;
   sessionToken?: string;
   authConfigs?: AuthInterceptor[];
+  metricsContext?: MetricsContextLabels;
   logger?: Logger;
 }
 
@@ -33,7 +35,7 @@ export class HttpClientFactory {
    */
   createGlobalClient(config: HttpClientConfig): HttpClient {
     const interceptors = this.createInterceptorChain(config);
-    const client = new HttpClient(config.baseUrl, interceptors, this.metrics, config.logger);
+    const client = new HttpClient(config.baseUrl, interceptors, this.metrics, config.logger, undefined, config.metricsContext);
     this.globalClient = client;
     return client;
   }
@@ -50,7 +52,7 @@ export class HttpClientFactory {
 
     // Create new client for session
     const interceptors = this.createInterceptorChain(config);
-    const newClient = new HttpClient(config.baseUrl, interceptors, this.metrics, config.logger);
+    const newClient = new HttpClient(config.baseUrl, interceptors, this.metrics, config.logger, undefined, config.metricsContext);
 
     // Double-check for race condition
     const existingClient = this.sessionClients.get(sessionId);

@@ -584,6 +584,7 @@ Returns `429 Too Many Requests` when exceeded.
 - `MCP4_LOG_FORMAT`: `console` (default) or `json`
 - `MCP4_METRICS_ENABLED`: Enable Prometheus metrics (default: `false`)
 - `MCP4_METRICS_PATH`: Metrics endpoint (default: `/metrics`)
+- HTTP/session/tool/API metrics include `profile_id` and `tenant_id` labels; when unresolved they use `profile_id="unknown"` and `tenant_id="none"`.
 
 **Security Note**: 
 - Sensitive auth tokens are automatically redacted from logs based on your profile's auth configuration (bearer, query, or custom-header)

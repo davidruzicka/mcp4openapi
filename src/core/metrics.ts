@@ -17,6 +17,11 @@ export interface MetricsCollectorConfig {
   prefix?: string;
 }
 
+export interface MetricsContextLabels {
+  profileId?: string | null;
+  tenantId?: string | null;
+}
+
 export class MetricsCollector {
   private registry: Registry;
   private enabled: boolean;
@@ -57,14 +62,14 @@ export class MetricsCollector {
     this.httpRequestsTotal = new Counter({
       name: `${prefix}http_requests_total`,
       help: 'Total number of HTTP requests',
-      labelNames: ['method', 'path', 'status'],
+      labelNames: ['method', 'path', 'status', 'profile_id', 'tenant_id'],
       registers: [this.registry],
     });
 
     this.httpRequestDuration = new Histogram({
       name: `${prefix}http_request_duration_seconds`,
       help: 'HTTP request duration in seconds',
-      labelNames: ['method', 'path', 'status'],
+      labelNames: ['method', 'path', 'status', 'profile_id', 'tenant_id'],
       buckets: [0.001, 0.01, 0.05, 0.1, 0.5, 1, 2, 5],
       registers: [this.registry],
     });
@@ -73,18 +78,21 @@ export class MetricsCollector {
     this.sessionsActive = new Gauge({
       name: `${prefix}sessions_active`,
       help: 'Number of active sessions',
+      labelNames: ['profile_id', 'tenant_id'],
       registers: [this.registry],
     });
 
     this.sessionsCreatedTotal = new Counter({
       name: `${prefix}sessions_created_total`,
       help: 'Total number of sessions created',
+      labelNames: ['profile_id', 'tenant_id'],
       registers: [this.registry],
     });
 
     this.sessionsDestroyedTotal = new Counter({
       name: `${prefix}sessions_destroyed_total`,
       help: 'Total number of sessions destroyed',
+      labelNames: ['profile_id', 'tenant_id'],
       registers: [this.registry],
     });
 
@@ -92,14 +100,14 @@ export class MetricsCollector {
     this.mcpToolCallsTotal = new Counter({
       name: `${prefix}tool_calls_total`,
       help: 'Total number of MCP tool calls',
-      labelNames: ['tool', 'status'],
+      labelNames: ['tool', 'status', 'profile_id', 'tenant_id'],
       registers: [this.registry],
     });
 
     this.mcpToolCallDuration = new Histogram({
       name: `${prefix}tool_call_duration_seconds`,
       help: 'MCP tool call duration in seconds',
-      labelNames: ['tool', 'status'],
+      labelNames: ['tool', 'status', 'profile_id', 'tenant_id'],
       buckets: [0.01, 0.05, 0.1, 0.5, 1, 2, 5, 10, 30],
       registers: [this.registry],
     });
@@ -107,7 +115,7 @@ export class MetricsCollector {
     this.mcpToolCallErrors = new Counter({
       name: `${prefix}tool_call_errors_total`,
       help: 'Total number of MCP tool call errors',
-      labelNames: ['tool', 'error_type'],
+      labelNames: ['tool', 'error_type', 'profile_id', 'tenant_id'],
       registers: [this.registry],
     });
 
@@ -151,14 +159,14 @@ export class MetricsCollector {
     this.apiCallsTotal = new Counter({
       name: `${prefix}api_calls_total`,
       help: 'Total number of API calls to backend',
-      labelNames: ['operation', 'status'],
+      labelNames: ['operation', 'status', 'profile_id', 'tenant_id'],
       registers: [this.registry],
     });
 
     this.apiCallDuration = new Histogram({
       name: `${prefix}api_call_duration_seconds`,
       help: 'API call duration in seconds',
-      labelNames: ['operation', 'status'],
+      labelNames: ['operation', 'status', 'profile_id', 'tenant_id'],
       buckets: [0.01, 0.05, 0.1, 0.5, 1, 2, 5, 10],
       registers: [this.registry],
     });
@@ -166,7 +174,7 @@ export class MetricsCollector {
     this.apiCallErrors = new Counter({
       name: `${prefix}api_call_errors_total`,
       help: 'Total number of API call errors',
-      labelNames: ['operation', 'error_type'],
+      labelNames: ['operation', 'error_type', 'profile_id', 'tenant_id'],
       registers: [this.registry],
     });
   }
@@ -174,13 +182,22 @@ export class MetricsCollector {
   /**
    * Record HTTP request
    */
-  recordHttpRequest(method: string, path: string, status: number, durationSeconds: number): void {
+  recordHttpRequest(
+    method: string,
+    path: string,
+    status: number,
+    durationSeconds: number,
+    context?: MetricsContextLabels
+  ): void {
     if (!this.enabled) return;
+    const labels = this.resolveContextLabels(context);
 
     this.httpRequestsTotal.inc({
       method,
       path: this.normalizePath(path),
       status: status.toString(),
+      profile_id: labels.profile_id,
+      tenant_id: labels.tenant_id,
     });
 
     this.httpRequestDuration.observe(
@@ -188,6 +205,8 @@ export class MetricsCollector {
         method,
         path: this.normalizePath(path),
         status: status.toString(),
+        profile_id: labels.profile_id,
+        tenant_id: labels.tenant_id,
       },
       durationSeconds
     );
@@ -196,37 +215,54 @@ export class MetricsCollector {
   /**
    * Record session created
    */
-  recordSessionCreated(): void {
+  recordSessionCreated(context?: MetricsContextLabels): void {
     if (!this.enabled) return;
-    this.sessionsCreatedTotal.inc();
-    this.sessionsActive.inc();
+    const labels = this.resolveContextLabels(context);
+    this.sessionsCreatedTotal.inc(labels);
+    this.sessionsActive.inc(labels);
   }
 
   /**
    * Record session destroyed
    */
-  recordSessionDestroyed(): void {
+  recordSessionDestroyed(context?: MetricsContextLabels): void {
     if (!this.enabled) return;
-    this.sessionsDestroyedTotal.inc();
-    this.sessionsActive.dec();
+    const labels = this.resolveContextLabels(context);
+    this.sessionsDestroyedTotal.inc(labels);
+    this.sessionsActive.dec(labels);
   }
 
   /**
    * Record MCP tool call
    */
-  recordToolCall(tool: string, status: 'success' | 'error', durationSeconds: number): void {
+  recordToolCall(
+    tool: string,
+    status: 'success' | 'error',
+    durationSeconds: number,
+    context?: MetricsContextLabels
+  ): void {
     if (!this.enabled) return;
+    const labels = this.resolveContextLabels(context);
 
-    this.mcpToolCallsTotal.inc({ tool, status });
-    this.mcpToolCallDuration.observe({ tool, status }, durationSeconds);
+    this.mcpToolCallsTotal.inc({ tool, status, profile_id: labels.profile_id, tenant_id: labels.tenant_id });
+    this.mcpToolCallDuration.observe(
+      { tool, status, profile_id: labels.profile_id, tenant_id: labels.tenant_id },
+      durationSeconds
+    );
   }
 
   /**
    * Record MCP tool call error
    */
-  recordToolCallError(tool: string, errorType: string): void {
+  recordToolCallError(tool: string, errorType: string, context?: MetricsContextLabels): void {
     if (!this.enabled) return;
-    this.mcpToolCallErrors.inc({ tool, error_type: errorType });
+    const labels = this.resolveContextLabels(context);
+    this.mcpToolCallErrors.inc({
+      tool,
+      error_type: errorType,
+      profile_id: labels.profile_id,
+      tenant_id: labels.tenant_id,
+    });
   }
 
   recordToolsTotal(source: string, count: number): void {
@@ -262,21 +298,41 @@ export class MetricsCollector {
   /**
    * Record API call to backend
    */
-  recordApiCall(operation: string, status: number, durationSeconds: number): void {
+  recordApiCall(
+    operation: string,
+    status: number,
+    durationSeconds: number,
+    context?: MetricsContextLabels
+  ): void {
     if (!this.enabled) return;
 
     const statusLabel = this.getStatusLabel(status);
+    const labels = this.resolveContextLabels(context);
     
-    this.apiCallsTotal.inc({ operation, status: statusLabel });
-    this.apiCallDuration.observe({ operation, status: statusLabel }, durationSeconds);
+    this.apiCallsTotal.inc({
+      operation,
+      status: statusLabel,
+      profile_id: labels.profile_id,
+      tenant_id: labels.tenant_id,
+    });
+    this.apiCallDuration.observe(
+      { operation, status: statusLabel, profile_id: labels.profile_id, tenant_id: labels.tenant_id },
+      durationSeconds
+    );
   }
 
   /**
    * Record API call error
    */
-  recordApiCallError(operation: string, errorType: string): void {
+  recordApiCallError(operation: string, errorType: string, context?: MetricsContextLabels): void {
     if (!this.enabled) return;
-    this.apiCallErrors.inc({ operation, error_type: errorType });
+    const labels = this.resolveContextLabels(context);
+    this.apiCallErrors.inc({
+      operation,
+      error_type: errorType,
+      profile_id: labels.profile_id,
+      tenant_id: labels.tenant_id,
+    });
   }
 
   /**
@@ -331,5 +387,14 @@ export class MetricsCollector {
     if (status >= 400 && status < 500) return '4xx';
     if (status >= 500 && status < 600) return '5xx';
     return 'unknown';
+  }
+
+  private resolveContextLabels(context?: MetricsContextLabels): { profile_id: string; tenant_id: string } {
+    const profileId = context?.profileId?.trim();
+    const tenantId = context?.tenantId?.trim();
+    return {
+      profile_id: profileId && profileId.length > 0 ? profileId : 'unknown',
+      tenant_id: tenantId && tenantId.length > 0 ? tenantId : 'none',
+    };
   }
 }

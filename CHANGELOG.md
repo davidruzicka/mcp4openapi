@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Upgraded the dev test/lint toolchain to eslint 10 and Vitest 4, replaced `typescript-json-schema` with `ts-json-schema-generator`, and updated schema-sync generation scripts accordingly.
 - Updated Vitest configuration to v4 worker options (`maxWorkers`, `isolate`, `fileParallelism`) to remove deprecated `poolOptions` usage.
 - Extended local stdio profile-index snippets for Claude Code CLI and Gemini (JSON + CLI) to include API base URL env wiring, and enabled tenant API-base override injection for Gemini local JSON snippets.
+- Added `profile_id` and `tenant_id` labels to HTTP/session/tool/API Prometheus metrics with explicit fallbacks (`unknown`/`none`) to support tenant-aware observability.
 
 ## [0.4.0] - 2026-02-16
 
