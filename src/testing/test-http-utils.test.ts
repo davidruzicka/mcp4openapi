@@ -11,15 +11,15 @@ import {
 
 // Mock dependencies
 vi.mock('../transport/interceptors.js', () => ({
-  InterceptorChain: vi.fn().mockImplementation((config) => ({
-    config,
-  })),
-  HttpClient: vi.fn().mockImplementation((baseUrl, interceptors) => ({
-    baseUrl,
-    interceptors,
-    getBaseUrl: () => baseUrl,
-    getInterceptorsConfig: () => interceptors.config,
-    request: vi.fn().mockImplementation(async (method: string, path: string, options: RequestInit = {}) => {
+  InterceptorChain: vi.fn(function MockInterceptorChain(this: any, config: any) {
+    this.config = config;
+  }),
+  HttpClient: vi.fn(function MockHttpClient(this: any, baseUrl: string, interceptors: any) {
+    this.baseUrl = baseUrl;
+    this.interceptors = interceptors;
+    this.getBaseUrl = () => baseUrl;
+    this.getInterceptorsConfig = () => interceptors.config;
+    this.request = vi.fn().mockImplementation(async (method: string, path: string, options: RequestInit = {}) => {
       const url = `${baseUrl}${path}`;
       const init: RequestInit = {
         method,
@@ -32,8 +32,8 @@ vi.mock('../transport/interceptors.js', () => ({
         status: response.status,
         json: () => response.json(),
       };
-    }),
-  })),
+    });
+  }),
 }));
 
 describe('Test HTTP Utils', () => {

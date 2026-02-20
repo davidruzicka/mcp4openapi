@@ -1,8 +1,8 @@
 import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import typescript from 'typescript';
-import * as TJS from 'typescript-json-schema';
+import * as nodeFs from 'node:fs';
+import { createGenerator } from 'ts-json-schema-generator';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -40,6 +40,10 @@ const PRESERVED_SCHEMA_KEYS = new Set([
 
 function escapeJsonPointer(value) {
   return value.replace(/~/g, '~0').replace(/\//g, '~1');
+}
+
+function unescapeJsonPointer(value) {
+  return value.replace(/~1/g, '/').replace(/~0/g, '~');
 }
 
 function extractDefinitionName(rawName) {
@@ -177,46 +181,53 @@ function sortKeysDeep(value) {
   return result;
 }
 
+function normalizeSchemaRoot(schema) {
+  if (!schema || typeof schema !== 'object') {
+    return schema;
+  }
+
+  if (typeof schema.$ref !== 'string' || !schema.$ref.startsWith('#/definitions/')) {
+    return schema;
+  }
+
+  const rawRef = schema.$ref.slice('#/definitions/'.length);
+  const refName = unescapeJsonPointer(rawRef);
+  const rootDefinition = schema.definitions?.[refName];
+  if (!rootDefinition || typeof rootDefinition !== 'object') {
+    return schema;
+  }
+
+  return {
+    ...rootDefinition,
+    definitions: schema.definitions,
+    $schema: schema.$schema,
+  };
+}
+
 export function generateProfileSchemaFromTypes() {
-  const configPath = typescript.findConfigFile(PROJECT_ROOT, typescript.sys.fileExists, 'tsconfig.json');
-  if (!configPath) {
-    throw new Error('Cannot find tsconfig.json');
-  }
-
-  const configFile = typescript.readConfigFile(configPath, typescript.sys.readFile);
-  if (configFile.error) {
-    throw new Error(typescript.formatDiagnostics([configFile.error], {
-      getCanonicalFileName: (f) => f,
-      getCurrentDirectory: () => PROJECT_ROOT,
-      getNewLine: () => '\n',
-    }));
-  }
-
-  const parsedConfig = typescript.parseJsonConfigFileContent(
-    configFile.config,
-    typescript.sys,
-    PROJECT_ROOT
-  );
-
-  const settings = {
-    refs: true,
-    required: true,
-    strictNullChecks: true,
-    ignoreErrors: true,
+  const generatorConfig = {
+    tsconfig: path.join(PROJECT_ROOT, 'tsconfig.json'),
+    type: 'Profile',
+    expose: 'all',
+    topRef: false,
+    additionalProperties: true,
+    jsDoc: 'extended',
+    skipTypeCheck: true,
   };
 
-  const program = TJS.getProgramFromFiles(
-    [path.join(PROJECT_ROOT, 'src/types/profile.ts')],
-    parsedConfig.options,
-    PROJECT_ROOT
-  );
+  // Compatibility: some Node runtimes (for example Node 20) do not expose fs.globSync.
+  // ts-json-schema-generator uses fs.globSync only when `path` is provided.
+  if (typeof nodeFs.globSync === 'function') {
+    generatorConfig.path = path.join(PROJECT_ROOT, 'src/types/profile.ts');
+  }
 
-  const parsed = TJS.generateSchema(program, 'Profile', settings);
+  const parsed = createGenerator(generatorConfig).createSchema('Profile');
+
   if (!parsed) {
     throw new Error('Failed to generate JSON schema from Profile type');
   }
 
-  const normalized = renameDefinitions(parsed);
+  const normalized = renameDefinitions(normalizeSchemaRoot(parsed));
   return normalized;
 }
 

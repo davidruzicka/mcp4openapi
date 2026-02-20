@@ -2,7 +2,6 @@
 import { describe, it, expect } from 'vitest';
 import { ToolGenerator } from './tool-generator.js';
 import { OpenAPIParser } from '../openapi/openapi-parser.js';
-import { ValidationError } from '../core/errors.js';
 
 describe('ToolGenerator ReDoS Protection', () => {
   it('should reject inputs > 4096 chars when pattern is present, even if maxLength is larger', () => {

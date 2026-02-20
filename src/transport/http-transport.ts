@@ -26,6 +26,7 @@ import type {
 } from '../types/http-transport.js';
 import { isInitializeRequest } from '../validation/jsonrpc-validator.js';
 import { MetricsCollector } from '../core/metrics.js';
+import type { MetricsContextLabels } from '../core/metrics.js';
 import { ExternalOAuthProvider } from '../auth/oauth-provider.js';
 import { SSRFValidator } from '../security/ssrf-validator.js';
 import type { AuthInterceptor, OAuthConfig } from '../types/profile.js';
@@ -54,6 +55,8 @@ import {
   parseSessionToolFilterHeader,
 } from '../tool-filter/index.js';
 import type { SessionToolFilter, SessionToolFilterRequest } from '../types/http-transport.js';
+import type { HttpTenantIndex, HttpTenantsConfig, ResolvedTenantContext } from '../types/http-tenants.js';
+import { buildTenantIndexForProfile, loadRawTenantsConfigFromEnv, resolveTenantFromHeaders } from './http-tenant-config.js';
 import type { ListedProfileDetails } from '../profile/profile-resolver.js';
 import {
   buildProfileIndexPayload,
@@ -61,6 +64,7 @@ import {
   parseAcceptLanguage,
   renderProfileIndexHtml,
 } from './profile-index.js';
+import type { ProfileIndexSourceProfile, ProfileIndexTenantSummary } from './profile-index.js';
 const DEFAULT_MAX_TOKEN_LENGTH = 1000;
 
 interface ProfileRuntimeState {
@@ -70,6 +74,8 @@ interface ProfileRuntimeState {
   toolFilterService?: ToolFilterService;
   oauthTokensByAccessToken: Map<string, { refreshToken?: string; expiresAt?: number; clientId: string; scopes: string[] }>;
   sessions: Map<string, SessionData>;
+  tenantIndex: HttpTenantIndex;
+  tenantOAuthProvidersBySessionId: Map<string, ExternalOAuthProvider>;
 }
 
 interface RequestWithStartTime extends Request {
@@ -100,12 +106,14 @@ export class HttpTransport {
   private static readonly PROFILE_HINT_TTL_MS = 10 * 60 * 1000;
   private profileIndexProvider: (() => Promise<ListedProfileDetails[]>) | null = null;
   private ssrfValidator: SSRFValidator;
+  private rawTenantConfig: HttpTenantsConfig | null;
 
   constructor(config: HttpTransportConfig, logger: Logger) {
     // Freeze config to prevent runtime mutation of security-critical settings (allowedOrigins, rate limits, etc.)
     this.config = Object.freeze({ ...config });
     this.logger = logger;
     this.ssrfValidator = new SSRFValidator(logger);
+    this.rawTenantConfig = loadRawTenantsConfigFromEnv();
     
     // Initialize metrics if enabled
     if (config.metricsEnabled) {
@@ -392,13 +400,21 @@ export class HttpTransport {
       this.logger.info('No OAuth config provided - OAuth provider not initialized', { profileId });
     }
 
+    const tenantIndex = this.config.tenantIndex || buildTenantIndexForProfile(this.rawTenantConfig, context, this.logger);
+
     const state: ProfileRuntimeState = {
       profileId,
       context,
       oauthProvider,
       oauthTokensByAccessToken: new Map(),
       sessions: new Map(),
+      tenantIndex,
+      tenantOAuthProvidersBySessionId: new Map(),
     };
+
+    if (tenantIndex.enabled) {
+      this.logger.info('HTTP tenant configuration enabled', { profileId, tenantCount: tenantIndex.byTenantId.size });
+    }
 
     this.profileStates.set(profileId, state);
     return state;
@@ -1024,9 +1040,9 @@ export class HttpTransport {
 
     const profileRoutingEnabled = this.config.profileRoutingEnabled === true;
     const defaultProfileId = this.getDefaultProfileId();
-
     const attachProfileId: RequestHandler = (req: Request, _res: Response, next: NextFunction) => {
-      (req as McpRequest).profileId = req.params.profileId;
+      const profileParam = req.params.profileId;
+      (req as McpRequest).profileId = Array.isArray(profileParam) ? profileParam[0] : profileParam;
       next();
     };
 
@@ -1357,7 +1373,7 @@ export class HttpTransport {
             // nosemgrep: javascript.express.security.cors-misconfiguration.cors-misconfiguration
             res.setHeader('Access-Control-Allow-Origin', origin);
             res.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
-            res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept, Mcp-Session-Id');
+            res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept, Mcp-Session-Id, X-Mcp4-Tenant-Id, X-Mcp4-Api-Base-Url');
             res.setHeader('Access-Control-Max-Age', '86400'); // 24 hours cache
             return res.status(HTTP_STATUS.OK).send();
           }
@@ -1423,7 +1439,10 @@ export class HttpTransport {
 
       if (this.metrics) {
         const duration = (Date.now() - startTime) / 1000;
-        this.metrics.recordHttpRequest(req.method, req.path, res.statusCode, duration);
+        this.metrics.recordHttpRequest(req.method, req.path, res.statusCode, duration, {
+          profileId: 'unknown',
+          tenantId: 'none',
+        });
       }
     });
 
@@ -1500,8 +1519,9 @@ export class HttpTransport {
       return;
     }
 
+    const profilesWithTenantSummary = await this.enrichProfilesForIndexWithTenants(profiles);
     const origin = this.getRequestOrigin(req);
-    const { payload, templateData } = buildProfileIndexPayload(profiles, origin, locale);
+    const { payload, templateData } = buildProfileIndexPayload(profilesWithTenantSummary, origin, locale);
 
     if (prefersJson) {
       res.json(payload);
@@ -1519,6 +1539,59 @@ export class HttpTransport {
       `default-src 'self'; frame-ancestors 'none'; object-src 'none'; base-uri 'self'; script-src 'self' 'nonce-${nonce}'; style-src 'self' 'nonce-${nonce}'`
     );
     res.send(html);
+  }
+
+  private async enrichProfilesForIndexWithTenants(profiles: ListedProfileDetails[]): Promise<ProfileIndexSourceProfile[]> {
+    if (!this.rawTenantConfig || this.rawTenantConfig.tenants.length === 0 || !this.profileContextProvider) {
+      return profiles;
+    }
+
+    const enriched: ProfileIndexSourceProfile[] = [];
+    for (const profile of profiles) {
+      try {
+        const context = await this.profileContextProvider(profile.profileId);
+        if (!context) {
+          enriched.push(profile);
+          continue;
+        }
+        const tenantIndex = buildTenantIndexForProfile(this.rawTenantConfig, context, this.logger);
+        const tenantSummary = this.buildProfileIndexTenantSummary(tenantIndex);
+        enriched.push({
+          ...profile,
+          tenantSummary,
+        });
+      } catch (error) {
+        this.logger.warn('Failed to build tenant summary for profile index', {
+          profileId: profile.profileId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        enriched.push(profile);
+      }
+    }
+
+    return enriched;
+  }
+
+  private buildProfileIndexTenantSummary(
+    tenantIndex: HttpTenantIndex,
+  ): ProfileIndexTenantSummary | undefined {
+    if (!tenantIndex.enabled || tenantIndex.byTenantId.size === 0) {
+      return undefined;
+    }
+
+    const tenants = Array.from(tenantIndex.byTenantId.values())
+      .map((tenant) => ({
+        tenantId: tenant.tenantId,
+        selectorType: tenant.tenantSelectorType,
+        selectorDisplay: tenant.tenantSelectorValue,
+      }))
+      .sort((left, right) => left.tenantId.localeCompare(right.tenantId));
+
+    return {
+      tenantsEnabled: true,
+      selectionHeaderName: 'X-Mcp4-Tenant-Id',
+      tenants,
+    };
   }
 
 
@@ -2126,6 +2199,50 @@ export class HttpTransport {
     });
   }
 
+  private resolveEffectiveAuthContext(
+    profileState: ProfileRuntimeState,
+    resolvedTenant?: ResolvedTenantContext | null,
+    session?: SessionData,
+  ): { authConfigs: AuthInterceptor[]; oauthConfig?: OAuthConfig } {
+    if (resolvedTenant) {
+      return {
+        authConfigs: resolvedTenant.tenantAuthConfigs,
+        oauthConfig: resolvedTenant.tenantOAuthConfig,
+      };
+    }
+    if (session && session.tenantAuthMode) {
+      return {
+        authConfigs: session.tenantAuthConfigs || [],
+        oauthConfig: session.tenantOAuthConfig,
+      };
+    }
+    return {
+      authConfigs: profileState.context.authConfigs || [],
+      oauthConfig: profileState.context.oauthConfig,
+    };
+  }
+
+  private getTenantIndex(profileState: ProfileRuntimeState): HttpTenantIndex {
+    if (profileState.tenantIndex) {
+      return profileState.tenantIndex;
+    }
+    profileState.tenantIndex = {
+      enabled: false,
+      byTenantId: new Map(),
+      byBaseUrl: new Map(),
+      maskSelectors: [],
+      selectorTypeByTenantId: new Map(),
+    };
+    return profileState.tenantIndex;
+  }
+
+  private getTenantOAuthProviderCache(profileState: ProfileRuntimeState): Map<string, ExternalOAuthProvider> {
+    if (!profileState.tenantOAuthProvidersBySessionId) {
+      profileState.tenantOAuthProvidersBySessionId = new Map<string, ExternalOAuthProvider>();
+    }
+    return profileState.tenantOAuthProvidersBySessionId;
+  }
+
   /**
    * Extract and validate auth token from request headers
    * 
@@ -2140,13 +2257,16 @@ export class HttpTransport {
    */
   private extractAuthToken(
     req: McpRequest,
-    profileState: ProfileRuntimeState
+    profileState: ProfileRuntimeState,
+    authConfigOverride?: AuthInterceptor[],
   ): { type: 'bearer' | 'oauth' | 'api-token' | 'none', token?: string, sessionId?: string } {
     const sessionId = req.sessionId || req.headers['mcp-session-id'] as string | undefined;
     const session = sessionId ? profileState.sessions.get(sessionId) : undefined;
-    const authConfigs = profileState.context.authConfigs;
+    const authConfigs = authConfigOverride ?? profileState.context.authConfigs;
     const configs = authConfigs ? (Array.isArray(authConfigs) ? authConfigs : [authConfigs]) : [];
-    const hasOAuth = !!profileState.oauthProvider || configs.some(config => config.type === 'oauth');
+    const hasOAuth = authConfigOverride
+      ? configs.some((config) => config.type === 'oauth')
+      : (!!profileState.oauthProvider || configs.some((config) => config.type === 'oauth'));
     
     // 1. Check Authorization: Bearer header
     const authHeader = req.headers.authorization;
@@ -2171,7 +2291,7 @@ export class HttpTransport {
     
     // 2. Check configured custom header (if any)
     if (configs.length > 0) {
-      const sortedConfigs = configs.sort((a, b) => (a.priority || 0) - (b.priority || 0));
+      const sortedConfigs = [...configs].sort((a, b) => (a.priority || 0) - (b.priority || 0));
       const customHeaderConfig = sortedConfigs.find(c => c.type === 'custom-header' && c.header_name);
       if (customHeaderConfig && customHeaderConfig.header_name) {
         if (!isSafePropertyName(customHeaderConfig.header_name)) {
@@ -2242,6 +2362,8 @@ export class HttpTransport {
    */
   private async handlePost(req: McpRequest, res: Response): Promise<void> {
     const startTime = Date.now();
+    let metricsProfileState: ProfileRuntimeState | null = null;
+    let metricsTenantId: string | null = null;
     try {
       this.logger.debug('handlePost called', { method: req.method, path: req.path, sessionId: req.sessionId, accept: req.headers.accept });
       const profileState = await this.getProfileStateForRequest(req);
@@ -2249,6 +2371,7 @@ export class HttpTransport {
         this.respondProfileNotFound(res, req.profileId);
         return;
       }
+      metricsProfileState = profileState;
       const requestProfileId = req.profileId ?? profileState.profileId;
       const sessionId = req.sessionId;
       const body = req.body;
@@ -2258,6 +2381,8 @@ export class HttpTransport {
       const parsedToolFilter =
         toolFilterHeader !== undefined ? parseSessionToolFilterHeader(toolFilterHeader) : undefined;
       const normalizedToolFilterHeader = parsedToolFilter?.normalizedHeader;
+      const tenantIdHeaderValue = this.getTenantIdHeaderValue(req);
+      const tenantBaseUrlHeaderValue = this.getTenantBaseUrlHeaderValue(req);
 
       // Validate Accept header per MCP Streamable HTTP specification
       const accept = req.headers.accept || '';
@@ -2301,6 +2426,7 @@ export class HttpTransport {
           res.status(HTTP_STATUS.NOT_FOUND).json({ error: 'Not Found', message: 'Session not found or expired' });
           return;
         }
+        metricsTenantId = session.tenantId || null;
         if (filteringHeader !== undefined) {
           if (!session.filteringHeader || session.filteringHeader !== filteringHeader) {
             throw new ValidationError('X-Mcp4-Params header mismatch for existing session.');
@@ -2313,8 +2439,23 @@ export class HttpTransport {
             );
           }
         }
+        if (tenantIdHeaderValue !== undefined || tenantBaseUrlHeaderValue !== undefined) {
+          const resolvedTenantForRequest = resolveTenantFromHeaders(
+            this.getTenantIndex(profileState),
+            tenantIdHeaderValue,
+            tenantBaseUrlHeaderValue,
+          );
+          metricsTenantId = resolvedTenantForRequest?.tenantId || metricsTenantId;
+          if (
+            resolvedTenantForRequest?.tenantId !== session.tenantId ||
+            resolvedTenantForRequest?.tenantBaseUrl !== session.tenantBaseUrl
+          ) {
+            throw new ValidationError('Tenant selector header mismatch for existing session.');
+          }
+        }
         this.updateSessionActivity(profileState, sessionId);
-        const authInfo = this.extractAuthToken(req, profileState);
+        const effectiveAuthContext = this.resolveEffectiveAuthContext(profileState, undefined, session);
+        const authInfo = this.extractAuthToken(req, profileState, effectiveAuthContext.authConfigs);
         if (authInfo.token && authInfo.type !== 'oauth') {
           const previousToken = session.authToken;
           if (!previousToken || previousToken !== authInfo.token) {
@@ -2356,16 +2497,23 @@ export class HttpTransport {
         // Create session on initialization
         let newSessionId: string | undefined;
         if (isInitialization) {
-          // Extract and validate auth token from headers
-          const authInfo = this.extractAuthToken(req, profileState);
+          const resolvedTenant = resolveTenantFromHeaders(
+            this.getTenantIndex(profileState),
+            tenantIdHeaderValue,
+            tenantBaseUrlHeaderValue,
+          );
+          metricsTenantId = resolvedTenant?.tenantId || null;
+          const effectiveAuthContext = this.resolveEffectiveAuthContext(profileState, resolvedTenant);
+          const authInfo = this.extractAuthToken(req, profileState, effectiveAuthContext.authConfigs);
           this.logger.debug('Auth token extracted', { authType: authInfo?.type, hasToken: !!authInfo?.token });
 
           // If OAuth is configured, require authentication for initialization
           // This ensures clients like Cursor properly handle OAuth flow
-          if (profileState.oauthProvider && !authInfo.token) {
+          if (effectiveAuthContext.oauthConfig && !authInfo.token) {
             this.logger.debug('OAuth configured but no token provided, triggering OAuth flow');
             const resourceMetadataUrl = this.getOAuthProtectedResourceUrl(requestProfileId);
-            res.setHeader('WWW-Authenticate', `Bearer resource_metadata="${resourceMetadataUrl}", scope="${profileState.oauthProvider.scopes.join(' ')}"`);
+            const scopeValue = effectiveAuthContext.oauthConfig.scopes?.join(' ') || 'api';
+            res.setHeader('WWW-Authenticate', `Bearer resource_metadata="${resourceMetadataUrl}", scope="${scopeValue}"`);
             res.status(HTTP_STATUS.UNAUTHORIZED).json({
               error: 'Unauthorized',
               message: 'Authentication required for OAuth'
@@ -2374,7 +2522,7 @@ export class HttpTransport {
           }
 
           // Require a client token only when auth is configured and server env fallback is unavailable
-          const authConfigs = profileState.context.authConfigs ?? [];
+          const authConfigs = effectiveAuthContext.authConfigs;
           if (authConfigs.length > 0 && !authInfo.token && !this.hasServerEnvAuthToken(authConfigs)) {
             this.logger.debug('Auth configured but no token provided, rejecting initialization', {
               profileId: requestProfileId,
@@ -2388,10 +2536,10 @@ export class HttpTransport {
           }
 
           // Validate token if auth is configured and token is provided
-          if (authInfo && authInfo.token && profileState.context.authConfigs && profileState.context.baseUrl) {
+          if (authInfo && authInfo.token && authConfigs.length > 0 && (resolvedTenant?.tenantBaseUrl || profileState.context.baseUrl)) {
             // Find matching auth config based on priority (authConfigs is sorted)
             // For 'bearer' token type, 'oauth' config is also a match
-            const authConfig = profileState.context.authConfigs.find(c =>
+            const authConfig = authConfigs.find(c =>
                 c.type === authInfo.type || 
                 (authInfo.type === 'bearer' && c.type === 'oauth')
             );
@@ -2402,7 +2550,7 @@ export class HttpTransport {
                 endpoint: authConfig.validation_endpoint,
               });
               
-              const isValid = await this.validateAuthToken(authConfig, authInfo.token, profileState.context.baseUrl);
+              const isValid = await this.validateAuthToken(authConfig, authInfo.token, resolvedTenant?.tenantBaseUrl || profileState.context.baseUrl || '');
               
               if (!isValid) {
                 this.logger.warn('Auth token validation failed during initialization', {
@@ -2454,7 +2602,9 @@ export class HttpTransport {
             parsedFiltering?.filtering,
             parsedFiltering?.normalizedHeader,
             parsedToolFilter,
-            normalizedToolFilterHeader
+            normalizedToolFilterHeader,
+            resolvedTenant,
+            tenantBaseUrlHeaderValue
           );
         }
 
@@ -2532,13 +2682,25 @@ export class HttpTransport {
       // Record error metrics
       if (this.metrics) {
         const duration = (Date.now() - startTime) / 1000;
-        this.metrics.recordHttpRequest(req.method, req.path, status, duration);
+        this.metrics.recordHttpRequest(
+          req.method,
+          req.path,
+          status,
+          duration,
+          this.resolveMetricsContext(metricsProfileState, metricsTenantId)
+        );
       }
     } finally {
       // Record success metrics (if not already recorded in catch)
       if (this.metrics && res.statusCode !== 500) {
         const duration = (Date.now() - startTime) / 1000;
-        this.metrics.recordHttpRequest(req.method, req.path, res.statusCode, duration);
+        this.metrics.recordHttpRequest(
+          req.method,
+          req.path,
+          res.statusCode,
+          duration,
+          this.resolveMetricsContext(metricsProfileState, metricsTenantId)
+        );
       }
     }
   }
@@ -2550,12 +2712,15 @@ export class HttpTransport {
    */
   private async handleGet(req: McpRequest, res: Response): Promise<void> {
     const startTime = Date.now();
+    let metricsProfileState: ProfileRuntimeState | null = null;
+    let metricsTenantId: string | null = null;
     try {
       const profileState = await this.getProfileStateForRequest(req);
       if (!profileState) {
         this.respondProfileNotFound(res, req.profileId);
         return;
       }
+      metricsProfileState = profileState;
       const sessionId = req.sessionId;
       const lastEventId = req.headers['last-event-id'] as string | undefined;
 
@@ -2577,6 +2742,7 @@ export class HttpTransport {
         res.status(HTTP_STATUS.NOT_FOUND).json({ error: 'Not Found', message: 'Session not found or expired' });
         return;
       }
+      metricsTenantId = session.tenantId || null;
 
       this.updateSessionActivity(profileState, sessionId);
 
@@ -2586,7 +2752,13 @@ export class HttpTransport {
       // Record metrics for successful SSE start
       if (this.metrics) {
         const duration = (Date.now() - startTime) / 1000;
-        this.metrics.recordHttpRequest(req.method, req.path, 200, duration);
+        this.metrics.recordHttpRequest(
+          req.method,
+          req.path,
+          200,
+          duration,
+          this.resolveMetricsContext(metricsProfileState, metricsTenantId)
+        );
       }
     } catch (error) {
       const correlationId = generateCorrelationId();
@@ -2604,7 +2776,13 @@ export class HttpTransport {
       // Record error metrics
       if (this.metrics) {
         const duration = (Date.now() - startTime) / 1000;
-        this.metrics.recordHttpRequest(req.method, req.path, status, duration);
+        this.metrics.recordHttpRequest(
+          req.method,
+          req.path,
+          status,
+          duration,
+          this.resolveMetricsContext(metricsProfileState, metricsTenantId)
+        );
       }
     }
   }
@@ -2629,7 +2807,13 @@ export class HttpTransport {
       res.status(status).json({ error: 'Bad Request', message: 'Mcp-Session-Id header required' });
       if (this.metrics) {
         const duration = (Date.now() - startTime) / 1000;
-        this.metrics.recordHttpRequest(req.method, req.path, status, duration);
+        this.metrics.recordHttpRequest(
+          req.method,
+          req.path,
+          status,
+          duration,
+          this.resolveMetricsContext(undefined, null, profileId)
+        );
       }
       return;
     }
@@ -2646,7 +2830,13 @@ export class HttpTransport {
       res.status(status).json({ error: 'Not Found', message: 'Session not found' });
       if (this.metrics) {
         const duration = (Date.now() - startTime) / 1000;
-        this.metrics.recordHttpRequest(req.method, req.path, status, duration);
+        this.metrics.recordHttpRequest(
+          req.method,
+          req.path,
+          status,
+          duration,
+          this.resolveMetricsContext(profileState, null)
+        );
       }
       return;
     }
@@ -2657,7 +2847,13 @@ export class HttpTransport {
     
     if (this.metrics) {
       const duration = (Date.now() - startTime) / 1000;
-      this.metrics.recordHttpRequest(req.method, req.path, status, duration);
+      this.metrics.recordHttpRequest(
+        req.method,
+        req.path,
+        status,
+        duration,
+        this.resolveMetricsContext(profileState, session.tenantId || null)
+      );
     }
   }
 
@@ -2849,6 +3045,52 @@ export class HttpTransport {
     return headerValue;
   }
 
+
+  private validateTenantHeaderValue(headerName: string, value: string): string {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      throw new ValidationError(`Invalid ${headerName} header. Value must not be empty.`);
+    }
+    if (trimmed.length > 256) {
+      throw new ValidationError(`Invalid ${headerName} header. Value is too long.`);
+    }
+    if (/[\r\n]/.test(trimmed)) {
+      throw new ValidationError(`Invalid ${headerName} header. Control characters are not allowed.`);
+    }
+    if (trimmed.includes(',')) {
+      throw new ValidationError(`Invalid ${headerName} header. Multiple values are not allowed.`);
+    }
+    return trimmed;
+  }
+
+  private getTenantIdHeaderValue(req: Request): string | undefined {
+    const headerValue = req.headers['x-mcp4-tenant-id'];
+    if (Array.isArray(headerValue)) {
+      if (headerValue.length === 0) {
+        return undefined;
+      }
+      if (headerValue.length > 1) {
+        throw new ValidationError('Invalid X-Mcp4-Tenant-Id header. Expected a single value.');
+      }
+      return this.validateTenantHeaderValue('X-Mcp4-Tenant-Id', headerValue[0]);
+    }
+    return headerValue ? this.validateTenantHeaderValue('X-Mcp4-Tenant-Id', headerValue) : undefined;
+  }
+
+  private getTenantBaseUrlHeaderValue(req: Request): string | undefined {
+    const headerValue = req.headers['x-mcp4-api-base-url'];
+    if (Array.isArray(headerValue)) {
+      if (headerValue.length === 0) {
+        return undefined;
+      }
+      if (headerValue.length > 1) {
+        throw new ValidationError('Invalid X-Mcp4-Api-Base-Url header. Expected a single value.');
+      }
+      return this.validateTenantHeaderValue('X-Mcp4-Api-Base-Url', headerValue[0]);
+    }
+    return headerValue ? this.validateTenantHeaderValue('X-Mcp4-Api-Base-Url', headerValue) : undefined;
+  }
+
   /**
    * Create new session
    *
@@ -2864,7 +3106,9 @@ export class HttpTransport {
     filtering?: Record<string, string[]>,
     filteringHeader?: string,
     toolFilterRequest?: SessionToolFilterRequest,
-    toolFilterHeader?: string
+    toolFilterHeader?: string,
+    tenantContext?: ResolvedTenantContext | null,
+    tenantHeaderValue?: string
   ): string {
     // Validate token if provided (defense in depth)
     if (authToken) {
@@ -2886,6 +3130,12 @@ export class HttpTransport {
       filteringHeader,
       toolFilterRequest,
       toolFilterHeader,
+      tenantId: tenantContext?.tenantId,
+      tenantBaseUrl: tenantContext?.tenantBaseUrl,
+      tenantHeaderValue: tenantHeaderValue || tenantContext?.tenantBaseUrl,
+      tenantAuthMode: tenantContext?.tenantAuthMode,
+      tenantOAuthConfig: tenantContext?.tenantOAuthConfig,
+      tenantAuthConfigs: tenantContext?.tenantAuthConfigs,
     };
     profileState.sessions.set(sessionId, session);
     this.logger.info('Session created', { 
@@ -2898,7 +3148,10 @@ export class HttpTransport {
 
     // Record metrics
     if (this.metrics) {
-      this.metrics.recordSessionCreated();
+      this.metrics.recordSessionCreated({
+        profileId: profileState.profileId,
+        tenantId: tenantContext?.tenantId || null,
+      });
     }
 
     return sessionId;
@@ -2941,6 +3194,12 @@ export class HttpTransport {
       if (session.authToken) {
         profileState.oauthTokensByAccessToken.delete(session.authToken);
       }
+
+      const tenantOAuthProvider = this.getTenantOAuthProviderCache(profileState).get(sessionId);
+      if (tenantOAuthProvider) {
+        tenantOAuthProvider.cleanup();
+        this.getTenantOAuthProviderCache(profileState).delete(sessionId);
+      }
       
       profileState.sessions.delete(sessionId);
       this.logger.info('Session destroyed', { profileId: profileState.profileId, sessionId });
@@ -2950,7 +3209,10 @@ export class HttpTransport {
       
       // Record metrics
       if (this.metrics) {
-        this.metrics.recordSessionDestroyed();
+        this.metrics.recordSessionDestroyed({
+          profileId: profileState.profileId,
+          tenantId: session.tenantId || null,
+        });
         this.metrics.clearToolsSession(sessionId);
       }
     }
@@ -3041,6 +3303,9 @@ export class HttpTransport {
       if (profileState.oauthProvider) {
         profileState.oauthProvider.cleanup();
       }
+      for (const tenantOAuthProvider of this.getTenantOAuthProviderCache(profileState).values()) {
+        tenantOAuthProvider.cleanup();
+      }
 
       for (const [sessionId, session] of profileState.sessions) {
         const age = now - session.lastActivityAt;
@@ -3108,6 +3373,27 @@ export class HttpTransport {
     return session?.toolFilterHeader;
   }
 
+  public getSessionTenantContext(profileId: string, sessionId: string): {
+    tenantId?: string;
+    tenantBaseUrl?: string;
+    tenantAuthMode?: 'oauth' | 'token';
+    tenantOAuthConfig?: OAuthConfig;
+    tenantAuthConfigs?: AuthInterceptor[];
+  } | undefined {
+    const session = this.profileStates.get(profileId)?.sessions.get(sessionId);
+    if (!session) {
+      return undefined;
+    }
+
+    return {
+      tenantId: session.tenantId,
+      tenantBaseUrl: session.tenantBaseUrl,
+      tenantAuthMode: session.tenantAuthMode,
+      tenantOAuthConfig: session.tenantOAuthConfig,
+      tenantAuthConfigs: session.tenantAuthConfigs,
+    };
+  }
+
   public setSessionToolFilter(profileId: string, sessionId: string, toolFilter: SessionToolFilter): void {
     const session = this.profileStates.get(profileId)?.sessions.get(sessionId);
     if (!session) {
@@ -3156,6 +3442,19 @@ export class HttpTransport {
     this.metrics.recordToolFilterRejection(tool, source);
   }
 
+  private resolveMetricsContext(
+    profileState?: ProfileRuntimeState | null,
+    tenantId?: string | null,
+    profileId?: string | null
+  ): MetricsContextLabels {
+    const resolvedProfileId = profileState?.profileId || profileId || 'unknown';
+    const resolvedTenantId = tenantId || 'none';
+    return {
+      profileId: resolvedProfileId,
+      tenantId: resolvedTenantId,
+    };
+  }
+
   /**
    * Ensure session has a valid access token, refreshing if necessary
    * 
@@ -3192,6 +3491,21 @@ export class HttpTransport {
     return true;
   }
 
+
+  private getOAuthProviderForSession(profileState: ProfileRuntimeState, session: SessionData): ExternalOAuthProvider | null {
+    if (session.tenantOAuthConfig) {
+      const providerCache = this.getTenantOAuthProviderCache(profileState);
+      const cachedProvider = providerCache.get(session.id);
+      if (cachedProvider) {
+        return cachedProvider;
+      }
+      const newProvider = new ExternalOAuthProvider(session.tenantOAuthConfig, this.logger);
+      providerCache.set(session.id, newProvider);
+      return newProvider;
+    }
+    return profileState.oauthProvider;
+  }
+
   /**
    * Refresh access token using refresh token
    * 
@@ -3201,37 +3515,43 @@ export class HttpTransport {
   private async refreshAccessToken(profileId: string, sessionId: string): Promise<boolean> {
     const profileState = this.profileStates.get(profileId);
     const session = profileState?.sessions.get(sessionId);
-    if (!profileState || !session || !session.refreshToken || !profileState.oauthProvider) {
+    if (!profileState || !session || !session.refreshToken) {
       this.logger.warn('Cannot refresh token: missing session, refreshToken, or OAuth provider', {
         profileId,
         sessionId,
         hasSession: !!session,
         hasRefreshToken: !!session?.refreshToken,
-        hasOAuthProvider: !!profileState?.oauthProvider,
+        hasOAuthProvider: !!(profileState && session && (session.tenantOAuthConfig || profileState.oauthProvider)),
       });
       return false;
     }
 
     try {
+      const oauthProvider = this.getOAuthProviderForSession(profileState, session);
+      if (!oauthProvider) {
+        return false;
+      }
       // Get client from OAuth provider
       // Try to find client by clientId stored in session, or use default client
       let client;
       if (session.oauthClientId) {
-        await profileState.oauthProvider.ensureEndpointsInitialized();
-        client = await profileState.oauthProvider.clientsStore.getClient(session.oauthClientId);
+        await oauthProvider.ensureEndpointsInitialized();
+        client = await oauthProvider.clientsStore.getClient(session.oauthClientId);
       }
 
       // Fallback to default client from config if session client not found
-      if (!client && profileState.oauthProvider) {
-        await profileState.oauthProvider.ensureEndpointsInitialized();
+      if (!client) {
+        await oauthProvider.ensureEndpointsInitialized();
         // Try common client IDs
         const defaultClientIds = [PROXY_CREDENTIALS.CLIENT_ID];
-        if (profileState.context.oauthConfig?.client_id) {
+        if (session.tenantOAuthConfig?.client_id) {
+          defaultClientIds.unshift(session.tenantOAuthConfig.client_id);
+        } else if (profileState.context.oauthConfig?.client_id) {
           defaultClientIds.unshift(profileState.context.oauthConfig.client_id);
         }
         
         for (const clientId of defaultClientIds) {
-          client = await profileState.oauthProvider.clientsStore.getClient(clientId);
+          client = await oauthProvider.clientsStore.getClient(clientId);
           if (client) break;
         }
       }
@@ -3246,7 +3566,7 @@ export class HttpTransport {
       }
 
       // Exchange refresh token for new tokens
-      const tokens = await profileState.oauthProvider.exchangeRefreshToken(
+      const tokens = await oauthProvider.exchangeRefreshToken(
         client,
         session.refreshToken,
         session.scopes
@@ -3315,7 +3635,18 @@ export class HttpTransport {
   /**
    * Get OAuth authorization URL
    */
-  public getOAuthAuthorizationUrl(profileId?: string): string {
+  public getOAuthAuthorizationUrl(profileId?: string, sessionId?: string): string {
+    if (profileId && sessionId) {
+      const profileState = this.profileStates.get(profileId);
+      const session = profileState?.sessions.get(sessionId);
+      if (profileState && session) {
+        const provider = this.getOAuthProviderForSession(profileState, session);
+        if (provider) {
+          return provider.authorizationEndpoint || '';
+        }
+      }
+    }
+
     if (!profileId) {
       const defaultProfileId = this.getDefaultProfileId();
       if (!defaultProfileId) {

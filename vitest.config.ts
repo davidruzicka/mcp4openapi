@@ -10,12 +10,8 @@ export default defineConfig({
     hookTimeout: 10000, // 10s max for beforeEach/afterEach
     teardownTimeout: 5000, // 5s max for cleanup
     pool: 'threads',
-    poolOptions: {
-      threads: {
-        maxThreads: 4,
-        isolate: true, // Isolate each test file
-      },
-    },
+    maxWorkers: 4,
+    isolate: true, // Isolate each test file
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'html', 'lcov'],

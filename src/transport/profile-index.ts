@@ -3,6 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { escapeHtmlSafe } from '../validation/validation-utils.js';
 import type { ListedProfileDetails, ProfileAuthMethod } from '../profile/profile-resolver.js';
+import type { TenantSelectorType } from '../types/http-tenants.js';
 
 export type ProfileIndexLocale = 'cs' | 'en';
 
@@ -52,6 +53,14 @@ interface ProfileIndexI18n {
   authEnvVarsNone: string;
   authHeaderPrefix: string;
   authQueryPrefix: string;
+  tenantSectionLabel: string;
+  tenantsAvailableLabel: string;
+  tenantHeaderLabel: string;
+  tenantSelectorLabel: string;
+  tenantMaskNote: string;
+  tenantPickerScopeLabel: string;
+  tenantProfileDefaultLabel: string;
+  tenantProfileDefaultNote: string;
 }
 
 interface ProfileIndexSnippet {
@@ -70,6 +79,20 @@ interface ProfileIndexTab {
 
 type RenderAuthMethod = ProfileAuthMethod | { type: 'none' };
 
+export interface ProfileIndexTenantSummary {
+  tenantsEnabled: boolean;
+  selectionHeaderName: 'X-Mcp4-Tenant-Id';
+  tenants: Array<{
+    tenantId: string;
+    selectorType: TenantSelectorType;
+    selectorDisplay: string;
+  }>;
+}
+
+export interface ProfileIndexSourceProfile extends ListedProfileDetails {
+  tenantSummary?: ProfileIndexTenantSummary;
+}
+
 interface ProfileIndexProfile extends ListedProfileDetails {
   mcpUrl: string;
   sseUrl: string;
@@ -80,6 +103,7 @@ interface ProfileIndexProfile extends ListedProfileDetails {
   snippets: ProfileIndexSnippet[];
   authTabs: ProfileIndexTab[];
   modeTabs: ProfileIndexTab[];
+  tenantSummary?: ProfileIndexTenantSummary;
 }
 
 export interface ProfileIndexPayload {
@@ -184,6 +208,14 @@ export function buildProfileIndexI18n(locale: ProfileIndexLocale): ProfileIndexI
       authEnvVarsNone: 'Bez proměnné prostředí',
       authHeaderPrefix: 'Hlavička',
       authQueryPrefix: 'Parametr',
+      tenantSectionLabel: 'Tenanti',
+      tenantsAvailableLabel: 'Dostupní tenanti',
+      tenantHeaderLabel: 'Hlavička pro výběr',
+      tenantSelectorLabel: 'Selektor',
+      tenantMaskNote: 'Tenant se selektorem mask: vyžaduje při inicializaci také konkrétní X-Mcp4-Api-Base-Url.',
+      tenantPickerScopeLabel: 'Interaktivní výběr tenanta je dostupný jen pro klienty s ověřenou podporou vlastních hlaviček.',
+      tenantProfileDefaultLabel: 'Bez tenanta (použít konfiguraci profilu)',
+      tenantProfileDefaultNote: 'Do konfigurace se nepřidá X-Mcp4-Tenant-Id ani X-Mcp4-Api-Base-Url.',
     };
   }
 
@@ -233,11 +265,19 @@ export function buildProfileIndexI18n(locale: ProfileIndexLocale): ProfileIndexI
     authEnvVarsNone: 'No environment variable required',
     authHeaderPrefix: 'Header',
     authQueryPrefix: 'Query param',
+    tenantSectionLabel: 'Tenants',
+    tenantsAvailableLabel: 'Available tenants',
+    tenantHeaderLabel: 'Selection header',
+    tenantSelectorLabel: 'Selector',
+    tenantMaskNote: 'Tenants configured with mask: also require concrete X-Mcp4-Api-Base-Url on initialization.',
+    tenantPickerScopeLabel: 'Interactive tenant picker is available only for clients with verified custom-header support.',
+    tenantProfileDefaultLabel: 'No tenant (use profile config)',
+    tenantProfileDefaultNote: 'X-Mcp4-Tenant-Id and X-Mcp4-Api-Base-Url will not be added to the snippet.',
   };
 }
 
 export function buildProfileIndexPayload(
-  profiles: ListedProfileDetails[],
+  profiles: ProfileIndexSourceProfile[],
   origin: string,
   locale: ProfileIndexLocale
 ): { payload: ProfileIndexPayload; templateData: Record<string, string> } {
@@ -256,6 +296,7 @@ export function buildProfileIndexPayload(
       snippets,
       authTabs,
       modeTabs,
+      tenantSummary: profile.tenantSummary,
     };
   });
 
@@ -368,9 +409,6 @@ function buildEnvValue(
   if (useInput) {
     const id = inputMap.get(name);
     if (id) {
-      if (mode === 'jetbrains') {
-        return `{$input:${id}}`;
-      }
       return `\${input:${id}}`;
     }
   }
@@ -736,6 +774,7 @@ function buildLocalConnectionSnippets(
   }
 
   const args = ['-y', 'mcp4openapi', '--profile', '__PROFILE_ID__'];
+  const localApiBaseEnv = resolveLocalApiBaseEnv(profile);
   const vscodeEnv = buildLocalEnvMap(profile, localEnvVarNames, inputMap, 'vscode');
   const cursorEnv = buildLocalEnvMap(profile, localEnvVarNames, inputMap, 'cursor');
   const jetbrainsEnv = buildLocalEnvMap(profile, localEnvVarNames, inputMap, 'jetbrains');
@@ -800,9 +839,9 @@ function buildLocalConnectionSnippets(
     cursor: JSON.stringify(cursorConfig, null, 2),
     jetbrains: JSON.stringify(jetbrainsConfig, null, 2),
     claudeJson: JSON.stringify(claudeJsonConfig, null, 2),
-    claudeCli: buildLocalClaudeSnippet(profile),
-    geminiJson: buildLocalGeminiJsonSnippet(args),
-    geminiCli: buildLocalGeminiSnippet(profile),
+    claudeCli: buildLocalClaudeSnippet(profile, localApiBaseEnv),
+    geminiJson: buildLocalGeminiJsonSnippet(args, localApiBaseEnv),
+    geminiCli: buildLocalGeminiSnippet(profile, localApiBaseEnv),
     codexToml: buildCodexLocalTomlSnippet(localEnvVarNames, claudeEnv),
     codexCli: buildLocalCodexSnippet(localEnvVarNames, claudeEnv),
   };
@@ -829,14 +868,42 @@ function buildLocalEnvMap(
   return envMap;
 }
 
-function buildLocalClaudeSnippet(profile: ListedProfileDetails): string {
-  void profile;
-  return 'claude mcp add -s user __PROFILE_ID__ -- npx -y mcp4openapi --profile __PROFILE_ID__';
+function resolveLocalApiBaseEnv(profile: ListedProfileDetails): { envVar: string; value: string } | null {
+  const envVar = profile.apiBaseUrl?.valueFromEnv?.trim();
+  if (!envVar) {
+    return null;
+  }
+  const defaultValue = profile.apiBaseUrl?.defaultValue?.trim();
+  return {
+    envVar,
+    value: defaultValue || `\${${envVar}}`,
+  };
 }
 
-function buildLocalGeminiSnippet(profile: ListedProfileDetails): string {
+function buildLocalClaudeSnippet(
+  profile: ListedProfileDetails,
+  localApiBaseEnv: { envVar: string; value: string } | null
+): string {
   void profile;
-  return 'gemini mcp add -s user __PROFILE_ID__ -- npx -y mcp4openapi --profile __PROFILE_ID__';
+  const parts = ['claude', 'mcp', 'add', '-s', 'user'];
+  if (localApiBaseEnv) {
+    parts.push('--env', `"${localApiBaseEnv.envVar}=${localApiBaseEnv.value}"`);
+  }
+  parts.push('__PROFILE_ID__', '--', 'npx', '-y', 'mcp4openapi', '--profile', '__PROFILE_ID__');
+  return parts.join(' ');
+}
+
+function buildLocalGeminiSnippet(
+  profile: ListedProfileDetails,
+  localApiBaseEnv: { envVar: string; value: string } | null
+): string {
+  void profile;
+  const parts = ['gemini', 'mcp', 'add', '-s', 'user'];
+  if (localApiBaseEnv) {
+    parts.push('-e', `"${localApiBaseEnv.envVar}=${localApiBaseEnv.value}"`);
+  }
+  parts.push('__PROFILE_ID__', '--', 'npx', '-y', 'mcp4openapi', '--profile', '__PROFILE_ID__');
+  return parts.join(' ');
 }
 
 function buildLocalCodexSnippet(envVarNames: string[], envMap: Record<string, string>): string {
@@ -850,13 +917,22 @@ function buildLocalCodexSnippet(envVarNames: string[], envMap: Record<string, st
   return parts.join(' ');
 }
 
-function buildLocalGeminiJsonSnippet(args: string[]): string {
+function buildLocalGeminiJsonSnippet(
+  args: string[],
+  localApiBaseEnv: { envVar: string; value: string } | null
+): string {
+  const server: Record<string, unknown> = {
+    command: 'npx',
+    args,
+  };
+  if (localApiBaseEnv) {
+    server.env = {
+      [localApiBaseEnv.envVar]: localApiBaseEnv.value,
+    };
+  }
   const config = {
     mcpServers: {
-      __PROFILE_ID__: {
-        command: 'npx',
-        args,
-      },
+      __PROFILE_ID__: server,
     },
   };
   return JSON.stringify(config, null, 2);

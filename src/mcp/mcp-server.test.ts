@@ -401,6 +401,76 @@ describe('MCPServer', () => {
     });
   });
 
+
+  describe('session tenant client overrides', () => {
+    it('uses tenant base URL and tenant auth configs for session HTTP client', async () => {
+      const specPath = path.join(process.cwd(), 'profiles/gitlab/openapi.yaml');
+      await server.initialize(specPath);
+
+      const getOrCreateSessionClient = vi.fn().mockReturnValue({});
+      (server as any).httpClientFactory = {
+        hasGlobalClient: () => true,
+        getGlobalClient: () => ({}),
+        getOrCreateSessionClient,
+      };
+      (server as any).httpTransport = {
+        ensureValidSessionToken: vi.fn().mockResolvedValue(true),
+        getSessionToken: vi.fn().mockReturnValue('session-token'),
+        getSessionTenantContext: vi.fn().mockReturnValue({
+          tenantId: 'team-a',
+          tenantBaseUrl: 'https://team-a.example.com/api',
+          tenantAuthConfigs: [{ type: 'bearer', value_from_env: 'TEAM_A_TOKEN' }],
+        }),
+      };
+
+      await (server as any).getHttpClientForSession('session-1', 'default');
+
+      expect(getOrCreateSessionClient).toHaveBeenCalledWith(
+        'session-1',
+        expect.objectContaining({
+          baseUrl: 'https://team-a.example.com/api',
+          authConfigs: [{ type: 'bearer', value_from_env: 'TEAM_A_TOKEN' }],
+          sessionToken: 'session-token',
+          metricsContext: {
+            profileId: 'default',
+            tenantId: 'team-a',
+          },
+        })
+      );
+    });
+
+    it('falls back to profile base URL when tenant context is missing', async () => {
+      const specPath = path.join(process.cwd(), 'profiles/gitlab/openapi.yaml');
+      await server.initialize(specPath);
+
+      const getOrCreateSessionClient = vi.fn().mockReturnValue({});
+      (server as any).httpClientFactory = {
+        hasGlobalClient: () => true,
+        getGlobalClient: () => ({}),
+        getOrCreateSessionClient,
+      };
+      (server as any).httpTransport = {
+        ensureValidSessionToken: vi.fn().mockResolvedValue(true),
+        getSessionToken: vi.fn().mockReturnValue('session-token'),
+        getSessionTenantContext: vi.fn().mockReturnValue(undefined),
+      };
+
+      await (server as any).getHttpClientForSession('session-2', 'default');
+
+      expect(getOrCreateSessionClient).toHaveBeenCalledWith(
+        'session-2',
+        expect.objectContaining({
+          baseUrl: (server as any).getBaseUrl(),
+          authConfigs: undefined,
+          metricsContext: {
+            profileId: 'default',
+            tenantId: 'none',
+          },
+        })
+      );
+    });
+  });
+
   describe('error sanitization', () => {
     it('should successfully execute simple tool and return result', async () => {
       const server = new MCPServer();
@@ -556,6 +626,40 @@ describe('MCPServer', () => {
       const response = asToolCallResponse(await server.callToolRpc(simpleTool.name, {}, 'test-session', '1'));
       const error = response.error as { code?: number };
       expect(error.code).toBe(-32603);
+    });
+
+    it('records tool metrics with profile and tenant context on success', async () => {
+      const server = new MCPServer();
+      const specPath = path.join(process.cwd(), 'profiles/gitlab/openapi.yaml');
+      await server.initialize(specPath);
+
+      const simpleTool = (server as any).profile.tools.find((t: any) => !t.composite);
+      if (!simpleTool) return;
+
+      (server as any).executeSimpleTool = async () => ({ ok: true });
+      const metrics = {
+        recordToolCall: vi.fn(),
+        recordToolCallError: vi.fn(),
+      };
+      (server as any).httpTransport = {
+        hasOAuthProvider: () => false,
+        getMetricsCollector: () => metrics,
+        getSessionTenantContext: vi.fn().mockReturnValue({ tenantId: 'team-a' }),
+        getSessionFiltering: vi.fn().mockReturnValue(undefined),
+      };
+
+      await server.callToolRpc(simpleTool.name, {}, 'session-1', '1');
+
+      expect(metrics.recordToolCall).toHaveBeenCalledWith(
+        simpleTool.name,
+        'success',
+        expect.any(Number),
+        expect.objectContaining({
+          profileId: expect.any(String),
+          tenantId: 'team-a',
+        })
+      );
+      expect(metrics.recordToolCallError).not.toHaveBeenCalled();
     });
   });
 
@@ -2352,14 +2456,22 @@ describe('MCPServer', () => {
   });
 
   describe('setupHandlers (MCP SDK)', () => {
+    const findHandlerCall = (setHandlerSpy: ReturnType<typeof vi.spyOn>, method: string) => {
+      return [...setHandlerSpy.mock.calls].reverse().find((call) => {
+        const schema: any = call[0];
+        return schema?.shape?.method?.value === method;
+      });
+    };
+
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
     it('ListTools handler should wrap errors with correlation ID when uninitialized', async () => {
       const setHandlerSpy = vi.spyOn(MCPProtocolServer.prototype as any, 'setRequestHandler');
-      const server = new MCPServer();
+      new MCPServer();
 
-      const listCall = setHandlerSpy.mock.calls.find(call => {
-        const schema: any = call[0];
-        return schema?.shape?.method?.value === 'tools/list';
-      });
+      const listCall = findHandlerCall(setHandlerSpy, 'tools/list');
       expect(listCall).toBeDefined();
 
       const listHandler = listCall![1] as () => Promise<unknown>;
@@ -2372,10 +2484,7 @@ describe('MCPServer', () => {
       const specPath = path.join(process.cwd(), 'profiles/gitlab/openapi.yaml');
       await server.initialize(specPath);
 
-      const listCall = setHandlerSpy.mock.calls.find(call => {
-        const schema: any = call[0];
-        return schema?.shape?.method?.value === 'tools/list';
-      });
+      const listCall = findHandlerCall(setHandlerSpy, 'tools/list');
       const listHandler = listCall![1] as () => Promise<any>;
       const result = await listHandler();
       expect(result).toHaveProperty('tools');
@@ -2397,10 +2506,7 @@ describe('MCPServer', () => {
         },
       ];
 
-      const listCall = setHandlerSpy.mock.calls.find(call => {
-        const schema: any = call[0];
-        return schema?.shape?.method?.value === 'prompts/list';
-      });
+      const listCall = findHandlerCall(setHandlerSpy, 'prompts/list');
       expect(listCall).toBeDefined();
 
       const listHandler = listCall![1] as () => Promise<any>;
@@ -2416,10 +2522,7 @@ describe('MCPServer', () => {
         throw new Error('boom');
       };
 
-      const listCall = setHandlerSpy.mock.calls.find(call => {
-        const schema: any = call[0];
-        return schema?.shape?.method?.value === 'prompts/list';
-      });
+      const listCall = findHandlerCall(setHandlerSpy, 'prompts/list');
       const listHandler = listCall![1] as () => Promise<any>;
       await expect(listHandler()).rejects.toThrow(/correlation ID/);
     });
@@ -2438,10 +2541,7 @@ describe('MCPServer', () => {
         },
       ];
 
-      const getCall = setHandlerSpy.mock.calls.find(call => {
-        const schema: any = call[0];
-        return schema?.shape?.method?.value === 'prompts/get';
-      });
+      const getCall = findHandlerCall(setHandlerSpy, 'prompts/get');
       expect(getCall).toBeDefined();
 
       const getHandler = getCall![1] as (req: any) => Promise<any>;
@@ -2451,12 +2551,9 @@ describe('MCPServer', () => {
 
     it('GetPrompt handler should wrap configuration errors with correlation ID when uninitialized', async () => {
       const setHandlerSpy = vi.spyOn(MCPProtocolServer.prototype as any, 'setRequestHandler');
-      const server = new MCPServer();
+      new MCPServer();
 
-      const getCall = setHandlerSpy.mock.calls.find(call => {
-        const schema: any = call[0];
-        return schema?.shape?.method?.value === 'prompts/get';
-      });
+      const getCall = findHandlerCall(setHandlerSpy, 'prompts/get');
       const getHandler = getCall![1] as (req: any) => Promise<any>;
 
       await expect(getHandler({ params: { name: 'summarize_issue', arguments: {} } }))
@@ -2477,10 +2574,7 @@ describe('MCPServer', () => {
         },
       ];
 
-      const getCall = setHandlerSpy.mock.calls.find(call => {
-        const schema: any = call[0];
-        return schema?.shape?.method?.value === 'prompts/get';
-      });
+      const getCall = findHandlerCall(setHandlerSpy, 'prompts/get');
       const getHandler = getCall![1] as (req: any) => Promise<any>;
 
       await expect(getHandler({ params: { name: 'summarize_issue', arguments: {} } }))
@@ -2494,10 +2588,7 @@ describe('MCPServer', () => {
       await server.initialize(specPath);
       (server as any).profile.prompts = [];
 
-      const getCall = setHandlerSpy.mock.calls.find(call => {
-        const schema: any = call[0];
-        return schema?.shape?.method?.value === 'prompts/get';
-      });
+      const getCall = findHandlerCall(setHandlerSpy, 'prompts/get');
       const getHandler = getCall![1] as (req: any) => Promise<any>;
 
       await expect(getHandler({ params: { name: 'missing_prompt', arguments: {} } }))
@@ -2521,10 +2612,7 @@ describe('MCPServer', () => {
         throw new Error('boom');
       };
 
-      const getCall = setHandlerSpy.mock.calls.find(call => {
-        const schema: any = call[0];
-        return schema?.shape?.method?.value === 'prompts/get';
-      });
+      const getCall = findHandlerCall(setHandlerSpy, 'prompts/get');
       const getHandler = getCall![1] as (req: any) => Promise<any>;
 
       await expect(getHandler({ params: { name: 'summarize_issue', arguments: { issue_title: 'X' } } }))
@@ -2556,10 +2644,7 @@ describe('MCPServer', () => {
       };
       (server as any).toolGenerator.validateArguments = () => {};
 
-      const callToolCall = setHandlerSpy.mock.calls.find(call => {
-        const schema: any = call[0];
-        return schema?.shape?.method?.value === 'tools/call';
-      });
+      const callToolCall = findHandlerCall(setHandlerSpy, 'tools/call');
       expect(callToolCall).toBeDefined();
       const callToolHandler = callToolCall![1] as (req: any) => Promise<any>;
       const response = await callToolHandler({ params: { name: 'composite_test', arguments: {} } });
@@ -2587,10 +2672,7 @@ describe('MCPServer', () => {
         throw new AuthorizationError('Forbidden');
       };
 
-      const callToolCall = setHandlerSpy.mock.calls.find(call => {
-        const schema: any = call[0];
-        return schema?.shape?.method?.value === 'tools/call';
-      });
+      const callToolCall = findHandlerCall(setHandlerSpy, 'tools/call');
       const callToolHandler = callToolCall![1] as (req: any) => Promise<any>;
       await expect(
         callToolHandler({ params: { name: 'simple_test', arguments: {} } })

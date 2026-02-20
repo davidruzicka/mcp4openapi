@@ -1,5 +1,5 @@
 {
-  "description": "Configuration schema for MCP from OpenAPI tool profiles",
+  "$schema": "http://json-schema.org/draft-07/schema#",
   "type": "object",
   "properties": {
     "profile_name": {
@@ -95,6 +95,7 @@
     "profile_name",
     "tools"
   ],
+  "description": "Configuration schema for MCP from OpenAPI tool profiles",
   "definitions": {
     "Tool": {
       "type": "object",
@@ -189,8 +190,8 @@
         }
       },
       "required": [
-        "description",
         "name",
+        "description",
         "parameters"
       ],
       "oneOf": [
@@ -232,7 +233,87 @@
       ]
     },
     "Record<string,OperationDefinition>": {
-      "type": "object"
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/definitions/OperationDefinition"
+      }
+    },
+    "OperationDefinition": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "$ref": "#/definitions/ProxyDownloadOperation"
+        }
+      ],
+      "description": "Extended operation definition supporting proxy_download"
+    },
+    "ProxyDownloadOperation": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "proxy_download",
+          "description": "Must be 'proxy_download'"
+        },
+        "metadata_endpoint": {
+          "type": "string",
+          "description": "OpenAPI operation ID to fetch metadata (e.g., 'get_/issues/{id}/attachments/{attachmentId}')"
+        },
+        "download_endpoint": {
+          "type": "string",
+          "description": "OpenAPI operation ID for direct download endpoint when metadata does not expose a URL"
+        },
+        "url_field": {
+          "type": "string",
+          "description": "JSON path to URL field in metadata response",
+          "default": "url"
+        },
+        "max_size_bytes": {
+          "type": "number",
+          "description": "Maximum file size in bytes",
+          "default": 10485760
+        },
+        "max_size_bytes_from_env": {
+          "type": "string",
+          "description": "Environment variable that overrides max_size_bytes when set"
+        },
+        "timeout_ms": {
+          "type": "number",
+          "description": "Timeout for download in milliseconds",
+          "default": 30000
+        },
+        "allowed_mime_types": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Optional MIME type whitelist (e.g., ['image/*', 'application/pdf'])"
+        },
+        "skip_auth": {
+          "type": "boolean",
+          "description": "Skip authentication for download URL (default: false). Set to true for pre-signed URLs.",
+          "default": false
+        },
+        "allowed_hosts": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Optional allowlist of host patterns for cross-origin downloads when skip_auth=true (e.g., [\"cdn.example.com\", \"*.example.com\"])"
+        },
+        "allow_private_network": {
+          "type": "boolean",
+          "description": "SSRF safety switch: when skip_auth=true, controls whether proxy_download may fetch from localhost and private/loopback/link-local IPs (including hostnames that resolve to them) (default: false)",
+          "default": false
+        }
+      },
+      "required": [
+        "type",
+        "metadata_endpoint"
+      ],
+      "description": "Proxy download operation configuration\n\nWhy: Some APIs return file URLs that require authentication. LLM cannot fetch these directly, so we proxy the download."
     },
     "CompositeStep": {
       "type": "object",
@@ -266,10 +347,183 @@
       ]
     },
     "Record<string,ParameterDefinition>": {
-      "type": "object"
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/definitions/Parameter"
+      }
+    },
+    "Parameter": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ParameterType"
+            },
+            {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/ParameterType"
+              }
+            }
+          ],
+          "description": "Parameter data type",
+          "oneOf": [
+            {
+              "type": "string",
+              "enum": [
+                "string",
+                "integer",
+                "number",
+                "boolean",
+                "array",
+                "object"
+              ]
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "string",
+                  "integer",
+                  "number",
+                  "boolean",
+                  "array",
+                  "object"
+                ]
+              },
+              "minItems": 1
+            }
+          ]
+        },
+        "description": {
+          "type": "string",
+          "description": "Clear description of this parameter (shown to LLM)"
+        },
+        "required": {
+          "type": "boolean",
+          "description": "Is this parameter always required?",
+          "default": false
+        },
+        "required_for": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "List of actions this parameter is required for",
+          "examples": [
+            [
+              "create",
+              "update"
+            ]
+          ]
+        },
+        "enum": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "List of allowed values"
+        },
+        "minLength": {
+          "type": "number",
+          "description": "Minimum length for string parameters"
+        },
+        "maxLength": {
+          "type": "number",
+          "description": "Maximum length for string parameters"
+        },
+        "pattern": {
+          "type": "string",
+          "description": "Regex pattern for string parameters"
+        },
+        "items": {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "description": "Item type for array parameters"
+        },
+        "properties": {
+          "$ref": "#/definitions/Record%3Cstring%2Cunknown%3E",
+          "description": "Properties schema for object parameters (empty {} = free-form object)"
+        },
+        "default": {
+          "description": "Default value if not provided"
+        },
+        "example": {
+          "description": "Example value for documentation"
+        },
+        "object_entries_to_array": {
+          "type": "object",
+          "properties": {
+            "key_field": {
+              "type": "string",
+              "description": "Field name to store the object key"
+            },
+            "value_field": {
+              "type": "string",
+              "description": "Field name to store the object value"
+            },
+            "wrap_value_field": {
+              "type": "string",
+              "description": "Optional wrapper field name for non-object values"
+            }
+          },
+          "required": [
+            "key_field",
+            "value_field"
+          ],
+          "description": "Convert an object map into an array of objects using key/value fields"
+        },
+        "array_item_to_object": {
+          "type": "object",
+          "properties": {
+            "key_field": {
+              "type": "string",
+              "description": "Field name to store the array item value"
+            }
+          },
+          "required": [
+            "key_field"
+          ],
+          "description": "Convert primitive array items into objects using the provided field"
+        }
+      },
+      "required": [
+        "type",
+        "description"
+      ]
+    },
+    "ParameterType": {
+      "type": "string",
+      "enum": [
+        "string",
+        "integer",
+        "number",
+        "boolean",
+        "array",
+        "object"
+      ]
+    },
+    "Record<string,unknown>": {
+      "type": "object",
+      "additionalProperties": {}
     },
     "Record<string,string[]>": {
-      "type": "object"
+      "type": "object",
+      "additionalProperties": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
     },
     "PromptDefinition": {
       "type": "object",
@@ -294,8 +548,8 @@
         }
       },
       "required": [
-        "messages",
-        "name"
+        "name",
+        "messages"
       ]
     },
     "PromptArgumentDefinition": {
@@ -326,16 +580,16 @@
         }
       },
       "required": [
-        "content",
-        "role"
+        "role",
+        "content"
       ]
     },
     "PromptMessageRole": {
+      "type": "string",
       "enum": [
         "assistant",
         "user"
-      ],
-      "type": "string"
+      ]
     },
     "PromptContentTemplate": {
       "type": "object",
@@ -349,8 +603,8 @@
         }
       },
       "required": [
-        "text",
-        "type"
+        "type",
+        "text"
       ]
     },
     "Interceptors": {
@@ -392,13 +646,13 @@
           "$ref": "#/definitions/Retry"
         },
         "array_format": {
+          "type": "string",
           "enum": [
             "brackets",
             "indices",
             "repeat",
             "comma"
           ],
-          "type": "string",
           "description": "How to serialize array query parameters",
           "default": "repeat",
           "examples": [
@@ -410,28 +664,27 @@
           "description": "Request timeout in milliseconds"
         },
         "redirect_auth_policy": {
+          "type": "string",
           "enum": [
             "never",
             "same-origin"
           ],
-          "type": "string",
           "default": "same-origin"
         }
       },
       "description": "HTTP interceptor configuration (auth, rate limiting, retry)"
     },
     "Auth": {
-      "description": "Auth interceptor configuration\n\n- bearer: Standard HTTP Bearer token (Authorization: Bearer <token>)\n- query: API key in query string (?api_key=<token>)\n- custom-header: Custom header name (e.g., X-API-Key: <token>)\n- oauth: OAuth 2.0 Authorization Code Flow with PKCE (HTTP transport only)\n\nMulti-auth support:\n- When multiple auth methods are provided as array, they are tried in order\n- priority field determines the order (lower = higher priority)\n- First successful authentication is used\n\nToken validation (optional):\n- validation_endpoint: API endpoint to verify token validity (e.g., \"/api/v4/user\")\n- Validates token during initialization to fail fast with invalid tokens\n- Improves UX by rejecting bad tokens immediately, not after first tool call",
       "type": "object",
       "properties": {
         "type": {
+          "type": "string",
           "enum": [
             "bearer",
             "query",
             "custom-header",
             "oauth"
           ],
-          "type": "string",
           "description": "Authentication type"
         },
         "priority": {
@@ -469,8 +722,8 @@
           ]
         },
         "oauth_config": {
-          "description": "OAuth 2.0 configuration\n\nSupports Authorization Code Flow with PKCE (RFC 7636)\nOnly available in HTTP transport mode\n\nClient registration can be:\n- Static: pre-registered client_id and client_secret\n- Dynamic: RFC 7591 dynamic client registration",
-          "$ref": "#/definitions/OAuthConfig"
+          "$ref": "#/definitions/OAuthConfig",
+          "description": "OAuth 2.0 configuration\n\nSupports Authorization Code Flow with PKCE (RFC 7636)\nOnly available in HTTP transport mode\n\nClient registration can be:\n- Static: pre-registered client_id and client_secret\n- Dynamic: RFC 7591 dynamic client registration"
         },
         "oauth_rate_limit": {
           "type": "object",
@@ -504,11 +757,11 @@
           "type": "string"
         },
         "validation_method": {
+          "type": "string",
           "enum": [
             "GET",
             "HEAD"
-          ],
-          "type": "string"
+          ]
         },
         "validation_timeout_ms": {
           "type": "number"
@@ -523,6 +776,7 @@
       "required": [
         "type"
       ],
+      "description": "Auth interceptor configuration\n\n- bearer: Standard HTTP Bearer token (Authorization: Bearer <token>)\n- query: API key in query string (?api_key=<token>)\n- custom-header: Custom header name (e.g., X-API-Key: <token>)\n- oauth: OAuth 2.0 Authorization Code Flow with PKCE (HTTP transport only)\n\nMulti-auth support:\n- When multiple auth methods are provided as array, they are tried in order\n- priority field determines the order (lower = higher priority)\n- First successful authentication is used\n\nToken validation (optional):\n- validation_endpoint: API endpoint to verify token validity (e.g., \"/api/v4/user\")\n- Validates token during initialization to fail fast with invalid tokens\n- Improves UX by rejecting bad tokens immediately, not after first tool call",
       "allOf": [
         {
           "if": {
@@ -627,53 +881,52 @@
       ]
     },
     "OAuthConfig": {
-      "description": "OAuth 2.0 configuration. Must provide EITHER 'issuer' (endpoints auto-derived) OR both 'authorization_endpoint' and 'token_endpoint' (explicit).",
       "type": "object",
       "properties": {
         "issuer": {
-          "description": "OAuth 2.0 issuer URL (RFC 8414). When provided, authorization_endpoint and token_endpoint are auto-derived via /.well-known/oauth-authorization-server or standard paths. Supports ${env:VAR} syntax.",
           "type": "string",
+          "description": "OAuth 2.0 issuer URL (RFC 8414). When provided, authorization_endpoint and token_endpoint are auto-derived via /.well-known/oauth-authorization-server or standard paths. Supports ${env:VAR} syntax.",
           "examples": [
             "https://gitlab.example.com",
             "${env:MCP4_OAUTH_ISSUER}"
           ]
         },
         "authorization_endpoint": {
-          "description": "OAuth 2.0 authorization endpoint. Optional if issuer is provided. Supports ${env:VAR} syntax.",
           "type": "string",
+          "description": "OAuth 2.0 authorization endpoint. Optional if issuer is provided. Supports ${env:VAR} syntax.",
           "examples": [
             "https://gitlab.example.com/oauth/authorize",
             "${env:OAUTH_AUTHORIZATION_URL}"
           ]
         },
         "token_endpoint": {
-          "description": "OAuth 2.0 token endpoint. Optional if issuer is provided. Supports ${env:VAR} syntax.",
           "type": "string",
+          "description": "OAuth 2.0 token endpoint. Optional if issuer is provided. Supports ${env:VAR} syntax.",
           "examples": [
             "https://gitlab.example.com/oauth/token",
             "${env:OAUTH_TOKEN_URL}"
           ]
         },
         "client_id": {
-          "description": "Pre-registered OAuth client ID (supports ${env:VAR} syntax). Optional for dynamic registration.",
           "type": "string",
+          "description": "Pre-registered OAuth client ID (supports ${env:VAR} syntax). Optional for dynamic registration.",
           "examples": [
             "${env:MCP4_OAUTH_CLIENT_ID}"
           ]
         },
         "client_secret": {
-          "description": "Pre-registered OAuth client secret (supports ${env:VAR} syntax). Optional for public clients.",
           "type": "string",
+          "description": "Pre-registered OAuth client secret (supports ${env:VAR} syntax). Optional for public clients.",
           "examples": [
             "${env:MCP4_OAUTH_CLIENT_SECRET}"
           ]
         },
         "scopes": {
-          "description": "OAuth 2.0 scopes to request. Optional - if not provided, no scopes will be requested (some APIs don't require scopes)",
           "type": "array",
           "items": {
             "type": "string"
           },
+          "description": "OAuth 2.0 scopes to request. Optional - if not provided, no scopes will be requested (some APIs don't require scopes)",
           "examples": [
             [
               "api",
@@ -686,41 +939,42 @@
           ]
         },
         "redirect_uri": {
-          "description": "OAuth callback URI. Defaults to http://{MCP4_HOST}:{MCP4_PORT}/oauth/callback",
           "type": "string",
+          "description": "OAuth callback URI. Defaults to http://{MCP4_HOST}:{MCP4_PORT}/oauth/callback",
           "examples": [
             "https://<your-mcp-server-host>/oauth/callback"
           ]
         },
         "registration_endpoint": {
-          "description": "Client registration endpoint for dynamic registration (RFC 7591)",
           "type": "string",
+          "description": "Client registration endpoint for dynamic registration (RFC 7591)",
           "examples": [
             "https://gitlab.example.com/oauth/register"
           ]
         },
         "introspection_endpoint": {
-          "description": "Token introspection endpoint (RFC 7662)",
           "type": "string",
+          "description": "Token introspection endpoint (RFC 7662)",
           "examples": [
             "https://gitlab.example.com/oauth/introspect"
           ]
         },
         "revocation_endpoint": {
-          "description": "Token revocation endpoint (RFC 7009)",
           "type": "string",
+          "description": "Token revocation endpoint (RFC 7009)",
           "examples": [
             "https://gitlab.example.com/oauth/revoke"
           ]
         },
         "allowed_redirect_hosts": {
-          "description": "Optional: Allowed redirect hosts for OAuth callbacks\nUsed to prevent open redirect vulnerabilities\n\nSupports wildcards: \"*.example.com\" matches any subdomain\nDefaults to [\"localhost\", \"127.0.0.1\"] for security\n\nCan reference MCP4_ALLOWED_ORIGINS environment variable",
           "type": "array",
           "items": {
             "type": "string"
-          }
+          },
+          "description": "Optional: Allowed redirect hosts for OAuth callbacks\nUsed to prevent open redirect vulnerabilities\n\nSupports wildcards: \"*.example.com\" matches any subdomain\nDefaults to [\"localhost\", \"127.0.0.1\"] for security\n\nCan reference MCP4_ALLOWED_ORIGINS environment variable"
         }
-      }
+      },
+      "description": "OAuth 2.0 configuration. Must provide EITHER 'issuer' (endpoints auto-derived) OR both 'authorization_endpoint' and 'token_endpoint' (explicit)."
     },
     "BaseUrl": {
       "type": "object",
@@ -757,15 +1011,26 @@
           ]
         },
         "overrides": {
-          "$ref": "#/definitions/Record%3Cstring%2C%7Bmax_requests_per_minute%3Anumber%3B%7D%3E"
+          "$ref": "#/definitions/Record%3Cstring%2Cstructure-1535101595-11762-11798-1535101595-11747-11799-1535101595-11733-11800-1535101595-11662-11802-1535101595-0-11942%3E"
         }
       },
       "required": [
         "max_requests_per_minute"
       ]
     },
-    "Record<string,{max_requests_per_minute:number;}>": {
-      "type": "object"
+    "Record<string,structure-1535101595-11762-11798-1535101595-11747-11799-1535101595-11733-11800-1535101595-11662-11802-1535101595-0-11942>": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "max_requests_per_minute": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "max_requests_per_minute"
+        ]
+      }
     },
     "Retry": {
       "type": "object",
@@ -808,219 +1073,15 @@
         }
       },
       "required": [
-        "backoff_ms",
         "max_attempts",
+        "backoff_ms",
         "retry_on_status"
       ]
     },
-    "Parameter": {
-      "type": "object",
-      "required": [
-        "type",
-        "description"
-      ],
-      "properties": {
-        "type": {
-          "description": "Parameter data type",
-          "oneOf": [
-            {
-              "type": "string",
-              "enum": [
-                "string",
-                "integer",
-                "number",
-                "boolean",
-                "array",
-                "object"
-              ]
-            },
-            {
-              "type": "array",
-              "items": {
-                "type": "string",
-                "enum": [
-                  "string",
-                  "integer",
-                  "number",
-                  "boolean",
-                  "array",
-                  "object"
-                ]
-              },
-              "minItems": 1
-            }
-          ]
-        },
-        "description": {
-          "type": "string",
-          "description": "Clear description of this parameter (shown to LLM)",
-          "minLength": 5
-        },
-        "required": {
-          "type": "boolean",
-          "description": "Is this parameter always required?",
-          "default": false
-        },
-        "required_for": {
-          "type": "array",
-          "description": "List of actions this parameter is required for",
-          "items": {
-            "type": "string"
-          },
-          "examples": [
-            [
-              "create",
-              "update"
-            ]
-          ]
-        },
-        "enum": {
-          "type": "array",
-          "description": "List of allowed values",
-          "items": {
-            "type": "string"
-          },
-          "minItems": 1
-        },
-        "minLength": {
-          "type": "integer",
-          "description": "Minimum length for string parameters",
-          "minimum": 0
-        },
-        "maxLength": {
-          "type": "integer",
-          "description": "Maximum length for string parameters",
-          "minimum": 0
-        },
-        "pattern": {
-          "type": "string",
-          "description": "Regex pattern for string parameters"
-        },
-        "items": {
-          "type": "object",
-          "description": "Item type for array parameters",
-          "properties": {
-            "type": {
-              "type": "string"
-            }
-          }
-        },
-        "properties": {
-          "type": "object",
-          "description": "Properties schema for object parameters (empty {} = free-form object)",
-          "additionalProperties": true
-        },
-        "default": {
-          "description": "Default value if not provided"
-        },
-        "example": {
-          "description": "Example value for documentation"
-        },
-        "object_entries_to_array": {
-          "type": "object",
-          "description": "Convert an object map into an array of objects using key/value fields",
-          "required": [
-            "key_field",
-            "value_field"
-          ],
-          "properties": {
-            "key_field": {
-              "type": "string",
-              "description": "Field name to store the object key"
-            },
-            "value_field": {
-              "type": "string",
-              "description": "Field name to store the object value"
-            },
-            "wrap_value_field": {
-              "type": "string",
-              "description": "Optional wrapper field name for non-object values"
-            }
-          }
-        },
-        "array_item_to_object": {
-          "type": "object",
-          "description": "Convert primitive array items into objects using the provided field",
-          "required": [
-            "key_field"
-          ],
-          "properties": {
-            "key_field": {
-              "type": "string",
-              "description": "Field name to store the array item value"
-            }
-          }
-        }
-      }
-    },
-    "ProxyDownloadOperation": {
-      "type": "object",
-      "required": [
-        "type",
-        "metadata_endpoint"
-      ],
-      "properties": {
-        "type": {
-          "const": "proxy_download",
-          "description": "Must be 'proxy_download'"
-        },
-        "metadata_endpoint": {
-          "type": "string",
-          "description": "OpenAPI operation ID to fetch metadata (e.g., 'get_/issues/{id}/attachments/{attachmentId}')"
-        },
-        "download_endpoint": {
-          "type": "string",
-          "description": "OpenAPI operation ID for direct download endpoint when metadata does not expose a URL"
-        },
-        "url_field": {
-          "type": "string",
-          "description": "JSON path to URL field in metadata response",
-          "default": "url"
-        },
-        "max_size_bytes": {
-          "type": "number",
-          "description": "Maximum file size in bytes",
-          "default": 10485760,
-          "minimum": 1
-        },
-        "max_size_bytes_from_env": {
-          "type": "string",
-          "description": "Environment variable that overrides max_size_bytes when set"
-        },
-        "timeout_ms": {
-          "type": "number",
-          "description": "Timeout for download in milliseconds",
-          "default": 30000,
-          "minimum": 1000
-        },
-        "allowed_mime_types": {
-          "type": "array",
-          "description": "Optional MIME type whitelist (e.g., ['image/*', 'application/pdf'])",
-          "items": {
-            "type": "string"
-          }
-        },
-        "skip_auth": {
-          "type": "boolean",
-          "description": "Skip authentication for download URL (default: false). Set to true for pre-signed URLs.",
-          "default": false
-        },
-        "allowed_hosts": {
-          "type": "array",
-          "description": "Optional allowlist of host patterns for cross-origin downloads when skip_auth=true (e.g., [\"cdn.example.com\", \"*.example.com\"])",
-          "items": {
-            "type": "string"
-          }
-        },
-        "allow_private_network": {
-          "type": "boolean",
-          "description": "SSRF safety switch: when skip_auth=true, controls whether proxy_download may fetch from localhost and private/loopback/link-local IPs (including hostnames that resolve to them) (default: false)",
-          "default": false
-        }
-      }
+    "Record<string,{max_requests_per_minute:number;}>": {
+      "type": "object"
     }
   },
-  "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://github.com/davidruzicka/mcp4openapi/profile-schema.json",
   "title": "MCP Profile"
 }

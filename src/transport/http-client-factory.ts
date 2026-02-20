@@ -7,7 +7,8 @@
 
 import { InterceptorChain, HttpClient } from './interceptors.js';
 import type { MetricsCollector } from '../core/metrics.js';
-import type { Profile } from '../types/profile.js';
+import type { MetricsContextLabels } from '../core/metrics.js';
+import type { Profile, AuthInterceptor } from '../types/profile.js';
 import type { Logger } from '../core/logger.js';
 import { ConfigurationError, AuthenticationError } from '../core/errors.js';
 
@@ -15,6 +16,8 @@ export interface HttpClientConfig {
   profile: Profile;
   baseUrl: string;
   sessionToken?: string;
+  authConfigs?: AuthInterceptor[];
+  metricsContext?: MetricsContextLabels;
   logger?: Logger;
 }
 
@@ -32,7 +35,7 @@ export class HttpClientFactory {
    */
   createGlobalClient(config: HttpClientConfig): HttpClient {
     const interceptors = this.createInterceptorChain(config);
-    const client = new HttpClient(config.baseUrl, interceptors, this.metrics, config.logger);
+    const client = new HttpClient(config.baseUrl, interceptors, this.metrics, config.logger, undefined, config.metricsContext);
     this.globalClient = client;
     return client;
   }
@@ -49,7 +52,7 @@ export class HttpClientFactory {
 
     // Create new client for session
     const interceptors = this.createInterceptorChain(config);
-    const newClient = new HttpClient(config.baseUrl, interceptors, this.metrics, config.logger);
+    const newClient = new HttpClient(config.baseUrl, interceptors, this.metrics, config.logger, undefined, config.metricsContext);
 
     // Double-check for race condition
     const existingClient = this.sessionClients.get(sessionId);
@@ -123,7 +126,7 @@ export class HttpClientFactory {
       return config.sessionToken;
     }
 
-    const authConfigRaw = config.profile.interceptors?.auth;
+    const authConfigRaw = config.authConfigs || config.profile.interceptors?.auth;
     if (!authConfigRaw) {
       return undefined;
     }
@@ -145,7 +148,11 @@ export class HttpClientFactory {
    */
   private createInterceptorChain(config: HttpClientConfig): InterceptorChain {
     const token = this.getAuthToken(config);
-    return new InterceptorChain(config.profile.interceptors || {}, token);
+    const interceptors = {
+      ...(config.profile.interceptors || {}),
+      ...(config.authConfigs ? { auth: config.authConfigs } : {}),
+    };
+    return new InterceptorChain(interceptors, token);
   }
 
   /**
@@ -162,8 +169,8 @@ export class HttpClientFactory {
 
     // Check if we have any auth token available
     const hasToken = this.getAuthToken(config);
-    if (!hasToken && config.profile.interceptors?.auth) {
-      const authConfigRaw = config.profile.interceptors.auth;
+    const authConfigRaw = config.authConfigs || config.profile.interceptors?.auth;
+    if (!hasToken && authConfigRaw) {
       const authConfigs = Array.isArray(authConfigRaw) ? authConfigRaw : [authConfigRaw];
       const nonOAuthConfig = authConfigs.find(c => c.type !== 'oauth');
       const envVar = nonOAuthConfig?.value_from_env || 'MCP4_API_TOKEN';

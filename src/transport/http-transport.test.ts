@@ -107,6 +107,581 @@ describeIfListen('HttpTransport', () => {
     });
   });
 
+
+  describe('tenant session selection', () => {
+    const tenantConfig = {
+      version: 1,
+      tenants: [
+        {
+          tenant_id: 'team-a',
+          profile_ids: ['default'],
+          api_base_url: 'https://team-a.example.com/api',
+          auth_mode: 'token',
+          auth: { type: 'bearer', value_from_env: 'TEAM_A_TOKEN' },
+        },
+        {
+          tenant_id: 'team-b',
+          profile_ids: ['default'],
+          api_base_url: 'https://team-b.example.com/api',
+          auth_mode: 'token',
+          auth: { type: 'bearer', value_from_env: 'TEAM_B_TOKEN' },
+        },
+      ],
+    };
+
+    beforeEach(() => {
+      process.env.MCP4_HTTP_TENANTS_JSON = JSON.stringify(tenantConfig);
+    });
+
+    afterEach(() => {
+      delete process.env.MCP4_HTTP_TENANTS_JSON;
+    });
+
+    it('stores tenant context from X-Mcp4-Tenant-Id header during initialize', async () => {
+      const tenantTransport = new HttpTransport(
+        {
+          host: '127.0.0.1',
+          port: 0,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: false,
+          metricsPath: '/metrics',
+          authConfigs: [{ type: 'bearer', value_from_env: 'FALLBACK_TOKEN' }],
+          baseUrl: 'https://default.example.com/api',
+        },
+        logger,
+      );
+      tenantTransport.setMessageHandler(async () => ({ result: { ok: true } }));
+      const tenantApp = (tenantTransport as any).app;
+
+      const initResponse = await request(tenantApp)
+        .post('/mcp')
+        .set('Accept', 'application/json')
+        .set('Content-Type', 'application/json')
+        .set('Authorization', 'Bearer session-token')
+        .set('X-Mcp4-Tenant-Id', 'team-b')
+        .send({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} });
+
+      expect(initResponse.status).toBe(200);
+      const sessionId = initResponse.headers['mcp-session-id'];
+      expect(sessionId).toBeDefined();
+
+      const tenantContext = tenantTransport.getSessionTenantContext('default', sessionId);
+      expect(tenantContext?.tenantId).toBe('team-b');
+      expect(tenantContext?.tenantBaseUrl).toBe('https://team-b.example.com/api');
+
+      await tenantTransport.stop();
+    });
+
+    it('rejects unknown tenant base url selector', async () => {
+      const tenantTransport = new HttpTransport(
+        {
+          host: '127.0.0.1',
+          port: 0,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: false,
+          metricsPath: '/metrics',
+          authConfigs: [{ type: 'bearer', value_from_env: 'FALLBACK_TOKEN' }],
+          baseUrl: 'https://default.example.com/api',
+        },
+        logger,
+      );
+      tenantTransport.setMessageHandler(async () => ({ result: { ok: true } }));
+      const tenantApp = (tenantTransport as any).app;
+
+      const response = await request(tenantApp)
+        .post('/mcp')
+        .set('Accept', 'application/json')
+        .set('Content-Type', 'application/json')
+        .set('Authorization', 'Bearer session-token')
+        .set('X-Mcp4-Api-Base-Url', ['https://team-a.example.com/api', 'https://team-b.example.com/api'])
+        .send({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} });
+
+      expect(response.status).toBe(400);
+      expect(response.body.message).toContain('Invalid X-Mcp4-Api-Base-Url header');
+
+      await tenantTransport.stop();
+    });
+
+    it('accepts equivalent tenant base URL selector on existing session', async () => {
+      const tenantTransport = new HttpTransport(
+        {
+          host: '127.0.0.1',
+          port: 0,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: false,
+          metricsPath: '/metrics',
+          authConfigs: [{ type: 'bearer', value_from_env: 'FALLBACK_TOKEN' }],
+          baseUrl: 'https://default.example.com/api',
+        },
+        logger,
+      );
+      tenantTransport.setMessageHandler(async () => ({ result: { ok: true } }));
+      const tenantApp = (tenantTransport as any).app;
+
+      const initResponse = await request(tenantApp)
+        .post('/mcp')
+        .set('Accept', 'application/json')
+        .set('Content-Type', 'application/json')
+        .set('Authorization', 'Bearer session-token')
+        .set('X-Mcp4-Api-Base-Url', 'https://team-a.example.com/api/')
+        .send({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} });
+      const sessionId = initResponse.headers['mcp-session-id'];
+
+      const response = await request(tenantApp)
+        .post('/mcp')
+        .set('Accept', 'application/json')
+        .set('Content-Type', 'application/json')
+        .set('Mcp-Session-Id', sessionId)
+        .set('X-Mcp4-Api-Base-Url', 'https://team-a.example.com/api')
+        .send({ jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} });
+
+      expect(response.status).toBe(200);
+      await tenantTransport.stop();
+    });
+
+    it('rejects tenant header mismatch on non-initialize request', async () => {
+      const tenantTransport = new HttpTransport(
+        {
+          host: '127.0.0.1',
+          port: 0,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: false,
+          metricsPath: '/metrics',
+          authConfigs: [{ type: 'bearer', value_from_env: 'FALLBACK_TOKEN' }],
+          baseUrl: 'https://default.example.com/api',
+        },
+        logger,
+      );
+      tenantTransport.setMessageHandler(async () => ({ result: { ok: true } }));
+      const tenantApp = (tenantTransport as any).app;
+
+      const initResponse = await request(tenantApp)
+        .post('/mcp')
+        .set('Accept', 'application/json')
+        .set('Content-Type', 'application/json')
+        .set('Authorization', 'Bearer session-token')
+        .set('X-Mcp4-Tenant-Id', 'team-a')
+        .send({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} });
+      const sessionId = initResponse.headers['mcp-session-id'];
+
+      const response = await request(tenantApp)
+        .post('/mcp')
+        .set('Accept', 'application/json')
+        .set('Content-Type', 'application/json')
+        .set('Mcp-Session-Id', sessionId)
+        .set('X-Mcp4-Tenant-Id', 'team-b')
+        .send({ jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} });
+
+      expect(response.status).toBe(400);
+      expect(response.body.message).toContain('Tenant selector header mismatch');
+
+      await tenantTransport.stop();
+    });
+
+    it('resolves mask tenant during initialize from concrete base URL selector', async () => {
+      process.env.MCP4_HTTP_TENANTS_JSON = JSON.stringify({
+        version: 1,
+        tenants: [
+          {
+            tenant_id: 'grafana',
+            profile_ids: ['default'],
+            api_base_url: 'mask:https://grafana.*.ops.iszn.cz/api',
+            auth_mode: 'token',
+            auth: { type: 'bearer', value_from_env: 'GRAFANA_TOKEN' },
+          },
+        ],
+      });
+
+      const tenantTransport = new HttpTransport(
+        {
+          host: '127.0.0.1',
+          port: 0,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: false,
+          metricsPath: '/metrics',
+          authConfigs: [{ type: 'bearer', value_from_env: 'FALLBACK_TOKEN' }],
+          baseUrl: 'https://default.example.com/api',
+        },
+        logger,
+      );
+      tenantTransport.setMessageHandler(async () => ({ result: { ok: true } }));
+      const tenantApp = (tenantTransport as any).app;
+
+      const initResponse = await request(tenantApp)
+        .post('/mcp')
+        .set('Accept', 'application/json')
+        .set('Content-Type', 'application/json')
+        .set('Authorization', 'Bearer session-token')
+        .set('X-Mcp4-Tenant-Id', 'grafana')
+        .set('X-Mcp4-Api-Base-Url', 'https://grafana.team-a.ops.iszn.cz/api')
+        .send({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} });
+
+      expect(initResponse.status).toBe(200);
+      const sessionId = initResponse.headers['mcp-session-id'];
+      const tenantContext = tenantTransport.getSessionTenantContext('default', sessionId);
+      expect(tenantContext?.tenantId).toBe('grafana');
+      expect(tenantContext?.tenantBaseUrl).toBe('https://grafana.team-a.ops.iszn.cz/api');
+
+      await tenantTransport.stop();
+    });
+
+    it('rejects initialize when mask tenant is selected by tenant id without concrete URL selector', async () => {
+      process.env.MCP4_HTTP_TENANTS_JSON = JSON.stringify({
+        version: 1,
+        tenants: [
+          {
+            tenant_id: 'grafana',
+            profile_ids: ['default'],
+            api_base_url: 'mask:https://grafana.*.ops.iszn.cz/api',
+            auth_mode: 'token',
+            auth: { type: 'bearer', value_from_env: 'GRAFANA_TOKEN' },
+          },
+        ],
+      });
+
+      const tenantTransport = new HttpTransport(
+        {
+          host: '127.0.0.1',
+          port: 0,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: false,
+          metricsPath: '/metrics',
+          authConfigs: [{ type: 'bearer', value_from_env: 'FALLBACK_TOKEN' }],
+          baseUrl: 'https://default.example.com/api',
+        },
+        logger,
+      );
+      tenantTransport.setMessageHandler(async () => ({ result: { ok: true } }));
+      const tenantApp = (tenantTransport as any).app;
+
+      const initResponse = await request(tenantApp)
+        .post('/mcp')
+        .set('Accept', 'application/json')
+        .set('Content-Type', 'application/json')
+        .set('Authorization', 'Bearer session-token')
+        .set('X-Mcp4-Tenant-Id', 'grafana')
+        .send({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} });
+
+      expect(initResponse.status).toBe(400);
+      expect(initResponse.body.message).toContain('requires X-Mcp4-Api-Base-Url');
+
+      await tenantTransport.stop();
+    });
+
+    it('rejects non-initialize request when tenant id is unchanged but concrete base URL changes', async () => {
+      process.env.MCP4_HTTP_TENANTS_JSON = JSON.stringify({
+        version: 1,
+        tenants: [
+          {
+            tenant_id: 'grafana',
+            profile_ids: ['default'],
+            api_base_url: 'mask:https://grafana.*.ops.iszn.cz/api',
+            auth_mode: 'token',
+            auth: { type: 'bearer', value_from_env: 'GRAFANA_TOKEN' },
+          },
+        ],
+      });
+
+      const tenantTransport = new HttpTransport(
+        {
+          host: '127.0.0.1',
+          port: 0,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: false,
+          metricsPath: '/metrics',
+          authConfigs: [{ type: 'bearer', value_from_env: 'FALLBACK_TOKEN' }],
+          baseUrl: 'https://default.example.com/api',
+        },
+        logger,
+      );
+      tenantTransport.setMessageHandler(async () => ({ result: { ok: true } }));
+      const tenantApp = (tenantTransport as any).app;
+
+      const initResponse = await request(tenantApp)
+        .post('/mcp')
+        .set('Accept', 'application/json')
+        .set('Content-Type', 'application/json')
+        .set('Authorization', 'Bearer session-token')
+        .set('X-Mcp4-Tenant-Id', 'grafana')
+        .set('X-Mcp4-Api-Base-Url', 'https://grafana.team-a.ops.iszn.cz/api')
+        .send({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} });
+
+      const sessionId = initResponse.headers['mcp-session-id'];
+      const response = await request(tenantApp)
+        .post('/mcp')
+        .set('Accept', 'application/json')
+        .set('Content-Type', 'application/json')
+        .set('Mcp-Session-Id', sessionId)
+        .set('X-Mcp4-Tenant-Id', 'grafana')
+        .set('X-Mcp4-Api-Base-Url', 'https://grafana.team-b.ops.iszn.cz/api')
+        .send({ jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} });
+
+      expect(response.status).toBe(400);
+      expect(response.body.message).toContain('Tenant selector header mismatch');
+
+      await tenantTransport.stop();
+    });
+
+    it('prefers exact base URL selector over mask selector when both match', async () => {
+      const exactContext = {
+        tenantId: 'exact',
+        tenantBaseUrl: 'https://grafana.team-a.ops.iszn.cz/api',
+        tenantAuthMode: 'token',
+        tenantAuthConfigs: [{ type: 'bearer', value_from_env: 'EXACT_TOKEN' }],
+        tenantSelectorType: 'exact' as const,
+        tenantSelectorValue: 'https://grafana.team-a.ops.iszn.cz/api',
+      };
+      const maskContext = {
+        tenantId: 'mask',
+        tenantBaseUrl: 'mask:https://grafana.*.ops.iszn.cz/api',
+        tenantAuthMode: 'token',
+        tenantAuthConfigs: [{ type: 'bearer', value_from_env: 'MASK_TOKEN' }],
+        tenantSelectorType: 'mask' as const,
+        tenantSelectorValue: 'mask:https://grafana.*.ops.iszn.cz/api',
+      };
+
+      const tenantTransport = new HttpTransport(
+        {
+          host: '127.0.0.1',
+          port: 0,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: false,
+          metricsPath: '/metrics',
+          authConfigs: [{ type: 'bearer', value_from_env: 'FALLBACK_TOKEN' }],
+          baseUrl: 'https://default.example.com/api',
+          tenantIndex: {
+            enabled: true,
+            byTenantId: new Map([
+              ['exact', exactContext as any],
+              ['mask', maskContext as any],
+            ]),
+            byBaseUrl: new Map([
+              ['https://grafana.team-a.ops.iszn.cz/api', exactContext as any],
+            ]),
+            maskSelectors: [
+              {
+                tenantId: 'mask',
+                selector: {
+                  original: 'https://grafana.*.ops.iszn.cz/api',
+                  normalizedMask: 'https://grafana.*.ops.iszn.cz/api',
+                  scheme: 'https:',
+                  hostLabels: ['grafana', '*', 'ops', 'iszn', 'cz'],
+                  port: '',
+                  path: '/api',
+                  pathSegments: ['api'],
+                },
+                context: maskContext as any,
+              },
+            ],
+            selectorTypeByTenantId: new Map([
+              ['exact', 'exact'],
+              ['mask', 'mask'],
+            ]),
+          },
+        },
+        logger,
+      );
+      tenantTransport.setMessageHandler(async () => ({ result: { ok: true } }));
+      const tenantApp = (tenantTransport as any).app;
+
+      const initResponse = await request(tenantApp)
+        .post('/mcp')
+        .set('Accept', 'application/json')
+        .set('Content-Type', 'application/json')
+        .set('Authorization', 'Bearer session-token')
+        .set('X-Mcp4-Api-Base-Url', 'https://grafana.team-a.ops.iszn.cz/api')
+        .send({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} });
+
+      expect(initResponse.status).toBe(200);
+      const sessionId = initResponse.headers['mcp-session-id'];
+      const tenantContext = tenantTransport.getSessionTenantContext('default', sessionId);
+      expect(tenantContext?.tenantId).toBe('exact');
+      expect(tenantContext?.tenantBaseUrl).toBe('https://grafana.team-a.ops.iszn.cz/api');
+
+      await tenantTransport.stop();
+    });
+  });
+
+  describe('tenant auth resolution', () => {
+    afterEach(() => {
+      delete process.env.MCP4_HTTP_TENANTS_JSON;
+    });
+
+    it('does not trigger OAuth challenge when tenant auth_mode is token in mixed-auth profile', async () => {
+      process.env.MCP4_HTTP_TENANTS_JSON = JSON.stringify({
+        version: 1,
+        tenants: [
+          {
+            tenant_id: 'team-token',
+            profile_ids: ['default'],
+            api_base_url: 'https://team-token.example.com/api',
+            auth_mode: 'token',
+          },
+        ],
+      });
+
+      const tenantTransport = new HttpTransport(
+        {
+          host: '127.0.0.1',
+          port: 0,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: false,
+          metricsPath: '/metrics',
+          oauthConfig: {
+            authorization_endpoint: 'https://auth.example.com/oauth/authorize',
+            token_endpoint: 'https://auth.example.com/oauth/token',
+            client_id: 'oauth-client',
+            client_secret: 'oauth-secret',
+            scopes: ['api'],
+          },
+          authConfigs: [
+            {
+              type: 'oauth',
+              oauth_config: {
+                authorization_endpoint: 'https://auth.example.com/oauth/authorize',
+                token_endpoint: 'https://auth.example.com/oauth/token',
+                client_id: 'oauth-client',
+                client_secret: 'oauth-secret',
+                scopes: ['api'],
+              },
+            },
+            { type: 'custom-header', header_name: 'X-Profile-Token' },
+          ],
+          baseUrl: 'https://default.example.com/api',
+        },
+        logger,
+      );
+      tenantTransport.setMessageHandler(async () => ({ result: { ok: true } }));
+      const tenantApp = (tenantTransport as any).app;
+
+      const response = await request(tenantApp)
+        .post('/mcp')
+        .set('Accept', 'application/json')
+        .set('Content-Type', 'application/json')
+        .set('X-Mcp4-Tenant-Id', 'team-token')
+        .send({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} });
+
+      expect(response.status).toBe(401);
+      expect(response.headers['www-authenticate']).toBeUndefined();
+      expect(response.body.message).toBe('Authentication required');
+
+      await tenantTransport.stop();
+    });
+
+    it('accepts tenant-specific custom-header auth during initialize', async () => {
+      process.env.MCP4_HTTP_TENANTS_JSON = JSON.stringify({
+        version: 1,
+        tenants: [
+          {
+            tenant_id: 'team-custom',
+            profile_ids: ['default'],
+            api_base_url: 'https://team-custom.example.com/api',
+            auth_mode: 'token',
+            auth: { type: 'custom-header', header_name: 'X-Tenant-Token' },
+          },
+        ],
+      });
+
+      const tenantTransport = new HttpTransport(
+        {
+          host: '127.0.0.1',
+          port: 0,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: false,
+          metricsPath: '/metrics',
+          authConfigs: [{ type: 'custom-header', header_name: 'X-Profile-Token' }],
+          baseUrl: 'https://default.example.com/api',
+        },
+        logger,
+      );
+      tenantTransport.setMessageHandler(async () => ({ result: { ok: true } }));
+      const tenantApp = (tenantTransport as any).app;
+
+      const response = await request(tenantApp)
+        .post('/mcp')
+        .set('Accept', 'application/json')
+        .set('Content-Type', 'application/json')
+        .set('X-Mcp4-Tenant-Id', 'team-custom')
+        .set('X-Tenant-Token', 'tenant-header-token')
+        .send({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} });
+
+      expect(response.status).toBe(200);
+      const sessionId = response.headers['mcp-session-id'];
+      expect(sessionId).toBeDefined();
+      expect(tenantTransport.getSessionToken('default', sessionId)).toBe('tenant-header-token');
+
+      await tenantTransport.stop();
+    });
+
+    it('prefers tenant custom-header over profile custom-header when both are present', async () => {
+      process.env.MCP4_HTTP_TENANTS_JSON = JSON.stringify({
+        version: 1,
+        tenants: [
+          {
+            tenant_id: 'team-custom',
+            profile_ids: ['default'],
+            api_base_url: 'https://team-custom.example.com/api',
+            auth_mode: 'token',
+            auth: { type: 'custom-header', header_name: 'X-Tenant-Token' },
+          },
+        ],
+      });
+
+      const tenantTransport = new HttpTransport(
+        {
+          host: '127.0.0.1',
+          port: 0,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: false,
+          metricsPath: '/metrics',
+          authConfigs: [{ type: 'custom-header', header_name: 'X-Profile-Token' }],
+          baseUrl: 'https://default.example.com/api',
+        },
+        logger,
+      );
+      tenantTransport.setMessageHandler(async () => ({ result: { ok: true } }));
+      const tenantApp = (tenantTransport as any).app;
+
+      const response = await request(tenantApp)
+        .post('/mcp')
+        .set('Accept', 'application/json')
+        .set('Content-Type', 'application/json')
+        .set('X-Mcp4-Tenant-Id', 'team-custom')
+        .set('X-Profile-Token', 'profile-token')
+        .set('X-Tenant-Token', 'tenant-token')
+        .send({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} });
+
+      expect(response.status).toBe(200);
+      const sessionId = response.headers['mcp-session-id'];
+      expect(sessionId).toBeDefined();
+      expect(tenantTransport.getSessionToken('default', sessionId)).toBe('tenant-token');
+
+      await tenantTransport.stop();
+    });
+  });
+
   describe('DNS rebinding protection with localhost host config', () => {
     let localTransport: HttpTransport;
     let localApp: Express;
@@ -259,9 +834,8 @@ describeIfListen('HttpTransport', () => {
   describe('profile index', () => {
     let indexTransport: HttpTransport;
     let indexApp: Express;
-
-    beforeEach(async () => {
-      const config = {
+    const createIndexTransport = (): HttpTransport => new HttpTransport(
+      {
         host: '127.0.0.1',
         port: 0,
         sessionTimeoutMs: 1800000,
@@ -271,12 +845,17 @@ describeIfListen('HttpTransport', () => {
         metricsPath: '/metrics',
         profileRoutingEnabled: true,
         profileIndexEnabled: true,
-      };
-      indexTransport = new HttpTransport(config, logger);
+      },
+      logger,
+    );
+
+    beforeEach(async () => {
+      indexTransport = createIndexTransport();
       indexApp = (indexTransport as any).app;
     });
 
     afterEach(async () => {
+      delete process.env.MCP4_HTTP_TENANTS_JSON;
       await indexTransport.stop();
     });
 
@@ -322,6 +901,129 @@ describeIfListen('HttpTransport', () => {
       expect(response.body.profiles).toHaveLength(1);
       expect(response.body.profiles[0].profileId).toBe('beta');
       expect(response.body.profiles[0].mcpUrl).toContain('/profile/beta/mcp');
+    });
+
+    it('returns per-profile tenant metadata in JSON payload when tenant config is enabled', async () => {
+      process.env.MCP4_HTTP_TENANTS_JSON = JSON.stringify({
+        version: 1,
+        tenants: [
+          {
+            tenant_id: 'team-a',
+            profile_ids: ['tenant-aware'],
+            api_base_url: 'https://grafana.team-a.ops.iszn.cz/api',
+            auth_mode: 'token',
+            auth: { type: 'bearer', value_from_env: 'TEAM_A_TOKEN' },
+          },
+          {
+            tenant_id: 'grafana-mask',
+            profile_ids: ['tenant-aware'],
+            api_base_url: 'mask:https://grafana.*.security.ops.iszn.cz/api',
+            auth_mode: 'token',
+            auth: { type: 'bearer', value_from_env: 'GRAFANA_MASK_TOKEN' },
+          },
+        ],
+      });
+      await indexTransport.stop();
+      indexTransport = createIndexTransport();
+      indexApp = (indexTransport as any).app;
+
+      indexTransport.setProfileContextProvider(async (profileId: string) => ({
+        profileId,
+        baseUrl: 'https://default.example.com/api',
+        authConfigs: [{ type: 'bearer', value_from_env: 'DEFAULT_TOKEN' }],
+      }));
+      indexTransport.setProfileIndexProvider(async () => ([
+        {
+          profileId: 'tenant-aware',
+          profileName: 'Tenant Aware',
+          profileAliases: [],
+          description: 'Has tenant data',
+          envVars: [],
+        },
+        {
+          profileId: 'no-tenant-data',
+          profileName: 'No Tenant Data',
+          profileAliases: [],
+          description: 'No tenant context',
+          envVars: [],
+        },
+      ]));
+
+      const response = await request(indexApp)
+        .get('/')
+        .set('Accept', 'application/json');
+
+      expect(response.status).toBe(200);
+      const withTenantData = response.body.profiles.find((profile: any) => profile.profileId === 'tenant-aware');
+      const withoutTenantData = response.body.profiles.find((profile: any) => profile.profileId === 'no-tenant-data');
+      expect(withTenantData?.tenantSummary?.tenantsEnabled).toBe(true);
+      expect(withTenantData?.tenantSummary?.selectionHeaderName).toBe('X-Mcp4-Tenant-Id');
+      expect(withTenantData?.tenantSummary?.tenants).toEqual([
+        expect.objectContaining({
+          tenantId: 'grafana-mask',
+          selectorType: 'mask',
+          selectorDisplay: 'mask:https://grafana.*.security.ops.iszn.cz/api',
+        }),
+        expect.objectContaining({
+          tenantId: 'team-a',
+          selectorType: 'exact',
+          selectorDisplay: 'https://grafana.team-a.ops.iszn.cz/api',
+        }),
+      ]);
+      expect(withoutTenantData?.tenantSummary).toBeUndefined();
+    });
+
+    it('renders tenant picker support markers in HTML payload', async () => {
+      process.env.MCP4_HTTP_TENANTS_JSON = JSON.stringify({
+        version: 1,
+        tenants: [
+          {
+            tenant_id: 'team-a',
+            profile_ids: ['tenant-aware'],
+            api_base_url: 'https://grafana.team-a.ops.iszn.cz/api',
+            auth_mode: 'token',
+            auth: { type: 'bearer', value_from_env: 'TEAM_A_TOKEN' },
+          },
+        ],
+      });
+      await indexTransport.stop();
+      indexTransport = createIndexTransport();
+      indexApp = (indexTransport as any).app;
+
+      indexTransport.setProfileContextProvider(async (profileId: string) => ({
+        profileId,
+        baseUrl: 'https://default.example.com/api',
+        authConfigs: [{ type: 'bearer', value_from_env: 'DEFAULT_TOKEN' }],
+      }));
+      indexTransport.setProfileIndexProvider(async () => ([
+        {
+          profileId: 'tenant-aware',
+          profileName: 'Tenant Aware',
+          profileAliases: [],
+          description: 'Has tenant data',
+          envVars: [],
+          authMethods: [{ type: 'bearer', valueFromEnv: 'DEFAULT_TOKEN' }],
+        },
+      ]));
+
+      const response = await request(indexApp).get('/');
+
+      expect(response.status).toBe(200);
+      expect(response.headers['content-type']).toContain('text/html');
+      expect(response.text).toContain('tenant-tabs');
+      expect(response.text).toContain('injectTenantHeaderIntoJsonSnippet');
+      expect(response.text).toContain('injectTenantApiBaseUrlIntoJsonSnippet');
+      expect(response.text).toContain('X-Mcp4-Tenant-Id');
+      expect(response.text).toContain('X-Mcp4-Api-Base-Url');
+      expect(response.text).toContain('__profile-default__');
+      expect(response.text).toContain('<your-part>');
+      expect(response.text).toContain('data-client-tab');
+      expect(response.text).toContain('wireClientTabs');
+      expect(response.text).toContain('key.startsWith(\'vscode-\')');
+      expect(response.text).toContain('key.startsWith(\'jetbrains-\')');
+      expect(response.text).toContain('key.startsWith(\'claude-json-\')');
+      expect(response.text).toContain('key.startsWith(\'gemini-json-\')');
+      expect(response.text).toContain('key.startsWith(\'codex-toml-\')');
     });
   });
 
@@ -1362,8 +2064,8 @@ describeIfListen('HttpTransport', () => {
 
       // Check metrics
       const response1 = await request(metricsApp).get('/metrics');
-      expect(response1.text).toContain('mcp_sessions_created_total 1');
-      expect(response1.text).toContain('mcp_sessions_active 1');
+      expect(response1.text).toContain('mcp_sessions_created_total{profile_id="default",tenant_id="none"} 1');
+      expect(response1.text).toContain('mcp_sessions_active{profile_id="default",tenant_id="none"} 1');
 
       // Extract session ID
       const initResponse = await request(metricsApp)
@@ -1382,7 +2084,7 @@ describeIfListen('HttpTransport', () => {
 
       // Check metrics again
       const response2 = await request(metricsApp).get('/metrics');
-      expect(response2.text).toContain('mcp_sessions_destroyed_total');
+      expect(response2.text).toContain('mcp_sessions_destroyed_total{profile_id="default",tenant_id="none"}');
     });
 
     it('should use custom metrics path', async () => {
@@ -2298,6 +3000,45 @@ describeIfListen('HttpTransport', () => {
       const sessionId = (transport as any).createSession(profileState, 'access-token', 'refresh-token');
       const result = await (transport as any).refreshAccessToken('default', sessionId);
       expect(result).toBe(false);
+    });
+
+    it('reuses tenant OAuth provider instance per session and clears it on session destroy', () => {
+      const profileState = createProfileState(transport as any);
+      const tenantOAuthConfig = {
+        authorization_endpoint: 'https://auth.example.com/oauth/authorize',
+        token_endpoint: 'https://auth.example.com/oauth/token',
+        client_id: 'tenant-client',
+        client_secret: 'tenant-secret',
+      };
+      const sessionId = (transport as any).createSession(
+        profileState,
+        'access-token',
+        'refresh-token',
+        undefined,
+        ['api'],
+        'tenant-client',
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        {
+          tenantId: 'team-oauth',
+          tenantBaseUrl: 'https://team-oauth.example.com/api',
+          tenantAuthMode: 'oauth',
+          tenantOAuthConfig,
+          tenantAuthConfigs: [{ type: 'oauth', oauth_config: tenantOAuthConfig }],
+        },
+      );
+      const session = profileState.sessions.get(sessionId);
+      expect(session).toBeDefined();
+
+      const firstProvider = (transport as any).getOAuthProviderForSession(profileState, session);
+      const secondProvider = (transport as any).getOAuthProviderForSession(profileState, session);
+      expect(firstProvider).toBe(secondProvider);
+      expect((profileState as any).tenantOAuthProvidersBySessionId.get(sessionId)).toBe(firstProvider);
+
+      (transport as any).destroySession(profileState, sessionId);
+      expect((profileState as any).tenantOAuthProvidersBySessionId.has(sessionId)).toBe(false);
     });
 
     it('should handle token refresh without expires_in', async () => {

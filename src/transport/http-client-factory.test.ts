@@ -5,16 +5,16 @@ import type { Profile } from '../types/profile.js';
 
 // Mock dependencies
 vi.mock('./interceptors.js', () => ({
-  InterceptorChain: vi.fn().mockImplementation((interceptors, token) => ({
-    interceptors,
-    token,
-  })),
-  HttpClient: vi.fn().mockImplementation((baseUrl, interceptors, metrics) => ({
-    baseUrl,
-    interceptors,
-    metrics,
-    setMetricsCollector: vi.fn(),
-  })),
+  InterceptorChain: vi.fn(function MockInterceptorChain(this: any, interceptors: any, token: string | undefined) {
+    this.interceptors = interceptors;
+    this.token = token;
+  }),
+  HttpClient: vi.fn(function MockHttpClient(this: any, baseUrl: string, interceptors: any, metrics: any) {
+    this.baseUrl = baseUrl;
+    this.interceptors = interceptors;
+    this.metrics = metrics;
+    this.setMetricsCollector = vi.fn();
+  }),
 }));
 
 describe('HttpClientFactory', () => {

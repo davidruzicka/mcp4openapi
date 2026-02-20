@@ -8,6 +8,7 @@ import {
   resolveTemplateRoot,
 } from './profile-index.js';
 import type { ListedProfileDetails } from '../profile/profile-resolver.js';
+import type { ProfileIndexSourceProfile } from './profile-index.js';
 
 describe('profile index helpers', () => {
   it('detects locale from Accept-Language', () => {
@@ -69,7 +70,7 @@ describe('profile index helpers', () => {
     expect(cursor?.content).toContain('"Authorization: Bearer ${env:GITLAB_TOKEN}"');
     expect(cursor?.content).toContain('"GITLAB_TOKEN": "${env:GITLAB_TOKEN}"');
     expect(jetbrains?.content).toContain('"requestInit"');
-    expect(jetbrains?.content).toContain('"Authorization": "Bearer {$input:gitlab-token}"');
+    expect(jetbrains?.content).toContain('"Authorization": "Bearer ${input:gitlab-token}"');
     expect(claudeJson?.format).toBe('json');
     expect(claudeJson?.content).toContain('"mcpServers"');
     expect(claudeJson?.content).toContain('"type": "http"');
@@ -89,7 +90,7 @@ describe('profile index helpers', () => {
     expect(cursorLocal?.content).toContain('"GITLAB_API_BASE_URL": "https://gitlab.com/api/v4"');
     expect(cursorLocal?.content).not.toContain('${input:gitlab-token}');
     expect(jetbrainsLocal?.mode).toBe('local');
-    expect(jetbrainsLocal?.content).toContain('"GITLAB_TOKEN": "{$input:gitlab-token}"');
+    expect(jetbrainsLocal?.content).toContain('"GITLAB_TOKEN": "${input:gitlab-token}"');
     expect(claudeLocalJson?.mode).toBe('local');
     expect(claudeLocalJson?.format).toBe('json');
     expect(claudeLocalJson?.content).toContain('"mcpServers"');
@@ -98,7 +99,7 @@ describe('profile index helpers', () => {
     expect(claudeLocalJson?.content).not.toContain('${env:GITLAB_TOKEN}');
     expect(claudeLocalCli?.mode).toBe('local');
     expect(claudeLocalCli?.format).toBe('cli');
-    expect(claudeLocalCli?.content).toContain('claude mcp add -s user __PROFILE_ID__ -- npx -y mcp4openapi --profile __PROFILE_ID__');
+    expect(claudeLocalCli?.content).toContain('claude mcp add -s user --env "GITLAB_API_BASE_URL=https://gitlab.com/api/v4" __PROFILE_ID__ -- npx -y mcp4openapi --profile __PROFILE_ID__');
     expect(claudeLocalCli?.content).not.toContain('export ');
     expect(geminiJson?.format).toBe('json');
     expect(geminiJson?.content).toContain('"mcpServers"');
@@ -111,11 +112,12 @@ describe('profile index helpers', () => {
     expect(geminiLocalJson?.content).toContain('"mcpServers"');
     expect(geminiLocalJson?.content).toContain('"command": "npx"');
     expect(geminiLocalJson?.content).toContain('"args": [');
-    expect(geminiLocalJson?.content).not.toContain('"env": {');
+    expect(geminiLocalJson?.content).toContain('"env": {');
+    expect(geminiLocalJson?.content).toContain('"GITLAB_API_BASE_URL": "https://gitlab.com/api/v4"');
     expect(geminiLocalJson?.content).not.toContain('GITLAB_TOKEN');
     expect(geminiLocalCli?.mode).toBe('local');
     expect(geminiLocalCli?.format).toBe('cli');
-    expect(geminiLocalCli?.content).toContain('gemini mcp add -s user __PROFILE_ID__ -- npx -y mcp4openapi --profile __PROFILE_ID__');
+    expect(geminiLocalCli?.content).toContain('gemini mcp add -s user -e "GITLAB_API_BASE_URL=https://gitlab.com/api/v4" __PROFILE_ID__ -- npx -y mcp4openapi --profile __PROFILE_ID__');
     expect(codexToml?.format).toBe('toml');
     expect(codexToml?.content).toContain('[mcp_servers.__PROFILE_ID__]');
     expect(codexToml?.content).toContain('transport = "http"');
@@ -232,7 +234,7 @@ describe('profile index helpers', () => {
     expect(vscode?.content).not.toContain('"headers"');
     expect(cursor?.content).toContain('"url": "__PROFILE_URL__?api_key=${env:YT_TOKEN}"');
     expect(cursor?.content).not.toContain('"mcp-remote"');
-    expect(jetbrains?.content).toContain('"url": "__PROFILE_URL__?api_key={$input:yt-token}"');
+    expect(jetbrains?.content).toContain('"url": "__PROFILE_URL__?api_key=${input:yt-token}"');
     expect(claudeJson?.content).toContain('"url": "__PROFILE_URL__?api_key=${YT_TOKEN}"');
     expect(claudeCli?.content).toContain('__PROFILE_URL__?api_key=\\${YT_TOKEN}');
     expect(geminiJson?.content).toContain('"httpUrl": "__PROFILE_URL__?api_key=${YT_TOKEN}"');
@@ -354,7 +356,8 @@ describe('profile index helpers', () => {
     expect(cursorLocal?.content).not.toContain('MCP4_OAUTH_CLIENT_SECRET');
 
     expect(geminiLocalJson?.content).toContain('"args": [');
-    expect(geminiLocalJson?.content).not.toContain('"env": {');
+    expect(geminiLocalJson?.content).toContain('"env": {');
+    expect(geminiLocalJson?.content).toContain('"GITLAB_API_BASE_URL": "https://gitlab.com/api/v4"');
     expect(geminiLocalJson?.content).not.toContain('GITLAB_TOKEN');
     expect(geminiLocalJson?.content).not.toContain('MCP4_OAUTH_CLIENT_ID');
     expect(geminiLocalJson?.content).not.toContain('MCP4_OAUTH_CLIENT_SECRET');
@@ -468,5 +471,100 @@ describe('profile index helpers', () => {
     const inputs = __test__.buildInputs(['API TOKEN', 'api-token']);
     expect(inputs[0].id).toBe('api-token');
     expect(inputs[1].id).toBe('api-token-2');
+  });
+
+  it('includes per-profile tenant summary in payload', () => {
+    const profiles: ProfileIndexSourceProfile[] = [
+      {
+        profileId: 'grafana',
+        profileName: 'grafana',
+        profileAliases: [],
+        description: 'Grafana',
+        envVars: [],
+        authMethods: [],
+        tenantSummary: {
+          tenantsEnabled: true,
+          selectionHeaderName: 'X-Mcp4-Tenant-Id',
+          tenants: [
+            {
+              tenantId: 'team-a',
+              selectorType: 'exact',
+              selectorDisplay: 'https://grafana.team-a.ops.iszn.cz/api',
+            },
+            {
+              tenantId: 'team-mask',
+              selectorType: 'mask',
+              selectorDisplay: 'mask:https://grafana.*.ops.iszn.cz/api',
+            },
+          ],
+        },
+      },
+    ];
+
+    const { payload } = buildProfileIndexPayload(profiles, 'http://localhost:3003', 'en');
+    const [profile] = payload.profiles;
+
+    expect(profile.tenantSummary?.tenantsEnabled).toBe(true);
+    expect(profile.tenantSummary?.selectionHeaderName).toBe('X-Mcp4-Tenant-Id');
+    expect(profile.tenantSummary?.tenants).toHaveLength(2);
+    expect(profile.tenantSummary?.tenants[0].tenantId).toBe('team-a');
+    expect(profile.tenantSummary?.tenants[1].selectorType).toBe('mask');
+  });
+
+  it('renders tenant picker payload and tenant header injection script markers in HTML', async () => {
+    const profiles: ProfileIndexSourceProfile[] = [
+      {
+        profileId: 'grafana',
+        profileName: 'grafana',
+        profileAliases: [],
+        description: 'Grafana',
+        envVars: [],
+        authMethods: [],
+        tenantSummary: {
+          tenantsEnabled: true,
+          selectionHeaderName: 'X-Mcp4-Tenant-Id',
+          tenants: [
+            {
+              tenantId: 'team-a',
+              selectorType: 'exact',
+              selectorDisplay: 'https://grafana.team-a.ops.iszn.cz/api',
+            },
+          ],
+        },
+      },
+    ];
+
+    const { templateData } = buildProfileIndexPayload(profiles, 'http://localhost:3003', 'en');
+    const template = await loadProfileIndexTemplate();
+    const html = renderProfileIndexHtml(template, templateData, 'nonce123');
+
+    expect(html).toContain('"tenantSummary":{"tenantsEnabled":true');
+    expect(html).toContain('"selectionHeaderName":"X-Mcp4-Tenant-Id"');
+    expect(html).toContain('injectTenantHeaderIntoJsonSnippet');
+    expect(html).toContain('upsertCursorHeaderArgInArgs');
+    expect(html).toContain('ensureCursorMcpRemoteArgs');
+    expect(html).toContain('injectTenantApiBaseUrlIntoJsonSnippet');
+    expect(html).toContain('injectTenantApiBaseUrlIntoCodexToml');
+    expect(html).toContain('const sectionHeaderRegex = /^\\[mcp_servers\\.[^\\]]+\\.env\\]\\s*$/;');
+    expect(html).toContain('const fallbackSectionHeader = `[mcp_servers.${profileId}.env]`;');
+    expect(html).toContain('__profile-default__');
+    expect(html).toContain('supportsTenantPicker');
+    expect(html).toContain('buildMaskExampleBaseUrl');
+    expect(html).toContain('getClientLabel');
+    expect(html).toContain('data-client-tab');
+    expect(html).toContain('wireClientTabs');
+    expect(html).toContain('snippet-section-header');
+    expect(html).toContain('active-mode-badge');
+    expect(html).toContain('X-Mcp4-Tenant-Id');
+    expect(html).toContain('X-Mcp4-Api-Base-Url');
+    expect(html).toContain('<your-part>');
+    expect(html).toContain('key.startsWith(\'vscode-\')');
+    expect(html).toContain('key.startsWith(\'cursor-\')');
+    expect(html).toContain("upsertCursorHeaderArgInArgs(args, 'X-Mcp4-Tenant-Id'");
+    expect(html).toContain('key.startsWith(\'jetbrains-\')');
+    expect(html).toContain('key.startsWith(\'claude-json-\')');
+    expect(html).toContain('key.startsWith(\'gemini-json-\')');
+    expect(html).toContain('key.startsWith(\'gemini-local-json-\')');
+    expect(html).toContain('key.startsWith(\'codex-toml-\')');
   });
 });

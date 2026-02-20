@@ -51,6 +51,7 @@
         border: 1px solid var(--border);
         box-shadow: var(--shadow);
         padding: 24px;
+        min-width: 0;
       }
       .profiles {
         display: flex;
@@ -95,11 +96,15 @@
         -webkit-box-orient: vertical;
       }
       #auth-label {
+        margin: 6px 0 0;
+      }
+      #api-endpoint-env-label {
         margin: 6px 0 12px;
       }
       .detail-grid {
         display: grid;
         gap: 18px;
+        min-width: 0;
       }
       .tab-row {
         display: flex;
@@ -130,6 +135,8 @@
         border-radius: 12px;
         padding: 16px;
         background: #fff;
+        min-width: 0;
+        max-width: 100%;
       }
       .detail-card h3 {
         margin: 0 0 8px;
@@ -157,23 +164,74 @@
         color: #e2e8f0;
         padding: 14px;
         border-radius: 12px;
+        max-width: 100%;
+        width: 100%;
         overflow-x: auto;
         line-height: 1.6;
       }
       .snippets {
         display: grid;
+        grid-template-columns: minmax(0, 1fr);
         gap: 16px;
+        min-width: 0;
+        max-width: 100%;
+      }
+      .snippet-section-header {
+        position: sticky;
+        top: 0;
+        z-index: 1;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        margin: 2px 0 12px;
+        padding: 10px 0 8px;
+        border-top: 1px solid var(--border);
+        background: #fff;
+      }
+      .snippet-section-title {
+        font-size: 12px;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: var(--muted);
+        font-weight: 600;
+      }
+      .mode-badge {
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        padding: 3px 10px;
+        font-size: 12px;
+        color: var(--accent);
+        background: #fff5ec;
+        font-weight: 600;
       }
       .snippet-header {
         display: flex;
         align-items: center;
         justify-content: space-between;
         gap: 12px;
+        min-width: 0;
+        flex-wrap: wrap;
       }
       .snippet-meta {
         display: flex;
         align-items: center;
         gap: 8px;
+        min-width: 0;
+        max-width: 100%;
+        flex-wrap: wrap;
+      }
+      #snippet-list [data-client-panel] .detail-card {
+        overflow-x: auto;
+      }
+      #snippet-list > [data-client-panel] {
+        min-width: 0;
+        max-width: 100%;
+        width: 100%;
+      }
+      #snippet-list [data-format-panel-group] {
+        min-width: 0;
+        max-width: 100%;
       }
       .config-info {
         font-size: 13px;
@@ -216,6 +274,37 @@
         border-radius: 12px;
         color: #7a3f1e;
       }
+      .tenant-list {
+        display: grid;
+        gap: 8px;
+        margin-top: 10px;
+      }
+      .tenant-item {
+        width: 100%;
+        text-align: left;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background: #fff;
+        padding: 10px 12px;
+        cursor: pointer;
+      }
+      .tenant-item.active {
+        border-color: var(--accent);
+        background: #fff5ec;
+      }
+      .tenant-title {
+        font-size: 13px;
+        font-weight: 600;
+      }
+      .tenant-selector {
+        margin-top: 3px;
+        font-size: 12px;
+        color: var(--muted);
+        word-break: break-all;
+      }
+      .tenant-mask-note {
+        margin-top: 10px;
+      }
       .sr-only {
         position: absolute;
         width: 1px;
@@ -234,6 +323,9 @@
         }
         header {
           padding: 36px 20px 24px;
+        }
+        .snippet-section-header {
+          flex-wrap: wrap;
         }
       }
     </style>
@@ -266,6 +358,8 @@
 
       const listEl = document.getElementById('profile-list');
       const detailEl = document.getElementById('profile-detail');
+      const tenantSelectionByProfile = new Map();
+      const PROFILE_DEFAULT_TENANT_SELECTION = '__profile-default__';
 
       function escapeHtml(value) {
         return String(value)
@@ -284,20 +378,320 @@
         return `<div class="tag-list">${tags}</div>`;
       }
 
-      function buildSnippet(template, profile) {
-        return template
+      function supportsTenantPicker(entry) {
+        if (!entry || entry.mode !== 'remote') return false;
+        const key = entry.key || '';
+        return (
+          key.startsWith('vscode-') ||
+          key.startsWith('cursor-') ||
+          key.startsWith('jetbrains-') ||
+          key.startsWith('claude-json-') ||
+          key.startsWith('gemini-json-') ||
+          key.startsWith('codex-toml-')
+        );
+      }
+
+      function buildMaskExampleBaseUrl(selectorDisplay) {
+        if (!selectorDisplay || typeof selectorDisplay !== 'string') return null;
+        if (!selectorDisplay.startsWith('mask:')) return null;
+        const rawMask = selectorDisplay.slice(5).trim();
+        const match = /^(https?:\/\/)([^\/?#]+)([^?#]*)$/.exec(rawMask);
+        if (!match) return null;
+        const scheme = match[1];
+        const hostWithPort = match[2];
+        const path = match[3] || '';
+        const host = hostWithPort.split(':')[0];
+        const portSuffix = hostWithPort.slice(host.length);
+        const exampleHost = host
+          .split('.')
+          .map(label => (label === '*' ? '<your-part>' : label))
+          .join('.');
+        const examplePath = path
+          .split('/')
+          .map(segment => (segment === '*' ? '<your-part>' : segment))
+          .join('/');
+        return `${scheme}${exampleHost}${portSuffix}${examplePath}`;
+      }
+
+      function resolveTenantSelection(profile, selectedTenantId) {
+        if (!selectedTenantId) return null;
+        if (selectedTenantId === PROFILE_DEFAULT_TENANT_SELECTION) return null;
+        const tenantList = profile?.tenantSummary?.tenants || [];
+        const selectedTenant = tenantList.find(item => item.tenantId === selectedTenantId);
+        if (!selectedTenant) return null;
+        const localApiBaseUrl = selectedTenant.selectorType === 'mask'
+          ? buildMaskExampleBaseUrl(selectedTenant.selectorDisplay)
+          : selectedTenant.selectorDisplay;
+        return {
+          tenantId: selectedTenant.tenantId,
+          selectorType: selectedTenant.selectorType,
+          selectorDisplay: selectedTenant.selectorDisplay,
+          baseUrlExample: selectedTenant.selectorType === 'mask'
+            ? buildMaskExampleBaseUrl(selectedTenant.selectorDisplay)
+            : null,
+          localApiBaseUrl,
+        };
+      }
+
+      function upsertCursorHeaderArgInArgs(args, headerName, headerValue) {
+        if (!Array.isArray(args)) return args;
+        const normalizedHeaderPrefix = `${headerName}:`.toLowerCase();
+        for (let index = 0; index < args.length - 1; index += 1) {
+          if (args[index] !== '--header') continue;
+          const headerArg = args[index + 1];
+          if (typeof headerArg !== 'string') continue;
+          if (!headerArg.toLowerCase().startsWith(normalizedHeaderPrefix)) continue;
+          args[index + 1] = `${headerName}: ${headerValue}`;
+          return args;
+        }
+        args.push('--header');
+        args.push(`${headerName}: ${headerValue}`);
+        return args;
+      }
+
+      function ensureCursorMcpRemoteArgs(server) {
+        if (!server || typeof server !== 'object') return null;
+        const currentArgs = Array.isArray(server.args) ? server.args : null;
+        const hasMcpRemoteArgs = currentArgs && currentArgs.some(arg => arg === 'mcp-remote');
+        if (hasMcpRemoteArgs) {
+          return currentArgs;
+        }
+
+        const cursorUrl = typeof server.url === 'string' ? server.url : '__PROFILE_URL__';
+        server.command = 'npx';
+        server.args = ['-y', 'mcp-remote', cursorUrl];
+        delete server.type;
+        delete server.url;
+        delete server.headers;
+        return server.args;
+      }
+
+      function injectTenantHeaderIntoJsonSnippet(snippet, entry, tenantSelection) {
+        let parsed;
+        try {
+          parsed = JSON.parse(snippet);
+        } catch {
+          return snippet;
+        }
+
+        const key = entry.key || '';
+        const root = key.startsWith('vscode-') || key.startsWith('jetbrains-')
+          ? parsed.servers
+          : parsed.mcpServers;
+
+        if (!root || typeof root !== 'object') return snippet;
+        const serverName = Object.keys(root)[0];
+        if (!serverName || !root[serverName] || typeof root[serverName] !== 'object') return snippet;
+        const server = root[serverName];
+
+        if (key.startsWith('cursor-')) {
+          const args = ensureCursorMcpRemoteArgs(server);
+          if (!Array.isArray(args)) return snippet;
+          upsertCursorHeaderArgInArgs(args, 'X-Mcp4-Tenant-Id', tenantSelection.tenantId);
+          if (tenantSelection.baseUrlExample) {
+            upsertCursorHeaderArgInArgs(args, 'X-Mcp4-Api-Base-Url', tenantSelection.baseUrlExample);
+          }
+        } else if (key.startsWith('jetbrains-')) {
+          if (!server.requestInit || typeof server.requestInit !== 'object') {
+            server.requestInit = {};
+          }
+          if (!server.requestInit.headers || typeof server.requestInit.headers !== 'object') {
+            server.requestInit.headers = {};
+          }
+          server.requestInit.headers['X-Mcp4-Tenant-Id'] = tenantSelection.tenantId;
+          if (tenantSelection.baseUrlExample) {
+            server.requestInit.headers['X-Mcp4-Api-Base-Url'] = tenantSelection.baseUrlExample;
+          }
+        } else {
+          if (!server.headers || typeof server.headers !== 'object') {
+            server.headers = {};
+          }
+          server.headers['X-Mcp4-Tenant-Id'] = tenantSelection.tenantId;
+          if (tenantSelection.baseUrlExample) {
+            server.headers['X-Mcp4-Api-Base-Url'] = tenantSelection.baseUrlExample;
+          }
+        }
+
+        return JSON.stringify(parsed, null, 2);
+      }
+
+      function upsertCodexTomlHeader(snippet, headerName, headerValue) {
+        const headerEntry = `"${headerName}" = "${headerValue}"`;
+        const lines = snippet.split('\n');
+        const headersLineIndex = lines.findIndex(line => line.trim().startsWith('http_headers = {'));
+        if (headersLineIndex === -1) {
+          return `${snippet}\nhttp_headers = { ${headerEntry} }`;
+        }
+
+        const line = lines[headersLineIndex];
+        const escapedHeaderName = headerName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const existingHeaderRegex = new RegExp(`"${escapedHeaderName}"\\s*=\\s*"[^"]*"`);
+        if (existingHeaderRegex.test(line)) {
+          lines[headersLineIndex] = line.replace(existingHeaderRegex, headerEntry);
+          return lines.join('\n');
+        }
+
+        if (/\}\s*$/.test(line)) {
+          lines[headersLineIndex] = line.replace(/\}\s*$/, `, ${headerEntry} }`);
+          return lines.join('\n');
+        }
+
+        return `${snippet}\nhttp_headers = { ${headerEntry} }`;
+      }
+
+      function injectTenantHeaderIntoCodexToml(snippet, tenantSelection) {
+        let output = upsertCodexTomlHeader(snippet, 'X-Mcp4-Tenant-Id', tenantSelection.tenantId);
+        if (tenantSelection.baseUrlExample) {
+          output = upsertCodexTomlHeader(output, 'X-Mcp4-Api-Base-Url', tenantSelection.baseUrlExample);
+        }
+        return output;
+      }
+
+      function injectTenantHeaderForSnippet(snippet, entry, tenantSelection) {
+        if (!tenantSelection || !supportsTenantPicker(entry)) {
+          return snippet;
+        }
+        const key = entry.key || '';
+        if (key.startsWith('codex-toml-')) {
+          return injectTenantHeaderIntoCodexToml(snippet, tenantSelection);
+        }
+        return injectTenantHeaderIntoJsonSnippet(snippet, entry, tenantSelection);
+      }
+
+      function injectTenantApiBaseUrlIntoJsonSnippet(snippet, entry, profile, tenantSelection) {
+        const apiBaseUrlEnvVar = profile?.apiEndpointEnvVar;
+        const tenantApiBaseUrl = tenantSelection?.localApiBaseUrl;
+        if (!apiBaseUrlEnvVar || !tenantApiBaseUrl) return snippet;
+
+        const key = entry?.key || '';
+        const isSupportedJsonSnippet = (
+          key.startsWith('vscode-local-') ||
+          key.startsWith('cursor-local-') ||
+          key.startsWith('jetbrains-local-') ||
+          key.startsWith('claude-local-json-') ||
+          key.startsWith('gemini-local-json-')
+        );
+        if (!isSupportedJsonSnippet) return snippet;
+
+        let parsed;
+        try {
+          parsed = JSON.parse(snippet);
+        } catch {
+          return snippet;
+        }
+
+        const root = key.startsWith('vscode-local-') || key.startsWith('jetbrains-local-')
+          ? parsed.servers
+          : parsed.mcpServers;
+        if (!root || typeof root !== 'object') return snippet;
+        const serverName = Object.keys(root)[0];
+        if (!serverName || !root[serverName] || typeof root[serverName] !== 'object') return snippet;
+        const server = root[serverName];
+        if (!server.env || typeof server.env !== 'object') {
+          server.env = {};
+        }
+        server.env[apiBaseUrlEnvVar] = tenantApiBaseUrl;
+
+        return JSON.stringify(parsed, null, 2);
+      }
+
+      function removeEnvVarFromCodexTomlEnvVars(snippet, envVarName) {
+        const lines = snippet.split('\n');
+        for (let index = 0; index < lines.length; index += 1) {
+          const line = lines[index];
+          const match = /^(\s*)env_vars\s*=\s*\[(.*)\]\s*$/.exec(line);
+          if (!match) continue;
+          const indentation = match[1] || '';
+          const rawValues = match[2].split(',').map(value => value.trim()).filter(Boolean);
+          const filteredValues = rawValues.filter(value => value !== `"${envVarName}"`);
+          if (filteredValues.length === 0) {
+            lines.splice(index, 1);
+            return lines.join('\n');
+          }
+          lines[index] = `${indentation}env_vars = [${filteredValues.join(', ')}]`;
+          return lines.join('\n');
+        }
+        return lines.join('\n');
+      }
+
+      function upsertCodexTomlEnvValue(snippet, profileId, envVarName, envVarValue) {
+        const sanitized = removeEnvVarFromCodexTomlEnvVars(snippet, envVarName);
+        const lines = sanitized.split('\n');
+        const sectionHeaderRegex = /^\[mcp_servers\.[^\]]+\.env\]\s*$/;
+        const fallbackSectionHeader = `[mcp_servers.${profileId}.env]`;
+        const sectionIndex = lines.findIndex(line => sectionHeaderRegex.test(line.trim()));
+        const envEntry = `${envVarName} = "${envVarValue}"`;
+
+        if (sectionIndex === -1) {
+          return `${sanitized}\n\n${fallbackSectionHeader}\n${envEntry}`;
+        }
+
+        let nextSectionIndex = lines.length;
+        for (let index = sectionIndex + 1; index < lines.length; index += 1) {
+          if (lines[index].trim().startsWith('[')) {
+            nextSectionIndex = index;
+            break;
+          }
+        }
+
+        const escapedEnvVarName = envVarName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const entryRegex = new RegExp(`^\\s*${escapedEnvVarName}\\s*=\\s*\".*\"\\s*$`);
+        for (let index = sectionIndex + 1; index < nextSectionIndex; index += 1) {
+          if (!entryRegex.test(lines[index])) continue;
+          lines[index] = envEntry;
+          return lines.join('\n');
+        }
+
+        lines.splice(nextSectionIndex, 0, envEntry);
+        return lines.join('\n');
+      }
+
+      function injectTenantApiBaseUrlIntoCodexToml(snippet, profile, tenantSelection) {
+        const apiBaseUrlEnvVar = profile?.apiEndpointEnvVar;
+        const tenantApiBaseUrl = tenantSelection?.localApiBaseUrl;
+        const profileId = profile?.profileId;
+        if (!apiBaseUrlEnvVar || !tenantApiBaseUrl || !profileId) return snippet;
+        return upsertCodexTomlEnvValue(snippet, profileId, apiBaseUrlEnvVar, tenantApiBaseUrl);
+      }
+
+      function injectTenantApiBaseUrlForLocalSnippet(snippet, entry, profile, tenantSelection) {
+        if (!tenantSelection || entry?.mode !== 'local') {
+          return snippet;
+        }
+        const key = entry.key || '';
+        if (key.startsWith('codex-local-toml-')) {
+          return injectTenantApiBaseUrlIntoCodexToml(snippet, profile, tenantSelection);
+        }
+        return injectTenantApiBaseUrlIntoJsonSnippet(snippet, entry, profile, tenantSelection);
+      }
+
+      function buildSnippet(template, profile, entry, selectedTenantId) {
+        const rendered = template
           .replace(/__PROFILE_ID__/g, profile.profileId)
           .replace(/__PROFILE_NAME__/g, profile.profileName)
           .replace(/__PROFILE_URL__/g, profile.mcpUrl)
           .replace(/__PROFILE_SSE_URL__/g, profile.sseUrl);
+        const tenantSelection = resolveTenantSelection(profile, selectedTenantId);
+        const withTenantHeaders = injectTenantHeaderForSnippet(rendered, entry, tenantSelection);
+        return injectTenantApiBaseUrlForLocalSnippet(withTenantHeaders, entry, profile, tenantSelection);
       }
 
-      function renderSnippets(profile, activeAuth, activeMode) {
-        const blocks = [];
+      function getClientLabel(client) {
+        if (client === 'vscode') return i18n?.snippetLabels?.vscode || 'VS Code + Copilot';
+        if (client === 'cursor') return i18n?.snippetLabels?.cursor || 'Cursor';
+        if (client === 'jetbrains') return i18n?.snippetLabels?.jetbrains || 'JetBrains IDEs + Copilot';
+        if (client === 'claude') return i18n?.snippetLabels?.claude || 'Claude Code';
+        if (client === 'gemini') return i18n?.snippetLabels?.gemini || 'Gemini CLI';
+        if (client === 'codex') return i18n?.snippetLabels?.codex || 'Codex';
+        return client;
+      }
+
+      function renderSnippets(profile, activeAuth, activeMode, selectedTenantId) {
         const order = ['vscode', 'cursor', 'jetbrains', 'claude', 'gemini', 'codex'];
         const snippets = profile.snippets || [];
         const groups = new Map();
         const isCzech = (i18n.profileLabel || '') === 'Profil';
+        const selectedTenant = resolveTenantSelection(profile, selectedTenantId);
 
         const buildClientConfigInfo = client => {
           if (client === 'vscode') {
@@ -337,6 +731,9 @@
           if (!entry || !entry.key) continue;
           if (activeAuth && entry.authKey && entry.authKey !== activeAuth) continue;
           if (activeMode && entry.mode && entry.mode !== activeMode) continue;
+          if (selectedTenant && activeMode === 'remote' && profile.tenantSummary?.tenantsEnabled && !supportsTenantPicker(entry)) {
+            continue;
+          }
           const client = order.find(prefix => entry.key.startsWith(prefix));
           if (!client) continue;
           const existing = groups.get(client) || [];
@@ -344,15 +741,14 @@
           groups.set(client, existing);
         }
 
+        const clientTabs = [];
+        const clientPanels = [];
         let cardIndex = 0;
         for (const client of order) {
           const entries = groups.get(client);
           if (!entries || entries.length === 0) continue;
 
-          const rawTitle = entries[0].label || entries[0].key || client;
-          const title = activeMode === 'local'
-            ? rawTitle.replace(/\s-\s.+$/, '')
-            : rawTitle;
+          const title = getClientLabel(client);
           const formatOrder = ['toml', 'json', 'cli'];
           entries.sort((a, b) => {
             const left = formatOrder.indexOf(a.format || '');
@@ -362,6 +758,9 @@
 
           const groupId = `snippet-format-${client}-${cardIndex}`;
           cardIndex += 1;
+          const clientTabId = `snippet-client-tab-${client}-${cardIndex}`;
+          const clientPanelId = `snippet-client-panel-${client}-${cardIndex}`;
+          const isClientActive = clientTabs.length === 0;
           const hasFormatTabs = entries.length > 1;
           const tabsHtml = `
             <div class="tab-row snippet-format-tabs" role="tablist" aria-label="Snippet format">
@@ -383,7 +782,7 @@
 
           const panelHtml = entries.map((entry, index) => {
             const format = entry.format || '';
-            const snippet = buildSnippet(entry.content, profile);
+            const snippet = buildSnippet(entry.content, profile, entry, selectedTenantId);
             const encodedSnippet = encodeURIComponent(snippet);
             const hiddenAttr = hasFormatTabs && index > 0 ? ' hidden' : '';
             return `
@@ -393,25 +792,131 @@
             `;
           }).join('');
 
-          const firstSnippet = buildSnippet(entries[0].content, profile);
+          const firstSnippet = buildSnippet(entries[0].content, profile, entries[0], selectedTenantId);
           const firstEncodedSnippet = encodeURIComponent(firstSnippet);
           const configInfo = buildClientConfigInfo(client);
 
-          blocks.push(`
-            <div class="detail-card">
-              <div class="snippet-header">
-                <h3>${escapeHtml(title)}</h3>
-                <div class="snippet-meta">
-                  ${tabsHtml}
-                  <button class="copy-btn" data-copy="${firstEncodedSnippet}" data-copy-group="${escapeHtml(groupId)}">${escapeHtml(i18n.copy || '')}</button>
+          clientTabs.push(`
+            <button
+              class="tab${isClientActive ? ' active' : ''}"
+              type="button"
+              role="tab"
+              id="${escapeHtml(clientTabId)}"
+              aria-selected="${isClientActive ? 'true' : 'false'}"
+              tabindex="${isClientActive ? '0' : '-1'}"
+              aria-controls="${escapeHtml(clientPanelId)}"
+              data-client-tab="${escapeHtml(client)}"
+            >
+              ${escapeHtml(title)}
+            </button>
+          `);
+
+          clientPanels.push(`
+            <div
+              id="${escapeHtml(clientPanelId)}"
+              role="tabpanel"
+              aria-labelledby="${escapeHtml(clientTabId)}"
+              data-client-panel="${escapeHtml(client)}"
+              ${isClientActive ? '' : 'hidden'}
+            >
+              <div class="detail-card">
+                <div class="snippet-header">
+                  <h3>${escapeHtml(title)}</h3>
+                  <div class="snippet-meta">
+                    ${tabsHtml}
+                    <button class="copy-btn" data-copy="${firstEncodedSnippet}" data-copy-group="${escapeHtml(groupId)}">${escapeHtml(i18n.copy || '')}</button>
+                  </div>
                 </div>
+                ${configInfo ? `<div class="config-info">${configInfo}</div>` : ''}
+                ${panelHtml}
               </div>
-              ${configInfo ? `<div class="config-info">${configInfo}</div>` : ''}
-              ${panelHtml}
             </div>
           `);
         }
-        return blocks.join('');
+        if (clientTabs.length === 0) {
+          return '';
+        }
+        return `
+          <div class="tab-row" id="client-tabs" role="tablist" aria-label="Client tools">
+            ${clientTabs.join('')}
+          </div>
+          ${clientPanels.join('')}
+        `;
+      }
+
+      function wireClientTabs(snippetList) {
+        if (!snippetList) return;
+        if (snippetList.dataset.clientTabsWired === '1') return;
+        snippetList.dataset.clientTabsWired = '1';
+
+        const activateClientTab = clientKey => {
+          const tabs = Array.from(snippetList.querySelectorAll('[data-client-tab]'));
+          tabs.forEach(tab => {
+            const isActive = tab.getAttribute('data-client-tab') === clientKey;
+            tab.classList.toggle('active', isActive);
+            tab.setAttribute('aria-selected', isActive ? 'true' : 'false');
+            tab.setAttribute('tabindex', isActive ? '0' : '-1');
+          });
+
+          const panels = Array.from(snippetList.querySelectorAll('[data-client-panel]'));
+          panels.forEach(panel => {
+            const isActive = panel.getAttribute('data-client-panel') === clientKey;
+            if (isActive) {
+              panel.removeAttribute('hidden');
+            } else {
+              panel.setAttribute('hidden', '');
+            }
+          });
+        };
+
+        snippetList.addEventListener('click', event => {
+          const target = event.target;
+          if (!(target instanceof HTMLElement)) return;
+          const clientKey = target.getAttribute('data-client-tab');
+          if (!clientKey) return;
+          activateClientTab(clientKey);
+        });
+
+        snippetList.addEventListener('keydown', event => {
+          const target = event.target;
+          if (!(target instanceof HTMLElement)) return;
+          const clientKey = target.getAttribute('data-client-tab');
+          if (!clientKey) return;
+
+          const tabs = Array.from(snippetList.querySelectorAll('[data-client-tab]'));
+          if (tabs.length === 0) return;
+          const currentIndex = tabs.findIndex(tab => tab === target);
+          if (currentIndex === -1) return;
+
+          const focusAt = index => {
+            const nextTab = tabs[index];
+            if (!nextTab) return;
+            nextTab.focus();
+            const nextClient = nextTab.getAttribute('data-client-tab');
+            if (!nextClient) return;
+            activateClientTab(nextClient);
+          };
+
+          if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
+            event.preventDefault();
+            focusAt((currentIndex + 1) % tabs.length);
+            return;
+          }
+          if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
+            event.preventDefault();
+            focusAt((currentIndex - 1 + tabs.length) % tabs.length);
+            return;
+          }
+          if (event.key === 'Home') {
+            event.preventDefault();
+            focusAt(0);
+            return;
+          }
+          if (event.key === 'End') {
+            event.preventDefault();
+            focusAt(tabs.length - 1);
+          }
+        });
       }
 
       function wireSnippetFormatTabs(snippetList) {
@@ -520,6 +1025,23 @@
         const activeAuth = authTabs.length > 0 ? authTabs[0].key : null;
         const modeTabs = profile.modeTabs || [];
         const activeMode = modeTabs.length > 0 ? modeTabs[0].key : 'remote';
+        const isCzech = (i18n.profileLabel || '') === 'Profil';
+        const snippetSectionLabel = isCzech ? 'Konfigurace klientů' : 'Client configuration snippets';
+        const getModeLabel = modeKey => modeTabs.find(tab => tab.key === modeKey)?.label || modeKey;
+        const tenantSummary = profile.tenantSummary;
+        const tenantList = tenantSummary && tenantSummary.tenantsEnabled ? (tenantSummary.tenants || []) : [];
+        const profileDefaultSelectionAvailable = tenantList.length > 0;
+        const persistedTenantId = tenantSelectionByProfile.get(profile.profileId);
+        const persistedSelectionIsValid = typeof persistedTenantId === 'string' && (
+          persistedTenantId === PROFILE_DEFAULT_TENANT_SELECTION ||
+          tenantList.some(item => item.tenantId === persistedTenantId)
+        );
+        const initialTenantId = persistedSelectionIsValid
+          ? persistedTenantId
+          : (profileDefaultSelectionAvailable ? PROFILE_DEFAULT_TENANT_SELECTION : null);
+        if (initialTenantId) {
+          tenantSelectionByProfile.set(profile.profileId, initialTenantId);
+        }
         const authEnvVars = Array.from(
           new Set((profile.authMethods || [])
             .map(method => method && method.valueFromEnv)
@@ -529,14 +1051,56 @@
           ? `${i18n.authEnvVarsLabel || 'Environment variable:'} ${authEnvVars.join(', ')}`
           : (i18n.authEnvVarsNone || 'No environment variable required');
         const apiEndpointEnvVar = profile.apiEndpointEnvVar || '';
-        const apiEndpointDefaultValue = profile.apiEndpointDefaultValue || '';
         let apiEndpointValueText = `${i18n.apiEndpointUnavailableInline || 'is not configured'}`;
-        if (apiEndpointEnvVar && apiEndpointDefaultValue) {
-          apiEndpointValueText = `${i18n.apiEndpointDefaultTag || '(default)'} ${apiEndpointDefaultValue}, ${i18n.apiEndpointVariableLabel || 'variable'}: ${apiEndpointEnvVar}`;
-        } else if (apiEndpointEnvVar) {
-          apiEndpointValueText = `${i18n.apiEndpointVariableLabel || 'variable'} ${apiEndpointEnvVar}`;
+        if (profile.apiEndpointDefaultValue) {
+          apiEndpointValueText = profile.apiEndpointDefaultValue;
         }
         const apiEndpointHtml = `<p><strong>${escapeHtml(i18n.apiEndpointLabel || 'API endpoint')}</strong>: ${escapeHtml(apiEndpointValueText)}</p>`;
+        const apiEndpointEnvText = apiEndpointEnvVar
+          ? `${i18n.authEnvVarsLabel || 'Environment variable:'} ${apiEndpointEnvVar}`
+          : '';
+        const tenantCardHtml = tenantList.length > 0
+          ? `
+            <div class="detail-card">
+              <h3>${escapeHtml(i18n.tenantSectionLabel || 'Tenants')}</h3>
+              <p><strong>${escapeHtml(i18n.tenantsAvailableLabel || 'Available tenants')}</strong>: ${tenantList.length}</p>
+              <p><strong>${escapeHtml(i18n.tenantHeaderLabel || 'Selection header')}</strong>: ${escapeHtml(tenantSummary.selectionHeaderName || 'X-Mcp4-Tenant-Id')}</p>
+              <p class="profile-subtitle">${escapeHtml(i18n.tenantPickerScopeLabel || '')}</p>
+              <div class="tenant-list" id="tenant-tabs" role="tablist" aria-label="Tenants">
+                ${profileDefaultSelectionAvailable ? `
+                  <button
+                    class="tenant-item${initialTenantId === PROFILE_DEFAULT_TENANT_SELECTION ? ' active' : ''}"
+                    type="button"
+                    role="tab"
+                    aria-selected="${initialTenantId === PROFILE_DEFAULT_TENANT_SELECTION ? 'true' : 'false'}"
+                    tabindex="${initialTenantId === PROFILE_DEFAULT_TENANT_SELECTION ? '0' : '-1'}"
+                    data-tenant-id="${PROFILE_DEFAULT_TENANT_SELECTION}"
+                  >
+                    <div class="tenant-title">${escapeHtml(i18n.tenantProfileDefaultLabel || 'No tenant (use profile config)')}</div>
+                    <div class="tenant-selector">${escapeHtml(i18n.tenantProfileDefaultNote || 'X-Mcp4-Tenant-Id and X-Mcp4-Api-Base-Url will not be added to the snippet.')}</div>
+                  </button>
+                ` : ''}
+                ${tenantList.map(item => {
+                  const isActive = item.tenantId === initialTenantId;
+                  return `
+                    <button
+                      class="tenant-item${isActive ? ' active' : ''}"
+                      type="button"
+                      role="tab"
+                      aria-selected="${isActive ? 'true' : 'false'}"
+                      tabindex="${isActive ? '0' : '-1'}"
+                      data-tenant-id="${escapeHtml(item.tenantId)}"
+                    >
+                      <div class="tenant-title">${escapeHtml(item.tenantId)}</div>
+                      <div class="tenant-selector">${escapeHtml(i18n.tenantSelectorLabel || 'Selector')}: ${escapeHtml(item.selectorDisplay)}</div>
+                    </button>
+                  `;
+                }).join('')}
+              </div>
+              ${tenantList.some(item => item.selectorType === 'mask') ? `<p class="profile-subtitle tenant-mask-note">${escapeHtml(i18n.tenantMaskNote || '')}</p>` : ''}
+            </div>
+          `
+          : '';
         detailEl.innerHTML = `
           <div class="detail-card">
             <h3>${escapeHtml(i18n.profileLabel || '')}</h3>
@@ -549,6 +1113,7 @@
             <p><strong>SSE</strong> ${escapeHtml(i18n.sseDeprecatedLabel || '(deprecated)')}: ${escapeHtml(profile.sseUrl)}</p>
             ${apiEndpointHtml}
           </div>
+          ${tenantCardHtml}
           <div class="detail-card">
             <div class="tab-row" id="mode-tabs" role="tablist" aria-label="Connection mode">
               ${modeTabs.map(tab => `
@@ -567,6 +1132,10 @@
               <strong>${escapeHtml(i18n.authSectionLabel || 'Authentication:')}</strong>
               ${escapeHtml(authEnvText)}
             </p>
+            <p class="profile-subtitle" id="api-endpoint-env-label" style="display:none;">
+              <strong>${escapeHtml(i18n.apiEndpointLabel || 'API endpoint')}:</strong>
+              ${escapeHtml(apiEndpointEnvText)}
+            </p>
             <div class="tab-row" id="auth-tabs" role="tablist" aria-label="Authentication methods">
               ${authTabs.map(tab => `
                 <button
@@ -581,18 +1150,26 @@
                 </button>
               `).join('')}
             </div>
+            <div class="snippet-section-header">
+              <span class="snippet-section-title">${escapeHtml(snippetSectionLabel)}</span>
+              <span class="mode-badge" id="active-mode-badge">${escapeHtml(getModeLabel(activeMode))}</span>
+            </div>
             <div class="snippets" id="snippet-list" role="tabpanel" aria-live="polite">
-              ${renderSnippets(profile, activeAuth, activeMode)}
+              ${renderSnippets(profile, activeAuth, activeMode, initialTenantId)}
             </div>
           </div>
         `;
 
         const modeRow = detailEl.querySelector('#mode-tabs');
         const authLabel = detailEl.querySelector('#auth-label');
+        const apiEndpointEnvLabel = detailEl.querySelector('#api-endpoint-env-label');
         const tabRow = detailEl.querySelector('#auth-tabs');
+        const modeBadge = detailEl.querySelector('#active-mode-badge');
         const snippetList = detailEl.querySelector('#snippet-list');
+        const tenantRow = detailEl.querySelector('#tenant-tabs');
         if (modeRow && authLabel && tabRow && snippetList) {
           let currentMode = activeMode;
+          let currentTenantId = initialTenantId;
 
           const setActiveMode = modeKey => {
             currentMode = modeKey;
@@ -606,8 +1183,16 @@
             const showAuthLabel = modeKey === 'local';
             tabRow.style.display = showAuthTabs ? '' : 'none';
             authLabel.style.display = showAuthLabel ? '' : 'none';
+            if (modeBadge instanceof HTMLElement) {
+              modeBadge.textContent = getModeLabel(modeKey);
+            }
+            if (apiEndpointEnvLabel) {
+              const showApiEndpointEnvLabel = modeKey === 'local' && !!apiEndpointEnvText;
+              apiEndpointEnvLabel.style.display = showApiEndpointEnvLabel ? '' : 'none';
+            }
             const currentAuth = (tabRow.querySelector('.tab.active') || tabRow.querySelector('.tab'))?.getAttribute('data-auth');
-            snippetList.innerHTML = renderSnippets(profile, currentAuth, currentMode);
+            snippetList.innerHTML = renderSnippets(profile, currentAuth, currentMode, currentTenantId);
+            wireClientTabs(snippetList);
             wireSnippetFormatTabs(snippetList);
           };
 
@@ -619,16 +1204,34 @@
               tab.setAttribute('aria-selected', isActive ? 'true' : 'false');
               tab.setAttribute('tabindex', isActive ? '0' : '-1');
               if (isActive) {
-                activeTabId = tab.id || null;
-              }
-            });
-            snippetList.innerHTML = renderSnippets(profile, authKey, currentMode);
+                  activeTabId = tab.id || null;
+                }
+              });
+            snippetList.innerHTML = renderSnippets(profile, authKey, currentMode, currentTenantId);
+            wireClientTabs(snippetList);
             wireSnippetFormatTabs(snippetList);
             if (activeTabId) {
               snippetList.setAttribute('aria-labelledby', activeTabId);
             } else {
               snippetList.removeAttribute('aria-labelledby');
             }
+          };
+
+          const setActiveTenant = tenantId => {
+            currentTenantId = tenantId;
+            tenantSelectionByProfile.set(profile.profileId, tenantId);
+            if (tenantRow) {
+              tenantRow.querySelectorAll('[data-tenant-id]').forEach(tab => {
+                const isActive = tab.getAttribute('data-tenant-id') === tenantId;
+                tab.classList.toggle('active', isActive);
+                tab.setAttribute('aria-selected', isActive ? 'true' : 'false');
+                tab.setAttribute('tabindex', isActive ? '0' : '-1');
+              });
+            }
+            const currentAuth = (tabRow.querySelector('.tab.active') || tabRow.querySelector('.tab'))?.getAttribute('data-auth');
+            snippetList.innerHTML = renderSnippets(profile, currentAuth, currentMode, currentTenantId);
+            wireClientTabs(snippetList);
+            wireSnippetFormatTabs(snippetList);
           };
 
           modeRow.addEventListener('click', event => {
@@ -718,6 +1321,54 @@
               focusTabAt(tabs.length - 1);
             }
           });
+
+          if (tenantRow) {
+            tenantRow.addEventListener('click', event => {
+              const target = event.target;
+              if (!(target instanceof HTMLElement)) return;
+              const tenantButton = target.closest('[data-tenant-id]');
+              if (!(tenantButton instanceof HTMLElement)) return;
+              const tenantId = tenantButton.getAttribute('data-tenant-id');
+              if (!tenantId) return;
+              setActiveTenant(tenantId);
+            });
+
+            tenantRow.addEventListener('keydown', event => {
+              const tabs = Array.from(tenantRow.querySelectorAll('[role="tab"]'));
+              if (tabs.length === 0) return;
+
+              const currentIndex = tabs.findIndex(tab => tab === document.activeElement);
+              if (currentIndex === -1) return;
+
+              const focusTabAt = index => {
+                const nextTab = tabs[index];
+                if (!nextTab) return;
+                nextTab.focus();
+                const tenantId = nextTab.getAttribute('data-tenant-id');
+                if (tenantId) setActiveTenant(tenantId);
+              };
+
+              if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
+                event.preventDefault();
+                focusTabAt((currentIndex + 1) % tabs.length);
+                return;
+              }
+              if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
+                event.preventDefault();
+                focusTabAt((currentIndex - 1 + tabs.length) % tabs.length);
+                return;
+              }
+              if (event.key === 'Home') {
+                event.preventDefault();
+                focusTabAt(0);
+                return;
+              }
+              if (event.key === 'End') {
+                event.preventDefault();
+                focusTabAt(tabs.length - 1);
+              }
+            });
+          }
 
           const initialActiveTab = tabRow.querySelector('.tab.active');
           if (initialActiveTab && initialActiveTab.id) {

@@ -1373,7 +1373,14 @@ describe('HttpClient - API metrics', () => {
   it('records API call metrics on success', async () => {
     const metrics = new MetricsCollector({ enabled: true, prefix: 'test_' });
     const interceptors = new InterceptorChain({});
-    const client = new HttpClient('https://api.example.com', interceptors, metrics, undefined, mockSSRFValidator);
+    const client = new HttpClient(
+      'https://api.example.com',
+      interceptors,
+      metrics,
+      undefined,
+      mockSSRFValidator,
+      { profileId: 'grafana', tenantId: 'team-a' }
+    );
 
     setupFetchMock({ ok: true }, { status: 200, headers: { 'Content-Type': 'application/json' } });
 
@@ -1383,6 +1390,8 @@ describe('HttpClient - API metrics', () => {
     expect(output).toContain('test_api_calls_total');
     expect(output).toContain('operation="get_test"');
     expect(output).toContain('status="2xx"');
+    expect(output).toContain('profile_id="grafana"');
+    expect(output).toContain('tenant_id="team-a"');
   });
 
   it('records API call error metrics on failure', async () => {
@@ -1401,6 +1410,8 @@ describe('HttpClient - API metrics', () => {
     expect(output).toContain('status="5xx"');
     expect(output).toContain('test_api_call_errors_total');
     expect(output).toContain('error_type="NetworkError"');
+    expect(output).toContain('profile_id="unknown"');
+    expect(output).toContain('tenant_id="none"');
   });
 
   it('records UnknownError for non-Error failures', async () => {

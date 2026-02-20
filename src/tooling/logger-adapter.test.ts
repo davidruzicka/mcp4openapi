@@ -1,6 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
 import { LoggerAdapter } from './logger-adapter.js';
-import type { DebugLogger } from './proxy-executor.js';
 
 describe('LoggerAdapter', () => {
   it('should delegate debug calls', () => {

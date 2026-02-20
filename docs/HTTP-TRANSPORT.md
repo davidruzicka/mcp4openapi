@@ -126,6 +126,12 @@ Routes:
 - `DELETE /profile/:profileId/mcp`
 - Legacy alias: `POST|GET|DELETE /profile/:profileId/sse`
 - Optional HTML profile index: `GET /` (when `MCP4_HTTP_PROFILE_INDEX=true`)
+  - Keeps current API endpoint display semantics (env/default source)
+  - When tenant config is available for a profile, shows tenant availability and tenant list per profile
+  - Includes interactive tenant picker for supported remote snippet formats and injects `X-Mcp4-Tenant-Id` into copied snippet output
+  - Picker includes an explicit "no tenant" option that keeps snippet headers unchanged
+  - For `mask:` tenant selection, picker also injects example `X-Mcp4-Api-Base-Url` with wildcard parts replaced by `<your-part>`
+  - In `Local stdio` mode, tenant selection injects tenant API base URL into snippet env config for supported local snippet formats
 
 Default profile behavior:
 - If `MCP4_PROFILE_PATH` (or `--profile-path`) is set, `/mcp` and `/sse` stay available.
@@ -147,6 +153,81 @@ Root protected resource metadata also supports a `resource` query parameter for 
 - `/.well-known/oauth-protected-resource/mcp?resource=http://host/profile/:profileId/mcp`
 
 If no default profile is configured, use the `resource` query parameter to resolve metadata.
+
+
+
+### Tenant Session Override (HTTP)
+
+You can configure per-session tenant selection using either:
+- `MCP4_HTTP_TENANTS_FILE=/path/to/tenants.json`
+- `MCP4_HTTP_TENANTS_JSON={...}`
+
+`api_base_url` selector formats:
+- exact: `https://team-a.example.com/api`
+- mask: `mask:https://grafana.*.security.*.ops.iszn.cz/api`
+
+Required tenant scoping:
+- `profile_ids`: required non-empty array of profile ids where the tenant is active
+
+Header selectors (initialize request only):
+- `X-Mcp4-Tenant-Id`: select tenant by `tenant_id`.
+- `X-Mcp4-Api-Base-Url`: select tenant by exact or mask selector.
+
+Deterministic resolution order at initialization:
+1. `X-Mcp4-Tenant-Id`
+2. exact match for `X-Mcp4-Api-Base-Url`
+3. `mask:` match for `X-Mcp4-Api-Base-Url`
+
+Mask selector behavior:
+- For exact selectors, `X-Mcp4-Tenant-Id` or `X-Mcp4-Api-Base-Url` is sufficient.
+- For mask selectors, concrete URL selection requires `X-Mcp4-Api-Base-Url`.
+- `X-Mcp4-Tenant-Id` for mask entries is optional guard; when both headers are provided, they must resolve to the same tenant.
+
+Session immutability:
+- On non-initialize requests, selector headers are optional.
+- If provided, they must match the stored session tenant selection (tenant id and concrete base URL).
+- Mismatch returns `400 ValidationError`.
+- If no tenant headers are sent, tenant override is skipped and profile-level config is used.
+
+Security and validation rules:
+- Tenant base URLs are allowlist-only; unknown selectors are rejected.
+- `https` is required by default (`http` only with `MCP4_HTTP_TENANTS_ALLOW_HTTP=true`).
+- Credentials, query, and fragment are rejected in selectors.
+- `default` tenant property is not supported.
+- `mask:` grammar:
+  - wildcard `*` is allowed only as a full hostname label
+  - literal hostname labels must match `[a-z0-9-]+`
+  - wildcard `*` is allowed in path only as a full path segment
+  - one `*` path segment matches exactly one concrete path segment
+- Startup fail-fast collision checks:
+  - exact vs exact with incompatible auth
+  - exact vs mask intersection
+  - mask vs mask intersection
+- Runtime ambiguity guard: if one concrete URL matches multiple mask tenants, request fails with `400 ValidationError`.
+
+Tenant config example (exact + mask):
+
+```json
+{
+  "version": 1,
+  "tenants": [
+    {
+      "tenant_id": "team-a",
+      "profile_ids": ["grafana", "grafana-optimized"],
+      "api_base_url": "https://team-a.example.com/api",
+      "auth_mode": "token",
+      "auth": { "type": "bearer", "value_from_env": "TEAM_A_TOKEN" }
+    },
+    {
+      "tenant_id": "grafana-security",
+      "profile_ids": ["grafana-security"],
+      "api_base_url": "mask:https://grafana.*.security.*.ops.iszn.cz/api",
+      "auth_mode": "token",
+      "auth": { "type": "bearer", "value_from_env": "GRAFANA_SECURITY_TOKEN" }
+    }
+  ]
+}
+```
 
 ### Reverse Proxy Support
 
@@ -735,23 +816,23 @@ curl http://localhost:3003/metrics
 
 ```prometheus
 # HTTP metrics
-mcp_http_requests_total{method,path,status}
-mcp_http_request_duration_seconds{method,path,status}
+mcp_http_requests_total{method,path,status,profile_id,tenant_id}
+mcp_http_request_duration_seconds{method,path,status,profile_id,tenant_id}
 
 # Session metrics
-mcp_sessions_active
-mcp_sessions_created_total
-mcp_sessions_destroyed_total
+mcp_sessions_active{profile_id,tenant_id}
+mcp_sessions_created_total{profile_id,tenant_id}
+mcp_sessions_destroyed_total{profile_id,tenant_id}
 
 # Tool call metrics
-mcp_tool_calls_total{tool,status}
-mcp_tool_call_duration_seconds{tool,status}
-mcp_tool_call_errors_total{tool,error_type}
+mcp_tool_calls_total{tool,status,profile_id,tenant_id}
+mcp_tool_call_duration_seconds{tool,status,profile_id,tenant_id}
+mcp_tool_call_errors_total{tool,error_type,profile_id,tenant_id}
 
 # API call metrics (to backend)
-mcp_api_calls_total{operation,status}
-mcp_api_call_duration_seconds{operation,status}
-mcp_api_call_errors_total{operation,error_type}
+mcp_api_calls_total{operation,status,profile_id,tenant_id}
+mcp_api_call_duration_seconds{operation,status,profile_id,tenant_id}
+mcp_api_call_errors_total{operation,error_type,profile_id,tenant_id}
 ```
 
 **Prometheus scrape config**:
