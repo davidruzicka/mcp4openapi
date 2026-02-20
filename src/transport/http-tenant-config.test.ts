@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { writeFile, unlink } from 'node:fs/promises';
 import type { HttpProfileContext } from '../types/http-transport.js';
 import { ConsoleLogger } from '../core/logger.js';
@@ -87,6 +87,34 @@ describe('http-tenant-config', () => {
   it('fails on invalid tenant json payload', () => {
     process.env.MCP4_HTTP_TENANTS_JSON = '{invalid-json';
     expect(() => loadRawTenantsConfigFromEnv()).toThrow(/Invalid tenant JSON config/);
+  });
+
+  it('fails when tenant config payload is not an object', () => {
+    process.env.MCP4_HTTP_TENANTS_JSON = JSON.stringify(null);
+    expect(() => loadRawTenantsConfigFromEnv()).toThrow(/Tenant config must be an object/i);
+  });
+
+  it('fails when tenant config version is not supported', () => {
+    process.env.MCP4_HTTP_TENANTS_JSON = JSON.stringify({
+      version: 2,
+      tenants: [
+        {
+          tenant_id: 'team-a',
+          api_base_url: 'https://team-a.example.com/api',
+          auth_mode: 'token',
+          auth: { type: 'bearer', value_from_env: 'TEAM_A_TOKEN' },
+        },
+      ],
+    });
+    expect(() => loadRawTenantsConfigFromEnv()).toThrow(/Unsupported tenant config version/i);
+  });
+
+  it('fails when tenants array is empty', () => {
+    process.env.MCP4_HTTP_TENANTS_JSON = JSON.stringify({
+      version: 1,
+      tenants: [],
+    });
+    expect(() => loadRawTenantsConfigFromEnv()).toThrow(/non-empty tenants array/i);
   });
 
   it('fails for duplicate tenant_id', () => {
@@ -195,6 +223,24 @@ describe('http-tenant-config', () => {
     expect(() => buildTenantIndexForProfile(invalidScheme as any, profileContext, logger)).toThrow(/must use https/);
   });
 
+  it('fails on invalid tenant api_base_url values', () => {
+    const malformedUrl = {
+      version: 1,
+      tenants: [
+        { tenant_id: 'team-a', api_base_url: 'not-a-url', auth_mode: 'token', auth: { type: 'bearer', value_from_env: 'A' } },
+      ],
+    };
+    expect(() => buildTenantIndexForProfile(malformedUrl as any, profileContext, logger)).toThrow(/Invalid tenant api_base_url/i);
+
+    const credentialsUrl = {
+      version: 1,
+      tenants: [
+        { tenant_id: 'team-b', api_base_url: 'https://user:pass@example.com/api', auth_mode: 'token', auth: { type: 'bearer', value_from_env: 'B' } },
+      ],
+    };
+    expect(() => buildTenantIndexForProfile(credentialsUrl as any, profileContext, logger)).toThrow(/must not contain credentials/i);
+  });
+
   it('allows http scheme only when MCP4_HTTP_TENANTS_ALLOW_HTTP=true', () => {
     process.env.MCP4_HTTP_TENANTS_ALLOW_HTTP = 'true';
     const raw = {
@@ -246,5 +292,96 @@ describe('http-tenant-config', () => {
       byBaseUrl: new Map(),
     };
     expect(() => resolveTenantFromHeaders(customIndex as any, undefined, undefined)).toThrow(/selector is required/i);
+  });
+
+  it('fails when token auth_mode has no token auth configuration', () => {
+    const oauthOnlyProfileContext: HttpProfileContext = {
+      profileId: 'default',
+      baseUrl: 'https://api.default.example.com',
+      authConfigs: [{ type: 'oauth' }],
+      oauthConfig: {
+        authorization_endpoint: 'https://auth.example.com/oauth/authorize',
+        token_endpoint: 'https://auth.example.com/oauth/token',
+        client_id: 'oauth-client',
+        client_secret: 'oauth-secret',
+      },
+    };
+
+    const raw = {
+      version: 1,
+      tenants: [
+        { tenant_id: 'team-a', api_base_url: 'https://team-a.example.com/api', auth_mode: 'token' as const },
+      ],
+    };
+
+    expect(() => buildTenantIndexForProfile(raw as any, oauthOnlyProfileContext, logger)).toThrow(/requires token auth_mode/i);
+  });
+
+  it('fails when oauth auth_mode has oauth interceptor without oauth configuration', () => {
+    const oauthProfileContextWithoutConfig: HttpProfileContext = {
+      profileId: 'default',
+      baseUrl: 'https://api.default.example.com',
+      authConfigs: [{ type: 'oauth' }],
+    };
+
+    const raw = {
+      version: 1,
+      tenants: [
+        { tenant_id: 'team-a', api_base_url: 'https://team-a.example.com/api', auth_mode: 'oauth' as const },
+      ],
+    };
+
+    expect(() => buildTenantIndexForProfile(raw as any, oauthProfileContextWithoutConfig, logger)).toThrow(
+      /requires oauth auth_mode but no oauth configuration is available/i,
+    );
+  });
+
+  it('fails when more than one tenant is marked as default', () => {
+    const raw = {
+      version: 1,
+      tenants: [
+        { tenant_id: 'team-a', default: true, api_base_url: 'https://team-a.example.com/api', auth_mode: 'token', auth: { type: 'bearer', value_from_env: 'A' } },
+        { tenant_id: 'team-b', default: true, api_base_url: 'https://team-b.example.com/api', auth_mode: 'token', auth: { type: 'bearer', value_from_env: 'B' } },
+      ],
+    };
+
+    expect(() => buildTenantIndexForProfile(raw as any, profileContext, logger)).toThrow(/Only one tenant can be marked as default/i);
+  });
+
+  it('allows duplicate base URL for identical auth config and warns', () => {
+    const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    const raw = {
+      version: 1,
+      tenants: [
+        {
+          tenant_id: 'team-a',
+          default: true,
+          api_base_url: 'https://same.example.com/api',
+          auth_mode: 'token',
+          auth: { type: 'bearer', value_from_env: 'SHARED_TOKEN' },
+        },
+        {
+          tenant_id: 'team-b',
+          api_base_url: 'https://same.example.com/api/',
+          auth_mode: 'token',
+          auth: { type: 'bearer', value_from_env: 'SHARED_TOKEN' },
+        },
+      ],
+    };
+
+    try {
+      const index = buildTenantIndexForProfile(raw as any, profileContext, logger);
+      expect(index.byTenantId.size).toBe(2);
+      expect(index.byBaseUrl.size).toBe(1);
+      expect(warnSpy).toHaveBeenCalledWith(
+        'Multiple tenants share the same api_base_url and auth config',
+        expect.objectContaining({
+          profileId: 'default',
+          tenantIds: ['team-a', 'team-b'],
+        }),
+      );
+    } finally {
+      warnSpy.mockRestore();
+    }
   });
 });
