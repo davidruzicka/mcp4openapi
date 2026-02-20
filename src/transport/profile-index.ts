@@ -56,7 +56,6 @@ interface ProfileIndexI18n {
   tenantSectionLabel: string;
   tenantsAvailableLabel: string;
   tenantHeaderLabel: string;
-  tenantDefaultLabel: string;
   tenantSelectorLabel: string;
   tenantMaskNote: string;
   tenantPickerScopeLabel: string;
@@ -83,12 +82,10 @@ type RenderAuthMethod = ProfileAuthMethod | { type: 'none' };
 export interface ProfileIndexTenantSummary {
   tenantsEnabled: boolean;
   selectionHeaderName: 'X-Mcp4-Tenant-Id';
-  profileDefaultAvailable: boolean;
   tenants: Array<{
     tenantId: string;
     selectorType: TenantSelectorType;
     selectorDisplay: string;
-    isDefault: boolean;
   }>;
 }
 
@@ -214,12 +211,11 @@ export function buildProfileIndexI18n(locale: ProfileIndexLocale): ProfileIndexI
       tenantSectionLabel: 'Tenanti',
       tenantsAvailableLabel: 'Dostupní tenanti',
       tenantHeaderLabel: 'Hlavička pro výběr',
-      tenantDefaultLabel: 'výchozí',
       tenantSelectorLabel: 'Selektor',
       tenantMaskNote: 'Tenant se selektorem mask: vyžaduje při inicializaci také konkrétní X-Mcp4-Api-Base-Url.',
       tenantPickerScopeLabel: 'Interaktivní výběr tenanta je dostupný jen pro klienty s ověřenou podporou vlastních hlaviček.',
-      tenantProfileDefaultLabel: 'Výchozí profil (bez tenanta)',
-      tenantProfileDefaultNote: 'Do konfigurace se nepřidá X-Mcp4-Tenant-Id.',
+      tenantProfileDefaultLabel: 'Bez tenanta (použít konfiguraci profilu)',
+      tenantProfileDefaultNote: 'Do konfigurace se nepřidá X-Mcp4-Tenant-Id ani X-Mcp4-Api-Base-Url.',
     };
   }
 
@@ -272,12 +268,11 @@ export function buildProfileIndexI18n(locale: ProfileIndexLocale): ProfileIndexI
     tenantSectionLabel: 'Tenants',
     tenantsAvailableLabel: 'Available tenants',
     tenantHeaderLabel: 'Selection header',
-    tenantDefaultLabel: 'default',
     tenantSelectorLabel: 'Selector',
     tenantMaskNote: 'Tenants configured with mask: also require concrete X-Mcp4-Api-Base-Url on initialization.',
     tenantPickerScopeLabel: 'Interactive tenant picker is available only for clients with verified custom-header support.',
-    tenantProfileDefaultLabel: 'Profile default (no tenant)',
-    tenantProfileDefaultNote: 'X-Mcp4-Tenant-Id will not be added to the snippet.',
+    tenantProfileDefaultLabel: 'No tenant (use profile config)',
+    tenantProfileDefaultNote: 'X-Mcp4-Tenant-Id and X-Mcp4-Api-Base-Url will not be added to the snippet.',
   };
 }
 

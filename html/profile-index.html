@@ -984,20 +984,15 @@
         const getModeLabel = modeKey => modeTabs.find(tab => tab.key === modeKey)?.label || modeKey;
         const tenantSummary = profile.tenantSummary;
         const tenantList = tenantSummary && tenantSummary.tenantsEnabled ? (tenantSummary.tenants || []) : [];
-        const profileDefaultSelectionAvailable = tenantSummary && tenantSummary.profileDefaultAvailable === true;
+        const profileDefaultSelectionAvailable = tenantList.length > 0;
         const persistedTenantId = tenantSelectionByProfile.get(profile.profileId);
-        const defaultTenant = tenantList.find(item => item.isDefault) || tenantList[0];
         const persistedSelectionIsValid = typeof persistedTenantId === 'string' && (
           persistedTenantId === PROFILE_DEFAULT_TENANT_SELECTION ||
           tenantList.some(item => item.tenantId === persistedTenantId)
         );
         const initialTenantId = persistedSelectionIsValid
           ? persistedTenantId
-          : (
-            profileDefaultSelectionAvailable
-              ? PROFILE_DEFAULT_TENANT_SELECTION
-              : (defaultTenant ? defaultTenant.tenantId : null)
-          );
+          : (profileDefaultSelectionAvailable ? PROFILE_DEFAULT_TENANT_SELECTION : null);
         if (initialTenantId) {
           tenantSelectionByProfile.set(profile.profileId, initialTenantId);
         }
@@ -1035,13 +1030,12 @@
                     tabindex="${initialTenantId === PROFILE_DEFAULT_TENANT_SELECTION ? '0' : '-1'}"
                     data-tenant-id="${PROFILE_DEFAULT_TENANT_SELECTION}"
                   >
-                    <div class="tenant-title">${escapeHtml(i18n.tenantProfileDefaultLabel || 'Profile default (no tenant)')}</div>
-                    <div class="tenant-selector">${escapeHtml(i18n.tenantProfileDefaultNote || 'X-Mcp4-Tenant-Id will not be added to the snippet.')}</div>
+                    <div class="tenant-title">${escapeHtml(i18n.tenantProfileDefaultLabel || 'No tenant (use profile config)')}</div>
+                    <div class="tenant-selector">${escapeHtml(i18n.tenantProfileDefaultNote || 'X-Mcp4-Tenant-Id and X-Mcp4-Api-Base-Url will not be added to the snippet.')}</div>
                   </button>
                 ` : ''}
                 ${tenantList.map(item => {
                   const isActive = item.tenantId === initialTenantId;
-                  const defaultLabel = item.isDefault ? ` (${i18n.tenantDefaultLabel || 'default'})` : '';
                   return `
                     <button
                       class="tenant-item${isActive ? ' active' : ''}"
@@ -1051,7 +1045,7 @@
                       tabindex="${isActive ? '0' : '-1'}"
                       data-tenant-id="${escapeHtml(item.tenantId)}"
                     >
-                      <div class="tenant-title">${escapeHtml(item.tenantId)}${escapeHtml(defaultLabel)}</div>
+                      <div class="tenant-title">${escapeHtml(item.tenantId)}</div>
                       <div class="tenant-selector">${escapeHtml(i18n.tenantSelectorLabel || 'Selector')}: ${escapeHtml(item.selectorDisplay)}</div>
                     </button>
                   `;

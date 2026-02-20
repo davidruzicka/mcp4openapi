@@ -45,7 +45,6 @@ describe('http-tenant-config', () => {
       tenants: [
         {
           tenant_id: 'team-a',
-          default: true,
           profile_ids: ['profile-a'],
           api_base_url: 'https://team-a.example.com/api',
           auth_mode: 'token',
@@ -53,7 +52,6 @@ describe('http-tenant-config', () => {
         },
         {
           tenant_id: 'team-b',
-          default: true,
           profile_ids: ['profile-b'],
           api_base_url: 'https://team-b.example.com/api',
           auth_mode: 'token',
@@ -65,12 +63,12 @@ describe('http-tenant-config', () => {
     const profileAIndex = buildTenantIndexForProfile(raw as any, { ...profileContext, profileId: 'profile-a' }, logger);
     expect(profileAIndex.enabled).toBe(true);
     expect(Array.from(profileAIndex.byTenantId.keys())).toEqual(['team-a']);
-    expect(resolveTenantFromHeaders(profileAIndex, undefined, undefined)?.tenantId).toBe('team-a');
+    expect(resolveTenantFromHeaders(profileAIndex, undefined, undefined)).toBeNull();
 
     const profileBIndex = buildTenantIndexForProfile(raw as any, { ...profileContext, profileId: 'profile-b' }, logger);
     expect(profileBIndex.enabled).toBe(true);
     expect(Array.from(profileBIndex.byTenantId.keys())).toEqual(['team-b']);
-    expect(resolveTenantFromHeaders(profileBIndex, undefined, undefined)?.tenantId).toBe('team-b');
+    expect(resolveTenantFromHeaders(profileBIndex, undefined, undefined)).toBeNull();
 
     const unmatchedIndex = buildTenantIndexForProfile(raw as any, { ...profileContext, profileId: 'profile-c' }, logger);
     expect(unmatchedIndex.enabled).toBe(false);
@@ -85,7 +83,6 @@ describe('http-tenant-config', () => {
         {
           tenant_id: 'team-a',
           profile_ids: ['default'],
-          default: true,
           api_base_url: 'https://team-a.example.com/api',
           auth_mode: 'token',
           auth: { type: 'bearer', value_from_env: 'TEAM_A_TOKEN' },
@@ -111,7 +108,6 @@ describe('http-tenant-config', () => {
           {
             tenant_id: 'team-file',
             profile_ids: ['default'],
-            default: true,
             api_base_url: 'https://file.example.com/api',
             auth_mode: 'token',
             auth: { type: 'bearer', value_from_env: 'FILE_TOKEN' },
@@ -335,12 +331,12 @@ describe('http-tenant-config', () => {
     const raw = {
       version: 1,
       tenants: [
-        { tenant_id: 'team-a', profile_ids: ['default'], default: true, api_base_url: 'http://insecure.example.com/api/', auth_mode: 'token', auth: { type: 'bearer', value_from_env: 'A' } },
+        { tenant_id: 'team-a', profile_ids: ['default'], api_base_url: 'http://insecure.example.com/api/', auth_mode: 'token', auth: { type: 'bearer', value_from_env: 'A' } },
       ],
     };
 
     const index = buildTenantIndexForProfile(raw as any, profileContext, logger);
-    const resolved = resolveTenantFromHeaders(index, undefined, undefined);
+    const resolved = resolveTenantFromHeaders(index, 'team-a', undefined);
     expect(resolved?.tenantBaseUrl).toBe('http://insecure.example.com/api');
   });
 
@@ -348,7 +344,7 @@ describe('http-tenant-config', () => {
     const raw = {
       version: 1,
       tenants: [
-        { tenant_id: 'team-a', profile_ids: ['default'], default: true, api_base_url: 'https://a.example.com/api', auth_mode: 'token', auth: { type: 'bearer', value_from_env: 'A' } },
+        { tenant_id: 'team-a', profile_ids: ['default'], api_base_url: 'https://a.example.com/api', auth_mode: 'token', auth: { type: 'bearer', value_from_env: 'A' } },
         { tenant_id: 'team-b', profile_ids: ['default'], api_base_url: 'https://b.example.com/api', auth_mode: 'token', auth: { type: 'bearer', value_from_env: 'B' } },
       ],
     };
@@ -359,7 +355,7 @@ describe('http-tenant-config', () => {
     expect(() => resolveTenantFromHeaders(index, 'team-a', 'https://b.example.com/api')).toThrow(/mismatch/);
   });
 
-  it('falls back to first tenant when default is not configured', () => {
+  it('returns null when no tenant selector headers are provided', () => {
     const raw = {
       version: 1,
       tenants: [
@@ -370,34 +366,7 @@ describe('http-tenant-config', () => {
 
     const index = buildTenantIndexForProfile(raw as any, profileContext, logger);
     const resolved = resolveTenantFromHeaders(index, undefined, undefined);
-    expect(index.defaultTenantId).toBe('first');
-    expect(resolved?.tenantId).toBe('first');
-  });
-
-  it('returns profile default context when tenant selectors are omitted and profile default is allowed', () => {
-    const raw = {
-      version: 1,
-      tenants: [
-        { tenant_id: 'first', profile_ids: ['default'], api_base_url: 'https://first.example.com/api', auth_mode: 'token', auth: { type: 'bearer', value_from_env: 'A' } },
-      ],
-    };
-
-    const index = buildTenantIndexForProfile(raw as any, profileContext, logger);
-    const resolved = resolveTenantFromHeaders(index, undefined, undefined, {
-      allowProfileDefaultWithoutTenant: true,
-    });
     expect(resolved).toBeNull();
-  });
-
-  it('requires selector when index is enabled without default tenant', () => {
-    const customIndex = {
-      enabled: true,
-      byTenantId: new Map(),
-      byBaseUrl: new Map(),
-      maskSelectors: [],
-      selectorTypeByTenantId: new Map(),
-    };
-    expect(() => resolveTenantFromHeaders(customIndex as any, undefined, undefined)).toThrow(/selector is required/i);
   });
 
   it('fails when token auth_mode has no token auth configuration', () => {
@@ -442,16 +411,15 @@ describe('http-tenant-config', () => {
     );
   });
 
-  it('fails when more than one tenant is marked as default', () => {
+  it('rejects deprecated tenant default property', () => {
     const raw = {
       version: 1,
       tenants: [
         { tenant_id: 'team-a', profile_ids: ['default'], default: true, api_base_url: 'https://team-a.example.com/api', auth_mode: 'token', auth: { type: 'bearer', value_from_env: 'A' } },
-        { tenant_id: 'team-b', profile_ids: ['default'], default: true, api_base_url: 'https://team-b.example.com/api', auth_mode: 'token', auth: { type: 'bearer', value_from_env: 'B' } },
       ],
     };
 
-    expect(() => buildTenantIndexForProfile(raw as any, profileContext, logger)).toThrow(/Only one tenant can be marked as default/i);
+    expect(() => buildTenantIndexForProfile(raw as any, profileContext, logger)).toThrow(/unsupported 'default' property/i);
   });
 
   it('allows duplicate base URL for identical auth config and warns', () => {
@@ -462,7 +430,6 @@ describe('http-tenant-config', () => {
         {
           tenant_id: 'team-a',
           profile_ids: ['default'],
-          default: true,
           api_base_url: 'https://same.example.com/api',
           auth_mode: 'token',
           auth: { type: 'bearer', value_from_env: 'SHARED_TOKEN' },
@@ -559,14 +526,13 @@ describe('http-tenant-config', () => {
     ).toThrow(/Unknown tenant base URL selector/i);
   });
 
-  it('rejects default fallback for mask tenant without concrete selector', () => {
+  it('returns null for mask tenant when no selector headers are provided', () => {
     const raw = {
       version: 1,
       tenants: [
         {
           tenant_id: 'grafana',
           profile_ids: ['default'],
-          default: true,
           api_base_url: 'mask:https://grafana.*.ops.iszn.cz/api',
           auth_mode: 'token',
           auth: { type: 'bearer', value_from_env: 'GRAFANA_TOKEN' },
@@ -575,7 +541,7 @@ describe('http-tenant-config', () => {
     };
 
     const index = buildTenantIndexForProfile(raw as any, profileContext, logger);
-    expect(() => resolveTenantFromHeaders(index, undefined, undefined)).toThrow(/default tenant 'grafana' uses mask selector/i);
+    expect(resolveTenantFromHeaders(index, undefined, undefined)).toBeNull();
   });
 
   it('rejects ambiguous mask base URL selector at runtime', () => {
@@ -1083,14 +1049,6 @@ describe('http-tenant-config', () => {
       vi.stubGlobal('URL', originalURL);
     }
 
-    const indexWithMissingDefaultMapping = {
-      enabled: true,
-      defaultTenantId: 'missing-default',
-      byTenantId: new Map(),
-      byBaseUrl: new Map(),
-      maskSelectors: [],
-      selectorTypeByTenantId: new Map(),
-    };
-    expect(resolveTenantFromHeaders(indexWithMissingDefaultMapping as any, undefined, undefined)).toBeNull();
+    expect(resolveTenantFromHeaders(runtimeMaskIndex as any, undefined, undefined)).toBeNull();
   });
 });

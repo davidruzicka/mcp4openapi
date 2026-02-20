@@ -485,19 +485,16 @@ describe('profile index helpers', () => {
         tenantSummary: {
           tenantsEnabled: true,
           selectionHeaderName: 'X-Mcp4-Tenant-Id',
-          profileDefaultAvailable: true,
           tenants: [
             {
               tenantId: 'team-a',
               selectorType: 'exact',
               selectorDisplay: 'https://grafana.team-a.ops.iszn.cz/api',
-              isDefault: true,
             },
             {
               tenantId: 'team-mask',
               selectorType: 'mask',
               selectorDisplay: 'mask:https://grafana.*.ops.iszn.cz/api',
-              isDefault: false,
             },
           ],
         },
@@ -509,7 +506,6 @@ describe('profile index helpers', () => {
 
     expect(profile.tenantSummary?.tenantsEnabled).toBe(true);
     expect(profile.tenantSummary?.selectionHeaderName).toBe('X-Mcp4-Tenant-Id');
-    expect(profile.tenantSummary?.profileDefaultAvailable).toBe(true);
     expect(profile.tenantSummary?.tenants).toHaveLength(2);
     expect(profile.tenantSummary?.tenants[0].tenantId).toBe('team-a');
     expect(profile.tenantSummary?.tenants[1].selectorType).toBe('mask');
@@ -527,13 +523,11 @@ describe('profile index helpers', () => {
         tenantSummary: {
           tenantsEnabled: true,
           selectionHeaderName: 'X-Mcp4-Tenant-Id',
-          profileDefaultAvailable: true,
           tenants: [
             {
               tenantId: 'team-a',
               selectorType: 'exact',
               selectorDisplay: 'https://grafana.team-a.ops.iszn.cz/api',
-              isDefault: true,
             },
           ],
         },
@@ -546,7 +540,6 @@ describe('profile index helpers', () => {
 
     expect(html).toContain('"tenantSummary":{"tenantsEnabled":true');
     expect(html).toContain('"selectionHeaderName":"X-Mcp4-Tenant-Id"');
-    expect(html).toContain('"profileDefaultAvailable":true');
     expect(html).toContain('injectTenantHeaderIntoJsonSnippet');
     expect(html).toContain('injectTenantApiBaseUrlIntoJsonSnippet');
     expect(html).toContain('injectTenantApiBaseUrlIntoCodexToml');

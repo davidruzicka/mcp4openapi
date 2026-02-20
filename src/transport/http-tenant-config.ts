@@ -2,6 +2,7 @@ import fs from 'fs';
 import type { Logger } from '../core/logger.js';
 import { ConfigurationError, ValidationError } from '../core/errors.js';
 import type { AuthInterceptor, OAuthConfig } from '../types/profile.js';
+import { hasOwnKey } from '../validation/validation-utils.js';
 import type {
   HttpTenantIndex,
   HttpTenantsConfig,
@@ -447,7 +448,6 @@ export function buildTenantIndexForProfile(
   const byBaseUrl = new Map<string, ResolvedTenantContext>();
   const maskSelectors: TenantMaskSelectorEntry[] = [];
   const selectorTypeByTenantId = new Map<string, TenantSelectorType>();
-  let defaultTenantId: string | undefined;
 
   for (let i = 0; i < rawConfig.tenants.length; i += 1) {
     const tenant = rawConfig.tenants[i];
@@ -466,11 +466,8 @@ export function buildTenantIndexForProfile(
       throw new ValidationError(`Duplicate tenant_id '${resolved.tenantId}'.`);
     }
 
-    if (tenant.default === true) {
-      if (defaultTenantId) {
-        throw new ValidationError('Only one tenant can be marked as default.');
-      }
-      defaultTenantId = resolved.tenantId;
+    if (hasOwnKey(tenant as unknown as Record<string, unknown>, 'default')) {
+      throw new ValidationError(`Tenant '${resolved.tenantId}' uses unsupported 'default' property.`);
     }
 
     if (built.selectorType === 'exact') {
@@ -541,17 +538,8 @@ export function buildTenantIndexForProfile(
     };
   }
 
-  if (!defaultTenantId && byTenantId.size > 0) {
-    defaultTenantId = byTenantId.keys().next().value;
-    logger.warn('No default tenant configured, using first tenant as fallback.', {
-      profileId: profileContext.profileId,
-      tenantId: defaultTenantId,
-    });
-  }
-
   return {
     enabled: true,
-    defaultTenantId,
     byTenantId,
     byBaseUrl,
     maskSelectors,
@@ -563,9 +551,6 @@ export function resolveTenantFromHeaders(
   tenantIndex: HttpTenantIndex,
   tenantIdHeader: string | undefined,
   tenantBaseUrlHeader: string | undefined,
-  options?: {
-    allowProfileDefaultWithoutTenant?: boolean;
-  },
 ): ResolvedTenantContext | null {
   if (!tenantIndex.enabled) {
     return null;
@@ -615,25 +600,5 @@ export function resolveTenantFromHeaders(
     return byBaseUrl;
   }
 
-  if (!tenantIdHeader && !tenantBaseUrlHeader && options?.allowProfileDefaultWithoutTenant) {
-    return null;
-  }
-
-  if (!tenantIndex.defaultTenantId) {
-    throw new ValidationError('Tenant selector is required because no default tenant is configured.');
-  }
-
-  const fallback = tenantIndex.byTenantId.get(tenantIndex.defaultTenantId) || null;
-  if (!fallback) {
-    return null;
-  }
-
-  const fallbackType = tenantIndex.selectorTypeByTenantId.get(fallback.tenantId) || fallback.tenantSelectorType;
-  if (fallbackType === 'mask') {
-    throw new ValidationError(
-      `Tenant selector is required because default tenant '${fallback.tenantId}' uses mask selector.`,
-    );
-  }
-
-  return fallback;
+  return null;
 }

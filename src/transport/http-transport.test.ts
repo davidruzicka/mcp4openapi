@@ -115,7 +115,6 @@ describeIfListen('HttpTransport', () => {
         {
           tenant_id: 'team-a',
           profile_ids: ['default'],
-          default: true,
           api_base_url: 'https://team-a.example.com/api',
           auth_mode: 'token',
           auth: { type: 'bearer', value_from_env: 'TEAM_A_TOKEN' },
@@ -294,7 +293,6 @@ describeIfListen('HttpTransport', () => {
           {
             tenant_id: 'grafana',
             profile_ids: ['default'],
-            default: true,
             api_base_url: 'mask:https://grafana.*.ops.iszn.cz/api',
             auth_mode: 'token',
             auth: { type: 'bearer', value_from_env: 'GRAFANA_TOKEN' },
@@ -344,7 +342,6 @@ describeIfListen('HttpTransport', () => {
           {
             tenant_id: 'grafana',
             profile_ids: ['default'],
-            default: true,
             api_base_url: 'mask:https://grafana.*.ops.iszn.cz/api',
             auth_mode: 'token',
             auth: { type: 'bearer', value_from_env: 'GRAFANA_TOKEN' },
@@ -390,7 +387,6 @@ describeIfListen('HttpTransport', () => {
           {
             tenant_id: 'grafana',
             profile_ids: ['default'],
-            default: true,
             api_base_url: 'mask:https://grafana.*.ops.iszn.cz/api',
             auth_mode: 'token',
             auth: { type: 'bearer', value_from_env: 'GRAFANA_TOKEN' },
@@ -471,7 +467,6 @@ describeIfListen('HttpTransport', () => {
           baseUrl: 'https://default.example.com/api',
           tenantIndex: {
             enabled: true,
-            defaultTenantId: 'exact',
             byTenantId: new Map([
               ['exact', exactContext as any],
               ['mask', maskContext as any],
@@ -535,7 +530,6 @@ describeIfListen('HttpTransport', () => {
           {
             tenant_id: 'team-token',
             profile_ids: ['default'],
-            default: true,
             api_base_url: 'https://team-token.example.com/api',
             auth_mode: 'token',
           },
@@ -599,7 +593,6 @@ describeIfListen('HttpTransport', () => {
           {
             tenant_id: 'team-custom',
             profile_ids: ['default'],
-            default: true,
             api_base_url: 'https://team-custom.example.com/api',
             auth_mode: 'token',
             auth: { type: 'custom-header', header_name: 'X-Tenant-Token' },
@@ -647,7 +640,6 @@ describeIfListen('HttpTransport', () => {
           {
             tenant_id: 'team-custom',
             profile_ids: ['default'],
-            default: true,
             api_base_url: 'https://team-custom.example.com/api',
             auth_mode: 'token',
             auth: { type: 'custom-header', header_name: 'X-Tenant-Token' },
@@ -917,7 +909,6 @@ describeIfListen('HttpTransport', () => {
         tenants: [
           {
             tenant_id: 'team-a',
-            default: true,
             profile_ids: ['tenant-aware'],
             api_base_url: 'https://grafana.team-a.ops.iszn.cz/api',
             auth_mode: 'token',
@@ -967,19 +958,16 @@ describeIfListen('HttpTransport', () => {
       const withoutTenantData = response.body.profiles.find((profile: any) => profile.profileId === 'no-tenant-data');
       expect(withTenantData?.tenantSummary?.tenantsEnabled).toBe(true);
       expect(withTenantData?.tenantSummary?.selectionHeaderName).toBe('X-Mcp4-Tenant-Id');
-      expect(withTenantData?.tenantSummary?.profileDefaultAvailable).toBe(true);
       expect(withTenantData?.tenantSummary?.tenants).toEqual([
         expect.objectContaining({
           tenantId: 'grafana-mask',
           selectorType: 'mask',
           selectorDisplay: 'mask:https://grafana.*.security.ops.iszn.cz/api',
-          isDefault: false,
         }),
         expect.objectContaining({
           tenantId: 'team-a',
           selectorType: 'exact',
           selectorDisplay: 'https://grafana.team-a.ops.iszn.cz/api',
-          isDefault: true,
         }),
       ]);
       expect(withoutTenantData?.tenantSummary).toBeUndefined();
@@ -992,7 +980,6 @@ describeIfListen('HttpTransport', () => {
           {
             tenant_id: 'team-a',
             profile_ids: ['tenant-aware'],
-            default: true,
             api_base_url: 'https://grafana.team-a.ops.iszn.cz/api',
             auth_mode: 'token',
             auth: { type: 'bearer', value_from_env: 'TEAM_A_TOKEN' },

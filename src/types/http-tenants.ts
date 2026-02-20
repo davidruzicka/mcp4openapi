@@ -16,7 +16,6 @@ export interface TenantMaskSelector {
 export interface HttpTenantConfig {
   tenant_id: string;
   profile_ids: string[];
-  default?: boolean;
   api_base_url: string;
   auth_mode: TenantAuthMode;
   auth?: AuthInterceptor | AuthInterceptor[];
@@ -45,7 +44,6 @@ export interface TenantMaskSelectorEntry {
 
 export interface HttpTenantIndex {
   enabled: boolean;
-  defaultTenantId?: string;
   byTenantId: Map<string, ResolvedTenantContext>;
   byBaseUrl: Map<string, ResolvedTenantContext>;
   maskSelectors: TenantMaskSelectorEntry[];

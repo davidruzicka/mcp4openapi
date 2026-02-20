@@ -11,7 +11,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added HTTP tenant session override with deterministic exact and `mask:` selectors, startup/runtime collision guards, path-segment wildcards (`*`) for mask URLs, required `profile_ids` tenant scoping, and profile-index tenant metadata with interactive header injection (`X-Mcp4-Tenant-Id`, plus example `X-Mcp4-Api-Base-Url` for `mask:` tenants) including explicit "no tenant" profile-default selection when available.
 
 ### Fixed
-- Fixed tenant auth-mode resolution and tenant custom-header extraction order in HTTP initialize flow, restored `X-Mcp4-Params` single-array parsing, and reused tenant OAuth provider state across refreshes with session-scoped cleanup.
 - Normalized profile route param handling to accept Express string-array params while preserving `McpRequest.profileId` as `string | undefined`.
 - Fixed Vitest v4 regressions in mocked constructor tests and MCP handler lookup tests to keep the suite stable after test-runner upgrades.
 - Fixed profile schema sync generation on Node runtimes without `fs.globSync` by falling back to tsconfig-based source discovery.
