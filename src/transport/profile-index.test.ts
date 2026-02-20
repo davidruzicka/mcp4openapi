@@ -70,7 +70,7 @@ describe('profile index helpers', () => {
     expect(cursor?.content).toContain('"Authorization: Bearer ${env:GITLAB_TOKEN}"');
     expect(cursor?.content).toContain('"GITLAB_TOKEN": "${env:GITLAB_TOKEN}"');
     expect(jetbrains?.content).toContain('"requestInit"');
-    expect(jetbrains?.content).toContain('"Authorization": "Bearer {$input:gitlab-token}"');
+    expect(jetbrains?.content).toContain('"Authorization": "Bearer ${input:gitlab-token}"');
     expect(claudeJson?.format).toBe('json');
     expect(claudeJson?.content).toContain('"mcpServers"');
     expect(claudeJson?.content).toContain('"type": "http"');
@@ -90,7 +90,7 @@ describe('profile index helpers', () => {
     expect(cursorLocal?.content).toContain('"GITLAB_API_BASE_URL": "https://gitlab.com/api/v4"');
     expect(cursorLocal?.content).not.toContain('${input:gitlab-token}');
     expect(jetbrainsLocal?.mode).toBe('local');
-    expect(jetbrainsLocal?.content).toContain('"GITLAB_TOKEN": "{$input:gitlab-token}"');
+    expect(jetbrainsLocal?.content).toContain('"GITLAB_TOKEN": "${input:gitlab-token}"');
     expect(claudeLocalJson?.mode).toBe('local');
     expect(claudeLocalJson?.format).toBe('json');
     expect(claudeLocalJson?.content).toContain('"mcpServers"');
@@ -233,7 +233,7 @@ describe('profile index helpers', () => {
     expect(vscode?.content).not.toContain('"headers"');
     expect(cursor?.content).toContain('"url": "__PROFILE_URL__?api_key=${env:YT_TOKEN}"');
     expect(cursor?.content).not.toContain('"mcp-remote"');
-    expect(jetbrains?.content).toContain('"url": "__PROFILE_URL__?api_key={$input:yt-token}"');
+    expect(jetbrains?.content).toContain('"url": "__PROFILE_URL__?api_key=${input:yt-token}"');
     expect(claudeJson?.content).toContain('"url": "__PROFILE_URL__?api_key=${YT_TOKEN}"');
     expect(claudeCli?.content).toContain('__PROFILE_URL__?api_key=\\${YT_TOKEN}');
     expect(geminiJson?.content).toContain('"httpUrl": "__PROFILE_URL__?api_key=${YT_TOKEN}"');
@@ -544,6 +544,11 @@ describe('profile index helpers', () => {
     expect(html).toContain('injectTenantHeaderIntoJsonSnippet');
     expect(html).toContain('supportsTenantPicker');
     expect(html).toContain('buildMaskExampleBaseUrl');
+    expect(html).toContain('getClientLabel');
+    expect(html).toContain('data-client-tab');
+    expect(html).toContain('wireClientTabs');
+    expect(html).toContain('snippet-section-header');
+    expect(html).toContain('active-mode-badge');
     expect(html).toContain('X-Mcp4-Tenant-Id');
     expect(html).toContain('X-Mcp4-Api-Base-Url');
     expect(html).toContain('<your-part>');

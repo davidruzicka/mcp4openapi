@@ -407,9 +407,6 @@ function buildEnvValue(
   if (useInput) {
     const id = inputMap.get(name);
     if (id) {
-      if (mode === 'jetbrains') {
-        return `{$input:${id}}`;
-      }
       return `\${input:${id}}`;
     }
   }

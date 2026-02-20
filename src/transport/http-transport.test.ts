@@ -1020,6 +1020,8 @@ describeIfListen('HttpTransport', () => {
       expect(response.text).toContain('X-Mcp4-Tenant-Id');
       expect(response.text).toContain('X-Mcp4-Api-Base-Url');
       expect(response.text).toContain('<your-part>');
+      expect(response.text).toContain('data-client-tab');
+      expect(response.text).toContain('wireClientTabs');
       expect(response.text).toContain('key.startsWith(\'vscode-\')');
       expect(response.text).toContain('key.startsWith(\'jetbrains-\')');
       expect(response.text).toContain('key.startsWith(\'claude-json-\')');

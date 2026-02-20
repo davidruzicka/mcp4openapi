@@ -51,6 +51,7 @@
         border: 1px solid var(--border);
         box-shadow: var(--shadow);
         padding: 24px;
+        min-width: 0;
       }
       .profiles {
         display: flex;
@@ -95,11 +96,15 @@
         -webkit-box-orient: vertical;
       }
       #auth-label {
+        margin: 6px 0 0;
+      }
+      #api-endpoint-env-label {
         margin: 6px 0 12px;
       }
       .detail-grid {
         display: grid;
         gap: 18px;
+        min-width: 0;
       }
       .tab-row {
         display: flex;
@@ -130,6 +135,8 @@
         border-radius: 12px;
         padding: 16px;
         background: #fff;
+        min-width: 0;
+        max-width: 100%;
       }
       .detail-card h3 {
         margin: 0 0 8px;
@@ -157,23 +164,74 @@
         color: #e2e8f0;
         padding: 14px;
         border-radius: 12px;
+        max-width: 100%;
+        width: 100%;
         overflow-x: auto;
         line-height: 1.6;
       }
       .snippets {
         display: grid;
+        grid-template-columns: minmax(0, 1fr);
         gap: 16px;
+        min-width: 0;
+        max-width: 100%;
+      }
+      .snippet-section-header {
+        position: sticky;
+        top: 0;
+        z-index: 1;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        margin: 2px 0 12px;
+        padding: 10px 0 8px;
+        border-top: 1px solid var(--border);
+        background: #fff;
+      }
+      .snippet-section-title {
+        font-size: 12px;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: var(--muted);
+        font-weight: 600;
+      }
+      .mode-badge {
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        padding: 3px 10px;
+        font-size: 12px;
+        color: var(--accent);
+        background: #fff5ec;
+        font-weight: 600;
       }
       .snippet-header {
         display: flex;
         align-items: center;
         justify-content: space-between;
         gap: 12px;
+        min-width: 0;
+        flex-wrap: wrap;
       }
       .snippet-meta {
         display: flex;
         align-items: center;
         gap: 8px;
+        min-width: 0;
+        max-width: 100%;
+        flex-wrap: wrap;
+      }
+      #snippet-list [data-client-panel] .detail-card {
+        overflow-x: auto;
+      }
+      #snippet-list > [data-client-panel] {
+        min-width: 0;
+        max-width: 100%;
+        width: 100%;
+      }
+      #snippet-list [data-format-panel-group] {
+        min-width: 0;
+        max-width: 100%;
       }
       .config-info {
         font-size: 13px;
@@ -262,6 +320,9 @@
         }
         header {
           padding: 36px 20px 24px;
+        }
+        .snippet-section-header {
+          flex-wrap: wrap;
         }
       }
     </style>
@@ -453,8 +514,17 @@
         return injectTenantHeaderForSnippet(rendered, entry, tenantSelection);
       }
 
+      function getClientLabel(client) {
+        if (client === 'vscode') return i18n?.snippetLabels?.vscode || 'VS Code + Copilot';
+        if (client === 'cursor') return i18n?.snippetLabels?.cursor || 'Cursor';
+        if (client === 'jetbrains') return i18n?.snippetLabels?.jetbrains || 'JetBrains IDEs + Copilot';
+        if (client === 'claude') return i18n?.snippetLabels?.claude || 'Claude Code';
+        if (client === 'gemini') return i18n?.snippetLabels?.gemini || 'Gemini CLI';
+        if (client === 'codex') return i18n?.snippetLabels?.codex || 'Codex';
+        return client;
+      }
+
       function renderSnippets(profile, activeAuth, activeMode, selectedTenantId) {
-        const blocks = [];
         const order = ['vscode', 'cursor', 'jetbrains', 'claude', 'gemini', 'codex'];
         const snippets = profile.snippets || [];
         const groups = new Map();
@@ -508,15 +578,14 @@
           groups.set(client, existing);
         }
 
+        const clientTabs = [];
+        const clientPanels = [];
         let cardIndex = 0;
         for (const client of order) {
           const entries = groups.get(client);
           if (!entries || entries.length === 0) continue;
 
-          const rawTitle = entries[0].label || entries[0].key || client;
-          const title = activeMode === 'local'
-            ? rawTitle.replace(/\s-\s.+$/, '')
-            : rawTitle;
+          const title = getClientLabel(client);
           const formatOrder = ['toml', 'json', 'cli'];
           entries.sort((a, b) => {
             const left = formatOrder.indexOf(a.format || '');
@@ -526,6 +595,9 @@
 
           const groupId = `snippet-format-${client}-${cardIndex}`;
           cardIndex += 1;
+          const clientTabId = `snippet-client-tab-${client}-${cardIndex}`;
+          const clientPanelId = `snippet-client-panel-${client}-${cardIndex}`;
+          const isClientActive = clientTabs.length === 0;
           const hasFormatTabs = entries.length > 1;
           const tabsHtml = `
             <div class="tab-row snippet-format-tabs" role="tablist" aria-label="Snippet format">
@@ -561,21 +633,127 @@
           const firstEncodedSnippet = encodeURIComponent(firstSnippet);
           const configInfo = buildClientConfigInfo(client);
 
-          blocks.push(`
-            <div class="detail-card">
-              <div class="snippet-header">
-                <h3>${escapeHtml(title)}</h3>
-                <div class="snippet-meta">
-                  ${tabsHtml}
-                  <button class="copy-btn" data-copy="${firstEncodedSnippet}" data-copy-group="${escapeHtml(groupId)}">${escapeHtml(i18n.copy || '')}</button>
+          clientTabs.push(`
+            <button
+              class="tab${isClientActive ? ' active' : ''}"
+              type="button"
+              role="tab"
+              id="${escapeHtml(clientTabId)}"
+              aria-selected="${isClientActive ? 'true' : 'false'}"
+              tabindex="${isClientActive ? '0' : '-1'}"
+              aria-controls="${escapeHtml(clientPanelId)}"
+              data-client-tab="${escapeHtml(client)}"
+            >
+              ${escapeHtml(title)}
+            </button>
+          `);
+
+          clientPanels.push(`
+            <div
+              id="${escapeHtml(clientPanelId)}"
+              role="tabpanel"
+              aria-labelledby="${escapeHtml(clientTabId)}"
+              data-client-panel="${escapeHtml(client)}"
+              ${isClientActive ? '' : 'hidden'}
+            >
+              <div class="detail-card">
+                <div class="snippet-header">
+                  <h3>${escapeHtml(title)}</h3>
+                  <div class="snippet-meta">
+                    ${tabsHtml}
+                    <button class="copy-btn" data-copy="${firstEncodedSnippet}" data-copy-group="${escapeHtml(groupId)}">${escapeHtml(i18n.copy || '')}</button>
+                  </div>
                 </div>
+                ${configInfo ? `<div class="config-info">${configInfo}</div>` : ''}
+                ${panelHtml}
               </div>
-              ${configInfo ? `<div class="config-info">${configInfo}</div>` : ''}
-              ${panelHtml}
             </div>
           `);
         }
-        return blocks.join('');
+        if (clientTabs.length === 0) {
+          return '';
+        }
+        return `
+          <div class="tab-row" id="client-tabs" role="tablist" aria-label="Client tools">
+            ${clientTabs.join('')}
+          </div>
+          ${clientPanels.join('')}
+        `;
+      }
+
+      function wireClientTabs(snippetList) {
+        if (!snippetList) return;
+        if (snippetList.dataset.clientTabsWired === '1') return;
+        snippetList.dataset.clientTabsWired = '1';
+
+        const activateClientTab = clientKey => {
+          const tabs = Array.from(snippetList.querySelectorAll('[data-client-tab]'));
+          tabs.forEach(tab => {
+            const isActive = tab.getAttribute('data-client-tab') === clientKey;
+            tab.classList.toggle('active', isActive);
+            tab.setAttribute('aria-selected', isActive ? 'true' : 'false');
+            tab.setAttribute('tabindex', isActive ? '0' : '-1');
+          });
+
+          const panels = Array.from(snippetList.querySelectorAll('[data-client-panel]'));
+          panels.forEach(panel => {
+            const isActive = panel.getAttribute('data-client-panel') === clientKey;
+            if (isActive) {
+              panel.removeAttribute('hidden');
+            } else {
+              panel.setAttribute('hidden', '');
+            }
+          });
+        };
+
+        snippetList.addEventListener('click', event => {
+          const target = event.target;
+          if (!(target instanceof HTMLElement)) return;
+          const clientKey = target.getAttribute('data-client-tab');
+          if (!clientKey) return;
+          activateClientTab(clientKey);
+        });
+
+        snippetList.addEventListener('keydown', event => {
+          const target = event.target;
+          if (!(target instanceof HTMLElement)) return;
+          const clientKey = target.getAttribute('data-client-tab');
+          if (!clientKey) return;
+
+          const tabs = Array.from(snippetList.querySelectorAll('[data-client-tab]'));
+          if (tabs.length === 0) return;
+          const currentIndex = tabs.findIndex(tab => tab === target);
+          if (currentIndex === -1) return;
+
+          const focusAt = index => {
+            const nextTab = tabs[index];
+            if (!nextTab) return;
+            nextTab.focus();
+            const nextClient = nextTab.getAttribute('data-client-tab');
+            if (!nextClient) return;
+            activateClientTab(nextClient);
+          };
+
+          if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
+            event.preventDefault();
+            focusAt((currentIndex + 1) % tabs.length);
+            return;
+          }
+          if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
+            event.preventDefault();
+            focusAt((currentIndex - 1 + tabs.length) % tabs.length);
+            return;
+          }
+          if (event.key === 'Home') {
+            event.preventDefault();
+            focusAt(0);
+            return;
+          }
+          if (event.key === 'End') {
+            event.preventDefault();
+            focusAt(tabs.length - 1);
+          }
+        });
       }
 
       function wireSnippetFormatTabs(snippetList) {
@@ -684,6 +862,9 @@
         const activeAuth = authTabs.length > 0 ? authTabs[0].key : null;
         const modeTabs = profile.modeTabs || [];
         const activeMode = modeTabs.length > 0 ? modeTabs[0].key : 'remote';
+        const isCzech = (i18n.profileLabel || '') === 'Profil';
+        const snippetSectionLabel = isCzech ? 'Konfigurace klientů' : 'Client configuration snippets';
+        const getModeLabel = modeKey => modeTabs.find(tab => tab.key === modeKey)?.label || modeKey;
         const tenantSummary = profile.tenantSummary;
         const tenantList = tenantSummary && tenantSummary.tenantsEnabled ? (tenantSummary.tenants || []) : [];
         const persistedTenantId = tenantSelectionByProfile.get(profile.profileId);
@@ -703,14 +884,14 @@
           ? `${i18n.authEnvVarsLabel || 'Environment variable:'} ${authEnvVars.join(', ')}`
           : (i18n.authEnvVarsNone || 'No environment variable required');
         const apiEndpointEnvVar = profile.apiEndpointEnvVar || '';
-        const apiEndpointDefaultValue = profile.apiEndpointDefaultValue || '';
         let apiEndpointValueText = `${i18n.apiEndpointUnavailableInline || 'is not configured'}`;
-        if (apiEndpointEnvVar && apiEndpointDefaultValue) {
-          apiEndpointValueText = `${i18n.apiEndpointDefaultTag || '(default)'} ${apiEndpointDefaultValue}, ${i18n.apiEndpointVariableLabel || 'variable'}: ${apiEndpointEnvVar}`;
-        } else if (apiEndpointEnvVar) {
-          apiEndpointValueText = `${i18n.apiEndpointVariableLabel || 'variable'} ${apiEndpointEnvVar}`;
+        if (profile.apiEndpointDefaultValue) {
+          apiEndpointValueText = profile.apiEndpointDefaultValue;
         }
         const apiEndpointHtml = `<p><strong>${escapeHtml(i18n.apiEndpointLabel || 'API endpoint')}</strong>: ${escapeHtml(apiEndpointValueText)}</p>`;
+        const apiEndpointEnvText = apiEndpointEnvVar
+          ? `${i18n.authEnvVarsLabel || 'Environment variable:'} ${apiEndpointEnvVar}`
+          : '';
         const tenantCardHtml = tenantList.length > 0
           ? `
             <div class="detail-card">
@@ -772,6 +953,10 @@
               <strong>${escapeHtml(i18n.authSectionLabel || 'Authentication:')}</strong>
               ${escapeHtml(authEnvText)}
             </p>
+            <p class="profile-subtitle" id="api-endpoint-env-label" style="display:none;">
+              <strong>${escapeHtml(i18n.apiEndpointLabel || 'API endpoint')}:</strong>
+              ${escapeHtml(apiEndpointEnvText)}
+            </p>
             <div class="tab-row" id="auth-tabs" role="tablist" aria-label="Authentication methods">
               ${authTabs.map(tab => `
                 <button
@@ -786,6 +971,10 @@
                 </button>
               `).join('')}
             </div>
+            <div class="snippet-section-header">
+              <span class="snippet-section-title">${escapeHtml(snippetSectionLabel)}</span>
+              <span class="mode-badge" id="active-mode-badge">${escapeHtml(getModeLabel(activeMode))}</span>
+            </div>
             <div class="snippets" id="snippet-list" role="tabpanel" aria-live="polite">
               ${renderSnippets(profile, activeAuth, activeMode, initialTenantId)}
             </div>
@@ -794,7 +983,9 @@
 
         const modeRow = detailEl.querySelector('#mode-tabs');
         const authLabel = detailEl.querySelector('#auth-label');
+        const apiEndpointEnvLabel = detailEl.querySelector('#api-endpoint-env-label');
         const tabRow = detailEl.querySelector('#auth-tabs');
+        const modeBadge = detailEl.querySelector('#active-mode-badge');
         const snippetList = detailEl.querySelector('#snippet-list');
         const tenantRow = detailEl.querySelector('#tenant-tabs');
         if (modeRow && authLabel && tabRow && snippetList) {
@@ -813,8 +1004,16 @@
             const showAuthLabel = modeKey === 'local';
             tabRow.style.display = showAuthTabs ? '' : 'none';
             authLabel.style.display = showAuthLabel ? '' : 'none';
+            if (modeBadge instanceof HTMLElement) {
+              modeBadge.textContent = getModeLabel(modeKey);
+            }
+            if (apiEndpointEnvLabel) {
+              const showApiEndpointEnvLabel = modeKey === 'local' && !!apiEndpointEnvText;
+              apiEndpointEnvLabel.style.display = showApiEndpointEnvLabel ? '' : 'none';
+            }
             const currentAuth = (tabRow.querySelector('.tab.active') || tabRow.querySelector('.tab'))?.getAttribute('data-auth');
             snippetList.innerHTML = renderSnippets(profile, currentAuth, currentMode, currentTenantId);
+            wireClientTabs(snippetList);
             wireSnippetFormatTabs(snippetList);
           };
 
@@ -830,6 +1029,7 @@
                 }
               });
             snippetList.innerHTML = renderSnippets(profile, authKey, currentMode, currentTenantId);
+            wireClientTabs(snippetList);
             wireSnippetFormatTabs(snippetList);
             if (activeTabId) {
               snippetList.setAttribute('aria-labelledby', activeTabId);
@@ -851,6 +1051,7 @@
             }
             const currentAuth = (tabRow.querySelector('.tab.active') || tabRow.querySelector('.tab'))?.getAttribute('data-auth');
             snippetList.innerHTML = renderSnippets(profile, currentAuth, currentMode, currentTenantId);
+            wireClientTabs(snippetList);
             wireSnippetFormatTabs(snippetList);
           };
 
