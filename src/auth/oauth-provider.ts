@@ -40,9 +40,35 @@ import { parseOAuthMetadataEndpoints } from './oauth-metadata.js';
 const MAX_CLIENTS = 1000;
 const MAX_REDIRECT_URIS = 10;
 const MAX_REDIRECT_URI_LENGTH = 256;
+const MAX_CLIENTS_ENV = 'MCP4_OAUTH_CLIENT_STORE_MAX_CLIENTS';
+const MAX_REDIRECT_URIS_ENV = 'MCP4_OAUTH_CLIENT_STORE_MAX_REDIRECT_URIS';
+const MAX_REDIRECT_URI_LENGTH_ENV = 'MCP4_OAUTH_CLIENT_STORE_MAX_REDIRECT_URI_LENGTH';
+
+export interface InMemoryClientsStoreOptions {
+  maxClients?: number;
+  maxRedirectUris?: number;
+  maxRedirectUriLength?: number;
+}
 
 export class InMemoryClientsStore implements OAuthRegisteredClientsStore {
   private clients = new Map<string, OAuthClientInformationFull>();
+  private readonly maxClients: number;
+  private readonly maxRedirectUris: number;
+  private readonly maxRedirectUriLength: number;
+
+  constructor(options: InMemoryClientsStoreOptions = {}, env: NodeJS.ProcessEnv = process.env) {
+    this.maxClients = resolvePositiveIntegerOptionOrEnv(options.maxClients, env[MAX_CLIENTS_ENV], MAX_CLIENTS);
+    this.maxRedirectUris = resolvePositiveIntegerOptionOrEnv(
+      options.maxRedirectUris,
+      env[MAX_REDIRECT_URIS_ENV],
+      MAX_REDIRECT_URIS
+    );
+    this.maxRedirectUriLength = resolvePositiveIntegerOptionOrEnv(
+      options.maxRedirectUriLength,
+      env[MAX_REDIRECT_URI_LENGTH_ENV],
+      MAX_REDIRECT_URI_LENGTH
+    );
+  }
 
   async getClient(clientId: string): Promise<OAuthClientInformationFull | undefined> {
     return this.clients.get(clientId);
@@ -56,7 +82,7 @@ export class InMemoryClientsStore implements OAuthRegisteredClientsStore {
     }
 
     const isExistingClient = this.clients.has(clientMetadata.client_id);
-    if (!isExistingClient && this.clients.size >= MAX_CLIENTS) {
+    if (!isExistingClient && this.clients.size >= this.maxClients) {
       this.evictOldestClient();
     }
 
@@ -74,16 +100,16 @@ export class InMemoryClientsStore implements OAuthRegisteredClientsStore {
       throw new Error('redirect_uris must be an array');
     }
 
-    if (client.redirect_uris.length > MAX_REDIRECT_URIS) {
-      throw new Error(`Too many redirect_uris (max ${MAX_REDIRECT_URIS})`);
+    if (client.redirect_uris.length > this.maxRedirectUris) {
+      throw new Error(`Too many redirect_uris (max ${this.maxRedirectUris})`);
     }
 
     for (const uri of client.redirect_uris) {
       if (typeof uri !== 'string') {
         throw new Error('redirect_uri must be a string');
       }
-      if (uri.length > MAX_REDIRECT_URI_LENGTH) {
-        throw new Error(`redirect_uri too long (max ${MAX_REDIRECT_URI_LENGTH} chars)`);
+      if (uri.length > this.maxRedirectUriLength) {
+        throw new Error(`redirect_uri too long (max ${this.maxRedirectUriLength} chars)`);
       }
     }
   }
@@ -102,6 +128,21 @@ export class InMemoryClientsStore implements OAuthRegisteredClientsStore {
       this.clients.delete(oldestClientId);
     }
   }
+}
+
+function resolvePositiveIntegerOptionOrEnv(optionValue: number | undefined, envValue: string | undefined, fallback: number): number {
+  if (typeof optionValue === 'number' && Number.isInteger(optionValue) && optionValue > 0) {
+    return optionValue;
+  }
+
+  if (envValue !== undefined) {
+    const parsed = Number.parseInt(envValue, 10);
+    if (Number.isInteger(parsed) && parsed > 0) {
+      return parsed;
+    }
+  }
+
+  return fallback;
 }
 
 /**

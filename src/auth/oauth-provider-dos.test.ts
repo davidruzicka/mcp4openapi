@@ -92,6 +92,45 @@ describe('InMemoryClientsStore DoS Protection', () => {
     expect(store.getClientCount()).toBe(1000);
   });
 
+  it('should support constructor limit overrides', async () => {
+    const configuredStore = new InMemoryClientsStore({
+      maxClients: 2,
+      maxRedirectUris: 1,
+      maxRedirectUriLength: 32,
+    });
+
+    await configuredStore.registerClient(createClient('mcp-client-1'));
+    await configuredStore.registerClient(createClient('mcp-client-2'));
+    await configuredStore.registerClient(createClient('mcp-client-3'));
+
+    expect(configuredStore.getClientCount()).toBe(2);
+    await expect(
+      configuredStore.registerClient(
+        createClient('mcp-client-too-many-uris', ['http://a', 'http://b'])
+      )
+    ).rejects.toThrow('Too many redirect_uris');
+  });
+
+  it('should support environment limit overrides', async () => {
+    const envStore = new InMemoryClientsStore(
+      {},
+      {
+        MCP4_OAUTH_CLIENT_STORE_MAX_CLIENTS: '2',
+        MCP4_OAUTH_CLIENT_STORE_MAX_REDIRECT_URIS: '1',
+        MCP4_OAUTH_CLIENT_STORE_MAX_REDIRECT_URI_LENGTH: '128',
+      } as NodeJS.ProcessEnv
+    );
+
+    await envStore.registerClient(createClient('mcp-client-1'));
+    await envStore.registerClient(createClient('mcp-client-2'));
+    await envStore.registerClient(createClient('mcp-client-3'));
+
+    expect(envStore.getClientCount()).toBe(2);
+    await expect(
+      envStore.registerClient(createClient('mcp-client-too-long', ['http://localhost/' + 'x'.repeat(256)]))
+    ).rejects.toThrow('redirect_uri too long');
+  });
+
   it('should validate redirect_uris count', async () => {
     const uris = Array(11).fill('http://localhost/callback');
     const client = createClient('mcp-client-bad-count', uris);
