@@ -76,6 +76,11 @@ export class SSRFValidator {
         throw new ValidationError('IP address not allowed');
       }
     } else {
+      if (this.isNonStandardIP(hostname)) {
+        this.logger.warn('SSRF blocked: non-standard IP format', { hostname });
+        throw new ValidationError('IP address not allowed (non-standard format)');
+      }
+
       // 3. DNS resolution check
       // Hostname: resolve to all IPs and block if any are private/loopback/link-local
       const addresses = await this.lookupAllIpAddresses(hostname);
@@ -123,6 +128,18 @@ export class SSRFValidator {
     }
 
     return addresses;
+  }
+
+  private isNonStandardIP(hostname: string): boolean {
+    const parts = hostname.split('.');
+    const tld = parts[parts.length - 1];
+
+    // Check if TLD is numeric (decimal/octal) or hex
+    // Note: hex must start with 0x to be unambiguous
+    const isNumeric = /^\d+$/.test(tld);
+    const isHex = /^0x[0-9a-f]+$/i.test(tld);
+
+    return isNumeric || isHex;
   }
 
   private isAllowedHost(hostname: string, allowedHosts: string[]): boolean {
