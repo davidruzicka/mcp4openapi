@@ -1,7 +1,7 @@
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import { InMemoryClientsStore } from './oauth-provider.js';
-import { OAuthClientInformationFull } from '@modelcontextprotocol/sdk/shared/auth.js';
+import type { OAuthClientInformationFull } from '@modelcontextprotocol/sdk/shared/auth.js';
 
 describe('InMemoryClientsStore DoS Protection', () => {
   let store: InMemoryClientsStore;
@@ -74,6 +74,22 @@ describe('InMemoryClientsStore DoS Protection', () => {
 
     // Oldest dynamic client (mcp-client-0) should be evicted
     expect(await store.getClient('mcp-client-0')).toBeUndefined();
+  });
+
+  it('should keep max client limit after duplicate client re-registration', async () => {
+    await store.registerClient(createClient('mcp-client-0'));
+    await store.registerClient(createClient('mcp-client-0'));
+
+    for (let i = 1; i < 1000; i++) {
+      await store.registerClient(createClient(`mcp-client-${i}`));
+    }
+
+    expect(store.getClientCount()).toBe(1000);
+
+    await store.registerClient(createClient('mcp-client-overflow-1'));
+    await store.registerClient(createClient('mcp-client-overflow-2'));
+
+    expect(store.getClientCount()).toBe(1000);
   });
 
   it('should validate redirect_uris count', async () => {

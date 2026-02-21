@@ -43,11 +43,6 @@ const MAX_REDIRECT_URI_LENGTH = 256;
 
 export class InMemoryClientsStore implements OAuthRegisteredClientsStore {
   private clients = new Map<string, OAuthClientInformationFull>();
-  // Track creation order for eviction.
-  // Note: Since clients can be pre-registered (like mcp-proxy-client), we need to ensure
-  // they are also tracked if we want them to be candidates for eviction (or protection).
-  // However, pre-registered clients are usually static and we prefer to evict dynamic ones.
-  private creationOrder: string[] = [];
 
   async getClient(clientId: string): Promise<OAuthClientInformationFull | undefined> {
     return this.clients.get(clientId);
@@ -60,12 +55,12 @@ export class InMemoryClientsStore implements OAuthRegisteredClientsStore {
        this.validateClientMetadata(clientMetadata);
     }
 
-    if (this.clients.size >= MAX_CLIENTS) {
+    const isExistingClient = this.clients.has(clientMetadata.client_id);
+    if (!isExistingClient && this.clients.size >= MAX_CLIENTS) {
       this.evictOldestClient();
     }
 
     this.clients.set(clientMetadata.client_id, clientMetadata);
-    this.creationOrder.push(clientMetadata.client_id);
     return clientMetadata;
   }
 
@@ -94,19 +89,16 @@ export class InMemoryClientsStore implements OAuthRegisteredClientsStore {
   }
 
   private evictOldestClient(): void {
-    // Prefer removing dynamic clients (mcp-client-*)
-    const dynamicClientIndex = this.creationOrder.findIndex(id => id.startsWith('mcp-client-'));
-
-    if (dynamicClientIndex !== -1) {
-      const clientId = this.creationOrder[dynamicClientIndex];
+    for (const clientId of this.clients.keys()) {
+      if (!clientId.startsWith('mcp-client-')) {
+        continue;
+      }
       this.clients.delete(clientId);
-      this.creationOrder.splice(dynamicClientIndex, 1);
       return;
     }
 
-    // Fallback: remove oldest client (FIFO)
-    const oldestClientId = this.creationOrder.shift();
-    if (oldestClientId) {
+    const oldestClientId = this.clients.keys().next().value;
+    if (oldestClientId !== undefined) {
       this.clients.delete(oldestClientId);
     }
   }
