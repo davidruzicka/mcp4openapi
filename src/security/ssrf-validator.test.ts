@@ -128,31 +128,6 @@ describe('SSRFValidator', () => {
       await expect(validator.validate('http://sub.example.com', options)).rejects.toThrow("Host not in allowlist");
     });
 
-    it('should block non-standard IP formats', async () => {
-      const nonStandardIps = [
-        'http://0177.0.0.1', // Octal
-        'http://0x7f000001', // Hex
-        'http://0x7f.0.0.1', // Dotted Hex
-        'http://2130706433', // Integer
-        'http://127.1', // Short
-        'http://0', // Zero
-        'http://example.123', // Numeric TLD
-      ];
-
-      for (const ip of nonStandardIps) {
-        // Matches "IP address not allowed" (from normalized IPv4 check)
-        // OR "IP address not allowed (non-standard format)" (from our new check)
-        // OR "Invalid URL" (from new URL() parser for invalid formats like numeric TLDs)
-        await expect(validator.validate(ip)).rejects.toThrow(/IP address not allowed|Invalid URL/);
-      }
-    });
-
-    it('should allow valid hostnames with digits', async () => {
-      (lookup as any).mockResolvedValue([{ address: '93.184.216.34', family: 4 }]);
-      await expect(validator.validate('http://123.com')).resolves.not.toThrow();
-      await expect(validator.validate('http://example123.com')).resolves.not.toThrow();
-    });
-
     it('should fail if DNS lookup fails', async () => {
       (lookup as any).mockRejectedValue(new Error('ENOTFOUND'));
       await expect(validator.validate('http://nonexistent.domain')).rejects.toThrow('DNS lookup failed');

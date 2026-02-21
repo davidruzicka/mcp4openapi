@@ -37,16 +37,78 @@ import { parseOAuthMetadataEndpoints } from './oauth-metadata.js';
 /**
  * In-memory store for OAuth client registrations
  */
+const MAX_CLIENTS = 1000;
+const MAX_REDIRECT_URIS = 10;
+const MAX_REDIRECT_URI_LENGTH = 256;
+
 export class InMemoryClientsStore implements OAuthRegisteredClientsStore {
   private clients = new Map<string, OAuthClientInformationFull>();
+  // Track creation order for eviction.
+  // Note: Since clients can be pre-registered (like mcp-proxy-client), we need to ensure
+  // they are also tracked if we want them to be candidates for eviction (or protection).
+  // However, pre-registered clients are usually static and we prefer to evict dynamic ones.
+  private creationOrder: string[] = [];
 
   async getClient(clientId: string): Promise<OAuthClientInformationFull | undefined> {
     return this.clients.get(clientId);
   }
 
   async registerClient(clientMetadata: OAuthClientInformationFull): Promise<OAuthClientInformationFull> {
+    // Only validate redirect_uris for dynamic clients (mcp-client-*),
+    // allow pre-registered ones to have special configs (like empty redirect_uris)
+    if (clientMetadata.client_id.startsWith('mcp-client-')) {
+       this.validateClientMetadata(clientMetadata);
+    }
+
+    if (this.clients.size >= MAX_CLIENTS) {
+      this.evictOldestClient();
+    }
+
     this.clients.set(clientMetadata.client_id, clientMetadata);
+    this.creationOrder.push(clientMetadata.client_id);
     return clientMetadata;
+  }
+
+  // Exposed for testing
+  getClientCount(): number {
+    return this.clients.size;
+  }
+
+  private validateClientMetadata(client: OAuthClientInformationFull): void {
+    if (!client.redirect_uris || !Array.isArray(client.redirect_uris)) {
+      throw new Error('redirect_uris must be an array');
+    }
+
+    if (client.redirect_uris.length > MAX_REDIRECT_URIS) {
+      throw new Error(`Too many redirect_uris (max ${MAX_REDIRECT_URIS})`);
+    }
+
+    for (const uri of client.redirect_uris) {
+      if (typeof uri !== 'string') {
+        throw new Error('redirect_uri must be a string');
+      }
+      if (uri.length > MAX_REDIRECT_URI_LENGTH) {
+        throw new Error(`redirect_uri too long (max ${MAX_REDIRECT_URI_LENGTH} chars)`);
+      }
+    }
+  }
+
+  private evictOldestClient(): void {
+    // Prefer removing dynamic clients (mcp-client-*)
+    const dynamicClientIndex = this.creationOrder.findIndex(id => id.startsWith('mcp-client-'));
+
+    if (dynamicClientIndex !== -1) {
+      const clientId = this.creationOrder[dynamicClientIndex];
+      this.clients.delete(clientId);
+      this.creationOrder.splice(dynamicClientIndex, 1);
+      return;
+    }
+
+    // Fallback: remove oldest client (FIFO)
+    const oldestClientId = this.creationOrder.shift();
+    if (oldestClientId) {
+      this.clients.delete(oldestClientId);
+    }
   }
 }
 
