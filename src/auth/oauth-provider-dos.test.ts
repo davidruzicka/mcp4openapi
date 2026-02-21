@@ -129,6 +129,26 @@ describe('InMemoryClientsStore DoS Protection', () => {
     ).rejects.toBeInstanceOf(OAuthClientStoreCapacityError);
   });
 
+  it('should return immutable limits snapshot and apply idle grace option', () => {
+    const configuredStore = new InMemoryClientsStore({
+      maxClients: 3,
+      maxRedirectUris: 2,
+      maxRedirectUriLength: 64,
+      idleGraceMs: 77,
+    });
+
+    const limits = configuredStore.getLimits();
+    expect(limits).toEqual({
+      maxClients: 3,
+      maxRedirectUris: 2,
+      maxRedirectUriLength: 64,
+      idleGraceMs: 77,
+    });
+
+    limits.maxClients = 999;
+    expect(configuredStore.getLimits().maxClients).toBe(3);
+  });
+
   it('should support constructor limit overrides', async () => {
     const configuredStore = new InMemoryClientsStore({
       maxClients: 2,
@@ -189,6 +209,34 @@ describe('InMemoryClientsStore DoS Protection', () => {
     expect(meta?.pendingStateCount).toBe(0);
     expect(meta?.pendingAuthCodeCount).toBe(0);
     expect(meta?.lastUsedAt).toBe(1000);
+  });
+
+  it('should ignore markClientUsed for unknown client', async () => {
+    const metadataStore = new InMemoryClientsStore({ maxClients: 10 }, {}, () => 1000);
+    await metadataStore.registerClient(createClient('mcp-client-1'));
+
+    const before = metadataStore.getClientMetadataSnapshot();
+    metadataStore.markClientUsed('mcp-client-missing');
+    const after = metadataStore.getClientMetadataSnapshot();
+
+    expect(after).toEqual(before);
+  });
+
+  it('should include static and pending usage in stats', async () => {
+    const statsStore = new InMemoryClientsStore({ maxClients: 10 });
+    await statsStore.registerClient(createClient('static-client'));
+    await statsStore.registerClient(createClient('mcp-client-dynamic'));
+
+    statsStore.markAuthStateOpened('static-client');
+    statsStore.markAuthCodeOpened('mcp-client-dynamic');
+
+    expect(statsStore.getStats()).toMatchObject({
+      totalClients: 2,
+      dynamicClients: 1,
+      staticClients: 1,
+      pendingStateClients: 1,
+      pendingAuthCodeClients: 1,
+    });
   });
 
   it('should validate redirect_uris count', async () => {

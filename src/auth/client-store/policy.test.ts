@@ -46,6 +46,29 @@ describe('chooseEvictionDecision', () => {
     });
   });
 
+  it('breaks tie by createdAt when lastUsedAt is equal', () => {
+    const decision = chooseEvictionDecision([
+      createCandidate({
+        clientId: 'dynamic-newer-created',
+        isNeverUsed: false,
+        createdAt: 200,
+        lastUsedAt: 500,
+      }),
+      createCandidate({
+        clientId: 'dynamic-older-created',
+        isNeverUsed: false,
+        createdAt: 100,
+        lastUsedAt: 500,
+      }),
+    ], 0);
+
+    expect(decision).toEqual({
+      decision: 'evict',
+      clientId: 'dynamic-older-created',
+      tier: 'tier_b_dynamic_idle',
+    });
+  });
+
   it('falls back to tier C for static idle clients', () => {
     const decision = chooseEvictionDecision([
       createCandidate({
