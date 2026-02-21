@@ -6,7 +6,13 @@ import request from 'supertest';
 import type { McpRequest } from '../types/http-transport.js';
 import { HttpTransport } from './http-transport.js';
 import { ConsoleLogger } from '../core/logger.js';
-import { AuthenticationError, AuthorizationError, RateLimitError, ValidationError } from '../core/errors.js';
+import {
+  AuthenticationError,
+  AuthorizationError,
+  OAuthClientStoreCapacityError,
+  RateLimitError,
+  ValidationError,
+} from '../core/errors.js';
 import { CAN_LISTEN } from '../testing/listen-support.js';
 
 function createTransport(config?: Partial<any>) {
@@ -1587,6 +1593,101 @@ describe('HttpTransport security behavior (no listen)', () => {
 
     expect(res.statusCode).toBe(500);
     expect(res.body).toMatchObject({ error: 'server_error', error_description: 'Registration failed' });
+
+    await transport.stop();
+  });
+
+  it('returns 429 from /oauth/register when no safe client eviction candidate exists', async () => {
+    const transport = new HttpTransport(
+      {
+        host: '127.0.0.1',
+        port: 0,
+        sessionTimeoutMs: 1800000,
+        heartbeatEnabled: false,
+        heartbeatIntervalMs: 30000,
+        metricsEnabled: false,
+        metricsPath: '/metrics',
+        oauthConfig: {
+          issuer: 'https://auth.example.com',
+          client_id: 'test-client',
+          client_secret: 'test-secret',
+          scopes: ['read'],
+        },
+      } as any,
+      new ConsoleLogger()
+    );
+
+    createProfileState(transport as any).oauthProvider = {
+      scopes: ['read'],
+      clientsStore: {
+        registerClient: async () => {
+          throw new OAuthClientStoreCapacityError('OAuth client registration temporarily unavailable: no idle client can be evicted');
+        },
+      },
+    };
+
+    const app = (transport as any).app;
+    const handler = getExpressRouteHandler(app, 'post', '/oauth/register');
+    const req: any = { body: { redirect_uris: ['http://localhost/cb'] }, headers: {} };
+    const res = createMockResponse();
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(429);
+    expect(res.body).toMatchObject({
+      error: 'temporarily_unavailable',
+      error_description: 'OAuth client registration temporarily unavailable: no idle client can be evicted',
+    });
+    expect(typeof res.body.correlationId).toBe('string');
+
+    await transport.stop();
+  });
+
+  it('attaches and detaches oauth client usage on session lifecycle', async () => {
+    const transport = createTransport();
+    const markSessionAttached = vi.fn();
+    const markSessionDetached = vi.fn();
+    const profileState = createProfileState(transport as any);
+    profileState.oauthProvider = {
+      clientsStore: {
+        markSessionAttached,
+        markSessionDetached,
+      },
+    };
+
+    const sessionId = (transport as any).createSession(profileState, undefined, undefined, undefined, ['read'], 'mcp-client-123');
+    expect(markSessionAttached).toHaveBeenCalledWith('mcp-client-123');
+
+    (transport as any).destroySession(profileState, sessionId);
+    expect(markSessionDetached).toHaveBeenCalledWith('mcp-client-123');
+
+    await transport.stop();
+  });
+
+  it('detaches oauth client usage when session expires in cleanup', async () => {
+    const transport = createTransport({ sessionTimeoutMs: 10, oauthSessionTimeoutMs: 10 });
+    const markSessionDetached = vi.fn();
+    const profileState = createProfileState(transport as any);
+    profileState.oauthProvider = {
+      cleanup: () => {},
+      clientsStore: {
+        markSessionDetached,
+      },
+    };
+
+    profileState.sessions.set('oauth-expired', {
+      id: 'oauth-expired',
+      createdAt: Date.now(),
+      lastActivityAt: Date.now() - 30,
+      sseStreams: new Map(),
+      authToken: 'token',
+      refreshToken: 'refresh',
+      oauthClientId: 'mcp-client-expired',
+      messageQueue: [],
+    });
+
+    (transport as any).cleanupExpiredSessions();
+    expect(profileState.sessions.has('oauth-expired')).toBe(false);
+    expect(markSessionDetached).toHaveBeenCalledWith('mcp-client-expired');
 
     await transport.stop();
   });

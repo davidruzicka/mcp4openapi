@@ -20,7 +20,6 @@ import type {
   OAuthServerProvider,
   AuthorizationParams,
 } from '@modelcontextprotocol/sdk/server/auth/provider.js';
-import type { OAuthRegisteredClientsStore } from '@modelcontextprotocol/sdk/server/auth/clients.js';
 import type {
   OAuthClientInformationFull,
   OAuthTokens,
@@ -33,117 +32,9 @@ import { OAUTH_CLEANUP, OAUTH_PATHS, PROXY_CREDENTIALS } from '../core/constants
 import { escapeHtmlSafe } from '../validation/validation-utils.js';
 import { SSRFValidator } from '../security/ssrf-validator.js';
 import { parseOAuthMetadataEndpoints } from './oauth-metadata.js';
-
-/**
- * In-memory store for OAuth client registrations
- */
-const MAX_CLIENTS = 1000;
-const MAX_REDIRECT_URIS = 10;
-const MAX_REDIRECT_URI_LENGTH = 256;
-const MAX_CLIENTS_ENV = 'MCP4_OAUTH_CLIENT_STORE_MAX_CLIENTS';
-const MAX_REDIRECT_URIS_ENV = 'MCP4_OAUTH_CLIENT_STORE_MAX_REDIRECT_URIS';
-const MAX_REDIRECT_URI_LENGTH_ENV = 'MCP4_OAUTH_CLIENT_STORE_MAX_REDIRECT_URI_LENGTH';
-
-export interface InMemoryClientsStoreOptions {
-  maxClients?: number;
-  maxRedirectUris?: number;
-  maxRedirectUriLength?: number;
-}
-
-export class InMemoryClientsStore implements OAuthRegisteredClientsStore {
-  private clients = new Map<string, OAuthClientInformationFull>();
-  private readonly maxClients: number;
-  private readonly maxRedirectUris: number;
-  private readonly maxRedirectUriLength: number;
-
-  constructor(options: InMemoryClientsStoreOptions = {}, env: NodeJS.ProcessEnv = process.env) {
-    this.maxClients = resolvePositiveIntegerOptionOrEnv(options.maxClients, env[MAX_CLIENTS_ENV], MAX_CLIENTS);
-    this.maxRedirectUris = resolvePositiveIntegerOptionOrEnv(
-      options.maxRedirectUris,
-      env[MAX_REDIRECT_URIS_ENV],
-      MAX_REDIRECT_URIS
-    );
-    this.maxRedirectUriLength = resolvePositiveIntegerOptionOrEnv(
-      options.maxRedirectUriLength,
-      env[MAX_REDIRECT_URI_LENGTH_ENV],
-      MAX_REDIRECT_URI_LENGTH
-    );
-  }
-
-  async getClient(clientId: string): Promise<OAuthClientInformationFull | undefined> {
-    return this.clients.get(clientId);
-  }
-
-  async registerClient(clientMetadata: OAuthClientInformationFull): Promise<OAuthClientInformationFull> {
-    // Only validate redirect_uris for dynamic clients (mcp-client-*),
-    // allow pre-registered ones to have special configs (like empty redirect_uris)
-    if (clientMetadata.client_id.startsWith('mcp-client-')) {
-       this.validateClientMetadata(clientMetadata);
-    }
-
-    const isExistingClient = this.clients.has(clientMetadata.client_id);
-    if (!isExistingClient && this.clients.size >= this.maxClients) {
-      this.evictOldestClient();
-    }
-
-    this.clients.set(clientMetadata.client_id, clientMetadata);
-    return clientMetadata;
-  }
-
-  // Exposed for testing
-  getClientCount(): number {
-    return this.clients.size;
-  }
-
-  private validateClientMetadata(client: OAuthClientInformationFull): void {
-    if (!client.redirect_uris || !Array.isArray(client.redirect_uris)) {
-      throw new Error('redirect_uris must be an array');
-    }
-
-    if (client.redirect_uris.length > this.maxRedirectUris) {
-      throw new Error(`Too many redirect_uris (max ${this.maxRedirectUris})`);
-    }
-
-    for (const uri of client.redirect_uris) {
-      if (typeof uri !== 'string') {
-        throw new Error('redirect_uri must be a string');
-      }
-      if (uri.length > this.maxRedirectUriLength) {
-        throw new Error(`redirect_uri too long (max ${this.maxRedirectUriLength} chars)`);
-      }
-    }
-  }
-
-  private evictOldestClient(): void {
-    for (const clientId of this.clients.keys()) {
-      if (!clientId.startsWith('mcp-client-')) {
-        continue;
-      }
-      this.clients.delete(clientId);
-      return;
-    }
-
-    const oldestClientId = this.clients.keys().next().value;
-    if (oldestClientId !== undefined) {
-      this.clients.delete(oldestClientId);
-    }
-  }
-}
-
-function resolvePositiveIntegerOptionOrEnv(optionValue: number | undefined, envValue: string | undefined, fallback: number): number {
-  if (typeof optionValue === 'number' && Number.isInteger(optionValue) && optionValue > 0) {
-    return optionValue;
-  }
-
-  if (envValue !== undefined) {
-    const parsed = Number.parseInt(envValue, 10);
-    if (Number.isInteger(parsed) && parsed > 0) {
-      return parsed;
-    }
-  }
-
-  return fallback;
-}
+import { InMemoryClientsStore } from './client-store/in-memory-clients-store.js';
+export { InMemoryClientsStore };
+export type { InMemoryClientsStoreOptions } from './client-store/types.js';
 
 /**
  * State preserved across the redirect to external provider
@@ -284,7 +175,7 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
     return this.initializationPromise;
   }
 
-  get clientsStore(): OAuthRegisteredClientsStore {
+  get clientsStore(): InMemoryClientsStore {
     return this._clientsStore;
   }
 
@@ -685,6 +576,7 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
       scopes: params.scopes,
       createdAt: Date.now(),
     });
+    this._clientsStore.markAuthStateOpened(client.client_id);
 
     const authUrl = new URL(this.config.authorization_endpoint!);
     const clientId = this.config.client_id || client.client_id;
@@ -760,6 +652,7 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
 
     // Clean up state
     this.stateStore.delete(state);
+    this._clientsStore.markAuthStateClosed(storedState.clientId);
 
     try {
         // Exchange External Code for Tokens
@@ -787,6 +680,7 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
             createdAt: Date.now(),
             tokens
         });
+        this._clientsStore.markAuthCodeOpened(client.client_id);
 
         // Re-validate redirect URI host + registration before redirect (defense-in-depth)
         if (!this.isAllowedRedirectHost(storedState.clientRedirectUri)) {
@@ -885,6 +779,7 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
     const EXPIRATION_MS = 5 * 60 * 1000; // 5 minutes
     if (codeAge > EXPIRATION_MS) {
       this.authorizationCodes.delete(authorizationCode);
+      this._clientsStore.markAuthCodeClosed(codeData.client.client_id);
       throw new Error('Authorization code expired');
     }
 
@@ -912,6 +807,7 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
 
     // Delete authorization code (single use)
     this.authorizationCodes.delete(authorizationCode);
+    this._clientsStore.markAuthCodeClosed(codeData.client.client_id);
 
     // Store access token for validation
     const tokenData: AccessTokenData = {
@@ -1187,6 +1083,7 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
     for (const [state, data] of this.stateStore.entries()) {
       if (now - data.createdAt > STATE_TIMEOUT) {
         this.stateStore.delete(state);
+        this._clientsStore.markAuthStateClosed(data.clientId);
       }
     }
 
@@ -1195,6 +1092,7 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
     for (const [code, data] of this.authorizationCodes.entries()) {
       if (now - data.createdAt > CODE_TIMEOUT) {
         this.authorizationCodes.delete(code);
+        this._clientsStore.markAuthCodeClosed(data.client.client_id);
       }
     }
 

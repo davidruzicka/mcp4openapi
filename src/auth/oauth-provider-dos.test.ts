@@ -2,6 +2,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { InMemoryClientsStore } from './oauth-provider.js';
 import type { OAuthClientInformationFull } from '@modelcontextprotocol/sdk/shared/auth.js';
+import { OAuthClientStoreCapacityError } from '../core/errors.js';
 
 describe('InMemoryClientsStore DoS Protection', () => {
   let store: InMemoryClientsStore;
@@ -40,9 +41,6 @@ describe('InMemoryClientsStore DoS Protection', () => {
     for (let i = 0; i < 1000; i++) {
       await store.registerClient(createClient(`mcp-client-${i}`));
     }
-
-    // Verify mcp-client-0 exists
-    expect(await store.getClient('mcp-client-0')).toBeDefined();
 
     // Register one more
     await store.registerClient(createClient('mcp-client-overflow'));
@@ -92,6 +90,45 @@ describe('InMemoryClientsStore DoS Protection', () => {
     expect(store.getClientCount()).toBe(1000);
   });
 
+  it('should keep active clients and evict idle clients first', async () => {
+    const configuredStore = new InMemoryClientsStore({ maxClients: 2 });
+    await configuredStore.registerClient(createClient('mcp-client-active'));
+    await configuredStore.registerClient(createClient('mcp-client-idle'));
+
+    configuredStore.markSessionAttached('mcp-client-active');
+    await configuredStore.registerClient(createClient('mcp-client-new'));
+
+    expect(await configuredStore.getClient('mcp-client-active')).toBeDefined();
+    expect(await configuredStore.getClient('mcp-client-idle')).toBeUndefined();
+    expect(await configuredStore.getClient('mcp-client-new')).toBeDefined();
+  });
+
+  it('should reject registration when no idle candidate exists', async () => {
+    const configuredStore = new InMemoryClientsStore({ maxClients: 1 });
+    await configuredStore.registerClient(createClient('mcp-client-active'));
+    configuredStore.markSessionAttached('mcp-client-active');
+
+    await expect(
+      configuredStore.registerClient(createClient('mcp-client-new')),
+    ).rejects.toBeInstanceOf(OAuthClientStoreCapacityError);
+  });
+
+  it('should support idle grace env override', async () => {
+    const envStore = new InMemoryClientsStore(
+      { maxClients: 2 },
+      {
+        MCP4_OAUTH_CLIENT_STORE_IDLE_GRACE_MS: '999999',
+      } as NodeJS.ProcessEnv,
+      () => 1000,
+    );
+    await envStore.registerClient(createClient('mcp-client-1'));
+    await envStore.registerClient(createClient('mcp-client-2'));
+
+    await expect(
+      envStore.registerClient(createClient('mcp-client-3')),
+    ).rejects.toBeInstanceOf(OAuthClientStoreCapacityError);
+  });
+
   it('should support constructor limit overrides', async () => {
     const configuredStore = new InMemoryClientsStore({
       maxClients: 2,
@@ -129,6 +166,29 @@ describe('InMemoryClientsStore DoS Protection', () => {
     await expect(
       envStore.registerClient(createClient('mcp-client-too-long', ['http://localhost/' + 'x'.repeat(256)]))
     ).rejects.toThrow('redirect_uri too long');
+  });
+
+  it('should expose metadata transitions and prevent counter underflow', async () => {
+    const metadataStore = new InMemoryClientsStore({ maxClients: 10 }, {}, () => 1000);
+    await metadataStore.registerClient(createClient('mcp-client-1'));
+
+    metadataStore.markSessionAttached('mcp-client-1');
+    metadataStore.markSessionDetached('mcp-client-1');
+    metadataStore.markSessionDetached('mcp-client-1');
+    metadataStore.markAuthStateOpened('mcp-client-1');
+    metadataStore.markAuthStateClosed('mcp-client-1');
+    metadataStore.markAuthStateClosed('mcp-client-1');
+    metadataStore.markAuthCodeOpened('mcp-client-1');
+    metadataStore.markAuthCodeClosed('mcp-client-1');
+    metadataStore.markAuthCodeClosed('mcp-client-1');
+    metadataStore.markClientUsed('mcp-client-1');
+
+    const meta = metadataStore.getClientMetadataSnapshot().find((item) => item.clientId === 'mcp-client-1');
+    expect(meta).toBeDefined();
+    expect(meta?.activeSessionCount).toBe(0);
+    expect(meta?.pendingStateCount).toBe(0);
+    expect(meta?.pendingAuthCodeCount).toBe(0);
+    expect(meta?.lastUsedAt).toBe(1000);
   });
 
   it('should validate redirect_uris count', async () => {

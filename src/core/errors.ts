@@ -79,6 +79,16 @@ export class RateLimitError extends MCPError {
   }
 }
 
+export class OAuthClientStoreCapacityError extends MCPError {
+  constructor(
+    message: string = 'OAuth client registration temporarily unavailable',
+    details?: Record<string, unknown>,
+  ) {
+    super(message, 'OAUTH_CLIENT_STORE_CAPACITY', details);
+    this.name = 'OAuthClientStoreCapacityError';
+  }
+}
+
 export class NetworkError extends MCPError {
   constructor(message: string, statusCode?: number, details?: Record<string, unknown>) {
     super(message, 'NETWORK_ERROR', { statusCode, ...details });

@@ -125,6 +125,11 @@ MCP4_OAUTH_REDIRECT_URI=http://<mcp-server-url>:<mcp-server-port>/oauth/callback
 - `MCP4_OAUTH_CLIENT_STORE_MAX_CLIENTS` (default: `1000`)
 - `MCP4_OAUTH_CLIENT_STORE_MAX_REDIRECT_URIS` (default: `10`)
 - `MCP4_OAUTH_CLIENT_STORE_MAX_REDIRECT_URI_LENGTH` (default: `256`)
+- `MCP4_OAUTH_CLIENT_STORE_IDLE_GRACE_MS` (default: `0`)
+
+Dynamic registration eviction policy:
+- Idle dynamic clients are evicted first (`mcp-client-*`), while clients with active session usage or pending OAuth state/code are protected from eviction.
+- If no idle candidate is safely evictable, dynamic registration returns `429` (`temporarily_unavailable`).
 
 ### 3. Create OAuth Profile
 

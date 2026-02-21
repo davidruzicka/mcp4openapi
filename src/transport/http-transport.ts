@@ -37,6 +37,7 @@ import {
   AuthenticationError,
   AuthorizationError,
   ConfigurationError,
+  OAuthClientStoreCapacityError,
   RateLimitError,
   ValidationError,
   generateCorrelationId,
@@ -1990,6 +1991,21 @@ export class HttpTransport {
         token_endpoint_auth_method: 'client_secret_post',
       });
     } catch (error) {
+      if (error instanceof OAuthClientStoreCapacityError) {
+        const correlationId = generateCorrelationId();
+        this.logger.warn('Client registration rejected: OAuth client store at capacity', {
+          profileId: profileState.profileId,
+          correlationId,
+          details: error.details,
+        });
+        res.status(HTTP_STATUS.TOO_MANY_REQUESTS).json({
+          error: 'temporarily_unavailable',
+          error_description: error.message,
+          correlationId,
+        });
+        return;
+      }
+
       this.logger.error('Client registration failed', error instanceof Error ? error : new Error(String(error)));
       res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ error: 'server_error', error_description: 'Registration failed' });
     }
@@ -3138,6 +3154,9 @@ export class HttpTransport {
       tenantAuthConfigs: tenantContext?.tenantAuthConfigs,
     };
     profileState.sessions.set(sessionId, session);
+    if (oauthClientId) {
+      this.attachOAuthClientSession(profileState, session, oauthClientId);
+    }
     this.logger.info('Session created', { 
       profileId: profileState.profileId,
       sessionId, 
@@ -3175,6 +3194,10 @@ export class HttpTransport {
   private destroySession(profileState: ProfileRuntimeState, sessionId: string): void {
     const session = profileState.sessions.get(sessionId);
     if (session) {
+      if (session.oauthClientId) {
+        this.detachOAuthClientSession(profileState, session, session.oauthClientId);
+      }
+
       // Close all active SSE streams
       for (const [, streamState] of session.sseStreams) {
         streamState.active = false;
@@ -3216,6 +3239,18 @@ export class HttpTransport {
         this.metrics.clearToolsSession(sessionId);
       }
     }
+  }
+
+  private attachOAuthClientSession(profileState: ProfileRuntimeState, session: SessionData, clientId: string): void {
+    const oauthProvider = this.getOAuthProviderForSession(profileState, session);
+    oauthProvider?.clientsStore.markSessionAttached?.(clientId);
+  }
+
+  private detachOAuthClientSession(profileState: ProfileRuntimeState, session: SessionData, clientId: string): void {
+    const oauthProvider = session.tenantOAuthConfig
+      ? this.getTenantOAuthProviderCache(profileState).get(session.id) || null
+      : profileState.oauthProvider;
+    oauthProvider?.clientsStore.markSessionDetached?.(clientId);
   }
 
   /**
