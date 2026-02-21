@@ -119,7 +119,12 @@ MCP4_OAUTH_REDIRECT_URI=http://<mcp-server-url>:<mcp-server-port>/oauth/callback
 2. **Explicit Issuer** (`MCP4_OAUTH_ISSUER`) - derives standard paths
 3. **Autodiscovery** (from `MCP4_API_BASE_URL`) - fetches metadata or uses standard paths
 
-**Complete environment variable reference**: See [env.example](../env.example#L109-L131) for all OAuth configuration options.
+**Complete environment variable reference**: See [env.example](../env.example) for all OAuth configuration options.
+
+**Optional dynamic registration safety limits:**
+- `MCP4_OAUTH_CLIENT_STORE_MAX_CLIENTS` (default: `1000`)
+- `MCP4_OAUTH_CLIENT_STORE_MAX_REDIRECT_URIS` (default: `10`)
+- `MCP4_OAUTH_CLIENT_STORE_MAX_REDIRECT_URI_LENGTH` (default: `256`)
 
 ### 3. Create OAuth Profile
 
