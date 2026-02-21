@@ -20,7 +20,6 @@ import type {
   OAuthServerProvider,
   AuthorizationParams,
 } from '@modelcontextprotocol/sdk/server/auth/provider.js';
-import type { OAuthRegisteredClientsStore } from '@modelcontextprotocol/sdk/server/auth/clients.js';
 import type {
   OAuthClientInformationFull,
   OAuthTokens,
@@ -33,22 +32,9 @@ import { OAUTH_CLEANUP, OAUTH_PATHS, PROXY_CREDENTIALS } from '../core/constants
 import { escapeHtmlSafe } from '../validation/validation-utils.js';
 import { SSRFValidator } from '../security/ssrf-validator.js';
 import { parseOAuthMetadataEndpoints } from './oauth-metadata.js';
-
-/**
- * In-memory store for OAuth client registrations
- */
-export class InMemoryClientsStore implements OAuthRegisteredClientsStore {
-  private clients = new Map<string, OAuthClientInformationFull>();
-
-  async getClient(clientId: string): Promise<OAuthClientInformationFull | undefined> {
-    return this.clients.get(clientId);
-  }
-
-  async registerClient(clientMetadata: OAuthClientInformationFull): Promise<OAuthClientInformationFull> {
-    this.clients.set(clientMetadata.client_id, clientMetadata);
-    return clientMetadata;
-  }
-}
+import { InMemoryClientsStore } from './client-store/in-memory-clients-store.js';
+export { InMemoryClientsStore };
+export type { InMemoryClientsStoreOptions } from './client-store/types.js';
 
 /**
  * State preserved across the redirect to external provider
@@ -189,7 +175,7 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
     return this.initializationPromise;
   }
 
-  get clientsStore(): OAuthRegisteredClientsStore {
+  get clientsStore(): InMemoryClientsStore {
     return this._clientsStore;
   }
 
@@ -590,6 +576,7 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
       scopes: params.scopes,
       createdAt: Date.now(),
     });
+    this._clientsStore.markAuthStateOpened(client.client_id);
 
     const authUrl = new URL(this.config.authorization_endpoint!);
     const clientId = this.config.client_id || client.client_id;
@@ -665,6 +652,7 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
 
     // Clean up state
     this.stateStore.delete(state);
+    this._clientsStore.markAuthStateClosed(storedState.clientId);
 
     try {
         // Exchange External Code for Tokens
@@ -692,6 +680,7 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
             createdAt: Date.now(),
             tokens
         });
+        this._clientsStore.markAuthCodeOpened(client.client_id);
 
         // Re-validate redirect URI host + registration before redirect (defense-in-depth)
         if (!this.isAllowedRedirectHost(storedState.clientRedirectUri)) {
@@ -790,6 +779,7 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
     const EXPIRATION_MS = 5 * 60 * 1000; // 5 minutes
     if (codeAge > EXPIRATION_MS) {
       this.authorizationCodes.delete(authorizationCode);
+      this._clientsStore.markAuthCodeClosed(codeData.client.client_id);
       throw new Error('Authorization code expired');
     }
 
@@ -817,6 +807,7 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
 
     // Delete authorization code (single use)
     this.authorizationCodes.delete(authorizationCode);
+    this._clientsStore.markAuthCodeClosed(codeData.client.client_id);
 
     // Store access token for validation
     const tokenData: AccessTokenData = {
@@ -1092,6 +1083,7 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
     for (const [state, data] of this.stateStore.entries()) {
       if (now - data.createdAt > STATE_TIMEOUT) {
         this.stateStore.delete(state);
+        this._clientsStore.markAuthStateClosed(data.clientId);
       }
     }
 
@@ -1100,6 +1092,7 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
     for (const [code, data] of this.authorizationCodes.entries()) {
       if (now - data.createdAt > CODE_TIMEOUT) {
         this.authorizationCodes.delete(code);
+        this._clientsStore.markAuthCodeClosed(data.client.client_id);
       }
     }
 

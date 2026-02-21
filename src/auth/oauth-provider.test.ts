@@ -1761,4 +1761,93 @@ describe('ExternalOAuthProvider', () => {
     });
   });
 
+  describe('client store eviction safety integration', () => {
+    const createDynamicClient = (id: string): OAuthClientInformationFull => ({
+      client_id: id,
+      client_secret: 'secret',
+      redirect_uris: ['http://localhost:3003/oauth/callback'],
+      grant_types: ['authorization_code'],
+      response_types: ['code'],
+    });
+
+    it('keeps a client with pending authorization state from eviction', async () => {
+      const previousMaxClients = process.env.MCP4_OAUTH_CLIENT_STORE_MAX_CLIENTS;
+      process.env.MCP4_OAUTH_CLIENT_STORE_MAX_CLIENTS = '4';
+
+      try {
+        provider = new ExternalOAuthProvider(config, mockLogger);
+
+        const clientA = createDynamicClient('mcp-client-a');
+        const clientB = createDynamicClient('mcp-client-b');
+        const clientC = createDynamicClient('mcp-client-c');
+
+        await (provider as any)._clientsStore.registerClient(clientA);
+        await (provider as any)._clientsStore.registerClient(clientB);
+
+        await provider.authorize(clientA, {
+          redirectUri: 'http://localhost:3003/oauth/callback',
+          codeChallenge: 'challenge',
+          scopes: ['api'],
+        }, { redirect: vi.fn() } as any);
+
+        await (provider as any)._clientsStore.registerClient(clientC);
+
+        expect(await (provider as any)._clientsStore.getClient(clientA.client_id)).toBeDefined();
+        expect(await (provider as any)._clientsStore.getClient(clientB.client_id)).toBeUndefined();
+      } finally {
+        if (previousMaxClients === undefined) {
+          delete process.env.MCP4_OAUTH_CLIENT_STORE_MAX_CLIENTS;
+        } else {
+          process.env.MCP4_OAUTH_CLIENT_STORE_MAX_CLIENTS = previousMaxClients;
+        }
+      }
+    });
+
+    it('keeps a client with pending authorization code from eviction', async () => {
+      const previousMaxClients = process.env.MCP4_OAUTH_CLIENT_STORE_MAX_CLIENTS;
+      process.env.MCP4_OAUTH_CLIENT_STORE_MAX_CLIENTS = '4';
+
+      try {
+        provider = new ExternalOAuthProvider(config, mockLogger);
+
+        const clientA = createDynamicClient('mcp-client-a');
+        const clientB = createDynamicClient('mcp-client-b');
+        const clientC = createDynamicClient('mcp-client-c');
+
+        await (provider as any)._clientsStore.registerClient(clientA);
+        await (provider as any)._clientsStore.registerClient(clientB);
+        (provider as any).stateStore.set('state-pending-code', {
+          clientRedirectUri: 'http://localhost:3003/oauth/callback',
+          codeChallenge: 'challenge',
+          originalState: 'orig',
+          clientId: clientA.client_id,
+          scopes: ['api'],
+          createdAt: Date.now(),
+        });
+        (provider as any).exchangeCodeWithProvider = vi.fn().mockResolvedValue({
+          access_token: 'at',
+          refresh_token: 'rt',
+          expires_in: 3600,
+          token_type: 'Bearer',
+        });
+
+        await provider.handleCallback(
+          { query: { code: 'auth-code', state: 'state-pending-code' } } as any,
+          { status: vi.fn().mockReturnThis(), send: vi.fn(), redirect: vi.fn(), json: vi.fn() } as any,
+        );
+
+        await (provider as any)._clientsStore.registerClient(clientC);
+
+        expect(await (provider as any)._clientsStore.getClient(clientA.client_id)).toBeDefined();
+        expect(await (provider as any)._clientsStore.getClient(clientB.client_id)).toBeUndefined();
+      } finally {
+        if (previousMaxClients === undefined) {
+          delete process.env.MCP4_OAUTH_CLIENT_STORE_MAX_CLIENTS;
+        } else {
+          process.env.MCP4_OAUTH_CLIENT_STORE_MAX_CLIENTS = previousMaxClients;
+        }
+      }
+    });
+  });
+
 });
