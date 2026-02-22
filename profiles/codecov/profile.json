@@ -1,0 +1,476 @@
+{
+  "$schema": "../../profile-schema.json",
+  "profile_name": "codecov-optimized",
+  "profile_id": "codecov",
+  "profile_aliases": [
+    "codecov-optimized"
+  ],
+  "openapi_spec_path": "./CodecovAPI.yaml",
+  "description": "CRUD-style tool grouping for Codecov API (read-heavy + user activation updates).",
+  "parameter_aliases": {
+    "owner_username": [
+      "owner"
+    ],
+    "repo_name": [
+      "repo"
+    ],
+    "user_username_or_ownerid": [
+      "user",
+      "username",
+      "user_id"
+    ],
+    "pullid": [
+      "pull_id"
+    ],
+    "commitid": [
+      "commit_id",
+      "commit_sha"
+    ],
+    "name": [
+      "branch_name"
+    ],
+    "id": [
+      "test_result_id"
+    ],
+    "file_path": [
+      "compare_file_path"
+    ],
+    "path": [
+      "report_path"
+    ]
+  },
+  "tools": [
+    {
+      "name": "retrieve_content",
+      "description": "Read-only access to Codecov entities. Actions: 'list_owners', 'get_owner', 'list_repositories', 'get_repository', 'list_branches', 'get_branch', 'list_commits', 'get_commit', 'list_commit_uploads', 'get_comparison', 'get_component_comparison', 'get_file_comparison', 'get_flag_comparison', 'get_impacted_files_comparison', 'get_segmented_file_comparison', 'list_components', 'get_repository_config', 'get_coverage_trend', 'get_eval_comparison', 'get_eval_summary', 'get_file_report', 'list_flags', 'get_flag_coverage_trend', 'list_pulls', 'get_pull', 'get_report', 'get_report_tree', 'list_test_analytics', 'list_test_results', 'get_test_result', 'get_totals', 'list_user_sessions', 'list_users', 'get_user'.",
+      "metadata_params": [
+        "action"
+      ],
+      "operations": {
+        "list_owners": "root_list",
+        "get_owner": "root_retrieve",
+        "list_repositories": "repos_list",
+        "get_repository": "repos_retrieve",
+        "list_branches": "repos_branches_list",
+        "get_branch": "repos_branches_retrieve",
+        "list_commits": "repos_commits_list",
+        "get_commit": "repos_commits_retrieve",
+        "list_commit_uploads": "repos_commits_uploads_list",
+        "get_comparison": "repos_compare_retrieve",
+        "get_component_comparison": "repos_compare_components_retrieve",
+        "get_file_comparison": "repos_compare_file_retrieve",
+        "get_flag_comparison": "repos_compare_flags_retrieve",
+        "get_impacted_files_comparison": "repos_compare_impacted_files_retrieve",
+        "get_segmented_file_comparison": "repos_compare_segments_retrieve",
+        "list_components": "repos_components_list",
+        "get_repository_config": "repos_config_retrieve",
+        "get_coverage_trend": "repos_coverage_list",
+        "get_eval_comparison": "repos_evals_compare_retrieve",
+        "get_eval_summary": "repos_evals_summary_retrieve",
+        "get_file_report": "repos_file_report_retrieve",
+        "list_flags": "repos_flags_list",
+        "get_flag_coverage_trend": "repos_flags_coverage_list",
+        "list_pulls": "repos_pulls_list",
+        "get_pull": "repos_pulls_retrieve",
+        "get_report": "repos_report_retrieve",
+        "get_report_tree": "repos_report_tree_retrieve",
+        "list_test_analytics": "repos_test_analytics_list",
+        "list_test_results": "repos_test_results_list",
+        "get_test_result": "repos_test_results_retrieve",
+        "get_totals": "repos_totals_retrieve",
+        "list_user_sessions": "user_sessions_list",
+        "list_users": "users_list",
+        "get_user": "users_retrieve"
+      },
+      "parameters": {
+        "action": {
+          "type": "string",
+          "enum": [
+            "list_owners",
+            "get_owner",
+            "list_repositories",
+            "get_repository",
+            "list_branches",
+            "get_branch",
+            "list_commits",
+            "get_commit",
+            "list_commit_uploads",
+            "get_comparison",
+            "get_component_comparison",
+            "get_file_comparison",
+            "get_flag_comparison",
+            "get_impacted_files_comparison",
+            "get_segmented_file_comparison",
+            "list_components",
+            "get_repository_config",
+            "get_coverage_trend",
+            "get_eval_comparison",
+            "get_eval_summary",
+            "get_file_report",
+            "list_flags",
+            "get_flag_coverage_trend",
+            "list_pulls",
+            "get_pull",
+            "get_report",
+            "get_report_tree",
+            "list_test_analytics",
+            "list_test_results",
+            "get_test_result",
+            "get_totals",
+            "list_user_sessions",
+            "list_users",
+            "get_user"
+          ],
+          "description": "Action to perform",
+          "required": true
+        },
+        "service": {
+          "type": "string",
+          "enum": [
+            "bitbucket",
+            "bitbucket_server",
+            "github",
+            "github_enterprise",
+            "gitlab",
+            "gitlab_enterprise",
+            "to_be_deleted"
+          ],
+          "description": "Git hosting service provider",
+          "required": true
+        },
+        "owner_username": {
+          "type": "string",
+          "description": "Owner username (organization or user handle on the service provider)",
+          "required_for": [
+            "get_owner",
+            "list_repositories",
+            "get_repository",
+            "list_branches",
+            "get_branch",
+            "list_commits",
+            "get_commit",
+            "list_commit_uploads",
+            "get_comparison",
+            "get_component_comparison",
+            "get_file_comparison",
+            "get_flag_comparison",
+            "get_impacted_files_comparison",
+            "get_segmented_file_comparison",
+            "list_components",
+            "get_repository_config",
+            "get_coverage_trend",
+            "get_eval_comparison",
+            "get_eval_summary",
+            "get_file_report",
+            "list_flags",
+            "get_flag_coverage_trend",
+            "list_pulls",
+            "get_pull",
+            "get_report",
+            "get_report_tree",
+            "list_test_analytics",
+            "list_test_results",
+            "get_test_result",
+            "get_totals",
+            "list_user_sessions",
+            "list_users",
+            "get_user"
+          ]
+        },
+        "repo_name": {
+          "type": "string",
+          "description": "Repository name",
+          "required_for": [
+            "get_repository",
+            "list_branches",
+            "get_branch",
+            "list_commits",
+            "get_commit",
+            "list_commit_uploads",
+            "get_comparison",
+            "get_component_comparison",
+            "get_file_comparison",
+            "get_flag_comparison",
+            "get_impacted_files_comparison",
+            "get_segmented_file_comparison",
+            "list_components",
+            "get_repository_config",
+            "get_coverage_trend",
+            "get_eval_comparison",
+            "get_eval_summary",
+            "get_file_report",
+            "list_flags",
+            "get_flag_coverage_trend",
+            "list_pulls",
+            "get_pull",
+            "get_report",
+            "get_report_tree",
+            "list_test_analytics",
+            "list_test_results",
+            "get_test_result",
+            "get_totals"
+          ]
+        },
+        "user_username_or_ownerid": {
+          "type": "string",
+          "description": "User identifier (username or owner id)",
+          "required_for": [
+            "get_user"
+          ]
+        },
+        "name": {
+          "type": "string",
+          "description": "Branch name",
+          "required_for": [
+            "get_branch"
+          ]
+        },
+        "commitid": {
+          "type": "string",
+          "description": "Commit SHA",
+          "required_for": [
+            "get_commit",
+            "list_commit_uploads"
+          ]
+        },
+        "file_path": {
+          "type": "string",
+          "description": "File path for compare/file and compare/segments endpoints",
+          "required_for": [
+            "get_file_comparison",
+            "get_segmented_file_comparison"
+          ]
+        },
+        "flag_name": {
+          "type": "string",
+          "description": "Flag name",
+          "required_for": [
+            "get_flag_coverage_trend"
+          ]
+        },
+        "pullid": {
+          "type": "string",
+          "description": "Pull request number for pull detail (or optional compare baseline selector)",
+          "required_for": [
+            "get_pull"
+          ]
+        },
+        "id": {
+          "type": "string",
+          "description": "Test result id",
+          "required_for": [
+            "get_test_result"
+          ]
+        },
+        "path": {
+          "type": "string",
+          "description": "Path for report filtering and required file path for file report endpoint",
+          "required_for": [
+            "get_file_report"
+          ]
+        },
+        "interval": {
+          "type": "string",
+          "description": "Trend interval (for example: day, week, month)",
+          "required_for": [
+            "get_coverage_trend",
+            "get_flag_coverage_trend"
+          ]
+        },
+        "page": {
+          "type": "integer",
+          "description": "A page number within the paginated result set"
+        },
+        "page_size": {
+          "type": "integer",
+          "description": "Number of results to return per page"
+        },
+        "search": {
+          "type": "string",
+          "description": "Search term"
+        },
+        "active": {
+          "type": "boolean",
+          "description": "Filter repositories by activation status"
+        },
+        "names": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Filter repositories by a list of repository names"
+        },
+        "author": {
+          "type": "string",
+          "description": "Filter by author"
+        },
+        "ordering": {
+          "type": "string",
+          "description": "Ordering mode for list endpoints"
+        },
+        "branch": {
+          "type": "string",
+          "description": "Branch name filter"
+        },
+        "base": {
+          "type": "string",
+          "description": "Base reference for comparison"
+        },
+        "head": {
+          "type": "string",
+          "description": "Head reference for comparison"
+        },
+        "base_sha": {
+          "type": "string",
+          "description": "Base commit SHA"
+        },
+        "head_sha": {
+          "type": "string",
+          "description": "Head commit SHA"
+        },
+        "classname": {
+          "type": "string",
+          "description": "Test class name filter"
+        },
+        "commit": {
+          "type": "string",
+          "description": "Commit SHA filter for eval summary"
+        },
+        "commit_sha": {
+          "type": "string",
+          "description": "Commit SHA filter for test analytics"
+        },
+        "commit_id": {
+          "type": "string",
+          "description": "Commit id filter for test results"
+        },
+        "component_id": {
+          "type": "string",
+          "description": "Component id filter"
+        },
+        "depth": {
+          "type": "string",
+          "description": "Tree depth filter"
+        },
+        "duration_max": {
+          "type": "integer",
+          "description": "Maximum test duration in seconds"
+        },
+        "duration_min": {
+          "type": "integer",
+          "description": "Minimum test duration in seconds"
+        },
+        "end_date": {
+          "type": "string",
+          "description": "End date filter (ISO date)"
+        },
+        "flag": {
+          "type": "string",
+          "description": "Coverage flag filter"
+        },
+        "is_admin": {
+          "type": "boolean",
+          "description": "Filter users by admin flag"
+        },
+        "outcome": {
+          "type": "string",
+          "description": "Test outcome filter"
+        },
+        "sha": {
+          "type": "string",
+          "description": "Specific commit SHA filter"
+        },
+        "start_date": {
+          "type": "string",
+          "description": "Start date filter (ISO date)"
+        },
+        "state": {
+          "type": "string",
+          "description": "Pull request state filter"
+        }
+      }
+    },
+    {
+      "name": "update_content",
+      "description": "Update existing Codecov entities. Actions: 'update_user_activation'.",
+      "metadata_params": [
+        "action",
+        "service",
+        "owner_username",
+        "user_username_or_ownerid"
+      ],
+      "operations": {
+        "update_user_activation": "users_partial_update"
+      },
+      "parameters": {
+        "action": {
+          "type": "string",
+          "enum": [
+            "update_user_activation"
+          ],
+          "description": "Action to perform",
+          "required": true
+        },
+        "service": {
+          "type": "string",
+          "enum": [
+            "bitbucket",
+            "bitbucket_server",
+            "github",
+            "github_enterprise",
+            "gitlab",
+            "gitlab_enterprise",
+            "to_be_deleted"
+          ],
+          "description": "Git hosting service provider",
+          "required": true
+        },
+        "owner_username": {
+          "type": "string",
+          "description": "Owner username (organization or user handle on the service provider)",
+          "required_for": [
+            "update_user_activation"
+          ]
+        },
+        "user_username_or_ownerid": {
+          "type": "string",
+          "description": "User identifier (username or owner id)",
+          "required_for": [
+            "update_user_activation"
+          ]
+        },
+        "activated": {
+          "type": "boolean",
+          "description": "Whether the user should be activated (true) or deactivated (false)",
+          "required_for": [
+            "update_user_activation"
+          ]
+        }
+      }
+    }
+  ],
+  "interceptors": {
+    "auth": {
+      "type": "bearer",
+      "value_from_env": "CODECOV_TOKEN"
+    },
+    "base_url": {
+      "value_from_env": "CODECOV_API_BASE_URL",
+      "default": "https://api.codecov.io/api/v2"
+    },
+    "retry": {
+      "max_attempts": 3,
+      "backoff_ms": [
+        1000,
+        2000,
+        4000
+      ],
+      "retry_on_status": [
+        429,
+        502,
+        503,
+        504
+      ]
+    }
+  }
+}
