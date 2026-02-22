@@ -35,6 +35,7 @@ export function parseProfileAllowlistConfig(options: {
   let allowNameRegex: RegExp | undefined;
   if (rawRegex && rawRegex.length > 0) {
     try {
+      // nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp - Finding 692560306: operator-controlled startup config (MCP4_ALLOW_PROFILES_REGEX), not user input.
       allowNameRegex = new RegExp(rawRegex);
     } catch (error) {
       throw new ConfigurationError('Invalid profile allow regex', {
