@@ -135,6 +135,7 @@ npx mcp4openapi -l
 Predefined profiles in the `profiles/` directory contains names for easy reference:
 - GitLab profile: `gitlab`
 - YouTrack profile: `youtrack`
+- Codecov profile: `codecov`
 - SemGrep profile: `semgrep`
 - Grafana profile: `grafana`
 - n8n profile: `n8n`
@@ -670,6 +671,7 @@ npm run test:e2e
 - **[docs/RELEASING.md](./docs/RELEASING.md)** - Release process and CI/CD automation (for maintainers)
 - **`profiles/`** - Example profiles for OpenAPI specs
 - **`profiles/youtrack/`** - YouTrack profile + bundled OpenAPI spec (ready-to-use MCP tools)
+- **`profiles/codecov/`** - Codecov CRUD-style profile + bundled OpenAPI spec
 - **`profile-schema.json`** - JSON Schema for IDE autocomplete
 
 ## Project Status

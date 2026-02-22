@@ -1,0 +1,754 @@
+{
+  "$schema": "../../src/testing/test-schema.ts",
+  "profile_name": "codecov-optimized",
+  "scenarios": [
+    {
+      "name": "Codecov - list_owners",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "list_owners",
+        "service": "github"
+      },
+      "mocks": [
+        {
+          "operationId": "root_list",
+          "response": {
+            "body": {}
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Codecov - get_owner",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "get_owner",
+        "service": "github",
+        "owner_username": "codecov"
+      },
+      "mocks": [
+        {
+          "operationId": "root_retrieve",
+          "response": {
+            "body": {}
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Codecov - list_repositories",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "list_repositories",
+        "service": "github",
+        "owner_username": "codecov"
+      },
+      "mocks": [
+        {
+          "operationId": "repos_list",
+          "response": {
+            "body": {}
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Codecov - get_repository",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "get_repository",
+        "service": "github",
+        "owner_username": "codecov",
+        "repo_name": "example-repo"
+      },
+      "mocks": [
+        {
+          "operationId": "repos_retrieve",
+          "response": {
+            "body": {}
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Codecov - list_branches",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "list_branches",
+        "service": "github",
+        "owner_username": "codecov",
+        "repo_name": "example-repo"
+      },
+      "mocks": [
+        {
+          "operationId": "repos_branches_list",
+          "response": {
+            "body": {}
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Codecov - get_branch",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "get_branch",
+        "service": "github",
+        "owner_username": "codecov",
+        "repo_name": "example-repo",
+        "name": "main"
+      },
+      "mocks": [
+        {
+          "operationId": "repos_branches_retrieve",
+          "response": {
+            "body": {}
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Codecov - list_commits",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "list_commits",
+        "service": "github",
+        "owner_username": "codecov",
+        "repo_name": "example-repo"
+      },
+      "mocks": [
+        {
+          "operationId": "repos_commits_list",
+          "response": {
+            "body": {}
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Codecov - get_commit",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "get_commit",
+        "service": "github",
+        "owner_username": "codecov",
+        "repo_name": "example-repo",
+        "commitid": "abc123def"
+      },
+      "mocks": [
+        {
+          "operationId": "repos_commits_retrieve",
+          "response": {
+            "body": {}
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Codecov - list_commit_uploads",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "list_commit_uploads",
+        "service": "github",
+        "owner_username": "codecov",
+        "repo_name": "example-repo",
+        "commitid": "abc123def"
+      },
+      "mocks": [
+        {
+          "operationId": "repos_commits_uploads_list",
+          "response": {
+            "body": {}
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Codecov - get_comparison",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "get_comparison",
+        "service": "github",
+        "owner_username": "codecov",
+        "repo_name": "example-repo"
+      },
+      "mocks": [
+        {
+          "operationId": "repos_compare_retrieve",
+          "response": {
+            "body": {}
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Codecov - get_component_comparison",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "get_component_comparison",
+        "service": "github",
+        "owner_username": "codecov",
+        "repo_name": "example-repo"
+      },
+      "mocks": [
+        {
+          "operationId": "repos_compare_components_retrieve",
+          "response": {
+            "body": {}
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Codecov - get_file_comparison",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "get_file_comparison",
+        "service": "github",
+        "owner_username": "codecov",
+        "repo_name": "example-repo",
+        "file_path": "src/index.ts"
+      },
+      "mocks": [
+        {
+          "operationId": "repos_compare_file_retrieve",
+          "response": {
+            "body": {}
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Codecov - get_flag_comparison",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "get_flag_comparison",
+        "service": "github",
+        "owner_username": "codecov",
+        "repo_name": "example-repo"
+      },
+      "mocks": [
+        {
+          "operationId": "repos_compare_flags_retrieve",
+          "response": {
+            "body": {}
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Codecov - get_impacted_files_comparison",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "get_impacted_files_comparison",
+        "service": "github",
+        "owner_username": "codecov",
+        "repo_name": "example-repo"
+      },
+      "mocks": [
+        {
+          "operationId": "repos_compare_impacted_files_retrieve",
+          "response": {
+            "body": {}
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Codecov - get_segmented_file_comparison",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "get_segmented_file_comparison",
+        "service": "github",
+        "owner_username": "codecov",
+        "repo_name": "example-repo",
+        "file_path": "src/index.ts"
+      },
+      "mocks": [
+        {
+          "operationId": "repos_compare_segments_retrieve",
+          "response": {
+            "body": {}
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Codecov - list_components",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "list_components",
+        "service": "github",
+        "owner_username": "codecov",
+        "repo_name": "example-repo"
+      },
+      "mocks": [
+        {
+          "operationId": "repos_components_list",
+          "response": {
+            "body": {}
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Codecov - get_repository_config",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "get_repository_config",
+        "service": "github",
+        "owner_username": "codecov",
+        "repo_name": "example-repo"
+      },
+      "mocks": [
+        {
+          "operationId": "repos_config_retrieve",
+          "response": {
+            "body": {}
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Codecov - get_coverage_trend",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "get_coverage_trend",
+        "service": "github",
+        "owner_username": "codecov",
+        "repo_name": "example-repo",
+        "interval": "day"
+      },
+      "mocks": [
+        {
+          "operationId": "repos_coverage_list",
+          "response": {
+            "body": {}
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Codecov - get_eval_comparison",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "get_eval_comparison",
+        "service": "github",
+        "owner_username": "codecov",
+        "repo_name": "example-repo"
+      },
+      "mocks": [
+        {
+          "operationId": "repos_evals_compare_retrieve",
+          "response": {
+            "body": {}
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Codecov - get_eval_summary",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "get_eval_summary",
+        "service": "github",
+        "owner_username": "codecov",
+        "repo_name": "example-repo"
+      },
+      "mocks": [
+        {
+          "operationId": "repos_evals_summary_retrieve",
+          "response": {
+            "body": {}
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Codecov - get_file_report",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "get_file_report",
+        "service": "github",
+        "owner_username": "codecov",
+        "repo_name": "example-repo",
+        "path": "src/index.ts"
+      },
+      "mocks": [
+        {
+          "operationId": "repos_file_report_retrieve",
+          "response": {
+            "body": {}
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Codecov - list_flags",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "list_flags",
+        "service": "github",
+        "owner_username": "codecov",
+        "repo_name": "example-repo"
+      },
+      "mocks": [
+        {
+          "operationId": "repos_flags_list",
+          "response": {
+            "body": {}
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Codecov - get_flag_coverage_trend",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "get_flag_coverage_trend",
+        "service": "github",
+        "owner_username": "codecov",
+        "repo_name": "example-repo",
+        "flag_name": "unit",
+        "interval": "day"
+      },
+      "mocks": [
+        {
+          "operationId": "repos_flags_coverage_list",
+          "response": {
+            "body": {}
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Codecov - list_pulls",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "list_pulls",
+        "service": "github",
+        "owner_username": "codecov",
+        "repo_name": "example-repo"
+      },
+      "mocks": [
+        {
+          "operationId": "repos_pulls_list",
+          "response": {
+            "body": {}
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Codecov - get_pull",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "get_pull",
+        "service": "github",
+        "owner_username": "codecov",
+        "repo_name": "example-repo",
+        "pullid": "42"
+      },
+      "mocks": [
+        {
+          "operationId": "repos_pulls_retrieve",
+          "response": {
+            "body": {}
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Codecov - get_report",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "get_report",
+        "service": "github",
+        "owner_username": "codecov",
+        "repo_name": "example-repo"
+      },
+      "mocks": [
+        {
+          "operationId": "repos_report_retrieve",
+          "response": {
+            "body": {}
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Codecov - get_report_tree",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "get_report_tree",
+        "service": "github",
+        "owner_username": "codecov",
+        "repo_name": "example-repo"
+      },
+      "mocks": [
+        {
+          "operationId": "repos_report_tree_retrieve",
+          "response": {
+            "body": {}
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Codecov - list_test_analytics",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "list_test_analytics",
+        "service": "github",
+        "owner_username": "codecov",
+        "repo_name": "example-repo"
+      },
+      "mocks": [
+        {
+          "operationId": "repos_test_analytics_list",
+          "response": {
+            "body": {}
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Codecov - list_test_results",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "list_test_results",
+        "service": "github",
+        "owner_username": "codecov",
+        "repo_name": "example-repo"
+      },
+      "mocks": [
+        {
+          "operationId": "repos_test_results_list",
+          "response": {
+            "body": {}
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Codecov - get_test_result",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "get_test_result",
+        "service": "github",
+        "owner_username": "codecov",
+        "repo_name": "example-repo",
+        "id": "test-1"
+      },
+      "mocks": [
+        {
+          "operationId": "repos_test_results_retrieve",
+          "response": {
+            "body": {}
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Codecov - get_totals",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "get_totals",
+        "service": "github",
+        "owner_username": "codecov",
+        "repo_name": "example-repo"
+      },
+      "mocks": [
+        {
+          "operationId": "repos_totals_retrieve",
+          "response": {
+            "body": {}
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Codecov - list_user_sessions",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "list_user_sessions",
+        "service": "github",
+        "owner_username": "codecov"
+      },
+      "mocks": [
+        {
+          "operationId": "user_sessions_list",
+          "response": {
+            "body": {}
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Codecov - list_users",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "list_users",
+        "service": "github",
+        "owner_username": "codecov"
+      },
+      "mocks": [
+        {
+          "operationId": "users_list",
+          "response": {
+            "body": {}
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Codecov - get_user",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "get_user",
+        "service": "github",
+        "owner_username": "codecov",
+        "user_username_or_ownerid": "developer"
+      },
+      "mocks": [
+        {
+          "operationId": "users_retrieve",
+          "response": {
+            "body": {}
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Codecov - update_user_activation",
+      "tool": "update_content",
+      "arguments": {
+        "action": "update_user_activation",
+        "service": "github",
+        "owner_username": "codecov",
+        "user_username_or_ownerid": "developer",
+        "activated": true
+      },
+      "mocks": [
+        {
+          "operationId": "users_partial_update",
+          "response": {
+            "body": {
+              "activated": true,
+              "username": "developer"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    }
+  ],
+  "coverage": {
+    "require_all_actions": true,
+    "skip_actions": {}
+  }
+}
