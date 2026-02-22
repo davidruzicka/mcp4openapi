@@ -339,11 +339,7 @@ export class ProxyDownloadExecutor {
           `Cross-origin download URL not allowed with authentication (base origin '${baseOrigin}', download origin '${downloadOrigin}'). Set skip_auth=true or use a same-origin download endpoint.`
         );
       }
-      return;
     }
-
-    // With skip_auth, allow same-origin without additional restrictions
-    if (downloadOrigin === baseOrigin) return;
 
     await this.enforceAllowedDownloadTarget(downloadUrl, operation);
   }
@@ -505,7 +501,7 @@ export class ProxyDownloadExecutor {
   }
 
   private async enforceAllowedDownloadTarget(targetUrl: string, operation: ProxyDownloadOperation): Promise<void> {
-    const allowPrivateNetwork = operation.allow_private_network ?? false;
+    const allowPrivateNetwork = operation.allow_private_network ?? (process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK === 'true');
     const allowedHosts = operation.allowed_hosts ?? [];
 
     await this.ssrfValidator.validate(targetUrl, {
