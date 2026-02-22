@@ -10,7 +10,7 @@ import type { ProxyDownloadOperation } from '../types/profile.js';
 import type { ResponseContext, AuthCredentials } from '../transport/interceptors.js';
 import { NetworkError, ValidationError } from '../core/errors.js';
 import { isSafePropertyName } from '../validation/validation-utils.js';
-import { SSRFValidator } from '../security/ssrf-validator.js';
+import { SSRFValidator, type SSRFOptions } from '../security/ssrf-validator.js';
 import { LoggerAdapter } from './logger-adapter.js';
 
 export interface DebugLogger {
@@ -332,16 +332,30 @@ export class ProxyDownloadExecutor {
     skipAuth: boolean
   ): Promise<void> {
     const downloadOrigin = new URL(downloadUrl).origin;
+    const isCrossOrigin = downloadOrigin !== baseOrigin;
 
-    if (!skipAuth) {
-      if (downloadOrigin !== baseOrigin) {
-        throw new ValidationError(
-          `Cross-origin download URL not allowed with authentication (base origin '${baseOrigin}', download origin '${downloadOrigin}'). Set skip_auth=true or use a same-origin download endpoint.`
-        );
-      }
+    if (!skipAuth && isCrossOrigin) {
+      throw new ValidationError(
+        `Cross-origin download URL not allowed with authentication (base origin '${baseOrigin}', download origin '${downloadOrigin}'). Set skip_auth=true or use a same-origin download endpoint.`
+      );
     }
 
-    await this.enforceAllowedDownloadTarget(downloadUrl, operation);
+    const targetPolicy = this.resolveDownloadTargetPolicy(isCrossOrigin, operation);
+    await this.enforceAllowedDownloadTarget(downloadUrl, targetPolicy);
+  }
+
+  private resolveDownloadTargetPolicy(
+    isCrossOrigin: boolean,
+    operation: ProxyDownloadOperation
+  ): SSRFOptions {
+    const allowPrivateNetwork =
+      operation.allow_private_network ??
+      (process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK === 'true');
+
+    return {
+      allowPrivateNetwork,
+      allowedHosts: isCrossOrigin ? (operation.allowed_hosts ?? []) : undefined,
+    };
   }
 
   /**
@@ -500,14 +514,8 @@ export class ProxyDownloadExecutor {
     return resolved.toString();
   }
 
-  private async enforceAllowedDownloadTarget(targetUrl: string, operation: ProxyDownloadOperation): Promise<void> {
-    const allowPrivateNetwork = operation.allow_private_network ?? (process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK === 'true');
-    const allowedHosts = operation.allowed_hosts ?? [];
-
-    await this.ssrfValidator.validate(targetUrl, {
-      allowPrivateNetwork,
-      allowedHosts,
-    });
+  private async enforceAllowedDownloadTarget(targetUrl: string, targetPolicy: SSRFOptions): Promise<void> {
+    await this.ssrfValidator.validate(targetUrl, targetPolicy);
   }
 
   /**

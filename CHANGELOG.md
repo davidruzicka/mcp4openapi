@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed profile schema sync generation on Node runtimes without `fs.globSync` by falling back to tsconfig-based source discovery.
 - Fixed OSV scan gating by pinning direct `ajv` usage to `^8.18.0` and adding a temporary documented ignore for the unresolved `eslint` dev-only transitive `ajv@6.12.6` finding.
 - Hardened OAuth in-memory client store limits with configurable env/constructor overrides, idle-grace configuration, active-usage-aware eviction policy, and deterministic 429 responses when no safe eviction candidate exists.
+- Fixed proxy-download SSRF policy regression so same-origin URLs remain allowed when `allowed_hosts` is configured for cross-origin `skip_auth` flows, while still enforcing private-network SSRF checks.
 
 ### Changed
 - Refreshed lockfile with latest non-breaking dependency updates available under current semver ranges.

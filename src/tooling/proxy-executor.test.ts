@@ -364,6 +364,36 @@ describe('ProxyDownloadExecutor', () => {
     ).rejects.toThrow("Host not in allowlist: 'cdn.example.com'");
   });
 
+  it('should allow same-origin download even when allowed_hosts excludes base host', async () => {
+    mockHttpClient.request.mockResolvedValue({
+      status: 200,
+      headers: {},
+      body: { url: 'https://api.example.com/files/abc123' },
+    });
+
+    const mockBinary = new Uint8Array([0x01, 0x02]);
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: new Headers({
+        'content-length': String(mockBinary.byteLength),
+        'content-type': 'application/octet-stream',
+      }),
+      arrayBuffer: () => Promise.resolve(mockBinary.buffer),
+    });
+
+    const executor = new ProxyDownloadExecutor(mockHttpClient as any);
+    const operation: ProxyDownloadOperation = {
+      type: 'proxy_download',
+      metadata_endpoint: 'get_/file',
+      url_field: 'url',
+      skip_auth: true,
+      allowed_hosts: ['cdn.example.com'],
+    };
+
+    await executor.execute(operation, metadataRequest('/file'), { headers: {} });
+  });
+
   it('should log allowlist details when host is not allowed', async () => {
     mockHttpClient.request.mockResolvedValue({
       status: 200,
@@ -495,6 +525,46 @@ describe('ProxyDownloadExecutor', () => {
     };
 
     await executor.execute(operation, metadataRequest('/file'), { headers: {} });
+  });
+
+  it('should allow private network targets when MCP4_SSRF_ALLOW_PRIVATE_NETWORK=true and operation is not set', async () => {
+    const originalAllowPrivateNetwork = process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK;
+    process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK = 'true';
+
+    try {
+      mockHttpClient.request.mockResolvedValue({
+        status: 200,
+        headers: {},
+        body: { url: 'http://127.0.0.1/secret' },
+      });
+
+      const mockBinary = new Uint8Array([0x01]);
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        headers: new Headers({
+          'content-length': String(mockBinary.byteLength),
+          'content-type': 'application/octet-stream',
+        }),
+        arrayBuffer: () => Promise.resolve(mockBinary.buffer),
+      });
+
+      const executor = new ProxyDownloadExecutor(mockHttpClient as any);
+      const operation: ProxyDownloadOperation = {
+        type: 'proxy_download',
+        metadata_endpoint: 'get_/file',
+        url_field: 'url',
+        skip_auth: true,
+      };
+
+      await executor.execute(operation, metadataRequest('/file'), { headers: {} });
+    } finally {
+      if (originalAllowPrivateNetwork === undefined) {
+        delete process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK;
+      } else {
+        process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK = originalAllowPrivateNetwork;
+      }
+    }
   });
 
   it('should reject hostname that resolves to private IP when skip_auth is true', async () => {
