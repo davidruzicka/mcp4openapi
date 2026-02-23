@@ -23,6 +23,17 @@ Reference canonical sources; never duplicate rules.
 
 - **Never duplicate validation or business rules. Always reference canonical docs.**
 - Prefer data-oriented programming - instead of chained if/else or switch statements, use data structures (maps, tables) to define behavior.
+- **Senior Delivery Standard (MANDATORY):**
+  - Treat implementation requests as senior-level by default unless user explicitly asks for a quick prototype.
+  - Prefer modular design with explicit boundaries (for example policy resolver, key builder, store interface, factory/registry) over monolithic feature blocks.
+  - Apply clean code principles: single responsibility, composable units, minimal coupling, deterministic behavior, and clear naming.
+  - Deliver code complete changes: implementation + validation + tests (success and failure paths) + docs/changelog updates for user-visible behavior.
+  - Deliver production quality by default: include observability hooks (metrics/logging where relevant), explicit error taxonomy, and operational guardrails (timeouts, limits, bounded memory/concurrency).
+  - Include security-by-default design: least privilege, safe defaults, input validation/sanitization, secret/token redaction, and SSRF/injection considerations for external I/O.
+  - Validate failure behavior explicitly: degraded-mode handling, retries/backoff only where safe, and deterministic behavior under partial outages.
+  - Add production-oriented tests when behavior is critical (for example auth boundaries, security constraints, limits, eviction, and metrics emission).
+  - Preserve extensibility: design new capabilities to support future backends/strategies without high-impact refactors.
+  - Keep behavior data-driven where possible (configuration tables/rules) instead of imperative branching chains.
 - Prefer test-driven development - for generated theory (aka potential failure, bug or security finding) create failing test confirming it.
 - Keep changes consistent with the current test migration: prefer schema-driven profile tests over hardcoded mocks.
 - If the user corrects or revises a prior response or implementation, activate the auto-update-skills skill and follow its workflow.
