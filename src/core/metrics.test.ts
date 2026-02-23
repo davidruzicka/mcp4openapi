@@ -181,6 +181,17 @@ describe('MetricsCollector', () => {
       expect(output).toContain('test_tool_calls_total{tool="manage_badges",status="success",profile_id="unknown",tenant_id="none"} 1');
       expect(output).toContain('test_api_calls_total{operation="get_project_badges",status="2xx",profile_id="unknown",tenant_id="none"} 1');
     });
+
+    it('records API cache events', async () => {
+      metrics.recordApiCacheEvent('get_nodes', 'hit', { profileId: 'n8n', tenantId: 'none' });
+      metrics.recordApiCacheEvent('get_nodes', 'miss', { profileId: 'n8n', tenantId: 'none' });
+
+      const output = await metrics.getMetrics();
+      expect(output).toContain('test_api_cache_events_total');
+      expect(output).toContain('operation="get_nodes"');
+      expect(output).toContain('event="hit"');
+      expect(output).toContain('event="miss"');
+    });
   });
 
   describe('Tool filter metrics', () => {

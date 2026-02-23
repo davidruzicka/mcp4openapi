@@ -11,8 +11,6 @@
 - [P2: Nice-to-Have](#p2-nice-to-have)
   - [2. Export Profile Command](#2-export-profile-command)
   - [3. OpenAPI Operation Filter for Default Profile](#3-openapi-operation-filter-for-default-profile)
-  - [4. Response Caching](#4-response-caching)
-  - [5. Request Deduplication](#5-request-deduplication)
   - [7. Strengthen ReDoS Protection in Regex Compiler](#7-strengthen-redos-protection-in-regex-compiler)
   - [8. Limit HTTP profile server cache growth](#8-limit-http-profile-server-cache-growth)
   - [9. Break MCPServer-HttpTransport circular dependency](#9-break-mcpserver-httptransport-circular-dependency)
@@ -146,30 +144,6 @@ export DEFAULT_PROFILE_EXCLUDE_TAGS="admin,system"
 - Regex: 1 hour
 - Tag-based: 1-2 hours
 - Total (all three): 3-4 hours
-
-### 4. Response Caching
-Add optional caching layer for idempotent GET requests:
-```json
-{
-  "interceptors": {
-    "cache": {
-      "enabled": true,
-      "ttl_seconds": 300,
-      "max_entries": 1000
-    }
-  }
-}
-```
-
-**Estimated effort**: 3-4 hours
-
-### 5. Request Deduplication
-Prevent multiple identical in-flight requests (thundering herd):
-- Hash request (method + URL + body)
-- If same request is pending, await existing promise
-- Return cached result to all callers
-
-**Estimated effort**: 2-3 hours
 
 ### 7. Strengthen ReDoS Protection in Regex Compiler
 **Problem**: `RegexCompiler` accepts user input from HTTP headers (`X-Mcp4-Tools`) and environment variables. While `RegexValidator` provides partial protection (length limits, nested quantifiers, ambiguous alternation), it doesn't cover all ReDoS attack vectors. A malicious user could craft regex patterns that pass validation but still cause exponential backtracking.

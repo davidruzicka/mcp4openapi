@@ -225,6 +225,16 @@ describe('HttpClient - accessors', () => {
     expect(client.getBaseUrl()).toBe('https://example.test');
     expect(client.getInterceptorsConfig()).toEqual(config);
   });
+
+  it('should fail fast for unsupported redis cache backend', () => {
+    const config: InterceptorConfig = {
+      cache: {
+        backend: 'redis',
+      },
+    };
+
+    expect(() => new InterceptorChain(config)).toThrow('cache.backend=redis is not implemented yet');
+  });
 });
 
 describe('InterceptorChain - getAuthCredentials', () => {

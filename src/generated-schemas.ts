@@ -68,6 +68,18 @@ export const baseUrlConfigSchema = z.object({
     default: z.string().optional()
 });
 
+export const cacheConfigSchema = z.object({
+    enabled: z.boolean().optional(),
+    backend: z.union([z.literal("memory"), z.literal("redis")]).optional(),
+    scope: z.union([z.literal("auto"), z.literal("public"), z.literal("private"), z.literal("session")]).optional(),
+    ttl_seconds: z.number().optional(),
+    max_entries: z.number().optional(),
+    max_memory_bytes: z.number().optional(),
+    max_memory_bytes_from_env: z.string().optional(),
+    methods: z.array(z.union([z.literal("GET"), z.literal("HEAD")])).optional(),
+    vary_headers: z.array(z.string()).optional()
+});
+
 export const rateLimitConfigSchema = z.object({
     max_requests_per_minute: z.number(),
     overrides: z.record(z.string(), z.object({
@@ -140,6 +152,7 @@ export const promptDefinitionSchema = z.object({
 export const interceptorConfigSchema = z.object({
     auth: z.union([authInterceptorSchema, z.array(authInterceptorSchema)]).optional(),
     base_url: baseUrlConfigSchema.optional(),
+    cache: cacheConfigSchema.optional(),
     rate_limit: rateLimitConfigSchema.optional(),
     retry: retryConfigSchema.optional(),
     array_format: z.union([z.literal("brackets"), z.literal("indices"), z.literal("repeat"), z.literal("comma")]).optional(),
