@@ -10,6 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Added profile-configurable in-memory response caching (`interceptors.cache`) with TTL, request deduplication, LRU eviction, and hard `max_memory_bytes` budget limits.
 
+### Fixed
+- Fixed HTTP profile index API endpoint/snippet rendering to prefer env-overridden base URLs over profile defaults, so displayed n8n endpoints match effective runtime configuration.
+
 ## [0.5.0] - 2026-02-22
 
 ### Added

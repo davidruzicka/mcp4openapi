@@ -320,11 +320,9 @@ export function buildProfileIndexPayload(
 function resolveApiEndpoint(
   profile: ListedProfileDetails
 ): { value: string | null; source: 'env' | 'default' | 'env-unset' | 'unavailable'; envVar: string | null } {
-  const valueFromEnv = profile.apiBaseUrl?.valueFromEnv?.trim();
-  const defaultValue = profile.apiBaseUrl?.defaultValue?.trim();
+  const { envVar: valueFromEnv, envValue, defaultValue } = resolveConfiguredApiBaseUrl(profile);
 
   if (valueFromEnv) {
-    const envValue = process.env[valueFromEnv]?.trim();
     if (envValue) {
       return {
         value: envValue,
@@ -359,6 +357,15 @@ function resolveApiEndpoint(
     source: 'unavailable',
     envVar: null,
   };
+}
+
+function resolveConfiguredApiBaseUrl(
+  profile: ListedProfileDetails
+): { envVar: string | null; envValue: string | null; defaultValue: string | null } {
+  const envVar = profile.apiBaseUrl?.valueFromEnv?.trim() || null;
+  const envValue = envVar ? process.env[envVar]?.trim() || null : null;
+  const defaultValue = profile.apiBaseUrl?.defaultValue?.trim() || null;
+  return { envVar, envValue, defaultValue };
 }
 
 export function renderProfileIndexHtml(template: string, templateData: Record<string, string>, nonce: string): string {
@@ -854,12 +861,12 @@ function buildLocalEnvMap(
   mode: 'vscode' | 'cursor' | 'jetbrains' | 'cli'
 ): Record<string, string> {
   const envMap: Record<string, string> = {};
-  const baseUrlVar = profile.apiBaseUrl?.valueFromEnv;
-  const baseUrlDefault = profile.apiBaseUrl?.defaultValue;
+  const { envVar: baseUrlVar, envValue: baseUrlEnvValue, defaultValue: baseUrlDefault } = resolveConfiguredApiBaseUrl(profile);
+  const resolvedBaseUrlValue = baseUrlEnvValue || baseUrlDefault;
 
   for (const envVar of envVarNames) {
-    if (baseUrlVar && envVar === baseUrlVar && baseUrlDefault) {
-      envMap[envVar] = baseUrlDefault;
+    if (baseUrlVar && envVar === baseUrlVar && resolvedBaseUrlValue) {
+      envMap[envVar] = resolvedBaseUrlValue;
       continue;
     }
     envMap[envVar] = buildEnvValue(envVar, inputMap, isSensitiveEnvVar(envVar), mode);
@@ -869,14 +876,13 @@ function buildLocalEnvMap(
 }
 
 function resolveLocalApiBaseEnv(profile: ListedProfileDetails): { envVar: string; value: string } | null {
-  const envVar = profile.apiBaseUrl?.valueFromEnv?.trim();
+  const { envVar, envValue, defaultValue } = resolveConfiguredApiBaseUrl(profile);
   if (!envVar) {
     return null;
   }
-  const defaultValue = profile.apiBaseUrl?.defaultValue?.trim();
   return {
     envVar,
-    value: defaultValue || `\${${envVar}}`,
+    value: envValue || defaultValue || `\${${envVar}}`,
   };
 }
 
