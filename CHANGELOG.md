@@ -10,9 +10,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Added profile-configurable in-memory response caching (`interceptors.cache`) with TTL, request deduplication, LRU eviction, and hard `max_memory_bytes` budget limits.
 
-### Changed
-- Refactored response caching into modular components (`CachePolicyResolver`, `CacheKeyBuilder`, `CacheStoreFactory`, `ResponseCacheInterceptor`) with cache scope isolation (`auto/public/private/session`), backend registry (`memory` + `redis` placeholder), env override for memory budget, and cache event Prometheus metrics.
-
 ## [0.5.0] - 2026-02-22
 
 ### Added
