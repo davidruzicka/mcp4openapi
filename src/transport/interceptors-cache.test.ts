@@ -94,6 +94,36 @@ describe('HttpClient - Response cache interceptor', () => {
     expect(calls).toBe(2);
   });
 
+  it('does not cache when response has cache-control: no-cache', async () => {
+    const config: InterceptorConfig = {
+      cache: {
+        enabled: true,
+        ttl_seconds: 300,
+        max_entries: 100,
+        max_memory_bytes: 5_000_000,
+      },
+    };
+
+    const client = createTestHttpClient('https://api.example.com', config);
+    let calls = 0;
+
+    global.fetch = async () => {
+      calls += 1;
+      return new Response(JSON.stringify({ calls }), {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-cache',
+        },
+      });
+    };
+
+    await client.request('GET', '/items');
+    await client.request('GET', '/items');
+
+    expect(calls).toBe(2);
+  });
+
   it('does not read or store cache when request has cache-control: no-store', async () => {
     const config: InterceptorConfig = {
       cache: {
@@ -151,6 +181,36 @@ describe('HttpClient - Response cache interceptor', () => {
     expect(calls).toBe(1);
     expect(first.body).toEqual({ calls: 1 });
     expect(second.body).toEqual({ calls: 1 });
+  });
+
+  it('does not cache when response has vary: *', async () => {
+    const config: InterceptorConfig = {
+      cache: {
+        enabled: true,
+        ttl_seconds: 300,
+        max_entries: 100,
+        max_memory_bytes: 5_000_000,
+      },
+    };
+
+    const client = createTestHttpClient('https://api.example.com', config);
+    let calls = 0;
+
+    global.fetch = async () => {
+      calls += 1;
+      return new Response(JSON.stringify({ calls }), {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/json',
+          Vary: '*',
+        },
+      });
+    };
+
+    await client.request('GET', '/items');
+    await client.request('GET', '/items');
+
+    expect(calls).toBe(2);
   });
 
   it('evicts cached entries when max_entries is reached', async () => {
@@ -211,5 +271,69 @@ describe('HttpClient - Response cache interceptor', () => {
     });
 
     expect(calls).toBe(2);
+  });
+
+  it('does not cache public scope requests with authorization header', async () => {
+    const config: InterceptorConfig = {
+      cache: {
+        enabled: true,
+        scope: 'public',
+        ttl_seconds: 300,
+        max_entries: 10,
+        max_memory_bytes: 5_000_000,
+      },
+    };
+
+    const client = createTestHttpClient('https://api.example.com', config);
+    let calls = 0;
+
+    global.fetch = async () => {
+      calls += 1;
+      return new Response(JSON.stringify({ calls }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    };
+
+    await client.request('GET', '/public', {
+      headers: { Authorization: 'Bearer token' },
+    });
+    await client.request('GET', '/public', {
+      headers: { Authorization: 'Bearer token' },
+    });
+
+    expect(calls).toBe(2);
+  });
+
+  it('invalidates cache after successful unsafe mutation', async () => {
+    const config: InterceptorConfig = {
+      cache: {
+        enabled: true,
+        ttl_seconds: 300,
+        max_entries: 100,
+        max_memory_bytes: 5_000_000,
+      },
+    };
+
+    const client = createTestHttpClient('https://api.example.com', config);
+    let calls = 0;
+
+    global.fetch = async () => {
+      calls += 1;
+      return new Response(JSON.stringify({ calls }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    };
+
+    const first = await client.request('GET', '/items');
+    const second = await client.request('GET', '/items');
+    await client.request('POST', '/items', { body: { name: 'new-item' } });
+    const third = await client.request('GET', '/items');
+
+    expect(first.body).toEqual({ calls: 1 });
+    expect(second.body).toEqual({ calls: 1 });
+    expect(third.body).toEqual({ calls: 3 });
+    expect(calls).toBe(3);
   });
 });

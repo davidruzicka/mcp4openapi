@@ -88,7 +88,13 @@ export class InterceptorChain {
     const store = CacheStoreFactory.create(policy, {
       onEvict: (reason) => recordEvent(reason === 'max_entries' ? 'evict_max_entries' : 'evict_max_memory', 'unknown'),
     });
-    const cacheInterceptor = new ResponseCacheInterceptor(policy, store, keyBuilder, recordEvent);
+    const cacheInterceptor = new ResponseCacheInterceptor(
+      policy,
+      store,
+      keyBuilder,
+      sensitiveHeaders,
+      recordEvent
+    );
 
     return cacheInterceptor.asInterceptor();
   }
