@@ -1,6 +1,12 @@
+import { HTTP_STATUS } from '../core/constants.js';
 import type { CachePolicy, CacheStore } from './cache-store.js';
 import type { CacheKeyBuilder } from './cache-key-builder.js';
 import type { InterceptorFn, RequestContext, ResponseContext } from './interceptors.js';
+import {
+  buildConditionalRequestHeaders,
+  cachedResponseRequiresRevalidation,
+  mergeNotModifiedResponse,
+} from './cache-revalidation-utils.js';
 import {
   type CacheSkipReason,
   evaluateRequestCacheDecision,
@@ -25,6 +31,10 @@ export type CacheEvent =
   | 'skip_resp_invalid_directive'
   | 'skip_resp_non_success'
   | 'inflight_hit'
+  | 'revalidate_forced'
+  | 'revalidate_hit'
+  | 'revalidate_miss'
+  | 'revalidate_validator_missing'
   | 'invalidate_unsafe_method'
   | 'evict_max_entries'
   | 'evict_max_memory';
@@ -60,11 +70,23 @@ export class ResponseCacheInterceptor {
 
       const cacheKey = this.keyBuilder.build(ctx);
       const cached = this.store.get(cacheKey);
-      if (cached) {
+      const mustRevalidate = Boolean(
+        cached && (
+          requestDecision.requiresRevalidation
+          || cachedResponseRequiresRevalidation(cached)
+        )
+      );
+
+      if (cached && !mustRevalidate) {
         this.onEvent?.('hit', operation);
         return cached;
       }
-      this.onEvent?.('miss', operation);
+
+      if (mustRevalidate) {
+        this.onEvent?.('revalidate_forced', operation);
+      } else {
+        this.onEvent?.('miss', operation);
+      }
 
       const existingInFlight = this.inFlight.get(cacheKey);
       if (existingInFlight) {
@@ -73,24 +95,16 @@ export class ResponseCacheInterceptor {
       }
 
       const requestPromise = (async () => {
-        const response = await next();
+        const response = await this.executeOriginRequest({
+          ctx,
+          next,
+          cached,
+          mustRevalidate,
+          operation,
+        });
 
         if (requestDecision.canStoreResponse) {
-          const responseDecision = evaluateResponseCacheDecision({
-            response,
-            policy: this.policy,
-          });
-
-          if (responseDecision.cacheable && responseDecision.ttlSeconds !== undefined) {
-            try {
-              this.store.set(cacheKey, response, responseDecision.ttlSeconds);
-              this.onEvent?.('store', operation);
-            } catch {
-              this.onEvent?.('skip', operation);
-            }
-          } else {
-            this.recordSkipReason(responseDecision.skipReason, operation);
-          }
+          this.storeIfCacheable(cacheKey, response, operation);
         }
 
         this.invalidateAfterUnsafeMutation(ctx, response, requestDecision, operation);
@@ -105,6 +119,65 @@ export class ResponseCacheInterceptor {
         this.inFlight.delete(cacheKey);
       }
     };
+  }
+
+  private async executeOriginRequest(input: {
+    ctx: RequestContext;
+    next: () => Promise<ResponseContext>;
+    cached: ResponseContext | undefined;
+    mustRevalidate: boolean;
+    operation: string;
+  }): Promise<ResponseContext> {
+    const { ctx, next, cached, mustRevalidate, operation } = input;
+
+    if (!mustRevalidate || !cached) {
+      return next();
+    }
+
+    const conditionalHeaders = buildConditionalRequestHeaders(cached);
+    if (!conditionalHeaders) {
+      this.onEvent?.('revalidate_validator_missing', operation);
+      return next();
+    }
+
+    const originalHeaders = ctx.headers;
+    try {
+      ctx.headers = {
+        ...ctx.headers,
+        ...conditionalHeaders,
+      };
+
+      const revalidationResponse = await next();
+
+      if (revalidationResponse.status !== HTTP_STATUS.NOT_MODIFIED) {
+        this.onEvent?.('revalidate_miss', operation);
+        return revalidationResponse;
+      }
+
+      this.onEvent?.('revalidate_hit', operation);
+      return mergeNotModifiedResponse(cached, revalidationResponse);
+    } finally {
+      ctx.headers = originalHeaders;
+    }
+  }
+
+  private storeIfCacheable(cacheKey: string, response: ResponseContext, operation: string): void {
+    const responseDecision = evaluateResponseCacheDecision({
+      response,
+      policy: this.policy,
+    });
+
+    if (!responseDecision.cacheable || responseDecision.ttlSeconds === undefined) {
+      this.recordSkipReason(responseDecision.skipReason, operation);
+      return;
+    }
+
+    try {
+      this.store.set(cacheKey, response, responseDecision.ttlSeconds);
+      this.onEvent?.('store', operation);
+    } catch {
+      this.onEvent?.('skip', operation);
+    }
   }
 
   private invalidateAfterUnsafeMutation(

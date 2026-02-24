@@ -573,7 +573,11 @@ export class HttpClient {
 
           response = await fetch(currentUrl, hopOptions);
 
-          if (response.status >= 300 && response.status < 400) {
+          if (
+            response.status >= 300
+            && response.status < 400
+            && response.status !== HTTP_STATUS.NOT_MODIFIED
+          ) {
             const location = response.headers.get('location');
             if (!location) {
               throw new NetworkError(`Redirect without Location header: HTTP ${response.status}`);
@@ -634,7 +638,10 @@ export class HttpClient {
 
         // Why throw on non-2xx: Allows caller to handle errors with try/catch
         // Use structured errors for better client handling
-        if (response.status < HTTP_STATUS.OK || response.status >= HTTP_STATUS.MULTIPLE_CHOICES) {
+        if (
+          response.status !== HTTP_STATUS.NOT_MODIFIED
+          && (response.status < HTTP_STATUS.OK || response.status >= HTTP_STATUS.MULTIPLE_CHOICES)
+        ) {
           // Extract error message from response body (common formats)
           let errorMessage = `HTTP ${response.status}`;
           if (typeof body === 'object' && body !== null) {

@@ -996,6 +996,28 @@ describe('HttpClient - Structured Error Handling', () => {
     }
   });
 
+  it('should return 304 response without throwing', async () => {
+    const config: InterceptorConfig = {
+      auth: { type: 'bearer', value_from_env: 'MCP4_API_TOKEN' },
+    };
+
+    const client = createTestHttpClient('https://api.example.com', config);
+
+    global.fetch = async () => {
+      return new Response(null, {
+        status: 304,
+        headers: {
+          ETag: '"v1"',
+          Date: 'Tue, 24 Feb 2026 00:01:00 GMT',
+        },
+      });
+    };
+
+    const response = await client.request('GET', '/test');
+    expect(response.status).toBe(304);
+    expect(response.headers.etag).toBe('"v1"');
+  });
+
   it('should throw NetworkError on 404 status', async () => {
     const config: InterceptorConfig = {
       auth: { type: 'bearer', value_from_env: 'MCP4_API_TOKEN' },

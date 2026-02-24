@@ -124,6 +124,52 @@ describe('HttpClient - Response cache interceptor', () => {
     expect(calls).toBe(2);
   });
 
+  it('revalidates cached no-cache response with ETag and reuses cached body on 304', async () => {
+    const config: InterceptorConfig = {
+      cache: {
+        enabled: true,
+        ttl_seconds: 300,
+        max_entries: 100,
+        max_memory_bytes: 5_000_000,
+      },
+    };
+
+    const client = createTestHttpClient('https://api.example.com', config);
+    let calls = 0;
+    const seenIfNoneMatch: string[] = [];
+
+    global.fetch = async (_url, init) => {
+      calls += 1;
+      const headers = (init?.headers as Record<string, string>) || {};
+      seenIfNoneMatch.push(headers['If-None-Match'] || headers['if-none-match'] || '');
+
+      if (calls === 1) {
+        return new Response(JSON.stringify({ version: 1 }), {
+          status: 200,
+          headers: {
+            'Content-Type': 'application/json',
+            'Cache-Control': 'no-cache, max-age=0',
+            ETag: '"v1"',
+          },
+        });
+      }
+
+      return new Response(null, {
+        status: 304,
+        headers: { Date: 'Tue, 24 Feb 2026 00:01:00 GMT' },
+      });
+    };
+
+    const first = await client.request('GET', '/items');
+    const second = await client.request('GET', '/items');
+
+    expect(calls).toBe(2);
+    expect(first.body).toEqual({ version: 1 });
+    expect(second.status).toBe(200);
+    expect(second.body).toEqual({ version: 1 });
+    expect(seenIfNoneMatch[1]).toBe('"v1"');
+  });
+
   it('does not read or store cache when request has cache-control: no-store', async () => {
     const config: InterceptorConfig = {
       cache: {
@@ -149,6 +195,85 @@ describe('HttpClient - Response cache interceptor', () => {
     await client.request('GET', '/items', { headers: { 'Cache-Control': 'no-store' } });
 
     expect(calls).toBe(2);
+  });
+
+  it('forces conditional revalidation when request has cache-control: no-cache', async () => {
+    const config: InterceptorConfig = {
+      cache: {
+        enabled: true,
+        ttl_seconds: 300,
+        max_entries: 100,
+        max_memory_bytes: 5_000_000,
+      },
+    };
+
+    const client = createTestHttpClient('https://api.example.com', config);
+    let calls = 0;
+    const conditionalHeaders: string[] = [];
+
+    global.fetch = async (_url, init) => {
+      calls += 1;
+      const headers = (init?.headers as Record<string, string>) || {};
+      conditionalHeaders.push(headers['If-None-Match'] || headers['if-none-match'] || '');
+
+      if (calls === 1) {
+        return new Response(JSON.stringify({ version: 1 }), {
+          status: 200,
+          headers: {
+            'Content-Type': 'application/json',
+            'Cache-Control': 'max-age=120',
+            ETag: '"v1"',
+          },
+        });
+      }
+
+      return new Response(null, { status: 304 });
+    };
+
+    const first = await client.request('GET', '/items');
+    const second = await client.request('GET', '/items', {
+      headers: { 'Cache-Control': 'no-cache' },
+    });
+
+    expect(calls).toBe(2);
+    expect(first.body).toEqual({ version: 1 });
+    expect(second.status).toBe(200);
+    expect(second.body).toEqual({ version: 1 });
+    expect(conditionalHeaders[1]).toBe('"v1"');
+  });
+
+  it('bypasses cached body for request no-cache when validators are missing', async () => {
+    const config: InterceptorConfig = {
+      cache: {
+        enabled: true,
+        ttl_seconds: 300,
+        max_entries: 100,
+        max_memory_bytes: 5_000_000,
+      },
+    };
+
+    const client = createTestHttpClient('https://api.example.com', config);
+    let calls = 0;
+
+    global.fetch = async () => {
+      calls += 1;
+      return new Response(JSON.stringify({ calls }), {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/json',
+          'Cache-Control': 'max-age=120',
+        },
+      });
+    };
+
+    const first = await client.request('GET', '/items');
+    const second = await client.request('GET', '/items', {
+      headers: { 'Cache-Control': 'no-cache' },
+    });
+
+    expect(calls).toBe(2);
+    expect(first.body).toEqual({ calls: 1 });
+    expect(second.body).toEqual({ calls: 2 });
   });
 
   it('deduplicates concurrent in-flight GET requests', async () => {

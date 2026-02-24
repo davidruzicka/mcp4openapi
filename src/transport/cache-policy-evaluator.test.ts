@@ -37,7 +37,25 @@ describe('cache-policy-evaluator request decisions', () => {
     });
   });
 
-  it('rejects request caching for pragma: no-cache', () => {
+  it('requires revalidation for request cache-control: no-cache', () => {
+    const decision = evaluateRequestCacheDecision({
+      ctx: {
+        method: 'GET',
+        url: 'https://api.example.com/items',
+        headers: { 'Cache-Control': 'no-cache' },
+      },
+      policy: createPolicy(),
+      sensitiveHeaders: new Set(['authorization', 'cookie']),
+    });
+
+    expect(decision).toMatchObject({
+      canReadFromCache: true,
+      canStoreResponse: true,
+      requiresRevalidation: true,
+    });
+  });
+
+  it('requires revalidation for request pragma: no-cache', () => {
     const decision = evaluateRequestCacheDecision({
       ctx: {
         method: 'GET',
@@ -49,9 +67,9 @@ describe('cache-policy-evaluator request decisions', () => {
     });
 
     expect(decision).toMatchObject({
-      canReadFromCache: false,
-      canStoreResponse: false,
-      skipReason: 'req_pragma_no_cache',
+      canReadFromCache: true,
+      canStoreResponse: true,
+      requiresRevalidation: true,
     });
   });
 
@@ -91,7 +109,7 @@ describe('cache-policy-evaluator request decisions', () => {
 });
 
 describe('cache-policy-evaluator response decisions', () => {
-  it('does not cache response cache-control: no-cache', () => {
+  it('does not cache response cache-control: no-cache without validators', () => {
     const decision = evaluateResponseCacheDecision({
       response: {
         status: 200,
@@ -104,6 +122,26 @@ describe('cache-policy-evaluator response decisions', () => {
     expect(decision).toEqual({
       cacheable: false,
       skipReason: 'resp_no_cache',
+    });
+  });
+
+  it('caches response cache-control: no-cache when validators are present', () => {
+    const decision = evaluateResponseCacheDecision({
+      response: {
+        status: 200,
+        headers: {
+          'Cache-Control': 'no-cache, max-age=0',
+          ETag: '"v1"',
+        },
+        body: { ok: true },
+      },
+      policy: createPolicy({ ttlSeconds: 120 }),
+    });
+
+    expect(decision).toEqual({
+      cacheable: true,
+      ttlSeconds: 120,
+      requiresRevalidation: true,
     });
   });
 

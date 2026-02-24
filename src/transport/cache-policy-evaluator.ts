@@ -29,12 +29,14 @@ export interface RequestCacheDecision {
   canStoreResponse: boolean;
   skipReason?: CacheSkipReason;
   isUnsafeMutationMethod: boolean;
+  requiresRevalidation: boolean;
 }
 
 export interface ResponseCacheDecision {
   cacheable: boolean;
   ttlSeconds?: number;
   skipReason?: CacheSkipReason;
+  requiresRevalidation?: boolean;
 }
 
 interface EvaluateRequestInput {
@@ -60,6 +62,7 @@ export function evaluateRequestCacheDecision(input: EvaluateRequestInput): Reque
       canReadFromCache: false,
       canStoreResponse: false,
       isUnsafeMutationMethod,
+      requiresRevalidation: false,
     };
   }
 
@@ -68,6 +71,7 @@ export function evaluateRequestCacheDecision(input: EvaluateRequestInput): Reque
       canReadFromCache: false,
       canStoreResponse: false,
       isUnsafeMutationMethod,
+      requiresRevalidation: false,
     };
   }
 
@@ -81,25 +85,26 @@ export function evaluateRequestCacheDecision(input: EvaluateRequestInput): Reque
       canStoreResponse: false,
       skipReason: 'req_no_store',
       isUnsafeMutationMethod,
+      requiresRevalidation: false,
     };
   }
 
   if (hasDirective(cacheControl, 'no-cache')) {
     return {
-      canReadFromCache: false,
-      canStoreResponse: false,
-      skipReason: 'req_no_cache',
+      canReadFromCache: true,
+      canStoreResponse: true,
       isUnsafeMutationMethod,
+      requiresRevalidation: true,
     };
   }
 
   const pragma = getHeaderValueCaseInsensitive(input.ctx.headers, 'pragma');
   if (pragma?.toLowerCase().split(',').map((v) => v.trim()).includes('no-cache')) {
     return {
-      canReadFromCache: false,
-      canStoreResponse: false,
-      skipReason: 'req_pragma_no_cache',
+      canReadFromCache: true,
+      canStoreResponse: true,
       isUnsafeMutationMethod,
+      requiresRevalidation: true,
     };
   }
 
@@ -109,6 +114,7 @@ export function evaluateRequestCacheDecision(input: EvaluateRequestInput): Reque
       canStoreResponse: false,
       skipReason: 'req_public_scope_auth',
       isUnsafeMutationMethod,
+      requiresRevalidation: false,
     };
   }
 
@@ -116,6 +122,7 @@ export function evaluateRequestCacheDecision(input: EvaluateRequestInput): Reque
     canReadFromCache: true,
     canStoreResponse: true,
     isUnsafeMutationMethod,
+    requiresRevalidation: false,
   };
 }
 
@@ -132,11 +139,7 @@ export function evaluateResponseCacheDecision(input: EvaluateResponseInput): Res
   if (hasDirective(cacheControl, 'no-store')) {
     return { cacheable: false, skipReason: 'resp_no_store' };
   }
-
-  // Without conditional revalidation support, cached `no-cache` is unsafe.
-  if (hasDirective(cacheControl, 'no-cache')) {
-    return { cacheable: false, skipReason: 'resp_no_cache' };
-  }
+  const requiresRevalidation = hasDirective(cacheControl, 'no-cache');
 
   if (policy.scope === 'public') {
     if (hasDirective(cacheControl, 'private')) {
@@ -161,11 +164,20 @@ export function evaluateResponseCacheDecision(input: EvaluateResponseInput): Res
   if (ttlSeconds === 'invalid') {
     return { cacheable: false, skipReason: 'resp_invalid_directive' };
   }
-  if (ttlSeconds <= 0) {
+  if (requiresRevalidation && !hasRevalidationValidators(response.headers)) {
+    return { cacheable: false, skipReason: 'resp_no_cache' };
+  }
+
+  if (!requiresRevalidation && ttlSeconds <= 0) {
     return { cacheable: false, skipReason: 'resp_ttl_non_positive' };
   }
 
-  return { cacheable: true, ttlSeconds };
+  const retentionTtlSeconds = ttlSeconds <= 0 ? policy.ttlSeconds : ttlSeconds;
+  return {
+    cacheable: true,
+    ttlSeconds: retentionTtlSeconds,
+    ...(requiresRevalidation ? { requiresRevalidation: true } : {}),
+  };
 }
 
 type TtlResolution = number | 'invalid';
@@ -256,4 +268,11 @@ function hasSensitiveHeaders(headers: Record<string, string>, sensitiveHeaders: 
     }
   }
   return false;
+}
+
+function hasRevalidationValidators(headers: Record<string, string>): boolean {
+  return Boolean(
+    getHeaderValueCaseInsensitive(headers, 'etag')
+    || getHeaderValueCaseInsensitive(headers, 'last-modified')
+  );
 }
