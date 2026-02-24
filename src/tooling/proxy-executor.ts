@@ -209,7 +209,7 @@ export class ProxyDownloadExecutor {
         const parsed = Number(rawValue);
         if (!Number.isInteger(parsed) || parsed <= 0) {
           throw new ValidationError(
-            `Invalid max size from env ${key}: expected positive integer, got '${rawValue}'`
+            `Invalid max size from env ${key}: expected positive integer`
           );
         }
         return parsed;
