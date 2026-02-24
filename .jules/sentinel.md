@@ -114,3 +114,15 @@ Hostname validation is insufficient for URL security because it ignores the prot
 1.  Always validate the `protocol` of a URL in addition to the hostname.
 2.  Explicitly block dangerous schemes (`javascript:`, `data:`, `vbscript:`, `file:`).
 3.  Prefer an allowlist of safe schemes (`http:`, `https:`) and known application schemes (e.g., `vscode:`, `cursor:`) over a blocklist if possible, but definitely block known bad ones.
+
+## 2026-02-24 - [MEDIUM] Environment Variable Leakage in Error Messages
+
+**Vulnerability:**
+`ProxyDownloadExecutor` included the raw value of an environment variable in a `ValidationError` message when the value was not a valid positive integer. If a user configured `max_size_bytes_from_env` to point to a sensitive environment variable (e.g., an API key), the secret value would be exposed in the error message.
+
+**Learning:**
+Error messages should never include raw values from sensitive sources like environment variables, even for validation errors. Configuration errors can easily lead to secrets being treated as normal values.
+
+**Prevention:**
+1.  Avoid including raw values in error messages when the source is potentially sensitive (env vars, auth headers).
+2.  Use generic error messages for validation failures of sensitive data.
