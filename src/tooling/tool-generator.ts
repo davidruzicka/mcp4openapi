@@ -10,12 +10,15 @@ import type { ToolDefinition, ParameterDefinition, ParameterType } from '../type
 import type { OpenAPIParser } from '../openapi/openapi-parser.js';
 import { ValidationError } from '../core/errors.js';
 import { RegexValidator } from '../tool-filter/regex/regex-validator.js';
+import type { ValidationResult } from '../tool-filter/types.js';
 
 const DEFAULT_REGEX_MAX_LENGTH = 4096;
 const DEFAULT_REGEX_PATTERN_MAX_LENGTH = 1024;
 
 export class ToolGenerator {
   private regexValidator: RegexValidator;
+  private regexValidationCache = new Map<string, ValidationResult>();
+  private compiledRegexCache = new Map<string, RegExp>();
 
   constructor(private parser: OpenAPIParser) {
     this.regexValidator = new RegexValidator(DEFAULT_REGEX_PATTERN_MAX_LENGTH);
@@ -180,7 +183,12 @@ export class ToolGenerator {
 
         if (param.pattern !== undefined) {
           // Validate regex pattern for ReDoS vulnerabilities
-          const validation = this.regexValidator.validate(param.pattern);
+          let validation = this.regexValidationCache.get(param.pattern);
+          if (!validation) {
+            validation = this.regexValidator.validate(param.pattern);
+            this.regexValidationCache.set(param.pattern, validation);
+          }
+
           if (!validation.valid) {
             throw new ValidationError(
               `Invalid pattern for ${name}. Unsafe regex: ${validation.error}`,
@@ -188,16 +196,20 @@ export class ToolGenerator {
             );
           }
 
-          let regex: RegExp;
-          try {
-            regex = new RegExp(param.pattern);
-          } catch (error) {
-            const reason = error instanceof Error ? error.message : String(error);
-            throw new ValidationError(
-              `Invalid pattern for ${name}.`,
-              { paramName: name, pattern: param.pattern, reason }
-            );
+          let regex = this.compiledRegexCache.get(param.pattern);
+          if (!regex) {
+            try {
+              regex = new RegExp(param.pattern);
+              this.compiledRegexCache.set(param.pattern, regex);
+            } catch (error) {
+              const reason = error instanceof Error ? error.message : String(error);
+              throw new ValidationError(
+                `Invalid pattern for ${name}.`,
+                { paramName: name, pattern: param.pattern, reason }
+              );
+            }
           }
+
           if (!regex.test(value)) {
             throw new ValidationError(
               `Invalid value for ${name}. Must match pattern: ${param.pattern}`,
