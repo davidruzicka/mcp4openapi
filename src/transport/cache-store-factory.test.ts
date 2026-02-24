@@ -26,4 +26,10 @@ describe('CacheStoreFactory', () => {
       CacheStoreFactory.create({ ...basePolicy, backend: 'redis' });
     }).toThrow(ConfigurationError);
   });
+
+  it('throws for unsupported backend key at runtime', () => {
+    expect(() => {
+      CacheStoreFactory.create({ ...basePolicy, backend: 'unknown' as any });
+    }).toThrow('Unsupported cache backend: unknown');
+  });
 });

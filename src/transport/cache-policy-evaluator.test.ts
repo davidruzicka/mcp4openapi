@@ -106,6 +106,44 @@ describe('cache-policy-evaluator request decisions', () => {
     expect(decision.canStoreResponse).toBe(false);
     expect(decision.isUnsafeMutationMethod).toBe(true);
   });
+
+  it('does not cache requests with a body payload', () => {
+    const decision = evaluateRequestCacheDecision({
+      ctx: {
+        method: 'GET',
+        url: 'https://api.example.com/items',
+        headers: {},
+        body: { probe: true },
+      },
+      policy: createPolicy(),
+      sensitiveHeaders: new Set(['authorization', 'cookie']),
+    });
+
+    expect(decision).toMatchObject({
+      canReadFromCache: false,
+      canStoreResponse: false,
+      isUnsafeMutationMethod: false,
+    });
+  });
+
+  it('ignores empty sensitive header values in public scope checks', () => {
+    const decision = evaluateRequestCacheDecision({
+      ctx: {
+        method: 'GET',
+        url: 'https://api.example.com/items',
+        headers: {
+          Authorization: '',
+        },
+      },
+      policy: createPolicy({ scope: 'public' }),
+      sensitiveHeaders: new Set(['authorization', 'cookie']),
+    });
+
+    expect(decision).toMatchObject({
+      canReadFromCache: true,
+      canStoreResponse: true,
+    });
+  });
 });
 
 describe('cache-policy-evaluator response decisions', () => {
@@ -122,6 +160,22 @@ describe('cache-policy-evaluator response decisions', () => {
     expect(decision).toEqual({
       cacheable: false,
       skipReason: 'resp_no_cache',
+    });
+  });
+
+  it('does not cache non-success responses', () => {
+    const decision = evaluateResponseCacheDecision({
+      response: {
+        status: 503,
+        headers: {},
+        body: { ok: false },
+      },
+      policy: createPolicy(),
+    });
+
+    expect(decision).toEqual({
+      cacheable: false,
+      skipReason: 'resp_non_success',
     });
   });
 
@@ -209,6 +263,85 @@ describe('cache-policy-evaluator response decisions', () => {
     });
   });
 
+  it('does not cache private responses in public scope', () => {
+    const decision = evaluateResponseCacheDecision({
+      response: {
+        status: 200,
+        headers: { 'Cache-Control': 'private, max-age=60' },
+        body: { ok: true },
+      },
+      policy: createPolicy({ scope: 'public' }),
+    });
+
+    expect(decision).toEqual({
+      cacheable: false,
+      skipReason: 'resp_private',
+    });
+  });
+
+  it('does not cache set-cookie responses in public scope', () => {
+    const decision = evaluateResponseCacheDecision({
+      response: {
+        status: 200,
+        headers: {
+          'Cache-Control': 'max-age=60',
+          'Set-Cookie': 'sid=abc',
+        },
+        body: { ok: true },
+      },
+      policy: createPolicy({ scope: 'public' }),
+    });
+
+    expect(decision).toEqual({
+      cacheable: false,
+      skipReason: 'resp_set_cookie_shared',
+    });
+  });
+
+  it('does not cache non-revalidated responses with non-positive ttl', () => {
+    const decision = evaluateResponseCacheDecision({
+      response: {
+        status: 200,
+        headers: { 'Cache-Control': 'max-age=0' },
+        body: { ok: true },
+      },
+      policy: createPolicy(),
+    });
+
+    expect(decision).toEqual({
+      cacheable: false,
+      skipReason: 'resp_ttl_non_positive',
+    });
+  });
+
+  it('treats valueless s-maxage and max-age directives as invalid', () => {
+    const publicDecision = evaluateResponseCacheDecision({
+      response: {
+        status: 200,
+        headers: { 'Cache-Control': 's-maxage' },
+        body: { ok: true },
+      },
+      policy: createPolicy({ scope: 'public' }),
+    });
+    expect(publicDecision).toEqual({
+      cacheable: false,
+      skipReason: 'resp_invalid_directive',
+    });
+
+    const privateDecision = evaluateResponseCacheDecision({
+      response: {
+        status: 200,
+        headers: { 'Cache-Control': 'max-age' },
+        body: { ok: true },
+      },
+      policy: createPolicy(),
+    });
+    expect(privateDecision).toEqual({
+      cacheable: false,
+      skipReason: 'resp_invalid_directive',
+    });
+  });
+
   it('derives ttl from expires/date/age headers', () => {
     const decision = evaluateResponseCacheDecision({
       response: {
@@ -227,6 +360,41 @@ describe('cache-policy-evaluator response decisions', () => {
     expect(decision).toEqual({
       cacheable: true,
       ttlSeconds: 240,
+    });
+  });
+
+  it('ignores invalid expires and age headers', () => {
+    const invalidExpires = evaluateResponseCacheDecision({
+      response: {
+        status: 200,
+        headers: {
+          Expires: 'not-a-date',
+          Date: 'Tue, 24 Feb 2026 00:00:00 GMT',
+        },
+        body: { ok: true },
+      },
+      policy: createPolicy({ ttlSeconds: 123 }),
+    });
+    expect(invalidExpires).toEqual({
+      cacheable: true,
+      ttlSeconds: 123,
+    });
+
+    const invalidAge = evaluateResponseCacheDecision({
+      response: {
+        status: 200,
+        headers: {
+          Expires: 'Tue, 24 Feb 2026 00:05:00 GMT',
+          Date: 'Tue, 24 Feb 2026 00:00:00 GMT',
+          Age: 'abc',
+        },
+        body: { ok: true },
+      },
+      policy: createPolicy(),
+    });
+    expect(invalidAge).toEqual({
+      cacheable: true,
+      ttlSeconds: 300,
     });
   });
 });

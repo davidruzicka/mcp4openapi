@@ -68,4 +68,15 @@ describe('CachePolicyResolver', () => {
       hasAuth: false,
     })).toThrow(ConfigurationError);
   });
+
+  it('throws on out-of-range max_memory_bytes_from_env value', () => {
+    process.env.CUSTOM_CACHE_LIMIT = '9007199254740992';
+
+    expect(() => CachePolicyResolver.resolve({
+      cacheConfig: {
+        max_memory_bytes_from_env: 'CUSTOM_CACHE_LIMIT',
+      },
+      hasAuth: false,
+    })).toThrow(ConfigurationError);
+  });
 });

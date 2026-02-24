@@ -75,4 +75,53 @@ describe('InMemoryCacheStore', () => {
     expect(() => new InMemoryCacheStore({ maxEntries: 0, maxMemoryBytes: 1000 })).toThrow(ValidationError);
     expect(() => new InMemoryCacheStore({ maxEntries: 10, maxMemoryBytes: 0 })).toThrow(ValidationError);
   });
+
+  it('ignores writes with non-positive ttl', () => {
+    const store = new InMemoryCacheStore({ maxEntries: 10, maxMemoryBytes: 10_000 });
+
+    store.set('key-a', createResponse('hello'), 0, 0);
+
+    expect(store.get('key-a', 0)).toBeUndefined();
+  });
+
+  it('returns false when deleting missing key', () => {
+    const store = new InMemoryCacheStore({ maxEntries: 10, maxMemoryBytes: 10_000 });
+    expect(store.delete('missing')).toBe(false);
+  });
+
+  it('removes expired entries during set sweep', () => {
+    const store = new InMemoryCacheStore({ maxEntries: 10, maxMemoryBytes: 50_000 });
+    store.set('stale', createResponse('a'), 1, 0);
+
+    store.set('fresh', createResponse('b'), 60, 2_000);
+
+    expect(store.get('stale', 2_000)).toBeUndefined();
+    expect(store.get('fresh', 2_000)).toBeDefined();
+  });
+
+  it('falls back to default size estimate when JSON serialization fails', () => {
+    const store = new InMemoryCacheStore({ maxEntries: 10, maxMemoryBytes: 50_000 });
+    const originalStringify = JSON.stringify;
+
+    JSON.stringify = (() => {
+      throw new Error('boom');
+    }) as unknown as typeof JSON.stringify;
+
+    try {
+      store.set('key-a', createResponse('hello'), 60, 0);
+      expect(store.get('key-a', 0)).toBeDefined();
+    } finally {
+      JSON.stringify = originalStringify;
+    }
+  });
+
+  it('breaks eviction loop safely when accounting is inconsistent', () => {
+    const store = new InMemoryCacheStore({ maxEntries: 10, maxMemoryBytes: 1_000 });
+
+    // Simulate corrupted memory accounting to exercise defensive break path.
+    (store as any).memoryBytes = 2_000;
+    (store as any).evictUntilWithinBudget();
+
+    expect(store.getStats().entries).toBe(0);
+  });
 });

@@ -113,6 +113,41 @@ describe('ProfileLoader', () => {
   });
 
   describe('tool semantic validation', () => {
+    it('rejects invalid cache interceptor numeric constraints', async () => {
+      const loader = new ProfileLoader();
+      const fs = await import('fs/promises');
+
+      const writeProfile = async (cache: Record<string, unknown>, suffix: string): Promise<string> => {
+        const tmpPath = `/tmp/profile-cache-${suffix}-${Date.now()}-${Math.random()}.json`;
+        await fs.writeFile(
+          tmpPath,
+          JSON.stringify({
+            profile_name: 'test',
+            tools: [
+              {
+                name: 'tool',
+                description: 'Tool',
+                parameters: {},
+                operations: { execute: 'op' },
+              },
+            ],
+            interceptors: { cache },
+          }),
+          'utf-8'
+        );
+        return tmpPath;
+      };
+
+      const ttlPath = await writeProfile({ ttl_seconds: 0 }, 'ttl');
+      await expect(loader.load(ttlPath)).rejects.toThrow('interceptors.cache.ttl_seconds must be greater than 0');
+
+      const maxEntriesPath = await writeProfile({ max_entries: 1.5 }, 'entries');
+      await expect(loader.load(maxEntriesPath)).rejects.toThrow('interceptors.cache.max_entries must be a positive integer');
+
+      const methodsPath = await writeProfile({ methods: [] }, 'methods');
+      await expect(loader.load(methodsPath)).rejects.toThrow('interceptors.cache.methods must contain at least one HTTP method');
+    });
+
     it('rejects composite tools without steps', async () => {
       const loader = new ProfileLoader();
       const fs = await import('fs/promises');

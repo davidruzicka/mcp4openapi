@@ -461,4 +461,49 @@ describe('HttpClient - Response cache interceptor', () => {
     expect(third.body).toEqual({ calls: 3 });
     expect(calls).toBe(3);
   });
+
+  it('partitions cache by custom-header auth from multi-auth config', async () => {
+    process.env.CACHE_TEST_QUERY_TOKEN = 'query-token';
+    process.env.CACHE_TEST_HEADER_TOKEN = 'header-token';
+
+    const config: InterceptorConfig = {
+      auth: [
+        {
+          type: 'query',
+          query_param: 'api_key',
+          value_from_env: 'CACHE_TEST_QUERY_TOKEN',
+          priority: 1,
+        },
+        {
+          type: 'custom-header',
+          header_name: 'X-Tenant-Auth',
+          value_from_env: 'CACHE_TEST_HEADER_TOKEN',
+          priority: 0,
+        },
+      ],
+      cache: {
+        enabled: true,
+        scope: 'private',
+        ttl_seconds: 300,
+        max_entries: 10,
+        max_memory_bytes: 5_000_000,
+      },
+    };
+
+    const client = createTestHttpClient('https://api.example.com', config);
+    let calls = 0;
+
+    global.fetch = async () => {
+      calls += 1;
+      return new Response(JSON.stringify({ calls }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    };
+
+    await client.request('GET', '/tenant', { headers: { 'X-Tenant-Auth': 'tenant-a' } });
+    await client.request('GET', '/tenant', { headers: { 'X-Tenant-Auth': 'tenant-b' } });
+
+    expect(calls).toBe(1);
+  });
 });

@@ -221,6 +221,7 @@ describe('MetricsCollector', () => {
       disabledMetrics.recordHttpRequest('POST', '/mcp', 200, 0.1);
       disabledMetrics.recordSessionCreated();
       disabledMetrics.recordToolCall('test', 'success', 0.1);
+      disabledMetrics.recordApiCacheEvent('get_nodes', 'hit');
       
       const output = await disabledMetrics.getMetrics();
       

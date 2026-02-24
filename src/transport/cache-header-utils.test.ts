@@ -26,6 +26,12 @@ describe('cache-header-utils', () => {
     expect(getDirectiveValue(directives, 'stale-while-revalidate')).toBe('30');
   });
 
+  it('skips empty cache-control tokens', () => {
+    const directives = parseCacheControl('max-age=60,   , no-store');
+    expect(getDirectiveValue(directives, 'max-age')).toBe('60');
+    expect(hasDirective(directives, 'no-store')).toBe(true);
+  });
+
   it('returns undefined for missing directive values', () => {
     const directives = parseCacheControl('no-cache');
 
@@ -39,6 +45,7 @@ describe('cache-header-utils', () => {
     expect(parseNonNegativeInteger('-1')).toBeUndefined();
     expect(parseNonNegativeInteger('12.5')).toBeUndefined();
     expect(parseNonNegativeInteger('abc')).toBeUndefined();
+    expect(parseNonNegativeInteger('9007199254740992')).toBeUndefined();
   });
 
   it('parses vary header and detects wildcard', () => {
@@ -49,5 +56,8 @@ describe('cache-header-utils', () => {
     const wildcard = parseVaryHeader(' * ');
     expect(wildcard.star).toBe(true);
     expect(wildcard.headers.size).toBe(0);
+
+    const withEmptyToken = parseVaryHeader('accept, , accept-language');
+    expect(withEmptyToken.headers).toEqual(new Set(['accept', 'accept-language']));
   });
 });

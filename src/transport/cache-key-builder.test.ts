@@ -71,4 +71,32 @@ describe('CacheKeyBuilder', () => {
 
     expect(keyA).toBe(keyB);
   });
+
+  it('sorts multiple vary and sensitive headers deterministically', () => {
+    const policy: CachePolicy = {
+      ...basePolicy,
+      varyHeaders: new Set(['accept', 'accept-language']),
+    };
+    const builder = new CacheKeyBuilder(policy, new Set(['authorization', 'x-api-key']), 'session-1');
+
+    const keyA = builder.build(buildContext({
+      headers: {
+        'x-api-key': 'k1',
+        authorization: 'Bearer token',
+        'accept-language': 'en',
+        accept: 'application/json',
+      },
+    }));
+
+    const keyB = builder.build(buildContext({
+      headers: {
+        accept: 'application/json',
+        'accept-language': 'en',
+        authorization: 'Bearer token',
+        'x-api-key': 'k1',
+      },
+    }));
+
+    expect(keyA).toBe(keyB);
+  });
 });
