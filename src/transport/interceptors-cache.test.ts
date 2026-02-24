@@ -94,6 +94,33 @@ describe('HttpClient - Response cache interceptor', () => {
     expect(calls).toBe(2);
   });
 
+  it('does not read or store cache when request has cache-control: no-store', async () => {
+    const config: InterceptorConfig = {
+      cache: {
+        enabled: true,
+        ttl_seconds: 300,
+        max_entries: 100,
+        max_memory_bytes: 5_000_000,
+      },
+    };
+
+    const client = createTestHttpClient('https://api.example.com', config);
+    let calls = 0;
+
+    global.fetch = async () => {
+      calls += 1;
+      return new Response(JSON.stringify({ calls }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    };
+
+    await client.request('GET', '/items', { headers: { 'Cache-Control': 'no-store' } });
+    await client.request('GET', '/items', { headers: { 'Cache-Control': 'no-store' } });
+
+    expect(calls).toBe(2);
+  });
+
   it('deduplicates concurrent in-flight GET requests', async () => {
     const config: InterceptorConfig = {
       cache: {

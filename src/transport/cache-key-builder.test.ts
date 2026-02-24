@@ -35,6 +35,15 @@ describe('CacheKeyBuilder', () => {
     expect(keyA).toBe(keyB);
   });
 
+  it('preserves order of duplicate query parameters in cache keys', () => {
+    const builder = new CacheKeyBuilder(basePolicy, new Set(['authorization']), 'session-1');
+
+    const keyA = builder.build(buildContext({ url: 'https://api.example.com/items?sort=created_at&sort=id' }));
+    const keyB = builder.build(buildContext({ url: 'https://api.example.com/items?sort=id&sort=created_at' }));
+
+    expect(keyA).not.toBe(keyB);
+  });
+
   it('partitions private scope by sensitive auth headers', () => {
     const builder = new CacheKeyBuilder(basePolicy, new Set(['authorization']), 'session-1');
 

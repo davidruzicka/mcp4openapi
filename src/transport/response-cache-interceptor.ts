@@ -34,7 +34,10 @@ export class ResponseCacheInterceptor {
       }
 
       const cacheControl = this.getHeaderValueCaseInsensitive(ctx.headers, 'cache-control');
-      if (cacheControl?.toLowerCase().includes('no-cache')) {
+      if (
+        this.hasCacheControlDirective(cacheControl, 'no-cache')
+        || this.hasCacheControlDirective(cacheControl, 'no-store')
+      ) {
         this.onEvent?.('skip', operation);
         return next();
       }
@@ -94,7 +97,20 @@ export class ResponseCacheInterceptor {
     }
 
     const cacheControl = this.getHeaderValueCaseInsensitive(response.headers, 'cache-control');
-    return !cacheControl?.toLowerCase().includes('no-store');
+    return !this.hasCacheControlDirective(cacheControl, 'no-store');
+  }
+
+  private hasCacheControlDirective(cacheControl: string | undefined, directive: string): boolean {
+    if (!cacheControl) {
+      return false;
+    }
+
+    const expected = directive.toLowerCase();
+    return cacheControl
+      .toLowerCase()
+      .split(',')
+      .map((token) => token.trim())
+      .some((token) => token === expected || token.startsWith(`${expected}=`));
   }
 
   private getHeaderValueCaseInsensitive(headers: Record<string, string>, headerName: string): string | undefined {

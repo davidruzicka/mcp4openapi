@@ -11,12 +11,16 @@ export class CacheKeyBuilder {
 
   build(ctx: RequestContext): string {
     const url = new URL(ctx.url);
-    const sortedQueryEntries = [...url.searchParams.entries()].sort(([keyA, valueA], [keyB, valueB]) => {
-      if (keyA === keyB) {
-        return valueA.localeCompare(valueB);
-      }
-      return keyA.localeCompare(keyB);
-    });
+    const sortedQueryEntries = [...url.searchParams.entries()]
+      .map((entry, originalIndex) => ({ entry, originalIndex }))
+      .sort((left, right) => {
+        const keyDiff = left.entry[0].localeCompare(right.entry[0]);
+        if (keyDiff !== 0) {
+          return keyDiff;
+        }
+        return left.originalIndex - right.originalIndex;
+      })
+      .map(({ entry }) => entry);
     const canonicalQuery = new URLSearchParams(sortedQueryEntries).toString();
     const canonicalUrl = `${url.origin}${url.pathname}${canonicalQuery ? `?${canonicalQuery}` : ''}`;
 

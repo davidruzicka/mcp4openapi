@@ -44,8 +44,15 @@ export class CachePolicyResolver {
     if (envVar) {
       const rawValue = process.env[envVar];
       if (rawValue !== undefined) {
-        const parsed = Number.parseInt(rawValue, 10);
-        if (!Number.isInteger(parsed) || parsed <= 0) {
+        const trimmedValue = rawValue.trim();
+        if (!/^[0-9]+$/.test(trimmedValue)) {
+          throw new ConfigurationError(
+            `Invalid ${envVar}: '${rawValue}' (must be positive integer for cache max_memory_bytes)`
+          );
+        }
+
+        const parsed = Number(trimmedValue);
+        if (!Number.isSafeInteger(parsed) || parsed <= 0) {
           throw new ConfigurationError(
             `Invalid ${envVar}: '${rawValue}' (must be positive integer for cache max_memory_bytes)`
           );

@@ -57,4 +57,15 @@ describe('CachePolicyResolver', () => {
       hasAuth: false,
     })).toThrow(ConfigurationError);
   });
+
+  it('throws on partially numeric max_memory_bytes_from_env value', () => {
+    process.env.CUSTOM_CACHE_LIMIT = '4096mb';
+
+    expect(() => CachePolicyResolver.resolve({
+      cacheConfig: {
+        max_memory_bytes_from_env: 'CUSTOM_CACHE_LIMIT',
+      },
+      hasAuth: false,
+    })).toThrow(ConfigurationError);
+  });
 });
