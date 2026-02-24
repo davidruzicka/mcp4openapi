@@ -434,6 +434,41 @@ describe('profile index helpers', () => {
     delete process.env.DEMO_API_BASE_URL;
   });
 
+  it('uses env-overridden API endpoint in local snippets', () => {
+    process.env.N8N_API_BASE_URL = 'https://admin.isatky.cz/api/v1';
+    const profiles: ListedProfileDetails[] = [
+      {
+        profileId: 'n8n-optimized',
+        profileName: 'n8n-optimized',
+        profileAliases: [],
+        description: 'n8n',
+        envVars: ['N8N_API_BASE_URL', 'N8N_TOKEN'],
+        authMethods: [
+          {
+            type: 'custom-header',
+            headerName: 'X-N8N-API-KEY',
+            valueFromEnv: 'N8N_TOKEN',
+          },
+        ],
+        apiBaseUrl: {
+          valueFromEnv: 'N8N_API_BASE_URL',
+          defaultValue: 'http://localhost:5678/api/v1',
+        },
+      },
+    ];
+
+    const { payload } = buildProfileIndexPayload(profiles, 'http://localhost:3003', 'en');
+    const [profile] = payload.profiles;
+
+    const vscodeLocal = profile.snippets.find(s => s.key === 'vscode-local-custom-header');
+    const claudeLocalCli = profile.snippets.find(s => s.key === 'claude-local-cli-custom-header');
+
+    expect(vscodeLocal?.content).toContain('"N8N_API_BASE_URL": "https://admin.isatky.cz/api/v1"');
+    expect(vscodeLocal?.content).not.toContain('"N8N_API_BASE_URL": "http://localhost:5678/api/v1"');
+    expect(claudeLocalCli?.content).toContain('--env "N8N_API_BASE_URL=https://admin.isatky.cz/api/v1"');
+    delete process.env.N8N_API_BASE_URL;
+  });
+
   it('builds Czech i18n labels via payload', () => {
     const profiles: ListedProfileDetails[] = [
       {
@@ -455,6 +490,7 @@ describe('profile index helpers', () => {
     const second = await loadProfileIndexTemplate();
     expect(first.length).toBeGreaterThan(0);
     expect(second).toBe(first);
+    expect(first).toContain('profile.apiEndpoint || profile.apiEndpointDefaultValue');
   });
 
   it('resolves template root when no package.json is found', () => {

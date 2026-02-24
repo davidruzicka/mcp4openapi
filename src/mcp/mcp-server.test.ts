@@ -96,33 +96,47 @@ describe('MCPServer', () => {
     });
 
     it('should create global client when profile has no auth', async () => {
-      const specPath = path.join(process.cwd(), 'profiles/n8n-nodes/openapi.yaml');
+      const specPath = path.join(os.tmpdir(), `spec-no-auth-${Date.now()}-${Math.random()}.yaml`);
       const profilePath = path.join(os.tmpdir(), `profile-no-auth-${Date.now()}-${Math.random()}.json`);
       delete process.env.MCP4_API_TOKEN;
+
+      const spec = `openapi: 3.0.0
+info:
+  title: Test API
+  version: 1.0.0
+paths:
+  /items:
+    get:
+      operationId: listItems
+      responses:
+        '200':
+          description: OK
+`;
 
       const profile = {
         profile_name: 'no-auth-profile',
         description: 'No auth profile',
         tools: [
           {
-            name: 'n8n_nodes',
-            description: 'List n8n nodes',
+            name: 'items',
+            description: 'List items',
             metadata_params: ['action'],
-            operations: { list_full: 'getNodes' },
+            operations: { list: 'listItems' },
             parameters: {
-              action: { type: 'string', enum: ['list_full'], description: 'Action', required: true },
+              action: { type: 'string', enum: ['list'], description: 'Action', required: true },
             },
           },
         ],
       };
 
       try {
+        await fs.writeFile(specPath, spec, 'utf-8');
         await fs.writeFile(profilePath, JSON.stringify(profile), 'utf-8');
         await server.initialize(specPath, profilePath);
         const hasGlobalClient = (server as any).httpClientFactory.hasGlobalClient();
         expect(hasGlobalClient).toBe(true);
       } finally {
-        await fs.unlink(profilePath);
+        await Promise.allSettled([fs.unlink(profilePath), fs.unlink(specPath)]);
       }
     });
 

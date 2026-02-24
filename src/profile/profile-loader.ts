@@ -102,6 +102,40 @@ export class ProfileLoader {
       }
     }
 
+    const cache = profile.interceptors?.cache;
+    if (cache) {
+      if (cache.ttl_seconds !== undefined && cache.ttl_seconds <= 0) {
+        throw new ValidationError(
+          'interceptors.cache.ttl_seconds must be greater than 0',
+          { value: cache.ttl_seconds }
+        );
+      }
+      if (cache.max_entries !== undefined && (!Number.isInteger(cache.max_entries) || cache.max_entries <= 0)) {
+        throw new ValidationError(
+          'interceptors.cache.max_entries must be a positive integer',
+          { value: cache.max_entries }
+        );
+      }
+      if (cache.max_memory_bytes !== undefined && (!Number.isInteger(cache.max_memory_bytes) || cache.max_memory_bytes <= 0)) {
+        throw new ValidationError(
+          'interceptors.cache.max_memory_bytes must be a positive integer',
+          { value: cache.max_memory_bytes }
+        );
+      }
+      if (cache.methods && cache.methods.length === 0) {
+        throw new ValidationError(
+          'interceptors.cache.methods must contain at least one HTTP method',
+          { value: cache.methods }
+        );
+      }
+      if (cache.max_memory_bytes_from_env !== undefined && cache.max_memory_bytes_from_env.trim().length === 0) {
+        throw new ValidationError(
+          'interceptors.cache.max_memory_bytes_from_env must not be empty',
+          { value: cache.max_memory_bytes_from_env }
+        );
+      }
+    }
+
     for (const tool of profile.tools) {
       // Composite tools must have steps
       if (tool.composite && (!tool.steps || tool.steps.length === 0)) {

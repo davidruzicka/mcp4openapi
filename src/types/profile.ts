@@ -180,11 +180,24 @@ export type OperationDefinition = string | ProxyDownloadOperation;
 export interface InterceptorConfig {
   auth?: AuthInterceptor | AuthInterceptor[]; // Single or multiple auth methods
   base_url?: BaseUrlConfig;
+  cache?: CacheConfig;
   rate_limit?: RateLimitConfig;
   retry?: RetryConfig;
   array_format?: 'brackets' | 'indices' | 'repeat' | 'comma'; // default: 'repeat'
   timeout_ms?: number; // Request timeout in milliseconds
   redirect_auth_policy?: 'same-origin' | 'never'; // default: 'same-origin'
+}
+
+export interface CacheConfig {
+  enabled?: boolean; // default: true
+  backend?: 'memory' | 'redis'; // default: 'memory'
+  scope?: 'auto' | 'public' | 'private' | 'session'; // default: auto (private when auth configured, else public)
+  ttl_seconds?: number; // default: 300
+  max_entries?: number; // default: 1000
+  max_memory_bytes?: number; // default: 67108864 (64MB)
+  max_memory_bytes_from_env?: string; // optional env override for max_memory_bytes
+  methods?: ('GET' | 'HEAD')[];
+  vary_headers?: string[]; // default: ['accept', 'accept-language']
 }
 
 /**

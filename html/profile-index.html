@@ -1051,10 +1051,7 @@
           ? `${i18n.authEnvVarsLabel || 'Environment variable:'} ${authEnvVars.join(', ')}`
           : (i18n.authEnvVarsNone || 'No environment variable required');
         const apiEndpointEnvVar = profile.apiEndpointEnvVar || '';
-        let apiEndpointValueText = `${i18n.apiEndpointUnavailableInline || 'is not configured'}`;
-        if (profile.apiEndpointDefaultValue) {
-          apiEndpointValueText = profile.apiEndpointDefaultValue;
-        }
+        const apiEndpointValueText = profile.apiEndpoint || profile.apiEndpointDefaultValue || `${i18n.apiEndpointUnavailableInline || 'is not configured'}`;
         const apiEndpointHtml = `<p><strong>${escapeHtml(i18n.apiEndpointLabel || 'API endpoint')}</strong>: ${escapeHtml(apiEndpointValueText)}</p>`;
         const apiEndpointEnvText = apiEndpointEnvVar
           ? `${i18n.authEnvVarsLabel || 'Environment variable:'} ${apiEndpointEnvVar}`

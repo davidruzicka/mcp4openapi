@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Hardened response-cache correctness by honoring request `Cache-Control: no-store`, preserving duplicate query-parameter order in cache keys, and strictly validating `max_memory_bytes_from_env` numeric values.
+- Tightened HTTP cache RFC behavior with conditional revalidation (`ETag`/`If-None-Match`, `Last-Modified`/`If-Modified-Since`, `304` merge), request/response `no-cache` and `no-store` safeguards, public-scope `private` and auth protections, `Vary` validation, robust directive parsing, and successful unsafe-method cache invalidation with dedicated tests.
+
+## [0.5.1] - 2026-02-24
+
+### Added
+- Added profile-configurable in-memory response caching (`interceptors.cache`) with TTL, request deduplication, LRU eviction, and hard `max_memory_bytes` budget limits.
+
+### Fixed
+- Fixed HTTP profile index API endpoint/snippet rendering to prefer env-overridden base URLs over profile defaults, so displayed n8n endpoints match effective runtime configuration.
+
 ## [0.5.0] - 2026-02-22
 
 ### Added

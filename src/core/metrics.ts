@@ -51,6 +51,7 @@ export class MetricsCollector {
   private apiCallsTotal: Counter;
   private apiCallDuration: Histogram;
   private apiCallErrors: Counter;
+  private apiCacheEventsTotal: Counter;
 
   constructor(config: MetricsCollectorConfig) {
     this.enabled = config.enabled;
@@ -175,6 +176,13 @@ export class MetricsCollector {
       name: `${prefix}api_call_errors_total`,
       help: 'Total number of API call errors',
       labelNames: ['operation', 'error_type', 'profile_id', 'tenant_id'],
+      registers: [this.registry],
+    });
+
+    this.apiCacheEventsTotal = new Counter({
+      name: `${prefix}api_cache_events_total`,
+      help: 'Total number of API cache events',
+      labelNames: ['operation', 'event', 'profile_id', 'tenant_id'],
       registers: [this.registry],
     });
   }
@@ -330,6 +338,17 @@ export class MetricsCollector {
     this.apiCallErrors.inc({
       operation,
       error_type: errorType,
+      profile_id: labels.profile_id,
+      tenant_id: labels.tenant_id,
+    });
+  }
+
+  recordApiCacheEvent(operation: string, event: string, context?: MetricsContextLabels): void {
+    if (!this.enabled) return;
+    const labels = this.resolveContextLabels(context);
+    this.apiCacheEventsTotal.inc({
+      operation,
+      event,
       profile_id: labels.profile_id,
       tenant_id: labels.tenant_id,
     });

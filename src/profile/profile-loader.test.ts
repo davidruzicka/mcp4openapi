@@ -113,6 +113,41 @@ describe('ProfileLoader', () => {
   });
 
   describe('tool semantic validation', () => {
+    it('rejects invalid cache interceptor numeric constraints', async () => {
+      const loader = new ProfileLoader();
+      const fs = await import('fs/promises');
+
+      const writeProfile = async (cache: Record<string, unknown>, suffix: string): Promise<string> => {
+        const tmpPath = `/tmp/profile-cache-${suffix}-${Date.now()}-${Math.random()}.json`;
+        await fs.writeFile(
+          tmpPath,
+          JSON.stringify({
+            profile_name: 'test',
+            tools: [
+              {
+                name: 'tool',
+                description: 'Tool',
+                parameters: {},
+                operations: { execute: 'op' },
+              },
+            ],
+            interceptors: { cache },
+          }),
+          'utf-8'
+        );
+        return tmpPath;
+      };
+
+      const ttlPath = await writeProfile({ ttl_seconds: 0 }, 'ttl');
+      await expect(loader.load(ttlPath)).rejects.toThrow('interceptors.cache.ttl_seconds must be greater than 0');
+
+      const maxEntriesPath = await writeProfile({ max_entries: 1.5 }, 'entries');
+      await expect(loader.load(maxEntriesPath)).rejects.toThrow('interceptors.cache.max_entries must be a positive integer');
+
+      const methodsPath = await writeProfile({ methods: [] }, 'methods');
+      await expect(loader.load(methodsPath)).rejects.toThrow('interceptors.cache.methods must contain at least one HTTP method');
+    });
+
     it('rejects composite tools without steps', async () => {
       const loader = new ProfileLoader();
       const fs = await import('fs/promises');
@@ -1781,6 +1816,124 @@ describe('ProfileLoader', () => {
       const profile = await loader.load(tmpPath);
       expect(profile.tools[0].parameters.config.type).toBe('object');
       expect(profile.tools[0].parameters.config.properties).toEqual({});
+    });
+  });
+
+  describe('cache interceptor validation', () => {
+    it('should reject non-positive cache max_memory_bytes', async () => {
+      const loader = new ProfileLoader();
+      const fs = await import('fs/promises');
+      const tmpPath = `/tmp/cache-memory-invalid-${Date.now()}-${Math.random()}.json`;
+      await fs.writeFile(
+        tmpPath,
+        JSON.stringify({
+          profile_name: 'cache-invalid',
+          interceptors: {
+            cache: {
+              ttl_seconds: 300,
+              max_entries: 100,
+              max_memory_bytes: 0,
+            },
+          },
+          tools: [
+            {
+              name: 'tool_a',
+              description: 'Tool A',
+              operations: { list: 'getItems' },
+              parameters: {
+                action: {
+                  type: 'string',
+                  description: 'Action',
+                  enum: ['list'],
+                  required: true,
+                },
+              },
+            },
+          ],
+        }),
+        'utf-8'
+      );
+
+      await expect(loader.load(tmpPath)).rejects.toThrow(
+        'interceptors.cache.max_memory_bytes must be a positive integer'
+      );
+    });
+
+    it('should accept valid cache max_memory_bytes configuration', async () => {
+      const loader = new ProfileLoader();
+      const fs = await import('fs/promises');
+      const tmpPath = `/tmp/cache-memory-valid-${Date.now()}-${Math.random()}.json`;
+      await fs.writeFile(
+        tmpPath,
+        JSON.stringify({
+          profile_name: 'cache-valid',
+          interceptors: {
+            cache: {
+              enabled: true,
+              ttl_seconds: 300,
+              max_entries: 100,
+              max_memory_bytes: 2_000_000,
+              methods: ['GET'],
+            },
+          },
+          tools: [
+            {
+              name: 'tool_a',
+              description: 'Tool A',
+              operations: { list: 'getItems' },
+              parameters: {
+                action: {
+                  type: 'string',
+                  description: 'Action',
+                  enum: ['list'],
+                  required: true,
+                },
+              },
+            },
+          ],
+        }),
+        'utf-8'
+      );
+
+      const profile = await loader.load(tmpPath);
+      expect(profile.interceptors?.cache?.max_memory_bytes).toBe(2_000_000);
+    });
+
+    it('should reject empty cache max_memory_bytes_from_env', async () => {
+      const loader = new ProfileLoader();
+      const fs = await import('fs/promises');
+      const tmpPath = `/tmp/cache-memory-env-invalid-${Date.now()}-${Math.random()}.json`;
+      await fs.writeFile(
+        tmpPath,
+        JSON.stringify({
+          profile_name: 'cache-env-invalid',
+          interceptors: {
+            cache: {
+              max_memory_bytes_from_env: '   ',
+            },
+          },
+          tools: [
+            {
+              name: 'tool_a',
+              description: 'Tool A',
+              operations: { list: 'getItems' },
+              parameters: {
+                action: {
+                  type: 'string',
+                  description: 'Action',
+                  enum: ['list'],
+                  required: true,
+                },
+              },
+            },
+          ],
+        }),
+        'utf-8'
+      );
+
+      await expect(loader.load(tmpPath)).rejects.toThrow(
+        'interceptors.cache.max_memory_bytes_from_env must not be empty'
+      );
     });
   });
 });

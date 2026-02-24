@@ -531,6 +531,39 @@ Options:
 
 Sensitive headers include `Authorization`, `Proxy-Authorization`, `Cookie`, and configured custom auth headers.
 
+### Response Cache (In-Memory)
+
+```json
+{
+  "cache": {
+    "enabled": true,
+    "backend": "memory",
+    "scope": "auto",
+    "ttl_seconds": 3600,
+    "max_entries": 1000,
+    "max_memory_bytes": 67108864,
+    "max_memory_bytes_from_env": "MCP4_CACHE_MAX_MEMORY_BYTES",
+    "methods": ["GET"],
+    "vary_headers": ["accept", "accept-language"]
+  }
+}
+```
+
+- `enabled` (optional): Enables response caching. Default: `true`.
+- `backend` (optional): Cache backend. Supported: `memory`, `redis` (placeholder for future backend implementation). Default: `memory`.
+- `scope` (optional): Cache isolation scope. `auto` picks `private` when auth is configured, otherwise `public`. Other values: `public`, `private`, `session`.
+- `ttl_seconds` (optional): Cache TTL for matching requests. Default: `300`.
+- `max_entries` (optional): Maximum number of cached entries. Default: `1000`.
+- `max_memory_bytes` (optional): Hard memory budget for in-memory cache (LRU eviction when exceeded). Default: `67108864` (64MB).
+- `max_memory_bytes_from_env` (optional): Environment variable override for memory budget. If set and present at runtime, it overrides `max_memory_bytes`.
+- `methods` (optional): HTTP methods eligible for caching. Supported values: `GET`, `HEAD`. Default: `["GET"]`.
+- `vary_headers` (optional): Request headers included in cache key (case-insensitive). Default: `["accept", "accept-language"]`.
+
+Notes:
+- Cache keys include canonical URL and sensitive auth headers (hashed), so cached responses are partitioned across different auth contexts.
+- Responses with `Cache-Control: no-store` are not cached.
+- In-flight duplicate requests are deduplicated automatically for the same cache key.
+
 ### Rate Limiting
 
 ```json

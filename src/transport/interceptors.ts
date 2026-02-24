@@ -5,6 +5,7 @@
  * from business logic (API calls). Each interceptor is independently testable.
  */
 
+import { randomUUID } from 'node:crypto';
 import type { InterceptorConfig } from '../types/profile.js';
 import { TIME, HTTP_STATUS, TIMEOUTS } from '../core/constants.js';
 import { MetricsCollector } from '../core/metrics.js';
@@ -19,6 +20,10 @@ import {
 import { isSafePropertyName } from '../validation/validation-utils.js';
 import { SSRFValidator } from '../security/ssrf-validator.js';
 import { Logger, ConsoleLogger } from '../core/logger.js';
+import { CachePolicyResolver } from './cache-policy-resolver.js';
+import { CacheStoreFactory } from './cache-store-factory.js';
+import { CacheKeyBuilder } from './cache-key-builder.js';
+import { ResponseCacheInterceptor } from './response-cache-interceptor.js';
 
 export interface RequestContext {
   method: string;
@@ -46,6 +51,9 @@ export type InterceptorFn = (
 
 export class InterceptorChain {
   private interceptors: InterceptorFn[] = [];
+  private metrics: MetricsCollector | null = null;
+  private metricsContext: MetricsContextLabels = { profileId: 'unknown', tenantId: 'none' };
+  private readonly cacheSessionPartitionId = randomUUID();
 
   constructor(public config: InterceptorConfig, private authToken?: string) {
     this.buildChain();
@@ -55,6 +63,10 @@ export class InterceptorChain {
     if (this.config.auth) {
       this.interceptors.push(this.createAuthInterceptor());
     }
+
+    if (this.config.cache?.enabled !== false && this.config.cache) {
+      this.interceptors.push(this.createCacheInterceptor());
+    }
     
     if (this.config.rate_limit) {
       this.interceptors.push(this.createRateLimitInterceptor());
@@ -63,6 +75,57 @@ export class InterceptorChain {
     if (this.config.retry) {
       this.interceptors.push(this.createRetryInterceptor());
     }
+  }
+
+  private createCacheInterceptor(): InterceptorFn {
+    const policy = CachePolicyResolver.resolve({
+      cacheConfig: this.config.cache!,
+      hasAuth: !!this.config.auth,
+    });
+    const recordEvent = (event: string, operation: string) => this.recordCacheEvent(operation, event);
+    const sensitiveHeaders = this.getSensitiveCacheHeaders();
+    const keyBuilder = new CacheKeyBuilder(policy, sensitiveHeaders, this.cacheSessionPartitionId);
+    const store = CacheStoreFactory.create(policy, {
+      onEvict: (reason) => recordEvent(reason === 'max_entries' ? 'evict_max_entries' : 'evict_max_memory', 'unknown'),
+    });
+    const cacheInterceptor = new ResponseCacheInterceptor(
+      policy,
+      store,
+      keyBuilder,
+      sensitiveHeaders,
+      recordEvent
+    );
+
+    return cacheInterceptor.asInterceptor();
+  }
+
+  setMetricsCollector(metrics: MetricsCollector | null, context?: MetricsContextLabels): void {
+    this.metrics = metrics;
+    if (context) {
+      this.metricsContext = context;
+    }
+  }
+
+  private recordCacheEvent(operation: string, event: string): void {
+    this.metrics?.recordApiCacheEvent(operation, event, this.metricsContext);
+  }
+
+  private getSensitiveCacheHeaders(): Set<string> {
+    const sensitiveHeaders = new Set(['authorization', 'proxy-authorization', 'cookie']);
+    const authConfigRaw = this.config.auth;
+
+    if (!authConfigRaw) {
+      return sensitiveHeaders;
+    }
+
+    const authConfigs = Array.isArray(authConfigRaw) ? authConfigRaw : [authConfigRaw];
+    for (const authConfig of authConfigs) {
+      if (authConfig.type === 'custom-header' && authConfig.header_name) {
+        sensitiveHeaders.add(authConfig.header_name.toLowerCase());
+      }
+    }
+
+    return sensitiveHeaders;
   }
 
   /**
@@ -347,10 +410,12 @@ export class HttpClient {
     this.logger = logger || new ConsoleLogger();
     this.ssrfValidator = ssrfValidator || new SSRFValidator(this.logger);
     this.metricsContext = metricsContext || { profileId: 'unknown', tenantId: 'none' };
+    this.interceptors.setMetricsCollector(this.metrics, this.metricsContext);
   }
 
   setMetricsCollector(metrics: MetricsCollector | null): void {
     this.metrics = metrics;
+    this.interceptors.setMetricsCollector(metrics, this.metricsContext);
   }
 
   /**
@@ -508,7 +573,11 @@ export class HttpClient {
 
           response = await fetch(currentUrl, hopOptions);
 
-          if (response.status >= 300 && response.status < 400) {
+          if (
+            response.status >= 300
+            && response.status < 400
+            && response.status !== HTTP_STATUS.NOT_MODIFIED
+          ) {
             const location = response.headers.get('location');
             if (!location) {
               throw new NetworkError(`Redirect without Location header: HTTP ${response.status}`);
@@ -569,7 +638,10 @@ export class HttpClient {
 
         // Why throw on non-2xx: Allows caller to handle errors with try/catch
         // Use structured errors for better client handling
-        if (response.status < HTTP_STATUS.OK || response.status >= HTTP_STATUS.MULTIPLE_CHOICES) {
+        if (
+          response.status !== HTTP_STATUS.NOT_MODIFIED
+          && (response.status < HTTP_STATUS.OK || response.status >= HTTP_STATUS.MULTIPLE_CHOICES)
+        ) {
           // Extract error message from response body (common formats)
           let errorMessage = `HTTP ${response.status}`;
           if (typeof body === 'object' && body !== null) {
