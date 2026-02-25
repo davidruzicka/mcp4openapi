@@ -160,8 +160,24 @@ describe('HttpClient - Auth Interceptors', () => {
     };
 
     expect(() => new InterceptorChain(config)).toThrow(
-      'Auth token not found. Expected in environment variable: MISSING_TOKEN or passed to constructor'
+      'Auth token not found. Expected token in environment variable: MISSING_TOKEN or from HTTP session initialization (Authorization/X-API-Token/custom auth header)'
     );
+  });
+
+  it('should accept session token when value_from_env is missing', async () => {
+    const config: InterceptorConfig = {
+      auth: {
+        type: 'bearer',
+      } as any,
+    };
+
+    const interceptors = new InterceptorChain(config, 'session-token');
+    const client = new HttpClient('https://api.example.com', interceptors, null, undefined, mockSSRFValidator);
+    const { capturedHeaders } = setupFetchMock();
+
+    await client.request('GET', '/test');
+
+    expect(capturedHeaders['Authorization']).toBe('Bearer session-token');
   });
 
   it('should throw error for OAuth auth type', () => {
@@ -458,6 +474,22 @@ describe('InterceptorChain - getAuthCredentials', () => {
 
     const credentials = chain.getAuthCredentials();
     expect(credentials.headers).toEqual({});
+    expect(credentials.queryParams).toBeUndefined();
+  });
+
+  it('should return session-token credentials when value_from_env is missing', () => {
+    const config: InterceptorConfig = {
+      auth: {
+        type: 'bearer',
+      } as any,
+    };
+
+    const chain = new InterceptorChain({});
+    (chain as any).config = config;
+    (chain as any).authToken = 'session-token';
+
+    const credentials = chain.getAuthCredentials();
+    expect(credentials.headers).toEqual({ Authorization: 'Bearer session-token' });
     expect(credentials.queryParams).toBeUndefined();
   });
 

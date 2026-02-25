@@ -165,15 +165,20 @@ export class InterceptorChain {
     }
     
     const envVarName = authConfig.value_from_env;
-    if (!envVarName) {
-      throw new ConfigurationError('Auth configuration missing value_from_env');
+    const token = this.authToken || (envVarName ? process.env[envVarName] : undefined);
+
+    if (!token && !envVarName) {
+      throw new ConfigurationError(
+        'Auth configuration requires value_from_env or a session token provided during HTTP initialization'
+      );
     }
-    
-    const token = this.authToken || process.env[envVarName];
 
     if (!token) {
+      const sourceHint = envVarName
+        ? `in environment variable: ${envVarName} or from HTTP session initialization (Authorization/X-API-Token/custom auth header)`
+        : 'from HTTP session initialization (Authorization/X-API-Token/custom auth header)';
       throw new AuthenticationError(
-        `Auth token not found. Expected in environment variable: ${envVarName} or passed to constructor`
+        `Auth token not found. Expected token ${sourceHint}`
       );
     }
 
@@ -355,12 +360,9 @@ export class InterceptorChain {
     }
 
     const envVarName = authConfig.value_from_env;
-    if (!envVarName) {
-      return { headers: {} };
-    }
-    
-    // Use session token first, then environment variable
-    const token = this.authToken || process.env[envVarName];
+
+    // Use session token first, then environment variable when configured
+    const token = this.authToken || (envVarName ? process.env[envVarName] : undefined);
     if (!token) {
       return { headers: {} };
     }
