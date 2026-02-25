@@ -154,6 +154,8 @@ export class HttpTransport {
       res.setHeader('X-Content-Type-Options', 'nosniff');
       res.setHeader('Referrer-Policy', 'no-referrer');
       res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(), camera=(), payment=()');
+      res.setHeader('Strict-Transport-Security', 'max-age=63072000; includeSubDomains');
+      res.setHeader('X-XSS-Protection', '0');
 
       // Additional security headers
       res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
