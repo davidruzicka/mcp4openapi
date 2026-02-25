@@ -1,0 +1,4 @@
+interface:
+  display_name: "Prepare Release Publishing"
+  short_description: "Prepare patch/minor/major release publish flow"
+  default_prompt: "Prepare release publishing for patch"
