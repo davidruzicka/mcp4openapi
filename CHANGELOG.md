@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.3] - 2026-02-25
+
+
 ### Added
 - Added `prepare-release-publishing` skill with a tested `patch|minor|major` workflow that inserts dated release headings under `Unreleased`, runs `npm version`, and verifies version consistency against `package.json`.
 
