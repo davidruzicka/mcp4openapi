@@ -96,7 +96,7 @@
   },
   "overrides": {
     "hono": "4.11.10",
-    "minimatch": "10.2.2"
+    "minimatch": "10.2.3"
   },
   "engines": {
     "node": ">=18"
