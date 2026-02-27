@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added `prepare-release-publishing` skill with a tested `patch|minor|major` workflow that inserts dated release headings under `Unreleased`, runs `npm version`, and verifies version consistency against `package.json`.
 
 ### Fixed
+- Fixed CLI standard flags so `--help`/`-h` prints usage and `--version`/`-v` prints package version without requiring OpenAPI/profile startup configuration.
 - Hardened response-cache correctness by honoring request `Cache-Control: no-store`, preserving duplicate query-parameter order in cache keys, and strictly validating `max_memory_bytes_from_env` numeric values.
 - Tightened HTTP cache RFC behavior with conditional revalidation (`ETag`/`If-None-Match`, `Last-Modified`/`If-Modified-Since`, `304` merge), request/response `no-cache` and `no-store` safeguards, public-scope `private` and auth protections, `Vary` validation, robust directive parsing, and successful unsafe-method cache invalidation with dedicated tests.
 - Fixed HTTP tenant/session token auth flow so interceptor auth no longer requires `value_from_env` when a valid session token is already provided via MCP initialization headers.

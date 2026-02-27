@@ -76,14 +76,25 @@ const KNOWN_ENV_VARS = new Set([
 
 const NON_ENV_FLAGS = new Set([
   'list-profiles',
+  'help',
+  'version',
 ]);
+
+const SHORT_FLAG_ALIASES: Record<string, string> = {
+  h: 'help',
+  l: 'list-profiles',
+  v: 'version',
+};
 
 export function parseCliArgs(argv: string[]): Record<string, string> {
   const args: Record<string, string> = {};
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
-    if (arg === '-l') {
-      args['list-profiles'] = 'true';
+    if (arg.startsWith('-') && !arg.startsWith('--') && arg.length === 2) {
+      const alias = SHORT_FLAG_ALIASES[arg[1]];
+      if (alias) {
+        args[alias] = 'true';
+      }
       continue;
     }
     if (!arg.startsWith('--')) continue;

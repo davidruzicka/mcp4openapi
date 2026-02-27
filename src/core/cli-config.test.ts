@@ -51,6 +51,12 @@ describe('cli-config', () => {
     expect(parsed['list-profiles']).toBe('true');
   });
 
+  it('parses -h and -v aliases', () => {
+    const parsed = parseCliArgs(['-h', '-v']);
+    expect(parsed.help).toBe('true');
+    expect(parsed.version).toBe('true');
+  });
+
   it('applies CLI args to env using MCP4 mapping', () => {
     const parsed = parseCliArgs(['--profile', 'gitlab', '--profiles-dir', 'profiles']);
     applyCliEnvOverrides(parsed);
@@ -64,10 +70,17 @@ describe('cli-config', () => {
     expect(process.env.MCP4_LIST_PROFILES).toBeUndefined();
   });
 
+  it('ignores help and version in env overrides', () => {
+    const parsed = parseCliArgs(['--help', '--version']);
+    expect(() => applyCliEnvOverrides(parsed)).not.toThrow();
+    expect(process.env.MCP4_HELP).toBeUndefined();
+    expect(process.env.MCP4_VERSION).toBeUndefined();
+  });
+
   it('throws for CLI args without known MCP4 env vars', () => {
-    const parsed = parseCliArgs(['--help', '--unknown-flag', 'value']);
+    const parsed = parseCliArgs(['--unknown-flag', 'value']);
     expect(() => applyCliEnvOverrides(parsed)).toThrow(UnknownCliFlagError);
-    expect(() => applyCliEnvOverrides(parsed)).toThrow('Unknown CLI flags: help, unknown-flag');
+    expect(() => applyCliEnvOverrides(parsed)).toThrow('Unknown CLI flags: unknown-flag');
   });
 
   it('allows known OAuth env vars', () => {

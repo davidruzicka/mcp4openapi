@@ -7,6 +7,7 @@
  */
 
 import 'dotenv/config';
+import { existsSync, readFileSync } from 'node:fs';
 import { MCPServer } from '../mcp/mcp-server.js';
 import { ConsoleLogger, JsonLogger } from './logger.js';
 import { OAUTH_PATHS } from './constants.js';
@@ -83,8 +84,45 @@ export function resolveHttpHostPort(): { host: string; port: number } {
   return { host, port };
 }
 
+const CLI_HELP_LINES = [
+  'Usage: mcp4openapi [options]',
+  '',
+  'Options:',
+  '  -h, --help             Show help and exit',
+  '  -v, --version          Show version and exit',
+  '  -l, --list-profiles    List available profiles and exit',
+  '      --profile <id>     Select profile by id/name/alias',
+  '      --openapi-spec-path <path-or-url>',
+  '                         OpenAPI spec path (or MCP4_OPENAPI_SPEC_PATH)',
+];
+
+export function getCliHelpText(): string {
+  return CLI_HELP_LINES.join('\n');
+}
+
+export function getCliVersion(): string {
+  const packageJsonCandidates = [
+    new URL('../../package.json', import.meta.url),
+    new URL('../../../package.json', import.meta.url),
+  ];
+  const packageJsonPath = packageJsonCandidates.find((candidate) => existsSync(candidate));
+  if (!packageJsonPath) {
+    return 'unknown';
+  }
+  const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf-8')) as { version?: unknown };
+  return typeof packageJson.version === 'string' ? packageJson.version : 'unknown';
+}
+
 export async function main() {
   const cliArgs = parseCliArgs(process.argv.slice(2));
+  if (cliArgs.help === 'true') {
+    console.log(getCliHelpText());
+    return;
+  }
+  if (cliArgs.version === 'true') {
+    console.log(getCliVersion());
+    return;
+  }
   applyCliEnvOverrides(cliArgs);
 
   // Create logger early so startup/autodiscovery logs are structured and redacted consistently
@@ -239,7 +277,7 @@ export async function main() {
 
   const requiresSpecPath = transport !== 'http' || !httpProfileRoutingEnabled || hasDefaultProfile;
   if (!specPath && requiresSpecPath) {
-    logger.error('MCP4_OPENAPI_SPEC_PATH is required. Provide --openapi-spec-path (or MCP4_OPENAPI_SPEC_PATH), or use --profile with openapi_spec_path in the profile.');
+    logger.error('MCP4_OPENAPI_SPEC_PATH is required. Provide --openapi-spec-path (or MCP4_OPENAPI_SPEC_PATH), or use --profile with openapi_spec_path in the profile. Use --help for usage.');
     process.exit(1);
   }
   

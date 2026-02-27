@@ -10,10 +10,13 @@ type StartupProfileResult = {
   hasExplicitSpecPath: boolean;
 };
 
-function mockCliConfig() {
+function mockCliConfig(
+  cliArgs: Record<string, string> = {},
+  applyCliEnvOverridesImpl: () => void = () => {},
+) {
   vi.doMock('./cli-config.js', () => ({
-    parseCliArgs: () => ({}),
-    applyCliEnvOverrides: () => {},
+    parseCliArgs: () => cliArgs,
+    applyCliEnvOverrides: applyCliEnvOverridesImpl,
   }));
 }
 
@@ -179,6 +182,44 @@ describe('CLI main flow', () => {
 
     await expect(main()).rejects.toThrow('exit 1');
     expect(exitSpy).toHaveBeenCalledWith(1);
+  });
+
+  it('prints help and exits before startup validation', async () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const applySpy = vi.fn();
+    const resolveStartupProfileSpy = vi.fn();
+
+    mockCliConfig({ help: 'true' }, applySpy);
+    vi.doMock('../profile/startup-profile.js', () => ({
+      resolveStartupProfile: resolveStartupProfileSpy,
+    }));
+
+    const { main } = await import('./index.js');
+
+    await main();
+
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('Usage: mcp4openapi [options]'));
+    expect(applySpy).not.toHaveBeenCalled();
+    expect(resolveStartupProfileSpy).not.toHaveBeenCalled();
+  });
+
+  it('prints version and exits before startup validation', async () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const applySpy = vi.fn();
+    const resolveStartupProfileSpy = vi.fn();
+
+    mockCliConfig({ version: 'true' }, applySpy);
+    vi.doMock('../profile/startup-profile.js', () => ({
+      resolveStartupProfile: resolveStartupProfileSpy,
+    }));
+
+    const { main } = await import('./index.js');
+
+    await main();
+
+    expect(logSpy).toHaveBeenCalledWith(expect.stringMatching(/^\d+\.\d+\.\d+/));
+    expect(applySpy).not.toHaveBeenCalled();
+    expect(resolveStartupProfileSpy).not.toHaveBeenCalled();
   });
 
   it('initializes MCPServer and runs stdio when spec path is present', async () => {

@@ -132,6 +132,15 @@ npx mcp4openapi --list-profiles
 npx mcp4openapi -l
 ```
 
+Show standard CLI info with:
+
+```bash
+npx mcp4openapi --help
+npx mcp4openapi -h
+npx mcp4openapi --version
+npx mcp4openapi -v
+```
+
 Predefined profiles in the `profiles/` directory contains names for easy reference:
 - GitLab profile: `gitlab`
 - YouTrack profile: `youtrack`
