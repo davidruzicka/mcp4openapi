@@ -193,7 +193,7 @@ export function getFilterMaxValues(): number {
   const parsed = parseInt(raw, 10);
   if (Number.isNaN(parsed) || parsed <= 0) {
     throw new ValidationError(
-      `Invalid MCP4_FILTER_MAX_VALUES: expected positive integer, got '${raw}'.`
+      'Invalid MCP4_FILTER_MAX_VALUES: expected positive integer.'
     );
   }
   return parsed;
