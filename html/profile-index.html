@@ -17,6 +17,7 @@
         --border: #e1d8cc;
         --shadow: 0 12px 40px rgba(0, 0, 0, 0.08);
       }
+      [hidden] { display: none !important; }
       * { box-sizing: border-box; }
       body {
         margin: 0;
@@ -2083,13 +2084,14 @@
           const wireTextFilter = (inputSelector, itemSelector, emptySelector) => {
             const input = detailEl.querySelector(inputSelector);
             if (!(input instanceof HTMLInputElement)) return;
-            const emptyState = detailEl.querySelector(emptySelector);
+            const scopeRoot = input.closest('.filter-card-body') || detailEl;
+            const emptyState = scopeRoot.querySelector(emptySelector);
             const applyFilter = () => {
               const query = normalizeFilterQuery(input.value);
               let visibleCount = 0;
-              detailEl.querySelectorAll(itemSelector).forEach(item => {
+              scopeRoot.querySelectorAll(itemSelector).forEach(item => {
                 if (!(item instanceof HTMLElement)) return;
-                const filterText = normalizeFilterQuery(item.getAttribute('data-filter-text'));
+                const filterText = normalizeFilterQuery(item.getAttribute('data-filter-text') || item.textContent || '');
                 const isVisible = !query || filterText.includes(query);
                 item.toggleAttribute('hidden', !isVisible);
                 if (isVisible) {
@@ -2100,7 +2102,29 @@
                 emptyState.toggleAttribute('hidden', visibleCount !== 0);
               }
             };
+            if (input.dataset.filterValueHooked !== '1') {
+              const inputPrototype = Object.getPrototypeOf(input);
+              const valueDescriptor = Object.getOwnPropertyDescriptor(inputPrototype, 'value');
+              if (valueDescriptor && typeof valueDescriptor.get === 'function' && typeof valueDescriptor.set === 'function') {
+                const nativeGet = valueDescriptor.get.bind(input);
+                const nativeSet = valueDescriptor.set.bind(input);
+                Object.defineProperty(input, 'value', {
+                  configurable: true,
+                  enumerable: valueDescriptor.enumerable ?? true,
+                  get() {
+                    return nativeGet();
+                  },
+                  set(nextValue) {
+                    nativeSet(nextValue);
+                    applyFilter();
+                  },
+                });
+                input.dataset.filterValueHooked = '1';
+              }
+            }
             input.addEventListener('input', applyFilter);
+            input.addEventListener('change', applyFilter);
+            input.addEventListener('search', applyFilter);
             applyFilter();
           };
 
