@@ -31,18 +31,18 @@
 - [x] Run targeted tests for core filtering, CLI config, MCP server, and HTTP transport.
 
 ## Phase 2 - HTML profile index
-- [ ] Update local snippet generation so filter selections work for `Local stdio` too.
-- [ ] Map local tool selections to existing `MCP4_TOOL_FILTER_*` outputs.
-- [ ] Map local parameter selections to `MCP4_PARAM_FILTER` output.
-- [ ] Make snippet capability gating mode-aware (remote custom headers vs local env/CLI injection).
-- [ ] Keep existing remote `X-Mcp4-Tools` / `X-Mcp4-Params` behavior unchanged.
-- [ ] Update profile index tests for local filtered snippets.
-- [ ] Verify in browser after server restart.
+- [x] Update local snippet generation so filter selections work for `Local stdio` too.
+- [x] Map local tool selections to existing `MCP4_TOOL_FILTER_*` outputs.
+- [x] Map local parameter selections to `MCP4_PARAM_FILTER` output.
+- [x] Make snippet capability gating mode-aware (remote custom headers vs local env/CLI injection).
+- [x] Keep existing remote `X-Mcp4-Tools` / `X-Mcp4-Params` behavior unchanged.
+- [x] Update profile index tests for local filtered snippets.
+- [x] Verify in browser after server restart.
 
 ## Docs
-- [ ] Update `README.md` for `MCP4_PARAM_FILTER` and transport semantics.
-- [ ] Update `docs/HTTP-TRANSPORT.md` for global-vs-session filtering rules.
-- [ ] Update `CHANGELOG.md` with user-facing summary.
+- [x] Update `README.md` for `MCP4_PARAM_FILTER` and transport semantics.
+- [x] Update `docs/HTTP-TRANSPORT.md` for global-vs-session filtering rules.
+- [x] Update `CHANGELOG.md` with user-facing summary.
 
 ## Acceptance criteria
 - [x] `--param-filter` is accepted and mapped to `MCP4_PARAM_FILTER`.

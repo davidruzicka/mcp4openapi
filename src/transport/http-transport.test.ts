@@ -1062,6 +1062,7 @@ describeIfListen('HttpTransport', () => {
       expect(response.text).toContain('tenant-tabs');
       expect(response.text).toContain('injectTenantHeaderIntoJsonSnippet');
       expect(response.text).toContain('injectFilterHeadersForSnippet');
+      expect(response.text).toContain('injectLocalFilterConfigForSnippet');
       expect(response.text).toContain('injectTenantApiBaseUrlIntoJsonSnippet');
       expect(response.text).toContain('X-Mcp4-Tenant-Id');
       expect(response.text).toContain('X-Mcp4-Api-Base-Url');

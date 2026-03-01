@@ -340,6 +340,28 @@ Regex patterns are validated for length, nested quantifiers, and alternations wi
 - If session initialization fails with "X-Mcp4-Tools filtered out all tools", verify tool names or regex patterns match available tools.
 - If regex validation fails, shorten patterns and avoid nested quantifiers or alternations with quantifiers.
 
+### Optional - Parameter Filtering
+Global parameter filtering constrains tool-call arguments process-wide in both `stdio` and `http`.
+
+- `MCP4_PARAM_FILTER`: Baseline parameter filter using the same format as `X-Mcp4-Params`
+
+CLI mapping:
+- `MCP4_PARAM_FILTER` -> `--param-filter`
+
+Rules:
+- In `stdio`, `MCP4_PARAM_FILTER` applies for the lifetime of the local process.
+- In `http`, `MCP4_PARAM_FILTER` is the baseline for every session.
+- If a client also sends `X-Mcp4-Params` during HTTP initialization, the session header may only narrow the global baseline.
+- Conflicting overlaps fail with a validation error.
+
+**Example**:
+```bash
+npx mcp4openapi \
+  --transport stdio \
+  --tool-filter-allow-names manage_merge_requests \
+  --param-filter "project_id=123,_allow_read"
+```
+
 ### Optional - Authentication (No-Profile Mode)
 When running without a profile (OpenAPI spec only), authentication is automatically configured from OpenAPI spec's `security` schemes:
 
@@ -507,11 +529,11 @@ Rules:
 - Startup rejects selector collisions (exact/exact with incompatible auth, exact/mask overlap, mask/mask overlap) and runtime rejects ambiguous mask matches.
 - If no tenant headers are sent, no tenant override is applied and profile-level config is used.
 
-When `MCP4_HTTP_PROFILE_INDEX=true`, the HTML profile index shows tenant availability per profile and provides interactive tenant picker for supported remote snippet formats that inject `X-Mcp4-Tenant-Id` into copied snippet output. Picker always includes a "no tenant" option that keeps snippets without tenant headers. For `mask:` tenants, copied snippets also include example `X-Mcp4-Api-Base-Url` with wildcard parts replaced by `<your-part>`. In `Local stdio` mode, tenant selection updates API base URL in snippets that support local env injection (using profile API endpoint env var). The same page now also exposes a per-profile tool catalog with interactive builders for `X-Mcp4-Tools` and `X-Mcp4-Params`; when either filter is active, snippet variants that cannot send custom HTTP headers are hidden automatically.
+When `MCP4_HTTP_PROFILE_INDEX=true`, the HTML profile index shows tenant availability per profile and provides interactive tenant picker for supported remote snippet formats that inject `X-Mcp4-Tenant-Id` into copied snippet output. Picker always includes a "no tenant" option that keeps snippets without tenant headers. For `mask:` tenants, copied snippets also include example `X-Mcp4-Api-Base-Url` with wildcard parts replaced by `<your-part>`. In `Local stdio` mode, tenant selection updates API base URL in snippets that support local env injection (using profile API endpoint env var). The same page also exposes a per-profile tool catalog with interactive builders for `X-Mcp4-Tools` and `X-Mcp4-Params`: in remote mode, unsupported custom-header snippet variants are hidden while filtering is active; in local mode, the same filter state is translated into `--tool-filter-allow-names`, `--tool-filter-allow-categories`, and `--param-filter` inside generated stdio snippets.
 
 #### Parameter Filtering (HTTP: X-Mcp4-Params)
 
-`X-Mcp4-Params` is a per-session header for constraining tool call parameters (not tool selection). It is parsed on session initialization and then enforced for the lifetime of the session: subsequent requests may omit the header, but if provided it must match the session value or the server returns a `400` validation error.
+`X-Mcp4-Params` is a per-session header for constraining tool call parameters (not tool selection). It is parsed on session initialization and then enforced for the lifetime of the session: subsequent requests may omit the header, but if provided it must match the session value or the server returns a `400` validation error. If `MCP4_PARAM_FILTER` is also set, the session header may only narrow that process-wide baseline.
 
 **Format**: comma-separated `key=value` pairs. Repeat keys to allow multiple values.
 

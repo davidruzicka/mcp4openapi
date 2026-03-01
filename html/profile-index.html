@@ -606,6 +606,42 @@
         return values.join(', ');
       }
 
+      function serializeLocalToolFilterAllowNames(profileId) {
+        const selection = getToolSelection(profileId);
+        return Array.from(selection.exactNames).sort().join(',');
+      }
+
+      function serializeLocalToolFilterAllowCategories(profileId) {
+        const selection = getToolSelection(profileId);
+        const categories = [];
+        if (selection.controlKeys.has('_allow_list')) {
+          categories.push('list');
+        }
+        if (selection.controlKeys.has('_allow_read')) {
+          categories.push('read');
+        }
+        return categories.join(',');
+      }
+
+      function buildLocalCliFilterArgs(profileId) {
+        const cliArgs = [];
+        const allowNames = serializeLocalToolFilterAllowNames(profileId);
+        const allowCategories = serializeLocalToolFilterAllowCategories(profileId);
+        const paramFilter = serializeParamFilterHeader(profileId);
+
+        if (allowNames) {
+          cliArgs.push('--tool-filter-allow-names', allowNames);
+        }
+        if (allowCategories) {
+          cliArgs.push('--tool-filter-allow-categories', allowCategories);
+        }
+        if (paramFilter) {
+          cliArgs.push('--param-filter', paramFilter);
+        }
+
+        return cliArgs;
+      }
+
       function hasActiveToolFilter(profileId) {
         return Boolean(serializeToolFilterHeader(profileId));
       }
@@ -770,6 +806,22 @@
         args.push('--header');
         args.push(`${headerName}: ${headerValue}`);
         return args;
+      }
+
+      function appendCliArgs(args, additionalArgs) {
+        if (!Array.isArray(args) || !Array.isArray(additionalArgs) || additionalArgs.length === 0) {
+          return args;
+        }
+        for (const arg of additionalArgs) {
+          args.push(arg);
+        }
+        return args;
+      }
+
+      function escapeCliDoubleQuotedValue(value) {
+        return String(value || '')
+          .replace(/\\/g, '\\\\')
+          .replace(/"/g, '\\"');
       }
 
       function ensureCursorMcpRemoteArgs(server) {
@@ -960,6 +1012,95 @@
         return injectFilterHeadersIntoJsonSnippet(snippet, entry, toolHeader, paramHeader);
       }
 
+      function injectLocalFilterArgsIntoJsonSnippet(snippet, entry, localCliArgs) {
+        if (!Array.isArray(localCliArgs) || localCliArgs.length === 0) {
+          return snippet;
+        }
+
+        let parsed;
+        try {
+          parsed = JSON.parse(snippet);
+        } catch {
+          return snippet;
+        }
+
+        const key = entry.key || '';
+        const root = key.startsWith('vscode-local-') || key.startsWith('jetbrains-local-')
+          ? parsed.servers
+          : parsed.mcpServers;
+        if (!root || typeof root !== 'object') return snippet;
+        const serverName = Object.keys(root)[0];
+        if (!serverName || !root[serverName] || typeof root[serverName] !== 'object') return snippet;
+        const server = root[serverName];
+
+        if (!Array.isArray(server.args)) {
+          return snippet;
+        }
+
+        appendCliArgs(server.args, localCliArgs);
+        return JSON.stringify(parsed, null, 2);
+      }
+
+      function injectLocalFilterArgsIntoCodexToml(snippet, localCliArgs) {
+        if (!Array.isArray(localCliArgs) || localCliArgs.length === 0) {
+          return snippet;
+        }
+
+        const lines = snippet.split('\n');
+        for (let index = 0; index < lines.length; index += 1) {
+          const line = lines[index];
+          const match = /^(\s*)args\s*=\s*\[(.*)\]\s*$/.exec(line);
+          if (!match) continue;
+          const indentation = match[1] || '';
+          const existingValues = match[2].trim();
+          const appendedValues = localCliArgs
+            .map(arg => `"${arg.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`)
+            .join(', ');
+          const combinedValues = existingValues
+            ? `${existingValues}, ${appendedValues}`
+            : appendedValues;
+          lines[index] = `${indentation}args = [${combinedValues}]`;
+          return lines.join('\n');
+        }
+
+        return snippet;
+      }
+
+      function injectLocalFilterArgsIntoCliSnippet(snippet, localCliArgs) {
+        if (!Array.isArray(localCliArgs) || localCliArgs.length === 0) {
+          return snippet;
+        }
+
+        const suffix = localCliArgs
+          .map((arg, index) => (index % 2 === 0 ? `${arg}` : `"${escapeCliDoubleQuotedValue(arg)}"`))
+          .join(' ');
+        return `${snippet} ${suffix}`;
+      }
+
+      function injectLocalFilterConfigForSnippet(snippet, entry, profileId) {
+        if (!entry || entry.mode !== 'local') {
+          return snippet;
+        }
+
+        const localCliArgs = buildLocalCliFilterArgs(profileId);
+        if (localCliArgs.length === 0) {
+          return snippet;
+        }
+
+        const key = entry.key || '';
+        if (key.startsWith('codex-local-toml-')) {
+          return injectLocalFilterArgsIntoCodexToml(snippet, localCliArgs);
+        }
+        if (entry.format === 'json') {
+          return injectLocalFilterArgsIntoJsonSnippet(snippet, entry, localCliArgs);
+        }
+        if (entry.format === 'cli') {
+          return injectLocalFilterArgsIntoCliSnippet(snippet, localCliArgs);
+        }
+
+        return snippet;
+      }
+
       function injectTenantApiBaseUrlIntoJsonSnippet(snippet, entry, profile, tenantSelection) {
         const apiBaseUrlEnvVar = profile?.apiEndpointEnvVar;
         const tenantApiBaseUrl = tenantSelection?.localApiBaseUrl;
@@ -1077,8 +1218,9 @@
         const toolHeader = serializeToolFilterHeader(profile.profileId);
         const paramHeader = serializeParamFilterHeader(profile.profileId);
         const withTenantHeaders = injectTenantHeaderForSnippet(rendered, entry, tenantSelection);
-        const withFilterHeaders = injectFilterHeadersForSnippet(withTenantHeaders, entry, toolHeader, paramHeader);
-        return injectTenantApiBaseUrlForLocalSnippet(withFilterHeaders, entry, profile, tenantSelection);
+        const withRemoteFilterHeaders = injectFilterHeadersForSnippet(withTenantHeaders, entry, toolHeader, paramHeader);
+        const withLocalFilterConfig = injectLocalFilterConfigForSnippet(withRemoteFilterHeaders, entry, profile.profileId);
+        return injectTenantApiBaseUrlForLocalSnippet(withLocalFilterConfig, entry, profile, tenantSelection);
       }
 
       function getClientLabel(client) {
@@ -1097,9 +1239,7 @@
         const groups = new Map();
         const isCzech = (i18n.profileLabel || '') === 'Profil';
         const selectedTenant = resolveTenantSelection(profile, selectedTenantId);
-        const toolHeader = serializeToolFilterHeader(profile.profileId);
-        const paramHeader = serializeParamFilterHeader(profile.profileId);
-        const requiresCustomHeaders = hasActiveToolFilter(profile.profileId) || hasActiveParamFilter(profile.profileId);
+        const hasActiveFiltering = hasActiveToolFilter(profile.profileId) || hasActiveParamFilter(profile.profileId);
 
         const buildClientConfigInfo = client => {
           if (client === 'vscode') {
@@ -1139,7 +1279,7 @@
           if (!entry || !entry.key) continue;
           if (activeAuth && entry.authKey && entry.authKey !== activeAuth) continue;
           if (activeMode && entry.mode && entry.mode !== activeMode) continue;
-          if (requiresCustomHeaders && !entry.supportsCustomHeaders) {
+          if (hasActiveFiltering && activeMode === 'remote' && !entry.supportsCustomHeaders) {
             continue;
           }
           if (selectedTenant && activeMode === 'remote' && profile.tenantSummary?.tenantsEnabled && !entry.supportsTenantHeaders) {
@@ -1245,7 +1385,7 @@
           `);
         }
         if (clientTabs.length === 0) {
-          if (requiresCustomHeaders) {
+          if (hasActiveFiltering && activeMode === 'remote') {
             return `
               <div class="notice">
                 ${escapeHtml(isCzech

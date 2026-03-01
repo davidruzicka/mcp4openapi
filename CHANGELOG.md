@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- Added interactive tool and parameter filter builders to the HTML profile index, including `X-Mcp4-Tools`/`X-Mcp4-Params` header previews, per-profile tool catalogs, and automatic hiding of snippet formats that cannot send custom HTTP headers while filtering is active.
+- Added global `MCP4_PARAM_FILTER` / `--param-filter` baseline enforcement for `stdio` and `http`, and extended HTML profile-index filter builders to emit local stdio filter args (`--tool-filter-allow-*`, `--param-filter`) while still using `X-Mcp4-Tools` / `X-Mcp4-Params` for remote HTTP snippets.
 
 ## [0.5.4] - 2026-02-27
 
