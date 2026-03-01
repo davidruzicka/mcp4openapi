@@ -622,6 +622,7 @@
           const parameters = Array.isArray(tool?.parameters) ? tool.parameters : [];
           for (const parameter of parameters) {
             if (!parameter || !parameter.name) continue;
+            if (parameter.supportsFilterHeader === false) continue;
             const existing = entries.get(parameter.name);
             if (!existing) {
               entries.set(parameter.name, {

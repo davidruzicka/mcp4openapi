@@ -9,6 +9,7 @@ import fsPromises from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ConfigurationError } from '../core/errors.js';
+import { isFilteringKeySupported } from '../core/filtering.js';
 import type { ParameterDefinition, ToolDefinition } from '../types/profile.js';
 
 export interface ResolvedProfile {
@@ -55,6 +56,7 @@ export interface ProfileIndexParameterSummary {
   required: boolean;
   requiredFor: string[];
   isMetadata: boolean;
+  supportsFilterHeader?: boolean;
   enumValues?: string[];
   defaultValue?: string;
 }
@@ -317,6 +319,7 @@ function buildParameterSummary(
       ? parameter.required_for.filter((value): value is string => typeof value === 'string')
       : [],
     isMetadata: metadataParams.has(name),
+    supportsFilterHeader: isFilteringKeySupported(name),
     enumValues: enumValues && enumValues.length > 0 && enumValues.length <= 12 ? enumValues : undefined,
     defaultValue,
   };

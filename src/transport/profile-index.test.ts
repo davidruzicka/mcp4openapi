@@ -711,6 +711,16 @@ describe('profile index helpers', () => {
                 required: false,
                 requiredFor: [],
                 isMetadata: false,
+                supportsFilterHeader: true,
+              },
+              {
+                name: 'managed_scan_config.diff_scan.enabled',
+                typeLabel: 'boolean',
+                description: 'Unsafe dotted key',
+                required: false,
+                requiredFor: [],
+                isMetadata: false,
+                supportsFilterHeader: false,
               },
             ],
           },
@@ -729,5 +739,8 @@ describe('profile index helpers', () => {
     expect(html).toContain('data-tool-search');
     expect(html).toContain('data-param-search');
     expect(html).toContain('Text filter');
+    expect(html).toContain('"supportsFilterHeader":true');
+    expect(html).toContain('"supportsFilterHeader":false');
+    expect(html).toContain('if (parameter.supportsFilterHeader === false) continue;');
   });
 });

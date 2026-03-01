@@ -10,6 +10,7 @@ import type { OAuthConfig, AuthInterceptor } from './profile.js';
 import type { HttpTenantIndex } from './http-tenants.js';
 import type { SessionToolFilterRequest, SessionToolFilterCompat as SessionToolFilter } from '../tool-filter/index.js';
 import type { OpenAPIParser } from '../openapi/openapi-parser.js';
+import type { FilteringRules } from '../core/filtering.js';
 
 export type { SessionToolFilter, SessionToolFilterRequest };
 
@@ -81,6 +82,7 @@ export interface HttpTransportConfig {
   oauthRefreshThresholdMs?: number; // Refresh token threshold in ms before expiration (default: 60 seconds)
   parser?: OpenAPIParser; // OpenAPI parser for operation resolution (optional, for category filtering)
   tenantIndex?: HttpTenantIndex; // Preloaded tenant configuration index (optional)
+  globalFiltering?: FilteringRules; // Process-wide baseline parameter filtering
 }
 
 export interface HttpProfileContext {

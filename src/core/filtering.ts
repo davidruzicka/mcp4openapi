@@ -13,6 +13,22 @@ export interface FilteringParseResult {
   normalizedHeader: string;
 }
 
+function createFilteringRules(): FilteringRules {
+  return Object.create(null) as FilteringRules;
+}
+
+function cloneFilteringRules(filtering: FilteringRules): FilteringRules {
+  const cloned = createFilteringRules();
+  for (const [key, values] of Object.entries(filtering)) {
+    cloned[key] = Array.isArray(values) ? [...values] : [];
+  }
+  return cloned;
+}
+
+export function hasFilteringRules(filtering?: FilteringRules): boolean {
+  return !!filtering && Object.keys(filtering).length > 0;
+}
+
 export function normalizeFilteringHeaderValue(value?: string): string | undefined {
   if (value === undefined || value === null) {
     return undefined;
@@ -25,11 +41,11 @@ export function normalizeFilteringHeaderValue(value?: string): string | undefine
 export function parseFilteringHeader(headerValue: string): FilteringParseResult {
   const normalizedHeader = normalizeFilteringHeaderValue(headerValue);
   if (!normalizedHeader) {
-    return { filtering: Object.create(null), normalizedHeader: '' };
+    return { filtering: createFilteringRules(), normalizedHeader: '' };
   }
 
   const maxValues = getFilterMaxValues();
-  const filtering: FilteringRules = Object.create(null);
+  const filtering = createFilteringRules();
 
   const parts = normalizedHeader.split(',');
   for (const part of parts) {
@@ -85,6 +101,77 @@ export function parseFilteringHeader(headerValue: string): FilteringParseResult 
 
 export function isControlKey(key: string): boolean {
   return CONTROL_KEYS.has(key);
+}
+
+export function isFilteringKeySupported(key: string): boolean {
+  return KEY_PATTERN.test(key);
+}
+
+export function parseConfiguredFilteringValue(value?: string): FilteringParseResult {
+  const normalizedValue = normalizeFilteringHeaderValue(value);
+  if (!normalizedValue) {
+    return { filtering: createFilteringRules(), normalizedHeader: '' };
+  }
+  return parseFilteringHeader(normalizedValue);
+}
+
+export function mergeFilteringRules(
+  baseFiltering?: FilteringRules,
+  additionalFiltering?: FilteringRules
+): FilteringRules | undefined {
+  const hasBaseFiltering = hasFilteringRules(baseFiltering);
+  const hasAdditionalFiltering = hasFilteringRules(additionalFiltering);
+
+  if (!hasBaseFiltering && !hasAdditionalFiltering) {
+    return undefined;
+  }
+  if (!hasBaseFiltering && additionalFiltering) {
+    return cloneFilteringRules(additionalFiltering);
+  }
+  if (!hasAdditionalFiltering && baseFiltering) {
+    return cloneFilteringRules(baseFiltering);
+  }
+
+  const merged = createFilteringRules();
+  const base = baseFiltering!;
+  const additional = additionalFiltering!;
+  const valueKeys = new Set([
+    ...Object.keys(base).filter(key => !isControlKey(key)),
+    ...Object.keys(additional).filter(key => !isControlKey(key)),
+  ]);
+
+  for (const key of valueKeys) {
+    const baseValues = base[key] ?? [];
+    const additionalValues = additional[key] ?? [];
+
+    if (baseValues.length > 0 && additionalValues.length > 0) {
+      const additionalAllowed = new Set(additionalValues);
+      const intersection = dedupe(baseValues).filter(value => additionalAllowed.has(value));
+      if (intersection.length === 0) {
+        throw new ValidationError(
+          `Filtering rules conflict for key '${key}'. No allowed values remain after applying both filters.`
+        );
+      }
+      merged[key] = intersection;
+      continue;
+    }
+
+    const fallbackValues = baseValues.length > 0 ? baseValues : additionalValues;
+    if (fallbackValues.length > 0) {
+      merged[key] = dedupe(fallbackValues);
+    }
+  }
+
+  for (const controlKey of CONTROL_KEYS) {
+    if (
+      Object.prototype.hasOwnProperty.call(base, controlKey)
+      && Object.prototype.hasOwnProperty.call(additional, controlKey)
+    ) {
+      merged[controlKey] = [];
+    }
+  }
+
+  return hasFilteringRules(merged) ? merged : undefined;
 }
 
 interface FilteringContext {

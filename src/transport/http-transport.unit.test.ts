@@ -7,7 +7,7 @@ import { HttpTransport } from './http-transport.js';
 import { ConsoleLogger } from '../core/logger.js';
 import { parseSessionToolFilterHeader } from '../tool-filter/index.js';
 import type { SessionToolFilter } from '../types/http-transport.js';
-import { ConfigurationError } from '../core/errors.js';
+import { ConfigurationError, ValidationError } from '../core/errors.js';
 
 describe('HttpTransport unit', () => {
   let transport: HttpTransport;
@@ -101,6 +101,105 @@ describe('HttpTransport unit', () => {
 
       expect(transport.getSessionFiltering('default', sessionId)).toEqual({ project_id: ['1'] });
       expect(transport.getSessionFilteringHeader('default', sessionId)).toBe('project_id=1');
+    });
+
+    it('applies global filtering to sessions without a session header filter', async () => {
+      const scopedTransport = new HttpTransport(
+        {
+          host: '127.0.0.1',
+          port: 0,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: false,
+          metricsPath: '/metrics',
+          globalFiltering: { project_id: ['1'], _allow_read: [] },
+        },
+        logger
+      );
+
+      try {
+        const sessionId = (scopedTransport as any).createSession(createProfileState(scopedTransport as any));
+        expect(scopedTransport.getSessionFiltering('default', sessionId)).toEqual({
+          project_id: ['1'],
+          _allow_read: [],
+        });
+        expect(scopedTransport.getSessionFilteringHeader('default', sessionId)).toBeUndefined();
+      } finally {
+        await scopedTransport.stop();
+      }
+    });
+
+    it('merges session filtering with global filtering when creating a session', async () => {
+      const scopedTransport = new HttpTransport(
+        {
+          host: '127.0.0.1',
+          port: 0,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: false,
+          metricsPath: '/metrics',
+          globalFiltering: { project_id: ['1', '2'], _allow_read: [] },
+        },
+        logger
+      );
+
+      try {
+        const sessionId = (scopedTransport as any).createSession(
+          createProfileState(scopedTransport as any),
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          { project_id: ['2'], _allow_read: [] },
+          'project_id=2,_allow_read'
+        );
+
+        expect(scopedTransport.getSessionFiltering('default', sessionId)).toEqual({
+          project_id: ['2'],
+          _allow_read: [],
+        });
+        expect(scopedTransport.getSessionFilteringHeader('default', sessionId)).toBe(
+          'project_id=2,_allow_read'
+        );
+      } finally {
+        await scopedTransport.stop();
+      }
+    });
+
+    it('rejects conflicting session filtering against global filtering', async () => {
+      const scopedTransport = new HttpTransport(
+        {
+          host: '127.0.0.1',
+          port: 0,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: false,
+          metricsPath: '/metrics',
+          globalFiltering: { project_id: ['1'] },
+        },
+        logger
+      );
+
+      try {
+        expect(() =>
+          (scopedTransport as any).createSession(
+            createProfileState(scopedTransport as any),
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            { project_id: ['2'] },
+            'project_id=2'
+          )
+        ).toThrow(ValidationError);
+      } finally {
+        await scopedTransport.stop();
+      }
     });
 
     it('handles tenant header arrays and invalid values', () => {

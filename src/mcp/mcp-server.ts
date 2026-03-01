@@ -20,7 +20,12 @@ import { ToolGenerator } from '../tooling/tool-generator.js';
 import { applyParameterDefaults, normalizeArguments } from '../validation/argument-normalizer.js';
 import { CompositeExecutor } from '../tooling/composite-executor.js';
 import { ProxyDownloadExecutor } from '../tooling/proxy-executor.js';
-import { enforceFiltering, parseFilteringHeader, type FilteringRules } from '../core/filtering.js';
+import {
+  enforceFiltering,
+  mergeFilteringRules,
+  parseFilteringHeader,
+  type FilteringRules,
+} from '../core/filtering.js';
 import { 
   ConfigurationError, 
   OperationNotFoundError, 
@@ -74,6 +79,7 @@ export class MCPServer {
   private logger: Logger;
   private httpTransport: HttpTransport | null = null;
   private stdioFiltering?: FilteringRules;
+  private globalFiltering?: FilteringRules;
   private toolFilterService?: ToolFilterService;
   private globalToolFilterSummary?: {
     originalCount: number;
@@ -398,6 +404,10 @@ export class MCPServer {
     this.toolGenerator = new ToolGenerator(this.parser);
     
     this.setupHandlers();
+  }
+
+  public setGlobalFiltering(filtering?: FilteringRules): void {
+    this.globalFiltering = filtering && Object.keys(filtering).length > 0 ? filtering : undefined;
   }
 
   async initialize(specPath: string, profilePath?: string): Promise<void> {
@@ -1273,6 +1283,7 @@ export class MCPServer {
       resourceName: profileContext.resourceName,
       resourceDocumentation: profileContext.resourceDocumentation,
       parser: profileContext.parser,
+      globalFiltering: this.globalFiltering,
     };
 
     // Warn if binding to non-localhost without explicit MCP4_ALLOWED_ORIGINS
@@ -1348,7 +1359,7 @@ export class MCPServer {
         throw new ValidationError('Invalid X-Mcp4-Params header. Expected comma-separated key=value pairs.');
       }
       const parsed = parseFilteringHeader(params.filtering);
-      this.stdioFiltering = parsed.filtering;
+      this.stdioFiltering = mergeFilteringRules(this.globalFiltering, parsed.filtering);
     }
 
     if (this.httpTransport && sessionId) {
@@ -1581,7 +1592,7 @@ export class MCPServer {
       const effectiveProfileId = profileId || this.getProfileIdValue();
       return this.httpTransport.getSessionFiltering(effectiveProfileId, sessionId);
     }
-    return this.stdioFiltering;
+    return this.stdioFiltering ?? this.globalFiltering;
   }
 
   private getToolFilterForSession(sessionId?: string, profileId?: string): SessionToolFilter | undefined {

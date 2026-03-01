@@ -2212,6 +2212,51 @@ paths:
       expect((server as any).stdioFiltering).toEqual({ project_id: ['1'] });
     });
 
+    it('merges stdio filtering with global filtering', () => {
+      const server = new MCPServer();
+      server.setGlobalFiltering({ project_id: ['1', '2'], _allow_read: [] });
+      const message = {
+        jsonrpc: '2.0',
+        id: '1',
+        method: 'initialize',
+        params: { filtering: 'project_id=2,_allow_read' }
+      };
+
+      (server as any).handleInitialize(message, undefined);
+
+      expect((server as any).stdioFiltering).toEqual({
+        project_id: ['2'],
+        _allow_read: [],
+      });
+    });
+
+    it('rejects conflicting stdio filtering against global filtering', () => {
+      const server = new MCPServer();
+      server.setGlobalFiltering({ project_id: ['1'] });
+      const message = {
+        jsonrpc: '2.0',
+        id: '1',
+        method: 'initialize',
+        params: { filtering: 'project_id=2' }
+      };
+
+      expect(() => (server as any).handleInitialize(message, undefined)).toThrow(ValidationError);
+    });
+
+    it('uses global filtering when no stdio filtering is provided', () => {
+      const server = new MCPServer();
+      server.setGlobalFiltering({ project_id: ['1'] });
+
+      (server as any).handleInitialize({
+        jsonrpc: '2.0',
+        id: '1',
+        method: 'initialize',
+        params: {}
+      }, undefined);
+
+      expect((server as any).getFilteringForSession()).toEqual({ project_id: ['1'] });
+    });
+
     it('should reject non-string stdio filtering', () => {
       const server = new MCPServer();
       const message = {

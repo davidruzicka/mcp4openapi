@@ -42,7 +42,7 @@ import {
   ValidationError,
   generateCorrelationId,
 } from '../core/errors.js';
-import { parseFilteringHeader, normalizeFilteringHeaderValue } from '../core/filtering.js';
+import { mergeFilteringRules, parseFilteringHeader, normalizeFilteringHeaderValue } from '../core/filtering.js';
 import {
   ToolFilterService,
   EnvConfigParser,
@@ -3130,6 +3130,8 @@ export class HttpTransport {
     if (authToken) {
       this.validateToken(authToken, 'Session auth token');
     }
+
+    const effectiveFiltering = mergeFilteringRules(this.config.globalFiltering, filtering);
     
     const sessionId = crypto.randomUUID();
     const session: SessionData = {
@@ -3142,7 +3144,7 @@ export class HttpTransport {
       accessTokenExpiresAt,
       scopes,
       oauthClientId,
-      filtering,
+      filtering: effectiveFiltering,
       filteringHeader,
       toolFilterRequest,
       toolFilterHeader,

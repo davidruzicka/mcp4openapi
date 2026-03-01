@@ -3,6 +3,7 @@
  */
 
 import type { Logger } from '../core/logger.js';
+import type { FilteringRules } from '../core/filtering.js';
 import { MCPServer } from './mcp-server.js';
 import type { HttpProfileContext } from '../types/http-transport.js';
 import type { HttpTransport } from '../transport/http-transport.js';
@@ -12,12 +13,19 @@ export class MCPServerManager {
   private registry: ProfileRegistry;
   private logger: Logger;
   private httpTransport?: HttpTransport;
+  private globalFiltering?: FilteringRules;
   private servers = new Map<string, Promise<MCPServer>>();
 
-  constructor(registry: ProfileRegistry, logger: Logger, httpTransport?: HttpTransport) {
+  constructor(
+    registry: ProfileRegistry,
+    logger: Logger,
+    httpTransport?: HttpTransport,
+    globalFiltering?: FilteringRules
+  ) {
     this.registry = registry;
     this.logger = logger;
     this.httpTransport = httpTransport;
+    this.globalFiltering = globalFiltering;
   }
 
   getDefaultProfileId(): string | undefined {
@@ -43,6 +51,7 @@ export class MCPServerManager {
   private async createServer(profileId: string): Promise<MCPServer> {
     const resolved = await this.registry.resolveProfile(profileId);
     const server = new MCPServer(this.logger);
+    server.setGlobalFiltering(this.globalFiltering);
     await server.initialize(resolved.specPath, resolved.profilePath);
     if (this.httpTransport) {
       server.attachHttpTransport(this.httpTransport);
