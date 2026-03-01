@@ -662,6 +662,8 @@ describe('profile index helpers', () => {
     expect(html).toContain('serializeParamFilterHeader');
     expect(html).toContain('function hasActiveToolFilter(profileId)');
     expect(html).toContain('function hasActiveParamFilter(profileId)');
+    expect(html).toContain('function setBulkToggleState(toggle, selectedCount, totalCount)');
+    expect(html).toContain('function syncSectionBulkToggles(detailEl, profile)');
     expect(html).toContain('function wireCollapsibleDetails(root, idPrefix)');
     expect(html).toContain('Tool Filter');
     expect(html).toContain('Parameter Filter');
@@ -692,6 +694,12 @@ describe('profile index helpers', () => {
     expect(html).toContain("cliArgs.push('--param-filter', paramFilter);");
     expect(html).toContain('values.push(`${name}=${encodeURIComponent(value)}`);');
     expect(html).toContain('CSS.escape(paramName)');
+    expect(html).toContain('data-tool-section-toggle');
+    expect(html).toContain('data-param-section-toggle');
+    expect(html).toContain("toggle.indeterminate = state === 'some';");
+    expect(html).toContain("const shouldSelect = target.dataset.bulkState === 'none';");
+    expect(html).toContain('const setAllToolFilters = shouldSelect => {');
+    expect(html).toContain('const setAllParamFilters = shouldSelect => {');
     expect(html).toContain("summary.setAttribute('role', 'button')");
     expect(html).toContain("summary.setAttribute('aria-controls'");
     expect(html).toContain("summary.setAttribute('aria-expanded'");

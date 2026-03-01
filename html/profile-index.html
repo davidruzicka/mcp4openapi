@@ -371,6 +371,15 @@
       .filter-search {
         margin-top: 12px;
       }
+      .filter-search-row {
+        display: flex;
+        align-items: end;
+        gap: 12px;
+      }
+      .filter-search-field {
+        flex: 1 1 auto;
+        min-width: 0;
+      }
       .filter-search-label {
         display: block;
         margin-bottom: 6px;
@@ -379,6 +388,13 @@
       }
       .filter-search-input {
         width: 100%;
+      }
+      .filter-bulk-toggle {
+        flex: 0 0 auto;
+        margin-bottom: 1px;
+      }
+      .filter-bulk-toggle input {
+        margin: 0;
       }
       .catalog-list {
         display: grid;
@@ -648,6 +664,44 @@
 
       function hasActiveParamFilter(profileId) {
         return Boolean(serializeParamFilterHeader(profileId));
+      }
+
+      function setBulkToggleState(toggle, selectedCount, totalCount) {
+        if (!(toggle instanceof HTMLInputElement)) return;
+        const safeSelectedCount = Math.max(0, Number(selectedCount) || 0);
+        const safeTotalCount = Math.max(0, Number(totalCount) || 0);
+        const state = safeTotalCount === 0
+          ? 'none'
+          : safeSelectedCount <= 0
+            ? 'none'
+            : safeSelectedCount >= safeTotalCount
+              ? 'all'
+              : 'some';
+        toggle.dataset.bulkState = state;
+        toggle.disabled = safeTotalCount === 0;
+        toggle.checked = state === 'all';
+        toggle.indeterminate = state === 'some';
+        toggle.setAttribute('aria-checked', state === 'some' ? 'mixed' : (state === 'all' ? 'true' : 'false'));
+      }
+
+      function syncSectionBulkToggles(detailEl, profile) {
+        if (!(detailEl instanceof HTMLElement) || !profile) return;
+
+        const toolToggle = detailEl.querySelector('[data-tool-section-toggle]');
+        if (toolToggle instanceof HTMLInputElement) {
+          const toolSelection = getToolSelection(profile.profileId);
+          const totalToolFilters = Array.isArray(profile.toolCatalog) ? profile.toolCatalog.length : 0;
+          const selectedToolFilters = toolSelection.exactNames.size;
+          setBulkToggleState(toolToggle, selectedToolFilters, totalToolFilters);
+        }
+
+        const paramToggle = detailEl.querySelector('[data-param-section-toggle]');
+        if (paramToggle instanceof HTMLInputElement) {
+          const paramSelection = getParamSelection(profile.profileId);
+          const totalParamFilters = collectProfileParameters(profile).length;
+          const selectedParamFilters = paramSelection.values.size;
+          setBulkToggleState(paramToggle, selectedParamFilters, totalParamFilters);
+        }
       }
 
       function collectProfileParameters(profile) {
@@ -1587,6 +1641,10 @@
         const controlLabel = isCzech ? 'Ridici pravidla' : 'Control rules';
         const searchLabel = isCzech ? 'Textovy filtr toolu' : 'Text filter';
         const searchPlaceholder = isCzech ? 'napr. merg' : 'for example merg';
+        const bulkLabel = isCzech ? 'Vse' : 'All';
+        const bulkHelp = isCzech
+          ? 'Kliknuti prepne hromadne vsechny filtry v teto sekci.'
+          : 'Click to toggle every filter in this section.';
         const allowListTitle = isCzech ? '_allow_list' : '_allow_list';
         const allowReadTitle = isCzech ? '_allow_read' : '_allow_read';
         const allowListHelp = isCzech
@@ -1621,14 +1679,26 @@
           ? `<div class="filter-empty">${escapeHtml(emptyText)}</div>`
           : `
             <div class="filter-search">
-              <label class="filter-search-label" for="tool-filter-search-${escapeHtml(profile.profileId)}">${escapeHtml(searchLabel)}</label>
-              <input
-                class="param-input filter-search-input"
-                id="tool-filter-search-${escapeHtml(profile.profileId)}"
-                type="search"
-                data-tool-search
-                placeholder="${escapeHtml(searchPlaceholder)}"
-              />
+              <div class="filter-search-row">
+                <label class="filter-toggle filter-bulk-toggle" title="${escapeHtml(bulkHelp)}">
+                  <input
+                    type="checkbox"
+                    data-tool-section-toggle
+                    data-bulk-state="none"
+                  />
+                  <span>${escapeHtml(bulkLabel)}</span>
+                </label>
+                <div class="filter-search-field">
+                  <label class="filter-search-label" for="tool-filter-search-${escapeHtml(profile.profileId)}">${escapeHtml(searchLabel)}</label>
+                  <input
+                    class="param-input filter-search-input"
+                    id="tool-filter-search-${escapeHtml(profile.profileId)}"
+                    type="search"
+                    data-tool-search
+                    placeholder="${escapeHtml(searchPlaceholder)}"
+                  />
+                </div>
+              </div>
             </div>
             <div class="catalog-list">
               ${catalog.map(tool => {
@@ -1727,6 +1797,10 @@
         const noResultsText = isCzech ? 'Zadny parametr neodpovida zadanemu filtru.' : 'No parameters match the current filter.';
         const searchLabel = isCzech ? 'Textovy filtr parametru' : 'Text filter';
         const searchPlaceholder = isCzech ? 'napr. merg' : 'for example merg';
+        const bulkLabel = isCzech ? 'Vse' : 'All';
+        const bulkHelp = isCzech
+          ? 'Kliknuti prepne hromadne vsechny filtry v teto sekci.'
+          : 'Click to toggle every filter in this section.';
         const allowListHelp = isCzech
           ? 'Pro list operace uvolni kontrolu pritomnosti a hodnot filtrovaneho parametru.'
           : 'Relaxes list-operation filtering when the filtered parameter is missing or uses a different value.';
@@ -1763,14 +1837,26 @@
                 <div class="filter-empty">${escapeHtml(emptyText)}</div>
               ` : `
                 <div class="filter-search">
-                  <label class="filter-search-label" for="param-filter-search-${escapeHtml(profile.profileId)}">${escapeHtml(searchLabel)}</label>
-                  <input
-                    class="param-input filter-search-input"
-                    id="param-filter-search-${escapeHtml(profile.profileId)}"
-                    type="search"
-                    data-param-search
-                    placeholder="${escapeHtml(searchPlaceholder)}"
-                  />
+                  <div class="filter-search-row">
+                    <label class="filter-toggle filter-bulk-toggle" title="${escapeHtml(bulkHelp)}">
+                      <input
+                        type="checkbox"
+                        data-param-section-toggle
+                        data-bulk-state="none"
+                      />
+                      <span>${escapeHtml(bulkLabel)}</span>
+                    </label>
+                    <div class="filter-search-field">
+                      <label class="filter-search-label" for="param-filter-search-${escapeHtml(profile.profileId)}">${escapeHtml(searchLabel)}</label>
+                      <input
+                        class="param-input filter-search-input"
+                        id="param-filter-search-${escapeHtml(profile.profileId)}"
+                        type="search"
+                        data-param-search
+                        placeholder="${escapeHtml(searchPlaceholder)}"
+                      />
+                    </div>
+                  </div>
                 </div>
                 <div class="catalog-params">
                   ${parameters.map(parameter => {
@@ -2232,6 +2318,7 @@
               } else {
                 selection.exactNames.delete(toolName);
               }
+              syncSectionBulkToggles(detailEl, profile);
               refreshSnippetAndPreview();
             });
           });
@@ -2248,6 +2335,7 @@
               } else {
                 selection.controlKeys.delete(controlKey);
               }
+              syncSectionBulkToggles(detailEl, profile);
               refreshSnippetAndPreview();
             });
           });
@@ -2273,6 +2361,7 @@
               } else {
                 selection.values.delete(paramName);
               }
+              syncSectionBulkToggles(detailEl, profile);
               refreshSnippetAndPreview();
             });
           });
@@ -2288,6 +2377,7 @@
                 paramName,
                 target.value.split(',').map(value => value.trim()).filter(Boolean)
               );
+              syncSectionBulkToggles(detailEl, profile);
               refreshSnippetAndPreview();
             });
           });
@@ -2304,7 +2394,73 @@
               } else {
                 selection.controlKeys.delete(controlKey);
               }
+              syncSectionBulkToggles(detailEl, profile);
               refreshSnippetAndPreview();
+            });
+          });
+
+          const setAllToolFilters = shouldSelect => {
+            const selection = getToolSelection(profile.profileId);
+            if (shouldSelect) {
+              selection.exactNames = new Set(
+                (Array.isArray(profile.toolCatalog) ? profile.toolCatalog : [])
+                  .map(tool => tool?.name)
+                  .filter(Boolean)
+              );
+            } else {
+              selection.exactNames.clear();
+            }
+            detailEl.querySelectorAll('[data-tool-toggle]').forEach(input => {
+              if (input instanceof HTMLInputElement) {
+                input.checked = shouldSelect;
+              }
+            });
+            syncSectionBulkToggles(detailEl, profile);
+            refreshSnippetAndPreview();
+          };
+
+          const setAllParamFilters = shouldSelect => {
+            const selection = getParamSelection(profile.profileId);
+            if (!shouldSelect) {
+              selection.values.clear();
+            }
+
+            detailEl.querySelectorAll('[data-param-toggle]').forEach(input => {
+              if (!(input instanceof HTMLInputElement)) return;
+              const paramName = input.getAttribute('data-param-toggle');
+              input.checked = shouldSelect;
+              if (!paramName) return;
+              const valuesInput = detailEl.querySelector(`[data-param-values="${CSS.escape(paramName)}"]`);
+              if (valuesInput instanceof HTMLInputElement) {
+                valuesInput.disabled = !shouldSelect;
+              }
+              if (shouldSelect) {
+                const seeded = valuesInput instanceof HTMLInputElement
+                  ? valuesInput.value.split(',').map(value => value.trim()).filter(Boolean)
+                  : [];
+                selection.values.set(paramName, seeded);
+              }
+            });
+
+            syncSectionBulkToggles(detailEl, profile);
+            refreshSnippetAndPreview();
+          };
+
+          detailEl.querySelectorAll('[data-tool-section-toggle]').forEach(input => {
+            input.addEventListener('change', event => {
+              const target = event.target;
+              if (!(target instanceof HTMLInputElement)) return;
+              const shouldSelect = target.dataset.bulkState === 'none';
+              setAllToolFilters(shouldSelect);
+            });
+          });
+
+          detailEl.querySelectorAll('[data-param-section-toggle]').forEach(input => {
+            input.addEventListener('change', event => {
+              const target = event.target;
+              if (!(target instanceof HTMLInputElement)) return;
+              const shouldSelect = target.dataset.bulkState === 'none';
+              setAllParamFilters(shouldSelect);
             });
           });
 
@@ -2317,6 +2473,7 @@
           }
           updatePreviewText(toolHeaderPreview, 'X-Mcp4-Tools', serializeToolFilterHeader(profile.profileId));
           updatePreviewText(paramHeaderPreview, 'X-Mcp4-Params', serializeParamFilterHeader(profile.profileId));
+          syncSectionBulkToggles(detailEl, profile);
           setActiveMode(currentMode);
         }
       }
