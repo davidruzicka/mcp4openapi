@@ -1,0 +1,134 @@
+# Profile Index Tool And Parameter Filter Plan
+
+## Goal
+Extend the HTML profile index so each profile exposes an interactive, inspectable tool catalog and can generate filter headers for selected tools and parameters directly into supported connection snippets.
+
+## Scope
+- Add a collapsible tool list for each profile.
+- Show a collapsible action list for each tool as an informational view only.
+- Show a collapsible parameter list for each tool.
+- Add interactive tool selection that generates `X-Mcp4-Tools` for supported snippet formats.
+- Add interactive parameter selection, including values, that generates `X-Mcp4-Params` for supported snippet formats.
+- Show `_allow_list` and `_allow_read` as visually distinct control entries with explanatory tooltips.
+- Hide snippet configurations that do not support custom headers whenever tool or parameter filtering is active.
+- Preserve current behavior when no filtering is active.
+
+## Locked Decisions
+- [x] Tool filtering and parameter filtering are separate concepts with separate UI state and separate header serialization.
+- [x] Tool actions are displayed as an informational collapsible list only and are not independently filterable in v1.
+- [x] `_allow_list` and `_allow_read` are UI-generated control entries and are not loaded from profile JSON as regular tools or parameters.
+- [x] When tool or parameter filtering is active, only snippet configurations with verified custom-header support remain visible.
+- [x] The first version uses the existing profile index payload and page render flow; it does not add a lazy follow-up API route.
+
+## Plan Checklist
+- [x] Extend profile index source data in `src/profile/profile-resolver.ts` with a compact tool catalog summary extracted from profile `tools[]`.
+- [x] Add index-specific summary types for tool metadata instead of exposing raw `ToolDefinition` structures to the HTML payload.
+- [x] Include per-tool summary fields:
+  - [x] `name`
+  - [x] `description`
+  - [x] `kind` (`simple` or `composite`)
+  - [x] `actions[]`
+  - [x] `hasActionSelector`
+  - [x] `operationCount` or `stepCount`
+  - [x] compact `parameters[]` summary
+- [x] Include per-parameter summary fields:
+  - [x] `name`
+  - [x] normalized type label
+  - [x] `description`
+  - [x] `required`
+  - [x] `requiredFor[]`
+  - [x] `isMetadata`
+  - [x] short `enumValues[]` when useful
+  - [x] safe `defaultValue` when useful
+- [x] Keep tool catalog ordering deterministic so the UI and tests remain stable across runs.
+- [x] Extend `src/transport/profile-index.ts` payload types to carry the new per-profile `toolCatalog`.
+- [x] Keep profile index payload compact by sending only summary data needed for the UI.
+- [x] Extend `ProfileIndexSnippet` metadata in `src/transport/profile-index.ts` with capability flags.
+- [x] Add `supportsCustomHeaders` capability for each snippet entry.
+- [x] Add `supportsTenantHeaders` capability for each snippet entry.
+- [x] Determine snippet capabilities server-side during snippet generation, not by repeated client-side prefix heuristics.
+- [x] Refactor the existing tenant-picker capability checks in `html/profile-index.html` to rely on snippet capability flags.
+- [x] Add per-profile client-side state maps in `html/profile-index.html` for:
+  - [x] selected tool entries
+  - [x] selected tool control entries
+  - [x] selected parameter values
+  - [x] selected parameter control entries
+- [x] Keep filter state keyed by `profileId`, similar to existing tenant selection state.
+- [x] Add pure helper functions in `html/profile-index.html` to serialize tool filter state into `X-Mcp4-Tools`.
+- [x] Add pure helper functions in `html/profile-index.html` to serialize parameter filter state into `X-Mcp4-Params`.
+- [x] Ensure `X-Mcp4-Params` values are percent-encoded when needed.
+- [x] Support repeated parameter keys in `X-Mcp4-Params` for multiple allowed values.
+- [x] Add helper functions to detect whether tool filtering is active for the current profile.
+- [x] Add helper functions to detect whether parameter filtering is active for the current profile.
+- [x] Extend snippet generation flow in `html/profile-index.html` so `buildSnippet()` becomes orchestration only:
+  - [x] placeholder replacement
+  - [x] tenant header injection
+  - [x] tool filter header injection
+  - [x] parameter filter header injection
+- [x] Add dedicated snippet header injection helpers for JSON snippet formats.
+- [x] Add dedicated snippet header injection helpers for Codex TOML snippet formats.
+- [ ] Add CLI header injection only for formats where the output stays valid and maintainable.
+- [x] Make header injection idempotent so re-rendering updates existing headers instead of duplicating them.
+- [x] Add a new "Tool Filter" detail card in `html/profile-index.html`.
+- [x] Render each tool row with:
+  - [x] a checkbox or equivalent toggle immediately next to the tool name
+  - [x] a collapsible detail toggle
+  - [x] tool description
+  - [x] collapsible action list
+  - [x] collapsible parameter list
+- [x] Add a visually distinct "Control rules" sub-block for tool-level `_allow_list` and `_allow_read`.
+- [x] Add tooltip text that explains tool-level `_allow_*` semantics as category allow rules.
+- [x] Add a new "Parameter Filter" detail card in `html/profile-index.html`.
+- [x] Render a profile-wide parameter filter list aggregated from the profile tool catalog.
+- [x] For each regular parameter entry:
+  - [x] allow enabling or disabling the parameter
+  - [x] show at least one value input when enabled
+  - [x] allow adding more than one value for the same parameter
+- [x] For parameter-level `_allow_list` and `_allow_read`:
+  - [x] render them as control toggles without value inputs
+  - [x] show tooltip text that explains list/read enforcement relaxation semantics
+- [x] Add a live filter-header preview block in the profile detail view.
+- [x] Show the current `X-Mcp4-Tools` preview only when the serialized tool header is non-empty.
+- [x] Show the current `X-Mcp4-Params` preview only when the serialized parameter header is non-empty.
+- [x] Re-render copy payloads whenever filter selections change.
+- [x] Update snippet rendering logic in `renderSnippets()` so active filtering hides entries without `supportsCustomHeaders`.
+- [x] Update snippet rendering logic so active tenant selection still hides entries without `supportsTenantHeaders`.
+- [x] When both tenant selection and filtering are active, render only the intersection of supported entries.
+- [x] Render an explicit notice when filtering is active and no remaining snippet formats support the required headers.
+- [x] Keep all existing snippet formats visible when no filtering is active.
+- [x] Refactor inline page logic into smaller helpers to avoid expanding `renderDetail()` into an unmaintainable monolith.
+- [x] Add keyboard-accessible collapse and toggle behavior for the new tool and parameter sections.
+- [ ] Preserve existing accessibility patterns:
+  - [ ] `button` controls
+  - [x] `aria-expanded`
+  - [x] `aria-controls`
+  - [x] keyboard activation with `Enter` and `Space`
+- [x] Add unit tests in `src/profile/profile-resolver.test.ts` for tool catalog extraction:
+  - [x] simple operation tool
+  - [x] composite tool
+  - [x] multi-action tool
+  - [x] metadata parameters
+  - [x] `required_for`
+  - [x] summary ordering stability
+- [x] Add tests in `src/transport/profile-index.test.ts` for payload generation with the new tool catalog.
+- [x] Add tests in `src/transport/profile-index.test.ts` for snippet capability flags.
+- [ ] Add tests in `src/transport/profile-index.test.ts` for filter header serialization helpers.
+- [ ] Add tests in `src/transport/profile-index.test.ts` for custom-header capability gating when filters are active.
+- [ ] Add tests in `src/transport/profile-index.test.ts` for tenant plus filter intersection behavior.
+- [x] Add at least one smoke-level route test in `src/transport/http-transport.test.ts` to confirm profile index rendering still works end-to-end.
+- [x] Update `docs/HTTP-TRANSPORT.md` to document interactive profile-index generation of `X-Mcp4-Tools` and `X-Mcp4-Params`.
+- [x] Update `README.md` to document the new profile-index filtering UI and the visibility rule for custom-header support.
+- [x] Update `CHANGELOG.md` with a single user-facing entry describing the profile-index filtering upgrade.
+- [x] Run `npm run typecheck`.
+- [x] Run targeted tests for profile index and profile resolver changes.
+
+## Acceptance Criteria
+- [x] Every profile shows a collapsible tool catalog in the HTML profile index.
+- [x] Every tool can reveal its action list and parameter list.
+- [x] Tool selections generate a valid `X-Mcp4-Tools` preview and supported snippets inject that header.
+- [x] Parameter selections with values generate a valid `X-Mcp4-Params` preview and supported snippets inject that header.
+- [x] `_allow_list` and `_allow_read` are visible as distinct control entries with explanatory hover text.
+- [x] When tool or parameter filtering is active, unsupported snippet configurations are hidden.
+- [x] When no filtering is active, existing profile-index snippet behavior remains unchanged.
+- [x] Tenant selection behavior continues to work and composes correctly with the new filter logic.
+- [ ] The implementation is covered by tests for payload extraction, HTML rendering behavior, and header serialization.

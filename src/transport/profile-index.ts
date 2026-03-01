@@ -70,7 +70,11 @@ interface ProfileIndexSnippet {
   authKey: string;
   mode: 'remote' | 'local';
   format: 'json' | 'cli' | 'toml';
+  supportsCustomHeaders: boolean;
+  supportsTenantHeaders: boolean;
 }
+
+type ProfileIndexSnippetDraft = Omit<ProfileIndexSnippet, 'supportsCustomHeaders' | 'supportsTenantHeaders'>;
 
 interface ProfileIndexTab {
   key: string;
@@ -297,6 +301,7 @@ export function buildProfileIndexPayload(
       authTabs,
       modeTabs,
       tenantSummary: profile.tenantSummary,
+      toolCatalog: profile.toolCatalog || [],
     };
   });
 
@@ -449,7 +454,7 @@ function buildProfileSnippets(
     ? profile.authMethods
     : [{ type: 'none' }];
 
-  const snippets: ProfileIndexSnippet[] = [];
+  const snippets: ProfileIndexSnippetDraft[] = [];
   const authTabs: ProfileIndexTab[] = [];
   const modeTabs: ProfileIndexTab[] = [
     { key: 'remote', label: labels.snippetLabels.modeRemote },
@@ -604,7 +609,24 @@ function buildProfileSnippets(
     });
   }
 
-  return { snippets, authTabs, modeTabs };
+  return { snippets: snippets.map(applySnippetCapabilities), authTabs, modeTabs };
+}
+
+function applySnippetCapabilities(snippet: ProfileIndexSnippetDraft): ProfileIndexSnippet {
+  const supportsRemoteCustomHeaders = snippet.mode === 'remote' && (
+    snippet.key.startsWith('vscode-') ||
+    snippet.key.startsWith('cursor-') ||
+    snippet.key.startsWith('jetbrains-') ||
+    snippet.key.startsWith('claude-json-') ||
+    snippet.key.startsWith('gemini-json-') ||
+    snippet.key.startsWith('codex-toml-')
+  );
+
+  return {
+    ...snippet,
+    supportsCustomHeaders: supportsRemoteCustomHeaders,
+    supportsTenantHeaders: supportsRemoteCustomHeaders,
+  };
 }
 
 function buildConnectionSnippets(

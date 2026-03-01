@@ -507,7 +507,7 @@ Rules:
 - Startup rejects selector collisions (exact/exact with incompatible auth, exact/mask overlap, mask/mask overlap) and runtime rejects ambiguous mask matches.
 - If no tenant headers are sent, no tenant override is applied and profile-level config is used.
 
-When `MCP4_HTTP_PROFILE_INDEX=true`, the HTML profile index shows tenant availability per profile and provides interactive tenant picker for supported remote snippet formats that inject `X-Mcp4-Tenant-Id` into copied snippet output. Picker always includes a "no tenant" option that keeps snippets without tenant headers. For `mask:` tenants, copied snippets also include example `X-Mcp4-Api-Base-Url` with wildcard parts replaced by `<your-part>`. In `Local stdio` mode, tenant selection updates API base URL in snippets that support local env injection (using profile API endpoint env var).
+When `MCP4_HTTP_PROFILE_INDEX=true`, the HTML profile index shows tenant availability per profile and provides interactive tenant picker for supported remote snippet formats that inject `X-Mcp4-Tenant-Id` into copied snippet output. Picker always includes a "no tenant" option that keeps snippets without tenant headers. For `mask:` tenants, copied snippets also include example `X-Mcp4-Api-Base-Url` with wildcard parts replaced by `<your-part>`. In `Local stdio` mode, tenant selection updates API base URL in snippets that support local env injection (using profile API endpoint env var). The same page now also exposes a per-profile tool catalog with interactive builders for `X-Mcp4-Tools` and `X-Mcp4-Params`; when either filter is active, snippet variants that cannot send custom HTTP headers are hidden automatically.
 
 #### Parameter Filtering (HTTP: X-Mcp4-Params)
 
