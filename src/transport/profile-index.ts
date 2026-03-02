@@ -46,6 +46,7 @@ interface ProfileIndexI18n {
     bearer: string;
     query: string;
     customHeader: string;
+    sessionCookie: string;
     none: string;
   };
   authSectionLabel: string;
@@ -205,6 +206,7 @@ export function buildProfileIndexI18n(locale: ProfileIndexLocale): ProfileIndexI
         bearer: 'Bearer',
         query: 'Token (query)',
         customHeader: 'Vlastní hlavička',
+        sessionCookie: 'Session cookie',
         none: 'Bez autentizace',
       },
       authSectionLabel: 'Autentizace:',
@@ -262,6 +264,7 @@ export function buildProfileIndexI18n(locale: ProfileIndexLocale): ProfileIndexI
       bearer: 'Bearer',
       query: 'Token (query)',
       customHeader: 'Custom header',
+      sessionCookie: 'Session cookie',
       none: 'No auth',
     },
     authSectionLabel: 'Authentication:',
@@ -443,6 +446,9 @@ function buildAuthLabel(auth: RenderAuthMethod, labels: ProfileIndexI18n): strin
     const suffix = auth.headerName ? `: ${auth.headerName}` : '';
     return `${labels.authLabels.customHeader}${suffix}`.trim();
   }
+  if (auth.type === 'session-cookie') {
+    return labels.authLabels.sessionCookie;
+  }
   return labels.authLabels.none;
 }
 
@@ -456,84 +462,85 @@ function buildProfileSnippets(
 
   const snippets: ProfileIndexSnippetDraft[] = [];
   const authTabs: ProfileIndexTab[] = [];
-  const modeTabs: ProfileIndexTab[] = [
-    { key: 'remote', label: labels.snippetLabels.modeRemote },
-    { key: 'local', label: labels.snippetLabels.modeLocal },
-  ];
 
   for (const auth of authMethods) {
     const authLabel = buildAuthLabel(auth, labels);
     const suffix = authLabel ? ` - ${authLabel}` : '';
     const authKey = auth.type;
     authTabs.push({ key: authKey, label: authLabel || auth.type });
-    const remoteSnippetContext = buildConnectionSnippets(auth);
     const localSnippetContext = buildLocalConnectionSnippets(profile, auth);
 
-    snippets.push({
-      key: `vscode-${auth.type}`,
-      label: `${labels.snippetLabels.vscode}${suffix}`,
-      content: remoteSnippetContext.vscode,
-      authKey,
-      mode: 'remote',
-      format: 'json',
-    });
-    snippets.push({
-      key: `cursor-${auth.type}`,
-      label: `${labels.snippetLabels.cursor}${suffix}`,
-      content: remoteSnippetContext.cursor,
-      authKey,
-      mode: 'remote',
-      format: 'json',
-    });
-    snippets.push({
-      key: `jetbrains-${auth.type}`,
-      label: `${labels.snippetLabels.jetbrains}${suffix}`,
-      content: remoteSnippetContext.jetbrains,
-      authKey,
-      mode: 'remote',
-      format: 'json',
-    });
-    snippets.push({
-      key: `claude-json-${auth.type}`,
-      label: `${labels.snippetLabels.claude}${suffix}`,
-      content: remoteSnippetContext.claudeJson,
-      authKey,
-      mode: 'remote',
-      format: 'json',
-    });
-    snippets.push({
-      key: `claude-cli-${auth.type}`,
-      label: `${labels.snippetLabels.claude}${suffix}`,
-      content: remoteSnippetContext.claudeCli,
-      authKey,
-      mode: 'remote',
-      format: 'cli',
-    });
-    snippets.push({
-      key: `gemini-json-${auth.type}`,
-      label: `${labels.snippetLabels.gemini}${suffix}`,
-      content: remoteSnippetContext.geminiJson,
-      authKey,
-      mode: 'remote',
-      format: 'json',
-    });
-    snippets.push({
-      key: `gemini-cli-${auth.type}`,
-      label: `${labels.snippetLabels.gemini}${suffix}`,
-      content: remoteSnippetContext.geminiCli,
-      authKey,
-      mode: 'remote',
-      format: 'cli',
-    });
-    snippets.push({
-      key: `codex-toml-${auth.type}`,
-      label: `${labels.snippetLabels.codex}${suffix}`,
-      content: remoteSnippetContext.codexToml,
-      authKey,
-      mode: 'remote',
-      format: 'toml',
-    });
+    if (auth.type !== 'session-cookie') {
+      const remoteSnippetContext = buildConnectionSnippets(auth);
+
+      snippets.push({
+        key: `vscode-${auth.type}`,
+        label: `${labels.snippetLabels.vscode}${suffix}`,
+        content: remoteSnippetContext.vscode,
+        authKey,
+        mode: 'remote',
+        format: 'json',
+      });
+      snippets.push({
+        key: `cursor-${auth.type}`,
+        label: `${labels.snippetLabels.cursor}${suffix}`,
+        content: remoteSnippetContext.cursor,
+        authKey,
+        mode: 'remote',
+        format: 'json',
+      });
+      snippets.push({
+        key: `jetbrains-${auth.type}`,
+        label: `${labels.snippetLabels.jetbrains}${suffix}`,
+        content: remoteSnippetContext.jetbrains,
+        authKey,
+        mode: 'remote',
+        format: 'json',
+      });
+      snippets.push({
+        key: `claude-json-${auth.type}`,
+        label: `${labels.snippetLabels.claude}${suffix}`,
+        content: remoteSnippetContext.claudeJson,
+        authKey,
+        mode: 'remote',
+        format: 'json',
+      });
+      snippets.push({
+        key: `claude-cli-${auth.type}`,
+        label: `${labels.snippetLabels.claude}${suffix}`,
+        content: remoteSnippetContext.claudeCli,
+        authKey,
+        mode: 'remote',
+        format: 'cli',
+      });
+      snippets.push({
+        key: `gemini-json-${auth.type}`,
+        label: `${labels.snippetLabels.gemini}${suffix}`,
+        content: remoteSnippetContext.geminiJson,
+        authKey,
+        mode: 'remote',
+        format: 'json',
+      });
+      snippets.push({
+        key: `gemini-cli-${auth.type}`,
+        label: `${labels.snippetLabels.gemini}${suffix}`,
+        content: remoteSnippetContext.geminiCli,
+        authKey,
+        mode: 'remote',
+        format: 'cli',
+      });
+      snippets.push({
+        key: `codex-toml-${auth.type}`,
+        label: `${labels.snippetLabels.codex}${suffix}`,
+        content: remoteSnippetContext.codexToml,
+        authKey,
+        mode: 'remote',
+        format: 'toml',
+      });
+    }
+
     if (auth.type === 'oauth' || auth.type === 'bearer') {
+      const remoteSnippetContext = buildConnectionSnippets(auth);
       snippets.push({
         key: `codex-cli-${auth.type}`,
         label: `${labels.snippetLabels.codex}${suffix}`,
@@ -607,6 +614,14 @@ function buildProfileSnippets(
       mode: 'local',
       format: 'toml',
     });
+  }
+
+  const modeTabs: ProfileIndexTab[] = [];
+  if (snippets.some((snippet) => snippet.mode === 'remote')) {
+    modeTabs.push({ key: 'remote', label: labels.snippetLabels.modeRemote });
+  }
+  if (snippets.some((snippet) => snippet.mode === 'local')) {
+    modeTabs.push({ key: 'local', label: labels.snippetLabels.modeLocal });
   }
 
   return { snippets: snippets.map(applySnippetCapabilities), authTabs, modeTabs };
@@ -1043,9 +1058,32 @@ function buildCodexLocalTomlSnippet(
 }
 
 function resolveLocalEnvVarNames(profile: ListedProfileDetails, auth: RenderAuthMethod): string[] {
-  void auth;
   const oauthOnly = new Set(profile.oauthEnvVars || []);
-  return profile.envVars.filter(envVar => !oauthOnly.has(envVar));
+  const baseUrlEnv = profile.apiBaseUrl?.valueFromEnv;
+  const authEnvVars = new Set<string>();
+
+  if (auth.type === 'bearer' || auth.type === 'query' || auth.type === 'custom-header') {
+    if (auth.valueFromEnv) {
+      authEnvVars.add(auth.valueFromEnv);
+    }
+  } else if (auth.type === 'session-cookie') {
+    if (auth.usernameFromEnv) {
+      authEnvVars.add(auth.usernameFromEnv);
+    }
+    if (auth.passwordFromEnv) {
+      authEnvVars.add(auth.passwordFromEnv);
+    }
+  }
+
+  if (baseUrlEnv) {
+    authEnvVars.add(baseUrlEnv);
+  }
+
+  if (authEnvVars.size === 0) {
+    return profile.envVars.filter(envVar => !oauthOnly.has(envVar));
+  }
+
+  return profile.envVars.filter(envVar => !oauthOnly.has(envVar) && authEnvVars.has(envVar));
 }
 
 function formatTomlArray(values: string[]): string {

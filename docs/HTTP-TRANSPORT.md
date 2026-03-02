@@ -135,6 +135,7 @@ Routes:
   - For `mask:` tenant selection, picker also injects example `X-Mcp4-Api-Base-Url` with wildcard parts replaced by `<your-part>`
   - In `Local stdio` mode, tenant selection injects tenant API base URL into snippet env config for supported local snippet formats
   - In `Local stdio` mode, active tool/parameter filters are translated into local `mcp4openapi` CLI arguments (`--tool-filter-allow-names`, `--tool-filter-allow-categories`, `--param-filter`) instead of hiding supported local snippets
+  - Profiles that use `auth.type: "session-cookie"` are shown only in `Local stdio` snippets because remote HTTP initialization does not accept upstream login/password via request headers
 
 Default profile behavior:
 - If `MCP4_PROFILE_PATH` (or `--profile-path`) is set, `/mcp` and `/sse` stay available.

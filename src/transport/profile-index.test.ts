@@ -397,6 +397,53 @@ describe('profile index helpers', () => {
     expect(profile.authTabs[0].label).toBe('Custom header: X-N8N-API-KEY');
   });
 
+  it('builds session-cookie snippets only for local stdio', () => {
+    const profiles: ListedProfileDetails[] = [
+      {
+        profileId: 'n8n-nodes',
+        profileName: 'n8n-node-list',
+        profileAliases: [],
+        description: 'n8n node list',
+        envVars: ['N8N_NODES_BASE_URL', 'N8N_NODES_LOGIN_PASSWORD', 'N8N_NODES_LOGIN_USER'],
+        authMethods: [
+          {
+            type: 'session-cookie',
+            usernameFromEnv: 'N8N_NODES_LOGIN_USER',
+            passwordFromEnv: 'N8N_NODES_LOGIN_PASSWORD',
+          },
+        ],
+        apiBaseUrl: {
+          valueFromEnv: 'N8N_NODES_BASE_URL',
+          defaultValue: 'https://admin.isatky.cz',
+        },
+      },
+    ];
+
+    const { payload } = buildProfileIndexPayload(profiles, 'http://localhost:3003', 'en');
+    const [profile] = payload.profiles;
+
+    expect(profile.modeTabs).toEqual([
+      { key: 'local', label: 'Local stdio' },
+    ]);
+    expect(profile.authTabs[0].label).toBe('Session cookie');
+    expect(profile.snippets.find(s => s.key === 'vscode-session-cookie')).toBeUndefined();
+    expect(profile.snippets.find(s => s.key === 'cursor-session-cookie')).toBeUndefined();
+
+    const vscodeLocal = profile.snippets.find(s => s.key === 'vscode-local-session-cookie');
+    const cursorLocal = profile.snippets.find(s => s.key === 'cursor-local-session-cookie');
+    const claudeLocalCli = profile.snippets.find(s => s.key === 'claude-local-cli-session-cookie');
+    const codexLocalToml = profile.snippets.find(s => s.key === 'codex-local-toml-session-cookie');
+
+    expect(vscodeLocal?.content).toContain('"N8N_NODES_LOGIN_USER": "${N8N_NODES_LOGIN_USER}"');
+    expect(vscodeLocal?.content).toContain('"N8N_NODES_LOGIN_PASSWORD": "${input:n8n-nodes-login-password}"');
+    expect(vscodeLocal?.content).toContain('"N8N_NODES_BASE_URL": "https://admin.isatky.cz"');
+    expect(cursorLocal?.content).toContain('"N8N_NODES_LOGIN_USER": "${env:N8N_NODES_LOGIN_USER}"');
+    expect(cursorLocal?.content).toContain('"N8N_NODES_LOGIN_PASSWORD": "${env:N8N_NODES_LOGIN_PASSWORD}"');
+    expect(claudeLocalCli?.content).toContain('--env "N8N_NODES_BASE_URL=https://admin.isatky.cz"');
+    expect(codexLocalToml?.content).toContain('env_vars = ["N8N_NODES_LOGIN_PASSWORD", "N8N_NODES_LOGIN_USER"]');
+    expect(codexLocalToml?.content).toContain('N8N_NODES_BASE_URL = "https://admin.isatky.cz"');
+  });
+
   it('renders template placeholders', () => {
     const profiles: ListedProfileDetails[] = [
       {
