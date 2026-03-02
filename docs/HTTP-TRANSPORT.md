@@ -129,9 +129,12 @@ Routes:
   - Keeps current API endpoint display semantics (env/default source)
   - When tenant config is available for a profile, shows tenant availability and tenant list per profile
   - Includes interactive tenant picker for supported remote snippet formats and injects `X-Mcp4-Tenant-Id` into copied snippet output
+  - Includes a per-profile tool catalog with interactive builders for `X-Mcp4-Tools` and `X-Mcp4-Params`
+  - While tool or parameter filtering is active, only snippet variants with verified custom-header support remain visible
   - Picker includes an explicit "no tenant" option that keeps snippet headers unchanged
   - For `mask:` tenant selection, picker also injects example `X-Mcp4-Api-Base-Url` with wildcard parts replaced by `<your-part>`
   - In `Local stdio` mode, tenant selection injects tenant API base URL into snippet env config for supported local snippet formats
+  - In `Local stdio` mode, active tool/parameter filters are translated into local `mcp4openapi` CLI arguments (`--tool-filter-allow-names`, `--tool-filter-allow-categories`, `--param-filter`) instead of hiding supported local snippets
 
 Default profile behavior:
 - If `MCP4_PROFILE_PATH` (or `--profile-path`) is set, `/mcp` and `/sse` stay available.
@@ -288,6 +291,11 @@ Source: https://modelcontextprotocol.io/specification/2025-03-26/basic/transport
 ```
 X-Mcp4-Params: project_id=123, project_id=456, _allow_read
 ```
+
+**Global baseline**:
+- `MCP4_PARAM_FILTER` uses the same syntax and applies process-wide.
+- If both `MCP4_PARAM_FILTER` and `X-Mcp4-Params` are set, the session header may only narrow the global baseline.
+- Conflicting overlaps fail during session initialization.
 
 **Tool filtering header format**:
 - Comma-separated list of tool names or regex entries

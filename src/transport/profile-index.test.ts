@@ -128,6 +128,9 @@ describe('profile index helpers', () => {
     expect(codexCli?.content).toContain('codex mcp add --url "__PROFILE_URL__"');
     expect(codexCli?.content).toContain('__PROFILE_ID__');
     expect(codexCli?.content).toContain('--bearer-token-env-var GITLAB_TOKEN');
+    expect(vscode?.supportsCustomHeaders).toBe(true);
+    expect(vscode?.supportsTenantHeaders).toBe(true);
+    expect(codexCli?.supportsCustomHeaders).toBe(false);
     expect(codexLocalToml?.format).toBe('toml');
     expect(codexLocalToml?.content).toContain('command = "npx"');
     expect(codexLocalToml?.content).toContain('env_vars = ["GITLAB_TOKEN"]');
@@ -547,6 +550,65 @@ describe('profile index helpers', () => {
     expect(profile.tenantSummary?.tenants[1].selectorType).toBe('mask');
   });
 
+  it('includes tool catalog summaries in payload', () => {
+    const profiles: ListedProfileDetails[] = [
+      {
+        profileId: 'demo',
+        profileName: 'demo',
+        profileAliases: [],
+        description: 'Demo',
+        envVars: [],
+        authMethods: [],
+        toolCatalog: [
+          {
+            name: 'manage_demo',
+            description: 'Manage demo records.',
+            kind: 'simple',
+            actions: ['list', 'get'],
+            hasActionSelector: true,
+            operationCount: 2,
+            stepCount: 0,
+            parameters: [
+              {
+                name: 'action',
+                typeLabel: 'string',
+                description: 'Action selector',
+                required: true,
+                requiredFor: [],
+                isMetadata: true,
+                enumValues: ['list', 'get'],
+              },
+            ],
+          },
+        ],
+      },
+    ];
+
+    const { payload } = buildProfileIndexPayload(profiles, 'http://localhost:3003', 'en');
+    expect(payload.profiles[0].toolCatalog).toEqual([
+      {
+        name: 'manage_demo',
+        description: 'Manage demo records.',
+        kind: 'simple',
+        actions: ['list', 'get'],
+        hasActionSelector: true,
+        operationCount: 2,
+        stepCount: 0,
+        parameters: [
+          {
+            name: 'action',
+            typeLabel: 'string',
+            description: 'Action selector',
+            required: true,
+            requiredFor: [],
+            isMetadata: true,
+            enumValues: ['list', 'get'],
+          },
+        ],
+      },
+    ]);
+  });
+
   it('renders tenant picker payload and tenant header injection script markers in HTML', async () => {
     const profiles: ProfileIndexSourceProfile[] = [
       {
@@ -576,15 +638,36 @@ describe('profile index helpers', () => {
 
     expect(html).toContain('"tenantSummary":{"tenantsEnabled":true');
     expect(html).toContain('"selectionHeaderName":"X-Mcp4-Tenant-Id"');
+    expect(html).toContain('"supportsCustomHeaders":true');
     expect(html).toContain('injectTenantHeaderIntoJsonSnippet');
     expect(html).toContain('upsertCursorHeaderArgInArgs');
     expect(html).toContain('ensureCursorMcpRemoteArgs');
+    expect(html).toContain('injectFilterHeadersForSnippet');
+    expect(html).toContain('injectFilterHeadersIntoJsonSnippet');
+    expect(html).toContain('injectFilterHeadersIntoCodexToml');
+    expect(html).toContain('buildLocalCliFilterArgs');
+    expect(html).toContain('serializeLocalToolFilterAllowNames');
+    expect(html).toContain('serializeLocalToolFilterAllowCategories');
+    expect(html).toContain('injectLocalFilterConfigForSnippet');
+    expect(html).toContain('injectLocalFilterArgsIntoJsonSnippet');
+    expect(html).toContain('injectLocalFilterArgsIntoCodexToml');
+    expect(html).toContain('injectLocalFilterArgsIntoCliSnippet');
     expect(html).toContain('injectTenantApiBaseUrlIntoJsonSnippet');
     expect(html).toContain('injectTenantApiBaseUrlIntoCodexToml');
     expect(html).toContain('const sectionHeaderRegex = /^\\[mcp_servers\\.[^\\]]+\\.env\\]\\s*$/;');
     expect(html).toContain('const fallbackSectionHeader = `[mcp_servers.${profileId}.env]`;');
     expect(html).toContain('__profile-default__');
     expect(html).toContain('supportsTenantPicker');
+    expect(html).toContain('serializeToolFilterHeader');
+    expect(html).toContain('serializeParamFilterHeader');
+    expect(html).toContain('function hasActiveToolFilter(profileId)');
+    expect(html).toContain('function hasActiveParamFilter(profileId)');
+    expect(html).toContain('function setBulkToggleState(toggle, selectedCount, totalCount)');
+    expect(html).toContain('function syncSectionBulkToggles(detailEl, profile)');
+    expect(html).toContain('function wireCollapsibleDetails(root, idPrefix)');
+    expect(html).toContain('Tool Filter');
+    expect(html).toContain('Parameter Filter');
+    expect(html).toContain('Header Preview');
     expect(html).toContain('buildMaskExampleBaseUrl');
     expect(html).toContain('getClientLabel');
     expect(html).toContain('data-client-tab');
@@ -593,14 +676,92 @@ describe('profile index helpers', () => {
     expect(html).toContain('active-mode-badge');
     expect(html).toContain('X-Mcp4-Tenant-Id');
     expect(html).toContain('X-Mcp4-Api-Base-Url');
+    expect(html).toContain('X-Mcp4-Tools');
+    expect(html).toContain('X-Mcp4-Params');
     expect(html).toContain('<your-part>');
-    expect(html).toContain('key.startsWith(\'vscode-\')');
-    expect(html).toContain('key.startsWith(\'cursor-\')');
     expect(html).toContain("upsertCursorHeaderArgInArgs(args, 'X-Mcp4-Tenant-Id'");
-    expect(html).toContain('key.startsWith(\'jetbrains-\')');
-    expect(html).toContain('key.startsWith(\'claude-json-\')');
-    expect(html).toContain('key.startsWith(\'gemini-json-\')');
     expect(html).toContain('key.startsWith(\'gemini-local-json-\')');
-    expect(html).toContain('key.startsWith(\'codex-toml-\')');
+    expect(html).toContain('entry.supportsCustomHeaders');
+    expect(html).toContain('entry.supportsTenantHeaders');
+    expect(html).toContain("const hasActiveFiltering = hasActiveToolFilter(profile.profileId) || hasActiveParamFilter(profile.profileId);");
+    expect(html).toContain("if (hasActiveFiltering && activeMode === 'remote' && !entry.supportsCustomHeaders)");
+    expect(html).toContain("if (selectedTenant && activeMode === 'remote' && profile.tenantSummary?.tenantsEnabled && !entry.supportsTenantHeaders)");
+    expect(html).toContain("if (hasActiveFiltering && activeMode === 'remote') {");
+    expect(html).toContain('args.push(arg);');
+    expect(html).toContain('if (allowNames) {');
+    expect(html).toContain("cliArgs.push('--tool-filter-allow-names', allowNames);");
+    expect(html).toContain("cliArgs.push('--tool-filter-allow-categories', allowCategories);");
+    expect(html).toContain("cliArgs.push('--param-filter', paramFilter);");
+    expect(html).toContain('values.push(`${name}=${encodeURIComponent(value)}`);');
+    expect(html).toContain('CSS.escape(paramName)');
+    expect(html).toContain('data-tool-section-toggle');
+    expect(html).toContain('data-param-section-toggle');
+    expect(html).toContain("toggle.indeterminate = state === 'some';");
+    expect(html).toContain("const shouldSelect = target.dataset.bulkState === 'none';");
+    expect(html).toContain('const setAllToolFilters = shouldSelect => {');
+    expect(html).toContain('const setAllParamFilters = shouldSelect => {');
+    expect(html).toContain("summary.setAttribute('role', 'button')");
+    expect(html).toContain("summary.setAttribute('aria-controls'");
+    expect(html).toContain("summary.setAttribute('aria-expanded'");
+    expect(html).toContain('details.addEventListener(\'toggle\', syncState)');
+  });
+
+  it('renders filter cards collapsed by default and keeps the header preview hidden until populated', async () => {
+    const profiles: ProfileIndexSourceProfile[] = [
+      {
+        profileId: 'demo',
+        profileName: 'demo',
+        profileAliases: [],
+        description: 'Demo',
+        envVars: [],
+        authMethods: [],
+        toolCatalog: [
+          {
+            name: 'manage_demo',
+            description: 'Manage demo records.',
+            kind: 'simple',
+            actions: ['list'],
+            hasActionSelector: false,
+            operationCount: 1,
+            stepCount: 0,
+            parameters: [
+              {
+                name: 'query',
+                typeLabel: 'string',
+                description: 'Search text',
+                required: false,
+                requiredFor: [],
+                isMetadata: false,
+                supportsFilterHeader: true,
+              },
+              {
+                name: 'managed_scan_config.diff_scan.enabled',
+                typeLabel: 'boolean',
+                description: 'Unsafe dotted key',
+                required: false,
+                requiredFor: [],
+                isMetadata: false,
+                supportsFilterHeader: false,
+              },
+            ],
+          },
+        ],
+      },
+    ];
+
+    const { templateData } = buildProfileIndexPayload(profiles, 'http://localhost:3003', 'en');
+    const template = await loadProfileIndexTemplate();
+    const html = renderProfileIndexHtml(template, templateData, 'nonce123');
+
+    expect(html).toContain('<details class="detail-card filter-card">');
+    expect(html).not.toContain('<details class="detail-card filter-card" open>');
+    expect(html).toContain('const hasPreview = Boolean(toolHeader || paramHeader);');
+    expect(html).toContain('id="filter-preview-card"${hasPreview ? \'\' : \' hidden\'}');
+    expect(html).toContain('data-tool-search');
+    expect(html).toContain('data-param-search');
+    expect(html).toContain('Text filter');
+    expect(html).toContain('"supportsFilterHeader":true');
+    expect(html).toContain('"supportsFilterHeader":false');
+    expect(html).toContain('if (parameter.supportsFilterHeader === false) continue;');
   });
 });

@@ -17,6 +17,7 @@
         --border: #e1d8cc;
         --shadow: 0 12px 40px rgba(0, 0, 0, 0.08);
       }
+      [hidden] { display: none !important; }
       * { box-sizing: border-box; }
       body {
         margin: 0;
@@ -305,6 +306,198 @@
       .tenant-mask-note {
         margin-top: 10px;
       }
+      .filter-card-stack {
+        display: grid;
+        gap: 16px;
+      }
+      .filter-card {
+        padding: 0;
+      }
+      .filter-card summary {
+        cursor: pointer;
+        list-style: none;
+      }
+      .filter-card summary::-webkit-details-marker {
+        display: none;
+      }
+      .filter-card summary::marker {
+        display: none;
+      }
+      .filter-card-summary {
+        padding: 14px 16px 12px;
+      }
+      .filter-card-title {
+        margin: 0;
+        font-size: 14px;
+        font-weight: 600;
+      }
+      .filter-card-subtitle {
+        margin-top: 4px;
+        font-size: 12px;
+        color: var(--muted);
+        line-height: 1.5;
+      }
+      .filter-card-body {
+        border-top: 1px solid var(--border);
+        padding: 14px 16px 16px;
+      }
+      .filter-preview-line {
+        margin-top: 10px;
+        font-size: 13px;
+        color: var(--muted);
+        word-break: break-word;
+      }
+      .filter-control-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 12px;
+      }
+      .filter-toggle {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        padding: 6px 10px;
+        font-size: 12px;
+        background: #f7f4ef;
+        color: var(--ink);
+      }
+      .filter-toggle.control {
+        background: #fff8f1;
+        border-color: #f6d5bd;
+        color: #7a3f1e;
+      }
+      .filter-search {
+        margin-top: 12px;
+      }
+      .filter-search-row {
+        display: flex;
+        align-items: end;
+        gap: 12px;
+      }
+      .filter-search-field {
+        flex: 1 1 auto;
+        min-width: 0;
+      }
+      .filter-search-label {
+        display: block;
+        margin-bottom: 6px;
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .filter-search-input {
+        width: 100%;
+      }
+      .filter-bulk-toggle {
+        flex: 0 0 auto;
+        margin-bottom: 1px;
+      }
+      .filter-bulk-toggle input {
+        margin: 0;
+      }
+      .catalog-list {
+        display: grid;
+        gap: 10px;
+        margin-top: 12px;
+      }
+      .catalog-item {
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        background: #fff;
+        overflow: hidden;
+      }
+      .catalog-item summary {
+        cursor: pointer;
+        list-style: none;
+        padding: 12px 14px;
+      }
+      .catalog-item summary::-webkit-details-marker {
+        display: none;
+      }
+      .catalog-item summary::marker {
+        display: none;
+      }
+      .catalog-summary {
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+      }
+      .catalog-summary-text {
+        min-width: 0;
+      }
+      .catalog-title {
+        font-weight: 600;
+        font-size: 14px;
+      }
+      .catalog-meta {
+        margin-top: 4px;
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .catalog-body {
+        border-top: 1px solid var(--border);
+        padding: 12px 14px 14px;
+      }
+      .catalog-nested {
+        margin-top: 12px;
+      }
+      .catalog-nested summary {
+        padding: 0;
+        font-size: 13px;
+        color: var(--accent-2);
+      }
+      .catalog-chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 10px;
+      }
+      .catalog-chip {
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        padding: 3px 9px;
+        background: #f7f4ef;
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .catalog-params {
+        display: grid;
+        gap: 8px;
+        margin-top: 10px;
+      }
+      .param-row {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr);
+        gap: 10px;
+        align-items: start;
+        padding: 10px 0;
+        border-top: 1px solid var(--border);
+      }
+      .param-row:first-child {
+        border-top: 0;
+        padding-top: 0;
+      }
+      .param-meta {
+        font-size: 12px;
+        color: var(--muted);
+        margin-top: 4px;
+      }
+      .param-input {
+        width: 100%;
+        margin-top: 8px;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 8px 10px;
+        font: inherit;
+        background: #fff;
+      }
+      .filter-empty {
+        margin-top: 12px;
+        font-size: 13px;
+        color: var(--muted);
+      }
       .sr-only {
         position: absolute;
         width: 1px;
@@ -359,6 +552,8 @@
       const listEl = document.getElementById('profile-list');
       const detailEl = document.getElementById('profile-detail');
       const tenantSelectionByProfile = new Map();
+      const toolSelectionByProfile = new Map();
+      const paramSelectionByProfile = new Map();
       const PROFILE_DEFAULT_TENANT_SELECTION = '__profile-default__';
 
       function escapeHtml(value) {
@@ -378,17 +573,236 @@
         return `<div class="tag-list">${tags}</div>`;
       }
 
+      function getToolSelection(profileId) {
+        let selection = toolSelectionByProfile.get(profileId);
+        if (!selection) {
+          selection = {
+            exactNames: new Set(),
+            controlKeys: new Set(),
+          };
+          toolSelectionByProfile.set(profileId, selection);
+        }
+        return selection;
+      }
+
+      function getParamSelection(profileId) {
+        let selection = paramSelectionByProfile.get(profileId);
+        if (!selection) {
+          selection = {
+            values: new Map(),
+            controlKeys: new Set(),
+          };
+          paramSelectionByProfile.set(profileId, selection);
+        }
+        return selection;
+      }
+
+      function serializeToolFilterHeader(profileId) {
+        const selection = getToolSelection(profileId);
+        const values = [
+          ...Array.from(selection.exactNames).sort(),
+          ...Array.from(selection.controlKeys).sort(),
+        ];
+        return values.join(', ');
+      }
+
+      function serializeParamFilterHeader(profileId) {
+        const selection = getParamSelection(profileId);
+        const values = [];
+        const names = Array.from(selection.values.keys()).sort();
+        for (const name of names) {
+          const rawValues = selection.values.get(name) || [];
+          const normalizedValues = rawValues
+            .map(value => String(value || '').trim())
+            .filter(Boolean);
+          for (const value of normalizedValues) {
+            values.push(`${name}=${encodeURIComponent(value)}`);
+          }
+        }
+        values.push(...Array.from(selection.controlKeys).sort());
+        return values.join(', ');
+      }
+
+      function serializeLocalToolFilterAllowNames(profileId) {
+        const selection = getToolSelection(profileId);
+        return Array.from(selection.exactNames).sort().join(',');
+      }
+
+      function serializeLocalToolFilterAllowCategories(profileId) {
+        const selection = getToolSelection(profileId);
+        const categories = [];
+        if (selection.controlKeys.has('_allow_list')) {
+          categories.push('list');
+        }
+        if (selection.controlKeys.has('_allow_read')) {
+          categories.push('read');
+        }
+        return categories.join(',');
+      }
+
+      function buildLocalCliFilterArgs(profileId) {
+        const cliArgs = [];
+        const allowNames = serializeLocalToolFilterAllowNames(profileId);
+        const allowCategories = serializeLocalToolFilterAllowCategories(profileId);
+        const paramFilter = serializeParamFilterHeader(profileId);
+
+        if (allowNames) {
+          cliArgs.push('--tool-filter-allow-names', allowNames);
+        }
+        if (allowCategories) {
+          cliArgs.push('--tool-filter-allow-categories', allowCategories);
+        }
+        if (paramFilter) {
+          cliArgs.push('--param-filter', paramFilter);
+        }
+
+        return cliArgs;
+      }
+
+      function hasActiveToolFilter(profileId) {
+        return Boolean(serializeToolFilterHeader(profileId));
+      }
+
+      function hasActiveParamFilter(profileId) {
+        return Boolean(serializeParamFilterHeader(profileId));
+      }
+
+      function setBulkToggleState(toggle, selectedCount, totalCount) {
+        if (!(toggle instanceof HTMLInputElement)) return;
+        const safeSelectedCount = Math.max(0, Number(selectedCount) || 0);
+        const safeTotalCount = Math.max(0, Number(totalCount) || 0);
+        const state = safeTotalCount === 0
+          ? 'none'
+          : safeSelectedCount <= 0
+            ? 'none'
+            : safeSelectedCount >= safeTotalCount
+              ? 'all'
+              : 'some';
+        toggle.dataset.bulkState = state;
+        toggle.disabled = safeTotalCount === 0;
+        toggle.checked = state === 'all';
+        toggle.indeterminate = state === 'some';
+        toggle.setAttribute('aria-checked', state === 'some' ? 'mixed' : (state === 'all' ? 'true' : 'false'));
+      }
+
+      function syncSectionBulkToggles(detailEl, profile) {
+        if (!(detailEl instanceof HTMLElement) || !profile) return;
+
+        const toolToggle = detailEl.querySelector('[data-tool-section-toggle]');
+        if (toolToggle instanceof HTMLInputElement) {
+          const toolSelection = getToolSelection(profile.profileId);
+          const totalToolFilters = Array.isArray(profile.toolCatalog) ? profile.toolCatalog.length : 0;
+          const selectedToolFilters = toolSelection.exactNames.size;
+          setBulkToggleState(toolToggle, selectedToolFilters, totalToolFilters);
+        }
+
+        const paramToggle = detailEl.querySelector('[data-param-section-toggle]');
+        if (paramToggle instanceof HTMLInputElement) {
+          const paramSelection = getParamSelection(profile.profileId);
+          const totalParamFilters = collectProfileParameters(profile).length;
+          const selectedParamFilters = paramSelection.values.size;
+          setBulkToggleState(paramToggle, selectedParamFilters, totalParamFilters);
+        }
+      }
+
+      function collectProfileParameters(profile) {
+        const catalog = Array.isArray(profile?.toolCatalog) ? profile.toolCatalog : [];
+        const entries = new Map();
+        for (const tool of catalog) {
+          const toolName = tool?.name || '';
+          const parameters = Array.isArray(tool?.parameters) ? tool.parameters : [];
+          for (const parameter of parameters) {
+            if (!parameter || !parameter.name) continue;
+            if (parameter.supportsFilterHeader === false) continue;
+            const existing = entries.get(parameter.name);
+            if (!existing) {
+              entries.set(parameter.name, {
+                ...parameter,
+                toolNames: toolName ? [toolName] : [],
+              });
+              continue;
+            }
+            const toolNames = new Set([...(existing.toolNames || []), ...(toolName ? [toolName] : [])]);
+            const requiredFor = new Set([...(existing.requiredFor || []), ...((parameter.requiredFor || []).filter(Boolean))]);
+            existing.toolNames = Array.from(toolNames).sort();
+            existing.requiredFor = Array.from(requiredFor).sort();
+            if (!existing.description && parameter.description) {
+              existing.description = parameter.description;
+            }
+            if (!existing.typeLabel && parameter.typeLabel) {
+              existing.typeLabel = parameter.typeLabel;
+            }
+            if (!existing.defaultValue && parameter.defaultValue) {
+              existing.defaultValue = parameter.defaultValue;
+            }
+            if ((!existing.enumValues || existing.enumValues.length === 0) && Array.isArray(parameter.enumValues)) {
+              existing.enumValues = parameter.enumValues;
+            }
+            existing.required = existing.required || parameter.required;
+            existing.isMetadata = existing.isMetadata || parameter.isMetadata;
+          }
+        }
+
+        return Array.from(entries.values()).sort((left, right) => left.name.localeCompare(right.name));
+      }
+
+      function updatePreviewText(element, headerName, value) {
+        if (!(element instanceof HTMLElement)) return;
+        if (!value) {
+          element.innerHTML = '';
+          element.setAttribute('hidden', '');
+        } else {
+          element.innerHTML = `<strong>${escapeHtml(headerName)}</strong>: ${escapeHtml(value)}`;
+          element.removeAttribute('hidden');
+        }
+        const previewCard = element.closest('#filter-preview-card');
+        if (previewCard instanceof HTMLElement) {
+          const hasVisibleLine = Array.from(previewCard.querySelectorAll('.filter-preview-line'))
+            .some(line => line instanceof HTMLElement && !line.hasAttribute('hidden'));
+          previewCard.toggleAttribute('hidden', !hasVisibleLine);
+        }
+      }
+
+      function normalizeFilterQuery(value) {
+        return String(value || '').trim().toLowerCase();
+      }
+
+      function buildFilterText(parts) {
+        return parts
+          .flatMap(part => Array.isArray(part) ? part : [part])
+          .filter(Boolean)
+          .map(part => String(part).toLowerCase())
+          .join(' ');
+      }
+
+      function wireCollapsibleDetails(root, idPrefix) {
+        if (!(root instanceof HTMLElement)) return;
+        let counter = 0;
+        root.querySelectorAll('details').forEach(details => {
+          if (!(details instanceof HTMLDetailsElement)) return;
+          const summary = details.querySelector(':scope > summary');
+          if (!(summary instanceof HTMLElement)) return;
+          const panel = summary.nextElementSibling;
+          summary.setAttribute('role', 'button');
+          if (panel instanceof HTMLElement) {
+            if (!panel.id) {
+              counter += 1;
+              panel.id = `${idPrefix}-panel-${counter}`;
+            }
+            summary.setAttribute('aria-controls', panel.id);
+          } else {
+            summary.removeAttribute('aria-controls');
+          }
+          const syncState = () => {
+            summary.setAttribute('aria-expanded', details.open ? 'true' : 'false');
+          };
+          syncState();
+          details.addEventListener('toggle', syncState);
+        });
+      }
+
       function supportsTenantPicker(entry) {
-        if (!entry || entry.mode !== 'remote') return false;
-        const key = entry.key || '';
-        return (
-          key.startsWith('vscode-') ||
-          key.startsWith('cursor-') ||
-          key.startsWith('jetbrains-') ||
-          key.startsWith('claude-json-') ||
-          key.startsWith('gemini-json-') ||
-          key.startsWith('codex-toml-')
-        );
+        return Boolean(entry && entry.mode === 'remote' && entry.supportsTenantHeaders);
       }
 
       function buildMaskExampleBaseUrl(selectorDisplay) {
@@ -447,6 +861,22 @@
         args.push('--header');
         args.push(`${headerName}: ${headerValue}`);
         return args;
+      }
+
+      function appendCliArgs(args, additionalArgs) {
+        if (!Array.isArray(args) || !Array.isArray(additionalArgs) || additionalArgs.length === 0) {
+          return args;
+        }
+        for (const arg of additionalArgs) {
+          args.push(arg);
+        }
+        return args;
+      }
+
+      function escapeCliDoubleQuotedValue(value) {
+        return String(value || '')
+          .replace(/\\/g, '\\\\')
+          .replace(/"/g, '\\"');
       }
 
       function ensureCursorMcpRemoteArgs(server) {
@@ -556,6 +986,174 @@
           return injectTenantHeaderIntoCodexToml(snippet, tenantSelection);
         }
         return injectTenantHeaderIntoJsonSnippet(snippet, entry, tenantSelection);
+      }
+
+      function injectFilterHeadersIntoJsonSnippet(snippet, entry, toolHeader, paramHeader) {
+        let parsed;
+        try {
+          parsed = JSON.parse(snippet);
+        } catch {
+          return snippet;
+        }
+
+        const key = entry.key || '';
+        const root = key.startsWith('vscode-') || key.startsWith('jetbrains-')
+          ? parsed.servers
+          : parsed.mcpServers;
+        if (!root || typeof root !== 'object') return snippet;
+        const serverName = Object.keys(root)[0];
+        if (!serverName || !root[serverName] || typeof root[serverName] !== 'object') return snippet;
+        const server = root[serverName];
+
+        if (key.startsWith('cursor-')) {
+          const args = ensureCursorMcpRemoteArgs(server);
+          if (!Array.isArray(args)) return snippet;
+          if (toolHeader) {
+            upsertCursorHeaderArgInArgs(args, 'X-Mcp4-Tools', toolHeader);
+          }
+          if (paramHeader) {
+            upsertCursorHeaderArgInArgs(args, 'X-Mcp4-Params', paramHeader);
+          }
+        } else if (key.startsWith('jetbrains-')) {
+          if (!server.requestInit || typeof server.requestInit !== 'object') {
+            server.requestInit = {};
+          }
+          if (!server.requestInit.headers || typeof server.requestInit.headers !== 'object') {
+            server.requestInit.headers = {};
+          }
+          if (toolHeader) {
+            server.requestInit.headers['X-Mcp4-Tools'] = toolHeader;
+          }
+          if (paramHeader) {
+            server.requestInit.headers['X-Mcp4-Params'] = paramHeader;
+          }
+        } else {
+          if (!server.headers || typeof server.headers !== 'object') {
+            server.headers = {};
+          }
+          if (toolHeader) {
+            server.headers['X-Mcp4-Tools'] = toolHeader;
+          }
+          if (paramHeader) {
+            server.headers['X-Mcp4-Params'] = paramHeader;
+          }
+        }
+
+        return JSON.stringify(parsed, null, 2);
+      }
+
+      function injectFilterHeadersIntoCodexToml(snippet, toolHeader, paramHeader) {
+        let output = snippet;
+        if (toolHeader) {
+          output = upsertCodexTomlHeader(output, 'X-Mcp4-Tools', toolHeader);
+        }
+        if (paramHeader) {
+          output = upsertCodexTomlHeader(output, 'X-Mcp4-Params', paramHeader);
+        }
+        return output;
+      }
+
+      function injectFilterHeadersForSnippet(snippet, entry, toolHeader, paramHeader) {
+        if (!entry || !entry.supportsCustomHeaders) {
+          return snippet;
+        }
+        if (!toolHeader && !paramHeader) {
+          return snippet;
+        }
+        const key = entry.key || '';
+        if (key.startsWith('codex-toml-')) {
+          return injectFilterHeadersIntoCodexToml(snippet, toolHeader, paramHeader);
+        }
+        return injectFilterHeadersIntoJsonSnippet(snippet, entry, toolHeader, paramHeader);
+      }
+
+      function injectLocalFilterArgsIntoJsonSnippet(snippet, entry, localCliArgs) {
+        if (!Array.isArray(localCliArgs) || localCliArgs.length === 0) {
+          return snippet;
+        }
+
+        let parsed;
+        try {
+          parsed = JSON.parse(snippet);
+        } catch {
+          return snippet;
+        }
+
+        const key = entry.key || '';
+        const root = key.startsWith('vscode-local-') || key.startsWith('jetbrains-local-')
+          ? parsed.servers
+          : parsed.mcpServers;
+        if (!root || typeof root !== 'object') return snippet;
+        const serverName = Object.keys(root)[0];
+        if (!serverName || !root[serverName] || typeof root[serverName] !== 'object') return snippet;
+        const server = root[serverName];
+
+        if (!Array.isArray(server.args)) {
+          return snippet;
+        }
+
+        appendCliArgs(server.args, localCliArgs);
+        return JSON.stringify(parsed, null, 2);
+      }
+
+      function injectLocalFilterArgsIntoCodexToml(snippet, localCliArgs) {
+        if (!Array.isArray(localCliArgs) || localCliArgs.length === 0) {
+          return snippet;
+        }
+
+        const lines = snippet.split('\n');
+        for (let index = 0; index < lines.length; index += 1) {
+          const line = lines[index];
+          const match = /^(\s*)args\s*=\s*\[(.*)\]\s*$/.exec(line);
+          if (!match) continue;
+          const indentation = match[1] || '';
+          const existingValues = match[2].trim();
+          const appendedValues = localCliArgs
+            .map(arg => `"${arg.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`)
+            .join(', ');
+          const combinedValues = existingValues
+            ? `${existingValues}, ${appendedValues}`
+            : appendedValues;
+          lines[index] = `${indentation}args = [${combinedValues}]`;
+          return lines.join('\n');
+        }
+
+        return snippet;
+      }
+
+      function injectLocalFilterArgsIntoCliSnippet(snippet, localCliArgs) {
+        if (!Array.isArray(localCliArgs) || localCliArgs.length === 0) {
+          return snippet;
+        }
+
+        const suffix = localCliArgs
+          .map((arg, index) => (index % 2 === 0 ? `${arg}` : `"${escapeCliDoubleQuotedValue(arg)}"`))
+          .join(' ');
+        return `${snippet} ${suffix}`;
+      }
+
+      function injectLocalFilterConfigForSnippet(snippet, entry, profileId) {
+        if (!entry || entry.mode !== 'local') {
+          return snippet;
+        }
+
+        const localCliArgs = buildLocalCliFilterArgs(profileId);
+        if (localCliArgs.length === 0) {
+          return snippet;
+        }
+
+        const key = entry.key || '';
+        if (key.startsWith('codex-local-toml-')) {
+          return injectLocalFilterArgsIntoCodexToml(snippet, localCliArgs);
+        }
+        if (entry.format === 'json') {
+          return injectLocalFilterArgsIntoJsonSnippet(snippet, entry, localCliArgs);
+        }
+        if (entry.format === 'cli') {
+          return injectLocalFilterArgsIntoCliSnippet(snippet, localCliArgs);
+        }
+
+        return snippet;
       }
 
       function injectTenantApiBaseUrlIntoJsonSnippet(snippet, entry, profile, tenantSelection) {
@@ -672,8 +1270,12 @@
           .replace(/__PROFILE_URL__/g, profile.mcpUrl)
           .replace(/__PROFILE_SSE_URL__/g, profile.sseUrl);
         const tenantSelection = resolveTenantSelection(profile, selectedTenantId);
+        const toolHeader = serializeToolFilterHeader(profile.profileId);
+        const paramHeader = serializeParamFilterHeader(profile.profileId);
         const withTenantHeaders = injectTenantHeaderForSnippet(rendered, entry, tenantSelection);
-        return injectTenantApiBaseUrlForLocalSnippet(withTenantHeaders, entry, profile, tenantSelection);
+        const withRemoteFilterHeaders = injectFilterHeadersForSnippet(withTenantHeaders, entry, toolHeader, paramHeader);
+        const withLocalFilterConfig = injectLocalFilterConfigForSnippet(withRemoteFilterHeaders, entry, profile.profileId);
+        return injectTenantApiBaseUrlForLocalSnippet(withLocalFilterConfig, entry, profile, tenantSelection);
       }
 
       function getClientLabel(client) {
@@ -692,6 +1294,7 @@
         const groups = new Map();
         const isCzech = (i18n.profileLabel || '') === 'Profil';
         const selectedTenant = resolveTenantSelection(profile, selectedTenantId);
+        const hasActiveFiltering = hasActiveToolFilter(profile.profileId) || hasActiveParamFilter(profile.profileId);
 
         const buildClientConfigInfo = client => {
           if (client === 'vscode') {
@@ -731,7 +1334,10 @@
           if (!entry || !entry.key) continue;
           if (activeAuth && entry.authKey && entry.authKey !== activeAuth) continue;
           if (activeMode && entry.mode && entry.mode !== activeMode) continue;
-          if (selectedTenant && activeMode === 'remote' && profile.tenantSummary?.tenantsEnabled && !supportsTenantPicker(entry)) {
+          if (hasActiveFiltering && activeMode === 'remote' && !entry.supportsCustomHeaders) {
+            continue;
+          }
+          if (selectedTenant && activeMode === 'remote' && profile.tenantSummary?.tenantsEnabled && !entry.supportsTenantHeaders) {
             continue;
           }
           const client = order.find(prefix => entry.key.startsWith(prefix));
@@ -834,6 +1440,15 @@
           `);
         }
         if (clientTabs.length === 0) {
+          if (hasActiveFiltering && activeMode === 'remote') {
+            return `
+              <div class="notice">
+                ${escapeHtml(isCzech
+                  ? 'Pri aktivnim filtrovani zustavaji dostupne jen konfigurace s podporou vlastnich HTTP hlavicek.'
+                  : 'When filtering is active, only configurations with custom HTTP header support remain available.')}
+              </div>
+            `;
+          }
           return '';
         }
         return `
@@ -1018,6 +1633,293 @@
         return `${unique[0]} (${unique.slice(1).join(', ')})`;
       }
 
+      function renderToolFilterCard(profile, isCzech) {
+        const catalog = Array.isArray(profile.toolCatalog) ? profile.toolCatalog : [];
+        const selection = getToolSelection(profile.profileId);
+        const title = isCzech ? 'Filtr toolu' : 'Tool Filter';
+        const emptyText = isCzech ? 'Tento profil nema zadne definovane tooly.' : 'This profile has no defined tools.';
+        const noResultsText = isCzech ? 'Zadny tool neodpovida zadanemu filtru.' : 'No tools match the current filter.';
+        const controlLabel = isCzech ? 'Ridici pravidla' : 'Control rules';
+        const searchLabel = isCzech ? 'Textovy filtr toolu' : 'Text filter';
+        const searchPlaceholder = isCzech ? 'napr. merg' : 'for example merg';
+        const bulkLabel = isCzech ? 'Vse' : 'All';
+        const bulkHelp = isCzech
+          ? 'Kliknuti prepne hromadne vsechny filtry v teto sekci.'
+          : 'Click to toggle every filter in this section.';
+        const allowListTitle = isCzech ? '_allow_list' : '_allow_list';
+        const allowReadTitle = isCzech ? '_allow_read' : '_allow_read';
+        const allowListHelp = isCzech
+          ? 'Povoli tooly rozpoznane jako list operace.'
+          : 'Allows tools detected as list operations.';
+        const allowReadHelp = isCzech
+          ? 'Povoli tooly rozpoznane jako read operace.'
+          : 'Allows tools detected as read operations.';
+
+        const controlsHtml = `
+          <div class="filter-control-row">
+            <label class="filter-toggle control" title="${escapeHtml(allowListHelp)}">
+              <input
+                type="checkbox"
+                data-tool-control="_allow_list"
+                ${selection.controlKeys.has('_allow_list') ? 'checked' : ''}
+              />
+              <span>${escapeHtml(allowListTitle)}</span>
+            </label>
+            <label class="filter-toggle control" title="${escapeHtml(allowReadHelp)}">
+              <input
+                type="checkbox"
+                data-tool-control="_allow_read"
+                ${selection.controlKeys.has('_allow_read') ? 'checked' : ''}
+              />
+              <span>${escapeHtml(allowReadTitle)}</span>
+            </label>
+          </div>
+        `;
+
+        const toolsHtml = catalog.length === 0
+          ? `<div class="filter-empty">${escapeHtml(emptyText)}</div>`
+          : `
+            <div class="filter-search">
+              <div class="filter-search-row">
+                <label class="filter-toggle filter-bulk-toggle" title="${escapeHtml(bulkHelp)}">
+                  <input
+                    type="checkbox"
+                    data-tool-section-toggle
+                    data-bulk-state="none"
+                  />
+                  <span>${escapeHtml(bulkLabel)}</span>
+                </label>
+                <div class="filter-search-field">
+                  <label class="filter-search-label" for="tool-filter-search-${escapeHtml(profile.profileId)}">${escapeHtml(searchLabel)}</label>
+                  <input
+                    class="param-input filter-search-input"
+                    id="tool-filter-search-${escapeHtml(profile.profileId)}"
+                    type="search"
+                    data-tool-search
+                    placeholder="${escapeHtml(searchPlaceholder)}"
+                  />
+                </div>
+              </div>
+            </div>
+            <div class="catalog-list">
+              ${catalog.map(tool => {
+                const detailMeta = [];
+                if (tool.kind) {
+                  detailMeta.push(tool.kind);
+                }
+                if (tool.operationCount) {
+                  detailMeta.push(`${tool.operationCount} ${tool.operationCount === 1 ? 'operation' : 'operations'}`);
+                }
+                if (tool.stepCount) {
+                  detailMeta.push(`${tool.stepCount} ${tool.stepCount === 1 ? 'step' : 'steps'}`);
+                }
+                const searchText = buildFilterText([
+                  tool.name,
+                  tool.description,
+                  Array.isArray(tool.actions) ? tool.actions : [],
+                  Array.isArray(tool.parameters)
+                    ? tool.parameters.flatMap(parameter => [parameter?.name, parameter?.description, parameter?.typeLabel, parameter?.requiredFor || []])
+                    : [],
+                ]);
+                return `
+                  <details class="catalog-item" data-tool-filter-item data-filter-text="${escapeHtml(searchText)}">
+                    <summary>
+                      <div class="catalog-summary">
+                        <input
+                          type="checkbox"
+                          data-tool-toggle="${escapeHtml(tool.name)}"
+                          ${selection.exactNames.has(tool.name) ? 'checked' : ''}
+                        />
+                        <div class="catalog-summary-text">
+                          <div class="catalog-title">${escapeHtml(tool.name)}</div>
+                          <div class="catalog-meta">${escapeHtml(detailMeta.join(' · '))}</div>
+                        </div>
+                      </div>
+                    </summary>
+                    <div class="catalog-body">
+                      <div class="profile-subtitle">${escapeHtml(tool.description || '')}</div>
+                      <details class="catalog-nested">
+                        <summary>${escapeHtml(isCzech ? 'Akce' : 'Actions')}</summary>
+                        <div class="catalog-chips">
+                          ${Array.isArray(tool.actions) && tool.actions.length > 0
+                            ? tool.actions.map(action => `<span class="catalog-chip">${escapeHtml(action)}</span>`).join('')
+                            : `<span class="catalog-chip">${escapeHtml(isCzech ? 'Bez akci' : 'No actions')}</span>`}
+                        </div>
+                      </details>
+                      <details class="catalog-nested">
+                        <summary>${escapeHtml(isCzech ? 'Parametry' : 'Parameters')}</summary>
+                        <div class="catalog-params">
+                          ${Array.isArray(tool.parameters) && tool.parameters.length > 0
+                            ? tool.parameters.map(parameter => `
+                              <div class="param-row">
+                                <span class="catalog-chip">${escapeHtml(parameter.name)}</span>
+                                <div>
+                                  <div class="profile-subtitle">${escapeHtml(parameter.description || '')}</div>
+                                  <div class="param-meta">
+                                    ${escapeHtml(parameter.typeLabel || 'string')}
+                                    ${parameter.required ? ` · ${escapeHtml(isCzech ? 'povinny' : 'required')}` : ''}
+                                    ${parameter.isMetadata ? ` · ${escapeHtml(isCzech ? 'metadata' : 'metadata')}` : ''}
+                                    ${Array.isArray(parameter.requiredFor) && parameter.requiredFor.length > 0 ? ` · ${escapeHtml(`required_for: ${parameter.requiredFor.join(', ')}`)}` : ''}
+                                  </div>
+                                </div>
+                              </div>
+                            `).join('')
+                            : `<div class="filter-empty">${escapeHtml(isCzech ? 'Bez parametru' : 'No parameters')}</div>`}
+                        </div>
+                      </details>
+                    </div>
+                  </details>
+                `;
+              }).join('')}
+            </div>
+            <div class="filter-empty" data-tool-filter-empty hidden>${escapeHtml(noResultsText)}</div>
+          `;
+
+        return `
+          <details class="detail-card filter-card">
+            <summary class="filter-card-summary">
+              <div class="filter-card-title">${escapeHtml(title)}</div>
+              <div class="filter-card-subtitle">${escapeHtml(isCzech ? 'Vyber tooly, ktere se maji propsat do hlavicky X-Mcp4-Tools.' : 'Select the tools that should be serialized into the X-Mcp4-Tools header.')}</div>
+            </summary>
+            <div class="filter-card-body">
+              <div class="param-meta">${escapeHtml(controlLabel)}</div>
+              ${controlsHtml}
+              ${toolsHtml}
+            </div>
+          </details>
+        `;
+      }
+
+      function renderParameterFilterCard(profile, isCzech) {
+        const parameters = collectProfileParameters(profile);
+        const selection = getParamSelection(profile.profileId);
+        const title = isCzech ? 'Filtr parametru' : 'Parameter Filter';
+        const emptyText = isCzech ? 'Tento profil nema zadne parametry vhodne pro filtraci.' : 'This profile has no parameters available for filtering.';
+        const noResultsText = isCzech ? 'Zadny parametr neodpovida zadanemu filtru.' : 'No parameters match the current filter.';
+        const searchLabel = isCzech ? 'Textovy filtr parametru' : 'Text filter';
+        const searchPlaceholder = isCzech ? 'napr. merg' : 'for example merg';
+        const bulkLabel = isCzech ? 'Vse' : 'All';
+        const bulkHelp = isCzech
+          ? 'Kliknuti prepne hromadne vsechny filtry v teto sekci.'
+          : 'Click to toggle every filter in this section.';
+        const allowListHelp = isCzech
+          ? 'Pro list operace uvolni kontrolu pritomnosti a hodnot filtrovaneho parametru.'
+          : 'Relaxes list-operation filtering when the filtered parameter is missing or uses a different value.';
+        const allowReadHelp = isCzech
+          ? 'Pro read operace uvolni kontrolu pritomnosti a hodnot filtrovaneho parametru.'
+          : 'Relaxes read-operation filtering when the filtered parameter is missing or uses a different value.';
+
+        return `
+          <details class="detail-card filter-card">
+            <summary class="filter-card-summary">
+              <div class="filter-card-title">${escapeHtml(title)}</div>
+              <div class="filter-card-subtitle">${escapeHtml(isCzech ? 'Vyber parametry a jejich hodnoty pro hlavicku X-Mcp4-Params. Vice hodnot oddel carkou.' : 'Select parameters and their values for the X-Mcp4-Params header. Separate multiple values with commas.')}</div>
+            </summary>
+            <div class="filter-card-body">
+              <div class="filter-control-row">
+                <label class="filter-toggle control" title="${escapeHtml(allowListHelp)}">
+                  <input
+                    type="checkbox"
+                    data-param-control="_allow_list"
+                    ${selection.controlKeys.has('_allow_list') ? 'checked' : ''}
+                  />
+                  <span>_allow_list</span>
+                </label>
+                <label class="filter-toggle control" title="${escapeHtml(allowReadHelp)}">
+                  <input
+                    type="checkbox"
+                    data-param-control="_allow_read"
+                    ${selection.controlKeys.has('_allow_read') ? 'checked' : ''}
+                  />
+                  <span>_allow_read</span>
+                </label>
+              </div>
+              ${parameters.length === 0 ? `
+                <div class="filter-empty">${escapeHtml(emptyText)}</div>
+              ` : `
+                <div class="filter-search">
+                  <div class="filter-search-row">
+                    <label class="filter-toggle filter-bulk-toggle" title="${escapeHtml(bulkHelp)}">
+                      <input
+                        type="checkbox"
+                        data-param-section-toggle
+                        data-bulk-state="none"
+                      />
+                      <span>${escapeHtml(bulkLabel)}</span>
+                    </label>
+                    <div class="filter-search-field">
+                      <label class="filter-search-label" for="param-filter-search-${escapeHtml(profile.profileId)}">${escapeHtml(searchLabel)}</label>
+                      <input
+                        class="param-input filter-search-input"
+                        id="param-filter-search-${escapeHtml(profile.profileId)}"
+                        type="search"
+                        data-param-search
+                        placeholder="${escapeHtml(searchPlaceholder)}"
+                      />
+                    </div>
+                  </div>
+                </div>
+                <div class="catalog-params">
+                  ${parameters.map(parameter => {
+                    const searchText = buildFilterText([
+                      parameter.name,
+                      parameter.description,
+                      parameter.typeLabel,
+                      parameter.toolNames || [],
+                      parameter.requiredFor || [],
+                    ]);
+                  const existingValues = selection.values.get(parameter.name) || [];
+                  const serializedValue = existingValues.join(', ');
+                  const isEnabled = selection.values.has(parameter.name);
+                  return `
+                    <div class="param-row" data-param-filter-item data-filter-text="${escapeHtml(searchText)}">
+                      <input
+                        type="checkbox"
+                        data-param-toggle="${escapeHtml(parameter.name)}"
+                        ${isEnabled ? 'checked' : ''}
+                      />
+                      <div>
+                        <div class="catalog-title">${escapeHtml(parameter.name)}</div>
+                        <div class="profile-subtitle">${escapeHtml(parameter.description || '')}</div>
+                        <div class="param-meta">
+                          ${escapeHtml(parameter.typeLabel || 'string')}
+                          ${parameter.required ? ` · ${escapeHtml(isCzech ? 'povinny' : 'required')}` : ''}
+                          ${parameter.isMetadata ? ` · ${escapeHtml(isCzech ? 'metadata' : 'metadata')}` : ''}
+                          ${Array.isArray(parameter.toolNames) && parameter.toolNames.length > 0 ? ` · ${escapeHtml(parameter.toolNames.join(', '))}` : ''}
+                        </div>
+                        <input
+                          class="param-input"
+                          type="text"
+                          data-param-values="${escapeHtml(parameter.name)}"
+                          value="${escapeHtml(serializedValue)}"
+                          placeholder="${escapeHtml(isCzech ? 'napr. 123, 456' : 'for example 123, 456')}"
+                          ${isEnabled ? '' : 'disabled'}
+                        />
+                      </div>
+                    </div>
+                  `;
+                  }).join('')}
+                </div>
+                <div class="filter-empty" data-param-filter-empty hidden>${escapeHtml(noResultsText)}</div>
+              `}
+            </div>
+          </details>
+        `;
+      }
+
+      function renderFilterPreviewCard(profile, isCzech) {
+        const toolHeader = serializeToolFilterHeader(profile.profileId);
+        const paramHeader = serializeParamFilterHeader(profile.profileId);
+        const hasPreview = Boolean(toolHeader || paramHeader);
+        return `
+          <div class="detail-card" id="filter-preview-card"${hasPreview ? '' : ' hidden'}>
+            <div class="filter-card-title">${escapeHtml(isCzech ? 'Nahled hlavicek' : 'Header Preview')}</div>
+            <div class="filter-preview-line" id="tool-header-preview"${toolHeader ? '' : ' hidden'}></div>
+            <div class="filter-preview-line" id="param-header-preview"${paramHeader ? '' : ' hidden'}></div>
+          </div>
+        `;
+      }
+
       function renderDetail(profile) {
         const title = buildProfileTitle(profile);
         const description = profile.description || i18n.noDescription || '';
@@ -1056,6 +1958,9 @@
         const apiEndpointEnvText = apiEndpointEnvVar
           ? `${i18n.authEnvVarsLabel || 'Environment variable:'} ${apiEndpointEnvVar}`
           : '';
+        const toolFilterHtml = renderToolFilterCard(profile, isCzech);
+        const parameterFilterHtml = renderParameterFilterCard(profile, isCzech);
+        const filterPreviewHtml = renderFilterPreviewCard(profile, isCzech);
         const tenantCardHtml = tenantList.length > 0
           ? `
             <div class="detail-card">
@@ -1111,6 +2016,9 @@
             ${apiEndpointHtml}
           </div>
           ${tenantCardHtml}
+          ${toolFilterHtml}
+          ${parameterFilterHtml}
+          ${filterPreviewHtml}
           <div class="detail-card">
             <div class="tab-row" id="mode-tabs" role="tablist" aria-label="Connection mode">
               ${modeTabs.map(tab => `
@@ -1125,15 +2033,15 @@
                 </button>
               `).join('')}
             </div>
-            <p class="profile-subtitle" id="auth-label">
+            <p class="profile-subtitle" id="auth-label"${activeMode === 'local' ? '' : ' hidden'}>
               <strong>${escapeHtml(i18n.authSectionLabel || 'Authentication:')}</strong>
               ${escapeHtml(authEnvText)}
             </p>
-            <p class="profile-subtitle" id="api-endpoint-env-label" style="display:none;">
+            <p class="profile-subtitle" id="api-endpoint-env-label"${activeMode === 'local' && apiEndpointEnvText ? '' : ' hidden'}>
               <strong>${escapeHtml(i18n.apiEndpointLabel || 'API endpoint')}:</strong>
               ${escapeHtml(apiEndpointEnvText)}
             </p>
-            <div class="tab-row" id="auth-tabs" role="tablist" aria-label="Authentication methods">
+            <div class="tab-row" id="auth-tabs" role="tablist" aria-label="Authentication methods"${activeMode === 'local' ? ' hidden' : ''}>
               ${authTabs.map(tab => `
                 <button
                   class="tab${tab.key === activeAuth ? ' active' : ''}"
@@ -1157,6 +2065,8 @@
           </div>
         `;
 
+        wireCollapsibleDetails(detailEl, `profile-${profile.profileId}`);
+
         const modeRow = detailEl.querySelector('#mode-tabs');
         const authLabel = detailEl.querySelector('#auth-label');
         const apiEndpointEnvLabel = detailEl.querySelector('#api-endpoint-env-label');
@@ -1164,9 +2074,69 @@
         const modeBadge = detailEl.querySelector('#active-mode-badge');
         const snippetList = detailEl.querySelector('#snippet-list');
         const tenantRow = detailEl.querySelector('#tenant-tabs');
+        const toolHeaderPreview = detailEl.querySelector('#tool-header-preview');
+        const paramHeaderPreview = detailEl.querySelector('#param-header-preview');
         if (modeRow && authLabel && tabRow && snippetList) {
           let currentMode = activeMode;
           let currentTenantId = initialTenantId;
+          let currentAuthKey = activeAuth;
+
+          const wireTextFilter = (inputSelector, itemSelector, emptySelector) => {
+            const input = detailEl.querySelector(inputSelector);
+            if (!(input instanceof HTMLInputElement)) return;
+            const scopeRoot = input.closest('.filter-card-body') || detailEl;
+            const emptyState = scopeRoot.querySelector(emptySelector);
+            const applyFilter = () => {
+              const query = normalizeFilterQuery(input.value);
+              let visibleCount = 0;
+              scopeRoot.querySelectorAll(itemSelector).forEach(item => {
+                if (!(item instanceof HTMLElement)) return;
+                const filterText = normalizeFilterQuery(item.getAttribute('data-filter-text') || item.textContent || '');
+                const isVisible = !query || filterText.includes(query);
+                item.toggleAttribute('hidden', !isVisible);
+                if (isVisible) {
+                  visibleCount += 1;
+                }
+              });
+              if (emptyState instanceof HTMLElement) {
+                emptyState.toggleAttribute('hidden', visibleCount !== 0);
+              }
+            };
+            if (input.dataset.filterValueHooked !== '1') {
+              const inputPrototype = Object.getPrototypeOf(input);
+              const valueDescriptor = Object.getOwnPropertyDescriptor(inputPrototype, 'value');
+              if (valueDescriptor && typeof valueDescriptor.get === 'function' && typeof valueDescriptor.set === 'function') {
+                const nativeGet = valueDescriptor.get.bind(input);
+                const nativeSet = valueDescriptor.set.bind(input);
+                Object.defineProperty(input, 'value', {
+                  configurable: true,
+                  enumerable: valueDescriptor.enumerable ?? true,
+                  get() {
+                    return nativeGet();
+                  },
+                  set(nextValue) {
+                    nativeSet(nextValue);
+                    applyFilter();
+                  },
+                });
+                input.dataset.filterValueHooked = '1';
+              }
+            }
+            input.addEventListener('input', applyFilter);
+            input.addEventListener('change', applyFilter);
+            input.addEventListener('search', applyFilter);
+            applyFilter();
+          };
+
+          const refreshSnippetAndPreview = () => {
+            const activeTab = tabRow.querySelector('.tab.active') || tabRow.querySelector('.tab');
+            currentAuthKey = activeTab?.getAttribute('data-auth') || currentAuthKey;
+            updatePreviewText(toolHeaderPreview, 'X-Mcp4-Tools', serializeToolFilterHeader(profile.profileId));
+            updatePreviewText(paramHeaderPreview, 'X-Mcp4-Params', serializeParamFilterHeader(profile.profileId));
+            snippetList.innerHTML = renderSnippets(profile, currentAuthKey, currentMode, currentTenantId);
+            wireClientTabs(snippetList);
+            wireSnippetFormatTabs(snippetList);
+          };
 
           const setActiveMode = modeKey => {
             currentMode = modeKey;
@@ -1178,19 +2148,16 @@
             });
             const showAuthTabs = modeKey !== 'local';
             const showAuthLabel = modeKey === 'local';
-            tabRow.style.display = showAuthTabs ? '' : 'none';
-            authLabel.style.display = showAuthLabel ? '' : 'none';
+            tabRow.toggleAttribute('hidden', !showAuthTabs);
+            authLabel.toggleAttribute('hidden', !showAuthLabel);
             if (modeBadge instanceof HTMLElement) {
               modeBadge.textContent = getModeLabel(modeKey);
             }
             if (apiEndpointEnvLabel) {
               const showApiEndpointEnvLabel = modeKey === 'local' && !!apiEndpointEnvText;
-              apiEndpointEnvLabel.style.display = showApiEndpointEnvLabel ? '' : 'none';
+              apiEndpointEnvLabel.toggleAttribute('hidden', !showApiEndpointEnvLabel);
             }
-            const currentAuth = (tabRow.querySelector('.tab.active') || tabRow.querySelector('.tab'))?.getAttribute('data-auth');
-            snippetList.innerHTML = renderSnippets(profile, currentAuth, currentMode, currentTenantId);
-            wireClientTabs(snippetList);
-            wireSnippetFormatTabs(snippetList);
+            refreshSnippetAndPreview();
           };
 
           const setActiveTab = authKey => {
@@ -1204,9 +2171,8 @@
                   activeTabId = tab.id || null;
                 }
               });
-            snippetList.innerHTML = renderSnippets(profile, authKey, currentMode, currentTenantId);
-            wireClientTabs(snippetList);
-            wireSnippetFormatTabs(snippetList);
+            currentAuthKey = authKey;
+            refreshSnippetAndPreview();
             if (activeTabId) {
               snippetList.setAttribute('aria-labelledby', activeTabId);
             } else {
@@ -1225,10 +2191,7 @@
                 tab.setAttribute('tabindex', isActive ? '0' : '-1');
               });
             }
-            const currentAuth = (tabRow.querySelector('.tab.active') || tabRow.querySelector('.tab'))?.getAttribute('data-auth');
-            snippetList.innerHTML = renderSnippets(profile, currentAuth, currentMode, currentTenantId);
-            wireClientTabs(snippetList);
-            wireSnippetFormatTabs(snippetList);
+            refreshSnippetAndPreview();
           };
 
           modeRow.addEventListener('click', event => {
@@ -1367,10 +2330,174 @@
             });
           }
 
+          detailEl.querySelectorAll('[data-tool-toggle]').forEach(input => {
+            input.addEventListener('change', event => {
+              const target = event.target;
+              if (!(target instanceof HTMLInputElement)) return;
+              const toolName = target.getAttribute('data-tool-toggle');
+              if (!toolName) return;
+              const selection = getToolSelection(profile.profileId);
+              if (target.checked) {
+                selection.exactNames.add(toolName);
+              } else {
+                selection.exactNames.delete(toolName);
+              }
+              syncSectionBulkToggles(detailEl, profile);
+              refreshSnippetAndPreview();
+            });
+          });
+
+          detailEl.querySelectorAll('[data-tool-control]').forEach(input => {
+            input.addEventListener('change', event => {
+              const target = event.target;
+              if (!(target instanceof HTMLInputElement)) return;
+              const controlKey = target.getAttribute('data-tool-control');
+              if (!controlKey) return;
+              const selection = getToolSelection(profile.profileId);
+              if (target.checked) {
+                selection.controlKeys.add(controlKey);
+              } else {
+                selection.controlKeys.delete(controlKey);
+              }
+              syncSectionBulkToggles(detailEl, profile);
+              refreshSnippetAndPreview();
+            });
+          });
+
+          detailEl.querySelectorAll('[data-param-toggle]').forEach(input => {
+            input.addEventListener('change', event => {
+              const target = event.target;
+              if (!(target instanceof HTMLInputElement)) return;
+              const paramName = target.getAttribute('data-param-toggle');
+              if (!paramName) return;
+              const valuesInput = detailEl.querySelector(`[data-param-values="${CSS.escape(paramName)}"]`);
+              if (valuesInput instanceof HTMLInputElement) {
+                valuesInput.disabled = !target.checked;
+              }
+              const selection = getParamSelection(profile.profileId);
+              if (target.checked) {
+                if (!selection.values.has(paramName)) {
+                  const seeded = valuesInput instanceof HTMLInputElement
+                    ? valuesInput.value.split(',').map(value => value.trim()).filter(Boolean)
+                    : [];
+                  selection.values.set(paramName, seeded);
+                }
+              } else {
+                selection.values.delete(paramName);
+              }
+              syncSectionBulkToggles(detailEl, profile);
+              refreshSnippetAndPreview();
+            });
+          });
+
+          detailEl.querySelectorAll('[data-param-values]').forEach(input => {
+            input.addEventListener('input', event => {
+              const target = event.target;
+              if (!(target instanceof HTMLInputElement) || target.disabled) return;
+              const paramName = target.getAttribute('data-param-values');
+              if (!paramName) return;
+              const selection = getParamSelection(profile.profileId);
+              selection.values.set(
+                paramName,
+                target.value.split(',').map(value => value.trim()).filter(Boolean)
+              );
+              syncSectionBulkToggles(detailEl, profile);
+              refreshSnippetAndPreview();
+            });
+          });
+
+          detailEl.querySelectorAll('[data-param-control]').forEach(input => {
+            input.addEventListener('change', event => {
+              const target = event.target;
+              if (!(target instanceof HTMLInputElement)) return;
+              const controlKey = target.getAttribute('data-param-control');
+              if (!controlKey) return;
+              const selection = getParamSelection(profile.profileId);
+              if (target.checked) {
+                selection.controlKeys.add(controlKey);
+              } else {
+                selection.controlKeys.delete(controlKey);
+              }
+              syncSectionBulkToggles(detailEl, profile);
+              refreshSnippetAndPreview();
+            });
+          });
+
+          const setAllToolFilters = shouldSelect => {
+            const selection = getToolSelection(profile.profileId);
+            if (shouldSelect) {
+              selection.exactNames = new Set(
+                (Array.isArray(profile.toolCatalog) ? profile.toolCatalog : [])
+                  .map(tool => tool?.name)
+                  .filter(Boolean)
+              );
+            } else {
+              selection.exactNames.clear();
+            }
+            detailEl.querySelectorAll('[data-tool-toggle]').forEach(input => {
+              if (input instanceof HTMLInputElement) {
+                input.checked = shouldSelect;
+              }
+            });
+            syncSectionBulkToggles(detailEl, profile);
+            refreshSnippetAndPreview();
+          };
+
+          const setAllParamFilters = shouldSelect => {
+            const selection = getParamSelection(profile.profileId);
+            if (!shouldSelect) {
+              selection.values.clear();
+            }
+
+            detailEl.querySelectorAll('[data-param-toggle]').forEach(input => {
+              if (!(input instanceof HTMLInputElement)) return;
+              const paramName = input.getAttribute('data-param-toggle');
+              input.checked = shouldSelect;
+              if (!paramName) return;
+              const valuesInput = detailEl.querySelector(`[data-param-values="${CSS.escape(paramName)}"]`);
+              if (valuesInput instanceof HTMLInputElement) {
+                valuesInput.disabled = !shouldSelect;
+              }
+              if (shouldSelect) {
+                const seeded = valuesInput instanceof HTMLInputElement
+                  ? valuesInput.value.split(',').map(value => value.trim()).filter(Boolean)
+                  : [];
+                selection.values.set(paramName, seeded);
+              }
+            });
+
+            syncSectionBulkToggles(detailEl, profile);
+            refreshSnippetAndPreview();
+          };
+
+          detailEl.querySelectorAll('[data-tool-section-toggle]').forEach(input => {
+            input.addEventListener('change', event => {
+              const target = event.target;
+              if (!(target instanceof HTMLInputElement)) return;
+              const shouldSelect = target.dataset.bulkState === 'none';
+              setAllToolFilters(shouldSelect);
+            });
+          });
+
+          detailEl.querySelectorAll('[data-param-section-toggle]').forEach(input => {
+            input.addEventListener('change', event => {
+              const target = event.target;
+              if (!(target instanceof HTMLInputElement)) return;
+              const shouldSelect = target.dataset.bulkState === 'none';
+              setAllParamFilters(shouldSelect);
+            });
+          });
+
+          wireTextFilter('[data-tool-search]', '[data-tool-filter-item]', '[data-tool-filter-empty]');
+          wireTextFilter('[data-param-search]', '[data-param-filter-item]', '[data-param-filter-empty]');
+
           const initialActiveTab = tabRow.querySelector('.tab.active');
           if (initialActiveTab && initialActiveTab.id) {
             snippetList.setAttribute('aria-labelledby', initialActiveTab.id);
           }
+          updatePreviewText(toolHeaderPreview, 'X-Mcp4-Tools', serializeToolFilterHeader(profile.profileId));
+          updatePreviewText(paramHeaderPreview, 'X-Mcp4-Params', serializeParamFilterHeader(profile.profileId));
+          syncSectionBulkToggles(detailEl, profile);
           setActiveMode(currentMode);
         }
       }

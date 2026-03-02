@@ -100,6 +100,12 @@ describe('cli-config', () => {
     expect(process.env.MCP4_TRUST_BOOTSTRAP_URLS).toBe('true');
   });
 
+  it('allows param-filter CLI mapping', () => {
+    const parsed = parseCliArgs(['--param-filter', 'project_id=123,_allow_read']);
+    applyCliEnvOverrides(parsed);
+    expect(process.env.MCP4_PARAM_FILTER).toBe('project_id=123,_allow_read');
+  });
+
   it('throws for mixed known and unknown flags', () => {
     const parsed = parseCliArgs(['--profile', 'gitlab', '--unknown', 'value']);
     expect(() => applyCliEnvOverrides(parsed)).toThrow(UnknownCliFlagError);

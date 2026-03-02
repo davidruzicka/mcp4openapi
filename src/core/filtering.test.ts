@@ -5,7 +5,10 @@ import { AuthorizationError, ValidationError } from './errors.js';
 import {
   enforceFiltering,
   getFilterMaxValues,
+  isFilteringKeySupported,
+  mergeFilteringRules,
   normalizeFilteringHeaderValue,
+  parseConfiguredFilteringValue,
   parseFilteringHeader,
 } from './filtering.js';
 
@@ -133,6 +136,86 @@ describe('filtering', () => {
 
     it('trims non-empty values', () => {
       expect(normalizeFilteringHeaderValue('  resource_id=1 ')).toBe('resource_id=1');
+    });
+  });
+
+  describe('parseConfiguredFilteringValue', () => {
+    it('returns empty filtering for unset or blank config', () => {
+      expect(parseConfiguredFilteringValue(undefined)).toEqual({
+        filtering: {},
+        normalizedHeader: '',
+      });
+      expect(parseConfiguredFilteringValue('   ')).toEqual({
+        filtering: {},
+        normalizedHeader: '',
+      });
+    });
+
+    it('parses valid config using the same rules as X-Mcp4-Params', () => {
+      expect(parseConfiguredFilteringValue('project_id=123,_allow_read')).toEqual({
+        filtering: {
+          project_id: ['123'],
+          _allow_read: [],
+        },
+        normalizedHeader: 'project_id=123,_allow_read',
+      });
+    });
+  });
+
+  describe('isFilteringKeySupported', () => {
+    it('accepts only header-safe filter keys', () => {
+      expect(isFilteringKeySupported('project_id')).toBe(true);
+      expect(isFilteringKeySupported('project-id')).toBe(true);
+      expect(isFilteringKeySupported('managed_scan_config.diff_scan.enabled')).toBe(false);
+      expect(isFilteringKeySupported('-project_id')).toBe(false);
+      expect(isFilteringKeySupported('bad key')).toBe(false);
+    });
+  });
+
+  describe('mergeFilteringRules', () => {
+    it('returns undefined when both filtering scopes are empty', () => {
+      expect(mergeFilteringRules()).toBeUndefined();
+      expect(mergeFilteringRules({}, {})).toBeUndefined();
+    });
+
+    it('returns a cloned single filtering scope unchanged', () => {
+      const baseFiltering = { project_id: ['1'], _allow_read: [] };
+      const merged = mergeFilteringRules(baseFiltering, undefined);
+      expect(merged).toEqual(baseFiltering);
+      expect(merged).not.toBeUndefined();
+      expect(merged).not.toBe(baseFiltering);
+    });
+
+    it('intersects overlapping values and retains unique keys', () => {
+      const merged = mergeFilteringRules(
+        { project_id: ['1', '2'], group_id: ['9'], _allow_read: [] },
+        { project_id: ['2', '3'], issue_id: ['7'], _allow_read: [], _allow_list: [] }
+      );
+
+      expect(merged).toEqual({
+        project_id: ['2'],
+        group_id: ['9'],
+        issue_id: ['7'],
+        _allow_read: [],
+      });
+    });
+
+    it('rejects conflicting overlapping values', () => {
+      expect(() =>
+        mergeFilteringRules({ project_id: ['1'] }, { project_id: ['2'] })
+      ).toThrow(ValidationError);
+    });
+
+    it('retains control keys only when both scopes allow them', () => {
+      const merged = mergeFilteringRules(
+        { project_id: ['1'], _allow_read: [] },
+        { group_id: ['2'], _allow_list: [] }
+      );
+
+      expect(merged).toEqual({
+        project_id: ['1'],
+        group_id: ['2'],
+      });
     });
   });
 

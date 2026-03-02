@@ -21,6 +21,7 @@ import { resolveStartupProfile } from '../profile/startup-profile.js';
 import { isProfileAllowed, parseProfileAllowlistConfig } from '../profile/profile-allowlist.js';
 import { SSRFValidator } from '../security/ssrf-validator.js';
 import { parseOAuthMetadataEndpoints } from '../auth/oauth-metadata.js';
+import { parseConfiguredFilteringValue } from './filtering.js';
 
 // Bootstrap SSRF checks run before runtime logger setup, so use a no-op logger here.
 const bootstrapUrlValidator = new SSRFValidator({
@@ -247,6 +248,7 @@ export async function main() {
   });
 
   const transport = process.env.MCP4_TRANSPORT || 'stdio';
+  const globalFiltering = parseConfiguredFilteringValue(process.env.MCP4_PARAM_FILTER).filtering;
   const httpProfileRoutingEnabled = process.env.MCP4_HTTP_PROFILE_ROUTING === 'true';
   const profileAllowlistConfig = httpProfileRoutingEnabled
     ? parseProfileAllowlistConfig({
@@ -291,6 +293,7 @@ export async function main() {
         ...baseConfig,
         profileRoutingEnabled: true,
         defaultProfileId: defaultProfileForRouting?.profileId,
+        globalFiltering,
       }, logger);
 
       const registry = new ProfileRegistry({
@@ -299,7 +302,7 @@ export async function main() {
         specPathOverride: hasExplicitSpecPath ? specPathOverride : undefined,
         allowlist: profileAllowlistConfig,
       });
-      const manager = new MCPServerManager(registry, logger, httpTransport);
+      const manager = new MCPServerManager(registry, logger, httpTransport, globalFiltering);
 
       httpTransport.setProfileContextProvider(async (id) => manager.getProfileContext(id));
       httpTransport.setProfileIndexProvider(async () => registry.listProfilesForIndex());
@@ -342,6 +345,7 @@ export async function main() {
     }
 
     const server = new MCPServer(logger);
+    server.setGlobalFiltering(globalFiltering);
     await server.initialize(specPath!, profilePath);
 
     if (transport === 'http') {

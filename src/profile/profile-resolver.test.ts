@@ -134,6 +134,212 @@ describe('profile-resolver', () => {
     expect(resolved?.profileId).toBe('sample');
   });
 
+  it('extracts compact tool catalog summaries for profile index', async () => {
+    const root = await createTempDir();
+    const profilesDir = path.join(root, 'profiles');
+    const profilePath = path.join(profilesDir, 'catalog.json');
+
+    await writeJson(profilePath, {
+      profile_name: 'catalog',
+      profile_id: 'catalog',
+      openapi_spec_path: './openapi.yaml',
+      tools: [
+        {
+          name: 'manage_projects',
+          description: 'Manage projects.',
+          metadata_params: ['action'],
+          operations: {
+            update: 'updateProject',
+            list: 'listProjects',
+          },
+          parameters: {
+            project_id: {
+              type: 'string',
+              description: 'Project ID',
+              required_for: ['update'],
+            },
+            action: {
+              type: 'string',
+              description: 'Action',
+              required: true,
+              enum: ['list', 'update'],
+            },
+            page: {
+              type: ['integer', 'string'],
+              description: 'Page number',
+              default: 1,
+            },
+          },
+        },
+        {
+          name: 'get_deployment',
+          description: 'Get deployment.',
+          composite: true,
+          steps: [
+            {
+              call: 'GET /deployments',
+              store_as: 'deployment',
+            },
+          ],
+          parameters: {},
+        },
+      ],
+    });
+
+    const profiles = await listProfilesDetailed(profilesDir);
+    expect(profiles).toHaveLength(1);
+    expect(profiles[0].toolCatalog).toEqual([
+      {
+        name: 'manage_projects',
+        description: 'Manage projects.',
+        kind: 'simple',
+        actions: ['list', 'update'],
+        hasActionSelector: true,
+        operationCount: 2,
+        stepCount: 0,
+        parameters: [
+          {
+            name: 'action',
+            typeLabel: 'string',
+            description: 'Action',
+            required: true,
+            requiredFor: [],
+            isMetadata: true,
+            supportsFilterHeader: true,
+            enumValues: ['list', 'update'],
+            defaultValue: undefined,
+          },
+          {
+            name: 'page',
+            typeLabel: 'integer | string',
+            description: 'Page number',
+            required: false,
+            requiredFor: [],
+            isMetadata: false,
+            supportsFilterHeader: true,
+            enumValues: undefined,
+            defaultValue: '1',
+          },
+          {
+            name: 'project_id',
+            typeLabel: 'string',
+            description: 'Project ID',
+            required: false,
+            requiredFor: ['update'],
+            isMetadata: false,
+            supportsFilterHeader: true,
+            enumValues: undefined,
+            defaultValue: undefined,
+          },
+        ],
+      },
+      {
+        name: 'get_deployment',
+        description: 'Get deployment.',
+        kind: 'composite',
+        actions: [],
+        hasActionSelector: false,
+        operationCount: 0,
+        stepCount: 1,
+        parameters: [],
+      },
+    ]);
+  });
+
+  it('ignores invalid tool entries and invalid parameter summaries in the profile index catalog', async () => {
+    const root = await createTempDir();
+    const profilesDir = path.join(root, 'profiles');
+    const profilePath = path.join(profilesDir, 'edge-cases.json');
+
+    await writeJson(profilePath, {
+      profile_name: 'edge-cases',
+      profile_id: 'edge-cases',
+      openapi_spec_path: './openapi.yaml',
+      tools: [
+        null,
+        'not-a-tool',
+        {
+          name: '',
+          description: 'Blank name should be dropped.',
+          parameters: {},
+        },
+        {
+          name: 'edge_cases',
+          description: 'Exercises summary guards.',
+          parameters: {
+            invalid_param: null,
+            missing_description: {
+              type: 'string',
+            },
+            mixed_enum: {
+              type: 'string',
+              description: 'Mixed enum values',
+              enum: ['merge', 7, true, { nested: 'ignored' }],
+            },
+            string_default: {
+              type: ['string', null],
+              description: 'String default value',
+              default: 'hello',
+            },
+            'managed_scan_config.diff_scan.enabled': {
+              type: 'boolean',
+              description: 'Unsafe for X-Mcp4-Params key serialization',
+            },
+          },
+        },
+      ],
+    });
+
+    const profiles = await listProfilesDetailed(profilesDir);
+    expect(profiles).toHaveLength(1);
+    expect(profiles[0].toolCatalog).toEqual([
+      {
+        name: 'edge_cases',
+        description: 'Exercises summary guards.',
+        kind: 'simple',
+        actions: [],
+        hasActionSelector: false,
+        operationCount: 0,
+        stepCount: 0,
+        parameters: [
+          {
+            name: 'managed_scan_config.diff_scan.enabled',
+            typeLabel: 'boolean',
+            description: 'Unsafe for X-Mcp4-Params key serialization',
+            required: false,
+            requiredFor: [],
+            isMetadata: false,
+            supportsFilterHeader: false,
+            enumValues: undefined,
+            defaultValue: undefined,
+          },
+          {
+            name: 'mixed_enum',
+            typeLabel: 'string',
+            description: 'Mixed enum values',
+            required: false,
+            requiredFor: [],
+            isMetadata: false,
+            supportsFilterHeader: true,
+            enumValues: ['merge', '7', 'true'],
+            defaultValue: undefined,
+          },
+          {
+            name: 'string_default',
+            typeLabel: 'string | unknown',
+            description: 'String default value',
+            required: false,
+            requiredFor: [],
+            isMetadata: false,
+            supportsFilterHeader: true,
+            enumValues: undefined,
+            defaultValue: 'hello',
+          },
+        ],
+      },
+    ]);
+  });
+
   it('extracts env vars from single auth interceptor and ignores unknown auth types', async () => {
     const root = await createTempDir();
     const profilesDir = path.join(root, 'profiles');

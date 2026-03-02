@@ -9,6 +9,8 @@ import fsPromises from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ConfigurationError } from '../core/errors.js';
+import { isFilteringKeySupported } from '../core/filtering.js';
+import type { ParameterDefinition, ToolDefinition } from '../types/profile.js';
 
 export interface ResolvedProfile {
   profileId: string;
@@ -33,6 +35,30 @@ export interface ListedProfileDetails {
   oauthEnvVars?: string[];
   authMethods: ProfileAuthMethod[];
   apiBaseUrl?: ProfileApiBaseUrl;
+  toolCatalog?: ProfileIndexToolSummary[];
+}
+
+export interface ProfileIndexToolSummary {
+  name: string;
+  description: string;
+  kind: 'simple' | 'composite';
+  actions: string[];
+  hasActionSelector: boolean;
+  operationCount: number;
+  stepCount: number;
+  parameters: ProfileIndexParameterSummary[];
+}
+
+export interface ProfileIndexParameterSummary {
+  name: string;
+  typeLabel: string;
+  description: string;
+  required: boolean;
+  requiredFor: string[];
+  isMetadata: boolean;
+  supportsFilterHeader?: boolean;
+  enumValues?: string[];
+  defaultValue?: string;
 }
 
 export interface ProfileApiBaseUrl {
@@ -224,6 +250,99 @@ function extractAuthMethods(profile: Record<string, unknown>): ProfileAuthMethod
   return methods;
 }
 
+function extractToolCatalog(profile: Record<string, unknown>): ProfileIndexToolSummary[] {
+  const tools = Array.isArray(profile.tools) ? profile.tools : [];
+  return tools
+    .filter(isToolDefinitionLike)
+    .map(tool => buildToolSummary(tool))
+    .filter((tool): tool is ProfileIndexToolSummary => tool !== null);
+}
+
+function isToolDefinitionLike(value: unknown): value is ToolDefinition {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+  const record = value as Record<string, unknown>;
+  return typeof record.name === 'string' && typeof record.description === 'string' && record.parameters !== undefined;
+}
+
+function buildToolSummary(tool: ToolDefinition): ProfileIndexToolSummary | null {
+  if (!tool.name || !tool.description || !tool.parameters) {
+    return null;
+  }
+
+  const actions = tool.operations ? Object.keys(tool.operations).sort((left, right) => left.localeCompare(right)) : [];
+  const metadataParams = new Set(tool.metadata_params || []);
+
+  return {
+    name: tool.name,
+    description: tool.description,
+    kind: tool.composite ? 'composite' : 'simple',
+    actions,
+    hasActionSelector: hasActionSelector(tool.parameters),
+    operationCount: tool.operations ? Object.keys(tool.operations).length : 0,
+    stepCount: tool.steps?.length || 0,
+    parameters: Object.entries(tool.parameters)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([name, parameter]) => buildParameterSummary(name, parameter, metadataParams))
+      .filter((parameter): parameter is ProfileIndexParameterSummary => parameter !== null),
+  };
+}
+
+function hasActionSelector(parameters: Record<string, ParameterDefinition>): boolean {
+  const action = parameters.action;
+  return Boolean(action && Array.isArray(action.enum) && action.enum.length > 0);
+}
+
+function buildParameterSummary(
+  name: string,
+  parameter: ParameterDefinition,
+  metadataParams: Set<string>
+): ProfileIndexParameterSummary | null {
+  if (!parameter || typeof parameter !== 'object' || typeof parameter.description !== 'string') {
+    return null;
+  }
+
+  const enumValues = Array.isArray(parameter.enum)
+    ? parameter.enum
+        .map(value => (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') ? String(value) : '')
+        .filter(Boolean)
+    : undefined;
+  const defaultValue = formatSummaryValue(parameter.default);
+
+  return {
+    name,
+    typeLabel: formatParameterTypeLabel(parameter.type),
+    description: parameter.description,
+    required: Boolean(parameter.required),
+    requiredFor: Array.isArray(parameter.required_for)
+      ? parameter.required_for.filter((value): value is string => typeof value === 'string')
+      : [],
+    isMetadata: metadataParams.has(name),
+    supportsFilterHeader: isFilteringKeySupported(name),
+    enumValues: enumValues && enumValues.length > 0 && enumValues.length <= 12 ? enumValues : undefined,
+    defaultValue,
+  };
+}
+
+function formatParameterTypeLabel(type: ParameterDefinition['type']): string {
+  const values = Array.isArray(type) ? type : [type];
+  return values
+    .map(value => typeof value === 'string' ? value : 'unknown')
+    .filter(Boolean)
+    .join(' | ');
+}
+
+function formatSummaryValue(value: unknown): string | undefined {
+  if (typeof value === 'string') {
+    return value;
+  }
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return String(value);
+  }
+  return undefined;
+}
+
 function isHttpUrl(value: string): boolean {
   try {
     const url = new URL(value);
@@ -323,6 +442,7 @@ async function loadProfileDetails(profilePath: string): Promise<ListedProfileDet
     oauthEnvVars: extractOauthEnvVars(profile),
     authMethods: extractAuthMethods(profile),
     apiBaseUrl: extractApiBaseUrl(profile),
+    toolCatalog: extractToolCatalog(profile),
   };
 }
 

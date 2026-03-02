@@ -882,6 +882,55 @@ describeIfListen('HttpTransport', () => {
       expect(response.text).toContain('First profile');
     });
 
+    it('renders filter UI markers in the HTML profile index response', async () => {
+      indexTransport.setProfileIndexProvider(async () => ([
+        {
+          profileId: 'alpha',
+          profileName: 'Alpha',
+          profileAliases: ['a1'],
+          description: 'First profile',
+          envVars: ['MCP4_API_TOKEN'],
+          authMethods: [{ type: 'bearer', valueFromEnv: 'MCP4_API_TOKEN' }],
+          toolCatalog: [
+            {
+              name: 'manage_alpha',
+              description: 'Manage alpha records.',
+              kind: 'simple',
+              actions: ['list', 'get'],
+              hasActionSelector: true,
+              operationCount: 2,
+              stepCount: 0,
+              parameters: [
+                {
+                  name: 'action',
+                  typeLabel: 'string',
+                  description: 'Action selector',
+                  required: true,
+                  requiredFor: [],
+                  isMetadata: true,
+                },
+              ],
+            },
+          ],
+        },
+      ]));
+
+      const response = await request(indexApp).get('/');
+
+      expect(response.status).toBe(200);
+      expect(response.headers['content-type']).toContain('text/html');
+      expect(response.text).toContain('Tool Filter');
+      expect(response.text).toContain('Parameter Filter');
+      expect(response.text).toContain('data-tool-search');
+      expect(response.text).toContain('data-param-search');
+      expect(response.text).toContain('const hasPreview = Boolean(toolHeader || paramHeader);');
+      expect(response.text).toContain('id="filter-preview-card"${hasPreview ? \'\' : \' hidden\'}');
+      expect(response.text).toContain('hasActiveToolFilter');
+      expect(response.text).toContain('hasActiveParamFilter');
+      expect(response.text).toContain('wireCollapsibleDetails');
+      expect(response.text).toContain("summary.setAttribute('aria-expanded'");
+    });
+
     it('returns JSON when application/json is requested', async () => {
       indexTransport.setProfileIndexProvider(async () => ([
         {
@@ -1012,18 +1061,21 @@ describeIfListen('HttpTransport', () => {
       expect(response.headers['content-type']).toContain('text/html');
       expect(response.text).toContain('tenant-tabs');
       expect(response.text).toContain('injectTenantHeaderIntoJsonSnippet');
+      expect(response.text).toContain('injectFilterHeadersForSnippet');
+      expect(response.text).toContain('injectLocalFilterConfigForSnippet');
       expect(response.text).toContain('injectTenantApiBaseUrlIntoJsonSnippet');
       expect(response.text).toContain('X-Mcp4-Tenant-Id');
       expect(response.text).toContain('X-Mcp4-Api-Base-Url');
+      expect(response.text).toContain('X-Mcp4-Tools');
+      expect(response.text).toContain('X-Mcp4-Params');
       expect(response.text).toContain('__profile-default__');
       expect(response.text).toContain('<your-part>');
       expect(response.text).toContain('data-client-tab');
       expect(response.text).toContain('wireClientTabs');
-      expect(response.text).toContain('key.startsWith(\'vscode-\')');
-      expect(response.text).toContain('key.startsWith(\'jetbrains-\')');
-      expect(response.text).toContain('key.startsWith(\'claude-json-\')');
-      expect(response.text).toContain('key.startsWith(\'gemini-json-\')');
-      expect(response.text).toContain('key.startsWith(\'codex-toml-\')');
+      expect(response.text).toContain('supportsCustomHeaders');
+      expect(response.text).toContain('supportsTenantHeaders');
+      expect(response.text).toContain('Tool Filter');
+      expect(response.text).toContain('Parameter Filter');
     });
   });
 
