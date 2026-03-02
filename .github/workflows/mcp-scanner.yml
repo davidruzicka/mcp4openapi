@@ -17,12 +17,33 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Install MCP Sentinel
+        run: |
+          arch="$(uname -m)"
+          case "$arch" in
+            x86_64|amd64)
+              asset="mcp-sentinel-linux-x86_64"
+              ;;
+            aarch64|arm64)
+              asset="mcp-sentinel-linux-arm64"
+              ;;
+            *)
+              echo "Unsupported runner architecture: $arch" >&2
+              exit 1
+              ;;
+          esac
+          curl -fsSL \
+            -o mcp-sentinel \
+            "https://github.com/beejak/MCP_Scanner/releases/download/v2.6.0/${asset}"
+          chmod +x mcp-sentinel
+
       - name: Run MCP Sentinel scan
         run: |
-          docker run --rm \
-            -v "${{ github.workspace }}:/workspace" \
-            ghcr.io/beejak/mcp-sentinel:2.6.0 \
-            scan /workspace --output sarif --output-file /workspace/mcp-scan.sarif --fail-on high
+          ./mcp-sentinel \
+            scan "${{ github.workspace }}" \
+            --output sarif \
+            --output-file "${{ github.workspace }}/mcp-scan.sarif" \
+            --fail-on high
 
       - name: Upload SARIF
         if: ${{ always() && hashFiles('mcp-scan.sarif') != '' }}
