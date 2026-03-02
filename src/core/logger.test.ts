@@ -385,6 +385,37 @@ describe('Token Redaction', () => {
     });
   });
 
+  describe('Session cookie auth', () => {
+    it('should redact cookie header', () => {
+      const authConfig: AuthInterceptor = {
+        type: 'session-cookie',
+        session_cookie_config: {
+          login_endpoint: '/rest/login',
+          username_field: 'username',
+          username_from_env: 'LOGIN_USER',
+          password_field: 'password',
+          password_from_env: 'LOGIN_PASSWORD',
+          cookie_names: ['sid'],
+        },
+      };
+
+      const logger = new ConsoleLogger(LogLevel.INFO, authConfig);
+      logger.info('Request', {
+        headers: {
+          Cookie: 'sid=secret-session; theme=light',
+          'User-Agent': 'mcp-client/1.0',
+        },
+      });
+
+      expect(consoleErrorSpy).toHaveBeenCalledWith(
+        expect.stringMatching(/\[REDACTED\]/)
+      );
+      expect(consoleErrorSpy).not.toHaveBeenCalledWith(
+        expect.stringContaining('sid=secret-session')
+      );
+    });
+  });
+
   describe('No auth config', () => {
     it('should not redact when no auth config provided', () => {
       const logger = new ConsoleLogger(LogLevel.INFO);

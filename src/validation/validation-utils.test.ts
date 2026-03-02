@@ -8,7 +8,8 @@ import {
   isSafePropertyName,
   hasOwnKey,
   escapeRegExp,
-  escapeHtmlSafe
+  escapeHtmlSafe,
+  isHostnameAllowed
 } from './validation-utils.js';
 
 describe('Validation Utils', () => {
@@ -43,6 +44,25 @@ describe('Validation Utils', () => {
       expect(isUri('')).toBe(false);
       expect(isUri('example.com')).toBe(false);
       expect(isUri('://invalid')).toBe(false);
+    });
+  });
+
+  describe('isHostnameAllowed', () => {
+    it('matches exact hosts', () => {
+      expect(isHostnameAllowed('api.example.com', ['api.example.com'])).toBe(true);
+      expect(isHostnameAllowed('api.example.com', ['other.example.com'])).toBe(false);
+    });
+
+    it('matches wildcard subdomains but not the bare suffix', () => {
+      expect(isHostnameAllowed('sub.example.com', ['*.example.com'])).toBe(true);
+      expect(isHostnameAllowed('deep.sub.example.com', ['*.example.com'])).toBe(true);
+      expect(isHostnameAllowed('example.com', ['*.example.com'])).toBe(false);
+      expect(isHostnameAllowed('sub.example.com', ['*.'])).toBe(false);
+    });
+
+    it('returns false for empty allowlists', () => {
+      expect(isHostnameAllowed('api.example.com', undefined)).toBe(false);
+      expect(isHostnameAllowed('api.example.com', [])).toBe(false);
     });
   });
 

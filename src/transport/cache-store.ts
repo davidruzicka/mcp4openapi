@@ -8,6 +8,7 @@ export type CacheEvictionReason = 'max_entries' | 'max_memory';
 export interface CachePolicy {
   backend: CacheBackend;
   scope: Exclude<CacheScope, 'auto'>;
+  allowSharedWithAuth: boolean;
   ttlSeconds: number;
   methods: Set<string>;
   varyHeaders: Set<string>;

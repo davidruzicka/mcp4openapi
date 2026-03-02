@@ -192,6 +192,7 @@ export interface CacheConfig {
   enabled?: boolean; // default: true
   backend?: 'memory' | 'redis'; // default: 'memory'
   scope?: 'auto' | 'public' | 'private' | 'session'; // default: auto (private when auth configured, else public)
+  allow_shared_with_auth?: boolean; // default: false; allow explicit public caching for auth-protected but shared content
   ttl_seconds?: number; // default: 300
   max_entries?: number; // default: 1000
   max_memory_bytes?: number; // default: 67108864 (64MB)
@@ -206,6 +207,7 @@ export interface CacheConfig {
  * - bearer: Standard HTTP Bearer token (Authorization: Bearer <token>)
  * - query: API key in query string (?api_key=<token>)
  * - custom-header: Custom header name (e.g., X-API-Key: <token>)
+ * - session-cookie: Form login that exchanges credentials for a maintained session cookie
  * - oauth: OAuth 2.0 Authorization Code Flow with PKCE (HTTP transport only)
  * 
  * Multi-auth support:
@@ -220,7 +222,7 @@ export interface CacheConfig {
  * - Improves UX by rejecting bad tokens immediately, not after first tool call
  */
 export interface AuthInterceptor {
-  type: 'bearer' | 'query' | 'custom-header' | 'oauth';
+  type: 'bearer' | 'query' | 'custom-header' | 'session-cookie' | 'oauth';
   
   // Priority for multi-auth (lower = higher priority, default: 0)
   priority?: number;
@@ -228,10 +230,13 @@ export interface AuthInterceptor {
   // For bearer/query/custom-header
   header_name?: string;  // Required for custom-header
   query_param?: string;  // Required for query
-  value_from_env?: string; // Required for bearer/query/custom-header, not used for oauth
-  
+  value_from_env?: string; // Required for bearer/query/custom-header, not used for oauth/session-cookie
+
   // For oauth type
   oauth_config?: OAuthConfig;
+
+  // For session-cookie type
+  session_cookie_config?: SessionCookieConfig;
   
   // OAuth rate limiting (only for oauth type)
   // Overrides default OAuth rate limits (10 requests per 1 minute)
@@ -245,6 +250,87 @@ export interface AuthInterceptor {
   validation_method?: 'GET' | 'HEAD';  // HTTP method for validation (default: GET)
   validation_timeout_ms?: number;  // Timeout in milliseconds (default: 5000)
   validation_allowed_hosts?: string[]; // Optional allowlist for absolute validation endpoint hosts
+}
+
+/**
+ * Session cookie authentication configuration
+ *
+ * Supports direct server-to-server login flows where the API exchanges
+ * username/password for a session cookie instead of issuing API tokens.
+ */
+export interface SessionCookieConfig {
+  /**
+   * Login endpoint path or absolute URL.
+   * Relative paths are resolved against the profile base_url.
+   */
+  login_endpoint: string;
+
+  /**
+   * HTTP method for login. Currently only POST is supported.
+   */
+  login_method?: 'POST';
+
+  /**
+   * Login payload content type.
+   */
+  login_content_type?: 'application/json' | 'application/x-www-form-urlencoded';
+
+  /**
+   * Login form field name for username/login identifier.
+   */
+  username_field: string;
+
+  /**
+   * Environment variable containing the login username.
+   */
+  username_from_env: string;
+
+  /**
+   * Login form field name for password.
+   */
+  password_field: string;
+
+  /**
+   * Environment variable containing the login password.
+   */
+  password_from_env: string;
+
+  /**
+   * Optional extra headers to send with the login request.
+   */
+  login_static_headers?: Record<string, string>;
+
+  /**
+   * Optional extra fields to include in the login request body.
+   */
+  login_static_body?: Record<string, string>;
+
+  /**
+   * Allowed session cookie names accepted from Set-Cookie.
+   * At least one matching cookie must be returned by login.
+   */
+  cookie_names: string[];
+
+  /**
+   * Optional allowlist for absolute login endpoints beyond the profile base URL host.
+   * Supports exact hosts and *.example.com wildcards.
+   */
+  login_allowed_hosts?: string[];
+
+  /**
+   * HTTP status codes that should trigger relogin and a single replay attempt.
+   */
+  reauth_on_statuses?: number[];
+
+  /**
+   * Backoff applied after failed login/relogin to avoid login storms.
+   */
+  failure_backoff_ms?: number;
+
+  /**
+   * Treat cookies expiring within this skew window as expired.
+   */
+  expiry_skew_ms?: number;
 }
 
 /**

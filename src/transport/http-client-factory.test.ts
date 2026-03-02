@@ -174,6 +174,37 @@ describe('HttpClientFactory', () => {
 
       expect(() => factory.validateClientConfig(config)).toThrow(AuthenticationError);
     });
+
+    it('accepts session-cookie auth without a static token', () => {
+      const sessionCookieProfile: Profile = {
+        profile_name: 'session-cookie-profile',
+        interceptors: {
+          auth: {
+            type: 'session-cookie',
+            session_cookie_config: {
+              login_endpoint: '/rest/login',
+              username_field: 'username',
+              username_from_env: 'LOGIN_USER',
+              password_field: 'password',
+              password_from_env: 'LOGIN_PASSWORD',
+              cookie_names: ['sid'],
+            },
+          },
+        },
+        tools: [],
+      };
+
+      const config = {
+        profile: sessionCookieProfile,
+        baseUrl: 'https://api.example.com',
+      };
+
+      expect(() => factory.validateClientConfig(config)).not.toThrow();
+
+      const client = factory.createGlobalClient(config);
+      expect((client as any).interceptors.token).toBeDefined();
+      expect(typeof (client as any).interceptors.token.prepareRequest).toBe('function');
+    });
   });
 
   describe('getAuthToken', () => {

@@ -6,6 +6,7 @@ import { ConfigurationError } from '../core/errors.js';
 const basePolicy: CachePolicy = {
   backend: 'memory',
   scope: 'public',
+  allowSharedWithAuth: false,
   ttlSeconds: 60,
   methods: new Set(['GET']),
   varyHeaders: new Set(['accept']),

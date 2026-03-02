@@ -65,6 +65,34 @@ export class AuthenticationError extends MCPError {
   }
 }
 
+export class SessionCookieLoginError extends MCPError {
+  constructor(message: string = 'Session cookie login failed', details?: Record<string, unknown>) {
+    super(message, 'SESSION_COOKIE_LOGIN_ERROR', details);
+    this.name = 'SessionCookieLoginError';
+  }
+}
+
+export class SessionCookieMissingError extends MCPError {
+  constructor(message: string = 'Expected session cookie was not returned', details?: Record<string, unknown>) {
+    super(message, 'SESSION_COOKIE_MISSING', details);
+    this.name = 'SessionCookieMissingError';
+  }
+}
+
+export class SessionCookieExpiredError extends MCPError {
+  constructor(message: string = 'Session cookie expired', details?: Record<string, unknown>) {
+    super(message, 'SESSION_COOKIE_EXPIRED', details);
+    this.name = 'SessionCookieExpiredError';
+  }
+}
+
+export class SessionCookieBackoffError extends MCPError {
+  constructor(message: string = 'Session cookie relogin temporarily suspended', details?: Record<string, unknown>) {
+    super(message, 'SESSION_COOKIE_BACKOFF', details);
+    this.name = 'SessionCookieBackoffError';
+  }
+}
+
 export class AuthorizationError extends MCPError {
   constructor(message: string = 'Insufficient permissions') {
     super(message, 'AUTHORIZATION_ERROR');

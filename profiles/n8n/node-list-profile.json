@@ -1,0 +1,61 @@
+{
+  "$schema": "../../profile-schema.json",
+  "profile_name": "n8n-node-list",
+  "profile_id": "n8n-nodes",
+  "description": "Single-purpose tool for fetching the list of supported n8n nodes from an n8n instance.",
+  "openapi_spec_path": "./node-list-openapi.yaml",
+  "interceptors": {
+    "base_url": {
+      "value_from_env": "N8N_NODES_BASE_URL",
+      "default": "http://localhost:5678"
+    },
+    "cache": {
+      "enabled": true,
+      "backend": "memory",
+      "scope": "public",
+      "ttl_seconds": 604800,
+      "max_entries": 64,
+      "max_memory_bytes": 33554432,
+      "max_memory_bytes_from_env": "N8N_NODES_CACHE_MAX_MEMORY_BYTES",
+      "methods": [
+        "GET"
+      ],
+      "vary_headers": [
+        "accept",
+        "accept-language"
+      ]
+    }
+  },
+  "tools": [
+    {
+      "name": "n8n_nodes",
+      "description": "List n8n node definitions (full or summary).",
+      "metadata_params": [
+        "action"
+      ],
+      "operations": {
+        "list_full": "getNodes",
+        "list_summary": "getNodes"
+      },
+      "parameters": {
+        "action": {
+          "type": "string",
+          "enum": [
+            "list_full",
+            "list_summary"
+          ],
+          "description": "Action to perform",
+          "required": true
+        }
+      },
+      "response_fields": {
+        "list_summary": [
+          "displayName",
+          "group",
+          "description",
+          "usableAsTool"
+        ]
+      }
+    }
+  ]
+}

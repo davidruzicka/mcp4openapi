@@ -95,6 +95,10 @@ function redactSensitiveContext(
       redacted.headers = redactHeader(redacted.headers, 'authorization');
       break;
 
+    case 'session-cookie':
+      redacted.headers = redactHeader(redacted.headers, 'cookie');
+      break;
+
     case 'custom-header':
       if (authConfig.header_name) {
         redacted.headers = redactHeader(

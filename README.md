@@ -658,7 +658,7 @@ Returns `429 Too Many Requests` when exceeded.
 - HTTP/session/tool/API metrics include `profile_id` and `tenant_id` labels; when unresolved they use `profile_id="unknown"` and `tenant_id="none"`.
 
 **Security Note**: 
-- Sensitive auth tokens are automatically redacted from logs based on your profile's auth configuration (bearer, query, or custom-header)
+- Sensitive auth tokens are automatically redacted from logs based on your profile's auth configuration (bearer, query, custom-header, or session-cookie)
 - All errors returned to clients are sanitized to generic messages (`Internal error`) while full details are logged server-side
 
 ## Profile System
