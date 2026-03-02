@@ -1,6 +1,20 @@
 {
   "$schema": "../../src/testing/test-schema.ts",
   "profile_name": "n8n-node-list",
+  "global_mocks": [
+    {
+      "path": "/rest/login",
+      "method": "POST",
+      "response": {
+        "headers": {
+          "Set-Cookie": "n8n-auth=test-session-cookie; Path=/; HttpOnly"
+        },
+        "body": {
+          "loggedIn": true
+        }
+      }
+    }
+  ],
   "scenarios": [
     {
       "name": "n8n_nodes - list_full",
@@ -28,10 +42,26 @@
       ],
       "expect": {
         "success": true,
-        "request": {
-          "method": "GET",
-          "path": "/types/nodes.json"
-        }
+        "requests": [
+          {
+            "method": "POST",
+            "path": "/rest/login",
+            "headers": {
+              "content-type": "application/json"
+            },
+            "body_exact": {
+              "emailOrLdapLoginId": "test-user",
+              "password": "test-password"
+            }
+          },
+          {
+            "method": "GET",
+            "path": "/types/nodes.json",
+            "headers_regex": {
+              "cookie": "n8n-auth=test-session-cookie"
+            }
+          }
+        ]
       }
     },
     {

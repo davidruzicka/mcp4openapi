@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - Added `session-cookie` profile auth with managed relogin/cookie rotation and an explicit `allow_shared_with_auth` cache override for authenticated shared responses.
+- Updated the `n8n-nodes` profile to use `session-cookie` login for `/types/nodes.json` while keeping explicit public cache enabled for shared node metadata.
 
 ## [0.5.6] - 2026-03-02
 

@@ -5,6 +5,23 @@
   "description": "Single-purpose tool for fetching the list of supported n8n nodes from an n8n instance.",
   "openapi_spec_path": "./node-list-openapi.yaml",
   "interceptors": {
+    "auth": {
+      "type": "session-cookie",
+      "session_cookie_config": {
+        "login_endpoint": "/rest/login",
+        "login_content_type": "application/json",
+        "username_field": "emailOrLdapLoginId",
+        "username_from_env": "N8N_NODES_LOGIN_USER",
+        "password_field": "password",
+        "password_from_env": "N8N_NODES_LOGIN_PASSWORD",
+        "cookie_names": [
+          "n8n-auth"
+        ],
+        "reauth_on_statuses": [
+          401
+        ]
+      }
+    },
     "base_url": {
       "value_from_env": "N8N_NODES_BASE_URL",
       "default": "http://localhost:5678"
@@ -13,6 +30,7 @@
       "enabled": true,
       "backend": "memory",
       "scope": "public",
+      "allow_shared_with_auth": true,
       "ttl_seconds": 604800,
       "max_entries": 64,
       "max_memory_bytes": 33554432,

@@ -32,6 +32,11 @@ function configureProfileEnv(profile: Profile, baseUrl: string): void {
     ) {
       process.env[authConfig.value_from_env] = 'test-token';
     }
+
+    if (authConfig.type === 'session-cookie' && authConfig.session_cookie_config) {
+      process.env[authConfig.session_cookie_config.username_from_env] = 'test-user';
+      process.env[authConfig.session_cookie_config.password_from_env] = 'test-password';
+    }
   }
 
   const baseUrlEnv = profile.interceptors?.base_url?.value_from_env;
