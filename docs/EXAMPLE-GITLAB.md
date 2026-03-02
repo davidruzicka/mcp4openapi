@@ -19,7 +19,7 @@ Visit https://gitlab.com/-/user_settings/personal_access_tokens and create a tok
 
 Reuse the [README Quick Start](../README.md#quick-start) instructions to load the GitLab specification and profile. Substitute:
 
-- `MCP4_PROFILE_PATH=profiles/gitlab/developer-profile-oauth.json`
+- `MCP4_PROFILE=gitlab`
 - `GITLAB_TOKEN=<your GitLab token>`
 - `GITLAB_API_BASE_URL=https://gitlab.com/api/v4`
 
@@ -293,7 +293,7 @@ Add to your `mcp.json`:
       "command": "node",
       "args": ["/path/to/mcp4openapi/dist/index.js"],
       "env": {
-        "MCP4_PROFILE_PATH": "/path/to/profiles/gitlab/developer-profile-oauth.json",
+        "MCP4_PROFILE": "gitlab",
         "GITLAB_TOKEN": "glpat-xxxxxxxxxxxxxxxxxxxx",
         "GITLAB_API_BASE_URL": "https://gitlab.com/api/v4"
       }
@@ -301,6 +301,8 @@ Add to your `mcp.json`:
   }
 }
 ```
+
+This Claude Desktop example is stdio + token based. For OAuth browser flow, use HTTP transport and URL-based client configuration from [OAUTH.md](./OAUTH.md).
 
 ## Common Use Cases
 

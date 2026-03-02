@@ -66,9 +66,11 @@ describe('profile index helpers', () => {
     ]);
     expect(vscode?.content).toContain('"url": "__PROFILE_URL__"');
     expect(vscode?.content).toContain('"Authorization": "Bearer ${input:gitlab-token}"');
-    expect(cursor?.content).toContain('"mcp-remote"');
-    expect(cursor?.content).toContain('"Authorization: Bearer ${env:GITLAB_TOKEN}"');
+    expect(cursor?.content).toContain('"type": "http"');
+    expect(cursor?.content).toContain('"url": "__PROFILE_URL__"');
+    expect(cursor?.content).toContain('"Authorization": "Bearer ${GITLAB_TOKEN}"');
     expect(cursor?.content).toContain('"GITLAB_TOKEN": "${env:GITLAB_TOKEN}"');
+    expect(cursor?.content).not.toContain('"mcp-remote"');
     expect(jetbrains?.content).toContain('"requestInit"');
     expect(jetbrains?.content).toContain('"Authorization": "Bearer ${input:gitlab-token}"');
     expect(claudeJson?.format).toBe('json');
@@ -235,8 +237,9 @@ describe('profile index helpers', () => {
     expect(profile.mcpUrl).toBe('http://localhost:3003/profile/youtrack/mcp');
     expect(vscode?.content).toContain('"url": "__PROFILE_URL__?api_key=${input:yt-token}"');
     expect(vscode?.content).not.toContain('"headers"');
-    expect(cursor?.content).toContain('"url": "__PROFILE_URL__?api_key=${env:YT_TOKEN}"');
+    expect(cursor?.content).toContain('"url": "__PROFILE_URL__?api_key=${YT_TOKEN}"');
     expect(cursor?.content).not.toContain('"mcp-remote"');
+    expect(cursor?.content).toContain('"YT_TOKEN": "${env:YT_TOKEN}"');
     expect(jetbrains?.content).toContain('"url": "__PROFILE_URL__?api_key=${input:yt-token}"');
     expect(claudeJson?.content).toContain('"url": "__PROFILE_URL__?api_key=${YT_TOKEN}"');
     expect(claudeCli?.content).toContain('__PROFILE_URL__?api_key=\\${YT_TOKEN}');
@@ -640,8 +643,6 @@ describe('profile index helpers', () => {
     expect(html).toContain('"selectionHeaderName":"X-Mcp4-Tenant-Id"');
     expect(html).toContain('"supportsCustomHeaders":true');
     expect(html).toContain('injectTenantHeaderIntoJsonSnippet');
-    expect(html).toContain('upsertCursorHeaderArgInArgs');
-    expect(html).toContain('ensureCursorMcpRemoteArgs');
     expect(html).toContain('injectFilterHeadersForSnippet');
     expect(html).toContain('injectFilterHeadersIntoJsonSnippet');
     expect(html).toContain('injectFilterHeadersIntoCodexToml');
@@ -679,7 +680,8 @@ describe('profile index helpers', () => {
     expect(html).toContain('X-Mcp4-Tools');
     expect(html).toContain('X-Mcp4-Params');
     expect(html).toContain('<your-part>');
-    expect(html).toContain("upsertCursorHeaderArgInArgs(args, 'X-Mcp4-Tenant-Id'");
+    expect(html).not.toContain('ensureCursorMcpRemoteArgs');
+    expect(html).not.toContain('upsertCursorHeaderArgInArgs');
     expect(html).toContain('key.startsWith(\'gemini-local-json-\')');
     expect(html).toContain('entry.supportsCustomHeaders');
     expect(html).toContain('entry.supportsTenantHeaders');

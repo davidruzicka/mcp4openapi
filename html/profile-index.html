@@ -847,22 +847,6 @@
         };
       }
 
-      function upsertCursorHeaderArgInArgs(args, headerName, headerValue) {
-        if (!Array.isArray(args)) return args;
-        const normalizedHeaderPrefix = `${headerName}:`.toLowerCase();
-        for (let index = 0; index < args.length - 1; index += 1) {
-          if (args[index] !== '--header') continue;
-          const headerArg = args[index + 1];
-          if (typeof headerArg !== 'string') continue;
-          if (!headerArg.toLowerCase().startsWith(normalizedHeaderPrefix)) continue;
-          args[index + 1] = `${headerName}: ${headerValue}`;
-          return args;
-        }
-        args.push('--header');
-        args.push(`${headerName}: ${headerValue}`);
-        return args;
-      }
-
       function appendCliArgs(args, additionalArgs) {
         if (!Array.isArray(args) || !Array.isArray(additionalArgs) || additionalArgs.length === 0) {
           return args;
@@ -877,23 +861,6 @@
         return String(value || '')
           .replace(/\\/g, '\\\\')
           .replace(/"/g, '\\"');
-      }
-
-      function ensureCursorMcpRemoteArgs(server) {
-        if (!server || typeof server !== 'object') return null;
-        const currentArgs = Array.isArray(server.args) ? server.args : null;
-        const hasMcpRemoteArgs = currentArgs && currentArgs.some(arg => arg === 'mcp-remote');
-        if (hasMcpRemoteArgs) {
-          return currentArgs;
-        }
-
-        const cursorUrl = typeof server.url === 'string' ? server.url : '__PROFILE_URL__';
-        server.command = 'npx';
-        server.args = ['-y', 'mcp-remote', cursorUrl];
-        delete server.type;
-        delete server.url;
-        delete server.headers;
-        return server.args;
       }
 
       function injectTenantHeaderIntoJsonSnippet(snippet, entry, tenantSelection) {
@@ -914,14 +881,7 @@
         if (!serverName || !root[serverName] || typeof root[serverName] !== 'object') return snippet;
         const server = root[serverName];
 
-        if (key.startsWith('cursor-')) {
-          const args = ensureCursorMcpRemoteArgs(server);
-          if (!Array.isArray(args)) return snippet;
-          upsertCursorHeaderArgInArgs(args, 'X-Mcp4-Tenant-Id', tenantSelection.tenantId);
-          if (tenantSelection.baseUrlExample) {
-            upsertCursorHeaderArgInArgs(args, 'X-Mcp4-Api-Base-Url', tenantSelection.baseUrlExample);
-          }
-        } else if (key.startsWith('jetbrains-')) {
+        if (key.startsWith('jetbrains-')) {
           if (!server.requestInit || typeof server.requestInit !== 'object') {
             server.requestInit = {};
           }
@@ -1005,16 +965,7 @@
         if (!serverName || !root[serverName] || typeof root[serverName] !== 'object') return snippet;
         const server = root[serverName];
 
-        if (key.startsWith('cursor-')) {
-          const args = ensureCursorMcpRemoteArgs(server);
-          if (!Array.isArray(args)) return snippet;
-          if (toolHeader) {
-            upsertCursorHeaderArgInArgs(args, 'X-Mcp4-Tools', toolHeader);
-          }
-          if (paramHeader) {
-            upsertCursorHeaderArgInArgs(args, 'X-Mcp4-Params', paramHeader);
-          }
-        } else if (key.startsWith('jetbrains-')) {
+        if (key.startsWith('jetbrains-')) {
           if (!server.requestInit || typeof server.requestInit !== 'object') {
             server.requestInit = {};
           }

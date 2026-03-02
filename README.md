@@ -50,7 +50,7 @@ Check example profiles in [profiles/](https://github.com/davidruzicka/mcp4openap
 
 **Cursor:**
 - **Project-Specific:** `.cursor/mcp.json` in your project root
-- **Global:** default `~/.cursor/mcp.json` in your home directory (various, platform-dependent location based on current Cursor profile; use `⚙` → `Tools & MCP` → `New MCP Server`)
+- **Global:** user profile configuration (for example Linux `~/.config/Cursor/User/mcp.json`; use `⚙` → `Tools & MCP` → `New MCP Server`)
 
 **VS Code + Copilot:**
 - **Project-Specific:** `.vscode/mcp.json` in your project root
@@ -99,7 +99,9 @@ Access Token (Bearer) example:
 
 _`inputs` section prompts you for the token when the server starts, so environment variables are not needed._
 
-#### Cursor example:
+#### Cursor examples
+
+Cursor stdio example (non-OAuth, token-based auth only):
 
 ```json
 {
@@ -112,6 +114,18 @@ _`inputs` section prompts you for the token when the server starts, so environme
                 "MCP4_API_BASE_URL": "https://api.example.com",
                 "MCP4_PROFILE_PATH": "path/to/mcp-profile.json"
             }
+        }
+    }
+}
+```
+
+Cursor OAuth example (HTTP transport, URL-based MCP server):
+
+```json
+{
+    "mcpServers": {
+        "mcp4openapi-oauth": {
+            "url": "http://127.0.0.1:3003/mcp"
         }
     }
 }
@@ -569,8 +583,25 @@ See [docs/OAUTH.md](./docs/OAUTH.md#ssltls-support) for SSL configuration with O
 
 #### OAuth 2.0 Configuration
 
+OAuth requires HTTP transport. Stdio (`command`/`args`) client configuration does not support OAuth browser flow.
+
+Cursor OAuth setup (global user config) example:
+
+```json
+{
+    "mcpServers": {
+        "gitlab-oauth": {
+            "url": "http://127.0.0.1:3003/mcp"
+        }
+    }
+}
+```
+
 **Autodiscovery** - Just provide DCR (Dynamic Client Registration) credentials, API base URL and OAuth callback:
 ```bash
+export MCP4_TRANSPORT=http
+export MCP4_HOST=127.0.0.1
+export MCP4_PORT=3003
 export MCP4_API_BASE_URL=https://www.gitlab.com/api/v4
 export MCP4_OAUTH_CLIENT_ID=your_dcr_client_id
 export MCP4_OAUTH_CLIENT_SECRET=your_dcr_client_secret

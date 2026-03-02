@@ -85,6 +85,9 @@ npx mcp4openapi \
 
 **Environment variables:**
 ```bash
+# Required for OAuth browser flow
+export MCP4_TRANSPORT=http
+
 # OAuth credentials (for interactive users)
 export MCP4_OAUTH_AUTHORIZATION_URL=https://gitlab.example.com/oauth/authorize
 export MCP4_OAUTH_TOKEN_URL=https://gitlab.example.com/oauth/token
@@ -102,6 +105,7 @@ export MCP4_API_BASE_URL=https://gitlab.example.com/api/v4
 CLI alternative:
 ```bash
 npx mcp4openapi \
+  --transport http \
   --oauth-authorization-url https://gitlab.example.com/oauth/authorize \
   --oauth-token-url https://gitlab.example.com/oauth/token \
   --oauth-client-id xxx \
@@ -110,6 +114,8 @@ npx mcp4openapi \
   --api-token glpat-xxxxxxxxxxxx \
   --api-base-url https://gitlab.example.com/api/v4
 ```
+
+OAuth browser flow works only with HTTP transport.
 
 **How it works:**
 - OAuth tokens are validated via OAuth flow

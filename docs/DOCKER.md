@@ -71,7 +71,7 @@ docker run -d \
 Reuse the IDE configuration examples from the README instead of maintaining duplicates here:
 
 - [Configuration file locations and VS Code prompt setup](../README.md#option-a-npx)
-- [Cursor remote connection using `mcp-remote`](../README.md#option-a-npx)
+- [Cursor remote HTTP connection](../README.md#option-a-npx)
 - [Claude Code CLI registration](../README.md#option-a-npx)
 - [JetBrains IDE authorization prompt](../README.md#option-a-npx)
 

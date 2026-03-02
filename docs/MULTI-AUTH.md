@@ -218,6 +218,9 @@ This is equivalent to:
 **Example `.env`**:
 
 ```bash
+# Required for OAuth browser flow
+MCP4_TRANSPORT=http
+
 # OAuth (for interactive users)
 MCP4_OAUTH_CLIENT_ID=your-client-id
 MCP4_OAUTH_CLIENT_SECRET=your-secret
@@ -232,6 +235,7 @@ MCP4_API_BASE_URL=https://gitlab.example.com/api/v4
 CLI alternative:
 ```bash
 npx mcp4openapi \
+  --transport http \
   --oauth-client-id your-client-id \
   --oauth-client-secret your-secret \
   --api-token glpat-xxxxxxxxxxxx \
@@ -251,13 +255,13 @@ npx mcp4openapi \
 
 ```bash
 # 1. Start server with multi-auth profile
+export MCP4_TRANSPORT=http
 export MCP4_OAUTH_AUTHORIZATION_URL=https://gitlab.example.com/oauth/authorize
 export MCP4_OAUTH_TOKEN_URL=https://gitlab.example.com/oauth/token
 export MCP4_OAUTH_CLIENT_ID=xxx
 export MCP4_OAUTH_CLIENT_SECRET=yyy
-export MCP4_OAUTH_REDIRECT_URI=https://mcp-gitlab.example.com/oauth/callback
-export MCP4_API_BASE_URL=https://gitlab.example.com/api/v4
 export MCP4_OAUTH_REDIRECT_URI=https://<your-mcp-server-host>/oauth/callback
+export MCP4_API_BASE_URL=https://gitlab.example.com/api/v4
 npm start
 
 # 2. Configure Cursor
@@ -275,6 +279,7 @@ npm start
 CLI alternative:
 ```bash
 npx mcp4openapi \
+  --transport http \
   --oauth-authorization-url https://gitlab.example.com/oauth/authorize \
   --oauth-token-url https://gitlab.example.com/oauth/token \
   --oauth-client-id xxx \

@@ -660,7 +660,7 @@ function buildConnectionSnippets(
     ? buildEnvValue(tokenEnv, inputMap, isSensitiveEnvVar(tokenEnv), 'vscode')
     : '<token>';
   const cursorToken = tokenEnv
-    ? buildEnvValue(tokenEnv, inputMap, false, 'cursor')
+    ? `\${${tokenEnv}}`
     : '<token>';
   const jetbrainsToken = tokenEnv
     ? buildEnvValue(tokenEnv, inputMap, isSensitiveEnvVar(tokenEnv), 'jetbrains')
@@ -720,27 +720,20 @@ function buildConnectionSnippets(
     '{',
     '  "mcpServers": {',
     '    "__PROFILE_ID__": {',
+    '      "type": "http",',
+    `      "url": "${cursorUrl}"`,
   ];
-  if (auth.type === 'query') {
-    cursorLines.push('      "type": "http",');
-    cursorLines.push(`      "url": "${cursorUrl}"`);
-  } else if (headersBlock.length > 0) {
-    cursorLines.push('      "command": "npx",');
-    cursorLines.push('      "args": [');
-    cursorLines.push('        "-y",');
-    cursorLines.push('        "mcp-remote",');
-    cursorLines.push(`        "${cursorUrl}",`);
-    cursorLines.push('        "--header",');
-    cursorLines.push(`        "${headerName}: ${cursorHeaderValue}"`);
-    cursorLines.push('      ],');
-    if (tokenEnv) {
-      cursorLines.push('      "env": {');
-      cursorLines.push(`        "${tokenEnv}": "${buildEnvValue(tokenEnv, inputMap, false, 'cursor')}"`);
-      cursorLines.push('      }');
-    }
-  } else {
-    cursorLines.push('      "type": "http",');
-    cursorLines.push('      "url": "__PROFILE_URL__"');
+  if (headersBlock.length > 0) {
+    appendComma(cursorLines);
+    cursorLines.push('      "headers": {');
+    cursorLines.push(`        "${headerName}": "${cursorHeaderValue}"`);
+    cursorLines.push('      }');
+  }
+  if (tokenEnv) {
+    appendComma(cursorLines);
+    cursorLines.push('      "env": {');
+    cursorLines.push(`        "${tokenEnv}": "${buildEnvValue(tokenEnv, inputMap, false, 'cursor')}"`);
+    cursorLines.push('      }');
   }
   cursorLines.push('    }', '  }', '}');
 
