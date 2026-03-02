@@ -2207,6 +2207,13 @@ export class HttpTransport {
     }
 
     return authConfigs.some((config) => {
+      if (config.type === 'session-cookie' && config.session_cookie_config) {
+        const username = process.env[config.session_cookie_config.username_from_env];
+        const password = process.env[config.session_cookie_config.password_from_env];
+        return typeof username === 'string' && username.trim().length > 0
+          && typeof password === 'string' && password.trim().length > 0;
+      }
+
       if (!config.value_from_env) {
         return false;
       }
