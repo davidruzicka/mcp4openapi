@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.5] - 2026-03-02
+
+
 ### Added
 - Added global `MCP4_PARAM_FILTER` / `--param-filter` baseline enforcement for `stdio` and `http`, and extended HTML profile-index filter builders to emit local stdio filter args (`--tool-filter-allow-*`, `--param-filter`) while still using `X-Mcp4-Tools` / `X-Mcp4-Params` for remote HTTP snippets.
 - Added tri-state bulk selection toggles to the profile-index tool and parameter filter sections for one-click select-all/clear-all behavior with mixed-state visibility.
