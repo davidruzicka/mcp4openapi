@@ -109,8 +109,8 @@ Multi-auth allows a single MCP server to support multiple authentication methods
 {
   "auth": [
     {"type": "oauth", "priority": 0},      // Tried first
-    {"type": "bearer", "priority": 1},     // Tried second
-    {"type": "custom-header", "priority": 2}  // Tried third
+    {"type": "session-cookie", "priority": 1}, // Tried second
+    {"type": "bearer", "priority": 2}      // Tried third
   ]
 }
 ```
@@ -132,6 +132,8 @@ HTTP Transport checks for tokens in this order:
 
 **Important**: Token detection happens in HTTP transport layer, **before** profile auth configs are consulted. Profile configs define which tokens are *valid* and how to use them, but detection is built into the transport.
 
+`session-cookie` is not token-detected. It uses profile-managed upstream login credentials from `session_cookie_config` and maintains the cookie jar inside the HTTP client runtime.
+
 ---
 
 ## Configuration Reference
@@ -143,7 +145,7 @@ HTTP Transport checks for tokens in this order:
   "interceptors": {
     "auth": [
       {
-        "type": "oauth | bearer | query | custom-header",
+        "type": "oauth | bearer | query | custom-header | session-cookie",
         "priority": 0,
         // ... type-specific fields
       }
@@ -156,17 +158,21 @@ HTTP Transport checks for tokens in this order:
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `type` | `string` | ✅ | Auth method: `oauth`, `bearer`, `query`, `custom-header` |
+| `type` | `string` | ✅ | Auth method: `oauth`, `bearer`, `query`, `custom-header`, `session-cookie` |
 | `priority` | `integer` | ❌ | Priority (lower = higher). Default: `0` |
 | `value_from_env` | `string` | ✅* | Environment variable name (for `bearer`, `query`, `custom-header`) |
 | `header_name` | `string` | ✅** | Custom header name (for `custom-header`) |
 | `query_param` | `string` | ✅*** | Query parameter name (for `query`) |
 | `oauth_config` | `object` | ✅**** | OAuth configuration (for `oauth`) |
+| `session_cookie_config` | `object` | ✅***** | Session cookie login configuration (for `session-cookie`) |
 
 *Required for: `bearer`, `query`, `custom-header`  
 **Required for: `custom-header`  
 ***Required for: `query`  
-****Required for: `oauth`
+****Required for: `oauth`  
+*****Required for: `session-cookie`
+
+`session_cookie_config` follows the profile auth schema from [docs/PROFILE-GUIDE.md](./PROFILE-GUIDE.md), including `login_endpoint`, credential env vars, and `cookie_names`.
 
 ---
 

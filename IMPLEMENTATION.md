@@ -30,7 +30,7 @@
          │            - Maps actions to operations
          │
          ├──────────► HTTP Client + Interceptors (src/transport/interceptors.ts)
-         │            - Auth (header/query/bearer from env)
+         │            - Auth (bearer/query/custom-header/session-cookie)
          │            - Rate limiting (token bucket)
          │            - Retry (exponential backoff)
          │            - Fetch wrapper
@@ -122,7 +122,8 @@ tool-filter/
 - **Metadata Params**: Specify which parameters control tool behavior vs API request
 - **Array Format**: Configure array serialization per API (brackets, indices, repeat, comma)
 - **Partial Results**: Composite tools can return completed steps even if later steps fail
-- **Profile-Aware Token Redaction**: Logger automatically redacts auth tokens based on profile's auth type (bearer/query/custom-header)
+- **Profile-Aware Token Redaction**: Logger automatically redacts auth credentials based on profile auth type (bearer/query/custom-header/session-cookie)
+- **Explicit Shared Cache Override**: `allow_shared_with_auth` keeps auth-aware cache safety by default while allowing explicitly shared public cache entries for responses that are identical across callers
 
 **Trade-offs**:
 - More upfront configuration vs runtime flexibility
@@ -375,7 +376,7 @@ scripts/
 - Log levels: DEBUG, INFO, WARN, ERROR, SILENT
 - Structured logging with context
 - Environment-driven configuration (`MCP4_LOG_LEVEL`, `MCP4_LOG_FORMAT`)
-- **Profile-aware token redaction**: Automatically redacts auth tokens (bearer/query/custom-header) based on profile configuration
+- **Profile-aware token redaction**: Automatically redacts auth credentials (bearer/query/custom-header/session-cookie, including `Cookie`) based on profile configuration
 
 **2. Configuration Over Hard-coding**
 - Parameter aliases in profile (no hard-coded `resource_id`, `project_id`)

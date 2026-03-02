@@ -273,6 +273,7 @@ Source: https://modelcontextprotocol.io/specification/2025-03-26/basic/transport
   - The header name comes from the profile auth configuration, so it can vary per profile.
   - Supports various token formats: GitLab (`glpat-...`), YouTrack (`perm:...`), generic tokens
   - Flexible whitespace handling (extra spaces are trimmed)
+  - If the active profile uses `auth.type: "session-cookie"`, upstream authentication is handled by the server using the profile's `session_cookie_config` credentials, so an initialization token header is not required unless another auth method is active for that profile.
 - `X-Mcp4-Params: <filter>` (optional)
 - `X-Mcp4-Tools: <tool-filter>` (optional)
   - If sent during initialization, the server stores the normalized header value in the session.
