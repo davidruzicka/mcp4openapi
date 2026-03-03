@@ -9,6 +9,7 @@ import { HttpClient, InterceptorChain } from './interceptors.js';
 import type { InterceptorConfig } from '../types/profile.js';
 import {
   ConfigurationError,
+  SessionCookieLoginError,
   SessionCookieBackoffError,
   SessionCookieMissingError,
 } from '../core/errors.js';
@@ -170,6 +171,63 @@ describe('session-cookie auth runtime', () => {
       url: 'https://api.example.com/items',
       headers: {},
     })).rejects.toBeInstanceOf(ConfigurationError);
+  });
+
+  it('rejects login endpoints on same hostname with a different origin unless allowlisted', async () => {
+    const manager = new SessionCookieAuthManager(
+      createSessionCookieConfig({
+        session_cookie_config: {
+          login_endpoint: 'http://api.example.com:8080/login',
+        },
+      }).auth!.session_cookie_config!,
+      'https://api.example.com',
+    );
+
+    await expect(manager.prepareRequest({
+      method: 'GET',
+      url: 'https://api.example.com/items',
+      headers: {},
+    })).rejects.toBeInstanceOf(ConfigurationError);
+  });
+
+  it('aborts login fetch when it exceeds the configured timeout', async () => {
+    vi.useFakeTimers();
+
+    global.fetch = vi.fn((_url: RequestInfo | URL, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+      init?.signal?.addEventListener('abort', () => {
+        reject(new Error('aborted'));
+      }, { once: true });
+    }));
+
+    const manager = new SessionCookieAuthManager(
+      createSessionCookieConfig().auth!.session_cookie_config!,
+      'https://api.example.com',
+      undefined,
+      50,
+    );
+
+    const pendingRequest = manager.prepareRequest({
+      method: 'GET',
+      url: 'https://api.example.com/items',
+      headers: {},
+    }).catch((caughtError) => caughtError);
+
+    await vi.advanceTimersByTimeAsync(50);
+
+    const error = await pendingRequest;
+
+    expect(error).toBeInstanceOf(SessionCookieLoginError);
+    expect(error).toMatchObject({
+      details: {
+        timeoutMs: 50,
+      },
+    });
+    expect(global.fetch).toHaveBeenCalledWith(
+      'https://api.example.com/rest/login',
+      expect.objectContaining({
+        signal: expect.any(AbortSignal),
+      })
+    );
   });
 
   it('reauthenticates once on auth failure, replays the request, and rotates cookies from responses', async () => {

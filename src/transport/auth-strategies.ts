@@ -25,6 +25,7 @@ export class AuthStrategyRegistry {
           activeAuthConfig.session_cookie_config!,
           context.baseUrl,
           context.logger,
+          context.profile.interceptors?.timeout_ms,
         ),
       };
     }

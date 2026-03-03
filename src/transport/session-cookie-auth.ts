@@ -5,6 +5,7 @@ import {
   SessionCookieLoginError,
   SessionCookieMissingError,
 } from '../core/errors.js';
+import { TIMEOUTS } from '../core/constants.js';
 import type { Logger } from '../core/logger.js';
 import type { SessionCookieConfig } from '../types/profile.js';
 import { isHostnameAllowed, isSafePropertyName } from '../validation/validation-utils.js';
@@ -237,6 +238,7 @@ export class SessionCookieAuthManager implements AuthRuntimeProvider {
     private readonly config: SessionCookieConfig,
     private readonly baseUrlValue: string,
     private readonly logger?: Logger,
+    private readonly requestTimeoutMs: number = TIMEOUTS.HTTP_REQUEST_TIMEOUT_MS,
   ) {
     this.coordinator = new SessionCookieCoordinator(this.config.failure_backoff_ms ?? 5000);
   }
@@ -282,12 +284,28 @@ export class SessionCookieAuthManager implements AuthRuntimeProvider {
     await this.coordinator.run(async () => {
       const loginUrl = this.resolveLoginUrl();
       const request = this.buildLoginRequest();
-      const response = await fetch(loginUrl, {
-        method: this.config.login_method || 'POST',
-        headers: request.headers,
-        body: request.body,
-        redirect: 'manual',
-      });
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), this.requestTimeoutMs);
+      let response: Response;
+
+      try {
+        response = await fetch(loginUrl, {
+          method: this.config.login_method || 'POST',
+          headers: request.headers,
+          body: request.body,
+          redirect: 'manual',
+          signal: controller.signal,
+        });
+      } catch (error) {
+        if (controller.signal.aborted) {
+          throw new SessionCookieLoginError('Session cookie login timed out', {
+            timeoutMs: this.requestTimeoutMs,
+          });
+        }
+        throw error;
+      } finally {
+        clearTimeout(timeoutId);
+      }
 
       if (response.status < 200 || response.status >= 300) {
         const errorBody = await response.text();
@@ -310,11 +328,11 @@ export class SessionCookieAuthManager implements AuthRuntimeProvider {
 
     if (
       isAbsolute
-      && loginUrl.hostname !== this.baseUrl.hostname
+      && loginUrl.origin !== this.baseUrl.origin
       && !isHostnameAllowed(loginUrl.hostname, this.config.login_allowed_hosts)
     ) {
       throw new ConfigurationError(
-        `login_endpoint host '${loginUrl.hostname}' is not allowed (must match base_url origin or login_allowed_hosts)`
+        `login_endpoint origin '${loginUrl.origin}' is not allowed (must match base_url origin or login_allowed_hosts)`
       );
     }
 
