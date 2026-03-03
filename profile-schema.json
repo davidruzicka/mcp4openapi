@@ -728,6 +728,9 @@
           "$ref": "#/definitions/OAuthConfig",
           "description": "OAuth 2.0 configuration\n\nSupports Authorization Code Flow with PKCE (RFC 7636)\nOnly available in HTTP transport mode\n\nClient registration can be:\n- Static: pre-registered client_id and client_secret\n- Dynamic: RFC 7591 dynamic client registration"
         },
+        "session_cookie_config": {
+          "$ref": "#/definitions/SessionCookieConfig"
+        },
         "oauth_rate_limit": {
           "type": "object",
           "properties": {
@@ -979,6 +982,96 @@
       },
       "description": "OAuth 2.0 configuration. Must provide EITHER 'issuer' (endpoints auto-derived) OR both 'authorization_endpoint' and 'token_endpoint' (explicit)."
     },
+    "SessionCookieConfig": {
+      "type": "object",
+      "properties": {
+        "login_endpoint": {
+          "type": "string",
+          "description": "Login endpoint path or absolute URL. Relative paths are resolved against the profile base_url."
+        },
+        "login_method": {
+          "type": "string",
+          "const": "POST",
+          "description": "HTTP method for login. Currently only POST is supported."
+        },
+        "login_content_type": {
+          "type": "string",
+          "enum": [
+            "application/json",
+            "application/x-www-form-urlencoded"
+          ],
+          "description": "Login payload content type."
+        },
+        "username_field": {
+          "type": "string",
+          "description": "Login form field name for username/login identifier."
+        },
+        "username_from_env": {
+          "type": "string",
+          "description": "Environment variable containing the login username."
+        },
+        "password_field": {
+          "type": "string",
+          "description": "Login form field name for password."
+        },
+        "password_from_env": {
+          "type": "string",
+          "description": "Environment variable containing the login password."
+        },
+        "login_static_headers": {
+          "$ref": "#/definitions/Record%3Cstring%2Cstring%3E",
+          "description": "Optional extra headers to send with the login request."
+        },
+        "login_static_body": {
+          "$ref": "#/definitions/Record%3Cstring%2Cstring%3E",
+          "description": "Optional extra fields to include in the login request body."
+        },
+        "cookie_names": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Allowed session cookie names accepted from Set-Cookie. At least one matching cookie must be returned by login."
+        },
+        "login_allowed_hosts": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Optional allowlist for absolute login endpoints beyond the profile base URL host. Supports exact hosts and *.example.com wildcards."
+        },
+        "reauth_on_statuses": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          },
+          "description": "HTTP status codes that should trigger relogin and a single replay attempt."
+        },
+        "failure_backoff_ms": {
+          "type": "number",
+          "description": "Backoff applied after failed login/relogin to avoid login storms."
+        },
+        "expiry_skew_ms": {
+          "type": "number",
+          "description": "Treat cookies expiring within this skew window as expired."
+        }
+      },
+      "required": [
+        "login_endpoint",
+        "username_field",
+        "username_from_env",
+        "password_field",
+        "password_from_env",
+        "cookie_names"
+      ],
+      "description": "Session cookie authentication configuration\n\nSupports direct server-to-server login flows where the API exchanges username/password for a session cookie instead of issuing API tokens."
+    },
+    "Record<string,string>": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
     "BaseUrl": {
       "type": "object",
       "properties": {
@@ -1023,6 +1116,9 @@
             "session"
           ]
         },
+        "allow_shared_with_auth": {
+          "type": "boolean"
+        },
         "ttl_seconds": {
           "type": "number"
         },
@@ -1066,14 +1162,14 @@
           ]
         },
         "overrides": {
-          "$ref": "#/definitions/Record%3Cstring%2Cstructure-1535101595-12347-12383-1535101595-12332-12384-1535101595-12318-12385-1535101595-12247-12387-1535101595-0-12527%3E"
+          "$ref": "#/definitions/Record%3Cstring%2Cstructure-1535101595-14600-14636-1535101595-14585-14637-1535101595-14571-14638-1535101595-14500-14640-1535101595-0-14780%3E"
         }
       },
       "required": [
         "max_requests_per_minute"
       ]
     },
-    "Record<string,structure-1535101595-12347-12383-1535101595-12332-12384-1535101595-12318-12385-1535101595-12247-12387-1535101595-0-12527>": {
+    "Record<string,structure-1535101595-14600-14636-1535101595-14585-14637-1535101595-14571-14638-1535101595-14500-14640-1535101595-0-14780>": {
       "type": "object",
       "additionalProperties": {
         "type": "object",
@@ -1132,6 +1228,20 @@
         "backoff_ms",
         "retry_on_status"
       ]
+    },
+    "Record<string,structure-1535101595-12347-12383-1535101595-12332-12384-1535101595-12318-12385-1535101595-12247-12387-1535101595-0-12527>": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "max_requests_per_minute": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "max_requests_per_minute"
+        ]
+      }
     },
     "Record<string,structure-1535101595-12096-12132-1535101595-12081-12133-1535101595-12067-12134-1535101595-11996-12136-1535101595-0-12276>": {
       "type": "object",

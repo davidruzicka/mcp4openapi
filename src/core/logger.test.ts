@@ -150,6 +150,34 @@ describe('ConsoleLogger', () => {
       expect.stringContaining('Beep\\x07')
     );
   });
+
+  it('redacts cookie headers for session-cookie auth', () => {
+    const logger = new ConsoleLogger(LogLevel.INFO, {
+      type: 'session-cookie',
+      session_cookie_config: {
+        login_endpoint: '/rest/login',
+        username_field: 'email',
+        username_from_env: 'LOGIN_USER',
+        password_field: 'password',
+        password_from_env: 'LOGIN_PASSWORD',
+        cookie_names: ['sid'],
+      },
+    } satisfies AuthInterceptor);
+
+    logger.info('session request', {
+      headers: {
+        Cookie: 'sid=secret',
+        'Content-Type': 'application/json',
+      },
+    });
+
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('"Cookie":"[REDACTED]"')
+    );
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('"Content-Type":"application/json"')
+    );
+  });
 });
 
 describe('JsonLogger', () => {
@@ -382,6 +410,37 @@ describe('Token Redaction', () => {
       const call = consoleErrorSpy.mock.calls[0][0];
       expect(call).toContain('[REDACTED]');
       expect(call).not.toContain('secret123');
+    });
+  });
+
+  describe('Session cookie auth', () => {
+    it('should redact cookie header', () => {
+      const authConfig: AuthInterceptor = {
+        type: 'session-cookie',
+        session_cookie_config: {
+          login_endpoint: '/rest/login',
+          username_field: 'username',
+          username_from_env: 'LOGIN_USER',
+          password_field: 'password',
+          password_from_env: 'LOGIN_PASSWORD',
+          cookie_names: ['sid'],
+        },
+      };
+
+      const logger = new ConsoleLogger(LogLevel.INFO, authConfig);
+      logger.info('Request', {
+        headers: {
+          Cookie: 'sid=secret-session; theme=light',
+          'User-Agent': 'mcp-client/1.0',
+        },
+      });
+
+      expect(consoleErrorSpy).toHaveBeenCalledWith(
+        expect.stringMatching(/\[REDACTED\]/)
+      );
+      expect(consoleErrorSpy).not.toHaveBeenCalledWith(
+        expect.stringContaining('sid=secret-session')
+      );
     });
   });
 

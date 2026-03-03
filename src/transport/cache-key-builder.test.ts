@@ -6,6 +6,7 @@ import type { RequestContext } from './interceptors.js';
 const basePolicy: CachePolicy = {
   backend: 'memory',
   scope: 'private',
+  allowSharedWithAuth: false,
   ttlSeconds: 300,
   methods: new Set(['GET']),
   varyHeaders: new Set(['accept']),

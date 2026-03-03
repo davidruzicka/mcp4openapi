@@ -9,6 +9,7 @@ function createPolicy(overrides: Partial<CachePolicy> = {}): CachePolicy {
   return {
     backend: 'memory',
     scope: 'private',
+    allowSharedWithAuth: false,
     ttlSeconds: 300,
     methods: new Set(['GET']),
     varyHeaders: new Set(['accept', 'accept-language']),
@@ -136,6 +137,23 @@ describe('cache-policy-evaluator request decisions', () => {
         },
       },
       policy: createPolicy({ scope: 'public' }),
+      sensitiveHeaders: new Set(['authorization', 'cookie']),
+    });
+
+    expect(decision).toMatchObject({
+      canReadFromCache: true,
+      canStoreResponse: true,
+    });
+  });
+
+  it('allows explicit public cache with auth headers when override is enabled', () => {
+    const decision = evaluateRequestCacheDecision({
+      ctx: {
+        method: 'GET',
+        url: 'https://api.example.com/items',
+        headers: { Cookie: 'sid=token' },
+      },
+      policy: createPolicy({ scope: 'public', allowSharedWithAuth: true }),
       sensitiveHeaders: new Set(['authorization', 'cookie']),
     });
 
@@ -295,6 +313,25 @@ describe('cache-policy-evaluator response decisions', () => {
     expect(decision).toEqual({
       cacheable: false,
       skipReason: 'resp_set_cookie_shared',
+    });
+  });
+
+  it('allows set-cookie responses in public scope when explicit auth sharing override is enabled', () => {
+    const decision = evaluateResponseCacheDecision({
+      response: {
+        status: 200,
+        headers: {
+          'Cache-Control': 'max-age=60',
+          'Set-Cookie': 'sid=abc',
+        },
+        body: { ok: true },
+      },
+      policy: createPolicy({ scope: 'public', allowSharedWithAuth: true }),
+    });
+
+    expect(decision).toEqual({
+      cacheable: true,
+      ttlSeconds: 60,
     });
   });
 

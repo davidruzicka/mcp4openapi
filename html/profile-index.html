@@ -1897,7 +1897,13 @@
         }
         const authEnvVars = Array.from(
           new Set((profile.authMethods || [])
-            .map(method => method && method.valueFromEnv)
+            .flatMap(method => {
+              if (!method) return [];
+              if (method.type === 'session-cookie') {
+                return [method.usernameFromEnv, method.passwordFromEnv].filter(Boolean);
+              }
+              return [method.valueFromEnv].filter(Boolean);
+            })
             .filter(Boolean))
         );
         const authEnvText = authEnvVars.length > 0

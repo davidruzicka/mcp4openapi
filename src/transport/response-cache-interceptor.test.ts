@@ -6,6 +6,7 @@ import { ResponseCacheInterceptor } from './response-cache-interceptor.js';
 const basePolicy: CachePolicy = {
   backend: 'memory',
   scope: 'private',
+  allowSharedWithAuth: false,
   ttlSeconds: 300,
   methods: new Set(['GET']),
   varyHeaders: new Set(['accept']),

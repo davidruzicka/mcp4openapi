@@ -95,15 +95,18 @@ function mockMcpServer(options?: {
   runHttp?: () => Promise<void>;
   runStdio?: () => Promise<void>;
   stop?: () => Promise<void>;
+  setGlobalFiltering?: (enabled: boolean) => void;
 }) {
   const initialize = options?.initialize || vi.fn().mockResolvedValue(undefined);
   const runHttp = options?.runHttp || vi.fn().mockResolvedValue(undefined);
   const runStdio = options?.runStdio || vi.fn().mockResolvedValue(undefined);
   const stop = options?.stop || vi.fn().mockResolvedValue(undefined);
+  const setGlobalFiltering = options?.setGlobalFiltering || vi.fn();
 
   vi.doMock('../mcp/mcp-server.js', () => ({
     MCPServer: class {
       constructor() {}
+      setGlobalFiltering = setGlobalFiltering;
       initialize = initialize;
       runHttp = runHttp;
       runStdio = runStdio;
@@ -111,7 +114,7 @@ function mockMcpServer(options?: {
     },
   }));
 
-  return { initialize, runHttp, runStdio, stop };
+  return { setGlobalFiltering, initialize, runHttp, runStdio, stop };
 }
 
 function mockHttpTransport() {

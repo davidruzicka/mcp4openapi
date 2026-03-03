@@ -440,6 +440,33 @@ Adds: `X-API-Key: <token>`
 
 Adds: `?api_key=<token>` to URL
 
+#### Session Cookie Login
+
+Use this when the upstream API requires a form login that exchanges credentials for a maintained session cookie.
+
+```json
+{
+  "auth": {
+    "type": "session-cookie",
+    "session_cookie_config": {
+      "login_endpoint": "/rest/login",
+      "username_field": "emailOrLdapLoginId",
+      "username_from_env": "APP_LOGIN_USER",
+      "password_field": "password",
+      "password_from_env": "APP_LOGIN_PASSWORD",
+      "cookie_names": ["n8n-auth"],
+      "reauth_on_statuses": [401]
+    }
+  }
+}
+```
+
+Notes:
+- The server performs a direct `POST` login and stores only the configured `cookie_names`.
+- Cookies are updated when later API responses return `Set-Cookie`.
+- On configured auth-failure statuses (default `401`), runtime performs one relogin and one replay attempt.
+- `login_endpoint` may be relative to `base_url` or an absolute URL on the same host (or a host listed in `login_allowed_hosts`).
+
 #### Multi-Auth with Priority
 
 Support multiple authentication methods with fallback:
@@ -558,10 +585,12 @@ Sensitive headers include `Authorization`, `Proxy-Authorization`, `Cookie`, and 
 - `max_memory_bytes_from_env` (optional): Environment variable override for memory budget. If set and present at runtime, it overrides `max_memory_bytes`.
 - `methods` (optional): HTTP methods eligible for caching. Supported values: `GET`, `HEAD`. Default: `["GET"]`.
 - `vary_headers` (optional): Request headers included in cache key (case-insensitive). Default: `["accept", "accept-language"]`.
+- `allow_shared_with_auth` (optional): Allows explicit `public` caching even when auth headers or `Set-Cookie` are present. Default: `false`.
 
 Notes:
 - Cache keys include canonical URL and sensitive auth headers (hashed), so cached responses are partitioned across different auth contexts.
 - Responses with `Cache-Control: no-store` are not cached.
+- Keep `allow_shared_with_auth` disabled unless the authenticated response body is truly identical for every caller.
 - In-flight duplicate requests are deduplicated automatically for the same cache key.
 
 ### Rate Limiting

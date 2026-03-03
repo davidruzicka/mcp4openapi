@@ -451,10 +451,11 @@ export class MCPServer {
     // For HTTP transport, clients are created per-session with user's token
     const baseUrl = this.getBaseUrl();
     const envAuthConfig = this.getEnvBackedAuthConfig();
+    const primaryRuntimeAuthConfig = authConfigs.find(config => config.type !== 'oauth');
     const envVarName = envAuthConfig?.value_from_env;
     const envToken = envVarName ? process.env[envVarName] : undefined;
 
-    if ((envAuthConfig && envToken) || authConfigs.length === 0) {
+    if ((envAuthConfig && envToken) || authConfigs.length === 0 || primaryRuntimeAuthConfig?.type === 'session-cookie') {
       // Token available in env (stdio) or no auth required - create global client
       const httpClient = this.httpClientFactory.createGlobalClient({
         profile: this.profile,

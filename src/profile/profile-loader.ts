@@ -14,13 +14,14 @@
  */
 
 import fs from 'fs/promises';
-import type { Profile, ParameterType, PromptDefinition } from '../types/profile.js';
+import type { AuthInterceptor, Profile, ParameterType, PromptDefinition, SessionCookieConfig } from '../types/profile.js';
 import { ValidationError, ConfigurationError } from '../core/errors.js';
 import { profileSchema, authInterceptorSchema } from '../generated-schemas.js';
 import type { OpenAPIParser } from '../openapi/openapi-parser.js';
 import type { OperationInfo, SchemaInfo } from '../types/openapi.js';
 import { shortenToolName, NamingStrategy, levenshteinDistance, type OperationForNaming } from '../core/naming.js';
 import { normalizeToolName } from '../tool-filter/utils.js';
+import { isSafePropertyName, isUri } from '../validation/validation-utils.js';
 
 // Schemas are now auto-generated from TypeScript types!
 // See scripts/generate-schemas.js for details.
@@ -34,10 +35,13 @@ const enhancedAuthInterceptorSchema = authInterceptorSchema.refine(
     if (data.type === 'custom-header' && !data.header_name) {
       return false;
     }
+    if (data.type === 'session-cookie' && !data.session_cookie_config) {
+      return false;
+    }
     return true;
   },
   {
-    message: 'query type requires query_param, custom-header requires header_name',
+    message: 'query type requires query_param, custom-header requires header_name, session-cookie requires session_cookie_config',
   }
 );
 
@@ -56,6 +60,113 @@ export class ProfileLoader {
     this.validateLogic(profile);
     
     return profile;
+  }
+
+  private validateSessionCookieConfig(
+    profile: Profile,
+    authEntry: AuthInterceptor & { session_cookie_config: SessionCookieConfig },
+    path: string,
+  ): void {
+    const config = authEntry.session_cookie_config;
+    const configPath = `${path}.session_cookie_config`;
+
+    if (!config.login_endpoint.trim()) {
+      throw new ValidationError(
+        `${configPath}.login_endpoint must not be empty`,
+        { path: `${configPath}.login_endpoint` }
+      );
+    }
+
+    if (/^[A-Za-z][A-Za-z0-9+.-]*:/.test(config.login_endpoint) && !isUri(config.login_endpoint)) {
+      throw new ValidationError(
+        `${configPath}.login_endpoint must be a valid absolute URL`,
+        { path: `${configPath}.login_endpoint` }
+      );
+    }
+
+    if (!Array.isArray(config.cookie_names) || config.cookie_names.length === 0) {
+      throw new ValidationError(
+        `${configPath}.cookie_names must contain at least one cookie name`,
+        { path: `${configPath}.cookie_names` }
+      );
+    }
+
+    for (const cookieName of config.cookie_names) {
+      if (!cookieName.trim()) {
+        throw new ValidationError(
+          `${configPath}.cookie_names must not contain empty values`,
+          { path: `${configPath}.cookie_names` }
+        );
+      }
+    }
+
+    if (config.failure_backoff_ms !== undefined && config.failure_backoff_ms <= 0) {
+      throw new ValidationError(
+        `${configPath}.failure_backoff_ms must be greater than 0`,
+        { path: `${configPath}.failure_backoff_ms`, value: config.failure_backoff_ms }
+      );
+    }
+
+    if (config.expiry_skew_ms !== undefined && config.expiry_skew_ms < 0) {
+      throw new ValidationError(
+        `${configPath}.expiry_skew_ms must be greater than or equal to 0`,
+        { path: `${configPath}.expiry_skew_ms`, value: config.expiry_skew_ms }
+      );
+    }
+
+    if (config.reauth_on_statuses) {
+      if (config.reauth_on_statuses.length === 0) {
+        throw new ValidationError(
+          `${configPath}.reauth_on_statuses must contain at least one status code`,
+          { path: `${configPath}.reauth_on_statuses` }
+        );
+      }
+
+      for (const statusCode of config.reauth_on_statuses) {
+        if (!Number.isInteger(statusCode) || statusCode < 400 || statusCode > 599) {
+          throw new ValidationError(
+            `${configPath}.reauth_on_statuses must contain integer HTTP error statuses`,
+            { path: `${configPath}.reauth_on_statuses`, value: statusCode }
+          );
+        }
+      }
+    }
+
+    if (config.login_static_headers) {
+      for (const [headerName, headerValue] of Object.entries(config.login_static_headers)) {
+        if (!isSafePropertyName(headerName)) {
+          throw new ValidationError(
+            `${configPath}.login_static_headers contains invalid header name '${headerName}'`,
+            { path: `${configPath}.login_static_headers`, headerName }
+          );
+        }
+        if (!headerValue.trim()) {
+          throw new ValidationError(
+            `${configPath}.login_static_headers must not contain empty header values`,
+            { path: `${configPath}.login_static_headers`, headerName }
+          );
+        }
+      }
+    }
+
+    if (config.login_allowed_hosts) {
+      for (const host of config.login_allowed_hosts) {
+        const trimmedHost = host.trim();
+        if (!trimmedHost || trimmedHost === '*.' || trimmedHost === '*') {
+          throw new ValidationError(
+            `${configPath}.login_allowed_hosts contains invalid host pattern '${host}'`,
+            { path: `${configPath}.login_allowed_hosts`, host }
+          );
+        }
+      }
+    }
+
+    if (!profile.interceptors?.base_url && !isUri(config.login_endpoint)) {
+      throw new ValidationError(
+        `${configPath}.login_endpoint must be absolute when interceptors.base_url is not configured`,
+        { path: `${configPath}.login_endpoint` }
+      );
+    }
   }
 
   /**
@@ -80,18 +191,25 @@ export class ProfileLoader {
 
         // Additional OAuth validation: must have issuer OR both endpoints
         const authEntry = result.data;
+        const path = index !== undefined ? `interceptors.auth[${index}]` : 'interceptors.auth';
         if (authEntry.type === 'oauth' && authEntry.oauth_config) {
           const config = authEntry.oauth_config;
           const hasIssuer = !!config.issuer;
           const hasEndpoints = !!config.authorization_endpoint && !!config.token_endpoint;
           
           if (!hasIssuer && !hasEndpoints) {
-            const path = index !== undefined ? `interceptors.auth[${index}].oauth_config` : 'interceptors.auth.oauth_config';
+            const oauthPath = index !== undefined ? `interceptors.auth[${index}].oauth_config` : 'interceptors.auth.oauth_config';
             throw new ValidationError(
-              `OAuth config at ${path} must provide either 'issuer' OR both 'authorization_endpoint' and 'token_endpoint'`,
-              { path, hasIssuer, hasEndpoints }
+              `OAuth config at ${oauthPath} must provide either 'issuer' OR both 'authorization_endpoint' and 'token_endpoint'`,
+              { path: oauthPath, hasIssuer, hasEndpoints }
             );
           }
+        } else if (authEntry.type === 'session-cookie' && authEntry.session_cookie_config) {
+          this.validateSessionCookieConfig(
+            profile,
+            authEntry as AuthInterceptor & { session_cookie_config: SessionCookieConfig },
+            path,
+          );
         }
       };
 

@@ -149,6 +149,33 @@ export function isUri(value: string): boolean {
 }
 
 /**
+ * Matches a hostname against an allowlist of exact names and *.example.com wildcards.
+ */
+export function isHostnameAllowed(hostname: string, allowedHosts?: string[]): boolean {
+  if (!allowedHosts || allowedHosts.length === 0) {
+    return false;
+  }
+
+  for (const allowed of allowedHosts) {
+    if (allowed === hostname) {
+      return true;
+    }
+
+    if (allowed.startsWith('*.')) {
+      const suffix = allowed.slice(2);
+      if (!suffix || hostname === suffix) {
+        continue;
+      }
+      if (hostname.endsWith(`.${suffix}`)) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+/**
  * Escape HTML special characters to prevent XSS attacks
  * 
  * Why: User-provided strings in error messages must be sanitized

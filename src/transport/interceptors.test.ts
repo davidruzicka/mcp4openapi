@@ -226,6 +226,33 @@ describe('HttpClient - Auth Interceptors', () => {
     expect(capturedHeaders['Authorization']).toBeUndefined();
     expect(capturedHeaders['X-API-Key']).toBeUndefined();
   });
+
+  it('should reject unsafe runtime-provided auth header names', async () => {
+    const config: InterceptorConfig = {
+      auth: {
+        type: 'bearer',
+        value_from_env: 'IGNORED_TOKEN',
+      },
+    };
+    const interceptors = new InterceptorChain(config, {
+      prepareRequest: async () => ({
+        headers: {
+          constructor: 'bad',
+        },
+      }),
+      getAuthCredentials: () => ({ headers: {} }),
+      onResponse: async () => {},
+      handleAuthFailure: async () => false,
+    });
+    const client = new HttpClient('https://api.example.com', interceptors, null, undefined, mockSSRFValidator);
+
+    global.fetch = async () => new Response(JSON.stringify({ ok: true }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+    await expect(client.request('GET', '/test')).rejects.toThrow('Invalid header name: constructor');
+  });
 });
 
 describe('HttpClient - accessors', () => {
@@ -396,6 +423,7 @@ describe('InterceptorChain - getAuthCredentials', () => {
     const chain = new InterceptorChain(config);
     const credentials = chain.getAuthCredentials();
 
+    expect((chain as any).getSelectedAuthConfig()).toBeUndefined();
     expect(credentials.headers).toEqual({});
     expect(credentials.queryParams).toBeUndefined();
   });
@@ -511,6 +539,35 @@ describe('InterceptorChain - getAuthCredentials', () => {
     const credentials = chain.getAuthCredentials();
     expect(credentials.headers).toEqual({});
     expect(credentials.queryParams).toBeUndefined();
+  });
+
+  it('should return empty credentials for oauth-only and request-time missing token paths', () => {
+    let reads = 0;
+    const oauthThenBearer = {
+      get type() {
+        reads += 1;
+        return reads === 1 ? 'bearer' : 'oauth';
+      },
+      value_from_env: 'IGNORED_TOKEN',
+    } as any;
+    const oauthChain = new InterceptorChain({});
+    (oauthChain as any).config = {
+      auth: [oauthThenBearer],
+    } satisfies InterceptorConfig;
+
+    expect((oauthChain as any).resolveStaticAuthCredentials()).toEqual({ headers: {} });
+    expect((oauthChain as any).resolveStaticAuthCredentialsForRequest()).toEqual({ headers: {} });
+
+    const missingTokenChain = new InterceptorChain({});
+    (missingTokenChain as any).config = {
+      auth: {
+        type: 'bearer',
+        value_from_env: 'MISSING_RUNTIME_TOKEN',
+      },
+    } satisfies InterceptorConfig;
+    delete process.env.MISSING_RUNTIME_TOKEN;
+
+    expect((missingTokenChain as any).resolveStaticAuthCredentialsForRequest()).toEqual({ headers: {} });
   });
 
   it('HttpClient should expose getAuthCredentials via pass-through', () => {

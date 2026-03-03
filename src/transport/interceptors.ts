@@ -24,6 +24,7 @@ import { CachePolicyResolver } from './cache-policy-resolver.js';
 import { CacheStoreFactory } from './cache-store-factory.js';
 import { CacheKeyBuilder } from './cache-key-builder.js';
 import { ResponseCacheInterceptor } from './response-cache-interceptor.js';
+import type { AuthRuntimeProvider } from './auth-runtime.js';
 
 export interface RequestContext {
   method: string;
@@ -54,8 +55,15 @@ export class InterceptorChain {
   private metrics: MetricsCollector | null = null;
   private metricsContext: MetricsContextLabels = { profileId: 'unknown', tenantId: 'none' };
   private readonly cacheSessionPartitionId = randomUUID();
+  private authToken?: string;
+  private authRuntime?: AuthRuntimeProvider;
 
-  constructor(public config: InterceptorConfig, private authToken?: string) {
+  constructor(public config: InterceptorConfig, authRuntimeOrToken?: string | AuthRuntimeProvider) {
+    if (typeof authRuntimeOrToken === 'string' || authRuntimeOrToken === undefined) {
+      this.authToken = authRuntimeOrToken;
+    } else {
+      this.authRuntime = authRuntimeOrToken;
+    }
     this.buildChain();
   }
 
@@ -128,45 +136,49 @@ export class InterceptorChain {
     return sensitiveHeaders;
   }
 
-  /**
-   * Auth interceptor: adds auth header/query from env or session token
-   *
-   * Why env-based: Keeps secrets out of config files. Config defines WHERE
-   * to get the token, runtime provides the value.
-   *
-   * Supports:
-   * - bearer: Standard HTTP Authorization: Bearer <token>
-   * - query: API key in URL (?api_key=<token>)
-   * - custom-header: Custom header (e.g., X-API-Key: <token>)
-   * 
-   * Note: For multi-auth, uses the primary (first/lowest priority) non-OAuth config.
-   * OAuth is handled separately in HTTP transport, not in InterceptorChain.
-   */
-  private createAuthInterceptor(): InterceptorFn {
-    const authConfigRaw = this.config.auth!;
-    
-    // Handle multi-auth: get primary non-OAuth config
+  private getSelectedAuthConfig() {
+    const authConfigRaw = this.config.auth;
+    if (!authConfigRaw) {
+      return undefined;
+    }
+
     const authConfigs = Array.isArray(authConfigRaw) ? authConfigRaw : [authConfigRaw];
-    const sortedConfigs = authConfigs.sort((a, b) => (a.priority || 0) - (b.priority || 0));
-    
-    // Find first non-OAuth config (OAuth handled by HTTP transport)
-    const authConfig = sortedConfigs.find(c => c.type !== 'oauth');
-    
+    const sortedConfigs = [...authConfigs].sort((a, b) => (a.priority || 0) - (b.priority || 0));
+    return sortedConfigs.find((config) => config.type !== 'oauth');
+  }
+
+  private applyAuthCredentials(ctx: RequestContext, credentials: AuthCredentials): void {
+    for (const [headerName, value] of Object.entries(credentials.headers)) {
+      if (!isSafePropertyName(headerName)) {
+        throw new ConfigurationError(`Invalid header name: ${headerName}`);
+      }
+      // nosemgrep: javascript.express.security.audit.remote-property-injection.remote-property-injection
+      ctx.headers[headerName] = value;
+    }
+
+    if (credentials.queryParams) {
+      const url = new URL(ctx.url);
+      url.searchParams.set(credentials.queryParams.key, credentials.queryParams.value);
+      ctx.url = url.toString();
+    }
+  }
+
+  private ensureStaticAuthReady(): void {
+    const authConfig = this.getSelectedAuthConfig();
     if (!authConfig) {
       throw new ConfigurationError(
         'Only OAuth authentication configured. OAuth requires HTTP transport for the authorization flow (redirects, callbacks). Add a token-based auth config or use HTTP transport.'
       );
     }
-    
+
     if (authConfig.type === 'oauth') {
       throw new ConfigurationError(
         'OAuth authentication not supported in InterceptorChain (use HTTP transport OAuth flow)'
       );
     }
-    
+
     const envVarName = authConfig.value_from_env;
     const token = this.authToken || (envVarName ? process.env[envVarName] : undefined);
-
     if (!token && !envVarName) {
       throw new ConfigurationError(
         'Auth configuration requires value_from_env or a session token provided during HTTP initialization'
@@ -181,22 +193,81 @@ export class InterceptorChain {
         `Auth token not found. Expected token ${sourceHint}`
       );
     }
+  }
+
+  private resolveStaticAuthCredentials(): AuthCredentials {
+    const authConfig = this.getSelectedAuthConfig();
+    if (!authConfig || authConfig.type === 'oauth') {
+      return { headers: {} };
+    }
+
+    const envVarName = authConfig.value_from_env;
+    const token = this.authToken || (envVarName ? process.env[envVarName] : undefined);
+    if (!token) {
+      return { headers: {} };
+    }
+
+    const credentials: AuthCredentials = { headers: {} };
+    if (authConfig.type === 'bearer') {
+      credentials.headers.Authorization = `Bearer ${token}`;
+    } else if (authConfig.type === 'custom-header' && authConfig.header_name) {
+      if (!isSafePropertyName(authConfig.header_name)) {
+        return { headers: {} };
+      }
+      credentials.headers[authConfig.header_name] = token;
+    } else if (authConfig.type === 'query' && authConfig.query_param) {
+      credentials.queryParams = {
+        key: authConfig.query_param,
+        value: token,
+      };
+    }
+
+    return credentials;
+  }
+
+  private resolveStaticAuthCredentialsForRequest(): AuthCredentials {
+    const authConfig = this.getSelectedAuthConfig();
+    if (!authConfig || authConfig.type === 'oauth') {
+      return { headers: {} };
+    }
+
+    const envVarName = authConfig.value_from_env;
+    const token = this.authToken || (envVarName ? process.env[envVarName] : undefined);
+    if (!token) {
+      return { headers: {} };
+    }
+
+    if (authConfig.type === 'custom-header' && authConfig.header_name && !isSafePropertyName(authConfig.header_name)) {
+      throw new ConfigurationError(`Invalid header name: ${authConfig.header_name}`);
+    }
+
+    return this.resolveStaticAuthCredentials();
+  }
+
+  /**
+   * Auth interceptor: adds auth header/query from env or session token
+   *
+   * Why env-based: Keeps secrets out of config files. Config defines WHERE
+   * to get the token, runtime provides the value.
+   *
+   * Supports:
+   * - bearer: Standard HTTP Authorization: Bearer <token>
+   * - query: API key in URL (?api_key=<token>)
+   * - custom-header: Custom header (e.g., X-API-Key: <token>)
+   * 
+   * Note: For multi-auth, uses the primary (first/lowest priority) non-OAuth config.
+   * OAuth is handled separately in HTTP transport, not in InterceptorChain.
+    */
+  private createAuthInterceptor(): InterceptorFn {
+    if (!this.authRuntime) {
+      this.ensureStaticAuthReady();
+    }
 
     return async (ctx, next) => {
-      if (authConfig.type === 'bearer') {
-        ctx.headers['Authorization'] = `Bearer ${token}`;
-      } else if (authConfig.type === 'query' && authConfig.query_param) {
-        const url = new URL(ctx.url);
-        url.searchParams.set(authConfig.query_param, token);
-        ctx.url = url.toString();
-      } else if (authConfig.type === 'custom-header' && authConfig.header_name) {
-        if (!isSafePropertyName(authConfig.header_name)) {
-          throw new ConfigurationError(`Invalid header name: ${authConfig.header_name}`);
-        }
-        // nosemgrep: javascript.express.security.audit.remote-property-injection.remote-property-injection
-        ctx.headers[authConfig.header_name] = token;
-      }
-
+      const credentials = this.authRuntime
+        ? await this.authRuntime.prepareRequest(ctx)
+        : this.resolveStaticAuthCredentialsForRequest();
+      this.applyAuthCredentials(ctx, credentials);
       return next();
     };
   }
@@ -328,6 +399,20 @@ export class InterceptorChain {
     return next();
   }
 
+  async handleResponse(response: ResponseContext): Promise<void> {
+    if (this.authRuntime) {
+      await this.authRuntime.onResponse(response);
+    }
+  }
+
+  async handleAuthFailure(response: ResponseContext): Promise<boolean> {
+    if (!this.authRuntime) {
+      return false;
+    }
+
+    return this.authRuntime.handleAuthFailure(response);
+  }
+
   /**
    * Extract auth credentials (headers + query params) without making a request
    * 
@@ -346,44 +431,11 @@ export class InterceptorChain {
       return { headers: {} };
     }
 
-    const authConfigRaw = this.config.auth;
-    
-    // Handle multi-auth: get primary non-OAuth config
-    const authConfigs = Array.isArray(authConfigRaw) ? authConfigRaw : [authConfigRaw];
-    const sortedConfigs = authConfigs.sort((a, b) => (a.priority || 0) - (b.priority || 0));
-    
-    // Find first non-OAuth config (OAuth handled separately in HTTP transport)
-    const authConfig = sortedConfigs.find(c => c.type !== 'oauth');
-    
-    if (!authConfig || authConfig.type === 'oauth') {
-      return { headers: {} };
+    if (this.authRuntime) {
+      return this.authRuntime.getAuthCredentials();
     }
 
-    const envVarName = authConfig.value_from_env;
-
-    // Use session token first, then environment variable when configured
-    const token = this.authToken || (envVarName ? process.env[envVarName] : undefined);
-    if (!token) {
-      return { headers: {} };
-    }
-
-    const credentials: AuthCredentials = { headers: {} };
-
-    if (authConfig.type === 'bearer') {
-      credentials.headers['Authorization'] = `Bearer ${token}`;
-    } else if (authConfig.type === 'custom-header' && authConfig.header_name) {
-      if (!isSafePropertyName(authConfig.header_name)) {
-        return { headers: {} }; // Skip unsafe header name
-      }
-      credentials.headers[authConfig.header_name] = token;
-    } else if (authConfig.type === 'query' && authConfig.query_param) {
-      credentials.queryParams = {
-        key: authConfig.query_param,
-        value: token
-      };
-    }
-
-    return credentials;
+    return this.resolveStaticAuthCredentials();
   }
 }
 
@@ -485,6 +537,21 @@ export class HttpClient {
     operationId?: string; // For per-endpoint rate limiting
     timeout_ms?: number;
   } = {}): Promise<ResponseContext> {
+    return this.requestInternal(method, path, options, true);
+  }
+
+  private async requestInternal(
+    method: string,
+    path: string,
+    options: {
+      params?: Record<string, string | string[]>;
+      body?: unknown;
+      headers?: Record<string, string>;
+      operationId?: string;
+      timeout_ms?: number;
+    },
+    allowAuthRetry: boolean,
+  ): Promise<ResponseContext> {
     let url = this.baseUrl + path;
 
     // Add query parameters with proper array handling
@@ -637,6 +704,19 @@ export class HttpClient {
           headers: Object.fromEntries(response.headers.entries()),
           body,
         };
+
+        await this.interceptors.handleResponse(responseContext);
+
+        if (
+          allowAuthRetry
+          && response.status !== HTTP_STATUS.NOT_MODIFIED
+          && (response.status < HTTP_STATUS.OK || response.status >= HTTP_STATUS.MULTIPLE_CHOICES)
+        ) {
+          const recovered = await this.interceptors.handleAuthFailure(responseContext);
+          if (recovered) {
+            return this.requestInternal(method, path, options, false);
+          }
+        }
 
         // Why throw on non-2xx: Allows caller to handle errors with try/catch
         // Use structured errors for better client handling

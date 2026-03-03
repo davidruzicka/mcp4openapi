@@ -23,6 +23,7 @@ export class CachePolicyResolver {
     return {
       backend,
       scope: this.resolveScope(cacheConfig.scope, hasAuth),
+      allowSharedWithAuth: cacheConfig.allow_shared_with_auth === true,
       ttlSeconds: cacheConfig.ttl_seconds ?? DEFAULT_CACHE_TTL_SECONDS,
       methods: new Set((cacheConfig.methods ?? [...DEFAULT_CACHE_METHODS]).map((method) => method.toUpperCase())),
       varyHeaders: new Set((cacheConfig.vary_headers ?? DEFAULT_CACHE_VARY_HEADERS).map((header) => header.toLowerCase())),

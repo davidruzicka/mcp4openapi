@@ -72,6 +72,7 @@ export const cacheConfigSchema = z.object({
     enabled: z.boolean().optional(),
     backend: z.union([z.literal("memory"), z.literal("redis")]).optional(),
     scope: z.union([z.literal("auto"), z.literal("public"), z.literal("private"), z.literal("session")]).optional(),
+    allow_shared_with_auth: z.boolean().optional(),
     ttl_seconds: z.number().optional(),
     max_entries: z.number().optional(),
     max_memory_bytes: z.number().optional(),
@@ -107,6 +108,23 @@ export const oAuthConfigSchema = z.object({
     allowed_redirect_hosts: z.array(z.string()).optional()
 });
 
+export const sessionCookieConfigSchema = z.object({
+    login_endpoint: z.string(),
+    login_method: z.literal("POST").optional(),
+    login_content_type: z.union([z.literal("application/json"), z.literal("application/x-www-form-urlencoded")]).optional(),
+    username_field: z.string(),
+    username_from_env: z.string(),
+    password_field: z.string(),
+    password_from_env: z.string(),
+    login_static_headers: z.record(z.string(), z.string()).optional(),
+    login_static_body: z.record(z.string(), z.string()).optional(),
+    cookie_names: z.array(z.string()),
+    login_allowed_hosts: z.array(z.string()).optional(),
+    reauth_on_statuses: z.array(z.number()).optional(),
+    failure_backoff_ms: z.number().optional(),
+    expiry_skew_ms: z.number().optional()
+});
+
 export const toolDefinitionSchema = z.object({
     name: z.string(),
     description: z.string(),
@@ -126,12 +144,13 @@ export const promptMessageTemplateSchema = z.object({
 });
 
 export const authInterceptorSchema = z.object({
-    type: z.union([z.literal("bearer"), z.literal("query"), z.literal("custom-header"), z.literal("oauth")]),
+    type: z.union([z.literal("bearer"), z.literal("query"), z.literal("custom-header"), z.literal("session-cookie"), z.literal("oauth")]),
     priority: z.number().optional(),
     header_name: z.string().optional(),
     query_param: z.string().optional(),
     value_from_env: z.string().optional(),
     oauth_config: oAuthConfigSchema.optional(),
+    session_cookie_config: sessionCookieConfigSchema.optional(),
     oauth_rate_limit: z.object({
         max_requests: z.number(),
         window_ms: z.number()

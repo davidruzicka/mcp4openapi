@@ -135,6 +135,7 @@ Routes:
   - For `mask:` tenant selection, picker also injects example `X-Mcp4-Api-Base-Url` with wildcard parts replaced by `<your-part>`
   - In `Local stdio` mode, tenant selection injects tenant API base URL into snippet env config for supported local snippet formats
   - In `Local stdio` mode, active tool/parameter filters are translated into local `mcp4openapi` CLI arguments (`--tool-filter-allow-names`, `--tool-filter-allow-categories`, `--param-filter`) instead of hiding supported local snippets
+  - Profiles that use `auth.type: "session-cookie"` are shown only in `Local stdio` snippets because remote HTTP initialization does not accept upstream login/password via request headers
 
 Default profile behavior:
 - If `MCP4_PROFILE_PATH` (or `--profile-path`) is set, `/mcp` and `/sse` stay available.
@@ -273,6 +274,7 @@ Source: https://modelcontextprotocol.io/specification/2025-03-26/basic/transport
   - The header name comes from the profile auth configuration, so it can vary per profile.
   - Supports various token formats: GitLab (`glpat-...`), YouTrack (`perm:...`), generic tokens
   - Flexible whitespace handling (extra spaces are trimmed)
+  - If the active profile uses `auth.type: "session-cookie"`, upstream authentication is handled by the server using the profile's `session_cookie_config` credentials, so an initialization token header is not required unless another auth method is active for that profile.
 - `X-Mcp4-Params: <filter>` (optional)
 - `X-Mcp4-Tools: <tool-filter>` (optional)
   - If sent during initialization, the server stores the normalized header value in the session.

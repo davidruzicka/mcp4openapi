@@ -21,6 +21,7 @@ describe('CachePolicyResolver', () => {
 
     expect(policy.scope).toBe('public');
     expect(policy.backend).toBe('memory');
+    expect(policy.allowSharedWithAuth).toBe(false);
     expect(policy.maxMemoryBytes).toBe(64 * 1024 * 1024);
   });
 
@@ -45,6 +46,19 @@ describe('CachePolicyResolver', () => {
     });
 
     expect(policy.maxMemoryBytes).toBe(4096);
+  });
+
+  it('preserves explicit allow_shared_with_auth override', () => {
+    const policy = CachePolicyResolver.resolve({
+      cacheConfig: {
+        scope: 'public',
+        allow_shared_with_auth: true,
+      },
+      hasAuth: true,
+    });
+
+    expect(policy.scope).toBe('public');
+    expect(policy.allowSharedWithAuth).toBe(true);
   });
 
   it('throws on invalid max_memory_bytes_from_env value', () => {

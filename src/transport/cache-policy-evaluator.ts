@@ -108,7 +108,11 @@ export function evaluateRequestCacheDecision(input: EvaluateRequestInput): Reque
     };
   }
 
-  if (input.policy.scope === 'public' && hasSensitiveHeaders(input.ctx.headers, input.sensitiveHeaders)) {
+  if (
+    input.policy.scope === 'public'
+    && !input.policy.allowSharedWithAuth
+    && hasSensitiveHeaders(input.ctx.headers, input.sensitiveHeaders)
+  ) {
     return {
       canReadFromCache: false,
       canStoreResponse: false,
@@ -145,7 +149,7 @@ export function evaluateResponseCacheDecision(input: EvaluateResponseInput): Res
     if (hasDirective(cacheControl, 'private')) {
       return { cacheable: false, skipReason: 'resp_private' };
     }
-    if (getHeaderValueCaseInsensitive(response.headers, 'set-cookie')) {
+    if (!policy.allowSharedWithAuth && getHeaderValueCaseInsensitive(response.headers, 'set-cookie')) {
       return { cacheable: false, skipReason: 'resp_set_cookie_shared' };
     }
   }

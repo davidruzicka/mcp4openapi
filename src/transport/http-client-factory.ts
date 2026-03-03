@@ -11,6 +11,8 @@ import type { MetricsContextLabels } from '../core/metrics.js';
 import type { Profile, AuthInterceptor } from '../types/profile.js';
 import type { Logger } from '../core/logger.js';
 import { ConfigurationError, AuthenticationError } from '../core/errors.js';
+import { AuthStrategyRegistry } from './auth-strategies.js';
+import type { ResolvedAuthRuntime } from './auth-runtime.js';
 
 export interface HttpClientConfig {
   profile: Profile;
@@ -29,12 +31,14 @@ export class HttpClientFactory {
   private globalClient?: HttpClient;
   private sessionClients = new Map<string, HttpClient>();
   private metrics: MetricsCollector | null = null;
+  private readonly authStrategyRegistry = new AuthStrategyRegistry();
 
   /**
    * Create global HTTP client (for stdio transport)
    */
   createGlobalClient(config: HttpClientConfig): HttpClient {
-    const interceptors = this.createInterceptorChain(config);
+    const authRuntime = this.resolveAuthRuntime(config);
+    const interceptors = this.createInterceptorChain(config, authRuntime);
     const client = new HttpClient(config.baseUrl, interceptors, this.metrics, config.logger, undefined, config.metricsContext);
     this.globalClient = client;
     return client;
@@ -51,7 +55,8 @@ export class HttpClientFactory {
     }
 
     // Create new client for session
-    const interceptors = this.createInterceptorChain(config);
+    const authRuntime = this.resolveAuthRuntime(config);
+    const interceptors = this.createInterceptorChain(config, authRuntime);
     const newClient = new HttpClient(config.baseUrl, interceptors, this.metrics, config.logger, undefined, config.metricsContext);
 
     // Double-check for race condition
@@ -118,41 +123,24 @@ export class HttpClientFactory {
   }
 
   /**
-   * Get auth token for client creation
-   */
-  private getAuthToken(config: HttpClientConfig): string | undefined {
-    // Priority: session token > environment token
-    if (config.sessionToken) {
-      return config.sessionToken;
-    }
-
-    const authConfigRaw = config.authConfigs || config.profile.interceptors?.auth;
-    if (!authConfigRaw) {
-      return undefined;
-    }
-
-    // Handle multi-auth: get primary non-OAuth config
-    const authConfigs = Array.isArray(authConfigRaw) ? authConfigRaw : [authConfigRaw];
-    const sortedConfigs = authConfigs.sort((a, b) => (a.priority || 0) - (b.priority || 0));
-    const authConfig = sortedConfigs.find(c => c.type !== 'oauth');
-
-    if (authConfig && authConfig.value_from_env) {
-      return process.env[authConfig.value_from_env];
-    }
-
-    return undefined;
-  }
-
-  /**
    * Create interceptor chain for client
    */
-  private createInterceptorChain(config: HttpClientConfig): InterceptorChain {
-    const token = this.getAuthToken(config);
+  private createInterceptorChain(config: HttpClientConfig, authRuntime: ResolvedAuthRuntime): InterceptorChain {
     const interceptors = {
       ...(config.profile.interceptors || {}),
       ...(config.authConfigs ? { auth: config.authConfigs } : {}),
     };
-    return new InterceptorChain(interceptors, token);
+    return new InterceptorChain(interceptors, authRuntime.authRuntime || authRuntime.authToken);
+  }
+
+  private resolveAuthRuntime(config: HttpClientConfig): ResolvedAuthRuntime {
+    return this.authStrategyRegistry.resolve({
+      profile: config.profile,
+      baseUrl: config.baseUrl,
+      authConfigs: config.authConfigs,
+      sessionToken: config.sessionToken,
+      logger: config.logger,
+    });
   }
 
   /**
@@ -167,13 +155,11 @@ export class HttpClientFactory {
       throw new ConfigurationError('Profile is required for HTTP client');
     }
 
-    // Check if we have any auth token available
-    const hasToken = this.getAuthToken(config);
-    const authConfigRaw = config.authConfigs || config.profile.interceptors?.auth;
-    if (!hasToken && authConfigRaw) {
-      const authConfigs = Array.isArray(authConfigRaw) ? authConfigRaw : [authConfigRaw];
-      const nonOAuthConfig = authConfigs.find(c => c.type !== 'oauth');
-      const envVar = nonOAuthConfig?.value_from_env || 'MCP4_API_TOKEN';
+    const authRuntime = this.resolveAuthRuntime(config);
+    const activeAuthConfig = authRuntime.activeAuthConfig;
+    const hasCredentialSource = !!authRuntime.authToken || !!authRuntime.authRuntime;
+    if (!hasCredentialSource && activeAuthConfig && activeAuthConfig.type !== 'oauth') {
+      const envVar = activeAuthConfig.value_from_env || 'MCP4_API_TOKEN';
       throw new AuthenticationError(
         `No auth token available. Expected token in Authorization header or ${envVar} env var`,
         { envVar }

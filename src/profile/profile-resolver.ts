@@ -67,10 +67,12 @@ export interface ProfileApiBaseUrl {
 }
 
 export interface ProfileAuthMethod {
-  type: 'bearer' | 'query' | 'custom-header' | 'oauth';
+  type: 'bearer' | 'query' | 'custom-header' | 'oauth' | 'session-cookie';
   headerName?: string;
   queryParam?: string;
   valueFromEnv?: string;
+  usernameFromEnv?: string;
+  passwordFromEnv?: string;
 }
 
 interface ProfileIndexEntry {
@@ -131,6 +133,18 @@ function collectEnvVarsFromString(value: string, envVars: Set<string>): void {
 function collectEnvVarsFromAuth(auth: Record<string, unknown>, envVars: Set<string>): void {
   if (typeof auth.value_from_env === 'string' && auth.value_from_env.trim().length > 0) {
     envVars.add(auth.value_from_env.trim());
+  }
+
+  const sessionCookieConfig = auth.session_cookie_config;
+  if (sessionCookieConfig && typeof sessionCookieConfig === 'object') {
+    const usernameFromEnv = (sessionCookieConfig as Record<string, unknown>).username_from_env;
+    const passwordFromEnv = (sessionCookieConfig as Record<string, unknown>).password_from_env;
+    if (typeof usernameFromEnv === 'string' && usernameFromEnv.trim().length > 0) {
+      envVars.add(usernameFromEnv.trim());
+    }
+    if (typeof passwordFromEnv === 'string' && passwordFromEnv.trim().length > 0) {
+      envVars.add(passwordFromEnv.trim());
+    }
   }
 
   const oauthConfig = auth.oauth_config;
@@ -237,14 +251,21 @@ function extractAuthMethods(profile: Record<string, unknown>): ProfileAuthMethod
     if (!entry || typeof entry !== 'object') continue;
     const record = entry as Record<string, unknown>;
     const type = record.type;
-    if (type !== 'bearer' && type !== 'query' && type !== 'custom-header' && type !== 'oauth') {
+    if (type !== 'bearer' && type !== 'query' && type !== 'custom-header' && type !== 'oauth' && type !== 'session-cookie') {
       continue;
     }
+    const sessionCookieConfig = record.session_cookie_config;
     methods.push({
       type,
       headerName: typeof record.header_name === 'string' ? record.header_name : undefined,
       queryParam: typeof record.query_param === 'string' ? record.query_param : undefined,
       valueFromEnv: typeof record.value_from_env === 'string' ? record.value_from_env : undefined,
+      usernameFromEnv: sessionCookieConfig && typeof sessionCookieConfig === 'object' && typeof (sessionCookieConfig as Record<string, unknown>).username_from_env === 'string'
+        ? (sessionCookieConfig as Record<string, string>).username_from_env
+        : undefined,
+      passwordFromEnv: sessionCookieConfig && typeof sessionCookieConfig === 'object' && typeof (sessionCookieConfig as Record<string, unknown>).password_from_env === 'string'
+        ? (sessionCookieConfig as Record<string, string>).password_from_env
+        : undefined,
     });
   }
   return methods;
