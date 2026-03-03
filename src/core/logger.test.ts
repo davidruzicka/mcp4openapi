@@ -150,6 +150,34 @@ describe('ConsoleLogger', () => {
       expect.stringContaining('Beep\\x07')
     );
   });
+
+  it('redacts cookie headers for session-cookie auth', () => {
+    const logger = new ConsoleLogger(LogLevel.INFO, {
+      type: 'session-cookie',
+      session_cookie_config: {
+        login_endpoint: '/rest/login',
+        username_field: 'email',
+        username_from_env: 'LOGIN_USER',
+        password_field: 'password',
+        password_from_env: 'LOGIN_PASSWORD',
+        cookie_names: ['sid'],
+      },
+    } satisfies AuthInterceptor);
+
+    logger.info('session request', {
+      headers: {
+        Cookie: 'sid=secret',
+        'Content-Type': 'application/json',
+      },
+    });
+
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('"Cookie":"[REDACTED]"')
+    );
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('"Content-Type":"application/json"')
+    );
+  });
 });
 
 describe('JsonLogger', () => {

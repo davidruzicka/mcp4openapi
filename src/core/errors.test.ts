@@ -13,6 +13,8 @@ import {
   ResourceNotFoundError,
   ParameterError,
   AuthenticationError,
+  SessionCookieExpiredError,
+  SessionCookieBackoffError,
   AuthorizationError,
   RateLimitError,
   NetworkError,
@@ -83,6 +85,23 @@ describe('Error Classes', () => {
       expect(error.details).toBeUndefined();
     });
   });
+
+  describe('Session cookie auth errors', () => {
+    it('should create typed session-cookie errors with details', () => {
+      const expired = new SessionCookieExpiredError('expired now', { cookie: 'sid' });
+      const backoff = new SessionCookieBackoffError(undefined, { retryAfterMs: 5000 });
+
+      expect(expired.message).toBe('expired now');
+      expect(expired.code).toBe('SESSION_COOKIE_EXPIRED');
+      expect(expired.details).toEqual({ cookie: 'sid' });
+      expect(expired.name).toBe('SessionCookieExpiredError');
+
+      expect(backoff.message).toBe('Session cookie relogin temporarily suspended');
+      expect(backoff.code).toBe('SESSION_COOKIE_BACKOFF');
+      expect(backoff.details).toEqual({ retryAfterMs: 5000 });
+      expect(backoff.name).toBe('SessionCookieBackoffError');
+    });
+  });
 });
 
 describe('isMCPError', () => {
@@ -93,6 +112,8 @@ describe('isMCPError', () => {
     expect(isMCPError(new ResourceNotFoundError('res1'))).toBe(true);
     expect(isMCPError(new ParameterError('param', 'reason'))).toBe(true);
     expect(isMCPError(new AuthenticationError())).toBe(true);
+    expect(isMCPError(new SessionCookieExpiredError())).toBe(true);
+    expect(isMCPError(new SessionCookieBackoffError())).toBe(true);
     expect(isMCPError(new AuthorizationError())).toBe(true);
     expect(isMCPError(new RateLimitError('limit exceeded'))).toBe(true);
     expect(isMCPError(new NetworkError('network failed'))).toBe(true);

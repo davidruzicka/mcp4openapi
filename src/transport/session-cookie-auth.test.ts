@@ -9,6 +9,7 @@ import { HttpClient, InterceptorChain } from './interceptors.js';
 import type { InterceptorConfig } from '../types/profile.js';
 import {
   ConfigurationError,
+  SessionCookieExpiredError,
   SessionCookieLoginError,
   SessionCookieBackoffError,
   SessionCookieMissingError,
@@ -22,6 +23,8 @@ const mockSSRFValidator = {
 const originalEnv = { ...process.env };
 
 function createSessionCookieConfig(overrides: Partial<NonNullable<InterceptorConfig['auth']>> = {}): InterceptorConfig {
+  const authOverrides = overrides as Record<string, unknown>;
+  const sessionCookieOverrides = ((authOverrides.session_cookie_config || {}) as Record<string, unknown>);
   return {
     auth: {
       type: 'session-cookie',
@@ -32,9 +35,11 @@ function createSessionCookieConfig(overrides: Partial<NonNullable<InterceptorCon
         password_field: 'password',
         password_from_env: 'LOGIN_PASSWORD',
         cookie_names: ['sid'],
-        ...(((overrides as Record<string, unknown>).session_cookie_config || {}) as Record<string, unknown>),
+        ...sessionCookieOverrides,
       },
-      ...(overrides as Record<string, unknown>),
+      ...Object.fromEntries(
+        Object.entries(authOverrides).filter(([key]) => key !== 'session_cookie_config')
+      ),
     } as InterceptorConfig['auth'],
   };
 }
@@ -64,6 +69,16 @@ describe('session-cookie auth runtime', () => {
     expect(cookies[1]).toMatchObject({ name: 'theme', value: 'light' });
   });
 
+  it('ignores malformed cookies and preserves commas inside expires attributes', () => {
+    const cookies = SetCookieParser.parseHeader(
+      'invalid, sid=abc; Expires=Mon, 09 Mar 2026 14:37:04 GMT; Path=/, novalue=; Path=/'
+    );
+
+    expect(cookies).toHaveLength(1);
+    expect(cookies[0].name).toBe('sid');
+    expect(SetCookieParser.parseHeader('; ;')).toEqual([]);
+  });
+
   it('stores only allowed cookies and prunes expired values', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-03-02T00:00:00.000Z'));
@@ -78,6 +93,28 @@ describe('session-cookie auth runtime', () => {
 
     expect(jar.upsertFromHeader('sid=expired; Path=/; Max-Age=0')).toBe(true);
     expect(jar.getAuthCredentials(0)).toEqual({ headers: {} });
+  });
+
+  it('returns false when cookie updates are missing or disallowed', async () => {
+    const jar = new SessionCookieJar(new Set(['sid']));
+    expect(jar.upsertFromHeader(undefined)).toBe(false);
+    expect(jar.upsertFromHeader('theme=light; Path=/')).toBe(false);
+
+    const manager = new SessionCookieAuthManager(
+      createSessionCookieConfig().auth!.session_cookie_config!,
+      'https://api.example.com',
+    );
+
+    await expect(manager.handleAuthFailure({
+      status: 403,
+      headers: {},
+      body: { error: 'forbidden' },
+    })).resolves.toBe(false);
+    await expect(manager.onResponse({
+      status: 200,
+      headers: {},
+      body: { ok: true },
+    })).resolves.toBeUndefined();
   });
 
   it('deduplicates concurrent login attempts and enforces failure backoff', async () => {
@@ -228,6 +265,139 @@ describe('session-cookie auth runtime', () => {
         signal: expect.any(AbortSignal),
       })
     );
+  });
+
+  it('rethrows non-timeout login transport failures', async () => {
+    global.fetch = vi.fn(async () => {
+      throw new Error('socket hang up');
+    });
+
+    const manager = new SessionCookieAuthManager(
+      createSessionCookieConfig().auth!.session_cookie_config!,
+      'https://api.example.com',
+    );
+
+    await expect(manager.prepareRequest({
+      method: 'GET',
+      url: 'https://api.example.com/items',
+      headers: {},
+    })).rejects.toThrow('socket hang up');
+  });
+
+  it('throws a typed error when login returns a non-success response', async () => {
+    global.fetch = vi.fn(async () => new Response('bad credentials', {
+      status: 401,
+      headers: {
+        'Content-Type': 'text/plain',
+      },
+    }));
+
+    const manager = new SessionCookieAuthManager(
+      createSessionCookieConfig().auth!.session_cookie_config!,
+      'https://api.example.com',
+    );
+
+    await expect(manager.prepareRequest({
+      method: 'GET',
+      url: 'https://api.example.com/items',
+      headers: {},
+    })).rejects.toMatchObject({
+      name: 'SessionCookieLoginError',
+      message: 'bad credentials',
+      details: {
+        statusCode: 401,
+      },
+    });
+  });
+
+  it('throws an expired error when login returns only immediately expired cookies', async () => {
+    global.fetch = vi.fn(async () => new Response('', {
+      status: 200,
+      headers: {
+        'Set-Cookie': 'sid=expired; Path=/; Max-Age=0',
+      },
+    }));
+
+    const manager = new SessionCookieAuthManager(
+      createSessionCookieConfig().auth!.session_cookie_config!,
+      'https://api.example.com',
+    );
+
+    await expect(manager.prepareRequest({
+      method: 'GET',
+      url: 'https://api.example.com/items',
+      headers: {},
+    })).rejects.toBeInstanceOf(SessionCookieExpiredError);
+  });
+
+  it('supports x-www-form-urlencoded login payloads and forwards static body fields', async () => {
+    global.fetch = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
+      expect(init?.headers).toMatchObject({
+        'Content-Type': 'application/x-www-form-urlencoded',
+      });
+      expect(init?.body).toBeInstanceOf(URLSearchParams);
+      expect((init?.body as URLSearchParams).toString()).toBe('realm=users&email=user%40example.com&password=secret-password');
+      return new Response('', {
+        status: 200,
+        headers: {
+          'Set-Cookie': 'sid=form-cookie; Path=/; HttpOnly',
+        },
+      });
+    });
+
+    const manager = new SessionCookieAuthManager(
+      createSessionCookieConfig({
+        session_cookie_config: {
+          login_content_type: 'application/x-www-form-urlencoded',
+          login_static_body: {
+            realm: 'users',
+          },
+        },
+      }).auth!.session_cookie_config!,
+      'https://api.example.com',
+    );
+
+    await expect(manager.prepareRequest({
+      method: 'GET',
+      url: 'https://api.example.com/items',
+      headers: {},
+    })).resolves.toEqual({
+      headers: {
+        Cookie: 'sid=form-cookie',
+      },
+    });
+  });
+
+  it('rejects invalid login header names and missing session-cookie env vars', async () => {
+    delete process.env.LOGIN_PASSWORD;
+
+    const missingEnvManager = new SessionCookieAuthManager(
+      createSessionCookieConfig().auth!.session_cookie_config!,
+      'https://api.example.com',
+    );
+    await expect(missingEnvManager.prepareRequest({
+      method: 'GET',
+      url: 'https://api.example.com/items',
+      headers: {},
+    })).rejects.toBeInstanceOf(ConfigurationError);
+
+    process.env.LOGIN_PASSWORD = 'secret-password';
+    const invalidHeaderManager = new SessionCookieAuthManager(
+      createSessionCookieConfig({
+        session_cookie_config: {
+          login_static_headers: {
+            constructor: 'bad',
+          },
+        },
+      }).auth!.session_cookie_config!,
+      'https://api.example.com',
+    );
+
+    await expect(invalidHeaderManager.prepareRequest({
+      method: 'GET',
+      url: 'https://api.example.com/items',
+      headers: {},
+    })).rejects.toBeInstanceOf(ConfigurationError);
   });
 
   it('reauthenticates once on auth failure, replays the request, and rotates cookies from responses', async () => {
