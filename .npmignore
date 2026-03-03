@@ -37,6 +37,11 @@ node_modules/
 # IDE
 .vscode/
 .idea/
+.agents/
+.codex/
+.claude/
+.jules/
+.github/
 *.swp
 *.swo
 

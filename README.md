@@ -6,36 +6,48 @@
 [![Docker Hub](https://img.shields.io/docker/v/mcp4openapi/mcp4openapi?label=docker)](https://hub.docker.com/r/mcp4openapi/mcp4openapi)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](./LICENSE.md)
 
-Universal MCP server that generates tools from any OpenAPI specification.
+Turn any OpenAPI specification into a smaller, LLM-friendly MCP server.
 
-## Why This Project?
+## At a Glance
 
-Transform any OpenAPI specification into MCP tools **without writing code**.
-Configure everything via MCP profiles, reduce LLM context pollution, and get production-ready features out of the box.
+- **Input**: any OpenAPI 3.x spec
+- **Shaping layer**: optional MCP profile to reduce tools, rename parameters, compose workflows, and trim responses
+- **Output**: MCP tools exposed over `stdio` or HTTP
 
 [![mcp4openapi-diagram](docs/mcp4openapi-principle.png)](docs/mcp4openapi-principle.png)
 
-## Use Cases
+## How It Works
 
-1. **Less Context Pollution**: Fewer tools with filtered response fields through profiles = more relevant context for LLM
-2. **Multi-Environment**: Same server, different profiles (dev/staging/prod)
-3. **Custom Workflows**: Composite tools for common multi-step operations
-4. **Reusable Prompts**: Profile-defined MCP prompts (`prompts/list`, `prompts/get`) for repeated LLM tasks
+| Step | What happens | Why it matters |
+| --- | --- | --- |
+| 1. Load API | `mcp4openapi` reads your OpenAPI spec | Raw REST operations become available for tool generation |
+| 2. Shape tools | A profile can group, filter, and simplify operations | The LLM sees fewer, more useful tools |
+| 3. Connect client | Your MCP client connects over `stdio` or HTTP | You use the API through MCP without custom server code |
 
-More about MCP profiles: [docs/PROFILE-GUIDE.md](https://github.com/davidruzicka/mcp4openapi/blob/main/docs/PROFILE-GUIDE.md).
+Typical outcomes:
+- Fewer tools and smaller responses, so the LLM keeps more relevant context
+- One server with multiple profiles for dev, staging, prod, or role-specific access
+- Reusable higher-level workflows with composite tools and prompt definitions
 
-## Key Features
+Start with an existing profile in [`profiles/`](./profiles), then adapt only what you need.
 
-### Core
-- **Any OpenAPI API**: Works with any OpenAPI 3.x specifications
-- **Profiles**: Create JSON configuration transforming API to MCP tools LLM friendly in [MCP profiles](docs/PROFILE-GUIDE.md)
-- **Tool Aggregation**: Reduce tool clutter - group related operations in MCP profiles
-- **Composite Actions**: Chain API calls into workflows in MCP profiles for saving context and requests with repetitive complex operations
-- **Prompt Definitions**: Add reusable MCP prompts directly in profiles
-- **OAuth 2.0**: Browser-based authentication flow for HTTP transport (see [docs/OAUTH.md](./docs/OAUTH.md))
-- **Multi-Auth**: Support multiple auth methods (OAuth + Bearer e.g.) with priority-based fallback (see [docs/MULTI-AUTH.md](./docs/MULTI-AUTH.md))
-- **Multipart uploads**: HttpClient handles `multipart/form-data` (file attachments and mixed fields)
-- **Observability**: Structured logging (console/JSON) with profile-aware secrets redaction, Prometheus metrics
+## Start Here
+
+- **I want to try it fast**: jump to [Quick Start](#quick-start) and use an existing bundled profile.
+- **I need remote access or OAuth**: use [HTTP transport](./docs/HTTP-TRANSPORT.md) and [OAuth setup](./docs/OAUTH.md).
+- **I want custom tool design**: start with the [Profile Guide](./docs/PROFILE-GUIDE.md).
+
+## Core Capabilities
+
+- **Any OpenAPI API**: works with OpenAPI 3.x specifications
+- **Profiles**: transform raw APIs into LLM-friendly MCP tools in [MCP profiles](docs/PROFILE-GUIDE.md)
+- **Tool aggregation**: reduce tool clutter by grouping related operations
+- **Composite actions**: chain API calls into reusable workflows
+- **Prompt definitions**: add reusable MCP prompts directly in profiles
+- **OAuth 2.0**: browser-based auth flow for HTTP transport (see [docs/OAUTH.md](./docs/OAUTH.md))
+- **Multi-auth**: combine multiple auth methods with priority fallback (see [docs/MULTI-AUTH.md](./docs/MULTI-AUTH.md))
+- **Multipart uploads**: `HttpClient` handles `multipart/form-data`
+- **Observability**: structured logging with secrets redaction and Prometheus metrics
 
 ## Security Note
 
@@ -45,6 +57,21 @@ More about MCP profiles: [docs/PROFILE-GUIDE.md](https://github.com/davidruzicka
 Check example profiles in [profiles/](https://github.com/davidruzicka/mcp4openapi/tree/main/profiles).
 
 ## Quick Start
+
+For most users, the simplest path is:
+
+1. Pick a bundled profile such as `gitlab`, `codecov`, or `n8n`.
+2. Start `mcp4openapi` with `npx`.
+3. Paste one matching MCP client config below.
+
+Minimal local example:
+
+```bash
+export MCP4_API_TOKEN=your_token
+npx mcp4openapi --profile gitlab --api-base-url https://gitlab.example.com/api/v4
+```
+
+If you already know your MCP client, go straight to its config example. If not, use the file-location section first.
 
 ### Configuration File Locations
 
@@ -62,7 +89,7 @@ Check example profiles in [profiles/](https://github.com/davidruzicka/mcp4openap
 
 **Claude Code:**
 - **Project-Specific:** `.claude/mcp.json` in your project root
-- **Global:** `~/.claude/mcp.json` in your home directory (platform-dependent)
+- **Global:** `~/.claude.json` in your home directory (platform-dependent)
 
 ### Option A: npx
 
@@ -78,11 +105,13 @@ Access Token (Bearer) example:
     "servers": {
         "mcp4openapi": {
             "command": "npx",
-            "args": ["mcp4openapi"],
+            "args": [
+                "-y", "mcp4openapi",
+                "--profile", "<profile-name>",
+                "--api-base-url", "https://api.example.com"
+            ],
             "env": {
                 "MCP4_API_TOKEN": "${input:api-token}",
-                "MCP4_API_BASE_URL": "https://api.example.com",
-                "MCP4_PROFILE_PATH": "path/to/mcp-profile.json"
             }
         },
         "inputs": [
@@ -108,11 +137,13 @@ Cursor stdio example (non-OAuth, token-based auth only):
     "mcpServers": {
         "mcp4openapi": {
             "command": "npx",
-            "args": ["mcp4openapi"],
+            "args": [
+                "-y", "mcp4openapi",
+                "--profile", "<profile-name>",
+                "--api-base-url", "https://api.example.com"
+            ],
             "env": {
                 "MCP4_API_TOKEN": "${env:MCP4_API_TOKEN}",
-                "MCP4_API_BASE_URL": "https://api.example.com",
-                "MCP4_PROFILE_PATH": "path/to/mcp-profile.json"
             }
         }
     }
@@ -125,7 +156,7 @@ Cursor OAuth example (HTTP transport, URL-based MCP server):
 {
     "mcpServers": {
         "mcp4openapi-oauth": {
-            "url": "http://127.0.0.1:3003/mcp"
+            "url": "http://127.0.0.1:3003/profile/<profile-name>/mcp"
         }
     }
 }
@@ -174,8 +205,7 @@ Profiles are resolved from `./profiles` path by default. If that directory is mi
 
 ```bash
 claude mcp add --transport stdio mcp4openapi \
-  --env MCP4_API_TOKEN="${MCP4_API_TOKEN}" \
-  -- npx mcp4openapi --profile mcp-profile --api-base-url https://api.example.com
+  -- npx mcp4openapi --profile <profile-name> --api-base-url https://api.example.com
 ```
 
 ##### ⚠️ Prerequisites
@@ -192,7 +222,7 @@ claude mcp add --transport stdio mcp4openapi \
             "args": [
                 "mcp4openapi",
                 "--profile",
-                "mcp-profile",
+                "<profile-name>",
                 "--api-base-url",
                 "https://api.example.com"
             ],
@@ -315,7 +345,7 @@ echo 'export NODE_EXTRA_CA_CERTS="$HOME/ca-bundle.pem"' >> $HOME/.bash_profile
 ## Environment Variables
 
 ### Required
-- `MCP4_API_TOKEN`: API token (default env var name; customizable via `MCP4_AUTH_ENV_VAR`)
+- `MCP4_API_TOKEN`: API token (default env var name; customizable via `MCP4_AUTH_ENV_VAR` or profile `value_from_env` for auth parameters)
   - **Required for stdio** mode with authenticated APIs
   - **Optional for HTTP** mode with per-session tokens sent in HTTP headers
   - When using no profile mode, auth type is auto-detected from OpenAPI `security` schemes if present

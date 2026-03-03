@@ -1,6 +1,6 @@
 {
   "$schema": "../../profile-schema.json",
-  "profile_name": "github_security",
+  "profile_name": "github-missing",
   "profile_id": "github-security",
   "openapi_spec_path": "./openapi.yaml",
   "description": "GitHub Code Scanning alert operations for triage and remediation workflows.",
