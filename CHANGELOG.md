@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.7] - 2026-03-03
+
+
 ### Added
 - Restored the dedicated n8n node-list profile (`n8n-nodes`) with its standalone node metadata OpenAPI spec and profile test coverage.
 
