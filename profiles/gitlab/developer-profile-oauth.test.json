@@ -1162,7 +1162,7 @@
       "arguments": {
         "action": "list",
         "project_id": "{{projectId}}",
-        "state": ["opened", "closed"],
+        "state": "opened",
         "labels": "bug",
         "updated_after": "2024-01-01T00:00:00Z"
       },
@@ -1191,7 +1191,7 @@
           "method": "GET",
           "path": "/projects/{{projectId}}/issues",
           "query": {
-            "state[]": ["opened", "closed"],
+            "state": "opened",
             "labels": "bug",
             "updated_after": "2024-01-01T00:00:00Z"
           }
