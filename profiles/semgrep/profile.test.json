@@ -361,12 +361,12 @@
       "tool": "manage_sbom",
       "arguments": {
         "action": "create",
-        "deployment_slug": "{{deploymentSlug}}",
+        "deploymentSlug": "{{deploymentSlug}}",
         "repositoryId": "{{repositoryId}}",
         "ref": "refs/heads/main"
       },
       "mocks": [],
-      "expect": { "success": false, "error_message_regex": "deploymentId" }
+      "expect": { "success": false, "error_message_regex": "deployment_id" }
     },
     {
       "name": "Get SBOM Export",

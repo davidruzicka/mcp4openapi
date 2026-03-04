@@ -495,6 +495,8 @@ paths:
       const simpleTool = (server as any).profile.tools.find((t: any) => !t.composite);
       if (!simpleTool) return;
 
+      (server as any).toolGenerator.validateArguments = () => {};
+
       // Mock executeSimpleTool to return success
       (server as any).executeSimpleTool = async () => {
         return { id: 1, name: 'test' };
@@ -552,6 +554,8 @@ paths:
       const simpleTool = (server as any).profile.tools.find((t: any) => !t.composite);
       if (!simpleTool) return; // Skip if no simple tools
 
+      (server as any).toolGenerator.validateArguments = () => {};
+
       // Mock executeSimpleTool to throw ValidationError
       (server as any).executeSimpleTool = async () => {
         throw new ValidationError('Invalid input');
@@ -570,6 +574,8 @@ paths:
       // Find any simple (non-composite) tool
       const simpleTool = (server as any).profile.tools.find((t: any) => !t.composite);
       if (!simpleTool) return; // Skip if no simple tools
+
+      (server as any).toolGenerator.validateArguments = () => {};
 
       // Mock executeSimpleTool to throw RateLimitError
       (server as any).executeSimpleTool = async () => {
@@ -590,6 +596,8 @@ paths:
       const simpleTool = (server as any).profile.tools.find((t: any) => !t.composite);
       if (!simpleTool) return;
 
+      (server as any).toolGenerator.validateArguments = () => {};
+
       // Mock executeSimpleTool to throw AuthenticationError
       (server as any).executeSimpleTool = async () => {
         throw new AuthenticationError('Token expired');
@@ -607,6 +615,8 @@ paths:
 
       const simpleTool = (server as any).profile.tools.find((t: any) => !t.composite);
       if (!simpleTool) return;
+
+      (server as any).toolGenerator.validateArguments = () => {};
 
       // Mock httpTransport with OAuth provider
       (server as any).httpTransport = {
@@ -633,6 +643,8 @@ paths:
       const simpleTool = (server as any).profile.tools.find((t: any) => !t.composite);
       if (!simpleTool) return;
 
+      (server as any).toolGenerator.validateArguments = () => {};
+
       (server as any).executeSimpleTool = async () => {
         throw new Error('Generic internal error');
       };
@@ -649,6 +661,8 @@ paths:
 
       const simpleTool = (server as any).profile.tools.find((t: any) => !t.composite);
       if (!simpleTool) return;
+
+      (server as any).toolGenerator.validateArguments = () => {};
 
       (server as any).executeSimpleTool = async () => ({ ok: true });
       const metrics = {
@@ -2291,6 +2305,7 @@ paths:
 
       (server as any).toolGenerator = {
         mapActionToOperation: () => 'getProject',
+        validateArguments: () => {},
       };
       (server as any).parser = {
         getOperation: () => ({

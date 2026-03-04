@@ -176,11 +176,16 @@ tool-filter/
 
 **Why**: `badge_id` only needed for get/update/delete, not list/create
 
-**How**: `required_for: ["get", "update", "delete"]` in parameter definition
+**How**:
+- `required_for: ["get", "update", "delete"]` for conditional required inputs
+- `allowed_for: [...]` and `forbidden_for: [...]` for explicit action-level parameter gating
+- `enum_for: { action: [...] }` for action-specific enum constraints
 
-**LLM-friendly**: Description includes: "Required when action is: get, update, delete"
+**LLM-friendly**: Description includes conditional hints for required/allowed/forbidden actions.
 
-**Validation**: Runtime check in `validateArguments()`
+**Validation**:
+- Profile-load validation checks action references and contradictory rule combinations.
+- Runtime check in `validateArguments()` blocks invalid action/parameter combinations before API call.
 
 ### 7. Interceptor Chain Pattern
 
@@ -298,7 +303,7 @@ src/
 
 profiles/
 ├── gitlab/              - GitLab OpenAPI/profile variants
-├── github-security/     - GitHub code scanning profile
+├── github-security/     - GitHub security alerts profile (code scanning + Dependabot + secret scanning)
 ├── collabim/            - Collabim profile and converted OpenAPI
 ├── semgrep/             - Semgrep profile
 └── ...                  - Other API profiles

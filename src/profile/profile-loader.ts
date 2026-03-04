@@ -14,7 +14,14 @@
  */
 
 import fs from 'fs/promises';
-import type { AuthInterceptor, Profile, ParameterType, PromptDefinition, SessionCookieConfig } from '../types/profile.js';
+import type {
+  AuthInterceptor,
+  Profile,
+  ParameterDefinition,
+  ParameterType,
+  PromptDefinition,
+  SessionCookieConfig,
+} from '../types/profile.js';
 import { ValidationError, ConfigurationError } from '../core/errors.js';
 import { profileSchema, authInterceptorSchema } from '../generated-schemas.js';
 import type { OpenAPIParser } from '../openapi/openapi-parser.js';
@@ -292,24 +299,9 @@ export class ProfileLoader {
           );
         }
 
-        if (paramDef.required_for) {
-          const actionParam = tool.parameters['action'];
-          if (!actionParam?.enum) {
-            throw new ValidationError(
-              `Parameter '${paramName}' in tool '${tool.name}' has 'required_for' but 'action' parameter has no enum`,
-              { toolName: tool.name, paramName, hasActionParam: !!actionParam }
-            );
-          }
-
-          for (const action of paramDef.required_for) {
-            if (!actionParam.enum.includes(action)) {
-              throw new ValidationError(
-                `Parameter '${paramName}' requires action '${action}' but it's not in action enum: ${actionParam.enum.join(', ')}`,
-                { toolName: tool.name, paramName, requiredAction: action, availableActions: actionParam.enum }
-              );
-            }
-          }
-        }
+        const actionEnum = tool.parameters['action']?.enum;
+        this.validateConditionalActionRules(tool.name, paramName, paramDef, actionEnum);
+        this.validateActionScopedEnumRules(tool.name, paramName, paramDef, actionEnum);
       }
 
       // Validate operation keys match action enum or follow {action}_{resourceType} pattern
@@ -366,6 +358,125 @@ export class ProfileLoader {
 
     if (profile.prompts) {
       this.validatePrompts(profile.prompts, profile.tools);
+    }
+  }
+
+  private validateConditionalActionRules(
+    toolName: string,
+    paramName: string,
+    paramDef: ParameterDefinition,
+    actionEnum: string[] | undefined,
+  ): void {
+    const rules = [
+      { key: 'required_for', values: paramDef.required_for },
+      { key: 'allowed_for', values: paramDef.allowed_for },
+      { key: 'forbidden_for', values: paramDef.forbidden_for },
+    ] as const;
+    const activeRules = rules.reduce<Array<{ key: 'required_for' | 'allowed_for' | 'forbidden_for'; values: string[] }>>(
+      (result, rule) => {
+        if (Array.isArray(rule.values) && rule.values.length > 0) {
+          result.push({ key: rule.key, values: rule.values });
+        }
+        return result;
+      },
+      [],
+    );
+
+    if (activeRules.length === 0) {
+      return;
+    }
+
+    if (!actionEnum || actionEnum.length === 0) {
+      const ruleNames = activeRules.map((rule) => `'${rule.key}'`).join(', ');
+      throw new ValidationError(
+        `Parameter '${paramName}' in tool '${toolName}' has ${ruleNames} but 'action' parameter has no enum`,
+        { toolName, paramName, hasActionEnum: false, rules: activeRules.map((rule) => rule.key) },
+      );
+    }
+
+    for (const rule of activeRules) {
+      for (const action of rule.values) {
+        if (!actionEnum.includes(action)) {
+          throw new ValidationError(
+            `Parameter '${paramName}' has '${rule.key}' action '${action}' but it's not in action enum: ${actionEnum.join(', ')}`,
+            { toolName, paramName, rule: rule.key, action, availableActions: actionEnum },
+          );
+        }
+      }
+    }
+
+    const allowedFor = paramDef.allowed_for ?? [];
+    const forbiddenFor = paramDef.forbidden_for ?? [];
+    const requiredFor = paramDef.required_for ?? [];
+
+    const allowedForbiddenOverlap = allowedFor.filter((action) => forbiddenFor.includes(action));
+    if (allowedForbiddenOverlap.length > 0) {
+      throw new ValidationError(
+        `Parameter '${paramName}' in tool '${toolName}' has overlapping 'allowed_for' and 'forbidden_for' actions: ${allowedForbiddenOverlap.join(', ')}`,
+        { toolName, paramName, overlap: allowedForbiddenOverlap },
+      );
+    }
+
+    const requiredForbiddenOverlap = requiredFor.filter((action) => forbiddenFor.includes(action));
+    if (requiredForbiddenOverlap.length > 0) {
+      throw new ValidationError(
+        `Parameter '${paramName}' in tool '${toolName}' has actions required and forbidden at the same time: ${requiredForbiddenOverlap.join(', ')}`,
+        { toolName, paramName, overlap: requiredForbiddenOverlap },
+      );
+    }
+
+    if (allowedFor.length > 0) {
+      const missingRequired = requiredFor.filter((action) => !allowedFor.includes(action));
+      if (missingRequired.length > 0) {
+        throw new ValidationError(
+          `Parameter '${paramName}' in tool '${toolName}' has required actions missing from 'allowed_for': ${missingRequired.join(', ')}`,
+          { toolName, paramName, missingRequired, allowedFor },
+        );
+      }
+    }
+  }
+
+  private validateActionScopedEnumRules(
+    toolName: string,
+    paramName: string,
+    paramDef: ParameterDefinition,
+    actionEnum: string[] | undefined,
+  ): void {
+    if (!paramDef.enum_for) {
+      return;
+    }
+
+    if (!actionEnum || actionEnum.length === 0) {
+      throw new ValidationError(
+        `Parameter '${paramName}' in tool '${toolName}' has 'enum_for' but 'action' parameter has no enum`,
+        { toolName, paramName, hasActionEnum: false },
+      );
+    }
+
+    for (const [action, values] of Object.entries(paramDef.enum_for)) {
+      if (!actionEnum.includes(action)) {
+        throw new ValidationError(
+          `Parameter '${paramName}' has 'enum_for' action '${action}' but it's not in action enum: ${actionEnum.join(', ')}`,
+          { toolName, paramName, action, availableActions: actionEnum },
+        );
+      }
+
+      if (!Array.isArray(values) || values.length === 0) {
+        throw new ValidationError(
+          `Parameter '${paramName}' in tool '${toolName}' has empty 'enum_for' values for action '${action}'`,
+          { toolName, paramName, action },
+        );
+      }
+
+      if (paramDef.enum) {
+        const invalidValues = values.filter((value) => !paramDef.enum?.includes(value));
+        if (invalidValues.length > 0) {
+          throw new ValidationError(
+            `Parameter '${paramName}' in tool '${toolName}' has 'enum_for' values not present in base enum for action '${action}': ${invalidValues.join(', ')}`,
+            { toolName, paramName, action, invalidValues, enum: paramDef.enum },
+          );
+        }
+      }
     }
   }
 

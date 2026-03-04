@@ -190,6 +190,7 @@ Predefined profiles in the `profiles/` directory contains names for easy referen
 - GitLab profile: `gitlab`
 - YouTrack profile: `youtrack`
 - Codecov profile: `codecov`
+- GitHub security profile: `github-security`
 - SemGrep profile: `semgrep`
 - Grafana profile: `grafana`
 - n8n profile: `n8n`
