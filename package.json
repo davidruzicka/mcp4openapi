@@ -95,7 +95,8 @@
     "vitest": "^4.0.18"
   },
   "overrides": {
-    "hono": "4.11.10",
+    "@hono/node-server": "1.19.10",
+    "hono": "4.12.4",
     "minimatch": "10.2.3"
   },
   "engines": {
