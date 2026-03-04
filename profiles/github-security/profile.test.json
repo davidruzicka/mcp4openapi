@@ -4,7 +4,9 @@
   "variables": {
     "owner": "davidruzicka",
     "repo": "mcp4openapi",
-    "alertNumber": 101
+    "alertNumber": 101,
+    "dependabotAlertNumber": 202,
+    "secretAlertNumber": 303
   },
   "scenarios": [
     {
@@ -156,6 +158,515 @@
             "dismissed_reason": "false positive",
             "dismissed_comment": "Accepted as non-exploitable in this context."
           }
+        }
+      }
+    },
+    {
+      "name": "Dependabot - List Alerts",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "list_dependabot_alerts",
+        "owner": "{{owner}}",
+        "repo": "{{repo}}",
+        "state": "open",
+        "severity": "high",
+        "ecosystem": "npm",
+        "package": "@hono/node-server"
+      },
+      "mocks": [
+        {
+          "operationId": "listDependabotAlerts",
+          "response": {
+            "body": [
+              {
+                "number": 202,
+                "state": "open",
+                "dependency": {
+                  "package": {
+                    "ecosystem": "npm",
+                    "name": "@hono/node-server"
+                  },
+                  "manifest_path": "package.json",
+                  "scope": "runtime"
+                },
+                "security_advisory": {
+                  "summary": "@hono/node-server has authorization bypass for protected static paths via encoded slashes in Serve Static Middleware",
+                  "severity": "high"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": [
+          { "number": 202, "state": "open" }
+        ],
+        "request": {
+          "method": "GET",
+          "path": "/repos/{{owner}}/{{repo}}/dependabot/alerts",
+          "query": {
+            "state": "open",
+            "severity": "high",
+            "ecosystem": "npm",
+            "package": "@hono/node-server"
+          }
+        }
+      }
+    },
+    {
+      "name": "Dependabot - Get Alert",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "get_dependabot_alert",
+        "owner": "{{owner}}",
+        "repo": "{{repo}}",
+        "alert_number": "{{dependabotAlertNumber}}"
+      },
+      "mocks": [
+        {
+          "operationId": "getDependabotAlert",
+          "response": {
+            "body": {
+              "number": 202,
+              "state": "open",
+              "dependency": {
+                "package": {
+                  "ecosystem": "npm",
+                  "name": "@hono/node-server"
+                },
+                "manifest_path": "package.json"
+              },
+              "security_advisory": {
+                "summary": "@hono/node-server has authorization bypass for protected static paths via encoded slashes in Serve Static Middleware",
+                "severity": "high"
+              }
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": { "number": 202, "state": "open" },
+        "request": {
+          "method": "GET",
+          "path": "/repos/{{owner}}/{{repo}}/dependabot/alerts/{{dependabotAlertNumber}}"
+        }
+      }
+    },
+    {
+      "name": "Dependabot - Update Alert",
+      "tool": "update_content",
+      "arguments": {
+        "action": "update_dependabot_alert",
+        "owner": "{{owner}}",
+        "repo": "{{repo}}",
+        "alert_number": "{{dependabotAlertNumber}}",
+        "state": "dismissed",
+        "dismissed_reason": "tolerable_risk",
+        "dismissed_comment": "Mitigated upstream; monitoring only."
+      },
+      "mocks": [
+        {
+          "operationId": "updateDependabotAlert",
+          "response": {
+            "body": {
+              "number": 202,
+              "state": "dismissed",
+              "dismissed_reason": "tolerable_risk",
+              "dismissed_comment": "Mitigated upstream; monitoring only."
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": {
+          "number": 202,
+          "state": "dismissed",
+          "dismissed_reason": "tolerable_risk"
+        },
+        "request": {
+          "method": "PATCH",
+          "path": "/repos/{{owner}}/{{repo}}/dependabot/alerts/{{dependabotAlertNumber}}",
+          "body": {
+            "state": "dismissed",
+            "dismissed_reason": "tolerable_risk",
+            "dismissed_comment": "Mitigated upstream; monitoring only."
+          }
+        }
+      }
+    },
+    {
+      "name": "Secret Scanning - List Alerts",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "list_secret_scanning_alerts",
+        "owner": "{{owner}}",
+        "repo": "{{repo}}",
+        "state": "open",
+        "secret_type": "generic-api-key"
+      },
+      "mocks": [
+        {
+          "operationId": "listSecretScanningAlerts",
+          "response": {
+            "body": [
+              {
+                "number": 303,
+                "state": "open",
+                "secret_type": "generic-api-key",
+                "html_url": "https://github.com/davidruzicka/mcp4openapi/security/secret-scanning/303"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": [
+          { "number": 303, "state": "open", "secret_type": "generic-api-key" }
+        ],
+        "request": {
+          "method": "GET",
+          "path": "/repos/{{owner}}/{{repo}}/secret-scanning/alerts",
+          "query": {
+            "state": "open",
+            "secret_type": "generic-api-key"
+          }
+        }
+      }
+    },
+    {
+      "name": "Secret Scanning - Get Alert",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "get_secret_scanning_alert",
+        "owner": "{{owner}}",
+        "repo": "{{repo}}",
+        "alert_number": "{{secretAlertNumber}}"
+      },
+      "mocks": [
+        {
+          "operationId": "getSecretScanningAlert",
+          "response": {
+            "body": {
+              "number": 303,
+              "state": "open",
+              "secret_type": "generic-api-key",
+              "resolution": null
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": { "number": 303, "state": "open", "secret_type": "generic-api-key" },
+        "request": {
+          "method": "GET",
+          "path": "/repos/{{owner}}/{{repo}}/secret-scanning/alerts/{{secretAlertNumber}}"
+        }
+      }
+    },
+    {
+      "name": "Secret Scanning - List Alert Locations",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "list_secret_scanning_alert_locations",
+        "owner": "{{owner}}",
+        "repo": "{{repo}}",
+        "alert_number": "{{secretAlertNumber}}"
+      },
+      "mocks": [
+        {
+          "operationId": "listSecretScanningAlertLocations",
+          "response": {
+            "body": [
+              {
+                "type": "commit",
+                "commit_sha": "def456",
+                "details": {
+                  "path": "src/config.ts",
+                  "start_line": 19
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": [
+          { "type": "commit", "commit_sha": "def456" }
+        ],
+        "request": {
+          "method": "GET",
+          "path": "/repos/{{owner}}/{{repo}}/secret-scanning/alerts/{{secretAlertNumber}}/locations"
+        }
+      }
+    },
+    {
+      "name": "Secret Scanning - Update Alert",
+      "tool": "update_content",
+      "arguments": {
+        "action": "update_secret_scanning_alert",
+        "owner": "{{owner}}",
+        "repo": "{{repo}}",
+        "alert_number": "{{secretAlertNumber}}",
+        "state": "resolved",
+        "resolution": "wont_fix",
+        "resolution_comment": "Credential belongs to test fixture only."
+      },
+      "mocks": [
+        {
+          "operationId": "updateSecretScanningAlert",
+          "response": {
+            "body": {
+              "number": 303,
+              "state": "resolved",
+              "resolution": "wont_fix",
+              "resolution_comment": "Credential belongs to test fixture only."
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": {
+          "number": 303,
+          "state": "resolved",
+          "resolution": "wont_fix"
+        },
+        "request": {
+          "method": "PATCH",
+          "path": "/repos/{{owner}}/{{repo}}/secret-scanning/alerts/{{secretAlertNumber}}",
+          "body": {
+            "state": "resolved",
+            "resolution": "wont_fix",
+            "resolution_comment": "Credential belongs to test fixture only."
+          }
+        }
+      }
+    },
+    {
+      "name": "Validation - Reject Parameter Not Allowed For Action",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "get_alert",
+        "owner": "{{owner}}",
+        "repo": "{{repo}}",
+        "alert_number": "{{alertNumber}}",
+        "ecosystem": "npm"
+      },
+      "expect": {
+        "success": false,
+        "error_message_regex": "not allowed for action 'get_alert'",
+        "requests": []
+      }
+    },
+    {
+      "name": "Validation - Reject Invalid Filter On Secret Get",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "get_secret_scanning_alert",
+        "owner": "{{owner}}",
+        "repo": "{{repo}}",
+        "alert_number": "{{secretAlertNumber}}",
+        "secret_type": "generic-api-key"
+      },
+      "expect": {
+        "success": false,
+        "error_message_regex": "not allowed for action 'get_secret_scanning_alert'",
+        "requests": []
+      }
+    },
+    {
+      "name": "Validation - Reject Invalid Filter On Secret Locations",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "list_secret_scanning_alert_locations",
+        "owner": "{{owner}}",
+        "repo": "{{repo}}",
+        "alert_number": "{{secretAlertNumber}}",
+        "severity": "high"
+      },
+      "expect": {
+        "success": false,
+        "error_message_regex": "not allowed for action 'list_secret_scanning_alert_locations'",
+        "requests": []
+      }
+    },
+    {
+      "name": "Validation - Reject Dismissed Reason For Secret Update",
+      "tool": "update_content",
+      "arguments": {
+        "action": "update_secret_scanning_alert",
+        "owner": "{{owner}}",
+        "repo": "{{repo}}",
+        "alert_number": "{{secretAlertNumber}}",
+        "state": "resolved",
+        "resolution": "wont_fix",
+        "dismissed_reason": "false positive"
+      },
+      "expect": {
+        "success": false,
+        "error_message_regex": "not allowed for action 'update_secret_scanning_alert'",
+        "requests": []
+      }
+    },
+    {
+      "name": "Validation - Missing Required Resolution For Secret Update",
+      "tool": "update_content",
+      "arguments": {
+        "action": "update_secret_scanning_alert",
+        "owner": "{{owner}}",
+        "repo": "{{repo}}",
+        "alert_number": "{{secretAlertNumber}}",
+        "state": "resolved"
+      },
+      "expect": {
+        "success": false,
+        "error_message_regex": "required for action 'update_secret_scanning_alert'",
+        "requests": []
+      }
+    },
+    {
+      "name": "Security Overview - Aggregate Open Alerts",
+      "tool": "retrieve_security_overview",
+      "arguments": {
+        "owner": "{{owner}}",
+        "repo": "{{repo}}",
+        "state": "open",
+        "per_page": 20
+      },
+      "mocks": [
+        {
+          "operationId": "listCodeScanningAlerts",
+          "response": {
+            "body": [
+              {
+                "number": 101,
+                "state": "open",
+                "rule": { "id": "js/sql-injection", "severity": "high" }
+              }
+            ]
+          }
+        },
+        {
+          "operationId": "listDependabotAlerts",
+          "response": {
+            "body": [
+              {
+                "number": 202,
+                "state": "open",
+                "dependency": {
+                  "package": { "ecosystem": "npm", "name": "@hono/node-server" },
+                  "manifest_path": "package.json"
+                },
+                "security_advisory": {
+                  "summary": "@hono/node-server has authorization bypass for protected static paths via encoded slashes in Serve Static Middleware",
+                  "severity": "high"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "operationId": "listSecretScanningAlerts",
+          "response": {
+            "body": [
+              {
+                "number": 303,
+                "state": "open",
+                "secret_type": "generic-api-key"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": {
+          "data": {
+            "code_scanning": [{ "number": 101, "state": "open" }],
+            "dependabot": [{ "number": 202, "state": "open" }],
+            "secret_scanning": [{ "number": 303, "state": "open", "secret_type": "generic-api-key" }]
+          }
+        },
+        "requests": [
+          {
+            "method": "GET",
+            "path": "/repos/{{owner}}/{{repo}}/code-scanning/alerts",
+            "query": { "state": "open", "per_page": "20", "page": "1" }
+          },
+          {
+            "method": "GET",
+            "path": "/repos/{{owner}}/{{repo}}/dependabot/alerts",
+            "query": { "state": "open", "per_page": "20", "page": "1" }
+          },
+          {
+            "method": "GET",
+            "path": "/repos/{{owner}}/{{repo}}/secret-scanning/alerts",
+            "query": { "state": "open", "per_page": "20", "page": "1" }
+          }
+        ]
+      }
+    },
+    {
+      "name": "Security Overview - Partial Results When Dependabot Fails",
+      "tool": "retrieve_security_overview",
+      "arguments": {
+        "owner": "{{owner}}",
+        "repo": "{{repo}}",
+        "state": "open"
+      },
+      "mocks": [
+        {
+          "operationId": "listCodeScanningAlerts",
+          "response": {
+            "body": [
+              {
+                "number": 101,
+                "state": "open",
+                "rule": { "id": "js/sql-injection", "severity": "high" }
+              }
+            ]
+          }
+        },
+        {
+          "operationId": "listDependabotAlerts",
+          "response": {
+            "status": 500,
+            "body": { "message": "temporary upstream failure" }
+          }
+        },
+        {
+          "operationId": "listSecretScanningAlerts",
+          "response": {
+            "body": [
+              {
+                "number": 303,
+                "state": "open",
+                "secret_type": "generic-api-key"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": {
+          "data": {
+            "code_scanning": [{ "number": 101, "state": "open" }],
+            "secret_scanning": [{ "number": 303, "state": "open", "secret_type": "generic-api-key" }],
+            "dependabot_error": {
+              "step_call": "GET /repos/{owner}/{repo}/dependabot/alerts"
+            }
+          },
+          "errors": [
+            { "step_call": "GET /repos/{owner}/{repo}/dependabot/alerts" }
+          ]
         }
       }
     }

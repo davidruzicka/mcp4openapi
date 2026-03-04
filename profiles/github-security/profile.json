@@ -3,7 +3,7 @@
   "profile_name": "github-missing",
   "profile_id": "github-security",
   "openapi_spec_path": "./openapi.yaml",
-  "description": "GitHub Code Scanning alert operations for triage and remediation workflows.",
+  "description": "GitHub security alert operations for triage and remediation workflows (code scanning, Dependabot, and secret scanning).",
   "parameter_aliases": {
     "alert_number": ["alertNumber"],
     "tool_name": ["tool"]
@@ -11,22 +11,32 @@
   "tools": [
     {
       "name": "retrieve_content",
-      "description": "Read-only access to GitHub code scanning alerts. Actions: 'list_alerts', 'get_alert', 'list_alert_instances'.",
+      "description": "Read-only access to GitHub security alerts. Actions: code scanning ('list_alerts', 'get_alert', 'list_alert_instances'), Dependabot ('list_dependabot_alerts', 'get_dependabot_alert'), secret scanning ('list_secret_scanning_alerts', 'get_secret_scanning_alert', 'list_secret_scanning_alert_locations').",
       "metadata_params": ["action"],
       "operations": {
         "list_alerts": "listCodeScanningAlerts",
         "get_alert": "getCodeScanningAlert",
-        "list_alert_instances": "listCodeScanningAlertInstances"
+        "list_alert_instances": "listCodeScanningAlertInstances",
+        "list_dependabot_alerts": "listDependabotAlerts",
+        "get_dependabot_alert": "getDependabotAlert",
+        "list_secret_scanning_alerts": "listSecretScanningAlerts",
+        "get_secret_scanning_alert": "getSecretScanningAlert",
+        "list_secret_scanning_alert_locations": "listSecretScanningAlertLocations"
       },
       "response_fields": {
         "list_alerts": ["number", "state", "rule", "tool", "html_url", "created_at", "updated_at", "dismissed_reason"],
         "get_alert": ["number", "state", "rule", "tool", "html_url", "created_at", "updated_at", "dismissed_reason", "dismissed_comment", "most_recent_instance"],
-        "list_alert_instances": ["ref", "analysis_key", "environment", "category", "state", "commit_sha", "message", "location"]
+        "list_alert_instances": ["ref", "analysis_key", "environment", "category", "state", "commit_sha", "message", "location"],
+        "list_dependabot_alerts": ["number", "state", "dependency", "security_advisory", "security_vulnerability", "html_url", "created_at", "updated_at", "dismissed_reason"],
+        "get_dependabot_alert": ["number", "state", "dependency", "security_advisory", "security_vulnerability", "html_url", "created_at", "updated_at", "dismissed_reason", "dismissed_comment"],
+        "list_secret_scanning_alerts": ["number", "state", "secret_type", "resolution", "html_url", "created_at", "updated_at"],
+        "get_secret_scanning_alert": ["number", "state", "secret_type", "resolution", "resolution_comment", "html_url", "locations_url", "created_at", "updated_at"],
+        "list_secret_scanning_alert_locations": ["type", "details", "commit_sha", "blob_sha"]
       },
       "parameters": {
         "action": {
           "type": "string",
-          "enum": ["list_alerts", "get_alert", "list_alert_instances"],
+          "enum": ["list_alerts", "get_alert", "list_alert_instances", "list_dependabot_alerts", "get_dependabot_alert", "list_secret_scanning_alerts", "get_secret_scanning_alert", "list_secret_scanning_alert_locations"],
           "description": "Action to perform",
           "required": true
         },
@@ -43,52 +53,104 @@
         "alert_number": {
           "type": "integer",
           "description": "Alert number",
-          "required_for": ["get_alert", "list_alert_instances"]
+          "required_for": ["get_alert", "list_alert_instances", "get_dependabot_alert", "get_secret_scanning_alert", "list_secret_scanning_alert_locations"]
         },
         "state": {
           "type": "string",
-          "enum": ["open", "closed", "dismissed", "fixed"],
-          "description": "Filter by alert state"
+          "enum": ["open", "closed", "dismissed", "fixed", "auto_dismissed", "resolved"],
+          "description": "Filter by alert state",
+          "allowed_for": ["list_alerts", "list_dependabot_alerts", "list_secret_scanning_alerts"]
         },
         "ref": {
           "type": "string",
-          "description": "Filter by ref (branch)"
+          "description": "Filter by ref (branch)",
+          "allowed_for": ["list_alerts"]
         },
         "severity": {
           "type": "string",
           "enum": ["critical", "high", "medium", "low", "warning", "note", "error"],
-          "description": "Filter by severity"
+          "description": "Filter by severity",
+          "allowed_for": ["list_alerts", "list_dependabot_alerts"]
         },
         "tool_name": {
           "type": "string",
-          "description": "Filter by analysis tool name"
+          "description": "Filter by analysis tool name",
+          "allowed_for": ["list_alerts"]
+        },
+        "ecosystem": {
+          "type": "string",
+          "description": "Dependabot filter by package ecosystem",
+          "allowed_for": ["list_dependabot_alerts"]
+        },
+        "package": {
+          "type": "string",
+          "description": "Dependabot filter by package name",
+          "allowed_for": ["list_dependabot_alerts"]
+        },
+        "manifest": {
+          "type": "string",
+          "description": "Dependabot filter by manifest path",
+          "allowed_for": ["list_dependabot_alerts"]
+        },
+        "scope": {
+          "type": "string",
+          "enum": ["runtime", "development"],
+          "description": "Dependabot filter by dependency scope",
+          "allowed_for": ["list_dependabot_alerts"]
+        },
+        "secret_type": {
+          "type": "string",
+          "description": "Secret scanning filter by secret type",
+          "allowed_for": ["list_secret_scanning_alerts"]
+        },
+        "resolution": {
+          "type": "string",
+          "enum": ["false_positive", "wont_fix", "revoked", "used_in_tests", "pattern_edited", "pattern_deleted"],
+          "description": "Secret scanning filter by resolution",
+          "allowed_for": ["list_secret_scanning_alerts"]
+        },
+        "sort": {
+          "type": "string",
+          "enum": ["created", "updated"],
+          "description": "Sort field for secret scanning alerts",
+          "allowed_for": ["list_secret_scanning_alerts"]
+        },
+        "direction": {
+          "type": "string",
+          "enum": ["asc", "desc"],
+          "description": "Sort direction for secret scanning alerts",
+          "allowed_for": ["list_secret_scanning_alerts"]
         },
         "page": {
           "type": "integer",
           "description": "Page number",
-          "default": 1
+          "allowed_for": ["list_alerts", "list_alert_instances", "list_dependabot_alerts", "list_secret_scanning_alerts", "list_secret_scanning_alert_locations"]
         },
         "per_page": {
           "type": "integer",
           "description": "Items per page",
-          "default": 30
+          "allowed_for": ["list_alerts", "list_alert_instances", "list_dependabot_alerts", "list_secret_scanning_alerts", "list_secret_scanning_alert_locations"]
         }
       }
     },
     {
       "name": "update_content",
-      "description": "Update GitHub code scanning alerts. Actions: 'update_alert'.",
+      "description": "Update GitHub security alerts. Actions: 'update_alert' (code scanning), 'update_dependabot_alert', 'update_secret_scanning_alert'.",
       "metadata_params": ["action"],
       "operations": {
-        "update_alert": "updateCodeScanningAlert"
+        "update_alert": "updateCodeScanningAlert",
+        "update_dependabot_alert": "updateDependabotAlert",
+        "update_secret_scanning_alert": "updateSecretScanningAlert"
       },
       "response_fields": {
-        "update_alert": ["number", "state", "dismissed_reason", "dismissed_comment", "updated_at"]
+        "update_alert": ["number", "state", "dismissed_reason", "dismissed_comment", "updated_at"],
+        "update_dependabot_alert": ["number", "state", "dismissed_reason", "dismissed_comment", "updated_at"],
+        "update_secret_scanning_alert": ["number", "state", "resolution", "resolution_comment", "updated_at"]
       },
       "parameters": {
         "action": {
           "type": "string",
-          "enum": ["update_alert"],
+          "enum": ["update_alert", "update_dependabot_alert", "update_secret_scanning_alert"],
           "description": "Action to perform",
           "required": true
         },
@@ -105,22 +167,138 @@
         "alert_number": {
           "type": "integer",
           "description": "Alert number to update",
-          "required_for": ["update_alert"]
+          "required_for": ["update_alert", "update_dependabot_alert", "update_secret_scanning_alert"]
         },
         "state": {
           "type": "string",
-          "enum": ["open", "dismissed"],
+          "enum": ["open", "dismissed", "resolved"],
           "description": "New alert state",
-          "required_for": ["update_alert"]
+          "required_for": ["update_alert", "update_dependabot_alert", "update_secret_scanning_alert"]
         },
         "dismissed_reason": {
           "type": "string",
-          "enum": ["false positive", "won't fix", "used in tests"],
-          "description": "Dismiss reason when state is dismissed"
+          "enum": ["false positive", "won't fix", "used in tests", "fix_started", "inaccurate", "no_bandwidth", "not_used", "tolerable_risk"],
+          "description": "Dismiss reason when state is dismissed",
+          "allowed_for": ["update_alert", "update_dependabot_alert"],
+          "forbidden_for": ["update_secret_scanning_alert"]
         },
         "dismissed_comment": {
           "type": "string",
-          "description": "Comment for dismissal"
+          "description": "Comment for dismissal",
+          "allowed_for": ["update_alert", "update_dependabot_alert"],
+          "forbidden_for": ["update_secret_scanning_alert"]
+        },
+        "resolution": {
+          "type": "string",
+          "enum": ["false_positive", "wont_fix", "revoked", "used_in_tests", "pattern_edited", "pattern_deleted"],
+          "description": "Secret scanning resolution when state is resolved",
+          "required_for": ["update_secret_scanning_alert"],
+          "allowed_for": ["update_secret_scanning_alert"],
+          "forbidden_for": ["update_alert", "update_dependabot_alert"]
+        },
+        "resolution_comment": {
+          "type": "string",
+          "description": "Comment for secret scanning resolution",
+          "allowed_for": ["update_secret_scanning_alert"],
+          "forbidden_for": ["update_alert", "update_dependabot_alert"]
+        }
+      }
+    },
+    {
+      "name": "retrieve_security_overview",
+      "description": "Composite overview of open security findings across code scanning, Dependabot, and secret scanning. Returns short aggregated records for agent triage.",
+      "composite": true,
+      "partial_results": true,
+      "steps": [
+        {
+          "call": "GET /repos/{owner}/{repo}/code-scanning/alerts",
+          "store_as": "code_scanning"
+        },
+        {
+          "call": "GET /repos/{owner}/{repo}/dependabot/alerts",
+          "store_as": "dependabot"
+        },
+        {
+          "call": "GET /repos/{owner}/{repo}/secret-scanning/alerts",
+          "store_as": "secret_scanning"
+        }
+      ],
+      "response_fields": {
+        "code_scanning": ["number", "state", "rule", "html_url", "created_at", "updated_at"],
+        "dependabot": ["number", "state", "dependency", "security_advisory", "security_vulnerability", "html_url", "created_at", "updated_at"],
+        "secret_scanning": ["number", "state", "secret_type", "resolution", "html_url", "created_at", "updated_at"]
+      },
+      "parameters": {
+        "owner": {
+          "type": "string",
+          "description": "Repository owner",
+          "required": true
+        },
+        "repo": {
+          "type": "string",
+          "description": "Repository name",
+          "required": true
+        },
+        "state": {
+          "type": "string",
+          "enum": ["open", "closed", "dismissed", "fixed", "auto_dismissed", "resolved"],
+          "description": "Filter by alert state",
+          "default": "open"
+        },
+        "severity": {
+          "type": "string",
+          "enum": ["critical", "high", "medium", "low", "warning", "note", "error"],
+          "description": "Filter by severity where supported"
+        },
+        "per_page": {
+          "type": "integer",
+          "description": "Items per source to include in overview",
+          "default": 20
+        },
+        "page": {
+          "type": "integer",
+          "description": "Page number",
+          "default": 1
+        },
+        "tool_name": {
+          "type": "string",
+          "description": "Code scanning filter by analysis tool name"
+        },
+        "ecosystem": {
+          "type": "string",
+          "description": "Dependabot filter by package ecosystem"
+        },
+        "package": {
+          "type": "string",
+          "description": "Dependabot filter by package name"
+        },
+        "manifest": {
+          "type": "string",
+          "description": "Dependabot filter by manifest path"
+        },
+        "scope": {
+          "type": "string",
+          "enum": ["runtime", "development"],
+          "description": "Dependabot filter by dependency scope"
+        },
+        "secret_type": {
+          "type": "string",
+          "description": "Secret scanning filter by secret type"
+        },
+        "resolution": {
+          "type": "string",
+          "enum": ["false_positive", "wont_fix", "revoked", "used_in_tests", "pattern_edited", "pattern_deleted"],
+          "description": "Secret scanning filter by resolution"
+        },
+        "sort": {
+          "type": "string",
+          "enum": ["created", "updated"],
+          "description": "Secret scanning sort field"
+        },
+        "direction": {
+          "type": "string",
+          "enum": ["asc", "desc"],
+          "description": "Secret scanning sort direction"
         }
       }
     }

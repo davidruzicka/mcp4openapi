@@ -78,6 +78,8 @@ export interface ParameterDefinition {
   description: string;
   required?: boolean;
   required_for?: string[]; // Which actions require this parameter
+  allowed_for?: string[]; // Which actions allow this parameter (optional allowlist)
+  forbidden_for?: string[]; // Which actions must reject this parameter
   enum?: string[];
   minLength?: number;
   maxLength?: number;

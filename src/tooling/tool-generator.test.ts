@@ -154,6 +154,76 @@ describe('ToolGenerator', () => {
     }).toThrow(/link_url/);
   });
 
+  it('should reject parameters outside allowed_for actions', () => {
+    const toolDef = {
+      name: 'test_allowed_for',
+      description: 'Allowed-for validation',
+      operations: {
+        list: 'getSomething',
+        get: 'getSomethingElse'
+      },
+      parameters: {
+        action: {
+          type: 'string' as const,
+          description: 'Action',
+          enum: ['list', 'get'],
+          required: true
+        },
+        detail_level: {
+          type: 'string' as const,
+          description: 'Detail level',
+          allowed_for: ['get']
+        }
+      }
+    };
+
+    expect(() => {
+      generator.validateArguments(toolDef, { action: 'list', detail_level: 'full' });
+    }).toThrow(/not allowed for action 'list'/);
+
+    expect(() => {
+      generator.validateArguments(toolDef, { action: 'get', detail_level: 'full' });
+    }).not.toThrow();
+  });
+
+  it('should reject parameters for forbidden_for actions', () => {
+    const toolDef = {
+      name: 'test_forbidden_for',
+      description: 'Forbidden-for validation',
+      operations: {
+        update_alert: 'updateCodeScanningAlert',
+        update_secret_scanning_alert: 'updateSecretScanningAlert'
+      },
+      parameters: {
+        action: {
+          type: 'string' as const,
+          description: 'Action',
+          enum: ['update_alert', 'update_secret_scanning_alert'],
+          required: true
+        },
+        dismissed_reason: {
+          type: 'string' as const,
+          description: 'Dismiss reason',
+          forbidden_for: ['update_secret_scanning_alert']
+        }
+      }
+    };
+
+    expect(() => {
+      generator.validateArguments(toolDef, {
+        action: 'update_secret_scanning_alert',
+        dismissed_reason: 'false positive'
+      });
+    }).toThrow(/not allowed for action 'update_secret_scanning_alert'/);
+
+    expect(() => {
+      generator.validateArguments(toolDef, {
+        action: 'update_alert',
+        dismissed_reason: 'false positive'
+      });
+    }).not.toThrow();
+  });
+
   it('should map action to operation ID', () => {
     const toolDef = profile.tools.find(t => t.name === 'manage_project_badges');
     expect(toolDef).toBeDefined();

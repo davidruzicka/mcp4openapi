@@ -419,6 +419,18 @@
             ]
           ]
         },
+        "allowed_for": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "forbidden_for": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
         "enum": {
           "type": "array",
           "items": {
@@ -1162,14 +1174,14 @@
           ]
         },
         "overrides": {
-          "$ref": "#/definitions/Record%3Cstring%2Cstructure-1535101595-14600-14636-1535101595-14585-14637-1535101595-14571-14638-1535101595-14500-14640-1535101595-0-14780%3E"
+          "$ref": "#/definitions/Record%3Cstring%2Cstructure-1535101595-14757-14793-1535101595-14742-14794-1535101595-14728-14795-1535101595-14657-14797-1535101595-0-14937%3E"
         }
       },
       "required": [
         "max_requests_per_minute"
       ]
     },
-    "Record<string,structure-1535101595-14600-14636-1535101595-14585-14637-1535101595-14571-14638-1535101595-14500-14640-1535101595-0-14780>": {
+    "Record<string,structure-1535101595-14757-14793-1535101595-14742-14794-1535101595-14728-14795-1535101595-14657-14797-1535101595-0-14937>": {
       "type": "object",
       "additionalProperties": {
         "type": "object",
@@ -1228,6 +1240,20 @@
         "backoff_ms",
         "retry_on_status"
       ]
+    },
+    "Record<string,structure-1535101595-14600-14636-1535101595-14585-14637-1535101595-14571-14638-1535101595-14500-14640-1535101595-0-14780>": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "max_requests_per_minute": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "max_requests_per_minute"
+        ]
+      }
     },
     "Record<string,structure-1535101595-12347-12383-1535101595-12332-12384-1535101595-12318-12385-1535101595-12247-12387-1535101595-0-12527>": {
       "type": "object",

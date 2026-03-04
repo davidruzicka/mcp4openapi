@@ -259,7 +259,144 @@ describe('ProfileLoader', () => {
         'utf-8'
       );
 
-      await expect(loader.load(tmpPath)).rejects.toThrow("requires action 'get' but it's not in action enum");
+      await expect(loader.load(tmpPath)).rejects.toThrow("has 'required_for' action 'get' but it's not in action enum");
+    });
+
+    it('rejects allowed_for when action enum is missing', async () => {
+      const loader = new ProfileLoader();
+      const fs = await import('fs/promises');
+      const tmpPath = `/tmp/profile-allowed-for-${Date.now()}-${Math.random()}.json`;
+      await fs.writeFile(
+        tmpPath,
+        JSON.stringify({
+          profile_name: 'test',
+          tools: [
+            {
+              name: 'tool',
+              description: 'Tool',
+              parameters: {
+                some_id: {
+                  type: 'string',
+                  description: 'id',
+                  allowed_for: ['get'],
+                },
+              },
+              operations: { execute: 'op' },
+            },
+          ],
+          interceptors: {},
+        }),
+        'utf-8'
+      );
+
+      await expect(loader.load(tmpPath)).rejects.toThrow("has 'allowed_for' but 'action' parameter has no enum");
+    });
+
+    it('rejects forbidden_for actions that are not in action enum', async () => {
+      const loader = new ProfileLoader();
+      const fs = await import('fs/promises');
+      const tmpPath = `/tmp/profile-forbidden-for-enum-${Date.now()}-${Math.random()}.json`;
+      await fs.writeFile(
+        tmpPath,
+        JSON.stringify({
+          profile_name: 'test',
+          tools: [
+            {
+              name: 'tool',
+              description: 'Tool',
+              parameters: {
+                action: {
+                  type: 'string',
+                  description: 'Action',
+                  enum: ['list'],
+                },
+                some_id: {
+                  type: 'string',
+                  description: 'id',
+                  forbidden_for: ['get'],
+                },
+              },
+              operations: { list: 'op' },
+            },
+          ],
+          interceptors: {},
+        }),
+        'utf-8'
+      );
+
+      await expect(loader.load(tmpPath)).rejects.toThrow("has 'forbidden_for' action 'get' but it's not in action enum");
+    });
+
+    it('rejects overlapping allowed_for and forbidden_for actions', async () => {
+      const loader = new ProfileLoader();
+      const fs = await import('fs/promises');
+      const tmpPath = `/tmp/profile-allowed-forbidden-overlap-${Date.now()}-${Math.random()}.json`;
+      await fs.writeFile(
+        tmpPath,
+        JSON.stringify({
+          profile_name: 'test',
+          tools: [
+            {
+              name: 'tool',
+              description: 'Tool',
+              parameters: {
+                action: {
+                  type: 'string',
+                  description: 'Action',
+                  enum: ['list', 'get'],
+                },
+                some_id: {
+                  type: 'string',
+                  description: 'id',
+                  allowed_for: ['get'],
+                  forbidden_for: ['get'],
+                },
+              },
+              operations: { list: 'op' },
+            },
+          ],
+          interceptors: {},
+        }),
+        'utf-8'
+      );
+
+      await expect(loader.load(tmpPath)).rejects.toThrow("overlapping 'allowed_for' and 'forbidden_for'");
+    });
+
+    it('rejects required_for actions missing from allowed_for', async () => {
+      const loader = new ProfileLoader();
+      const fs = await import('fs/promises');
+      const tmpPath = `/tmp/profile-required-not-allowed-${Date.now()}-${Math.random()}.json`;
+      await fs.writeFile(
+        tmpPath,
+        JSON.stringify({
+          profile_name: 'test',
+          tools: [
+            {
+              name: 'tool',
+              description: 'Tool',
+              parameters: {
+                action: {
+                  type: 'string',
+                  description: 'Action',
+                  enum: ['list', 'get'],
+                },
+                some_id: {
+                  type: 'string',
+                  description: 'id',
+                  required_for: ['get'],
+                  allowed_for: ['list'],
+                },
+              },
+              operations: { list: 'op' },
+            },
+          ],
+          interceptors: {},
+        }),
+        'utf-8'
+      );
+
+      await expect(loader.load(tmpPath)).rejects.toThrow("required actions missing from 'allowed_for'");
     });
   });
 

@@ -1450,6 +1450,7 @@ export class MCPServer {
         throw new ResourceNotFoundError(toolName, 'Tool');
       }
       args = applyParameterDefaults(toolDef, rawArgs);
+      this.toolGenerator.validateArguments(toolDef, args);
 
       const toolFilter = this.getToolFilterForSession(sessionId, profileId);
       if (toolFilter && !toolFilter.allowedToolNames.has(toolName)) {
