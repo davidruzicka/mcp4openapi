@@ -30,6 +30,7 @@ export const parameterDefinitionSchema = z.object({
     allowed_for: z.array(z.string()).optional(),
     forbidden_for: z.array(z.string()).optional(),
     enum: z.array(z.string()).optional(),
+    enum_for: z.record(z.string(), z.array(z.string())).optional(),
     minLength: z.number().optional(),
     maxLength: z.number().optional(),
     pattern: z.string().optional(),

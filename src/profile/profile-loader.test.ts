@@ -262,6 +262,109 @@ describe('ProfileLoader', () => {
       await expect(loader.load(tmpPath)).rejects.toThrow("has 'required_for' action 'get' but it's not in action enum");
     });
 
+    it('rejects enum_for when action enum is missing', async () => {
+      const loader = new ProfileLoader();
+      const fs = await import('fs/promises');
+      const tmpPath = `/tmp/profile-enum-for-no-action-${Date.now()}-${Math.random()}.json`;
+      await fs.writeFile(
+        tmpPath,
+        JSON.stringify({
+          profile_name: 'test',
+          tools: [
+            {
+              name: 'tool',
+              description: 'Tool',
+              parameters: {
+                state: {
+                  type: 'string',
+                  description: 'State',
+                  enum: ['open', 'closed'],
+                  enum_for: { list: ['open'] },
+                },
+              },
+              operations: { list: 'op' },
+            },
+          ],
+          interceptors: {},
+        }),
+        'utf-8'
+      );
+
+      await expect(loader.load(tmpPath)).rejects.toThrow("has 'enum_for' but 'action' parameter has no enum");
+    });
+
+    it('rejects enum_for actions that are not in action enum', async () => {
+      const loader = new ProfileLoader();
+      const fs = await import('fs/promises');
+      const tmpPath = `/tmp/profile-enum-for-unknown-action-${Date.now()}-${Math.random()}.json`;
+      await fs.writeFile(
+        tmpPath,
+        JSON.stringify({
+          profile_name: 'test',
+          tools: [
+            {
+              name: 'tool',
+              description: 'Tool',
+              parameters: {
+                action: {
+                  type: 'string',
+                  description: 'Action',
+                  enum: ['list'],
+                },
+                state: {
+                  type: 'string',
+                  description: 'State',
+                  enum: ['open', 'closed'],
+                  enum_for: { get: ['open'] },
+                },
+              },
+              operations: { list: 'op' },
+            },
+          ],
+          interceptors: {},
+        }),
+        'utf-8'
+      );
+
+      await expect(loader.load(tmpPath)).rejects.toThrow("has 'enum_for' action 'get' but it's not in action enum");
+    });
+
+    it('rejects enum_for values that are not in base enum', async () => {
+      const loader = new ProfileLoader();
+      const fs = await import('fs/promises');
+      const tmpPath = `/tmp/profile-enum-for-invalid-values-${Date.now()}-${Math.random()}.json`;
+      await fs.writeFile(
+        tmpPath,
+        JSON.stringify({
+          profile_name: 'test',
+          tools: [
+            {
+              name: 'tool',
+              description: 'Tool',
+              parameters: {
+                action: {
+                  type: 'string',
+                  description: 'Action',
+                  enum: ['list'],
+                },
+                state: {
+                  type: 'string',
+                  description: 'State',
+                  enum: ['open', 'closed'],
+                  enum_for: { list: ['resolved'] },
+                },
+              },
+              operations: { list: 'op' },
+            },
+          ],
+          interceptors: {},
+        }),
+        'utf-8'
+      );
+
+      await expect(loader.load(tmpPath)).rejects.toThrow("has 'enum_for' values not present in base enum");
+    });
+
     it('rejects allowed_for when action enum is missing', async () => {
       const loader = new ProfileLoader();
       const fs = await import('fs/promises');
@@ -397,6 +500,42 @@ describe('ProfileLoader', () => {
       );
 
       await expect(loader.load(tmpPath)).rejects.toThrow("required actions missing from 'allowed_for'");
+    });
+
+    it('rejects overlapping required_for and forbidden_for actions', async () => {
+      const loader = new ProfileLoader();
+      const fs = await import('fs/promises');
+      const tmpPath = `/tmp/profile-required-forbidden-overlap-${Date.now()}-${Math.random()}.json`;
+      await fs.writeFile(
+        tmpPath,
+        JSON.stringify({
+          profile_name: 'test',
+          tools: [
+            {
+              name: 'tool',
+              description: 'Tool',
+              parameters: {
+                action: {
+                  type: 'string',
+                  description: 'Action',
+                  enum: ['get'],
+                },
+                some_id: {
+                  type: 'string',
+                  description: 'id',
+                  required_for: ['get'],
+                  forbidden_for: ['get'],
+                },
+              },
+              operations: { get: 'op' },
+            },
+          ],
+          interceptors: {},
+        }),
+        'utf-8'
+      );
+
+      await expect(loader.load(tmpPath)).rejects.toThrow('actions required and forbidden at the same time');
     });
   });
 

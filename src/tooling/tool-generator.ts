@@ -73,6 +73,15 @@ export class ToolGenerator {
         properties[name].description = existing +
           ` Not allowed when action is: ${param.forbidden_for.join(', ')}.`;
       }
+
+      if (param.enum_for && Object.keys(param.enum_for).length > 0) {
+        const existing = properties[name].description || '';
+        const summary = Object.entries(param.enum_for)
+          .map(([action, values]) => `${action}=[${values.join(', ')}]`)
+          .join('; ');
+        properties[name].description = existing +
+          ` Allowed values by action: ${summary}.`;
+      }
     }
 
     return {
@@ -176,6 +185,15 @@ export class ToolGenerator {
         throw new ValidationError(
           `Parameter '${name}' is not allowed for action '${action}'`
         );
+      }
+
+      if (value !== undefined && action && param.enum_for && param.enum_for[action]) {
+        const actionEnumValues = param.enum_for[action];
+        if (!actionEnumValues.includes(String(value))) {
+          throw new ValidationError(
+            `Invalid value for ${name} when action is '${action}'. Must be one of: ${actionEnumValues.join(', ')}`
+          );
+        }
       }
 
       // Validate enum

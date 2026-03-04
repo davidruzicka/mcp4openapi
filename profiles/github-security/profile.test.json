@@ -498,6 +498,36 @@
       }
     },
     {
+      "name": "Validation - Reject Invalid State For Secret Scanning List",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "list_secret_scanning_alerts",
+        "owner": "{{owner}}",
+        "repo": "{{repo}}",
+        "state": "closed"
+      },
+      "expect": {
+        "success": false,
+        "error_message_regex": "Invalid value for state when action is 'list_secret_scanning_alerts'",
+        "requests": []
+      }
+    },
+    {
+      "name": "Validation - Reject Invalid State For Dependabot List",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "list_dependabot_alerts",
+        "owner": "{{owner}}",
+        "repo": "{{repo}}",
+        "state": "resolved"
+      },
+      "expect": {
+        "success": false,
+        "error_message_regex": "Invalid value for state when action is 'list_dependabot_alerts'",
+        "requests": []
+      }
+    },
+    {
       "name": "Validation - Reject Dismissed Reason For Secret Update",
       "tool": "update_content",
       "arguments": {
@@ -512,6 +542,39 @@
       "expect": {
         "success": false,
         "error_message_regex": "not allowed for action 'update_secret_scanning_alert'",
+        "requests": []
+      }
+    },
+    {
+      "name": "Validation - Reject Invalid State For Code Scanning Update",
+      "tool": "update_content",
+      "arguments": {
+        "action": "update_alert",
+        "owner": "{{owner}}",
+        "repo": "{{repo}}",
+        "alert_number": "{{alertNumber}}",
+        "state": "resolved"
+      },
+      "expect": {
+        "success": false,
+        "error_message_regex": "Invalid value for state when action is 'update_alert'",
+        "requests": []
+      }
+    },
+    {
+      "name": "Validation - Reject Invalid Dismissed Reason For Code Scanning Update",
+      "tool": "update_content",
+      "arguments": {
+        "action": "update_alert",
+        "owner": "{{owner}}",
+        "repo": "{{repo}}",
+        "alert_number": "{{alertNumber}}",
+        "state": "dismissed",
+        "dismissed_reason": "tolerable_risk"
+      },
+      "expect": {
+        "success": false,
+        "error_message_regex": "Invalid value for dismissed_reason when action is 'update_alert'",
         "requests": []
       }
     },

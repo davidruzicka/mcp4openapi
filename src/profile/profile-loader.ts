@@ -299,7 +299,9 @@ export class ProfileLoader {
           );
         }
 
-        this.validateConditionalActionRules(tool.name, paramName, paramDef, tool.parameters['action']?.enum);
+        const actionEnum = tool.parameters['action']?.enum;
+        this.validateConditionalActionRules(tool.name, paramName, paramDef, actionEnum);
+        this.validateActionScopedEnumRules(tool.name, paramName, paramDef, actionEnum);
       }
 
       // Validate operation keys match action enum or follow {action}_{resourceType} pattern
@@ -430,6 +432,50 @@ export class ProfileLoader {
           `Parameter '${paramName}' in tool '${toolName}' has required actions missing from 'allowed_for': ${missingRequired.join(', ')}`,
           { toolName, paramName, missingRequired, allowedFor },
         );
+      }
+    }
+  }
+
+  private validateActionScopedEnumRules(
+    toolName: string,
+    paramName: string,
+    paramDef: ParameterDefinition,
+    actionEnum: string[] | undefined,
+  ): void {
+    if (!paramDef.enum_for) {
+      return;
+    }
+
+    if (!actionEnum || actionEnum.length === 0) {
+      throw new ValidationError(
+        `Parameter '${paramName}' in tool '${toolName}' has 'enum_for' but 'action' parameter has no enum`,
+        { toolName, paramName, hasActionEnum: false },
+      );
+    }
+
+    for (const [action, values] of Object.entries(paramDef.enum_for)) {
+      if (!actionEnum.includes(action)) {
+        throw new ValidationError(
+          `Parameter '${paramName}' has 'enum_for' action '${action}' but it's not in action enum: ${actionEnum.join(', ')}`,
+          { toolName, paramName, action, availableActions: actionEnum },
+        );
+      }
+
+      if (!Array.isArray(values) || values.length === 0) {
+        throw new ValidationError(
+          `Parameter '${paramName}' in tool '${toolName}' has empty 'enum_for' values for action '${action}'`,
+          { toolName, paramName, action },
+        );
+      }
+
+      if (paramDef.enum) {
+        const invalidValues = values.filter((value) => !paramDef.enum?.includes(value));
+        if (invalidValues.length > 0) {
+          throw new ValidationError(
+            `Parameter '${paramName}' in tool '${toolName}' has 'enum_for' values not present in base enum for action '${action}': ${invalidValues.join(', ')}`,
+            { toolName, paramName, action, invalidValues, enum: paramDef.enum },
+          );
+        }
       }
     }
   }

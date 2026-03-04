@@ -179,6 +179,7 @@ tool-filter/
 **How**:
 - `required_for: ["get", "update", "delete"]` for conditional required inputs
 - `allowed_for: [...]` and `forbidden_for: [...]` for explicit action-level parameter gating
+- `enum_for: { action: [...] }` for action-specific enum constraints
 
 **LLM-friendly**: Description includes conditional hints for required/allowed/forbidden actions.
 

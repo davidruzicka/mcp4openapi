@@ -154,6 +154,44 @@ describe('ToolGenerator', () => {
     }).toThrow(/link_url/);
   });
 
+  it('should include action-gated hints in generated parameter description', () => {
+    const toolDef = {
+      name: 'test_action_hints',
+      description: 'Action hint descriptions',
+      operations: {
+        update_alert: 'updateCodeScanningAlert',
+        update_secret_scanning_alert: 'updateSecretScanningAlert'
+      },
+      parameters: {
+        action: {
+          type: 'string' as const,
+          description: 'Action',
+          enum: ['update_alert', 'update_secret_scanning_alert'],
+          required: true
+        },
+        state: {
+          type: 'string' as const,
+          description: 'State',
+          required_for: ['update_alert'],
+          allowed_for: ['update_alert', 'update_secret_scanning_alert'],
+          forbidden_for: ['update_secret_scanning_alert'],
+          enum_for: {
+            update_alert: ['open', 'dismissed'],
+            update_secret_scanning_alert: ['open', 'resolved']
+          }
+        }
+      }
+    };
+
+    const tool = generator.generateTool(toolDef);
+    const stateProperty = tool.inputSchema.properties?.state as { description?: string };
+
+    expect(stateProperty.description).toContain('Required when action is: update_alert.');
+    expect(stateProperty.description).toContain('Allowed only when action is: update_alert, update_secret_scanning_alert.');
+    expect(stateProperty.description).toContain('Not allowed when action is: update_secret_scanning_alert.');
+    expect(stateProperty.description).toContain('Allowed values by action: update_alert=[open, dismissed]; update_secret_scanning_alert=[open, resolved].');
+  });
+
   it('should reject parameters outside allowed_for actions', () => {
     const toolDef = {
       name: 'test_allowed_for',
@@ -221,6 +259,43 @@ describe('ToolGenerator', () => {
         action: 'update_alert',
         dismissed_reason: 'false positive'
       });
+    }).not.toThrow();
+  });
+
+  it('should validate enum_for values per action', () => {
+    const toolDef = {
+      name: 'test_enum_for',
+      description: 'Action-scoped enum validation',
+      operations: {
+        list_alerts: 'listCodeScanningAlerts',
+        list_secret_scanning_alerts: 'listSecretScanningAlerts'
+      },
+      parameters: {
+        action: {
+          type: 'string' as const,
+          description: 'Action',
+          enum: ['list_alerts', 'list_secret_scanning_alerts'],
+          required: true
+        },
+        state: {
+          type: 'string' as const,
+          description: 'State',
+          enum: ['open', 'closed', 'resolved'],
+          allowed_for: ['list_alerts', 'list_secret_scanning_alerts'],
+          enum_for: {
+            list_alerts: ['open', 'closed'],
+            list_secret_scanning_alerts: ['open', 'resolved']
+          }
+        }
+      }
+    };
+
+    expect(() => {
+      generator.validateArguments(toolDef, { action: 'list_alerts', state: 'resolved' });
+    }).toThrow(/Invalid value for state when action is 'list_alerts'/);
+
+    expect(() => {
+      generator.validateArguments(toolDef, { action: 'list_secret_scanning_alerts', state: 'resolved' });
     }).not.toThrow();
   });
 

@@ -59,7 +59,12 @@
           "type": "string",
           "enum": ["open", "closed", "dismissed", "fixed", "auto_dismissed", "resolved"],
           "description": "Filter by alert state",
-          "allowed_for": ["list_alerts", "list_dependabot_alerts", "list_secret_scanning_alerts"]
+          "allowed_for": ["list_alerts", "list_dependabot_alerts", "list_secret_scanning_alerts"],
+          "enum_for": {
+            "list_alerts": ["open", "closed", "dismissed", "fixed"],
+            "list_dependabot_alerts": ["open", "dismissed", "fixed", "auto_dismissed"],
+            "list_secret_scanning_alerts": ["open", "resolved"]
+          }
         },
         "ref": {
           "type": "string",
@@ -173,14 +178,23 @@
           "type": "string",
           "enum": ["open", "dismissed", "resolved"],
           "description": "New alert state",
-          "required_for": ["update_alert", "update_dependabot_alert", "update_secret_scanning_alert"]
+          "required_for": ["update_alert", "update_dependabot_alert", "update_secret_scanning_alert"],
+          "enum_for": {
+            "update_alert": ["open", "dismissed"],
+            "update_dependabot_alert": ["open", "dismissed"],
+            "update_secret_scanning_alert": ["open", "resolved"]
+          }
         },
         "dismissed_reason": {
           "type": "string",
           "enum": ["false positive", "won't fix", "used in tests", "fix_started", "inaccurate", "no_bandwidth", "not_used", "tolerable_risk"],
           "description": "Dismiss reason when state is dismissed",
           "allowed_for": ["update_alert", "update_dependabot_alert"],
-          "forbidden_for": ["update_secret_scanning_alert"]
+          "forbidden_for": ["update_secret_scanning_alert"],
+          "enum_for": {
+            "update_alert": ["false positive", "won't fix", "used in tests"],
+            "update_dependabot_alert": ["fix_started", "inaccurate", "no_bandwidth", "not_used", "tolerable_risk"]
+          }
         },
         "dismissed_comment": {
           "type": "string",
@@ -241,7 +255,7 @@
         },
         "state": {
           "type": "string",
-          "enum": ["open", "closed", "dismissed", "fixed", "auto_dismissed", "resolved"],
+          "enum": ["open"],
           "description": "Filter by alert state",
           "default": "open"
         },

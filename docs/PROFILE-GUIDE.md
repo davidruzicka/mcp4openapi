@@ -145,6 +145,7 @@ Maps user actions to OpenAPI operations.
 - `required_for`: Conditional parameter requirements
 - `allowed_for`: Optional action allowlist for a parameter
 - `forbidden_for`: Optional action denylist for a parameter
+- `enum_for`: Optional action-specific enum values for a parameter
 - Parameters are defined at the tool level. Use `required_for` + `allowed_for`/`forbidden_for` to keep one CRUD-style tool while enforcing action-specific parameter safety.
 
 #### Root Array Request Bodies
@@ -335,6 +336,21 @@ Array a object parametry se nyní validují i na úrovni generovaného JSON Sch�
     "description": "Dismiss reason",
     "allowed_for": ["update_alert", "update_dependabot_alert"],
     "forbidden_for": ["update_secret_scanning_alert"]
+  }
+}
+```
+
+#### Action-Scoped Enum Values
+
+```json
+{
+  "state": {
+    "type": "string",
+    "enum": ["open", "closed", "resolved"],
+    "enum_for": {
+      "list_alerts": ["open", "closed"],
+      "list_secret_scanning_alerts": ["open", "resolved"]
+    }
   }
 }
 ```
