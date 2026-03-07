@@ -141,7 +141,15 @@ export function isEmail(value: string): boolean {
  */
 export function isUri(value: string): boolean {
   try {
-    new URL(value);
+    const url = new URL(value);
+
+    // Security: Block dangerous schemes that could lead to XSS
+    const protocol = url.protocol.toLowerCase();
+    const dangerousSchemes = ['javascript:', 'vbscript:', 'data:'];
+    if (dangerousSchemes.includes(protocol)) {
+      return false;
+    }
+
     return true;
   } catch {
     return false;

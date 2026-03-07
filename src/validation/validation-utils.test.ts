@@ -45,6 +45,14 @@ describe('Validation Utils', () => {
       expect(isUri('example.com')).toBe(false);
       expect(isUri('://invalid')).toBe(false);
     });
+
+    it('should reject dangerous URI schemes (XSS prevention)', () => {
+      expect(isUri('javascript:alert(1)')).toBe(false);
+      expect(isUri('javascript://localhost/%0aalert(1)')).toBe(false);
+      expect(isUri('vbscript:msgbox("hello")')).toBe(false);
+      expect(isUri('data:text/html,<script>alert(1)</script>')).toBe(false);
+      expect(isUri('JaVaScRiPt:alert(1)')).toBe(false); // Case insensitive
+    });
   });
 
   describe('isHostnameAllowed', () => {
