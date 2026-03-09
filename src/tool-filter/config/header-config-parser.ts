@@ -116,7 +116,7 @@ export class HeaderConfigParser {
     const parsed = parseInt(raw, 10);
     if (Number.isNaN(parsed) || parsed <= 0) {
       throw new ConfigurationError(
-        `Invalid MCP4_TOOL_FILTER_SESSION_MAX_TOOLS: '${raw}' (must be positive integer)`
+        `Invalid MCP4_TOOL_FILTER_SESSION_MAX_TOOLS (must be positive integer)`
       );
     }
 

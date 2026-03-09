@@ -47,7 +47,7 @@ export function buildHttpTransportBaseConfig(host: string, port: number): HttpTr
       const parsed = parseInt(process.env.MCP4_OAUTH_SESSION_TIMEOUT_MS, 10);
       if (Number.isNaN(parsed)) {
         throw new ConfigurationError(
-          `Invalid MCP4_OAUTH_SESSION_TIMEOUT_MS: expected integer milliseconds, got '${process.env.MCP4_OAUTH_SESSION_TIMEOUT_MS}'`
+          `Invalid MCP4_OAUTH_SESSION_TIMEOUT_MS: expected integer milliseconds`
         );
       }
       return parsed;
@@ -57,7 +57,7 @@ export function buildHttpTransportBaseConfig(host: string, port: number): HttpTr
       const parsed = parseInt(process.env.MCP4_OAUTH_REFRESH_THRESHOLD_MS, 10);
       if (Number.isNaN(parsed)) {
         throw new ConfigurationError(
-          `Invalid MCP4_OAUTH_REFRESH_THRESHOLD_MS: expected integer milliseconds, got '${process.env.MCP4_OAUTH_REFRESH_THRESHOLD_MS}'`
+          `Invalid MCP4_OAUTH_REFRESH_THRESHOLD_MS: expected integer milliseconds`
         );
       }
       return parsed;
