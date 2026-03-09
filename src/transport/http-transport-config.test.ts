@@ -101,11 +101,25 @@ describe('buildHttpTransportBaseConfig', () => {
 
   it('throws on invalid oauth session timeout', () => {
     process.env.MCP4_OAUTH_SESSION_TIMEOUT_MS = 'invalid';
-    expect(() => buildHttpTransportBaseConfig('127.0.0.1', 3003)).toThrow(ConfigurationError);
+    let error: Error | undefined;
+    try {
+      buildHttpTransportBaseConfig('127.0.0.1', 3003);
+    } catch (e) {
+      error = e as Error;
+    }
+    expect(error).toBeInstanceOf(ConfigurationError);
+    expect(error?.message).not.toContain('invalid');
   });
 
   it('throws on invalid oauth refresh threshold', () => {
     process.env.MCP4_OAUTH_REFRESH_THRESHOLD_MS = 'invalid';
-    expect(() => buildHttpTransportBaseConfig('127.0.0.1', 3003)).toThrow(ConfigurationError);
+    let error: Error | undefined;
+    try {
+      buildHttpTransportBaseConfig('127.0.0.1', 3003);
+    } catch (e) {
+      error = e as Error;
+    }
+    expect(error).toBeInstanceOf(ConfigurationError);
+    expect(error?.message).not.toContain('invalid');
   });
 });

@@ -79,7 +79,7 @@ export function resolveHttpHostPort(): { host: string; port: number } {
   const port = parseInt(process.env.MCP4_PORT || '3003', 10);
 
   if (Number.isNaN(port)) {
-    throw new Error(`Invalid MCP4_PORT: ${process.env.MCP4_PORT}`);
+    throw new Error(`Invalid MCP4_PORT`);
   }
 
   return { host, port };

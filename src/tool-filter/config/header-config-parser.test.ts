@@ -78,6 +78,7 @@ describe('HeaderConfigParser - MCP4_TOOL_FILTER_SESSION_MAX_TOOLS', () => {
     
     expect(() => parser.parse('get_user')).toThrow(ConfigurationError);
     expect(() => parser.parse('get_user')).toThrow(/must be positive integer/);
+    expect(() => parser.parse('get_user')).not.toThrow(/invalid/);
   });
 
   it('throws on negative value', () => {

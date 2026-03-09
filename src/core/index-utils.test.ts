@@ -113,7 +113,14 @@ describe('index helpers', () => {
   it('resolveHttpHostPort throws on invalid port', () => {
     process.env.MCP4_PORT = 'abc';
 
-    expect(() => resolveHttpHostPort()).toThrow('Invalid MCP4_PORT');
+    let error: Error | undefined;
+    try {
+      resolveHttpHostPort();
+    } catch (e) {
+      error = e as Error;
+    }
+    expect(error?.message).toContain('Invalid MCP4_PORT');
+    expect(error?.message).not.toContain('abc');
   });
 
   it('resolveHttpHostPort uses custom host and port', () => {

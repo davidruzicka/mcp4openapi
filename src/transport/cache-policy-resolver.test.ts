@@ -64,12 +64,19 @@ describe('CachePolicyResolver', () => {
   it('throws on invalid max_memory_bytes_from_env value', () => {
     process.env.CUSTOM_CACHE_LIMIT = 'invalid';
 
-    expect(() => CachePolicyResolver.resolve({
-      cacheConfig: {
-        max_memory_bytes_from_env: 'CUSTOM_CACHE_LIMIT',
-      },
-      hasAuth: false,
-    })).toThrow(ConfigurationError);
+    let error: Error | undefined;
+    try {
+      CachePolicyResolver.resolve({
+        cacheConfig: {
+          max_memory_bytes_from_env: 'CUSTOM_CACHE_LIMIT',
+        },
+        hasAuth: false,
+      });
+    } catch (e) {
+      error = e as Error;
+    }
+    expect(error).toBeInstanceOf(ConfigurationError);
+    expect(error?.message).not.toContain('invalid');
   });
 
   it('throws on partially numeric max_memory_bytes_from_env value', () => {
