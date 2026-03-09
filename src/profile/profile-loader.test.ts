@@ -2095,6 +2095,50 @@ describe('ProfileLoader', () => {
     });
   });
 
+  describe('session cookie auth validation', () => {
+    it('should reject dangerous login_endpoint URIs', async () => {
+      const loader = new ProfileLoader();
+      const fs = await import('fs/promises');
+      const tmpPath = `/tmp/auth-invalid-${Date.now()}-${Math.random()}.json`;
+      await fs.writeFile(
+        tmpPath,
+        JSON.stringify({
+          profile_name: 'auth-invalid',
+          interceptors: {
+            auth: [
+              {
+                type: 'session-cookie',
+                session_cookie_config: {
+                  login_endpoint: 'javascript:alert(1)',
+                  cookie_names: ['session'],
+                  username_field: 'user',
+                  username_from_env: 'USER',
+                  password_field: 'pass',
+                  password_from_env: 'PASS'
+                }
+              }
+            ]
+          },
+          tools: [
+            {
+              name: 'tool_a',
+              description: 'Tool A',
+              operations: { list: 'getItems' },
+              parameters: {
+                action: { type: 'string', required: true, description: 'Action' },
+              },
+            },
+          ],
+        }),
+        'utf-8'
+      );
+
+      await expect(loader.load(tmpPath)).rejects.toThrow(
+        /login_endpoint.*must be a valid absolute URL/
+      );
+    });
+  });
+
   describe('cache interceptor validation', () => {
     it('should reject non-positive cache max_memory_bytes', async () => {
       const loader = new ProfileLoader();

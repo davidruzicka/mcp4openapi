@@ -305,6 +305,12 @@ describe('SchemaValidator', () => {
     });
     expect(invalidResult.valid).toBe(false);
     expect(invalidResult.errors![0].message).toContain('URI format');
+
+    const dangerousResult = validator.validateRequestBody(operation, {
+      url: 'javascript:alert(1)',
+    });
+    expect(dangerousResult.valid).toBe(false);
+    expect(dangerousResult.errors![0].message).toContain('URI format');
   });
 
   it('validates null value against non-null schema', () => {
