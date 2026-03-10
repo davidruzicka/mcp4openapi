@@ -22,12 +22,20 @@ import type {
   QueuedMessage,
   HttpTransportConfig,
   HttpProfileContext,
-  McpRequest
+  McpRequest,
+  EnterpriseAuthorizationRuntimeConfig,
 } from '../types/http-transport.js';
 import { isInitializeRequest } from '../validation/jsonrpc-validator.js';
 import { MetricsCollector } from '../core/metrics.js';
 import type { MetricsContextLabels } from '../core/metrics.js';
 import { ExternalOAuthProvider } from '../auth/oauth-provider.js';
+import { EnterpriseAuthProvider } from '../auth/enterprise-auth-provider.js';
+import { InboundAuthTokenStore } from '../auth/inbound-auth-token-store.js';
+import { EnterpriseReplayStore } from '../auth/enterprise-replay-store.js';
+import { JwksCache } from '../auth/jwks-cache.js';
+import { buildAuthorizationServerMetadata, buildProtectedResourceMetadata } from '../auth/enterprise-metadata.js';
+import { mapAuthError } from '../auth/auth-error-mapper.js';
+import { OAuthGrantRouter } from './oauth-grant-router.js';
 import { SSRFValidator } from '../security/ssrf-validator.js';
 import type { AuthInterceptor, OAuthConfig } from '../types/profile.js';
 import { HTTP_STATUS, MIME_TYPES, OAUTH_PATHS, TIMEOUTS, OAUTH_RATE_LIMIT, PROXY_CREDENTIALS } from '../core/constants.js';
@@ -72,6 +80,7 @@ interface ProfileRuntimeState {
   profileId: string;
   context: HttpProfileContext;
   oauthProvider: ExternalOAuthProvider | null;
+  enterpriseAuthProvider: EnterpriseAuthProvider | null;
   toolFilterService?: ToolFilterService;
   oauthTokensByAccessToken: Map<string, { refreshToken?: string; expiresAt?: number; clientId: string; scopes: string[] }>;
   sessions: Map<string, SessionData>;
@@ -108,6 +117,9 @@ export class HttpTransport {
   private profileIndexProvider: (() => Promise<ListedProfileDetails[]>) | null = null;
   private ssrfValidator: SSRFValidator;
   private rawTenantConfig: HttpTenantsConfig | null;
+  private readonly enterpriseRuntimeConfig: Required<EnterpriseAuthorizationRuntimeConfig>;
+  private readonly inboundAuthTokenStore: InboundAuthTokenStore;
+  private readonly enterpriseJwksCache: JwksCache;
 
   constructor(config: HttpTransportConfig, logger: Logger) {
     // Freeze config to prevent runtime mutation of security-critical settings (allowedOrigins, rate limits, etc.)
@@ -115,6 +127,15 @@ export class HttpTransport {
     this.logger = logger;
     this.ssrfValidator = new SSRFValidator(logger);
     this.rawTenantConfig = loadRawTenantsConfigFromEnv();
+    this.enterpriseRuntimeConfig = this.resolveEnterpriseRuntimeConfig(config.enterpriseAuthorizationRuntimeConfig);
+    this.inboundAuthTokenStore = new InboundAuthTokenStore({
+      maxTokens: this.enterpriseRuntimeConfig.global_max_enterprise_tokens,
+    });
+    this.enterpriseJwksCache = new JwksCache({
+      maxCachedIssuers: this.enterpriseRuntimeConfig.global_max_cached_issuers,
+      refreshTimeoutMs: this.enterpriseRuntimeConfig.jwks_refresh_timeout_ms,
+      refreshBackoffMs: this.enterpriseRuntimeConfig.jwks_refresh_backoff_ms,
+    }, logger);
     
     // Initialize metrics if enabled
     if (config.metricsEnabled) {
@@ -134,6 +155,21 @@ export class HttpTransport {
 
   getMetricsCollector(): MetricsCollector | null {
     return this.metrics;
+  }
+
+  private resolveEnterpriseRuntimeConfig(config?: EnterpriseAuthorizationRuntimeConfig): Required<EnterpriseAuthorizationRuntimeConfig> {
+    return {
+      enabled: config?.enabled ?? true,
+      global_max_cached_jwks_keys: config?.global_max_cached_jwks_keys ?? 64,
+      global_max_cached_issuers: config?.global_max_cached_issuers ?? 16,
+      global_max_replay_entries: config?.global_max_replay_entries ?? 2048,
+      global_max_enterprise_tokens: config?.global_max_enterprise_tokens ?? 2048,
+      jwks_refresh_timeout_ms: config?.jwks_refresh_timeout_ms ?? 5000,
+      jwks_refresh_backoff_ms: config?.jwks_refresh_backoff_ms ?? 1000,
+      enterprise_grant_rate_limit_max: config?.enterprise_grant_rate_limit_max ?? 10,
+      enterprise_grant_rate_limit_window_ms: config?.enterprise_grant_rate_limit_window_ms ?? 60_000,
+      enterprise_grant_max_concurrency_per_profile: config?.enterprise_grant_max_concurrency_per_profile ?? 4,
+    };
   }
 
   setProfileIndexProvider(provider: (() => Promise<ListedProfileDetails[]>) | null): void {
@@ -401,12 +437,23 @@ export class HttpTransport {
       this.logger.info('No OAuth config provided - OAuth provider not initialized', { profileId });
     }
 
+    const enterpriseAuthProvider = context.enterpriseAuthorization?.enabled && this.enterpriseRuntimeConfig.enabled
+      ? new EnterpriseAuthProvider({
+          profileId,
+          config: context.enterpriseAuthorization,
+          jwksCache: this.enterpriseJwksCache,
+          replayStore: new EnterpriseReplayStore({ maxEntries: this.enterpriseRuntimeConfig.global_max_replay_entries }),
+          logger: this.logger,
+        })
+      : null;
+
     const tenantIndex = this.config.tenantIndex || buildTenantIndexForProfile(this.rawTenantConfig, context, this.logger);
 
     const state: ProfileRuntimeState = {
       profileId,
       context,
       oauthProvider,
+      enterpriseAuthProvider,
       oauthTokensByAccessToken: new Map(),
       sessions: new Map(),
       tenantIndex,
@@ -1601,7 +1648,7 @@ export class HttpTransport {
     res: Response,
     profileState: ProfileRuntimeState
   ): Promise<void> {
-    if (!profileState.oauthProvider) {
+    if (!profileState.oauthProvider && !profileState.context.enterpriseAuthorization?.enabled) {
       res.status(HTTP_STATUS.NOT_FOUND).json({ error: 'Not Found', message: 'OAuth not configured for this profile' });
       return;
     }
@@ -1626,7 +1673,7 @@ export class HttpTransport {
       bearer_methods_supported: ['header'],
     };
 
-    if (profileState.oauthProvider.scopes && profileState.oauthProvider.scopes.length > 0) {
+    if (profileState.oauthProvider?.scopes && profileState.oauthProvider.scopes.length > 0) {
       metadata.scopes_supported = profileState.oauthProvider.scopes;
     }
 
@@ -1638,7 +1685,7 @@ export class HttpTransport {
       metadata.resource_documentation = profileState.context.resourceDocumentation;
     }
 
-    res.json(metadata);
+    res.json(buildProtectedResourceMetadata(metadata, profileState.context.enterpriseAuthorization));
   }
 
   private async handleOAuthAuthorize(
@@ -1711,85 +1758,91 @@ export class HttpTransport {
     res: Response,
     profileState: ProfileRuntimeState
   ): Promise<void> {
-    if (!profileState.oauthProvider) {
+    const enterpriseEnabled = profileState.context.enterpriseAuthorization?.enabled === true;
+    if (!profileState.oauthProvider && !enterpriseEnabled) {
       res.status(HTTP_STATUS.NOT_FOUND).json({ error: 'server_error', error_description: 'OAuth provider not initialized' });
       return;
     }
 
+    const router = new OAuthGrantRouter();
+
+    router.register('authorization_code', {
+      required: ['code', 'client_id'],
+      optional: ['redirect_uri', 'client_secret', 'code_verifier'],
+      handler: async (request, response) => {
+        if (!profileState.oauthProvider) {
+          response.status(HTTP_STATUS.NOT_FOUND).json({ error: 'server_error', error_description: 'OAuth provider not initialized' });
+          return;
+        }
+        try {
+          await profileState.oauthProvider.ensureEndpointsInitialized();
+          const client = await this.validateOAuthClientCredentials(profileState, request.body.client_id, request.body.client_secret, response);
+          if (!client) {
+            return;
+          }
+          const tokens = await profileState.oauthProvider.exchangeAuthorizationCode(client, request.body.code, request.body.code_verifier, request.body.redirect_uri);
+          this.storeOAuthTokens(profileState, tokens, client.client_id, client.scope?.split(' ') || []);
+          response.json(tokens);
+        } catch {
+          response.status(HTTP_STATUS.BAD_REQUEST).json({ error: 'invalid_grant', error_description: 'Token exchange failed' });
+        }
+      },
+    });
+
+    router.register('refresh_token', {
+      required: ['refresh_token', 'client_id'],
+      optional: ['client_secret'],
+      handler: async (request, response) => {
+        if (!profileState.oauthProvider) {
+          response.status(HTTP_STATUS.NOT_FOUND).json({ error: 'server_error', error_description: 'OAuth provider not initialized' });
+          return;
+        }
+        try {
+          await profileState.oauthProvider.ensureEndpointsInitialized();
+          const client = await this.validateOAuthClientCredentials(profileState, request.body.client_id, request.body.client_secret, response);
+          if (!client) {
+            return;
+          }
+          const tokens = await profileState.oauthProvider.exchangeRefreshToken(client, request.body.refresh_token);
+          this.storeOAuthTokens(profileState, tokens, client.client_id, client.scope?.split(' ') || []);
+          response.json(tokens);
+        } catch {
+          response.status(HTTP_STATUS.BAD_REQUEST).json({ error: 'invalid_grant', error_description: 'Token exchange failed' });
+        }
+      },
+    });
+
+    router.register('urn:ietf:params:oauth:grant-type:jwt-bearer', {
+      required: ['assertion'],
+      optional: ['client_id', 'scope'],
+      handler: async (request, response) => {
+        if (!profileState.enterpriseAuthProvider || !profileState.context.enterpriseAuthorization?.enabled) {
+          response.status(HTTP_STATUS.BAD_REQUEST).json({ error: 'unsupported_grant_type' });
+          return;
+        }
+        const principal = await profileState.enterpriseAuthProvider.validateAssertion(request.body.assertion, request.body.client_id);
+        const issuedToken = this.inboundAuthTokenStore.issue(principal);
+        profileState.oauthTokensByAccessToken.set(issuedToken.token, {
+          expiresAt: principal.expiresAt,
+          clientId: principal.clientId ?? request.body.client_id ?? 'enterprise-client',
+          scopes: principal.scopes,
+        });
+        response.json({
+          access_token: issuedToken.token,
+          token_type: 'Bearer',
+          expires_in: principal.expiresAt ? Math.max(1, Math.floor((principal.expiresAt - Date.now()) / 1000)) : undefined,
+          scope: principal.scopes.join(' '),
+        });
+      },
+    });
+
     try {
       res.setHeader('Cache-Control', 'no-store');
-
-      const { grant_type, code, redirect_uri, client_id, client_secret, code_verifier, refresh_token } = req.body;
-
-      this.logger.debug('OAuth token request', {
-        profileId: profileState.profileId,
-        grant_type,
-        client_id,
-        has_code: !!code,
-        has_code_verifier: !!code_verifier,
-        redirect_uri,
-      });
-
-      if (grant_type === 'authorization_code') {
-        if (!code) {
-          res.status(HTTP_STATUS.BAD_REQUEST).json({ error: 'invalid_request', error_description: 'Missing code' });
-          return;
-        }
-
-        await profileState.oauthProvider.ensureEndpointsInitialized();
-        const client = await this.validateOAuthClientCredentials(
-          profileState,
-          client_id,
-          client_secret,
-          res
-        );
-        if (!client) {
-          return;
-        }
-
-        const tokens = await profileState.oauthProvider.exchangeAuthorizationCode(
-          client,
-          code,
-          code_verifier,
-          redirect_uri
-        );
-
-        this.storeOAuthTokens(profileState, tokens, client.client_id, client.scope?.split(' ') || []);
-        res.json(tokens);
-        return;
-      }
-
-      if (grant_type === 'refresh_token') {
-        if (!refresh_token) {
-          res.status(HTTP_STATUS.BAD_REQUEST).json({ error: 'invalid_request', error_description: 'Missing refresh_token' });
-          return;
-        }
-
-        await profileState.oauthProvider.ensureEndpointsInitialized();
-        const client = await this.validateOAuthClientCredentials(
-          profileState,
-          client_id,
-          client_secret,
-          res
-        );
-        if (!client) {
-          return;
-        }
-
-        const tokens = await profileState.oauthProvider.exchangeRefreshToken(client, refresh_token);
-        this.storeOAuthTokens(profileState, tokens, client.client_id, client.scope?.split(' ') || []);
-        res.json(tokens);
-        return;
-      }
-
-      this.logger.warn('Unsupported grant type', { grant_type, expected: 'authorization_code or refresh_token' });
-      res.status(HTTP_STATUS.BAD_REQUEST).json({ error: 'unsupported_grant_type' });
+      await router.route(req, res);
     } catch (error) {
-      this.logger.error('OAuth token exchange error', error instanceof Error ? error : new Error(String(error)));
-      res.status(HTTP_STATUS.BAD_REQUEST).json({
-        error: 'invalid_grant',
-        error_description: 'Token exchange failed',
-      });
+      const mapped = mapAuthError(error);
+      this.logger.error('OAuth token exchange error', error instanceof Error ? error : new Error(String(error)), { correlationId: mapped.correlationId });
+      res.status(mapped.status).json(mapped.body);
     }
   }
 
@@ -1928,7 +1981,7 @@ export class HttpTransport {
       const urlOptions = forceProfilePrefix ? { forceProfilePrefix: true } : undefined;
       const issuer = this.getProfileIssuerUrl(profileId, urlOptions);
 
-      res.json({
+      const metadata = {
         issuer,
         authorization_endpoint: this.buildProfileUrl(profileId, OAUTH_PATHS.AUTHORIZE, urlOptions),
         token_endpoint: this.buildProfileUrl(profileId, OAUTH_PATHS.TOKEN, urlOptions),
@@ -1936,8 +1989,9 @@ export class HttpTransport {
         response_types_supported: ['code'],
         code_challenge_methods_supported: ['S256'],
         grant_types_supported: ['authorization_code', 'refresh_token'],
-        scopes_supported: profileState.oauthProvider.scopes || ['api'],
-      });
+        scopes_supported: profileState.oauthProvider?.scopes || profileState.context.enterpriseAuthorization?.access_policy?.scopes_supported || ['api'],
+      };
+      res.json(buildAuthorizationServerMetadata(metadata, profileState.context.enterpriseAuthorization));
     } catch (error) {
       this.logger.error('OAuth authorization server metadata error', error instanceof Error ? error : new Error(String(error)));
       res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).send('OAuth metadata failed');
@@ -2226,22 +2280,25 @@ export class HttpTransport {
     profileState: ProfileRuntimeState,
     resolvedTenant?: ResolvedTenantContext | null,
     session?: SessionData,
-  ): { authConfigs: AuthInterceptor[]; oauthConfig?: OAuthConfig } {
+  ): { authConfigs: AuthInterceptor[]; oauthConfig?: OAuthConfig; enterpriseAuthorization?: HttpProfileContext['enterpriseAuthorization'] } {
     if (resolvedTenant) {
       return {
         authConfigs: resolvedTenant.tenantAuthConfigs,
         oauthConfig: resolvedTenant.tenantOAuthConfig,
+        enterpriseAuthorization: profileState.context.enterpriseAuthorization,
       };
     }
     if (session && session.tenantAuthMode) {
       return {
         authConfigs: session.tenantAuthConfigs || [],
         oauthConfig: session.tenantOAuthConfig,
+        enterpriseAuthorization: profileState.context.enterpriseAuthorization,
       };
     }
     return {
       authConfigs: profileState.context.authConfigs || [],
       oauthConfig: profileState.context.oauthConfig,
+      enterpriseAuthorization: profileState.context.enterpriseAuthorization,
     };
   }
 
@@ -2544,6 +2601,17 @@ export class HttpTransport {
             return;
           }
 
+          if (effectiveAuthContext.enterpriseAuthorization?.enabled && effectiveAuthContext.enterpriseAuthorization.mode === 'required' && !authInfo.token) {
+            const resourceMetadataUrl = this.getOAuthProtectedResourceUrl(requestProfileId);
+            const scopeValue = effectiveAuthContext.enterpriseAuthorization.access_policy?.scopes_supported?.join(' ') || 'api';
+            res.setHeader('WWW-Authenticate', `Bearer resource_metadata="${resourceMetadataUrl}", scope="${scopeValue}"`);
+            res.status(HTTP_STATUS.UNAUTHORIZED).json({
+              error: 'Unauthorized',
+              message: 'Enterprise authorization required'
+            });
+            return;
+          }
+
           // Require a client token only when auth is configured and server env fallback is unavailable
           const authConfigs = effectiveAuthContext.authConfigs;
           if (authConfigs.length > 0 && !authInfo.token && !this.hasServerEnvAuthToken(authConfigs)) {
@@ -2597,10 +2665,19 @@ export class HttpTransport {
           let oauthClientId: string | undefined;
           
           if (authInfo.token && (authInfo.type === 'oauth' || authInfo.type === 'bearer')) {
+            const internalToken = this.inboundAuthTokenStore.get(authInfo.token);
+            if (internalToken) {
+              if (internalToken.principal.profileId !== requestProfileId) {
+                throw new AuthenticationError('Enterprise token is not valid for this profile');
+              }
+              accessTokenExpiresAt = internalToken.expiresAt;
+              scopes = internalToken.principal.scopes;
+              oauthClientId = internalToken.principal.clientId;
+            }
             const tokenData = profileState.oauthTokensByAccessToken.get(authInfo.token);
             if (tokenData) {
               refreshToken = tokenData.refreshToken;
-              accessTokenExpiresAt = tokenData.expiresAt;
+              accessTokenExpiresAt = tokenData.expiresAt ?? accessTokenExpiresAt;
               scopes = tokenData.scopes;
               oauthClientId = tokenData.clientId;
               this.logger.debug('Found OAuth token data for session', {
@@ -2608,7 +2685,7 @@ export class HttpTransport {
                 hasExpiration: !!accessTokenExpiresAt,
                 scopesCount: scopes.length,
               });
-            } else {
+            } else if (!internalToken) {
               this.logger.debug('No OAuth token data found in map (may be non-OAuth bearer token)', {
                 hasToken: true,
               });

@@ -646,6 +646,7 @@ export class MCPServer {
       profileId: this.getProfileIdValue(),
       oauthConfig,
       authConfigs,
+      enterpriseAuthorization: this.profile.enterprise_authorization,
       baseUrl,
       rateLimitOAuthMax: oauthRateLimit.max,
       rateLimitOAuthWindowMs: oauthRateLimit.windowMs,

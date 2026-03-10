@@ -17,6 +17,7 @@ export interface Profile {
   resources?: ResourceDefinition[];
   interceptors?: InterceptorConfig;
   parameter_aliases?: Record<string, string[]>; // e.g., {"id": ["resource_id", "project_id"]}
+  enterprise_authorization?: EnterpriseAuthorizationConfig;
   
   // OAuth resource metadata (optional overrides)
   resource_name?: string;           // OAuth resource name (overrides OpenAPI info.title)
@@ -509,6 +510,60 @@ export interface OAuthConfig {
    * Can reference MCP4_ALLOWED_ORIGINS environment variable
    */
   allowed_redirect_hosts?: string[];
+}
+
+export interface EnterpriseAuthorizationConfig {
+  enabled: boolean;
+  mode?: 'required' | 'optional';
+  resource?: string;
+  audience?: string | string[];
+  issuer: EnterpriseIssuerConfig;
+  token_exchange: EnterpriseTokenExchangeConfig;
+  access_policy?: EnterpriseAccessPolicyConfig;
+  metadata?: EnterpriseMetadataConfig;
+}
+
+export interface EnterpriseIssuerConfig {
+  issuer: string;
+  jwks_uri?: string;
+  allowed_algs?: Array<'RS256' | 'RS384' | 'RS512' | 'ES256' | 'ES384' | 'ES512'>;
+  allowed_kids?: string[];
+  clock_skew_seconds?: number;
+  require_signed_assertions?: boolean;
+  trust_mode?: 'discovery' | 'explicit';
+}
+
+export interface EnterpriseTokenExchangeConfig {
+  grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer';
+  subject_token_type?: 'urn:ietf:params:oauth:token-type:id_token';
+  required_typ?: string[];
+  required_claims?: string[];
+  max_assertion_ttl_seconds?: number;
+  max_assertion_size_bytes?: number;
+  replay_protection_ttl_seconds?: number;
+  allowed_client_ids?: string[];
+}
+
+export interface EnterpriseAccessPolicyConfig {
+  claim_mappings?: {
+    subject?: string;
+    email?: string;
+    groups?: string;
+    tenant_id?: string;
+    client_id?: string;
+  };
+  scopes_supported?: string[];
+  default_scopes?: string[];
+  required_scopes?: string[];
+  allowed_tool_categories?: Array<'list' | 'read' | 'modify' | 'admin'>;
+  allow_dynamic_client_registration?: boolean;
+}
+
+export interface EnterpriseMetadataConfig {
+  authorization_servers?: string[];
+  documentation_url?: string;
+  display_name?: string;
+  extensions?: Record<string, string | boolean | number | string[]>;
 }
 
 export interface BaseUrlConfig {

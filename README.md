@@ -46,6 +46,7 @@ Start with an existing profile in [`profiles/`](./profiles), then adapt only wha
 - **Prompt definitions**: add reusable MCP prompts directly in profiles
 - **MCP Apps resources**: expose static or fetch-backed `resources/list`, `resources/templates/list`, `resources/read`, and template-variable completion from profiles
 - **OAuth 2.0**: browser-based auth flow for HTTP transport (see [docs/OAUTH.md](./docs/OAUTH.md))
+- **Enterprise managed authorization**: inbound JWT bearer grant for HTTP transport with profile-driven issuer/JWKS policy and opaque MCP access tokens (see [docs/OAUTH.md](./docs/OAUTH.md))
 - **Multi-auth**: combine multiple auth methods with priority fallback (see [docs/MULTI-AUTH.md](./docs/MULTI-AUTH.md))
 - **Multipart uploads**: `HttpClient` handles `multipart/form-data`
 - **Observability**: structured logging with secrets redaction and Prometheus metrics

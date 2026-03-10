@@ -2,6 +2,37 @@
 
 This guide explains how to configure OAuth 2.0 authentication for mcp4openapi.
 
+## Enterprise managed authorization
+
+HTTP transport also supports enterprise-managed authorization through a profile-level `enterprise_authorization` block. This is separate from `interceptors.auth`: `interceptors.auth` configures how mcp4openapi authenticates to the upstream API, while `enterprise_authorization` configures how HTTP clients authenticate to mcp4openapi.
+
+Use the JWT bearer grant on `/oauth/token` with `grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer` and an `assertion` parameter. The server validates the configured issuer/JWKS over HTTPS, enforces replay protection and size/TTL limits, then mints an opaque MCP bearer token instead of returning the raw enterprise JWT.
+
+Minimal profile example:
+
+```json
+{
+  "profile_name": "enterprise-http",
+  "enterprise_authorization": {
+    "enabled": true,
+    "issuer": {
+      "issuer": "https://issuer.example.com",
+      "jwks_uri": "https://issuer.example.com/.well-known/jwks.json",
+      "allowed_algs": ["RS256"]
+    },
+    "token_exchange": {
+      "grant_type": "urn:ietf:params:oauth:grant-type:jwt-bearer",
+      "required_typ": ["at+jwt"],
+      "required_claims": ["sub"]
+    },
+    "access_policy": {
+      "scopes_supported": ["api"],
+      "default_scopes": ["api"]
+    }
+  }
+}
+```
+
 ## Overview
 
 OAuth 2.0 support enables browser-based authentication flow instead of manually managing API tokens:

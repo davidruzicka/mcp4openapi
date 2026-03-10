@@ -80,6 +80,7 @@ This guide explains how to create custom MCP tool profiles for any OpenAPI-compl
 - **`prompts`** (optional): Array of MCP prompt definitions exposed via `prompts/list` and `prompts/get`
 - **`resources`** (optional): Array of MCP Apps/static/template resource definitions exposed via `resources/*`
 - **`interceptors`** (optional): Auth, rate limiting, retry configuration
+- **`enterprise_authorization`** (optional): HTTP-only inbound authorization policy for enterprise-managed JWT bearer grant exchange
 
 **Profile selection**: If you set `profile_id` (or `profile_aliases`) and `openapi_spec_path`, you can launch the server with `--profile <id>` or `MCP4_PROFILE=<id>` without setting `--openapi-spec-path` or `MCP4_OPENAPI_SPEC_PATH`.
 

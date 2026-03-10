@@ -2265,6 +2265,66 @@ describe('ProfileLoader', () => {
     });
   });
 
+  describe('enterprise authorization validation', () => {
+    it('normalizes valid enterprise authorization config', async () => {
+      const loader = new ProfileLoader();
+      const fs = await import('fs/promises');
+      const tmpPath = `/tmp/enterprise-valid-${Date.now()}-${Math.random()}.json`;
+      await fs.writeFile(
+        tmpPath,
+        JSON.stringify({
+          profile_name: 'enterprise-valid',
+          enterprise_authorization: {
+            enabled: true,
+            issuer: { issuer: 'https://issuer.example', jwks_uri: 'https://issuer.example/jwks' },
+            token_exchange: { grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer' },
+            access_policy: { claim_mappings: { subject: 'sub' }, scopes_supported: ['api'], default_scopes: ['api'] }
+          },
+          tools: [{
+            name: 'tool_a',
+            description: 'Tool A',
+            operations: { list: 'getItems' },
+            parameters: { action: { type: 'string', description: 'Action', enum: ['list'], required: true } }
+          }]
+        }),
+        'utf-8'
+      );
+
+      const profile = await loader.load(tmpPath);
+      expect(profile.enterprise_authorization?.mode).toBe('required');
+      expect(profile.enterprise_authorization?.token_exchange.required_claims).toContain('sub');
+    });
+
+    it('rejects non-https enterprise issuer URLs', async () => {
+      const loader = new ProfileLoader();
+      const fs = await import('fs/promises');
+      const previousNodeEnv = process.env.NODE_ENV;
+      process.env.NODE_ENV = 'production';
+      const tmpPath = `/tmp/enterprise-invalid-${Date.now()}-${Math.random()}.json`;
+      await fs.writeFile(
+        tmpPath,
+        JSON.stringify({
+          profile_name: 'enterprise-invalid',
+          enterprise_authorization: {
+            enabled: true,
+            issuer: { issuer: 'http://issuer.example' },
+            token_exchange: { grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer' }
+          },
+          tools: [{
+            name: 'tool_a',
+            description: 'Tool A',
+            operations: { list: 'getItems' },
+            parameters: { action: { type: 'string', description: 'Action', enum: ['list'], required: true } }
+          }]
+        }),
+        'utf-8'
+      );
+
+      await expect(loader.load(tmpPath)).rejects.toThrow(/must use https/);
+      process.env.NODE_ENV = previousNodeEnv;
+    });
+  });
+
   describe('cache interceptor validation', () => {
     it('should reject non-positive cache max_memory_bytes', async () => {
       const loader = new ProfileLoader();

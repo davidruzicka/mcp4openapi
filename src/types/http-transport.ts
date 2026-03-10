@@ -6,7 +6,7 @@
  */
 
 import type { Request as ExpressRequest, Response } from 'express';
-import type { OAuthConfig, AuthInterceptor } from './profile.js';
+import type { OAuthConfig, AuthInterceptor, EnterpriseAuthorizationConfig } from './profile.js';
 import type { HttpTenantIndex } from './http-tenants.js';
 import type { SessionToolFilterRequest, SessionToolFilterCompat as SessionToolFilter } from '../tool-filter/index.js';
 import type { OpenAPIParser } from '../openapi/openapi-parser.js';
@@ -51,6 +51,19 @@ export interface QueuedMessage {
   timestamp: number;
 }
 
+export interface EnterpriseAuthorizationRuntimeConfig {
+  enabled?: boolean;
+  global_max_cached_jwks_keys?: number;
+  global_max_cached_issuers?: number;
+  global_max_replay_entries?: number;
+  global_max_enterprise_tokens?: number;
+  jwks_refresh_timeout_ms?: number;
+  jwks_refresh_backoff_ms?: number;
+  enterprise_grant_rate_limit_max?: number;
+  enterprise_grant_rate_limit_window_ms?: number;
+  enterprise_grant_max_concurrency_per_profile?: number;
+}
+
 export interface HttpTransportConfig {
   host: string;
   port: number;
@@ -74,6 +87,7 @@ export interface HttpTransportConfig {
   oauthConfig?: OAuthConfig; // OAuth 2.0 configuration (optional)
   baseUrl?: string; // Base URL for API (for token validation)
   authConfigs?: AuthInterceptor[]; // Auth configurations (for token validation)
+  enterpriseAuthorizationRuntimeConfig?: EnterpriseAuthorizationRuntimeConfig;
   resourceName?: string; // OAuth resource name (from OpenAPI info.title or profile override)
   resourceDocumentation?: string; // OAuth resource documentation URL (from OpenAPI externalDocs.url or profile override)
   sslCertFile?: string; // Path to SSL certificate file
@@ -89,6 +103,7 @@ export interface HttpProfileContext {
   profileId: string;
   oauthConfig?: OAuthConfig;
   authConfigs?: AuthInterceptor[];
+  enterpriseAuthorization?: EnterpriseAuthorizationConfig;
   baseUrl?: string;
   rateLimitOAuthMax?: number;
   rateLimitOAuthWindowMs?: number;

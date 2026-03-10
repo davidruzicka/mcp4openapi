@@ -30,6 +30,7 @@ import type { OperationInfo, SchemaInfo } from '../types/openapi.js';
 import { shortenToolName, NamingStrategy, levenshteinDistance, type OperationForNaming } from '../core/naming.js';
 import { normalizeToolName } from '../tool-filter/utils.js';
 import { isSafePropertyName, isUri } from '../validation/validation-utils.js';
+import { validateEnterpriseAuthorizationProfile } from './enterprise-profile-validator.js';
 
 // Schemas are now auto-generated from TypeScript types!
 // See scripts/generate-schemas.js for details.
@@ -68,7 +69,12 @@ export class ProfileLoader {
     this.validateLogic(profile);
     this.validateOperations(profile, parser);
     await createLoadedProfileAppsModel(profile, { profilePath, parser });
-    
+
+    const normalizedEnterpriseAuthorization = validateEnterpriseAuthorizationProfile(profile);
+    if (normalizedEnterpriseAuthorization) {
+      profile.enterprise_authorization = normalizedEnterpriseAuthorization;
+    }
+
     return profile;
   }
 

@@ -62,5 +62,34 @@ export function buildHttpTransportBaseConfig(host: string, port: number): HttpTr
       }
       return parsed;
     })(),
+    enterpriseAuthorizationRuntimeConfig: {
+      enabled: process.env.MCP4_ENTERPRISE_AUTHORIZATION_ENABLED === undefined
+        ? undefined
+        : process.env.MCP4_ENTERPRISE_AUTHORIZATION_ENABLED === 'true',
+      global_max_cached_issuers: process.env.MCP4_ENTERPRISE_MAX_CACHED_ISSUERS
+        ? parseInt(process.env.MCP4_ENTERPRISE_MAX_CACHED_ISSUERS, 10)
+        : undefined,
+      global_max_replay_entries: process.env.MCP4_ENTERPRISE_MAX_REPLAY_ENTRIES
+        ? parseInt(process.env.MCP4_ENTERPRISE_MAX_REPLAY_ENTRIES, 10)
+        : undefined,
+      global_max_enterprise_tokens: process.env.MCP4_ENTERPRISE_MAX_TOKENS
+        ? parseInt(process.env.MCP4_ENTERPRISE_MAX_TOKENS, 10)
+        : undefined,
+      jwks_refresh_timeout_ms: process.env.MCP4_ENTERPRISE_JWKS_TIMEOUT_MS
+        ? parseInt(process.env.MCP4_ENTERPRISE_JWKS_TIMEOUT_MS, 10)
+        : undefined,
+      jwks_refresh_backoff_ms: process.env.MCP4_ENTERPRISE_JWKS_BACKOFF_MS
+        ? parseInt(process.env.MCP4_ENTERPRISE_JWKS_BACKOFF_MS, 10)
+        : undefined,
+      enterprise_grant_rate_limit_max: process.env.MCP4_ENTERPRISE_GRANT_RATE_LIMIT_MAX
+        ? parseInt(process.env.MCP4_ENTERPRISE_GRANT_RATE_LIMIT_MAX, 10)
+        : undefined,
+      enterprise_grant_rate_limit_window_ms: process.env.MCP4_ENTERPRISE_GRANT_RATE_LIMIT_WINDOW_MS
+        ? parseInt(process.env.MCP4_ENTERPRISE_GRANT_RATE_LIMIT_WINDOW_MS, 10)
+        : undefined,
+      enterprise_grant_max_concurrency_per_profile: process.env.MCP4_ENTERPRISE_GRANT_MAX_CONCURRENCY
+        ? parseInt(process.env.MCP4_ENTERPRISE_GRANT_MAX_CONCURRENCY, 10)
+        : undefined,
+    },
   };
 }
