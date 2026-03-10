@@ -126,3 +126,16 @@ Error messages should never include raw values from sensitive sources like envir
 **Prevention:**
 1.  Avoid including raw values in error messages when the source is potentially sensitive (env vars, auth headers).
 2.  Use generic error messages for validation failures of sensitive data.
+
+## 2026-03-10 - [MEDIUM] Missing HTTP Security Headers
+
+**Vulnerability:**
+The HTTP transport layer lacked standard security headers for Strict-Transport-Security (HSTS) and X-XSS-Protection. The absence of HSTS means that browsers may not be forced to use HTTPS for subsequent connections, leaving them vulnerable to downgrade attacks. Although X-XSS-Protection is largely deprecated by modern browsers in favor of CSP, it should explicitly be set to '0' to disable legacy XSS auditors which themselves can introduce side-channel vulnerabilities.
+
+**Learning:**
+While several security headers were configured (such as CSP, X-Frame-Options, and Cross-Origin-Opener-Policy), defense-in-depth requires a complete set of standard headers. Specifically, relying on default Express behavior omits critical HTTP security best practices.
+
+**Prevention:**
+1. Include `Strict-Transport-Security` header with `max-age=63072000; includeSubDomains` in Express middleware.
+2. Explicitly set `X-XSS-Protection: 0` in Express middleware.
+3. Assert the presence of all required security headers in automated integration tests (`src/transport/http-transport-security.test.ts`).
