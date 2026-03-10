@@ -44,6 +44,7 @@ Start with an existing profile in [`profiles/`](./profiles), then adapt only wha
 - **Tool aggregation**: reduce tool clutter by grouping related operations
 - **Composite actions**: chain API calls into reusable workflows
 - **Prompt definitions**: add reusable MCP prompts directly in profiles
+- **MCP Apps resources**: expose static or fetch-backed `resources/list`, `resources/templates/list`, `resources/read`, and template-variable completion from profiles
 - **OAuth 2.0**: browser-based auth flow for HTTP transport (see [docs/OAUTH.md](./docs/OAUTH.md))
 - **Multi-auth**: combine multiple auth methods with priority fallback (see [docs/MULTI-AUTH.md](./docs/MULTI-AUTH.md))
 - **Multipart uploads**: `HttpClient` handles `multipart/form-data`
@@ -55,6 +56,15 @@ Start with an existing profile in [`profiles/`](./profiles), then adapt only wha
 - For remote deployments, bind to an explicit interface or place the server behind a reverse proxy that enforces strict Host checks and origin allowlists.
 
 Check example profiles in [profiles/](https://github.com/davidruzicka/mcp4openapi/tree/main/profiles).
+
+## MCP Apps Profiles
+
+Profiles can now declare top-level `resources[]` for MCP Apps UIs and read-only data surfaces:
+- fixed resources with `uri` and preloaded `file_path` or bounded `inline_text`
+- template resources with `uri_template`, optional variable completion, and optional fetch-backed rendering through declared read-only OpenAPI/composite bindings
+- tool-level `apps` metadata to attach output templates and widget metadata without changing the core tool schema generator
+
+See [docs/PROFILE-GUIDE.md](./docs/PROFILE-GUIDE.md) for the profile shape and validation rules.
 
 ## Quick Start
 

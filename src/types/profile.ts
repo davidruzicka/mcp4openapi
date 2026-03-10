@@ -14,12 +14,62 @@ export interface Profile {
   description?: string;
   tools: ToolDefinition[];
   prompts?: PromptDefinition[];
+  resources?: ResourceDefinition[];
   interceptors?: InterceptorConfig;
   parameter_aliases?: Record<string, string[]>; // e.g., {"id": ["resource_id", "project_id"]}
   
   // OAuth resource metadata (optional overrides)
   resource_name?: string;           // OAuth resource name (overrides OpenAPI info.title)
   resource_documentation?: string;  // OAuth resource documentation URL (overrides OpenAPI externalDocs.url)
+}
+
+export interface ResourceDefinition {
+  name: string;
+  kind: 'static' | 'template';
+  uri?: string;
+  uri_template?: string;
+  title?: string;
+  description?: string;
+  mime_type: string;
+  file_path?: string;
+  inline_text?: string;
+  fetch?: ResourceFetchDefinition;
+  completion?: ResourceCompletionDefinition;
+  apps?: ResourceAppsDefinition;
+}
+
+export interface ResourceFetchDefinition {
+  source: 'operation' | 'composite';
+  operation?: string;
+  composite_tool?: string;
+  parameter_mapping?: Record<string, string>;
+  result_path?: string;
+  cache_ttl_seconds?: number;
+}
+
+export interface ResourceCompletionDefinition {
+  variables: Record<string, ResourceCompletionVariableDefinition>;
+}
+
+export interface ResourceCompletionVariableDefinition {
+  source: 'static' | 'operation' | 'composite_tool';
+  values?: string[];
+  operation?: string;
+  composite_tool?: string;
+  result_path?: string;
+  label_path?: string;
+  value_path?: string;
+  parameter_mapping?: Record<string, string>;
+}
+
+export interface ResourceAppsDefinition {
+  widget_description?: string;
+  widget_prefers_border?: boolean;
+  widget_csp?: {
+    connect_domains?: string[];
+    resource_domains?: string[];
+  };
+  custom_meta?: Record<string, unknown>;
 }
 
 export interface ToolDefinition {
@@ -44,6 +94,22 @@ export interface ToolDefinition {
   
   // Whether to send response_fields as 'fields' query parameter (e.g. for YouTrack)
   send_response_fields_as_param?: boolean;
+  apps?: ToolAppsDefinition;
+}
+
+export interface ToolAppsDefinition {
+  output_template_resource_uri?: string;
+  widget_accessible?: boolean;
+  tool_invocation_message?: {
+    invoking?: string;
+    invoked?: string;
+  };
+  invocation_text?: {
+    invoking?: string;
+    invoked?: string;
+  };
+  annotations?: Record<string, unknown>;
+  custom_meta?: Record<string, unknown>;
 }
 
 export interface PromptDefinition {

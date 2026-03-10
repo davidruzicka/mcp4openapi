@@ -2256,4 +2256,43 @@ describe('ProfileLoader', () => {
       );
     });
   });
+
+  describe('OpenAPI-backed validation', () => {
+    it('rejects missing tool operations when parser is provided', async () => {
+      const loader = new ProfileLoader();
+      const fs = await import('fs/promises');
+      const specPath = `/tmp/profile-loader-openapi-${Date.now()}-${Math.random()}.yaml`;
+      const profilePath = `/tmp/profile-loader-profile-${Date.now()}-${Math.random()}.json`;
+
+      await fs.writeFile(specPath, `openapi: 3.0.0
+info:
+  title: Loader Test
+  version: 1.0.0
+paths:
+  /items:
+    get:
+      operationId: listItems
+      responses:
+        '200':
+          description: ok
+`, 'utf8');
+      await fs.writeFile(profilePath, JSON.stringify({
+        profile_name: 'loader-test',
+        tools: [
+          {
+            name: 'missing_operation',
+            description: 'Missing op',
+            parameters: {},
+            operations: { list: 'missingOperation' },
+          },
+        ],
+      }), 'utf8');
+
+      const parserModule = await import('../openapi/openapi-parser.js');
+      const parser = new parserModule.OpenAPIParser();
+      await parser.load(specPath);
+
+      await expect(loader.load(profilePath, parser)).rejects.toThrow("Operation 'missingOperation' in tool 'missing_operation' not found in OpenAPI spec");
+    });
+  });
 });
