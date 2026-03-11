@@ -78,8 +78,8 @@ export function redactQueryParam(
   paramName: string
 ): string {
   if (!url) return '';
-  // Enforce safe paramName (alphanumeric, underscore, dash) length <= 64
-  if (!/^[A-Za-z0-9_-]{1,64}$/.test(paramName)) {
+  // Enforce safe paramName (alphanumeric, underscore, dash, dot) length <= 64
+  if (!/^[A-Za-z0-9_.-]{1,64}$/.test(paramName)) {
     return url; // Unsafe param name; return original unmodified
   }
   

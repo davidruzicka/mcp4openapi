@@ -100,6 +100,13 @@ describe('Validation Utils', () => {
       expect(redactQueryParam(undefined, 'token')).toBe('');
     });
 
+    it('should redact parameter with dot in the name', () => {
+      const url = 'https://example.com/api?api.key=secret&other=value';
+      const redacted = redactQueryParam(url, 'api.key');
+      expect(redacted).toContain('api.key=%5BREDACTED%5D');
+      expect(redacted).toContain('other=value');
+    });
+
     it('should fallback to manual parsing for invalid URL', () => {
       const invalidUrl = '/api?token=secret&other=value';
       const redacted = redactQueryParam(invalidUrl, 'token');
