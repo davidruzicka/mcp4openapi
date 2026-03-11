@@ -2277,7 +2277,10 @@ describe('ProfileLoader', () => {
           enterprise_authorization: {
             enabled: true,
             issuer: { issuer: 'https://issuer.example', jwks_uri: 'https://issuer.example/jwks' },
-            token_exchange: { grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer' },
+            token_exchange: {
+              grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+              allowed_client_ids: ['enterprise-client'],
+            },
             access_policy: { claim_mappings: { subject: 'sub' }, scopes_supported: ['api'], default_scopes: ['api'] }
           },
           tools: [{
@@ -2322,6 +2325,33 @@ describe('ProfileLoader', () => {
 
       await expect(loader.load(tmpPath)).rejects.toThrow(/must use https/);
       process.env.NODE_ENV = previousNodeEnv;
+    });
+
+    it('rejects enterprise profiles without allowed clients when dynamic registration uses secure default', async () => {
+      const loader = new ProfileLoader();
+      const fs = await import('fs/promises');
+      const tmpPath = `/tmp/enterprise-clients-invalid-${Date.now()}-${Math.random()}.json`;
+      await fs.writeFile(
+        tmpPath,
+        JSON.stringify({
+          profile_name: 'enterprise-client-validation',
+          enterprise_authorization: {
+            enabled: true,
+            issuer: { issuer: 'https://issuer.example', jwks_uri: 'https://issuer.example/jwks' },
+            token_exchange: { grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer' },
+            access_policy: { scopes_supported: ['api'], default_scopes: ['api'] }
+          },
+          tools: [{
+            name: 'tool_a',
+            description: 'Tool A',
+            operations: { list: 'getItems' },
+            parameters: { action: { type: 'string', description: 'Action', enum: ['list'], required: true } }
+          }]
+        }),
+        'utf-8'
+      );
+
+      await expect(loader.load(tmpPath)).rejects.toThrow(/allowed_client_ids is required/);
     });
   });
 

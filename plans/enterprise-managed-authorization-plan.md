@@ -8,7 +8,16 @@
 ## Status
 - [x] Feasibility reviewed against current OAuth/profile architecture.
 - [x] Plan documented in `plans/`.
-- [ ] Implementation not started.
+- [x] Follow-up gap checklist completed.
+
+## Follow-up Gap Checklist (Mar 2026)
+- [x] Reuse the shared inbound principal/token model for OAuth-issued access tokens as well as enterprise-issued tokens.
+- [x] Enforce enterprise tenant isolation during internal token verification and add regression coverage.
+- [x] Enforce enterprise-specific rate limiting, concurrency limits, and globally bounded replay/JWKS/token caches.
+- [x] Implement trust-mode aware issuer discovery/JWKS resolution and stricter semantic validation for conflicting policy combinations.
+- [x] Enforce HTTP-only enterprise authorization runtime boundaries plus stricter `/oauth/token` request hardening.
+- [x] Expose the remaining enterprise metadata fields and centralize auth redaction in transport logging/error paths.
+- [x] Add enterprise observability hooks and broaden the security/transport test matrix for the remaining claim/cache/boundary cases.
 
 ## Executive Summary
 - Enterprise managed authorization should be implemented as a server-side authorization capability for the MCP HTTP server, not as a simple upstream API auth method.

@@ -103,6 +103,7 @@ describeIfListen('E2E: enterprise authentication', () => {
             grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
             required_typ: ['at+jwt'],
             required_claims: ['sub'],
+            allowed_client_ids: ['enterprise-client'],
           },
           access_policy: {
             scopes_supported: ['api'],

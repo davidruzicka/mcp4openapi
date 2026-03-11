@@ -49,14 +49,18 @@ export class EnterpriseAuthProvider {
     if (this.config.issuer.allowed_kids?.length && (!header.kid || !this.config.issuer.allowed_kids.includes(header.kid))) {
       throw new EnterpriseTokenValidationError('Enterprise assertion key id is not allowed', { kid: header.kid });
     }
-    if (this.config.token_exchange.allowed_client_ids?.length && clientId && !this.config.token_exchange.allowed_client_ids.includes(clientId)) {
+    if (this.config.access_policy?.allow_dynamic_client_registration === false) {
+      if (!clientId) {
+        throw new EnterprisePolicyViolationError('Client identifier is required for enterprise token exchange');
+      }
+      if (!this.config.token_exchange.allowed_client_ids?.includes(clientId)) {
+        throw new EnterprisePolicyViolationError('Client is not allowed to use enterprise token exchange', { clientId });
+      }
+    } else if (this.config.token_exchange.allowed_client_ids?.length && clientId && !this.config.token_exchange.allowed_client_ids.includes(clientId)) {
       throw new EnterprisePolicyViolationError('Client is not allowed to use enterprise token exchange', { clientId });
     }
-    if (this.config.access_policy?.allow_dynamic_client_registration === false && !clientId && this.config.token_exchange.allowed_client_ids?.length) {
-      throw new EnterprisePolicyViolationError('Client identifier is required for enterprise token exchange');
-    }
 
-    const jwksUri = this.config.issuer.jwks_uri ?? new URL('/.well-known/jwks.json', this.config.issuer.issuer).toString();
+    const jwksUri = await this.resolveJwksUri();
     const resolver = await this.jwksCache.getResolver(this.config.issuer.issuer, jwksUri, header.kid);
     try {
       const { payload } = await jwtVerify(assertion, resolver, {
@@ -64,7 +68,6 @@ export class EnterpriseAuthProvider {
         audience: this.config.resource ?? this.config.audience,
         algorithms: this.config.issuer.allowed_algs,
         clockTolerance: this.config.issuer.clock_skew_seconds,
-        typ: this.config.token_exchange.required_typ?.[0],
         maxTokenAge: `${this.config.token_exchange.max_assertion_ttl_seconds ?? 300}s`,
       });
       this.validatePayload(payload, header.typ);
@@ -91,6 +94,38 @@ export class EnterpriseAuthProvider {
       }
       throw new EnterpriseTokenValidationError('Enterprise assertion validation failed');
     }
+  }
+
+  private async resolveJwksUri(): Promise<string> {
+    if (this.config.issuer.trust_mode !== 'discovery') {
+      return this.config.issuer.jwks_uri ?? new URL('/.well-known/jwks.json', this.config.issuer.issuer).toString();
+    }
+
+    const discoveryUrl = new URL('/.well-known/openid-configuration', this.config.issuer.issuer).toString();
+    const response = await fetch(discoveryUrl, {
+      headers: { accept: 'application/json' },
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!response.ok) {
+      throw new EnterpriseIssuerDiscoveryError('Failed to resolve issuer discovery metadata', {
+        issuer: this.config.issuer.issuer,
+        status: response.status,
+      });
+    }
+
+    const metadata = await response.json() as { jwks_uri?: string; issuer?: string };
+    if (metadata.issuer && metadata.issuer !== this.config.issuer.issuer) {
+      throw new EnterpriseIssuerDiscoveryError('Issuer discovery metadata did not match configured issuer', {
+        issuer: this.config.issuer.issuer,
+        discoveredIssuer: metadata.issuer,
+      });
+    }
+    if (!metadata.jwks_uri) {
+      throw new EnterpriseIssuerDiscoveryError('Issuer discovery metadata did not include jwks_uri', {
+        issuer: this.config.issuer.issuer,
+      });
+    }
+    return metadata.jwks_uri;
   }
 
   private validatePayload(payload: Record<string, unknown>, typ?: string): void {

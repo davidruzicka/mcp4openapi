@@ -20,13 +20,13 @@ function redactString(value: string): string {
   return '[REDACTED]';
 }
 
-export function redactAuthPayload<T>(value: T): T {
+function redactAuthPayloadInternal<T>(value: T, forceRedaction: boolean): T {
   if (typeof value === 'string') {
-    return redactString(value) as T;
+    return (forceRedaction ? redactString(value) : value) as T;
   }
 
   if (Array.isArray(value)) {
-    return value.map((entry) => redactAuthPayload(entry)) as T;
+    return value.map((entry) => redactAuthPayloadInternal(entry, forceRedaction)) as T;
   }
 
   if (!value || typeof value !== 'object') {
@@ -35,13 +35,18 @@ export function redactAuthPayload<T>(value: T): T {
 
   const result: Record<string, unknown> = {};
   for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
-    if (SECRET_FIELD_NAMES.has(key)) {
+    const shouldRedact = forceRedaction || SECRET_FIELD_NAMES.has(key);
+    if (shouldRedact && (typeof entry !== 'object' || entry === null)) {
       result[key] = typeof entry === 'string' ? redactString(entry) : '[REDACTED]';
       continue;
     }
-    result[key] = redactAuthPayload(entry);
+    result[key] = redactAuthPayloadInternal(entry, shouldRedact);
   }
   return result as T;
+}
+
+export function redactAuthPayload<T>(value: T): T {
+  return redactAuthPayloadInternal(value, false);
 }
 
 export function sanitizeAuthErrorMessage(message: string): string {

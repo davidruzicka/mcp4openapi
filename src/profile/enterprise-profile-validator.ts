@@ -92,5 +92,26 @@ export function validateEnterpriseAuthorizationProfile(profile: Profile): Enterp
   if (normalized.metadata?.documentation_url) {
     ensureHttpsUrl(normalized.metadata.documentation_url, 'enterprise_authorization.metadata.documentation_url');
   }
+  if (normalized.resource && normalized.audience) {
+    const audiences = Array.isArray(normalized.audience) ? normalized.audience : [normalized.audience];
+    if (!audiences.includes(normalized.resource)) {
+      throw new EnterpriseAuthorizationConfigurationError(
+        'enterprise_authorization.resource must be included in audience when both are configured'
+      );
+    }
+  }
+  if (normalized.mode === 'required' && profile.interceptors?.auth) {
+    const authConfigs = Array.isArray(profile.interceptors.auth) ? profile.interceptors.auth : [profile.interceptors.auth];
+    if (authConfigs.some((auth) => auth.type === 'oauth')) {
+      throw new EnterpriseAuthorizationConfigurationError(
+        'enterprise_authorization.mode=required cannot be combined with profile oauth auth metadata'
+      );
+    }
+  }
+  if (normalized.access_policy?.allow_dynamic_client_registration === false && !(normalized.token_exchange.allowed_client_ids?.length)) {
+    throw new EnterpriseAuthorizationConfigurationError(
+      'enterprise_authorization.token_exchange.allowed_client_ids is required when dynamic client registration is disabled'
+    );
+  }
   return normalized;
 }

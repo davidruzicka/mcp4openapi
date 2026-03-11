@@ -14,8 +14,11 @@ export class InboundAuthTokenStore {
   }
 
   issue(principal: AuthorizedPrincipal): InboundAuthTokenRecord {
+    return this.store(randomBytes(32).toString('base64url'), principal);
+  }
+
+  store(token: string, principal: AuthorizedPrincipal): InboundAuthTokenRecord {
     this.evictExpired(Date.now());
-    const token = randomBytes(32).toString('base64url');
     const record: InboundAuthTokenRecord = {
       token,
       principal,

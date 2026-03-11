@@ -35,6 +35,7 @@ import { EnterpriseReplayStore } from '../auth/enterprise-replay-store.js';
 import { JwksCache } from '../auth/jwks-cache.js';
 import { buildAuthorizationServerMetadata, buildProtectedResourceMetadata } from '../auth/enterprise-metadata.js';
 import { mapAuthError } from '../auth/auth-error-mapper.js';
+import { redactAuthPayload } from '../auth/auth-redaction.js';
 import { OAuthGrantRouter } from './oauth-grant-router.js';
 import { SSRFValidator } from '../security/ssrf-validator.js';
 import type { AuthInterceptor, OAuthConfig } from '../types/profile.js';
@@ -120,6 +121,9 @@ export class HttpTransport {
   private readonly enterpriseRuntimeConfig: Required<EnterpriseAuthorizationRuntimeConfig>;
   private readonly inboundAuthTokenStore: InboundAuthTokenStore;
   private readonly enterpriseJwksCache: JwksCache;
+  private readonly enterpriseReplayStore: EnterpriseReplayStore;
+  private readonly enterpriseGrantAttemptsByProfile = new Map<string, number[]>();
+  private readonly enterpriseGrantConcurrencyByProfile = new Map<string, number>();
 
   constructor(config: HttpTransportConfig, logger: Logger) {
     // Freeze config to prevent runtime mutation of security-critical settings (allowedOrigins, rate limits, etc.)
@@ -133,9 +137,13 @@ export class HttpTransport {
     });
     this.enterpriseJwksCache = new JwksCache({
       maxCachedIssuers: this.enterpriseRuntimeConfig.global_max_cached_issuers,
+      maxCachedKeys: this.enterpriseRuntimeConfig.global_max_cached_jwks_keys,
       refreshTimeoutMs: this.enterpriseRuntimeConfig.jwks_refresh_timeout_ms,
       refreshBackoffMs: this.enterpriseRuntimeConfig.jwks_refresh_backoff_ms,
     }, logger);
+    this.enterpriseReplayStore = new EnterpriseReplayStore({
+      maxEntries: this.enterpriseRuntimeConfig.global_max_replay_entries,
+    });
     
     // Initialize metrics if enabled
     if (config.metricsEnabled) {
@@ -170,6 +178,34 @@ export class HttpTransport {
       enterprise_grant_rate_limit_window_ms: config?.enterprise_grant_rate_limit_window_ms ?? 60_000,
       enterprise_grant_max_concurrency_per_profile: config?.enterprise_grant_max_concurrency_per_profile ?? 4,
     };
+  }
+
+  private enforceEnterpriseGrantRateLimit(profileId: string): void {
+    const now = Date.now();
+    const attempts = (this.enterpriseGrantAttemptsByProfile.get(profileId) || [])
+      .filter((timestamp) => now - timestamp < this.enterpriseRuntimeConfig.enterprise_grant_rate_limit_window_ms);
+    if (attempts.length >= this.enterpriseRuntimeConfig.enterprise_grant_rate_limit_max) {
+      throw new RateLimitError('Enterprise token exchange rate limit exceeded');
+    }
+    attempts.push(now);
+    this.enterpriseGrantAttemptsByProfile.set(profileId, attempts);
+  }
+
+  private acquireEnterpriseGrantConcurrency(profileId: string): void {
+    const current = this.enterpriseGrantConcurrencyByProfile.get(profileId) || 0;
+    if (current >= this.enterpriseRuntimeConfig.enterprise_grant_max_concurrency_per_profile) {
+      throw new RateLimitError('Enterprise token exchange concurrency limit exceeded');
+    }
+    this.enterpriseGrantConcurrencyByProfile.set(profileId, current + 1);
+  }
+
+  private releaseEnterpriseGrantConcurrency(profileId: string): void {
+    const current = this.enterpriseGrantConcurrencyByProfile.get(profileId) || 0;
+    if (current <= 1) {
+      this.enterpriseGrantConcurrencyByProfile.delete(profileId);
+      return;
+    }
+    this.enterpriseGrantConcurrencyByProfile.set(profileId, current - 1);
   }
 
   setProfileIndexProvider(provider: (() => Promise<ListedProfileDetails[]>) | null): void {
@@ -268,7 +304,7 @@ export class HttpTransport {
           method: req.method,
           url: req.url,
           status: res.statusCode,
-          body
+          body: redactAuthPayload(body)
         });
         return originalJson.call(this, body);
       };
@@ -443,7 +479,7 @@ export class HttpTransport {
           profileId,
           config: context.enterpriseAuthorization,
           jwksCache: this.enterpriseJwksCache,
-          replayStore: new EnterpriseReplayStore({ maxEntries: this.enterpriseRuntimeConfig.global_max_replay_entries }),
+          replayStore: this.enterpriseReplayStore,
           logger: this.logger,
         })
       : null;
@@ -1765,6 +1801,15 @@ export class HttpTransport {
       return;
     }
 
+    const grantType = typeof req.body?.grant_type === 'string' ? req.body.grant_type : undefined;
+    if (grantType === 'urn:ietf:params:oauth:grant-type:jwt-bearer' && !this.isFormUrlEncodedRequest(req)) {
+      res.status(HTTP_STATUS.BAD_REQUEST).json({
+        error: 'invalid_request',
+        error_description: 'Content-Type must be application/x-www-form-urlencoded',
+      });
+      return;
+    }
+
     const router = new OAuthGrantRouter();
 
     router.register('authorization_code', {
@@ -1821,19 +1866,29 @@ export class HttpTransport {
           response.status(HTTP_STATUS.BAD_REQUEST).json({ error: 'unsupported_grant_type' });
           return;
         }
-        const principal = await profileState.enterpriseAuthProvider.validateAssertion(request.body.assertion, request.body.client_id);
-        const issuedToken = this.inboundAuthTokenStore.issue(principal);
-        profileState.oauthTokensByAccessToken.set(issuedToken.token, {
-          expiresAt: principal.expiresAt,
-          clientId: principal.clientId ?? request.body.client_id ?? 'enterprise-client',
-          scopes: principal.scopes,
-        });
-        response.json({
-          access_token: issuedToken.token,
-          token_type: 'Bearer',
-          expires_in: principal.expiresAt ? Math.max(1, Math.floor((principal.expiresAt - Date.now()) / 1000)) : undefined,
-          scope: principal.scopes.join(' '),
-        });
+        this.enforceEnterpriseGrantRateLimit(profileState.profileId);
+        this.acquireEnterpriseGrantConcurrency(profileState.profileId);
+        try {
+          const principal = await profileState.enterpriseAuthProvider.validateAssertion(request.body.assertion, request.body.client_id);
+          const issuedToken = this.inboundAuthTokenStore.issue(principal);
+          profileState.oauthTokensByAccessToken.set(issuedToken.token, {
+            expiresAt: principal.expiresAt,
+            clientId: principal.clientId ?? request.body.client_id ?? 'enterprise-client',
+            scopes: principal.scopes,
+          });
+          this.metrics?.recordApiCall('enterprise_token_exchange', 200, 0, { profileId: profileState.profileId, tenantId: principal.tenantId ?? null });
+          response.json({
+            access_token: issuedToken.token,
+            token_type: 'Bearer',
+            expires_in: principal.expiresAt ? Math.max(1, Math.floor((principal.expiresAt - Date.now()) / 1000)) : undefined,
+            scope: principal.scopes.join(' '),
+          });
+        } catch (error) {
+          this.metrics?.recordApiCallError('enterprise_token_exchange', error instanceof Error ? error.name : 'UnknownError', { profileId: profileState.profileId, tenantId: null });
+          throw error;
+        } finally {
+          this.releaseEnterpriseGrantConcurrency(profileState.profileId);
+        }
       },
     });
 
@@ -1845,6 +1900,24 @@ export class HttpTransport {
       this.logger.error('OAuth token exchange error', error instanceof Error ? error : new Error(String(error)), { correlationId: mapped.correlationId });
       res.status(mapped.status).json(mapped.body);
     }
+  }
+
+  private isFormUrlEncodedRequest(req: Request): boolean {
+    if (typeof req.is === 'function') {
+      return Boolean(req.is('application/x-www-form-urlencoded'));
+    }
+
+    const contentType = typeof req.headers['content-type'] === 'string'
+      ? req.headers['content-type']
+      : Array.isArray(req.headers['content-type'])
+        ? req.headers['content-type'][0]
+        : undefined;
+
+    if (!contentType) {
+      return false;
+    }
+
+    return contentType.toLowerCase().includes('application/x-www-form-urlencoded');
   }
 
   private compareSecretsConstantTime(expectedSecret: string, providedSecret: string): boolean {
@@ -2671,6 +2744,9 @@ export class HttpTransport {
               if (internalToken.principal.profileId !== requestProfileId) {
                 throw new AuthenticationError('Enterprise token is not valid for this profile');
               }
+              if (internalToken.principal.tenantId && resolvedTenant?.tenantId && internalToken.principal.tenantId !== resolvedTenant.tenantId) {
+                throw new AuthenticationError('Enterprise token is not valid for this tenant');
+              }
               accessTokenExpiresAt = internalToken.expiresAt;
               scopes = internalToken.principal.scopes;
               oauthClientId = internalToken.principal.clientId;
@@ -3300,9 +3376,10 @@ export class HttpTransport {
       }
       session.sseStreams.clear();
       
-      // Clean up OAuth token from map if present
+      // Clean up inbound auth token state if present
       if (session.authToken) {
         profileState.oauthTokensByAccessToken.delete(session.authToken);
+        this.inboundAuthTokenStore.delete(session.authToken);
       }
 
       const tenantOAuthProvider = this.getTenantOAuthProviderCache(profileState).get(sessionId);
@@ -3393,6 +3470,14 @@ export class HttpTransport {
       expiresAt,
       clientId,
       scopes,
+    });
+    this.inboundAuthTokenStore.store(tokens.access_token, {
+      authType: 'oauth',
+      profileId: profileState.profileId,
+      subject: clientId,
+      clientId,
+      scopes,
+      expiresAt,
     });
 
     this.logger.debug('Stored OAuth tokens', {
@@ -3705,6 +3790,7 @@ export class HttpTransport {
       // Update token map: remove old token, add new one
       if (oldAccessToken) {
         profileState.oauthTokensByAccessToken.delete(oldAccessToken);
+        this.inboundAuthTokenStore.delete(oldAccessToken);
       }
       this.storeOAuthTokens(profileState, tokens, client.client_id, session.scopes || []);
 
