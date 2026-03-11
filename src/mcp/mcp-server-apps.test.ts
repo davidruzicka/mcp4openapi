@@ -4,6 +4,7 @@ import path from 'path';
 import { createServer, type Server } from 'http';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { AddressInfo } from 'net';
+import { CompleteRequestSchema, ListResourcesRequestSchema, ListResourceTemplatesRequestSchema, ListToolsRequestSchema, ReadResourceRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { MCPServer } from './mcp-server.js';
 
 let apiServer: Server;
@@ -360,5 +361,106 @@ describe('MCPServer apps resources', () => {
 
     (server as any).profile = { tools: [] };
     await expect((server as any).executeAppsComposite('missingComposite', {})).rejects.toThrow('Composite tool not found: missingComposite');
+  });
+
+  it('covers MCP apps handlers, initialize capabilities, and composite fetch success paths', async () => {
+    const server = await createServerFixture();
+    const handlers = new Map<unknown, (request?: any) => Promise<unknown>>();
+    const originalSetRequestHandler = (server as any).server.setRequestHandler.bind((server as any).server);
+    (server as any).server.setRequestHandler = (schema: unknown, handler: (request?: any) => Promise<unknown>) => {
+      handlers.set(schema, handler);
+      return originalSetRequestHandler(schema, handler);
+    };
+
+    (server as any).setupHandlers();
+
+    await expect(handlers.get(ListToolsRequestSchema)!()).resolves.toMatchObject({
+      tools: [expect.objectContaining({ name: 'get_item' })],
+    });
+    await expect(handlers.get(ListResourcesRequestSchema)!()).resolves.toEqual({
+      resources: [expect.objectContaining({ uri: 'ui://shell' })],
+    });
+    await expect(handlers.get(ListResourceTemplatesRequestSchema)!()).resolves.toEqual({
+      resourceTemplates: [expect.objectContaining({ uriTemplate: 'ui://items/{item_id}' })],
+    });
+    await expect(handlers.get(ReadResourceRequestSchema)!({ params: { uri: 'ui://shell' } })).resolves.toEqual({
+      contents: [expect.objectContaining({ uri: 'ui://shell', text: '<div>Shell</div>' })],
+    });
+    await expect(handlers.get(CompleteRequestSchema)!({
+      params: {
+        ref: { type: 'ref/resource', uri: 'ui://items/{item_id}' },
+        argument: { name: 'item_id', value: '1' },
+      },
+    })).resolves.toEqual({
+      completion: { values: ['1'], total: 1, hasMore: false },
+    });
+
+    const initializeResponse = (server as any).handleInitialize({ jsonrpc: '2.0', id: 'init' }, undefined, undefined);
+    expect(initializeResponse.result.capabilities).toEqual({
+      tools: {},
+      prompts: { listChanged: false },
+      resources: { listChanged: false, subscribe: false },
+      completions: {},
+    });
+
+    const fixedFetchServer = new MCPServer();
+    (fixedFetchServer as any).appsModel = {
+      resourcesByUri: new Map([['ui://cached', {
+        uri: 'ui://cached',
+        mimeType: 'text/plain',
+        appsMeta: { source: 'fetch' },
+        fetchStrategy: {
+          source: 'operation',
+          operation: 'getItem',
+          parameterMapping: {},
+          timeoutMs: 1000,
+        },
+      }]]),
+      templateResources: [],
+      templateResourcesByUriTemplate: new Map(),
+    };
+    (fixedFetchServer as any).fetchResourceContent = vi.fn().mockResolvedValue('fetched shell');
+    await expect((fixedFetchServer as any).readResource('ui://cached')).resolves.toEqual({
+      contents: [{ uri: 'ui://cached', mimeType: 'text/plain', _meta: { source: 'fetch' }, text: 'fetched shell' }],
+    });
+
+    const missingTextServer = new MCPServer();
+    (missingTextServer as any).appsModel = {
+      resourcesByUri: new Map(),
+      templateResources: [{
+        name: 'template',
+        uriTemplate: 'ui://items/{item_id}',
+        mimeType: 'text/html',
+        staticText: undefined,
+        fetchStrategy: { source: 'operation', operation: 'getItem', parameterMapping: {}, timeoutMs: 1000 },
+        variables: ['item_id'],
+        matcher: /^ui:\/\/items\/([^/?#]+)$/,
+      }],
+      templateResourcesByUriTemplate: new Map(),
+    };
+    (missingTextServer as any).fetchResourceContent = vi.fn().mockResolvedValue(undefined);
+    await expect((missingTextServer as any).readResource('ui://items/1')).rejects.toThrow("Resource not found: ui://items/1");
+    await expect((missingTextServer as any).completeResourceArgument({
+      params: {
+        ref: { type: 'ref/resource', uri: 'ui://items/{item_id}' },
+        argument: { name: 'item_id' },
+      },
+    })).rejects.toThrow('completion/complete requires argument.name and argument.value');
+    await expect((missingTextServer as any).completeResourceArgument({
+      params: {
+        ref: { type: 'ref/resource', uri: 'ui://missing/{id}' },
+        argument: { name: 'id', value: '1' },
+      },
+    })).rejects.toThrow('Resource template not found: ui://missing/{id}');
+
+    const compositeServer = new MCPServer();
+    (compositeServer as any).profile = {
+      tools: [{ name: 'composite_fetch', steps: [{ call: 'GET /items', store_as: 'items' }] }],
+    };
+    (compositeServer as any).compositeExecutor = {
+      execute: vi.fn().mockResolvedValue({ data: { id: '1' } }),
+    };
+    (compositeServer as any).getHttpClientForSession = vi.fn().mockResolvedValue({});
+    await expect((compositeServer as any).executeAppsComposite('composite_fetch', { item_id: '1' }, 'session-5', 'default')).resolves.toEqual({ id: '1' });
   });
 });

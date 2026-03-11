@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { OpenAPIParser } from '../openapi/openapi-parser.js';
 import { ValidationError } from '../core/errors.js';
 import type { Profile } from '../types/profile.js';
-import { createLoadedProfileAppsModel } from './profile-apps.js';
+import { createLoadedProfileAppsModel, extractTemplateVariables, getNestedValue } from './profile-apps.js';
 
 const tempPaths: string[] = [];
 
@@ -809,6 +809,236 @@ describe('createLoadedProfileAppsModel', () => {
 
     expect(model?.toolAppsByName.get('get_item')?.templateParameterMapping).toBeUndefined();
     expect(model?.toolAppsByName.get('get_item')?.outputTemplateResourceName).toBe('item_template');
+  });
+
+  it('covers remaining apps model validation and helper branches', async () => {
+    const parser = await createParser();
+
+    const noAppsProfile = createProfile({
+      tools: [{ ...createProfile().tools[0], apps: undefined }],
+      resources: [],
+    });
+    const noAppsProfilePath = await writeTempFile('profile-no-apps.json', JSON.stringify(noAppsProfile));
+    await expect(createLoadedProfileAppsModel(noAppsProfile, { profilePath: noAppsProfilePath, parser })).resolves.toBeUndefined();
+
+    const templateWithoutContentProfile = createProfile({
+      tools: [{ ...createProfile().tools[0], apps: undefined }],
+      resources: [{
+        name: 'item_template',
+        kind: 'template',
+        uri_template: 'ui://items/{item_id}',
+        mime_type: 'text/html',
+      }],
+    });
+    const templateWithoutContentPath = await writeTempFile('profile-template-no-content.json', JSON.stringify(templateWithoutContentProfile));
+    const templateWithoutContentModel = await createLoadedProfileAppsModel(templateWithoutContentProfile, {
+      profilePath: templateWithoutContentPath,
+      parser,
+    });
+    expect(templateWithoutContentModel?.templateResources[0]).toMatchObject({
+      staticText: undefined,
+      fetchStrategy: undefined,
+    });
+
+    const staticCompletionProfile = createProfile({
+      resources: [{
+        name: 'item_template',
+        kind: 'template',
+        uri_template: 'ui://items/{item_id}',
+        mime_type: 'text/html',
+        completion: { variables: { item_id: { source: 'static', values: ['1', '2'] } } },
+      }],
+      tools: [{
+        ...createProfile().tools[0],
+        apps: {
+          output_template_resource_uri: 'ui://items/{item_id}',
+          widget_accessible: false,
+          tool_invocation_message: {
+            invoking: 'Preparing widget',
+            invoked: 'Widget ready',
+          },
+        },
+      }],
+    });
+    const staticCompletionPath = await writeTempFile('profile-static-completion-success.json', JSON.stringify(staticCompletionProfile));
+    const staticCompletionModel = await createLoadedProfileAppsModel(staticCompletionProfile, { profilePath: staticCompletionPath, parser });
+    expect(staticCompletionModel?.templateResources[0].completion?.variables.item_id).toMatchObject({
+      source: 'static',
+      values: ['1', '2'],
+      parameterMapping: {},
+    });
+    expect(staticCompletionModel?.toolAppsByName.get('get_item')?.meta).toMatchObject({
+      'openai/outputTemplate': 'ui://items/{item_id}',
+      'openai/widgetAccessible': false,
+      'openai/toolInvocation/invoking': 'Preparing widget',
+      'openai/toolInvocation/invoked': 'Widget ready',
+    });
+
+    const unknownFetchCompositeProfile = createProfile({
+      tools: [
+        { ...createProfile().tools[0], apps: undefined },
+        { name: 'plain_tool', description: 'Plain', parameters: {}, operations: { execute: 'getItem' } },
+      ],
+      resources: [{
+        name: 'item_template',
+        kind: 'template',
+        uri_template: 'ui://items/{item_id}',
+        mime_type: 'text/html',
+        fetch: { source: 'composite', composite_tool: 'plain_tool', parameter_mapping: { item_id: 'item_id' } },
+      }],
+    });
+    const unknownFetchCompositePath = await writeTempFile('profile-fetch-unknown-composite.json', JSON.stringify(unknownFetchCompositeProfile));
+    await expect(createLoadedProfileAppsModel(unknownFetchCompositeProfile, { profilePath: unknownFetchCompositePath, parser })).rejects.toMatchObject({
+      details: expect.objectContaining({ code: 'apps_resource_invalid_fetch_reference', path: 'resources[0].fetch.composite_tool' }),
+    });
+
+    const unknownOperationCompletionProfile = createProfile({
+      resources: [{
+        name: 'item_template',
+        kind: 'template',
+        uri_template: 'ui://items/{item_id}',
+        mime_type: 'text/html',
+        inline_text: '<div>Item</div>',
+        completion: { variables: { item_id: { source: 'operation', operation: 'missingOperation', value_path: 'id' } } },
+      }],
+    });
+    const unknownOperationCompletionPath = await writeTempFile('profile-completion-unknown-operation.json', JSON.stringify(unknownOperationCompletionProfile));
+    await expect(createLoadedProfileAppsModel(unknownOperationCompletionProfile, { profilePath: unknownOperationCompletionPath, parser })).rejects.toMatchObject({
+      details: expect.objectContaining({ code: 'apps_resource_invalid_completion_definition', path: 'resources[0].completion.variables.item_id.operation' }),
+    });
+
+    const unknownCompositeCompletionProfile = createProfile({
+      tools: [
+        { ...createProfile().tools[0], apps: undefined },
+        { name: 'plain_tool', description: 'Plain', parameters: {}, operations: { execute: 'getItem' } },
+      ],
+      resources: [{
+        name: 'item_template',
+        kind: 'template',
+        uri_template: 'ui://items/{item_id}',
+        mime_type: 'text/html',
+        inline_text: '<div>Item</div>',
+        completion: { variables: { item_id: { source: 'composite_tool', composite_tool: 'plain_tool', value_path: 'id' } } },
+      }],
+    });
+    const unknownCompositeCompletionPath = await writeTempFile('profile-completion-unknown-composite.json', JSON.stringify(unknownCompositeCompletionProfile));
+    await expect(createLoadedProfileAppsModel(unknownCompositeCompletionProfile, { profilePath: unknownCompositeCompletionPath, parser })).rejects.toMatchObject({
+      details: expect.objectContaining({ code: 'apps_resource_invalid_completion_definition', path: 'resources[0].completion.variables.item_id.composite_tool' }),
+    });
+
+    const missingDerivedMappingProfile = createProfile({
+      tools: [{
+        ...createProfile().tools[0],
+        parameters: {
+          category_id: { type: 'string', description: 'Category id', required: true },
+        },
+        apps: { output_template_resource_uri: 'ui://items/{item_id}' },
+      }],
+    });
+    const missingDerivedMappingPath = await writeTempFile('profile-template-mapping-missing-derived.json', JSON.stringify(missingDerivedMappingProfile));
+    await expect(createLoadedProfileAppsModel(missingDerivedMappingProfile, { profilePath: missingDerivedMappingPath, parser })).rejects.toMatchObject({
+      details: expect.objectContaining({ code: 'apps_tool_invalid_template_mapping', path: 'tools[0].apps.output_template_resource_uri' }),
+    });
+
+    const invalidResultPathProfile = createProfile({
+      resources: [{
+        name: 'item_template',
+        kind: 'template',
+        uri_template: 'ui://items/{item_id}',
+        mime_type: 'text/html',
+        fetch: { source: 'operation', operation: 'getItem', parameter_mapping: { item_id: 'item_id' }, result_path: 'bad-path' },
+      }],
+    });
+    const invalidResultPath = await writeTempFile('profile-invalid-result-path.json', JSON.stringify(invalidResultPathProfile));
+    await expect(createLoadedProfileAppsModel(invalidResultPathProfile, { profilePath: invalidResultPath, parser })).rejects.toMatchObject({
+      details: expect.objectContaining({ code: 'apps_resource_invalid_fetch_reference', path: 'resources[0].fetch.result_path' }),
+    });
+
+    const longResultPathProfile = createProfile({
+      resources: [{
+        name: 'item_template',
+        kind: 'template',
+        uri_template: 'ui://items/{item_id}',
+        mime_type: 'text/html',
+        fetch: { source: 'operation', operation: 'getItem', parameter_mapping: { item_id: 'item_id' }, result_path: `a.${'b'.repeat(256)}` },
+      }],
+    });
+    const longResultPath = await writeTempFile('profile-long-result-path.json', JSON.stringify(longResultPathProfile));
+    await expect(createLoadedProfileAppsModel(longResultPathProfile, { profilePath: longResultPath, parser })).rejects.toMatchObject({
+      details: expect.objectContaining({ code: 'apps_resource_invalid_fetch_reference', path: 'resources[0].fetch.result_path' }),
+    });
+
+    const invalidUriProfile = createProfile({
+      resources: [{
+        name: 'bad_uri',
+        kind: 'static',
+        uri: 'not a uri',
+        mime_type: 'text/plain',
+        inline_text: 'hello',
+      }],
+    });
+    const invalidUriPath = await writeTempFile('profile-invalid-uri.json', JSON.stringify(invalidUriProfile));
+    await expect(createLoadedProfileAppsModel(invalidUriProfile, { profilePath: invalidUriPath, parser })).rejects.toMatchObject({
+      details: expect.objectContaining({ code: 'apps_resource_invalid_uri', path: 'resources[0].uri' }),
+    });
+
+    const duplicateTemplateVariableProfile = createProfile({
+      resources: [{
+        name: 'bad_template',
+        kind: 'template',
+        uri_template: 'ui://items/{item_id}/{item_id}',
+        mime_type: 'text/html',
+      }],
+    });
+    const duplicateTemplateVariablePath = await writeTempFile('profile-duplicate-template-variable.json', JSON.stringify(duplicateTemplateVariableProfile));
+    await expect(createLoadedProfileAppsModel(duplicateTemplateVariableProfile, { profilePath: duplicateTemplateVariablePath, parser })).rejects.toMatchObject({
+      details: expect.objectContaining({ code: 'apps_resource_invalid_uri_template', path: 'resources[0].uri_template' }),
+    });
+
+    const unmatchedBraceProfile = createProfile({
+      resources: [{
+        name: 'bad_template',
+        kind: 'template',
+        uri_template: 'ui://items/{item_id',
+        mime_type: 'text/html',
+      }],
+    });
+    const unmatchedBracePath = await writeTempFile('profile-unmatched-brace-template.json', JSON.stringify(unmatchedBraceProfile));
+    await expect(createLoadedProfileAppsModel(unmatchedBraceProfile, { profilePath: unmatchedBracePath, parser })).rejects.toMatchObject({
+      details: expect.objectContaining({ code: 'apps_resource_invalid_uri_template', path: 'resources[0].uri_template' }),
+    });
+
+    const longInvocationProfile = createProfile({
+      tools: [{
+        ...createProfile().tools[0],
+        apps: {
+          output_template_resource_uri: 'ui://items/{item_id}',
+          invocation_text: { invoking: 'x'.repeat(81), invoked: 'done' },
+        },
+      }],
+    });
+    const longInvocationPath = await writeTempFile('profile-long-invocation.json', JSON.stringify(longInvocationProfile));
+    await expect(createLoadedProfileAppsModel(longInvocationProfile, { profilePath: longInvocationPath, parser })).rejects.toMatchObject({
+      details: expect.objectContaining({ code: 'apps_tool_invalid_invocation_text', path: 'tools[0].apps.invoking' }),
+    });
+
+    const nonSerializableToolProfile = createProfile({
+      tools: [{
+        ...createProfile().tools[0],
+        apps: {
+          output_template_resource_uri: 'ui://items/{item_id}',
+          custom_meta: { bad: BigInt(1) as unknown as number },
+        },
+      }],
+    });
+    const nonSerializableToolPath = await writeTempFile('profile-non-serializable-tool-meta.json', '{}');
+    await expect(createLoadedProfileAppsModel(nonSerializableToolProfile, { profilePath: nonSerializableToolPath, parser })).rejects.toMatchObject({
+      details: expect.objectContaining({ code: 'apps_tool_invalid_invocation_text', path: 'tools[0].apps.custom_meta' }),
+    });
+
+    const template = templateWithoutContentModel!.templateResources[0];
+    expect(extractTemplateVariables(template, 'ui://items/alpha%20beta')).toEqual({ item_id: 'alpha beta' });
+    expect(getNestedValue({ item: [{ id: '1' }] }, 'item.id')).toBeUndefined();
   });
 
   it('uses ValidationError for Apps validation failures', async () => {
