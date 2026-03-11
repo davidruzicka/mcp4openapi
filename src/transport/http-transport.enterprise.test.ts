@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import request from 'supertest';
 import type { Express } from 'express';
 import { exportJWK, generateKeyPair, SignJWT } from 'jose';
@@ -104,5 +104,45 @@ describe('HttpTransport enterprise authorization', () => {
 
     expect(response.status).toBe(401);
     expect(String(response.body.message)).toContain('Enterprise token is not valid for this profile');
+  });
+
+  it('normalizes enterprise runtime config defaults and overrides', () => {
+    const config = (transport as any).resolveEnterpriseRuntimeConfig({
+      global_max_enterprise_tokens: 12,
+      enterprise_grant_rate_limit_max: 3,
+    });
+
+    expect(config.enabled).toBe(true);
+    expect(config.global_max_enterprise_tokens).toBe(12);
+    expect(config.enterprise_grant_rate_limit_max).toBe(3);
+    expect(config.enterprise_grant_max_concurrency_per_profile).toBe(4);
+  });
+
+  it('enforces enterprise grant rate and concurrency limits and releases counters', () => {
+    vi.spyOn(Date, 'now').mockReturnValue(1_000_000);
+    const limitedTransport = new HttpTransport({
+      host: '127.0.0.1',
+      port: 0,
+      sessionTimeoutMs: 1800000,
+      heartbeatEnabled: false,
+      heartbeatIntervalMs: 30000,
+      metricsEnabled: false,
+      metricsPath: '/metrics',
+      profileRoutingEnabled: true,
+      enterpriseAuthorizationRuntimeConfig: {
+        enterprise_grant_rate_limit_max: 1,
+        enterprise_grant_rate_limit_window_ms: 60_000,
+        enterprise_grant_max_concurrency_per_profile: 1,
+      },
+    }, logger);
+
+    expect(() => (limitedTransport as any).enforceEnterpriseGrantRateLimit('alpha')).not.toThrow();
+    expect(() => (limitedTransport as any).enforceEnterpriseGrantRateLimit('alpha')).toThrow(/rate limit exceeded/i);
+
+    expect(() => (limitedTransport as any).acquireEnterpriseGrantConcurrency('alpha')).not.toThrow();
+    expect(() => (limitedTransport as any).acquireEnterpriseGrantConcurrency('alpha')).toThrow(/concurrency limit exceeded/i);
+
+    (limitedTransport as any).releaseEnterpriseGrantConcurrency('alpha');
+    expect((limitedTransport as any).enterpriseGrantConcurrencyByProfile.has('alpha')).toBe(false);
   });
 });

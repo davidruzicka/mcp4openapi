@@ -23,14 +23,19 @@ describe('InboundAuthTokenStore', () => {
 
   it('drops expired records on read and before storing new tokens', () => {
     const now = 1_000_000;
-    vi.spyOn(Date, 'now').mockReturnValue(now);
+    const nowSpy = vi.spyOn(Date, 'now');
+    nowSpy.mockReturnValue(now);
     const store = new InboundAuthTokenStore({ maxTokens: 2 });
     store.store('expired', createPrincipal({ expiresAt: now - 1 }));
 
     expect(store.get('expired')).toBeUndefined();
     expect(store.size()).toBe(0);
 
-    store.store('fresh', createPrincipal({ expiresAt: now + 100 }));
+    store.store('still-valid', createPrincipal({ expiresAt: now + 100 }));
+    nowSpy.mockReturnValue(now + 200);
+    store.store('fresh', createPrincipal({ expiresAt: now + 500 }));
+
+    expect(store.get('still-valid')).toBeUndefined();
     expect(store.size()).toBe(1);
   });
 
@@ -52,5 +57,13 @@ describe('InboundAuthTokenStore', () => {
 
     store.delete(record.token);
     expect(store.get(record.token)).toBeUndefined();
+  });
+
+  it('stops overflow eviction cleanly even when configured with a negative capacity', () => {
+    const store = new InboundAuthTokenStore({ maxTokens: -1 });
+
+    store.store('token-1', createPrincipal());
+
+    expect(store.size()).toBe(0);
   });
 });

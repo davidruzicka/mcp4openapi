@@ -35,4 +35,12 @@ describe('enterprise-replay-store', () => {
     store.register({ jti: 'two', assertion: 'b', ttlSeconds: 60, issuer: 'https://issuer.example' });
     expect(store.size()).toBe(1);
   });
+
+  it('stops overflow eviction cleanly even when configured with a negative capacity', () => {
+    const store = new EnterpriseReplayStore({ maxEntries: -1 });
+
+    store.register({ jti: 'one', assertion: 'a', ttlSeconds: 60, issuer: 'https://issuer.example' });
+
+    expect(store.size()).toBe(0);
+  });
 });
