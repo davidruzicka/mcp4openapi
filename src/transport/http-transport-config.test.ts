@@ -15,11 +15,21 @@ const ENV_KEYS = [
   'MCP4_HTTP_RATE_LIMIT_MAX_REQUESTS',
   'MCP4_HTTP_RATE_LIMIT_METRICS_MAX',
   'MCP4_TOKEN_MAX_LENGTH',
+  'MCP4_TRUST_PROXY',
   'MCP4_SSL_CERT_FILE',
   'MCP4_SSL_KEY_FILE',
   'MCP4_OAUTH_SESSION_TIMEOUT_MS',
   'MCP4_OAUTH_REFRESH_THRESHOLD_MS',
   'MCP4_HTTP_PROFILE_INDEX',
+  'MCP4_ENTERPRISE_AUTHORIZATION_ENABLED',
+  'MCP4_ENTERPRISE_MAX_CACHED_ISSUERS',
+  'MCP4_ENTERPRISE_MAX_REPLAY_ENTRIES',
+  'MCP4_ENTERPRISE_MAX_TOKENS',
+  'MCP4_ENTERPRISE_JWKS_TIMEOUT_MS',
+  'MCP4_ENTERPRISE_JWKS_BACKOFF_MS',
+  'MCP4_ENTERPRISE_GRANT_RATE_LIMIT_MAX',
+  'MCP4_ENTERPRISE_GRANT_RATE_LIMIT_WINDOW_MS',
+  'MCP4_ENTERPRISE_GRANT_MAX_CONCURRENCY',
 ];
 
 describe('buildHttpTransportBaseConfig', () => {
@@ -71,11 +81,21 @@ describe('buildHttpTransportBaseConfig', () => {
     process.env.MCP4_HTTP_RATE_LIMIT_MAX_REQUESTS = '250';
     process.env.MCP4_HTTP_RATE_LIMIT_METRICS_MAX = '15';
     process.env.MCP4_TOKEN_MAX_LENGTH = '2048';
+    process.env.MCP4_TRUST_PROXY = 'loopback';
     process.env.MCP4_SSL_CERT_FILE = '/tmp/cert.pem';
     process.env.MCP4_SSL_KEY_FILE = '/tmp/key.pem';
     process.env.MCP4_OAUTH_SESSION_TIMEOUT_MS = '86400000';
     process.env.MCP4_OAUTH_REFRESH_THRESHOLD_MS = '120000';
     process.env.MCP4_HTTP_PROFILE_INDEX = 'true';
+    process.env.MCP4_ENTERPRISE_AUTHORIZATION_ENABLED = 'false';
+    process.env.MCP4_ENTERPRISE_MAX_CACHED_ISSUERS = '12';
+    process.env.MCP4_ENTERPRISE_MAX_REPLAY_ENTRIES = '34';
+    process.env.MCP4_ENTERPRISE_MAX_TOKENS = '56';
+    process.env.MCP4_ENTERPRISE_JWKS_TIMEOUT_MS = '78';
+    process.env.MCP4_ENTERPRISE_JWKS_BACKOFF_MS = '90';
+    process.env.MCP4_ENTERPRISE_GRANT_RATE_LIMIT_MAX = '11';
+    process.env.MCP4_ENTERPRISE_GRANT_RATE_LIMIT_WINDOW_MS = '12000';
+    process.env.MCP4_ENTERPRISE_GRANT_MAX_CONCURRENCY = '13';
 
     const config = buildHttpTransportBaseConfig('0.0.0.0', 8080);
 
@@ -92,11 +112,23 @@ describe('buildHttpTransportBaseConfig', () => {
     expect(config.rateLimitMaxRequests).toBe(250);
     expect(config.rateLimitMetricsMax).toBe(15);
     expect(config.maxTokenLength).toBe(2048);
+    expect(config.trustProxy).toBe('loopback');
     expect(config.sslCertFile).toBe('/tmp/cert.pem');
     expect(config.sslKeyFile).toBe('/tmp/key.pem');
     expect(config.oauthSessionTimeoutMs).toBe(86400000);
     expect(config.oauthRefreshThresholdMs).toBe(120000);
     expect(config.profileIndexEnabled).toBe(true);
+    expect(config.enterpriseAuthorizationRuntimeConfig).toEqual({
+      enabled: false,
+      global_max_cached_issuers: 12,
+      global_max_replay_entries: 34,
+      global_max_enterprise_tokens: 56,
+      jwks_refresh_timeout_ms: 78,
+      jwks_refresh_backoff_ms: 90,
+      enterprise_grant_rate_limit_max: 11,
+      enterprise_grant_rate_limit_window_ms: 12000,
+      enterprise_grant_max_concurrency_per_profile: 13,
+    });
   });
 
   it('throws on invalid oauth session timeout', () => {
@@ -121,5 +153,16 @@ describe('buildHttpTransportBaseConfig', () => {
     }
     expect(error).toBeInstanceOf(ConfigurationError);
     expect(error?.message).not.toContain('invalid');
+  });
+
+  it('parses trust proxy booleans and numeric values', () => {
+    process.env.MCP4_TRUST_PROXY = 'true';
+    expect(buildHttpTransportBaseConfig('127.0.0.1', 3003).trustProxy).toBe(true);
+
+    process.env.MCP4_TRUST_PROXY = '2';
+    expect(buildHttpTransportBaseConfig('127.0.0.1', 3003).trustProxy).toBe(2);
+
+    process.env.MCP4_TRUST_PROXY = 'false';
+    expect(buildHttpTransportBaseConfig('127.0.0.1', 3003).trustProxy).toBe(false);
   });
 });

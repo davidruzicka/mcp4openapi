@@ -2353,6 +2353,76 @@ describe('ProfileLoader', () => {
 
       await expect(loader.load(tmpPath)).rejects.toThrow(/allowed_client_ids is required/);
     });
+
+    it('rejects enterprise resources that are not included in audience', async () => {
+      const loader = new ProfileLoader();
+      const fs = await import('fs/promises');
+      const tmpPath = `/tmp/enterprise-resource-audience-invalid-${Date.now()}-${Math.random()}.json`;
+      await fs.writeFile(
+        tmpPath,
+        JSON.stringify({
+          profile_name: 'enterprise-resource-audience-invalid',
+          enterprise_authorization: {
+            enabled: true,
+            issuer: { issuer: 'https://issuer.example', jwks_uri: 'https://issuer.example/jwks' },
+            resource: 'https://resource.example/a',
+            audience: ['https://resource.example/b'],
+            token_exchange: {
+              grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+              allowed_client_ids: ['enterprise-client']
+            }
+          },
+          tools: [{
+            name: 'tool_a',
+            description: 'Tool A',
+            operations: { list: 'getItems' },
+            parameters: { action: { type: 'string', description: 'Action', enum: ['list'], required: true } }
+          }]
+        }),
+        'utf-8'
+      );
+
+      await expect(loader.load(tmpPath)).rejects.toThrow(/resource must be included in audience/);
+    });
+
+    it('rejects required enterprise mode when oauth auth metadata is configured', async () => {
+      const loader = new ProfileLoader();
+      const fs = await import('fs/promises');
+      const tmpPath = `/tmp/enterprise-required-oauth-invalid-${Date.now()}-${Math.random()}.json`;
+      await fs.writeFile(
+        tmpPath,
+        JSON.stringify({
+          profile_name: 'enterprise-required-oauth-invalid',
+          enterprise_authorization: {
+            enabled: true,
+            mode: 'required',
+            issuer: { issuer: 'https://issuer.example', jwks_uri: 'https://issuer.example/jwks' },
+            token_exchange: {
+              grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+              allowed_client_ids: ['enterprise-client']
+            }
+          },
+          interceptors: {
+            auth: {
+              type: 'oauth',
+              authorization_url: 'https://issuer.example/authorize',
+              token_url: 'https://issuer.example/token',
+              client_id: 'client-id',
+              scopes: ['api']
+            }
+          },
+          tools: [{
+            name: 'tool_a',
+            description: 'Tool A',
+            operations: { list: 'getItems' },
+            parameters: { action: { type: 'string', description: 'Action', enum: ['list'], required: true } }
+          }]
+        }),
+        'utf-8'
+      );
+
+      await expect(loader.load(tmpPath)).rejects.toThrow(/cannot be combined with profile oauth auth metadata/);
+    });
   });
 
   describe('cache interceptor validation', () => {
