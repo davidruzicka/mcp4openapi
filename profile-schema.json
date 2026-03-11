@@ -555,6 +555,9 @@
         "output_template_resource_uri": {
           "type": "string"
         },
+        "template_parameter_mapping": {
+          "$ref": "#/definitions/Record%3Cstring%2Cstring%3E"
+        },
         "widget_accessible": {
           "type": "boolean"
         },
@@ -586,6 +589,12 @@
         "custom_meta": {
           "$ref": "#/definitions/Record%3Cstring%2Cunknown%3E"
         }
+      }
+    },
+    "Record<string,string>": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
       }
     },
     "PromptDefinition": {
@@ -749,12 +758,6 @@
       "required": [
         "source"
       ]
-    },
-    "Record<string,string>": {
-      "type": "object",
-      "additionalProperties": {
-        "type": "string"
-      }
     },
     "ResourceCompletionDefinition": {
       "type": "object",
@@ -1393,14 +1396,14 @@
           ]
         },
         "overrides": {
-          "$ref": "#/definitions/Record%3Cstring%2Cstructure-1535101595-16486-16522-1535101595-16471-16523-1535101595-16457-16524-1535101595-16386-16526-1535101595-0-16666%3E"
+          "$ref": "#/definitions/Record%3Cstring%2Cstructure-1535101595-16541-16577-1535101595-16526-16578-1535101595-16512-16579-1535101595-16441-16581-1535101595-0-16721%3E"
         }
       },
       "required": [
         "max_requests_per_minute"
       ]
     },
-    "Record<string,structure-1535101595-16486-16522-1535101595-16471-16523-1535101595-16457-16524-1535101595-16386-16526-1535101595-0-16666>": {
+    "Record<string,structure-1535101595-16541-16577-1535101595-16526-16578-1535101595-16512-16579-1535101595-16441-16581-1535101595-0-16721>": {
       "type": "object",
       "additionalProperties": {
         "type": "object",
@@ -1459,6 +1462,20 @@
         "backoff_ms",
         "retry_on_status"
       ]
+    },
+    "Record<string,structure-1535101595-16486-16522-1535101595-16471-16523-1535101595-16457-16524-1535101595-16386-16526-1535101595-0-16666>": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "max_requests_per_minute": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "max_requests_per_minute"
+        ]
+      }
     },
     "Record<string,structure-1535101595-14836-14872-1535101595-14821-14873-1535101595-14807-14874-1535101595-14736-14876-1535101595-0-15016>": {
       "type": "object",

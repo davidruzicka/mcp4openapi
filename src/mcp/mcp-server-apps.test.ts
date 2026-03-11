@@ -2,7 +2,7 @@ import fs from 'fs/promises';
 import os from 'os';
 import path from 'path';
 import { createServer, type Server } from 'http';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { AddressInfo } from 'net';
 import { MCPServer } from './mcp-server.js';
 
@@ -121,6 +121,7 @@ paths:
           operation: 'getItem',
           parameter_mapping: { item_id: 'item_id' },
           result_path: 'html',
+          cache_ttl_seconds: 60,
         },
         completion: {
           variables: {
@@ -187,5 +188,43 @@ describe('MCPServer apps resources', () => {
     expect(staticResponse.result.contents[0].text).toContain('Shell');
     expect(dynamicResponse.result.contents[0].text).toContain('Item 1');
     expect(completionResponse.result.completion.values).toEqual(['1']);
+  });
+
+  it('propagates session context to fetch-backed resource and completion lookups', async () => {
+    const server = await createServerFixture();
+    const getHttpClientForSessionSpy = vi.spyOn(server as any, 'getHttpClientForSession');
+
+    await (server as any).handleOtherRequest({
+      jsonrpc: '2.0',
+      id: '7',
+      method: 'resources/read',
+      params: { uri: 'ui://items/1' },
+    }, 'session-123');
+
+    await (server as any).handleOtherRequest({
+      jsonrpc: '2.0',
+      id: '8',
+      method: 'completion/complete',
+      params: {
+        ref: { type: 'ref/resource', uri: 'ui://items/{item_id}' },
+        argument: { name: 'item_id', value: '1' },
+      },
+    }, 'session-123');
+
+    expect(getHttpClientForSessionSpy).toHaveBeenCalledWith('session-123', undefined);
+  });
+
+  it('returns method-level errors for unknown resources', async () => {
+    const server = await createServerFixture();
+
+    const response = await (server as any).handleOtherRequest({
+      jsonrpc: '2.0',
+      id: '9',
+      method: 'resources/read',
+      params: { uri: 'ui://missing' },
+    });
+
+    expect(response.error.code).toBe(-32601);
+    expect(response.error.message).toContain('Resource not found');
   });
 });

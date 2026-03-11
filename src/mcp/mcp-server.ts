@@ -83,6 +83,7 @@ export class MCPServer {
   private toolGenerator: ToolGenerator;
   private httpClientFactory = new HttpClientFactory();
   private compositeExecutor?: CompositeExecutor;
+  private appsFetchCache = new Map<string, { expiresAt: number; value: string }>();
   private schemaValidator: SchemaValidator;
   private logger: Logger;
   private httpTransport: HttpTransport | null = null;
@@ -427,6 +428,7 @@ export class MCPServer {
 
     // Load or create MCP profile
     this.appsModel = undefined;
+    this.appsFetchCache.clear();
     if (profilePath) {
       const loader = new ProfileLoader();
       this.profile = await loader.load(profilePath, this.parser);
@@ -1777,7 +1779,7 @@ export class MCPServer {
         return {
           jsonrpc: '2.0',
           id: req.id,
-          result: await this.readResource(params.uri),
+          result: await this.readResource(params.uri, sessionId, profileId),
         };
       } catch (error) {
         return {
@@ -1796,7 +1798,7 @@ export class MCPServer {
         return {
           jsonrpc: '2.0',
           id: req.id,
-          result: await this.completeResourceArgument(req as CompleteRequest),
+          result: await this.completeResourceArgument(req as CompleteRequest, sessionId, profileId),
         };
       } catch (error) {
         return {
@@ -1847,10 +1849,14 @@ export class MCPServer {
     })) || [];
   }
 
-  private async readResource(uri: string): Promise<{ contents: Array<Record<string, unknown>> }> {
+  private async readResource(
+    uri: string,
+    sessionId?: string,
+    profileId?: string,
+  ): Promise<{ contents: Array<Record<string, unknown>> }> {
     const fixedResource = this.appsModel?.resourcesByUri.get(uri);
     if (fixedResource) {
-      const text = fixedResource.text ?? await this.fetchResourceContent(fixedResource.fetchStrategy, {});
+      const text = fixedResource.text ?? await this.fetchResourceContent(fixedResource.fetchStrategy, {}, sessionId, profileId);
       return {
         contents: [{
           uri,
@@ -1873,7 +1879,8 @@ export class MCPServer {
     }
 
     const match = templateMatches[0];
-    const text = match.resource.staticText ?? await this.fetchResourceContent(match.resource.fetchStrategy, match.variables);
+    const text = match.resource.staticText
+      ?? await this.fetchResourceContent(match.resource.fetchStrategy, match.variables, sessionId, profileId);
     if (text === undefined) {
       throw new ResourceNotFoundError(uri, 'Resource');
     }
@@ -1888,7 +1895,11 @@ export class MCPServer {
     };
   }
 
-  private async completeResourceArgument(request: CompleteRequest) {
+  private async completeResourceArgument(
+    request: CompleteRequest,
+    sessionId?: string,
+    profileId?: string,
+  ) {
     const params = request.params as Record<string, unknown>;
     const ref = params.ref as { type?: string; uri?: string } | undefined;
     const argument = params.argument as { name?: string; value?: string } | undefined;
@@ -1914,7 +1925,13 @@ export class MCPServer {
     }
 
     const contextArguments = context?.arguments || {};
-    const values = await this.resolveCompletionValues(completionVariable, argument.value, contextArguments);
+    const values = await this.resolveCompletionValues(
+      completionVariable,
+      argument.value,
+      contextArguments,
+      sessionId,
+      profileId,
+    );
     return {
       completion: {
         values,
@@ -1927,27 +1944,45 @@ export class MCPServer {
   private async fetchResourceContent(
     strategy: LoadedResourceFetchStrategy | undefined,
     variables: Record<string, string>,
+    sessionId?: string,
+    profileId?: string,
   ): Promise<string | undefined> {
     if (!strategy) {
       return undefined;
     }
 
     const input = this.buildMappedInput(variables, strategy.parameterMapping);
-    const response = await this.executeAppsFetch(strategy, input);
+    const cacheKey = this.buildAppsFetchCacheKey(strategy, input, sessionId, profileId);
+    if (cacheKey) {
+      const cached = this.appsFetchCache.get(cacheKey);
+      if (cached && cached.expiresAt > Date.now()) {
+        return cached.value;
+      }
+      this.appsFetchCache.delete(cacheKey);
+    }
+
+    const response = await this.executeAppsFetch(strategy, input, sessionId, profileId);
     const extracted = getNestedValue(response, strategy.resultPath);
-    if (typeof extracted === 'string') {
-      return extracted;
+    const text = typeof extracted === 'string'
+      ? extracted
+      : JSON.stringify(extracted === undefined ? response : extracted, null, 2);
+
+    if (cacheKey && text !== undefined) {
+      this.appsFetchCache.set(cacheKey, {
+        expiresAt: Date.now() + strategy.cacheTtlSeconds! * 1000,
+        value: text,
+      });
     }
-    if (extracted === undefined) {
-      return JSON.stringify(response, null, 2);
-    }
-    return JSON.stringify(extracted, null, 2);
+
+    return text;
   }
 
   private async resolveCompletionValues(
     variable: LoadedCompletionVariable,
     partialValue: string,
     contextArguments: Record<string, string>,
+    sessionId?: string,
+    profileId?: string,
   ): Promise<string[]> {
     const filterValues = (values: string[]) => values
       .filter((value) => value.toLowerCase().includes(partialValue.toLowerCase()))
@@ -1957,7 +1992,12 @@ export class MCPServer {
       return filterValues(variable.values || []);
     }
 
-    const response = await this.executeAppsFetch(variable, this.buildMappedInput(contextArguments, variable.parameterMapping));
+    const response = await this.executeAppsFetch(
+      variable,
+      this.buildMappedInput(contextArguments, variable.parameterMapping),
+      sessionId,
+      profileId,
+    );
     const extracted = getNestedValue(response, variable.resultPath);
     const collection = Array.isArray(extracted) ? extracted : [];
     const values = collection
@@ -1991,13 +2031,36 @@ export class MCPServer {
     }, {});
   }
 
+  private buildAppsFetchCacheKey(
+    strategy: LoadedResourceFetchStrategy,
+    args: Record<string, unknown>,
+    sessionId?: string,
+    profileId?: string,
+  ): string | undefined {
+    if (!strategy.cacheTtlSeconds || strategy.cacheTtlSeconds <= 0) {
+      return undefined;
+    }
+
+    return JSON.stringify({
+      source: strategy.source,
+      operation: strategy.operation,
+      compositeTool: strategy.compositeTool,
+      resultPath: strategy.resultPath,
+      args,
+      sessionId,
+      profileId,
+    });
+  }
+
   private async executeAppsFetch(
     strategy: LoadedResourceFetchStrategy | LoadedCompletionVariable,
     args: Record<string, unknown>,
+    sessionId?: string,
+    profileId?: string,
   ): Promise<unknown> {
     const task = strategy.source === 'operation'
-      ? this.executeAppsOperation(strategy.operation!, args)
-      : this.executeAppsComposite(strategy.compositeTool!, args);
+      ? this.executeAppsOperation(strategy.operation!, args, sessionId, profileId)
+      : this.executeAppsComposite(strategy.compositeTool!, args, sessionId, profileId);
     return await Promise.race([
       task,
       new Promise<never>((_, reject) => {
@@ -2006,14 +2069,19 @@ export class MCPServer {
     ]);
   }
 
-  private async executeAppsOperation(operationId: string, args: Record<string, unknown>): Promise<unknown> {
+  private async executeAppsOperation(
+    operationId: string,
+    args: Record<string, unknown>,
+    sessionId?: string,
+    profileId?: string,
+  ): Promise<unknown> {
     const operation = this.parser.getOperation(operationId);
     if (!operation) {
       throw new OperationNotFoundError(operationId);
     }
     const path = this.resolvePath(operation.path, args);
     const queryParams = this.extractQueryParams(operation, args);
-    const httpClient = await this.getHttpClientForSession();
+    const httpClient = await this.getHttpClientForSession(sessionId, profileId);
     const response = await httpClient.request(operation.method, path, {
       params: queryParams,
       operationId,
@@ -2021,12 +2089,22 @@ export class MCPServer {
     return response.body;
   }
 
-  private async executeAppsComposite(toolName: string, args: Record<string, unknown>): Promise<unknown> {
+  private async executeAppsComposite(
+    toolName: string,
+    args: Record<string, unknown>,
+    sessionId?: string,
+    profileId?: string,
+  ): Promise<unknown> {
     const toolDef = this.profile?.tools.find((tool) => tool.name === toolName);
     if (!toolDef?.steps) {
       throw new ResourceNotFoundError(toolName, 'Composite tool');
     }
-    const compositeResult = await this.compositeExecutor?.execute(toolDef.steps, args, false, await this.getHttpClientForSession());
+    const compositeResult = await this.compositeExecutor?.execute(
+      toolDef.steps,
+      args,
+      false,
+      await this.getHttpClientForSession(sessionId, profileId),
+    );
     return compositeResult?.data;
   }
 

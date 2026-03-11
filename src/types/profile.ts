@@ -99,6 +99,7 @@ export interface ToolDefinition {
 
 export interface ToolAppsDefinition {
   output_template_resource_uri?: string;
+  template_parameter_mapping?: Record<string, string>;
   widget_accessible?: boolean;
   tool_invocation_message?: {
     invoking?: string;

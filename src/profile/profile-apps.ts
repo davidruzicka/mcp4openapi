@@ -89,6 +89,7 @@ export interface LoadedCompletionVariable {
 export interface LoadedToolAppsBinding {
   outputTemplateResourceUri?: string;
   outputTemplateResourceName?: string;
+  templateParameterMapping?: Record<string, string>;
   meta: Record<string, unknown>;
   annotations?: Record<string, unknown>;
 }
@@ -205,7 +206,7 @@ async function loadStaticResource(
     );
   }
   validateUri(resource.uri, `${resourcePath}.uri`, 'apps_resource_invalid_uri');
-  const content = await resolveResourceContent(resource, profileDir, resourcePath, parser, profile);
+  const content = await resolveResourceContent(resource, profileDir, resourcePath, parser, profile, false, []);
   return {
     name: resource.name,
     kind: 'static',
@@ -234,7 +235,7 @@ async function loadTemplateResource(
     );
   }
   const { variables, matcher } = compileUriTemplate(resource.uri_template, `${resourcePath}.uri_template`);
-  const content = await resolveResourceContent(resource, profileDir, resourcePath, parser, profile, true);
+  const content = await resolveResourceContent(resource, profileDir, resourcePath, parser, profile, true, variables);
   const completion = resource.completion
     ? loadCompletion(resource.completion, variables, `${resourcePath}.completion`, parser, profile)
     : undefined;
@@ -262,6 +263,7 @@ async function resolveResourceContent(
   parser: OpenAPIParser | undefined,
   profile: Profile,
   allowTemplateWithoutContent = false,
+  runtimeSourceKeys: string[] = [],
 ): Promise<{ text?: string; fetchStrategy?: LoadedResourceFetchStrategy }> {
   const contentSourceCount = [resource.file_path, resource.inline_text, resource.fetch].filter((value) => value !== undefined).length;
   if (contentSourceCount > 1) {
@@ -285,7 +287,7 @@ async function resolveResourceContent(
   }
 
   if (resource.file_path !== undefined) {
-    const resolvedPath = path.resolve(profileDir, resource.file_path);
+    const resolvedPath = resolveProfileResourcePath(profileDir, resource.file_path, `${resourcePath}.file_path`);
     try {
       const fileContent = await fs.readFile(resolvedPath, 'utf-8');
       return { text: fileContent };
@@ -301,11 +303,25 @@ async function resolveResourceContent(
 
   if (resource.fetch) {
     return {
-      fetchStrategy: loadFetchStrategy(resource.fetch, `${resourcePath}.fetch`, parser, profile),
+      fetchStrategy: loadFetchStrategy(resource.fetch, `${resourcePath}.fetch`, parser, profile, runtimeSourceKeys),
     };
   }
 
   return {};
+}
+
+function resolveProfileResourcePath(profileDir: string, resourceFilePath: string, pathRef: string): string {
+  const resolvedPath = path.resolve(profileDir, resourceFilePath);
+  const relativePath = path.relative(profileDir, resolvedPath);
+  if (relativePath.startsWith('..') || path.isAbsolute(relativePath)) {
+    throw appsValidationError(
+      `Resource file_path must stay within the profile directory: ${resourceFilePath}`,
+      pathRef,
+      'apps_resource_file_not_found',
+      resourceFilePath,
+    );
+  }
+  return resolvedPath;
 }
 
 function loadFetchStrategy(
@@ -313,15 +329,9 @@ function loadFetchStrategy(
   pathRef: string,
   parser: OpenAPIParser | undefined,
   profile: Profile,
+  runtimeSourceKeys: string[],
 ): LoadedResourceFetchStrategy {
-  if (fetchDefinition.result_path && fetchDefinition.result_path.length > MAX_RESULT_PATH_LENGTH) {
-    throw appsValidationError(
-      'result_path is too long',
-      `${pathRef}.result_path`,
-      'apps_resource_invalid_fetch_reference',
-      fetchDefinition.result_path,
-    );
-  }
+  validatePathExpression(fetchDefinition.result_path, `${pathRef}.result_path`, 'apps_resource_invalid_fetch_reference');
 
   if (fetchDefinition.source === 'operation') {
     if (!fetchDefinition.operation) {
@@ -332,7 +342,7 @@ function loadFetchStrategy(
       );
     }
     const operation = parser?.getOperation(fetchDefinition.operation);
-    if (!operation) {
+    if (parser && !operation) {
       throw appsValidationError(
         `Unknown operation '${fetchDefinition.operation}'`,
         `${pathRef}.operation`,
@@ -340,7 +350,7 @@ function loadFetchStrategy(
         fetchDefinition.operation,
       );
     }
-    if (!READ_ONLY_HTTP_METHODS.has(operation.method)) {
+    if (operation && !READ_ONLY_HTTP_METHODS.has(operation.method)) {
       throw appsValidationError(
         `Operation '${fetchDefinition.operation}' must use GET or HEAD`,
         `${pathRef}.operation`,
@@ -380,6 +390,13 @@ function loadFetchStrategy(
     }
   }
 
+  validateParameterMapping(
+    fetchDefinition.parameter_mapping,
+    new Set(runtimeSourceKeys),
+    `${pathRef}.parameter_mapping`,
+    'apps_resource_invalid_fetch_reference',
+  );
+
   return {
     source: fetchDefinition.source,
     operation: fetchDefinition.operation,
@@ -416,6 +433,7 @@ function loadCompletion(
       `${pathRef}.variables.${variableName}`,
       parser,
       profile,
+      templateVariables,
     );
   }
 
@@ -427,6 +445,7 @@ function loadCompletionVariable(
   pathRef: string,
   parser: OpenAPIParser | undefined,
   profile: Profile,
+  templateVariables: string[],
 ): LoadedCompletionVariable {
   if (definition.source === 'static') {
     const uniqueValues = new Set(definition.values || []);
@@ -457,14 +476,9 @@ function loadCompletionVariable(
     };
   }
 
-  if (definition.result_path && definition.result_path.length > MAX_RESULT_PATH_LENGTH) {
-    throw appsValidationError(
-      'Completion result_path is too long',
-      `${pathRef}.result_path`,
-      'apps_resource_invalid_completion_definition',
-      definition.result_path,
-    );
-  }
+  validatePathExpression(definition.result_path, `${pathRef}.result_path`, 'apps_resource_invalid_completion_definition');
+  validatePathExpression(definition.label_path, `${pathRef}.label_path`, 'apps_resource_invalid_completion_definition');
+  validatePathExpression(definition.value_path, `${pathRef}.value_path`, 'apps_resource_invalid_completion_definition');
 
   if (definition.source === 'operation') {
     if (!definition.operation) {
@@ -475,7 +489,15 @@ function loadCompletionVariable(
       );
     }
     const operation = parser?.getOperation(definition.operation);
-    if (!operation || !READ_ONLY_HTTP_METHODS.has(operation.method)) {
+    if (parser && !operation) {
+      throw appsValidationError(
+        `Completion operation '${definition.operation}' must exist and be GET/HEAD`,
+        `${pathRef}.operation`,
+        'apps_resource_invalid_completion_definition',
+        definition.operation,
+      );
+    }
+    if (operation && !READ_ONLY_HTTP_METHODS.has(operation.method)) {
       throw appsValidationError(
         `Completion operation '${definition.operation}' must exist and be GET/HEAD`,
         `${pathRef}.operation`,
@@ -515,6 +537,21 @@ function loadCompletionVariable(
     }
   }
 
+  if (!definition.value_path && !definition.label_path) {
+    throw appsValidationError(
+      'Operation-backed and composite-backed completion requires value_path or label_path',
+      pathRef,
+      'apps_resource_invalid_completion_definition',
+    );
+  }
+
+  validateParameterMapping(
+    definition.parameter_mapping,
+    new Set(templateVariables),
+    `${pathRef}.parameter_mapping`,
+    'apps_resource_invalid_completion_definition',
+  );
+
   return {
     source: definition.source,
     operation: definition.operation,
@@ -545,6 +582,7 @@ function buildToolAppsBinding(
   ensureJsonSerializable(tool.apps.annotations, `${pathRef}.annotations`, 'apps_tool_invalid_invocation_text');
 
   let outputTemplateResourceName: string | undefined;
+  let templateParameterMapping: Record<string, string> | undefined;
   if (tool.apps.output_template_resource_uri) {
     const staticResource = resourcesByUri.get(tool.apps.output_template_resource_uri);
     const templateResource = templateResourcesByUriTemplate.get(tool.apps.output_template_resource_uri);
@@ -560,7 +598,29 @@ function buildToolAppsBinding(
 
     if (templateResource) {
       const toolParamNames = new Set(Object.keys(tool.parameters));
+      const explicitMappings = tool.apps.template_parameter_mapping || {};
+      for (const [variable, parameterName] of Object.entries(explicitMappings)) {
+        if (!templateResource.variables.includes(variable)) {
+          throw appsValidationError(
+            `Tool '${tool.name}' mapping references unknown template variable '${variable}'`,
+            `${pathRef}.template_parameter_mapping.${variable}`,
+            'apps_tool_invalid_template_mapping',
+            variable,
+          );
+        }
+        if (!toolParamNames.has(parameterName)) {
+          throw appsValidationError(
+            `Tool '${tool.name}' mapping references unknown parameter '${parameterName}'`,
+            `${pathRef}.template_parameter_mapping.${variable}`,
+            'apps_tool_invalid_template_mapping',
+            parameterName,
+          );
+        }
+      }
       for (const variable of templateResource.variables) {
+        if (explicitMappings[variable]) {
+          continue;
+        }
         if (toolParamNames.has(variable)) {
           continue;
         }
@@ -575,6 +635,7 @@ function buildToolAppsBinding(
           variable,
         );
       }
+      templateParameterMapping = Object.keys(explicitMappings).length > 0 ? explicitMappings : undefined;
     }
   }
 
@@ -599,6 +660,7 @@ function buildToolAppsBinding(
   return {
     outputTemplateResourceUri: tool.apps.output_template_resource_uri,
     outputTemplateResourceName,
+    templateParameterMapping,
     meta,
     annotations: tool.apps.annotations,
   };
@@ -608,7 +670,7 @@ function normalizeResourceAppsMeta(apps: ResourceAppsDefinition | undefined, pat
   if (!apps) {
     return undefined;
   }
-  ensureJsonSerializable(apps.custom_meta, `${pathRef}.custom_meta`, 'apps_resource_invalid_completion_definition');
+  ensureJsonSerializable(apps.custom_meta, `${pathRef}.custom_meta`, 'apps_resource_invalid_fetch_reference');
   const meta: Record<string, unknown> = {};
   if (apps.widget_description) {
     meta['openai/widgetDescription'] = apps.widget_description;
@@ -631,9 +693,56 @@ function validateInlineText(value: string, pathRef: string): void {
     throw appsValidationError(
       `inline_text exceeds ${INLINE_TEXT_MAX_BYTES} bytes`,
       pathRef,
-      'apps_resource_missing_content',
+      'apps_resource_content_conflict',
       sizeBytes,
     );
+  }
+}
+
+function validatePathExpression(value: string | undefined, pathRef: string, code: string): void {
+  if (!value) {
+    return;
+  }
+  if (value.length > MAX_RESULT_PATH_LENGTH) {
+    throw appsValidationError(
+      'Path expression is too long',
+      pathRef,
+      code,
+      value,
+    );
+  }
+  if (!/^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$/.test(value)) {
+    throw appsValidationError(
+      `Invalid path expression '${value}'`,
+      pathRef,
+      code,
+      value,
+    );
+  }
+}
+
+function validateParameterMapping(
+  mapping: Record<string, string> | undefined,
+  allowedSourceKeys: Set<string>,
+  pathRef: string,
+  code: string,
+): void {
+  if (!mapping) {
+    return;
+  }
+
+  for (const [targetKey, sourceKey] of Object.entries(mapping)) {
+    if (!targetKey) {
+      throw appsValidationError('Parameter mapping target key must be non-empty', pathRef, code, targetKey);
+    }
+    if (!sourceKey || !allowedSourceKeys.has(sourceKey)) {
+      throw appsValidationError(
+        `Parameter mapping source '${sourceKey}' is not allowed`,
+        `${pathRef}.${targetKey}`,
+        code,
+        sourceKey,
+      );
+    }
   }
 }
 

@@ -103,7 +103,8 @@ These fields are exposed in the `/.well-known/oauth-protected-resource/mcp` endp
 - `kind: "template"` requires `uri_template`, supports URI-variable completion, and can serve static or fetch-backed content.
 - `mime_type` must stay text-safe (`text/*` or `application/json`).
 - fetch-backed resources/completions may only call declared read-only OpenAPI operations (`GET`/`HEAD`) or read-only composite tools.
-- tool `apps.output_template_resource_uri` must point at a declared resource URI or URI template, and template variables must be derivable from the tool parameters or `parameter_aliases`.
+- tool `apps.output_template_resource_uri` must point at a declared resource URI or URI template, and template variables must be derivable from the tool parameters, `parameter_aliases`, or explicit `apps.template_parameter_mapping`.
+- `fetch.cache_ttl_seconds` enables bounded in-process caching for fetch-backed resource reads; cache keys are scoped to the resolved strategy, args, session, and profile context.
 
 Example:
 

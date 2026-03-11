@@ -111,6 +111,33 @@ describe('createLoadedProfileAppsModel', () => {
     expect(model?.templateResources[0].completion?.variables.item_id.operation).toBe('listItems');
   });
 
+  it('supports explicit tool to template variable mapping', async () => {
+    const parser = await createParser();
+    const profile = createProfile({
+      tools: [
+        {
+          name: 'get_item',
+          description: 'Get item',
+          parameters: {
+            id: { type: 'string', description: 'Item id', required: true },
+          },
+          operations: { get: 'getItem' },
+          apps: {
+            output_template_resource_uri: 'ui://items/{item_id}',
+            template_parameter_mapping: {
+              item_id: 'id',
+            },
+          },
+        },
+      ],
+    });
+    const profilePath = await writeTempFile('profile.json', JSON.stringify(profile));
+
+    const model = await createLoadedProfileAppsModel(profile, { profilePath, parser });
+
+    expect(model?.toolAppsByName.get('get_item')?.templateParameterMapping).toEqual({ item_id: 'id' });
+  });
+
   it('rejects duplicate resource names', async () => {
     const parser = await createParser();
     const profile = createProfile({
@@ -132,7 +159,95 @@ describe('createLoadedProfileAppsModel', () => {
     });
   });
 
-  it('rejects oversized inline text', async () => {
+  it('rejects duplicate resource uris', async () => {
+    const parser = await createParser();
+    const profile = createProfile({
+      resources: [
+        {
+          name: 'shell_a',
+          kind: 'static',
+          uri: 'ui://shell',
+          mime_type: 'text/plain',
+          inline_text: 'A',
+        },
+        {
+          name: 'shell_b',
+          kind: 'static',
+          uri: 'ui://shell',
+          mime_type: 'text/plain',
+          inline_text: 'B',
+        },
+      ],
+    });
+    const profilePath = await writeTempFile('profile.json', JSON.stringify(profile));
+
+    await expect(createLoadedProfileAppsModel(profile, { profilePath, parser })).rejects.toMatchObject({
+      details: expect.objectContaining({ code: 'apps_resource_duplicate_uri', path: 'resources[1].uri' }),
+    });
+  });
+
+  it('rejects duplicate resource uri templates', async () => {
+    const parser = await createParser();
+    const profile = createProfile({
+      resources: [
+        createProfile().resources![0],
+        {
+          name: 'item_template_copy',
+          kind: 'template',
+          uri_template: 'ui://items/{item_id}',
+          mime_type: 'text/html',
+          inline_text: '<div>Copy</div>',
+        },
+      ],
+    });
+    const profilePath = await writeTempFile('profile.json', JSON.stringify(profile));
+
+    await expect(createLoadedProfileAppsModel(profile, { profilePath, parser })).rejects.toMatchObject({
+      details: expect.objectContaining({ code: 'apps_resource_duplicate_uri_template', path: 'resources[1].uri_template' }),
+    });
+  });
+
+  it('rejects resource content conflicts', async () => {
+    const parser = await createParser();
+    const profile = createProfile({
+      resources: [
+        {
+          name: 'conflict',
+          kind: 'static',
+          uri: 'ui://conflict',
+          mime_type: 'text/plain',
+          inline_text: 'inline',
+          file_path: './conflict.txt',
+        },
+      ],
+    });
+    const profilePath = await writeTempFile('profile.json', JSON.stringify(profile));
+
+    await expect(createLoadedProfileAppsModel(profile, { profilePath, parser })).rejects.toMatchObject({
+      details: expect.objectContaining({ code: 'apps_resource_content_conflict', path: 'resources[0]' }),
+    });
+  });
+
+  it('rejects missing static content', async () => {
+    const parser = await createParser();
+    const profile = createProfile({
+      resources: [
+        {
+          name: 'missing',
+          kind: 'static',
+          uri: 'ui://missing',
+          mime_type: 'text/plain',
+        },
+      ],
+    });
+    const profilePath = await writeTempFile('profile.json', JSON.stringify(profile));
+
+    await expect(createLoadedProfileAppsModel(profile, { profilePath, parser })).rejects.toMatchObject({
+      details: expect.objectContaining({ code: 'apps_resource_missing_content', path: 'resources[0]' }),
+    });
+  });
+
+  it('rejects oversized inline text with a typed validation error', async () => {
     const parser = await createParser();
     const profile = createProfile({
       resources: [
@@ -147,7 +262,70 @@ describe('createLoadedProfileAppsModel', () => {
     });
     const profilePath = await writeTempFile('profile.json', JSON.stringify(profile));
 
-    await expect(createLoadedProfileAppsModel(profile, { profilePath, parser })).rejects.toBeInstanceOf(ValidationError);
+    await expect(createLoadedProfileAppsModel(profile, { profilePath, parser })).rejects.toMatchObject({
+      details: expect.objectContaining({ code: 'apps_resource_content_conflict', path: 'resources[0].inline_text' }),
+    });
+  });
+
+  it('rejects missing files', async () => {
+    const parser = await createParser();
+    const profile = createProfile({
+      resources: [
+        {
+          name: 'missing_file',
+          kind: 'static',
+          uri: 'ui://missing-file',
+          mime_type: 'text/plain',
+          file_path: './missing.txt',
+        },
+      ],
+    });
+    const profilePath = await writeTempFile('profile.json', JSON.stringify(profile));
+
+    await expect(createLoadedProfileAppsModel(profile, { profilePath, parser })).rejects.toMatchObject({
+      details: expect.objectContaining({ code: 'apps_resource_file_not_found', path: 'resources[0].file_path' }),
+    });
+  });
+
+  it('rejects resource file paths outside the profile directory', async () => {
+    const parser = await createParser();
+    const outsideFile = await writeTempFile('outside.txt', 'secret');
+    const profile = createProfile({
+      resources: [
+        {
+          name: 'escaped_file',
+          kind: 'static',
+          uri: 'ui://escaped-file',
+          mime_type: 'text/plain',
+          file_path: outsideFile,
+        },
+      ],
+    });
+    const profilePath = await writeTempFile('profile.json', JSON.stringify(profile));
+
+    await expect(createLoadedProfileAppsModel(profile, { profilePath, parser })).rejects.toMatchObject({
+      details: expect.objectContaining({ code: 'apps_resource_file_not_found', path: 'resources[0].file_path' }),
+    });
+  });
+
+  it('rejects unsupported mime types', async () => {
+    const parser = await createParser();
+    const profile = createProfile({
+      resources: [
+        {
+          name: 'binary',
+          kind: 'static',
+          uri: 'ui://binary',
+          mime_type: 'application/pdf',
+          inline_text: 'nope',
+        },
+      ],
+    });
+    const profilePath = await writeTempFile('profile.json', JSON.stringify(profile));
+
+    await expect(createLoadedProfileAppsModel(profile, { profilePath, parser })).rejects.toMatchObject({
+      details: expect.objectContaining({ code: 'apps_resource_invalid_mime_type', path: 'resources[0].mime_type' }),
+    });
   });
 
   it('rejects invalid fetch operation references', async () => {
@@ -171,5 +349,191 @@ describe('createLoadedProfileAppsModel', () => {
     await expect(createLoadedProfileAppsModel(profile, { profilePath, parser })).rejects.toMatchObject({
       details: expect.objectContaining({ code: 'apps_resource_invalid_fetch_reference' }),
     });
+  });
+
+  it('allows operation-backed resources without parser context during structure-only validation', async () => {
+    const profile = createProfile({
+      resources: [
+        {
+          name: 'dynamic_item',
+          kind: 'template',
+          uri_template: 'ui://items/{item_id}',
+          mime_type: 'application/json',
+          fetch: {
+            source: 'operation',
+            operation: 'getItem',
+            parameter_mapping: { item_id: 'item_id' },
+          },
+          completion: {
+            variables: {
+              item_id: {
+                source: 'operation',
+                operation: 'listItems',
+                value_path: 'id',
+              },
+            },
+          },
+        },
+      ],
+    });
+    const profilePath = await writeTempFile('profile.json', JSON.stringify(profile));
+
+    const model = await createLoadedProfileAppsModel(profile, { profilePath });
+    expect(model?.templateResources[0]?.fetchStrategy?.operation).toBe('getItem');
+    expect(model?.templateResources[0]?.completion?.variables.item_id.operation).toBe('listItems');
+  });
+
+  it('rejects invalid fetch parameter mappings', async () => {
+    const parser = await createParser();
+    const profile = createProfile({
+      resources: [
+        {
+          name: 'dynamic_item',
+          kind: 'template',
+          uri_template: 'ui://items/{item_id}',
+          mime_type: 'text/html',
+          fetch: {
+            source: 'operation',
+            operation: 'getItem',
+            parameter_mapping: {
+              item_id: 'missing_variable',
+            },
+          },
+        },
+      ],
+    });
+    const profilePath = await writeTempFile('profile.json', JSON.stringify(profile));
+
+    await expect(createLoadedProfileAppsModel(profile, { profilePath, parser })).rejects.toMatchObject({
+      details: expect.objectContaining({ code: 'apps_resource_invalid_fetch_reference', path: 'resources[0].fetch.parameter_mapping.item_id' }),
+    });
+  });
+
+  it('rejects completion definitions without extraction paths', async () => {
+    const parser = await createParser();
+    const profile = createProfile({
+      resources: [
+        {
+          name: 'item_template',
+          kind: 'template',
+          uri_template: 'ui://items/{item_id}',
+          mime_type: 'text/html',
+          inline_text: '<div>Item</div>',
+          completion: {
+            variables: {
+              item_id: {
+                source: 'operation',
+                operation: 'listItems',
+              },
+            },
+          },
+        },
+      ],
+    });
+    const profilePath = await writeTempFile('profile.json', JSON.stringify(profile));
+
+    await expect(createLoadedProfileAppsModel(profile, { profilePath, parser })).rejects.toMatchObject({
+      details: expect.objectContaining({ code: 'apps_resource_invalid_completion_definition', path: 'resources[0].completion.variables.item_id' }),
+    });
+  });
+
+  it('rejects invalid completion parameter mappings', async () => {
+    const parser = await createParser();
+    const profile = createProfile({
+      resources: [
+        {
+          name: 'item_template',
+          kind: 'template',
+          uri_template: 'ui://items/{item_id}',
+          mime_type: 'text/html',
+          inline_text: '<div>Item</div>',
+          completion: {
+            variables: {
+              item_id: {
+                source: 'operation',
+                operation: 'listItems',
+                value_path: 'id',
+                parameter_mapping: {
+                  item_id: 'missing_variable',
+                },
+              },
+            },
+          },
+        },
+      ],
+    });
+    const profilePath = await writeTempFile('profile.json', JSON.stringify(profile));
+
+    await expect(createLoadedProfileAppsModel(profile, { profilePath, parser })).rejects.toMatchObject({
+      details: expect.objectContaining({ code: 'apps_resource_invalid_completion_definition', path: 'resources[0].completion.variables.item_id.parameter_mapping.item_id' }),
+    });
+  });
+
+  it('rejects tools that reference unknown Apps resources', async () => {
+    const parser = await createParser();
+    const profile = createProfile({
+      tools: [
+        {
+          ...createProfile().tools[0],
+          apps: {
+            output_template_resource_uri: 'ui://missing',
+          },
+        },
+      ],
+    });
+    const profilePath = await writeTempFile('profile.json', JSON.stringify(profile));
+
+    await expect(createLoadedProfileAppsModel(profile, { profilePath, parser })).rejects.toMatchObject({
+      details: expect.objectContaining({ code: 'apps_tool_missing_resource_reference', path: 'tools[0].apps.output_template_resource_uri' }),
+    });
+  });
+
+  it('rejects explicit mappings that reference unknown tool parameters', async () => {
+    const parser = await createParser();
+    const profile = createProfile({
+      tools: [
+        {
+          name: 'get_item',
+          description: 'Get item',
+          parameters: {
+            item_id: { type: 'string', description: 'Item id', required: true },
+          },
+          operations: { get: 'getItem' },
+          apps: {
+            output_template_resource_uri: 'ui://items/{item_id}',
+            template_parameter_mapping: {
+              item_id: 'missing_param',
+            },
+          },
+        },
+      ],
+    });
+    const profilePath = await writeTempFile('profile.json', JSON.stringify(profile));
+
+    await expect(createLoadedProfileAppsModel(profile, { profilePath, parser })).rejects.toMatchObject({
+      details: expect.objectContaining({ code: 'apps_tool_invalid_template_mapping', path: 'tools[0].apps.template_parameter_mapping.item_id' }),
+    });
+  });
+
+  it('uses ValidationError for Apps validation failures', async () => {
+    const parser = await createParser();
+    const profile = createProfile({
+      resources: [
+        {
+          name: 'bad_mapping',
+          kind: 'template',
+          uri_template: 'ui://items/{item_id}',
+          mime_type: 'text/html',
+          fetch: {
+            source: 'operation',
+            operation: 'getItem',
+            parameter_mapping: { item_id: 'missing' },
+          },
+        },
+      ],
+    });
+    const profilePath = await writeTempFile('profile.json', JSON.stringify(profile));
+
+    await expect(createLoadedProfileAppsModel(profile, { profilePath, parser })).rejects.toBeInstanceOf(ValidationError);
   });
 });

@@ -39,6 +39,7 @@ export const compositeStepSchema = z.object({
 
 export const toolAppsDefinitionSchema = z.object({
     output_template_resource_uri: z.string().optional(),
+    template_parameter_mapping: z.record(z.string(), z.string()).optional(),
     widget_accessible: z.boolean().optional(),
     tool_invocation_message: z.object({
         invoking: z.string().optional(),
