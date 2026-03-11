@@ -1858,6 +1858,132 @@ describe('ProfileLoader', () => {
         "OAuth config at interceptors.auth[0].oauth_config must provide either 'issuer' OR both 'authorization_endpoint' and 'token_endpoint'"
       );
     });
+
+    it('accepts OAuth auth entries that provide explicit endpoints without issuer', async () => {
+      const loader = new ProfileLoader();
+      const fs = await import('fs/promises');
+      const tmpPath = `/tmp/valid-oauth-array-profile-${Date.now()}-${Math.random()}.json`;
+      await fs.writeFile(
+        tmpPath,
+        JSON.stringify({
+          profile_name: 'test',
+          interceptors: {
+            auth: [
+              {
+                type: 'oauth',
+                oauth_config: {
+                  client_id: 'test',
+                  authorization_endpoint: 'https://auth.example.com/authorize',
+                  token_endpoint: 'https://auth.example.com/token',
+                },
+              },
+            ],
+          },
+          tools: [{
+            name: 'test_tool',
+            description: 'Test tool',
+            operations: { list: 'getTest' },
+            parameters: {},
+          }],
+        }),
+      );
+
+      await expect(loader.load(tmpPath)).resolves.toMatchObject({ profile_name: 'test' });
+    });
+  });
+
+  describe('operation validation for proxy downloads and composite steps', () => {
+    it('rejects missing proxy download metadata operations', async () => {
+      const loader = new ProfileLoader();
+      const fs = await import('fs/promises');
+      const tmpPath = `/tmp/proxy-download-metadata-${Date.now()}-${Math.random()}.json`;
+      await fs.writeFile(
+        tmpPath,
+        JSON.stringify({
+          profile_name: 'test',
+          tools: [{
+            name: 'download_asset',
+            description: 'Download asset',
+            parameters: {},
+            operations: {
+              execute: {
+                type: 'proxy_download',
+                metadata_endpoint: 'missingMetadata',
+                file_name_path: 'name',
+              },
+            },
+          }],
+          interceptors: {},
+        }),
+      );
+
+      const parser = {
+        getOperation: (operationId: string) => operationId === 'downloadFile' ? { operationId } : undefined,
+        getPath: () => undefined,
+      } as any;
+
+      await expect(loader.load(tmpPath, parser)).rejects.toThrow(/missingMetadata/);
+    });
+
+    it('rejects missing proxy download download_endpoint operations', async () => {
+      const loader = new ProfileLoader();
+      const fs = await import('fs/promises');
+      const tmpPath = `/tmp/proxy-download-endpoint-${Date.now()}-${Math.random()}.json`;
+      await fs.writeFile(
+        tmpPath,
+        JSON.stringify({
+          profile_name: 'test',
+          tools: [{
+            name: 'download_asset',
+            description: 'Download asset',
+            parameters: {},
+            operations: {
+              execute: {
+                type: 'proxy_download',
+                metadata_endpoint: 'getMetadata',
+                download_endpoint: 'missingDownload',
+                file_name_path: 'name',
+              },
+            },
+          }],
+          interceptors: {},
+        }),
+      );
+
+      const parser = {
+        getOperation: (operationId: string) => operationId === 'getMetadata' ? { operationId } : undefined,
+        getPath: () => undefined,
+      } as any;
+
+      await expect(loader.load(tmpPath, parser)).rejects.toThrow(/missingDownload/);
+    });
+
+    it('rejects composite steps that do not resolve to OpenAPI operations', async () => {
+      const loader = new ProfileLoader();
+      const fs = await import('fs/promises');
+      const tmpPath = `/tmp/composite-missing-step-${Date.now()}-${Math.random()}.json`;
+      await fs.writeFile(
+        tmpPath,
+        JSON.stringify({
+          profile_name: 'test',
+          tools: [{
+            name: 'read_asset',
+            description: 'Read asset',
+            composite: true,
+            parameters: {},
+            steps: [{ call: 'GET /missing', store_as: 'asset' }],
+          }],
+          interceptors: {},
+        }),
+      );
+
+      const parser = {
+        getOperation: () => undefined,
+        getPath: () => undefined,
+      } as any;
+
+      await expect(loader.load(tmpPath, parser)).rejects.toThrow(/Composite step 'GET \/missing'/);
+    });
   });
 
   it('should warn when generated tool exceeds 60 parameters', async () => {

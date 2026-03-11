@@ -26,6 +26,19 @@ describe('composeToolDescriptor', () => {
     expect(composeToolDescriptor(baseTool, { ...toolDef, apps: undefined }, undefined)).toEqual(baseTool);
   });
 
+  it('returns the base tool unchanged when no binding exists for the tool', () => {
+    const appsModel = {
+      fixedResources: [],
+      templateResources: [],
+      resourcesByUri: new Map(),
+      templateResourcesByName: new Map(),
+      templateResourcesByUriTemplate: new Map(),
+      toolAppsByName: new Map(),
+    } as unknown as LoadedProfileAppsModel;
+
+    expect(composeToolDescriptor(baseTool, toolDef, appsModel)).toEqual(baseTool);
+  });
+
   it('merges apps annotations and meta', () => {
     const appsModel = {
       fixedResources: [],
@@ -42,5 +55,23 @@ describe('composeToolDescriptor', () => {
 
     expect(descriptor._meta).toEqual({ 'openai/outputTemplate': 'ui://items/{item_id}' });
     expect(descriptor.annotations).toEqual({ title: 'Widget tool', readOnlyHint: true });
+  });
+
+  it('preserves existing annotations when binding has no annotation overrides', () => {
+    const appsModel = {
+      fixedResources: [],
+      templateResources: [],
+      resourcesByUri: new Map(),
+      templateResourcesByName: new Map(),
+      templateResourcesByUriTemplate: new Map(),
+      toolAppsByName: new Map([
+        ['get_item', { outputTemplateResourceUri: 'ui://items/{item_id}', meta: { 'openai/outputTemplate': 'ui://items/{item_id}' } }],
+      ]),
+    } as unknown as LoadedProfileAppsModel;
+
+    const descriptor = composeToolDescriptor({ ...baseTool, annotations: { audience: ['user'] } }, toolDef, appsModel);
+
+    expect(descriptor.annotations).toEqual({ audience: ['user'] });
+    expect(descriptor._meta).toEqual({ 'openai/outputTemplate': 'ui://items/{item_id}' });
   });
 });

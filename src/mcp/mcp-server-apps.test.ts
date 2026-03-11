@@ -160,6 +160,13 @@ describe('MCPServer apps resources', () => {
     ]);
   });
 
+  it('returns empty resource collections when no apps model is loaded', () => {
+    const server = new MCPServer();
+
+    expect((server as any).listResources()).toEqual([]);
+    expect((server as any).listResourceTemplates()).toEqual([]);
+  });
+
   it('reads static and fetch-backed resources and resolves completions', async () => {
     const server = await createServerFixture();
 
@@ -188,6 +195,35 @@ describe('MCPServer apps resources', () => {
     expect(staticResponse.result.contents[0].text).toContain('Shell');
     expect(dynamicResponse.result.contents[0].text).toContain('Item 1');
     expect(completionResponse.result.completion.values).toEqual(['1']);
+  });
+
+  it('returns validation errors for malformed resource and completion requests', async () => {
+    const server = await createServerFixture();
+
+    const invalidReadResponse = await (server as any).handleOtherRequest({
+      jsonrpc: '2.0',
+      id: 'invalid-read',
+      method: 'resources/read',
+      params: {},
+    });
+    const invalidCompletionResponse = await (server as any).handleOtherRequest({
+      jsonrpc: '2.0',
+      id: 'invalid-completion',
+      method: 'completion/complete',
+      params: {
+        ref: { type: 'other', uri: 'ui://items/{item_id}' },
+        argument: { name: 'item_id', value: '1' },
+      },
+    });
+
+    expect(invalidReadResponse.error).toEqual({
+      code: -32602,
+      message: 'resources/read requires string parameter "uri"',
+    });
+    expect(invalidCompletionResponse.error).toEqual({
+      code: -32602,
+      message: 'completion/complete requires a resource ref',
+    });
   });
 
   it('propagates session context to fetch-backed resource and completion lookups', async () => {
@@ -226,5 +262,103 @@ describe('MCPServer apps resources', () => {
 
     expect(response.error.code).toBe(-32601);
     expect(response.error.message).toContain('Resource not found');
+  });
+
+  it('returns validation errors for ambiguous resource matches and missing completion variables', async () => {
+    const server = await createServerFixture();
+    const templateResource = (server as any).appsModel.templateResources[0];
+    (server as any).appsModel.templateResources.push({ ...templateResource, name: 'duplicate_template' });
+
+    await expect((server as any).readResource('ui://items/1')).rejects.toThrow("Ambiguous resource uri 'ui://items/1'");
+
+    (server as any).appsModel.templateResources = [templateResource];
+    await expect((server as any).completeResourceArgument({
+      params: {
+        ref: { type: 'ref/resource', uri: 'ui://items/{item_id}' },
+        argument: { name: 'other_id', value: '1' },
+      },
+    })).rejects.toThrow("No completion configured for variable 'other_id'");
+  });
+
+  it('uses fallback template matching and handles static completion filtering', async () => {
+    const server = await createServerFixture();
+    const templateResource = (server as any).appsModel.templateResources[0];
+    (server as any).appsModel.templateResourcesByUriTemplate.clear();
+    templateResource.completion = {
+      variables: {
+        item_id: {
+          source: 'static',
+          values: ['1', '11', '22'],
+          parameterMapping: {},
+          timeoutMs: 1000,
+          maxValues: 100,
+        },
+      },
+    };
+
+    const response = await (server as any).completeResourceArgument({
+      params: {
+        ref: { type: 'ref/resource', uri: 'ui://items/1' },
+        argument: { name: 'item_id', value: '1' },
+      },
+    });
+
+    expect(response.completion.values).toEqual(['1', '11']);
+  });
+
+  it('caches fetched resource content and stringifies non-string fetch results', async () => {
+    const server = new MCPServer();
+    const executeAppsFetch = vi.fn().mockResolvedValue({ html: { nested: true } });
+    (server as any).executeAppsFetch = executeAppsFetch;
+
+    const strategy = {
+      source: 'operation',
+      operation: 'getItem',
+      parameterMapping: {},
+      resultPath: 'html',
+      cacheTtlSeconds: 60,
+      timeoutMs: 1000,
+    };
+
+    const first = await (server as any).fetchResourceContent(strategy, {}, 'session-1', 'default');
+    const second = await (server as any).fetchResourceContent(strategy, {}, 'session-1', 'default');
+
+    expect(first).toBe(JSON.stringify({ nested: true }, null, 2));
+    expect(second).toBe(first);
+    expect(executeAppsFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('covers low-level apps fetch helpers and error branches', async () => {
+    const server = new MCPServer();
+
+    expect(await (server as any).fetchResourceContent(undefined, {})).toBeUndefined();
+    expect((server as any).extractCompletionValue('1', { valuePath: 'id', labelPath: undefined })).toBe('1');
+    expect((server as any).extractCompletionValue(null, { valuePath: 'id', labelPath: undefined })).toBeUndefined();
+    expect((server as any).buildAppsFetchCacheKey({ cacheTtlSeconds: 0 }, {}, undefined, undefined)).toBeUndefined();
+    expect((server as any).buildMappedInput({ item_id: '1' }, {})).toEqual({ item_id: '1' });
+    expect((server as any).buildMappedInput({ item_id: '1' }, { target: 'item_id', skipped: 'missing' })).toEqual({ target: '1' });
+
+    vi.useFakeTimers();
+    try {
+      (server as any).executeAppsOperation = vi.fn().mockImplementation(() => new Promise(() => {}));
+      const timedFetch = (server as any).executeAppsFetch({
+        source: 'operation',
+        operation: 'getItem',
+        parameterMapping: {},
+        timeoutMs: 1,
+      }, {});
+      const timedFetchAssertion = expect(timedFetch).rejects.toThrow('Apps fetch timed out');
+      await vi.advanceTimersByTimeAsync(1);
+      await timedFetchAssertion;
+    } finally {
+      vi.useRealTimers();
+    }
+
+    delete (server as any).executeAppsOperation;
+    (server as any).parser = { getOperation: () => undefined };
+    await expect((server as any).executeAppsOperation('missingOperation', {})).rejects.toThrow('Operation not found: missingOperation');
+
+    (server as any).profile = { tools: [] };
+    await expect((server as any).executeAppsComposite('missingComposite', {})).rejects.toThrow('Composite tool not found: missingComposite');
   });
 });
