@@ -505,6 +505,27 @@ export class HttpTransport {
     return state;
   }
 
+  private hasTrustedEnterpriseToken(
+    profileId: string,
+    token: string | undefined,
+    tenantId?: string,
+  ): boolean {
+    if (!token) {
+      return false;
+    }
+
+    const internalToken = this.inboundAuthTokenStore.get(token);
+    if (!internalToken || internalToken.principal.authType !== 'enterprise' || internalToken.principal.profileId !== profileId) {
+      return false;
+    }
+
+    if (tenantId && internalToken.principal.tenantId && internalToken.principal.tenantId !== tenantId) {
+      return false;
+    }
+
+    return true;
+  }
+
   private getProfileIdForRequest(req: McpRequest): string | undefined {
     if (req.profileId) {
       return req.profileId;
@@ -2659,6 +2680,9 @@ export class HttpTransport {
           metricsTenantId = resolvedTenant?.tenantId || null;
           const effectiveAuthContext = this.resolveEffectiveAuthContext(profileState, resolvedTenant);
           const authInfo = this.extractAuthToken(req, profileState, effectiveAuthContext.authConfigs);
+          const internalToken = authInfo.token
+            ? this.inboundAuthTokenStore.get(authInfo.token)
+            : undefined;
           this.logger.debug('Auth token extracted', { authType: authInfo?.type, hasToken: !!authInfo?.token });
 
           // If OAuth is configured, require authentication for initialization
@@ -2675,15 +2699,17 @@ export class HttpTransport {
             return;
           }
 
-          if (effectiveAuthContext.enterpriseAuthorization?.enabled && effectiveAuthContext.enterpriseAuthorization.mode === 'required' && !authInfo.token) {
-            const resourceMetadataUrl = this.getOAuthProtectedResourceUrl(requestProfileId);
-            const scopeValue = effectiveAuthContext.enterpriseAuthorization.access_policy?.scopes_supported?.join(' ') || 'api';
-            res.setHeader('WWW-Authenticate', `Bearer resource_metadata="${resourceMetadataUrl}", scope="${scopeValue}"`);
-            res.status(HTTP_STATUS.UNAUTHORIZED).json({
-              error: 'Unauthorized',
-              message: 'Enterprise authorization required'
-            });
-            return;
+          if (effectiveAuthContext.enterpriseAuthorization?.enabled && effectiveAuthContext.enterpriseAuthorization.mode === 'required') {
+            if (!this.hasTrustedEnterpriseToken(requestProfileId, authInfo.token, resolvedTenant?.tenantId)) {
+              const resourceMetadataUrl = this.getOAuthProtectedResourceUrl(requestProfileId);
+              const scopeValue = effectiveAuthContext.enterpriseAuthorization.access_policy?.scopes_supported?.join(' ') || 'api';
+              res.setHeader('WWW-Authenticate', `Bearer resource_metadata="${resourceMetadataUrl}", scope="${scopeValue}"`);
+              res.status(HTTP_STATUS.UNAUTHORIZED).json({
+                error: 'Unauthorized',
+                message: 'Enterprise authorization required'
+              });
+              return;
+            }
           }
 
           // Require a client token only when auth is configured and server env fallback is unavailable
@@ -2701,7 +2727,7 @@ export class HttpTransport {
           }
 
           // Validate token if auth is configured and token is provided
-          if (authInfo && authInfo.token && authConfigs.length > 0 && (resolvedTenant?.tenantBaseUrl || profileState.context.baseUrl)) {
+          if (authInfo && authInfo.token && !internalToken && authConfigs.length > 0 && (resolvedTenant?.tenantBaseUrl || profileState.context.baseUrl)) {
             // Find matching auth config based on priority (authConfigs is sorted)
             // For 'bearer' token type, 'oauth' config is also a match
             const authConfig = authConfigs.find(c =>
@@ -2739,7 +2765,6 @@ export class HttpTransport {
           let oauthClientId: string | undefined;
           
           if (authInfo.token && (authInfo.type === 'oauth' || authInfo.type === 'bearer')) {
-            const internalToken = this.inboundAuthTokenStore.get(authInfo.token);
             if (internalToken) {
               if (internalToken.principal.profileId !== requestProfileId) {
                 throw new AuthenticationError('Enterprise token is not valid for this profile');
@@ -3578,6 +3603,29 @@ export class HttpTransport {
   public getSessionToolFilterHeader(profileId: string, sessionId: string): string | undefined {
     const session = this.profileStates.get(profileId)?.sessions.get(sessionId);
     return session?.toolFilterHeader;
+  }
+
+  public getSessionEnterpriseAllowedToolCategories(
+    profileId: string,
+    sessionId: string,
+  ): Set<'list' | 'read' | 'modify' | 'admin'> | undefined {
+    const profileState = this.profileStates.get(profileId);
+    const session = profileState?.sessions.get(sessionId);
+    if (!profileState || !session?.authToken) {
+      return undefined;
+    }
+
+    const internalToken = this.inboundAuthTokenStore.get(session.authToken);
+    if (!internalToken || internalToken.principal.authType !== 'enterprise' || internalToken.principal.profileId !== profileId) {
+      return undefined;
+    }
+
+    const allowedCategories = profileState.context.enterpriseAuthorization?.access_policy?.allowed_tool_categories;
+    if (!allowedCategories || allowedCategories.length === 0) {
+      return undefined;
+    }
+
+    return new Set(allowedCategories);
   }
 
   public getSessionTenantContext(profileId: string, sessionId: string): {

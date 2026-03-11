@@ -1202,5 +1202,38 @@ describe('HttpTransport unit', () => {
 
       await localTransport.stop();
     });
+
+    it('rejects arbitrary bearer tokens when enterprise mode is required', async () => {
+      const localTransport = new HttpTransport(
+        {
+          host: '127.0.0.1',
+          port: 0,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: false,
+          metricsPath: '/metrics',
+        },
+        logger
+      );
+      expect(
+        (localTransport as any).hasTrustedEnterpriseToken('default', 'not-an-issued-enterprise-token')
+      ).toBe(false);
+
+      const issuedToken = (localTransport as any).inboundAuthTokenStore.issue({
+        authType: 'enterprise',
+        profileId: 'default',
+        subject: 'user-1',
+        scopes: ['api'],
+        tenantId: 'tenant-a',
+      });
+
+      expect((localTransport as any).hasTrustedEnterpriseToken('default', issuedToken.token)).toBe(true);
+      expect((localTransport as any).hasTrustedEnterpriseToken('default', issuedToken.token, 'tenant-a')).toBe(true);
+      expect((localTransport as any).hasTrustedEnterpriseToken('default', issuedToken.token, 'tenant-b')).toBe(false);
+      expect((localTransport as any).hasTrustedEnterpriseToken('other-profile', issuedToken.token)).toBe(false);
+
+      await localTransport.stop();
+    });
   });
 });

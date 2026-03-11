@@ -183,6 +183,34 @@ describeIfListen('E2E: enterprise authentication', () => {
     expect(body.message).toBe('Enterprise authorization required');
   }, 20000);
 
+  it('rejects arbitrary bearer tokens when enterprise mode is required', async () => {
+    const httpPort = await startEnterpriseServer();
+
+    const response = await fetch(`http://127.0.0.1:${httpPort}/mcp`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: 'Bearer not-an-issued-enterprise-token',
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'initialize',
+        params: {
+          protocolVersion: '2025-03-26',
+          capabilities: {},
+          clientInfo: { name: 'enterprise-e2e', version: '1.0.0' },
+        },
+      }),
+    });
+
+    expect(response.status).toBe(401);
+    expect(response.headers.get('www-authenticate')).toContain('resource_metadata=');
+
+    const body = await response.json();
+    expect(body.message).toBe('Enterprise authorization required');
+  }, 20000);
+
   it('exchanges jwt bearer assertion for opaque token and initializes session', async () => {
     const httpPort = await startEnterpriseServer();
     const assertion = await createAssertion('enterprise-e2e-jti-1');

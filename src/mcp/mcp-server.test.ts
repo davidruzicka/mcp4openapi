@@ -1666,6 +1666,71 @@ paths:
       expect(payload).toEqual({ ok: true });
     });
 
+    it('filters tools list based on enterprise authorization categories', async () => {
+      const localServer = new MCPServer();
+      (localServer as any).profile = {
+        profile_name: 'test',
+        description: 'test',
+        tools: [
+          { name: 'list_groups', description: 'list', parameters: {}, operations: { list: 'op1' } },
+          { name: 'update_group', description: 'modify', parameters: {}, operations: { update: 'op2' } },
+        ],
+        enterprise_authorization: {
+          enabled: true,
+          access_policy: {
+            allowed_tool_categories: ['list'],
+          },
+        },
+        interceptors: {},
+      };
+      (localServer as any).toolGenerator = {
+        generateTool: (toolDef: any) => ({ name: toolDef.name }),
+      };
+      (localServer as any).httpTransport = {
+        hasOAuthProvider: (_profileId?: string) => false,
+        getSessionEnterpriseAllowedToolCategories: (_profileId: string, _sessionId: string) => new Set(['list']),
+      };
+
+      const response = await (localServer as any).handleOtherRequest({
+        jsonrpc: '2.0',
+        id: '1',
+        method: 'tools/list',
+        params: {},
+      }, 'session-1');
+
+      expect(response.result.tools).toHaveLength(1);
+      expect(response.result.tools[0].name).toBe('list_groups');
+    });
+
+    it('blocks tool calls not allowed by enterprise authorization policy', async () => {
+      const localServer = new MCPServer();
+      (localServer as any).profile = {
+        profile_name: 'test',
+        description: 'test',
+        tools: [
+          { name: 'update_group', description: 'modify', parameters: {}, operations: { update: 'op2' } },
+        ],
+        enterprise_authorization: {
+          enabled: true,
+          access_policy: {
+            allowed_tool_categories: ['list'],
+          },
+        },
+        interceptors: {},
+      };
+      (localServer as any).executeSimpleTool = vi.fn().mockResolvedValue({ ok: true });
+      (localServer as any).httpTransport = {
+        hasOAuthProvider: (_profileId?: string) => false,
+        getSessionFiltering: (_profileId: string, _sessionId: string) => undefined,
+        getSessionEnterpriseAllowedToolCategories: (_profileId: string, _sessionId: string) => new Set(['list']),
+      };
+
+      const response = await localServer.callToolRpc('update_group', {}, 'session-1', '1') as any;
+      expect(response.error).toBeDefined();
+      expect(response.error.code).toBe(-32002);
+      expect(response.error.message).toContain('enterprise authorization policy');
+    });
+
     it('rejects session tool filters that match all tools', () => {
       const localServer = new MCPServer();
       (localServer as any).profile = {

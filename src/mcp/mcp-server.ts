@@ -75,6 +75,8 @@ import { buildHttpTransportBaseConfig } from '../transport/http-transport-config
 import { renderPrompt } from '../prompt/prompt-renderer.js';
 import type { MetricsCollector, MetricsContextLabels } from '../core/metrics.js';
 
+type EnterpriseToolCategory = 'list' | 'read' | 'modify' | 'admin';
+
 export class MCPServer {
   private server: Server;
   private parser: OpenAPIParser;
@@ -1500,6 +1502,15 @@ export class MCPServer {
         );
       }
 
+      if (!this.isToolAllowedByEnterprisePolicy(toolDef, sessionId, profileId)) {
+        const allowedCategories = this.getEnterpriseAllowedToolCategoriesForSession(sessionId, profileId);
+        throw new AuthorizationError(
+          `Tool '${toolName}' not allowed by enterprise authorization policy. ` +
+          `Required category: ${this.getToolCategory(toolDef)}. ` +
+          `Allowed categories: ${Array.from(allowedCategories || []).join(', ')}.`
+        );
+      }
+
       const filtering = this.getFilteringForSession(sessionId, profileId);
       if (filtering) {
         const operation = this.getFilteringOperationInfo(toolDef, args);
@@ -1643,6 +1654,111 @@ export class MCPServer {
     return undefined;
   }
 
+  private getEnterpriseAllowedToolCategoriesForSession(
+    sessionId?: string,
+    profileId?: string,
+  ): Set<EnterpriseToolCategory> | undefined {
+    if (this.httpTransport && sessionId && typeof this.httpTransport.getSessionEnterpriseAllowedToolCategories === 'function') {
+      const effectiveProfileId = profileId || this.getProfileIdValue();
+      return this.httpTransport.getSessionEnterpriseAllowedToolCategories(effectiveProfileId, sessionId);
+    }
+    return undefined;
+  }
+
+  private getToolCategory(toolDef: ToolDefinition): Exclude<EnterpriseToolCategory, 'admin'> {
+    const classifier = new OperationClassifier();
+
+    if (toolDef.composite && toolDef.steps?.length) {
+      let hasList = false;
+      let hasRead = false;
+
+      for (const step of toolDef.steps) {
+        const [method, stepPath] = step.call.split(' ');
+        const operation = method && stepPath ? this.parser.getPath(stepPath)?.operations[method.toLowerCase()] : undefined;
+        if (!operation) {
+          return 'modify';
+        }
+
+        const category = classifier.classify(operation);
+        if (category === 'modify') {
+          return 'modify';
+        }
+        if (category === 'list') {
+          hasList = true;
+          continue;
+        }
+        hasRead = true;
+      }
+
+      if (hasList && !hasRead) {
+        return 'list';
+      }
+      if (hasRead && !hasList) {
+        return 'read';
+      }
+      return 'modify';
+    }
+
+    if (!toolDef.operations) {
+      return 'modify';
+    }
+
+    let hasList = false;
+    let hasRead = false;
+
+    for (const [action, operationDefinition] of Object.entries(toolDef.operations)) {
+      if (typeof operationDefinition !== 'string') {
+        return 'modify';
+      }
+
+      const operation = this.parser.getOperation(operationDefinition);
+      const category = operation
+        ? classifier.classify(operation)
+        : this.getFallbackToolCategory(action);
+
+      if (category === 'modify') {
+        return 'modify';
+      }
+      if (category === 'list') {
+        hasList = true;
+        continue;
+      }
+      hasRead = true;
+    }
+
+    if (hasList && !hasRead) {
+      return 'list';
+    }
+    if (hasRead && !hasList) {
+      return 'read';
+    }
+    return 'modify';
+  }
+
+  private getFallbackToolCategory(action: string): Exclude<EnterpriseToolCategory, 'admin'> {
+    const normalizedAction = action.toLowerCase();
+    if (normalizedAction === 'list' || normalizedAction === 'search') {
+      return 'list';
+    }
+    if (normalizedAction === 'get' || normalizedAction === 'read') {
+      return 'read';
+    }
+    return 'modify';
+  }
+
+  private isToolAllowedByEnterprisePolicy(
+    toolDef: ToolDefinition,
+    sessionId?: string,
+    profileId?: string,
+  ): boolean {
+    const allowedCategories = this.getEnterpriseAllowedToolCategoriesForSession(sessionId, profileId);
+    if (!allowedCategories || allowedCategories.size === 0) {
+      return true;
+    }
+
+    return allowedCategories.has(this.getToolCategory(toolDef));
+  }
+
   private getFilteringOperationInfo(
     toolDef: ToolDefinition,
     args: Record<string, unknown>
@@ -1689,6 +1805,7 @@ export class MCPServer {
       const allowedSet = sessionFilter?.allowedToolNames;
       const tools = this.profile?.tools
         .filter(toolDef => !allowedSet || allowedSet.has(toolDef.name))
+        .filter(toolDef => this.isToolAllowedByEnterprisePolicy(toolDef, sessionId, profileId))
         .map(toolDef => this.buildToolDescriptor(toolDef)) || [];
 
       return {
