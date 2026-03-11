@@ -103,7 +103,7 @@ describe('HttpTransport enterprise authorization', () => {
       .send({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 'test', version: '1.0.0' } } });
 
     expect(response.status).toBe(401);
-    expect(String(response.body.message)).toContain('Enterprise token is not valid for this profile');
+    expect(String(response.body.message)).toContain('Enterprise authorization required');
   });
 
   it('normalizes enterprise runtime config defaults and overrides', () => {

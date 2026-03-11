@@ -1731,6 +1731,171 @@ paths:
       expect(response.error.message).toContain('enterprise authorization policy');
     });
 
+    it('allows enterprise policy lookup to fall back to undefined without session transport support', () => {
+      const localServer = new MCPServer();
+      (localServer as any).profile = {
+        profile_name: 'test',
+        description: 'test',
+        tools: [],
+        interceptors: {},
+      };
+
+      expect((localServer as any).getEnterpriseAllowedToolCategoriesForSession('session-1', 'profile-a')).toBeUndefined();
+
+      (localServer as any).httpTransport = {};
+      expect((localServer as any).getEnterpriseAllowedToolCategoriesForSession('session-1', 'profile-a')).toBeUndefined();
+    });
+
+    it('classifies composite tool categories conservatively', () => {
+      const localServer = new MCPServer();
+      (localServer as any).parser = {
+        getPath: (path: string) => {
+          if (path === '/groups') {
+            return { operations: { get: { method: 'get', path, parameters: [] } } };
+          }
+          if (path === '/groups/{id}') {
+            return { operations: { get: { method: 'get', path, parameters: [{ in: 'path', name: 'id' }] } } };
+          }
+          if (path === '/groups/mutate') {
+            return { operations: { post: { method: 'post', path, parameters: [] } } };
+          }
+          return undefined;
+        },
+      };
+
+      expect((localServer as any).getToolCategory({
+        name: 'list_groups',
+        description: 'list',
+        composite: true,
+        steps: [{ call: 'GET /groups' }],
+      })).toBe('list');
+
+      expect((localServer as any).getToolCategory({
+        name: 'get_group',
+        description: 'read',
+        composite: true,
+        steps: [{ call: 'GET /groups/{id}' }],
+      })).toBe('read');
+
+      expect((localServer as any).getToolCategory({
+        name: 'mixed_group',
+        description: 'mixed',
+        composite: true,
+        steps: [{ call: 'GET /groups' }, { call: 'GET /groups/{id}' }],
+      })).toBe('modify');
+
+      expect((localServer as any).getToolCategory({
+        name: 'modify_group',
+        description: 'modify',
+        composite: true,
+        steps: [{ call: 'POST /groups/mutate' }],
+      })).toBe('modify');
+
+      expect((localServer as any).getToolCategory({
+        name: 'missing_step',
+        description: 'missing',
+        composite: true,
+        steps: [{ call: 'GET /missing' }],
+      })).toBe('modify');
+    });
+
+    it('classifies simple tools using operations and fallback actions', () => {
+      const localServer = new MCPServer();
+      (localServer as any).parser = {
+        getOperation: (operationId: string) => {
+          if (operationId === 'op-list') {
+            return { method: 'get', path: '/groups', parameters: [] };
+          }
+          if (operationId === 'op-read') {
+            return { method: 'get', path: '/groups/{id}', parameters: [{ in: 'path', name: 'id' }] };
+          }
+          if (operationId === 'op-modify') {
+            return { method: 'post', path: '/groups', parameters: [] };
+          }
+          return undefined;
+        },
+      };
+
+      expect((localServer as any).getToolCategory({
+        name: 'list_groups',
+        description: 'list',
+        operations: { list: 'op-list' },
+      })).toBe('list');
+
+      expect((localServer as any).getToolCategory({
+        name: 'get_group',
+        description: 'read',
+        operations: { get: 'op-read' },
+      })).toBe('read');
+
+      expect((localServer as any).getToolCategory({
+        name: 'mutate_group',
+        description: 'modify',
+        operations: { update: 'op-modify' },
+      })).toBe('modify');
+
+      expect((localServer as any).getToolCategory({
+        name: 'fallback_search',
+        description: 'search',
+        operations: { search: 'missing-op' },
+      })).toBe('list');
+
+      expect((localServer as any).getToolCategory({
+        name: 'fallback_get',
+        description: 'get',
+        operations: { get: 'missing-op' },
+      })).toBe('read');
+
+      expect((localServer as any).getToolCategory({
+        name: 'fallback_custom',
+        description: 'custom',
+        operations: { custom: 'missing-op' },
+      })).toBe('modify');
+
+      expect((localServer as any).getToolCategory({
+        name: 'missing_ops',
+        description: 'missing',
+      })).toBe('modify');
+
+      expect((localServer as any).getToolCategory({
+        name: 'non_string_op',
+        description: 'bad',
+        operations: { download: { url_source: '$.url' } },
+      })).toBe('modify');
+    });
+
+    it('allows tools when enterprise categories are unset and blocks mismatched categories otherwise', () => {
+      const localServer = new MCPServer();
+      (localServer as any).parser = {
+        getOperation: (operationId: string) => {
+          if (operationId === 'op-list') {
+            return { method: 'get', path: '/groups', parameters: [] };
+          }
+          return { method: 'post', path: '/groups', parameters: [] };
+        },
+      };
+
+      const toolDef = {
+        name: 'list_groups',
+        description: 'list',
+        operations: { list: 'op-list' },
+      };
+
+      expect((localServer as any).isToolAllowedByEnterprisePolicy(toolDef, undefined, 'profile-a')).toBe(true);
+
+      (localServer as any).httpTransport = {
+        getSessionEnterpriseAllowedToolCategories: () => new Set(['modify']),
+      };
+
+      expect((localServer as any).isToolAllowedByEnterprisePolicy(toolDef, 'session-1', 'profile-a')).toBe(false);
+
+      (localServer as any).httpTransport = {
+        getSessionEnterpriseAllowedToolCategories: () => new Set(),
+      };
+
+      expect((localServer as any).isToolAllowedByEnterprisePolicy(toolDef, 'session-1', 'profile-a')).toBe(true);
+    });
+
     it('rejects session tool filters that match all tools', () => {
       const localServer = new MCPServer();
       (localServer as any).profile = {
