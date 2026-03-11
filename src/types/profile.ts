@@ -515,8 +515,10 @@ export interface OAuthConfig {
 export interface EnterpriseAuthorizationConfig {
   enabled: boolean;
   mode?: 'required' | 'optional';
+  mode_from_env?: string;
   resource?: string;
   audience?: string | string[];
+  audience_from_env?: string;
   issuer: EnterpriseIssuerConfig;
   token_exchange: EnterpriseTokenExchangeConfig;
   access_policy?: EnterpriseAccessPolicyConfig;
@@ -525,8 +527,11 @@ export interface EnterpriseAuthorizationConfig {
 
 export interface EnterpriseIssuerConfig {
   issuer: string;
+  issuer_from_env?: string;
   jwks_uri?: string;
+  jwks_uri_from_env?: string;
   allowed_algs?: Array<'RS256' | 'RS384' | 'RS512' | 'ES256' | 'ES384' | 'ES512'>;
+  allowed_algs_from_env?: string;
   allowed_kids?: string[];
   clock_skew_seconds?: number;
   require_signed_assertions?: boolean;
@@ -552,10 +557,14 @@ export interface EnterpriseAccessPolicyConfig {
     tenant_id?: string;
     client_id?: string;
   };
+  claim_mappings_from_env?: string;
   scopes_supported?: string[];
   default_scopes?: string[];
+  default_scopes_from_env?: string;
   required_scopes?: string[];
+  required_scopes_from_env?: string;
   allowed_tool_categories?: Array<'list' | 'read' | 'modify' | 'admin'>;
+  allowed_tool_categories_from_env?: string;
   allow_dynamic_client_registration?: boolean;
 }
 

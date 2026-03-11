@@ -82,6 +82,20 @@ This guide explains how to create custom MCP tool profiles for any OpenAPI-compl
 - **`interceptors`** (optional): Auth, rate limiting, retry configuration
 - **`enterprise_authorization`** (optional): HTTP-only inbound authorization policy for enterprise-managed JWT bearer grant exchange
 
+`enterprise_authorization` supports selective env-backed fields so deployments can override issuer and policy settings without editing the profile file. Supported `*_from_env` fields in the first iteration:
+
+- `mode_from_env`
+- `audience_from_env`
+- `issuer.issuer_from_env`
+- `issuer.jwks_uri_from_env`
+- `issuer.allowed_algs_from_env`
+- `access_policy.default_scopes_from_env`
+- `access_policy.required_scopes_from_env`
+- `access_policy.allowed_tool_categories_from_env`
+- `access_policy.claim_mappings_from_env`
+
+Resolution precedence is `env value -> static profile value`. Empty env values are ignored and fall back to the static profile value. Array fields use comma-separated values, while `claim_mappings_from_env` must contain a JSON object.
+
 **Profile selection**: If you set `profile_id` (or `profile_aliases`) and `openapi_spec_path`, you can launch the server with `--profile <id>` or `MCP4_PROFILE=<id>` without setting `--openapi-spec-path` or `MCP4_OPENAPI_SPEC_PATH`.
 
 **Profile auth env vars**: Prefer profile-specific names for `value_from_env` (for example, `GITLAB_TOKEN`, `YOUTRACK_TOKEN`) instead of the generic `MCP4_API_TOKEN`.

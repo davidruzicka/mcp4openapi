@@ -2266,6 +2266,13 @@ describe('ProfileLoader', () => {
   });
 
   describe('enterprise authorization validation', () => {
+    afterEach(() => {
+      delete process.env.ENTERPRISE_MODE;
+      delete process.env.ENTERPRISE_ISSUER;
+      delete process.env.ENTERPRISE_ALLOWED_ALGS;
+      delete process.env.ENTERPRISE_CATEGORIES;
+    });
+
     it('normalizes valid enterprise authorization config', async () => {
       const loader = new ProfileLoader();
       const fs = await import('fs/promises');
@@ -2296,6 +2303,56 @@ describe('ProfileLoader', () => {
       const profile = await loader.load(tmpPath);
       expect(profile.enterprise_authorization?.mode).toBe('required');
       expect(profile.enterprise_authorization?.token_exchange.required_claims).toContain('sub');
+    });
+
+    it('loads env-backed enterprise authorization values from the profile', async () => {
+      process.env.ENTERPRISE_MODE = 'optional';
+      process.env.ENTERPRISE_ISSUER = 'https://env-issuer.example';
+      process.env.ENTERPRISE_ALLOWED_ALGS = 'RS384';
+      process.env.ENTERPRISE_CATEGORIES = 'list,read';
+
+      const loader = new ProfileLoader();
+      const fs = await import('fs/promises');
+      const tmpPath = `/tmp/enterprise-env-backed-${Date.now()}-${Math.random()}.json`;
+      await fs.writeFile(
+        tmpPath,
+        JSON.stringify({
+          profile_name: 'enterprise-env-backed',
+          enterprise_authorization: {
+            enabled: true,
+            mode: 'required',
+            mode_from_env: 'ENTERPRISE_MODE',
+            issuer: {
+              issuer: 'https://issuer.example',
+              issuer_from_env: 'ENTERPRISE_ISSUER',
+              allowed_algs: ['RS256'],
+              allowed_algs_from_env: 'ENTERPRISE_ALLOWED_ALGS'
+            },
+            token_exchange: {
+              grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+              allowed_client_ids: ['enterprise-client']
+            },
+            access_policy: {
+              scopes_supported: ['api'],
+              default_scopes: ['api'],
+              allowed_tool_categories_from_env: 'ENTERPRISE_CATEGORIES'
+            }
+          },
+          tools: [{
+            name: 'tool_a',
+            description: 'Tool A',
+            operations: { list: 'getItems' },
+            parameters: { action: { type: 'string', description: 'Action', enum: ['list'], required: true } }
+          }]
+        }),
+        'utf-8'
+      );
+
+      const profile = await loader.load(tmpPath);
+      expect(profile.enterprise_authorization?.mode).toBe('optional');
+      expect(profile.enterprise_authorization?.issuer.issuer).toBe('https://env-issuer.example');
+      expect(profile.enterprise_authorization?.issuer.allowed_algs).toEqual(['RS384']);
+      expect(profile.enterprise_authorization?.access_policy?.allowed_tool_categories).toEqual(['list', 'read']);
     });
 
     it('rejects non-https enterprise issuer URLs', async () => {

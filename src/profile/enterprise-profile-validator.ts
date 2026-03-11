@@ -3,6 +3,7 @@ import {
   ValidationError,
 } from '../core/errors.js';
 import type { EnterpriseAuthorizationConfig, Profile } from '../types/profile.js';
+import { resolveEnterpriseAuthorizationEnv } from './enterprise-env-resolver.js';
 
 const HTTPS_PROTOCOL = 'https:';
 const MAX_ASSERTION_TTL_SECONDS = 300;
@@ -28,7 +29,8 @@ function ensureUnique(values: string[] | undefined, path: string): void {
 }
 
 export function validateEnterpriseAuthorizationProfile(profile: Profile): EnterpriseAuthorizationConfig | undefined {
-  const config = profile.enterprise_authorization;
+  const rawConfig = profile.enterprise_authorization;
+  const config = rawConfig ? resolveEnterpriseAuthorizationEnv(rawConfig) : undefined;
   if (!config) {
     return undefined;
   }

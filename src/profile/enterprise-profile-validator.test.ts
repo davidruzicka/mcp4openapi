@@ -26,9 +26,18 @@ function createProfile(overrides?: Partial<Profile>): Profile {
 
 describe('validateEnterpriseAuthorizationProfile', () => {
   const previousNodeEnv = process.env.NODE_ENV;
+  const enterpriseEnvKeys = [
+    'ENTERPRISE_ISSUER',
+    'ENTERPRISE_ALLOWED_ALGS',
+    'ENTERPRISE_DEFAULT_SCOPES',
+    'ENTERPRISE_CATEGORIES',
+  ] as const;
 
   afterEach(() => {
     process.env.NODE_ENV = previousNodeEnv;
+    for (const key of enterpriseEnvKeys) {
+      delete process.env[key];
+    }
   });
 
   it('returns undefined when enterprise authorization is not configured', () => {
@@ -173,5 +182,37 @@ describe('validateEnterpriseAuthorizationProfile', () => {
 
     expect(normalized?.mode).toBe('optional');
     expect(normalized?.token_exchange.required_claims).toEqual(expect.arrayContaining(['sub', 'tenant_id']));
+  });
+
+  it('resolves env-backed issuer and access policy values before validation', () => {
+    process.env.ENTERPRISE_ISSUER = 'https://env-issuer.example';
+    process.env.ENTERPRISE_ALLOWED_ALGS = 'RS384';
+    process.env.ENTERPRISE_DEFAULT_SCOPES = 'api';
+    process.env.ENTERPRISE_CATEGORIES = 'list,read';
+
+    const normalized = validateEnterpriseAuthorizationProfile(createProfile({
+      enterprise_authorization: {
+        enabled: true,
+        issuer: {
+          issuer: 'https://issuer.example',
+          issuer_from_env: 'ENTERPRISE_ISSUER',
+          allowed_algs_from_env: 'ENTERPRISE_ALLOWED_ALGS',
+        },
+        token_exchange: {
+          grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+          allowed_client_ids: ['client-1'],
+        },
+        access_policy: {
+          scopes_supported: ['api'],
+          default_scopes_from_env: 'ENTERPRISE_DEFAULT_SCOPES',
+          allowed_tool_categories_from_env: 'ENTERPRISE_CATEGORIES',
+        },
+      },
+    } as Profile));
+
+    expect(normalized?.issuer.issuer).toBe('https://env-issuer.example');
+    expect(normalized?.issuer.allowed_algs).toEqual(['RS384']);
+    expect(normalized?.access_policy?.default_scopes).toEqual(['api']);
+    expect(normalized?.access_policy?.allowed_tool_categories).toEqual(['list', 'read']);
   });
 });

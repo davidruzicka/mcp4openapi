@@ -33,6 +33,58 @@ Minimal profile example:
 }
 ```
 
+Env-backed enterprise authorization fields let you keep deployment-specific values outside the profile while preserving static fallbacks in the profile itself.
+
+```json
+{
+  "profile_name": "enterprise-http",
+  "enterprise_authorization": {
+    "enabled": true,
+    "mode": "required",
+    "mode_from_env": "ENTERPRISE_MODE",
+    "issuer": {
+      "issuer": "https://issuer.example.com",
+      "issuer_from_env": "ENTERPRISE_ISSUER",
+      "jwks_uri": "https://issuer.example.com/.well-known/jwks.json",
+      "jwks_uri_from_env": "ENTERPRISE_JWKS_URI",
+      "allowed_algs": ["RS256"],
+      "allowed_algs_from_env": "ENTERPRISE_ALLOWED_ALGS"
+    },
+    "token_exchange": {
+      "grant_type": "urn:ietf:params:oauth:grant-type:jwt-bearer",
+      "allowed_client_ids": ["enterprise-client"]
+    },
+    "access_policy": {
+      "scopes_supported": ["api", "admin"],
+      "default_scopes": ["api"],
+      "default_scopes_from_env": "ENTERPRISE_DEFAULT_SCOPES",
+      "allowed_tool_categories_from_env": "ENTERPRISE_ALLOWED_TOOL_CATEGORIES",
+      "claim_mappings_from_env": "ENTERPRISE_CLAIM_MAPPINGS_JSON"
+    }
+  }
+}
+```
+
+Supported env-backed fields:
+
+- `mode_from_env`
+- `audience_from_env`
+- `issuer.issuer_from_env`
+- `issuer.jwks_uri_from_env`
+- `issuer.allowed_algs_from_env`
+- `access_policy.default_scopes_from_env`
+- `access_policy.required_scopes_from_env`
+- `access_policy.allowed_tool_categories_from_env`
+- `access_policy.claim_mappings_from_env`
+
+Formats and precedence:
+
+- Scalar values use the raw env string.
+- Array values use comma-separated strings.
+- `claim_mappings_from_env` must be a JSON object with supported keys (`subject`, `email`, `groups`, `tenant_id`, `client_id`).
+- Resolution precedence is `env value -> static profile value`.
+- Empty env values are ignored and fall back to the static profile value.
+
 ## Overview
 
 OAuth 2.0 support enables browser-based authentication flow instead of manually managing API tokens:

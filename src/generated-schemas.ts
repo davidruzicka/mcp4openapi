@@ -176,8 +176,11 @@ export const sessionCookieConfigSchema = z.object({
 
 export const enterpriseIssuerConfigSchema = z.object({
     issuer: z.string(),
+    issuer_from_env: z.string().optional(),
     jwks_uri: z.string().optional(),
+    jwks_uri_from_env: z.string().optional(),
     allowed_algs: z.array(z.union([z.literal("RS256"), z.literal("RS384"), z.literal("RS512"), z.literal("ES256"), z.literal("ES384"), z.literal("ES512")])).optional(),
+    allowed_algs_from_env: z.string().optional(),
     allowed_kids: z.array(z.string()).optional(),
     clock_skew_seconds: z.number().optional(),
     require_signed_assertions: z.boolean().optional(),
@@ -203,10 +206,14 @@ export const enterpriseAccessPolicyConfigSchema = z.object({
         tenant_id: z.string().optional(),
         client_id: z.string().optional()
     }).optional(),
+    claim_mappings_from_env: z.string().optional(),
     scopes_supported: z.array(z.string()).optional(),
     default_scopes: z.array(z.string()).optional(),
+    default_scopes_from_env: z.string().optional(),
     required_scopes: z.array(z.string()).optional(),
+    required_scopes_from_env: z.string().optional(),
     allowed_tool_categories: z.array(z.union([z.literal("list"), z.literal("read"), z.literal("modify"), z.literal("admin")])).optional(),
+    allowed_tool_categories_from_env: z.string().optional(),
     allow_dynamic_client_registration: z.boolean().optional()
 });
 
@@ -238,8 +245,10 @@ export const resourceCompletionDefinitionSchema = z.object({
 export const enterpriseAuthorizationConfigSchema = z.object({
     enabled: z.boolean(),
     mode: z.union([z.literal("required"), z.literal("optional")]).optional(),
+    mode_from_env: z.string().optional(),
     resource: z.string().optional(),
     audience: z.union([z.string(), z.array(z.string())]).optional(),
+    audience_from_env: z.string().optional(),
     issuer: enterpriseIssuerConfigSchema,
     token_exchange: enterpriseTokenExchangeConfigSchema,
     access_policy: enterpriseAccessPolicyConfigSchema.optional(),

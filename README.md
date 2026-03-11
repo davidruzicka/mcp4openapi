@@ -374,6 +374,8 @@ echo 'export NODE_EXTRA_CA_CERTS="$HOME/ca-bundle.pem"' >> $HOME/.bash_profile
 
 **Profile auth env vars**: Use profile-specific names for `value_from_env` (for example, `GITLAB_TOKEN`, `YOUTRACK_TOKEN`) instead of the generic `MCP4_API_TOKEN`.
 
+**Enterprise authorization env vars**: `enterprise_authorization` also supports selective `*_from_env` references for issuer, audience, mode, scopes, tool categories, and claim mappings so HTTP enterprise auth can be deployed without editing the profile file. See [docs/OAUTH.md](./docs/OAUTH.md) for the supported fields and formats.
+
 **CLI mapping rule**: Documented `MCP4_*` env vars can be passed as a CLI flag by dropping the `MCP4_` prefix and using kebab-case. Example: `MCP4_PROFILE_PATH` -> `--profile-path`, `MCP4_OPENAPI_SPEC_PATH` -> `--openapi-spec-path`. Unknown flags cause startup to fail.
 
 ### Optional - Tool Filtering

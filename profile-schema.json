@@ -1180,14 +1180,14 @@
           ]
         },
         "overrides": {
-          "$ref": "#/definitions/Record%3Cstring%2Cstructure-1535101595-16523-16559-1535101595-16508-16560-1535101595-16494-16561-1535101595-16423-16563-1535101595-0-16703%3E"
+          "$ref": "#/definitions/Record%3Cstring%2Cstructure-1535101595-16825-16861-1535101595-16810-16862-1535101595-16796-16863-1535101595-16725-16865-1535101595-0-17005%3E"
         }
       },
       "required": [
         "max_requests_per_minute"
       ]
     },
-    "Record<string,structure-1535101595-16523-16559-1535101595-16508-16560-1535101595-16494-16561-1535101595-16423-16563-1535101595-0-16703>": {
+    "Record<string,structure-1535101595-16825-16861-1535101595-16810-16862-1535101595-16796-16863-1535101595-16725-16865-1535101595-0-17005>": {
       "type": "object",
       "additionalProperties": {
         "type": "object",
@@ -1260,6 +1260,9 @@
             "optional"
           ]
         },
+        "mode_from_env": {
+          "type": "string"
+        },
         "resource": {
           "type": "string"
         },
@@ -1275,6 +1278,9 @@
               }
             }
           ]
+        },
+        "audience_from_env": {
+          "type": "string"
         },
         "issuer": {
           "$ref": "#/definitions/EnterpriseIssuerConfig"
@@ -1301,7 +1307,13 @@
         "issuer": {
           "type": "string"
         },
+        "issuer_from_env": {
+          "type": "string"
+        },
         "jwks_uri": {
+          "type": "string"
+        },
+        "jwks_uri_from_env": {
           "type": "string"
         },
         "allowed_algs": {
@@ -1317,6 +1329,9 @@
               "ES512"
             ]
           }
+        },
+        "allowed_algs_from_env": {
+          "type": "string"
         },
         "allowed_kids": {
           "type": "array",
@@ -1408,6 +1423,9 @@
             }
           }
         },
+        "claim_mappings_from_env": {
+          "type": "string"
+        },
         "scopes_supported": {
           "type": "array",
           "items": {
@@ -1420,11 +1438,17 @@
             "type": "string"
           }
         },
+        "default_scopes_from_env": {
+          "type": "string"
+        },
         "required_scopes": {
           "type": "array",
           "items": {
             "type": "string"
           }
+        },
+        "required_scopes_from_env": {
+          "type": "string"
         },
         "allowed_tool_categories": {
           "type": "array",
@@ -1437,6 +1461,9 @@
               "admin"
             ]
           }
+        },
+        "allowed_tool_categories_from_env": {
+          "type": "string"
         },
         "allow_dynamic_client_registration": {
           "type": "boolean"
@@ -1482,6 +1509,20 @@
               "type": "string"
             }
           }
+        ]
+      }
+    },
+    "Record<string,structure-1535101595-16523-16559-1535101595-16508-16560-1535101595-16494-16561-1535101595-16423-16563-1535101595-0-16703>": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "max_requests_per_minute": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "max_requests_per_minute"
         ]
       }
     },
