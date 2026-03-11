@@ -384,6 +384,7 @@ export class HttpTransport {
       profileId,
       oauthConfig: this.config.oauthConfig,
       authConfigs: this.config.authConfigs,
+      enterpriseAuthorization: this.config.enterpriseAuthorization,
       baseUrl: this.config.baseUrl,
       rateLimitOAuthMax: this.config.rateLimitOAuthMax,
       rateLimitOAuthWindowMs: this.config.rateLimitOAuthWindowMs,

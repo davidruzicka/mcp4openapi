@@ -1311,6 +1311,7 @@ export class MCPServer {
       oauthConfig: profileContext.oauthConfig,
       baseUrl: profileContext.baseUrl,
       authConfigs: profileContext.authConfigs,
+      enterpriseAuthorization: profileContext.enterpriseAuthorization,
       resourceName: profileContext.resourceName,
       resourceDocumentation: profileContext.resourceDocumentation,
       parser: profileContext.parser,
