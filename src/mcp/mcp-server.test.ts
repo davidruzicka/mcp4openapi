@@ -1799,6 +1799,65 @@ paths:
       })).toBe('modify');
     });
 
+    it('applies enterprise tool policy consistently to tool listing and execution for ambiguously categorized composite tools', async () => {
+      const localServer = new MCPServer();
+      (localServer as any).profile = {
+        profile_name: 'test',
+        description: 'test',
+        tools: [
+          {
+            name: 'mixed_group',
+            description: 'mixed',
+            composite: true,
+            steps: [{ call: 'GET /groups' }, { call: 'GET /groups/{id}' }],
+            parameters: {},
+          },
+        ],
+        enterprise_authorization: {
+          enabled: true,
+          access_policy: {
+            allowed_tool_categories: ['list'],
+          },
+        },
+        interceptors: {},
+      };
+      (localServer as any).parser = {
+        getPath: (path: string) => {
+          if (path === '/groups') {
+            return { operations: { get: { method: 'get', path, parameters: [] } } };
+          }
+          if (path === '/groups/{id}') {
+            return { operations: { get: { method: 'get', path, parameters: [{ in: 'path', name: 'id' }] } } };
+          }
+          return undefined;
+        },
+      };
+      (localServer as any).toolGenerator = {
+        generateTool: (toolDef: any) => ({ name: toolDef.name }),
+        validateArguments: vi.fn(),
+      };
+      (localServer as any).executeCompositeTool = vi.fn().mockResolvedValue({ ok: true });
+      (localServer as any).httpTransport = {
+        hasOAuthProvider: (_profileId?: string) => false,
+        getSessionFiltering: (_profileId: string, _sessionId: string) => undefined,
+        getSessionEnterpriseAllowedToolCategories: (_profileId: string, _sessionId: string) => new Set(['list']),
+      };
+
+      const listResponse = await (localServer as any).handleOtherRequest({
+        jsonrpc: '2.0',
+        id: '1',
+        method: 'tools/list',
+        params: {},
+      }, 'session-1');
+
+      expect(listResponse.result.tools).toHaveLength(0);
+
+      const callResponse = await localServer.callToolRpc('mixed_group', {}, 'session-1', '2') as any;
+      expect(callResponse.error).toBeDefined();
+      expect(callResponse.error.code).toBe(-32002);
+      expect(callResponse.error.message).toContain('enterprise authorization policy');
+    });
+
     it('classifies simple tools using operations and fallback actions', () => {
       const localServer = new MCPServer();
       (localServer as any).parser = {

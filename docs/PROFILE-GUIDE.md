@@ -94,7 +94,9 @@ This guide explains how to create custom MCP tool profiles for any OpenAPI-compl
 - `access_policy.allowed_tool_categories_from_env`
 - `access_policy.claim_mappings_from_env`
 
-Resolution precedence is `env value -> static profile value`. Empty env values are ignored and fall back to the static profile value. Array fields use comma-separated values, while `claim_mappings_from_env` must contain a JSON object.
+Resolution precedence is `env value -> static profile value`. Empty env values are ignored and fall back to the static profile value. Array fields use comma-separated values, while `claim_mappings_from_env` must contain a JSON object. Invalid env-backed enterprise values fail profile loading instead of being ignored.
+
+When `enterprise_authorization.mode` is `required`, HTTP initialization accepts only trusted enterprise-issued bearer tokens minted by the enterprise JWT bearer exchange. When `mode` is `optional`, legacy bearer-token initialization remains available for migration. Enterprise tool-category policy applies to both `tools/list` and `tools/call`.
 
 **Profile selection**: If you set `profile_id` (or `profile_aliases`) and `openapi_spec_path`, you can launch the server with `--profile <id>` or `MCP4_PROFILE=<id>` without setting `--openapi-spec-path` or `MCP4_OPENAPI_SPEC_PATH`.
 

@@ -84,6 +84,13 @@ Formats and precedence:
 - `claim_mappings_from_env` must be a JSON object with supported keys (`subject`, `email`, `groups`, `tenant_id`, `client_id`).
 - Resolution precedence is `env value -> static profile value`.
 - Empty env values are ignored and fall back to the static profile value.
+- Invalid env-backed enterprise values fail profile loading instead of being ignored.
+
+Runtime behavior:
+
+- `mode: required` rejects arbitrary bearer tokens during MCP initialization and requires a trusted enterprise-issued token minted by the JWT bearer exchange.
+- `mode: optional` keeps the existing bearer-token initialization path available for migration and mixed deployments.
+- Enterprise tool-category policy applies to both `tools/list` filtering and runtime `tools/call` enforcement.
 
 ## Overview
 

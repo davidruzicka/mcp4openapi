@@ -106,6 +106,48 @@ describe('HttpTransport enterprise authorization', () => {
     expect(String(response.body.message)).toContain('Enterprise authorization required');
   });
 
+  it('keeps enterprise authorization backward-compatible in optional mode', async () => {
+    const optionalTransport = new HttpTransport({
+      host: '127.0.0.1',
+      port: 0,
+      sessionTimeoutMs: 1800000,
+      heartbeatEnabled: false,
+      heartbeatIntervalMs: 30000,
+      metricsEnabled: false,
+      metricsPath: '/metrics',
+      profileRoutingEnabled: true,
+    }, logger);
+
+    optionalTransport.setProfileContextProvider(async (profileId) => ({
+      profileId,
+      enterpriseAuthorization: {
+        enabled: true,
+        mode: 'optional',
+        resource: `https://resource.example/${profileId}/mcp`,
+        issuer: { issuer: 'https://127.0.0.1', jwks_uri: 'https://127.0.0.1/jwks', allowed_algs: ['RS256'] },
+        token_exchange: { grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer', required_typ: ['at+jwt'], required_claims: ['sub'] },
+        access_policy: { scopes_supported: ['api'], default_scopes: ['api'] },
+      },
+    }));
+    optionalTransport.setMessageHandler(async (message) => ({
+      jsonrpc: '2.0',
+      id: (message as { id?: number }).id ?? 1,
+      result: { ok: true },
+    }));
+
+    const optionalApp = (optionalTransport as any).app as Express;
+    const response = await request(optionalApp)
+      .post('/profile/alpha/mcp')
+      .set('Authorization', 'Bearer arbitrary-client-token')
+      .set('Accept', 'application/json')
+      .send({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 'test', version: '1.0.0' } } });
+
+    expect(response.status).toBe(200);
+    expect(response.body.result).toEqual({ ok: true });
+
+    await optionalTransport.stop();
+  });
+
   it('normalizes enterprise runtime config defaults and overrides', () => {
     const config = (transport as any).resolveEnterpriseRuntimeConfig({
       global_max_enterprise_tokens: 12,
