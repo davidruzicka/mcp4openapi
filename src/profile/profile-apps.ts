@@ -287,13 +287,13 @@ async function resolveResourceContent(
   }
 
   if (resource.file_path !== undefined) {
-    const resolvedPath = resolveProfileResourcePath(profileDir, resource.file_path, `${resourcePath}.file_path`);
+    const resolvedPath = await resolveProfileResourcePath(profileDir, resource.file_path, `${resourcePath}.file_path`);
     try {
       const fileContent = await fs.readFile(resolvedPath, 'utf-8');
       return { text: fileContent };
     } catch {
       throw appsValidationError(
-        `Resource file not found or unreadable: ${resource.file_path}`,
+        'Resource file not found or unreadable',
         `${resourcePath}.file_path`,
         'apps_resource_file_not_found',
         resource.file_path,
@@ -310,18 +310,37 @@ async function resolveResourceContent(
   return {};
 }
 
-function resolveProfileResourcePath(profileDir: string, resourceFilePath: string, pathRef: string): string {
-  const resolvedPath = path.resolve(profileDir, resourceFilePath);
-  const relativePath = path.relative(profileDir, resolvedPath);
+async function resolveProfileResourcePath(profileDir: string, resourceFilePath: string, pathRef: string): Promise<string> {
+  const realProfileDir = await fs.realpath(profileDir).catch(() => path.resolve(profileDir));
+  const resolvedPath = path.resolve(realProfileDir, resourceFilePath);
+  const relativePath = path.relative(realProfileDir, resolvedPath);
   if (relativePath.startsWith('..') || path.isAbsolute(relativePath)) {
     throw appsValidationError(
-      `Resource file_path must stay within the profile directory: ${resourceFilePath}`,
+      'Resource file_path must stay within the profile directory',
       pathRef,
       'apps_resource_file_not_found',
       resourceFilePath,
     );
   }
-  return resolvedPath;
+
+  try {
+    const realResolvedPath = await fs.realpath(resolvedPath);
+    const realRelativePath = path.relative(realProfileDir, realResolvedPath);
+    if (realRelativePath.startsWith('..') || path.isAbsolute(realRelativePath)) {
+      throw appsValidationError(
+        'Resource file_path must stay within the profile directory',
+        pathRef,
+        'apps_resource_file_not_found',
+        resourceFilePath,
+      );
+    }
+    return realResolvedPath;
+  } catch (error) {
+    if (error instanceof ValidationError) {
+      throw error;
+    }
+    return resolvedPath;
+  }
 }
 
 function loadFetchStrategy(
@@ -765,7 +784,7 @@ function validateUri(uri: string, pathRef: string, code: string): void {
     }
   } catch {
     throw appsValidationError(
-      `Invalid uri '${uri}'`,
+      'Invalid uri',
       pathRef,
       code,
       uri,
@@ -802,7 +821,7 @@ function compileUriTemplate(uriTemplate: string, pathRef: string): { variables: 
   const braceCount = (uriTemplate.match(/[{}]/g) || []).length;
   if (unmatchedOpen || braceCount % 2 !== 0) {
     throw appsValidationError(
-      `Invalid uri_template '${uriTemplate}'`,
+      'Invalid uri_template',
       pathRef,
       'apps_resource_invalid_uri_template',
       uriTemplate,
@@ -813,7 +832,7 @@ function compileUriTemplate(uriTemplate: string, pathRef: string): { variables: 
     return { variables, matcher: new RegExp(regexSource) };
   } catch {
     throw appsValidationError(
-      `Invalid uri_template '${uriTemplate}'`,
+      'Invalid uri_template',
       pathRef,
       'apps_resource_invalid_uri_template',
       uriTemplate,

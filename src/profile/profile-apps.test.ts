@@ -313,6 +313,56 @@ describe('createLoadedProfileAppsModel', () => {
     });
   });
 
+  it('rejects relative traversal and symlink escapes for resource file paths', async () => {
+    const parser = await createParser();
+
+    const profileDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcp-apps-profile-'));
+    const outsideDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcp-apps-outside-'));
+    tempPaths.push(profileDir, outsideDir);
+
+    const outsideFilePath = path.join(outsideDir, 'outside.txt');
+    await fs.writeFile(outsideFilePath, 'secret', 'utf8');
+    await fs.writeFile(path.join(profileDir, 'inside.txt'), 'inside', 'utf8');
+    await fs.writeFile(path.join(profileDir, 'profile.json'), JSON.stringify(createProfile()), 'utf8');
+    await fs.symlink(outsideFilePath, path.join(profileDir, 'escaped-link.txt'));
+
+    const traversalProfile = createProfile({
+      resources: [
+        {
+          name: 'traversal_file',
+          kind: 'static',
+          uri: 'ui://traversal-file',
+          mime_type: 'text/plain',
+          file_path: '../outside.txt',
+        },
+      ],
+    });
+    const traversalProfilePath = path.join(profileDir, 'profile-traversal.json');
+    await fs.writeFile(traversalProfilePath, JSON.stringify(traversalProfile), 'utf8');
+
+    await expect(createLoadedProfileAppsModel(traversalProfile, { profilePath: traversalProfilePath, parser })).rejects.toMatchObject({
+      details: expect.objectContaining({ code: 'apps_resource_file_not_found', path: 'resources[0].file_path' }),
+    });
+
+    const symlinkProfile = createProfile({
+      resources: [
+        {
+          name: 'symlink_file',
+          kind: 'static',
+          uri: 'ui://symlink-file',
+          mime_type: 'text/plain',
+          file_path: './escaped-link.txt',
+        },
+      ],
+    });
+    const symlinkProfilePath = path.join(profileDir, 'profile-symlink.json');
+    await fs.writeFile(symlinkProfilePath, JSON.stringify(symlinkProfile), 'utf8');
+
+    await expect(createLoadedProfileAppsModel(symlinkProfile, { profilePath: symlinkProfilePath, parser })).rejects.toMatchObject({
+      details: expect.objectContaining({ code: 'apps_resource_file_not_found', path: 'resources[0].file_path' }),
+    });
+  });
+
   it('rejects unsupported mime types', async () => {
     const parser = await createParser();
     const profile = createProfile({
@@ -388,12 +438,66 @@ describe('createLoadedProfileAppsModel', () => {
     expect(model?.templateResources[0]?.completion?.variables.item_id.operation).toBe('listItems');
   });
 
-  it('rejects invalid fetch parameter mappings', async () => {
+  it('sanitizes user-facing validation messages for invalid file paths and URIs', async () => {
+    const parser = await createParser();
+
+    const missingFileProfile = createProfile({
+      resources: [
+        {
+          name: 'missing_file',
+          kind: 'static',
+          uri: 'ui://missing-file',
+          mime_type: 'text/plain',
+          file_path: '../secrets/token.txt',
+        },
+      ],
+    });
+    const missingFilePath = await writeTempFile('profile-missing-file-message.json', JSON.stringify(missingFileProfile));
+    await expect(createLoadedProfileAppsModel(missingFileProfile, { profilePath: missingFilePath, parser })).rejects.toMatchObject({
+      message: 'Resource file_path must stay within the profile directory',
+      details: expect.objectContaining({ value: '../secrets/token.txt' }),
+    });
+
+    const invalidUriProfile = createProfile({
+      resources: [
+        {
+          name: 'bad_uri',
+          kind: 'static',
+          uri: 'not a uri',
+          mime_type: 'text/plain',
+          inline_text: 'hello',
+        },
+      ],
+    });
+    const invalidUriPath = await writeTempFile('profile-invalid-uri-message.json', JSON.stringify(invalidUriProfile));
+    await expect(createLoadedProfileAppsModel(invalidUriProfile, { profilePath: invalidUriPath, parser })).rejects.toMatchObject({
+      message: 'Invalid uri',
+      details: expect.objectContaining({ value: 'not a uri' }),
+    });
+
+    const invalidUriTemplateProfile = createProfile({
+      resources: [
+        {
+          name: 'bad_template',
+          kind: 'template',
+          uri_template: 'ui://items/{item_id',
+          mime_type: 'text/html',
+        },
+      ],
+    });
+    const invalidUriTemplatePath = await writeTempFile('profile-invalid-uri-template-message.json', JSON.stringify(invalidUriTemplateProfile));
+    await expect(createLoadedProfileAppsModel(invalidUriTemplateProfile, { profilePath: invalidUriTemplatePath, parser })).rejects.toMatchObject({
+      message: 'Invalid uri_template',
+      details: expect.objectContaining({ value: 'ui://items/{item_id' }),
+    });
+  });
+
+  it('uses ValidationError for Apps validation failures', async () => {
     const parser = await createParser();
     const profile = createProfile({
       resources: [
         {
-          name: 'dynamic_item',
+          name: 'bad_mapping',
           kind: 'template',
           uri_template: 'ui://items/{item_id}',
           mime_type: 'text/html',
@@ -401,17 +505,15 @@ describe('createLoadedProfileAppsModel', () => {
             source: 'operation',
             operation: 'getItem',
             parameter_mapping: {
-              item_id: 'missing_variable',
+              item_id: 'missing',
             },
           },
         },
       ],
     });
-    const profilePath = await writeTempFile('profile.json', JSON.stringify(profile));
+    const profilePath = await writeTempFile('profile-bad-mapping.json', JSON.stringify(profile));
 
-    await expect(createLoadedProfileAppsModel(profile, { profilePath, parser })).rejects.toMatchObject({
-      details: expect.objectContaining({ code: 'apps_resource_invalid_fetch_reference', path: 'resources[0].fetch.parameter_mapping.item_id' }),
-    });
+    await expect(createLoadedProfileAppsModel(profile, { profilePath, parser })).rejects.toBeInstanceOf(ValidationError);
   });
 
   it('rejects completion definitions without extraction paths', async () => {

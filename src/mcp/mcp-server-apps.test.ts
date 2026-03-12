@@ -58,7 +58,15 @@ afterAll(async () => {
 
 async function createServerFixture() {
   const server = new MCPServer();
-  const specPath = await writeTempFile('openapi.yaml', `openapi: 3.0.0
+  const fixtureDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcp-server-apps-fixture-'));
+  tempDirs.push(fixtureDir);
+
+  const specPath = path.join(fixtureDir, 'openapi.yaml');
+  const profilePath = path.join(fixtureDir, 'profile.json');
+  const staticShellPath = path.join(fixtureDir, 'static-shell.html');
+
+  await fs.writeFile(staticShellPath, '<div>File Shell</div>', 'utf8');
+  await fs.writeFile(specPath, `openapi: 3.0.0
 info:
   title: Server Apps Test
   version: 1.0.0
@@ -83,8 +91,8 @@ paths:
       responses:
         '200':
           description: ok
-`);
-  const profilePath = await writeTempFile('profile.json', JSON.stringify({
+`, 'utf8');
+  await fs.writeFile(profilePath, JSON.stringify({
     profile_name: 'apps-server',
     interceptors: {
       base_url: { value_from_env: 'UNUSED_APPS_TEST_BASE_URL', default: apiBaseUrl },
@@ -111,6 +119,13 @@ paths:
         uri: 'ui://shell',
         mime_type: 'text/html',
         inline_text: '<div>Shell</div>',
+      },
+      {
+        name: 'static_file_shell',
+        kind: 'static',
+        uri: 'ui://file-shell',
+        mime_type: 'text/html',
+        file_path: './static-shell.html',
       },
       {
         name: 'item_template',
@@ -153,9 +168,10 @@ describe('MCPServer apps resources', () => {
     const templatesResponse = await (server as any).handleOtherRequest({ jsonrpc: '2.0', id: '3', method: 'resources/templates/list' });
 
     expect(toolsResponse.result.tools[0]._meta['openai/outputTemplate']).toBe('ui://items/{item_id}');
-    expect(resourcesResponse.result.resources).toEqual([
+    expect(resourcesResponse.result.resources).toEqual(expect.arrayContaining([
       expect.objectContaining({ uri: 'ui://shell', name: 'static_shell' }),
-    ]);
+      expect.objectContaining({ uri: 'ui://file-shell', name: 'static_file_shell' }),
+    ]));
     expect(templatesResponse.result.resourceTemplates).toEqual([
       expect.objectContaining({ uriTemplate: 'ui://items/{item_id}', name: 'item_template' }),
     ]);
@@ -196,6 +212,48 @@ describe('MCPServer apps resources', () => {
     expect(staticResponse.result.contents[0].text).toContain('Shell');
     expect(dynamicResponse.result.contents[0].text).toContain('Item 1');
     expect(completionResponse.result.completion.values).toEqual(['1']);
+  });
+
+  it('returns consistent resource content shape for inline file and fetch-backed resources', async () => {
+    const server = await createServerFixture();
+
+    const inlineResponse = await (server as any).handleOtherRequest({
+      jsonrpc: '2.0',
+      id: 'inline',
+      method: 'resources/read',
+      params: { uri: 'ui://shell' },
+    });
+    const fileResponse = await (server as any).handleOtherRequest({
+      jsonrpc: '2.0',
+      id: 'file',
+      method: 'resources/read',
+      params: { uri: 'ui://file-shell' },
+    });
+    const fetchResponse = await (server as any).handleOtherRequest({
+      jsonrpc: '2.0',
+      id: 'fetch',
+      method: 'resources/read',
+      params: { uri: 'ui://items/1' },
+    });
+
+    expect(inlineResponse.result.contents[0]).toEqual(expect.objectContaining({
+      uri: 'ui://shell',
+      mimeType: 'text/html',
+      text: '<div>Shell</div>',
+    }));
+    expect(fileResponse.result.contents[0]).toEqual(expect.objectContaining({
+      uri: 'ui://file-shell',
+      mimeType: 'text/html',
+      text: '<div>File Shell</div>',
+    }));
+    expect(fetchResponse.result.contents[0]).toEqual(expect.objectContaining({
+      uri: 'ui://items/1',
+      mimeType: 'text/html',
+      text: '<div>Item 1</div>',
+    }));
+    expect(typeof inlineResponse.result.contents[0].text).toBe('string');
+    expect(typeof fileResponse.result.contents[0].text).toBe('string');
+    expect(typeof fetchResponse.result.contents[0].text).toBe('string');
   });
 
   it('returns validation errors for malformed resource and completion requests', async () => {
@@ -378,7 +436,10 @@ describe('MCPServer apps resources', () => {
       tools: [expect.objectContaining({ name: 'get_item' })],
     });
     await expect(handlers.get(ListResourcesRequestSchema)!()).resolves.toEqual({
-      resources: [expect.objectContaining({ uri: 'ui://shell' })],
+      resources: expect.arrayContaining([
+        expect.objectContaining({ uri: 'ui://shell' }),
+        expect.objectContaining({ uri: 'ui://file-shell' }),
+      ]),
     });
     await expect(handlers.get(ListResourceTemplatesRequestSchema)!()).resolves.toEqual({
       resourceTemplates: [expect.objectContaining({ uriTemplate: 'ui://items/{item_id}' })],

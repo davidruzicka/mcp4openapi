@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Blocked dangerous URI schemes during URI validation to prevent XSS through attacker-controlled links and redirects.
 - Removed raw environment variable values from selected configuration error messages and added regression checks to prevent secret leakage in errors.
+- Hardened MCP Apps resource loading so `file_path` stays inside the profile directory after normalization and symlink resolution, while keeping `resources/read` output shape consistent across inline, file-backed, and fetch-backed resources.
 
 ## [0.5.7] - 2026-03-03
 

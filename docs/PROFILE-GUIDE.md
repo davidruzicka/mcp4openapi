@@ -100,6 +100,7 @@ These fields are exposed in the `/.well-known/oauth-protected-resource/mcp` endp
 
 `resources[]` lets a profile expose read-only UI assets and dynamic resource documents through MCP:
 - `kind: "static"` requires a fixed `uri` and exactly one content source: `file_path`, bounded `inline_text` (16 KB max), or `fetch`.
+- `file_path` must resolve inside the profile directory after normalization and symlink resolution; escaping the profile directory is rejected at load time.
 - `kind: "template"` requires `uri_template`, supports URI-variable completion, and can serve static or fetch-backed content.
 - `mime_type` must stay text-safe (`text/*` or `application/json`).
 - fetch-backed resources/completions may only call declared read-only OpenAPI operations (`GET`/`HEAD`) or read-only composite tools.
