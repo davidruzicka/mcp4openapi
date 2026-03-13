@@ -16,7 +16,6 @@
   - [10. Split HttpTransport into smaller modules](#10-split-httptransport-into-smaller-modules)
   - [11. Reduce usage of any casts in HTTP transport](#11-reduce-usage-of-any-casts-in-http-transport)
   - [12. Avoid HTTP profile hint collisions across shared IPs](#12-avoid-http-profile-hint-collisions-across-shared-ips)
-  - [13. Prevent unbounded growth of HTTP profile hint cache](#13-prevent-unbounded-growth-of-http-profile-hint-cache)
   - [14. Consider strict OAuth redirect scheme allowlist](#14-consider-strict-oauth-redirect-scheme-allowlist)
   - [15. Replace JSON fingerprint auth comparison for tenant collisions](#15-replace-json-fingerprint-auth-comparison-for-tenant-collisions)
   - [16. Extract tenant session lifecycle from HttpTransport](#16-extract-tenant-session-lifecycle-from-httptransport)
@@ -265,22 +264,6 @@ export DEFAULT_PROFILE_EXCLUDE_TAGS="admin,system"
 - `docs/HTTP-TRANSPORT.md` - document new hint mechanism (if user-facing)
 
 **Estimated effort**: 2-4 hours
-
-### 13. Prevent unbounded growth of HTTP profile hint cache
-**Problem**: Profile hints are stored per client but only cleaned up on subsequent lookups, so many one-off clients can cause the cache to grow without bound in long-running servers.
-
-**Goal**: Bound memory usage for profile hint cache.
-
-**Implementation options**:
-- Periodic cleanup timer that removes expired hints.
-- Cap the cache size with LRU eviction.
-- Combine TTL + size cap with logging when evictions occur.
-
-**Files to modify**:
-- `src/http-transport.ts` - add cache eviction or cleanup
-- `README.md` - document any new env vars or limits
-
-**Estimated effort**: 1-2 hours
 
 ### 14. Consider strict OAuth redirect scheme allowlist
 **Current**: `ExternalOAuthProvider` uses a denylist for dangerous redirect URI schemes (`javascript:`, `data:`, `vbscript:`, `file:`, `blob:`, `about:`) while keeping compatibility with custom client schemes.

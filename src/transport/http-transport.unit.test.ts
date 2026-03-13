@@ -58,6 +58,57 @@ describe('HttpTransport unit', () => {
     await transport.stop();
   });
 
+  describe('profile hint cache', () => {
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('prunes expired profile hints when storing a new hint', () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-03-14T00:00:00.000Z'));
+
+      const storeProfileHint = (transport as any).storeProfileHint.bind(transport);
+      const profileHintsByClient = (transport as any).profileHintsByClient as Map<string, { profileId: string; lastSeen: number }>;
+      const ttlMs = (HttpTransport as any).PROFILE_HINT_TTL_MS as number;
+
+      storeProfileHint(withGet({
+        ip: '10.0.0.1',
+        headers: { 'user-agent': 'agent-a' },
+      }), 'profile-a');
+
+      vi.advanceTimersByTime(ttlMs + 1);
+
+      storeProfileHint(withGet({
+        ip: '10.0.0.2',
+        headers: { 'user-agent': 'agent-b' },
+      }), 'profile-b');
+
+      expect(profileHintsByClient.size).toBe(1);
+      expect(profileHintsByClient.get('10.0.0.1|agent-a')).toBeUndefined();
+      expect(profileHintsByClient.get('10.0.0.2|agent-b')).toEqual({
+        profileId: 'profile-b',
+        lastSeen: Date.now(),
+      });
+    });
+
+    it('evicts the oldest active profile hint when the cache reaches capacity', () => {
+      const storeProfileHint = (transport as any).storeProfileHint.bind(transport);
+      const profileHintsByClient = (transport as any).profileHintsByClient as Map<string, { profileId: string; lastSeen: number }>;
+      const maxEntries = (HttpTransport as any).PROFILE_HINT_MAX_ENTRIES as number;
+
+      for (let index = 0; index < maxEntries + 1; index += 1) {
+        storeProfileHint(withGet({
+          ip: `10.0.0.${index}`,
+          headers: { 'user-agent': `agent-${index}` },
+        }), `profile-${index}`);
+      }
+
+      expect(profileHintsByClient.size).toBe(maxEntries);
+      expect(profileHintsByClient.has('10.0.0.0|agent-0')).toBe(false);
+      expect(profileHintsByClient.get(`10.0.0.${maxEntries}|agent-${maxEntries}`)?.profileId).toBe(`profile-${maxEntries}`);
+    });
+  });
+
   describe('filtering header helpers', () => {
     it('detects unknown message types', () => {
       const messageType = (transport as any).getMessageType(123);

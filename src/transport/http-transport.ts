@@ -115,6 +115,7 @@ export class HttpTransport {
   private warnedMissingOAuthRedirectEnvVars: Set<string> = new Set();
   private profileHintsByClient: Map<string, { profileId: string; lastSeen: number }> = new Map();
   private static readonly PROFILE_HINT_TTL_MS = 10 * 60 * 1000;
+  private static readonly PROFILE_HINT_MAX_ENTRIES = 1024;
   private profileIndexProvider: (() => Promise<ListedProfileDetails[]>) | null = null;
   private ssrfValidator: SSRFValidator;
   private rawTenantConfig: HttpTenantsConfig | null;
@@ -686,22 +687,42 @@ export class HttpTransport {
     return `${req.ip}|${userAgent}`;
   }
 
+  private pruneExpiredProfileHints(now: number): void {
+    for (const [key, hint] of this.profileHintsByClient.entries()) {
+      if (now - hint.lastSeen > HttpTransport.PROFILE_HINT_TTL_MS) {
+        this.profileHintsByClient.delete(key);
+      }
+    }
+  }
+
+  private evictProfileHintsToCapacity(): void {
+    while (this.profileHintsByClient.size >= HttpTransport.PROFILE_HINT_MAX_ENTRIES) {
+      const oldestKey = this.profileHintsByClient.keys().next().value;
+      if (!oldestKey) {
+        return;
+      }
+      this.profileHintsByClient.delete(oldestKey);
+    }
+  }
+
   private storeProfileHint(req: Request, profileId: string): void {
+    const now = Date.now();
     const key = this.getClientHintKey(req);
-    this.profileHintsByClient.set(key, { profileId, lastSeen: Date.now() });
+
+    this.pruneExpiredProfileHints(now);
+    if (this.profileHintsByClient.has(key)) {
+      this.profileHintsByClient.delete(key);
+    }
+    this.evictProfileHintsToCapacity();
+    this.profileHintsByClient.set(key, { profileId, lastSeen: now });
   }
 
   private resolveProfileIdFromHint(req: Request): string | null {
+    const now = Date.now();
     const key = this.getClientHintKey(req);
-    const hint = this.profileHintsByClient.get(key);
-    if (!hint) {
-      return null;
-    }
-    if (Date.now() - hint.lastSeen > HttpTransport.PROFILE_HINT_TTL_MS) {
-      this.profileHintsByClient.delete(key);
-      return null;
-    }
-    return hint.profileId;
+
+    this.pruneExpiredProfileHints(now);
+    return this.profileHintsByClient.get(key)?.profileId ?? null;
   }
 
   private resolveProfileIdForOriginCheck(req: Request): string | null {
