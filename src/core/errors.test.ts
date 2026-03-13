@@ -13,10 +13,18 @@ import {
   ResourceNotFoundError,
   ParameterError,
   AuthenticationError,
+  SessionCookieLoginError,
+  SessionCookieMissingError,
   SessionCookieExpiredError,
   SessionCookieBackoffError,
   AuthorizationError,
   RateLimitError,
+  OAuthClientStoreCapacityError,
+  EnterpriseAuthorizationConfigurationError,
+  EnterpriseTokenValidationError,
+  EnterpriseTokenReplayError,
+  EnterpriseIssuerDiscoveryError,
+  EnterprisePolicyViolationError,
   NetworkError,
   ConfigurationError,
   SessionError,
@@ -88,8 +96,20 @@ describe('Error Classes', () => {
 
   describe('Session cookie auth errors', () => {
     it('should create typed session-cookie errors with details', () => {
+      const login = new SessionCookieLoginError(undefined, { path: '/login' });
+      const missing = new SessionCookieMissingError(undefined, { cookie: 'sid' });
       const expired = new SessionCookieExpiredError('expired now', { cookie: 'sid' });
       const backoff = new SessionCookieBackoffError(undefined, { retryAfterMs: 5000 });
+
+      expect(login.message).toBe('Session cookie login failed');
+      expect(login.code).toBe('SESSION_COOKIE_LOGIN_ERROR');
+      expect(login.details).toEqual({ path: '/login' });
+      expect(login.name).toBe('SessionCookieLoginError');
+
+      expect(missing.message).toBe('Expected session cookie was not returned');
+      expect(missing.code).toBe('SESSION_COOKIE_MISSING');
+      expect(missing.details).toEqual({ cookie: 'sid' });
+      expect(missing.name).toBe('SessionCookieMissingError');
 
       expect(expired.message).toBe('expired now');
       expect(expired.code).toBe('SESSION_COOKIE_EXPIRED');
@@ -100,6 +120,30 @@ describe('Error Classes', () => {
       expect(backoff.code).toBe('SESSION_COOKIE_BACKOFF');
       expect(backoff.details).toEqual({ retryAfterMs: 5000 });
       expect(backoff.name).toBe('SessionCookieBackoffError');
+    });
+  });
+
+  describe('enterprise authorization errors', () => {
+    it('should create typed enterprise and OAuth capacity errors', () => {
+      const capacity = new OAuthClientStoreCapacityError(undefined, { retryAfterMs: 1000 });
+      const config = new EnterpriseAuthorizationConfigurationError('bad enterprise config', { path: 'enterprise_authorization' });
+      const validation = new EnterpriseTokenValidationError('bad assertion', { alg: 'RS256' });
+      const replay = new EnterpriseTokenReplayError();
+      const discovery = new EnterpriseIssuerDiscoveryError('jwks fetch failed', { status: 503 });
+      const policy = new EnterprisePolicyViolationError('client rejected', { clientId: 'client-1' });
+
+      expect(capacity.code).toBe('OAUTH_CLIENT_STORE_CAPACITY');
+      expect(capacity.details).toEqual({ retryAfterMs: 1000 });
+      expect(config.code).toBe('ENTERPRISE_AUTHORIZATION_CONFIGURATION_ERROR');
+      expect(config.details).toEqual({ path: 'enterprise_authorization' });
+      expect(validation.code).toBe('ENTERPRISE_TOKEN_VALIDATION_ERROR');
+      expect(validation.details).toEqual({ alg: 'RS256' });
+      expect(replay.code).toBe('ENTERPRISE_TOKEN_REPLAY_ERROR');
+      expect(replay.message).toContain('replay');
+      expect(discovery.code).toBe('ENTERPRISE_ISSUER_DISCOVERY_ERROR');
+      expect(discovery.details).toEqual({ status: 503 });
+      expect(policy.code).toBe('ENTERPRISE_POLICY_VIOLATION_ERROR');
+      expect(policy.details).toEqual({ clientId: 'client-1' });
     });
   });
 });

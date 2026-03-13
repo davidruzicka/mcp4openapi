@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Added profile-driven MCP Apps support with `resources/list`, `resources/templates/list`, `resources/read`, template completion, stricter Apps mapping/path validation, session-aware fetch execution, and bounded fetch-result caching.
 - Expanded the GitHub security profile with Secret Scanning CRUD actions, stricter action-gated parameter validation (`allowed_for`/`forbidden_for`), and an upgraded `retrieve_security_overview` composite across code scanning + Dependabot + secret scanning.
+- Added enterprise managed authorization for HTTP transport with profile-driven `enterprise_authorization`, JWT bearer grant support on `/oauth/token`, bounded JWKS/replay/token stores, metadata extensions, and security-focused validation/redaction coverage.
+- Added env-backed `enterprise_authorization` field resolution for issuer, audience, mode, selected access-policy settings, and claim mappings so deployments can override enterprise auth without editing profiles.
 
 ### Changed
 - Bumped transitive security-sensitive dependencies via overrides (`@hono/node-server` to `1.19.10`, `hono` to `4.12.4`) and aligned Semgrep SBOM negative test inputs/expectations with current `deploymentSlug`/`deployment_id` validation behavior.
@@ -19,6 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Blocked dangerous URI schemes during URI validation to prevent XSS through attacker-controlled links and redirects.
 - Removed raw environment variable values from selected configuration error messages and added regression checks to prevent secret leakage in errors.
 - Hardened MCP Apps resource loading so `file_path` stays inside the profile directory after normalization and symlink resolution, while keeping `resources/read` output shape consistent across inline, file-backed, and fetch-backed resources.
+- Fixed HTTP single-profile startup to carry `enterprise_authorization` into transport runtime so enterprise JWT bearer exchange and authenticated initialization work outside profile-routing mode, with dedicated E2E coverage.
+- Clarified and locked runtime enterprise authorization behavior so `required` mode enforces trusted enterprise-issued bearer tokens, `optional` mode stays backward-compatible, tool-category policy covers both listing and execution, and invalid env-backed values fail during profile loading.
 
 ## [0.5.7] - 2026-03-03
 

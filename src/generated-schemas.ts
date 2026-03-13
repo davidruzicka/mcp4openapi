@@ -174,6 +174,56 @@ export const sessionCookieConfigSchema = z.object({
     expiry_skew_ms: z.number().optional()
 });
 
+export const enterpriseIssuerConfigSchema = z.object({
+    issuer: z.string(),
+    issuer_from_env: z.string().optional(),
+    jwks_uri: z.string().optional(),
+    jwks_uri_from_env: z.string().optional(),
+    allowed_algs: z.array(z.union([z.literal("RS256"), z.literal("RS384"), z.literal("RS512"), z.literal("ES256"), z.literal("ES384"), z.literal("ES512")])).optional(),
+    allowed_algs_from_env: z.string().optional(),
+    allowed_kids: z.array(z.string()).optional(),
+    clock_skew_seconds: z.number().optional(),
+    require_signed_assertions: z.boolean().optional(),
+    trust_mode: z.union([z.literal("discovery"), z.literal("explicit")]).optional()
+});
+
+export const enterpriseTokenExchangeConfigSchema = z.object({
+    grant_type: z.literal("urn:ietf:params:oauth:grant-type:jwt-bearer"),
+    subject_token_type: z.literal("urn:ietf:params:oauth:token-type:id_token").optional(),
+    required_typ: z.array(z.string()).optional(),
+    required_claims: z.array(z.string()).optional(),
+    max_assertion_ttl_seconds: z.number().optional(),
+    max_assertion_size_bytes: z.number().optional(),
+    replay_protection_ttl_seconds: z.number().optional(),
+    allowed_client_ids: z.array(z.string()).optional()
+});
+
+export const enterpriseAccessPolicyConfigSchema = z.object({
+    claim_mappings: z.object({
+        subject: z.string().optional(),
+        email: z.string().optional(),
+        groups: z.string().optional(),
+        tenant_id: z.string().optional(),
+        client_id: z.string().optional()
+    }).optional(),
+    claim_mappings_from_env: z.string().optional(),
+    scopes_supported: z.array(z.string()).optional(),
+    default_scopes: z.array(z.string()).optional(),
+    default_scopes_from_env: z.string().optional(),
+    required_scopes: z.array(z.string()).optional(),
+    required_scopes_from_env: z.string().optional(),
+    allowed_tool_categories: z.array(z.union([z.literal("list"), z.literal("read"), z.literal("modify"), z.literal("admin")])).optional(),
+    allowed_tool_categories_from_env: z.string().optional(),
+    allow_dynamic_client_registration: z.boolean().optional()
+});
+
+export const enterpriseMetadataConfigSchema = z.object({
+    authorization_servers: z.array(z.string()).optional(),
+    documentation_url: z.string().optional(),
+    display_name: z.string().optional(),
+    extensions: z.record(z.string(), z.union([z.string(), z.boolean(), z.number(), z.array(z.string())])).optional()
+});
+
 export const toolDefinitionSchema = z.object({
     name: z.string(),
     description: z.string(),
@@ -186,6 +236,19 @@ export const toolDefinitionSchema = z.object({
     response_fields: z.record(z.string(), z.array(z.string())).optional(),
     send_response_fields_as_param: z.boolean().optional(),
     apps: toolAppsDefinitionSchema.optional()
+});
+
+export const enterpriseAuthorizationConfigSchema = z.object({
+    enabled: z.boolean(),
+    mode: z.union([z.literal("required"), z.literal("optional")]).optional(),
+    mode_from_env: z.string().optional(),
+    resource: z.string().optional(),
+    audience: z.union([z.string(), z.array(z.string())]).optional(),
+    audience_from_env: z.string().optional(),
+    issuer: enterpriseIssuerConfigSchema,
+    token_exchange: enterpriseTokenExchangeConfigSchema,
+    access_policy: enterpriseAccessPolicyConfigSchema.optional(),
+    metadata: enterpriseMetadataConfigSchema.optional()
 });
 
 export const resourceCompletionDefinitionSchema = z.object({
@@ -259,6 +322,7 @@ export const profileSchema = z.object({
     resources: z.array(resourceDefinitionSchema).optional(),
     interceptors: interceptorConfigSchema.optional(),
     parameter_aliases: z.record(z.string(), z.array(z.string())).optional(),
+    enterprise_authorization: enterpriseAuthorizationConfigSchema.optional(),
     resource_name: z.string().optional(),
     resource_documentation: z.string().optional()
 });

@@ -46,6 +46,7 @@ Start with an existing profile in [`profiles/`](./profiles), then adapt only wha
 - **Prompt definitions**: add reusable MCP prompts directly in profiles
 - **MCP Apps resources**: expose static or fetch-backed `resources/list`, `resources/templates/list`, `resources/read`, and template-variable completion from profiles
 - **OAuth 2.0**: browser-based auth flow for HTTP transport (see [docs/OAUTH.md](./docs/OAUTH.md))
+- **Enterprise managed authorization**: inbound JWT bearer grant for HTTP transport with profile-driven issuer/JWKS policy and opaque MCP access tokens (see [docs/OAUTH.md](./docs/OAUTH.md))
 - **Multi-auth**: combine multiple auth methods with priority fallback (see [docs/MULTI-AUTH.md](./docs/MULTI-AUTH.md))
 - **Multipart uploads**: `HttpClient` handles `multipart/form-data`
 - **Observability**: structured logging with secrets redaction and Prometheus metrics
@@ -372,6 +373,8 @@ echo 'export NODE_EXTRA_CA_CERTS="$HOME/ca-bundle.pem"' >> $HOME/.bash_profile
 - `MCP4_SSRF_ALLOW_PRIVATE_NETWORK`: Set to `true` to allow private/loopback/link-local targets in SSRF validation paths, including bootstrap URL checks.
 
 **Profile auth env vars**: Use profile-specific names for `value_from_env` (for example, `GITLAB_TOKEN`, `YOUTRACK_TOKEN`) instead of the generic `MCP4_API_TOKEN`.
+
+**Enterprise authorization env vars**: `enterprise_authorization` also supports selective `*_from_env` references for issuer, audience, mode, scopes, tool categories, and claim mappings so HTTP enterprise auth can be deployed without editing the profile file. See [docs/OAUTH.md](./docs/OAUTH.md) for the supported fields and formats.
 
 **CLI mapping rule**: Documented `MCP4_*` env vars can be passed as a CLI flag by dropping the `MCP4_` prefix and using kebab-case. Example: `MCP4_PROFILE_PATH` -> `--profile-path`, `MCP4_OPENAPI_SPEC_PATH` -> `--openapi-spec-path`. Unknown flags cause startup to fail.
 

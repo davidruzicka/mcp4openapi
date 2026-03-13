@@ -117,6 +117,41 @@ export class OAuthClientStoreCapacityError extends MCPError {
   }
 }
 
+export class EnterpriseAuthorizationConfigurationError extends MCPError {
+  constructor(message: string, details?: Record<string, unknown>) {
+    super(message, 'ENTERPRISE_AUTHORIZATION_CONFIGURATION_ERROR', details);
+    this.name = 'EnterpriseAuthorizationConfigurationError';
+  }
+}
+
+export class EnterpriseTokenValidationError extends MCPError {
+  constructor(message: string, details?: Record<string, unknown>) {
+    super(message, 'ENTERPRISE_TOKEN_VALIDATION_ERROR', details);
+    this.name = 'EnterpriseTokenValidationError';
+  }
+}
+
+export class EnterpriseTokenReplayError extends MCPError {
+  constructor(message: string = 'Enterprise assertion replay detected', details?: Record<string, unknown>) {
+    super(message, 'ENTERPRISE_TOKEN_REPLAY_ERROR', details);
+    this.name = 'EnterpriseTokenReplayError';
+  }
+}
+
+export class EnterpriseIssuerDiscoveryError extends MCPError {
+  constructor(message: string, details?: Record<string, unknown>) {
+    super(message, 'ENTERPRISE_ISSUER_DISCOVERY_ERROR', details);
+    this.name = 'EnterpriseIssuerDiscoveryError';
+  }
+}
+
+export class EnterprisePolicyViolationError extends MCPError {
+  constructor(message: string, details?: Record<string, unknown>) {
+    super(message, 'ENTERPRISE_POLICY_VIOLATION_ERROR', details);
+    this.name = 'EnterprisePolicyViolationError';
+  }
+}
+
 export class NetworkError extends MCPError {
   constructor(message: string, statusCode?: number, details?: Record<string, unknown>) {
     super(message, 'NETWORK_ERROR', { statusCode, ...details });

@@ -2265,6 +2265,338 @@ describe('ProfileLoader', () => {
     });
   });
 
+  describe('enterprise authorization validation', () => {
+    afterEach(() => {
+      delete process.env.ENTERPRISE_MODE;
+      delete process.env.ENTERPRISE_ISSUER;
+      delete process.env.ENTERPRISE_ALLOWED_ALGS;
+      delete process.env.ENTERPRISE_CATEGORIES;
+    });
+
+    it('normalizes valid enterprise authorization config', async () => {
+      const loader = new ProfileLoader();
+      const fs = await import('fs/promises');
+      const tmpPath = `/tmp/enterprise-valid-${Date.now()}-${Math.random()}.json`;
+      await fs.writeFile(
+        tmpPath,
+        JSON.stringify({
+          profile_name: 'enterprise-valid',
+          enterprise_authorization: {
+            enabled: true,
+            issuer: { issuer: 'https://issuer.example', jwks_uri: 'https://issuer.example/jwks' },
+            token_exchange: {
+              grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+              allowed_client_ids: ['enterprise-client'],
+            },
+            access_policy: { claim_mappings: { subject: 'sub' }, scopes_supported: ['api'], default_scopes: ['api'] }
+          },
+          tools: [{
+            name: 'tool_a',
+            description: 'Tool A',
+            operations: { list: 'getItems' },
+            parameters: { action: { type: 'string', description: 'Action', enum: ['list'], required: true } }
+          }]
+        }),
+        'utf-8'
+      );
+
+      const profile = await loader.load(tmpPath);
+      expect(profile.enterprise_authorization?.mode).toBe('required');
+      expect(profile.enterprise_authorization?.token_exchange.required_claims).toContain('sub');
+    });
+
+    it('loads env-backed enterprise authorization values from the profile', async () => {
+      process.env.ENTERPRISE_MODE = 'optional';
+      process.env.ENTERPRISE_ISSUER = 'https://env-issuer.example';
+      process.env.ENTERPRISE_ALLOWED_ALGS = 'RS384';
+      process.env.ENTERPRISE_CATEGORIES = 'list,read';
+
+      const loader = new ProfileLoader();
+      const fs = await import('fs/promises');
+      const tmpPath = `/tmp/enterprise-env-backed-${Date.now()}-${Math.random()}.json`;
+      await fs.writeFile(
+        tmpPath,
+        JSON.stringify({
+          profile_name: 'enterprise-env-backed',
+          enterprise_authorization: {
+            enabled: true,
+            mode: 'required',
+            mode_from_env: 'ENTERPRISE_MODE',
+            issuer: {
+              issuer: 'https://issuer.example',
+              issuer_from_env: 'ENTERPRISE_ISSUER',
+              allowed_algs: ['RS256'],
+              allowed_algs_from_env: 'ENTERPRISE_ALLOWED_ALGS'
+            },
+            token_exchange: {
+              grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+              allowed_client_ids: ['enterprise-client']
+            },
+            access_policy: {
+              scopes_supported: ['api'],
+              default_scopes: ['api'],
+              allowed_tool_categories_from_env: 'ENTERPRISE_CATEGORIES'
+            }
+          },
+          tools: [{
+            name: 'tool_a',
+            description: 'Tool A',
+            operations: { list: 'getItems' },
+            parameters: { action: { type: 'string', description: 'Action', enum: ['list'], required: true } }
+          }]
+        }),
+        'utf-8'
+      );
+
+      const profile = await loader.load(tmpPath);
+      expect(profile.enterprise_authorization?.mode).toBe('optional');
+      expect(profile.enterprise_authorization?.issuer.issuer).toBe('https://env-issuer.example');
+      expect(profile.enterprise_authorization?.issuer.allowed_algs).toEqual(['RS384']);
+      expect(profile.enterprise_authorization?.access_policy?.allowed_tool_categories).toEqual(['list', 'read']);
+    });
+
+    it('fails profile loading when enterprise env-backed authorization values are invalid', async () => {
+      process.env.ENTERPRISE_INVALID_CATEGORIES = 'list,unknown';
+
+      const loader = new ProfileLoader();
+      const fs = await import('fs/promises');
+      const tmpPath = `/tmp/enterprise-env-invalid-categories-${Date.now()}-${Math.random()}.json`;
+      await fs.writeFile(
+        tmpPath,
+        JSON.stringify({
+          profile_name: 'enterprise-env-invalid-categories',
+          enterprise_authorization: {
+            enabled: true,
+            issuer: {
+              issuer: 'https://issuer.example',
+              jwks_uri: 'https://issuer.example/jwks'
+            },
+            token_exchange: {
+              grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+              allowed_client_ids: ['enterprise-client']
+            },
+            access_policy: {
+              scopes_supported: ['api'],
+              default_scopes: ['api'],
+              allowed_tool_categories_from_env: 'ENTERPRISE_INVALID_CATEGORIES'
+            }
+          },
+          tools: [{
+            name: 'tool_a',
+            description: 'Tool A',
+            operations: { list: 'getItems' },
+            parameters: { action: { type: 'string', description: 'Action', enum: ['list'], required: true } }
+          }]
+        }),
+        'utf-8'
+      );
+
+      await expect(loader.load(tmpPath)).rejects.toThrow(/unsupported value 'unknown'/);
+    });
+
+    it('fails profile loading when enterprise claim mappings env JSON is malformed', async () => {
+      process.env.ENTERPRISE_INVALID_CLAIM_MAPPINGS = '{';
+
+      const loader = new ProfileLoader();
+      const fs = await import('fs/promises');
+      const tmpPath = `/tmp/enterprise-env-invalid-claims-${Date.now()}-${Math.random()}.json`;
+      await fs.writeFile(
+        tmpPath,
+        JSON.stringify({
+          profile_name: 'enterprise-env-invalid-claims',
+          enterprise_authorization: {
+            enabled: true,
+            issuer: {
+              issuer: 'https://issuer.example',
+              jwks_uri: 'https://issuer.example/jwks'
+            },
+            token_exchange: {
+              grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+              allowed_client_ids: ['enterprise-client']
+            },
+            access_policy: {
+              scopes_supported: ['api'],
+              default_scopes: ['api'],
+              claim_mappings_from_env: 'ENTERPRISE_INVALID_CLAIM_MAPPINGS'
+            }
+          },
+          tools: [{
+            name: 'tool_a',
+            description: 'Tool A',
+            operations: { list: 'getItems' },
+            parameters: { action: { type: 'string', description: 'Action', enum: ['list'], required: true } }
+          }]
+        }),
+        'utf-8'
+      );
+
+      await expect(loader.load(tmpPath)).rejects.toThrow(/must be valid JSON/);
+    });
+
+    it('fails profile loading when enterprise env var references are empty', async () => {
+      const loader = new ProfileLoader();
+      const fs = await import('fs/promises');
+      const tmpPath = `/tmp/enterprise-env-empty-reference-${Date.now()}-${Math.random()}.json`;
+      await fs.writeFile(
+        tmpPath,
+        JSON.stringify({
+          profile_name: 'enterprise-env-empty-reference',
+          enterprise_authorization: {
+            enabled: true,
+            issuer: {
+              issuer: 'https://issuer.example',
+              jwks_uri: 'https://issuer.example/jwks'
+            },
+            token_exchange: {
+              grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+              allowed_client_ids: ['enterprise-client']
+            },
+            access_policy: {
+              scopes_supported: ['api'],
+              default_scopes: ['api'],
+              allowed_tool_categories_from_env: '   '
+            }
+          },
+          tools: [{
+            name: 'tool_a',
+            description: 'Tool A',
+            operations: { list: 'getItems' },
+            parameters: { action: { type: 'string', description: 'Action', enum: ['list'], required: true } }
+          }]
+        }),
+        'utf-8'
+      );
+
+      await expect(loader.load(tmpPath)).rejects.toThrow(/allowed_tool_categories_from_env must not be empty/);
+    });
+
+    it('rejects non-https enterprise issuer URLs', async () => {
+      const loader = new ProfileLoader();
+      const fs = await import('fs/promises');
+      const previousNodeEnv = process.env.NODE_ENV;
+      process.env.NODE_ENV = 'production';
+      const tmpPath = `/tmp/enterprise-invalid-${Date.now()}-${Math.random()}.json`;
+      await fs.writeFile(
+        tmpPath,
+        JSON.stringify({
+          profile_name: 'enterprise-invalid',
+          enterprise_authorization: {
+            enabled: true,
+            issuer: { issuer: 'http://issuer.example' },
+            token_exchange: { grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer' }
+          },
+          tools: [{
+            name: 'tool_a',
+            description: 'Tool A',
+            operations: { list: 'getItems' },
+            parameters: { action: { type: 'string', description: 'Action', enum: ['list'], required: true } }
+          }]
+        }),
+        'utf-8'
+      );
+
+      await expect(loader.load(tmpPath)).rejects.toThrow(/must use https/);
+      process.env.NODE_ENV = previousNodeEnv;
+    });
+
+    it('rejects enterprise profiles without allowed clients when dynamic registration uses secure default', async () => {
+      const loader = new ProfileLoader();
+      const fs = await import('fs/promises');
+      const tmpPath = `/tmp/enterprise-clients-invalid-${Date.now()}-${Math.random()}.json`;
+      await fs.writeFile(
+        tmpPath,
+        JSON.stringify({
+          profile_name: 'enterprise-client-validation',
+          enterprise_authorization: {
+            enabled: true,
+            issuer: { issuer: 'https://issuer.example', jwks_uri: 'https://issuer.example/jwks' },
+            token_exchange: { grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer' },
+            access_policy: { scopes_supported: ['api'], default_scopes: ['api'] }
+          },
+          tools: [{
+            name: 'tool_a',
+            description: 'Tool A',
+            operations: { list: 'getItems' },
+            parameters: { action: { type: 'string', description: 'Action', enum: ['list'], required: true } }
+          }]
+        }),
+        'utf-8'
+      );
+
+      await expect(loader.load(tmpPath)).rejects.toThrow(/allowed_client_ids is required/);
+    });
+
+    it('rejects enterprise resources that are not included in audience', async () => {
+      const loader = new ProfileLoader();
+      const fs = await import('fs/promises');
+      const tmpPath = `/tmp/enterprise-resource-audience-invalid-${Date.now()}-${Math.random()}.json`;
+      await fs.writeFile(
+        tmpPath,
+        JSON.stringify({
+          profile_name: 'enterprise-resource-audience-invalid',
+          enterprise_authorization: {
+            enabled: true,
+            issuer: { issuer: 'https://issuer.example', jwks_uri: 'https://issuer.example/jwks' },
+            resource: 'https://resource.example/a',
+            audience: ['https://resource.example/b'],
+            token_exchange: {
+              grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+              allowed_client_ids: ['enterprise-client']
+            }
+          },
+          tools: [{
+            name: 'tool_a',
+            description: 'Tool A',
+            operations: { list: 'getItems' },
+            parameters: { action: { type: 'string', description: 'Action', enum: ['list'], required: true } }
+          }]
+        }),
+        'utf-8'
+      );
+
+      await expect(loader.load(tmpPath)).rejects.toThrow(/resource must be included in audience/);
+    });
+
+    it('rejects required enterprise mode when oauth auth metadata is configured', async () => {
+      const loader = new ProfileLoader();
+      const fs = await import('fs/promises');
+      const tmpPath = `/tmp/enterprise-required-oauth-invalid-${Date.now()}-${Math.random()}.json`;
+      await fs.writeFile(
+        tmpPath,
+        JSON.stringify({
+          profile_name: 'enterprise-required-oauth-invalid',
+          enterprise_authorization: {
+            enabled: true,
+            mode: 'required',
+            issuer: { issuer: 'https://issuer.example', jwks_uri: 'https://issuer.example/jwks' },
+            token_exchange: {
+              grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+              allowed_client_ids: ['enterprise-client']
+            }
+          },
+          interceptors: {
+            auth: {
+              type: 'oauth',
+              authorization_url: 'https://issuer.example/authorize',
+              token_url: 'https://issuer.example/token',
+              client_id: 'client-id',
+              scopes: ['api']
+            }
+          },
+          tools: [{
+            name: 'tool_a',
+            description: 'Tool A',
+            operations: { list: 'getItems' },
+            parameters: { action: { type: 'string', description: 'Action', enum: ['list'], required: true } }
+          }]
+        }),
+        'utf-8'
+      );
+
+      await expect(loader.load(tmpPath)).rejects.toThrow(/cannot be combined with profile oauth auth metadata/);
+    });
+  });
+
   describe('cache interceptor validation', () => {
     it('should reject non-positive cache max_memory_bytes', async () => {
       const loader = new ProfileLoader();
