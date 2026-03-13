@@ -238,10 +238,6 @@ export const toolDefinitionSchema = z.object({
     apps: toolAppsDefinitionSchema.optional()
 });
 
-export const resourceCompletionDefinitionSchema = z.object({
-    variables: z.record(z.string(), resourceCompletionVariableDefinitionSchema)
-});
-
 export const enterpriseAuthorizationConfigSchema = z.object({
     enabled: z.boolean(),
     mode: z.union([z.literal("required"), z.literal("optional")]).optional(),
@@ -253,6 +249,10 @@ export const enterpriseAuthorizationConfigSchema = z.object({
     token_exchange: enterpriseTokenExchangeConfigSchema,
     access_policy: enterpriseAccessPolicyConfigSchema.optional(),
     metadata: enterpriseMetadataConfigSchema.optional()
+});
+
+export const resourceCompletionDefinitionSchema = z.object({
+    variables: z.record(z.string(), resourceCompletionVariableDefinitionSchema)
 });
 
 export const promptMessageTemplateSchema = z.object({
