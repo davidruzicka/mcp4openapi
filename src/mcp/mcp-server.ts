@@ -9,13 +9,20 @@ import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import {
   CallToolRequestSchema,
-  ListToolsRequestSchema,
-  ListPromptsRequestSchema,
+  CompleteRequestSchema,
   GetPromptRequestSchema,
+  ListPromptsRequestSchema,
+  ListResourceTemplatesRequestSchema,
+  ListResourcesRequestSchema,
+  ListToolsRequestSchema,
+  ReadResourceRequestSchema,
+  type CompleteRequest,
 } from '@modelcontextprotocol/sdk/types.js';
 
 import { OpenAPIParser } from '../openapi/openapi-parser.js';
+import { createLoadedProfileAppsModel, extractTemplateVariables, getNestedValue, type LoadedProfileAppsModel, type LoadedResourceFetchStrategy, type LoadedTemplateResource, type LoadedCompletionVariable } from '../profile/profile-apps.js';
 import { ProfileLoader } from '../profile/profile-loader.js';
+import { composeToolDescriptor } from '../tooling/tool-app-descriptor.js';
 import { ToolGenerator } from '../tooling/tool-generator.js';
 import { applyParameterDefaults, normalizeArguments } from '../validation/argument-normalizer.js';
 import { CompositeExecutor } from '../tooling/composite-executor.js';
@@ -72,9 +79,11 @@ export class MCPServer {
   private server: Server;
   private parser: OpenAPIParser;
   private profile?: Profile;
+  private appsModel?: LoadedProfileAppsModel;
   private toolGenerator: ToolGenerator;
   private httpClientFactory = new HttpClientFactory();
   private compositeExecutor?: CompositeExecutor;
+  private appsFetchCache = new Map<string, { expiresAt: number; value: string }>();
   private schemaValidator: SchemaValidator;
   private logger: Logger;
   private httpTransport: HttpTransport | null = null;
@@ -396,6 +405,8 @@ export class MCPServer {
         capabilities: {
           tools: {},
           prompts: {},
+          resources: {},
+          completions: {},
         },
       }
     );
@@ -416,12 +427,16 @@ export class MCPServer {
     this.logger.info('Loaded OpenAPI spec', { specPath });
 
     // Load or create MCP profile
+    this.appsModel = undefined;
+    this.appsFetchCache.clear();
     if (profilePath) {
       const loader = new ProfileLoader();
-      this.profile = await loader.load(profilePath);
+      this.profile = await loader.load(profilePath, this.parser);
+      this.appsModel = await createLoadedProfileAppsModel(this.profile, { profilePath, parser: this.parser });
       this.logger.info('Loaded profile', {
         profile: this.profile.profile_name,
         toolCount: this.profile.tools.length,
+        resourceCount: this.profile.resources?.length || 0,
       });
     } else {
       this.profile = ProfileLoader.createDefaultProfile('default', this.parser);
@@ -773,9 +788,7 @@ export class MCPServer {
           throw new ConfigurationError('Server not initialized. Call initialize() first.');
         }
 
-        const tools = this.profile.tools.map(toolDef =>
-          this.toolGenerator.generateTool(toolDef)
-        );
+        const tools = this.profile.tools.map((toolDef) => this.buildToolDescriptor(toolDef));
 
         return { tools };
       } catch (err) {
@@ -819,6 +832,22 @@ export class MCPServer {
         throw new Error(`Internal error (correlation ID: ${correlationId})`);
       }
     });
+
+    this.server.setRequestHandler(ListResourcesRequestSchema, async () => ({
+      resources: this.listResources(),
+    }));
+
+    this.server.setRequestHandler(ListResourceTemplatesRequestSchema, async () => ({
+      resourceTemplates: this.listResourceTemplates(),
+    }));
+
+    this.server.setRequestHandler(ReadResourceRequestSchema, async (request) => (
+      this.readResource(request.params.uri)
+    ));
+
+    this.server.setRequestHandler(CompleteRequestSchema, async (request) => (
+      this.completeResourceArgument(request)
+    ));
 
     // Execute tool
     this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
@@ -1373,6 +1402,8 @@ export class MCPServer {
       capabilities: {
         tools: Record<string, never>;
         prompts: { listChanged: boolean };
+        resources: { listChanged: boolean; subscribe: boolean };
+        completions: Record<string, never>;
       };
       sessionId?: string;
     } = {
@@ -1386,6 +1417,11 @@ export class MCPServer {
         prompts: {
           listChanged: false,
         },
+        resources: {
+          listChanged: false,
+          subscribe: false,
+        },
+        completions: {},
       },
     };
 
@@ -1651,7 +1687,7 @@ export class MCPServer {
       const allowedSet = sessionFilter?.allowedToolNames;
       const tools = this.profile?.tools
         .filter(toolDef => !allowedSet || allowedSet.has(toolDef.name))
-        .map(toolDef => this.toolGenerator!.generateTool(toolDef)) || [];
+        .map(toolDef => this.buildToolDescriptor(toolDef)) || [];
 
       return {
         jsonrpc: '2.0',
@@ -1714,6 +1750,68 @@ export class MCPServer {
       }
     }
 
+    if (req.method === 'resources/list') {
+      return {
+        jsonrpc: '2.0',
+        id: req.id,
+        result: {
+          resources: this.listResources(),
+        },
+      };
+    }
+
+    if (req.method === 'resources/templates/list') {
+      return {
+        jsonrpc: '2.0',
+        id: req.id,
+        result: {
+          resourceTemplates: this.listResourceTemplates(),
+        },
+      };
+    }
+
+    if (req.method === 'resources/read') {
+      try {
+        const params = (req.params || {}) as Record<string, unknown>;
+        if (typeof params.uri !== 'string' || !params.uri.trim()) {
+          throw new ValidationError('resources/read requires string parameter "uri"');
+        }
+        return {
+          jsonrpc: '2.0',
+          id: req.id,
+          result: await this.readResource(params.uri, sessionId, profileId),
+        };
+      } catch (error) {
+        return {
+          jsonrpc: '2.0',
+          id: req.id,
+          error: {
+            code: error instanceof ValidationError ? -32602 : -32601,
+            message: (error as Error).message,
+          },
+        };
+      }
+    }
+
+    if (req.method === 'completion/complete') {
+      try {
+        return {
+          jsonrpc: '2.0',
+          id: req.id,
+          result: await this.completeResourceArgument(req as CompleteRequest, sessionId, profileId),
+        };
+      } catch (error) {
+        return {
+          jsonrpc: '2.0',
+          id: req.id,
+          error: {
+            code: error instanceof ValidationError ? -32602 : -32601,
+            message: (error as Error).message,
+          },
+        };
+      }
+    }
+
     // Unknown method
     return {
       jsonrpc: '2.0',
@@ -1723,6 +1821,291 @@ export class MCPServer {
         message: `Method not found: ${req.method}`,
       },
     };
+  }
+
+  private buildToolDescriptor(toolDef: ToolDefinition) {
+    return composeToolDescriptor(this.toolGenerator.generateTool(toolDef), toolDef, this.appsModel);
+  }
+
+  private listResources() {
+    return this.appsModel?.fixedResources.map((resource) => ({
+      uri: resource.uri,
+      name: resource.name,
+      title: resource.title,
+      description: resource.description,
+      mimeType: resource.mimeType,
+      _meta: resource.appsMeta,
+    })) || [];
+  }
+
+  private listResourceTemplates() {
+    return this.appsModel?.templateResources.map((resource) => ({
+      uriTemplate: resource.uriTemplate,
+      name: resource.name,
+      title: resource.title,
+      description: resource.description,
+      mimeType: resource.mimeType,
+      _meta: resource.appsMeta,
+    })) || [];
+  }
+
+  private async readResource(
+    uri: string,
+    sessionId?: string,
+    profileId?: string,
+  ): Promise<{ contents: Array<Record<string, unknown>> }> {
+    const fixedResource = this.appsModel?.resourcesByUri.get(uri);
+    if (fixedResource) {
+      const text = fixedResource.text ?? await this.fetchResourceContent(fixedResource.fetchStrategy, {}, sessionId, profileId);
+      return {
+        contents: [{
+          uri,
+          mimeType: fixedResource.mimeType,
+          _meta: fixedResource.appsMeta,
+          text,
+        }],
+      };
+    }
+
+    const templateMatches = (this.appsModel?.templateResources || [])
+      .map((resource) => ({ resource, variables: extractTemplateVariables(resource, uri) }))
+      .filter((candidate): candidate is { resource: LoadedTemplateResource; variables: Record<string, string> } => !!candidate.variables);
+
+    if (templateMatches.length === 0) {
+      throw new ResourceNotFoundError(uri, 'Resource');
+    }
+    if (templateMatches.length > 1) {
+      throw new ValidationError(`Ambiguous resource uri '${uri}'`, { uri });
+    }
+
+    const match = templateMatches[0];
+    const text = match.resource.staticText
+      ?? await this.fetchResourceContent(match.resource.fetchStrategy, match.variables, sessionId, profileId);
+    if (text === undefined) {
+      throw new ResourceNotFoundError(uri, 'Resource');
+    }
+
+    return {
+      contents: [{
+        uri,
+        mimeType: match.resource.mimeType,
+        _meta: match.resource.appsMeta,
+        text,
+      }],
+    };
+  }
+
+  private async completeResourceArgument(
+    request: CompleteRequest,
+    sessionId?: string,
+    profileId?: string,
+  ) {
+    const params = request.params as Record<string, unknown>;
+    const ref = params.ref as { type?: string; uri?: string } | undefined;
+    const argument = params.argument as { name?: string; value?: string } | undefined;
+    const context = params.context as { arguments?: Record<string, string> } | undefined;
+
+    if (ref?.type !== 'ref/resource' || typeof ref.uri !== 'string') {
+      throw new ValidationError('completion/complete requires a resource ref');
+    }
+    if (!argument?.name || typeof argument.value !== 'string') {
+      throw new ValidationError('completion/complete requires argument.name and argument.value');
+    }
+
+    const resourceUri = ref.uri;
+    const resource = this.appsModel?.templateResourcesByUriTemplate.get(resourceUri)
+      || this.appsModel?.templateResources.find((candidate) => !!extractTemplateVariables(candidate, resourceUri));
+    if (!resource?.completion) {
+      throw new ResourceNotFoundError(resourceUri, 'Resource template');
+    }
+
+    const completionVariable = resource.completion.variables[argument.name];
+    if (!completionVariable) {
+      throw new ValidationError(`No completion configured for variable '${argument.name}'`);
+    }
+
+    const contextArguments = context?.arguments || {};
+    const values = await this.resolveCompletionValues(
+      completionVariable,
+      argument.value,
+      contextArguments,
+      sessionId,
+      profileId,
+    );
+    return {
+      completion: {
+        values,
+        total: values.length,
+        hasMore: false,
+      },
+    };
+  }
+
+  private async fetchResourceContent(
+    strategy: LoadedResourceFetchStrategy | undefined,
+    variables: Record<string, string>,
+    sessionId?: string,
+    profileId?: string,
+  ): Promise<string | undefined> {
+    if (!strategy) {
+      return undefined;
+    }
+
+    const input = this.buildMappedInput(variables, strategy.parameterMapping);
+    const cacheKey = this.buildAppsFetchCacheKey(strategy, input, sessionId, profileId);
+    if (cacheKey) {
+      const cached = this.appsFetchCache.get(cacheKey);
+      if (cached && cached.expiresAt > Date.now()) {
+        return cached.value;
+      }
+      this.appsFetchCache.delete(cacheKey);
+    }
+
+    const response = await this.executeAppsFetch(strategy, input, sessionId, profileId);
+    const extracted = getNestedValue(response, strategy.resultPath);
+    const text = typeof extracted === 'string'
+      ? extracted
+      : JSON.stringify(extracted === undefined ? response : extracted, null, 2);
+
+    if (cacheKey && text !== undefined) {
+      this.appsFetchCache.set(cacheKey, {
+        expiresAt: Date.now() + strategy.cacheTtlSeconds! * 1000,
+        value: text,
+      });
+    }
+
+    return text;
+  }
+
+  private async resolveCompletionValues(
+    variable: LoadedCompletionVariable,
+    partialValue: string,
+    contextArguments: Record<string, string>,
+    sessionId?: string,
+    profileId?: string,
+  ): Promise<string[]> {
+    const filterValues = (values: string[]) => values
+      .filter((value) => value.toLowerCase().includes(partialValue.toLowerCase()))
+      .slice(0, 100);
+
+    if (variable.source === 'static') {
+      return filterValues(variable.values || []);
+    }
+
+    const response = await this.executeAppsFetch(
+      variable,
+      this.buildMappedInput(contextArguments, variable.parameterMapping),
+      sessionId,
+      profileId,
+    );
+    const extracted = getNestedValue(response, variable.resultPath);
+    const collection = Array.isArray(extracted) ? extracted : [];
+    const values = collection
+      .map((item) => this.extractCompletionValue(item, variable))
+      .filter((value): value is string => typeof value === 'string' && value.length > 0);
+
+    return filterValues(Array.from(new Set(values)));
+  }
+
+  private extractCompletionValue(item: unknown, variable: LoadedCompletionVariable): string | undefined {
+    if (typeof item === 'string') {
+      return item;
+    }
+    if (!item || typeof item !== 'object') {
+      return undefined;
+    }
+    const value = getNestedValue(item, variable.valuePath || variable.labelPath);
+    return typeof value === 'string' ? value : undefined;
+  }
+
+  private buildMappedInput(source: Record<string, string>, parameterMapping: Record<string, string>): Record<string, unknown> {
+    if (Object.keys(parameterMapping).length === 0) {
+      return { ...source };
+    }
+
+    return Object.entries(parameterMapping).reduce<Record<string, unknown>>((result, [targetKey, sourceKey]) => {
+      if (source[sourceKey] !== undefined) {
+        result[targetKey] = source[sourceKey];
+      }
+      return result;
+    }, {});
+  }
+
+  private buildAppsFetchCacheKey(
+    strategy: LoadedResourceFetchStrategy,
+    args: Record<string, unknown>,
+    sessionId?: string,
+    profileId?: string,
+  ): string | undefined {
+    if (!strategy.cacheTtlSeconds || strategy.cacheTtlSeconds <= 0) {
+      return undefined;
+    }
+
+    return JSON.stringify({
+      source: strategy.source,
+      operation: strategy.operation,
+      compositeTool: strategy.compositeTool,
+      resultPath: strategy.resultPath,
+      args,
+      sessionId,
+      profileId,
+    });
+  }
+
+  private async executeAppsFetch(
+    strategy: LoadedResourceFetchStrategy | LoadedCompletionVariable,
+    args: Record<string, unknown>,
+    sessionId?: string,
+    profileId?: string,
+  ): Promise<unknown> {
+    const task = strategy.source === 'operation'
+      ? this.executeAppsOperation(strategy.operation!, args, sessionId, profileId)
+      : this.executeAppsComposite(strategy.compositeTool!, args, sessionId, profileId);
+    return await Promise.race([
+      task,
+      new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new ValidationError('Apps fetch timed out')), strategy.timeoutMs);
+      }),
+    ]);
+  }
+
+  private async executeAppsOperation(
+    operationId: string,
+    args: Record<string, unknown>,
+    sessionId?: string,
+    profileId?: string,
+  ): Promise<unknown> {
+    const operation = this.parser.getOperation(operationId);
+    if (!operation) {
+      throw new OperationNotFoundError(operationId);
+    }
+    const path = this.resolvePath(operation.path, args);
+    const queryParams = this.extractQueryParams(operation, args);
+    const httpClient = await this.getHttpClientForSession(sessionId, profileId);
+    const response = await httpClient.request(operation.method, path, {
+      params: queryParams,
+      operationId,
+    });
+    return response.body;
+  }
+
+  private async executeAppsComposite(
+    toolName: string,
+    args: Record<string, unknown>,
+    sessionId?: string,
+    profileId?: string,
+  ): Promise<unknown> {
+    const toolDef = this.profile?.tools.find((tool) => tool.name === toolName);
+    if (!toolDef?.steps) {
+      throw new ResourceNotFoundError(toolName, 'Composite tool');
+    }
+    const compositeResult = await this.compositeExecutor?.execute(
+      toolDef.steps,
+      args,
+      false,
+      await this.getHttpClientForSession(sessionId, profileId),
+    );
+    return compositeResult?.data;
   }
 
   private listPrompts(): Array<{

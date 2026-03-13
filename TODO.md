@@ -6,8 +6,6 @@
 
 ## Contents
 
-- [P1: Correctness and Core Features](#p1-correctness-and-core-features)
-  - [1. Validate Operations Against OpenAPI Spec in ProfileLoader](#1-validate-operations-against-openapi-spec-in-profileloader)
 - [P2: Nice-to-Have](#p2-nice-to-have)
   - [2. Export Profile Command](#2-export-profile-command)
   - [3. OpenAPI Operation Filter for Default Profile](#3-openapi-operation-filter-for-default-profile)
@@ -21,25 +19,6 @@
   - [14. Consider strict OAuth redirect scheme allowlist](#14-consider-strict-oauth-redirect-scheme-allowlist)
   - [15. Replace JSON fingerprint auth comparison for tenant collisions](#15-replace-json-fingerprint-auth-comparison-for-tenant-collisions)
   - [16. Extract tenant session lifecycle from HttpTransport](#16-extract-tenant-session-lifecycle-from-httptransport)
-
-## P1: Correctness and Core Features
-
-### 1. Validate Operations Against OpenAPI Spec in ProfileLoader
-**Current**: Profile validation only checks internal consistency (operation keys match action enum). Validation against actual OpenAPI spec operations happens only in `scripts/validate-profile.ts`, not at runtime in `ProfileLoader`.
-
-**Goal**: Catch invalid operationIds at profile load time, not at first tool execution.
-
-**Implementation**:
-- In `ProfileLoader.load()`, accept optional `OpenAPIParser` parameter
-- After `validateLogic()`, validate each `operationId` in `tool.operations` exists in OpenAPI spec
-- Validate composite step `call` values exist as operations
-- Provide helpful error: "Operation 'getProjects' in tool 'project_tool' not found in OpenAPI spec. Available operations: getProject, listProjects, ..."
-
-**Files to modify**:
-- `src/profile-loader.ts` - add `validateOperations(parser: OpenAPIParser)` method
-- `src/mcp-server.ts` - pass parser to ProfileLoader
-
-**Estimated effort**: 1-2 hours
 
 ## P2: Nice-to-Have
 

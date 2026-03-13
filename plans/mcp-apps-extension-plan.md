@@ -8,7 +8,16 @@
 ## Status
 - [x] Decisions reviewed interactively.
 - [x] Plan documented in `plans/`.
-- [ ] Implementation not started.
+- [x] Follow-up gap checklist completed.
+
+## Follow-up Gap Checklist (Mar 2026)
+- [x] Propagate HTTP session/profile context through Apps resource reads and completion-backed fetches.
+- [x] Validate Apps fetch/completion parameter mappings and extraction-path requirements more strictly.
+- [x] Support explicit tool-to-template variable mapping when direct parameter derivation is not possible.
+- [x] Use `cache_ttl_seconds` for bounded fetch-result caching.
+- [x] Expand Apps validation and MCP coverage for the missing failure/edge cases.
+- [x] Add HTTP coverage for `completion/complete`.
+- [x] Tighten Apps validation error codes/details where follow-up gaps exposed inconsistencies.
 
 ## Confirmed Decisions
 

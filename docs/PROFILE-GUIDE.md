@@ -60,6 +60,7 @@ This guide explains how to create custom MCP tool profiles for any OpenAPI-compl
   "resource_documentation": "https://docs.example.com/api",
   "tools": [ ... ],
   "prompts": [ ... ],
+  "resources": [ ... ],
   "interceptors": { ... }
 }
 ```
@@ -77,6 +78,7 @@ This guide explains how to create custom MCP tool profiles for any OpenAPI-compl
 - **`resource_documentation`** (optional): OAuth 2.0 resource documentation URL (overrides OpenAPI `externalDocs.url`)
 - **`tools`** (required): Array of tool definitions
 - **`prompts`** (optional): Array of MCP prompt definitions exposed via `prompts/list` and `prompts/get`
+- **`resources`** (optional): Array of MCP Apps/static/template resource definitions exposed via `resources/*`
 - **`interceptors`** (optional): Auth, rate limiting, retry configuration
 
 **Profile selection**: If you set `profile_id` (or `profile_aliases`) and `openapi_spec_path`, you can launch the server with `--profile <id>` or `MCP4_PROFILE=<id>` without setting `--openapi-spec-path` or `MCP4_OPENAPI_SPEC_PATH`.
@@ -93,6 +95,62 @@ The `resource_name` and `resource_documentation` fields are used in OAuth 2.0 Pr
   - Priority: Profile > OpenAPI `externalDocs.url` > omitted if not available
 
 These fields are exposed in the `/.well-known/oauth-protected-resource/mcp` endpoint and help OAuth clients (like Cursor) display meaningful information about the protected resource. See [OAuth Configuration Guide](./OAUTH.md) for details.
+
+## MCP Apps Resources
+
+`resources[]` lets a profile expose read-only UI assets and dynamic resource documents through MCP:
+- `kind: "static"` requires a fixed `uri` and exactly one content source: `file_path`, bounded `inline_text` (16 KB max), or `fetch`.
+- `file_path` must resolve inside the profile directory after normalization and symlink resolution; escaping the profile directory is rejected at load time.
+- `kind: "template"` requires `uri_template`, supports URI-variable completion, and can serve static or fetch-backed content.
+- `mime_type` must stay text-safe (`text/*` or `application/json`).
+- fetch-backed resources/completions may only call declared read-only OpenAPI operations (`GET`/`HEAD`) or read-only composite tools.
+- tool `apps.output_template_resource_uri` must point at a declared resource URI or URI template, and template variables must be derivable from the tool parameters, `parameter_aliases`, or explicit `apps.template_parameter_mapping`.
+- `fetch.cache_ttl_seconds` enables bounded in-process caching for fetch-backed resource reads; cache keys are scoped to the resolved strategy, args, session, and profile context.
+
+Example:
+
+```json
+{
+  "resources": [
+    {
+      "name": "item_widget_shell",
+      "kind": "template",
+      "uri_template": "ui://items/{item_id}",
+      "mime_type": "text/html",
+      "file_path": "./widgets/item.html",
+      "completion": {
+        "variables": {
+          "item_id": {
+            "source": "operation",
+            "operation": "listItems",
+            "value_path": "id"
+          }
+        }
+      },
+      "apps": {
+        "widget_description": "Interactive item widget"
+      }
+    }
+  ],
+  "tools": [
+    {
+      "name": "get_item",
+      "description": "Load a single item",
+      "operations": { "get": "getItem" },
+      "parameters": {
+        "item_id": { "type": "string", "description": "Item id", "required": true }
+      },
+      "apps": {
+        "output_template_resource_uri": "ui://items/{item_id}",
+        "invocation_text": {
+          "invoking": "Loading item",
+          "invoked": "Item loaded"
+        }
+      }
+    }
+  ]
+}
+```
 
 ## Tool Types
 

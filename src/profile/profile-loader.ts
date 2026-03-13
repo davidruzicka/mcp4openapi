@@ -25,6 +25,7 @@ import type {
 import { ValidationError, ConfigurationError } from '../core/errors.js';
 import { profileSchema, authInterceptorSchema } from '../generated-schemas.js';
 import type { OpenAPIParser } from '../openapi/openapi-parser.js';
+import { createLoadedProfileAppsModel } from './profile-apps.js';
 import type { OperationInfo, SchemaInfo } from '../types/openapi.js';
 import { shortenToolName, NamingStrategy, levenshteinDistance, type OperationForNaming } from '../core/naming.js';
 import { normalizeToolName } from '../tool-filter/utils.js';
@@ -56,7 +57,7 @@ const enhancedAuthInterceptorSchema = authInterceptorSchema.refine(
 const enhancedProfileSchema = profileSchema;
 
 export class ProfileLoader {
-  async load(profilePath: string): Promise<Profile> {
+  async load(profilePath: string, parser?: OpenAPIParser): Promise<Profile> {
     const content = await fs.readFile(profilePath, 'utf-8');
     const json = JSON.parse(content);
 
@@ -65,6 +66,8 @@ export class ProfileLoader {
 
     ProfileLoader.normalizeToolNames(profile);
     this.validateLogic(profile);
+    this.validateOperations(profile, parser);
+    await createLoadedProfileAppsModel(profile, { profilePath, parser });
     
     return profile;
   }
@@ -358,6 +361,55 @@ export class ProfileLoader {
 
     if (profile.prompts) {
       this.validatePrompts(profile.prompts, profile.tools);
+    }
+  }
+
+  private validateOperations(profile: Profile, parser?: OpenAPIParser): void {
+    if (!parser) {
+      return;
+    }
+
+    for (const tool of profile.tools) {
+      if (tool.operations) {
+        for (const operationDefinition of Object.values(tool.operations)) {
+          if (typeof operationDefinition === 'string') {
+            if (!parser.getOperation(operationDefinition)) {
+              throw new ValidationError(
+                `Operation '${operationDefinition}' in tool '${tool.name}' not found in OpenAPI spec`,
+                { path: `tools.${tool.name}.operations`, operationId: operationDefinition, toolName: tool.name },
+              );
+            }
+            continue;
+          }
+
+          if (!parser.getOperation(operationDefinition.metadata_endpoint)) {
+            throw new ValidationError(
+              `Operation '${operationDefinition.metadata_endpoint}' in tool '${tool.name}' not found in OpenAPI spec`,
+              { path: `tools.${tool.name}.operations`, operationId: operationDefinition.metadata_endpoint, toolName: tool.name },
+            );
+          }
+
+          if (operationDefinition.download_endpoint && !parser.getOperation(operationDefinition.download_endpoint)) {
+            throw new ValidationError(
+              `Operation '${operationDefinition.download_endpoint}' in tool '${tool.name}' not found in OpenAPI spec`,
+              { path: `tools.${tool.name}.operations`, operationId: operationDefinition.download_endpoint, toolName: tool.name },
+            );
+          }
+        }
+      }
+
+      if (tool.composite && tool.steps) {
+        for (const step of tool.steps) {
+          const [method, stepPath] = step.call.split(' ');
+          const operation = parser.getPath(stepPath)?.operations[method.toLowerCase()];
+          if (!operation) {
+            throw new ValidationError(
+              `Composite step '${step.call}' in tool '${tool.name}' not found in OpenAPI spec`,
+              { path: `tools.${tool.name}.steps`, step: step.call, toolName: tool.name },
+            );
+          }
+        }
+      }
     }
   }
 
