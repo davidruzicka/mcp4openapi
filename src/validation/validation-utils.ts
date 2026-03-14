@@ -71,6 +71,17 @@ export function redactHeader(
 }
 
 /**
+ * Normalize a query parameter key for deterministic comparison across parser paths.
+ */
+function normalizeQueryParamKey(key: string): string {
+  try {
+    return decodeURIComponent(key);
+  } catch {
+    return key;
+  }
+}
+
+/**
  * Redact query parameter from URL string
  */
 export function redactQueryParam(
@@ -82,11 +93,16 @@ export function redactQueryParam(
   if (!/^[A-Za-z0-9_.-]{1,64}$/.test(paramName)) {
     return url; // Unsafe param name; return original unmodified
   }
+
+  const normalizedParamName = normalizeQueryParamKey(paramName);
   
   try {
     const urlObj = new URL(url);
-    if (urlObj.searchParams.has(paramName)) {
-      urlObj.searchParams.set(paramName, '[REDACTED]');
+    const matchingKey = Array.from(urlObj.searchParams.keys()).find(
+      key => normalizeQueryParamKey(key) === normalizedParamName
+    );
+    if (matchingKey) {
+      urlObj.searchParams.set(matchingKey, '[REDACTED]');
     }
     return urlObj.toString();
   } catch {
@@ -101,7 +117,7 @@ export function redactQueryParam(
       const eqIndex = part.indexOf('=');
       if (eqIndex === -1) return part; // skip malformed segment
       const key = part.substring(0, eqIndex);
-      if (key === paramName) {
+      if (normalizeQueryParamKey(key) === normalizedParamName) {
         // Encode [REDACTED] for consistency with URLSearchParams behavior
         return key + '=%5BREDACTED%5D';
       }

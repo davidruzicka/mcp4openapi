@@ -113,6 +113,26 @@ describe('Validation Utils', () => {
       expect(redacted).toBe('/api?token=%5BREDACTED%5D&other=value');
     });
 
+    it('should redact percent-encoded query keys on absolute URLs', () => {
+      const url = 'https://example.com/api?api%2Ekey=secret&other=value';
+      const redacted = redactQueryParam(url, 'api.key');
+      expect(redacted).toContain('api.key=%5BREDACTED%5D');
+      expect(redacted).toContain('other=value');
+    });
+
+    it('should redact percent-encoded query keys on relative URLs', () => {
+      const url = '/api?api%2Ekey=secret&other=value';
+      expect(redactQueryParam(url, 'api.key')).toBe('/api?api%2Ekey=%5BREDACTED%5D&other=value');
+    });
+
+    it('should redact the same logical query key across absolute and relative URLs', () => {
+      const absoluteUrl = 'https://example.com/api?api%2Ekey=secret';
+      const relativeUrl = '/api?api%2Ekey=secret';
+
+      expect(redactQueryParam(absoluteUrl, 'api.key')).toBe('https://example.com/api?api.key=%5BREDACTED%5D');
+      expect(redactQueryParam(relativeUrl, 'api.key')).toBe('/api?api%2Ekey=%5BREDACTED%5D');
+    });
+
     it('should leave URL unchanged when no query string present', () => {
       const url = 'https://example.com/path';
       expect(redactQueryParam(url, 'token')).toBe(url);
