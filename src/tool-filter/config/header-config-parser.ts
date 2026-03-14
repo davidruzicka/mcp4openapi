@@ -5,8 +5,9 @@
 import type { SessionToolFilterRequest, CompiledRegex } from '../types.js';
 import type { RegexCompiler } from '../regex/regex-compiler.js';
 import { ValidationError, ConfigurationError } from '../../core/errors.js';
+import { MAX_TOOL_FILTER_NAME_LENGTH } from '../constants.js';
 
-const MAX_HEADER_ENTRY_LENGTH = 255;
+const MAX_HEADER_ENTRY_LENGTH = MAX_TOOL_FILTER_NAME_LENGTH;
 const DEFAULT_MAX_ENTRIES = 100;
 
 /**

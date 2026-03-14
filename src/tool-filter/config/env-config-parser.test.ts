@@ -127,6 +127,15 @@ describe('EnvConfigParser', () => {
         MCP4_TOOL_FILTER_ALLOW_NAME_REGEX: '(a+)+'
       })).toThrow(ConfigurationError);
     });
+
+    it('applies the tool-name input boundary to env regex matches', () => {
+      const config = parser.parse({
+        MCP4_TOOL_FILTER_ALLOW_NAME_REGEX: 'a+'
+      });
+
+      expect(config!.allowRegex[0].test('a'.repeat(255))).toBe(true);
+      expect(config!.allowRegex[0].test('a'.repeat(256))).toBe(false);
+    });
   });
 
   describe('category parsing', () => {

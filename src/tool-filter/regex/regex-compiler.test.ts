@@ -79,6 +79,12 @@ describe('RegexCompiler', () => {
       expect(compiled.test('get_user')).toBe(false);
       expect(compiled.test('user_admin')).toBe(false);
     });
+
+    it('rejects inputs longer than the supported tool-name length boundary', () => {
+      const compiled = compiler.compile('a+', 'test');
+      expect(compiled.test('a'.repeat(255))).toBe(true);
+      expect(compiled.test('a'.repeat(256))).toBe(false);
+    });
   });
 
   describe('metadata preservation', () => {

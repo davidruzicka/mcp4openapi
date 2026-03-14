@@ -316,7 +316,7 @@ X-Mcp4-Params: project_id=123, project_id=456, _allow_read
 X-Mcp4-Tools: get_user, list_users, regex:read_.*
 ```
 
-Regex patterns are validated for length, nested quantifiers, and alternations with quantifiers.
+Regex patterns are validated for length, nested quantifiers, and alternations with quantifiers. Regex matching is also limited to tool-name-sized inputs (255 characters max) so header/env filters never run against unbounded strings.
 
 **Request Body**:
 - Single JSON-RPC request/notification/response
