@@ -169,6 +169,8 @@ The merger should merge only when all of the following are true:
 6. No unresolved review conversations remain.
 7. CI is green.
 8. No later negative review metadata supersedes an earlier approval.
+9. No reviewer-owned follow-up thread contains newer external replies than the latest reviewer response / decision for the current head SHA.
+10. Branch protection does not require a stronger human approval lane than the bounded single-agent reviewer can satisfy.
 
 ## First-Version Implementation Assets
 
@@ -206,11 +208,11 @@ Current first-version runtime scope:
 - reviewer selects only non-draft PRs with `agent:review:required` and no blocking labels,
 - reviewer treats current-head terminal review metadata (`approved`, `changes-requested`, `commented`) as already handled,
 - reviewer uses lease TTL plus `status: reviewing` metadata to avoid duplicate pickup,
+- reviewer now requeues PRs when reviewer-owned discussion threads receive newer external replies after the last current-head reviewer decision,
 - reviewer now publishes bounded semantic review decisions to GitHub reviews using transparent policy checks (current scope: missing agent disclosure, code-without-tests, docs-only approvals),
-- merger now evaluates deterministic merge gates for recent PRs, reconciles the `agent:ready-to-merge` label, and emits deduplicated merger metadata comments based on current-head approval, review lease, unresolved thread, and CI state,
-- merge executor now selects `agent:ready-to-merge` PRs, re-fetches the live PR, revalidates the current head SHA plus deterministic merge gates, removes stale ready labels, and calls the GitHub merge API with the current head SHA as a fail-safe lease,
+- merger now evaluates deterministic merge gates for recent PRs, reconciles the `agent:ready-to-merge` label, and emits deduplicated merger metadata comments based on current-head approval, review lease, unresolved thread, reviewer follow-up replies, branch protection, and CI state,
+- merge executor now selects `agent:ready-to-merge` PRs, re-fetches the live PR, revalidates the current head SHA plus deterministic merge gates, removes stale ready labels, enforces repository-allowed merge methods, and calls the GitHub merge API with the current head SHA as a fail-safe lease,
 - reviewer still does not yet perform broader AI-driven code reasoning,
-- merge executor still relies on the same bounded deterministic merge gates and does not yet interpret deeper human reply semantics beyond unresolved review threads / hold labels,
 - neither helper yet persists long-term feedback history.
 
 ## Future Work
@@ -220,5 +222,5 @@ Recommended next steps after this first version:
 1. Extend the evaluator scanner to cover pull-request reviews and inline review comments.
 2. Persist structured feedback records for weekly evaluator reports.
 3. Add issue/PR label reconciliation helpers for issuer/planner/implementor stages.
-4. Teach the merger / merge executor to inspect human reply semantics more deeply (for example agent-owned review follow-up threads).
-5. Add branch-protection-aware merge-policy extensions (for example explicit required human approval lanes or per-label merge methods).
+4. Persist agent-owned review-thread references so specialized reviewers can re-enter the exact conversation they opened.
+5. Extend branch-protection-aware merge policy beyond the current conservative human-lane / allowed-method checks (for example explicit code-owner approval routes or per-label merge methods).

@@ -28,6 +28,19 @@ export interface ReviewerReviewArtifact {
   readonly authorLogin: string;
 }
 
+export interface ReviewerReviewThread {
+  readonly id: string;
+  readonly isResolved: boolean;
+  readonly comments: readonly ReviewerReviewThreadComment[];
+}
+
+export interface ReviewerReviewThreadComment {
+  readonly id: string;
+  readonly body: string;
+  readonly updatedAt: string;
+  readonly authorLogin: string;
+}
+
 export interface ReviewerLeaseCheckInput {
   readonly threadComments: readonly ReviewerThreadComment[];
   readonly reviews: readonly ReviewerReviewArtifact[];
@@ -38,7 +51,7 @@ export interface ReviewerLeaseCheckInput {
 
 export interface ReviewerAssignment {
   readonly pullRequestNumber: number;
-  readonly reason: 'missing-current-review' | 'stale-review';
+  readonly reason: 'missing-current-review' | 'stale-review' | 'follow-up-requested';
   readonly leaseCommentBody: string;
 }
 
@@ -46,6 +59,7 @@ export interface CollectReviewerAssignmentsInput {
   readonly pullRequests: readonly ReviewerPullRequest[];
   readonly commentsByPrNumber: Readonly<Record<number, readonly ReviewerThreadComment[]>>;
   readonly reviewsByPrNumber: Readonly<Record<number, readonly ReviewerReviewArtifact[]>>;
+  readonly reviewThreadsByPrNumber: Readonly<Record<number, readonly ReviewerReviewThread[]>>;
   readonly repository: string;
   readonly agentId: string;
   readonly runId: string;
@@ -124,6 +138,7 @@ export function collectReviewerAssignments(input: CollectReviewerAssignmentsInpu
 
     const threadComments = input.commentsByPrNumber[pullRequest.number] ?? [];
     const reviews = input.reviewsByPrNumber[pullRequest.number] ?? [];
+    const reviewThreads = input.reviewThreadsByPrNumber[pullRequest.number] ?? [];
     if (hasActiveReviewerLease({
       threadComments,
       reviews,
@@ -135,15 +150,21 @@ export function collectReviewerAssignments(input: CollectReviewerAssignmentsInpu
     }
 
     const reviewerEvents = listReviewerMetadataEvents(threadComments, reviews);
-    const hasCurrentDecision = reviewerEvents
-      .filter((event) => event.metadata['head-sha'] === pullRequest.headSha)
-      .some((event) => TERMINAL_REVIEW_STATUSES.has(event.metadata.status ?? ''));
+    const currentHeadEvents = reviewerEvents.filter((event) => event.metadata['head-sha'] === pullRequest.headSha);
+    const hasCurrentDecision = currentHeadEvents.some((event) => TERMINAL_REVIEW_STATUSES.has(event.metadata.status ?? ''));
+    const latestCurrentDecisionTimestamp = currentHeadEvents
+      .filter((event) => TERMINAL_REVIEW_STATUSES.has(event.metadata.status ?? ''))
+      .map((event) => event.timestamp)
+      .sort((left, right) => parseIsoTimestamp(left) - parseIsoTimestamp(right))
+      .at(-1);
 
-    if (hasCurrentDecision) {
+    if (hasCurrentDecision && !hasReviewerFollowUpPending(reviewThreads, pullRequest.headSha, latestCurrentDecisionTimestamp)) {
       return [];
     }
 
-    const reason: ReviewerAssignment['reason'] = reviewerEvents.length > 0 ? 'stale-review' : 'missing-current-review';
+    const reason: ReviewerAssignment['reason'] = hasCurrentDecision
+      ? 'follow-up-requested'
+      : reviewerEvents.length > 0 ? 'stale-review' : 'missing-current-review';
 
     return [{
       pullRequestNumber: pullRequest.number,
@@ -245,6 +266,51 @@ function listReviewerMetadataEvents(
     .filter((event) => event.metadata['agent-stage'] === 'reviewer')
     .filter((event) => event.metadata['ignore-for-workflow'] !== 'true')
     .sort((left, right) => parseIsoTimestamp(left.timestamp) - parseIsoTimestamp(right.timestamp));
+}
+
+function hasReviewerFollowUpPending(
+  reviewThreads: readonly ReviewerReviewThread[],
+  currentHeadSha: string,
+  latestReviewerDecisionTimestamp: string | undefined,
+): boolean {
+  return reviewThreads.some((thread) => {
+    const agentComments = thread.comments.filter((comment) => isReviewerThreadComment(comment.body, currentHeadSha));
+    if (agentComments.length === 0) {
+      return false;
+    }
+
+    const latestAgentTimestamp = agentComments
+      .map((comment) => comment.updatedAt)
+      .sort((left, right) => parseIsoTimestamp(left) - parseIsoTimestamp(right))
+      .at(-1);
+    if (!latestAgentTimestamp) {
+      return false;
+    }
+
+    const latestExternalReplyTimestamp = thread.comments
+      .filter((comment) => !isReviewerThreadComment(comment.body, currentHeadSha))
+      .filter((comment) => parseIsoTimestamp(comment.updatedAt) > parseIsoTimestamp(latestAgentTimestamp))
+      .map((comment) => comment.updatedAt)
+      .sort((left, right) => parseIsoTimestamp(left) - parseIsoTimestamp(right))
+      .at(-1);
+
+    if (!latestExternalReplyTimestamp) {
+      return false;
+    }
+
+    if (!latestReviewerDecisionTimestamp) {
+      return true;
+    }
+
+    return parseIsoTimestamp(latestReviewerDecisionTimestamp) <= parseIsoTimestamp(latestExternalReplyTimestamp);
+  });
+}
+
+function isReviewerThreadComment(body: string, currentHeadSha: string): boolean {
+  const metadata = parseAgentMetadata(body);
+  return metadata?.['agent-stage'] === 'reviewer'
+    && metadata?.['ignore-for-workflow'] !== 'true'
+    && metadata?.['head-sha'] === currentHeadSha;
 }
 
 function collectSemanticFindings(

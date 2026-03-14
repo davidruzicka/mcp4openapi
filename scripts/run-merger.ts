@@ -3,6 +3,7 @@ import { evaluateMergeGate } from '../src/automation/merger-runner.js';
 import {
   addIssueLabels,
   createIssueComment,
+  getBranchProtection,
   listCiChecks,
   listIssueComments,
   listPullRequestReviews,
@@ -24,6 +25,7 @@ for (const pullRequest of relevantPullRequests.slice(0, runtimeConfig.maxPrs)) {
   const reviews = await listPullRequestReviews(runtimeConfig, pullRequest.number);
   const reviewThreads = await listReviewThreads(runtimeConfig, pullRequest.number);
   const ciChecks = await listCiChecks(runtimeConfig, pullRequest.headSha);
+  const branchProtection = await getBranchProtection(runtimeConfig, pullRequest.number);
 
   const evaluation = evaluateMergeGate({
     repository: runtimeConfig.repository,
@@ -36,6 +38,7 @@ for (const pullRequest of relevantPullRequests.slice(0, runtimeConfig.maxPrs)) {
     reviews,
     reviewThreads,
     ciChecks,
+    branchProtection,
   });
 
   await addIssueLabels(runtimeConfig, pullRequest.number, evaluation.labelsToAdd);

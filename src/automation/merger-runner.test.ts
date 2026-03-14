@@ -33,7 +33,7 @@ describe('merger-runner', () => {
           }),
         ],
         reviewThreads: [
-          { id: 'thread-1', isResolved: true },
+          buildReviewThread({ id: 'thread-1', isResolved: true }),
         ],
         ciChecks: [
           { name: 'test', status: 'completed', conclusion: 'success' },
@@ -144,7 +144,7 @@ describe('merger-runner', () => {
           }),
         ],
         reviewThreads: [
-          { id: 'thread-1', isResolved: false },
+          buildReviewThread({ id: 'thread-1', isResolved: false }),
         ],
         ciChecks: [
           { name: 'test', status: 'completed', conclusion: 'failure' },
@@ -159,6 +159,96 @@ describe('merger-runner', () => {
         'unresolved-review-threads',
         'ci-not-green',
       ]));
+    });
+
+    it('blocks merge readiness when reviewer-owned threads receive newer human replies after approval', () => {
+      const evaluation = evaluateMergeGate({
+        repository: 'davidruzicka/mcp4openapi',
+        agentId: 'merger',
+        runId: 'run-123',
+        timestamp: '2026-03-14T18:00:00Z',
+        leaseTtlMinutes: 45,
+        pullRequest: buildPullRequest({
+          number: 164,
+          headSha: 'abc123',
+          labels: ['agent:review:required', 'agent:review:done'],
+        }),
+        threadComments: [],
+        reviews: [
+          buildReview({
+            id: 6,
+            submittedAt: '2026-03-14T17:45:00Z',
+            status: 'approved',
+            headSha: 'abc123',
+          }),
+        ],
+        reviewThreads: [
+          buildReviewThread({
+            id: 'thread-2',
+            isResolved: true,
+            comments: [
+              buildReviewThreadComment({
+                id: 'thread-comment-1',
+                authorLogin: 'github-actions[bot]',
+                updatedAt: '2026-03-14T17:40:00Z',
+                body: buildReviewerThreadMetadataComment({
+                  status: 'commented',
+                  headSha: 'abc123',
+                  timestamp: '2026-03-14T17:40:00Z',
+                }),
+              }),
+              buildReviewThreadComment({
+                id: 'thread-comment-2',
+                authorLogin: 'human-reviewer',
+                updatedAt: '2026-03-14T17:50:00Z',
+                body: 'Please confirm the error path is covered.',
+              }),
+            ],
+          }),
+        ],
+        ciChecks: [
+          { name: 'test', status: 'completed', conclusion: 'success' },
+        ],
+      });
+
+      expect(evaluation.ready).toBe(false);
+      expect(evaluation.reasons).toContain('review-follow-up-pending');
+    });
+
+    it('blocks merge readiness when branch protection requires more than the bounded single-agent approval lane', () => {
+      const evaluation = evaluateMergeGate({
+        repository: 'davidruzicka/mcp4openapi',
+        agentId: 'merger',
+        runId: 'run-123',
+        timestamp: '2026-03-14T18:00:00Z',
+        leaseTtlMinutes: 45,
+        pullRequest: buildPullRequest({
+          number: 165,
+          headSha: 'abc123',
+          labels: ['agent:review:required', 'agent:review:done'],
+        }),
+        threadComments: [],
+        reviews: [
+          buildReview({
+            id: 7,
+            submittedAt: '2026-03-14T17:55:00Z',
+            status: 'approved',
+            headSha: 'abc123',
+          }),
+        ],
+        reviewThreads: [],
+        ciChecks: [
+          { name: 'test', status: 'completed', conclusion: 'success' },
+        ],
+        branchProtection: {
+          requiredApprovingReviewCount: 2,
+          requiresCodeOwnerReviews: false,
+          allowedMergeMethods: ['squash'],
+        },
+      });
+
+      expect(evaluation.ready).toBe(false);
+      expect(evaluation.reasons).toContain('branch-protection-review-policy');
     });
   });
 
@@ -225,6 +315,50 @@ function buildReview(input: {
     state: input.status === 'approved' ? 'APPROVED' : input.status === 'changes-requested' ? 'CHANGES_REQUESTED' : 'COMMENTED',
     authorLogin: 'github-actions[bot]',
   };
+}
+
+function buildReviewThread(input: {
+  id: string;
+  isResolved: boolean;
+  comments?: MergerReviewThread['comments'];
+}): MergerReviewThread {
+  return {
+    id: input.id,
+    isResolved: input.isResolved,
+    comments: input.comments ?? [],
+  };
+}
+
+function buildReviewThreadComment(input: {
+  id: string;
+  body: string;
+  updatedAt: string;
+  authorLogin: string;
+}): MergerReviewThread['comments'][number] {
+  return {
+    id: input.id,
+    body: input.body,
+    updatedAt: input.updatedAt,
+    authorLogin: input.authorLogin,
+  };
+}
+
+function buildReviewerThreadMetadataComment(input: {
+  status: 'approved' | 'changes-requested' | 'commented';
+  headSha: string;
+  timestamp: string;
+}): string {
+  return [
+    '🤖 Agent review (reviewer)',
+    '',
+    '<!-- AGENT-METADATA',
+    'agent-id: reviewer',
+    'agent-stage: reviewer',
+    `status: ${input.status}`,
+    `head-sha: ${input.headSha}`,
+    `timestamp: ${input.timestamp}`,
+    '-->',
+  ].join('\n');
 }
 
 function buildReviewingComment(input: {

@@ -4,6 +4,7 @@ import {
   type ReviewerChangedFile,
   type ReviewerPullRequest,
   type ReviewerReviewArtifact,
+  type ReviewerReviewThread,
   type ReviewerThreadComment,
 } from '../src/automation/reviewer-runner.js';
 
@@ -44,6 +45,30 @@ interface GitHubPullRequestReview {
   };
 }
 
+interface GraphQlReviewThreadsResponse {
+  readonly data?: {
+    readonly repository?: {
+      readonly pullRequest?: {
+        readonly reviewThreads?: {
+          readonly nodes?: ReadonlyArray<{
+            readonly id: string;
+            readonly isResolved: boolean;
+            readonly comments?: {
+              readonly nodes?: ReadonlyArray<{
+                readonly id: string;
+                readonly body: string;
+                readonly updatedAt: string;
+                readonly author?: { readonly login?: string };
+              }>;
+            };
+          }>;
+        };
+      };
+    };
+  };
+  readonly errors?: ReadonlyArray<{ readonly message: string }>;
+}
+
 interface RuntimeConfig {
   readonly repository: string;
   readonly token: string;
@@ -74,16 +99,19 @@ const runtimeConfig = readRuntimeConfig(process.env);
 const recentPullRequests = await listRecentPullRequests(runtimeConfig);
 const commentsByPrNumber: Record<number, readonly ReviewerThreadComment[]> = {};
 const reviewsByPrNumber: Record<number, readonly ReviewerReviewArtifact[]> = {};
+const reviewThreadsByPrNumber: Record<number, readonly ReviewerReviewThread[]> = {};
 
 for (const pullRequest of recentPullRequests) {
   commentsByPrNumber[pullRequest.number] = await listIssueComments(runtimeConfig, pullRequest.number);
   reviewsByPrNumber[pullRequest.number] = await listPullRequestReviews(runtimeConfig, pullRequest.number);
+  reviewThreadsByPrNumber[pullRequest.number] = await listReviewThreads(runtimeConfig, pullRequest.number);
 }
 
 const assignments = collectReviewerAssignments({
   pullRequests: recentPullRequests,
   commentsByPrNumber,
   reviewsByPrNumber,
+  reviewThreadsByPrNumber,
   repository: runtimeConfig.repository,
   agentId: runtimeConfig.agentId,
   runId: runtimeConfig.runId,
@@ -178,6 +206,54 @@ async function listPullRequestFiles(config: RuntimeConfig, pullRequestNumber: nu
   }));
 }
 
+async function listReviewThreads(config: RuntimeConfig, pullRequestNumber: number): Promise<ReviewerReviewThread[]> {
+  const [owner, repo] = splitRepository(config.repository);
+  const response = await githubGraphQlRequest<GraphQlReviewThreadsResponse>(config, {
+    query: `query ReviewThreads($owner: String!, $repo: String!, $prNumber: Int!) {
+      repository(owner: $owner, name: $repo) {
+        pullRequest(number: $prNumber) {
+          reviewThreads(first: 100) {
+            nodes {
+              id
+              isResolved
+              comments(first: 100) {
+                nodes {
+                  id
+                  body
+                  updatedAt
+                  author {
+                    login
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }`,
+    variables: {
+      owner,
+      repo,
+      prNumber: pullRequestNumber,
+    },
+  });
+
+  if (response.errors && response.errors.length > 0) {
+    throw new Error(`GitHub GraphQL request failed for reviewThreads: ${response.errors.map((error) => error.message).join('; ')}`);
+  }
+
+  return (response.data?.repository?.pullRequest?.reviewThreads?.nodes ?? []).map((thread) => ({
+    id: thread.id,
+    isResolved: thread.isResolved,
+    comments: (thread.comments?.nodes ?? []).map((comment) => ({
+      id: comment.id,
+      body: comment.body,
+      updatedAt: comment.updatedAt,
+      authorLogin: comment.author?.login ?? 'unknown',
+    })),
+  }));
+}
+
 async function createIssueComment(config: RuntimeConfig, issueNumber: number, body: string): Promise<void> {
   await githubRequest(config, `/repos/${config.repository}/issues/${issueNumber}/comments`, {
     method: 'POST',
@@ -242,6 +318,25 @@ async function githubRequest<T = unknown>(config: RuntimeConfig, path: string, i
   return response.json() as Promise<T>;
 }
 
+async function githubGraphQlRequest<T = unknown>(config: RuntimeConfig, payload: Record<string, unknown>): Promise<T> {
+  const response = await fetch(`${config.apiBaseUrl.replace(/\/api\/v3$/, '')}/graphql`, {
+    method: 'POST',
+    headers: {
+      Accept: 'application/vnd.github+json',
+      Authorization: `Bearer ${config.token}`,
+      'Content-Type': 'application/json',
+      'X-GitHub-Api-Version': '2022-11-28',
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    throw new Error(`GitHub GraphQL request failed (${response.status}): ${await response.text()}`);
+  }
+
+  return response.json() as Promise<T>;
+}
+
 function readRuntimeConfig(env: NodeJS.ProcessEnv): RuntimeConfig {
   const repository = env.GITHUB_REPOSITORY;
   const token = env.GITHUB_TOKEN;
@@ -278,6 +373,15 @@ function parsePositiveInteger(value: string | undefined, fallback: number): numb
   }
 
   return parsed;
+}
+
+function splitRepository(repository: string): readonly [string, string] {
+  const [owner, repo, ...rest] = repository.split('/');
+  if (!owner || !repo || rest.length > 0) {
+    throw new Error(`Invalid GITHUB_REPOSITORY value: ${repository}`);
+  }
+
+  return [owner, repo] as const;
 }
 
 function toGitHubReviewEvent(verdict: 'approved' | 'changes-requested' | 'commented'): CreateReviewInput['event'] {

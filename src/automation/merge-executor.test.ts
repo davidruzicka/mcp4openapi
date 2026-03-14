@@ -29,7 +29,7 @@ describe('merge-executor', () => {
         }),
         threadComments: [],
         reviews: [buildReview({ id: 1, submittedAt: '2026-03-14T18:55:00Z', status: 'approved', headSha: 'abc123' })],
-        reviewThreads: [{ id: 'thread-1', isResolved: true }],
+        reviewThreads: [buildReviewThread({ id: 'thread-1', isResolved: true })],
         ciChecks: [{ name: 'test', status: 'completed', conclusion: 'success' }],
       });
 
@@ -106,7 +106,7 @@ describe('merge-executor', () => {
         }),
         threadComments: [],
         reviews: [buildReview({ id: 4, submittedAt: '2026-03-14T18:55:00Z', status: 'approved', headSha: 'abc123' })],
-        reviewThreads: [{ id: 'thread-1', isResolved: false }],
+        reviewThreads: [buildReviewThread({ id: 'thread-1', isResolved: false })],
         ciChecks: [{ name: 'test', status: 'completed', conclusion: 'failure' }],
       });
 
@@ -118,6 +118,36 @@ describe('merge-executor', () => {
       ]));
       expect(execution.labelsToRemove).toContain('agent:ready-to-merge');
       expect(execution.commentBody).toContain('status: skipped');
+    });
+
+    it('skips merge when the configured merge method is not allowed by repository policy', () => {
+      const execution = planMergeExecution({
+        repository: 'davidruzicka/mcp4openapi',
+        agentId: 'merge-executor',
+        runId: 'run-456',
+        timestamp: '2026-03-14T19:00:00Z',
+        leaseTtlMinutes: 45,
+        expectedHeadSha: 'abc123',
+        mergeMethod: 'rebase',
+        pullRequest: buildPullRequest({
+          number: 174,
+          headSha: 'abc123',
+          labels: ['agent:review:required', 'agent:review:done', 'agent:ready-to-merge'],
+        }),
+        threadComments: [],
+        reviews: [buildReview({ id: 5, submittedAt: '2026-03-14T18:55:00Z', status: 'approved', headSha: 'abc123' })],
+        reviewThreads: [buildReviewThread({ id: 'thread-1', isResolved: true })],
+        ciChecks: [{ name: 'test', status: 'completed', conclusion: 'success' }],
+        branchProtection: {
+          requiredApprovingReviewCount: 1,
+          requiresCodeOwnerReviews: false,
+          allowedMergeMethods: ['squash'],
+        },
+      });
+
+      expect(execution.shouldMerge).toBe(false);
+      expect(execution.reasons).toContain('merge-method-disallowed');
+      expect(execution.commentBody).toContain('configured merge method is not allowed');
     });
   });
 
@@ -160,6 +190,18 @@ function buildPullRequest(input: {
     headSha: input.headSha,
     updatedAt: '2026-03-14T18:55:00Z',
     labels: input.labels,
+  };
+}
+
+function buildReviewThread(input: {
+  id: string;
+  isResolved: boolean;
+  comments?: MergerReviewThread['comments'];
+}): MergerReviewThread {
+  return {
+    id: input.id,
+    isResolved: input.isResolved,
+    comments: input.comments ?? [],
   };
 }
 

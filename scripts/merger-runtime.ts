@@ -1,4 +1,5 @@
 import type {
+  MergerBranchProtection,
   MergerCiCheck,
   MergerPullRequest,
   MergerReviewArtifact,
@@ -20,6 +21,9 @@ interface GitHubPullRequestSummary {
   readonly labels?: readonly GitHubLabel[];
   readonly head: {
     readonly sha: string;
+  };
+  readonly base: {
+    readonly ref: string;
   };
 }
 
@@ -70,8 +74,37 @@ interface GraphQlReviewThreadsResponse {
           readonly nodes?: ReadonlyArray<{
             readonly id: string;
             readonly isResolved: boolean;
+            readonly comments?: {
+              readonly nodes?: ReadonlyArray<{
+                readonly id: string;
+                readonly body: string;
+                readonly updatedAt: string;
+                readonly author?: {
+                  readonly login?: string;
+                };
+              }>;
+            };
           }>;
         };
+      };
+    };
+  };
+  readonly errors?: ReadonlyArray<{ readonly message: string }>;
+}
+
+interface GraphQlBranchProtectionResponse {
+  readonly data?: {
+    readonly repository?: {
+      readonly mergeCommitAllowed: boolean;
+      readonly squashMergeAllowed: boolean;
+      readonly rebaseMergeAllowed: boolean;
+      readonly pullRequest?: {
+        readonly baseRef?: {
+          readonly branchProtectionRule?: {
+            readonly requiredApprovingReviewCount?: number;
+            readonly requiresCodeOwnerReviews?: boolean;
+          } | null;
+        } | null;
       };
     };
   };
@@ -187,6 +220,16 @@ export async function listReviewThreads(config: MergerRuntimeConfig, pullRequest
             nodes {
               id
               isResolved
+              comments(first: 100) {
+                nodes {
+                  id
+                  body
+                  updatedAt
+                  author {
+                    login
+                  }
+                }
+              }
             }
           }
         }
@@ -206,7 +249,55 @@ export async function listReviewThreads(config: MergerRuntimeConfig, pullRequest
   return (response.data?.repository?.pullRequest?.reviewThreads?.nodes ?? []).map((thread) => ({
     id: thread.id,
     isResolved: thread.isResolved,
+    comments: (thread.comments?.nodes ?? []).map((comment) => ({
+      id: comment.id,
+      body: comment.body,
+      updatedAt: comment.updatedAt,
+      authorLogin: comment.author?.login ?? 'unknown',
+    })),
   }));
+}
+
+export async function getBranchProtection(config: MergerRuntimeConfig, pullRequestNumber: number): Promise<MergerBranchProtection> {
+  const [owner, repo] = splitRepository(config.repository);
+  const response = await githubGraphQlRequest<GraphQlBranchProtectionResponse>(config, {
+    query: `query BranchProtection($owner: String!, $repo: String!, $prNumber: Int!) {
+      repository(owner: $owner, name: $repo) {
+        mergeCommitAllowed
+        squashMergeAllowed
+        rebaseMergeAllowed
+        pullRequest(number: $prNumber) {
+          baseRef {
+            branchProtectionRule {
+              requiredApprovingReviewCount
+              requiresCodeOwnerReviews
+            }
+          }
+        }
+      }
+    }`,
+    variables: {
+      owner,
+      repo,
+      prNumber: pullRequestNumber,
+    },
+  });
+
+  if (response.errors && response.errors.length > 0) {
+    throw new Error(`GitHub GraphQL request failed for branch protection: ${response.errors.map((error) => error.message).join('; ')}`);
+  }
+
+  const repository = response.data?.repository;
+  const branchProtectionRule = repository?.pullRequest?.baseRef?.branchProtectionRule;
+  return {
+    requiredApprovingReviewCount: branchProtectionRule?.requiredApprovingReviewCount ?? 0,
+    requiresCodeOwnerReviews: branchProtectionRule?.requiresCodeOwnerReviews ?? false,
+    allowedMergeMethods: [
+      repository?.mergeCommitAllowed ? 'merge' : undefined,
+      repository?.squashMergeAllowed ? 'squash' : undefined,
+      repository?.rebaseMergeAllowed ? 'rebase' : undefined,
+    ].filter((method): method is 'merge' | 'squash' | 'rebase' => method !== undefined),
+  };
 }
 
 export async function listCiChecks(config: MergerRuntimeConfig, headSha: string): Promise<MergerCiCheck[]> {
@@ -292,6 +383,7 @@ function toMergerPullRequest(pullRequest: GitHubPullRequestSummary): MergerPullR
     url: pullRequest.html_url,
     draft: pullRequest.draft,
     headSha: pullRequest.head.sha,
+    baseRefName: pullRequest.base.ref,
     updatedAt: pullRequest.updated_at,
     labels: (pullRequest.labels ?? []).map((label) => label.name),
   } satisfies MergerPullRequest;

@@ -5,7 +5,7 @@ import {
   type MergeGateReason,
 } from './merger-runner.js';
 
-export type FinalMergeReason = MergeGateReason | 'missing-ready-label' | 'head-sha-changed';
+export type FinalMergeReason = MergeGateReason | 'missing-ready-label' | 'head-sha-changed' | 'merge-method-disallowed';
 export type MergeMethod = 'merge' | 'squash' | 'rebase';
 
 export interface PlanMergeExecutionInput extends EvaluateMergeGateInput {
@@ -35,6 +35,10 @@ export function planMergeExecution(input: PlanMergeExecutionInput): MergeExecuti
 
   if (input.expectedHeadSha !== input.pullRequest.headSha) {
     reasons.add('head-sha-changed');
+  }
+
+  if (input.branchProtection && !input.branchProtection.allowedMergeMethods.includes(mergeMethod)) {
+    reasons.add('merge-method-disallowed');
   }
 
   const evaluation = evaluateMergeGate(input);
@@ -130,6 +134,10 @@ function buildMergeExecutionSummary(input: {
 
   if (input.reasons.includes('missing-ready-label')) {
     return 'Final merge execution skipped because the ready-to-merge label is missing.';
+  }
+
+  if (input.reasons.includes('merge-method-disallowed')) {
+    return 'Final merge execution skipped because the configured merge method is not allowed by the repository merge policy.';
   }
 
   return `Final merge execution skipped because deterministic merge gates changed. ${input.gateSummary}`;
