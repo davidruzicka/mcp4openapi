@@ -366,7 +366,20 @@ If you need a different callback URL:
 }
 ```
 
-**Important**: Update redirect URI in GitLab application settings to match. Native-app schemes (`cursor://…`, `vscode://…`) are supported - just add their host to `allowed_redirect_hosts` (or `MCP4_ALLOWED_ORIGINS`) so validation passes.
+**Important**: Update redirect URI in GitLab application settings to match. OAuth redirect URIs now default to the `http` and `https` schemes only. Native-app schemes (`cursor://…`, `vscode://…`) require both the host allowlist and an explicit `allowed_redirect_schemes` opt-in.
+
+```json
+{
+  "auth": {
+    "type": "oauth",
+    "oauth_config": {
+      "redirect_uri": "cursor://anysphere.cursor-mcp/oauth/callback",
+      "allowed_redirect_hosts": ["anysphere.cursor-mcp"],
+      "allowed_redirect_schemes": ["http", "https", "cursor"]
+    }
+  }
+}
+```
 
 Allowed redirect hosts accept exact hostnames, wildcard subdomains (`*.example.com`), IPv4 addresses, IPv4 CIDR ranges (e.g., `10.0.0.0/8`), and IPv6 addresses/CIDR ranges (e.g., `2001:db8::/32`) so you can allow whole internal networks without listing individual machines.
 

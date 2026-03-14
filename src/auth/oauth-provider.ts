@@ -298,33 +298,45 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
     };
   }
 
+  private getAllowedRedirectSchemes(): string[] {
+    const configuredSchemes = this.config.allowed_redirect_schemes;
+    if (!configuredSchemes || configuredSchemes.length === 0) {
+      return ['http', 'https'];
+    }
+
+    return configuredSchemes
+      .map(scheme => scheme.trim().toLowerCase())
+      .filter(Boolean);
+  }
+
+  private isAllowedRedirectScheme(protocol: string): boolean {
+    const normalizedProtocol = protocol.endsWith(':') ? protocol.slice(0, -1) : protocol;
+    return this.getAllowedRedirectSchemes().includes(normalizedProtocol.toLowerCase());
+  }
+
   /**
    * Check if redirect URI host AND scheme are allowed
-   * Prevents open redirect vulnerabilities (CWE-601) and XSS (javascript: scheme)
+   * Prevents open redirect vulnerabilities (CWE-601) and unsafe scheme redirects
    */
   private isAllowedRedirectHost(redirectUri: string): boolean {
     try {
       const url = new URL(redirectUri);
 
-      // Security: Validate protocol to prevent javascript: or data: schemes
-      // We block dangerous schemes that could lead to XSS or local file access
-      const protocol = url.protocol.toLowerCase();
-      const dangerousSchemes = ['javascript:', 'data:', 'vbscript:', 'file:', 'blob:', 'about:'];
-      if (dangerousSchemes.includes(protocol)) {
+      if (!this.isAllowedRedirectScheme(url.protocol)) {
         return false;
       }
 
       const hostname = url.hostname;
-      
+
       // Default to localhost only if not configured
       const allowedHosts = this.config.allowed_redirect_hosts || ['localhost', '127.0.0.1'];
-      
+
       for (const allowed of allowedHosts) {
         if (this.matchRedirectHost(hostname, allowed)) {
           return true;
         }
       }
-      
+
       return false;
     } catch {
       // Invalid URL

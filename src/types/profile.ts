@@ -510,6 +510,12 @@ export interface OAuthConfig {
    * Can reference MCP4_ALLOWED_ORIGINS environment variable
    */
   allowed_redirect_hosts?: string[];
+
+  /**
+   * Optional: Allowed redirect URI schemes for OAuth callbacks
+   * Defaults to ["http", "https"] and requires explicit opt-in for custom app schemes
+   */
+  allowed_redirect_schemes?: string[];
 }
 
 export interface EnterpriseAuthorizationConfig {

@@ -652,7 +652,7 @@ export MCP4_OAUTH_CLIENT_SECRET=your_dcr_client_secret
 export MCP4_OAUTH_REDIRECT_URI=http://127.0.0.1:3003/oauth/callback
 # OAuth endpoints are automatically discovered from API base URL
 ```
-**Note**: DCR and OAuth callback must be registered with the OAuth provider.
+**Note**: DCR and OAuth callback must be registered with the OAuth provider. Custom desktop/mobile redirect URIs now require explicit profile opt-in via `oauth_config.allowed_redirect_schemes` (default: `http`, `https`) plus a matching `allowed_redirect_hosts` entry.
 
 **Configuration priority:**
 1. **Explicit URLs**: `MCP4_OAUTH_AUTHORIZATION_URL`, `MCP4_OAUTH_TOKEN_URL` (highest priority)

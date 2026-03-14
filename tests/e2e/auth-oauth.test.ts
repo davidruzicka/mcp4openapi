@@ -7,6 +7,8 @@
 
 import { it, expect, beforeAll, afterAll, afterEach } from 'vitest';
 import * as path from 'path';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
+import { tmpdir } from 'os';
 import { startStandaloneMockServer, MockServerInstance, getAvailablePort } from './utils/mock-server.js';
 import { McpProcess } from './utils/mcp-process.js';
 import { describeIfListen } from './utils/listen-support.js';
@@ -134,13 +136,35 @@ describeIfListen('E2E: OAuth 2.0 authentication', () => {
   describe('custom scheme redirect', () => {
     let mcp: McpProcess | undefined;
     let httpPort: number;
+    let customSchemeProfilePath: string;
+    let tempProfileDir: string;
 
     const cursorRedirectUri = 'cursor://anysphere.cursor-mcp/oauth/callback';
     const clientState = 'custom-state-123';
 
     beforeAll(async () => {
       httpPort = await getAvailablePort();
+
+      tempProfileDir = mkdtempSync(path.join(tmpdir(), 'mcp4openapi-oauth-'));
+      customSchemeProfilePath = path.join(tempProfileDir, 'developer-profile-oauth-custom-scheme.json');
+      const profile = JSON.parse(readFileSync(profilePath, 'utf-8')) as Record<string, any>;
+      profile.$schema = path.resolve(process.cwd(), 'profile-schema.json');
+      profile.openapi_spec_path = openapiSpecPath;
+      const oauthInterceptor = Array.isArray(profile.interceptors?.auth)
+        ? profile.interceptors.auth.find((auth: Record<string, any>) => auth.type === 'oauth')
+        : undefined;
+      if (!oauthInterceptor?.oauth_config) {
+        throw new Error('Expected OAuth interceptor in developer profile');
+      }
+      oauthInterceptor.oauth_config.allowed_redirect_schemes = ['http', 'https', 'cursor'];
+      writeFileSync(customSchemeProfilePath, JSON.stringify(profile, null, 2));
     }, 15000);
+
+    afterAll(() => {
+      if (tempProfileDir) {
+        rmSync(tempProfileDir, { recursive: true, force: true });
+      }
+    });
 
     afterEach(async () => {
       await mcp?.stop();
@@ -153,7 +177,7 @@ describeIfListen('E2E: OAuth 2.0 authentication', () => {
       mcp = new McpProcess({
         transport: 'http',
         openapiSpecPath,
-        profilePath,
+        profilePath: customSchemeProfilePath,
         apiBaseUrl: mockServer.gitlabApiUrl,
         httpPort,
         oauth: {

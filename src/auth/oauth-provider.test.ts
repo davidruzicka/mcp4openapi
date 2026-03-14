@@ -761,6 +761,34 @@ describe('ExternalOAuthProvider', () => {
       ).rejects.toThrow('Redirect URI not allowed');
     });
 
+    it('should reject custom redirect schemes unless explicitly allowed', async () => {
+      const configWithAllowedHosts = {
+        ...config,
+        allowed_redirect_hosts: ['anysphere.cursor-mcp'],
+      };
+      provider = new ExternalOAuthProvider(configWithAllowedHosts, mockLogger);
+
+      const client: OAuthClientInformationFull = {
+        client_id: 'test-client-id',
+        redirect_uris: [],
+        grant_types: ['authorization_code'],
+        response_types: ['code'],
+      };
+
+      const mockRes = {
+        redirect: vi.fn(),
+      } as unknown as Response;
+
+      await expect(
+        provider.authorize(client, {
+          redirectUri: 'cursor://anysphere.cursor-mcp/oauth/callback',
+          codeChallenge: 'challenge',
+          state: 'state123',
+          scopes: ['api'],
+        }, mockRes)
+      ).rejects.toThrow('Redirect URI not allowed');
+    });
+
     it('should redirect to authorization endpoint with correct params', async () => {
       const client: OAuthClientInformationFull = {
         client_id: 'test-client-id',
@@ -1077,11 +1105,12 @@ describe('ExternalOAuthProvider', () => {
       expect(mockRes.redirect).not.toHaveBeenCalled();
     });
 
-    it('should allow registered custom scheme redirect URIs when host is allowed', async () => {
+    it('should allow registered custom scheme redirect URIs when scheme is explicitly allowed', async () => {
       const configWithAllowedHosts = {
         ...config,
         allowed_redirect_hosts: ['anysphere.cursor-mcp'],
-      };
+        allowed_redirect_schemes: ['http', 'https', 'cursor'],
+      } as OAuthConfig;
       provider = new ExternalOAuthProvider(configWithAllowedHosts, mockLogger);
 
       const client: OAuthClientInformationFull = {
