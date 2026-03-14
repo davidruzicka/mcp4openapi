@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Updated `express-rate-limit` to `^8.3.1` to remediate the open GitHub Security / Dependabot alert for IPv4-mapped IPv6 rate-limit keying.
 
 ### Fixed
+- Bounded tool-filter regex matching to tool-name-sized inputs so header/env regex filters reject oversized values instead of testing unbounded strings.
 - Blocked dangerous URI schemes during URI validation to prevent XSS through attacker-controlled links and redirects.
 - Removed raw environment variable values from selected configuration error messages and added regression checks to prevent secret leakage in errors.
 - Hardened MCP Apps resource loading so `file_path` stays inside the profile directory after normalization and symlink resolution, while keeping `resources/read` output shape consistent across inline, file-backed, and fetch-backed resources.

@@ -5,6 +5,7 @@
 import type { CompiledRegex } from '../types.js';
 import type { RegexValidator } from './regex-validator.js';
 import { InvalidRegexError } from '../errors.js';
+import { MAX_TOOL_FILTER_NAME_LENGTH } from '../constants.js';
 
 /**
  * Compiled regex implementation
@@ -17,6 +18,10 @@ class CompiledRegexImpl implements CompiledRegex {
   ) {}
 
   test(value: string): boolean {
+    if (value.length > MAX_TOOL_FILTER_NAME_LENGTH) {
+      return false;
+    }
+
     return this.regex.test(value);
   }
 }

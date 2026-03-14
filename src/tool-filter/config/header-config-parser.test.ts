@@ -55,6 +55,12 @@ describe('HeaderConfigParser (X-Mcp4-Tools)', () => {
     expect(req.allowCategories.has('list')).toBe(true);
     expect(req.regexPatterns).toHaveLength(1);
   });
+
+  it('applies the tool-name input boundary to header regex matches', () => {
+    const req = parser.parse('regex:a+');
+    expect(req.regexPatterns[0].test('a'.repeat(255))).toBe(true);
+    expect(req.regexPatterns[0].test('a'.repeat(256))).toBe(false);
+  });
 });
 
 describe('HeaderConfigParser - MCP4_TOOL_FILTER_SESSION_MAX_TOOLS', () => {
