@@ -177,11 +177,14 @@ This repository includes small automation helpers for evaluator feedback and rev
 - `src/automation/agent-feedback.ts`
 - `src/automation/evaluator-runner.ts`
 - `src/automation/reviewer-runner.ts`
+- `src/automation/merger-runner.ts`
 - `scripts/render-agent-feedback-template.ts`
 - `scripts/run-evaluator.ts`
 - `scripts/run-reviewer.ts`
+- `scripts/run-merger.ts`
 - `.github/workflows/evaluator.yml`
 - `.github/workflows/reviewer.yml`
+- `.github/workflows/merger.yml`
 
 The current implementation intentionally focuses on bounded deterministic slices first:
 
@@ -200,7 +203,9 @@ Current first-version runtime scope:
 - reviewer treats current-head terminal review metadata (`approved`, `changes-requested`, `commented`) as already handled,
 - reviewer uses lease TTL plus `status: reviewing` metadata to avoid duplicate pickup,
 - reviewer now publishes bounded semantic review decisions to GitHub reviews using transparent policy checks (current scope: missing agent disclosure, code-without-tests, docs-only approvals),
-- reviewer still does not yet inspect unresolved review threads or perform broader AI-driven code reasoning,
+- merger now evaluates deterministic merge gates for recent PRs, reconciles the `agent:ready-to-merge` label, and emits deduplicated merger metadata comments based on current-head approval, review lease, unresolved thread, and CI state,
+- reviewer still does not yet perform broader AI-driven code reasoning,
+- merger does not yet execute the final merge action or wait on human reply semantics beyond unresolved review threads / hold labels,
 - neither helper yet persists long-term feedback history.
 
 ## Future Work
@@ -208,7 +213,7 @@ Current first-version runtime scope:
 Recommended next steps after this first version:
 
 1. Extend the evaluator scanner to cover pull-request reviews and inline review comments.
-2. Add a semantic reviewer execution layer that turns acquired leases into actual PR reviews/comments.
-3. Persist structured feedback records for weekly evaluator reports.
-4. Add issue/PR label reconciliation helpers.
-5. Add deterministic merger policy validators using the same metadata conventions.
+2. Persist structured feedback records for weekly evaluator reports.
+3. Add issue/PR label reconciliation helpers for issuer/planner/implementor stages.
+4. Teach the merger to inspect human reply semantics more deeply (for example agent-owned review follow-up threads).
+5. Add the final merge executor only after deterministic gate evaluation has proven stable.
