@@ -79,6 +79,7 @@ All agents should add a visible note plus a hidden metadata block.
 ```md
 <!-- AGENT-METADATA
 agent-id: reviewer
+agent-stage: reviewer
 agent-role: review
 run-id: 2026-03-14T13:45:12Z-reviewer-001
 repository: davidruzicka/mcp4openapi
@@ -93,6 +94,7 @@ timestamp: 2026-03-14T13:45:12Z
 ### Required fields
 
 - `agent-id`
+- `agent-stage`
 - `agent-role`
 - `run-id`
 - `status`
@@ -173,19 +175,30 @@ The merger should merge only when all of the following are true:
 This repository includes a small automation helper for evaluator feedback generation:
 
 - `src/automation/agent-feedback.ts`
+- `src/automation/evaluator-runner.ts`
 - `scripts/render-agent-feedback-template.ts`
+- `scripts/run-evaluator.ts`
+- `.github/workflows/evaluator.yml`
 
 The helper intentionally focuses on one bounded part of the workflow first:
 
 - deciding when thumbs-only feedback should trigger a follow-up request,
 - generating stage-specific feedback-request comment templates,
+- scanning recent issue/PR bodies plus issue comments for agent metadata and thumbs-only reactions,
 - emitting metadata that operational agents can safely ignore.
+
+Current first-version runtime scope:
+
+- supports issue bodies, PR bodies, and issue comments,
+- skips targets with mixed thumbs-up/thumbs-down signals,
+- deduplicates follow-up comments by evaluator metadata (`target-type` + `target-number`),
+- does not yet inspect inline review comments or persist long-term feedback history.
 
 ## Future Work
 
 Recommended next steps after this first version:
 
-1. Add a reusable GitHub Action or cron runner that invokes the evaluator helper.
+1. Extend the evaluator scanner to cover pull-request reviews and inline review comments.
 2. Persist structured feedback records for weekly evaluator reports.
 3. Add issue/PR label reconciliation helpers.
 4. Add deterministic reviewer/merger policy validators using the same metadata conventions.
