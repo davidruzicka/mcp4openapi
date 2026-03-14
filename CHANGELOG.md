@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - Blocked dangerous URI schemes during URI validation to prevent XSS through attacker-controlled links and redirects.
+- Restricted shared SSRF validation to `http:` and `https:` URLs so outbound bootstrap/OAuth/proxy guards reject unsupported schemes before hostname or DNS checks.
 - Removed raw environment variable values from selected configuration error messages and added regression checks to prevent secret leakage in errors.
 - Hardened MCP Apps resource loading so `file_path` stays inside the profile directory after normalization and symlink resolution, while keeping `resources/read` output shape consistent across inline, file-backed, and fetch-backed resources.
 - Fixed HTTP single-profile startup to carry `enterprise_authorization` into transport runtime so enterprise JWT bearer exchange and authenticated initialization work outside profile-routing mode, with dedicated E2E coverage.
