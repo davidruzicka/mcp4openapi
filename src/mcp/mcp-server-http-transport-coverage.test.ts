@@ -95,7 +95,7 @@ describe('MCPServer HTTP transport wiring (no listen)', () => {
     (server as any).handleToolCall = handleToolCall;
     (server as any).handleOtherRequest = handleOtherRequest;
 
-    const initResponse = await (server as any).handleJsonRpcMessage(
+    const initResponse = await server.handleHttpMessage(
       {
         jsonrpc: '2.0',
         id: 1,
@@ -110,7 +110,7 @@ describe('MCPServer HTTP transport wiring (no listen)', () => {
 
     expect(initResponse).toMatchObject({ jsonrpc: '2.0', id: 1 });
 
-    const toolResponse = await (server as any).handleJsonRpcMessage(
+    const toolResponse = await server.handleHttpMessage(
       {
         jsonrpc: '2.0',
         id: 2,
@@ -121,7 +121,7 @@ describe('MCPServer HTTP transport wiring (no listen)', () => {
     );
     expect(toolResponse).toEqual({ ok: 'tool' });
 
-    const otherResponse = await (server as any).handleJsonRpcMessage(
+    const otherResponse = await server.handleHttpMessage(
       {
         jsonrpc: '2.0',
         id: 3,

@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import path from 'path';
 import fs from 'node:fs/promises';
 import os from 'node:os';
@@ -7,6 +7,8 @@ import { ProfileRegistry } from '../profile/profile-registry.js';
 import type { ResolvedProfile } from '../profile/profile-resolver.js';
 import { resolveProfileFromPath } from '../profile/profile-resolver.js';
 import { MCPServerManager } from './mcp-server-manager.js';
+import { MCPServer } from './mcp-server.js';
+import type { MCPServerHttpBridge } from './http-transport-bridge.js';
 import { HttpTransport } from '../transport/http-transport.js';
 
 describe('MCPServerManager', () => {
@@ -47,6 +49,30 @@ describe('MCPServerManager', () => {
     const manager = new MCPServerManager(registry, logger);
 
     expect(manager.getDefaultProfileId()).toBe('default');
+  });
+
+  it('attaches a narrow HTTP bridge to lazily created servers', async () => {
+    const logger = new ConsoleLogger();
+    const registry = new ProfileRegistry({
+      profilesDir: path.join(process.cwd(), 'profiles'),
+    });
+    const httpBridge: MCPServerHttpBridge = {
+      ensureValidSessionToken: async () => true,
+      getSessionToken: () => undefined,
+      getSessionFiltering: () => undefined,
+      hasOAuthProvider: () => false,
+      stop: async () => {},
+    };
+
+    const manager = new MCPServerManager(registry, logger, httpBridge);
+    const attachSpy = vi.spyOn(MCPServer.prototype, 'attachHttpTransport');
+
+    try {
+      await manager.getServer('gitlab');
+      expect(attachSpy).toHaveBeenCalledWith(httpBridge);
+    } finally {
+      attachSpy.mockRestore();
+    }
   });
 
   it('routes HTTP requests through manager for profile routing', async () => {

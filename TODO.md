@@ -12,7 +12,6 @@
   - [4. Harden query parameter redaction canonicalization](#4-harden-query-parameter-redaction-canonicalization)
   - [7. Strengthen ReDoS Protection in Regex Compiler](#7-strengthen-redos-protection-in-regex-compiler)
   - [8. Limit HTTP profile server cache growth](#8-limit-http-profile-server-cache-growth)
-  - [9. Break MCPServer-HttpTransport circular dependency](#9-break-mcpserver-httptransport-circular-dependency)
   - [10. Split HttpTransport into smaller modules](#10-split-httptransport-into-smaller-modules)
   - [11. Reduce usage of any casts in HTTP transport](#11-reduce-usage-of-any-casts-in-http-transport)
   - [12. Avoid HTTP profile hint collisions across shared IPs](#12-avoid-http-profile-hint-collisions-across-shared-ips)
@@ -197,24 +196,6 @@ export DEFAULT_PROFILE_EXCLUDE_TAGS="admin,system"
 - `README.md` - document new env vars
 
 **Estimated effort**: 2-4 hours
-
-### 9. Break MCPServer-HttpTransport circular dependency
-**Problem**: MCPServer holds a reference to HttpTransport (typed as any), creating a circular dependency and weaker type safety.
-
-**Goal**: Remove direct dependency between MCPServer and HttpTransport for session cleanup and related hooks.
-
-**Implementation options**:
-- Introduce a small transport interface (methods used by MCPServer only) and type against that.
-- Use event-based cleanup: MCPServer emits session cleanup events, HttpTransport subscribes.
-- Invert control: move cleanup trigger into HttpTransport and pass a callback instead of full transport instance.
-
-**Files to modify**:
-- `src/mcp-server.ts` - replace direct transport reference with interface/callback
-- `src/http-transport.ts` - adjust session cleanup hookup
-- `src/mcp-server-manager.ts` - wiring changes if needed
-- `README.md` or `IMPLEMENTATION.md` - document architecture change
-
-**Estimated effort**: 2-3 hours
 
 ### 10. Split HttpTransport into smaller modules
 **Problem**: `src/http-transport.ts` is >2700 lines. `setupRoutes` and related OAuth/MCP handlers are large and hard to maintain.

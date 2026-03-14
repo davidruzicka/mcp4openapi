@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - Bumped transitive security-sensitive dependencies via overrides (`@hono/node-server` to `1.19.10`, `hono` to `4.12.4`) and aligned Semgrep SBOM negative test inputs/expectations with current `deploymentSlug`/`deployment_id` validation behavior.
 - Updated `express-rate-limit` to `^8.3.1` to remediate the open GitHub Security / Dependabot alert for IPv4-mapped IPv6 rate-limit keying.
+- Replaced concrete `HttpTransport` references in `MCPServer` and `MCPServerManager` with a narrow typed bridge so HTTP session/runtime wiring stays modular without changing transport behavior.
 
 ### Fixed
 - Blocked dangerous URI schemes during URI validation to prevent XSS through attacker-controlled links and redirects.

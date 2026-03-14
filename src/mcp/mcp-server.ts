@@ -70,7 +70,7 @@ import {
   type SessionToolFilterRequest,
 } from '../tool-filter/index.js';
 import type { HttpProfileContext } from '../types/http-transport.js';
-import type { HttpTransport } from '../transport/http-transport.js';
+import type { MCPServerHttpBridge, MCPServerHttpRuntimeBridge } from './http-transport-bridge.js';
 import { buildHttpTransportBaseConfig } from '../transport/http-transport-config.js';
 import { renderPrompt } from '../prompt/prompt-renderer.js';
 import type { MetricsCollector, MetricsContextLabels } from '../core/metrics.js';
@@ -88,7 +88,7 @@ export class MCPServer {
   private appsFetchCache = new Map<string, { expiresAt: number; value: string }>();
   private schemaValidator: SchemaValidator;
   private logger: Logger;
-  private httpTransport: HttpTransport | null = null;
+  private httpTransport: MCPServerHttpBridge | null = null;
   private stdioFiltering?: FilteringRules;
   private globalFiltering?: FilteringRules;
   private toolFilterService?: ToolFilterService;
@@ -728,7 +728,7 @@ export class MCPServer {
     // Get auth token from session (ensures token is valid/refreshed)
     const authToken = await this.getAuthTokenFromSession(sessionId, profileId);
     const effectiveProfileId = profileId || this.getProfileIdValue();
-    const tenantContext = this.httpTransport?.getSessionTenantContext(effectiveProfileId, sessionId);
+    const tenantContext = this.httpTransport?.getSessionTenantContext?.(effectiveProfileId, sessionId);
 
     // Create or get session client using factory
     return this.httpClientFactory.getOrCreateSessionClient(sessionId, {
@@ -1327,28 +1327,29 @@ export class MCPServer {
       this.logger.warn('Binding to non-localhost with empty MCP4_ALLOWED_ORIGINS. Set MCP4_ALLOWED_ORIGINS or bind to localhost.');
     }
 
-    this.httpTransport = new HttpTransport(config, this.logger);
-    const metricsCollector = this.httpTransport.getMetricsCollector?.() || null;
+    const httpTransport: MCPServerHttpRuntimeBridge = new HttpTransport(config, this.logger);
+    this.httpTransport = httpTransport;
+    const metricsCollector = httpTransport.getMetricsCollector?.() || null;
     this.httpClientFactory.setMetricsCollector(metricsCollector);
 
     this.recordGlobalToolFilterMetrics();
-    
+
     // Set message handler to process JSON-RPC messages
-    this.httpTransport.setMessageHandler(async (message: unknown, sessionId?: string, profileId?: string) => {
+    httpTransport.setMessageHandler(async (message: unknown, sessionId?: string, profileId?: string) => {
       return await this.handleJsonRpcMessage(message, sessionId, profileId);
     });
 
     // Register cleanup listener for session destruction (memory leak prevention)
-    this.httpTransport.onSessionDestroyed((profileId: string, sessionId: string) => {
+    httpTransport.onSessionDestroyed((profileId: string, sessionId: string) => {
       this.cleanupSessionClient(profileId, sessionId);
     });
 
-    await this.httpTransport.start();
+    await httpTransport.start();
     
     this.logger.info('MCP server running on HTTP', { host, port });
   }
 
-  public attachHttpTransport(transport: HttpTransport): void {
+  public attachHttpTransport(transport: MCPServerHttpBridge): void {
     this.httpTransport = transport;
     const metricsCollector = this.httpTransport.getMetricsCollector?.() || null;
     this.httpClientFactory.setMetricsCollector(metricsCollector);
@@ -1472,7 +1473,7 @@ export class MCPServer {
             message: 'Authentication required. Please authorize via OAuth.',
             data: {
               oauth_required: true,
-              resource_metadata: this.httpTransport.getOAuthProtectedResourceUrl(profileId),
+              resource_metadata: this.httpTransport.getOAuthProtectedResourceUrl?.(profileId),
               scope: 'api'
             }
           }
@@ -1790,7 +1791,7 @@ export class MCPServer {
             message: 'Authentication required. Please authorize via OAuth.',
             data: {
               oauth_required: true,
-              resource_metadata: this.httpTransport.getOAuthProtectedResourceUrl(profileId),
+              resource_metadata: this.httpTransport.getOAuthProtectedResourceUrl?.(profileId),
               scope: 'api'
             }
           }
@@ -2363,7 +2364,10 @@ export class MCPServer {
       return;
     }
 
-    if (typeof this.httpTransport.getSessionToolFilterRequest !== 'function') {
+    if (
+      typeof this.httpTransport.getSessionToolFilterRequest !== 'function' ||
+      typeof this.httpTransport.setSessionToolFilter !== 'function'
+    ) {
       return;
     }
     const effectiveProfileId = profileId || this.getProfileIdValue();

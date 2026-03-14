@@ -6,20 +6,20 @@ import type { Logger } from '../core/logger.js';
 import type { FilteringRules } from '../core/filtering.js';
 import { MCPServer } from './mcp-server.js';
 import type { HttpProfileContext } from '../types/http-transport.js';
-import type { HttpTransport } from '../transport/http-transport.js';
+import type { MCPServerHttpBridge } from './http-transport-bridge.js';
 import { ProfileRegistry } from '../profile/profile-registry.js';
 
 export class MCPServerManager {
   private registry: ProfileRegistry;
   private logger: Logger;
-  private httpTransport?: HttpTransport;
+  private httpTransport?: MCPServerHttpBridge;
   private globalFiltering?: FilteringRules;
   private servers = new Map<string, Promise<MCPServer>>();
 
   constructor(
     registry: ProfileRegistry,
     logger: Logger,
-    httpTransport?: HttpTransport,
+    httpTransport?: MCPServerHttpBridge,
     globalFiltering?: FilteringRules
   ) {
     this.registry = registry;
