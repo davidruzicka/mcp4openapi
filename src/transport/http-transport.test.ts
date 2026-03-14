@@ -10,25 +10,19 @@ import type { Express } from 'express';
 import fs from 'fs';
 import https from 'https';
 import { HttpTransport } from './http-transport.js';
+import { createHttpTransportTestHarness, type HttpTransportTestHarness } from './http-transport.test-harness.js';
 import { ConsoleLogger, type Logger } from '../core/logger.js';
 import { describeIfListen } from '../testing/listen-support.js';
 import { parseSessionToolFilterHeader } from '../tool-filter/index.js';
 
 describeIfListen('HttpTransport', () => {
   let transport: HttpTransport;
+  let harness: HttpTransportTestHarness;
   let app: Express;
   const logger = new ConsoleLogger();
-  const createProfileState = (target: any, profileId: string = 'default') => {
-    const state = {
-      profileId,
-      context: { profileId },
-      oauthProvider: null,
-      oauthTokensByAccessToken: new Map(),
-      sessions: new Map(),
-    };
-    target.profileStates.set(profileId, state);
-    return state;
-  };
+  const getHarness = (target: HttpTransport): HttpTransportTestHarness => createHttpTransportTestHarness(target);
+  const createProfileState = (target: HttpTransport, profileId: string = 'default') =>
+    getHarness(target).createProfileState(profileId);
 
   beforeEach(async () => {
     const config = {
@@ -42,8 +36,8 @@ describeIfListen('HttpTransport', () => {
     };
 
     transport = new HttpTransport(config, logger);
-    // Access private app property for testing
-    app = (transport as any).app;
+    harness = getHarness(transport);
+    app = harness.app;
   });
 
   afterEach(async () => {
@@ -55,8 +49,8 @@ describeIfListen('HttpTransport', () => {
   describe('filtering header mismatch', () => {
     it('rejects mismatched filtering header on existing session', async () => {
       transport.setMessageHandler(async () => ({ result: 'ok' }));
-      const sessionId = (transport as any).createSession(
-        createProfileState(transport as any),
+      const sessionId = harness.createSession(
+        createProfileState(transport),
         undefined,
         undefined,
         undefined,
@@ -81,8 +75,8 @@ describeIfListen('HttpTransport', () => {
     it('rejects mismatched tool filter header on existing session', async () => {
       transport.setMessageHandler(async () => ({ result: 'ok' }));
       const toolFilterRequest = parseSessionToolFilterHeader('get_user');
-      const sessionId = (transport as any).createSession(
-        createProfileState(transport as any),
+      const sessionId = harness.createSession(
+        createProfileState(transport),
         undefined,
         undefined,
         undefined,
@@ -153,7 +147,7 @@ describeIfListen('HttpTransport', () => {
         logger,
       );
       tenantTransport.setMessageHandler(async () => ({ result: { ok: true } }));
-      const tenantApp = (tenantTransport as any).app;
+      const tenantApp = getHarness(tenantTransport).app;
 
       const initResponse = await request(tenantApp)
         .post('/mcp')
@@ -190,7 +184,7 @@ describeIfListen('HttpTransport', () => {
         logger,
       );
       tenantTransport.setMessageHandler(async () => ({ result: { ok: true } }));
-      const tenantApp = (tenantTransport as any).app;
+      const tenantApp = getHarness(tenantTransport).app;
 
       const response = await request(tenantApp)
         .post('/mcp')
@@ -222,7 +216,7 @@ describeIfListen('HttpTransport', () => {
         logger,
       );
       tenantTransport.setMessageHandler(async () => ({ result: { ok: true } }));
-      const tenantApp = (tenantTransport as any).app;
+      const tenantApp = getHarness(tenantTransport).app;
 
       const initResponse = await request(tenantApp)
         .post('/mcp')
@@ -261,7 +255,7 @@ describeIfListen('HttpTransport', () => {
         logger,
       );
       tenantTransport.setMessageHandler(async () => ({ result: { ok: true } }));
-      const tenantApp = (tenantTransport as any).app;
+      const tenantApp = getHarness(tenantTransport).app;
 
       const initResponse = await request(tenantApp)
         .post('/mcp')
@@ -315,7 +309,7 @@ describeIfListen('HttpTransport', () => {
         logger,
       );
       tenantTransport.setMessageHandler(async () => ({ result: { ok: true } }));
-      const tenantApp = (tenantTransport as any).app;
+      const tenantApp = getHarness(tenantTransport).app;
 
       const initResponse = await request(tenantApp)
         .post('/mcp')
@@ -364,7 +358,7 @@ describeIfListen('HttpTransport', () => {
         logger,
       );
       tenantTransport.setMessageHandler(async () => ({ result: { ok: true } }));
-      const tenantApp = (tenantTransport as any).app;
+      const tenantApp = getHarness(tenantTransport).app;
 
       const initResponse = await request(tenantApp)
         .post('/mcp')
@@ -409,7 +403,7 @@ describeIfListen('HttpTransport', () => {
         logger,
       );
       tenantTransport.setMessageHandler(async () => ({ result: { ok: true } }));
-      const tenantApp = (tenantTransport as any).app;
+      const tenantApp = getHarness(tenantTransport).app;
 
       const initResponse = await request(tenantApp)
         .post('/mcp')
@@ -498,7 +492,7 @@ describeIfListen('HttpTransport', () => {
         logger,
       );
       tenantTransport.setMessageHandler(async () => ({ result: { ok: true } }));
-      const tenantApp = (tenantTransport as any).app;
+      const tenantApp = getHarness(tenantTransport).app;
 
       const initResponse = await request(tenantApp)
         .post('/mcp')
@@ -570,7 +564,7 @@ describeIfListen('HttpTransport', () => {
         logger,
       );
       tenantTransport.setMessageHandler(async () => ({ result: { ok: true } }));
-      const tenantApp = (tenantTransport as any).app;
+      const tenantApp = getHarness(tenantTransport).app;
 
       const response = await request(tenantApp)
         .post('/mcp')
@@ -615,7 +609,7 @@ describeIfListen('HttpTransport', () => {
         logger,
       );
       tenantTransport.setMessageHandler(async () => ({ result: { ok: true } }));
-      const tenantApp = (tenantTransport as any).app;
+      const tenantApp = getHarness(tenantTransport).app;
 
       const response = await request(tenantApp)
         .post('/mcp')
@@ -662,7 +656,7 @@ describeIfListen('HttpTransport', () => {
         logger,
       );
       tenantTransport.setMessageHandler(async () => ({ result: { ok: true } }));
-      const tenantApp = (tenantTransport as any).app;
+      const tenantApp = getHarness(tenantTransport).app;
 
       const response = await request(tenantApp)
         .post('/mcp')
@@ -711,7 +705,7 @@ describeIfListen('HttpTransport', () => {
         recordHttpRequest: vi.fn(),
       };
 
-      localApp = (localTransport as any).app;
+      localApp = getHarness(localTransport).app;
       localTransport.setMessageHandler(async () => ({ result: 'ok' }));
     });
 
@@ -851,7 +845,7 @@ describeIfListen('HttpTransport', () => {
 
     beforeEach(async () => {
       indexTransport = createIndexTransport();
-      indexApp = (indexTransport as any).app;
+      indexApp = getHarness(indexTransport).app;
     });
 
     afterEach(async () => {
@@ -974,7 +968,7 @@ describeIfListen('HttpTransport', () => {
       });
       await indexTransport.stop();
       indexTransport = createIndexTransport();
-      indexApp = (indexTransport as any).app;
+      indexApp = getHarness(indexTransport).app;
 
       indexTransport.setProfileContextProvider(async (profileId: string) => ({
         profileId,
@@ -1037,7 +1031,7 @@ describeIfListen('HttpTransport', () => {
       });
       await indexTransport.stop();
       indexTransport = createIndexTransport();
-      indexApp = (indexTransport as any).app;
+      indexApp = getHarness(indexTransport).app;
 
       indexTransport.setProfileContextProvider(async (profileId: string) => ({
         profileId,
@@ -1153,7 +1147,7 @@ describeIfListen('HttpTransport', () => {
       };
 
       customTransport = new HttpTransport(config, logger);
-      customApp = (customTransport as any).app;
+      customApp = getHarness(customTransport).app;
       customTransport.setMessageHandler(async (_msg) => ({ result: 'ok' }));
     });
 
@@ -1646,9 +1640,9 @@ describeIfListen('HttpTransport', () => {
 
       const sessionId = initResponse.headers['mcp-session-id'];
 
-      (transport as any).startSSEStream = () => {
+      harness.setStartSseStream(() => {
         throw new Error('SSE failure');
-      };
+      });
 
       const response = await request(app)
         .get('/mcp')
@@ -1936,7 +1930,7 @@ describeIfListen('HttpTransport', () => {
       });
 
       const sessionId = initResponse.headers['mcp-session-id'];
-      const profileState = (transport as any).profileStates.get('default');
+      const profileState = harness.getProfileState('default');
       const session = profileState.sessions.get(sessionId);
 
       expect(session).toBeDefined();
@@ -1963,7 +1957,7 @@ describeIfListen('HttpTransport', () => {
       });
 
       const sessionId = initResponse.headers['mcp-session-id'];
-      const profileState = (transport as any).profileStates.get('default');
+      const profileState = harness.getProfileState('default');
       const initialActivity = profileState.sessions.get(sessionId).lastActivityAt;
 
       // Wait a bit
@@ -2001,7 +1995,7 @@ describeIfListen('HttpTransport', () => {
       };
 
       metricsTransport = new HttpTransport(config, logger);
-      metricsApp = (metricsTransport as any).app;
+      metricsApp = getHarness(metricsTransport).app;
       metricsTransport.setMessageHandler(async (_msg) => ({ result: 'ok' }));
     });
 
@@ -2042,7 +2036,7 @@ describeIfListen('HttpTransport', () => {
         },
         logger
       );
-      const noMetricsApp = (noMetricsTransport as any).app;
+      const noMetricsApp = getHarness(noMetricsTransport).app;
 
       // Metrics endpoint should not be registered when disabled
       const response = await request(noMetricsApp)
@@ -2095,7 +2089,7 @@ describeIfListen('HttpTransport', () => {
       };
 
       const disabledTransport = new HttpTransport(disabledConfig, logger);
-      const disabledApp = (disabledTransport as any).app;
+      const disabledApp = getHarness(disabledTransport).app;
 
       const response = await request(disabledApp)
         .get('/metrics')
@@ -2151,7 +2145,7 @@ describeIfListen('HttpTransport', () => {
       };
 
       const customTransport = new HttpTransport(customConfig, logger);
-      const customApp = (customTransport as any).app;
+      const customApp = getHarness(customTransport).app;
 
       // Custom path should work
       const response1 = await request(customApp).get('/custom-metrics');
@@ -2187,7 +2181,7 @@ describeIfListen('HttpTransport', () => {
       };
 
       oauthTransport = new HttpTransport(oauthConfig, logger);
-      oauthApp = (oauthTransport as any).app;
+      oauthApp = getHarness(oauthTransport).app;
     });
 
     afterEach(async () => {
@@ -2263,8 +2257,8 @@ describeIfListen('HttpTransport', () => {
         logger
       );
       // Force oauthProvider to null after setup to test the else branch
-      createProfileState(oauthTransport as any).oauthProvider = null;
-      const oauthApp = (oauthTransport as any).app;
+      createProfileState(oauthTransport).oauthProvider = null;
+      const oauthApp = getHarness(oauthTransport).app;
 
       const response = await request(oauthApp)
         .post('/oauth/token')
@@ -2304,7 +2298,7 @@ describeIfListen('HttpTransport', () => {
       };
 
       oauthTransport = new HttpTransport(oauthConfig, logger);
-      oauthApp = (oauthTransport as any).app;
+      oauthApp = getHarness(oauthTransport).app;
     });
 
     afterEach(async () => {
@@ -2329,7 +2323,7 @@ describeIfListen('HttpTransport', () => {
 
     it('should handle exception during OAuth callback', async () => {
       // Mock the oauthProvider to throw an error during handleCallback
-      createProfileState(oauthTransport as any).oauthProvider = {
+      createProfileState(oauthTransport).oauthProvider = {
         handleCallback: async () => {
           throw new Error('Token exchange failed');
         }
@@ -2366,7 +2360,7 @@ describeIfListen('HttpTransport', () => {
       };
 
       oauthTransport = new HttpTransport(oauthConfig, logger);
-      oauthApp = (oauthTransport as any).app;
+      oauthApp = getHarness(oauthTransport).app;
     });
 
     afterEach(async () => {
@@ -2423,7 +2417,7 @@ describeIfListen('HttpTransport', () => {
       };
 
       oauthTransport = new HttpTransport(oauthConfig, logger);
-      oauthApp = (oauthTransport as any).app;
+      oauthApp = getHarness(oauthTransport).app;
     });
 
     afterEach(async () => {
@@ -2482,7 +2476,7 @@ describeIfListen('HttpTransport', () => {
       };
 
       oauthTransport = new HttpTransport(minimalOauthConfig as any, logger);
-      oauthApp = (oauthTransport as any).app;
+      oauthApp = getHarness(oauthTransport).app;
 
       const response = await request(oauthApp)
         .get('/.well-known/oauth-protected-resource/mcp');
@@ -2511,7 +2505,7 @@ describeIfListen('HttpTransport', () => {
       };
 
       const noOAuthTransport = new HttpTransport(noOAuthConfig, logger);
-      const noOAuthApp = (noOAuthTransport as any).app;
+      const noOAuthApp = getHarness(noOAuthTransport).app;
 
       // OAuth endpoints should not exist
       const authorizeResponse = await request(noOAuthApp).get('/oauth/authorize');
@@ -2538,7 +2532,7 @@ describeIfListen('HttpTransport', () => {
       };
 
       const tokenTransport = new HttpTransport(configWithMaxLength, logger);
-      const tokenApp = (tokenTransport as any).app;
+      const tokenApp = getHarness(tokenTransport).app;
       tokenTransport.setMessageHandler(async (_msg) => ({ result: 'ok' }));
 
       // Token within limit
@@ -2578,7 +2572,7 @@ describeIfListen('HttpTransport', () => {
         } as any,
         logger
       );
-      const tokenApp = (tokenTransport as any).app;
+      const tokenApp = getHarness(tokenTransport).app;
       tokenTransport.setMessageHandler(async () => ({ result: 'ok' }));
 
       const originalFetch = global.fetch;
@@ -2624,7 +2618,7 @@ describeIfListen('HttpTransport', () => {
         } as any,
         logger
       );
-      const tokenApp = (tokenTransport as any).app;
+      const tokenApp = getHarness(tokenTransport).app;
       tokenTransport.setMessageHandler(async () => ({ result: 'ok' }));
 
       const originalFetch = global.fetch;
@@ -2776,7 +2770,7 @@ describeIfListen('HttpTransport', () => {
       );
 
       // Mock invalid redirect URI
-      createProfileState(oauthTransport as any).oauthProvider = {
+      createProfileState(oauthTransport).oauthProvider = {
         redirectUri: 'not-a-valid-url'
       };
 
@@ -2918,7 +2912,7 @@ describeIfListen('HttpTransport', () => {
       };
 
       const oauthTransport = new HttpTransport(oauthConfig, logger);
-      await (oauthTransport as any).getProfileState('default');
+      await getHarness(oauthTransport).loadProfileState('default');
       expect(oauthTransport.hasOAuthProvider()).toBe(true);
       oauthTransport.stop();
     });
@@ -2947,7 +2941,7 @@ describeIfListen('HttpTransport', () => {
       };
 
       const oauthTransport = new HttpTransport(oauthConfig, logger);
-      await (oauthTransport as any).getProfileState('default');
+      await getHarness(oauthTransport).loadProfileState('default');
       expect(oauthTransport.getOAuthAuthorizationUrl()).toBe('https://example.com/oauth/authorize');
       oauthTransport.stop();
     });
@@ -2977,7 +2971,7 @@ describeIfListen('HttpTransport', () => {
       };
 
       const oauthTransport = new HttpTransport(oauthConfig, logger);
-      await (oauthTransport as any).getProfileState('default');
+      await getHarness(oauthTransport).loadProfileState('default');
       expect(oauthTransport.getOAuthScopes()).toEqual(['api', 'read_user']);
       oauthTransport.stop();
     });
@@ -2991,9 +2985,9 @@ describeIfListen('HttpTransport', () => {
 
   describe('destroySession', () => {
     it('should handle destroying non-existent session gracefully', () => {
-      const profileState = createProfileState(transport as any);
+      const profileState = createProfileState(transport);
       // Should not throw
-      expect(() => (transport as any).destroySession(profileState, 'non-existent-session')).not.toThrow();
+      expect(() => harness.destroySession(profileState, 'non-existent-session')).not.toThrow();
     });
   });
 
@@ -3028,41 +3022,41 @@ describeIfListen('HttpTransport', () => {
 
   describe('cleanupExpiredSessions', () => {
     it('should not throw when no sessions to clean', () => {
-      expect(() => (transport as any).cleanupExpiredSessions()).not.toThrow();
+      expect(() => harness.cleanupExpiredSessions()).not.toThrow();
     });
   });
 
   describe('refreshAccessToken', () => {
     it('should return false when session does not exist', async () => {
-      const result = await (transport as any).refreshAccessToken('default', 'non-existent');
+      const result = await harness.refreshAccessToken('default', 'non-existent');
       expect(result).toBe(false);
     });
 
     it('should return false when session has no refresh token', async () => {
       // Create session without refresh token
-      const profileState = createProfileState(transport as any);
-      const sessionId = (transport as any).createSession(profileState, 'access-token');
-      const result = await (transport as any).refreshAccessToken('default', sessionId);
+      const profileState = createProfileState(transport);
+      const sessionId = harness.createSession(profileState, 'access-token');
+      const result = await harness.refreshAccessToken('default', sessionId);
       expect(result).toBe(false);
     });
 
     it('should return false when OAuth provider is not configured', async () => {
       // Create session with refresh token but no OAuth provider
-      const profileState = createProfileState(transport as any);
-      const sessionId = (transport as any).createSession(profileState, 'access-token', 'refresh-token');
-      const result = await (transport as any).refreshAccessToken('default', sessionId);
+      const profileState = createProfileState(transport);
+      const sessionId = harness.createSession(profileState, 'access-token', 'refresh-token');
+      const result = await harness.refreshAccessToken('default', sessionId);
       expect(result).toBe(false);
     });
 
     it('reuses tenant OAuth provider instance per session and clears it on session destroy', () => {
-      const profileState = createProfileState(transport as any);
+      const profileState = createProfileState(transport);
       const tenantOAuthConfig = {
         authorization_endpoint: 'https://auth.example.com/oauth/authorize',
         token_endpoint: 'https://auth.example.com/oauth/token',
         client_id: 'tenant-client',
         client_secret: 'tenant-secret',
       };
-      const sessionId = (transport as any).createSession(
+      const sessionId = harness.createSession(
         profileState,
         'access-token',
         'refresh-token',
@@ -3084,12 +3078,12 @@ describeIfListen('HttpTransport', () => {
       const session = profileState.sessions.get(sessionId);
       expect(session).toBeDefined();
 
-      const firstProvider = (transport as any).getOAuthProviderForSession(profileState, session);
-      const secondProvider = (transport as any).getOAuthProviderForSession(profileState, session);
+      const firstProvider = harness.getOAuthProviderForSession(profileState, session);
+      const secondProvider = harness.getOAuthProviderForSession(profileState, session);
       expect(firstProvider).toBe(secondProvider);
       expect((profileState as any).tenantOAuthProvidersBySessionId.get(sessionId)).toBe(firstProvider);
 
-      (transport as any).destroySession(profileState, sessionId);
+      harness.destroySession(profileState, sessionId);
       expect((profileState as any).tenantOAuthProvidersBySessionId.has(sessionId)).toBe(false);
     });
 
@@ -3113,8 +3107,8 @@ describeIfListen('HttpTransport', () => {
         logger
       );
 
-      const profileState = createProfileState(oauthTransport as any);
-      const sessionId = (oauthTransport as any).createSession(profileState, 'old-access', 'refresh-token');
+      const profileState = createProfileState(oauthTransport);
+      const sessionId = getHarness(oauthTransport).createSession(profileState, 'old-access', 'refresh-token');
       const session = profileState.sessions.get(sessionId);
       session.oauthClientId = 'test-client';
 
@@ -3131,7 +3125,7 @@ describeIfListen('HttpTransport', () => {
         })
       };
 
-      const result = await (oauthTransport as any).refreshAccessToken('default', sessionId);
+      const result = await getHarness(oauthTransport).refreshAccessToken('default', sessionId);
       expect(result).toBe(true);
       expect(session.accessTokenExpiresAt).toBeUndefined();
       expect(session.authToken).toBe('new-access');
@@ -3159,8 +3153,8 @@ describeIfListen('HttpTransport', () => {
         logger
       );
 
-      const profileState = createProfileState(oauthTransport as any);
-      const sessionId = (oauthTransport as any).createSession(profileState, 'old-access', 'refresh-token');
+      const profileState = createProfileState(oauthTransport);
+      const sessionId = getHarness(oauthTransport).createSession(profileState, 'old-access', 'refresh-token');
       const session = profileState.sessions.get(sessionId);
       session.oauthClientId = 'test-client';
 
@@ -3174,7 +3168,7 @@ describeIfListen('HttpTransport', () => {
         }
       };
 
-      const result = await (oauthTransport as any).refreshAccessToken('default', sessionId);
+      const result = await getHarness(oauthTransport).refreshAccessToken('default', sessionId);
       expect(result).toBe(false);
 
       await oauthTransport.stop();
@@ -3190,14 +3184,14 @@ describeIfListen('HttpTransport', () => {
         oauthTokensByAccessToken: new Map(),
         sessions: new Map(),
       };
-      (transport as any).profileStates.set('default', profileState);
+      harness.setProfileState(profileState);
       const tokens = {
         access_token: 'test-access-token',
         refresh_token: 'test-refresh-token',
         expires_in: 3600
       };
       
-      (transport as any).storeOAuthTokens(profileState, tokens, 'client-id', ['read', 'write']);
+      harness.storeOAuthTokens(profileState, tokens, 'client-id', ['read', 'write']);
       
       const stored = profileState.oauthTokensByAccessToken.get('test-access-token');
       expect(stored).toBeDefined();
@@ -3215,12 +3209,12 @@ describeIfListen('HttpTransport', () => {
         oauthTokensByAccessToken: new Map(),
         sessions: new Map(),
       };
-      (transport as any).profileStates.set('default', profileState);
+      harness.setProfileState(profileState);
       const tokens = {
         access_token: 'test-access-token-2'
       };
       
-      (transport as any).storeOAuthTokens(profileState, tokens, 'client-id', []);
+      harness.storeOAuthTokens(profileState, tokens, 'client-id', []);
       
       const stored = profileState.oauthTokensByAccessToken.get('test-access-token-2');
       expect(stored).toBeDefined();
@@ -3231,8 +3225,8 @@ describeIfListen('HttpTransport', () => {
 
   describe('getSessionToken', () => {
     it('should return token for existing session', () => {
-      const profileState = createProfileState(transport as any);
-      const sessionId = (transport as any).createSession(profileState, 'my-auth-token');
+      const profileState = createProfileState(transport);
+      const sessionId = harness.createSession(profileState, 'my-auth-token');
       const token = transport.getSessionToken('default', sessionId);
       expect(token).toBe('my-auth-token');
     });
@@ -3260,7 +3254,7 @@ describeIfListen('HttpTransport', () => {
       }));
       routingTransport.setMessageHandler(handler);
 
-      const routingApp = (routingTransport as any).app;
+      const routingApp = getHarness(routingTransport).app;
 
       const response = await request(routingApp)
         .post('/profile/gitlab/mcp')
@@ -3302,7 +3296,7 @@ describeIfListen('HttpTransport', () => {
         serverInfo: { name: 'test' },
       }));
 
-      const routingApp = (routingTransport as any).app;
+      const routingApp = getHarness(routingTransport).app;
       const response = await request(routingApp)
         .post('/profile/gitlab/sse')
         .set('Accept', 'text/event-stream')
@@ -3343,7 +3337,7 @@ describeIfListen('HttpTransport', () => {
         result: { ok: true },
       }));
 
-      const routingApp = (routingTransport as any).app;
+      const routingApp = getHarness(routingTransport).app;
       const response = await request(routingApp)
         .post('/mcp')
         .set('Accept', 'application/json')
@@ -3386,7 +3380,7 @@ describeIfListen('HttpTransport', () => {
       }));
       routingTransport.setMessageHandler(handler);
 
-      const routingApp = (routingTransport as any).app;
+      const routingApp = getHarness(routingTransport).app;
       const response = await request(routingApp)
         .post('/mcp')
         .set('Accept', 'application/json')
@@ -3430,7 +3424,7 @@ describeIfListen('HttpTransport', () => {
       }));
       routingTransport.setMessageHandler(handler);
 
-      const routingApp = (routingTransport as any).app;
+      const routingApp = getHarness(routingTransport).app;
       const response = await request(routingApp)
         .post('/profile/alias-default/mcp')
         .set('Accept', 'application/json')
@@ -3475,7 +3469,7 @@ describeIfListen('HttpTransport', () => {
       }));
       routingTransport.setMessageHandler(handler);
 
-      const routingApp = (routingTransport as any).app;
+      const routingApp = getHarness(routingTransport).app;
       const response = await request(routingApp)
         .post('/profile/alias/mcp')
         .set('Accept', 'application/json')
@@ -3522,7 +3516,7 @@ describeIfListen('HttpTransport', () => {
         },
       }));
 
-      const routingApp = (routingTransport as any).app;
+      const routingApp = getHarness(routingTransport).app;
       const response = await request(routingApp).get('/profile/gitlab/.well-known/oauth-authorization-server');
 
       expect(response.status).toBe(200);
@@ -3559,7 +3553,7 @@ describeIfListen('HttpTransport', () => {
         },
       }));
 
-      const routingApp = (routingTransport as any).app;
+      const routingApp = getHarness(routingTransport).app;
       const response = await request(routingApp).get('/.well-known/oauth-authorization-server/profile/gitlab');
 
       expect(response.status).toBe(200);
@@ -3596,7 +3590,7 @@ describeIfListen('HttpTransport', () => {
         },
       }));
 
-      const routingApp = (routingTransport as any).app;
+      const routingApp = getHarness(routingTransport).app;
       const responseProfilePath = await request(routingApp).get('/profile/gitlab/.well-known/openid-configuration');
       const responseSuffixPath = await request(routingApp).get('/.well-known/openid-configuration/profile/gitlab');
 
@@ -3635,7 +3629,7 @@ describeIfListen('HttpTransport', () => {
         },
       }));
 
-      const routingApp = (routingTransport as any).app;
+      const routingApp = getHarness(routingTransport).app;
       const response = await request(routingApp).get('/profile/default/.well-known/oauth-authorization-server');
 
       expect(response.status).toBe(200);
@@ -3672,7 +3666,7 @@ describeIfListen('HttpTransport', () => {
         },
       }));
 
-      const routingApp = (routingTransport as any).app;
+      const routingApp = getHarness(routingTransport).app;
       const response = await request(routingApp).get('/profile/gitlab/.well-known/oauth-protected-resource/mcp');
 
       expect(response.status).toBe(200);
@@ -3708,7 +3702,7 @@ describeIfListen('HttpTransport', () => {
         },
       }));
 
-      const routingApp = (routingTransport as any).app;
+      const routingApp = getHarness(routingTransport).app;
       const response = await request(routingApp)
         .get('/.well-known/oauth-protected-resource/mcp')
         .query({ resource: 'https://example.com/profile/gitlab/mcp/' });
@@ -3746,7 +3740,7 @@ describeIfListen('HttpTransport', () => {
         },
       }));
 
-      const routingApp = (routingTransport as any).app;
+      const routingApp = getHarness(routingTransport).app;
       const response = await request(routingApp)
         .get('/.well-known/oauth-protected-resource/profile/gitlab/mcp');
 
@@ -3783,7 +3777,7 @@ describeIfListen('HttpTransport', () => {
         },
       }));
 
-      const routingApp = (routingTransport as any).app;
+      const routingApp = getHarness(routingTransport).app;
 
       // Prime hint via profile route
       await request(routingApp)
@@ -3828,7 +3822,7 @@ describeIfListen('HttpTransport', () => {
         },
       }));
 
-      const routingApp = (routingTransport as any).app;
+      const routingApp = getHarness(routingTransport).app;
       const response = await request(routingApp)
         .get('/.well-known/oauth-protected-resource/mcp')
         .query({ resource: 'https://example.com/profile/gitlab/mcp' });
@@ -3855,7 +3849,7 @@ describeIfListen('HttpTransport', () => {
         logger
       );
 
-      const routingApp = (routingTransport as any).app;
+      const routingApp = getHarness(routingTransport).app;
       const response = await request(routingApp)
         .get('/.well-known/oauth-protected-resource/mcp')
         .query({ resource: ['one', 'two'] });
@@ -3881,7 +3875,7 @@ describeIfListen('HttpTransport', () => {
         logger
       );
 
-      const routingApp = (routingTransport as any).app;
+      const routingApp = getHarness(routingTransport).app;
       const response = await request(routingApp)
         .get('/.well-known/oauth-protected-resource/mcp')
         .query({ resource: 'not-a-url' });
@@ -3916,7 +3910,7 @@ describeIfListen('HttpTransport', () => {
 
     it('should allow origin matching OAuth redirect URI host', async () => {
       // Mock OAuth provider with redirect URI
-      (oauthTransport as any).profileStates.set('default', {
+      getHarness(oauthTransport).setProfileState({
         profileId: 'default',
         context: { profileId: 'default' },
         oauthProvider: { redirectUri: 'http://myapp.example.com:3000/callback' },
@@ -3924,13 +3918,13 @@ describeIfListen('HttpTransport', () => {
         sessions: new Map(),
       });
 
-      const isAllowed = (oauthTransport as any).isAllowedOrigin('http://myapp.example.com:3000');
+      const isAllowed = getHarness(oauthTransport).isAllowedOrigin('http://myapp.example.com:3000');
       expect(isAllowed).toBe(true);
     });
 
     it('should handle invalid OAuth redirect URI gracefully', async () => {
       // Mock OAuth provider with invalid redirect URI
-      (oauthTransport as any).profileStates.set('default', {
+      getHarness(oauthTransport).setProfileState({
         profileId: 'default',
         context: { profileId: 'default' },
         oauthProvider: { redirectUri: 'not-a-valid-url' },
@@ -3939,7 +3933,7 @@ describeIfListen('HttpTransport', () => {
       });
 
       // Should not throw and should fall back to other checks
-      const isAllowed = (oauthTransport as any).isAllowedOrigin('http://localhost:3000');
+      const isAllowed = getHarness(oauthTransport).isAllowedOrigin('http://localhost:3000');
       expect(isAllowed).toBe(true); // localhost always allowed
     });
   });

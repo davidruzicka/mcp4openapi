@@ -4,6 +4,7 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { HttpTransport } from './http-transport.js';
+import { createHttpTransportTestHarness, type HttpTransportTestHarness } from './http-transport.test-harness.js';
 import { ConsoleLogger } from '../core/logger.js';
 import { parseSessionToolFilterHeader } from '../tool-filter/index.js';
 import type { SessionToolFilter } from '../types/http-transport.js';
@@ -11,19 +12,12 @@ import { ConfigurationError, ValidationError } from '../core/errors.js';
 
 describe('HttpTransport unit', () => {
   let transport: HttpTransport;
+  let harness: HttpTransportTestHarness;
   const logger = new ConsoleLogger();
 
-  const createProfileState = (target: any, profileId: string = 'default') => {
-    const state = {
-      profileId,
-      context: { profileId },
-      oauthProvider: null,
-      oauthTokensByAccessToken: new Map(),
-      sessions: new Map(),
-    };
-    target.profileStates.set(profileId, state);
-    return state;
-  };
+  const getHarness = (target: HttpTransport): HttpTransportTestHarness => createHttpTransportTestHarness(target);
+  const createProfileState = (target: HttpTransport, profileId: string = 'default') =>
+    getHarness(target).createProfileState(profileId);
 
   const withGet = (req: any) => {
     if (typeof req.get === 'function') {
@@ -52,6 +46,7 @@ describe('HttpTransport unit', () => {
     };
 
     transport = new HttpTransport(config, logger);
+    harness = getHarness(transport);
   });
 
   afterEach(async () => {
@@ -60,17 +55,17 @@ describe('HttpTransport unit', () => {
 
   describe('filtering header helpers', () => {
     it('detects unknown message types', () => {
-      const messageType = (transport as any).getMessageType(123);
+      const messageType = harness.getMessageType(123);
       expect(messageType).toBe('unknown');
     });
 
     it('detects response-only messages', () => {
-      const messageType = (transport as any).getMessageType({ result: { ok: true } });
+      const messageType = harness.getMessageType({ result: { ok: true } });
       expect(messageType).toBe('response-only');
     });
 
     it('handles filtering header arrays', () => {
-      const getFilteringHeaderValue = (transport as any).getFilteringHeaderValue.bind(transport);
+      const getFilteringHeaderValue = harness.getFilteringHeaderValue;
       expect(getFilteringHeaderValue({ headers: { 'x-mcp4-params': [] } })).toBeUndefined();
       expect(() =>
         getFilteringHeaderValue({ headers: { 'x-mcp4-params': ['a=b', 'c=d'] } })
@@ -78,7 +73,7 @@ describe('HttpTransport unit', () => {
     });
 
     it('returns first filtering header value when single entry is provided', () => {
-      const getFilteringHeaderValue = (transport as any).getFilteringHeaderValue.bind(transport);
+      const getFilteringHeaderValue = harness.getFilteringHeaderValue;
       expect(getFilteringHeaderValue({ headers: { 'x-mcp4-params': ['project_id=1'] } })).toBe(
         'project_id=1'
       );
@@ -88,8 +83,8 @@ describe('HttpTransport unit', () => {
     });
 
     it('exposes session filtering values', () => {
-      const sessionId = (transport as any).createSession(
-        createProfileState(transport as any),
+      const sessionId = harness.createSession(
+        createProfileState(transport),
         undefined,
         undefined,
         undefined,
@@ -119,7 +114,7 @@ describe('HttpTransport unit', () => {
       );
 
       try {
-        const sessionId = (scopedTransport as any).createSession(createProfileState(scopedTransport as any));
+        const sessionId = getHarness(scopedTransport).createSession(createProfileState(scopedTransport));
         expect(scopedTransport.getSessionFiltering('default', sessionId)).toEqual({
           project_id: ['1'],
           _allow_read: [],
@@ -146,8 +141,8 @@ describe('HttpTransport unit', () => {
       );
 
       try {
-        const sessionId = (scopedTransport as any).createSession(
-          createProfileState(scopedTransport as any),
+        const sessionId = getHarness(scopedTransport).createSession(
+          createProfileState(scopedTransport),
           undefined,
           undefined,
           undefined,
@@ -186,8 +181,8 @@ describe('HttpTransport unit', () => {
 
       try {
         expect(() =>
-          (scopedTransport as any).createSession(
-            createProfileState(scopedTransport as any),
+          getHarness(scopedTransport).createSession(
+            createProfileState(scopedTransport),
             undefined,
             undefined,
             undefined,
@@ -203,8 +198,8 @@ describe('HttpTransport unit', () => {
     });
 
     it('handles tenant header arrays and invalid values', () => {
-      const getTenantIdHeaderValue = (transport as any).getTenantIdHeaderValue.bind(transport);
-      const getTenantBaseUrlHeaderValue = (transport as any).getTenantBaseUrlHeaderValue.bind(transport);
+      const getTenantIdHeaderValue = harness.getTenantIdHeaderValue;
+      const getTenantBaseUrlHeaderValue = harness.getTenantBaseUrlHeaderValue;
 
       expect(getTenantIdHeaderValue({ headers: { 'x-mcp4-tenant-id': [] } })).toBeUndefined();
       expect(() => getTenantIdHeaderValue({ headers: { 'x-mcp4-tenant-id': ['a', 'b'] } })).toThrow();
@@ -218,7 +213,7 @@ describe('HttpTransport unit', () => {
     });
 
     it('handles tool filter header arrays', () => {
-      const getToolFilterHeaderValue = (transport as any).getToolFilterHeaderValue.bind(transport);
+      const getToolFilterHeaderValue = harness.getToolFilterHeaderValue;
       expect(getToolFilterHeaderValue({ headers: { 'x-mcp4-tools': [] } })).toBeUndefined();
       expect(() =>
         getToolFilterHeaderValue({ headers: { 'x-mcp4-tools': ['a', 'b'] } })
@@ -227,8 +222,8 @@ describe('HttpTransport unit', () => {
 
     it('exposes session tool filter values', () => {
       const toolFilterRequest = parseSessionToolFilterHeader('get_user');
-      const sessionId = (transport as any).createSession(
-        createProfileState(transport as any),
+      const sessionId = harness.createSession(
+        createProfileState(transport),
         undefined,
         undefined,
         undefined,
@@ -248,8 +243,8 @@ describe('HttpTransport unit', () => {
       expect(toolFilterRequest.allowCategories.has('list')).toBe(true);
       expect(toolFilterRequest.hasRules).toBe(true);
 
-      const sessionId = (transport as any).createSession(
-        createProfileState(transport as any),
+      const sessionId = harness.createSession(
+        createProfileState(transport),
         undefined,
         undefined,
         undefined,
@@ -268,8 +263,8 @@ describe('HttpTransport unit', () => {
       const toolFilterRequest = parseSessionToolFilterHeader('_allow_read');
       expect(toolFilterRequest.allowCategories.has('read')).toBe(true);
 
-      const sessionId = (transport as any).createSession(
-        createProfileState(transport as any),
+      const sessionId = harness.createSession(
+        createProfileState(transport),
         undefined,
         undefined,
         undefined,
@@ -290,8 +285,8 @@ describe('HttpTransport unit', () => {
       expect(toolFilterRequest.allowCategories.has('list')).toBe(true);
       expect(toolFilterRequest.regexPatterns.length).toBe(1);
 
-      const sessionId = (transport as any).createSession(
-        createProfileState(transport as any),
+      const sessionId = harness.createSession(
+        createProfileState(transport),
         undefined,
         undefined,
         undefined,
@@ -330,8 +325,8 @@ describe('HttpTransport unit', () => {
         logger
       );
 
-      const profileState = createProfileState(transportWithParser as any);
-      const service = (transportWithParser as any).getToolFilterService(profileState);
+      const profileState = createProfileState(transportWithParser);
+      const service = getHarness(transportWithParser).getToolFilterService(profileState);
       expect(service).toBeDefined();
 
       const toolFilterRequest = parseSessionToolFilterHeader('_allow_list');
@@ -354,8 +349,8 @@ describe('HttpTransport unit', () => {
         logger
       );
 
-      const profileState = createProfileState(transportWithoutParser as any);
-      const service = (transportWithoutParser as any).getToolFilterService(profileState);
+      const profileState = createProfileState(transportWithoutParser);
+      const service = getHarness(transportWithoutParser).getToolFilterService(profileState);
       expect(service).toBeDefined();
 
       const toolFilterRequest = parseSessionToolFilterHeader('get_user');
@@ -387,7 +382,7 @@ describe('HttpTransport unit', () => {
         patternCounts: { allow_list: 1 },
       });
 
-      const metricsOutput = await (metricsTransport as any).metrics.getMetrics();
+      const metricsOutput = await metricsTransport.getMetricsCollector()!.getMetrics();
       expect(metricsOutput).toContain('mcp_tools_total{source="profile"} 4');
       expect(metricsOutput).toContain('mcp_tools_filtered{source="global_env",action="allowed"} 3');
       expect(metricsOutput).toContain('mcp_tools_filtered{source="global_env",action="denied"} 1');
@@ -414,7 +409,7 @@ describe('HttpTransport unit', () => {
 
       metricsTransport.recordSessionToolFilterMetrics(sessionId, 2, request);
 
-      const metricsOutput = await (metricsTransport as any).metrics.getMetrics();
+      const metricsOutput = await metricsTransport.getMetricsCollector()!.getMetrics();
       expect(metricsOutput).toContain(`mcp_tools_session{session_id="${sessionId}"} 2`);
       expect(metricsOutput).toContain('mcp_tool_filter_patterns{type="session_allow_list"} 2');
       expect(metricsOutput).toContain('mcp_tool_filter_patterns{type="session_allow_regex"} 1');
@@ -439,7 +434,7 @@ describe('HttpTransport unit', () => {
       metricsTransport.recordToolFilterRejection('delete_user', 'env');
       metricsTransport.recordToolFilterRejection('drop_table', 'session');
 
-      const metricsOutput = await (metricsTransport as any).metrics.getMetrics();
+      const metricsOutput = await metricsTransport.getMetricsCollector()!.getMetrics();
       expect(metricsOutput).toContain('mcp_tool_filter_rejections_total{tool="delete_user",source="env"} 1');
       expect(metricsOutput).toContain('mcp_tool_filter_rejections_total{tool="drop_table",source="session"} 1');
 
@@ -488,8 +483,8 @@ describe('HttpTransport unit', () => {
         },
         logger
       );
-      const profileState = createProfileState(localTransport as any);
-      const sessionId = (localTransport as any).createSession(profileState);
+      const profileState = createProfileState(localTransport);
+      const sessionId = getHarness(localTransport).createSession(profileState);
 
       const toolFilter: SessionToolFilter = {
         allowedToolNames: new Set(['get_user', 'list_users']),
@@ -505,7 +500,7 @@ describe('HttpTransport unit', () => {
       expect(retrieved?.allowedToolNames.has('get_user')).toBe(true);
       expect(retrieved?.allowedToolNames.has('list_users')).toBe(true);
 
-      (localTransport as any).destroySession(profileState, sessionId);
+      getHarness(localTransport).destroySession(profileState, sessionId);
       await localTransport.stop();
     });
 
@@ -572,7 +567,7 @@ describe('HttpTransport unit', () => {
         logger
       );
 
-      const isAllowedOrigin = (localTransport as any).isAllowedOrigin.bind(localTransport);
+      const isAllowedOrigin = getHarness(localTransport).isAllowedOrigin;
       expect(isAllowedOrigin('http://localhost:1234')).toBe(true);
       expect(isAllowedOrigin('http://127.0.0.1:1234')).toBe(true);
       expect(isAllowedOrigin('https://example.com')).toBe(true);
@@ -596,7 +591,7 @@ describe('HttpTransport unit', () => {
         logger
       );
 
-      const isAllowedOrigin = (localTransport as any).isAllowedOrigin.bind(localTransport);
+      const isAllowedOrigin = getHarness(localTransport).isAllowedOrigin;
       expect(isAllowedOrigin('https://api.example.com')).toBe(true);
       expect(isAllowedOrigin('https://example.com')).toBe(true);
       expect(isAllowedOrigin('https://exact.example.org')).toBe(true);
@@ -622,7 +617,7 @@ describe('HttpTransport unit', () => {
         logger
       );
 
-      const isAllowedOrigin = (localTransport as any).isAllowedOrigin.bind(localTransport);
+      const isAllowedOrigin = getHarness(localTransport).isAllowedOrigin;
       expect(isAllowedOrigin('http://app.example.com')).toBe(true);
       expect(isAllowedOrigin('http://not-app.example.com')).toBe(false);
 
@@ -644,7 +639,7 @@ describe('HttpTransport unit', () => {
         logger
       );
 
-      const matchOrigin = (localTransport as any).matchOrigin.bind(localTransport);
+      const matchOrigin = getHarness(localTransport).matchOrigin;
       expect(matchOrigin('192.168.1.50', '192.168.1.0/24')).toBe(true);
       expect(matchOrigin('192.168.2.50', '192.168.1.0/24')).toBe(false);
       expect(matchOrigin('10.0.0.1', '10.0.0.0/not-a-number')).toBe(false);
@@ -667,7 +662,7 @@ describe('HttpTransport unit', () => {
         logger
       );
 
-      const ipv6ToBigInt = (localTransport as any).ipv6ToBigInt.bind(localTransport);
+      const ipv6ToBigInt = getHarness(localTransport).ipv6ToBigInt;
       expect(ipv6ToBigInt('2001:db8::1')).not.toBeNull();
       expect(ipv6ToBigInt('[2001:db8::1]')).not.toBeNull();
       expect(ipv6ToBigInt('::ffff:192.168.0.1')).not.toBeNull();
@@ -691,23 +686,23 @@ describe('HttpTransport unit', () => {
         logger
       );
 
-      (localTransport as any).profileStates.set('default', {
+      getHarness(localTransport).setProfileState({
         profileId: 'default',
         context: { profileId: 'default' },
         oauthProvider: { redirectUri: 'http://state.example.com/callback' },
         oauthTokensByAccessToken: new Map(),
         sessions: new Map(),
       });
-      (localTransport as any).profileStates.set('bad', {
+      getHarness(localTransport).setProfileState({
         profileId: 'bad',
         context: { profileId: 'bad' },
         oauthProvider: { redirectUri: 'not-a-url' },
         oauthTokensByAccessToken: new Map(),
         sessions: new Map(),
       });
-      (localTransport as any).oauthRedirectHostCache.set('cached', ['cached.example.com']);
+      getHarness(localTransport).setOAuthRedirectHosts('cached', ['cached.example.com']);
 
-      const hosts = (localTransport as any).getOAuthRedirectHostPatterns();
+      const hosts = getHarness(localTransport).getOAuthRedirectHostPatterns();
       expect(hosts).toContain('state.example.com');
       expect(hosts).toContain('config.example.com');
       expect(hosts).toContain('cached.example.com');
@@ -729,7 +724,7 @@ describe('HttpTransport unit', () => {
         logger
       );
 
-      const extractor = (localTransport as any).extractRedirectHostPatterns.bind(localTransport);
+      const extractor = getHarness(localTransport).extractRedirectHostPatterns;
       expect(extractor(undefined, 'default')).toEqual([]);
       expect(extractor({ redirect_uri: 'not-a-url' }, 'default')).toEqual([]);
 
@@ -750,7 +745,7 @@ describe('HttpTransport unit', () => {
         logger
       );
 
-      const resolver = (localTransport as any).resolveRedirectUriFromEnv.bind(localTransport);
+      const resolver = getHarness(localTransport).resolveRedirectUriFromEnv;
       expect(resolver('http://literal.example.com/cb', 'default')).toBe('http://literal.example.com/cb');
 
       process.env.OAUTH_REDIRECT_URI = 'http://env.example.com/cb';
@@ -776,12 +771,12 @@ describe('HttpTransport unit', () => {
         logger
       );
 
-      const fromPath = (localTransport as any).resolveProfileIdFromPath.bind(localTransport);
+      const fromPath = getHarness(localTransport).resolveProfileIdFromPath;
       expect(fromPath('/profile/gitlab/mcp')).toBe('gitlab');
       expect(fromPath('/not-profile/mcp')).toBeNull();
       expect(fromPath('/profile/%E0%A4%A/mcp')).toBeNull();
 
-      const fromReq = (localTransport as any).resolveProfileIdForOriginCheck.bind(localTransport);
+      const fromReq = getHarness(localTransport).resolveProfileIdForOriginCheck;
       const reqPath: any = { path: '/profile/alias/mcp', query: {} };
       expect(fromReq(reqPath)).toBe('alias');
 
@@ -820,9 +815,9 @@ describe('HttpTransport unit', () => {
         return { profileId: id };
       });
 
-      const primer = (localTransport as any).primeOAuthRedirectHosts.bind(localTransport);
+      const primer = getHarness(localTransport).primeOAuthRedirectHosts;
       await primer('empty');
-      expect((localTransport as any).oauthRedirectHostCache.get('empty')).toEqual([]);
+      expect(getHarness(localTransport).getOAuthRedirectHosts('empty')).toEqual([]);
 
       await primer('missing');
       await primer('boom');
@@ -849,7 +844,7 @@ describe('HttpTransport unit', () => {
         logger
       );
 
-      const checker = (localTransport as any).isAllowedOriginForRequest.bind(localTransport);
+      const checker = getHarness(localTransport).isAllowedOriginForRequest;
       const req: any = withGet({ path: '/mcp', query: {} });
       expect(await checker('http://example.com', req)).toBe(false);
 
@@ -869,7 +864,7 @@ describe('HttpTransport unit', () => {
         logger
       );
 
-      const checkerRouting = (routingTransport as any).isAllowedOriginForRequest.bind(routingTransport);
+      const checkerRouting = getHarness(routingTransport).isAllowedOriginForRequest;
       const reqNoProfile: any = withGet({ path: '/mcp', query: {} });
       expect(await checkerRouting('http://example.com', reqNoProfile)).toBe(false);
 
@@ -898,9 +893,9 @@ describe('HttpTransport unit', () => {
         localLogger as any
       );
 
-      createProfileState(localTransport as any).oauthProvider = { redirectUri: 'not-a-url' };
+      createProfileState(localTransport).oauthProvider = { redirectUri: 'not-a-url' };
 
-      const isAllowedOrigin = (localTransport as any).isAllowedOrigin.bind(localTransport);
+      const isAllowedOrigin = getHarness(localTransport).isAllowedOrigin;
       expect(isAllowedOrigin('not-a-url')).toBe(false);
       expect(isAllowedOrigin('https://not-example.com')).toBe(false);
 
@@ -929,13 +924,13 @@ describe('HttpTransport unit', () => {
         localLogger as any
       );
 
-      const matchOrigin = (localTransport as any).matchOrigin.bind(localTransport);
+      const matchOrigin = getHarness(localTransport).matchOrigin;
       expect(matchOrigin('2001:db8::1', '2001:db8::/32')).toBe(true);
       expect(matchOrigin('2001:db9::1', '2001:db8::/32')).toBe(false);
       expect(matchOrigin('2001:db8::1', '2001:db8::/129')).toBe(false);
       expect(localLogger.warn).toHaveBeenCalled();
 
-      const ipv6Mask = (localTransport as any).ipv6Mask.bind(localTransport);
+      const ipv6Mask = getHarness(localTransport).ipv6Mask;
       expect(ipv6Mask(0)).toBe(0n);
 
       await localTransport.stop();
@@ -956,7 +951,7 @@ describe('HttpTransport unit', () => {
         logger
       );
 
-      const ipv4ToInt = (localTransport as any).ipv4ToInt.bind(localTransport);
+      const ipv4ToInt = getHarness(localTransport).ipv4ToInt;
       expect(ipv4ToInt('1.2.3')).toBeNull();
       expect(ipv4ToInt('256.1.1.1')).toBeNull();
 
@@ -978,7 +973,7 @@ describe('HttpTransport unit', () => {
         logger
       );
 
-      const ipv6ToBigInt = (localTransport as any).ipv6ToBigInt.bind(localTransport);
+      const ipv6ToBigInt = getHarness(localTransport).ipv6ToBigInt;
       expect(ipv6ToBigInt('2001:db8:::1')).toBeNull();
       expect(ipv6ToBigInt('2001::db8::1')).toBeNull();
       expect(ipv6ToBigInt('2001:db8:zzzz::1')).toBeNull();
@@ -1011,7 +1006,7 @@ describe('HttpTransport unit', () => {
       }));
 
       const req: any = withGet({ path: '/profile/gitlab/oauth/authorize', query: {}, headers: {} });
-      const isAllowed = await (localTransport as any).isAllowedOriginForRequest('http://oauth.example.com', req);
+      const isAllowed = await getHarness(localTransport).isAllowedOriginForRequest('http://oauth.example.com', req);
       expect(isAllowed).toBe(true);
 
       delete process.env.OAUTH_REDIRECT_URI;
@@ -1043,7 +1038,7 @@ describe('HttpTransport unit', () => {
       }));
 
       const req: any = withGet({ path: '/profile/gitlab/oauth/authorize', query: {}, headers: {} });
-      const isAllowed = await (localTransport as any).isAllowedOriginForRequest('http://oauth.example.com', req);
+      const isAllowed = await getHarness(localTransport).isAllowedOriginForRequest('http://oauth.example.com', req);
       expect(isAllowed).toBe(false);
       expect(warnSpy).toHaveBeenCalledWith(
         'OAuth redirect_uri environment variable is empty',
@@ -1071,11 +1066,11 @@ describe('HttpTransport unit', () => {
         logger
       );
 
-      (localTransport as any).isAllowedOriginForRequest = async () => {
+      getHarness(localTransport).setIsAllowedOriginForRequest(async () => {
         throw new Error('boom');
-      };
+      });
 
-      const app = (localTransport as any).app;
+      const app = getHarness(localTransport).app;
       const router = app._router ?? app.router;
       expect(router).toBeDefined();
       const originLayer = router.stack.find((layer: any) =>
