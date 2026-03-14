@@ -1,5 +1,7 @@
 import {
+  buildSemanticReviewerDecision,
   collectReviewerAssignments,
+  type ReviewerChangedFile,
   type ReviewerPullRequest,
   type ReviewerReviewArtifact,
   type ReviewerThreadComment,
@@ -54,6 +56,20 @@ interface RuntimeConfig {
   readonly now: string;
 }
 
+interface GitHubPullRequestFile {
+  readonly filename: string;
+  readonly status: 'added' | 'modified' | 'removed' | 'renamed' | string;
+  readonly additions: number;
+  readonly deletions: number;
+  readonly changes: number;
+  readonly patch?: string;
+}
+
+interface CreateReviewInput {
+  readonly body: string;
+  readonly event: 'APPROVE' | 'REQUEST_CHANGES' | 'COMMENT';
+}
+
 const runtimeConfig = readRuntimeConfig(process.env);
 const recentPullRequests = await listRecentPullRequests(runtimeConfig);
 const commentsByPrNumber: Record<number, readonly ReviewerThreadComment[]> = {};
@@ -76,12 +92,35 @@ const assignments = collectReviewerAssignments({
 });
 
 for (const assignment of assignments.slice(0, runtimeConfig.maxPrs)) {
+  const pullRequest = recentPullRequests.find((candidate) => candidate.number === assignment.pullRequestNumber);
+  if (!pullRequest) {
+    throw new Error(`Missing PR snapshot for reviewer assignment #${assignment.pullRequestNumber}.`);
+  }
+
   await addIssueLabels(runtimeConfig, assignment.pullRequestNumber, ['agent:review:in-progress']);
   await createIssueComment(runtimeConfig, assignment.pullRequestNumber, assignment.leaseCommentBody);
-  process.stdout.write(`Acquired reviewer lease on PR #${assignment.pullRequestNumber} (${assignment.reason}).\n`);
+
+  const changedFiles = await listPullRequestFiles(runtimeConfig, assignment.pullRequestNumber);
+  const decision = buildSemanticReviewerDecision({
+    repository: runtimeConfig.repository,
+    agentId: runtimeConfig.agentId,
+    runId: runtimeConfig.runId,
+    timestamp: runtimeConfig.now,
+    pullRequest,
+    changedFiles,
+  });
+
+  await createPullRequestReview(runtimeConfig, assignment.pullRequestNumber, {
+    event: toGitHubReviewEvent(decision.verdict),
+    body: decision.reviewBody,
+  });
+  await addIssueLabels(runtimeConfig, assignment.pullRequestNumber, decision.labelsToAdd);
+  await removeIssueLabels(runtimeConfig, assignment.pullRequestNumber, decision.labelsToRemove);
+
+  process.stdout.write(`Reviewed PR #${assignment.pullRequestNumber} (${decision.verdict}; ${assignment.reason}).\n`);
 }
 
-process.stdout.write(`Reviewer runner completed. Created ${Math.min(assignments.length, runtimeConfig.maxPrs)} lease comment(s).\n`);
+process.stdout.write(`Reviewer runner completed. Processed ${Math.min(assignments.length, runtimeConfig.maxPrs)} PR(s).\n`);
 
 async function listRecentPullRequests(config: RuntimeConfig): Promise<ReviewerPullRequest[]> {
   const updatedSince = toIsoHoursAgo(config.now, config.lookbackHours);
@@ -127,6 +166,18 @@ async function listPullRequestReviews(config: RuntimeConfig, pullRequestNumber: 
     }));
 }
 
+async function listPullRequestFiles(config: RuntimeConfig, pullRequestNumber: number): Promise<ReviewerChangedFile[]> {
+  const files = await githubRequest<GitHubPullRequestFile[]>(config, `/repos/${config.repository}/pulls/${pullRequestNumber}/files?per_page=100`);
+  return files.map((file) => ({
+    filename: file.filename,
+    status: file.status,
+    additions: file.additions,
+    deletions: file.deletions,
+    changes: file.changes,
+    patch: file.patch,
+  }));
+}
+
 async function createIssueComment(config: RuntimeConfig, issueNumber: number, body: string): Promise<void> {
   await githubRequest(config, `/repos/${config.repository}/issues/${issueNumber}/comments`, {
     method: 'POST',
@@ -135,9 +186,36 @@ async function createIssueComment(config: RuntimeConfig, issueNumber: number, bo
 }
 
 async function addIssueLabels(config: RuntimeConfig, issueNumber: number, labels: readonly string[]): Promise<void> {
+  if (labels.length === 0) {
+    return;
+  }
+
   await githubRequest(config, `/repos/${config.repository}/issues/${issueNumber}/labels`, {
     method: 'POST',
     body: JSON.stringify({ labels }),
+  });
+}
+
+async function removeIssueLabels(config: RuntimeConfig, issueNumber: number, labels: readonly string[]): Promise<void> {
+  for (const label of labels) {
+    const encodedLabel = encodeURIComponent(label);
+    try {
+      await githubRequest(config, `/repos/${config.repository}/issues/${issueNumber}/labels/${encodedLabel}`, {
+        method: 'DELETE',
+      });
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('(404)')) {
+        continue;
+      }
+      throw error;
+    }
+  }
+}
+
+async function createPullRequestReview(config: RuntimeConfig, pullRequestNumber: number, input: CreateReviewInput): Promise<void> {
+  await githubRequest(config, `/repos/${config.repository}/pulls/${pullRequestNumber}/reviews`, {
+    method: 'POST',
+    body: JSON.stringify(input),
   });
 }
 
@@ -200,6 +278,17 @@ function parsePositiveInteger(value: string | undefined, fallback: number): numb
   }
 
   return parsed;
+}
+
+function toGitHubReviewEvent(verdict: 'approved' | 'changes-requested' | 'commented'): CreateReviewInput['event'] {
+  switch (verdict) {
+    case 'approved':
+      return 'APPROVE';
+    case 'changes-requested':
+      return 'REQUEST_CHANGES';
+    case 'commented':
+      return 'COMMENT';
+  }
 }
 
 function toIsoHoursAgo(now: string, hours: number): string {
