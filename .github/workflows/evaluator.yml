@@ -1,0 +1,47 @@
+name: Evaluator
+
+on:
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch:
+    inputs:
+      lookback_hours:
+        description: Lookback window in hours for recently updated issues/PRs
+        required: false
+        default: '24'
+      max_issues:
+        description: Maximum number of recently updated issues/PRs to inspect
+        required: false
+        default: '30'
+      max_posts:
+        description: Maximum evaluator comments to create in a single run
+        required: false
+        default: '10'
+
+jobs:
+  evaluator:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run evaluator follow-up scanner
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EVALUATOR_LOOKBACK_HOURS: ${{ github.event.inputs.lookback_hours || '24' }}
+          EVALUATOR_MAX_ISSUES: ${{ github.event.inputs.max_issues || '30' }}
+          EVALUATOR_MAX_POSTS: ${{ github.event.inputs.max_posts || '10' }}
+        run: npm run agent:evaluator

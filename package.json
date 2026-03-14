@@ -37,6 +37,7 @@
     "validate": "npm run build && node dist/scripts/validate-profile.js",
     "validate:schema": "npm run build && node dist/scripts/validate-schema.js",
     "agent:feedback-template": "npm run build && node dist/scripts/render-agent-feedback-template.js",
+    "agent:evaluator": "npm run build && node dist/scripts/run-evaluator.js",
     "prepublishOnly": "npm run build"
   },
   "keywords": [
