@@ -63,6 +63,40 @@ export interface BuildReviewerLeaseCommentInput {
   readonly reason: ReviewerAssignment['reason'];
 }
 
+export interface ReviewerChangedFile {
+  readonly filename: string;
+  readonly status: 'added' | 'modified' | 'removed' | 'renamed' | 'copied' | string;
+  readonly additions: number;
+  readonly deletions: number;
+  readonly changes: number;
+  readonly patch?: string;
+}
+
+export interface ReviewerFinding {
+  readonly category: 'missing-targeted-tests' | 'missing-agent-disclosure';
+  readonly severity: 'low' | 'medium' | 'high';
+  readonly summary: string;
+  readonly files?: readonly string[];
+}
+
+export interface BuildSemanticReviewerDecisionInput {
+  readonly repository: string;
+  readonly agentId: string;
+  readonly runId: string;
+  readonly timestamp: string;
+  readonly pullRequest: ReviewerPullRequest;
+  readonly changedFiles: readonly ReviewerChangedFile[];
+}
+
+export interface SemanticReviewerDecision {
+  readonly verdict: 'approved' | 'changes-requested' | 'commented';
+  readonly summary: string;
+  readonly findings: readonly ReviewerFinding[];
+  readonly reviewBody: string;
+  readonly labelsToAdd: readonly string[];
+  readonly labelsToRemove: readonly string[];
+}
+
 interface ReviewerMetadataEvent {
   readonly body: string;
   readonly timestamp: string;
@@ -152,6 +186,32 @@ export function buildReviewerLeaseComment(input: BuildReviewerLeaseCommentInput)
   ].join('\n');
 }
 
+export function buildSemanticReviewerDecision(input: BuildSemanticReviewerDecisionInput): SemanticReviewerDecision {
+  const findings = collectSemanticFindings(input.pullRequest, input.changedFiles);
+  const verdict = selectReviewerVerdict(findings, input.changedFiles);
+  const summary = buildReviewerSummary(verdict, findings, input.changedFiles);
+  const reviewBody = buildReviewerDecisionComment({
+    repository: input.repository,
+    pullRequestNumber: input.pullRequest.number,
+    headSha: input.pullRequest.headSha,
+    agentId: input.agentId,
+    runId: input.runId,
+    timestamp: input.timestamp,
+    verdict,
+    summary,
+    findings,
+  });
+
+  return {
+    verdict,
+    summary,
+    findings,
+    reviewBody,
+    labelsToAdd: ['agent:review:done'],
+    labelsToRemove: ['agent:review:in-progress'],
+  };
+}
+
 function isEligibleForReviewerQueue(pullRequest: ReviewerPullRequest): boolean {
   if (pullRequest.draft) {
     return false;
@@ -185,6 +245,141 @@ function listReviewerMetadataEvents(
     .filter((event) => event.metadata['agent-stage'] === 'reviewer')
     .filter((event) => event.metadata['ignore-for-workflow'] !== 'true')
     .sort((left, right) => parseIsoTimestamp(left.timestamp) - parseIsoTimestamp(right.timestamp));
+}
+
+function collectSemanticFindings(
+  pullRequest: ReviewerPullRequest,
+  changedFiles: readonly ReviewerChangedFile[],
+): ReviewerFinding[] {
+  const findings: ReviewerFinding[] = [];
+
+  if (pullRequest.labels.includes('agent:created') && !hasVisibleAgentDisclosure(pullRequest.body)) {
+    findings.push({
+      category: 'missing-agent-disclosure',
+      severity: 'high',
+      summary: 'automation-created PR is missing visible agent disclosure in the PR body',
+    });
+  }
+
+  const productionFiles = changedFiles.filter(isProductionChange);
+  const hasTargetedTests = changedFiles.some(isTestChange);
+  if (productionFiles.length > 0 && !hasTargetedTests) {
+    findings.push({
+      category: 'missing-targeted-tests',
+      severity: 'high',
+      summary: 'production changes appear to be missing targeted regression or failure-path tests',
+      files: productionFiles.map((file) => file.filename),
+    });
+  }
+
+  return findings;
+}
+
+function selectReviewerVerdict(
+  findings: readonly ReviewerFinding[],
+  changedFiles: readonly ReviewerChangedFile[],
+): SemanticReviewerDecision['verdict'] {
+  if (findings.some((finding) => finding.severity === 'high')) {
+    return 'changes-requested';
+  }
+
+  if (changedFiles.length > 0 && changedFiles.every(isDocumentationChange)) {
+    return 'approved';
+  }
+
+  return findings.length === 0 ? 'approved' : 'commented';
+}
+
+function buildReviewerSummary(
+  verdict: SemanticReviewerDecision['verdict'],
+  findings: readonly ReviewerFinding[],
+  changedFiles: readonly ReviewerChangedFile[],
+): string {
+  if (verdict === 'approved' && changedFiles.length > 0 && changedFiles.every(isDocumentationChange)) {
+    return 'Docs-only changes look consistent and low risk.';
+  }
+
+  if (findings.length === 0) {
+    return 'Current PR head looks consistent with the bounded reviewer policy checks.';
+  }
+
+  return findings[0]?.summary ?? 'Reviewer completed with non-blocking notes.';
+}
+
+function buildReviewerDecisionComment(input: {
+  repository: string;
+  pullRequestNumber: number;
+  headSha: string;
+  agentId: string;
+  runId: string;
+  timestamp: string;
+  verdict: SemanticReviewerDecision['verdict'];
+  summary: string;
+  findings: readonly ReviewerFinding[];
+}): string {
+  const metadataBlock = buildAgentMetadataBlock({
+    'agent-id': input.agentId,
+    'agent-stage': 'reviewer',
+    'agent-role': 'review',
+    repository: input.repository,
+    'pr-number': input.pullRequestNumber,
+    'head-sha': input.headSha,
+    status: input.verdict,
+    'run-id': input.runId,
+    timestamp: input.timestamp,
+  });
+
+  const findingLines = input.findings.length === 0
+    ? ['- No bounded-policy findings.']
+    : input.findings.map((finding) => {
+      const filesSuffix = finding.files && finding.files.length > 0
+        ? ` [files: ${finding.files.join(', ')}]`
+        : '';
+      return `- ${finding.category} (${finding.severity}): ${finding.summary}${filesSuffix}`;
+    });
+
+  return [
+    '🤖 Agent review (reviewer)',
+    '',
+    `Verdict: ${input.verdict}`,
+    `Summary: ${input.summary}`,
+    `Current head SHA: ${input.headSha}`,
+    '',
+    'Findings:',
+    ...findingLines,
+    '',
+    metadataBlock,
+  ].join('\n');
+}
+
+function hasVisibleAgentDisclosure(body: string): boolean {
+  const normalized = body.toLowerCase();
+  return normalized.includes('🤖')
+    || normalized.includes('automated agent')
+    || normalized.includes('agent-metadata');
+}
+
+function isDocumentationChange(file: ReviewerChangedFile): boolean {
+  return file.filename.endsWith('.md')
+    || file.filename.startsWith('docs/')
+    || file.filename.startsWith('.github/ISSUE_TEMPLATE/');
+}
+
+function isTestChange(file: ReviewerChangedFile): boolean {
+  return file.filename.endsWith('.test.ts')
+    || file.filename.endsWith('.test.js')
+    || file.filename.startsWith('tests/');
+}
+
+function isProductionChange(file: ReviewerChangedFile): boolean {
+  if (isDocumentationChange(file) || isTestChange(file)) {
+    return false;
+  }
+
+  return file.filename.endsWith('.ts')
+    || file.filename.endsWith('.js')
+    || file.filename.endsWith('.yml')
+    || file.filename.endsWith('.yaml');
 }
 
 function parseIsoTimestamp(value: string): number {

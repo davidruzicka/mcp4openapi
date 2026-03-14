@@ -199,7 +199,8 @@ Current first-version runtime scope:
 - reviewer selects only non-draft PRs with `agent:review:required` and no blocking labels,
 - reviewer treats current-head terminal review metadata (`approved`, `changes-requested`, `commented`) as already handled,
 - reviewer uses lease TTL plus `status: reviewing` metadata to avoid duplicate pickup,
-- reviewer does not yet perform semantic code review or resolve review threads on its own,
+- reviewer now publishes bounded semantic review decisions to GitHub reviews using transparent policy checks (current scope: missing agent disclosure, code-without-tests, docs-only approvals),
+- reviewer still does not yet inspect unresolved review threads or perform broader AI-driven code reasoning,
 - neither helper yet persists long-term feedback history.
 
 ## Future Work

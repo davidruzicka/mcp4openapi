@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildReviewerLeaseComment,
+  buildSemanticReviewerDecision,
   collectReviewerAssignments,
   hasActiveReviewerLease,
+  type ReviewerChangedFile,
   type ReviewerPullRequest,
   type ReviewerReviewArtifact,
   type ReviewerThreadComment,
@@ -244,22 +246,129 @@ describe('reviewer-runner', () => {
       expect(comment).toContain('status: reviewing');
     });
   });
+
+  describe('buildSemanticReviewerDecision', () => {
+    it('requests changes when production code changes do not include targeted tests', () => {
+      const decision = buildSemanticReviewerDecision({
+        repository: 'davidruzicka/mcp4openapi',
+        agentId: 'reviewer',
+        runId: 'run-123',
+        timestamp: '2026-03-14T16:10:00Z',
+        pullRequest: buildPullRequest({
+          number: 156,
+          headSha: 'abc123',
+          labels: ['agent:created', 'agent:review:required', 'agent:review:in-progress'],
+          body: '## Summary\n\nRefactor auth runtime.',
+        }),
+        changedFiles: [
+          buildChangedFile({ filename: 'src/transport/auth-runtime.ts' }),
+          buildChangedFile({ filename: 'src/transport/http-client-factory.ts' }),
+        ],
+      });
+
+      expect(decision.verdict).toBe('changes-requested');
+      expect(decision.findings).toEqual([
+        expect.objectContaining({
+          category: 'missing-agent-disclosure',
+        }),
+        expect.objectContaining({
+          category: 'missing-targeted-tests',
+        }),
+      ]);
+      expect(decision.reviewBody).toContain('status: changes-requested');
+      expect(decision.labelsToAdd).toContain('agent:review:done');
+      expect(decision.labelsToRemove).toContain('agent:review:in-progress');
+    });
+
+    it('approves docs-only changes with current-head reviewer metadata', () => {
+      const decision = buildSemanticReviewerDecision({
+        repository: 'davidruzicka/mcp4openapi',
+        agentId: 'reviewer',
+        runId: 'run-123',
+        timestamp: '2026-03-14T16:10:00Z',
+        pullRequest: buildPullRequest({
+          number: 157,
+          headSha: 'docsha',
+          labels: ['agent:created', 'agent:review:required', 'agent:review:in-progress'],
+          body: [
+            '🤖 This PR was created by an automated agent.',
+            '',
+            '<!-- AGENT-METADATA',
+            'agent-id: implementor',
+            'agent-stage: implementor',
+            'status: opened-pr',
+            '-->',
+          ].join('\n'),
+        }),
+        changedFiles: [
+          buildChangedFile({ filename: 'docs/AUTONOMOUS-AGENTS.md' }),
+          buildChangedFile({ filename: 'CHANGELOG.md' }),
+        ],
+      });
+
+      expect(decision.verdict).toBe('approved');
+      expect(decision.findings).toEqual([]);
+      expect(decision.reviewBody).toContain('Docs-only changes look consistent and low risk.');
+      expect(decision.reviewBody).toContain('status: approved');
+    });
+
+    it('requests changes when an automation-created PR body is missing agent disclosure', () => {
+      const decision = buildSemanticReviewerDecision({
+        repository: 'davidruzicka/mcp4openapi',
+        agentId: 'reviewer',
+        runId: 'run-123',
+        timestamp: '2026-03-14T16:10:00Z',
+        pullRequest: buildPullRequest({
+          number: 158,
+          headSha: 'abc123',
+          labels: ['agent:created', 'agent:review:required', 'agent:review:in-progress'],
+          body: 'Regular PR body without automation note.',
+        }),
+        changedFiles: [
+          buildChangedFile({ filename: 'docs/AUTONOMOUS-AGENTS.md' }),
+        ],
+      });
+
+      expect(decision.verdict).toBe('changes-requested');
+      expect(decision.findings).toEqual([
+        expect.objectContaining({
+          category: 'missing-agent-disclosure',
+        }),
+      ]);
+      expect(decision.reviewBody).toContain('automation-created PR is missing visible agent disclosure');
+    });
+  });
 });
 
 function buildPullRequest(input: {
   number: number;
   headSha: string;
   labels: readonly string[];
+  body?: string;
   draft?: boolean;
 }): ReviewerPullRequest {
   return {
     number: input.number,
     title: `PR ${input.number}`,
-    body: 'Autonomous PR body',
+    body: input.body ?? 'Autonomous PR body',
     url: `https://github.com/davidruzicka/mcp4openapi/pull/${input.number}`,
     draft: input.draft ?? false,
     headSha: input.headSha,
     updatedAt: '2026-03-14T16:00:00Z',
     labels: input.labels,
+  };
+}
+
+function buildChangedFile(input: {
+  filename: string;
+  status?: ReviewerChangedFile['status'];
+}): ReviewerChangedFile {
+  return {
+    filename: input.filename,
+    status: input.status ?? 'modified',
+    additions: 10,
+    deletions: 2,
+    changes: 12,
+    patch: '@@ -1 +1 @@',
   };
 }
