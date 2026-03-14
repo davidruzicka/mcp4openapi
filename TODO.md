@@ -11,7 +11,6 @@
   - [3. OpenAPI Operation Filter for Default Profile](#3-openapi-operation-filter-for-default-profile)
   - [4. Harden query parameter redaction canonicalization](#4-harden-query-parameter-redaction-canonicalization)
   - [7. Strengthen ReDoS Protection in Regex Compiler](#7-strengthen-redos-protection-in-regex-compiler)
-  - [8. Limit HTTP profile server cache growth](#8-limit-http-profile-server-cache-growth)
   - [9. Break MCPServer-HttpTransport circular dependency](#9-break-mcpserver-httptransport-circular-dependency)
   - [10. Split HttpTransport into smaller modules](#10-split-httptransport-into-smaller-modules)
   - [11. Reduce usage of any casts in HTTP transport](#11-reduce-usage-of-any-casts-in-http-transport)
@@ -180,23 +179,6 @@ export DEFAULT_PROFILE_EXCLUDE_TAGS="admin,system"
 - `src/tool-filter/regex/regex-compiler.test.ts` - add timeout and edge case tests
 
 **Estimated effort**: 2-3 hours (timeout implementation) + 1-2 hours (expanded validation)
-
-### 8. Limit HTTP profile server cache growth
-**Problem**: HTTP profile routing keeps every requested profile's MCPServer initialized indefinitely. With many large OpenAPI specs, this can exhaust memory.
-
-**Goal**: Add basic eviction or caps for profile server instances to bound memory usage.
-
-**Implementation options**:
-- TTL eviction: expire inactive profiles after `MCP4_PROFILE_CACHE_TTL_MS`.
-- Max size: cap servers to `MCP4_PROFILE_CACHE_MAX` with LRU eviction.
-- Combine TTL + max size with soft warnings when evicting.
-
-**Files to modify**:
-- `src/mcp-server-manager.ts` - eviction logic and tracking
-- `src/index.ts` - pass env config into manager/registry
-- `README.md` - document new env vars
-
-**Estimated effort**: 2-4 hours
 
 ### 9. Break MCPServer-HttpTransport circular dependency
 **Problem**: MCPServer holds a reference to HttpTransport (typed as any), creating a circular dependency and weaker type safety.

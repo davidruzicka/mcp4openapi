@@ -14,7 +14,7 @@ import { OAUTH_PATHS } from './constants.js';
 import { applyCliEnvOverrides, parseCliArgs } from './cli-config.js';
 import { buildHttpTransportBaseConfig } from '../transport/http-transport-config.js';
 import { ProfileRegistry } from '../profile/profile-registry.js';
-import { MCPServerManager } from '../mcp/mcp-server-manager.js';
+import { MCPServerManager, buildMCPServerManagerConfigFromEnv } from '../mcp/mcp-server-manager.js';
 import { getHttpProfileRoutingErrorMessage } from '../profile/startup-validation.js';
 import { listProfiles } from '../profile/profile-resolver.js';
 import { resolveStartupProfile } from '../profile/startup-profile.js';
@@ -302,7 +302,13 @@ export async function main() {
         specPathOverride: hasExplicitSpecPath ? specPathOverride : undefined,
         allowlist: profileAllowlistConfig,
       });
-      const manager = new MCPServerManager(registry, logger, httpTransport, globalFiltering);
+      const manager = new MCPServerManager(
+        registry,
+        logger,
+        httpTransport,
+        globalFiltering,
+        buildMCPServerManagerConfigFromEnv()
+      );
 
       httpTransport.setProfileContextProvider(async (id) => manager.getProfileContext(id));
       httpTransport.setProfileIndexProvider(async () => registry.listProfilesForIndex());
@@ -311,14 +317,12 @@ export async function main() {
         if (!profileId) {
           throw new Error('Profile ID is required for HTTP routing.');
         }
-        const server = await manager.getServer(profileId);
-        return server.handleHttpMessage(message, sessionId, profileId);
+        return manager.handleHttpMessage(message, sessionId, profileId);
       });
 
       httpTransport.onSessionDestroyed(async (profileId, sessionId) => {
         try {
-          const server = await manager.getServer(profileId);
-          server.handleSessionDestroyed(profileId, sessionId);
+          await manager.handleSessionDestroyed(profileId, sessionId);
         } catch (error) {
           logger.error('Session cleanup failed', error as Error, { profileId, sessionId });
         }

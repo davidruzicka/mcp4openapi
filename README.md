@@ -531,6 +531,8 @@ export MCP4_TOOLNAME_MAX=30
 - `MCP4_HTTP_PROFILE_INDEX`: Enable profile index on `GET /` for routed profiles.
 - `MCP4_ALLOW_PROFILES`: Comma-separated profile ids/names/aliases allowed for routed profiles.
 - `MCP4_ALLOW_PROFILES_REGEX`: Regex for allowed profile ids/names/aliases (applies only when routing is enabled).
+- `MCP4_PROFILE_SERVER_CACHE_MAX`: Max number of lazily initialized profile-routed MCP servers kept in memory (default: `32`).
+- `MCP4_PROFILE_SERVER_CACHE_TTL_MS`: Idle TTL for inactive profile-routed MCP servers in memory (default: `900000` = 15min, `0` disables TTL eviction).
 - `MCP4_HTTP_TENANTS_FILE`: Path to tenant selector config JSON.
 - `MCP4_HTTP_TENANTS_JSON`: Inline tenant selector config JSON.
 - `MCP4_HTTP_TENANTS_ALLOW_HTTP`: Allow `http` tenant selectors (default is `https` only).

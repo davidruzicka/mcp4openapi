@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import path from 'path';
 import fs from 'node:fs/promises';
 import os from 'node:os';
@@ -179,8 +179,7 @@ describe('MCPServerManager', () => {
       if (!profileId) {
         throw new Error('Profile ID missing');
       }
-      const server = await manager.getServer(profileId);
-      return server.handleHttpMessage(message, sessionId, profileId);
+      return manager.handleHttpMessage(message, sessionId, profileId);
     });
 
     const req: any = {
@@ -235,6 +234,128 @@ describe('MCPServerManager', () => {
     expect(res.body?.result?.serverInfo?.name).toBe('mcp4openapi');
 
     await httpTransport.stop();
+  });
+
+  it('evicts the least recently used inactive server when the cache reaches max size', async () => {
+    const logger = new ConsoleLogger();
+    const resolveProfile = vi.fn(async (profileId: string) => ({
+      profileId,
+      profileName: profileId,
+      profilePath: `/tmp/${profileId}.json`,
+      specPath: `/tmp/${profileId}.yaml`,
+    }));
+    const registry = { resolveProfile } as unknown as ProfileRegistry;
+    const createdServers = new Map<string, Array<{ profileId: string; handleHttpMessage: ReturnType<typeof vi.fn>; handleSessionDestroyed: ReturnType<typeof vi.fn> }>>();
+    const nowValues = [1, 2, 3, 4, 5, 6];
+    const manager = new MCPServerManager(registry, logger, undefined, undefined, {
+      cacheMaxEntries: 2,
+      now: () => nowValues.shift() ?? 99,
+      serverFactory: async (profileId: string) => {
+        const server = {
+          profileId,
+          handleHttpMessage: vi.fn(async () => ({ profileId })),
+          handleSessionDestroyed: vi.fn(),
+          getHttpProfileContext: vi.fn(() => ({ profileId })),
+        };
+        const existing = createdServers.get(profileId) ?? [];
+        existing.push(server);
+        createdServers.set(profileId, existing);
+        return server as any;
+      },
+    });
+
+    const alpha = await manager.getServer('alpha');
+    const beta = await manager.getServer('beta');
+    await manager.getServer('gamma');
+    const alphaAfterEviction = await manager.getServer('alpha');
+    const betaAfterEviction = await manager.getServer('beta');
+
+    expect(alphaAfterEviction).not.toBe(alpha);
+    expect(betaAfterEviction).not.toBe(beta);
+    expect(createdServers.get('alpha')).toHaveLength(2);
+    expect(createdServers.get('beta')).toHaveLength(2);
+    expect(createdServers.get('gamma')).toHaveLength(1);
+  });
+
+  it('keeps active-session servers resident when evicting inactive profiles', async () => {
+    const logger = new ConsoleLogger();
+    const registry = {
+      resolveProfile: vi.fn(async (profileId: string) => ({
+        profileId,
+        profileName: profileId,
+        profilePath: `/tmp/${profileId}.json`,
+        specPath: `/tmp/${profileId}.yaml`,
+      })),
+    } as unknown as ProfileRegistry;
+    const createdServers = new Map<string, Array<{ profileId: string; handleHttpMessage: ReturnType<typeof vi.fn>; handleSessionDestroyed: ReturnType<typeof vi.fn> }>>();
+    const nowValues = [10, 20, 30, 40, 50, 60, 70, 80];
+    const manager = new MCPServerManager(registry, logger, undefined, undefined, {
+      cacheMaxEntries: 2,
+      now: () => nowValues.shift() ?? 999,
+      serverFactory: async (profileId: string) => {
+        const server = {
+          profileId,
+          handleHttpMessage: vi.fn(async () => ({ ok: true, profileId })),
+          handleSessionDestroyed: vi.fn(),
+          getHttpProfileContext: vi.fn(() => ({ profileId })),
+        };
+        const existing = createdServers.get(profileId) ?? [];
+        existing.push(server);
+        createdServers.set(profileId, existing);
+        return server as any;
+      },
+    });
+
+    const activeAlpha = await manager.handleHttpMessage({ jsonrpc: '2.0', id: 1, method: 'initialize' }, 'session-1', 'alpha');
+    expect(activeAlpha).toEqual({ ok: true, profileId: 'alpha' });
+    const beta = await manager.getServer('beta');
+    await manager.getServer('gamma');
+
+    const alphaServer = await manager.getServer('alpha');
+    const betaAfterEviction = await manager.getServer('beta');
+
+    expect((createdServers.get('alpha') ?? [])).toHaveLength(1);
+    expect(alphaServer).toBe(createdServers.get('alpha')?.[0]);
+    expect(betaAfterEviction).not.toBe(beta);
+    expect(createdServers.get('beta')).toHaveLength(2);
+  });
+
+  it('evicts expired inactive servers before creating new entries and skips recreating them during cleanup', async () => {
+    const logger = new ConsoleLogger();
+    const resolveProfile = vi.fn(async (profileId: string) => ({
+      profileId,
+      profileName: profileId,
+      profilePath: `/tmp/${profileId}.json`,
+      specPath: `/tmp/${profileId}.yaml`,
+    }));
+    const registry = { resolveProfile } as unknown as ProfileRegistry;
+    const destroyedSessions: Array<{ profileId: string; sessionId: string }> = [];
+    let currentTime = 100;
+    const manager = new MCPServerManager(registry, logger, undefined, undefined, {
+      cacheMaxEntries: 4,
+      cacheTtlMs: 10,
+      now: () => currentTime,
+      serverFactory: async (profileId: string) => ({
+        handleHttpMessage: vi.fn(async () => ({ ok: true, profileId })),
+        handleSessionDestroyed: vi.fn((destroyedProfileId: string, sessionId: string) => {
+          destroyedSessions.push({ profileId: destroyedProfileId, sessionId });
+        }),
+        getHttpProfileContext: vi.fn(() => ({ profileId })),
+      } as any),
+    });
+
+    await manager.getServer('stale');
+    currentTime = 200;
+    await manager.getServer('fresh');
+    await manager.handleSessionDestroyed('stale', 'session-1');
+    const staleAfterEviction = await manager.getServer('stale');
+
+    expect(resolveProfile).toHaveBeenCalledTimes(3);
+    expect(resolveProfile).toHaveBeenNthCalledWith(1, 'stale');
+    expect(resolveProfile).toHaveBeenNthCalledWith(2, 'fresh');
+    expect(resolveProfile).toHaveBeenNthCalledWith(3, 'stale');
+    expect(destroyedSessions).toEqual([]);
+    expect(staleAfterEviction).toBeTruthy();
   });
 });
 
