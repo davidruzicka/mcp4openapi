@@ -36,6 +36,7 @@
     "check-schema-sync": "node scripts/check-profile-schema-sync.js",
     "validate": "npm run build && node dist/scripts/validate-profile.js",
     "validate:schema": "npm run build && node dist/scripts/validate-schema.js",
+    "agent:feedback-template": "npm run build && node dist/scripts/render-agent-feedback-template.js",
     "prepublishOnly": "npm run build"
   },
   "keywords": [
