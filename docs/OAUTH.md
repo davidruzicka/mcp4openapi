@@ -253,6 +253,8 @@ When profile routing is enabled, you can select a profile with a `resource` quer
 /.well-known/oauth-protected-resource/mcp?resource=http://localhost:3003/profile/gitlab/mcp
 ```
 
+Without a default profile, the transport also issues a short-lived `HttpOnly` profile-hint cookie after profile-scoped or `resource`-scoped discovery so follow-up root OAuth metadata requests stay pinned to the same profile.
+
 ### OAuth Flow Endpoints
 
 - **`/oauth/authorize`** - Authorization endpoint (redirects to external OAuth provider)

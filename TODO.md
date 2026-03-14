@@ -15,11 +15,10 @@
   - [9. Break MCPServer-HttpTransport circular dependency](#9-break-mcpserver-httptransport-circular-dependency)
   - [10. Split HttpTransport into smaller modules](#10-split-httptransport-into-smaller-modules)
   - [11. Reduce usage of any casts in HTTP transport](#11-reduce-usage-of-any-casts-in-http-transport)
-  - [12. Avoid HTTP profile hint collisions across shared IPs](#12-avoid-http-profile-hint-collisions-across-shared-ips)
-  - [13. Prevent unbounded growth of HTTP profile hint cache](#13-prevent-unbounded-growth-of-http-profile-hint-cache)
-  - [14. Consider strict OAuth redirect scheme allowlist](#14-consider-strict-oauth-redirect-scheme-allowlist)
-  - [15. Replace JSON fingerprint auth comparison for tenant collisions](#15-replace-json-fingerprint-auth-comparison-for-tenant-collisions)
-  - [16. Extract tenant session lifecycle from HttpTransport](#16-extract-tenant-session-lifecycle-from-httptransport)
+- [12. Prevent unbounded growth of HTTP profile hint cache](#12-prevent-unbounded-growth-of-http-profile-hint-cache)
+- [13. Consider strict OAuth redirect scheme allowlist](#13-consider-strict-oauth-redirect-scheme-allowlist)
+- [14. Replace JSON fingerprint auth comparison for tenant collisions](#14-replace-json-fingerprint-auth-comparison-for-tenant-collisions)
+- [15. Extract tenant session lifecycle from HttpTransport](#15-extract-tenant-session-lifecycle-from-httptransport)
 
 ## P2: Nice-to-Have
 
@@ -250,23 +249,7 @@ export DEFAULT_PROFILE_EXCLUDE_TAGS="admin,system"
 
 **Estimated effort**: 2-4 hours
 
-### 12. Avoid HTTP profile hint collisions across shared IPs
-**Problem**: Profile hint keys are derived from IP and user-agent only, so different clients behind the same NAT with identical user agents can overwrite each other's hints. This can misroute profile resolution for OAuth endpoints or origin checks when profile routing has no default profile.
-
-**Goal**: Make profile hint association more robust to shared IPs and identical user-agent strings.
-
-**Implementation options**:
-- Include additional request entropy in the key (e.g., TLS session ID, `X-Forwarded-For` chain hash, or a server-generated hint cookie).
-- Set a hint cookie on first profile-routed request and use that as the primary key.
-- Add a short-lived per-profile routing token embedded in OAuth metadata links.
-
-**Files to modify**:
-- `src/http-transport.ts` - profile hint keying and lookup logic
-- `docs/HTTP-TRANSPORT.md` - document new hint mechanism (if user-facing)
-
-**Estimated effort**: 2-4 hours
-
-### 13. Prevent unbounded growth of HTTP profile hint cache
+### 12. Prevent unbounded growth of HTTP profile hint cache
 **Problem**: Profile hints are stored per client but only cleaned up on subsequent lookups, so many one-off clients can cause the cache to grow without bound in long-running servers.
 
 **Goal**: Bound memory usage for profile hint cache.
@@ -282,7 +265,7 @@ export DEFAULT_PROFILE_EXCLUDE_TAGS="admin,system"
 
 **Estimated effort**: 1-2 hours
 
-### 14. Consider strict OAuth redirect scheme allowlist
+### 13. Consider strict OAuth redirect scheme allowlist
 **Current**: `ExternalOAuthProvider` uses a denylist for dangerous redirect URI schemes (`javascript:`, `data:`, `vbscript:`, `file:`, `blob:`, `about:`) while keeping compatibility with custom client schemes.
 
 **Goal**: Evaluate migrating to a strict allowlist-based scheme policy for stronger security guarantees.
@@ -300,7 +283,7 @@ export DEFAULT_PROFILE_EXCLUDE_TAGS="admin,system"
 
 **Estimated effort**: 2-4 hours
 
-### 15. Replace JSON fingerprint auth comparison for tenant collisions
+### 14. Replace JSON fingerprint auth comparison for tenant collisions
 **Current**: `authFingerprint` in `src/transport/http-tenant-config.ts` compares tenant auth compatibility via `JSON.stringify` over mapped auth config objects.
 
 **Analysis**:
@@ -323,7 +306,7 @@ export DEFAULT_PROFILE_EXCLUDE_TAGS="admin,system"
 
 **Estimated effort**: 1-2 hours
 
-### 16. Extract tenant session lifecycle from HttpTransport
+### 15. Extract tenant session lifecycle from HttpTransport
 **Problem**: `HttpTransport` currently combines routing, auth, filtering, SSE/session control, and tenant-specific session state/lifecycle (`tenantOAuthProvidersBySessionId`, tenant selector consistency checks, tenant context hydration). This concentration increases coupling and regression risk.
 
 **Goal**: Move tenant session responsibilities into a dedicated service while keeping transport behavior unchanged.

@@ -156,7 +156,9 @@ OAuth and metadata endpoints are scoped per profile when routing is enabled:
 Root protected resource metadata also supports a `resource` query parameter for profile selection:
 - `/.well-known/oauth-protected-resource/mcp?resource=http://host/profile/:profileId/mcp`
 
-If no default profile is configured, use the `resource` query parameter to resolve metadata.
+When profile routing is enabled without a default profile, the transport stores a short-lived `HttpOnly` profile-hint cookie after profile-scoped or `resource`-scoped discovery requests so follow-up root OAuth metadata requests stay pinned to the same profile even behind shared IP/user-agent pairs.
+
+If no default profile is configured, use a profile-scoped route or the `resource` query parameter before requesting root OAuth metadata.
 
 
 
