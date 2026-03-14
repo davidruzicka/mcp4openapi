@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- Added repository-scoped autonomous-agent docs plus a tested evaluator feedback workflow with template generation, GitHub Actions scanning, thumbs-only follow-up detection, and machine-readable metadata for issue/PR bodies and issue comments.
+- Added repository-scoped autonomous-agent docs plus tested evaluator/reviewer automation helpers for feedback follow-ups, current-head review selection, reviewer lease comments, and GitHub Actions workflows.
 - Added profile-driven MCP Apps support with `resources/list`, `resources/templates/list`, `resources/read`, template completion, stricter Apps mapping/path validation, session-aware fetch execution, and bounded fetch-result caching.
 - Expanded the GitHub security profile with Secret Scanning CRUD actions, stricter action-gated parameter validation (`allowed_for`/`forbidden_for`), and an upgraded `retrieve_security_overview` composite across code scanning + Dependabot + secret scanning.
 - Added enterprise managed authorization for HTTP transport with profile-driven `enterprise_authorization`, JWT bearer grant support on `/oauth/token`, bounded JWKS/replay/token stores, metadata extensions, and security-focused validation/redaction coverage.

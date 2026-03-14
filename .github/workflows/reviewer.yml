@@ -1,0 +1,56 @@
+name: Reviewer
+
+on:
+  schedule:
+    - cron: '23 * * * *'
+  workflow_dispatch:
+    inputs:
+      lookback_hours:
+        description: Lookback window in hours for recently updated PRs
+        required: false
+        default: '72'
+      max_prs:
+        description: Maximum number of reviewer leases to create in a single run
+        required: false
+        default: '10'
+      lease_ttl_minutes:
+        description: How long a reviewer lease stays active before another run may retry
+        required: false
+        default: '45'
+      agent_id:
+        description: Agent identity to write into metadata
+        required: false
+        default: reviewer
+
+concurrency:
+  group: reviewer
+  cancel-in-progress: false
+
+jobs:
+  reviewer:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Acquire reviewer leases
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REVIEWER_LOOKBACK_HOURS: ${{ github.event.inputs.lookback_hours || '72' }}
+          REVIEWER_MAX_PRS: ${{ github.event.inputs.max_prs || '10' }}
+          REVIEWER_LEASE_TTL_MINUTES: ${{ github.event.inputs.lease_ttl_minutes || '45' }}
+          REVIEWER_AGENT_ID: ${{ github.event.inputs.agent_id || 'reviewer' }}
+        run: npm run agent:reviewer

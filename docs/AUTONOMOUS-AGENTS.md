@@ -172,33 +172,42 @@ The merger should merge only when all of the following are true:
 
 ## First-Version Implementation Assets
 
-This repository includes a small automation helper for evaluator feedback generation:
+This repository includes small automation helpers for evaluator feedback and reviewer lease selection:
 
 - `src/automation/agent-feedback.ts`
 - `src/automation/evaluator-runner.ts`
+- `src/automation/reviewer-runner.ts`
 - `scripts/render-agent-feedback-template.ts`
 - `scripts/run-evaluator.ts`
+- `scripts/run-reviewer.ts`
 - `.github/workflows/evaluator.yml`
+- `.github/workflows/reviewer.yml`
 
-The helper intentionally focuses on one bounded part of the workflow first:
+The current implementation intentionally focuses on bounded deterministic slices first:
 
-- deciding when thumbs-only feedback should trigger a follow-up request,
+- deciding when thumbs-only feedback should trigger an evaluator follow-up request,
 - generating stage-specific feedback-request comment templates,
 - scanning recent issue/PR bodies plus issue comments for agent metadata and thumbs-only reactions,
-- emitting metadata that operational agents can safely ignore.
+- selecting PRs that need a reviewer pass for the current head SHA,
+- acquiring reviewer leases with explicit metadata so duplicate review runs are less likely.
 
 Current first-version runtime scope:
 
-- supports issue bodies, PR bodies, and issue comments,
-- skips targets with mixed thumbs-up/thumbs-down signals,
-- deduplicates follow-up comments by evaluator metadata (`target-type` + `target-number`),
-- does not yet inspect inline review comments or persist long-term feedback history.
+- evaluator supports issue bodies, PR bodies, and issue comments,
+- evaluator skips targets with mixed thumbs-up/thumbs-down signals,
+- evaluator deduplicates follow-up comments by evaluator metadata (`target-type` + `target-number`),
+- reviewer selects only non-draft PRs with `agent:review:required` and no blocking labels,
+- reviewer treats current-head terminal review metadata (`approved`, `changes-requested`, `commented`) as already handled,
+- reviewer uses lease TTL plus `status: reviewing` metadata to avoid duplicate pickup,
+- reviewer does not yet perform semantic code review or resolve review threads on its own,
+- neither helper yet persists long-term feedback history.
 
 ## Future Work
 
 Recommended next steps after this first version:
 
 1. Extend the evaluator scanner to cover pull-request reviews and inline review comments.
-2. Persist structured feedback records for weekly evaluator reports.
-3. Add issue/PR label reconciliation helpers.
-4. Add deterministic reviewer/merger policy validators using the same metadata conventions.
+2. Add a semantic reviewer execution layer that turns acquired leases into actual PR reviews/comments.
+3. Persist structured feedback records for weekly evaluator reports.
+4. Add issue/PR label reconciliation helpers.
+5. Add deterministic merger policy validators using the same metadata conventions.
