@@ -122,6 +122,23 @@ See [`IMPLEMENTATION.md`](./IMPLEMENTATION.md) for detailed architecture and des
 7. Push to your fork
 8. Open a Pull Request
 
+## Issue Labels and Autonomous Maintenance
+
+This repository uses a small label taxonomy so maintainers and autonomous agents can make low-risk decisions without re-triaging every issue from scratch. See [`docs/AUTONOMOUS-AGENTS.md`](./docs/AUTONOMOUS-AGENTS.md) for the current multi-agent workflow, metadata format, evaluator behavior, and merge gates.
+
+### Autonomy gate labels
+
+- `agent:safe`: Small, concrete, low-risk, and testable work that can be implemented autonomously in a single PR.
+- `agent:investigate`: Problem looks real, but the next step should be analysis, reproduction, or narrowing scope instead of direct implementation.
+- `agent:needs-plan`: Work is important but broad, security-sensitive, or architecture-sensitive enough that it should start with an explicit implementation plan.
+
+### Working rules
+
+- Autonomous issue-to-PR automation should only pick issues labeled `agent:safe`.
+- Planner/implementor/reviewer/merger behavior should follow the metadata and merge-gate rules in [`docs/AUTONOMOUS-AGENTS.md`](./docs/AUTONOMOUS-AGENTS.md).
+- Evaluator comments are non-operational and must be ignored by other automation when `agent-id: evaluator` or `ignore-for-workflow: true` is present.
+- When in doubt, leave the issue for human triage instead of over-labeling it as safe.
+
 ## Release Process
 
 For maintainers releasing new versions, see [`docs/RELEASING.md`](./docs/RELEASING.md).
