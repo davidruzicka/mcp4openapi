@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Hardened MCP Apps resource loading so `file_path` stays inside the profile directory after normalization and symlink resolution, while keeping `resources/read` output shape consistent across inline, file-backed, and fetch-backed resources.
 - Fixed HTTP single-profile startup to carry `enterprise_authorization` into transport runtime so enterprise JWT bearer exchange and authenticated initialization work outside profile-routing mode, with dedicated E2E coverage.
 - Clarified and locked runtime enterprise authorization behavior so `required` mode enforces trusted enterprise-issued bearer tokens, `optional` mode stays backward-compatible, tool-category policy covers both listing and execution, and invalid env-backed values fail during profile loading.
+- Replaced serialization-based tenant auth collision checks with an explicit comparator so equivalent nested OAuth configs no longer depend on object property insertion order.
 
 ## [0.5.7] - 2026-03-03
 
