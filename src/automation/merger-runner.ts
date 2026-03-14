@@ -8,6 +8,7 @@ export interface MergerPullRequest {
   readonly url: string;
   readonly draft: boolean;
   readonly headSha: string;
+  readonly baseRefName?: string;
   readonly updatedAt: string;
   readonly labels: readonly string[];
 }
@@ -31,6 +32,14 @@ export interface MergerReviewArtifact {
 export interface MergerReviewThread {
   readonly id: string;
   readonly isResolved: boolean;
+  readonly comments: readonly MergerReviewThreadComment[];
+}
+
+export interface MergerReviewThreadComment {
+  readonly id: string;
+  readonly body: string;
+  readonly updatedAt: string;
+  readonly authorLogin: string;
 }
 
 export interface MergerCiCheck {
@@ -39,13 +48,21 @@ export interface MergerCiCheck {
   readonly conclusion: 'success' | 'neutral' | 'skipped' | 'failure' | 'cancelled' | 'timed_out' | 'action_required' | null;
 }
 
+export interface MergerBranchProtection {
+  readonly requiredApprovingReviewCount: number;
+  readonly requiresCodeOwnerReviews: boolean;
+  readonly allowedMergeMethods: readonly ('merge' | 'squash' | 'rebase')[];
+}
+
 export type MergeGateReason =
   | 'draft-pr'
   | 'human-hold'
   | 'agent-blocked'
   | 'review-in-progress'
   | 'missing-current-approval'
+  | 'review-follow-up-pending'
   | 'unresolved-review-threads'
+  | 'branch-protection-review-policy'
   | 'ci-not-green';
 
 export interface EvaluateMergeGateInput {
@@ -59,6 +76,7 @@ export interface EvaluateMergeGateInput {
   readonly reviews: readonly MergerReviewArtifact[];
   readonly reviewThreads: readonly MergerReviewThread[];
   readonly ciChecks: readonly MergerCiCheck[];
+  readonly branchProtection?: MergerBranchProtection;
 }
 
 export interface MergeGateEvaluation {
@@ -113,8 +131,16 @@ export function evaluateMergeGate(input: EvaluateMergeGateInput): MergeGateEvalu
     reasons.add('missing-current-approval');
   }
 
+  if (hasReviewerFollowUpPending(input.reviewThreads, input.pullRequest.headSha, latestReviewerDecision?.timestamp)) {
+    reasons.add('review-follow-up-pending');
+  }
+
   if (input.reviewThreads.some((thread) => !thread.isResolved)) {
     reasons.add('unresolved-review-threads');
+  }
+
+  if (requiresHumanBranchProtectionLane(input.branchProtection)) {
+    reasons.add('branch-protection-review-policy');
   }
 
   if (!hasGreenCi(input.ciChecks)) {
@@ -218,6 +244,56 @@ function toReviewerDecisionEvent(body: string, timestamp: string): ReviewerDecis
   }];
 }
 
+function hasReviewerFollowUpPending(
+  reviewThreads: readonly MergerReviewThread[],
+  currentHeadSha: string,
+  latestReviewerDecisionTimestamp: string | undefined,
+): boolean {
+  return reviewThreads.some((thread) => {
+    const agentComments = thread.comments.filter((comment) => isReviewerThreadComment(comment.body, currentHeadSha));
+    if (agentComments.length === 0) {
+      return false;
+    }
+
+    const latestAgentTimestamp = maxTimestamp(agentComments.map((comment) => comment.updatedAt));
+    if (!latestAgentTimestamp) {
+      return false;
+    }
+
+    const latestExternalReplyTimestamp = maxTimestamp(
+      thread.comments
+        .filter((comment) => !isReviewerThreadComment(comment.body, currentHeadSha))
+        .filter((comment) => parseIsoTimestamp(comment.updatedAt) > parseIsoTimestamp(latestAgentTimestamp))
+        .map((comment) => comment.updatedAt),
+    );
+
+    if (!latestExternalReplyTimestamp) {
+      return false;
+    }
+
+    if (!latestReviewerDecisionTimestamp) {
+      return true;
+    }
+
+    return parseIsoTimestamp(latestReviewerDecisionTimestamp) <= parseIsoTimestamp(latestExternalReplyTimestamp);
+  });
+}
+
+function isReviewerThreadComment(body: string, currentHeadSha: string): boolean {
+  const metadata = parseAgentMetadata(body);
+  return metadata?.['agent-stage'] === 'reviewer'
+    && metadata?.['ignore-for-workflow'] !== 'true'
+    && metadata?.['head-sha'] === currentHeadSha;
+}
+
+function requiresHumanBranchProtectionLane(branchProtection: MergerBranchProtection | undefined): boolean {
+  if (!branchProtection) {
+    return false;
+  }
+
+  return branchProtection.requiredApprovingReviewCount > 1 || branchProtection.requiresCodeOwnerReviews;
+}
+
 function hasGreenCi(ciChecks: readonly MergerCiCheck[]): boolean {
   if (ciChecks.length === 0) {
     return false;
@@ -239,11 +315,26 @@ function buildMergeGateSummary(
     return `Current head is not merge-ready because the latest reviewer decision is ${latestReviewerDecision}.`;
   }
 
+  if (reasons.includes('branch-protection-review-policy')) {
+    return 'Current head is not merge-ready because branch protection requires a human-controlled approval lane beyond the bounded single-agent reviewer.';
+  }
+
+  if (reasons.includes('review-follow-up-pending')) {
+    return 'Current head is not merge-ready because reviewer-owned discussion threads received newer replies that still need agent follow-up.';
+  }
+
   return `Merge gates are not yet satisfied: ${reasons.join(', ')}.`;
 }
 
 export function shouldSkipMergerByLabels(labels: readonly string[]): boolean {
   return labels.some((label) => BLOCKING_LABELS.has(label));
+}
+
+function maxTimestamp(values: readonly string[]): string | undefined {
+  return values
+    .slice()
+    .sort((left, right) => parseIsoTimestamp(left) - parseIsoTimestamp(right))
+    .at(-1);
 }
 
 function parseIsoTimestamp(value: string): number {

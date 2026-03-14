@@ -2,6 +2,7 @@ import { parseAgentMetadata } from '../src/automation/evaluator-runner.js';
 import { planMergeExecution, type MergeMethod } from '../src/automation/merge-executor.js';
 import {
   createIssueComment,
+  getBranchProtection,
   getPullRequest,
   listCiChecks,
   listIssueComments,
@@ -31,6 +32,7 @@ for (const candidate of candidates) {
   const reviews = await listPullRequestReviews(runtimeConfig, pullRequest.number);
   const reviewThreads = await listReviewThreads(runtimeConfig, pullRequest.number);
   const ciChecks = await listCiChecks(runtimeConfig, pullRequest.headSha);
+  const branchProtection = await getBranchProtection(runtimeConfig, pullRequest.number);
 
   const execution = planMergeExecution({
     repository: runtimeConfig.repository,
@@ -45,6 +47,7 @@ for (const candidate of candidates) {
     reviews,
     reviewThreads,
     ciChecks,
+    branchProtection,
   });
 
   if (!execution.shouldMerge) {

@@ -7,6 +7,7 @@ import {
   type ReviewerChangedFile,
   type ReviewerPullRequest,
   type ReviewerReviewArtifact,
+  type ReviewerReviewThread,
   type ReviewerThreadComment,
 } from './reviewer-runner.js';
 
@@ -83,6 +84,7 @@ describe('reviewer-runner', () => {
         pullRequests,
         commentsByPrNumber: { 156: [] },
         reviewsByPrNumber: { 156: [] },
+        reviewThreadsByPrNumber: { 156: [] },
         repository: 'davidruzicka/mcp4openapi',
         agentId: 'reviewer',
         runId: 'run-123',
@@ -129,6 +131,7 @@ describe('reviewer-runner', () => {
         pullRequests,
         commentsByPrNumber: { 156: [] },
         reviewsByPrNumber,
+        reviewThreadsByPrNumber: { 156: [] },
         repository: 'davidruzicka/mcp4openapi',
         agentId: 'reviewer',
         runId: 'run-123',
@@ -166,6 +169,7 @@ describe('reviewer-runner', () => {
         pullRequests,
         commentsByPrNumber: { 156: [] },
         reviewsByPrNumber,
+        reviewThreadsByPrNumber: { 156: [] },
         repository: 'davidruzicka/mcp4openapi',
         agentId: 'reviewer',
         runId: 'run-123',
@@ -177,6 +181,64 @@ describe('reviewer-runner', () => {
         expect.objectContaining({
           pullRequestNumber: 156,
           reason: 'stale-review',
+        }),
+      ]);
+    });
+
+    it('requeues a PR when reviewer-owned thread replies arrived after the last current-head decision', () => {
+      const pullRequests: ReviewerPullRequest[] = [
+        buildPullRequest({ number: 156, headSha: 'abc123', labels: ['agent:review:required'] }),
+      ];
+      const reviewsByPrNumber: Record<number, ReviewerReviewArtifact[]> = {
+        156: [
+          {
+            id: 902,
+            body: buildReviewerMetadataComment({ status: 'approved', headSha: 'abc123', timestamp: '2026-03-14T16:05:00Z' }),
+            submittedAt: '2026-03-14T16:05:00Z',
+            state: 'APPROVED',
+            authorLogin: 'github-actions[bot]',
+          },
+        ],
+      };
+      const reviewThreadsByPrNumber: Record<number, ReviewerReviewThread[]> = {
+        156: [
+          buildReviewThread({
+            id: 'thread-1',
+            isResolved: true,
+            comments: [
+              buildReviewThreadComment({
+                id: 'comment-1',
+                authorLogin: 'github-actions[bot]',
+                updatedAt: '2026-03-14T16:00:00Z',
+                body: buildReviewerMetadataComment({ status: 'commented', headSha: 'abc123', timestamp: '2026-03-14T16:00:00Z' }),
+              }),
+              buildReviewThreadComment({
+                id: 'comment-2',
+                authorLogin: 'human-reviewer',
+                updatedAt: '2026-03-14T16:08:00Z',
+                body: 'Can you also verify the fallback path?',
+              }),
+            ],
+          }),
+        ],
+      };
+
+      const assignments = collectReviewerAssignments({
+        pullRequests,
+        commentsByPrNumber: { 156: [] },
+        reviewsByPrNumber,
+        reviewThreadsByPrNumber,
+        repository: 'davidruzicka/mcp4openapi',
+        agentId: 'reviewer',
+        runId: 'run-123',
+        now: '2026-03-14T16:10:00Z',
+        leaseTtlMinutes: 30,
+      });
+
+      expect(assignments).toEqual([
+        expect.objectContaining({
+          pullRequestNumber: 156,
+          reason: 'follow-up-requested',
         }),
       ]);
     });
@@ -217,6 +279,7 @@ describe('reviewer-runner', () => {
         pullRequests,
         commentsByPrNumber,
         reviewsByPrNumber: { 156: [], 157: [], 158: [], 159: [] },
+        reviewThreadsByPrNumber: { 156: [], 157: [], 158: [], 159: [] },
         repository: 'davidruzicka/mcp4openapi',
         agentId: 'reviewer',
         runId: 'run-123',
@@ -371,4 +434,48 @@ function buildChangedFile(input: {
     changes: 12,
     patch: '@@ -1 +1 @@',
   };
+}
+
+function buildReviewThread(input: {
+  id: string;
+  isResolved: boolean;
+  comments?: ReviewerReviewThread['comments'];
+}): ReviewerReviewThread {
+  return {
+    id: input.id,
+    isResolved: input.isResolved,
+    comments: input.comments ?? [],
+  };
+}
+
+function buildReviewThreadComment(input: {
+  id: string;
+  body: string;
+  updatedAt: string;
+  authorLogin: string;
+}): ReviewerReviewThread['comments'][number] {
+  return {
+    id: input.id,
+    body: input.body,
+    updatedAt: input.updatedAt,
+    authorLogin: input.authorLogin,
+  };
+}
+
+function buildReviewerMetadataComment(input: {
+  status: 'reviewing' | 'approved' | 'changes-requested' | 'commented';
+  headSha: string;
+  timestamp: string;
+}): string {
+  return [
+    '🤖 Agent review (reviewer)',
+    '',
+    '<!-- AGENT-METADATA',
+    'agent-id: reviewer',
+    'agent-stage: reviewer',
+    `status: ${input.status}`,
+    `head-sha: ${input.headSha}`,
+    `timestamp: ${input.timestamp}`,
+    '-->',
+  ].join('\n');
 }
