@@ -1,4 +1,5 @@
 import { buildAgentMetadataBlock } from './agent-feedback.js';
+import { planReviewerCompletion, hasReviewLifecycleSignal } from './agent-workflow-state.js';
 import { parseAgentMetadata } from './evaluator-runner.js';
 
 export interface ReviewerPullRequest {
@@ -223,13 +224,15 @@ export function buildSemanticReviewerDecision(input: BuildSemanticReviewerDecisi
     findings,
   });
 
+  const reviewTransition = planReviewerCompletion(input.pullRequest.labels, verdict);
+
   return {
     verdict,
     summary,
     findings,
     reviewBody,
-    labelsToAdd: ['agent:review:done'],
-    labelsToRemove: ['agent:review:in-progress'],
+    labelsToAdd: reviewTransition.labelsToAdd,
+    labelsToRemove: reviewTransition.labelsToRemove,
   };
 }
 
@@ -239,7 +242,7 @@ function isEligibleForReviewerQueue(pullRequest: ReviewerPullRequest): boolean {
   }
 
   const labels = new Set(pullRequest.labels);
-  if (!labels.has('agent:review:required')) {
+  if (!hasReviewLifecycleSignal(labels)) {
     return false;
   }
 

@@ -128,14 +128,32 @@ This repository uses a small label taxonomy so maintainers and autonomous agents
 
 ### Autonomy gate labels
 
-- `agent:safe`: Small, concrete, low-risk, and testable work that can be implemented autonomously in a single PR.
-- `agent:investigate`: Problem looks real, but the next step should be analysis, reproduction, or narrowing scope instead of direct implementation.
-- `agent:needs-plan`: Work is important but broad, security-sensitive, or architecture-sensitive enough that it should start with an explicit implementation plan.
+Issue labels:
+- `agent:safe`: Issue is currently eligible for autonomous handling.
+- `agent:needs-plan`: Eligible issue is waiting for planner output.
+- `agent:planned`: Planner produced a current acceptable plan and the issue remains eligible.
+- `agent:implementing`: Implementor lease is active.
+- `agent:blocked`: Automation should stop pending human help or an external dependency.
+- `human:hold`: Human explicitly paused automation.
+
+PR labels:
+- `agent:created`: PR was opened by automation.
+- `agent:review:required`: PR needs reviewer processing.
+- `agent:review:in-progress`: Reviewer lease is active.
+- `agent:review:done`: Review completed for the current lane; metadata must still match the current head SHA.
+- `agent:ready-to-merge`: Deterministic merge gates currently pass.
+- `agent:blocked`: PR is blocked for automation.
+- `human:hold`: Human explicitly paused merge automation.
+
+Legacy review labels still tolerated during migration:
+- `agent:reviewing`
+- `agent:reviewed`
 
 ### Working rules
 
-- Autonomous issue-to-PR automation should only pick issues labeled `agent:safe`.
-- Planner/implementor/reviewer/merger behavior should follow the metadata and merge-gate rules in [`docs/AUTONOMOUS-AGENTS.md`](./docs/AUTONOMOUS-AGENTS.md).
+- Autonomous issue-to-PR automation should only advance issues that satisfy the state-machine rules in [`docs/AUTONOMOUS-AGENTS.md`](./docs/AUTONOMOUS-AGENTS.md).
+- Planner / implementor / reviewer / merger behavior should follow the metadata, migration, and merge-gate rules in [`docs/AUTONOMOUS-AGENTS.md`](./docs/AUTONOMOUS-AGENTS.md).
+- The current implementor workflow runtime is a safe orchestration layer that expects a configured external command/backend via `IMPLEMENTOR_COMMAND`; the default workflow backend is the built-in Codex wrapper (`node dist/scripts/run-implementor-codex.js`), and if any backend omits visible PR disclosure, the runtime backfills it before review.
 - Evaluator comments are non-operational and must be ignored by other automation when `agent-id: evaluator` or `ignore-for-workflow: true` is present.
 - When in doubt, leave the issue for human triage instead of over-labeling it as safe.
 

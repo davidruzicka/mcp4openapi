@@ -1,0 +1,50 @@
+name: Planner
+
+on:
+  schedule:
+    - cron: '19 * * * *'
+  workflow_dispatch:
+    inputs:
+      lookback_hours:
+        description: Lookback window in hours for recently updated issues
+        required: false
+        default: '72'
+      max_issues:
+        description: Maximum number of issues to plan in a single run
+        required: false
+        default: '10'
+      agent_id:
+        description: Agent identity to write into metadata
+        required: false
+        default: planner
+
+concurrency:
+  group: planner
+  cancel-in-progress: false
+
+jobs:
+  planner:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run planner
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PLANNER_LOOKBACK_HOURS: ${{ github.event.inputs.lookback_hours || '72' }}
+          PLANNER_MAX_ISSUES: ${{ github.event.inputs.max_issues || '10' }}
+          PLANNER_AGENT_ID: ${{ github.event.inputs.agent_id || 'planner' }}
+        run: npm run agent:planner

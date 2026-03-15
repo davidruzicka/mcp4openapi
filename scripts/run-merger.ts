@@ -1,3 +1,4 @@
+import { hasReviewLifecycleSignal } from '../src/automation/agent-workflow-state.js';
 import { parseAgentMetadata } from '../src/automation/evaluator-runner.js';
 import { evaluateMergeGate } from '../src/automation/merger-runner.js';
 import {
@@ -17,7 +18,7 @@ const runtimeConfig = readMergerRuntimeConfig(process.env);
 const recentPullRequests = await listRecentPullRequests(runtimeConfig);
 const relevantPullRequests = recentPullRequests.filter((pullRequest) => {
   const labels = new Set(pullRequest.labels);
-  return labels.has('agent:review:required') || labels.has('agent:review:done') || labels.has('agent:ready-to-merge');
+  return hasReviewLifecycleSignal(labels) || labels.has('agent:ready-to-merge');
 });
 
 for (const pullRequest of relevantPullRequests.slice(0, runtimeConfig.maxPrs)) {

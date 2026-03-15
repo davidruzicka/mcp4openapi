@@ -49,6 +49,38 @@ describe('merger-runner', () => {
       expect(evaluation.commentBody).toContain('head-sha: abc123');
     });
 
+    it('treats a legacy reviewed label as a migration-era review requirement signal', () => {
+      const evaluation = evaluateMergeGate({
+        repository: 'davidruzicka/mcp4openapi',
+        agentId: 'merger',
+        runId: 'run-123',
+        timestamp: '2026-03-14T18:00:00Z',
+        leaseTtlMinutes: 45,
+        pullRequest: buildPullRequest({
+          number: 166,
+          headSha: 'legacy-sha',
+          labels: ['agent:created', 'agent:reviewed'],
+        }),
+        threadComments: [],
+        reviews: [
+          buildReview({
+            id: 8,
+            submittedAt: '2026-03-14T17:55:00Z',
+            status: 'approved',
+            headSha: 'legacy-sha',
+          }),
+        ],
+        reviewThreads: [],
+        ciChecks: [
+          { name: 'test', status: 'completed', conclusion: 'success' },
+        ],
+      });
+
+      expect(evaluation.ready).toBe(true);
+      expect(evaluation.reasons).toEqual([]);
+      expect(evaluation.labelsToAdd).toContain('agent:ready-to-merge');
+    });
+
     it('blocks merge readiness when the only approval is stale for an older head sha', () => {
       const evaluation = evaluateMergeGate({
         repository: 'davidruzicka/mcp4openapi',

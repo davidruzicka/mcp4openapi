@@ -287,6 +287,29 @@ describe('reviewer-runner', () => {
         leaseTtlMinutes: 30,
       })).toEqual([]);
     });
+
+    it('treats legacy reviewed and reviewing labels as migration-era review lane signals', () => {
+      const assignments = collectReviewerAssignments({
+        pullRequests: [
+          buildPullRequest({ number: 160, headSha: 'legacy-sha', labels: ['agent:reviewed'] }),
+        ],
+        commentsByPrNumber: { 160: [] },
+        reviewsByPrNumber: { 160: [] },
+        reviewThreadsByPrNumber: { 160: [] },
+        repository: 'davidruzicka/mcp4openapi',
+        agentId: 'reviewer',
+        runId: 'run-123',
+        now: '2026-03-14T16:10:00Z',
+        leaseTtlMinutes: 30,
+      });
+
+      expect(assignments).toEqual([
+        expect.objectContaining({
+          pullRequestNumber: 160,
+          reason: 'missing-current-review',
+        }),
+      ]);
+    });
   });
 
   describe('buildReviewerLeaseComment', () => {
@@ -339,8 +362,9 @@ describe('reviewer-runner', () => {
         }),
       ]);
       expect(decision.reviewBody).toContain('status: changes-requested');
-      expect(decision.labelsToAdd).toContain('agent:review:done');
+      expect(decision.labelsToAdd).toEqual([]);
       expect(decision.labelsToRemove).toContain('agent:review:in-progress');
+      expect(decision.labelsToRemove).toContain('agent:review:done');
     });
 
     it('approves docs-only changes with current-head reviewer metadata', () => {
