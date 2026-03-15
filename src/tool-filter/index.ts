@@ -30,6 +30,10 @@ export { HeaderConfigParser } from './config/header-config-parser.js';
 
 // Integration service
 export { ToolFilterService } from './integration/tool-filter-service.js';
+export {
+  createToolFilterService,
+  type CreateToolFilterServiceOptions,
+} from './integration/tool-filter-service-factory.js';
 
 // Utilities
 export { normalizeToolName } from './utils.js';

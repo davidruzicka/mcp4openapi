@@ -58,13 +58,8 @@ import { NamingStrategy, type OperationForNaming } from '../core/naming.js';
 import { isSafePropertyName } from '../validation/validation-utils.js';
 import {
   ToolFilterService,
-  EnvConfigParser,
-  HeaderConfigParser,
-  RegexCompiler,
-  RegexValidator,
   OperationClassifier,
-  OpenAPIOperationResolver,
-  OperationDetector,
+  createToolFilterService,
   applySessionToolFilter,
   type SessionToolFilterCompat as SessionToolFilter,
   type SessionToolFilterRequest,
@@ -2276,22 +2271,10 @@ export class MCPServer {
 
     // Initialize ToolFilterService if not already done
     if (!this.toolFilterService) {
-      const validator = new RegexValidator();
-      const compiler = new RegexCompiler(validator);
-      const envParser = new EnvConfigParser(compiler);
-      const headerParser = new HeaderConfigParser(compiler);
-      
-      // Create OperationDetector for category filtering
-      const classifier = new OperationClassifier();
-      const resolver = new OpenAPIOperationResolver(this.parser);
-      const detector = new OperationDetector(classifier, resolver);
-      
-      this.toolFilterService = new ToolFilterService(
-        envParser,
-        headerParser,
-        this.logger,
-        detector
-      );
+      this.toolFilterService = createToolFilterService({
+        logger: this.logger,
+        parser: this.parser,
+      });
     }
 
     const originalTools = this.profile.tools;
