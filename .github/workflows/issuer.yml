@@ -1,0 +1,50 @@
+name: Issuer
+
+on:
+  schedule:
+    - cron: '11 * * * *'
+  workflow_dispatch:
+    inputs:
+      lookback_hours:
+        description: Lookback window in hours for recently updated issues
+        required: false
+        default: '72'
+      max_issues:
+        description: Maximum number of issues to inspect in a single run
+        required: false
+        default: '20'
+      agent_id:
+        description: Agent identity to write into metadata
+        required: false
+        default: issuer
+
+concurrency:
+  group: issuer
+  cancel-in-progress: false
+
+jobs:
+  issuer:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run issuer autonomy gate
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUER_LOOKBACK_HOURS: ${{ github.event.inputs.lookback_hours || '72' }}
+          ISSUER_MAX_ISSUES: ${{ github.event.inputs.max_issues || '20' }}
+          ISSUER_AGENT_ID: ${{ github.event.inputs.agent_id || 'issuer' }}
+        run: npm run agent:issuer

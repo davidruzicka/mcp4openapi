@@ -1,4 +1,5 @@
 import { buildAgentMetadataBlock } from './agent-feedback.js';
+import { hasReviewLifecycleSignal } from './agent-workflow-state.js';
 import { parseAgentMetadata } from './evaluator-runner.js';
 import { hasActiveReviewerLease } from './reviewer-runner.js';
 
@@ -126,7 +127,7 @@ export function evaluateMergeGate(input: EvaluateMergeGateInput): MergeGateEvalu
   }
 
   const latestReviewerDecision = findLatestReviewerDecision(input.reviews, input.threadComments, input.pullRequest.headSha);
-  const reviewRequired = labels.has('agent:review:required') || labels.has('agent:review:done');
+  const reviewRequired = hasReviewLifecycleSignal(labels);
   if (reviewRequired && latestReviewerDecision?.status !== 'approved') {
     reasons.add('missing-current-approval');
   }

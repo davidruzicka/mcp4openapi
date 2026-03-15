@@ -1,0 +1,65 @@
+name: Implementor
+
+on:
+  schedule:
+    - cron: '29 * * * *'
+  workflow_dispatch:
+    inputs:
+      lookback_hours:
+        description: Lookback window in hours for recently updated issues
+        required: false
+        default: '72'
+      max_issues:
+        description: Maximum number of issues to implement in a single run
+        required: false
+        default: '5'
+      lease_ttl_minutes:
+        description: How long an implementor lease stays active before another run may retry
+        required: false
+        default: '120'
+      agent_id:
+        description: Agent identity to write into metadata
+        required: false
+        default: implementor
+      command:
+        description: Optional shell command for the external implementor backend; falls back to the built-in Codex wrapper or vars.IMPLEMENTOR_COMMAND
+        required: false
+        default: ''
+
+concurrency:
+  group: implementor
+  cancel-in-progress: false
+
+jobs:
+  implementor:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Codex CLI
+        run: npm install -g @openai/codex
+
+      - name: Run implementor handoff
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          IMPLEMENTOR_LOOKBACK_HOURS: ${{ github.event.inputs.lookback_hours || '72' }}
+          IMPLEMENTOR_MAX_ISSUES: ${{ github.event.inputs.max_issues || '5' }}
+          IMPLEMENTOR_LEASE_TTL_MINUTES: ${{ github.event.inputs.lease_ttl_minutes || '120' }}
+          IMPLEMENTOR_AGENT_ID: ${{ github.event.inputs.agent_id || 'implementor' }}
+          IMPLEMENTOR_COMMAND: ${{ github.event.inputs.command || vars.IMPLEMENTOR_COMMAND || 'node dist/scripts/run-implementor-codex.js' }}
+        run: npm run agent:implementor

@@ -1,21 +1,38 @@
 # Autonomous Agents
 
-This document defines the first repository-specific version of the multi-agent issue-to-PR workflow and the feedback/evaluation loop around it.
+This document defines the repository-specific autonomous issue-to-PR workflow, its label taxonomy, migration rules, and deterministic merge gates.
 
 ## Goals
 
 - Keep autonomous work narrow, testable, and auditable.
-- Make agent state machine decisions deterministic.
+- Make workflow state-machine decisions deterministic.
 - Preserve human override at every critical boundary.
+- Support gradual migration from the current label model without unsafe bulk relabeling.
 - Capture structured feedback that can improve prompts and policies without allowing uncontrolled self-modification.
 
+## Core principles
+
+- Labels represent coarse workflow state, not free-form commentary.
+- Machine-readable metadata is the source of truth for leases, head SHA binding, timestamps, and review currentness.
+- All agents must be idempotent.
+- All active ownership must use lease TTL, not permanent locks.
+- `human:hold` always wins over automation.
+- Migration uses dual-read, new-write, and on-touch reconciliation.
+
 ## Agent Roles
+
+### `proposal-intake`
+
+- Examines new automation proposals before a fresh issue is created.
+- Checks bounded open/closed issue and PR candidates for duplicates, regressions, and follow-up work.
+- Chooses one deterministic outcome: `comment-existing`, `create-and-link`, `create-fresh`, `reject-as-duplicate`, or `no-action`.
+- Must prefer no-op over noisy or ambiguous duplicate handling.
 
 ### `issuer`
 
 - Examines issues.
 - Decides whether work is safe for autonomous execution.
-- Applies or removes the autonomy gate labels.
+- Applies the autonomy gate labels that route work into the planning lane.
 
 ### `planner`
 
@@ -28,16 +45,23 @@ This document defines the first repository-specific version of the multi-agent i
 - Takes planned issues.
 - Implements the change in a branch.
 - Opens a PR with tests and an explicit agent note.
+- The default GitHub Actions backend uses a Codex CLI wrapper that consumes `IMPLEMENTOR_TASK_JSON`, runs Codex inside the checked-out repository/worktree, and requires a machine-readable JSON result before the orchestration layer updates labels.
 
 ### `reviewer`
 
 - Reviews the current PR head SHA.
 - Leaves machine-readable review metadata.
-- Re-reviews after new commits when earlier review metadata becomes stale.
+- Re-reviews after new commits or newer external thread replies when earlier review metadata becomes stale.
 
 ### `merger`
 
-- Merges only after current-sha review requirements, CI, and hold gates are satisfied.
+- Evaluates whether the current PR head is merge-ready.
+- Reconciles `agent:ready-to-merge` only when deterministic gates are satisfied.
+
+### `merge-executor`
+
+- Performs the actual merge after final live revalidation.
+- Uses the current head SHA as a fail-safe lease.
 
 ### `evaluator`
 
@@ -46,33 +70,225 @@ This document defines the first repository-specific version of the multi-agent i
 - Requests clarification when feedback is only a thumbs-up or thumbs-down and more context would materially help.
 - Produces prompt/policy recommendations for human approval.
 
-## Label Taxonomy
+## Final label taxonomy
 
 ### Issue labels
 
-- `agent:safe` - Small, concrete, low-risk issue approved for autonomous work.
-- `agent:needs-plan` - Work needs explicit design/planning before implementation.
-- `agent:investigate` - Next step should be reproduction, scoping, or analysis.
-- `agent:planned` - Planner left a current plan that still keeps the issue in the autonomous lane.
+- `agent:safe` - Issue is currently considered eligible for autonomous handling.
+- `agent:needs-plan` - Issue is eligible and awaiting planner output.
+- `agent:planned` - Planner produced a current acceptable plan and the issue remains eligible.
 - `agent:implementing` - An implementor lease is active.
-- `agent:blocked` - Automation should stop until a human intervenes.
-- `human:hold` - Human explicitly paused automation for this issue or its linked PR.
+- `agent:blocked` - Automation should stop until a human intervenes or an external dependency changes.
+- `human:hold` - Human explicitly paused automation.
 
 ### PR labels
 
 - `agent:created` - PR was created by automation.
-- `agent:review:required` - PR needs at least one agent review pass.
+- `agent:review:required` - PR needs reviewer processing.
 - `agent:review:in-progress` - A reviewer lease is active.
-- `agent:review:done` - Review for the current expected lane completed; metadata must still match the current head SHA.
+- `agent:review:done` - Review for the current lane completed; metadata must still match the current head SHA.
 - `agent:ready-to-merge` - All deterministic merge gates appear satisfied.
 - `agent:blocked` - PR is blocked for automation.
 - `human:hold` - Human explicitly paused merge automation.
 
+### Legacy labels still recognized during migration
+
+- `agent:reviewing`
+- `agent:reviewed`
+
 Notes:
 - Labels are coarse workflow hints.
-- Source of truth for currentness is metadata + current head SHA, not labels alone.
+- Source of truth for currentness is metadata plus current head SHA, not labels alone.
+- New automation writes the final taxonomy and opportunistically removes legacy review labels after reconciliation.
 
-## Comment Metadata
+## State machine
+
+### Proposal intake resolution
+
+Before an item enters the issue state machine, `proposal-intake` must classify it against a bounded shortlist of existing issues and PRs.
+
+Deterministic outcomes:
+
+- `comment-existing`
+  - use when an open pre-implementation issue already tracks the same bounded work
+- `create-and-link`
+  - use when the closest match is already active (`agent:planned`, `agent:implementing`, or an open PR) or when a closed match is a true regression / follow-up
+- `create-fresh`
+  - use when no relevant bounded match exists
+- `reject-as-duplicate`
+  - use when the best match is an already closed exact duplicate with no new regression / follow-up scope
+- `no-action`
+  - use when candidate matches are ambiguous, the worktree is dirty, or runtime evidence is too weak for a safe decision
+
+Required proposal-intake guardrails:
+
+- bounded retrieval before detailed duplicate classification
+- strict idempotency for comments / links / created issues
+- explicit early exits on ambiguity or dirty automation state
+- at most one side effect per run
+
+### Issue states
+
+- `candidate` -> no workflow labels
+- `needs-plan` -> `agent:safe` + `agent:needs-plan`
+- `planned` -> `agent:safe` + `agent:planned`
+- `implementing` -> `agent:safe` + `agent:planned` + `agent:implementing`
+- `blocked` -> `agent:blocked`
+- `held` -> `human:hold`
+
+### Issue transitions
+
+#### Candidate -> needs-plan
+Performed by `issuer` when coarse suitability passes.
+
+Actions:
+- add `agent:safe`
+- add `agent:needs-plan`
+- add issuer note with concise reasoning
+
+#### Needs-plan -> planned
+Performed by `planner` when detailed design still supports autonomous handling.
+
+Actions:
+- add `agent:planned`
+- remove `agent:needs-plan`
+- keep `agent:safe`
+- update or replace the current planner comment
+
+#### Needs-plan -> de-scoped / blocked
+Performed by `planner` when deeper analysis reveals ambiguity, broad scope, missing acceptance criteria, or policy mismatch.
+
+Actions:
+- remove `agent:safe`
+- remove `agent:needs-plan`
+- optionally add `agent:blocked`
+- explain why autonomous execution was rejected
+
+#### Planned -> implementing
+Performed by `implementor` when no open linked PR already exists.
+
+Actions:
+- acquire lease
+- add `agent:implementing`
+- publish implementor ownership metadata
+
+#### Implementing -> planned
+Performed by `implementor` on safe failure before PR creation.
+
+Actions:
+- remove `agent:implementing`
+- keep `agent:planned`
+- leave concise failure comment
+- add `agent:blocked` only when retry should stop pending human help
+
+#### Implementing -> PR created
+Performed by `implementor` after successful PR creation.
+
+Actions:
+- remove `agent:implementing`
+- keep `agent:safe`
+- usually keep `agent:planned` for auditability
+- link the PR from the issue
+
+### PR states
+
+- `candidate` -> no workflow labels
+- `review-required` -> `agent:review:required`
+- `review-in-progress` -> `agent:review:required` + `agent:review:in-progress`
+- `review-done` -> `agent:review:required` + `agent:review:done`
+- `ready-to-merge` -> `agent:review:required` + `agent:review:done` + `agent:ready-to-merge`
+- `blocked` -> `agent:blocked`
+- `held` -> `human:hold`
+
+### PR transitions
+
+#### PR created -> review required
+Performed by `implementor`.
+
+Actions:
+- add `agent:created`
+- add `agent:review:required`
+- add visible disclosure to the PR body
+
+#### Review required -> review in progress
+Performed by `reviewer`.
+
+Actions:
+- acquire reviewer lease
+- add `agent:review:in-progress`
+- post reviewer lease metadata
+
+#### Review in progress -> review done
+Performed by `reviewer` for the current head SHA.
+
+Actions:
+- submit review comment / approval metadata
+- add `agent:review:done`
+- remove `agent:review:in-progress`
+- remove legacy `agent:reviewing` / `agent:reviewed` labels if present
+
+#### Review done -> review required
+Triggered when review currentness is invalidated.
+
+Invalidation conditions:
+- PR head SHA changed
+- reviewer-owned threads received newer external replies
+- latest current-head decision is no longer approval-compatible
+
+Actions:
+- remove `agent:review:done`
+- preserve or re-add `agent:review:required`
+- remove `agent:ready-to-merge` if present
+
+#### Review done -> ready to merge
+Performed by `merger` when all deterministic gates pass.
+
+Actions:
+- add `agent:ready-to-merge`
+- post merge evaluation metadata
+
+#### Ready to merge -> not ready
+Performed by `merger` reconciliation.
+
+Actions:
+- remove `agent:ready-to-merge`
+- optionally add/update a reason summary comment
+
+#### Ready to merge -> merged
+Performed by `merge-executor` only after final live revalidation.
+
+## Migration rules
+
+Migration uses dual-read, new-write, and on-touch reconciliation.
+
+### Safe migration behavior
+
+- Keep `agent:safe` unchanged.
+- Treat legacy review labels only as hints.
+- Never trust `agent:reviewed` or `agent:ready-to-merge` without revalidating current metadata, threads, and head SHA.
+
+### Legacy -> final mapping
+
+#### Issue labels
+
+- Existing `agent:safe` remains valid.
+- If an issue has `agent:safe` and no planning state, planner may add `agent:needs-plan` on first touch.
+
+#### PR labels
+
+- `agent:reviewing`
+  - convert to `agent:review:in-progress` only if a live reviewer lease exists for the current head SHA
+  - otherwise treat as stale and remove opportunistically
+
+- `agent:reviewed`
+  - convert to `agent:review:done` only after revalidation against current head SHA, unresolved threads, and reviewer metadata
+  - otherwise treat as stale and remove opportunistically
+
+- `agent:ready-to-merge`
+  - keep only if merge gates still pass for the current head SHA
+  - otherwise remove during merger or merge-executor reconciliation
+
+## Comment metadata
 
 All agents should add a visible note plus a hidden metadata block.
 
@@ -111,21 +327,59 @@ timestamp: 2026-03-14T13:45:12Z
 - `issue-number`
 - `base-sha`
 - `review-cycle`
+- `reason`
+- `ignore-for-workflow`
 
-## Review Currentness Rule
+### Proposal-intake fields
+
+- `proposal-key`
+- `resolution`
+- `target-issue-number`
+- `target-pr-number`
+
+## Required visible disclosure
+
+All agent-authored issue comments, PR descriptions, review comments, and merge notes must explicitly disclose automation.
+
+Recommended prefixes:
+
+- `🤖 Agent note (issuer)`
+- `🤖 Agent plan (planner)`
+- `🤖 Agent implementation note (implementor)`
+- `🤖 Agent review (reviewer)`
+- `🤖 Agent note (merger)`
+- `🤖 Agent note (merge-executor)`
+
+## Review currentness rule
 
 A review is current only when:
 
-- its latest review metadata has `status: approved`, and
+- its latest reviewer metadata has `status: approved`, and
 - its `head-sha` matches the current PR head SHA.
 
-If the head SHA changes, the prior approval is stale and should not count toward merge.
+If the head SHA changes, the prior approval is stale and must not count toward merge.
 
-## Evaluator Feedback Loop
+## Merge gates
+
+The merger should mark a PR ready only when all of the following are true:
+
+1. PR is not draft.
+2. No `human:hold` label is present.
+3. No `agent:blocked` label is present.
+4. No reviewer lease is currently active.
+5. Required reviewer approval exists for the current head SHA.
+6. No unresolved review conversations remain.
+7. CI is green.
+8. No later negative review metadata supersedes an earlier approval.
+9. No reviewer-owned follow-up thread contains newer external replies than the latest reviewer response or decision for the current head SHA.
+10. Branch protection does not require a stronger human approval lane than the bounded single-agent reviewer can satisfy.
+11. The chosen merge method is allowed by repository policy.
+
+## Evaluator feedback loop
 
 ### Human feedback
 
-Humans can react with thumbs-up/thumbs-down or leave a short comment.
+Humans can react with thumbs-up / thumbs-down or leave a short comment.
 
 ### Weak signal handling
 
@@ -157,70 +411,71 @@ timestamp: 2026-03-14T16:00:00Z
 - Other agents must ignore evaluator comments when `agent-id: evaluator` or `ignore-for-workflow: true` is present.
 - Evaluator can suggest categories, but should not claim a root cause as fact unless a human already confirmed it.
 
-## Merge Gates
+## Current implementation assets
 
-The merger should merge only when all of the following are true:
-
-1. PR is not draft.
-2. No `human:hold` label is present.
-3. No `agent:blocked` label is present.
-4. No review lease is currently active.
-5. Required reviewer approvals exist for the current head SHA.
-6. No unresolved review conversations remain.
-7. CI is green.
-8. No later negative review metadata supersedes an earlier approval.
-9. No reviewer-owned follow-up thread contains newer external replies than the latest reviewer response / decision for the current head SHA.
-10. Branch protection does not require a stronger human approval lane than the bounded single-agent reviewer can satisfy.
-
-## First-Version Implementation Assets
-
-This repository includes small automation helpers for evaluator feedback and reviewer lease selection:
+This repository currently includes small automation helpers for evaluator feedback, review / merge state reconciliation, and deterministic workflow transitions:
 
 - `src/automation/agent-feedback.ts`
+- `src/automation/agent-workflow-state.ts`
 - `src/automation/evaluator-runner.ts`
+- `src/automation/proposal-intake.ts`
+- `src/automation/proposal-intake-runner.ts`
+- `src/automation/issuer-runner.ts`
+- `src/automation/planner-runner.ts`
+- `src/automation/implementor-runner.ts`
 - `src/automation/reviewer-runner.ts`
 - `src/automation/merger-runner.ts`
 - `src/automation/merge-executor.ts`
+- `scripts/github-agent-runtime.ts`
 - `scripts/render-agent-feedback-template.ts`
 - `scripts/merger-runtime.ts`
 - `scripts/run-evaluator.ts`
+- `scripts/run-issuer.ts`
+- `scripts/run-planner.ts`
+- `scripts/run-implementor.ts`
 - `scripts/run-reviewer.ts`
 - `scripts/run-merger.ts`
 - `scripts/run-merge-executor.ts`
 - `.github/workflows/evaluator.yml`
+- `.github/workflows/issuer.yml`
+- `.github/workflows/planner.yml`
+- `.github/workflows/implementor.yml`
 - `.github/workflows/reviewer.yml`
 - `.github/workflows/merger.yml`
 - `.github/workflows/merge-executor.yml`
 
-The current implementation intentionally focuses on bounded deterministic slices first:
-
-- deciding when thumbs-only feedback should trigger an evaluator follow-up request,
-- generating stage-specific feedback-request comment templates,
-- scanning recent issue/PR bodies plus issue comments for agent metadata and thumbs-only reactions,
-- selecting PRs that need a reviewer pass for the current head SHA,
-- acquiring reviewer leases with explicit metadata so duplicate review runs are less likely.
-
-Current first-version runtime scope:
+Current implemented runtime scope:
 
 - evaluator supports issue bodies, PR bodies, and issue comments,
-- evaluator skips targets with mixed thumbs-up/thumbs-down signals,
-- evaluator deduplicates follow-up comments by evaluator metadata (`target-type` + `target-number`),
-- reviewer selects only non-draft PRs with `agent:review:required` and no blocking labels,
-- reviewer treats current-head terminal review metadata (`approved`, `changes-requested`, `commented`) as already handled,
+- evaluator skips targets with mixed thumbs-up / thumbs-down signals,
+- evaluator deduplicates follow-up comments by evaluator metadata,
+- issuer performs bounded heuristic triage for recently updated issues and writes migration-safe autonomy gate comments plus labels,
+- proposal-intake now includes deterministic duplicate/follow-up/regression ranking, bounded GitHub issue/PR candidate retrieval, dirty-worktree early exit, and metadata-backed duplicate comments,
+- planner turns `agent:safe` + `agent:needs-plan` issues into explicit bounded implementation plans or de-scopes / blocks them with machine-readable rationale,
+- implementor acquires issue leases for `agent:planned` work, records implementation ownership, and can hand off execution to a configurable external command that returns structured PR metadata,
+- implementor auto-labels created PRs for review and backfills a visible agent disclosure in the PR body when the backend omitted one,
+- reviewer selects non-draft PRs with review-lifecycle labels and no blocking labels,
+- reviewer treats current-head terminal review metadata as already handled,
 - reviewer uses lease TTL plus `status: reviewing` metadata to avoid duplicate pickup,
-- reviewer now requeues PRs when reviewer-owned discussion threads receive newer external replies after the last current-head reviewer decision,
-- reviewer now publishes bounded semantic review decisions to GitHub reviews using transparent policy checks (current scope: missing agent disclosure, code-without-tests, docs-only approvals),
-- merger now evaluates deterministic merge gates for recent PRs, reconciles the `agent:ready-to-merge` label, and emits deduplicated merger metadata comments based on current-head approval, review lease, unresolved thread, reviewer follow-up replies, branch protection, and CI state,
-- merge executor now selects `agent:ready-to-merge` PRs, re-fetches the live PR, revalidates the current head SHA plus deterministic merge gates, removes stale ready labels, enforces repository-allowed merge methods, and calls the GitHub merge API with the current head SHA as a fail-safe lease,
-- reviewer still does not yet perform broader AI-driven code reasoning,
-- neither helper yet persists long-term feedback history.
+- reviewer requeues PRs when reviewer-owned discussion threads receive newer external replies,
+- reviewer publishes bounded semantic review decisions to GitHub reviews with transparent policy checks,
+- reviewer and merger now tolerate legacy `agent:reviewing` / `agent:reviewed` labels during migration,
+- merger evaluates deterministic merge gates, reconciles `agent:ready-to-merge`, and emits deduplicated merger metadata comments,
+- merge executor revalidates the current head SHA plus deterministic merge gates before calling the GitHub merge API.
 
-## Future Work
+Current intentionally unimplemented runtime scope:
 
-Recommended next steps after this first version:
+- in-workflow coding model execution for implementor (the runtime expects an external command/backend),
+- specialized multi-lane reviewers,
+- long-term feedback persistence.
 
-1. Extend the evaluator scanner to cover pull-request reviews and inline review comments.
-2. Persist structured feedback records for weekly evaluator reports.
-3. Add issue/PR label reconciliation helpers for issuer/planner/implementor stages.
-4. Persist agent-owned review-thread references so specialized reviewers can re-enter the exact conversation they opened.
-5. Extend branch-protection-aware merge policy beyond the current conservative human-lane / allowed-method checks (for example explicit code-owner approval routes or per-label merge methods).
+## Future work
+
+Recommended next steps:
+
+1. Add first-class issue creation/linking actions for `create-fresh` and `create-and-link` once the proposal source and idempotent link format are finalized.
+2. Replace the bounded heuristic issuer / planner decisions with a stronger pluggable semantic backend once prompt contracts and guardrails are finalized.
+3. Extend evaluator scanning to pull-request reviews and inline review comments.
+4. Persist structured feedback records for weekly evaluator reports.
+5. Persist agent-owned review-thread references so specialized reviewers can re-enter the exact conversations they opened.
+6. Extend branch-protection-aware merge policy beyond the current conservative single-reviewer model.
