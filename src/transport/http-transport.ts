@@ -89,6 +89,11 @@ interface ProfileRuntimeState {
   tenantOAuthProvidersBySessionId: Map<string, ExternalOAuthProvider>;
 }
 
+interface OAuthRedirectHostCacheEntry {
+  patterns: string[];
+  lastAccessedAt: number;
+}
+
 interface RequestWithStartTime extends Request {
   startTime?: number;
 }
@@ -102,6 +107,10 @@ interface OAuthRequiredErrorResponse {
 }
 
 export class HttpTransport {
+  private static readonly PROFILE_HINT_TTL_MS = 10 * 60 * 1000;
+  private static readonly PROFILE_RUNTIME_CACHE_TTL_MS = 10 * 60 * 1000;
+  private static readonly PROFILE_RUNTIME_CACHE_MAX_ENTRIES = 64;
+
   private app: express.Application;
   private server: Server | https.Server | null = null;
   private config: HttpTransportConfig;
@@ -111,10 +120,10 @@ export class HttpTransport {
   private messageHandler: ((message: unknown, sessionId?: string, profileId?: string) => Promise<unknown>) | null = null;
   private profileContextProvider: ((profileId: string) => Promise<HttpProfileContext | null>) | null = null;
   private profileStates: Map<string, ProfileRuntimeState> = new Map();
-  private oauthRedirectHostCache: Map<string, string[]> = new Map();
+  private profileStateLastAccess: Map<string, number> = new Map();
+  private oauthRedirectHostCache: Map<string, OAuthRedirectHostCacheEntry> = new Map();
   private warnedMissingOAuthRedirectEnvVars: Set<string> = new Set();
   private profileHintsByClient: Map<string, { profileId: string; lastSeen: number }> = new Map();
-  private static readonly PROFILE_HINT_TTL_MS = 10 * 60 * 1000;
   private profileIndexProvider: (() => Promise<ListedProfileDetails[]>) | null = null;
   private ssrfValidator: SSRFValidator;
   private rawTenantConfig: HttpTenantsConfig | null;
@@ -210,6 +219,129 @@ export class HttpTransport {
 
   setProfileIndexProvider(provider: (() => Promise<ListedProfileDetails[]>) | null): void {
     this.profileIndexProvider = provider;
+  }
+
+  private touchProfileState(profileId: string, now: number = Date.now()): void {
+    this.profileStateLastAccess.set(profileId, now);
+  }
+
+  private hasActiveProfileSessions(profileId: string): boolean {
+    return (this.profileStates.get(profileId)?.sessions.size ?? 0) > 0;
+  }
+
+  private deleteProfileState(profileId: string): void {
+    this.profileStates.delete(profileId);
+    this.profileStateLastAccess.delete(profileId);
+  }
+
+  private pruneInactiveProfileStates(now: number = Date.now()): void {
+    for (const [profileId, lastAccessedAt] of this.profileStateLastAccess.entries()) {
+      if (!this.profileStates.has(profileId)) {
+        this.profileStateLastAccess.delete(profileId);
+        continue;
+      }
+      if (this.hasActiveProfileSessions(profileId)) {
+        continue;
+      }
+      if (now - lastAccessedAt > HttpTransport.PROFILE_RUNTIME_CACHE_TTL_MS) {
+        this.deleteProfileState(profileId);
+      }
+    }
+  }
+
+  private evictInactiveProfileStatesIfNeeded(): void {
+    while (this.profileStates.size > HttpTransport.PROFILE_RUNTIME_CACHE_MAX_ENTRIES) {
+      let oldestInactiveProfileId: string | null = null;
+      let oldestInactiveAccess = Number.POSITIVE_INFINITY;
+
+      for (const [profileId, lastAccessedAt] of this.profileStateLastAccess.entries()) {
+        if (this.hasActiveProfileSessions(profileId)) {
+          continue;
+        }
+        if (lastAccessedAt < oldestInactiveAccess) {
+          oldestInactiveAccess = lastAccessedAt;
+          oldestInactiveProfileId = profileId;
+        }
+      }
+
+      if (!oldestInactiveProfileId) {
+        return;
+      }
+
+      this.deleteProfileState(oldestInactiveProfileId);
+    }
+  }
+
+  private cacheProfileState(state: ProfileRuntimeState): ProfileRuntimeState {
+    const now = Date.now();
+    this.pruneInactiveProfileStates(now);
+    this.profileStates.set(state.profileId, state);
+    this.touchProfileState(state.profileId, now);
+    this.evictInactiveProfileStatesIfNeeded();
+    return state;
+  }
+
+  private getCachedProfileState(profileId: string): ProfileRuntimeState | undefined {
+    this.pruneInactiveProfileStates();
+    const state = this.profileStates.get(profileId);
+    if (!state) {
+      this.profileStateLastAccess.delete(profileId);
+      return undefined;
+    }
+    this.touchProfileState(profileId);
+    return state;
+  }
+
+  private hasCachedOAuthRedirectHosts(profileId: string): boolean {
+    this.pruneInactiveOAuthRedirectHostCache();
+    const cached = this.oauthRedirectHostCache.get(profileId);
+    if (!cached) {
+      return false;
+    }
+    cached.lastAccessedAt = Date.now();
+    return true;
+  }
+
+  private cacheOAuthRedirectHosts(profileId: string, patterns: string[]): void {
+    const now = Date.now();
+    this.pruneInactiveOAuthRedirectHostCache(now);
+    this.oauthRedirectHostCache.set(profileId, { patterns, lastAccessedAt: now });
+    this.evictInactiveOAuthRedirectHostsIfNeeded();
+  }
+
+  private pruneInactiveOAuthRedirectHostCache(now: number = Date.now()): void {
+    for (const [profileId, entry] of this.oauthRedirectHostCache.entries()) {
+      if (this.hasActiveProfileSessions(profileId)) {
+        entry.lastAccessedAt = now;
+        continue;
+      }
+      if (now - entry.lastAccessedAt > HttpTransport.PROFILE_RUNTIME_CACHE_TTL_MS) {
+        this.oauthRedirectHostCache.delete(profileId);
+      }
+    }
+  }
+
+  private evictInactiveOAuthRedirectHostsIfNeeded(): void {
+    while (this.oauthRedirectHostCache.size > HttpTransport.PROFILE_RUNTIME_CACHE_MAX_ENTRIES) {
+      let oldestInactiveProfileId: string | null = null;
+      let oldestInactiveAccess = Number.POSITIVE_INFINITY;
+
+      for (const [profileId, entry] of this.oauthRedirectHostCache.entries()) {
+        if (this.hasActiveProfileSessions(profileId)) {
+          continue;
+        }
+        if (entry.lastAccessedAt < oldestInactiveAccess) {
+          oldestInactiveAccess = entry.lastAccessedAt;
+          oldestInactiveProfileId = profileId;
+        }
+      }
+
+      if (!oldestInactiveProfileId) {
+        return;
+      }
+
+      this.oauthRedirectHostCache.delete(oldestInactiveProfileId);
+    }
   }
 
   /**
@@ -431,7 +563,7 @@ export class HttpTransport {
   }
 
   private async getProfileState(profileId: string): Promise<ProfileRuntimeState | null> {
-    const existing = this.profileStates.get(profileId);
+    const existing = this.getCachedProfileState(profileId);
     if (existing) {
       return existing;
     }
@@ -501,8 +633,7 @@ export class HttpTransport {
       this.logger.info('HTTP tenant configuration enabled', { profileId, tenantCount: tenantIndex.byTenantId.size });
     }
 
-    this.profileStates.set(profileId, state);
-    return state;
+    return this.cacheProfileState(state);
   }
 
   private hasTrustedEnterpriseToken(
@@ -595,6 +726,7 @@ export class HttpTransport {
     const hosts = new Set<string>();
     const defaultProfileId = this.getDefaultProfileId() ?? 'default';
 
+    this.pruneInactiveProfileStates();
     for (const state of this.profileStates.values()) {
       const redirectUri = state.oauthProvider?.redirectUri;
       if (!redirectUri) {
@@ -614,8 +746,9 @@ export class HttpTransport {
       }
     }
 
-    for (const patterns of this.oauthRedirectHostCache.values()) {
-      for (const pattern of patterns) {
+    this.pruneInactiveOAuthRedirectHostCache();
+    for (const entry of this.oauthRedirectHostCache.values()) {
+      for (const pattern of entry.patterns) {
         hosts.add(pattern);
       }
     }
@@ -726,18 +859,18 @@ export class HttpTransport {
       return;
     }
 
-    if (this.oauthRedirectHostCache.has(profileId)) {
+    if (this.hasCachedOAuthRedirectHosts(profileId)) {
       return;
     }
 
     try {
       const context = await this.profileContextProvider(profileId);
       if (!context?.oauthConfig) {
-        this.oauthRedirectHostCache.set(profileId, []);
+        this.cacheOAuthRedirectHosts(profileId, []);
         return;
       }
       const patterns = this.extractRedirectHostPatterns(context.oauthConfig, profileId);
-      this.oauthRedirectHostCache.set(profileId, patterns);
+      this.cacheOAuthRedirectHosts(profileId, patterns);
     } catch (error) {
       if (error instanceof ConfigurationError && error.message === 'Profile not found') {
         return;
@@ -3414,6 +3547,9 @@ export class HttpTransport {
       }
       
       profileState.sessions.delete(sessionId);
+      this.touchProfileState(profileState.profileId);
+      this.pruneInactiveProfileStates();
+      this.pruneInactiveOAuthRedirectHostCache();
       this.logger.info('Session destroyed', { profileId: profileState.profileId, sessionId });
       
       // Notify session destruction listeners (for cleanup in MCPServer)
@@ -3563,6 +3699,9 @@ export class HttpTransport {
         this.destroySession(state, entry.sessionId);
       }
     }
+
+    this.pruneInactiveProfileStates(now);
+    this.pruneInactiveOAuthRedirectHostCache(now);
 
     if (expiredSessions.length > 0) {
       this.logger.info('Cleaned up expired sessions', { count: expiredSessions.length });

@@ -705,7 +705,10 @@ describe('HttpTransport unit', () => {
         oauthTokensByAccessToken: new Map(),
         sessions: new Map(),
       });
-      (localTransport as any).oauthRedirectHostCache.set('cached', ['cached.example.com']);
+      (localTransport as any).oauthRedirectHostCache.set('cached', {
+        patterns: ['cached.example.com'],
+        lastAccessedAt: Date.now(),
+      });
 
       const hosts = (localTransport as any).getOAuthRedirectHostPatterns();
       expect(hosts).toContain('state.example.com');
@@ -822,7 +825,7 @@ describe('HttpTransport unit', () => {
 
       const primer = (localTransport as any).primeOAuthRedirectHosts.bind(localTransport);
       await primer('empty');
-      expect((localTransport as any).oauthRedirectHostCache.get('empty')).toEqual([]);
+      expect((localTransport as any).oauthRedirectHostCache.get('empty')?.patterns).toEqual([]);
 
       await primer('missing');
       await primer('boom');
@@ -833,6 +836,109 @@ describe('HttpTransport unit', () => {
 
       warnSpy.mockRestore();
       await localTransport.stop();
+    });
+
+    it('evicts the oldest inactive profile runtime state when the cache reaches capacity', async () => {
+      const localTransport = new HttpTransport(
+        {
+          host: '127.0.0.1',
+          port: 0,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: false,
+          metricsPath: '/metrics',
+          profileRoutingEnabled: true,
+        } as any,
+        logger
+      );
+
+      localTransport.setProfileContextProvider(async (profileId) => ({ profileId }));
+      const getProfileState = (localTransport as any).getProfileState.bind(localTransport);
+      const maxEntries = (HttpTransport as any).PROFILE_RUNTIME_CACHE_MAX_ENTRIES;
+
+      for (let index = 0; index <= maxEntries; index += 1) {
+        await getProfileState(`profile-${index}`);
+      }
+
+      expect((localTransport as any).profileStates.size).toBe(maxEntries);
+      expect((localTransport as any).profileStates.has('profile-0')).toBe(false);
+      expect((localTransport as any).profileStates.has(`profile-${maxEntries}`)).toBe(true);
+
+      await localTransport.stop();
+    });
+
+    it('keeps active-session profile runtime state resident during cache eviction', async () => {
+      const localTransport = new HttpTransport(
+        {
+          host: '127.0.0.1',
+          port: 0,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: false,
+          metricsPath: '/metrics',
+          profileRoutingEnabled: true,
+        } as any,
+        logger
+      );
+
+      localTransport.setProfileContextProvider(async (profileId) => ({ profileId }));
+      const getProfileState = (localTransport as any).getProfileState.bind(localTransport);
+      const createSession = (localTransport as any).createSession.bind(localTransport);
+      const maxEntries = (HttpTransport as any).PROFILE_RUNTIME_CACHE_MAX_ENTRIES;
+
+      const activeState = await getProfileState('active');
+      createSession(activeState);
+
+      for (let index = 0; index < maxEntries; index += 1) {
+        await getProfileState(`profile-${index}`);
+      }
+
+      expect((localTransport as any).profileStates.size).toBe(maxEntries);
+      expect((localTransport as any).profileStates.has('active')).toBe(true);
+      expect((localTransport as any).profileStates.has('profile-0')).toBe(false);
+
+      await localTransport.stop();
+    });
+
+    it('prunes stale redirect-host cache entries before caching a new profile', async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-03-15T00:00:00.000Z'));
+
+      const localTransport = new HttpTransport(
+        {
+          host: '127.0.0.1',
+          port: 0,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: false,
+          metricsPath: '/metrics',
+          profileRoutingEnabled: true,
+        } as any,
+        logger
+      );
+
+      localTransport.setProfileContextProvider(async (profileId) => ({
+        profileId,
+        oauthConfig: {
+          redirect_uri: `https://${profileId}.example.com/callback`,
+        },
+      }));
+
+      const primeOAuthRedirectHosts = (localTransport as any).primeOAuthRedirectHosts.bind(localTransport);
+      const cacheTtlMs = (HttpTransport as any).PROFILE_RUNTIME_CACHE_TTL_MS;
+
+      await primeOAuthRedirectHosts('alpha');
+      vi.advanceTimersByTime(cacheTtlMs + 1);
+      await primeOAuthRedirectHosts('beta');
+
+      expect((localTransport as any).oauthRedirectHostCache.has('alpha')).toBe(false);
+      expect((localTransport as any).oauthRedirectHostCache.has('beta')).toBe(true);
+
+      await localTransport.stop();
+      vi.useRealTimers();
     });
 
     it('isAllowedOriginForRequest returns false when routing disabled or no profile id', async () => {
