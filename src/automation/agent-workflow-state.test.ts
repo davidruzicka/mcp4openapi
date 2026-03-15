@@ -69,6 +69,13 @@ describe('agent-workflow-state', () => {
         labelsToRemove: [ISSUE_WORKFLOW_LABELS.safe, ISSUE_WORKFLOW_LABELS.needsPlan],
       });
     });
+
+    it('keeps proposal-intake entry labels stable when the issue is already safe and awaiting planning', () => {
+      expect(planIssuerTransition({ labels: [ISSUE_WORKFLOW_LABELS.safe, ISSUE_WORKFLOW_LABELS.needsPlan], suitable: true })).toEqual({
+        labelsToAdd: [],
+        labelsToRemove: [],
+      });
+    });
   });
 
   describe('planPlannerTransition', () => {

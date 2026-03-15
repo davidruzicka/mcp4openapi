@@ -124,6 +124,12 @@ export function planIssuerTransition(input: PlanIssuerTransitionInput): Workflow
   }
 
   if (input.suitable) {
+    if (labels.has(ISSUE_WORKFLOW_LABELS.safe) && labels.has(ISSUE_WORKFLOW_LABELS.needsPlan)) {
+      return labels.has(ISSUE_WORKFLOW_LABELS.blocked)
+        ? mutation([], [ISSUE_WORKFLOW_LABELS.blocked])
+        : emptyMutation();
+    }
+
     return mutation([
       ISSUE_WORKFLOW_LABELS.safe,
       ISSUE_WORKFLOW_LABELS.needsPlan,

@@ -75,6 +75,10 @@ export function collectIssuerAssignments(input: CollectIssuerAssignmentsInput): 
   const eligibleIssues = input.issues.filter((issue) => isEligibleForIssuerQueue(issue));
 
   return eligibleIssues.flatMap((issue) => {
+    if (wasCreatedByProposalIntake(issue)) {
+      return [];
+    }
+
     if (hasProposalIntakeDecisionComment(input.commentsByIssueNumber[issue.number] ?? [])) {
       return [];
     }
@@ -208,4 +212,10 @@ function hasProposalIntakeDecisionComment(comments: readonly IssuerIssueComment[
     return metadata?.['agent-stage'] === 'proposal-intake'
       && metadata?.resolution !== undefined;
   });
+}
+
+function wasCreatedByProposalIntake(issue: IssuerIssue): boolean {
+  const metadata = parseAgentMetadata(issue.body);
+  return metadata?.['agent-stage'] === 'proposal-intake'
+    && metadata?.['agent-role'] === 'created-issue';
 }

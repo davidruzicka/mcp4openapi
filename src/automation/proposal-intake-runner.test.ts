@@ -166,6 +166,39 @@ describe('proposal-intake-runner', () => {
     expect(assignments[0]?.targetCommentBody).toContain('agent-stage: proposal-intake');
   });
 
+  it('persists reject-as-duplicate decisions as metadata-backed comments so downstream workflows can skip them', () => {
+    const assignments = collectProposalAssignments({
+      proposals: [buildProposal({
+        issueNumber: 188,
+        matches: [{
+          number: 144,
+          kind: 'issue',
+          state: 'closed',
+          workflowState: 'blocked',
+          relation: 'exact-duplicate',
+          title: 'Add bounded cache invalidation metrics for response cache',
+          url: 'https://github.com/davidruzicka/mcp4openapi/issues/144',
+        }],
+      })],
+      commentsByIssueNumber: { 188: [] },
+      repository: 'davidruzicka/mcp4openapi',
+      agentId: 'proposal-intake',
+      runId: 'run-3',
+      now: '2026-03-15T10:00:00Z',
+      maxActions: 1,
+    });
+
+    expect(assignments).toHaveLength(1);
+    expect(assignments[0]).toMatchObject({
+      issueNumber: 188,
+      action: 'reject-as-duplicate',
+      targetIssueNumber: 144,
+      proposalKey: 'add-bounded-cache-invalidation-metrics-for-response-cache',
+      commentBody: expect.stringContaining('resolution: reject-as-duplicate'),
+    });
+    expect(assignments[0]?.commentBody).toContain('Target issue: #144');
+  });
+
   it('caps side effects per run even when multiple safe proposal actions exist', () => {
     const assignments = collectProposalAssignments({
       proposals: [

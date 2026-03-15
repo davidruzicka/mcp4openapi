@@ -202,5 +202,67 @@ describe('issuer-runner', () => {
 
       expect(assignments).toHaveLength(0);
     });
+
+    it('skips issues already created by proposal-intake when metadata lives in the issue body', () => {
+      const createdByProposalIntakeBody = [
+        'Need a bounded warning threshold metric and focused tests.',
+        '',
+        'Source proposal: #177',
+        'Source URL: https://example.com/proposals/profile-routing-warnings',
+        '',
+        '<!-- AGENT-METADATA',
+        'agent-stage: proposal-intake',
+        'agent-role: created-issue',
+        'source-issue-number: 177',
+        'proposal-key: add-profile-routing-observability-budget-warnings',
+        '-->',
+      ].join('\n');
+
+      const assignments = collectIssuerAssignments({
+        issues: [buildIssue({
+          number: 188,
+          title: 'Add profile routing observability budget warnings',
+          body: createdByProposalIntakeBody,
+          labels: ['agent:safe', 'agent:needs-plan'],
+          url: 'https://github.com/davidruzicka/mcp4openapi/issues/188',
+        })],
+        commentsByIssueNumber: { 188: [] },
+        repository: 'davidruzicka/mcp4openapi',
+        agentId: 'issuer',
+        runId: 'run-1',
+        now: '2026-03-14T12:00:00Z',
+      });
+
+      expect(assignments).toHaveLength(0);
+    });
+
+    it('skips issues already resolved by proposal-intake reject-as-duplicate comments', () => {
+      const duplicateDecisionComment = [
+        '🤖 Agent note (proposal-intake)',
+        '',
+        'Resolution: reject-as-duplicate',
+        'Reason: closed exact duplicate does not justify a fresh issue',
+        'Target issue: #144',
+        '',
+        '<!-- AGENT-METADATA',
+        'agent-id: proposal-intake',
+        'agent-stage: proposal-intake',
+        'resolution: reject-as-duplicate',
+        'proposal-key: add-bounded-cache-invalidation-metrics-for-response-cache',
+        'target-issue-number: 144',
+        '-->',
+      ].join('\n');
+
+      const assignments = collectIssuerAssignments({
+        issues: [buildIssue({ number: 189, url: 'https://github.com/davidruzicka/mcp4openapi/issues/189' })],
+        commentsByIssueNumber: { 189: [buildComment(duplicateDecisionComment)] },
+        repository: 'davidruzicka/mcp4openapi',
+        agentId: 'issuer',
+        runId: 'run-1',
+        now: '2026-03-14T12:00:00Z',
+      });
+
+      expect(assignments).toHaveLength(0);
+    });
   });
 });
