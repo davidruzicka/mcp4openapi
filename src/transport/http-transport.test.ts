@@ -2340,7 +2340,7 @@ describeIfListen('HttpTransport', () => {
         .query({ code: 'test-code' });
 
       expect(response.status).toBe(500);
-      expect(response.text).toBe('OAuth callback failed');
+      expect(response.text).toMatch(/^Internal error \(correlation ID: .+\)$/);
     });
   });
 
