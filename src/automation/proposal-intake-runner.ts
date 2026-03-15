@@ -62,7 +62,7 @@ export function collectProposalAssignments(input: CollectProposalAssignmentsInpu
       proposalTitle: proposal.proposalTitle,
       matches: proposal.matches,
     });
-    if (resolution.action === 'no-action' || resolution.action === 'reject-as-duplicate') {
+    if (resolution.action === 'no-action') {
       continue;
     }
 
