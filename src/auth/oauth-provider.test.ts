@@ -28,6 +28,7 @@ vi.mock('../security/ssrf-validator.js', () => {
 });
 
 import { ExternalOAuthProvider, InMemoryClientsStore } from './oauth-provider.js';
+import { ipv4ToInt, ipv6ToBigInt, matchCIDR } from '../security/host-pattern-matcher.js';
 import type { OAuthConfig } from '../types/profile.js';
 import type { Logger } from '../core/logger.js';
 import type { Response } from 'express';
@@ -109,15 +110,13 @@ describe('ExternalOAuthProvider', () => {
       });
 
       it('validates IPv4 and IPv6 CIDR ranges', () => {
-        const matcher = (provider as any).matchCIDR.bind(provider);
-
-        expect(matcher('192.168.1.5', '192.168.1.0/24')).toBe(true);
-        expect(matcher('10.0.0.1', '192.168.1.0/24')).toBe(false);
-        expect(matcher('2001:db8::1', '2001:db8::/32')).toBe(true);
+        expect(matchCIDR('192.168.1.5', '192.168.1.0/24')).toBe(true);
+        expect(matchCIDR('10.0.0.1', '192.168.1.0/24')).toBe(false);
+        expect(matchCIDR('2001:db8::1', '2001:db8::/32')).toBe(true);
       });
 
       it('rejects invalid CIDR masks with warnings', () => {
-        const matcher = (provider as any).matchCIDR.bind(provider);
+        const matcher = (provider as any).matchRedirectHost.bind(provider);
 
         expect(matcher('192.168.1.1', '192.168.1.0/99')).toBe(false);
         expect(mockLogger.warn).toHaveBeenCalledWith(
@@ -127,15 +126,13 @@ describe('ExternalOAuthProvider', () => {
       });
 
       it('rejects CIDR ranges with mismatched versions or non-numeric masks', () => {
-        const matcher = (provider as any).matchCIDR.bind(provider);
-
-        expect(matcher('192.168.1.1', '2001:db8::/32')).toBe(false);
-        expect(matcher('::1', '10.0.0.0/8')).toBe(false);
-        expect(matcher('10.0.0.1', '10.0.0.0/not-a-number')).toBe(false);
+        expect(matchCIDR('192.168.1.1', '2001:db8::/32')).toBe(false);
+        expect(matchCIDR('::1', '10.0.0.0/8')).toBe(false);
+        expect(matchCIDR('10.0.0.1', '10.0.0.0/not-a-number')).toBe(false);
       });
 
       it('logs warning for invalid IPv6 CIDR mask bits', () => {
-        const matcher = (provider as any).matchCIDR.bind(provider);
+        const matcher = (provider as any).matchRedirectHost.bind(provider);
 
         expect(matcher('2001:db8::1', '2001:db8::/200')).toBe(false);
         expect(mockLogger.warn).toHaveBeenCalledWith(
@@ -145,19 +142,15 @@ describe('ExternalOAuthProvider', () => {
       });
 
       it('converts IPv4 to integer and validates octets', () => {
-        const toInt = (provider as any).ipv4ToInt.bind(provider);
-
-        expect(toInt('192.168.1.1')).toBe(3232235777);
-        expect(toInt('999.1.1.1')).toBeNull();
-        expect(toInt('10.0.0')).toBeNull();
+        expect(ipv4ToInt('192.168.1.1')).toBe(3232235777);
+        expect(ipv4ToInt('999.1.1.1')).toBeNull();
+        expect(ipv4ToInt('10.0.0')).toBeNull();
       });
 
       it('handles IPv4-mapped IPv6 addresses', () => {
-        const toBigInt = (provider as any).ipv6ToBigInt.bind(provider);
-
-        const mapped = toBigInt('::ffff:192.168.0.1');
-        const canonical = toBigInt('0:0:0:0:0:ffff:c0a8:1');
-        const invalid = toBigInt('::ffff:999.1.1.1');
+        const mapped = ipv6ToBigInt('::ffff:192.168.0.1');
+        const canonical = ipv6ToBigInt('0:0:0:0:0:ffff:c0a8:1');
+        const invalid = ipv6ToBigInt('::ffff:999.1.1.1');
 
         expect(mapped).toBeDefined();
         expect(mapped).toEqual(canonical);

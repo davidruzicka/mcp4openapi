@@ -11,6 +11,7 @@ import fs from 'fs';
 import https from 'https';
 import { HttpTransport } from './http-transport.js';
 import { ConsoleLogger, type Logger } from '../core/logger.js';
+import { ipv4ToInt, ipv6ToBigInt, matchCIDR } from '../security/host-pattern-matcher.js';
 import { describeIfListen } from '../testing/listen-support.js';
 import { parseSessionToolFilterHeader } from '../tool-filter/index.js';
 
@@ -1329,7 +1330,7 @@ describeIfListen('HttpTransport', () => {
     });
 
     it('rejects IPv4 CIDR ranges with invalid mask bits', () => {
-      const result = (ipTransport as any).matchCIDR('192.168.1.10', '192.168.1.0/40');
+      const result = (ipTransport as any).matchOrigin('192.168.1.10', '192.168.1.0/40');
 
       expect(result).toBe(false);
       expect(ipLogger.warn).toHaveBeenCalledWith('Invalid CIDR mask bits', { cidr: '192.168.1.0/40' });
@@ -1338,7 +1339,7 @@ describeIfListen('HttpTransport', () => {
     it('rejects IPv6 CIDR ranges with invalid mask bits', () => {
       (ipLogger.warn as ReturnType<typeof vi.fn>).mockReset();
 
-      const result = (ipTransport as any).matchCIDR('2001:db8::1', '2001:db8::/129');
+      const result = (ipTransport as any).matchOrigin('2001:db8::1', '2001:db8::/129');
 
       expect(result).toBe(false);
       expect(ipLogger.warn).toHaveBeenCalledWith('Invalid IPv6 CIDR mask bits', { cidr: '2001:db8::/129' });
@@ -1347,59 +1348,32 @@ describeIfListen('HttpTransport', () => {
     it('rejects CIDR when IP version does not match range', () => {
       (ipLogger.warn as ReturnType<typeof vi.fn>).mockReset();
 
-      const result = (ipTransport as any).matchCIDR('10.0.0.1', '2001:db8::/32');
+      const result = matchCIDR('10.0.0.1', '2001:db8::/32');
 
       expect(result).toBe(false);
       expect(ipLogger.warn).not.toHaveBeenCalled();
     });
 
     it('rejects IPv4 addresses with octets out of range', () => {
-      const ipv4Value = (ipTransport as any).ipv4ToInt('256.0.0.1');
-
-      expect(ipv4Value).toBeNull();
+      expect(ipv4ToInt('256.0.0.1')).toBeNull();
     });
 
     it('rejects malformed IPv6 addresses with multiple compression markers', () => {
-      const ipv6Value = (ipTransport as any).ipv6ToBigInt('2001::db8::1');
-
-      expect(ipv6Value).toBeNull();
+      expect(ipv6ToBigInt('2001::db8::1')).toBeNull();
     });
 
     it('parses IPv4-mapped IPv6 addresses into the correct bigint', () => {
-      const ipv6Value = (ipTransport as any).ipv6ToBigInt('::ffff:192.168.0.1');
-
-      expect(ipv6Value).toBe(281473913978881n);
+      expect(ipv6ToBigInt('::ffff:192.168.0.1')).toBe(281473913978881n);
     });
 
-    it('handles null return from ipv4ToInt in matchCIDR for IPv4', () => {
-      // Create a scenario where ipv4ToInt returns null
-      // This can happen if the IP parsing fails internally
-      const result = (ipTransport as any).matchCIDR('192.168.1.1', '192.168.1.0/24');
-      // Should still work for valid IPs, but we test the null check path
-      // by using an IP that passes isIP but might fail internal parsing
-      expect(typeof result).toBe('boolean');
+    it('keeps valid IPv4 and IPv6 CIDR comparisons boolean', () => {
+      expect(typeof matchCIDR('192.168.1.1', '192.168.1.0/24')).toBe('boolean');
+      expect(typeof matchCIDR('2001:db8::1', '2001:db8::/32')).toBe('boolean');
     });
 
-    it('handles null return from ipv6ToBigInt in matchCIDR for IPv6', () => {
-      const result = (ipTransport as any).matchCIDR('2001:db8::1', '2001:db8::/32');
-      expect(typeof result).toBe('boolean');
-    });
-
-    it('handles ipv6ToBigInt with invalid segment count after padding', () => {
-      // This should trigger the check at line 458-459
-      // We need an IPv6 that passes initial validation but fails segment count check
-      const result = (ipTransport as any).ipv6ToBigInt('2001:db8::1:2:3:4:5:6:7:8');
-      // This should be null due to too many segments
-      expect(result).toBeNull();
-    });
-
-    it('handles ipv6ToBigInt with wrong final segment count', () => {
-      // This should trigger the check at line 468-469
-      // We need an IPv6 that gets past the first segment count check but fails the final check
-      // This is tricky - let's test with a malformed IPv4-mapped address
-      const result = (ipTransport as any).ipv6ToBigInt('::ffff:192.168.0');
-      // Invalid IPv4 part should cause null
-      expect(result).toBeNull();
+    it('rejects IPv6 values with invalid segment counts', () => {
+      expect(ipv6ToBigInt('2001:db8::1:2:3:4:5:6:7:8')).toBeNull();
+      expect(ipv6ToBigInt('::ffff:192.168.0')).toBeNull();
     });
   });
 

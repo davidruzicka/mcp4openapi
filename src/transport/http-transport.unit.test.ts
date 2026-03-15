@@ -5,6 +5,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { HttpTransport } from './http-transport.js';
 import { ConsoleLogger } from '../core/logger.js';
+import { ipv4ToInt, ipv6Mask, ipv6ToBigInt } from '../security/host-pattern-matcher.js';
 import { parseSessionToolFilterHeader } from '../tool-filter/index.js';
 import type { SessionToolFilter } from '../types/http-transport.js';
 import { ConfigurationError, ValidationError } from '../core/errors.js';
@@ -667,7 +668,6 @@ describe('HttpTransport unit', () => {
         logger
       );
 
-      const ipv6ToBigInt = (localTransport as any).ipv6ToBigInt.bind(localTransport);
       expect(ipv6ToBigInt('2001:db8::1')).not.toBeNull();
       expect(ipv6ToBigInt('[2001:db8::1]')).not.toBeNull();
       expect(ipv6ToBigInt('::ffff:192.168.0.1')).not.toBeNull();
@@ -935,7 +935,6 @@ describe('HttpTransport unit', () => {
       expect(matchOrigin('2001:db8::1', '2001:db8::/129')).toBe(false);
       expect(localLogger.warn).toHaveBeenCalled();
 
-      const ipv6Mask = (localTransport as any).ipv6Mask.bind(localTransport);
       expect(ipv6Mask(0)).toBe(0n);
 
       await localTransport.stop();
@@ -956,7 +955,6 @@ describe('HttpTransport unit', () => {
         logger
       );
 
-      const ipv4ToInt = (localTransport as any).ipv4ToInt.bind(localTransport);
       expect(ipv4ToInt('1.2.3')).toBeNull();
       expect(ipv4ToInt('256.1.1.1')).toBeNull();
 
@@ -978,7 +976,6 @@ describe('HttpTransport unit', () => {
         logger
       );
 
-      const ipv6ToBigInt = (localTransport as any).ipv6ToBigInt.bind(localTransport);
       expect(ipv6ToBigInt('2001:db8:::1')).toBeNull();
       expect(ipv6ToBigInt('2001::db8::1')).toBeNull();
       expect(ipv6ToBigInt('2001:db8:zzzz::1')).toBeNull();
