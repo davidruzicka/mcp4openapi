@@ -6,6 +6,8 @@ import {
   detectIssueWorkflowState,
   detectPullRequestWorkflowState,
   hasBlockingWorkflowLabel,
+  hasReviewDoneSignal,
+  hasReviewInProgressSignal,
   hasReviewLifecycleSignal,
   planImplementorCompletion,
   planImplementorStart,
@@ -53,6 +55,12 @@ describe('agent-workflow-state', () => {
       expect(hasReviewLifecycleSignal([LEGACY_PR_WORKFLOW_LABELS.reviewed])).toBe(true);
       expect(hasReviewLifecycleSignal([])).toBe(false);
     });
+
+    it('accepts Set inputs for in-progress and done review lane helpers', () => {
+      expect(hasReviewInProgressSignal(new Set([LEGACY_PR_WORKFLOW_LABELS.reviewing]))).toBe(true);
+      expect(hasReviewDoneSignal(new Set([PR_WORKFLOW_LABELS.readyToMerge]))).toBe(true);
+      expect(hasReviewDoneSignal(new Set<string>())).toBe(false);
+    });
   });
 
   describe('planIssuerTransition', () => {
@@ -72,6 +80,31 @@ describe('agent-workflow-state', () => {
 
     it('keeps proposal-intake entry labels stable when the issue is already safe and awaiting planning', () => {
       expect(planIssuerTransition({ labels: [ISSUE_WORKFLOW_LABELS.safe, ISSUE_WORKFLOW_LABELS.needsPlan], suitable: true })).toEqual({
+        labelsToAdd: [],
+        labelsToRemove: [],
+      });
+    });
+
+    it('only clears stale blocked labels when a suitable issue is already in the safe planning lane', () => {
+      expect(planIssuerTransition({
+        labels: [ISSUE_WORKFLOW_LABELS.safe, ISSUE_WORKFLOW_LABELS.needsPlan, ISSUE_WORKFLOW_LABELS.blocked],
+        suitable: true,
+      })).toEqual({
+        labelsToAdd: [],
+        labelsToRemove: [ISSUE_WORKFLOW_LABELS.blocked],
+      });
+    });
+
+    it('keeps held, planned, or implementing issues out of issuer transitions', () => {
+      expect(planIssuerTransition({ labels: [ISSUE_WORKFLOW_LABELS.hold], suitable: true })).toEqual({
+        labelsToAdd: [],
+        labelsToRemove: [],
+      });
+      expect(planIssuerTransition({ labels: [ISSUE_WORKFLOW_LABELS.planned], suitable: true })).toEqual({
+        labelsToAdd: [],
+        labelsToRemove: [],
+      });
+      expect(planIssuerTransition({ labels: [ISSUE_WORKFLOW_LABELS.implementing], suitable: true })).toEqual({
         labelsToAdd: [],
         labelsToRemove: [],
       });
@@ -99,6 +132,33 @@ describe('agent-workflow-state', () => {
         labelsToRemove: [ISSUE_WORKFLOW_LABELS.safe, ISSUE_WORKFLOW_LABELS.needsPlan, ISSUE_WORKFLOW_LABELS.planned],
       });
     });
+
+    it('returns no planner mutation for held or implementing issues and can de-scope without adding blocked', () => {
+      expect(planPlannerTransition({
+        labels: [ISSUE_WORKFLOW_LABELS.hold],
+        remainsSuitable: true,
+      })).toEqual({
+        labelsToAdd: [],
+        labelsToRemove: [],
+      });
+
+      expect(planPlannerTransition({
+        labels: [ISSUE_WORKFLOW_LABELS.implementing],
+        remainsSuitable: true,
+      })).toEqual({
+        labelsToAdd: [],
+        labelsToRemove: [],
+      });
+
+      expect(planPlannerTransition({
+        labels: [ISSUE_WORKFLOW_LABELS.safe, ISSUE_WORKFLOW_LABELS.needsPlan],
+        remainsSuitable: false,
+        blocked: false,
+      })).toEqual({
+        labelsToAdd: [],
+        labelsToRemove: [ISSUE_WORKFLOW_LABELS.safe, ISSUE_WORKFLOW_LABELS.needsPlan, ISSUE_WORKFLOW_LABELS.planned],
+      });
+    });
   });
 
   describe('planImplementorStart', () => {
@@ -115,6 +175,28 @@ describe('agent-workflow-state', () => {
       expect(planImplementorStart({
         labels: [ISSUE_WORKFLOW_LABELS.safe, ISSUE_WORKFLOW_LABELS.planned],
         hasOpenPullRequest: true,
+      })).toEqual({
+        labelsToAdd: [],
+        labelsToRemove: [],
+      });
+    });
+
+    it('refuses to start without both safe and planned labels or when work is already held/in progress', () => {
+      expect(planImplementorStart({
+        labels: [ISSUE_WORKFLOW_LABELS.safe],
+      })).toEqual({
+        labelsToAdd: [],
+        labelsToRemove: [],
+      });
+
+      expect(planImplementorStart({
+        labels: [ISSUE_WORKFLOW_LABELS.safe, ISSUE_WORKFLOW_LABELS.planned, ISSUE_WORKFLOW_LABELS.hold],
+      })).toEqual({
+        labelsToAdd: [],
+        labelsToRemove: [],
+      });
+      expect(planImplementorStart({
+        labels: [ISSUE_WORKFLOW_LABELS.safe, ISSUE_WORKFLOW_LABELS.planned, ISSUE_WORKFLOW_LABELS.implementing],
       })).toEqual({
         labelsToAdd: [],
         labelsToRemove: [],

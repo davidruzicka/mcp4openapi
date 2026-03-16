@@ -81,6 +81,19 @@ describe('issuer-runner', () => {
       expect(assignments[0]?.commentBody).toContain('status: safe');
     });
 
+    it('skips issues already sitting in the stable safe plus needs-plan lane without stale blocked labels', () => {
+      const assignments = collectIssuerAssignments({
+        issues: [buildIssue({ labels: ['agent:safe', 'agent:needs-plan'] })],
+        commentsByIssueNumber: { 155: [] },
+        repository: 'davidruzicka/mcp4openapi',
+        agentId: 'issuer',
+        runId: 'run-1',
+        now: '2026-03-14T12:00:00Z',
+      });
+
+      expect(assignments).toEqual([]);
+    });
+
     it('marks exact open duplicates as unsafe before assigning agent:safe labels', () => {
       const assignments = collectIssuerAssignments({
         issues: [
@@ -156,6 +169,22 @@ describe('issuer-runner', () => {
           ],
         },
       ]);
+    });
+
+    it('does not treat punctuation-only normalized titles as duplicates', () => {
+      const assignments = collectIssuerAssignments({
+        issues: [
+          buildIssue({ number: 190, title: '!!!', url: 'https://github.com/davidruzicka/mcp4openapi/issues/190' }),
+        ],
+        commentsByIssueNumber: { 190: [] },
+        repository: 'davidruzicka/mcp4openapi',
+        agentId: 'issuer',
+        runId: 'run-1',
+        now: '2026-03-14T12:00:00Z',
+      });
+
+      expect(assignments).toHaveLength(1);
+      expect(assignments[0]?.issueNumber).toBe(190);
     });
 
     it('skips pull requests, held issues, proposal-intake-gated issues, and already-commented equivalent decisions', () => {

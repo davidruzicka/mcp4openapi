@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildCodexInvocationPlan,
+  parseCodexResult,
   parseImplementorTaskPayload,
   type ImplementorTaskPayload,
 } from './implementor-codex.js';
@@ -32,6 +33,29 @@ describe('implementor-codex', () => {
 
     it('rejects missing payloads', () => {
       expect(() => parseImplementorTaskPayload(undefined)).toThrow('Missing IMPLEMENTOR_TASK_JSON');
+    });
+
+    it('rejects malformed payloads and fills optional issue fields with safe defaults', () => {
+      expect(() => parseImplementorTaskPayload('{"repository":"repo"}')).toThrow('Invalid IMPLEMENTOR_TASK_JSON payload');
+
+      expect(parseImplementorTaskPayload(JSON.stringify({
+        repository: 'davidruzicka/mcp4openapi',
+        issue: {
+          number: 163,
+          title: 'Scoped fix',
+          body: 'Add a targeted regression test.',
+          url: 'https://github.com/davidruzicka/mcp4openapi/issues/163',
+        },
+        runId: 'run-1',
+        agentId: 'implementor',
+        now: '2026-03-15T00:00:00Z',
+      }))).toMatchObject({
+        issue: {
+          updatedAt: '',
+          labels: [],
+          isPullRequest: false,
+        },
+      });
     });
   });
 
@@ -69,6 +93,26 @@ describe('implementor-codex', () => {
       expect(plan.command).toBe('/usr/local/bin/codex');
       expect(plan.args.slice(0, 4)).toEqual(['exec', '--yolo', '--model', 'gpt-6-codex']);
       expect(plan.cwd).toBe('/tmp/worktree-163');
+    });
+
+    it('rejects unsupported Codex modes from the environment', () => {
+      expect(() => buildCodexInvocationPlan({
+        task: buildTaskPayload(),
+        outputPath: '/tmp/implementor-result.json',
+        env: {
+          IMPLEMENTOR_CODEX_MODE: 'turbo-danger',
+        },
+        defaultCwd: '/workspace/github.com/davidruzicka/mcp4openapi/.worktrees/agent-automation',
+      })).toThrow('Unsupported IMPLEMENTOR_CODEX_MODE: turbo-danger');
+    });
+  });
+
+  describe('parseCodexResult', () => {
+    it('delegates to the implementor command result parser', () => {
+      expect(parseCodexResult('{"outcome":"blocked","summary":"Needs human review."}')).toEqual({
+        outcome: 'blocked',
+        summary: 'Needs human review.',
+      });
     });
   });
 });
