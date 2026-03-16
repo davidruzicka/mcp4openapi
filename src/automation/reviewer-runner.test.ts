@@ -288,6 +288,97 @@ describe('reviewer-runner', () => {
       })).toEqual([]);
     });
 
+    it('ignores follow-up requeue logic when reviewer threads only contain other people or stale metadata', () => {
+      const assignments = collectReviewerAssignments({
+        pullRequests: [buildPullRequest({ number: 161, headSha: 'abc123', labels: ['agent:review:required'] })],
+        commentsByPrNumber: { 161: [] },
+        reviewsByPrNumber: {
+          161: [{
+            id: 903,
+            body: buildReviewerMetadataComment({ status: 'approved', headSha: 'abc123', timestamp: '2026-03-14T16:05:00Z' }),
+            submittedAt: '2026-03-14T16:05:00Z',
+            state: 'APPROVED',
+            authorLogin: 'github-actions[bot]',
+          }],
+        },
+        reviewThreadsByPrNumber: {
+          161: [buildReviewThread({
+            id: 'thread-no-agent-reply',
+            isResolved: false,
+            comments: [
+              buildReviewThreadComment({
+                id: 'comment-human',
+                authorLogin: 'human-reviewer',
+                updatedAt: '2026-03-14T16:08:00Z',
+                body: 'Please revisit the fallback path.',
+              }),
+            ],
+          })],
+        },
+        repository: 'davidruzicka/mcp4openapi',
+        agentId: 'reviewer',
+        runId: 'run-123',
+        now: '2026-03-14T16:10:00Z',
+        leaseTtlMinutes: 30,
+      });
+
+      expect(assignments).toEqual([]);
+    });
+
+    it('requeues when external replies arrive after a reviewer thread comment but before any terminal decision', () => {
+      const assignments = collectReviewerAssignments({
+        pullRequests: [buildPullRequest({ number: 162, headSha: 'abc123', labels: ['agent:review:required'] })],
+        commentsByPrNumber: { 162: [] },
+        reviewsByPrNumber: { 162: [] },
+        reviewThreadsByPrNumber: {
+          162: [buildReviewThread({
+            id: 'thread-pending-follow-up',
+            isResolved: false,
+            comments: [
+              buildReviewThreadComment({
+                id: 'comment-agent',
+                authorLogin: 'github-actions[bot]',
+                updatedAt: '2026-03-14T16:00:00Z',
+                body: buildReviewerMetadataComment({ status: 'commented', headSha: 'abc123', timestamp: '2026-03-14T16:00:00Z' }),
+              }),
+              buildReviewThreadComment({
+                id: 'comment-human',
+                authorLogin: 'human-reviewer',
+                updatedAt: '2026-03-14T16:08:00Z',
+                body: 'Please also cover the retry path.',
+              }),
+            ],
+          })],
+        },
+        repository: 'davidruzicka/mcp4openapi',
+        agentId: 'reviewer',
+        runId: 'run-123',
+        now: '2026-03-14T16:10:00Z',
+        leaseTtlMinutes: 30,
+      });
+
+      expect(assignments).toEqual([
+        expect.objectContaining({
+          pullRequestNumber: 162,
+          reason: 'missing-current-review',
+        }),
+      ]);
+    });
+
+    it('fails closed when reviewer timestamps are invalid', () => {
+      expect(() => collectReviewerAssignments({
+        pullRequests: [buildPullRequest({ number: 163, headSha: 'abc123', labels: ['agent:review:required'] })],
+        commentsByPrNumber: { 163: [] },
+        reviewsByPrNumber: { 163: [] },
+        reviewThreadsByPrNumber: { 163: [] },
+        repository: 'davidruzicka/mcp4openapi',
+        agentId: 'reviewer',
+        runId: 'run-123',
+        now: 'not-a-timestamp',
+        leaseTtlMinutes: 30,
+      })).toThrow('Invalid timestamp: not-a-timestamp');
+    });
+
     it('treats legacy reviewed and reviewing labels as migration-era review lane signals', () => {
       const assignments = collectReviewerAssignments({
         pullRequests: [
@@ -423,6 +514,29 @@ describe('reviewer-runner', () => {
         }),
       ]);
       expect(decision.reviewBody).toContain('automation-created PR is missing visible agent disclosure');
+    });
+
+    it('approves bounded production changes when agent disclosure and targeted tests are present', () => {
+      const decision = buildSemanticReviewerDecision({
+        repository: 'davidruzicka/mcp4openapi',
+        agentId: 'reviewer',
+        runId: 'run-123',
+        timestamp: '2026-03-14T16:10:00Z',
+        pullRequest: buildPullRequest({
+          number: 159,
+          headSha: 'clean-sha',
+          labels: ['agent:created', 'agent:review:required', 'agent:review:in-progress'],
+          body: '🤖 Automated agent update with targeted tests and bounded scope.',
+        }),
+        changedFiles: [
+          buildChangedFile({ filename: 'src/automation/reviewer-runner.ts' }),
+          buildChangedFile({ filename: 'src/automation/reviewer-runner.test.ts' }),
+        ],
+      });
+
+      expect(decision.verdict).toBe('approved');
+      expect(decision.findings).toEqual([]);
+      expect(decision.reviewBody).toContain('Current PR head looks consistent with the bounded reviewer policy checks.');
     });
   });
 });

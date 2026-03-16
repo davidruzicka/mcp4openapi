@@ -4,6 +4,7 @@ import {
   buildImplementorResultComment,
   collectImplementorAssignments,
   parseImplementorCommandResult,
+  planImplementorResultLabels,
   type ImplementorIssue,
   type ImplementorIssueComment,
 } from './implementor-runner.js';
@@ -75,6 +76,53 @@ describe('implementor-runner', () => {
 
       expect(assignments).toHaveLength(0);
     });
+
+    it('requeues issues once an implementor lease has expired', () => {
+      const leaseComment = buildImplementorLeaseComment({
+        repository: 'davidruzicka/mcp4openapi',
+        issueNumber: 161,
+        agentId: 'implementor',
+        runId: 'run-3',
+        timestamp: '2026-03-14T12:00:00Z',
+      });
+
+      const assignments = collectImplementorAssignments({
+        issues: [buildIssue()],
+        commentsByIssueNumber: { 161: [buildComment(leaseComment)] },
+        openPullRequestsByIssueNumber: {},
+        repository: 'davidruzicka/mcp4openapi',
+        agentId: 'implementor',
+        runId: 'run-3',
+        now: '2026-03-14T13:00:01Z',
+        leaseTtlMinutes: 60,
+      });
+
+      expect(assignments).toHaveLength(1);
+      expect(assignments[0]?.issueNumber).toBe(161);
+    });
+
+    it('rejects invalid timestamps in lease comments so automation fails closed', () => {
+      const assignments = () => collectImplementorAssignments({
+        issues: [buildIssue()],
+        commentsByIssueNumber: {
+          161: [buildComment([
+            '🤖 Agent implementation note (implementor)',
+            '',
+            '<!-- AGENT-METADATA',
+            'agent-stage: implementor',
+            'status: implementing',
+            '-->',
+          ].join('\n'))],
+        },
+        openPullRequestsByIssueNumber: {},
+        repository: 'davidruzicka/mcp4openapi',
+        agentId: 'implementor',
+        runId: 'run-3',
+        now: 'not-a-timestamp',
+      });
+
+      expect(assignments).toThrow('Invalid timestamp: not-a-timestamp');
+    });
   });
 
   describe('parseImplementorCommandResult', () => {
@@ -98,6 +146,23 @@ describe('implementor-runner', () => {
 
     it('rejects invalid payloads', () => {
       expect(() => parseImplementorCommandResult('{"summary":"missing outcome"}')).toThrow('Invalid implementor command result');
+      expect(() => parseImplementorCommandResult('not-json')).toThrow('expected JSON object');
+      expect(() => parseImplementorCommandResult('[]')).toThrow('unsupported outcome');
+      expect(() => parseImplementorCommandResult('null')).toThrow('expected object payload');
+      expect(() => parseImplementorCommandResult('{"outcome":"unknown","summary":"x"}')).toThrow('unsupported outcome');
+      expect(() => parseImplementorCommandResult('{"outcome":"blocked","summary":""}')).toThrow('missing summary');
+      expect(() => parseImplementorCommandResult('{"outcome":"blocked","summary":"x","pullRequest":null}')).toThrow('invalid pullRequest payload');
+      expect(() => parseImplementorCommandResult('{"outcome":"pr-created","summary":"x"}')).toThrow('pr-created outcome requires pullRequest metadata');
+    });
+  });
+
+  describe('planImplementorResultLabels', () => {
+    it('adds blocked workflow labels when implementation cannot proceed', () => {
+      expect(planImplementorResultLabels({ outcome: 'blocked', summary: 'Needs a human decision.' })).toEqual({
+        issueLabelsToAdd: ['agent:blocked'],
+        issueLabelsToRemove: ['agent:implementing'],
+        pullRequestLabelsToAdd: [],
+      });
     });
   });
 

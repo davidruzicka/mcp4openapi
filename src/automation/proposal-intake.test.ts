@@ -126,6 +126,26 @@ describe('proposal-intake', () => {
         reason: 'multiple competing matches require human clarification before acting',
       });
     });
+
+    it('falls back to a fresh issue when the only match is a related follow-up or an unsupported open state', () => {
+      expect(planProposalResolution({
+        proposalTitle: 'Add profile routing observability budget warnings',
+        matches: [buildMatch({ relation: 'related-follow-up' })],
+      })).toEqual({
+        action: 'create-fresh',
+        proposalKey: 'add-profile-routing-observability-budget-warnings',
+        reason: 'no relevant existing issue or pull request matches this proposal',
+      });
+
+      expect(planProposalResolution({
+        proposalTitle: 'Add bounded cache invalidation metrics for response cache',
+        matches: [buildMatch({ workflowState: 'needs-plan', state: 'open', relation: 'regression' })],
+      })).toEqual({
+        action: 'create-fresh',
+        proposalKey: 'add-bounded-cache-invalidation-metrics-for-response-cache',
+        reason: 'no relevant existing issue or pull request matches this proposal',
+      });
+    });
   });
 
   describe('classifyProposalMatchRelation', () => {
@@ -194,6 +214,23 @@ describe('proposal-intake', () => {
       expect(matches).toHaveLength(2);
       expect(matches.map((match) => match.number)).toEqual([156, 154]);
       expect(matches.map((match) => match.relation)).toEqual(['related-follow-up', 'near-duplicate']);
+    });
+
+    it('sorts same-relation matches by issue number and ignores empty-token candidates', () => {
+      const matches = rankProposalCandidateMatches({
+        proposalNumber: 999,
+        proposalTitle: 'Add cache invalidation count metrics and tests',
+        proposalBody: 'Track invalidation counters and add focused tests.',
+        candidates: [
+          buildArtifact({ number: 170, title: 'Add cache invalidation count metrics and tests' }),
+          buildArtifact({ number: 169, title: 'Add cache invalidation count metrics and tests' }),
+          buildArtifact({ number: 171, title: 'A an and the', body: 'To of in on' }),
+        ],
+        maxMatches: 5,
+      });
+
+      expect(matches.map((match) => match.number)).toEqual([169, 170]);
+      expect(matches.every((match) => match.number !== 171)).toBe(true);
     });
   });
 });

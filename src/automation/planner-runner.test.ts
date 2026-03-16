@@ -106,5 +106,20 @@ describe('planner-runner', () => {
 
       expect(assignments).toHaveLength(0);
     });
+
+    it('skips issues outside the planner queue or already protected by hold labels', () => {
+      expect(collectPlannerAssignments({
+        issues: [
+          buildIssue({ number: 161, labels: ['agent:safe'] }),
+          buildIssue({ number: 162, labels: ['agent:safe', 'agent:needs-plan', 'human:hold'] }),
+          buildIssue({ number: 163, labels: ['agent:safe', 'agent:needs-plan', 'agent:implementing'] }),
+        ],
+        commentsByIssueNumber: { 161: [], 162: [], 163: [] },
+        repository: 'davidruzicka/mcp4openapi',
+        agentId: 'planner',
+        runId: 'run-2',
+        now: '2026-03-14T12:00:00Z',
+      })).toEqual([]);
+    });
   });
 });
