@@ -220,6 +220,58 @@ describe('proposal-intake-runner', () => {
     expect(assignments).toHaveLength(1);
   });
 
+  it('skips competing matches until a human resolves the ambiguity', () => {
+    const assignments = collectProposalAssignments({
+      proposals: [buildProposal({
+        issueNumber: 190,
+        matches: [
+          {
+            number: 155,
+            kind: 'issue',
+            state: 'open',
+            workflowState: 'candidate',
+            relation: 'exact-duplicate',
+            title: 'Add bounded cache invalidation metrics for response cache',
+            url: 'https://github.com/davidruzicka/mcp4openapi/issues/155',
+          },
+          {
+            number: 191,
+            kind: 'issue',
+            state: 'open',
+            workflowState: 'planned',
+            relation: 'near-duplicate',
+            title: 'Track cache invalidation budget warnings',
+            url: 'https://github.com/davidruzicka/mcp4openapi/issues/191',
+          },
+        ],
+      })],
+      commentsByIssueNumber: { 190: [] },
+      repository: 'davidruzicka/mcp4openapi',
+      agentId: 'proposal-intake',
+      runId: 'run-3',
+      now: '2026-03-15T10:00:00Z',
+      maxActions: 1,
+    });
+
+    expect(assignments).toEqual([]);
+  });
+
+  it('omits linked issue references when proposal comments do not have linked issue metadata yet', () => {
+    const commentBody = buildProposalResolutionComment({
+      repository: 'davidruzicka/mcp4openapi',
+      issueNumber: 155,
+      agentId: 'proposal-intake',
+      runId: 'run-3',
+      timestamp: '2026-03-15T10:00:00Z',
+      action: 'create-and-link',
+      proposalKey: 'add-bounded-cache-invalidation-metrics-for-response-cache',
+      reason: 'existing open work is already active, so a fresh linked follow-up is safer',
+      targetIssueNumber: 155,
+    });
+
+    expect(commentBody).not.toContain('Linked issue: #');
+  });
+
   it('deduplicates equivalent target backlink comments by proposal key and source issue', () => {
     const commentBody = buildProposalTargetLinkComment({
       repository: 'davidruzicka/mcp4openapi',

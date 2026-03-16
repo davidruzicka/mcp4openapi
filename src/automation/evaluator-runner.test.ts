@@ -24,6 +24,12 @@ describe('evaluator-runner', () => {
         'head-sha': 'abc123',
       });
     });
+
+    it('ignores malformed metadata blocks without valid key-value pairs', () => {
+      expect(parseAgentMetadata('No metadata here')).toBeUndefined();
+      expect(parseAgentMetadata(['<!-- AGENT-METADATA', 'broken-line', '-->'].join('\n'))).toBeUndefined();
+      expect(parseAgentMetadata(['<!-- AGENT-METADATA', 'agent-id:', '-->'].join('\n'))).toBeUndefined();
+    });
   });
 
   describe('resolveStageFromMetadata', () => {
@@ -56,6 +62,13 @@ describe('evaluator-runner', () => {
         '+1': 1,
         '-1': 1,
       })).toBeUndefined();
+    });
+
+    it('returns positive for thumbs-up only signals', () => {
+      expect(selectVerdictFromReactions({
+        '+1': 2,
+        '-1': 0,
+      })).toBe('positive');
     });
   });
 
@@ -159,6 +172,21 @@ describe('evaluator-runner', () => {
             '-1': 1,
           },
         },
+        {
+          id: 503,
+          issueNumber: 155,
+          targetType: 'comment',
+          agentId: 'reviewer-quality',
+          stage: 'reviewer',
+          body: 'Ignored by workflow\n<!-- AGENT-METADATA\nagent-id: reviewer-quality\nagent-stage: reviewer\nignore-for-workflow: true\n-->',
+          url: 'https://github.com/davidruzicka/mcp4openapi/issues/155#issuecomment-503',
+          createdAt: '2026-03-14T16:00:00Z',
+          updatedAt: '2026-03-14T16:01:00Z',
+          reactions: {
+            '+1': 0,
+            '-1': 1,
+          },
+        },
       ];
 
       expect(collectEvaluatorFollowUpRequests({
@@ -204,6 +232,46 @@ describe('evaluator-runner', () => {
         targetNumber: 156,
       }));
       expect(request.commentBody).toContain('clean-implementation');
+    });
+
+    it('skips artifacts without a clear verdict and stages that do not request extra detail', () => {
+      const targetArtifacts: EvaluatorTargetArtifact[] = [
+        {
+          id: 157,
+          issueNumber: 157,
+          targetType: 'comment',
+          agentId: 'reviewer-quality',
+          stage: 'reviewer',
+          body: 'No strong reaction yet',
+          url: 'https://github.com/davidruzicka/mcp4openapi/issues/157#issuecomment-157',
+          createdAt: '2026-03-14T16:00:00Z',
+          updatedAt: '2026-03-14T16:01:00Z',
+          reactions: {},
+        },
+        {
+          id: 158,
+          issueNumber: 158,
+          targetType: 'pull_request',
+          agentId: 'merger-bot',
+          stage: 'merger',
+          body: 'Merge completed safely',
+          url: 'https://github.com/davidruzicka/mcp4openapi/pull/158',
+          createdAt: '2026-03-14T16:00:00Z',
+          updatedAt: '2026-03-14T16:01:00Z',
+          reactions: {
+            '+1': 1,
+            '-1': 0,
+          },
+        },
+      ];
+
+      expect(collectEvaluatorFollowUpRequests({
+        targetArtifacts,
+        threadComments: [],
+        repository: 'davidruzicka/mcp4openapi',
+        runId: 'run-123',
+        now: '2026-03-14T16:10:00Z',
+      })).toEqual([]);
     });
   });
 });
