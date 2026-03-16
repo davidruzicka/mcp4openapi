@@ -2,7 +2,44 @@ import { describe, expect, it } from 'vitest';
 import {
   mapIssueSummaryToProposalCandidate,
   mapPullRequestSummaryToProposalCandidate,
+  readIssueRuntimeConfig,
 } from './github-agent-runtime.js';
+
+describe('github-agent-runtime config', () => {
+  it('prefers MAX_CANDIDATES and falls back to legacy proposal-intake bounds', () => {
+    const defaults = {
+      lookbackHours: 72,
+      maxCandidates: 10,
+      agentId: 'proposal-intake',
+    };
+
+    expect(readIssueRuntimeConfig({
+      GITHUB_REPOSITORY: 'davidruzicka/mcp4openapi',
+      GITHUB_TOKEN: 'token',
+      PROPOSAL_INTAKE_MAX_CANDIDATES: '7',
+      PROPOSAL_INTAKE_MAX_ISSUES: '8',
+      PROPOSAL_INTAKE_MAX_ITEMS: '9',
+    }, 'PROPOSAL_INTAKE', defaults).maxCandidates).toBe(7);
+
+    expect(readIssueRuntimeConfig({
+      GITHUB_REPOSITORY: 'davidruzicka/mcp4openapi',
+      GITHUB_TOKEN: 'token',
+      PROPOSAL_INTAKE_MAX_ISSUES: '8',
+      PROPOSAL_INTAKE_MAX_ITEMS: '9',
+    }, 'PROPOSAL_INTAKE', defaults).maxCandidates).toBe(8);
+
+    expect(readIssueRuntimeConfig({
+      GITHUB_REPOSITORY: 'davidruzicka/mcp4openapi',
+      GITHUB_TOKEN: 'token',
+      PROPOSAL_INTAKE_MAX_ITEMS: '9',
+    }, 'PROPOSAL_INTAKE', defaults).maxCandidates).toBe(9);
+
+    expect(readIssueRuntimeConfig({
+      GITHUB_REPOSITORY: 'davidruzicka/mcp4openapi',
+      GITHUB_TOKEN: 'token',
+    }, 'PROPOSAL_INTAKE', defaults).maxCandidates).toBe(10);
+  });
+});
 
 describe('github-agent-runtime proposal candidate mapping', () => {
   it('maps issue workflow labels into proposal candidate artifacts', () => {

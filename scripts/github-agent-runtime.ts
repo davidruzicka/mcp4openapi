@@ -46,13 +46,18 @@ export interface IssueRuntimeConfig {
   readonly token: string;
   readonly apiBaseUrl: string;
   readonly lookbackHours: number;
+  readonly maxCandidates: number;
   readonly maxItems: number;
   readonly agentId: string;
   readonly runId: string;
   readonly now: string;
 }
 
-export function readIssueRuntimeConfig(env: NodeJS.ProcessEnv, prefix: string, defaults: { readonly lookbackHours: number; readonly maxItems: number; readonly agentId: string; }): IssueRuntimeConfig {
+export function readIssueRuntimeConfig(
+  env: NodeJS.ProcessEnv,
+  prefix: string,
+  defaults: { readonly lookbackHours: number; readonly maxItems?: number; readonly maxCandidates?: number; readonly agentId: string; },
+): IssueRuntimeConfig {
   const repository = env.GITHUB_REPOSITORY;
   const token = env.GITHUB_TOKEN;
   if (!repository) {
@@ -62,12 +67,23 @@ export function readIssueRuntimeConfig(env: NodeJS.ProcessEnv, prefix: string, d
     throw new Error('Missing required GITHUB_TOKEN environment variable.');
   }
 
+  const defaultMaxItems = defaults.maxCandidates ?? defaults.maxItems;
+  if (!defaultMaxItems) {
+    throw new Error(`Missing default max item bound for ${prefix}.`);
+  }
+
+  const maxCandidates = parsePositiveInteger(
+    env[`${prefix}_MAX_CANDIDATES`] ?? env[`${prefix}_MAX_ISSUES`] ?? env[`${prefix}_MAX_ITEMS`],
+    defaultMaxItems,
+  );
+
   return {
     repository,
     token,
     apiBaseUrl: env.GITHUB_API_URL ?? 'https://api.github.com',
     lookbackHours: parsePositiveInteger(env[`${prefix}_LOOKBACK_HOURS`], defaults.lookbackHours),
-    maxItems: parsePositiveInteger(env[`${prefix}_MAX_ISSUES`] ?? env[`${prefix}_MAX_ITEMS`], defaults.maxItems),
+    maxCandidates,
+    maxItems: maxCandidates,
     agentId: env[`${prefix}_AGENT_ID`] ?? defaults.agentId,
     runId: env.GITHUB_RUN_ID ? `github-actions-${env.GITHUB_RUN_ID}` : `manual-${Date.now()}`,
     now: env[`${prefix}_NOW`] ?? new Date().toISOString(),

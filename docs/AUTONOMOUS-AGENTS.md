@@ -125,7 +125,8 @@ Required proposal-intake guardrails:
 - bounded retrieval before detailed duplicate classification
 - strict idempotency for comments / links / created issues
 - explicit early exits on ambiguity or dirty automation state
-- at most one side effect per run
+- bounded proposal loading plus duplicate-candidate ranking independent from the side-effect budget
+- at most one side effect per run, even when multiple bounded candidates look safe
 
 ### Issue states
 
@@ -450,7 +451,7 @@ Current implemented runtime scope:
 - evaluator skips targets with mixed thumbs-up / thumbs-down signals,
 - evaluator deduplicates follow-up comments by evaluator metadata,
 - issuer performs bounded heuristic triage for recently updated issues and writes migration-safe autonomy gate comments plus labels,
-- proposal-intake now includes deterministic duplicate/follow-up/regression ranking, bounded GitHub issue/PR candidate retrieval, dirty-worktree early exit, and metadata-backed duplicate comments,
+- proposal-intake now includes deterministic duplicate/follow-up/regression ranking, bounded GitHub issue/PR candidate retrieval, a candidate-bound workflow input that stays separate from the single-action side-effect budget, dirty-worktree early exit, and metadata-backed duplicate comments,
 - planner turns `agent:safe` + `agent:needs-plan` issues into explicit bounded implementation plans or de-scopes / blocks them with machine-readable rationale,
 - implementor acquires issue leases for `agent:planned` work, records implementation ownership, and can hand off execution to a configurable external command that returns structured PR metadata,
 - implementor auto-labels created PRs for review and backfills a visible agent disclosure in the PR body when the backend omitted one,
@@ -473,7 +474,7 @@ Current intentionally unimplemented runtime scope:
 
 Recommended next steps:
 
-1. Add first-class issue creation/linking actions for `create-fresh` and `create-and-link` once the proposal source and idempotent link format are finalized.
+1. Add a separately configured multi-action side-effect budget for proposal-intake only if idempotency, ordering, and ambiguity guardrails are proven safe; the current `max_candidates` bound intentionally does not change the one-action-per-run limit.
 2. Replace the bounded heuristic issuer / planner decisions with a stronger pluggable semantic backend once prompt contracts and guardrails are finalized.
 3. Extend evaluator scanning to pull-request reviews and inline review comments.
 4. Persist structured feedback records for weekly evaluator reports.
