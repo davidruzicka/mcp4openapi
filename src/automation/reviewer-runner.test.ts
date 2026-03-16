@@ -401,6 +401,115 @@ describe('reviewer-runner', () => {
         }),
       ]);
     });
+
+    it('skips PRs without any review lifecycle signal even when they are otherwise eligible', () => {
+      expect(collectReviewerAssignments({
+        pullRequests: [buildPullRequest({ number: 164, headSha: 'abc123', labels: ['agent:created'] })],
+        commentsByPrNumber: { 164: [] },
+        reviewsByPrNumber: { 164: [] },
+        reviewThreadsByPrNumber: { 164: [] },
+        repository: 'davidruzicka/mcp4openapi',
+        agentId: 'reviewer',
+        runId: 'run-123',
+        now: '2026-03-14T16:10:00Z',
+        leaseTtlMinutes: 30,
+      })).toEqual([]);
+    });
+
+    it('fails open on malformed reviewer thread timestamps and only requeues when newer external replies exist', () => {
+      expect(collectReviewerAssignments({
+        pullRequests: [buildPullRequest({ number: 165, headSha: 'abc123', labels: ['agent:review:required'] })],
+        commentsByPrNumber: { 165: [] },
+        reviewsByPrNumber: {
+          165: [{
+            id: 904,
+            body: buildReviewerMetadataComment({ status: 'approved', headSha: 'abc123', timestamp: '2026-03-14T16:05:00Z' }),
+            submittedAt: '2026-03-14T16:05:00Z',
+            state: 'APPROVED',
+            authorLogin: 'github-actions[bot]',
+          }],
+        },
+        reviewThreadsByPrNumber: {
+          165: [buildReviewThread({
+            id: 'thread-malformed-agent-time',
+            isResolved: false,
+            comments: [
+              buildReviewThreadComment({
+                id: 'comment-agent-empty-time',
+                authorLogin: 'github-actions[bot]',
+                updatedAt: '',
+                body: buildReviewerMetadataComment({ status: 'commented', headSha: 'abc123', timestamp: '2026-03-14T16:00:00Z' }),
+              }),
+            ],
+          })],
+        },
+        repository: 'davidruzicka/mcp4openapi',
+        agentId: 'reviewer',
+        runId: 'run-123',
+        now: '2026-03-14T16:10:00Z',
+        leaseTtlMinutes: 30,
+      })).toEqual([]);
+    });
+
+    it('requeues when the latest reviewer decision timestamp is blank but a newer human reply exists', () => {
+      const assignments = collectReviewerAssignments({
+        pullRequests: [buildPullRequest({ number: 166, headSha: 'abc123', labels: ['agent:review:required'] })],
+        commentsByPrNumber: { 166: [] },
+        reviewsByPrNumber: {
+          166: [{
+            id: 905,
+            body: buildReviewerMetadataComment({ status: 'approved', headSha: 'abc123', timestamp: '2026-03-14T16:05:00Z' }),
+            submittedAt: '',
+            state: 'APPROVED',
+            authorLogin: 'github-actions[bot]',
+          }],
+        },
+        reviewThreadsByPrNumber: {
+          166: [buildReviewThread({
+            id: 'thread-blank-decision-time',
+            isResolved: false,
+            comments: [
+              buildReviewThreadComment({
+                id: 'comment-agent-1',
+                authorLogin: 'github-actions[bot]',
+                updatedAt: '2026-03-14T16:00:00Z',
+                body: buildReviewerMetadataComment({ status: 'commented', headSha: 'abc123', timestamp: '2026-03-14T16:00:00Z' }),
+              }),
+              buildReviewThreadComment({
+                id: 'comment-agent-2',
+                authorLogin: 'github-actions[bot]',
+                updatedAt: '2026-03-14T16:01:00Z',
+                body: buildReviewerMetadataComment({ status: 'commented', headSha: 'abc123', timestamp: '2026-03-14T16:01:00Z' }),
+              }),
+              buildReviewThreadComment({
+                id: 'comment-human-1',
+                authorLogin: 'human-reviewer',
+                updatedAt: '2026-03-14T16:08:00Z',
+                body: 'Please also validate the retry path.',
+              }),
+              buildReviewThreadComment({
+                id: 'comment-human-2',
+                authorLogin: 'human-reviewer',
+                updatedAt: '2026-03-14T16:09:00Z',
+                body: 'And confirm the fallback summary.',
+              }),
+            ],
+          })],
+        },
+        repository: 'davidruzicka/mcp4openapi',
+        agentId: 'reviewer',
+        runId: 'run-123',
+        now: '2026-03-14T16:10:00Z',
+        leaseTtlMinutes: 30,
+      });
+
+      expect(assignments).toEqual([
+        expect.objectContaining({
+          pullRequestNumber: 166,
+          reason: 'follow-up-requested',
+        }),
+      ]);
+    });
   });
 
   describe('buildReviewerLeaseComment', () => {

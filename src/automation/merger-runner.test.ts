@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildMergeGateEvaluationComment,
   evaluateMergeGate,
+  shouldSkipMergerByLabels,
   type MergerCiCheck,
   type MergerPullRequest,
   type MergerReviewArtifact,
@@ -281,6 +282,250 @@ describe('merger-runner', () => {
 
       expect(evaluation.ready).toBe(false);
       expect(evaluation.reasons).toContain('branch-protection-review-policy');
+    });
+
+    it('blocks draft or explicitly blocked PRs even before reviewer and CI checks are satisfied', () => {
+      const evaluation = evaluateMergeGate({
+        repository: 'davidruzicka/mcp4openapi',
+        agentId: 'merger',
+        runId: 'run-123',
+        timestamp: '2026-03-14T18:00:00Z',
+        leaseTtlMinutes: 45,
+        pullRequest: buildPullRequest({
+          number: 167,
+          headSha: 'abc123',
+          draft: true,
+          labels: ['agent:review:required', 'agent:blocked'],
+        }),
+        threadComments: [],
+        reviews: [],
+        reviewThreads: [],
+        ciChecks: [],
+      });
+
+      expect(evaluation.ready).toBe(false);
+      expect(evaluation.reasons).toEqual(expect.arrayContaining([
+        'draft-pr',
+        'agent-blocked',
+        'missing-current-approval',
+        'ci-not-green',
+      ]));
+    });
+
+    it('ignores missing or ignore-for-workflow reviewer metadata when evaluating approvals', () => {
+      const evaluation = evaluateMergeGate({
+        repository: 'davidruzicka/mcp4openapi',
+        agentId: 'merger',
+        runId: 'run-123',
+        timestamp: '2026-03-14T18:00:00Z',
+        leaseTtlMinutes: 45,
+        pullRequest: buildPullRequest({
+          number: 168,
+          headSha: 'abc123',
+          labels: ['agent:review:required'],
+        }),
+        threadComments: [
+          {
+            id: 50,
+            body: 'plain human note without metadata',
+            createdAt: '2026-03-14T17:50:00Z',
+            updatedAt: '2026-03-14T17:50:00Z',
+            authorLogin: 'human-reviewer',
+          },
+        ],
+        reviews: [{
+          id: 51,
+          body: [
+            'Ignored reviewer decision',
+            '<!-- AGENT-METADATA',
+            'agent-stage: reviewer',
+            'status: approved',
+            'head-sha: abc123',
+            'ignore-for-workflow: true',
+            '-->',
+          ].join('\n'),
+          submittedAt: '2026-03-14T17:55:00Z',
+          state: 'APPROVED',
+          authorLogin: 'github-actions[bot]',
+        }],
+        reviewThreads: [],
+        ciChecks: [{ name: 'test', status: 'completed', conclusion: 'success' }],
+      });
+
+      expect(evaluation.ready).toBe(false);
+      expect(evaluation.reasons).toContain('missing-current-approval');
+    });
+
+    it('fails closed on invalid merger event timestamps and exposes simple label-only skip checks', () => {
+      expect(() => evaluateMergeGate({
+        repository: 'davidruzicka/mcp4openapi',
+        agentId: 'merger',
+        runId: 'run-123',
+        timestamp: '2026-03-14T18:00:00Z',
+        leaseTtlMinutes: 45,
+        pullRequest: buildPullRequest({
+          number: 169,
+          headSha: 'abc123',
+          labels: ['agent:review:required'],
+        }),
+        threadComments: [],
+        reviews: [
+          {
+            id: 52,
+            body: buildReviewerThreadMetadataComment({
+              status: 'approved',
+              headSha: 'abc123',
+              timestamp: '2026-03-14T17:55:00Z',
+            }),
+            submittedAt: '2026-03-14T17:54:00Z',
+            state: 'APPROVED',
+            authorLogin: 'github-actions[bot]',
+          },
+          {
+            id: 53,
+            body: buildReviewerThreadMetadataComment({
+              status: 'commented',
+              headSha: 'abc123',
+              timestamp: '2026-03-14T17:56:00Z',
+            }),
+            submittedAt: 'not-a-timestamp',
+            state: 'COMMENTED',
+            authorLogin: 'github-actions[bot]',
+          },
+        ],
+        reviewThreads: [],
+        ciChecks: [{ name: 'test', status: 'completed', conclusion: 'success' }],
+      })).toThrow('Invalid timestamp: not-a-timestamp');
+
+      expect(shouldSkipMergerByLabels(['human:hold'])).toBe(true);
+      expect(shouldSkipMergerByLabels(['agent:review:required'])).toBe(false);
+    });
+
+    it('does not mark follow-up pending when reviewer-owned thread timestamps are blank or have no newer external reply', () => {
+      const blankAgentTimestamp = evaluateMergeGate({
+        repository: 'davidruzicka/mcp4openapi',
+        agentId: 'merger',
+        runId: 'run-123',
+        timestamp: '2026-03-14T18:00:00Z',
+        leaseTtlMinutes: 45,
+        pullRequest: buildPullRequest({
+          number: 170,
+          headSha: 'abc123',
+          labels: ['agent:review:required', 'agent:review:done'],
+        }),
+        threadComments: [],
+        reviews: [buildReview({
+          id: 53,
+          submittedAt: '2026-03-14T17:55:00Z',
+          status: 'approved',
+          headSha: 'abc123',
+        })],
+        reviewThreads: [buildReviewThread({
+          id: 'thread-blank-agent-time',
+          isResolved: true,
+          comments: [
+            buildReviewThreadComment({
+              id: 'agent-empty',
+              authorLogin: 'github-actions[bot]',
+              updatedAt: '',
+              body: buildReviewerThreadMetadataComment({
+                status: 'commented',
+                headSha: 'abc123',
+                timestamp: '2026-03-14T17:40:00Z',
+              }),
+            }),
+          ],
+        })],
+        ciChecks: [{ name: 'test', status: 'completed', conclusion: 'success' }],
+      });
+
+      const noNewerExternalReply = evaluateMergeGate({
+        repository: 'davidruzicka/mcp4openapi',
+        agentId: 'merger',
+        runId: 'run-123',
+        timestamp: '2026-03-14T18:00:00Z',
+        leaseTtlMinutes: 45,
+        pullRequest: buildPullRequest({
+          number: 171,
+          headSha: 'abc123',
+          labels: ['agent:review:required', 'agent:review:done'],
+        }),
+        threadComments: [],
+        reviews: [buildReview({
+          id: 54,
+          submittedAt: '2026-03-14T17:55:00Z',
+          status: 'approved',
+          headSha: 'abc123',
+        })],
+        reviewThreads: [buildReviewThread({
+          id: 'thread-no-external-reply',
+          isResolved: true,
+          comments: [
+            buildReviewThreadComment({
+              id: 'agent-comment',
+              authorLogin: 'github-actions[bot]',
+              updatedAt: '2026-03-14T17:40:00Z',
+              body: buildReviewerThreadMetadataComment({
+                status: 'commented',
+                headSha: 'abc123',
+                timestamp: '2026-03-14T17:40:00Z',
+              }),
+            }),
+          ],
+        })],
+        ciChecks: [{ name: 'test', status: 'completed', conclusion: 'success' }],
+      });
+
+      expect(blankAgentTimestamp.reasons).not.toContain('review-follow-up-pending');
+      expect(noNewerExternalReply.reasons).not.toContain('review-follow-up-pending');
+    });
+
+    it('flags follow-up pending when newer human replies exist before any terminal reviewer decision timestamp is available', () => {
+      const evaluation = evaluateMergeGate({
+        repository: 'davidruzicka/mcp4openapi',
+        agentId: 'merger',
+        runId: 'run-123',
+        timestamp: '2026-03-14T18:00:00Z',
+        leaseTtlMinutes: 45,
+        pullRequest: buildPullRequest({
+          number: 172,
+          headSha: 'abc123',
+          labels: [],
+        }),
+        threadComments: [],
+        reviews: [],
+        reviewThreads: [buildReviewThread({
+          id: 'thread-no-terminal-decision',
+          isResolved: true,
+          comments: [
+            buildReviewThreadComment({
+              id: 'agent-comment-1',
+              authorLogin: 'github-actions[bot]',
+              updatedAt: '2026-03-14T17:40:00Z',
+              body: buildReviewerThreadMetadataComment({
+                status: 'commented',
+                headSha: 'abc123',
+                timestamp: '2026-03-14T17:40:00Z',
+              }),
+            }),
+            buildReviewThreadComment({
+              id: 'human-comment-1',
+              authorLogin: 'human-reviewer',
+              updatedAt: '2026-03-14T17:50:00Z',
+              body: 'Please confirm the fallback path.',
+            }),
+            buildReviewThreadComment({
+              id: 'human-comment-2',
+              authorLogin: 'human-reviewer',
+              updatedAt: '2026-03-14T17:52:00Z',
+              body: 'And verify retries stay bounded.',
+            }),
+          ],
+        })],
+        ciChecks: [{ name: 'test', status: 'completed', conclusion: 'success' }],
+      });
+
+      expect(evaluation.reasons).toContain('review-follow-up-pending');
     });
   });
 

@@ -101,6 +101,29 @@ describe('implementor-runner', () => {
       expect(assignments[0]?.issueNumber).toBe(161);
     });
 
+    it('skips issues when an implementor lease is still active even without an open pull request', () => {
+      const leaseComment = buildImplementorLeaseComment({
+        repository: 'davidruzicka/mcp4openapi',
+        issueNumber: 161,
+        agentId: 'implementor',
+        runId: 'run-3',
+        timestamp: '2026-03-14T12:00:00Z',
+      });
+
+      const assignments = collectImplementorAssignments({
+        issues: [buildIssue()],
+        commentsByIssueNumber: { 161: [buildComment(leaseComment)] },
+        openPullRequestsByIssueNumber: {},
+        repository: 'davidruzicka/mcp4openapi',
+        agentId: 'implementor',
+        runId: 'run-3',
+        now: '2026-03-14T12:15:00Z',
+        leaseTtlMinutes: 30,
+      });
+
+      expect(assignments).toEqual([]);
+    });
+
     it('rejects invalid timestamps in lease comments so automation fails closed', () => {
       const assignments = () => collectImplementorAssignments({
         issues: [buildIssue()],
@@ -122,6 +145,32 @@ describe('implementor-runner', () => {
       });
 
       expect(assignments).toThrow('Invalid timestamp: not-a-timestamp');
+    });
+
+    it('ignores non-implementor metadata when evaluating active leases', () => {
+      const assignments = collectImplementorAssignments({
+        issues: [buildIssue()],
+        commentsByIssueNumber: {
+          161: [buildComment([
+            '🤖 Agent note (reviewer)',
+            '',
+            '<!-- AGENT-METADATA',
+            'agent-stage: reviewer',
+            'status: approved',
+            'timestamp: 2026-03-14T12:00:00Z',
+            '-->',
+          ].join('\n'))],
+        },
+        openPullRequestsByIssueNumber: {},
+        repository: 'davidruzicka/mcp4openapi',
+        agentId: 'implementor',
+        runId: 'run-3',
+        now: '2026-03-14T12:15:00Z',
+        leaseTtlMinutes: 30,
+      });
+
+      expect(assignments).toHaveLength(1);
+      expect(assignments[0]?.issueNumber).toBe(161);
     });
   });
 
