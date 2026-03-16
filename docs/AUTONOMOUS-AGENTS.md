@@ -480,3 +480,4 @@ Recommended next steps:
 4. Persist structured feedback records for weekly evaluator reports.
 5. Persist agent-owned review-thread references so specialized reviewers can re-enter the exact conversations they opened.
 6. Extend branch-protection-aware merge policy beyond the current conservative single-reviewer model.
+7. Add first-class issue creation/linking actions for `create-fresh` and `create-and-link` once the proposal source and idempotent link format are finalized.
