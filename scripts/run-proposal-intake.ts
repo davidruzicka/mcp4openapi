@@ -23,7 +23,7 @@ import {
 
 const runtimeConfig = readIssueRuntimeConfig(process.env, 'PROPOSAL_INTAKE', {
   lookbackHours: 72,
-  maxItems: 10,
+  maxCandidates: 10,
   agentId: 'proposal-intake',
 });
 
@@ -61,7 +61,7 @@ const proposals = recentIssues.map((issue) => {
       proposalTitle: mappedIssue.title,
       proposalBody: mappedIssue.body,
       candidates: candidateArtifacts,
-      maxMatches: runtimeConfig.maxItems,
+      maxMatches: runtimeConfig.maxCandidates,
     }),
   };
 });
@@ -73,6 +73,7 @@ const assignments = collectProposalAssignments({
   agentId: runtimeConfig.agentId,
   runId: runtimeConfig.runId,
   now: runtimeConfig.now,
+  // Proposal intake intentionally emits at most one side effect per run; maxCandidates only bounds retrieval and ranking.
   maxActions: 1,
   worktreeDirty: isWorktreeDirty(),
 });

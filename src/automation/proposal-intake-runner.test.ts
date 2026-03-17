@@ -199,7 +199,7 @@ describe('proposal-intake-runner', () => {
     expect(assignments[0]?.commentBody).toContain('Target issue: #144');
   });
 
-  it('caps side effects per run even when multiple safe proposal actions exist', () => {
+  it('keeps the side-effect budget at one action per run even when multiple bounded proposals are available', () => {
     const assignments = collectProposalAssignments({
       proposals: [
         buildProposal(),

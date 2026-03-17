@@ -9,8 +9,8 @@ on:
         description: Lookback window in hours for recently updated issues
         required: false
         default: '72'
-      max_items:
-        description: Maximum number of proposals and duplicate candidates to inspect in a single run
+      max_candidates:
+        description: Maximum number of recent proposals to load and duplicate candidates to rank per proposal. Does not increase side effects per run.
         required: false
         default: '10'
       agent_id:
@@ -46,6 +46,6 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PROPOSAL_INTAKE_LOOKBACK_HOURS: ${{ github.event.inputs.lookback_hours || '72' }}
-          PROPOSAL_INTAKE_MAX_ITEMS: ${{ github.event.inputs.max_items || '10' }}
+          PROPOSAL_INTAKE_MAX_CANDIDATES: ${{ github.event.inputs.max_candidates || '10' }}
           PROPOSAL_INTAKE_AGENT_ID: ${{ github.event.inputs.agent_id || 'proposal-intake' }}
         run: npm run agent:proposal-intake
