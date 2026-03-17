@@ -12,7 +12,7 @@ import {
 
 const runtimeConfig = readIssueRuntimeConfig(process.env, 'ISSUER', {
   lookbackHours: 72,
-  maxItems: 20,
+  maxCandidates: 20,
   agentId: 'issuer',
 });
 
@@ -31,11 +31,11 @@ const assignments = collectIssuerAssignments({
   now: runtimeConfig.now,
 });
 
-for (const assignment of assignments.slice(0, runtimeConfig.maxItems)) {
+for (const assignment of assignments.slice(0, runtimeConfig.maxCandidates)) {
   await addIssueLabels(runtimeConfig, assignment.issueNumber, assignment.labelsToAdd);
   await removeIssueLabels(runtimeConfig, assignment.issueNumber, assignment.labelsToRemove);
   await createIssueComment(runtimeConfig, assignment.issueNumber, assignment.commentBody);
   process.stdout.write(`Issuer processed issue #${assignment.issueNumber} (${assignment.suitable ? 'safe' : 'unsafe'}).\n`);
 }
 
-process.stdout.write(`Issuer runner completed. Processed ${Math.min(assignments.length, runtimeConfig.maxItems)} issue(s).\n`);
+process.stdout.write(`Issuer runner completed. Processed ${Math.min(assignments.length, runtimeConfig.maxCandidates)} issue(s).\n`);
