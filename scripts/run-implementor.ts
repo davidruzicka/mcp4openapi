@@ -26,7 +26,7 @@ import {
 const execFileAsync = promisify(execFile);
 const runtimeConfig = readIssueRuntimeConfig(process.env, 'IMPLEMENTOR', {
   lookbackHours: 72,
-  maxItems: 5,
+  maxCandidates: 5,
   agentId: 'implementor',
 });
 const implementorCommand = process.env.IMPLEMENTOR_COMMAND?.trim();
@@ -64,7 +64,7 @@ const assignments = collectImplementorAssignments({
   leaseTtlMinutes,
 });
 
-for (const assignment of assignments.slice(0, runtimeConfig.maxItems)) {
+for (const assignment of assignments.slice(0, runtimeConfig.maxCandidates)) {
   await addIssueLabels(runtimeConfig, assignment.issueNumber, assignment.labelsToAdd);
   await removeIssueLabels(runtimeConfig, assignment.issueNumber, assignment.labelsToRemove);
   await createIssueComment(runtimeConfig, assignment.issueNumber, assignment.leaseCommentBody);
@@ -107,7 +107,7 @@ for (const assignment of assignments.slice(0, runtimeConfig.maxItems)) {
   process.stdout.write(`Implementor processed issue #${assignment.issueNumber} (${result.outcome}).\n`);
 }
 
-process.stdout.write(`Implementor runner completed. Processed ${Math.min(assignments.length, runtimeConfig.maxItems)} issue(s).\n`);
+process.stdout.write(`Implementor runner completed. Processed ${Math.min(assignments.length, runtimeConfig.maxCandidates)} issue(s).\n`);
 
 async function runImplementorCommand(command: string, payload: unknown) {
   const { stdout } = await execFileAsync('bash', ['-lc', command], {

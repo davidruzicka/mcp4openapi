@@ -47,7 +47,6 @@ export interface IssueRuntimeConfig {
   readonly apiBaseUrl: string;
   readonly lookbackHours: number;
   readonly maxCandidates: number;
-  readonly maxItems: number;
   readonly agentId: string;
   readonly runId: string;
   readonly now: string;
@@ -56,7 +55,7 @@ export interface IssueRuntimeConfig {
 export function readIssueRuntimeConfig(
   env: NodeJS.ProcessEnv,
   prefix: string,
-  defaults: { readonly lookbackHours: number; readonly maxItems?: number; readonly maxCandidates?: number; readonly agentId: string; },
+  defaults: { readonly lookbackHours: number; readonly maxCandidates: number; readonly agentId: string; },
 ): IssueRuntimeConfig {
   const repository = env.GITHUB_REPOSITORY;
   const token = env.GITHUB_TOKEN;
@@ -67,14 +66,9 @@ export function readIssueRuntimeConfig(
     throw new Error('Missing required GITHUB_TOKEN environment variable.');
   }
 
-  const defaultMaxItems = defaults.maxCandidates ?? defaults.maxItems;
-  if (!defaultMaxItems) {
-    throw new Error(`Missing default max item bound for ${prefix}.`);
-  }
-
   const maxCandidates = parsePositiveInteger(
     env[`${prefix}_MAX_CANDIDATES`] ?? env[`${prefix}_MAX_ISSUES`] ?? env[`${prefix}_MAX_ITEMS`],
-    defaultMaxItems,
+    defaults.maxCandidates,
   );
 
   return {
@@ -83,7 +77,6 @@ export function readIssueRuntimeConfig(
     apiBaseUrl: env.GITHUB_API_URL ?? 'https://api.github.com',
     lookbackHours: parsePositiveInteger(env[`${prefix}_LOOKBACK_HOURS`], defaults.lookbackHours),
     maxCandidates,
-    maxItems: maxCandidates,
     agentId: env[`${prefix}_AGENT_ID`] ?? defaults.agentId,
     runId: env.GITHUB_RUN_ID ? `github-actions-${env.GITHUB_RUN_ID}` : `manual-${Date.now()}`,
     now: env[`${prefix}_NOW`] ?? new Date().toISOString(),
@@ -241,7 +234,7 @@ async function listRecentIssueSummaries(config: IssueRuntimeConfig, state: 'open
   return issues
     .filter((issue) => !issue.pull_request)
     .filter((issue) => issue.updated_at >= updatedSince)
-    .slice(0, config.maxItems);
+    .slice(0, config.maxCandidates);
 }
 
 async function listRecentPullRequests(config: IssueRuntimeConfig, state: 'open' | 'closed'): Promise<GitHubPullRequestSummary[]> {
@@ -249,7 +242,7 @@ async function listRecentPullRequests(config: IssueRuntimeConfig, state: 'open' 
   const pullRequests = await githubRequest<GitHubPullRequestSummary[]>(config, `/repos/${config.repository}/pulls?state=${state}&sort=updated&direction=desc&per_page=100`);
   return pullRequests
     .filter((pullRequest) => pullRequest.updated_at >= updatedSince)
-    .slice(0, config.maxItems);
+    .slice(0, config.maxCandidates);
 }
 
 async function githubRequest<T = unknown>(config: IssueRuntimeConfig, path: string, init: RequestInit = {}): Promise<T> {

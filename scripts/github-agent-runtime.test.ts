@@ -1,12 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
+  listOpenPullRequests,
+  listRecentIssues,
   mapIssueSummaryToProposalCandidate,
   mapPullRequestSummaryToProposalCandidate,
   readIssueRuntimeConfig,
 } from './github-agent-runtime.js';
 
 describe('github-agent-runtime config', () => {
-  it('prefers MAX_CANDIDATES and falls back to legacy proposal-intake bounds', () => {
+  it('prefers MAX_CANDIDATES and falls back to legacy proposal-intake bounds without exposing maxItems', () => {
     const defaults = {
       lookbackHours: 72,
       maxCandidates: 10,
@@ -19,25 +21,123 @@ describe('github-agent-runtime config', () => {
       PROPOSAL_INTAKE_MAX_CANDIDATES: '7',
       PROPOSAL_INTAKE_MAX_ISSUES: '8',
       PROPOSAL_INTAKE_MAX_ITEMS: '9',
-    }, 'PROPOSAL_INTAKE', defaults).maxCandidates).toBe(7);
+    }, 'PROPOSAL_INTAKE', defaults)).toMatchObject({ maxCandidates: 7 });
 
     expect(readIssueRuntimeConfig({
       GITHUB_REPOSITORY: 'davidruzicka/mcp4openapi',
       GITHUB_TOKEN: 'token',
       PROPOSAL_INTAKE_MAX_ISSUES: '8',
       PROPOSAL_INTAKE_MAX_ITEMS: '9',
-    }, 'PROPOSAL_INTAKE', defaults).maxCandidates).toBe(8);
+    }, 'PROPOSAL_INTAKE', defaults)).toMatchObject({ maxCandidates: 8 });
 
     expect(readIssueRuntimeConfig({
       GITHUB_REPOSITORY: 'davidruzicka/mcp4openapi',
       GITHUB_TOKEN: 'token',
       PROPOSAL_INTAKE_MAX_ITEMS: '9',
-    }, 'PROPOSAL_INTAKE', defaults).maxCandidates).toBe(9);
+    }, 'PROPOSAL_INTAKE', defaults)).toMatchObject({ maxCandidates: 9 });
 
-    expect(readIssueRuntimeConfig({
+    const runtimeConfig = readIssueRuntimeConfig({
       GITHUB_REPOSITORY: 'davidruzicka/mcp4openapi',
       GITHUB_TOKEN: 'token',
-    }, 'PROPOSAL_INTAKE', defaults).maxCandidates).toBe(10);
+    }, 'PROPOSAL_INTAKE', defaults);
+
+    expect(runtimeConfig).toMatchObject({ maxCandidates: 10 });
+    expect(runtimeConfig).not.toHaveProperty('maxItems');
+  });
+});
+
+describe('github-agent-runtime listing bounds', () => {
+  it('uses maxCandidates to cap recent issue retrieval', async () => {
+    const fetchMock = globalThis.fetch;
+    globalThis.fetch = async () => new Response(JSON.stringify([
+      {
+        number: 11,
+        title: 'Newest issue',
+        body: null,
+        html_url: 'https://github.com/davidruzicka/mcp4openapi/issues/11',
+        updated_at: '2026-03-17T10:00:00.000Z',
+      },
+      {
+        number: 10,
+        title: 'Second issue',
+        body: null,
+        html_url: 'https://github.com/davidruzicka/mcp4openapi/issues/10',
+        updated_at: '2026-03-17T09:00:00.000Z',
+      },
+      {
+        number: 9,
+        title: 'Older issue',
+        body: null,
+        html_url: 'https://github.com/davidruzicka/mcp4openapi/issues/9',
+        updated_at: '2026-03-17T08:00:00.000Z',
+      },
+    ]), { status: 200 });
+
+    try {
+      await expect(listRecentIssues({
+        repository: 'davidruzicka/mcp4openapi',
+        token: 'token',
+        apiBaseUrl: 'https://api.github.com',
+        lookbackHours: 48,
+        maxCandidates: 2,
+        agentId: 'proposal-intake',
+        runId: 'manual-test',
+        now: '2026-03-17T12:00:00.000Z',
+      })).resolves.toMatchObject([{ number: 11 }, { number: 10 }]);
+    } finally {
+      globalThis.fetch = fetchMock;
+    }
+  });
+
+  it('uses maxCandidates to cap recent pull request retrieval', async () => {
+    const fetchMock = globalThis.fetch;
+    globalThis.fetch = async () => new Response(JSON.stringify([
+      {
+        number: 21,
+        title: 'Newest PR',
+        body: null,
+        html_url: 'https://github.com/davidruzicka/mcp4openapi/pull/21',
+        draft: false,
+        updated_at: '2026-03-17T10:00:00.000Z',
+        state: 'open',
+        head: { sha: 'sha-21', ref: 'feat/newest' },
+      },
+      {
+        number: 20,
+        title: 'Second PR',
+        body: null,
+        html_url: 'https://github.com/davidruzicka/mcp4openapi/pull/20',
+        draft: false,
+        updated_at: '2026-03-17T09:00:00.000Z',
+        state: 'open',
+        head: { sha: 'sha-20', ref: 'feat/second' },
+      },
+      {
+        number: 19,
+        title: 'Older PR',
+        body: null,
+        html_url: 'https://github.com/davidruzicka/mcp4openapi/pull/19',
+        draft: false,
+        updated_at: '2026-03-17T08:00:00.000Z',
+        state: 'open',
+        head: { sha: 'sha-19', ref: 'feat/older' },
+      },
+    ]), { status: 200 });
+
+    try {
+      await expect(listOpenPullRequests({
+        repository: 'davidruzicka/mcp4openapi',
+        token: 'token',
+        apiBaseUrl: 'https://api.github.com',
+        lookbackHours: 48,
+        maxCandidates: 2,
+        agentId: 'proposal-intake',
+        runId: 'manual-test',
+        now: '2026-03-17T12:00:00.000Z',
+      })).resolves.toMatchObject([{ number: 21 }, { number: 20 }]);
+    } finally {
+      globalThis.fetch = fetchMock;
+    }
   });
 });
 

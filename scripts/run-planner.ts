@@ -12,7 +12,7 @@ import {
 
 const runtimeConfig = readIssueRuntimeConfig(process.env, 'PLANNER', {
   lookbackHours: 72,
-  maxItems: 10,
+  maxCandidates: 10,
   agentId: 'planner',
 });
 
@@ -41,11 +41,11 @@ const assignments = collectPlannerAssignments({
   now: runtimeConfig.now,
 });
 
-for (const assignment of assignments.slice(0, runtimeConfig.maxItems)) {
+for (const assignment of assignments.slice(0, runtimeConfig.maxCandidates)) {
   await addIssueLabels(runtimeConfig, assignment.issueNumber, assignment.labelsToAdd);
   await removeIssueLabels(runtimeConfig, assignment.issueNumber, assignment.labelsToRemove);
   await createIssueComment(runtimeConfig, assignment.issueNumber, assignment.commentBody);
   process.stdout.write(`Planner processed issue #${assignment.issueNumber} (${assignment.remainsSuitable ? 'planned' : assignment.blocked ? 'blocked' : 'de-scoped'}).\n`);
 }
 
-process.stdout.write(`Planner runner completed. Processed ${Math.min(assignments.length, runtimeConfig.maxItems)} issue(s).\n`);
+process.stdout.write(`Planner runner completed. Processed ${Math.min(assignments.length, runtimeConfig.maxCandidates)} issue(s).\n`);
