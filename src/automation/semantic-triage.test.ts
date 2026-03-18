@@ -208,6 +208,112 @@ describe('semantic-triage', () => {
     })).toBeNull();
   });
 
+  it('rejects backend decisions with blank reasons or unsupported relations', () => {
+    expect(validateSemanticBackendDecision({
+      backendName: 'local-heuristic-v1',
+      decision: {
+        issueNumber: 155,
+        relation: 'near-duplicate',
+        reason: '   ',
+        score: 0.8,
+      },
+      candidates: [buildCandidate()],
+    })).toBeNull();
+
+    expect(validateSemanticBackendDecision({
+      backendName: 'local-heuristic-v1',
+      decision: {
+        issueNumber: 155,
+        relation: 'unsupported' as SemanticBackendRawDecision['relation'],
+        reason: 'bad relation',
+        score: 0.8,
+      },
+      candidates: [buildCandidate()],
+    })).toBeNull();
+  });
+
+  it('breaks ranking ties by title overlap, then body overlap, then earliest issue number', () => {
+    const issue = buildCandidate({
+      number: 210,
+      title: 'cache invalidation metrics flushes',
+      body: 'cache invalidation metrics flush paths targeted tests',
+    });
+
+    const rankedByTitle = rankSemanticCandidates(issue, [
+      buildCandidate({
+        number: 157,
+        title: 'cache invalidation rollout notes flushes',
+        body: issue.body,
+      }),
+      buildCandidate({
+        number: 156,
+        title: 'cache invalidation metrics flushes',
+        body: 'cache invalidation rollout notes',
+      }),
+    ]);
+    expect(rankedByTitle.map((candidate) => candidate.number)).toEqual([156, 157]);
+
+    const rankedByBodyThenNumber = rankSemanticCandidates(issue, [
+      buildCandidate({
+        number: 159,
+        title: 'cache invalidation metrics flushes',
+        body: 'cache invalidation metrics flush paths',
+      }),
+      buildCandidate({
+        number: 158,
+        title: 'cache invalidation metrics flushes',
+        body: 'cache invalidation metrics flush paths',
+      }),
+      buildCandidate({
+        number: 160,
+        title: 'cache invalidation metrics flushes',
+        body: 'cache invalidation rollout notes',
+      }),
+    ]);
+    expect(rankedByBodyThenNumber.map((candidate) => candidate.number)).toEqual([158, 159, 160]);
+  });
+
+  it('handles empty token sets without treating punctuation-only text as a duplicate', () => {
+    const issue = buildCandidate({ number: 210, title: '!!!', body: 'and the for with to' });
+    const candidate = buildCandidate({ number: 211, title: '???', body: 'and the for with to' });
+
+    expect(rankSemanticCandidates(issue, [candidate])).toEqual([candidate]);
+    expect(findSemanticOpenDuplicate({
+      stage: 'issuer',
+      issue,
+      candidates: [candidate],
+    })).toBeNull();
+  });
+
+  it('breaks ambiguous local-heuristic ties by earliest matching issue number', () => {
+    const duplicate = findSemanticOpenDuplicate({
+      stage: 'planner',
+      issue: buildCandidate({
+        number: 210,
+        title: 'cache invalidation metrics for flush paths',
+        body: 'cache invalidation metrics flush paths targeted tests and docs',
+      }),
+      candidates: [
+        buildCandidate({
+          number: 154,
+          title: 'cache invalidation metrics across flush paths',
+          body: 'cache invalidation metrics flush paths targeted tests and docs',
+        }),
+        buildCandidate({
+          number: 155,
+          title: 'cache invalidation metrics around flush paths',
+          body: 'cache invalidation metrics flush paths targeted tests and docs',
+        }),
+      ],
+    });
+
+    expect(duplicate).toMatchObject({
+      issueNumber: 154,
+      relation: 'near-duplicate',
+      backendName: 'local-heuristic-v1',
+    });
+  });
+
   it('builds bounded prompt contracts with explicit fallback guardrails from ranked candidates', () => {
     const contract = buildSemanticTriagePromptContract({
       stage: 'issuer',
