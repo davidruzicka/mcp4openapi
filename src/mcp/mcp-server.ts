@@ -1858,12 +1858,14 @@ export class MCPServer {
           code = -32601;
         }
 
+        const correlationId = generateCorrelationId();
+        this.logger.error('Prompt get error', error as Error, { correlationId, promptName: (req.params as Record<string, unknown> | undefined)?.name, sessionId });
         return {
           jsonrpc: '2.0',
           id: req.id,
           error: {
             code,
-            message: (error as Error).message,
+            message: this.formatErrorForClient(error, correlationId),
           },
         };
       }
@@ -1901,12 +1903,14 @@ export class MCPServer {
           result: await this.readResource(params.uri, sessionId, profileId),
         };
       } catch (error) {
+        const correlationId = generateCorrelationId();
+        this.logger.error('Resource read error', error as Error, { correlationId, uri: (req.params as Record<string, unknown> | undefined)?.uri, sessionId });
         return {
           jsonrpc: '2.0',
           id: req.id,
           error: {
             code: error instanceof ValidationError ? -32602 : -32601,
-            message: (error as Error).message,
+            message: this.formatErrorForClient(error, correlationId),
           },
         };
       }
@@ -1920,12 +1924,14 @@ export class MCPServer {
           result: await this.completeResourceArgument(req as CompleteRequest, sessionId, profileId),
         };
       } catch (error) {
+        const correlationId = generateCorrelationId();
+        this.logger.error('Completion error', error as Error, { correlationId, sessionId });
         return {
           jsonrpc: '2.0',
           id: req.id,
           error: {
             code: error instanceof ValidationError ? -32602 : -32601,
-            message: (error as Error).message,
+            message: this.formatErrorForClient(error, correlationId),
           },
         };
       }

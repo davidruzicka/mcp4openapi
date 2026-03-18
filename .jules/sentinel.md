@@ -126,3 +126,15 @@ Error messages should never include raw values from sensitive sources like envir
 **Prevention:**
 1.  Avoid including raw values in error messages when the source is potentially sensitive (env vars, auth headers).
 2.  Use generic error messages for validation failures of sensitive data.
+
+## 2026-03-18 - [CRITICAL] Internal Error Leakage via Prompts and Resources
+
+**Vulnerability:**
+The `handleOtherRequest` method in `MCPServer` was returning the raw `(error as Error).message` instead of formatting the error safely via `formatErrorForClient(error, correlationId)` for `prompts/get`, `resources/read`, and `completion/complete`.
+
+**Learning:**
+Any catch block handling user requests should never leak the raw error message. `formatErrorForClient` correctly scopes generic Internal errors from ValidationError and others while generating a correlationId, reducing the chance of exposing stack traces and inner path structures.
+
+**Prevention:**
+1. Ensure `this.formatErrorForClient(error, correlationId)` is consistently used to serialize error messages sent in JSON-RPC responses.
+2. Ensure correlationIDs are properly logged and mapped correctly so server operators can search for the original errors.

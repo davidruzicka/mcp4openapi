@@ -275,14 +275,15 @@ describe('MCPServer apps resources', () => {
       },
     });
 
-    expect(invalidReadResponse.error).toEqual({
+    expect(invalidReadResponse.error).toMatchObject({
       code: -32602,
-      message: 'resources/read requires string parameter "uri"',
     });
-    expect(invalidCompletionResponse.error).toEqual({
+    expect(invalidReadResponse.error.message).toContain('resources/read requires string parameter "uri"');
+
+    expect(invalidCompletionResponse.error).toMatchObject({
       code: -32602,
-      message: 'completion/complete requires a resource ref',
     });
+    expect(invalidCompletionResponse.error.message).toContain('completion/complete requires a resource ref');
   });
 
   it('propagates session context to fetch-backed resource and completion lookups', async () => {
