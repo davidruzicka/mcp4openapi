@@ -29,6 +29,7 @@ const assignments = collectIssuerAssignments({
   agentId: runtimeConfig.agentId,
   runId: runtimeConfig.runId,
   now: runtimeConfig.now,
+  semanticDuplicateBackendName: runtimeConfig.semanticDuplicateBackendName,
 });
 
 for (const assignment of assignments.slice(0, runtimeConfig.maxCandidates)) {

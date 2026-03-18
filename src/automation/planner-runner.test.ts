@@ -91,7 +91,10 @@ describe('planner-runner', () => {
         timestamp: '2026-03-14T12:00:00Z',
         remainsSuitable: true,
         blocked: false,
-        reasons: ['issue body provides enough structure for a bounded implementation plan'],
+        reasons: [
+          'issue body provides enough structure for a bounded implementation plan',
+          'issue remains inside the low-risk autonomous planning lane',
+        ],
         plan: '## Implementation plan\n- Step 1',
       });
 
@@ -105,6 +108,210 @@ describe('planner-runner', () => {
       });
 
       expect(assignments).toHaveLength(0);
+    });
+
+    it('de-scopes near-duplicate issues when semantic duplicate triage finds an earlier open match', () => {
+      const assignments = collectPlannerAssignments({
+        issues: [
+          buildIssue(),
+          buildIssue({
+            number: 161,
+            title: 'Add deterministic metrics for cache flush invalidation',
+            body: [
+              '## Summary',
+              'Need targeted instrumentation for cache invalidation counts and flush paths.',
+              '',
+              '## Acceptance Criteria',
+              '- [ ] emit counter on invalidation',
+              '- [ ] add unit tests for flush and failure paths',
+              '- [ ] document the metric',
+            ].join('\n'),
+            url: 'https://github.com/davidruzicka/mcp4openapi/issues/161',
+          }),
+        ],
+        commentsByIssueNumber: { 160: [], 161: [] },
+        repository: 'davidruzicka/mcp4openapi',
+        agentId: 'planner',
+        runId: 'run-2',
+        now: '2026-03-14T12:00:00Z',
+        semanticDuplicateBackendName: 'local-heuristic-v1',
+      });
+
+      expect(assignments).toHaveLength(2);
+      expect(assignments[1]).toMatchObject({
+        issueNumber: 161,
+        remainsSuitable: false,
+        blocked: false,
+        labelsToAdd: [],
+        labelsToRemove: ['agent:safe', 'agent:needs-plan', 'agent:planned'],
+      });
+      expect(assignments[1]?.reasons).toContain('issue appears to semantically duplicate existing open issue #160');
+      expect(assignments[1]?.commentBody).toContain('Semantic duplicate backend:');
+      expect(assignments[1]?.commentBody).toContain('Duplicate guard minimum fallback: exact open-title matches remain enforced even if semantic triage is unavailable.');
+    });
+
+    it('keeps related issues in scope when semantic duplicate triage stays below the duplicate threshold', () => {
+      const assignments = collectPlannerAssignments({
+        issues: [
+          buildIssue(),
+          buildIssue({
+            number: 162,
+            title: 'Document cache invalidation rollout notes',
+            body: [
+              '## Summary',
+              'Document the rollout and incident notes for cache invalidation metrics.',
+              '',
+              '## Acceptance Criteria',
+              '- [ ] add rollout notes',
+              '- [ ] explain operator expectations',
+            ].join('\n'),
+            url: 'https://github.com/davidruzicka/mcp4openapi/issues/162',
+          }),
+        ],
+        commentsByIssueNumber: { 160: [], 162: [] },
+        repository: 'davidruzicka/mcp4openapi',
+        agentId: 'planner',
+        runId: 'run-2',
+        now: '2026-03-14T12:00:00Z',
+        semanticDuplicateBackendName: 'local-heuristic-v1',
+      });
+
+      expect(assignments).toHaveLength(2);
+      expect(assignments[1]).toMatchObject({
+        issueNumber: 162,
+        remainsSuitable: true,
+        blocked: false,
+        labelsToAdd: ['agent:planned', 'agent:safe'],
+      });
+      expect(assignments[1]?.reasons).not.toContain('issue appears to semantically duplicate existing open issue #160');
+    });
+
+    it('supports disabling semantic duplicate triage while preserving exact-title fallback only', () => {
+      const assignments = collectPlannerAssignments({
+        issues: [
+          buildIssue(),
+          buildIssue({
+            number: 161,
+            title: 'Add deterministic metrics for cache flush invalidation',
+            body: [
+              '## Summary',
+              'Need targeted instrumentation for cache invalidation counts and flush paths.',
+              '',
+              '## Acceptance Criteria',
+              '- [ ] emit counter on invalidation',
+              '- [ ] add unit tests for flush and failure paths',
+              '- [ ] document the metric',
+            ].join('\n'),
+            url: 'https://github.com/davidruzicka/mcp4openapi/issues/161',
+          }),
+        ],
+        commentsByIssueNumber: { 160: [], 161: [] },
+        repository: 'davidruzicka/mcp4openapi',
+        agentId: 'planner',
+        runId: 'run-2',
+        now: '2026-03-14T12:00:00Z',
+        semanticDuplicateBackendName: 'disabled',
+      });
+
+      expect(assignments).toHaveLength(2);
+      expect(assignments[1]).toMatchObject({
+        issueNumber: 161,
+        remainsSuitable: true,
+        blocked: false,
+        labelsToAdd: ['agent:planned', 'agent:safe'],
+      });
+    });
+
+    it('keeps high-risk duplicate issues blocked instead of downgrading them to de-scoped', () => {
+      const assignments = collectPlannerAssignments({
+        issues: [
+          buildIssue({
+            title: 'Add deterministic cache invalidation metrics for auth token refresh',
+            body: [
+              '## Summary',
+              'Need targeted instrumentation for cache invalidation counts during auth token refresh.',
+              '',
+              '## Acceptance Criteria',
+              '- [ ] emit counter on invalidation',
+              '- [ ] add unit tests for success and failure paths',
+              '- [ ] document the metric',
+            ].join('\n'),
+          }),
+          buildIssue({
+            number: 161,
+            title: 'Add deterministic metrics for auth token refresh invalidation',
+            body: [
+              '## Summary',
+              'Need targeted instrumentation for cache invalidation counts during auth token refresh.',
+              '',
+              '## Acceptance Criteria',
+              '- [ ] emit counter on invalidation',
+              '- [ ] add unit tests for token refresh failure paths',
+              '- [ ] document the metric',
+            ].join('\n'),
+            url: 'https://github.com/davidruzicka/mcp4openapi/issues/161',
+          }),
+        ],
+        commentsByIssueNumber: { 160: [], 161: [] },
+        repository: 'davidruzicka/mcp4openapi',
+        agentId: 'planner',
+        runId: 'run-2',
+        now: '2026-03-14T12:00:00Z',
+        semanticDuplicateBackendName: 'local-heuristic-v1',
+      });
+
+      expect(assignments).toHaveLength(2);
+      expect(assignments[1]).toMatchObject({
+        issueNumber: 161,
+        remainsSuitable: false,
+        blocked: true,
+        labelsToAdd: ['agent:blocked'],
+      });
+      expect(assignments[1]?.reasons).toContain('issue appears to semantically duplicate existing open issue #160');
+    });
+
+    it('does not suppress a duplicate-specific de-scoped comment when an older de-scoped comment had different reasons', () => {
+      const previousDescopedComment = buildPlannerDecisionComment({
+        repository: 'davidruzicka/mcp4openapi',
+        issueNumber: 161,
+        agentId: 'planner',
+        runId: 'run-old',
+        timestamp: '2026-03-14T11:00:00Z',
+        remainsSuitable: false,
+        blocked: false,
+        reasons: ['issue body is still too vague for bounded implementation'],
+      });
+
+      const assignments = collectPlannerAssignments({
+        issues: [
+          buildIssue(),
+          buildIssue({
+            number: 161,
+            title: 'Add deterministic metrics for cache flush invalidation',
+            body: [
+              '## Summary',
+              'Need targeted instrumentation for cache invalidation counts and flush paths.',
+              '',
+              '## Acceptance Criteria',
+              '- [ ] emit counter on invalidation',
+              '- [ ] add unit tests for flush and failure paths',
+              '- [ ] document the metric',
+            ].join('\n'),
+            url: 'https://github.com/davidruzicka/mcp4openapi/issues/161',
+          }),
+        ],
+        commentsByIssueNumber: { 160: [], 161: [buildComment(previousDescopedComment)] },
+        repository: 'davidruzicka/mcp4openapi',
+        agentId: 'planner',
+        runId: 'run-2',
+        now: '2026-03-14T12:00:00Z',
+        semanticDuplicateBackendName: 'local-heuristic-v1',
+      });
+
+      expect(assignments).toHaveLength(2);
+      const duplicateAssignment = assignments.find((assignment) => assignment.issueNumber === 161);
+      expect(duplicateAssignment?.issueNumber).toBe(161);
+      expect(duplicateAssignment?.reasons).toContain('issue appears to semantically duplicate existing open issue #160');
     });
 
     it('skips issues outside the planner queue or already protected by hold labels', () => {

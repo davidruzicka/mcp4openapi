@@ -1,7 +1,7 @@
 import { buildAgentMetadataBlock } from './agent-feedback.js';
 import { planIssuerTransition, hasBlockingWorkflowLabel } from './agent-workflow-state.js';
 import { parseAgentMetadata } from './evaluator-runner.js';
-import { buildIssueTitleKey } from './issue-title-key.js';
+import { findSemanticOpenDuplicate, type SemanticDuplicateBackendName } from './semantic-triage.js';
 
 export interface IssuerIssue {
   readonly number: number;
@@ -42,6 +42,7 @@ export interface CollectIssuerAssignmentsInput {
   readonly agentId: string;
   readonly runId: string;
   readonly now: string;
+  readonly semanticDuplicateBackendName?: SemanticDuplicateBackendName;
 }
 
 const RISK_KEYWORDS = ['security', 'auth', 'oauth', 'token', 'secret', 'tenant', 'migration', 'breaking', 'architecture', 'refactor'];
@@ -84,16 +85,25 @@ export function collectIssuerAssignments(input: CollectIssuerAssignmentsInput): 
     }
 
     const decision = evaluateIssueAutonomy(issue);
-    const duplicateIssue = findExactOpenDuplicate(issue, eligibleIssues);
-    const effectiveDecision = duplicateIssue
+    const duplicateMatch = findSemanticOpenDuplicate({
+      stage: 'issuer',
+      issue,
+      candidates: eligibleIssues.filter((candidate) => candidate.number < issue.number),
+      backendName: input.semanticDuplicateBackendName,
+    });
+    const effectiveDecision = duplicateMatch
       ? {
           suitable: false,
           reasons: [
             ...decision.reasons,
-            `issue appears to duplicate existing open issue #${duplicateIssue.number}`,
+            duplicateMatch.reason,
           ],
+          duplicateBackendName: duplicateMatch.backendName,
         }
-      : decision;
+      : {
+          ...decision,
+          duplicateBackendName: undefined,
+        };
     const transition = planIssuerTransition({
       labels: issue.labels,
       suitable: effectiveDecision.suitable,
@@ -110,6 +120,7 @@ export function collectIssuerAssignments(input: CollectIssuerAssignmentsInput): 
       timestamp: input.now,
       suitable: effectiveDecision.suitable,
       reasons: effectiveDecision.reasons,
+      duplicateBackendName: effectiveDecision.duplicateBackendName,
     });
 
     if (hasEquivalentIssuerDecisionComment(input.commentsByIssueNumber[issue.number] ?? [], effectiveDecision.suitable, effectiveDecision.reasons)) {
@@ -135,6 +146,7 @@ export function buildIssuerDecisionComment(input: {
   readonly timestamp: string;
   readonly suitable: boolean;
   readonly reasons: readonly string[];
+  readonly duplicateBackendName?: string;
 }): string {
   const metadataBlock = buildAgentMetadataBlock({
     'agent-id': input.agentId,
@@ -148,10 +160,11 @@ export function buildIssuerDecisionComment(input: {
     timestamp: input.timestamp,
   });
 
-  const duplicateGuardNote = input.reasons.some((reason) => reason.startsWith('issue appears to duplicate existing open issue #'))
+  const duplicateGuardNote = input.reasons.some((reason) => reason.startsWith('issue appears to duplicate existing open issue #') || reason.startsWith('issue appears to semantically duplicate existing open issue #'))
     ? [
         '',
-        'Duplicate guard scope: exact open-title matches only; near-duplicates, follow-ups, and regressions stay in proposal-intake.',
+        `Semantic duplicate backend: ${input.duplicateBackendName ?? 'exact-title-fallback'}`,
+        'Duplicate guard minimum fallback: exact open-title matches remain enforced even if semantic triage is unavailable.',
       ]
     : [];
 
@@ -186,24 +199,17 @@ function isEligibleForIssuerQueue(issue: IssuerIssue): boolean {
 function hasEquivalentIssuerDecisionComment(
   comments: readonly IssuerIssueComment[],
   suitable: boolean,
-  _reasons: readonly string[],
+  reasons: readonly string[],
 ): boolean {
   const expectedStatus = suitable ? 'safe' : 'unsafe';
+  const expectedReasons = reasons.join(',');
 
   return comments.some((comment) => {
     const metadata = parseAgentMetadata(comment.body);
     return metadata?.['agent-stage'] === 'issuer'
-      && metadata?.status === expectedStatus;
+      && metadata?.status === expectedStatus
+      && metadata?.reasons === expectedReasons;
   });
-}
-
-function findExactOpenDuplicate(issue: IssuerIssue, candidates: readonly IssuerIssue[]): IssuerIssue | null {
-  const issueKey = buildIssueTitleKey(issue.title);
-  if (!issueKey) {
-    return null;
-  }
-
-  return candidates.find((candidate) => candidate.number < issue.number && buildIssueTitleKey(candidate.title) === issueKey) ?? null;
 }
 
 function hasProposalIntakeDecisionComment(comments: readonly IssuerIssueComment[]): boolean {

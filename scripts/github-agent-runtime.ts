@@ -1,4 +1,5 @@
 import { detectIssueWorkflowState } from '../src/automation/agent-workflow-state.js';
+import type { SemanticDuplicateBackendName } from '../src/automation/semantic-triage.js';
 import type { ProposalCandidateArtifact } from '../src/automation/proposal-intake.js';
 
 interface GitHubLabel {
@@ -47,6 +48,7 @@ export interface IssueRuntimeConfig {
   readonly apiBaseUrl: string;
   readonly lookbackHours: number;
   readonly maxCandidates: number;
+  readonly semanticDuplicateBackendName?: SemanticDuplicateBackendName;
   readonly agentId: string;
   readonly runId: string;
   readonly now: string;
@@ -70,6 +72,10 @@ export function readIssueRuntimeConfig(
     env[`${prefix}_MAX_CANDIDATES`] ?? env[`${prefix}_MAX_ISSUES`] ?? env[`${prefix}_MAX_ITEMS`],
     defaults.maxCandidates,
   );
+  const semanticDuplicateBackendName = parseSemanticDuplicateBackendName(
+    env[`${prefix}_SEMANTIC_DUPLICATE_BACKEND`],
+    `${prefix}_SEMANTIC_DUPLICATE_BACKEND`,
+  );
 
   return {
     repository,
@@ -77,10 +83,28 @@ export function readIssueRuntimeConfig(
     apiBaseUrl: env.GITHUB_API_URL ?? 'https://api.github.com',
     lookbackHours: parsePositiveInteger(env[`${prefix}_LOOKBACK_HOURS`], defaults.lookbackHours),
     maxCandidates,
+    semanticDuplicateBackendName,
     agentId: env[`${prefix}_AGENT_ID`] ?? defaults.agentId,
     runId: env.GITHUB_RUN_ID ? `github-actions-${env.GITHUB_RUN_ID}` : `manual-${Date.now()}`,
     now: env[`${prefix}_NOW`] ?? new Date().toISOString(),
   };
+}
+
+function parseSemanticDuplicateBackendName(
+  value: string | undefined,
+  envName: string,
+): SemanticDuplicateBackendName | undefined {
+  if (value === undefined || value === '') {
+    return undefined;
+  }
+
+  if (value === 'disabled' || value === 'exact-title-fallback' || value === 'local-heuristic-v1') {
+    return value;
+  }
+
+  throw new Error(
+    `Invalid ${envName} environment variable: expected one of disabled, exact-title-fallback, local-heuristic-v1.`,
+  );
 }
 
 export async function listRecentIssues(config: IssueRuntimeConfig): Promise<GitHubIssueSummary[]> {
