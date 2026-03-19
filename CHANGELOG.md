@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - Preserved proposal-intake duplicate decisions and created-issue ownership across issuer runs so reject-as-duplicate proposals persist metadata, proposal-created issues stay in the planner lane, issuer keeps proposal-intake entry labels idempotent, and proposal-intake no longer recursively re-processes issues it previously created.
+- Fixed OSV scan gating for current dev dependencies by overriding transitive `flatted` to `3.4.2`, eliminating the reporter failure caused by known vulnerabilities in `3.3.3`.
 - Clarified proposal-intake candidate bounds by wiring `max_candidates` separately from the single-action side-effect budget, keeping legacy env fallbacks, and documenting the one-action-per-run guardrail.
 - Blocked dangerous URI schemes during URI validation to prevent XSS through attacker-controlled links and redirects.
 - Removed raw environment variable values from selected configuration error messages and added regression checks to prevent secret leakage in errors.
