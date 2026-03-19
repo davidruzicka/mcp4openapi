@@ -1,6 +1,7 @@
 import { buildAgentMetadataBlock } from './agent-feedback.js';
 import { planPlannerTransition } from './agent-workflow-state.js';
 import { parseAgentMetadata } from './evaluator-runner.js';
+import { findSemanticOpenDuplicate, type SemanticDuplicateBackendName } from './semantic-triage.js';
 
 export interface PlannerIssue {
   readonly number: number;
@@ -24,6 +25,7 @@ export interface PlannerDecision {
   readonly blocked: boolean;
   readonly reasons: readonly string[];
   readonly plan?: string;
+  readonly duplicateBackendName?: string;
 }
 
 export interface PlannerAssignment {
@@ -44,6 +46,7 @@ export interface CollectPlannerAssignmentsInput {
   readonly agentId: string;
   readonly runId: string;
   readonly now: string;
+  readonly semanticDuplicateBackendName?: SemanticDuplicateBackendName;
 }
 
 const RISK_KEYWORDS = ['security', 'auth', 'oauth', 'token', 'secret', 'tenant', 'migration', 'breaking', 'architecture', 'refactor'];
@@ -82,7 +85,25 @@ export function collectPlannerAssignments(input: CollectPlannerAssignmentsInput)
       return [];
     }
 
-    const decision = evaluatePlannerDecision(issue);
+    const baseDecision = evaluatePlannerDecision(issue);
+    const duplicateMatch = findSemanticOpenDuplicate({
+      stage: 'planner',
+      issue,
+      candidates: input.issues.filter((candidate) => candidate.number < issue.number && isPlannerActionableIssue(candidate)),
+      backendName: input.semanticDuplicateBackendName,
+    });
+    const decision = duplicateMatch
+      ? {
+          remainsSuitable: false,
+          blocked: baseDecision.blocked,
+          reasons: [
+            ...baseDecision.reasons,
+            duplicateMatch.reason,
+          ],
+          plan: undefined,
+          duplicateBackendName: duplicateMatch.backendName,
+        }
+      : baseDecision;
     const transition = planPlannerTransition({
       labels: issue.labels,
       remainsSuitable: decision.remainsSuitable,
@@ -102,6 +123,7 @@ export function collectPlannerAssignments(input: CollectPlannerAssignmentsInput)
       blocked: decision.blocked,
       reasons: decision.reasons,
       plan: decision.plan,
+      duplicateBackendName: decision.duplicateBackendName,
     });
 
     if (hasEquivalentPlannerDecisionComment(input.commentsByIssueNumber[issue.number] ?? [], decision)) {
@@ -131,6 +153,7 @@ export function buildPlannerDecisionComment(input: {
   readonly blocked: boolean;
   readonly reasons: readonly string[];
   readonly plan?: string;
+  readonly duplicateBackendName?: string;
 }): string {
   const metadataBlock = buildAgentMetadataBlock({
     'agent-id': input.agentId,
@@ -144,12 +167,21 @@ export function buildPlannerDecisionComment(input: {
     timestamp: input.timestamp,
   });
 
+  const duplicateGuardNote = input.reasons.some((reason) => reason.startsWith('issue appears to duplicate existing open issue #') || reason.startsWith('issue appears to semantically duplicate existing open issue #'))
+    ? [
+        '',
+        `Semantic duplicate backend: ${input.duplicateBackendName ?? 'exact-title-fallback'}`,
+        'Duplicate guard minimum fallback: exact open-title matches remain enforced even if semantic triage is unavailable.',
+      ]
+    : [];
+
   return [
     '🤖 Agent plan (planner)',
     '',
     `Planner decision: ${input.remainsSuitable ? 'planned' : input.blocked ? 'blocked' : 'de-scoped'}`,
     'Reasons:',
     ...input.reasons.map((reason) => `- ${reason}`),
+    ...duplicateGuardNote,
     ...(input.plan ? ['', input.plan] : []),
     '',
     metadataBlock,
@@ -172,8 +204,16 @@ function buildImplementationPlan(issue: PlannerIssue): string {
 }
 
 function isEligibleForPlannerQueue(issue: PlannerIssue): boolean {
+  return isPlannerActionableIssue(issue);
+}
+
+function isPlannerActionableIssue(issue: PlannerIssue): boolean {
   const labels = new Set(issue.labels);
-  return labels.has('agent:safe') && labels.has('agent:needs-plan') && !labels.has('human:hold') && !labels.has('agent:implementing');
+  return labels.has('agent:safe')
+    && labels.has('agent:needs-plan')
+    && !labels.has('human:hold')
+    && !labels.has('agent:implementing')
+    && !labels.has('agent:blocked');
 }
 
 function hasEquivalentPlannerDecisionComment(
@@ -181,10 +221,12 @@ function hasEquivalentPlannerDecisionComment(
   decision: PlannerDecision,
 ): boolean {
   const expectedStatus = decision.remainsSuitable ? 'planned' : decision.blocked ? 'blocked' : 'de-scoped';
+  const expectedReasons = decision.reasons.join(',');
 
   return comments.some((comment) => {
     const metadata = parseAgentMetadata(comment.body);
     return metadata?.['agent-stage'] === 'planner'
-      && metadata?.status === expectedStatus;
+      && metadata?.status === expectedStatus
+      && metadata?.reasons === expectedReasons;
   });
 }

@@ -44,6 +44,36 @@ describe('github-agent-runtime config', () => {
     expect(runtimeConfig).toMatchObject({ maxCandidates: 10 });
     expect(runtimeConfig).not.toHaveProperty('maxItems');
   });
+
+  it('reads a semantic duplicate backend override from the stage-specific environment', () => {
+    const defaults = {
+      lookbackHours: 72,
+      maxCandidates: 10,
+      agentId: 'issuer',
+    };
+
+    expect(readIssueRuntimeConfig({
+      GITHUB_REPOSITORY: 'davidruzicka/mcp4openapi',
+      GITHUB_TOKEN: 'token',
+      ISSUER_SEMANTIC_DUPLICATE_BACKEND: 'disabled',
+    }, 'ISSUER', defaults)).toMatchObject({ semanticDuplicateBackendName: 'disabled' });
+  });
+
+  it('rejects invalid semantic duplicate backend overrides', () => {
+    const defaults = {
+      lookbackHours: 72,
+      maxCandidates: 10,
+      agentId: 'planner',
+    };
+
+    expect(() => readIssueRuntimeConfig({
+      GITHUB_REPOSITORY: 'davidruzicka/mcp4openapi',
+      GITHUB_TOKEN: 'token',
+      PLANNER_SEMANTIC_DUPLICATE_BACKEND: 'remote-llm-v1',
+    }, 'PLANNER', defaults)).toThrow(
+      'Invalid PLANNER_SEMANTIC_DUPLICATE_BACKEND environment variable: expected one of disabled, exact-title-fallback, local-heuristic-v1.',
+    );
+  });
 });
 
 describe('github-agent-runtime listing bounds', () => {
