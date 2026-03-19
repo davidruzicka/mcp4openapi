@@ -149,12 +149,35 @@ Legacy review labels still tolerated during migration:
 - `agent:reviewing`
 - `agent:reviewed`
 
+### Problem-type labels
+
+- `security`: Security bug, hardening gap, or validation/auth correctness issue.
+- `refactor`: Localized structural cleanup that reduces complexity without changing intended behavior.
+- `duplication`: Repeated logic, duplicated constraints, or parallel implementations that should be consolidated.
+- `tests`: Missing regression coverage, edge-case coverage, or weak failure-path validation.
+- `architecture`: Separation-of-concerns, boundary, dependency-direction, or extensibility problem.
+
+### Minimal label model
+
+The minimum recommended label model for issue triage and multi-agent maintenance is:
+
+- **Issue shape**: `bug`, `enhancement`, `documentation`, `question`
+- **Agent routing**: `agent:safe`, `agent:needs-plan`
+- **Dominant problem type**: `security`, `architecture`, `duplication`
+- **Resolution / closure**: `duplicate`, `invalid`, `wontfix`
+- **Human / community only**: `good first issue`, `help wanted`
+
+`refactor` and `tests` are useful optional refinements when maintainers want tighter routing for small implementation-ready issues.
+
 ### Working rules
 
 - Autonomous issue-to-PR automation should only advance issues that satisfy the state-machine rules in [`docs/AUTONOMOUS-AGENTS.md`](./docs/AUTONOMOUS-AGENTS.md).
 - Planner / implementor / reviewer / merger behavior should follow the metadata, migration, and merge-gate rules in [`docs/AUTONOMOUS-AGENTS.md`](./docs/AUTONOMOUS-AGENTS.md).
 - The current implementor workflow runtime is a safe orchestration layer that expects a configured external command/backend via `IMPLEMENTOR_COMMAND`; the default workflow backend is the built-in Codex wrapper (`node dist/scripts/run-implementor-codex.js`), and if any backend omits visible PR disclosure, the runtime backfills it before review.
 - Evaluator comments are non-operational and must be ignored by other automation when `agent-id: evaluator` or `ignore-for-workflow: true` is present.
+- Newly discovered low-risk improvement issues should include `agent:safe` plus exactly one dominant problem-type label when possible.
+- If a finding is worthwhile but still needs deeper analysis or design, prefer `agent:needs-plan` or `agent:blocked` instead of forcing it into an implementation-ready state.
+- Reserve `good first issue` and `help wanted` for human/community coordination, not as automation gates.
 - When in doubt, leave the issue for human triage instead of over-labeling it as safe.
 
 ## Release Process
