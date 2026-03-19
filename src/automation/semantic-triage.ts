@@ -70,12 +70,13 @@ interface SimilarityScores {
 const MAX_PROMPT_TITLE_CHARS = 160;
 const MAX_PROMPT_BODY_CHARS = 1200;
 const MAX_PROMPT_CANDIDATES = 8;
-const MIN_SHARED_TITLE_TERMS = 2;
-const MIN_TITLE_OVERLAP = 0.34;
-const MIN_COMBINED_DUPLICATE_SCORE = 0.52;
+const MIN_SHARED_TITLE_TERMS = 3;
+const MIN_TITLE_OVERLAP = 0.45;
+const MIN_COMBINED_DUPLICATE_SCORE = 0.58;
 const AMBIGUITY_SCORE_DELTA = 0.05;
 const AMBIGUITY_MAX_SCORE = 0.68;
 const STOP_WORDS = new Set(['a', 'an', 'and', 'the', 'for', 'with', 'to', 'of', 'in', 'on', 'after', 'before', 'need', 'needs', 'add']);
+const TEMPLATE_SECTION_HEADINGS = new Set(['summary', 'acceptance criteria', 'validation', 'checklist', 'implementation plan']);
 
 const LOCAL_HEURISTIC_BACKEND: SemanticDuplicateBackend = {
   name: 'local-heuristic-v1',
@@ -271,7 +272,7 @@ function computeSimilarityScores(issue: SemanticTriageCandidate, candidate: Sema
     sharedTitleTerms,
     titleOverlap,
     bodyOverlap,
-    combinedScore: (titleOverlap * 0.7) + (bodyOverlap * 0.3),
+    combinedScore: (titleOverlap * 0.85) + (bodyOverlap * 0.15),
   };
 }
 
@@ -299,7 +300,23 @@ function tokenizeTitle(text: string): Set<string> {
 }
 
 function tokenizeBody(text: string): Set<string> {
-  return tokenize(text, 5);
+  return tokenize(stripTemplateBoilerplate(text), 5);
+}
+
+function stripTemplateBoilerplate(text: string): string {
+  return text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .filter((line) => {
+      const headingMatch = line.match(/^#{1,6}\s+(.*)$/);
+      if (headingMatch) {
+        return !TEMPLATE_SECTION_HEADINGS.has(headingMatch[1]!.toLowerCase());
+      }
+
+      return !/^[-*]\s+\[[ xX]\]\s+(npm test|npm run typecheck|targeted unit tests|unit tests?)$/i.test(line);
+    })
+    .join(' ');
 }
 
 function tokenize(text: string, minLength: number): Set<string> {

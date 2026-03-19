@@ -186,6 +186,56 @@ describe('planner-runner', () => {
       expect(assignments[1]?.reasons).not.toContain('issue appears to semantically duplicate existing open issue #160');
     });
 
+    it('ignores held or blocked older issues when building duplicate candidates for the planner lane', () => {
+      const assignments = collectPlannerAssignments({
+        issues: [
+          buildIssue({
+            number: 158,
+            title: 'Add deterministic cache invalidation metrics',
+            labels: ['agent:safe', 'agent:needs-plan', 'human:hold'],
+            url: 'https://github.com/davidruzicka/mcp4openapi/issues/158',
+          }),
+          buildIssue({
+            number: 159,
+            title: 'Add deterministic cache invalidation metrics for blocked lane',
+            labels: ['agent:safe', 'agent:needs-plan', 'agent:blocked'],
+            url: 'https://github.com/davidruzicka/mcp4openapi/issues/159',
+          }),
+          buildIssue({
+            number: 161,
+            title: 'Add deterministic metrics for cache flush invalidation',
+            body: [
+              '## Summary',
+              'Need targeted instrumentation for cache invalidation counts and flush paths.',
+              '',
+              '## Acceptance Criteria',
+              '- [ ] emit counter on invalidation',
+              '- [ ] add unit tests for flush and failure paths',
+              '- [ ] document the metric',
+            ].join('\n'),
+            url: 'https://github.com/davidruzicka/mcp4openapi/issues/161',
+          }),
+        ],
+        commentsByIssueNumber: { 158: [], 159: [], 161: [] },
+        repository: 'davidruzicka/mcp4openapi',
+        agentId: 'planner',
+        runId: 'run-2',
+        now: '2026-03-14T12:00:00Z',
+        semanticDuplicateBackendName: 'local-heuristic-v1',
+      });
+
+      expect(assignments).toHaveLength(1);
+      const assignment = assignments.find((entry) => entry.issueNumber === 161);
+      expect(assignment).toMatchObject({
+        issueNumber: 161,
+        remainsSuitable: true,
+        blocked: false,
+        labelsToAdd: ['agent:planned', 'agent:safe'],
+      });
+      expect(assignment?.reasons).not.toContain('issue appears to semantically duplicate existing open issue #158');
+      expect(assignment?.reasons).not.toContain('issue appears to semantically duplicate existing open issue #159');
+    });
+
     it('supports disabling semantic duplicate triage while preserving exact-title fallback only', () => {
       const assignments = collectPlannerAssignments({
         issues: [

@@ -89,7 +89,7 @@ export function collectPlannerAssignments(input: CollectPlannerAssignmentsInput)
     const duplicateMatch = findSemanticOpenDuplicate({
       stage: 'planner',
       issue,
-      candidates: input.issues.filter((candidate) => candidate.number < issue.number),
+      candidates: input.issues.filter((candidate) => candidate.number < issue.number && isPlannerActionableIssue(candidate)),
       backendName: input.semanticDuplicateBackendName,
     });
     const decision = duplicateMatch
@@ -204,8 +204,16 @@ function buildImplementationPlan(issue: PlannerIssue): string {
 }
 
 function isEligibleForPlannerQueue(issue: PlannerIssue): boolean {
+  return isPlannerActionableIssue(issue);
+}
+
+function isPlannerActionableIssue(issue: PlannerIssue): boolean {
   const labels = new Set(issue.labels);
-  return labels.has('agent:safe') && labels.has('agent:needs-plan') && !labels.has('human:hold') && !labels.has('agent:implementing');
+  return labels.has('agent:safe')
+    && labels.has('agent:needs-plan')
+    && !labels.has('human:hold')
+    && !labels.has('agent:implementing')
+    && !labels.has('agent:blocked');
 }
 
 function hasEquivalentPlannerDecisionComment(

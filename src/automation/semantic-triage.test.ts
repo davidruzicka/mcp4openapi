@@ -84,6 +84,42 @@ describe('semantic-triage', () => {
     expect(duplicate).toBeNull();
   });
 
+  it('does not classify templated docs and tests issues as duplicates when only boilerplate overlaps', () => {
+    const templatedBody = (summary: string, acceptance: readonly string[]) => [
+      '## Summary',
+      summary,
+      '',
+      '## Acceptance Criteria',
+      ...acceptance.map((item) => `- [ ] ${item}`),
+      '',
+      '## Validation',
+      '- [ ] npm test',
+      '- [ ] npm run typecheck',
+    ].join('\n');
+
+    const duplicate = findSemanticOpenDuplicate({
+      stage: 'planner',
+      issue: buildCandidate({
+        number: 171,
+        title: 'Add OAuth callback docs',
+        body: templatedBody('Document the OAuth callback flow for operators.', [
+          'describe the OAuth callback route',
+          'document troubleshooting notes',
+        ]),
+      }),
+      candidates: [buildCandidate({
+        number: 170,
+        title: 'Add OAuth callback tests',
+        body: templatedBody('Add targeted coverage for the OAuth callback flow.', [
+          'cover success redirect handling',
+          'cover invalid state rejection',
+        ]),
+      })],
+    });
+
+    expect(duplicate).toBeNull();
+  });
+
   it('returns null when two near-duplicate candidates stay ambiguous', () => {
     const issue = buildCandidate({
       number: 170,
