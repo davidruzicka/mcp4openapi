@@ -126,6 +126,7 @@ Required proposal-intake guardrails:
 - strict idempotency for comments / links / created issues
 - explicit early exits on ambiguity or dirty automation state
 - bounded proposal loading plus duplicate-candidate ranking independent from the side-effect budget
+- proposal-intake-created issues remain valid tracking artifacts for duplicate matching but are never valid future proposal-intake source proposals
 - at most one side effect per run, even when multiple bounded candidates look safe
 
 ### Issue states

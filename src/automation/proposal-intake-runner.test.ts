@@ -38,6 +38,27 @@ function buildComment(body: string): ProposalIssueComment {
   };
 }
 
+function buildProposalIntakeCreatedIssueBody(input: {
+  readonly summary: string;
+  readonly sourceIssueNumber: number;
+  readonly proposalKey: string;
+  readonly sourceUrl?: string;
+}): string {
+  return [
+    input.summary,
+    '',
+    `Source proposal: #${input.sourceIssueNumber}`,
+    ...(input.sourceUrl ? [`Source URL: ${input.sourceUrl}`] : []),
+    '',
+    '<!-- AGENT-METADATA',
+    'agent-stage: proposal-intake',
+    'agent-role: created-issue',
+    `source-issue-number: ${input.sourceIssueNumber}`,
+    `proposal-key: ${input.proposalKey}`,
+    '-->',
+  ].join('\n');
+}
+
 describe('proposal-intake-runner', () => {
   it('queues one bounded proposal action with a metadata-backed agent note', () => {
     const assignments = collectProposalAssignments({
@@ -75,6 +96,30 @@ describe('proposal-intake-runner', () => {
     });
 
     expect(assignments).toHaveLength(0);
+  });
+
+  it('skips issues already created by proposal-intake when they reappear as proposal sources', () => {
+    const assignments = collectProposalAssignments({
+      proposals: [buildProposal({
+        issueNumber: 186,
+        proposalTitle: 'Track bounded cache invalidation metrics rollout',
+        proposalBody: buildProposalIntakeCreatedIssueBody({
+          summary: 'Need narrow metrics and tests for cache invalidation counts.',
+          sourceIssueNumber: 181,
+          proposalKey: 'track-bounded-cache-invalidation-metrics-rollout',
+          sourceUrl: 'https://github.com/davidruzicka/mcp4openapi/issues/181',
+        }),
+        matches: [],
+      })],
+      commentsByIssueNumber: { 186: [] },
+      repository: 'davidruzicka/mcp4openapi',
+      agentId: 'proposal-intake',
+      runId: 'run-3',
+      now: '2026-03-15T10:00:00Z',
+      maxActions: 1,
+    });
+
+    expect(assignments).toEqual([]);
   });
 
   it('deduplicates equivalent proposal-intake comments by proposal key and resolution', () => {

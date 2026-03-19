@@ -1,4 +1,5 @@
 import { buildAgentMetadataBlock } from './agent-feedback.js';
+import { isProposalIntakeCreatedIssue } from './agent-metadata-guards.js';
 import { planIssuerTransition, hasBlockingWorkflowLabel } from './agent-workflow-state.js';
 import { parseAgentMetadata } from './evaluator-runner.js';
 import { findSemanticOpenDuplicate, type SemanticDuplicateBackendName } from './semantic-triage.js';
@@ -221,7 +222,5 @@ function hasProposalIntakeDecisionComment(comments: readonly IssuerIssueComment[
 }
 
 function wasCreatedByProposalIntake(issue: IssuerIssue): boolean {
-  const metadata = parseAgentMetadata(issue.body);
-  return metadata?.['agent-stage'] === 'proposal-intake'
-    && metadata?.['agent-role'] === 'created-issue';
+  return isProposalIntakeCreatedIssue(issue.body);
 }

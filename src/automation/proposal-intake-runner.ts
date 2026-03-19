@@ -1,3 +1,4 @@
+import { isProposalIntakeCreatedIssue } from './agent-metadata-guards.js';
 import { buildAgentMetadataBlock } from './agent-feedback.js';
 import { parseAgentMetadata } from './evaluator-runner.js';
 import {
@@ -56,6 +57,10 @@ export function collectProposalAssignments(input: CollectProposalAssignmentsInpu
   for (const proposal of input.proposals) {
     if (assignments.length >= input.maxActions) {
       break;
+    }
+
+    if (isProposalIntakeCreatedIssue(proposal.proposalBody)) {
+      continue;
     }
 
     const resolution = planProposalResolution({
