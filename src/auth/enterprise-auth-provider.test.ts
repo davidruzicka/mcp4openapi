@@ -8,6 +8,7 @@ import {
   EnterpriseIssuerDiscoveryError,
   EnterprisePolicyViolationError,
   EnterpriseTokenValidationError,
+  ValidationError,
 } from '../core/errors.js';
 
 const logger = new ConsoleLogger();
@@ -346,5 +347,29 @@ describe('enterprise-auth-provider', () => {
 
     await expect(createProvider().validateAssertion(wrongTypAssertion, 'client-1')).rejects.toThrow(/typ header is not allowed/i);
     await expect(createProvider({ token_exchange: { grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer', required_typ: ['at+jwt'], required_claims: [] } }).validateAssertion(missingSubAssertion, 'client-1')).rejects.toThrow(/missing sub claim/i);
+  });
+
+  it('rejects discovery fetches to private IPs if private network is disabled (SSRF protection)', async () => {
+    // Override the process.env setting specifically for this test
+    const previousAllow = process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK;
+    process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK = 'false';
+
+    const provider = createProvider({
+      issuer: { issuer: 'http://169.254.169.254', allowed_algs: ['RS256'], trust_mode: 'discovery' },
+    });
+
+    try {
+      await provider['resolveJwksUri']();
+      expect.unreachable('Should have thrown an SSRF error');
+    } catch (err: unknown) {
+      expect(err).toBeInstanceOf(ValidationError);
+      expect((err as ValidationError).message).toMatch(/IP address not allowed/i);
+    } finally {
+      if (previousAllow === undefined) {
+        delete process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK;
+      } else {
+        process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK = previousAllow;
+      }
+    }
   });
 });

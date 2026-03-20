@@ -4,6 +4,7 @@ import type { EnterpriseAuthorizationConfig } from '../types/profile.js';
 import { EnterpriseReplayStore } from './enterprise-replay-store.js';
 import { JwksCache } from './jwks-cache.js';
 import { buildEnterprisePrincipal } from './enterprise-policy.js';
+import { SSRFValidator } from '../security/ssrf-validator.js';
 import {
   EnterpriseIssuerDiscoveryError,
   EnterprisePolicyViolationError,
@@ -26,6 +27,7 @@ export class EnterpriseAuthProvider {
   private readonly jwksCache: JwksCache;
   private readonly replayStore: EnterpriseReplayStore;
   private readonly logger: Logger;
+  private readonly ssrfValidator: SSRFValidator;
 
   constructor(options: EnterpriseAuthProviderOptions) {
     this.profileId = options.profileId;
@@ -33,6 +35,7 @@ export class EnterpriseAuthProvider {
     this.jwksCache = options.jwksCache;
     this.replayStore = options.replayStore;
     this.logger = options.logger;
+    this.ssrfValidator = new SSRFValidator(options.logger);
   }
 
   async validateAssertion(assertion: string, clientId?: string): Promise<AuthorizedPrincipal> {
@@ -102,6 +105,11 @@ export class EnterpriseAuthProvider {
     }
 
     const discoveryUrl = new URL('/.well-known/openid-configuration', this.config.issuer.issuer).toString();
+
+    await this.ssrfValidator.validate(discoveryUrl, {
+      allowPrivateNetwork: process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK === 'true',
+    });
+
     const response = await fetch(discoveryUrl, {
       headers: { accept: 'application/json' },
       signal: AbortSignal.timeout(5000),
