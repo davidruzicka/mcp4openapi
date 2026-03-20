@@ -243,6 +243,109 @@ describe('reviewer-runner', () => {
       ]);
     });
 
+    it('uses the latest current-head reviewer decision timestamp when multiple decisions exist', () => {
+      const pullRequests: ReviewerPullRequest[] = [
+        buildPullRequest({ number: 156, headSha: 'abc123', labels: ['agent:review:required'] }),
+      ];
+      const reviewsByPrNumber: Record<number, ReviewerReviewArtifact[]> = {
+        156: [
+          {
+            id: 902,
+            body: buildReviewerMetadataComment({ status: 'commented', headSha: 'abc123', timestamp: '2026-03-14T16:05:00Z' }),
+            submittedAt: '2026-03-14T16:05:00Z',
+            state: 'COMMENTED',
+            authorLogin: 'github-actions[bot]',
+          },
+          {
+            id: 901,
+            body: buildReviewerMetadataComment({ status: 'approved', headSha: 'abc123', timestamp: '2026-03-14T16:00:00Z' }),
+            submittedAt: '2026-03-14T16:00:00Z',
+            state: 'APPROVED',
+            authorLogin: 'github-actions[bot]',
+          },
+        ],
+      };
+      const reviewThreadsByPrNumber: Record<number, ReviewerReviewThread[]> = {
+        156: [
+          buildReviewThread({
+            id: 'thread-1',
+            isResolved: false,
+            comments: [
+              buildReviewThreadComment({
+                id: 'comment-1',
+                authorLogin: 'github-actions[bot]',
+                updatedAt: '2026-03-14T15:55:00Z',
+                body: buildReviewerMetadataComment({ status: 'commented', headSha: 'abc123', timestamp: '2026-03-14T15:55:00Z' }),
+              }),
+              buildReviewThreadComment({
+                id: 'comment-2',
+                authorLogin: 'human-reviewer',
+                updatedAt: '2026-03-14T16:03:00Z',
+                body: 'Looks good now.',
+              }),
+            ],
+          }),
+        ],
+      };
+
+      expect(collectReviewerAssignments({
+        pullRequests,
+        commentsByPrNumber: { 156: [] },
+        reviewsByPrNumber,
+        reviewThreadsByPrNumber,
+        repository: 'davidruzicka/mcp4openapi',
+        agentId: 'reviewer',
+        runId: 'run-123',
+        now: '2026-03-14T16:10:00Z',
+        leaseTtlMinutes: 30,
+      })).toEqual([]);
+    });
+
+    it('skips follow-up requeue when reviewer thread has no newer external reply', () => {
+      const pullRequests: ReviewerPullRequest[] = [
+        buildPullRequest({ number: 156, headSha: 'abc123', labels: ['agent:review:required'] }),
+      ];
+      const reviewsByPrNumber: Record<number, ReviewerReviewArtifact[]> = {
+        156: [
+          {
+            id: 902,
+            body: buildReviewerMetadataComment({ status: 'approved', headSha: 'abc123', timestamp: '2026-03-14T16:05:00Z' }),
+            submittedAt: '2026-03-14T16:05:00Z',
+            state: 'APPROVED',
+            authorLogin: 'github-actions[bot]',
+          },
+        ],
+      };
+      const reviewThreadsByPrNumber: Record<number, ReviewerReviewThread[]> = {
+        156: [
+          buildReviewThread({
+            id: 'thread-1',
+            isResolved: false,
+            comments: [
+              buildReviewThreadComment({
+                id: 'comment-1',
+                authorLogin: 'github-actions[bot]',
+                updatedAt: '2026-03-14T16:00:00Z',
+                body: buildReviewerMetadataComment({ status: 'commented', headSha: 'abc123', timestamp: '2026-03-14T16:00:00Z' }),
+              }),
+            ],
+          }),
+        ],
+      };
+
+      expect(collectReviewerAssignments({
+        pullRequests,
+        commentsByPrNumber: { 156: [] },
+        reviewsByPrNumber,
+        reviewThreadsByPrNumber,
+        repository: 'davidruzicka/mcp4openapi',
+        agentId: 'reviewer',
+        runId: 'run-123',
+        now: '2026-03-14T16:10:00Z',
+        leaseTtlMinutes: 30,
+      })).toEqual([]);
+    });
+
     it('skips PRs with an active review lease, draft state, or blocking labels', () => {
       const pullRequests: ReviewerPullRequest[] = [
         buildPullRequest({ number: 156, headSha: 'abc123', labels: ['agent:review:required'], draft: true }),
