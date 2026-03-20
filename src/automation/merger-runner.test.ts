@@ -34,7 +34,19 @@ describe('merger-runner', () => {
           }),
         ],
         reviewThreads: [
-          buildReviewThread({ id: 'thread-1', isResolved: true }),
+          buildReviewThread({
+            id: 'thread-1',
+            isResolved: true,
+            comments: [buildReviewThreadComment({
+              id: 'thread-comment-1',
+              authorLogin: 'github-actions[bot]',
+              updatedAt: '2026-03-14T17:56:00Z',
+              body: buildImplementorThreadMetadataComment({
+                headSha: 'abc123',
+                timestamp: '2026-03-14T17:56:00Z',
+              }),
+            })],
+          }),
         ],
         ciChecks: [
           { name: 'test', status: 'completed', conclusion: 'success' },
@@ -632,6 +644,24 @@ function buildReviewerThreadMetadataComment(input: {
     'agent-id: reviewer',
     'agent-stage: reviewer',
     `status: ${input.status}`,
+    `head-sha: ${input.headSha}`,
+    `timestamp: ${input.timestamp}`,
+    '-->',
+  ].join('\n');
+}
+
+function buildImplementorThreadMetadataComment(input: {
+  headSha: string;
+  timestamp: string;
+}): string {
+  return [
+    '🤖 Agent implementation note (implementor)',
+    '',
+    '<!-- AGENT-METADATA',
+    'agent-id: implementor',
+    'agent-stage: implementor',
+    'agent-role: review-follow-up-reply',
+    'status: review-follow-up-replied',
     `head-sha: ${input.headSha}`,
     `timestamp: ${input.timestamp}`,
     '-->',

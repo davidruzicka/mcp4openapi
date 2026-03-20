@@ -29,7 +29,27 @@ describe('merge-executor', () => {
         }),
         threadComments: [],
         reviews: [buildReview({ id: 1, submittedAt: '2026-03-14T18:55:00Z', status: 'approved', headSha: 'abc123' })],
-        reviewThreads: [buildReviewThread({ id: 'thread-1', isResolved: true })],
+        reviewThreads: [buildReviewThread({
+          id: 'thread-1',
+          isResolved: true,
+          comments: [{
+            id: 'thread-comment-1',
+            authorLogin: 'github-actions[bot]',
+            updatedAt: '2026-03-14T18:56:00Z',
+            body: [
+              '🤖 Agent implementation note (implementor)',
+              '',
+              '<!-- AGENT-METADATA',
+              'agent-id: implementor',
+              'agent-stage: implementor',
+              'agent-role: review-follow-up-reply',
+              'status: review-follow-up-replied',
+              'head-sha: abc123',
+              'timestamp: 2026-03-14T18:56:00Z',
+              '-->',
+            ].join('\n'),
+          }],
+        })],
         ciChecks: [{ name: 'test', status: 'completed', conclusion: 'success' }],
       });
 

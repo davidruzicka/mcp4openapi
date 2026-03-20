@@ -1,21 +1,5 @@
-import type { ImplementorCommandResult } from './implementor-runner.js';
-import { parseImplementorCommandResult } from './implementor-runner.js';
-
-export interface ImplementorTaskPayload {
-  readonly repository: string;
-  readonly issue: {
-    readonly number: number;
-    readonly title: string;
-    readonly body: string;
-    readonly url: string;
-    readonly updatedAt: string;
-    readonly labels: readonly string[];
-    readonly isPullRequest: boolean;
-  };
-  readonly runId: string;
-  readonly agentId: string;
-  readonly now: string;
-}
+import type { ImplementorCommandResult, ImplementorTaskPayload } from './implementor-runner.js';
+import { parseImplementorCommandResult, parseImplementorTaskPayload as parseImplementorWorkflowTaskPayload } from './implementor-runner.js';
 
 export interface BuildCodexInvocationPlanInput {
   readonly task: ImplementorTaskPayload;
@@ -37,40 +21,17 @@ const CODEX_MODE_FLAGS: Readonly<Record<string, readonly string[]>> = {
 };
 
 export function parseImplementorTaskPayload(raw: string | undefined): ImplementorTaskPayload {
-  if (!raw) {
-    throw new Error('Missing IMPLEMENTOR_TASK_JSON payload for Codex implementor backend.');
-  }
+  try {
+    return parseImplementorWorkflowTaskPayload(raw);
+  } catch (error) {
+    if (error instanceof Error) {
+      throw new Error(error.message
+        .replace('implementor workflow', 'Codex implementor backend')
+        .replace('implementor workflow', 'Codex implementor backend'));
+    }
 
-  const parsed = JSON.parse(raw) as Partial<ImplementorTaskPayload>;
-  if (
-    typeof parsed.repository !== 'string'
-    || !parsed.issue
-    || typeof parsed.issue.number !== 'number'
-    || typeof parsed.issue.title !== 'string'
-    || typeof parsed.issue.body !== 'string'
-    || typeof parsed.issue.url !== 'string'
-    || typeof parsed.runId !== 'string'
-    || typeof parsed.agentId !== 'string'
-    || typeof parsed.now !== 'string'
-  ) {
-    throw new Error('Invalid IMPLEMENTOR_TASK_JSON payload for Codex implementor backend.');
+    throw error;
   }
-
-  return {
-    repository: parsed.repository,
-    issue: {
-      number: parsed.issue.number,
-      title: parsed.issue.title,
-      body: parsed.issue.body,
-      url: parsed.issue.url,
-      updatedAt: parsed.issue.updatedAt ?? '',
-      labels: parsed.issue.labels ?? [],
-      isPullRequest: parsed.issue.isPullRequest ?? false,
-    },
-    runId: parsed.runId,
-    agentId: parsed.agentId,
-    now: parsed.now,
-  };
 }
 
 export function buildCodexInvocationPlan(input: BuildCodexInvocationPlanInput): CodexInvocationPlan {
@@ -130,6 +91,16 @@ function buildCodexImplementorPrompt(input: {
     '',
     'Issue body:',
     task.issue.body || '(empty)',
+    ...(task.plannerArtifact ? [
+      '',
+      'Planner artifact:',
+      JSON.stringify(task.plannerArtifact, null, 2),
+    ] : []),
+    ...(task.reviewFollowUpItems && task.reviewFollowUpItems.length > 0 ? [
+      '',
+      'Review follow-up items:',
+      JSON.stringify(task.reviewFollowUpItems, null, 2),
+    ] : []),
     '',
     'Required final output:',
     `- Write exactly one JSON object to ${input.outputPath}`,

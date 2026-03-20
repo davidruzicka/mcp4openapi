@@ -2,16 +2,19 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import {
   buildImplementorResultComment,
+  buildImplementorReviewThreadReplyPlans,
   collectImplementorAssignments,
   parseImplementorCommandResult,
   planImplementorResultLabels,
   type ImplementorCommandResult,
 } from '../src/automation/implementor-runner.js';
+import { parsePlannerArtifact } from '../src/automation/planner-artifact.js';
 import {
   addIssueLabels,
   addPullRequestLabels,
   buildOpenPullRequestsByIssueNumber,
   createIssueComment,
+  createReviewThreadReply,
   getPullRequest,
   listIssueComments,
   listOpenPullRequests,
@@ -74,9 +77,25 @@ for (const assignment of assignments.slice(0, runtimeConfig.maxCandidates)) {
     throw new Error(`Missing issue snapshot for implementor assignment #${assignment.issueNumber}.`);
   }
 
+  const plannerArtifact = (commentsByIssueNumber[assignment.issueNumber] ?? [])
+    .map((comment) => parsePlannerArtifact(comment.body))
+    .find((artifact) => artifact !== undefined);
+  const reviewFollowUpItems = plannerArtifact
+    ? [{
+        threadId: plannerArtifact.threadId,
+        headSha: plannerArtifact.headSha,
+        sourceCommentId: plannerArtifact.threadId,
+        summary: plannerArtifact.fixSummary,
+        actionability: 'actionable' as const,
+        requiresReply: true,
+      }]
+    : [];
+
   const taskPayload = {
     repository: runtimeConfig.repository,
     issue: mapIssueSummary(issue),
+    reviewFollowUpItems,
+    plannerArtifact,
     runId: runtimeConfig.runId,
     agentId: runtimeConfig.agentId,
     now: runtimeConfig.now,
@@ -97,11 +116,24 @@ for (const assignment of assignments.slice(0, runtimeConfig.maxCandidates)) {
     runId: runtimeConfig.runId,
     timestamp: runtimeConfig.now,
     result,
+    reviewFollowUpItems,
   }));
 
   if (result.pullRequest) {
     await addPullRequestLabels(runtimeConfig, result.pullRequest.number, labels.pullRequestLabelsToAdd);
     await ensurePullRequestDisclosure(runtimeConfig, result.pullRequest.number, assignment.issueNumber);
+
+    for (const replyPlan of buildImplementorReviewThreadReplyPlans({
+      task: taskPayload,
+      result,
+      newHeadSha: plannerArtifact?.headSha ?? `pr-${result.pullRequest.number}`,
+    })) {
+      await createReviewThreadReply(runtimeConfig, {
+        pullRequestNumber: result.pullRequest.number,
+        threadId: replyPlan.threadId,
+        body: replyPlan.body,
+      });
+    }
   }
 
   process.stdout.write(`Implementor processed issue #${assignment.issueNumber} (${result.outcome}).\n`);

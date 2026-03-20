@@ -48,6 +48,30 @@ describe('planner-runner', () => {
       expect(decision.reasons).toContain('issue body provides enough structure for a bounded implementation plan');
     });
 
+    it('emits a serialized planner artifact for review-follow-up issue context', () => {
+      const decision = evaluatePlannerDecision(buildIssue({
+        body: [
+          'Review thread: thread-1',
+          'Head SHA: abc123',
+          'Fix summary: Cover the fallback path',
+          'Implementation steps:',
+          '- Update fallback handling.',
+          'Test steps:',
+          '- Add a regression test for the fallback path.',
+          'Verification steps:',
+          '- Run targeted automation tests.',
+        ].join('\n'),
+      }));
+
+      expect(decision.remainsSuitable).toBe(true);
+      expect(decision.plan).toContain('## Review follow-up implementation plan');
+      expect(decision.plannerArtifact).toMatchObject({
+        kind: 'review-follow-up',
+        threadId: 'thread-1',
+        headSha: 'abc123',
+      });
+    });
+
     it('de-scopes unsuitable issues and can request a blocked lane', () => {
       const decision = evaluatePlannerDecision(buildIssue({
         title: 'Define security migration strategy',
@@ -83,6 +107,15 @@ describe('planner-runner', () => {
     });
 
     it('deduplicates equivalent planner decisions', () => {
+      const plannerArtifact = {
+        kind: 'review-follow-up' as const,
+        threadId: 'thread-1',
+        headSha: 'abc123',
+        fixSummary: 'Cover the fallback path',
+        implementationSteps: ['Update fallback handling.'],
+        testSteps: ['Add a regression test for the fallback path.'],
+        verificationSteps: ['Run targeted automation tests.'],
+      };
       const commentBody = buildPlannerDecisionComment({
         repository: 'davidruzicka/mcp4openapi',
         issueNumber: 160,
@@ -96,10 +129,23 @@ describe('planner-runner', () => {
           'issue remains inside the low-risk autonomous planning lane',
         ],
         plan: '## Implementation plan\n- Step 1',
+        plannerArtifact,
       });
 
       const assignments = collectPlannerAssignments({
-        issues: [buildIssue()],
+        issues: [buildIssue({
+          body: [
+            'Review thread: thread-1',
+            'Head SHA: abc123',
+            'Fix summary: Cover the fallback path',
+            'Implementation steps:',
+            '- Update fallback handling.',
+            'Test steps:',
+            '- Add a regression test for the fallback path.',
+            'Verification steps:',
+            '- Run targeted automation tests.',
+          ].join('\n'),
+        })],
         commentsByIssueNumber: { 160: [buildComment(commentBody)] },
         repository: 'davidruzicka/mcp4openapi',
         agentId: 'planner',

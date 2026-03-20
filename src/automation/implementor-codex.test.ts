@@ -28,7 +28,11 @@ function buildTaskPayload(overrides: Partial<ImplementorTaskPayload> = {}): Impl
 describe('implementor-codex', () => {
   describe('parseImplementorTaskPayload', () => {
     it('parses the JSON payload required by the implementor wrapper', () => {
-      expect(parseImplementorTaskPayload(JSON.stringify(buildTaskPayload()))).toEqual(buildTaskPayload());
+      expect(parseImplementorTaskPayload(JSON.stringify(buildTaskPayload()))).toMatchObject({
+        ...buildTaskPayload(),
+        reviewFollowUpItems: [],
+        plannerArtifact: undefined,
+      });
     });
 
     it('rejects missing payloads', () => {

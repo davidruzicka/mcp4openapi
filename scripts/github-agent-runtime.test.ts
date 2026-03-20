@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  createReviewThreadReply,
   listOpenPullRequests,
   listRecentIssues,
   mapIssueSummaryToProposalCandidate,
@@ -165,6 +166,83 @@ describe('github-agent-runtime listing bounds', () => {
         runId: 'manual-test',
         now: '2026-03-17T12:00:00.000Z',
       })).resolves.toMatchObject([{ number: 21 }, { number: 20 }]);
+    } finally {
+      globalThis.fetch = fetchMock;
+    }
+  });
+});
+
+describe('github-agent-runtime review thread replies', () => {
+  it('sends the expected GraphQL payload for review-thread replies', async () => {
+    const fetchMock = globalThis.fetch;
+    const requests: Array<{ url: string; body: string }> = [];
+    globalThis.fetch = async (input, init) => {
+      requests.push({ url: String(input), body: String(init?.body ?? '') });
+      if (requests.length === 1) {
+        return new Response(JSON.stringify({
+          data: { repository: { pullRequest: { id: 'PR_node_123' } } },
+        }), { status: 200 });
+      }
+
+      return new Response(JSON.stringify({ data: { addPullRequestReviewThreadReply: { comment: { id: 'comment-1' } } } }), { status: 200 });
+    };
+
+    try {
+      await createReviewThreadReply({
+        repository: 'davidruzicka/mcp4openapi',
+        token: 'token',
+        apiBaseUrl: 'https://api.github.com',
+        lookbackHours: 48,
+        maxCandidates: 2,
+        agentId: 'implementor',
+        runId: 'manual-test',
+        now: '2026-03-17T12:00:00.000Z',
+      }, {
+        pullRequestNumber: 201,
+        threadId: 'THREAD_node_456',
+        body: 'This reply was prepared by an agent.',
+      });
+    } finally {
+      globalThis.fetch = fetchMock;
+    }
+
+    expect(requests).toHaveLength(2);
+    expect(requests[0]?.url).toContain('/graphql');
+    expect(requests[1]?.body).toContain('addPullRequestReviewThreadReply');
+    expect(requests[1]?.body).toContain('THREAD_node_456');
+  });
+
+  it('throws a clear error when the GraphQL mutation returns errors', async () => {
+    const fetchMock = globalThis.fetch;
+    let callCount = 0;
+    globalThis.fetch = async () => {
+      callCount += 1;
+      if (callCount === 1) {
+        return new Response(JSON.stringify({
+          data: { repository: { pullRequest: { id: 'PR_node_123' } } },
+        }), { status: 200 });
+      }
+
+      return new Response(JSON.stringify({
+        errors: [{ message: 'mutation failed' }],
+      }), { status: 200 });
+    };
+
+    try {
+      await expect(createReviewThreadReply({
+        repository: 'davidruzicka/mcp4openapi',
+        token: 'token',
+        apiBaseUrl: 'https://api.github.com',
+        lookbackHours: 48,
+        maxCandidates: 2,
+        agentId: 'implementor',
+        runId: 'manual-test',
+        now: '2026-03-17T12:00:00.000Z',
+      }, {
+        pullRequestNumber: 201,
+        threadId: 'THREAD_node_456',
+        body: 'This reply was prepared by an agent.',
+      })).rejects.toThrow('GitHub GraphQL request failed for review-thread reply: mutation failed');
     } finally {
       globalThis.fetch = fetchMock;
     }

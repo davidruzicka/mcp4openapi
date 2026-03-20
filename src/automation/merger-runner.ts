@@ -1,6 +1,7 @@
 import { buildAgentMetadataBlock } from './agent-feedback.js';
 import { hasReviewLifecycleSignal } from './agent-workflow-state.js';
 import { parseAgentMetadata } from './evaluator-runner.js';
+import { resolveReviewThreadStates } from './review-resolution-state.js';
 import { hasActiveReviewerLease } from './reviewer-runner.js';
 
 export interface MergerPullRequest {
@@ -136,7 +137,11 @@ export function evaluateMergeGate(input: EvaluateMergeGateInput): MergeGateEvalu
     reasons.add('review-follow-up-pending');
   }
 
-  if (input.reviewThreads.some((thread) => !thread.isResolved)) {
+  const reviewThreadStates = resolveReviewThreadStates({
+    reviewThreads: input.reviewThreads,
+    currentHeadSha: input.pullRequest.headSha,
+  });
+  if (reviewThreadStates.some((thread) => thread.blocking)) {
     reasons.add('unresolved-review-threads');
   }
 
