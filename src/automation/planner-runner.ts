@@ -165,38 +165,33 @@ export function buildPlannerDecisionComment(input: {
   readonly plannerArtifact?: ReviewFixPlanArtifact;
   readonly duplicateBackendName?: string;
 }): string {
+  const plannerStatus = getPlannerDecisionStatus(input.remainsSuitable, input.blocked);
   const metadataBlock = buildAgentMetadataBlock({
     'agent-id': input.agentId,
     'agent-stage': 'planner',
     'agent-role': 'implementation-plan',
     repository: input.repository,
     'issue-number': input.issueNumber,
-    status: input.remainsSuitable ? 'planned' : input.blocked ? 'blocked' : 'de-scoped',
+    status: plannerStatus,
     reasons: input.reasons.join(','),
     'run-id': input.runId,
     timestamp: input.timestamp,
   });
 
-  const duplicateGuardNote = input.reasons.some((reason) => reason.startsWith('issue appears to duplicate existing open issue #') || reason.startsWith('issue appears to semantically duplicate existing open issue #'))
-    ? [
-        '',
-        `Semantic duplicate backend: ${input.duplicateBackendName ?? 'exact-title-fallback'}`,
-        'Duplicate guard minimum fallback: exact open-title matches remain enforced even if semantic triage is unavailable.',
-      ]
-    : [];
-
-  return [
+  const lines = [
     '🤖 Agent plan (planner)',
     '',
-    `Planner decision: ${input.remainsSuitable ? 'planned' : input.blocked ? 'blocked' : 'de-scoped'}`,
+    `Planner decision: ${plannerStatus}`,
     'Reasons:',
     ...input.reasons.map((reason) => `- ${reason}`),
-    ...duplicateGuardNote,
+    ...buildDuplicateGuardNoteLines(input.reasons, input.duplicateBackendName),
     ...(input.plan ? ['', input.plan] : []),
     ...(input.plannerArtifact ? ['', serializePlannerArtifact(input.plannerArtifact)] : []),
     '',
     metadataBlock,
-  ].join('\n');
+  ];
+
+  return lines.join('\n');
 }
 
 function buildImplementationPlan(issue: PlannerIssue, plannerArtifact: ReviewFixPlanArtifact | undefined): string {
@@ -243,7 +238,7 @@ function hasEquivalentPlannerDecisionComment(
   comments: readonly PlannerIssueComment[],
   decision: PlannerDecision,
 ): boolean {
-  const expectedStatus = decision.remainsSuitable ? 'planned' : decision.blocked ? 'blocked' : 'de-scoped';
+  const expectedStatus = getPlannerDecisionStatus(decision.remainsSuitable, decision.blocked);
   const expectedReasons = decision.reasons.join(',');
   const expectedArtifact = decision.plannerArtifact ? JSON.stringify(decision.plannerArtifact) : undefined;
 
@@ -255,6 +250,33 @@ function hasEquivalentPlannerDecisionComment(
       && metadata?.reasons === expectedReasons
       && JSON.stringify(parsedArtifact) === JSON.stringify(expectedArtifact ? decision.plannerArtifact : undefined);
   });
+}
+
+function getPlannerDecisionStatus(remainsSuitable: boolean, blocked: boolean): 'planned' | 'blocked' | 'de-scoped' {
+  if (remainsSuitable) {
+    return 'planned';
+  }
+
+  return blocked ? 'blocked' : 'de-scoped';
+}
+
+function buildDuplicateGuardNoteLines(
+  reasons: readonly string[],
+  duplicateBackendName: string | undefined,
+): string[] {
+  const hasDuplicateGuardReason = reasons.some((reason) => {
+    return reason.startsWith('issue appears to duplicate existing open issue #')
+      || reason.startsWith('issue appears to semantically duplicate existing open issue #');
+  });
+  if (!hasDuplicateGuardReason) {
+    return [];
+  }
+
+  return [
+    '',
+    `Semantic duplicate backend: ${duplicateBackendName ?? 'exact-title-fallback'}`,
+    'Duplicate guard minimum fallback: exact open-title matches remain enforced even if semantic triage is unavailable.',
+  ];
 }
 
 function extractReviewFollowUpContext(body: string): ReviewFixPlanArtifact | undefined {

@@ -106,6 +106,24 @@ describe('planner-runner', () => {
       expect(assignments[0]?.commentBody).toContain('status: planned');
     });
 
+    it('emits blocked planner status when a high-risk issue is de-scoped from autonomous planning', () => {
+      const assignments = collectPlannerAssignments({
+        issues: [buildIssue({
+          title: 'Define security migration strategy',
+          body: 'Need a broad auth and migration design before implementation.',
+        })],
+        commentsByIssueNumber: { 160: [] },
+        repository: 'davidruzicka/mcp4openapi',
+        agentId: 'planner',
+        runId: 'run-2',
+        now: '2026-03-14T12:00:00Z',
+      });
+
+      expect(assignments).toHaveLength(1);
+      expect(assignments[0]?.commentBody).toContain('Planner decision: blocked');
+      expect(assignments[0]?.commentBody).toContain('status: blocked');
+    });
+
     it('deduplicates equivalent planner decisions', () => {
       const plannerArtifact = {
         kind: 'review-follow-up' as const,

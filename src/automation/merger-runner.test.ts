@@ -561,6 +561,24 @@ describe('merger-runner', () => {
       expect(comment).toContain('head-sha: merge123');
       expect(comment).toContain('Reasons: ci-not-green, unresolved-review-threads');
     });
+
+    it('renders an explicit none reason when every merge gate is satisfied', () => {
+      const comment = buildMergeGateEvaluationComment({
+        repository: 'davidruzicka/mcp4openapi',
+        pullRequestNumber: 165,
+        headSha: 'merge124',
+        agentId: 'merger',
+        runId: 'run-124',
+        timestamp: '2026-03-14T18:05:00Z',
+        ready: true,
+        summary: 'Merge gates are satisfied.',
+        reasons: [],
+      });
+
+      expect(comment).toContain('Merge readiness: ready-to-merge');
+      expect(comment).toContain('Reasons: none');
+      expect(comment).toContain('reasons: none');
+    });
   });
 });
 

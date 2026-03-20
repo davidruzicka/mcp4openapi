@@ -342,5 +342,33 @@ describe('implementor-runner', () => {
       expect(comment).toContain('status: pr-created');
       expect(comment).toContain('PR: #201');
     });
+
+    it('includes a review follow-up count when follow-up items are present', () => {
+      const comment = buildImplementorResultComment({
+        repository: 'davidruzicka/mcp4openapi',
+        issueNumber: 161,
+        agentId: 'implementor',
+        runId: 'run-3',
+        timestamp: '2026-03-14T12:30:00Z',
+        result: {
+          outcome: 'pr-created',
+          summary: 'Created PR #201 with tests.',
+          pullRequest: {
+            number: 201,
+            url: 'https://github.com/davidruzicka/mcp4openapi/pull/201',
+          },
+        },
+        reviewFollowUpItems: [{
+          threadId: 'thread-1',
+          headSha: 'abc123',
+          sourceCommentId: 'comment-2',
+          summary: 'Add a regression test for the fallback path',
+          actionability: 'actionable',
+          requiresReply: true,
+        }],
+      });
+
+      expect(comment).toContain('Review follow-up items: 1');
+    });
   });
 });

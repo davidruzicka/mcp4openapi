@@ -146,16 +146,42 @@ export function buildImplementorResultComment(input: {
     timestamp: input.timestamp,
   });
 
-  return [
+  const lines = [
     '🤖 Agent implementation note (implementor)',
     '',
     `Implementation result: ${input.result.outcome}`,
     `Summary: ${input.result.summary}`,
-    ...(input.result.pullRequest ? [`PR: #${input.result.pullRequest.number} (${input.result.pullRequest.url})`] : []),
-    ...(input.reviewFollowUpItems && input.reviewFollowUpItems.length > 0 ? [`Review follow-up items: ${input.reviewFollowUpItems.length}`] : []),
-    '',
-    metadataBlock,
-  ].join('\n');
+  ];
+
+  const pullRequestLine = buildImplementorPullRequestLine(input.result.pullRequest);
+  if (pullRequestLine) {
+    lines.push(pullRequestLine);
+  }
+
+  const reviewFollowUpCountLine = buildReviewFollowUpCountLine(input.reviewFollowUpItems);
+  if (reviewFollowUpCountLine) {
+    lines.push(reviewFollowUpCountLine);
+  }
+
+  lines.push('', metadataBlock);
+
+  return lines.join('\n');
+}
+
+function buildImplementorPullRequestLine(pullRequest: ImplementorCommandResult['pullRequest']): string | undefined {
+  if (!pullRequest) {
+    return undefined;
+  }
+
+  return `PR: #${pullRequest.number} (${pullRequest.url})`;
+}
+
+function buildReviewFollowUpCountLine(reviewFollowUpItems: readonly ReviewFollowUpItem[] | undefined): string | undefined {
+  if (!reviewFollowUpItems || reviewFollowUpItems.length === 0) {
+    return undefined;
+  }
+
+  return `Review follow-up items: ${reviewFollowUpItems.length}`;
 }
 
 export function parseImplementorTaskPayload(raw: string | undefined): ImplementorTaskPayload {

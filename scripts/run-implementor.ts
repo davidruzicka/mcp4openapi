@@ -23,6 +23,7 @@ import {
   mapIssueSummary,
   readIssueRuntimeConfig,
   removeIssueLabels,
+  type IssueRuntimeConfig,
   updatePullRequestBody,
 } from './github-agent-runtime.js';
 
@@ -120,20 +121,19 @@ for (const assignment of assignments.slice(0, runtimeConfig.maxCandidates)) {
   }));
 
   if (result.pullRequest) {
-    await addPullRequestLabels(runtimeConfig, result.pullRequest.number, labels.pullRequestLabelsToAdd);
-    await ensurePullRequestDisclosure(runtimeConfig, result.pullRequest.number, assignment.issueNumber);
+    const pullRequestNumber = result.pullRequest.number;
 
-    for (const replyPlan of buildImplementorReviewThreadReplyPlans({
+    await addPullRequestLabels(runtimeConfig, pullRequestNumber, labels.pullRequestLabelsToAdd);
+    await ensurePullRequestDisclosure(runtimeConfig, pullRequestNumber, assignment.issueNumber);
+
+    const newHeadSha = plannerArtifact?.headSha ?? `pr-${pullRequestNumber}`;
+    const replyPlans = buildImplementorReviewThreadReplyPlans({
       task: taskPayload,
       result,
-      newHeadSha: plannerArtifact?.headSha ?? `pr-${result.pullRequest.number}`,
-    })) {
-      await createReviewThreadReply(runtimeConfig, {
-        pullRequestNumber: result.pullRequest.number,
-        threadId: replyPlan.threadId,
-        body: replyPlan.body,
-      });
-    }
+      newHeadSha,
+    });
+
+    await postImplementorReviewThreadReplies(runtimeConfig, pullRequestNumber, replyPlans);
   }
 
   process.stdout.write(`Implementor processed issue #${assignment.issueNumber} (${result.outcome}).\n`);
@@ -151,6 +151,20 @@ async function runImplementorCommand(command: string, payload: unknown) {
   });
 
   return parseImplementorCommandResult(stdout.trim());
+}
+
+async function postImplementorReviewThreadReplies(
+  runtimeConfig: IssueRuntimeConfig,
+  pullRequestNumber: number,
+  replyPlans: ReadonlyArray<{ readonly threadId: string; readonly body: string }>,
+): Promise<void> {
+  for (const replyPlan of replyPlans) {
+    await createReviewThreadReply(runtimeConfig, {
+      pullRequestNumber,
+      threadId: replyPlan.threadId,
+      body: replyPlan.body,
+    });
+  }
 }
 
 async function ensurePullRequestDisclosure(config: typeof runtimeConfig, pullRequestNumber: number, issueNumber: number): Promise<void> {
