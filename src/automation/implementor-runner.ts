@@ -1,5 +1,5 @@
 import { buildAgentMetadataBlock } from './agent-feedback.js';
-import { planImplementorStart, planImplementorCompletion } from './agent-workflow-state.js';
+import { planImplementorCompletion, planImplementorStart } from './agent-workflow-state.js';
 import { parseAgentMetadata } from './evaluator-runner.js';
 import { parsePlannerArtifact, type ReviewFixPlanArtifact } from './planner-artifact.js';
 import { buildImplementorThreadReplyPlans, type ReviewFollowUpItem } from './review-follow-up.js';
@@ -28,6 +28,12 @@ export interface ImplementorCommandResult {
     readonly number: number;
     readonly url: string;
   };
+}
+
+export interface ImplementorResultLabelPlan {
+  readonly issueLabelsToAdd: readonly string[];
+  readonly issueLabelsToRemove: readonly string[];
+  readonly pullRequestLabelsToAdd: readonly string[];
 }
 
 export interface ImplementorAssignment {
@@ -295,7 +301,7 @@ export function parseImplementorCommandResult(raw: string): ImplementorCommandRe
   return parsed as ImplementorCommandResult;
 }
 
-export function planImplementorResultLabels(result: ImplementorCommandResult): { readonly issueLabelsToAdd: readonly string[]; readonly issueLabelsToRemove: readonly string[]; readonly pullRequestLabelsToAdd: readonly string[]; } {
+export function planImplementorResultLabels(result: ImplementorCommandResult): ImplementorResultLabelPlan {
   const issueTransition = planImplementorCompletion({
     labels: ['agent:implementing'],
     outcome: result.outcome,

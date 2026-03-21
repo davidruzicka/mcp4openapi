@@ -31,6 +31,8 @@ export interface ImplementorThreadReplyPlan {
   readonly body: string;
 }
 
+export type ImplementorThreadReplyPayload = Pick<ImplementorThreadReplyPlan, 'threadId' | 'body'>;
+
 export function collectReviewFollowUpItems(input: {
   readonly reviewThreads: readonly ReviewThreadLike[];
   readonly currentHeadSha: string;

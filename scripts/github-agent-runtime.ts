@@ -1,6 +1,8 @@
 import { detectIssueWorkflowState } from '../src/automation/agent-workflow-state.js';
-import type { SemanticDuplicateBackendName } from '../src/automation/semantic-triage.js';
 import type { ProposalCandidateArtifact } from '../src/automation/proposal-intake.js';
+import type { ImplementorThreadReplyPayload } from '../src/automation/review-follow-up.js';
+import type { SemanticDuplicateBackendName } from '../src/automation/semantic-triage.js';
+import type { GitHubGraphQlErrorResponse, GitHubGraphQlPullRequestIdResponse } from './github-graphql-types.js';
 
 interface GitHubLabel {
   readonly name: string;
@@ -54,10 +56,26 @@ export interface IssueRuntimeConfig {
   readonly now: string;
 }
 
+interface IssueRuntimeDefaults {
+  readonly lookbackHours: number;
+  readonly maxCandidates: number;
+  readonly agentId: string;
+}
+
+interface CreateRepositoryIssueInput {
+  readonly title: string;
+  readonly body: string;
+  readonly labels?: readonly string[];
+}
+
+interface CreateReviewThreadReplyInput extends ImplementorThreadReplyPayload {
+  readonly pullRequestNumber: number;
+}
+
 export function readIssueRuntimeConfig(
   env: NodeJS.ProcessEnv,
   prefix: string,
-  defaults: { readonly lookbackHours: number; readonly maxCandidates: number; readonly agentId: string; },
+  defaults: IssueRuntimeDefaults,
 ): IssueRuntimeConfig {
   const repository = env.GITHUB_REPOSITORY;
   const token = env.GITHUB_TOKEN;
@@ -155,7 +173,7 @@ export async function createIssueComment(config: IssueRuntimeConfig, issueNumber
 
 export async function createRepositoryIssue(
   config: IssueRuntimeConfig,
-  input: { readonly title: string; readonly body: string; readonly labels?: readonly string[] },
+  input: CreateRepositoryIssueInput,
 ): Promise<GitHubIssueSummary> {
   return githubRequest<GitHubIssueSummary>(config, `/repos/${config.repository}/issues`, {
     method: 'POST',
@@ -192,9 +210,9 @@ export async function updatePullRequestBody(config: IssueRuntimeConfig, pullRequ
 
 export async function createReviewThreadReply(
   config: IssueRuntimeConfig,
-  input: { readonly pullRequestNumber: number; readonly threadId: string; readonly body: string },
+  input: CreateReviewThreadReplyInput,
 ): Promise<void> {
-  const response = await githubGraphQlRequest<{ readonly errors?: ReadonlyArray<{ readonly message: string }> }>(config, {
+  const response = await githubGraphQlRequest<GitHubGraphQlErrorResponse>(config, {
     query: `mutation AddReviewThreadReply($pullRequestId: ID!, $body: String!, $inReplyTo: ID!) {
       addPullRequestReviewThreadReply(input: { pullRequestId: $pullRequestId, body: $body, inReplyTo: $inReplyTo }) {
         comment {
@@ -337,10 +355,7 @@ async function githubGraphQlRequest<T = unknown>(config: IssueRuntimeConfig, pay
 
 async function fetchPullRequestNodeId(config: IssueRuntimeConfig, pullRequestNumber: number): Promise<string> {
   const [owner, repo] = config.repository.split('/');
-  const response = await githubGraphQlRequest<{
-    readonly data?: { readonly repository?: { readonly pullRequest?: { readonly id?: string } } };
-    readonly errors?: ReadonlyArray<{ readonly message: string }>;
-  }>(config, {
+  const response = await githubGraphQlRequest<GitHubGraphQlPullRequestIdResponse>(config, {
     query: `query PullRequestNodeId($owner: String!, $repo: String!, $number: Int!) {
       repository(owner: $owner, name: $repo) {
         pullRequest(number: $number) {

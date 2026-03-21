@@ -9,6 +9,7 @@ import {
   type ImplementorCommandResult,
 } from '../src/automation/implementor-runner.js';
 import { parsePlannerArtifact } from '../src/automation/planner-artifact.js';
+import type { ImplementorThreadReplyPayload } from '../src/automation/review-follow-up.js';
 import {
   addIssueLabels,
   addPullRequestLabels,
@@ -156,7 +157,7 @@ async function runImplementorCommand(command: string, payload: unknown) {
 async function postImplementorReviewThreadReplies(
   runtimeConfig: IssueRuntimeConfig,
   pullRequestNumber: number,
-  replyPlans: ReadonlyArray<{ readonly threadId: string; readonly body: string }>,
+  replyPlans: readonly ImplementorThreadReplyPayload[],
 ): Promise<void> {
   for (const replyPlan of replyPlans) {
     await createReviewThreadReply(runtimeConfig, {

@@ -1,3 +1,4 @@
+import type { MergeMethod } from '../src/automation/merge-executor.js';
 import type {
   MergerBranchProtection,
   MergerCiCheck,
@@ -6,7 +7,7 @@ import type {
   MergerReviewThread,
   MergerThreadComment,
 } from '../src/automation/merger-runner.js';
-import type { MergeMethod } from '../src/automation/merge-executor.js';
+import type { GitHubGraphQlErrorResponse, GitHubGraphQlReviewThreadsResponse } from './github-graphql-types.js';
 
 interface GitHubLabel {
   readonly name: string;
@@ -66,33 +67,7 @@ interface GitHubCombinedStatusResponse {
   readonly statuses?: readonly GitHubCommitStatus[];
 }
 
-interface GraphQlReviewThreadsResponse {
-  readonly data?: {
-    readonly repository?: {
-      readonly pullRequest?: {
-        readonly reviewThreads?: {
-          readonly nodes?: ReadonlyArray<{
-            readonly id: string;
-            readonly isResolved: boolean;
-            readonly comments?: {
-              readonly nodes?: ReadonlyArray<{
-                readonly id: string;
-                readonly body: string;
-                readonly updatedAt: string;
-                readonly author?: {
-                  readonly login?: string;
-                };
-              }>;
-            };
-          }>;
-        };
-      };
-    };
-  };
-  readonly errors?: ReadonlyArray<{ readonly message: string }>;
-}
-
-interface GraphQlBranchProtectionResponse {
+interface GraphQlBranchProtectionResponse extends GitHubGraphQlErrorResponse {
   readonly data?: {
     readonly repository?: {
       readonly mergeCommitAllowed: boolean;
@@ -108,7 +83,6 @@ interface GraphQlBranchProtectionResponse {
       };
     };
   };
-  readonly errors?: ReadonlyArray<{ readonly message: string }>;
 }
 
 interface GitHubMergeResponse {
@@ -212,7 +186,7 @@ export async function listPullRequestReviews(config: MergerRuntimeConfig, pullRe
 
 export async function listReviewThreads(config: MergerRuntimeConfig, pullRequestNumber: number): Promise<MergerReviewThread[]> {
   const [owner, repo] = splitRepository(config.repository);
-  const response = await githubGraphQlRequest<GraphQlReviewThreadsResponse>(config, {
+  const response = await githubGraphQlRequest<GitHubGraphQlReviewThreadsResponse>(config, {
     query: `query ReviewThreads($owner: String!, $repo: String!, $prNumber: Int!) {
       repository(owner: $owner, name: $repo) {
         pullRequest(number: $prNumber) {
