@@ -9,7 +9,6 @@
 - [P2: Nice-to-Have](#p2-nice-to-have)
   - [2. Export Profile Command](#2-export-profile-command)
   - [3. OpenAPI Operation Filter for Default Profile](#3-openapi-operation-filter-for-default-profile)
-  - [4. Harden query parameter redaction canonicalization](#4-harden-query-parameter-redaction-canonicalization)
   - [7. Strengthen ReDoS Protection in Regex Compiler](#7-strengthen-redos-protection-in-regex-compiler)
   - [8. Limit HTTP profile server cache growth](#8-limit-http-profile-server-cache-growth)
   - [9. Break MCPServer-HttpTransport circular dependency](#9-break-mcpserver-httptransport-circular-dependency)
@@ -98,24 +97,6 @@ export DEFAULT_PROFILE_EXCLUDE_TAGS="admin,deprecated"
 ```
 
 **Pros**: Include most, exclude specific dangerous operations
-
-### 4. Harden query parameter redaction canonicalization
-**Current**: `redactQueryParam()` supports exact key matching and now covers dot-separated parameter names, but standard URL parsing and fallback/manual parsing do not explicitly share one canonicalization strategy for encoded query keys or equivalent key spellings.
-
-**Goal**: Keep query-parameter redaction deterministic across parser paths and reduce the risk of log leakage when sensitive keys appear in percent-encoded or otherwise equivalent forms.
-
-**Implementation**:
-- Define one canonicalization strategy for query parameter keys before comparison.
-- Align `new URL()` handling and manual fallback handling so both paths redact the same keys.
-- Add explicit tests for percent-encoded query keys and parser-path consistency.
-- Keep the implementation bounded and regex-safe; do not introduce heuristic fuzzy matching.
-
-**Files to modify**:
-- `src/validation/validation-utils.ts`
-- `src/validation/validation-utils.test.ts`
-
-**Estimated effort**: 1-2 hours
-**Cons**: May miss new dangerous operations
 
 **Option C: Tag-based Filter (Leverages OpenAPI Tags)**
 ```bash
