@@ -244,12 +244,20 @@ function hasEquivalentPlannerDecisionComment(
 
   return comments.some((comment) => {
     const metadata = parseAgentMetadata(comment.body);
-    const parsedArtifact = parsePlannerArtifact(comment.body);
+    const parsedArtifact = tryParsePlannerArtifact(comment.body);
     return metadata?.['agent-stage'] === 'planner'
       && metadata?.status === expectedStatus
       && metadata?.reasons === expectedReasons
       && JSON.stringify(parsedArtifact) === JSON.stringify(expectedArtifact ? decision.plannerArtifact : undefined);
   });
+}
+
+function tryParsePlannerArtifact(body: string): ReviewFixPlanArtifact | undefined {
+  try {
+    return parsePlannerArtifact(body);
+  } catch {
+    return undefined;
+  }
 }
 
 function getPlannerDecisionStatus(remainsSuitable: boolean, blocked: boolean): 'planned' | 'blocked' | 'de-scoped' {
@@ -281,19 +289,21 @@ function buildDuplicateGuardNoteLines(
 
 function extractReviewFollowUpContext(body: string): ReviewFixPlanArtifact | undefined {
   const threadId = body.match(/^Review thread:\s*(.+)$/im)?.[1]?.trim();
+  const sourceCommentId = body.match(/^Source comment ID:\s*(.+)$/im)?.[1]?.trim();
   const headSha = body.match(/^Head SHA:\s*(.+)$/im)?.[1]?.trim();
   const fixSummary = body.match(/^Fix summary:\s*(.+)$/im)?.[1]?.trim();
   const implementationSteps = extractBulletSection(body, 'Implementation steps');
   const testSteps = extractBulletSection(body, 'Test steps');
   const verificationSteps = extractBulletSection(body, 'Verification steps');
 
-  if (!threadId || !headSha || !fixSummary || implementationSteps.length === 0 || testSteps.length === 0 || verificationSteps.length === 0) {
+  if (!threadId || !sourceCommentId || !headSha || !fixSummary || implementationSteps.length === 0 || testSteps.length === 0 || verificationSteps.length === 0) {
     return undefined;
   }
 
   return {
     kind: 'review-follow-up',
     threadId,
+    sourceCommentId,
     headSha,
     fixSummary,
     implementationSteps,

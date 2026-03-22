@@ -10,6 +10,7 @@ describe('planner-artifact', () => {
     const artifact: ReviewFixPlanArtifact = {
       kind: 'review-follow-up',
       threadId: 'thread-1',
+      sourceCommentId: 'comment-1',
       headSha: 'abc123',
       fixSummary: 'Cover fallback path',
       implementationSteps: ['Update fallback handling.'],
@@ -21,11 +22,17 @@ describe('planner-artifact', () => {
   });
 
   it('rejects artifacts with missing threadId', () => {
-    expect(() => parsePlannerArtifact('<!-- AGENT-PLANNER-ARTIFACT\n{"kind":"review-follow-up","headSha":"abc123","fixSummary":"x","implementationSteps":["a"],"testSteps":["b"],"verificationSteps":["c"]}\n-->')).toThrow('Invalid planner artifact');
+    expect(() => parsePlannerArtifact('<!-- AGENT-PLANNER-ARTIFACT\n{"kind":"review-follow-up","sourceCommentId":"comment-1","headSha":"abc123","fixSummary":"x","implementationSteps":["a"],"testSteps":["b"],"verificationSteps":["c"]}\n-->')).toThrow('Invalid planner artifact');
+  });
+
+  it('rejects artifacts with missing sourceCommentId', () => {
+    expect(() => parsePlannerArtifact('<!-- AGENT-PLANNER-ARTIFACT\n{"kind":"review-follow-up","threadId":"thread-1","headSha":"abc123","fixSummary":"x","implementationSteps":["a"],"testSteps":["b"],"verificationSteps":["c"]}\n-->')).toThrow(
+      'Invalid planner artifact: missing sourceCommentId.',
+    );
   });
 
   it('rejects artifacts with empty step arrays', () => {
-    expect(() => parsePlannerArtifact('<!-- AGENT-PLANNER-ARTIFACT\n{"kind":"review-follow-up","threadId":"thread-1","headSha":"abc123","fixSummary":"x","implementationSteps":[],"testSteps":["b"],"verificationSteps":["c"]}\n-->')).toThrow('Invalid planner artifact');
+    expect(() => parsePlannerArtifact('<!-- AGENT-PLANNER-ARTIFACT\n{"kind":"review-follow-up","threadId":"thread-1","sourceCommentId":"comment-1","headSha":"abc123","fixSummary":"x","implementationSteps":[],"testSteps":["b"],"verificationSteps":["c"]}\n-->')).toThrow('Invalid planner artifact');
   });
 
   it('returns undefined for non review-follow-up artifact payloads', () => {
@@ -45,19 +52,19 @@ describe('planner-artifact', () => {
   });
 
   it('rejects artifacts with unsupported kinds', () => {
-    expect(() => parsePlannerArtifact('<!-- AGENT-PLANNER-ARTIFACT\n{"kind":"generic-plan","threadId":"thread-1","headSha":"abc123","fixSummary":"x","implementationSteps":["a"],"testSteps":["b"],"verificationSteps":["c"]}\n-->')).toThrow(
+    expect(() => parsePlannerArtifact('<!-- AGENT-PLANNER-ARTIFACT\n{"kind":"generic-plan","threadId":"thread-1","sourceCommentId":"comment-1","headSha":"abc123","fixSummary":"x","implementationSteps":["a"],"testSteps":["b"],"verificationSteps":["c"]}\n-->')).toThrow(
       'Invalid planner artifact: unsupported kind.',
     );
   });
 
   it('rejects artifacts with missing headSha', () => {
-    expect(() => parsePlannerArtifact('<!-- AGENT-PLANNER-ARTIFACT\n{"kind":"review-follow-up","threadId":"thread-1","fixSummary":"x","implementationSteps":["a"],"testSteps":["b"],"verificationSteps":["c"]}\n-->')).toThrow(
+    expect(() => parsePlannerArtifact('<!-- AGENT-PLANNER-ARTIFACT\n{"kind":"review-follow-up","threadId":"thread-1","sourceCommentId":"comment-1","fixSummary":"x","implementationSteps":["a"],"testSteps":["b"],"verificationSteps":["c"]}\n-->')).toThrow(
       'Invalid planner artifact: missing headSha.',
     );
   });
 
   it('rejects artifacts with missing fixSummary', () => {
-    expect(() => parsePlannerArtifact('<!-- AGENT-PLANNER-ARTIFACT\n{"kind":"review-follow-up","threadId":"thread-1","headSha":"abc123","implementationSteps":["a"],"testSteps":["b"],"verificationSteps":["c"]}\n-->')).toThrow(
+    expect(() => parsePlannerArtifact('<!-- AGENT-PLANNER-ARTIFACT\n{"kind":"review-follow-up","threadId":"thread-1","sourceCommentId":"comment-1","headSha":"abc123","implementationSteps":["a"],"testSteps":["b"],"verificationSteps":["c"]}\n-->')).toThrow(
       'Invalid planner artifact: missing fixSummary.',
     );
   });

@@ -1,6 +1,7 @@
 export interface ReviewFixPlanArtifact {
   readonly kind: 'review-follow-up';
   readonly threadId: string;
+  readonly sourceCommentId: string;
   readonly headSha: string;
   readonly fixSummary: string;
   readonly implementationSteps: readonly string[];
@@ -44,6 +45,9 @@ function validatePlannerArtifact(value: unknown): asserts value is ReviewFixPlan
   }
   if (typeof artifact.threadId !== 'string' || artifact.threadId.length === 0) {
     throw new Error('Invalid planner artifact: missing threadId.');
+  }
+  if (typeof artifact.sourceCommentId !== 'string' || artifact.sourceCommentId.length === 0) {
+    throw new Error('Invalid planner artifact: missing sourceCommentId.');
   }
   if (typeof artifact.headSha !== 'string' || artifact.headSha.length === 0) {
     throw new Error('Invalid planner artifact: missing headSha.');

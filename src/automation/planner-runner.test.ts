@@ -52,6 +52,7 @@ describe('planner-runner', () => {
       const decision = evaluatePlannerDecision(buildIssue({
         body: [
           'Review thread: thread-1',
+          'Source comment ID: comment-1',
           'Head SHA: abc123',
           'Fix summary: Cover the fallback path',
           'Implementation steps:',
@@ -68,6 +69,7 @@ describe('planner-runner', () => {
       expect(decision.plannerArtifact).toMatchObject({
         kind: 'review-follow-up',
         threadId: 'thread-1',
+        sourceCommentId: 'comment-1',
         headSha: 'abc123',
       });
     });
@@ -128,6 +130,7 @@ describe('planner-runner', () => {
       const plannerArtifact = {
         kind: 'review-follow-up' as const,
         threadId: 'thread-1',
+        sourceCommentId: 'comment-1',
         headSha: 'abc123',
         fixSummary: 'Cover the fallback path',
         implementationSteps: ['Update fallback handling.'],
@@ -154,6 +157,7 @@ describe('planner-runner', () => {
         issues: [buildIssue({
           body: [
             'Review thread: thread-1',
+            'Source comment ID: comment-1',
             'Head SHA: abc123',
             'Fix summary: Cover the fallback path',
             'Implementation steps:',
@@ -172,6 +176,52 @@ describe('planner-runner', () => {
       });
 
       expect(assignments).toHaveLength(0);
+    });
+
+    it('ignores malformed planner artifacts when deduplicating decision comments', () => {
+      const malformedComment = [
+        '🤖 Agent plan (planner)',
+        '',
+        'Planner decision: planned',
+        'Reasons:',
+        '- issue body provides enough structure for a bounded implementation plan',
+        '- issue remains inside the low-risk autonomous planning lane',
+        '',
+        '<!-- AGENT-PLANNER-ARTIFACT',
+        '{not-json}',
+        '-->',
+        '',
+        '<!-- AGENT-METADATA',
+        'agent-stage: planner',
+        'status: planned',
+        'reasons: issue body provides enough structure for a bounded implementation plan,issue remains inside the low-risk autonomous planning lane',
+        '-->',
+      ].join('\n');
+
+      const assignments = collectPlannerAssignments({
+        issues: [buildIssue({
+          body: [
+            'Review thread: thread-1',
+            'Source comment ID: comment-1',
+            'Head SHA: abc123',
+            'Fix summary: Cover the fallback path',
+            'Implementation steps:',
+            '- Update fallback handling.',
+            'Test steps:',
+            '- Add a regression test for the fallback path.',
+            'Verification steps:',
+            '- Run targeted automation tests.',
+          ].join('\n'),
+        })],
+        commentsByIssueNumber: { 160: [buildComment(malformedComment)] },
+        repository: 'davidruzicka/mcp4openapi',
+        agentId: 'planner',
+        runId: 'run-2',
+        now: '2026-03-14T12:00:00Z',
+      });
+
+      expect(assignments).toHaveLength(1);
+      expect(assignments[0]?.commentBody).toContain('comment-1');
     });
 
     it('de-scopes near-duplicate issues when semantic duplicate triage finds an earlier open match', () => {
