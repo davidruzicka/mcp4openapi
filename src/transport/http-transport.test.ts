@@ -3757,7 +3757,7 @@ describeIfListen('HttpTransport', () => {
       await routingTransport.stop();
     });
 
-    it('serves root auth server metadata using profile hint', async () => {
+    it('serves root auth server metadata using profile hint cookie', async () => {
       const routingTransport = new HttpTransport(
         {
           host: '127.0.0.1',
@@ -3784,14 +3784,15 @@ describeIfListen('HttpTransport', () => {
       }));
 
       const routingApp = (routingTransport as any).app;
+      const agent = request.agent(routingApp);
 
       // Prime hint via profile route
-      await request(routingApp)
+      await agent
         .post('/profile/gitlab/mcp')
         .send({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} })
         .ok(() => true);
 
-      const response = await request(routingApp).get('/.well-known/oauth-authorization-server');
+      const response = await agent.get('/.well-known/oauth-authorization-server');
 
       expect(response.status).toBe(200);
       expect(response.body.issuer).toContain('/profile/gitlab');
@@ -3799,6 +3800,110 @@ describeIfListen('HttpTransport', () => {
       expect(response.body.token_endpoint).toContain('/profile/gitlab/oauth/token');
 
       await routingTransport.stop();
+    });
+
+    it('isolates profile hints for clients sharing ip and user agent', async () => {
+      const routingTransport = new HttpTransport(
+        {
+          host: '127.0.0.1',
+          port: 0,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: false,
+          metricsPath: '/metrics',
+          profileRoutingEnabled: true,
+        },
+        logger
+      );
+      routingTransport.setProfileContextProvider(async (id) => ({
+        profileId: id,
+        oauthConfig: {
+          authorization_endpoint: `https://auth.example.com/${id}/oauth/authorize`,
+          token_endpoint: `https://auth.example.com/${id}/oauth/token`,
+          client_id: `${id}-client`,
+          client_secret: 'secret',
+          redirect_uri: 'http://localhost:3003/oauth/callback',
+          scopes: ['api'],
+        },
+      }));
+
+      const routingApp = (routingTransport as any).app;
+      const firstClient = request.agent(routingApp);
+      const secondClient = request.agent(routingApp);
+      const userAgent = 'shared-agent/1.0';
+
+      await firstClient
+        .post('/profile/gitlab/mcp')
+        .set('User-Agent', userAgent)
+        .send({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} })
+        .ok(() => true);
+
+      await secondClient
+        .post('/profile/github/mcp')
+        .set('User-Agent', userAgent)
+        .send({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} })
+        .ok(() => true);
+
+      const firstResponse = await firstClient
+        .get('/.well-known/oauth-authorization-server')
+        .set('User-Agent', userAgent);
+      const secondResponse = await secondClient
+        .get('/.well-known/oauth-authorization-server')
+        .set('User-Agent', userAgent);
+
+      expect(firstResponse.status).toBe(200);
+      expect(firstResponse.body.issuer).toContain('/profile/gitlab');
+      expect(secondResponse.status).toBe(200);
+      expect(secondResponse.body.issuer).toContain('/profile/github');
+
+      await routingTransport.stop();
+    });
+
+    it('expires profile hint cookies with the existing ttl', async () => {
+      vi.useFakeTimers();
+      const routingTransport = new HttpTransport(
+        {
+          host: '127.0.0.1',
+          port: 0,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: false,
+          metricsPath: '/metrics',
+          profileRoutingEnabled: true,
+        },
+        logger
+      );
+      routingTransport.setProfileContextProvider(async (id) => ({
+        profileId: id,
+        oauthConfig: {
+          authorization_endpoint: 'https://auth.example.com/oauth/authorize',
+          token_endpoint: 'https://auth.example.com/oauth/token',
+          client_id: 'client',
+          client_secret: 'secret',
+          redirect_uri: 'http://localhost:3003/oauth/callback',
+          scopes: ['api'],
+        },
+      }));
+
+      const routingApp = (routingTransport as any).app;
+      const agent = request.agent(routingApp);
+
+      await agent
+        .post('/profile/gitlab/mcp')
+        .send({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} })
+        .ok(() => true);
+
+      vi.advanceTimersByTime(10 * 60 * 1000 + 1);
+
+      const response = await agent.get('/.well-known/oauth-authorization-server');
+
+      expect(response.status).toBe(404);
+      expect(response.body.message).toBe('OAuth metadata unavailable for requested resource');
+
+      await routingTransport.stop();
+      vi.useRealTimers();
     });
 
     it('forces profile prefix when resource query targets default profile path', async () => {

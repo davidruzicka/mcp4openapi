@@ -101,6 +101,11 @@ interface OAuthRequiredErrorResponse {
   };
 }
 
+interface ProfileHintEntry {
+  profileId: string;
+  lastSeen: number;
+}
+
 export class HttpTransport {
   private app: express.Application;
   private server: Server | https.Server | null = null;
@@ -113,8 +118,10 @@ export class HttpTransport {
   private profileStates: Map<string, ProfileRuntimeState> = new Map();
   private oauthRedirectHostCache: Map<string, string[]> = new Map();
   private warnedMissingOAuthRedirectEnvVars: Set<string> = new Set();
-  private profileHintsByClient: Map<string, { profileId: string; lastSeen: number }> = new Map();
+  private profileHintsByClient: Map<string, ProfileHintEntry> = new Map();
+  private profileHintsByToken: Map<string, ProfileHintEntry> = new Map();
   private static readonly PROFILE_HINT_TTL_MS = 10 * 60 * 1000;
+  private static readonly PROFILE_HINT_COOKIE_NAME = 'mcp4_profile_hint';
   private profileIndexProvider: (() => Promise<ListedProfileDetails[]>) | null = null;
   private ssrfValidator: SSRFValidator;
   private rawTenantConfig: HttpTenantsConfig | null;
@@ -330,11 +337,11 @@ export class HttpTransport {
     });
 
     // Capture profile hints for clients using profile routing
-    this.app.use((req: Request, _res: Response, next: NextFunction) => {
+    this.app.use((req: Request, res: Response, next: NextFunction) => {
       if (this.config.profileRoutingEnabled) {
         const profileId = this.resolveProfileIdFromPath(req.path);
         if (profileId) {
-          this.storeProfileHint(req, profileId);
+          this.storeProfileHint(req, res, profileId);
         }
       }
       next();
@@ -686,22 +693,90 @@ export class HttpTransport {
     return `${req.ip}|${userAgent}`;
   }
 
-  private storeProfileHint(req: Request, profileId: string): void {
-    const key = this.getClientHintKey(req);
-    this.profileHintsByClient.set(key, { profileId, lastSeen: Date.now() });
+  private parseCookieHeader(cookieHeader: string | undefined): Map<string, string> {
+    const cookies = new Map<string, string>();
+    if (!cookieHeader) {
+      return cookies;
+    }
+
+    for (const segment of cookieHeader.split(';')) {
+      const trimmed = segment.trim();
+      if (!trimmed) {
+        continue;
+      }
+      const separatorIndex = trimmed.indexOf('=');
+      if (separatorIndex <= 0) {
+        continue;
+      }
+      const name = trimmed.slice(0, separatorIndex).trim();
+      const value = trimmed.slice(separatorIndex + 1).trim();
+      if (!name) {
+        continue;
+      }
+      cookies.set(name, value);
+    }
+
+    return cookies;
   }
 
-  private resolveProfileIdFromHint(req: Request): string | null {
-    const key = this.getClientHintKey(req);
-    const hint = this.profileHintsByClient.get(key);
+  private getProfileHintToken(req: Request): string | null {
+    const cookies = this.parseCookieHeader(req.get('cookie'));
+    const token = cookies.get(HttpTransport.PROFILE_HINT_COOKIE_NAME);
+    return token && token.length > 0 ? token : null;
+  }
+
+  private getOrCreateProfileHintToken(req: Request): string {
+    return this.getProfileHintToken(req) ?? crypto.randomBytes(16).toString('hex');
+  }
+
+  private setProfileHintCookie(req: Request, res: Response, token: string): void {
+    const attributes = [
+      `${HttpTransport.PROFILE_HINT_COOKIE_NAME}=${token}`,
+      'Path=/',
+      'HttpOnly',
+      'SameSite=Lax',
+      `Max-Age=${Math.floor(HttpTransport.PROFILE_HINT_TTL_MS / 1000)}`,
+    ];
+
+    if (req.secure || req.get('x-forwarded-proto') === 'https') {
+      attributes.push('Secure');
+    }
+
+    res.append('Set-Cookie', attributes.join('; '));
+  }
+
+  private consumeProfileHint(map: Map<string, ProfileHintEntry>, key: string, now: number): string | null {
+    const hint = map.get(key);
     if (!hint) {
       return null;
     }
-    if (Date.now() - hint.lastSeen > HttpTransport.PROFILE_HINT_TTL_MS) {
-      this.profileHintsByClient.delete(key);
+    if (now - hint.lastSeen > HttpTransport.PROFILE_HINT_TTL_MS) {
+      map.delete(key);
       return null;
     }
     return hint.profileId;
+  }
+
+  private storeProfileHint(req: Request, res: Response, profileId: string): void {
+    const now = Date.now();
+    const clientKey = this.getClientHintKey(req);
+    const token = this.getOrCreateProfileHintToken(req);
+    const entry: ProfileHintEntry = { profileId, lastSeen: now };
+
+    this.profileHintsByClient.set(clientKey, entry);
+    this.profileHintsByToken.set(token, entry);
+    this.setProfileHintCookie(req, res, token);
+  }
+
+  private resolveProfileIdFromHint(req: Request): string | null {
+    const now = Date.now();
+    const token = this.getProfileHintToken(req);
+    if (token) {
+      return this.consumeProfileHint(this.profileHintsByToken, token, now);
+    }
+
+    const key = this.getClientHintKey(req);
+    return this.consumeProfileHint(this.profileHintsByClient, key, now);
   }
 
   private resolveProfileIdForOriginCheck(req: Request): string | null {
@@ -1320,7 +1395,7 @@ export class HttpTransport {
 
       (req as McpRequest).profileId = info.profileId;
       (req as McpRequest).forceProfilePrefix = info.forceProfilePrefix;
-      this.storeProfileHint(req, info.profileId);
+      this.storeProfileHint(req, res, info.profileId);
       next();
     };
 
