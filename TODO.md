@@ -18,7 +18,6 @@
   - [12. Avoid HTTP profile hint collisions across shared IPs](#12-avoid-http-profile-hint-collisions-across-shared-ips)
   - [13. Prevent unbounded growth of HTTP profile hint cache](#13-prevent-unbounded-growth-of-http-profile-hint-cache)
   - [14. Consider strict OAuth redirect scheme allowlist](#14-consider-strict-oauth-redirect-scheme-allowlist)
-  - [15. Replace JSON fingerprint auth comparison for tenant collisions](#15-replace-json-fingerprint-auth-comparison-for-tenant-collisions)
   - [16. Extract tenant session lifecycle from HttpTransport](#16-extract-tenant-session-lifecycle-from-httptransport)
 
 ## P2: Nice-to-Have
@@ -299,29 +298,6 @@ export DEFAULT_PROFILE_EXCLUDE_TAGS="admin,system"
 - `docs/OAUTH.md` and `README.md` - configuration guidance
 
 **Estimated effort**: 2-4 hours
-
-### 15. Replace JSON fingerprint auth comparison for tenant collisions
-**Current**: `authFingerprint` in `src/transport/http-tenant-config.ts` compares tenant auth compatibility via `JSON.stringify` over mapped auth config objects.
-
-**Analysis**:
-- Relevance is medium: current mapping to known keys reduces top-level key-order risks, so this is not an immediate correctness bug.
-- Residual fragility remains for nested structures (for example `oauth_config`) and long-term readability/maintainability.
-- A semantic comparator communicates intended equality rules better than string fingerprinting.
-
-**Goal**: Replace serialization-based comparison with explicit deterministic auth config comparison.
-
-**Implementation options**:
-- Introduce dedicated utility (for example `areAuthConfigsEquivalent(left, right)`).
-- Define explicit semantics for array order (sensitive vs insensitive) and document the choice.
-- Perform field-level comparison for known auth interceptor properties, including nested `oauth_config`.
-- Reuse comparator in tenant collision checks where `authFingerprint(...)` is currently used.
-- Add focused tests for equivalent configs, non-equivalent configs, and nested OAuth config differences.
-
-**Files to modify**:
-- `src/transport/http-tenant-config.ts`
-- `src/transport/http-tenant-config.test.ts`
-
-**Estimated effort**: 1-2 hours
 
 ### 16. Extract tenant session lifecycle from HttpTransport
 **Problem**: `HttpTransport` currently combines routing, auth, filtering, SSE/session control, and tenant-specific session state/lifecycle (`tenantOAuthProvidersBySessionId`, tenant selector consistency checks, tenant context hydration). This concentration increases coupling and regression risk.

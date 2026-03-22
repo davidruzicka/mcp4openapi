@@ -460,6 +460,100 @@ describe('http-tenant-config', () => {
     }
   });
 
+  it('allows duplicate base URL for equivalent oauth config with different property insertion order and warns', () => {
+    const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    const raw = {
+      version: 1,
+      tenants: [
+        {
+          tenant_id: 'team-a',
+          profile_ids: ['default'],
+          api_base_url: 'https://same.example.com/api',
+          auth_mode: 'oauth' as const,
+          auth: {
+            type: 'oauth' as const,
+            oauth_config: {
+              authorization_endpoint: 'https://auth.example.com/oauth/authorize',
+              token_endpoint: 'https://auth.example.com/oauth/token',
+              client_id: 'shared-client',
+              scopes: ['read', 'write'],
+              allowed_redirect_hosts: ['localhost', '127.0.0.1'],
+            },
+          },
+        },
+        {
+          tenant_id: 'team-b',
+          profile_ids: ['default'],
+          api_base_url: 'https://same.example.com/api/',
+          auth_mode: 'oauth' as const,
+          auth: {
+            type: 'oauth' as const,
+            oauth_config: {
+              allowed_redirect_hosts: ['localhost', '127.0.0.1'],
+              scopes: ['read', 'write'],
+              client_id: 'shared-client',
+              token_endpoint: 'https://auth.example.com/oauth/token',
+              authorization_endpoint: 'https://auth.example.com/oauth/authorize',
+            },
+          },
+        },
+      ],
+    };
+
+    try {
+      const index = buildTenantIndexForProfile(raw as any, profileContext, logger);
+      expect(index.byTenantId.size).toBe(2);
+      expect(index.byBaseUrl.size).toBe(1);
+      expect(warnSpy).toHaveBeenCalledWith(
+        'Multiple tenants share the same api_base_url and auth config',
+        expect.objectContaining({
+          profileId: 'default',
+          tenantIds: ['team-a', 'team-b'],
+        }),
+      );
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it('fails when same base URL has oauth config that differs in a nested field', () => {
+    const raw = {
+      version: 1,
+      tenants: [
+        {
+          tenant_id: 'team-a',
+          profile_ids: ['default'],
+          api_base_url: 'https://same.example.com/api',
+          auth_mode: 'oauth' as const,
+          auth: {
+            type: 'oauth' as const,
+            oauth_config: {
+              authorization_endpoint: 'https://auth.example.com/oauth/authorize',
+              token_endpoint: 'https://auth.example.com/oauth/token',
+              client_id: 'shared-client',
+            },
+          },
+        },
+        {
+          tenant_id: 'team-b',
+          profile_ids: ['default'],
+          api_base_url: 'https://same.example.com/api/',
+          auth_mode: 'oauth' as const,
+          auth: {
+            type: 'oauth' as const,
+            oauth_config: {
+              authorization_endpoint: 'https://auth.example.com/oauth/authorize',
+              token_endpoint: 'https://auth.example.com/oauth/token',
+              client_id: 'different-client',
+            },
+          },
+        },
+      ],
+    };
+
+    expect(() => buildTenantIndexForProfile(raw as any, profileContext, logger)).toThrow(/collision/i);
+  });
+
   it('resolves mask tenant from concrete base URL and requires concrete URL for tenant id selector', () => {
     const raw = {
       version: 1,

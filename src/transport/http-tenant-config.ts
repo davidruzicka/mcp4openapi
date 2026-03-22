@@ -317,15 +317,109 @@ function buildResolvedContext(
   };
 }
 
-function authFingerprint(authConfigs: AuthInterceptor[]): string {
-  return JSON.stringify(authConfigs.map((entry) => ({
-    type: entry.type,
-    header_name: entry.header_name,
-    value_from_env: entry.value_from_env,
-    priority: entry.priority,
-    validation_endpoint: entry.validation_endpoint,
-    oauth_config: entry.type === 'oauth' ? entry.oauth_config : undefined,
-  })));
+function arePrimitiveArraysEqual(left: readonly string[] | readonly number[] | undefined, right: readonly string[] | readonly number[] | undefined): boolean {
+  if (left === right) {
+    return true;
+  }
+  if (!left || !right || left.length !== right.length) {
+    return false;
+  }
+  return left.every((value, index) => value === right[index]);
+}
+
+function areStringRecordsEqual(
+  left: Record<string, string> | undefined,
+  right: Record<string, string> | undefined,
+): boolean {
+  if (left === right) {
+    return true;
+  }
+  if (!left || !right) {
+    return false;
+  }
+
+  const leftKeys = Object.keys(left).sort();
+  const rightKeys = Object.keys(right).sort();
+  if (!arePrimitiveArraysEqual(leftKeys, rightKeys)) {
+    return false;
+  }
+
+  return leftKeys.every((key) => left[key] === right[key]);
+}
+
+function areOAuthConfigsEquivalent(left: OAuthConfig | undefined, right: OAuthConfig | undefined): boolean {
+  if (left === right) {
+    return true;
+  }
+  if (!left || !right) {
+    return false;
+  }
+
+  return left.issuer === right.issuer
+    && left.authorization_endpoint === right.authorization_endpoint
+    && left.token_endpoint === right.token_endpoint
+    && left.client_id === right.client_id
+    && left.client_secret === right.client_secret
+    && arePrimitiveArraysEqual(left.scopes, right.scopes)
+    && left.redirect_uri === right.redirect_uri
+    && left.registration_endpoint === right.registration_endpoint
+    && left.introspection_endpoint === right.introspection_endpoint
+    && left.revocation_endpoint === right.revocation_endpoint
+    && arePrimitiveArraysEqual(left.allowed_redirect_hosts, right.allowed_redirect_hosts);
+}
+
+function areSessionCookieConfigsEquivalent(
+  left: AuthInterceptor['session_cookie_config'],
+  right: AuthInterceptor['session_cookie_config'],
+): boolean {
+  if (left === right) {
+    return true;
+  }
+  if (!left || !right) {
+    return false;
+  }
+
+  return left.login_endpoint === right.login_endpoint
+    && left.login_method === right.login_method
+    && left.login_content_type === right.login_content_type
+    && left.username_field === right.username_field
+    && left.username_from_env === right.username_from_env
+    && left.password_field === right.password_field
+    && left.password_from_env === right.password_from_env
+    && areStringRecordsEqual(left.login_static_headers, right.login_static_headers)
+    && areStringRecordsEqual(left.login_static_body, right.login_static_body)
+    && arePrimitiveArraysEqual(left.cookie_names, right.cookie_names)
+    && arePrimitiveArraysEqual(left.login_allowed_hosts, right.login_allowed_hosts)
+    && arePrimitiveArraysEqual(left.reauth_on_statuses, right.reauth_on_statuses)
+    && left.failure_backoff_ms === right.failure_backoff_ms
+    && left.expiry_skew_ms === right.expiry_skew_ms;
+}
+
+function areAuthInterceptorsEquivalent(left: AuthInterceptor, right: AuthInterceptor): boolean {
+  return left.type === right.type
+    && left.priority === right.priority
+    && left.header_name === right.header_name
+    && left.query_param === right.query_param
+    && left.value_from_env === right.value_from_env
+    && left.validation_endpoint === right.validation_endpoint
+    && left.validation_method === right.validation_method
+    && left.validation_timeout_ms === right.validation_timeout_ms
+    && arePrimitiveArraysEqual(left.validation_allowed_hosts, right.validation_allowed_hosts)
+    && areOAuthConfigsEquivalent(left.oauth_config, right.oauth_config)
+    && areSessionCookieConfigsEquivalent(left.session_cookie_config, right.session_cookie_config)
+    && left.oauth_rate_limit?.max_requests === right.oauth_rate_limit?.max_requests
+    && left.oauth_rate_limit?.window_ms === right.oauth_rate_limit?.window_ms;
+}
+
+function areAuthConfigsEquivalent(left: AuthInterceptor[], right: AuthInterceptor[]): boolean {
+  if (left === right) {
+    return true;
+  }
+  if (left.length !== right.length) {
+    return false;
+  }
+
+  return left.every((entry, index) => areAuthInterceptorsEquivalent(entry, right[index]));
 }
 
 function maskMatchesBaseUrl(selector: TenantMaskSelector, normalizedBaseUrl: string): boolean {
@@ -473,8 +567,9 @@ export function buildTenantIndexForProfile(
     if (built.selectorType === 'exact') {
       const existingByBaseUrl = byBaseUrl.get(resolved.tenantBaseUrl);
       if (existingByBaseUrl) {
-        const sameAuth = authFingerprint(existingByBaseUrl.tenantAuthConfigs) === authFingerprint(resolved.tenantAuthConfigs);
-        if (!sameAuth || existingByBaseUrl.tenantAuthMode !== resolved.tenantAuthMode) {
+        const sameAuth = existingByBaseUrl.tenantAuthMode === resolved.tenantAuthMode
+          && areAuthConfigsEquivalent(existingByBaseUrl.tenantAuthConfigs, resolved.tenantAuthConfigs);
+        if (!sameAuth) {
           throw new ValidationError(
             `Tenant base URL collision for '${resolved.tenantBaseUrl}' with different auth configuration (${existingByBaseUrl.tenantId}, ${resolved.tenantId}).`,
           );
