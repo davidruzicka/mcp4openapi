@@ -199,11 +199,11 @@ export function parseImplementorTaskPayload(raw: string | undefined): Implemento
   try {
     parsed = JSON.parse(raw);
   } catch {
-    throw new Error('Invalid IMPLEMENTOR_TASK_JSON payload for implementor workflow.');
+    throw new Error('Invalid IMPLEMENTOR_TASK_JSON payload: expected JSON.');
   }
 
-  if (!parsed || typeof parsed !== 'object') {
-    throw new Error('Invalid IMPLEMENTOR_TASK_JSON payload for implementor workflow.');
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error('Invalid IMPLEMENTOR_TASK_JSON payload: expected object payload.');
   }
 
   const candidate = parsed as Partial<ImplementorTaskPayload> & { plannerArtifact?: string | ReviewFixPlanArtifact };
@@ -218,7 +218,7 @@ export function parseImplementorTaskPayload(raw: string | undefined): Implemento
     || typeof candidate.agentId !== 'string'
     || typeof candidate.now !== 'string'
   ) {
-    throw new Error('Invalid IMPLEMENTOR_TASK_JSON payload for implementor workflow.');
+    throw new Error('Invalid IMPLEMENTOR_TASK_JSON payload: missing required workflow fields.');
   }
 
   const plannerArtifact = typeof candidate.plannerArtifact === 'string'
@@ -257,7 +257,13 @@ export function buildImplementorReviewThreadReplyPlans(input: {
   readonly result: ImplementorCommandResult;
   readonly newHeadSha: string;
 }) {
-  if (!input.task.plannerArtifact || !input.task.reviewFollowUpItems || input.task.reviewFollowUpItems.length === 0) {
+  if (
+    !input.task.plannerArtifact
+    || !input.task.reviewFollowUpItems
+    || input.task.reviewFollowUpItems.length === 0
+    || input.result.outcome !== 'pr-created'
+    || !input.newHeadSha
+  ) {
     return [];
   }
 

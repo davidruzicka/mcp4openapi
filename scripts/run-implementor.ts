@@ -86,7 +86,7 @@ for (const assignment of assignments.slice(0, runtimeConfig.maxCandidates)) {
     ? [{
         threadId: plannerArtifact.threadId,
         headSha: plannerArtifact.headSha,
-        sourceCommentId: plannerArtifact.threadId,
+        sourceCommentId: plannerArtifact.sourceCommentId,
         summary: plannerArtifact.fixSummary,
         actionability: 'actionable' as const,
         requiresReply: true,
@@ -127,7 +127,8 @@ for (const assignment of assignments.slice(0, runtimeConfig.maxCandidates)) {
     await addPullRequestLabels(runtimeConfig, pullRequestNumber, labels.pullRequestLabelsToAdd);
     await ensurePullRequestDisclosure(runtimeConfig, pullRequestNumber, assignment.issueNumber);
 
-    const newHeadSha = plannerArtifact?.headSha ?? `pr-${pullRequestNumber}`;
+    const pullRequest = await getPullRequest(runtimeConfig, pullRequestNumber);
+    const newHeadSha = pullRequest.head.sha;
     const replyPlans = buildImplementorReviewThreadReplyPlans({
       task: taskPayload,
       result,
@@ -163,6 +164,7 @@ async function postImplementorReviewThreadReplies(
     await createReviewThreadReply(runtimeConfig, {
       pullRequestNumber,
       threadId: replyPlan.threadId,
+      inReplyToCommentId: replyPlan.inReplyToCommentId,
       body: replyPlan.body,
     });
   }

@@ -223,7 +223,7 @@ export async function createReviewThreadReply(
     variables: {
       pullRequestId: await fetchPullRequestNodeId(config, input.pullRequestNumber),
       body: input.body,
-      inReplyTo: input.threadId,
+      inReplyTo: input.inReplyToCommentId,
     },
   });
 

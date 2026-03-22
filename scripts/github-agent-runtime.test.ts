@@ -200,6 +200,7 @@ describe('github-agent-runtime review thread replies', () => {
       }, {
         pullRequestNumber: 201,
         threadId: 'THREAD_node_456',
+        inReplyToCommentId: 'COMMENT_node_789',
         body: 'This reply was prepared by an agent.',
       });
     } finally {
@@ -209,7 +210,8 @@ describe('github-agent-runtime review thread replies', () => {
     expect(requests).toHaveLength(2);
     expect(requests[0]?.url).toContain('/graphql');
     expect(requests[1]?.body).toContain('addPullRequestReviewThreadReply');
-    expect(requests[1]?.body).toContain('THREAD_node_456');
+    expect(requests[1]?.body).toContain('COMMENT_node_789');
+    expect(requests[1]?.body).not.toContain('THREAD_node_456');
   });
 
   it('throws a clear error when the GraphQL mutation returns errors', async () => {
@@ -241,6 +243,7 @@ describe('github-agent-runtime review thread replies', () => {
       }, {
         pullRequestNumber: 201,
         threadId: 'THREAD_node_456',
+        inReplyToCommentId: 'COMMENT_node_789',
         body: 'This reply was prepared by an agent.',
       })).rejects.toThrow('GitHub GraphQL request failed for review-thread reply: mutation failed');
     } finally {

@@ -27,11 +27,12 @@ export interface ReviewFollowUpItem {
 
 export interface ImplementorThreadReplyPlan {
   readonly threadId: string;
+  readonly inReplyToCommentId: string;
   readonly headSha: string;
   readonly body: string;
 }
 
-export type ImplementorThreadReplyPayload = Pick<ImplementorThreadReplyPlan, 'threadId' | 'body'>;
+export type ImplementorThreadReplyPayload = Pick<ImplementorThreadReplyPlan, 'threadId' | 'inReplyToCommentId' | 'body'>;
 
 export function collectReviewFollowUpItems(input: {
   readonly reviewThreads: readonly ReviewThreadLike[];
@@ -82,6 +83,7 @@ export function buildImplementorThreadReplyPlans(input: {
 
   return [...uniqueItems.values()].map((item) => ({
     threadId: item.threadId,
+    inReplyToCommentId: item.sourceCommentId,
     headSha: input.newHeadSha,
     body: buildImplementorThreadReplyBody({
       previousHeadSha: item.headSha,

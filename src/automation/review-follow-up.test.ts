@@ -242,9 +242,15 @@ describe('review-follow-up', () => {
       });
 
       expect(replies).toHaveLength(1);
+      expect(replies[0]).toMatchObject({
+        threadId: 'thread-1',
+        inReplyToCommentId: 'comment-2',
+        headSha: 'def456',
+      });
       expect(replies[0]?.body).toContain('This reply was prepared by an agent.');
       expect(replies[0]?.body).toContain('def456');
       expect(replies[0]?.body).toContain('agent-stage: implementor');
+      expect(replies[0]?.body).toContain('source-comment-id: comment-2');
     });
 
     it('fails closed when a reply plan would be missing required thread metadata', () => {
