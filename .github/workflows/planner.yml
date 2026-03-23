@@ -44,6 +44,9 @@ jobs:
       - name: Run planner
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MCP4_AGENT_ARTIFACT_SIGNING_KEY: ${{ secrets.MCP4_AGENT_ARTIFACT_SIGNING_KEY }}
+          MCP4_AGENT_ARTIFACT_KEY_ID: ${{ vars.MCP4_AGENT_ARTIFACT_KEY_ID }}
+          MCP4_AGENT_ARTIFACT_ALLOW_UNSIGNED: ${{ vars.MCP4_AGENT_ARTIFACT_ALLOW_UNSIGNED }}
           PLANNER_LOOKBACK_HOURS: ${{ github.event.inputs.lookback_hours || '72' }}
           PLANNER_MAX_ISSUES: ${{ github.event.inputs.max_issues || '10' }}
           PLANNER_AGENT_ID: ${{ github.event.inputs.agent_id || 'planner' }}

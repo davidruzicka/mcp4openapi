@@ -317,9 +317,10 @@ export function selectLatestTrustedPlannerArtifact(
   trustConfig: ArtifactTrustConfig,
 ): ReviewFixPlanArtifact | undefined {
   const commentsNewestFirst = comments
+    .filter((comment) => parseAgentMetadata(comment.body)?.['agent-stage'] === 'planner')
     .map((comment, index) => ({ comment, index }))
     .sort((left, right) => {
-      const timestampDelta = Date.parse(right.comment.updatedAt) - Date.parse(left.comment.updatedAt);
+      const timestampDelta = Date.parse(right.comment.createdAt) - Date.parse(left.comment.createdAt);
       return timestampDelta !== 0 ? timestampDelta : right.index - left.index;
     })
     .map(({ comment }) => comment);

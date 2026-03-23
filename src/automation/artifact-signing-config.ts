@@ -17,6 +17,11 @@ export function readArtifactTrustConfig(env: NodeJS.ProcessEnv): ArtifactTrustCo
     env.MCP4_AGENT_ARTIFACT_ALLOW_UNSIGNED,
     'MCP4_AGENT_ARTIFACT_ALLOW_UNSIGNED',
   );
+  if (explicitAllowUnsigned === false && !key) {
+    throw new ConfigurationError(
+      'MCP4_AGENT_ARTIFACT_ALLOW_UNSIGNED=false requires MCP4_AGENT_ARTIFACT_SIGNING_KEY to be configured.',
+    );
+  }
 
   return {
     allowUnsigned: explicitAllowUnsigned ?? (key ? false : true),

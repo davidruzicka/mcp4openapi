@@ -58,9 +58,24 @@ describe('artifact-signing-config', () => {
 
     expect(readArtifactTrustConfig({
       MCP4_AGENT_ARTIFACT_ALLOW_UNSIGNED: 'false',
+      MCP4_AGENT_ARTIFACT_SIGNING_KEY: 'planner-secret',
     })).toEqual({
       allowUnsigned: false,
+      signing: {
+        key: 'planner-secret',
+        keyId: 'default',
+      },
     });
+  });
+
+  it('rejects strict trust mode when the signing key is missing', () => {
+    expect(() => readArtifactTrustConfig({
+      MCP4_AGENT_ARTIFACT_ALLOW_UNSIGNED: 'false',
+      MCP4_AGENT_ARTIFACT_SIGNING_KEY: '   ',
+    })).toThrow(ConfigurationError);
+    expect(() => readArtifactTrustConfig({
+      MCP4_AGENT_ARTIFACT_ALLOW_UNSIGNED: 'false',
+    })).toThrow('MCP4_AGENT_ARTIFACT_ALLOW_UNSIGNED=false requires MCP4_AGENT_ARTIFACT_SIGNING_KEY');
   });
 
   it('rejects invalid allowUnsigned values', () => {

@@ -376,8 +376,11 @@ Rules:
 - Lenient read-only paths (for example planner dedupe/debugging) may read signed or legacy unsigned artifacts, but execution paths must trust only verified artifacts.
 - Unsigned artifacts are treated as untrusted text on execution paths unless `MCP4_AGENT_ARTIFACT_ALLOW_UNSIGNED=true` is enabled during migration.
 - Signed verification uses `MCP4_AGENT_ARTIFACT_SIGNING_KEY` plus optional `MCP4_AGENT_ARTIFACT_KEY_ID` (`default` when omitted); first-pass signing is fixed to HMAC-SHA256.
+- `MCP4_AGENT_ARTIFACT_ALLOW_UNSIGNED=false` is only valid when `MCP4_AGENT_ARTIFACT_SIGNING_KEY` is configured; startup should fail fast instead of leaving planner/implementor in a dead-end strict mode.
+- Planner/implementor workflows pass `MCP4_AGENT_ARTIFACT_*` through from GitHub secrets/vars so signing can be enabled without editing the shipped workflow files.
 - If a signed artifact is present but invalid, tampered, or the signing key is unavailable, implementor-side execution fails closed instead of silently downgrading to unsigned parsing.
 - Key rotation is done by changing the secret and optionally the key ID; historical comments remain readable only on lenient/non-execution paths unless compatibility mode is explicitly enabled.
+- Implementor artifact selection only considers planner-stage comments and orders candidates by comment creation time rather than edit time.
 - Implementor follow-up replies must visibly disclose automation and include metadata bound to the replying head SHA.
 - Merge policy is fail-closed: only `addressed` and `obsolete` are non-blocking; `open` blocks merge readiness.
 

@@ -69,13 +69,14 @@ function buildIssue(overrides: Partial<ImplementorIssue> = {}): ImplementorIssue
   };
 }
 
-function buildComment(body: string): ImplementorIssueComment {
+function buildComment(body: string, overrides: Partial<ImplementorIssueComment> = {}): ImplementorIssueComment {
   return {
     id: 1,
     body,
     createdAt: '2026-03-14T12:00:00Z',
     updatedAt: '2026-03-14T12:00:00Z',
     authorLogin: 'github-actions[bot]',
+    ...overrides,
   };
 }
 
@@ -261,10 +262,36 @@ describe('implementor-runner', () => {
         fixSummary: 'Handle the newest signed review follow-up',
       };
       const comments = [
-        buildComment(serializePlannerArtifact(buildPlannerArtifact())),
-        buildComment(serializePlannerArtifact(newerArtifact, {
-          signing: strictTrustConfig.signing,
-        })),
+        buildComment([
+          '🤖 Agent plan (planner)',
+          '',
+          serializePlannerArtifact(buildPlannerArtifact()),
+          '',
+          '<!-- AGENT-METADATA',
+          'agent-stage: planner',
+          'status: planned',
+          '-->',
+        ].join('\n'), {
+          id: 1,
+          createdAt: '2026-03-14T12:00:00Z',
+          updatedAt: '2026-03-14T12:00:00Z',
+        }),
+        buildComment([
+          '🤖 Agent plan (planner)',
+          '',
+          serializePlannerArtifact(newerArtifact, {
+            signing: strictTrustConfig.signing,
+          }),
+          '',
+          '<!-- AGENT-METADATA',
+          'agent-stage: planner',
+          'status: planned',
+          '-->',
+        ].join('\n'), {
+          id: 2,
+          createdAt: '2026-03-14T13:00:00Z',
+          updatedAt: '2026-03-14T13:00:00Z',
+        }),
       ];
 
       expect(selectLatestTrustedPlannerArtifact(comments, strictTrustConfig)).toEqual(newerArtifact);
@@ -272,12 +299,38 @@ describe('implementor-runner', () => {
 
     it('fails closed when the newest artifact-bearing comment is untrusted in strict mode', () => {
       const comments = [
-        buildComment(buildSignedPlannerArtifact()),
-        buildComment(serializePlannerArtifact({
-          ...buildPlannerArtifact(),
-          sourceCommentId: 'comment-4',
-          fixSummary: 'Unsigned planner artifact should block strict mode',
-        })),
+        buildComment([
+          '🤖 Agent plan (planner)',
+          '',
+          buildSignedPlannerArtifact(),
+          '',
+          '<!-- AGENT-METADATA',
+          'agent-stage: planner',
+          'status: planned',
+          '-->',
+        ].join('\n'), {
+          id: 1,
+          createdAt: '2026-03-14T12:00:00Z',
+          updatedAt: '2026-03-14T12:00:00Z',
+        }),
+        buildComment([
+          '🤖 Agent plan (planner)',
+          '',
+          serializePlannerArtifact({
+            ...buildPlannerArtifact(),
+            sourceCommentId: 'comment-4',
+            fixSummary: 'Unsigned planner artifact should block strict mode',
+          }),
+          '',
+          '<!-- AGENT-METADATA',
+          'agent-stage: planner',
+          'status: planned',
+          '-->',
+        ].join('\n'), {
+          id: 2,
+          createdAt: '2026-03-14T13:00:00Z',
+          updatedAt: '2026-03-14T13:00:00Z',
+        }),
       ];
 
       expect(() => selectLatestTrustedPlannerArtifact(comments, strictTrustConfig)).toThrow(
@@ -289,6 +342,88 @@ describe('implementor-runner', () => {
       expect(selectLatestTrustedPlannerArtifact([
         buildComment('No planner artifact here.'),
       ], strictTrustConfig)).toBeUndefined();
+    });
+
+    it('ignores newer non-planner comments that paste planner artifacts', () => {
+      const trustedPlannerComment = [
+        '🤖 Agent plan (planner)',
+        '',
+        buildSignedPlannerArtifact(),
+        '',
+        '<!-- AGENT-METADATA',
+        'agent-stage: planner',
+        'status: planned',
+        '-->',
+      ].join('\n');
+      const pastedHumanComment = [
+        'Copying the artifact block here for reference.',
+        '',
+        buildSignedPlannerArtifact().replace('Cover the fallback path', 'Tampered summary'),
+      ].join('\n');
+
+      expect(selectLatestTrustedPlannerArtifact([
+        buildComment(trustedPlannerComment, {
+          id: 1,
+          createdAt: '2026-03-14T12:00:00Z',
+          updatedAt: '2026-03-14T12:00:00Z',
+          authorLogin: 'github-actions[bot]',
+        }),
+        buildComment(pastedHumanComment, {
+          id: 2,
+          createdAt: '2026-03-14T13:00:00Z',
+          updatedAt: '2026-03-14T13:00:00Z',
+          authorLogin: 'octocat',
+        }),
+      ], strictTrustConfig)).toEqual(buildPlannerArtifact());
+    });
+
+    it('orders planner artifacts by creation time instead of edit time', () => {
+      const olderPlannerComment = [
+        '🤖 Agent plan (planner)',
+        '',
+        serializePlannerArtifact({
+          ...buildPlannerArtifact(),
+          sourceCommentId: 'comment-1',
+          fixSummary: 'Older planner artifact',
+        }, {
+          signing: strictTrustConfig.signing,
+        }),
+        '',
+        '<!-- AGENT-METADATA',
+        'agent-stage: planner',
+        'status: planned',
+        '-->',
+      ].join('\n');
+      const newerPlannerArtifact = {
+        ...buildPlannerArtifact(),
+        sourceCommentId: 'comment-3',
+        fixSummary: 'Newest planner artifact',
+      };
+      const newerPlannerComment = [
+        '🤖 Agent plan (planner)',
+        '',
+        serializePlannerArtifact(newerPlannerArtifact, {
+          signing: strictTrustConfig.signing,
+        }),
+        '',
+        '<!-- AGENT-METADATA',
+        'agent-stage: planner',
+        'status: planned',
+        '-->',
+      ].join('\n');
+
+      expect(selectLatestTrustedPlannerArtifact([
+        buildComment(olderPlannerComment, {
+          id: 1,
+          createdAt: '2026-03-14T12:00:00Z',
+          updatedAt: '2026-03-14T14:00:00Z',
+        }),
+        buildComment(newerPlannerComment, {
+          id: 2,
+          createdAt: '2026-03-14T13:00:00Z',
+          updatedAt: '2026-03-14T13:30:00Z',
+        }),
+      ], strictTrustConfig)).toEqual(newerPlannerArtifact);
     });
   });
 

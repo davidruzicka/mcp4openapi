@@ -259,9 +259,7 @@ function hasEquivalentPlannerDecisionComment(
       return tryInspectPlannerArtifactComment(comment.body) === undefined;
     }
 
-    const parsedArtifact = artifactSigning
-      ? tryParseTrustedPlannerArtifactComment(comment.body, artifactSigning)
-      : tryInspectPlannerArtifactComment(comment.body)?.artifact;
+    const parsedArtifact = tryParsePlannerArtifactCommentForDedupe(comment.body, artifactSigning);
 
     return isSameReviewFixPlanArtifact(parsedArtifact, expectedArtifact);
   });
@@ -289,6 +287,26 @@ function tryParseTrustedPlannerArtifactComment(
   } catch {
     return undefined;
   }
+}
+
+function tryParsePlannerArtifactCommentForDedupe(
+  body: string,
+  artifactSigning: ArtifactSigningConfig | undefined,
+): ReviewFixPlanArtifact | undefined {
+  const inspected = tryInspectPlannerArtifactComment(body);
+  if (!inspected) {
+    return undefined;
+  }
+
+  if (!inspected.isSigned) {
+    return inspected.artifact;
+  }
+
+  if (!artifactSigning) {
+    return undefined;
+  }
+
+  return tryParseTrustedPlannerArtifactComment(body, artifactSigning);
 }
 
 function isSameReviewFixPlanArtifact(
