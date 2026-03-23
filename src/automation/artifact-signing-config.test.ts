@@ -3,13 +3,21 @@ import { ConfigurationError } from '../core/errors.js';
 import { readArtifactTrustConfig } from './artifact-signing-config.js';
 
 describe('artifact-signing-config', () => {
-  it('returns safe defaults when the environment is empty', () => {
+  it('returns compatibility defaults when the environment is empty', () => {
     expect(readArtifactTrustConfig({})).toEqual({
-      allowUnsigned: false,
+      allowUnsigned: true,
     });
   });
 
-  it('parses a signing key from the environment', () => {
+  it('keeps unsigned planner artifacts enabled by default until signing is configured', () => {
+    expect(readArtifactTrustConfig({
+      MCP4_AGENT_ARTIFACT_KEY_ID: 'primary',
+    })).toEqual({
+      allowUnsigned: true,
+    });
+  });
+
+  it('parses a signing key from the environment and switches to strict trust by default', () => {
     expect(readArtifactTrustConfig({
       MCP4_AGENT_ARTIFACT_SIGNING_KEY: 'planner-secret',
     })).toEqual({
@@ -26,7 +34,7 @@ describe('artifact-signing-config', () => {
       MCP4_AGENT_ARTIFACT_SIGNING_KEY: '   ',
       MCP4_AGENT_ARTIFACT_KEY_ID: '   ',
     })).toEqual({
-      allowUnsigned: false,
+      allowUnsigned: true,
     });
 
     expect(readArtifactTrustConfig({

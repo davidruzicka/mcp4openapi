@@ -13,9 +13,13 @@ const DEFAULT_KEY_ID = 'default';
 export function readArtifactTrustConfig(env: NodeJS.ProcessEnv): ArtifactTrustConfig {
   const key = normalizeOptionalString(env.MCP4_AGENT_ARTIFACT_SIGNING_KEY);
   const keyId = normalizeOptionalString(env.MCP4_AGENT_ARTIFACT_KEY_ID) ?? DEFAULT_KEY_ID;
+  const explicitAllowUnsigned = parseExplicitBoolean(
+    env.MCP4_AGENT_ARTIFACT_ALLOW_UNSIGNED,
+    'MCP4_AGENT_ARTIFACT_ALLOW_UNSIGNED',
+  );
 
   return {
-    allowUnsigned: parseExplicitBoolean(env.MCP4_AGENT_ARTIFACT_ALLOW_UNSIGNED, 'MCP4_AGENT_ARTIFACT_ALLOW_UNSIGNED') ?? false,
+    allowUnsigned: explicitAllowUnsigned ?? (key ? false : true),
     ...(key
       ? {
           signing: {

@@ -217,7 +217,7 @@ export function parseImplementorTaskPayload(
     throw new Error('Invalid IMPLEMENTOR_TASK_JSON payload: expected object payload.');
   }
 
-  const candidate = parsed as Partial<ImplementorTaskPayload> & { plannerArtifact?: string | ReviewFixPlanArtifact };
+  const candidate = parsed as Partial<ImplementorTaskPayload> & { plannerArtifact?: unknown };
   if (
     typeof candidate.repository !== 'string'
     || !candidate.issue
@@ -232,10 +232,8 @@ export function parseImplementorTaskPayload(
     throw new Error('Invalid IMPLEMENTOR_TASK_JSON payload: missing required workflow fields.');
   }
 
-  const trustConfig = options?.trustConfig ?? { allowUnsigned: false };
-  const plannerArtifact = typeof candidate.plannerArtifact === 'string'
-    ? parsePlannerArtifactFromTaskString(candidate.plannerArtifact, trustConfig)
-    : candidate.plannerArtifact;
+  const trustConfig = options?.trustConfig ?? { allowUnsigned: true };
+  const plannerArtifact = parsePlannerArtifactFromTaskValue(candidate.plannerArtifact, trustConfig);
   if (candidate.plannerArtifact !== undefined && plannerArtifact === undefined) {
     throw new Error('Invalid IMPLEMENTOR_TASK_JSON payload: plannerArtifact must be a valid review-follow-up artifact.');
   }
@@ -262,6 +260,34 @@ export function parseImplementorTaskPayload(
     agentId: candidate.agentId,
     now: candidate.now,
   };
+}
+
+function parsePlannerArtifactFromTaskValue(
+  rawArtifact: unknown,
+  trustConfig: ArtifactTrustConfig,
+): ReviewFixPlanArtifact | undefined {
+  if (rawArtifact === undefined) {
+    return undefined;
+  }
+
+  const artifactComment = normalizePlannerArtifactTaskValue(rawArtifact);
+  return parsePlannerArtifactFromTaskString(artifactComment, trustConfig);
+}
+
+function normalizePlannerArtifactTaskValue(rawArtifact: unknown): string {
+  if (typeof rawArtifact === 'string') {
+    return rawArtifact;
+  }
+
+  if (!rawArtifact || typeof rawArtifact !== 'object' || Array.isArray(rawArtifact)) {
+    throw new Error('Invalid IMPLEMENTOR_TASK_JSON payload: plannerArtifact must be a valid review-follow-up artifact.');
+  }
+
+  return [
+    '<!-- AGENT-PLANNER-ARTIFACT',
+    JSON.stringify(rawArtifact),
+    '-->',
+  ].join('\n');
 }
 
 function parsePlannerArtifactFromTaskString(rawArtifact: string, trustConfig: ArtifactTrustConfig): ReviewFixPlanArtifact | undefined {
