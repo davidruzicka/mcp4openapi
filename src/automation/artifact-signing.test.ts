@@ -140,4 +140,83 @@ describe('artifact-signing', () => {
       reason: 'missing-key',
     });
   });
+
+  it('rejects non-object envelopes and mismatched kinds as unknown format', () => {
+    expect(verifyArtifactEnvelope<typeof payload>({
+      envelope: 'not-an-object',
+      expectedKind: 'review-follow-up',
+      key: signingConfig.key,
+    })).toEqual({
+      ok: false,
+      reason: 'unknown-format',
+    });
+
+    expect(verifyArtifactEnvelope<typeof payload>({
+      envelope: {
+        ...signArtifactEnvelope({
+          kind: 'review-follow-up',
+          payload,
+          config: signingConfig,
+        }),
+        kind: 'different-kind',
+      },
+      expectedKind: 'review-follow-up',
+      key: signingConfig.key,
+    })).toEqual({
+      ok: false,
+      reason: 'unknown-format',
+    });
+  });
+
+  it('rejects signed envelopes missing key metadata or payload as unknown format', () => {
+    const envelope = signArtifactEnvelope({
+      kind: 'review-follow-up',
+      payload,
+      config: signingConfig,
+    });
+
+    expect(verifyArtifactEnvelope<typeof payload>({
+      envelope: {
+        ...envelope,
+        keyId: '',
+      },
+      expectedKind: 'review-follow-up',
+      key: signingConfig.key,
+    })).toEqual({
+      ok: false,
+      reason: 'unknown-format',
+    });
+
+    expect(verifyArtifactEnvelope<typeof payload>({
+      envelope: {
+        ...envelope,
+        payload: undefined,
+      },
+      expectedKind: 'review-follow-up',
+      key: signingConfig.key,
+    })).toEqual({
+      ok: false,
+      reason: 'unknown-format',
+    });
+  });
+
+  it('rejects signatures with mismatched lengths before timing-safe comparison', () => {
+    const envelope = signArtifactEnvelope({
+      kind: 'review-follow-up',
+      payload,
+      config: signingConfig,
+    });
+
+    expect(verifyArtifactEnvelope<typeof payload>({
+      envelope: {
+        ...envelope,
+        signature: 'short',
+      },
+      expectedKind: 'review-follow-up',
+      key: signingConfig.key,
+    })).toEqual({
+      ok: false,
+      reason: 'invalid-signature',
+    });
+  });
 });

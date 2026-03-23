@@ -2,6 +2,7 @@ import { buildAgentMetadataBlock } from './agent-feedback.js';
 import { planPlannerTransition } from './agent-workflow-state.js';
 import { parseAgentMetadata } from './evaluator-runner.js';
 import {
+  inspectPlannerArtifactComment,
   parsePlannerArtifact,
   serializePlannerArtifact,
   type ReviewFixPlanArtifact,
@@ -138,7 +139,7 @@ export function collectPlannerAssignments(input: CollectPlannerAssignmentsInput)
       artifactSigning: input.artifactSigning,
     });
 
-    if (hasEquivalentPlannerDecisionComment(input.commentsByIssueNumber[issue.number] ?? [], decision)) {
+    if (hasEquivalentPlannerDecisionComment(input.commentsByIssueNumber[issue.number] ?? [], decision, input.artifactSigning !== undefined)) {
       return [];
     }
 
@@ -241,6 +242,7 @@ function isPlannerActionableIssue(issue: PlannerIssue): boolean {
 function hasEquivalentPlannerDecisionComment(
   comments: readonly PlannerIssueComment[],
   decision: PlannerDecision,
+  signingRequired: boolean,
 ): boolean {
   const expectedStatus = getPlannerDecisionStatus(decision.remainsSuitable, decision.blocked);
   const expectedReasons = decision.reasons.join(',');
@@ -248,17 +250,21 @@ function hasEquivalentPlannerDecisionComment(
 
   return comments.some((comment) => {
     const metadata = parseAgentMetadata(comment.body);
-    const parsedArtifact = tryParsePlannerArtifact(comment.body);
+    const parsedArtifact = tryInspectPlannerArtifactComment(comment.body);
+    const artifactMatches = JSON.stringify(parsedArtifact?.artifact) === JSON.stringify(expectedArtifact ? decision.plannerArtifact : undefined);
+    const signingMatches = !signingRequired || decision.plannerArtifact === undefined || parsedArtifact?.isSigned === true;
+
     return metadata?.['agent-stage'] === 'planner'
       && metadata?.status === expectedStatus
       && metadata?.reasons === expectedReasons
-      && JSON.stringify(parsedArtifact) === JSON.stringify(expectedArtifact ? decision.plannerArtifact : undefined);
+      && artifactMatches
+      && signingMatches;
   });
 }
 
-function tryParsePlannerArtifact(body: string): ReviewFixPlanArtifact | undefined {
+function tryInspectPlannerArtifactComment(body: string) {
   try {
-    return parsePlannerArtifact(body);
+    return inspectPlannerArtifactComment(body);
   } catch {
     return undefined;
   }

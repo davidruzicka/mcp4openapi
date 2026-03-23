@@ -286,6 +286,28 @@ function parsePlannerArtifactFromTaskString(rawArtifact: string, trustConfig: Ar
   }
 }
 
+export function selectLatestTrustedPlannerArtifact(
+  comments: readonly ImplementorIssueComment[],
+  trustConfig: ArtifactTrustConfig,
+): ReviewFixPlanArtifact | undefined {
+  const commentsNewestFirst = comments
+    .map((comment, index) => ({ comment, index }))
+    .sort((left, right) => {
+      const timestampDelta = Date.parse(right.comment.updatedAt) - Date.parse(left.comment.updatedAt);
+      return timestampDelta !== 0 ? timestampDelta : right.index - left.index;
+    })
+    .map(({ comment }) => comment);
+
+  for (const comment of commentsNewestFirst) {
+    const artifact = parseTrustedPlannerArtifact(comment.body, { trustConfig });
+    if (artifact !== undefined) {
+      return artifact;
+    }
+  }
+
+  return undefined;
+}
+
 export function buildImplementorReviewThreadReplyPlans(input: {
   readonly task: ImplementorTaskPayload;
   readonly result: ImplementorCommandResult;

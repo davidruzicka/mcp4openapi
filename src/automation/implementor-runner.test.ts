@@ -7,6 +7,7 @@ import {
   parseImplementorCommandResult,
   parseImplementorTaskPayload,
   planImplementorResultLabels,
+  selectLatestTrustedPlannerArtifact,
   type ImplementorIssue,
   type ImplementorIssueComment,
 } from './implementor-runner.js';
@@ -239,7 +240,97 @@ describe('implementor-runner', () => {
     });
   });
 
+  describe('selectLatestTrustedPlannerArtifact', () => {
+    it('prefers the newest trusted signed planner artifact over older unsigned comments in strict mode', () => {
+      const newerArtifact = {
+        ...buildPlannerArtifact(),
+        sourceCommentId: 'comment-3',
+        fixSummary: 'Handle the newest signed review follow-up',
+      };
+      const comments = [
+        buildComment(serializePlannerArtifact(buildPlannerArtifact())),
+        buildComment(serializePlannerArtifact(newerArtifact, {
+          signing: strictTrustConfig.signing,
+        })),
+      ];
+
+      expect(selectLatestTrustedPlannerArtifact(comments, strictTrustConfig)).toEqual(newerArtifact);
+    });
+
+    it('fails closed when the newest artifact-bearing comment is untrusted in strict mode', () => {
+      const comments = [
+        buildComment(buildSignedPlannerArtifact()),
+        buildComment(serializePlannerArtifact({
+          ...buildPlannerArtifact(),
+          sourceCommentId: 'comment-4',
+          fixSummary: 'Unsigned planner artifact should block strict mode',
+        })),
+      ];
+
+      expect(() => selectLatestTrustedPlannerArtifact(comments, strictTrustConfig)).toThrow(
+        'Invalid planner artifact: unsigned artifacts are not trusted.',
+      );
+    });
+
+    it('returns undefined when no issue comments contain a planner artifact', () => {
+      expect(selectLatestTrustedPlannerArtifact([
+        buildComment('No planner artifact here.'),
+      ], strictTrustConfig)).toBeUndefined();
+    });
+  });
+
   describe('parseImplementorTaskPayload', () => {
+    it('rejects missing and incomplete workflow payloads', () => {
+      expect(() => parseImplementorTaskPayload(undefined)).toThrow(
+        'Missing IMPLEMENTOR_TASK_JSON payload for implementor workflow.',
+      );
+
+      expect(() => parseImplementorTaskPayload(JSON.stringify({
+        repository: 'davidruzicka/mcp4openapi',
+        issue: {
+          number: 161,
+          title: 'Add cache invalidation metrics',
+          body: 'Need bounded instrumentation and tests.',
+          url: 'https://github.com/davidruzicka/mcp4openapi/issues/161',
+        },
+        agentId: 'implementor',
+        now: '2026-03-14T12:00:00Z',
+      }))).toThrow('missing required workflow fields');
+    });
+
+    it('maps unknown planner artifact validation failures to the generic payload error', () => {
+      expect(() => parseImplementorTaskPayload(JSON.stringify({
+        repository: 'davidruzicka/mcp4openapi',
+        issue: {
+          number: 161,
+          title: 'Add cache invalidation metrics',
+          body: 'Need bounded instrumentation and tests.',
+          url: 'https://github.com/davidruzicka/mcp4openapi/issues/161',
+        },
+        reviewFollowUpItems: [{
+          threadId: 'thread-1',
+          headSha: 'abc123',
+          sourceCommentId: 'comment-2',
+          summary: 'Add a regression test for the fallback path',
+          actionability: 'actionable',
+          requiresReply: true,
+        }],
+        plannerArtifact: [
+          '<!-- AGENT-PLANNER-ARTIFACT',
+          JSON.stringify({
+            ...buildPlannerArtifact(),
+            implementationSteps: [],
+          }),
+          '-->',
+        ].join('\n'),
+        runId: 'run-3',
+        agentId: 'implementor',
+        now: '2026-03-14T12:00:00Z',
+      }), {
+        trustConfig: unsignedCompatibilityTrustConfig,
+      })).toThrow('plannerArtifact must be a valid review-follow-up artifact');
+    });
+
     it('parses trusted signed planner artifacts and review follow-up items from the implementor payload', () => {
       const payload = parseImplementorTaskPayload(JSON.stringify({
         repository: 'davidruzicka/mcp4openapi',

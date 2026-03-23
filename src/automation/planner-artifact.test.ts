@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { parseTrustedPlannerArtifact, parsePlannerArtifact, serializePlannerArtifact, type ReviewFixPlanArtifact } from './planner-artifact.js';
+import {
+  inspectPlannerArtifactComment,
+  parseTrustedPlannerArtifact,
+  parsePlannerArtifact,
+  serializePlannerArtifact,
+  type ReviewFixPlanArtifact,
+} from './planner-artifact.js';
 
 const artifact: ReviewFixPlanArtifact = {
   kind: 'review-follow-up',
@@ -26,6 +32,10 @@ describe('planner-artifact', () => {
     });
 
     expect(parsePlannerArtifact(body)).toEqual(artifact);
+    expect(inspectPlannerArtifactComment(body)).toEqual({
+      artifact,
+      isSigned: true,
+    });
     expect(parseTrustedPlannerArtifact(body, {
       trustConfig: {
         allowUnsigned: false,
@@ -92,6 +102,110 @@ describe('planner-artifact', () => {
         },
       },
     })).toThrow('missing signature');
+
+    expect(() => parsePlannerArtifact([
+      '<!-- AGENT-PLANNER-ARTIFACT',
+      JSON.stringify({
+        version: 1,
+        kind: 'review-follow-up',
+        algorithm: 'hmac-sha256',
+        keyId: 'primary',
+        payload: 'not-an-object',
+        signature: 'abc123',
+      }),
+      '-->',
+    ].join('\n'))).toThrow('signed envelope must include object payload');
+  });
+
+  it('validates signed-envelope metadata on lenient and trusted paths', () => {
+    expect(() => parsePlannerArtifact([
+      '<!-- AGENT-PLANNER-ARTIFACT',
+      JSON.stringify({
+        version: 2,
+        kind: 'review-follow-up',
+        algorithm: 'hmac-sha256',
+        keyId: 'primary',
+        payload: artifact,
+        signature: 'abc123',
+      }),
+      '-->',
+    ].join('\n'))).toThrow('signed envelope must use version 1');
+
+    expect(() => parsePlannerArtifact([
+      '<!-- AGENT-PLANNER-ARTIFACT',
+      JSON.stringify({
+        version: 1,
+        kind: 'review-follow-up',
+        algorithm: 'hmac-sha256',
+        keyId: 'primary',
+        payload: artifact,
+        signature: '',
+      }),
+      '-->',
+    ].join('\n'))).toThrow('signed envelope must include signature');
+
+    expect(() => parseTrustedPlannerArtifact([
+      '<!-- AGENT-PLANNER-ARTIFACT',
+      JSON.stringify({
+        version: 2,
+        kind: 'review-follow-up',
+        algorithm: 'hmac-sha256',
+        keyId: 'primary',
+        payload: artifact,
+        signature: 'abc123',
+      }),
+      '-->',
+    ].join('\n'), {
+      trustConfig: {
+        allowUnsigned: false,
+        signing: {
+          key: 'signing-secret',
+          keyId: 'primary',
+        },
+      },
+    })).toThrow('unsupported signed envelope version');
+
+    expect(() => parseTrustedPlannerArtifact([
+      '<!-- AGENT-PLANNER-ARTIFACT',
+      JSON.stringify({
+        version: 1,
+        kind: 'review-follow-up',
+        algorithm: 'sha1',
+        keyId: 'primary',
+        payload: artifact,
+        signature: 'abc123',
+      }),
+      '-->',
+    ].join('\n'), {
+      trustConfig: {
+        allowUnsigned: false,
+        signing: {
+          key: 'signing-secret',
+          keyId: 'primary',
+        },
+      },
+    })).toThrow('unsupported signature algorithm');
+
+    expect(() => parseTrustedPlannerArtifact([
+      '<!-- AGENT-PLANNER-ARTIFACT',
+      JSON.stringify({
+        version: 1,
+        kind: 'wrong-kind',
+        algorithm: 'hmac-sha256',
+        keyId: 'primary',
+        payload: artifact,
+        signature: 'abc123',
+      }),
+      '-->',
+    ].join('\n'), {
+      trustConfig: {
+        allowUnsigned: false,
+        signing: {
+          key: 'signing-secret',
+          keyId: 'primary',
+        },
+      },
+    })).toThrow('unrecognized signed envelope format');
   });
 
   it('returns undefined for non review-follow-up artifact payloads', () => {

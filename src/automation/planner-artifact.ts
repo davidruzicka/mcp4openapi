@@ -20,6 +20,11 @@ export interface ParseTrustedPlannerArtifactOptions {
   readonly trustConfig: ArtifactTrustConfig;
 }
 
+export interface ParsedPlannerArtifactComment {
+  readonly artifact: ReviewFixPlanArtifact;
+  readonly isSigned: boolean;
+}
+
 const ARTIFACT_PREFIX = '<!-- AGENT-PLANNER-ARTIFACT';
 const ARTIFACT_PATTERN = /<!--\s*AGENT-PLANNER-ARTIFACT\n([\s\S]*?)\n-->/;
 
@@ -40,6 +45,10 @@ export function serializePlannerArtifact(
 }
 
 export function parsePlannerArtifact(body: string): ReviewFixPlanArtifact | undefined {
+  return inspectPlannerArtifactComment(body)?.artifact;
+}
+
+export function inspectPlannerArtifactComment(body: string): ParsedPlannerArtifactComment | undefined {
   const rawJson = extractPlannerArtifactJson(body);
   if (rawJson === undefined) {
     return undefined;
@@ -47,11 +56,17 @@ export function parsePlannerArtifact(body: string): ReviewFixPlanArtifact | unde
 
   const parsed = parsePlannerArtifactJson(rawJson);
   if (isSignedEnvelopeCandidate(parsed)) {
-    return parseLenientSignedEnvelope(parsed);
+    return {
+      artifact: parseLenientSignedEnvelope(parsed),
+      isSigned: true,
+    };
   }
 
   validatePlannerArtifact(parsed);
-  return parsed;
+  return {
+    artifact: parsed,
+    isSigned: false,
+  };
 }
 
 export function parseTrustedPlannerArtifact(
@@ -104,7 +119,31 @@ function parseLenientSignedEnvelope(value: unknown): ReviewFixPlanArtifact {
     throw new Error('Invalid planner artifact: expected object payload.');
   }
 
-  const payload = (value as { payload?: unknown }).payload;
+  const envelope = value as {
+    version?: unknown;
+    kind?: unknown;
+    algorithm?: unknown;
+    keyId?: unknown;
+    payload?: unknown;
+    signature?: unknown;
+  };
+  if (envelope.version !== 1) {
+    throw new Error('Invalid planner artifact: signed envelope must use version 1.');
+  }
+  if (envelope.kind !== 'review-follow-up') {
+    throw new Error('Invalid planner artifact: signed envelope kind must be review-follow-up.');
+  }
+  if (envelope.algorithm !== 'hmac-sha256') {
+    throw new Error('Invalid planner artifact: signed envelope must use hmac-sha256.');
+  }
+  if (typeof envelope.keyId !== 'string' || envelope.keyId.length === 0) {
+    throw new Error('Invalid planner artifact: signed envelope must include keyId.');
+  }
+  if (typeof envelope.signature !== 'string' || envelope.signature.length === 0) {
+    throw new Error('Invalid planner artifact: signed envelope must include signature.');
+  }
+
+  const payload = envelope.payload;
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
     throw new Error('Invalid planner artifact: signed envelope must include object payload.');
   }

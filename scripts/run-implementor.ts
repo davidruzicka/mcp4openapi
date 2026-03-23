@@ -7,9 +7,10 @@ import {
   collectImplementorAssignments,
   parseImplementorCommandResult,
   planImplementorResultLabels,
+  selectLatestTrustedPlannerArtifact,
   type ImplementorCommandResult,
+  type ImplementorTaskPayload,
 } from '../src/automation/implementor-runner.js';
-import { parseTrustedPlannerArtifact } from '../src/automation/planner-artifact.js';
 import type { ImplementorThreadReplyPayload } from '../src/automation/review-follow-up.js';
 import {
   addIssueLabels,
@@ -72,30 +73,14 @@ const assignments = collectImplementorAssignments({
 });
 
 for (const assignment of assignments.slice(0, runtimeConfig.maxCandidates)) {
-  await addIssueLabels(runtimeConfig, assignment.issueNumber, assignment.labelsToAdd);
-  await removeIssueLabels(runtimeConfig, assignment.issueNumber, assignment.labelsToRemove);
-  await createIssueComment(runtimeConfig, assignment.issueNumber, assignment.leaseCommentBody);
-
   const issue = recentIssues.find((candidate) => candidate.number === assignment.issueNumber);
   if (!issue) {
     throw new Error(`Missing issue snapshot for implementor assignment #${assignment.issueNumber}.`);
   }
 
-  const plannerArtifact = (commentsByIssueNumber[assignment.issueNumber] ?? [])
-    .map((comment) => parseTrustedPlannerArtifact(comment.body, { trustConfig: artifactTrustConfig }))
-    .find((artifact) => artifact !== undefined);
-  const reviewFollowUpItems = plannerArtifact
-    ? [{
-        threadId: plannerArtifact.threadId,
-        headSha: plannerArtifact.headSha,
-        sourceCommentId: plannerArtifact.sourceCommentId,
-        summary: plannerArtifact.fixSummary,
-        actionability: 'actionable' as const,
-        requiresReply: true,
-      }]
-    : [];
-
-  const taskPayload = {
+  let plannerArtifact: ImplementorTaskPayload['plannerArtifact'];
+  let reviewFollowUpItems: NonNullable<ImplementorTaskPayload['reviewFollowUpItems']> = [];
+  let taskPayload: ImplementorTaskPayload = {
     repository: runtimeConfig.repository,
     issue: mapIssueSummary(issue),
     reviewFollowUpItems,
@@ -105,10 +90,48 @@ for (const assignment of assignments.slice(0, runtimeConfig.maxCandidates)) {
     now: runtimeConfig.now,
   };
 
-  const result: ImplementorCommandResult = await runImplementorCommand(implementorCommand, taskPayload).catch((error: unknown) => ({
-    outcome: 'failed',
-    summary: error instanceof Error ? `Implementor command failed: ${error.message}` : 'Implementor command failed.',
-  }));
+  let preflightBlockedResult: ImplementorCommandResult | undefined;
+  try {
+    plannerArtifact = selectLatestTrustedPlannerArtifact(
+      commentsByIssueNumber[assignment.issueNumber] ?? [],
+      artifactTrustConfig,
+    );
+    reviewFollowUpItems = plannerArtifact
+      ? [{
+          threadId: plannerArtifact.threadId,
+          headSha: plannerArtifact.headSha,
+          sourceCommentId: plannerArtifact.sourceCommentId,
+          summary: plannerArtifact.fixSummary,
+          actionability: 'actionable' as const,
+          requiresReply: true,
+        }]
+      : [];
+    taskPayload = {
+      repository: runtimeConfig.repository,
+      issue: mapIssueSummary(issue),
+      reviewFollowUpItems,
+      plannerArtifact,
+      runId: runtimeConfig.runId,
+      agentId: runtimeConfig.agentId,
+      now: runtimeConfig.now,
+    };
+  } catch (error) {
+    preflightBlockedResult = {
+      outcome: 'blocked',
+      summary: error instanceof Error ? `Implementor preflight blocked: ${error.message}` : 'Implementor preflight blocked.',
+    };
+  }
+
+  const result: ImplementorCommandResult = preflightBlockedResult ?? await (async () => {
+    await addIssueLabels(runtimeConfig, assignment.issueNumber, assignment.labelsToAdd);
+    await removeIssueLabels(runtimeConfig, assignment.issueNumber, assignment.labelsToRemove);
+    await createIssueComment(runtimeConfig, assignment.issueNumber, assignment.leaseCommentBody);
+
+    return await runImplementorCommand(implementorCommand, taskPayload).catch((error: unknown) => ({
+      outcome: 'failed',
+      summary: error instanceof Error ? `Implementor command failed: ${error.message}` : 'Implementor command failed.',
+    }));
+  })();
 
   const labels = planImplementorResultLabels(result);
   await addIssueLabels(runtimeConfig, assignment.issueNumber, labels.issueLabelsToAdd);
