@@ -1,6 +1,11 @@
 import { buildAgentMetadataBlock } from './agent-feedback.js';
 import { planPlannerTransition } from './agent-workflow-state.js';
 import { parseAgentMetadata } from './evaluator-runner.js';
+import {
+  parsePlannerArtifact,
+  serializePlannerArtifact,
+  type ReviewFixPlanArtifact,
+} from './planner-artifact.js';
 import { findSemanticOpenDuplicate, type SemanticDuplicateBackendName } from './semantic-triage.js';
 
 export interface PlannerIssue {
@@ -25,6 +30,7 @@ export interface PlannerDecision {
   readonly blocked: boolean;
   readonly reasons: readonly string[];
   readonly plan?: string;
+  readonly plannerArtifact?: ReviewFixPlanArtifact;
   readonly duplicateBackendName?: string;
 }
 
@@ -57,8 +63,9 @@ export function evaluatePlannerDecision(issue: PlannerIssue): PlannerDecision {
   const reasons: string[] = [];
   const hasRiskKeyword = RISK_KEYWORDS.some((keyword) => haystack.includes(keyword));
   const hasStructureHint = STRUCTURE_HINTS.some((hint) => haystack.includes(hint));
+  const plannerArtifact = extractReviewFollowUpContext(issue.body);
 
-  if (hasStructureHint) {
+  if (hasStructureHint || plannerArtifact) {
     reasons.push('issue body provides enough structure for a bounded implementation plan');
   } else {
     reasons.push('issue body is still too vague for bounded implementation');
@@ -70,12 +77,13 @@ export function evaluatePlannerDecision(issue: PlannerIssue): PlannerDecision {
     reasons.push('issue remains inside the low-risk autonomous planning lane');
   }
 
-  const remainsSuitable = hasStructureHint && !hasRiskKeyword;
+  const remainsSuitable = (hasStructureHint || plannerArtifact !== undefined) && !hasRiskKeyword;
   return {
     remainsSuitable,
     blocked: hasRiskKeyword,
     reasons,
-    plan: remainsSuitable ? buildImplementationPlan(issue) : undefined,
+    plan: remainsSuitable ? buildImplementationPlan(issue, plannerArtifact) : undefined,
+    plannerArtifact,
   };
 }
 
@@ -123,6 +131,7 @@ export function collectPlannerAssignments(input: CollectPlannerAssignmentsInput)
       blocked: decision.blocked,
       reasons: decision.reasons,
       plan: decision.plan,
+      plannerArtifact: decision.plannerArtifact,
       duplicateBackendName: decision.duplicateBackendName,
     });
 
@@ -153,42 +162,51 @@ export function buildPlannerDecisionComment(input: {
   readonly blocked: boolean;
   readonly reasons: readonly string[];
   readonly plan?: string;
+  readonly plannerArtifact?: ReviewFixPlanArtifact;
   readonly duplicateBackendName?: string;
 }): string {
+  const plannerStatus = getPlannerDecisionStatus(input.remainsSuitable, input.blocked);
   const metadataBlock = buildAgentMetadataBlock({
     'agent-id': input.agentId,
     'agent-stage': 'planner',
     'agent-role': 'implementation-plan',
     repository: input.repository,
     'issue-number': input.issueNumber,
-    status: input.remainsSuitable ? 'planned' : input.blocked ? 'blocked' : 'de-scoped',
+    status: plannerStatus,
     reasons: input.reasons.join(','),
     'run-id': input.runId,
     timestamp: input.timestamp,
   });
 
-  const duplicateGuardNote = input.reasons.some((reason) => reason.startsWith('issue appears to duplicate existing open issue #') || reason.startsWith('issue appears to semantically duplicate existing open issue #'))
-    ? [
-        '',
-        `Semantic duplicate backend: ${input.duplicateBackendName ?? 'exact-title-fallback'}`,
-        'Duplicate guard minimum fallback: exact open-title matches remain enforced even if semantic triage is unavailable.',
-      ]
-    : [];
-
-  return [
+  const lines = [
     '🤖 Agent plan (planner)',
     '',
-    `Planner decision: ${input.remainsSuitable ? 'planned' : input.blocked ? 'blocked' : 'de-scoped'}`,
+    `Planner decision: ${plannerStatus}`,
     'Reasons:',
     ...input.reasons.map((reason) => `- ${reason}`),
-    ...duplicateGuardNote,
+    ...buildDuplicateGuardNoteLines(input.reasons, input.duplicateBackendName),
     ...(input.plan ? ['', input.plan] : []),
+    ...(input.plannerArtifact ? ['', serializePlannerArtifact(input.plannerArtifact)] : []),
     '',
     metadataBlock,
-  ].join('\n');
+  ];
+
+  return lines.join('\n');
 }
 
-function buildImplementationPlan(issue: PlannerIssue): string {
+function buildImplementationPlan(issue: PlannerIssue, plannerArtifact: ReviewFixPlanArtifact | undefined): string {
+  if (plannerArtifact) {
+    return [
+      '## Review follow-up implementation plan',
+      `1. Address review thread ${plannerArtifact.threadId} for head ${plannerArtifact.headSha}.`,
+      ...plannerArtifact.implementationSteps.map((step, index) => `${index + 2}. ${step}`),
+      '',
+      '### Validation',
+      ...plannerArtifact.testSteps.map((step) => `- ${step}`),
+      ...plannerArtifact.verificationSteps.map((step) => `- ${step}`),
+    ].join('\n');
+  }
+
   return [
     '## Implementation plan',
     `1. Confirm the narrow goal from issue #${issue.number} and keep changes bounded to the directly impacted module(s).`,
@@ -220,13 +238,90 @@ function hasEquivalentPlannerDecisionComment(
   comments: readonly PlannerIssueComment[],
   decision: PlannerDecision,
 ): boolean {
-  const expectedStatus = decision.remainsSuitable ? 'planned' : decision.blocked ? 'blocked' : 'de-scoped';
+  const expectedStatus = getPlannerDecisionStatus(decision.remainsSuitable, decision.blocked);
   const expectedReasons = decision.reasons.join(',');
+  const expectedArtifact = decision.plannerArtifact ? JSON.stringify(decision.plannerArtifact) : undefined;
 
   return comments.some((comment) => {
     const metadata = parseAgentMetadata(comment.body);
+    const parsedArtifact = tryParsePlannerArtifact(comment.body);
     return metadata?.['agent-stage'] === 'planner'
       && metadata?.status === expectedStatus
-      && metadata?.reasons === expectedReasons;
+      && metadata?.reasons === expectedReasons
+      && JSON.stringify(parsedArtifact) === JSON.stringify(expectedArtifact ? decision.plannerArtifact : undefined);
   });
+}
+
+function tryParsePlannerArtifact(body: string): ReviewFixPlanArtifact | undefined {
+  try {
+    return parsePlannerArtifact(body);
+  } catch {
+    return undefined;
+  }
+}
+
+function getPlannerDecisionStatus(remainsSuitable: boolean, blocked: boolean): 'planned' | 'blocked' | 'de-scoped' {
+  if (remainsSuitable) {
+    return 'planned';
+  }
+
+  return blocked ? 'blocked' : 'de-scoped';
+}
+
+function buildDuplicateGuardNoteLines(
+  reasons: readonly string[],
+  duplicateBackendName: string | undefined,
+): string[] {
+  const hasDuplicateGuardReason = reasons.some((reason) => {
+    return reason.startsWith('issue appears to duplicate existing open issue #')
+      || reason.startsWith('issue appears to semantically duplicate existing open issue #');
+  });
+  if (!hasDuplicateGuardReason) {
+    return [];
+  }
+
+  return [
+    '',
+    `Semantic duplicate backend: ${duplicateBackendName ?? 'exact-title-fallback'}`,
+    'Duplicate guard minimum fallback: exact open-title matches remain enforced even if semantic triage is unavailable.',
+  ];
+}
+
+function extractReviewFollowUpContext(body: string): ReviewFixPlanArtifact | undefined {
+  const threadId = body.match(/^Review thread:\s*(.+)$/im)?.[1]?.trim();
+  const sourceCommentId = body.match(/^Source comment ID:\s*(.+)$/im)?.[1]?.trim();
+  const headSha = body.match(/^Head SHA:\s*(.+)$/im)?.[1]?.trim();
+  const fixSummary = body.match(/^Fix summary:\s*(.+)$/im)?.[1]?.trim();
+  const implementationSteps = extractBulletSection(body, 'Implementation steps');
+  const testSteps = extractBulletSection(body, 'Test steps');
+  const verificationSteps = extractBulletSection(body, 'Verification steps');
+
+  if (!threadId || !sourceCommentId || !headSha || !fixSummary || implementationSteps.length === 0 || testSteps.length === 0 || verificationSteps.length === 0) {
+    return undefined;
+  }
+
+  return {
+    kind: 'review-follow-up',
+    threadId,
+    sourceCommentId,
+    headSha,
+    fixSummary,
+    implementationSteps,
+    testSteps,
+    verificationSteps,
+  };
+}
+
+function extractBulletSection(body: string, heading: string): string[] {
+  const match = body.match(new RegExp(`^${heading}:\\n([\\s\\S]*?)(?:\\n[A-Z][^\\n]*:|$)`, 'im'));
+  if (!match) {
+    return [];
+  }
+
+  return (match[1] ?? '')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.startsWith('- '))
+    .map((line) => line.slice(2).trim())
+    .filter((line) => line.length > 0);
 }

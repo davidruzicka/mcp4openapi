@@ -20,12 +20,18 @@ export interface SemanticOpenDuplicate {
   readonly score: number;
 }
 
+export interface SemanticPromptCandidate {
+  readonly number: number;
+  readonly title: string;
+  readonly body: string;
+}
+
 export interface SemanticPromptContract {
   readonly stage: SemanticTriageStage;
   readonly backendName: 'local-heuristic-v1';
   readonly fallback: string;
-  readonly issue: { readonly number: number; readonly title: string; readonly body: string };
-  readonly candidates: ReadonlyArray<{ readonly number: number; readonly title: string; readonly body: string }>;
+  readonly issue: SemanticPromptCandidate;
+  readonly candidates: readonly SemanticPromptCandidate[];
 }
 
 export interface SemanticBackendRawDecision {

@@ -1,6 +1,8 @@
 import { buildAgentMetadataBlock } from './agent-feedback.js';
-import { planImplementorStart, planImplementorCompletion } from './agent-workflow-state.js';
+import { planImplementorCompletion, planImplementorStart } from './agent-workflow-state.js';
 import { parseAgentMetadata } from './evaluator-runner.js';
+import { parsePlannerArtifact, type ReviewFixPlanArtifact } from './planner-artifact.js';
+import { buildImplementorThreadReplyPlans, type ReviewFollowUpItem } from './review-follow-up.js';
 
 export interface ImplementorIssue {
   readonly number: number;
@@ -28,11 +30,35 @@ export interface ImplementorCommandResult {
   };
 }
 
+export interface ImplementorResultLabelPlan {
+  readonly issueLabelsToAdd: readonly string[];
+  readonly issueLabelsToRemove: readonly string[];
+  readonly pullRequestLabelsToAdd: readonly string[];
+}
+
 export interface ImplementorAssignment {
   readonly issueNumber: number;
   readonly labelsToAdd: readonly string[];
   readonly labelsToRemove: readonly string[];
   readonly leaseCommentBody: string;
+}
+
+export interface ImplementorTaskPayload {
+  readonly repository: string;
+  readonly issue: {
+    readonly number: number;
+    readonly title: string;
+    readonly body: string;
+    readonly url: string;
+    readonly updatedAt: string;
+    readonly labels: readonly string[];
+    readonly isPullRequest: boolean;
+  };
+  readonly reviewFollowUpItems?: readonly ReviewFollowUpItem[];
+  readonly plannerArtifact?: ReviewFixPlanArtifact;
+  readonly runId: string;
+  readonly agentId: string;
+  readonly now: string;
 }
 
 export interface CollectImplementorAssignmentsInput {
@@ -112,6 +138,7 @@ export function buildImplementorResultComment(input: {
   readonly runId: string;
   readonly timestamp: string;
   readonly result: ImplementorCommandResult;
+  readonly reviewFollowUpItems?: readonly ReviewFollowUpItem[];
 }): string {
   const metadataBlock = buildAgentMetadataBlock({
     'agent-id': input.agentId,
@@ -125,15 +152,126 @@ export function buildImplementorResultComment(input: {
     timestamp: input.timestamp,
   });
 
-  return [
+  const lines = [
     '🤖 Agent implementation note (implementor)',
     '',
     `Implementation result: ${input.result.outcome}`,
     `Summary: ${input.result.summary}`,
-    ...(input.result.pullRequest ? [`PR: #${input.result.pullRequest.number} (${input.result.pullRequest.url})`] : []),
-    '',
-    metadataBlock,
-  ].join('\n');
+  ];
+
+  const pullRequestLine = buildImplementorPullRequestLine(input.result.pullRequest);
+  if (pullRequestLine) {
+    lines.push(pullRequestLine);
+  }
+
+  const reviewFollowUpCountLine = buildReviewFollowUpCountLine(input.reviewFollowUpItems);
+  if (reviewFollowUpCountLine) {
+    lines.push(reviewFollowUpCountLine);
+  }
+
+  lines.push('', metadataBlock);
+
+  return lines.join('\n');
+}
+
+function buildImplementorPullRequestLine(pullRequest: ImplementorCommandResult['pullRequest']): string | undefined {
+  if (!pullRequest) {
+    return undefined;
+  }
+
+  return `PR: #${pullRequest.number} (${pullRequest.url})`;
+}
+
+function buildReviewFollowUpCountLine(reviewFollowUpItems: readonly ReviewFollowUpItem[] | undefined): string | undefined {
+  if (!reviewFollowUpItems || reviewFollowUpItems.length === 0) {
+    return undefined;
+  }
+
+  return `Review follow-up items: ${reviewFollowUpItems.length}`;
+}
+
+export function parseImplementorTaskPayload(raw: string | undefined): ImplementorTaskPayload {
+  if (!raw) {
+    throw new Error('Missing IMPLEMENTOR_TASK_JSON payload for implementor workflow.');
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new Error('Invalid IMPLEMENTOR_TASK_JSON payload: expected JSON.');
+  }
+
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error('Invalid IMPLEMENTOR_TASK_JSON payload: expected object payload.');
+  }
+
+  const candidate = parsed as Partial<ImplementorTaskPayload> & { plannerArtifact?: string | ReviewFixPlanArtifact };
+  if (
+    typeof candidate.repository !== 'string'
+    || !candidate.issue
+    || typeof candidate.issue.number !== 'number'
+    || typeof candidate.issue.title !== 'string'
+    || typeof candidate.issue.body !== 'string'
+    || typeof candidate.issue.url !== 'string'
+    || typeof candidate.runId !== 'string'
+    || typeof candidate.agentId !== 'string'
+    || typeof candidate.now !== 'string'
+  ) {
+    throw new Error('Invalid IMPLEMENTOR_TASK_JSON payload: missing required workflow fields.');
+  }
+
+  const plannerArtifact = typeof candidate.plannerArtifact === 'string'
+    ? parsePlannerArtifact(candidate.plannerArtifact)
+    : candidate.plannerArtifact;
+  if (candidate.plannerArtifact !== undefined && plannerArtifact === undefined) {
+    throw new Error('Invalid IMPLEMENTOR_TASK_JSON payload: plannerArtifact must be a valid review-follow-up artifact.');
+  }
+
+  const reviewFollowUpItems = candidate.reviewFollowUpItems?.map(validateReviewFollowUpItem) ?? [];
+  if (plannerArtifact && reviewFollowUpItems.length === 0) {
+    throw new Error('Invalid IMPLEMENTOR_TASK_JSON payload: plannerArtifact requires reviewFollowUpItems.');
+  }
+
+  return {
+    repository: candidate.repository,
+    issue: {
+      number: candidate.issue.number,
+      title: candidate.issue.title,
+      body: candidate.issue.body,
+      url: candidate.issue.url,
+      updatedAt: candidate.issue.updatedAt ?? '',
+      labels: candidate.issue.labels ?? [],
+      isPullRequest: candidate.issue.isPullRequest ?? false,
+    },
+    reviewFollowUpItems,
+    plannerArtifact,
+    runId: candidate.runId,
+    agentId: candidate.agentId,
+    now: candidate.now,
+  };
+}
+
+export function buildImplementorReviewThreadReplyPlans(input: {
+  readonly task: ImplementorTaskPayload;
+  readonly result: ImplementorCommandResult;
+  readonly newHeadSha: string;
+}) {
+  if (
+    !input.task.plannerArtifact
+    || !input.task.reviewFollowUpItems
+    || input.task.reviewFollowUpItems.length === 0
+    || input.result.outcome !== 'pr-created'
+    || !input.newHeadSha
+  ) {
+    return [];
+  }
+
+  return buildImplementorThreadReplyPlans({
+    items: input.task.reviewFollowUpItems,
+    newHeadSha: input.newHeadSha,
+    resultSummary: input.result.summary,
+  });
 }
 
 export function parseImplementorCommandResult(raw: string): ImplementorCommandResult {
@@ -169,7 +307,7 @@ export function parseImplementorCommandResult(raw: string): ImplementorCommandRe
   return parsed as ImplementorCommandResult;
 }
 
-export function planImplementorResultLabels(result: ImplementorCommandResult): { readonly issueLabelsToAdd: readonly string[]; readonly issueLabelsToRemove: readonly string[]; readonly pullRequestLabelsToAdd: readonly string[]; } {
+export function planImplementorResultLabels(result: ImplementorCommandResult): ImplementorResultLabelPlan {
   const issueTransition = planImplementorCompletion({
     labels: ['agent:implementing'],
     outcome: result.outcome,
@@ -180,6 +318,14 @@ export function planImplementorResultLabels(result: ImplementorCommandResult): {
     issueLabelsToRemove: issueTransition.labelsToRemove,
     pullRequestLabelsToAdd: result.outcome === 'pr-created' ? ['agent:created', 'agent:review:required'] : [],
   };
+}
+
+function validateReviewFollowUpItem(item: ReviewFollowUpItem): ReviewFollowUpItem {
+  if (!item.threadId || !item.headSha || !item.sourceCommentId || !item.summary) {
+    throw new Error('Invalid IMPLEMENTOR_TASK_JSON payload: reviewFollowUpItems must include threadId, headSha, sourceCommentId, and summary.');
+  }
+
+  return item;
 }
 
 function hasActiveImplementorLease(

@@ -361,6 +361,20 @@ A review is current only when:
 
 If the head SHA changes, the prior approval is stale and must not count toward merge.
 
+## Review follow-up state and handoff
+
+Reviewer follow-up is now tracked with three shared per-thread states for the current automation lane:
+
+- `open` - current-head thread still needs action or lacks a current-head implementor follow-up reply.
+- `addressed` - current-head thread contains an implementor follow-up reply bound to the current head.
+- `obsolete` - thread metadata binds it to an older head SHA and it must not block the current head.
+
+Rules:
+
+- Reviewer/planner handoff may include a machine-readable review-follow-up artifact for fix/test work.
+- Implementor follow-up replies must visibly disclose automation and include metadata bound to the replying head SHA.
+- Merge policy is fail-closed: only `addressed` and `obsolete` are non-blocking; `open` blocks merge readiness.
+
 ## Merge gates
 
 The merger should mark a PR ready only when all of the following are true:

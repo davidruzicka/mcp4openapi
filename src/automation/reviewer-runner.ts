@@ -137,13 +137,15 @@ export function collectReviewerAssignments(input: CollectReviewerAssignmentsInpu
       return [];
     }
 
-    const threadComments = input.commentsByPrNumber[pullRequest.number] ?? [];
-    const reviews = input.reviewsByPrNumber[pullRequest.number] ?? [];
-    const reviewThreads = input.reviewThreadsByPrNumber[pullRequest.number] ?? [];
+    const pullRequestNumber = pullRequest.number;
+    const currentHeadSha = pullRequest.headSha;
+    const threadComments = input.commentsByPrNumber[pullRequestNumber] ?? [];
+    const reviews = input.reviewsByPrNumber[pullRequestNumber] ?? [];
+    const reviewThreads = input.reviewThreadsByPrNumber[pullRequestNumber] ?? [];
     if (hasActiveReviewerLease({
       threadComments,
       reviews,
-      currentHeadSha: pullRequest.headSha,
+      currentHeadSha,
       now: input.now,
       leaseTtlMinutes: input.leaseTtlMinutes,
     })) {
@@ -151,34 +153,29 @@ export function collectReviewerAssignments(input: CollectReviewerAssignmentsInpu
     }
 
     const reviewerEvents = listReviewerMetadataEvents(threadComments, reviews);
-    const currentHeadEvents = reviewerEvents.filter((event) => event.metadata['head-sha'] === pullRequest.headSha);
-    const hasCurrentDecision = currentHeadEvents.some((event) => TERMINAL_REVIEW_STATUSES.has(event.metadata.status ?? ''));
-    const latestCurrentDecisionTimestamp = currentHeadEvents
-      .filter((event) => TERMINAL_REVIEW_STATUSES.has(event.metadata.status ?? ''))
-      .map((event) => event.timestamp)
-      .sort((left, right) => parseIsoTimestamp(left) - parseIsoTimestamp(right))
-      .at(-1);
+    const currentHeadEvents = reviewerEvents.filter((event) => event.metadata['head-sha'] === currentHeadSha);
+    const currentDecisionTimestamp = findLatestReviewerDecisionTimestamp(currentHeadEvents);
+    const hasCurrentDecision = currentDecisionTimestamp !== undefined;
 
-    if (hasCurrentDecision && !hasReviewerFollowUpPending(reviewThreads, pullRequest.headSha, latestCurrentDecisionTimestamp)) {
+    if (hasCurrentDecision && !hasReviewerFollowUpPending(reviewThreads, currentHeadSha, currentDecisionTimestamp)) {
       return [];
     }
 
-    const reason: ReviewerAssignment['reason'] = hasCurrentDecision
-      ? 'follow-up-requested'
-      : reviewerEvents.length > 0 ? 'stale-review' : 'missing-current-review';
+    const reason = getReviewerAssignmentReason(hasCurrentDecision, reviewerEvents.length);
+    const leaseCommentBody = buildReviewerLeaseComment({
+      repository: input.repository,
+      pullRequestNumber,
+      headSha: currentHeadSha,
+      agentId: input.agentId,
+      runId: input.runId,
+      timestamp: input.now,
+      reason,
+    });
 
     return [{
-      pullRequestNumber: pullRequest.number,
+      pullRequestNumber,
       reason,
-      leaseCommentBody: buildReviewerLeaseComment({
-        repository: input.repository,
-        pullRequestNumber: pullRequest.number,
-        headSha: pullRequest.headSha,
-        agentId: input.agentId,
-        runId: input.runId,
-        timestamp: input.now,
-        reason,
-      }),
+      leaseCommentBody,
     }];
   });
 }
@@ -197,7 +194,7 @@ export function buildReviewerLeaseComment(input: BuildReviewerLeaseCommentInput)
     timestamp: input.timestamp,
   });
 
-  return [
+  const lines = [
     '🤖 Agent note (reviewer)',
     '',
     `Reviewer lease acquired for PR #${input.pullRequestNumber}.`,
@@ -205,7 +202,9 @@ export function buildReviewerLeaseComment(input: BuildReviewerLeaseCommentInput)
     `Current head SHA: ${input.headSha}`,
     '',
     metadataBlock,
-  ].join('\n');
+  ];
+
+  return lines.join('\n');
 }
 
 export function buildSemanticReviewerDecision(input: BuildSemanticReviewerDecisionInput): SemanticReviewerDecision {
@@ -269,6 +268,25 @@ function listReviewerMetadataEvents(
     .filter((event) => event.metadata['agent-stage'] === 'reviewer')
     .filter((event) => event.metadata['ignore-for-workflow'] !== 'true')
     .sort((left, right) => parseIsoTimestamp(left.timestamp) - parseIsoTimestamp(right.timestamp));
+}
+
+function findLatestReviewerDecisionTimestamp(events: readonly ReviewerMetadataEvent[]): string | undefined {
+  return events
+    .filter((event) => TERMINAL_REVIEW_STATUSES.has(event.metadata.status ?? ''))
+    .map((event) => event.timestamp)
+    .sort((left, right) => parseIsoTimestamp(left) - parseIsoTimestamp(right))
+    .at(-1);
+}
+
+function getReviewerAssignmentReason(
+  hasCurrentDecision: boolean,
+  reviewerEventCount: number,
+): ReviewerAssignment['reason'] {
+  if (hasCurrentDecision) {
+    return 'follow-up-requested';
+  }
+
+  return reviewerEventCount > 0 ? 'stale-review' : 'missing-current-review';
 }
 
 function hasReviewerFollowUpPending(

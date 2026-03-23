@@ -7,6 +7,7 @@ import {
   type ReviewerReviewThread,
   type ReviewerThreadComment,
 } from '../src/automation/reviewer-runner.js';
+import type { GitHubGraphQlReviewThreadsResponse } from './github-graphql-types.js';
 
 interface GitHubLabel {
   readonly name: string;
@@ -43,30 +44,6 @@ interface GitHubPullRequestReview {
   readonly user?: {
     readonly login?: string;
   };
-}
-
-interface GraphQlReviewThreadsResponse {
-  readonly data?: {
-    readonly repository?: {
-      readonly pullRequest?: {
-        readonly reviewThreads?: {
-          readonly nodes?: ReadonlyArray<{
-            readonly id: string;
-            readonly isResolved: boolean;
-            readonly comments?: {
-              readonly nodes?: ReadonlyArray<{
-                readonly id: string;
-                readonly body: string;
-                readonly updatedAt: string;
-                readonly author?: { readonly login?: string };
-              }>;
-            };
-          }>;
-        };
-      };
-    };
-  };
-  readonly errors?: ReadonlyArray<{ readonly message: string }>;
 }
 
 interface RuntimeConfig {
@@ -208,7 +185,7 @@ async function listPullRequestFiles(config: RuntimeConfig, pullRequestNumber: nu
 
 async function listReviewThreads(config: RuntimeConfig, pullRequestNumber: number): Promise<ReviewerReviewThread[]> {
   const [owner, repo] = splitRepository(config.repository);
-  const response = await githubGraphQlRequest<GraphQlReviewThreadsResponse>(config, {
+  const response = await githubGraphQlRequest<GitHubGraphQlReviewThreadsResponse>(config, {
     query: `query ReviewThreads($owner: String!, $repo: String!, $prNumber: Int!) {
       repository(owner: $owner, name: $repo) {
         pullRequest(number: $prNumber) {

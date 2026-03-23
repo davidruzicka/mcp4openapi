@@ -1,6 +1,8 @@
 import { detectIssueWorkflowState } from '../src/automation/agent-workflow-state.js';
-import type { SemanticDuplicateBackendName } from '../src/automation/semantic-triage.js';
 import type { ProposalCandidateArtifact } from '../src/automation/proposal-intake.js';
+import type { ImplementorThreadReplyPayload } from '../src/automation/review-follow-up.js';
+import type { SemanticDuplicateBackendName } from '../src/automation/semantic-triage.js';
+import type { GitHubGraphQlErrorResponse, GitHubGraphQlPullRequestIdResponse } from './github-graphql-types.js';
 
 interface GitHubLabel {
   readonly name: string;
@@ -54,10 +56,26 @@ export interface IssueRuntimeConfig {
   readonly now: string;
 }
 
+interface IssueRuntimeDefaults {
+  readonly lookbackHours: number;
+  readonly maxCandidates: number;
+  readonly agentId: string;
+}
+
+interface CreateRepositoryIssueInput {
+  readonly title: string;
+  readonly body: string;
+  readonly labels?: readonly string[];
+}
+
+interface CreateReviewThreadReplyInput extends ImplementorThreadReplyPayload {
+  readonly pullRequestNumber: number;
+}
+
 export function readIssueRuntimeConfig(
   env: NodeJS.ProcessEnv,
   prefix: string,
-  defaults: { readonly lookbackHours: number; readonly maxCandidates: number; readonly agentId: string; },
+  defaults: IssueRuntimeDefaults,
 ): IssueRuntimeConfig {
   const repository = env.GITHUB_REPOSITORY;
   const token = env.GITHUB_TOKEN;
@@ -155,7 +173,7 @@ export async function createIssueComment(config: IssueRuntimeConfig, issueNumber
 
 export async function createRepositoryIssue(
   config: IssueRuntimeConfig,
-  input: { readonly title: string; readonly body: string; readonly labels?: readonly string[] },
+  input: CreateRepositoryIssueInput,
 ): Promise<GitHubIssueSummary> {
   return githubRequest<GitHubIssueSummary>(config, `/repos/${config.repository}/issues`, {
     method: 'POST',
@@ -188,6 +206,30 @@ export async function updatePullRequestBody(config: IssueRuntimeConfig, pullRequ
     method: 'PATCH',
     body: JSON.stringify({ body }),
   });
+}
+
+export async function createReviewThreadReply(
+  config: IssueRuntimeConfig,
+  input: CreateReviewThreadReplyInput,
+): Promise<void> {
+  const response = await githubGraphQlRequest<GitHubGraphQlErrorResponse>(config, {
+    query: `mutation AddReviewThreadReply($pullRequestId: ID!, $body: String!, $inReplyTo: ID!) {
+      addPullRequestReviewThreadReply(input: { pullRequestId: $pullRequestId, body: $body, inReplyTo: $inReplyTo }) {
+        comment {
+          id
+        }
+      }
+    }`,
+    variables: {
+      pullRequestId: await fetchPullRequestNodeId(config, input.pullRequestNumber),
+      body: input.body,
+      inReplyTo: input.inReplyToCommentId,
+    },
+  });
+
+  if (response.errors && response.errors.length > 0) {
+    throw new Error(`GitHub GraphQL request failed for review-thread reply: ${response.errors.map((error) => error.message).join('; ')}`);
+  }
 }
 
 export function mapIssueSummary(issue: GitHubIssueSummary) {
@@ -290,6 +332,54 @@ async function githubRequest<T = unknown>(config: IssueRuntimeConfig, path: stri
   }
 
   return response.json() as Promise<T>;
+}
+
+async function githubGraphQlRequest<T = unknown>(config: IssueRuntimeConfig, payload: Record<string, unknown>): Promise<T> {
+  const response = await fetch(`${config.apiBaseUrl.replace(/\/api\/v3$/, '')}/graphql`, {
+    method: 'POST',
+    headers: {
+      Accept: 'application/vnd.github+json',
+      Authorization: `Bearer ${config.token}`,
+      'Content-Type': 'application/json',
+      'X-GitHub-Api-Version': '2022-11-28',
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    throw new Error(`GitHub GraphQL request failed (${response.status}): ${await response.text()}`);
+  }
+
+  return response.json() as Promise<T>;
+}
+
+async function fetchPullRequestNodeId(config: IssueRuntimeConfig, pullRequestNumber: number): Promise<string> {
+  const [owner, repo] = config.repository.split('/');
+  const response = await githubGraphQlRequest<GitHubGraphQlPullRequestIdResponse>(config, {
+    query: `query PullRequestNodeId($owner: String!, $repo: String!, $number: Int!) {
+      repository(owner: $owner, name: $repo) {
+        pullRequest(number: $number) {
+          id
+        }
+      }
+    }`,
+    variables: {
+      owner,
+      repo,
+      number: pullRequestNumber,
+    },
+  });
+
+  if (response.errors && response.errors.length > 0) {
+    throw new Error(`GitHub GraphQL request failed for pullRequest node id: ${response.errors.map((error) => error.message).join('; ')}`);
+  }
+
+  const pullRequestId = response.data?.repository?.pullRequest?.id;
+  if (!pullRequestId) {
+    throw new Error(`GitHub GraphQL request failed for pullRequest node id: missing node id for PR #${pullRequestNumber}.`);
+  }
+
+  return pullRequestId;
 }
 
 function extractLinkedIssueNumbers(text: string): number[] {

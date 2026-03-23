@@ -1,6 +1,7 @@
 import { buildAgentMetadataBlock } from './agent-feedback.js';
 import { hasReviewLifecycleSignal } from './agent-workflow-state.js';
 import { parseAgentMetadata } from './evaluator-runner.js';
+import { resolveReviewThreadStates } from './review-resolution-state.js';
 import { hasActiveReviewerLease } from './reviewer-runner.js';
 
 export interface MergerPullRequest {
@@ -102,6 +103,8 @@ const TERMINAL_REVIEW_STATUSES = new Set(['approved', 'changes-requested', 'comm
 
 export function evaluateMergeGate(input: EvaluateMergeGateInput): MergeGateEvaluation {
   const labels = new Set(input.pullRequest.labels);
+  const currentHeadSha = input.pullRequest.headSha;
+  const pullRequestNumber = input.pullRequest.number;
   const reasons = new Set<MergeGateReason>();
 
   if (input.pullRequest.draft) {
@@ -119,24 +122,28 @@ export function evaluateMergeGate(input: EvaluateMergeGateInput): MergeGateEvalu
   if (hasActiveReviewerLease({
     threadComments: input.threadComments,
     reviews: input.reviews,
-    currentHeadSha: input.pullRequest.headSha,
+    currentHeadSha,
     now: input.timestamp,
     leaseTtlMinutes: input.leaseTtlMinutes,
   })) {
     reasons.add('review-in-progress');
   }
 
-  const latestReviewerDecision = findLatestReviewerDecision(input.reviews, input.threadComments, input.pullRequest.headSha);
+  const latestReviewerDecision = findLatestReviewerDecision(input.reviews, input.threadComments, currentHeadSha);
   const reviewRequired = hasReviewLifecycleSignal(labels);
   if (reviewRequired && latestReviewerDecision?.status !== 'approved') {
     reasons.add('missing-current-approval');
   }
 
-  if (hasReviewerFollowUpPending(input.reviewThreads, input.pullRequest.headSha, latestReviewerDecision?.timestamp)) {
+  if (hasReviewerFollowUpPending(input.reviewThreads, currentHeadSha, latestReviewerDecision?.timestamp)) {
     reasons.add('review-follow-up-pending');
   }
 
-  if (input.reviewThreads.some((thread) => !thread.isResolved)) {
+  const reviewThreadStates = resolveReviewThreadStates({
+    reviewThreads: input.reviewThreads,
+    currentHeadSha,
+  });
+  if (reviewThreadStates.some((thread) => thread.blocking)) {
     reasons.add('unresolved-review-threads');
   }
 
@@ -148,25 +155,27 @@ export function evaluateMergeGate(input: EvaluateMergeGateInput): MergeGateEvalu
     reasons.add('ci-not-green');
   }
 
-  const ready = reasons.size === 0;
-  const summary = buildMergeGateSummary(ready, [...reasons], latestReviewerDecision?.status);
+  const reasonList = [...reasons];
+  const ready = reasonList.length === 0;
+  const summary = buildMergeGateSummary(ready, reasonList, latestReviewerDecision?.status);
+  const commentBody = buildMergeGateEvaluationComment({
+    repository: input.repository,
+    pullRequestNumber,
+    headSha: currentHeadSha,
+    agentId: input.agentId,
+    runId: input.runId,
+    timestamp: input.timestamp,
+    ready,
+    summary,
+    reasons: reasonList,
+  });
 
   return {
     ready,
-    reasons: [...reasons],
+    reasons: reasonList,
     summary,
     latestReviewerDecision: latestReviewerDecision?.status,
-    commentBody: buildMergeGateEvaluationComment({
-      repository: input.repository,
-      pullRequestNumber: input.pullRequest.number,
-      headSha: input.pullRequest.headSha,
-      agentId: input.agentId,
-      runId: input.runId,
-      timestamp: input.timestamp,
-      ready,
-      summary,
-      reasons: [...reasons],
-    }),
+    commentBody,
     labelsToAdd: ready ? ['agent:ready-to-merge'] : [],
     labelsToRemove: ready ? [] : ['agent:ready-to-merge'],
   };
@@ -183,6 +192,8 @@ export function buildMergeGateEvaluationComment(input: {
   summary: string;
   reasons: readonly MergeGateReason[];
 }): string {
+  const mergeReadinessStatus = getMergeReadinessStatus(input.ready);
+  const formattedReasons = formatMergeGateReasons(input.reasons);
   const metadataBlock = buildAgentMetadataBlock({
     'agent-id': input.agentId,
     'agent-stage': 'merger',
@@ -190,22 +201,24 @@ export function buildMergeGateEvaluationComment(input: {
     repository: input.repository,
     'pr-number': input.pullRequestNumber,
     'head-sha': input.headSha,
-    status: input.ready ? 'ready-to-merge' : 'blocked',
-    reasons: input.reasons.join(',') || 'none',
+    status: mergeReadinessStatus,
+    reasons: formattedReasons.metadataValue,
     'run-id': input.runId,
     timestamp: input.timestamp,
   });
 
-  return [
+  const lines = [
     '🤖 Agent note (merger)',
     '',
-    `Merge readiness: ${input.ready ? 'ready-to-merge' : 'blocked'}`,
+    `Merge readiness: ${mergeReadinessStatus}`,
     `Summary: ${input.summary}`,
     `Current head SHA: ${input.headSha}`,
-    `Reasons: ${input.reasons.join(', ') || 'none'}`,
+    `Reasons: ${formattedReasons.displayValue}`,
     '',
     metadataBlock,
-  ].join('\n');
+  ];
+
+  return lines.join('\n');
 }
 
 function findLatestReviewerDecision(
@@ -220,6 +233,27 @@ function findLatestReviewerDecision(
     .filter((event) => event.headSha === headSha)
     .sort((left, right) => parseIsoTimestamp(left.timestamp) - parseIsoTimestamp(right.timestamp))
     .at(-1);
+}
+
+function getMergeReadinessStatus(ready: boolean): 'ready-to-merge' | 'blocked' {
+  return ready ? 'ready-to-merge' : 'blocked';
+}
+
+function formatMergeGateReasons(reasons: readonly MergeGateReason[]): {
+  metadataValue: string;
+  displayValue: string;
+} {
+  if (reasons.length === 0) {
+    return {
+      metadataValue: 'none',
+      displayValue: 'none',
+    };
+  }
+
+  return {
+    metadataValue: reasons.join(','),
+    displayValue: reasons.join(', '),
+  };
 }
 
 function toReviewerDecisionEvent(body: string, timestamp: string): ReviewerDecisionEvent[] {

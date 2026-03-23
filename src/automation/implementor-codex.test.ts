@@ -28,7 +28,11 @@ function buildTaskPayload(overrides: Partial<ImplementorTaskPayload> = {}): Impl
 describe('implementor-codex', () => {
   describe('parseImplementorTaskPayload', () => {
     it('parses the JSON payload required by the implementor wrapper', () => {
-      expect(parseImplementorTaskPayload(JSON.stringify(buildTaskPayload()))).toEqual(buildTaskPayload());
+      expect(parseImplementorTaskPayload(JSON.stringify(buildTaskPayload()))).toMatchObject({
+        ...buildTaskPayload(),
+        reviewFollowUpItems: [],
+        plannerArtifact: undefined,
+      });
     });
 
     it('rejects missing payloads', () => {
@@ -93,6 +97,38 @@ describe('implementor-codex', () => {
       expect(plan.command).toBe('/usr/local/bin/codex');
       expect(plan.args.slice(0, 4)).toEqual(['exec', '--yolo', '--model', 'gpt-6-codex']);
       expect(plan.cwd).toBe('/tmp/worktree-163');
+    });
+
+    it('includes planner artifacts and review follow-up items in the Codex prompt when present', () => {
+      const plan = buildCodexInvocationPlan({
+        task: buildTaskPayload({
+          plannerArtifact: {
+            kind: 'review-follow-up',
+            threadId: 'thread-1',
+            headSha: 'abc123',
+            fixSummary: 'Cover fallback path',
+            implementationSteps: ['Update fallback handling.'],
+            testSteps: ['Add fallback regression coverage.'],
+            verificationSteps: ['Run targeted automation tests.'],
+          },
+          reviewFollowUpItems: [{
+            threadId: 'thread-1',
+            headSha: 'abc123',
+            sourceCommentId: 'comment-2',
+            summary: 'Add a regression test for the fallback path',
+            actionability: 'actionable',
+            requiresReply: true,
+          }],
+        }),
+        outputPath: '/tmp/implementor-result.json',
+        env: {},
+        defaultCwd: '/workspace/github.com/davidruzicka/mcp4openapi/.worktrees/agent-automation',
+      });
+
+      expect(plan.prompt).toContain('Planner artifact:');
+      expect(plan.prompt).toContain('"fixSummary": "Cover fallback path"');
+      expect(plan.prompt).toContain('Review follow-up items:');
+      expect(plan.prompt).toContain('"sourceCommentId": "comment-2"');
     });
 
     it('rejects unsupported Codex modes from the environment', () => {

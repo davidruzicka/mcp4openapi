@@ -2,12 +2,15 @@ import { describe, expect, it } from 'vitest';
 import {
   buildImplementorLeaseComment,
   buildImplementorResultComment,
+  buildImplementorReviewThreadReplyPlans,
   collectImplementorAssignments,
   parseImplementorCommandResult,
+  parseImplementorTaskPayload,
   planImplementorResultLabels,
   type ImplementorIssue,
   type ImplementorIssueComment,
 } from './implementor-runner.js';
+import { serializePlannerArtifact } from './planner-artifact.js';
 
 function buildIssue(overrides: Partial<ImplementorIssue> = {}): ImplementorIssue {
   return {
@@ -205,6 +208,247 @@ describe('implementor-runner', () => {
     });
   });
 
+  describe('parseImplementorTaskPayload', () => {
+    it('parses planner artifacts and review follow-up items from the implementor payload', () => {
+      const payload = parseImplementorTaskPayload(JSON.stringify({
+        repository: 'davidruzicka/mcp4openapi',
+        issue: {
+          number: 161,
+          title: 'Add cache invalidation metrics',
+          body: 'Need bounded instrumentation and tests.',
+          url: 'https://github.com/davidruzicka/mcp4openapi/issues/161',
+        },
+        reviewFollowUpItems: [{
+          threadId: 'thread-1',
+          headSha: 'abc123',
+          sourceCommentId: 'comment-2',
+          summary: 'Add a regression test for the fallback path',
+          actionability: 'actionable',
+          requiresReply: true,
+        }],
+        plannerArtifact: serializePlannerArtifact({
+          kind: 'review-follow-up',
+          threadId: 'thread-1',
+          sourceCommentId: 'comment-2',
+          headSha: 'abc123',
+          fixSummary: 'Cover the fallback path',
+          implementationSteps: ['Update fallback handling.'],
+          testSteps: ['Add a regression test for the fallback path.'],
+          verificationSteps: ['Run targeted automation tests.'],
+        }),
+        runId: 'run-3',
+        agentId: 'implementor',
+        now: '2026-03-14T12:00:00Z',
+      }));
+
+      expect(payload.plannerArtifact).toMatchObject({ threadId: 'thread-1', sourceCommentId: 'comment-2', headSha: 'abc123' });
+      expect(payload.reviewFollowUpItems).toHaveLength(1);
+    });
+
+    it('fails closed for invalid planner artifacts in the payload', () => {
+      expect(() => parseImplementorTaskPayload(JSON.stringify({
+        repository: 'davidruzicka/mcp4openapi',
+        issue: {
+          number: 161,
+          title: 'Add cache invalidation metrics',
+          body: 'Need bounded instrumentation and tests.',
+          url: 'https://github.com/davidruzicka/mcp4openapi/issues/161',
+        },
+        plannerArtifact: '## Implementation plan',
+        runId: 'run-3',
+        agentId: 'implementor',
+        now: '2026-03-14T12:00:00Z',
+      }))).toThrow('plannerArtifact must be a valid review-follow-up artifact');
+    });
+
+    it('rejects malformed, non-object, and incomplete planner follow-up payloads', () => {
+      expect(() => parseImplementorTaskPayload('not-json')).toThrow('Invalid IMPLEMENTOR_TASK_JSON payload: expected JSON.');
+      expect(() => parseImplementorTaskPayload('[]')).toThrow('Invalid IMPLEMENTOR_TASK_JSON payload: expected object payload.');
+
+      const artifact = serializePlannerArtifact({
+        kind: 'review-follow-up',
+        threadId: 'thread-1',
+        sourceCommentId: 'comment-2',
+        headSha: 'abc123',
+        fixSummary: 'Cover the fallback path',
+        implementationSteps: ['Update fallback handling.'],
+        testSteps: ['Add a regression test for the fallback path.'],
+        verificationSteps: ['Run targeted automation tests.'],
+      });
+
+      expect(() => parseImplementorTaskPayload(JSON.stringify({
+        repository: 'davidruzicka/mcp4openapi',
+        issue: {
+          number: 161,
+          title: 'Add cache invalidation metrics',
+          body: 'Need bounded instrumentation and tests.',
+          url: 'https://github.com/davidruzicka/mcp4openapi/issues/161',
+        },
+        plannerArtifact: artifact,
+        runId: 'run-3',
+        agentId: 'implementor',
+        now: '2026-03-14T12:00:00Z',
+      }))).toThrow('plannerArtifact requires reviewFollowUpItems');
+
+      expect(() => parseImplementorTaskPayload(JSON.stringify({
+        repository: 'davidruzicka/mcp4openapi',
+        issue: {
+          number: 161,
+          title: 'Add cache invalidation metrics',
+          body: 'Need bounded instrumentation and tests.',
+          url: 'https://github.com/davidruzicka/mcp4openapi/issues/161',
+        },
+        reviewFollowUpItems: [{
+          threadId: '',
+          headSha: 'abc123',
+          sourceCommentId: 'comment-2',
+          summary: 'Add a regression test for the fallback path',
+          actionability: 'actionable',
+          requiresReply: true,
+        }],
+        plannerArtifact: artifact,
+        runId: 'run-3',
+        agentId: 'implementor',
+        now: '2026-03-14T12:00:00Z',
+      }))).toThrow('reviewFollowUpItems must include threadId, headSha, sourceCommentId, and summary');
+    });
+  });
+
+  describe('buildImplementorReviewThreadReplyPlans', () => {
+    it('builds thread reply plans for successful review follow-up results', () => {
+      const replies = buildImplementorReviewThreadReplyPlans({
+        task: parseImplementorTaskPayload(JSON.stringify({
+          repository: 'davidruzicka/mcp4openapi',
+          issue: {
+            number: 161,
+            title: 'Add cache invalidation metrics',
+            body: 'Need bounded instrumentation and tests.',
+            url: 'https://github.com/davidruzicka/mcp4openapi/issues/161',
+          },
+          reviewFollowUpItems: [{
+            threadId: 'thread-1',
+            headSha: 'abc123',
+            sourceCommentId: 'comment-2',
+            summary: 'Add a regression test for the fallback path',
+            actionability: 'actionable',
+            requiresReply: true,
+          }],
+          plannerArtifact: serializePlannerArtifact({
+            kind: 'review-follow-up',
+            threadId: 'thread-1',
+            sourceCommentId: 'comment-2',
+            headSha: 'abc123',
+            fixSummary: 'Cover the fallback path',
+            implementationSteps: ['Update fallback handling.'],
+            testSteps: ['Add a regression test for the fallback path.'],
+            verificationSteps: ['Run targeted automation tests.'],
+          }),
+          runId: 'run-3',
+          agentId: 'implementor',
+          now: '2026-03-14T12:00:00Z',
+        })),
+        result: {
+          outcome: 'pr-created',
+          summary: 'Created PR #201 with targeted follow-up coverage.',
+          pullRequest: {
+            number: 201,
+            url: 'https://github.com/davidruzicka/mcp4openapi/pull/201',
+          },
+        },
+        newHeadSha: 'def456',
+      });
+
+      expect(replies).toHaveLength(1);
+      expect(replies[0]).toMatchObject({
+        threadId: 'thread-1',
+        inReplyToCommentId: 'comment-2',
+        headSha: 'def456',
+      });
+      expect(replies[0]?.body).toContain('This reply was prepared by an agent.');
+      expect(replies[0]?.body).toContain('def456');
+      expect(replies[0]?.body).toContain('source-comment-id: comment-2');
+    });
+
+    it('fails closed when follow-up replies are not tied to a created PR head', () => {
+      const task = parseImplementorTaskPayload(JSON.stringify({
+        repository: 'davidruzicka/mcp4openapi',
+        issue: {
+          number: 161,
+          title: 'Add cache invalidation metrics',
+          body: 'Need bounded instrumentation and tests.',
+          url: 'https://github.com/davidruzicka/mcp4openapi/issues/161',
+        },
+        reviewFollowUpItems: [{
+          threadId: 'thread-1',
+          headSha: 'abc123',
+          sourceCommentId: 'comment-2',
+          summary: 'Add a regression test for the fallback path',
+          actionability: 'actionable',
+          requiresReply: true,
+        }],
+        plannerArtifact: serializePlannerArtifact({
+          kind: 'review-follow-up',
+          threadId: 'thread-1',
+          sourceCommentId: 'comment-2',
+          headSha: 'abc123',
+          fixSummary: 'Cover the fallback path',
+          implementationSteps: ['Update fallback handling.'],
+          testSteps: ['Add a regression test for the fallback path.'],
+          verificationSteps: ['Run targeted automation tests.'],
+        }),
+        runId: 'run-3',
+        agentId: 'implementor',
+        now: '2026-03-14T12:00:00Z',
+      }));
+
+      expect(buildImplementorReviewThreadReplyPlans({
+        task,
+        result: {
+          outcome: 'blocked',
+          summary: 'Needs a human decision.',
+        },
+        newHeadSha: 'def456',
+      })).toEqual([]);
+
+      expect(buildImplementorReviewThreadReplyPlans({
+        task,
+        result: {
+          outcome: 'pr-created',
+          summary: 'Created PR #201 with targeted follow-up coverage.',
+          pullRequest: {
+            number: 201,
+            url: 'https://github.com/davidruzicka/mcp4openapi/pull/201',
+          },
+        },
+        newHeadSha: '',
+      })).toEqual([]);
+    });
+
+    it('returns no review-thread reply plans without planner artifacts or follow-up items', () => {
+      const task = parseImplementorTaskPayload(JSON.stringify({
+        repository: 'davidruzicka/mcp4openapi',
+        issue: {
+          number: 161,
+          title: 'Add cache invalidation metrics',
+          body: 'Need bounded instrumentation and tests.',
+          url: 'https://github.com/davidruzicka/mcp4openapi/issues/161',
+        },
+        runId: 'run-3',
+        agentId: 'implementor',
+        now: '2026-03-14T12:00:00Z',
+      }));
+
+      expect(buildImplementorReviewThreadReplyPlans({
+        task,
+        result: {
+          outcome: 'blocked',
+          summary: 'Needs a human decision.',
+        },
+        newHeadSha: 'def456',
+      })).toEqual([]);
+    });
+  });
+
   describe('planImplementorResultLabels', () => {
     it('adds blocked workflow labels when implementation cannot proceed', () => {
       expect(planImplementorResultLabels({ outcome: 'blocked', summary: 'Needs a human decision.' })).toEqual({
@@ -236,6 +480,75 @@ describe('implementor-runner', () => {
       expect(comment).toContain('🤖 Agent implementation note (implementor)');
       expect(comment).toContain('status: pr-created');
       expect(comment).toContain('PR: #201');
+    });
+
+    it('includes a review follow-up count when follow-up items are present', () => {
+      const comment = buildImplementorResultComment({
+        repository: 'davidruzicka/mcp4openapi',
+        issueNumber: 161,
+        agentId: 'implementor',
+        runId: 'run-3',
+        timestamp: '2026-03-14T12:30:00Z',
+        result: {
+          outcome: 'pr-created',
+          summary: 'Created PR #201 with tests.',
+          pullRequest: {
+            number: 201,
+            url: 'https://github.com/davidruzicka/mcp4openapi/pull/201',
+          },
+        },
+        reviewFollowUpItems: [{
+          threadId: 'thread-1',
+          headSha: 'abc123',
+          sourceCommentId: 'comment-2',
+          summary: 'Add a regression test for the fallback path',
+          actionability: 'actionable',
+          requiresReply: true,
+        }],
+      });
+
+      expect(comment).toContain('Review follow-up items: 1');
+    });
+
+    it('omits PR and review follow-up lines when optional fields are absent', () => {
+      const comment = buildImplementorResultComment({
+        repository: 'davidruzicka/mcp4openapi',
+        issueNumber: 161,
+        agentId: 'implementor',
+        runId: 'run-4',
+        timestamp: '2026-03-14T12:40:00Z',
+        result: {
+          outcome: 'blocked',
+          summary: 'Needs a human policy decision.',
+        },
+      });
+
+      expect(comment).toContain('Implementation result: blocked');
+      expect(comment).not.toContain('PR: #');
+      expect(comment).not.toContain('Review follow-up items:');
+      expect(comment).toContain('status: blocked');
+    });
+
+    it('omits the review follow-up line when the item list is empty', () => {
+      const comment = buildImplementorResultComment({
+        repository: 'davidruzicka/mcp4openapi',
+        issueNumber: 161,
+        agentId: 'implementor',
+        runId: 'run-5',
+        timestamp: '2026-03-14T12:45:00Z',
+        result: {
+          outcome: 'pr-created',
+          summary: 'Created PR #202 with tests.',
+          pullRequest: {
+            number: 202,
+            url: 'https://github.com/davidruzicka/mcp4openapi/pull/202',
+          },
+        },
+        reviewFollowUpItems: [],
+      });
+
+      expect(comment).toContain('PR: #202');
+      expect(comment).not.toContain('Review follow-up items:');
     });
   });
 });

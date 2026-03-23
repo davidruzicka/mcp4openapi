@@ -48,6 +48,32 @@ describe('planner-runner', () => {
       expect(decision.reasons).toContain('issue body provides enough structure for a bounded implementation plan');
     });
 
+    it('emits a serialized planner artifact for review-follow-up issue context', () => {
+      const decision = evaluatePlannerDecision(buildIssue({
+        body: [
+          'Review thread: thread-1',
+          'Source comment ID: comment-1',
+          'Head SHA: abc123',
+          'Fix summary: Cover the fallback path',
+          'Implementation steps:',
+          '- Update fallback handling.',
+          'Test steps:',
+          '- Add a regression test for the fallback path.',
+          'Verification steps:',
+          '- Run targeted automation tests.',
+        ].join('\n'),
+      }));
+
+      expect(decision.remainsSuitable).toBe(true);
+      expect(decision.plan).toContain('## Review follow-up implementation plan');
+      expect(decision.plannerArtifact).toMatchObject({
+        kind: 'review-follow-up',
+        threadId: 'thread-1',
+        sourceCommentId: 'comment-1',
+        headSha: 'abc123',
+      });
+    });
+
     it('de-scopes unsuitable issues and can request a blocked lane', () => {
       const decision = evaluatePlannerDecision(buildIssue({
         title: 'Define security migration strategy',
@@ -82,7 +108,35 @@ describe('planner-runner', () => {
       expect(assignments[0]?.commentBody).toContain('status: planned');
     });
 
+    it('emits blocked planner status when a high-risk issue is de-scoped from autonomous planning', () => {
+      const assignments = collectPlannerAssignments({
+        issues: [buildIssue({
+          title: 'Define security migration strategy',
+          body: 'Need a broad auth and migration design before implementation.',
+        })],
+        commentsByIssueNumber: { 160: [] },
+        repository: 'davidruzicka/mcp4openapi',
+        agentId: 'planner',
+        runId: 'run-2',
+        now: '2026-03-14T12:00:00Z',
+      });
+
+      expect(assignments).toHaveLength(1);
+      expect(assignments[0]?.commentBody).toContain('Planner decision: blocked');
+      expect(assignments[0]?.commentBody).toContain('status: blocked');
+    });
+
     it('deduplicates equivalent planner decisions', () => {
+      const plannerArtifact = {
+        kind: 'review-follow-up' as const,
+        threadId: 'thread-1',
+        sourceCommentId: 'comment-1',
+        headSha: 'abc123',
+        fixSummary: 'Cover the fallback path',
+        implementationSteps: ['Update fallback handling.'],
+        testSteps: ['Add a regression test for the fallback path.'],
+        verificationSteps: ['Run targeted automation tests.'],
+      };
       const commentBody = buildPlannerDecisionComment({
         repository: 'davidruzicka/mcp4openapi',
         issueNumber: 160,
@@ -96,10 +150,24 @@ describe('planner-runner', () => {
           'issue remains inside the low-risk autonomous planning lane',
         ],
         plan: '## Implementation plan\n- Step 1',
+        plannerArtifact,
       });
 
       const assignments = collectPlannerAssignments({
-        issues: [buildIssue()],
+        issues: [buildIssue({
+          body: [
+            'Review thread: thread-1',
+            'Source comment ID: comment-1',
+            'Head SHA: abc123',
+            'Fix summary: Cover the fallback path',
+            'Implementation steps:',
+            '- Update fallback handling.',
+            'Test steps:',
+            '- Add a regression test for the fallback path.',
+            'Verification steps:',
+            '- Run targeted automation tests.',
+          ].join('\n'),
+        })],
         commentsByIssueNumber: { 160: [buildComment(commentBody)] },
         repository: 'davidruzicka/mcp4openapi',
         agentId: 'planner',
@@ -108,6 +176,52 @@ describe('planner-runner', () => {
       });
 
       expect(assignments).toHaveLength(0);
+    });
+
+    it('ignores malformed planner artifacts when deduplicating decision comments', () => {
+      const malformedComment = [
+        '🤖 Agent plan (planner)',
+        '',
+        'Planner decision: planned',
+        'Reasons:',
+        '- issue body provides enough structure for a bounded implementation plan',
+        '- issue remains inside the low-risk autonomous planning lane',
+        '',
+        '<!-- AGENT-PLANNER-ARTIFACT',
+        '{not-json}',
+        '-->',
+        '',
+        '<!-- AGENT-METADATA',
+        'agent-stage: planner',
+        'status: planned',
+        'reasons: issue body provides enough structure for a bounded implementation plan,issue remains inside the low-risk autonomous planning lane',
+        '-->',
+      ].join('\n');
+
+      const assignments = collectPlannerAssignments({
+        issues: [buildIssue({
+          body: [
+            'Review thread: thread-1',
+            'Source comment ID: comment-1',
+            'Head SHA: abc123',
+            'Fix summary: Cover the fallback path',
+            'Implementation steps:',
+            '- Update fallback handling.',
+            'Test steps:',
+            '- Add a regression test for the fallback path.',
+            'Verification steps:',
+            '- Run targeted automation tests.',
+          ].join('\n'),
+        })],
+        commentsByIssueNumber: { 160: [buildComment(malformedComment)] },
+        repository: 'davidruzicka/mcp4openapi',
+        agentId: 'planner',
+        runId: 'run-2',
+        now: '2026-03-14T12:00:00Z',
+      });
+
+      expect(assignments).toHaveLength(1);
+      expect(assignments[0]?.commentBody).toContain('comment-1');
     });
 
     it('de-scopes near-duplicate issues when semantic duplicate triage finds an earlier open match', () => {

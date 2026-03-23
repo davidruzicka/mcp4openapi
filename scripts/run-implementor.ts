@@ -2,16 +2,20 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import {
   buildImplementorResultComment,
+  buildImplementorReviewThreadReplyPlans,
   collectImplementorAssignments,
   parseImplementorCommandResult,
   planImplementorResultLabels,
   type ImplementorCommandResult,
 } from '../src/automation/implementor-runner.js';
+import { parsePlannerArtifact } from '../src/automation/planner-artifact.js';
+import type { ImplementorThreadReplyPayload } from '../src/automation/review-follow-up.js';
 import {
   addIssueLabels,
   addPullRequestLabels,
   buildOpenPullRequestsByIssueNumber,
   createIssueComment,
+  createReviewThreadReply,
   getPullRequest,
   listIssueComments,
   listOpenPullRequests,
@@ -20,6 +24,7 @@ import {
   mapIssueSummary,
   readIssueRuntimeConfig,
   removeIssueLabels,
+  type IssueRuntimeConfig,
   updatePullRequestBody,
 } from './github-agent-runtime.js';
 
@@ -74,9 +79,25 @@ for (const assignment of assignments.slice(0, runtimeConfig.maxCandidates)) {
     throw new Error(`Missing issue snapshot for implementor assignment #${assignment.issueNumber}.`);
   }
 
+  const plannerArtifact = (commentsByIssueNumber[assignment.issueNumber] ?? [])
+    .map((comment) => parsePlannerArtifact(comment.body))
+    .find((artifact) => artifact !== undefined);
+  const reviewFollowUpItems = plannerArtifact
+    ? [{
+        threadId: plannerArtifact.threadId,
+        headSha: plannerArtifact.headSha,
+        sourceCommentId: plannerArtifact.sourceCommentId,
+        summary: plannerArtifact.fixSummary,
+        actionability: 'actionable' as const,
+        requiresReply: true,
+      }]
+    : [];
+
   const taskPayload = {
     repository: runtimeConfig.repository,
     issue: mapIssueSummary(issue),
+    reviewFollowUpItems,
+    plannerArtifact,
     runId: runtimeConfig.runId,
     agentId: runtimeConfig.agentId,
     now: runtimeConfig.now,
@@ -97,11 +118,24 @@ for (const assignment of assignments.slice(0, runtimeConfig.maxCandidates)) {
     runId: runtimeConfig.runId,
     timestamp: runtimeConfig.now,
     result,
+    reviewFollowUpItems,
   }));
 
   if (result.pullRequest) {
-    await addPullRequestLabels(runtimeConfig, result.pullRequest.number, labels.pullRequestLabelsToAdd);
-    await ensurePullRequestDisclosure(runtimeConfig, result.pullRequest.number, assignment.issueNumber);
+    const pullRequestNumber = result.pullRequest.number;
+
+    await addPullRequestLabels(runtimeConfig, pullRequestNumber, labels.pullRequestLabelsToAdd);
+    await ensurePullRequestDisclosure(runtimeConfig, pullRequestNumber, assignment.issueNumber);
+
+    const pullRequest = await getPullRequest(runtimeConfig, pullRequestNumber);
+    const newHeadSha = pullRequest.head.sha;
+    const replyPlans = buildImplementorReviewThreadReplyPlans({
+      task: taskPayload,
+      result,
+      newHeadSha,
+    });
+
+    await postImplementorReviewThreadReplies(runtimeConfig, pullRequestNumber, replyPlans);
   }
 
   process.stdout.write(`Implementor processed issue #${assignment.issueNumber} (${result.outcome}).\n`);
@@ -119,6 +153,21 @@ async function runImplementorCommand(command: string, payload: unknown) {
   });
 
   return parseImplementorCommandResult(stdout.trim());
+}
+
+async function postImplementorReviewThreadReplies(
+  runtimeConfig: IssueRuntimeConfig,
+  pullRequestNumber: number,
+  replyPlans: readonly ImplementorThreadReplyPayload[],
+): Promise<void> {
+  for (const replyPlan of replyPlans) {
+    await createReviewThreadReply(runtimeConfig, {
+      pullRequestNumber,
+      threadId: replyPlan.threadId,
+      inReplyToCommentId: replyPlan.inReplyToCommentId,
+      body: replyPlan.body,
+    });
+  }
 }
 
 async function ensurePullRequestDisclosure(config: typeof runtimeConfig, pullRequestNumber: number, issueNumber: number): Promise<void> {
