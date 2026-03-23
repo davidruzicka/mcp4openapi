@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { readArtifactTrustConfig } from '../src/automation/artifact-signing-config.js';
 import {
   buildImplementorResultComment,
   buildImplementorReviewThreadReplyPlans,
@@ -8,7 +9,7 @@ import {
   planImplementorResultLabels,
   type ImplementorCommandResult,
 } from '../src/automation/implementor-runner.js';
-import { parsePlannerArtifact } from '../src/automation/planner-artifact.js';
+import { parseTrustedPlannerArtifact } from '../src/automation/planner-artifact.js';
 import type { ImplementorThreadReplyPayload } from '../src/automation/review-follow-up.js';
 import {
   addIssueLabels,
@@ -41,6 +42,7 @@ if (!implementorCommand) {
 }
 
 const leaseTtlMinutes = parsePositiveInteger(process.env.IMPLEMENTOR_LEASE_TTL_MINUTES, 120);
+const artifactTrustConfig = readArtifactTrustConfig(process.env);
 const recentIssues = await listRecentIssues(runtimeConfig);
 const commentsByIssueNumber: Record<number, ReturnType<typeof mapIssueComment>[]> = {};
 for (const issue of recentIssues) {
@@ -80,7 +82,7 @@ for (const assignment of assignments.slice(0, runtimeConfig.maxCandidates)) {
   }
 
   const plannerArtifact = (commentsByIssueNumber[assignment.issueNumber] ?? [])
-    .map((comment) => parsePlannerArtifact(comment.body))
+    .map((comment) => parseTrustedPlannerArtifact(comment.body, { trustConfig: artifactTrustConfig }))
     .find((artifact) => artifact !== undefined);
   const reviewFollowUpItems = plannerArtifact
     ? [{

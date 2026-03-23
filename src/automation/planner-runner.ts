@@ -6,6 +6,7 @@ import {
   serializePlannerArtifact,
   type ReviewFixPlanArtifact,
 } from './planner-artifact.js';
+import type { ArtifactSigningConfig } from './artifact-signing.js';
 import { findSemanticOpenDuplicate, type SemanticDuplicateBackendName } from './semantic-triage.js';
 
 export interface PlannerIssue {
@@ -53,6 +54,7 @@ export interface CollectPlannerAssignmentsInput {
   readonly runId: string;
   readonly now: string;
   readonly semanticDuplicateBackendName?: SemanticDuplicateBackendName;
+  readonly artifactSigning?: ArtifactSigningConfig;
 }
 
 const RISK_KEYWORDS = ['security', 'auth', 'oauth', 'token', 'secret', 'tenant', 'migration', 'breaking', 'architecture', 'refactor'];
@@ -133,6 +135,7 @@ export function collectPlannerAssignments(input: CollectPlannerAssignmentsInput)
       plan: decision.plan,
       plannerArtifact: decision.plannerArtifact,
       duplicateBackendName: decision.duplicateBackendName,
+      artifactSigning: input.artifactSigning,
     });
 
     if (hasEquivalentPlannerDecisionComment(input.commentsByIssueNumber[issue.number] ?? [], decision)) {
@@ -164,6 +167,7 @@ export function buildPlannerDecisionComment(input: {
   readonly plan?: string;
   readonly plannerArtifact?: ReviewFixPlanArtifact;
   readonly duplicateBackendName?: string;
+  readonly artifactSigning?: ArtifactSigningConfig;
 }): string {
   const plannerStatus = getPlannerDecisionStatus(input.remainsSuitable, input.blocked);
   const metadataBlock = buildAgentMetadataBlock({
@@ -186,7 +190,7 @@ export function buildPlannerDecisionComment(input: {
     ...input.reasons.map((reason) => `- ${reason}`),
     ...buildDuplicateGuardNoteLines(input.reasons, input.duplicateBackendName),
     ...(input.plan ? ['', input.plan] : []),
-    ...(input.plannerArtifact ? ['', serializePlannerArtifact(input.plannerArtifact)] : []),
+    ...(input.plannerArtifact ? ['', serializePlannerArtifact(input.plannerArtifact, { signing: input.artifactSigning })] : []),
     '',
     metadataBlock,
   ];

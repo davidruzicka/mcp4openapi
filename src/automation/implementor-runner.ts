@@ -1,7 +1,11 @@
 import { buildAgentMetadataBlock } from './agent-feedback.js';
 import { planImplementorCompletion, planImplementorStart } from './agent-workflow-state.js';
+import type { ArtifactTrustConfig } from './artifact-signing-config.js';
 import { parseAgentMetadata } from './evaluator-runner.js';
-import { parsePlannerArtifact, type ReviewFixPlanArtifact } from './planner-artifact.js';
+import {
+  parseTrustedPlannerArtifact,
+  type ReviewFixPlanArtifact,
+} from './planner-artifact.js';
 import { buildImplementorThreadReplyPlans, type ReviewFollowUpItem } from './review-follow-up.js';
 
 export interface ImplementorIssue {
@@ -190,7 +194,14 @@ function buildReviewFollowUpCountLine(reviewFollowUpItems: readonly ReviewFollow
   return `Review follow-up items: ${reviewFollowUpItems.length}`;
 }
 
-export function parseImplementorTaskPayload(raw: string | undefined): ImplementorTaskPayload {
+export interface ParseImplementorTaskPayloadOptions {
+  readonly trustConfig?: ArtifactTrustConfig;
+}
+
+export function parseImplementorTaskPayload(
+  raw: string | undefined,
+  options?: ParseImplementorTaskPayloadOptions,
+): ImplementorTaskPayload {
   if (!raw) {
     throw new Error('Missing IMPLEMENTOR_TASK_JSON payload for implementor workflow.');
   }
@@ -221,8 +232,9 @@ export function parseImplementorTaskPayload(raw: string | undefined): Implemento
     throw new Error('Invalid IMPLEMENTOR_TASK_JSON payload: missing required workflow fields.');
   }
 
+  const trustConfig = options?.trustConfig ?? { allowUnsigned: false };
   const plannerArtifact = typeof candidate.plannerArtifact === 'string'
-    ? parsePlannerArtifact(candidate.plannerArtifact)
+    ? parsePlannerArtifactFromTaskString(candidate.plannerArtifact, trustConfig)
     : candidate.plannerArtifact;
   if (candidate.plannerArtifact !== undefined && plannerArtifact === undefined) {
     throw new Error('Invalid IMPLEMENTOR_TASK_JSON payload: plannerArtifact must be a valid review-follow-up artifact.');
@@ -250,6 +262,28 @@ export function parseImplementorTaskPayload(raw: string | undefined): Implemento
     agentId: candidate.agentId,
     now: candidate.now,
   };
+}
+
+function parsePlannerArtifactFromTaskString(rawArtifact: string, trustConfig: ArtifactTrustConfig): ReviewFixPlanArtifact | undefined {
+  try {
+    return parseTrustedPlannerArtifact(rawArtifact, { trustConfig });
+  } catch (error) {
+    if (!(error instanceof Error)) {
+      throw error;
+    }
+
+    if (error.message.includes('unsigned artifacts are not trusted')) {
+      throw new Error('Invalid IMPLEMENTOR_TASK_JSON payload: plannerArtifact must be signed or explicitly allowed unsigned.');
+    }
+    if (error.message.includes('signature verification failed')) {
+      throw new Error('Invalid IMPLEMENTOR_TASK_JSON payload: plannerArtifact signature verification failed.');
+    }
+    if (error.message.includes('signing key is not configured')) {
+      throw new Error('Invalid IMPLEMENTOR_TASK_JSON payload: plannerArtifact signing key is not configured.');
+    }
+
+    throw new Error('Invalid IMPLEMENTOR_TASK_JSON payload: plannerArtifact must be a valid review-follow-up artifact.');
+  }
 }
 
 export function buildImplementorReviewThreadReplyPlans(input: {

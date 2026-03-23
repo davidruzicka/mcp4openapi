@@ -12,6 +12,37 @@ import {
 } from './implementor-runner.js';
 import { serializePlannerArtifact } from './planner-artifact.js';
 
+const strictTrustConfig = {
+  allowUnsigned: false,
+  signing: {
+    key: 'signing-secret',
+    keyId: 'primary',
+  },
+} as const;
+
+const unsignedCompatibilityTrustConfig = {
+  allowUnsigned: true,
+} as const;
+
+function buildPlannerArtifact() {
+  return {
+    kind: 'review-follow-up' as const,
+    threadId: 'thread-1',
+    sourceCommentId: 'comment-2',
+    headSha: 'abc123',
+    fixSummary: 'Cover the fallback path',
+    implementationSteps: ['Update fallback handling.'],
+    testSteps: ['Add a regression test for the fallback path.'],
+    verificationSteps: ['Run targeted automation tests.'],
+  };
+}
+
+function buildSignedPlannerArtifact(): string {
+  return serializePlannerArtifact(buildPlannerArtifact(), {
+    signing: strictTrustConfig.signing,
+  });
+}
+
 function buildIssue(overrides: Partial<ImplementorIssue> = {}): ImplementorIssue {
   return {
     number: 161,
@@ -209,7 +240,7 @@ describe('implementor-runner', () => {
   });
 
   describe('parseImplementorTaskPayload', () => {
-    it('parses planner artifacts and review follow-up items from the implementor payload', () => {
+    it('parses trusted signed planner artifacts and review follow-up items from the implementor payload', () => {
       const payload = parseImplementorTaskPayload(JSON.stringify({
         repository: 'davidruzicka/mcp4openapi',
         issue: {
@@ -226,23 +257,122 @@ describe('implementor-runner', () => {
           actionability: 'actionable',
           requiresReply: true,
         }],
-        plannerArtifact: serializePlannerArtifact({
-          kind: 'review-follow-up',
-          threadId: 'thread-1',
-          sourceCommentId: 'comment-2',
-          headSha: 'abc123',
-          fixSummary: 'Cover the fallback path',
-          implementationSteps: ['Update fallback handling.'],
-          testSteps: ['Add a regression test for the fallback path.'],
-          verificationSteps: ['Run targeted automation tests.'],
-        }),
+        plannerArtifact: buildSignedPlannerArtifact(),
         runId: 'run-3',
         agentId: 'implementor',
         now: '2026-03-14T12:00:00Z',
-      }));
+      }), {
+        trustConfig: strictTrustConfig,
+      });
 
       expect(payload.plannerArtifact).toMatchObject({ threadId: 'thread-1', sourceCommentId: 'comment-2', headSha: 'abc123' });
       expect(payload.reviewFollowUpItems).toHaveLength(1);
+    });
+
+    it('rejects unsigned planner artifacts when compatibility mode is disabled', () => {
+      expect(() => parseImplementorTaskPayload(JSON.stringify({
+        repository: 'davidruzicka/mcp4openapi',
+        issue: {
+          number: 161,
+          title: 'Add cache invalidation metrics',
+          body: 'Need bounded instrumentation and tests.',
+          url: 'https://github.com/davidruzicka/mcp4openapi/issues/161',
+        },
+        reviewFollowUpItems: [{
+          threadId: 'thread-1',
+          headSha: 'abc123',
+          sourceCommentId: 'comment-2',
+          summary: 'Add a regression test for the fallback path',
+          actionability: 'actionable',
+          requiresReply: true,
+        }],
+        plannerArtifact: serializePlannerArtifact(buildPlannerArtifact()),
+        runId: 'run-3',
+        agentId: 'implementor',
+        now: '2026-03-14T12:00:00Z',
+      }), {
+        trustConfig: strictTrustConfig,
+      })).toThrow('plannerArtifact must be signed or explicitly allowed unsigned');
+    });
+
+    it('accepts unsigned planner artifacts when compatibility mode is explicitly enabled', () => {
+      const payload = parseImplementorTaskPayload(JSON.stringify({
+        repository: 'davidruzicka/mcp4openapi',
+        issue: {
+          number: 161,
+          title: 'Add cache invalidation metrics',
+          body: 'Need bounded instrumentation and tests.',
+          url: 'https://github.com/davidruzicka/mcp4openapi/issues/161',
+        },
+        reviewFollowUpItems: [{
+          threadId: 'thread-1',
+          headSha: 'abc123',
+          sourceCommentId: 'comment-2',
+          summary: 'Add a regression test for the fallback path',
+          actionability: 'actionable',
+          requiresReply: true,
+        }],
+        plannerArtifact: serializePlannerArtifact(buildPlannerArtifact()),
+        runId: 'run-3',
+        agentId: 'implementor',
+        now: '2026-03-14T12:00:00Z',
+      }), {
+        trustConfig: unsignedCompatibilityTrustConfig,
+      });
+
+      expect(payload.plannerArtifact).toMatchObject({ threadId: 'thread-1', sourceCommentId: 'comment-2', headSha: 'abc123' });
+    });
+
+    it('rejects tampered signed artifacts and missing signing keys on trusted paths', () => {
+      expect(() => parseImplementorTaskPayload(JSON.stringify({
+        repository: 'davidruzicka/mcp4openapi',
+        issue: {
+          number: 161,
+          title: 'Add cache invalidation metrics',
+          body: 'Need bounded instrumentation and tests.',
+          url: 'https://github.com/davidruzicka/mcp4openapi/issues/161',
+        },
+        reviewFollowUpItems: [{
+          threadId: 'thread-1',
+          headSha: 'abc123',
+          sourceCommentId: 'comment-2',
+          summary: 'Add a regression test for the fallback path',
+          actionability: 'actionable',
+          requiresReply: true,
+        }],
+        plannerArtifact: buildSignedPlannerArtifact().replace('Cover the fallback path', 'Tampered summary'),
+        runId: 'run-3',
+        agentId: 'implementor',
+        now: '2026-03-14T12:00:00Z',
+      }), {
+        trustConfig: strictTrustConfig,
+      })).toThrow('plannerArtifact signature verification failed');
+
+      expect(() => parseImplementorTaskPayload(JSON.stringify({
+        repository: 'davidruzicka/mcp4openapi',
+        issue: {
+          number: 161,
+          title: 'Add cache invalidation metrics',
+          body: 'Need bounded instrumentation and tests.',
+          url: 'https://github.com/davidruzicka/mcp4openapi/issues/161',
+        },
+        reviewFollowUpItems: [{
+          threadId: 'thread-1',
+          headSha: 'abc123',
+          sourceCommentId: 'comment-2',
+          summary: 'Add a regression test for the fallback path',
+          actionability: 'actionable',
+          requiresReply: true,
+        }],
+        plannerArtifact: buildSignedPlannerArtifact(),
+        runId: 'run-3',
+        agentId: 'implementor',
+        now: '2026-03-14T12:00:00Z',
+      }), {
+        trustConfig: {
+          allowUnsigned: false,
+        },
+      })).toThrow('plannerArtifact signing key is not configured');
     });
 
     it('fails closed for invalid planner artifacts in the payload', () => {
@@ -258,23 +388,20 @@ describe('implementor-runner', () => {
         runId: 'run-3',
         agentId: 'implementor',
         now: '2026-03-14T12:00:00Z',
-      }))).toThrow('plannerArtifact must be a valid review-follow-up artifact');
+      }), {
+        trustConfig: strictTrustConfig,
+      })).toThrow('plannerArtifact must be a valid review-follow-up artifact');
     });
 
     it('rejects malformed, non-object, and incomplete planner follow-up payloads', () => {
-      expect(() => parseImplementorTaskPayload('not-json')).toThrow('Invalid IMPLEMENTOR_TASK_JSON payload: expected JSON.');
-      expect(() => parseImplementorTaskPayload('[]')).toThrow('Invalid IMPLEMENTOR_TASK_JSON payload: expected object payload.');
+      expect(() => parseImplementorTaskPayload('not-json', {
+        trustConfig: strictTrustConfig,
+      })).toThrow('Invalid IMPLEMENTOR_TASK_JSON payload: expected JSON.');
+      expect(() => parseImplementorTaskPayload('[]', {
+        trustConfig: strictTrustConfig,
+      })).toThrow('Invalid IMPLEMENTOR_TASK_JSON payload: expected object payload.');
 
-      const artifact = serializePlannerArtifact({
-        kind: 'review-follow-up',
-        threadId: 'thread-1',
-        sourceCommentId: 'comment-2',
-        headSha: 'abc123',
-        fixSummary: 'Cover the fallback path',
-        implementationSteps: ['Update fallback handling.'],
-        testSteps: ['Add a regression test for the fallback path.'],
-        verificationSteps: ['Run targeted automation tests.'],
-      });
+      const signedArtifact = buildSignedPlannerArtifact();
 
       expect(() => parseImplementorTaskPayload(JSON.stringify({
         repository: 'davidruzicka/mcp4openapi',
@@ -284,11 +411,13 @@ describe('implementor-runner', () => {
           body: 'Need bounded instrumentation and tests.',
           url: 'https://github.com/davidruzicka/mcp4openapi/issues/161',
         },
-        plannerArtifact: artifact,
+        plannerArtifact: signedArtifact,
         runId: 'run-3',
         agentId: 'implementor',
         now: '2026-03-14T12:00:00Z',
-      }))).toThrow('plannerArtifact requires reviewFollowUpItems');
+      }), {
+        trustConfig: strictTrustConfig,
+      })).toThrow('plannerArtifact requires reviewFollowUpItems');
 
       expect(() => parseImplementorTaskPayload(JSON.stringify({
         repository: 'davidruzicka/mcp4openapi',
@@ -306,11 +435,13 @@ describe('implementor-runner', () => {
           actionability: 'actionable',
           requiresReply: true,
         }],
-        plannerArtifact: artifact,
+        plannerArtifact: signedArtifact,
         runId: 'run-3',
         agentId: 'implementor',
         now: '2026-03-14T12:00:00Z',
-      }))).toThrow('reviewFollowUpItems must include threadId, headSha, sourceCommentId, and summary');
+      }), {
+        trustConfig: strictTrustConfig,
+      })).toThrow('reviewFollowUpItems must include threadId, headSha, sourceCommentId, and summary');
     });
   });
 
@@ -333,20 +464,13 @@ describe('implementor-runner', () => {
             actionability: 'actionable',
             requiresReply: true,
           }],
-          plannerArtifact: serializePlannerArtifact({
-            kind: 'review-follow-up',
-            threadId: 'thread-1',
-            sourceCommentId: 'comment-2',
-            headSha: 'abc123',
-            fixSummary: 'Cover the fallback path',
-            implementationSteps: ['Update fallback handling.'],
-            testSteps: ['Add a regression test for the fallback path.'],
-            verificationSteps: ['Run targeted automation tests.'],
-          }),
+          plannerArtifact: buildSignedPlannerArtifact(),
           runId: 'run-3',
           agentId: 'implementor',
           now: '2026-03-14T12:00:00Z',
-        })),
+        }), {
+          trustConfig: strictTrustConfig,
+        }),
         result: {
           outcome: 'pr-created',
           summary: 'Created PR #201 with targeted follow-up coverage.',
@@ -386,20 +510,13 @@ describe('implementor-runner', () => {
           actionability: 'actionable',
           requiresReply: true,
         }],
-        plannerArtifact: serializePlannerArtifact({
-          kind: 'review-follow-up',
-          threadId: 'thread-1',
-          sourceCommentId: 'comment-2',
-          headSha: 'abc123',
-          fixSummary: 'Cover the fallback path',
-          implementationSteps: ['Update fallback handling.'],
-          testSteps: ['Add a regression test for the fallback path.'],
-          verificationSteps: ['Run targeted automation tests.'],
-        }),
+        plannerArtifact: buildSignedPlannerArtifact(),
         runId: 'run-3',
         agentId: 'implementor',
         now: '2026-03-14T12:00:00Z',
-      }));
+      }), {
+        trustConfig: strictTrustConfig,
+      });
 
       expect(buildImplementorReviewThreadReplyPlans({
         task,

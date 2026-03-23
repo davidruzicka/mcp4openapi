@@ -5,6 +5,34 @@ import {
   parseImplementorTaskPayload,
   type ImplementorTaskPayload,
 } from './implementor-codex.js';
+import { serializePlannerArtifact } from './planner-artifact.js';
+
+const strictTrustConfig = {
+  allowUnsigned: false,
+  signing: {
+    key: 'signing-secret',
+    keyId: 'primary',
+  },
+} as const;
+
+function buildPlannerArtifact() {
+  return {
+    kind: 'review-follow-up' as const,
+    threadId: 'thread-1',
+    sourceCommentId: 'comment-2',
+    headSha: 'abc123',
+    fixSummary: 'Cover fallback path',
+    implementationSteps: ['Update fallback handling.'],
+    testSteps: ['Add fallback regression coverage.'],
+    verificationSteps: ['Run targeted automation tests.'],
+  };
+}
+
+function buildSignedPlannerArtifact(): string {
+  return serializePlannerArtifact(buildPlannerArtifact(), {
+    signing: strictTrustConfig.signing,
+  });
+}
 
 function buildTaskPayload(overrides: Partial<ImplementorTaskPayload> = {}): ImplementorTaskPayload {
   return {
@@ -28,7 +56,9 @@ function buildTaskPayload(overrides: Partial<ImplementorTaskPayload> = {}): Impl
 describe('implementor-codex', () => {
   describe('parseImplementorTaskPayload', () => {
     it('parses the JSON payload required by the implementor wrapper', () => {
-      expect(parseImplementorTaskPayload(JSON.stringify(buildTaskPayload()))).toMatchObject({
+      expect(parseImplementorTaskPayload(JSON.stringify(buildTaskPayload()), {
+        trustConfig: strictTrustConfig,
+      })).toMatchObject({
         ...buildTaskPayload(),
         reviewFollowUpItems: [],
         plannerArtifact: undefined,
@@ -36,11 +66,15 @@ describe('implementor-codex', () => {
     });
 
     it('rejects missing payloads', () => {
-      expect(() => parseImplementorTaskPayload(undefined)).toThrow('Missing IMPLEMENTOR_TASK_JSON');
+      expect(() => parseImplementorTaskPayload(undefined, {
+        trustConfig: strictTrustConfig,
+      })).toThrow('Missing IMPLEMENTOR_TASK_JSON');
     });
 
     it('rejects malformed payloads and fills optional issue fields with safe defaults', () => {
-      expect(() => parseImplementorTaskPayload('{"repository":"repo"}')).toThrow('Invalid IMPLEMENTOR_TASK_JSON payload');
+      expect(() => parseImplementorTaskPayload('{"repository":"repo"}', {
+        trustConfig: strictTrustConfig,
+      })).toThrow('Invalid IMPLEMENTOR_TASK_JSON payload');
 
       expect(parseImplementorTaskPayload(JSON.stringify({
         repository: 'davidruzicka/mcp4openapi',
@@ -53,13 +87,64 @@ describe('implementor-codex', () => {
         runId: 'run-1',
         agentId: 'implementor',
         now: '2026-03-15T00:00:00Z',
-      }))).toMatchObject({
+      }), {
+        trustConfig: strictTrustConfig,
+      })).toMatchObject({
         issue: {
           updatedAt: '',
           labels: [],
           isPullRequest: false,
         },
       });
+    });
+
+    it('forwards trusted parsing errors with Codex-specific wording', () => {
+      expect(() => parseImplementorTaskPayload(JSON.stringify({
+        repository: 'davidruzicka/mcp4openapi',
+        issue: {
+          number: 163,
+          title: 'Scoped fix',
+          body: 'Add a targeted regression test.',
+          url: 'https://github.com/davidruzicka/mcp4openapi/issues/163',
+        },
+        reviewFollowUpItems: [{
+          threadId: 'thread-1',
+          headSha: 'abc123',
+          sourceCommentId: 'comment-2',
+          summary: 'Add a regression test for the fallback path',
+          actionability: 'actionable',
+          requiresReply: true,
+        }],
+        plannerArtifact: serializePlannerArtifact(buildPlannerArtifact()),
+        runId: 'run-1',
+        agentId: 'implementor',
+        now: '2026-03-15T00:00:00Z',
+      }), {
+        trustConfig: strictTrustConfig,
+      })).toThrow('Codex implementor backend');
+      expect(() => parseImplementorTaskPayload(JSON.stringify({
+        repository: 'davidruzicka/mcp4openapi',
+        issue: {
+          number: 163,
+          title: 'Scoped fix',
+          body: 'Add a targeted regression test.',
+          url: 'https://github.com/davidruzicka/mcp4openapi/issues/163',
+        },
+        reviewFollowUpItems: [{
+          threadId: 'thread-1',
+          headSha: 'abc123',
+          sourceCommentId: 'comment-2',
+          summary: 'Add a regression test for the fallback path',
+          actionability: 'actionable',
+          requiresReply: true,
+        }],
+        plannerArtifact: buildSignedPlannerArtifact().replace('Cover fallback path', 'Tampered summary'),
+        runId: 'run-1',
+        agentId: 'implementor',
+        now: '2026-03-15T00:00:00Z',
+      }), {
+        trustConfig: strictTrustConfig,
+      })).toThrow('signature verification failed');
     });
   });
 
@@ -99,18 +184,11 @@ describe('implementor-codex', () => {
       expect(plan.cwd).toBe('/tmp/worktree-163');
     });
 
-    it('includes planner artifacts and review follow-up items in the Codex prompt when present', () => {
+    it('includes trusted planner artifacts and review follow-up items in the Codex prompt when present', () => {
+      const artifact = buildPlannerArtifact();
       const plan = buildCodexInvocationPlan({
         task: buildTaskPayload({
-          plannerArtifact: {
-            kind: 'review-follow-up',
-            threadId: 'thread-1',
-            headSha: 'abc123',
-            fixSummary: 'Cover fallback path',
-            implementationSteps: ['Update fallback handling.'],
-            testSteps: ['Add fallback regression coverage.'],
-            verificationSteps: ['Run targeted automation tests.'],
-          },
+          plannerArtifact: artifact,
           reviewFollowUpItems: [{
             threadId: 'thread-1',
             headSha: 'abc123',
@@ -127,8 +205,8 @@ describe('implementor-codex', () => {
 
       expect(plan.prompt).toContain('Planner artifact:');
       expect(plan.prompt).toContain('"fixSummary": "Cover fallback path"');
-      expect(plan.prompt).toContain('Review follow-up items:');
       expect(plan.prompt).toContain('"sourceCommentId": "comment-2"');
+      expect(plan.prompt).toContain('Review follow-up items:');
     });
 
     it('rejects unsupported Codex modes from the environment', () => {

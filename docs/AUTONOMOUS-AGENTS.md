@@ -372,6 +372,12 @@ Reviewer follow-up is now tracked with three shared per-thread states for the cu
 Rules:
 
 - Reviewer/planner handoff may include a machine-readable review-follow-up artifact for fix/test work.
+- Planner-generated review-follow-up artifacts may be emitted as signed envelopes inside the existing `AGENT-PLANNER-ARTIFACT` fence.
+- Lenient read-only paths (for example planner dedupe/debugging) may read signed or legacy unsigned artifacts, but execution paths must trust only verified artifacts.
+- Unsigned artifacts are treated as untrusted text on execution paths unless `MCP4_AGENT_ARTIFACT_ALLOW_UNSIGNED=true` is enabled during migration.
+- Signed verification uses `MCP4_AGENT_ARTIFACT_SIGNING_KEY` plus optional `MCP4_AGENT_ARTIFACT_KEY_ID` (`default` when omitted); first-pass signing is fixed to HMAC-SHA256.
+- If a signed artifact is present but invalid, tampered, or the signing key is unavailable, implementor-side execution fails closed instead of silently downgrading to unsigned parsing.
+- Key rotation is done by changing the secret and optionally the key ID; historical comments remain readable only on lenient/non-execution paths unless compatibility mode is explicitly enabled.
 - Implementor follow-up replies must visibly disclose automation and include metadata bound to the replying head SHA.
 - Merge policy is fail-closed: only `addressed` and `obsolete` are non-blocking; `open` blocks merge readiness.
 

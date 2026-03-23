@@ -1,3 +1,4 @@
+import { readArtifactTrustConfig } from '../src/automation/artifact-signing-config.js';
 import { collectPlannerAssignments } from '../src/automation/planner-runner.js';
 import {
   addIssueLabels,
@@ -16,6 +17,7 @@ const runtimeConfig = readIssueRuntimeConfig(process.env, 'PLANNER', {
   agentId: 'planner',
 });
 
+const artifactTrustConfig = readArtifactTrustConfig(process.env);
 const recentIssues = await listRecentIssues(runtimeConfig);
 const commentsByIssueNumber: Record<number, ReturnType<typeof mapIssueComment>[]> = {};
 for (const issue of recentIssues) {
@@ -40,6 +42,7 @@ const assignments = collectPlannerAssignments({
   runId: runtimeConfig.runId,
   now: runtimeConfig.now,
   semanticDuplicateBackendName: runtimeConfig.semanticDuplicateBackendName,
+  artifactSigning: artifactTrustConfig.signing,
 });
 
 for (const assignment of assignments.slice(0, runtimeConfig.maxCandidates)) {

@@ -1,5 +1,12 @@
-import type { ImplementorCommandResult, ImplementorTaskPayload } from './implementor-runner.js';
-import { parseImplementorCommandResult, parseImplementorTaskPayload as parseImplementorWorkflowTaskPayload } from './implementor-runner.js';
+import type {
+  ImplementorCommandResult,
+  ImplementorTaskPayload,
+  ParseImplementorTaskPayloadOptions,
+} from './implementor-runner.js';
+import {
+  parseImplementorCommandResult,
+  parseImplementorTaskPayload as parseImplementorWorkflowTaskPayload,
+} from './implementor-runner.js';
 
 export interface BuildCodexInvocationPlanInput {
   readonly task: ImplementorTaskPayload;
@@ -20,14 +27,15 @@ const CODEX_MODE_FLAGS: Readonly<Record<string, readonly string[]>> = {
   yolo: ['--yolo'],
 };
 
-export function parseImplementorTaskPayload(raw: string | undefined): ImplementorTaskPayload {
+export function parseImplementorTaskPayload(
+  raw: string | undefined,
+  options?: ParseImplementorTaskPayloadOptions,
+): ImplementorTaskPayload {
   try {
-    return parseImplementorWorkflowTaskPayload(raw);
+    return parseImplementorWorkflowTaskPayload(raw, options);
   } catch (error) {
     if (error instanceof Error) {
-      throw new Error(error.message
-        .replace('implementor workflow', 'Codex implementor backend')
-        .replace('implementor workflow', 'Codex implementor backend'));
+      throw new Error(`Codex implementor backend: ${error.message}`);
     }
 
     throw error;

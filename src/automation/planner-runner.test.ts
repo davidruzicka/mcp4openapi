@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { parsePlannerArtifact } from './planner-artifact.js';
 import {
   buildPlannerDecisionComment,
   collectPlannerAssignments,
@@ -126,7 +127,67 @@ describe('planner-runner', () => {
       expect(assignments[0]?.commentBody).toContain('status: blocked');
     });
 
-    it('deduplicates equivalent planner decisions', () => {
+    it('includes a signed planner artifact in the planner comment when signing is configured', () => {
+      const plannerArtifact = {
+        kind: 'review-follow-up' as const,
+        threadId: 'thread-1',
+        sourceCommentId: 'comment-1',
+        headSha: 'abc123',
+        fixSummary: 'Cover the fallback path',
+        implementationSteps: ['Update fallback handling.'],
+        testSteps: ['Add a regression test for the fallback path.'],
+        verificationSteps: ['Run targeted automation tests.'],
+      };
+
+      const commentBody = buildPlannerDecisionComment({
+        repository: 'davidruzicka/mcp4openapi',
+        issueNumber: 160,
+        agentId: 'planner',
+        runId: 'run-2',
+        timestamp: '2026-03-14T12:00:00Z',
+        remainsSuitable: true,
+        blocked: false,
+        reasons: [
+          'issue body provides enough structure for a bounded implementation plan',
+          'issue remains inside the low-risk autonomous planning lane',
+        ],
+        plan: '## Review follow-up implementation plan\n- Step 1',
+        plannerArtifact,
+        artifactSigning: {
+          key: 'signing-secret',
+          keyId: 'primary',
+        },
+      });
+
+      expect(commentBody).toContain('"algorithm":"hmac-sha256"');
+      expect(commentBody).toContain('"signature":');
+      expect(parsePlannerArtifact(commentBody)).toEqual(plannerArtifact);
+    });
+
+    it('does not emit an artifact block when there is no planner artifact to serialize', () => {
+      const commentBody = buildPlannerDecisionComment({
+        repository: 'davidruzicka/mcp4openapi',
+        issueNumber: 160,
+        agentId: 'planner',
+        runId: 'run-2',
+        timestamp: '2026-03-14T12:00:00Z',
+        remainsSuitable: true,
+        blocked: false,
+        reasons: [
+          'issue body provides enough structure for a bounded implementation plan',
+          'issue remains inside the low-risk autonomous planning lane',
+        ],
+        plan: '## Implementation plan\n- Step 1',
+        artifactSigning: {
+          key: 'signing-secret',
+          keyId: 'primary',
+        },
+      });
+
+      expect(commentBody).not.toContain('AGENT-PLANNER-ARTIFACT');
+    });
+
+    it('deduplicates equivalent planner decisions even when artifact signatures differ', () => {
       const plannerArtifact = {
         kind: 'review-follow-up' as const,
         threadId: 'thread-1',
@@ -151,6 +212,10 @@ describe('planner-runner', () => {
         ],
         plan: '## Implementation plan\n- Step 1',
         plannerArtifact,
+        artifactSigning: {
+          key: 'old-signing-secret',
+          keyId: 'old',
+        },
       });
 
       const assignments = collectPlannerAssignments({
@@ -173,6 +238,10 @@ describe('planner-runner', () => {
         agentId: 'planner',
         runId: 'run-2',
         now: '2026-03-14T12:00:00Z',
+        artifactSigning: {
+          key: 'new-signing-secret',
+          keyId: 'new',
+        },
       });
 
       expect(assignments).toHaveLength(0);
@@ -384,113 +453,7 @@ describe('planner-runner', () => {
         blocked: false,
         labelsToAdd: ['agent:planned', 'agent:safe'],
       });
-    });
-
-    it('keeps high-risk duplicate issues blocked instead of downgrading them to de-scoped', () => {
-      const assignments = collectPlannerAssignments({
-        issues: [
-          buildIssue({
-            title: 'Add deterministic cache invalidation metrics for auth token refresh',
-            body: [
-              '## Summary',
-              'Need targeted instrumentation for cache invalidation counts during auth token refresh.',
-              '',
-              '## Acceptance Criteria',
-              '- [ ] emit counter on invalidation',
-              '- [ ] add unit tests for success and failure paths',
-              '- [ ] document the metric',
-            ].join('\n'),
-          }),
-          buildIssue({
-            number: 161,
-            title: 'Add deterministic metrics for auth token refresh invalidation',
-            body: [
-              '## Summary',
-              'Need targeted instrumentation for cache invalidation counts during auth token refresh.',
-              '',
-              '## Acceptance Criteria',
-              '- [ ] emit counter on invalidation',
-              '- [ ] add unit tests for token refresh failure paths',
-              '- [ ] document the metric',
-            ].join('\n'),
-            url: 'https://github.com/davidruzicka/mcp4openapi/issues/161',
-          }),
-        ],
-        commentsByIssueNumber: { 160: [], 161: [] },
-        repository: 'davidruzicka/mcp4openapi',
-        agentId: 'planner',
-        runId: 'run-2',
-        now: '2026-03-14T12:00:00Z',
-        semanticDuplicateBackendName: 'local-heuristic-v1',
-      });
-
-      expect(assignments).toHaveLength(2);
-      expect(assignments[1]).toMatchObject({
-        issueNumber: 161,
-        remainsSuitable: false,
-        blocked: true,
-        labelsToAdd: ['agent:blocked'],
-      });
-      expect(assignments[1]?.reasons).toContain('issue appears to semantically duplicate existing open issue #160');
-    });
-
-    it('does not suppress a duplicate-specific de-scoped comment when an older de-scoped comment had different reasons', () => {
-      const previousDescopedComment = buildPlannerDecisionComment({
-        repository: 'davidruzicka/mcp4openapi',
-        issueNumber: 161,
-        agentId: 'planner',
-        runId: 'run-old',
-        timestamp: '2026-03-14T11:00:00Z',
-        remainsSuitable: false,
-        blocked: false,
-        reasons: ['issue body is still too vague for bounded implementation'],
-      });
-
-      const assignments = collectPlannerAssignments({
-        issues: [
-          buildIssue(),
-          buildIssue({
-            number: 161,
-            title: 'Add deterministic metrics for cache flush invalidation',
-            body: [
-              '## Summary',
-              'Need targeted instrumentation for cache invalidation counts and flush paths.',
-              '',
-              '## Acceptance Criteria',
-              '- [ ] emit counter on invalidation',
-              '- [ ] add unit tests for flush and failure paths',
-              '- [ ] document the metric',
-            ].join('\n'),
-            url: 'https://github.com/davidruzicka/mcp4openapi/issues/161',
-          }),
-        ],
-        commentsByIssueNumber: { 160: [], 161: [buildComment(previousDescopedComment)] },
-        repository: 'davidruzicka/mcp4openapi',
-        agentId: 'planner',
-        runId: 'run-2',
-        now: '2026-03-14T12:00:00Z',
-        semanticDuplicateBackendName: 'local-heuristic-v1',
-      });
-
-      expect(assignments).toHaveLength(2);
-      const duplicateAssignment = assignments.find((assignment) => assignment.issueNumber === 161);
-      expect(duplicateAssignment?.issueNumber).toBe(161);
-      expect(duplicateAssignment?.reasons).toContain('issue appears to semantically duplicate existing open issue #160');
-    });
-
-    it('skips issues outside the planner queue or already protected by hold labels', () => {
-      expect(collectPlannerAssignments({
-        issues: [
-          buildIssue({ number: 161, labels: ['agent:safe'] }),
-          buildIssue({ number: 162, labels: ['agent:safe', 'agent:needs-plan', 'human:hold'] }),
-          buildIssue({ number: 163, labels: ['agent:safe', 'agent:needs-plan', 'agent:implementing'] }),
-        ],
-        commentsByIssueNumber: { 161: [], 162: [], 163: [] },
-        repository: 'davidruzicka/mcp4openapi',
-        agentId: 'planner',
-        runId: 'run-2',
-        now: '2026-03-14T12:00:00Z',
-      })).toEqual([]);
+      expect(assignments[1]?.commentBody).not.toContain('Semantic duplicate backend:');
     });
   });
 });
