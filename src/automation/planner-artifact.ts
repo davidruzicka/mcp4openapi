@@ -115,10 +115,6 @@ function parsePlannerArtifactJson(rawJson: string): unknown {
 }
 
 function parseLenientSignedEnvelope(value: unknown): ReviewFixPlanArtifact {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    throw new Error('Invalid planner artifact: expected object payload.');
-  }
-
   const envelope = value as {
     version?: unknown;
     kind?: unknown;
@@ -169,22 +165,24 @@ function mapVerificationFailureToMessage(
     | 'unsupported-algorithm'
     | 'missing-key',
 ): string {
-  switch (reason) {
-    case 'missing-signature':
-      return 'missing signature.';
-    case 'invalid-signature':
-      return 'signature verification failed.';
-    case 'unknown-format':
-      return 'unrecognized signed envelope format.';
-    case 'unsupported-version':
-      return 'unsupported signed envelope version.';
-    case 'unsupported-algorithm':
-      return 'unsupported signature algorithm.';
-    case 'missing-key':
-      return 'signing key is not configured.';
-    default:
-      return 'signature verification failed.';
-  }
+  const messages: Record<
+    | 'missing-signature'
+    | 'invalid-signature'
+    | 'unknown-format'
+    | 'unsupported-version'
+    | 'unsupported-algorithm'
+    | 'missing-key',
+    string
+  > = {
+    'missing-signature': 'missing signature.',
+    'invalid-signature': 'signature verification failed.',
+    'unknown-format': 'unrecognized signed envelope format.',
+    'unsupported-version': 'unsupported signed envelope version.',
+    'unsupported-algorithm': 'unsupported signature algorithm.',
+    'missing-key': 'signing key is not configured.',
+  };
+
+  return messages[reason];
 }
 
 function validatePlannerArtifact(value: unknown): asserts value is ReviewFixPlanArtifact {

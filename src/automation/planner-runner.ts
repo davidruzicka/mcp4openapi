@@ -120,9 +120,6 @@ export function collectPlannerAssignments(input: CollectPlannerAssignmentsInput)
       remainsSuitable: decision.remainsSuitable,
       blocked: decision.blocked,
     });
-    if (transition.labelsToAdd.length === 0 && transition.labelsToRemove.length === 0) {
-      return [];
-    }
 
     const commentBody = buildPlannerDecisionComment({
       repository: input.repository,
@@ -298,9 +295,6 @@ function isSameReviewFixPlanArtifact(
   left: ReviewFixPlanArtifact | undefined,
   right: ReviewFixPlanArtifact | undefined,
 ): boolean {
-  if (left === right) {
-    return true;
-  }
   if (!left || !right) {
     return false;
   }

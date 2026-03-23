@@ -241,6 +241,63 @@ describe('planner-runner', () => {
       expect(assignments).toHaveLength(0);
     });
 
+    it('deduplicates equivalent planner decisions without planner artifacts', () => {
+      const existingComment = buildPlannerDecisionComment({
+        repository: 'davidruzicka/mcp4openapi',
+        issueNumber: 160,
+        agentId: 'planner',
+        runId: 'run-1',
+        timestamp: '2026-03-14T11:00:00Z',
+        remainsSuitable: true,
+        blocked: false,
+        reasons: [
+          'issue body provides enough structure for a bounded implementation plan',
+          'issue remains inside the low-risk autonomous planning lane',
+        ],
+        plan: '## Implementation plan\n- Step 1',
+      });
+
+      const assignments = collectPlannerAssignments({
+        issues: [buildIssue()],
+        commentsByIssueNumber: { 160: [buildComment(existingComment)] },
+        repository: 'davidruzicka/mcp4openapi',
+        agentId: 'planner',
+        runId: 'run-2',
+        now: '2026-03-14T12:00:00Z',
+      });
+
+      expect(assignments).toHaveLength(0);
+    });
+
+    it('does not deduplicate planner comments when metadata no longer matches the current decision', () => {
+      const mismatchedMetadataComment = [
+        '🤖 Agent plan (planner)',
+        '',
+        'Planner decision: planned',
+        'Reasons:',
+        '- issue body provides enough structure for a bounded implementation plan',
+        '- issue remains inside the low-risk autonomous planning lane',
+        '',
+        '<!-- AGENT-METADATA',
+        'agent-stage: planner',
+        'status: blocked',
+        'reasons: issue body provides enough structure for a bounded implementation plan,issue remains inside the low-risk autonomous planning lane',
+        '-->',
+      ].join('\n');
+
+      const assignments = collectPlannerAssignments({
+        issues: [buildIssue()],
+        commentsByIssueNumber: { 160: [buildComment(mismatchedMetadataComment)] },
+        repository: 'davidruzicka/mcp4openapi',
+        agentId: 'planner',
+        runId: 'run-2',
+        now: '2026-03-14T12:00:00Z',
+      });
+
+      expect(assignments).toHaveLength(1);
+      expect(assignments[0]?.commentBody).toContain('Planner decision: planned');
+    });
+
     it('does not treat unsigned legacy planner artifacts as equivalent when signed output is required', () => {
       const plannerArtifact = {
         kind: 'review-follow-up' as const,
