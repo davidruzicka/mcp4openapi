@@ -135,6 +135,45 @@ describe('planner-artifact', () => {
       '<!-- AGENT-PLANNER-ARTIFACT',
       JSON.stringify({
         version: 1,
+        kind: 'wrong-kind',
+        algorithm: 'hmac-sha256',
+        keyId: 'primary',
+        payload: artifact,
+        signature: 'abc123',
+      }),
+      '-->',
+    ].join('\n'))).toThrow('signed envelope kind must be review-follow-up');
+
+    expect(() => parsePlannerArtifact([
+      '<!-- AGENT-PLANNER-ARTIFACT',
+      JSON.stringify({
+        version: 1,
+        kind: 'review-follow-up',
+        algorithm: 'sha1',
+        keyId: 'primary',
+        payload: artifact,
+        signature: 'abc123',
+      }),
+      '-->',
+    ].join('\n'))).toThrow('signed envelope must use hmac-sha256');
+
+    expect(() => parsePlannerArtifact([
+      '<!-- AGENT-PLANNER-ARTIFACT',
+      JSON.stringify({
+        version: 1,
+        kind: 'review-follow-up',
+        algorithm: 'hmac-sha256',
+        keyId: '',
+        payload: artifact,
+        signature: 'abc123',
+      }),
+      '-->',
+    ].join('\n'))).toThrow('signed envelope must include keyId');
+
+    expect(() => parsePlannerArtifact([
+      '<!-- AGENT-PLANNER-ARTIFACT',
+      JSON.stringify({
+        version: 1,
         kind: 'review-follow-up',
         algorithm: 'hmac-sha256',
         keyId: 'primary',
