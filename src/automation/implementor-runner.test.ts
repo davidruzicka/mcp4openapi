@@ -666,7 +666,7 @@ describe('implementor-runner', () => {
       })).toThrow('plannerArtifact signature verification failed');
     });
 
-    it('rejects malformed object-form planner artifacts', () => {
+    it('rejects malformed object-form and non-object planner artifacts', () => {
       expect(() => parseImplementorTaskPayload(JSON.stringify({
         repository: 'davidruzicka/mcp4openapi',
         issue: {
@@ -693,6 +693,30 @@ describe('implementor-runner', () => {
           testSteps: ['Add a regression test'],
           verificationSteps: ['Run targeted tests'],
         },
+        runId: 'run-3',
+        agentId: 'implementor',
+        now: '2026-03-14T12:00:00Z',
+      }), {
+        trustConfig: unsignedCompatibilityTrustConfig,
+      })).toThrow('plannerArtifact must be a valid review-follow-up artifact');
+
+      expect(() => parseImplementorTaskPayload(JSON.stringify({
+        repository: 'davidruzicka/mcp4openapi',
+        issue: {
+          number: 161,
+          title: 'Add cache invalidation metrics',
+          body: 'Need bounded instrumentation and tests.',
+          url: 'https://github.com/davidruzicka/mcp4openapi/issues/161',
+        },
+        reviewFollowUpItems: [{
+          threadId: 'thread-1',
+          headSha: 'abc123',
+          sourceCommentId: 'comment-2',
+          summary: 'Add a regression test for the fallback path',
+          actionability: 'actionable',
+          requiresReply: true,
+        }],
+        plannerArtifact: [],
         runId: 'run-3',
         agentId: 'implementor',
         now: '2026-03-14T12:00:00Z',
