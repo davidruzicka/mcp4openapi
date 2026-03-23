@@ -81,6 +81,8 @@ This guide explains how to create custom MCP tool profiles for any OpenAPI-compl
 - **`resources`** (optional): Array of MCP Apps/static/template resource definitions exposed via `resources/*`
 - **`interceptors`** (optional): Auth, rate limiting, retry configuration
 - **`enterprise_authorization`** (optional): HTTP-only inbound authorization policy for enterprise-managed JWT bearer grant exchange
+- **`upstream_mcp`** (optional): Remote upstream MCP provider definitions for proxy/federation roadmap support
+- **`upstream_mcp_from_env`** (optional): Env var name containing JSON object/array of upstream MCP providers; overrides `upstream_mcp` when set to non-empty JSON
 
 `enterprise_authorization` supports selective env-backed fields so deployments can override issuer and policy settings without editing the profile file. Supported `*_from_env` fields in the first iteration:
 
@@ -97,6 +99,42 @@ This guide explains how to create custom MCP tool profiles for any OpenAPI-compl
 Resolution precedence is `env value -> static profile value`. Empty env values are ignored and fall back to the static profile value. Array fields use comma-separated values, while `claim_mappings_from_env` must contain a JSON object. Invalid env-backed enterprise values fail profile loading instead of being ignored.
 
 When `enterprise_authorization.mode` is `required`, HTTP initialization accepts only trusted enterprise-issued bearer tokens minted by the enterprise JWT bearer exchange. When `mode` is `optional`, legacy bearer-token initialization remains available for migration. Enterprise tool-category policy applies to both `tools/list` and `tools/call`.
+
+`upstream_mcp` is validated through the same profile loading path but, in the first roadmap step, only supports remote HTTP streamable providers:
+
+- `transport.type` must be `"http-streamable"`
+- `transport.url` must be an absolute `http` or `https` URL without inline credentials
+- `auth.type` may be `bearer`, `query`, or `custom-header`
+- `auth.value_from_env` is required for every upstream auth type; inline secrets are not supported
+- `upstream_mcp_from_env` may point to a JSON object or array and takes precedence over static `upstream_mcp`
+- `stdio` upstream definitions are intentionally rejected in this iteration so the later feature-gated implementation can add process lifecycle hardening separately
+
+Example:
+
+```json
+{
+  "upstream_mcp_from_env": "MCP4_UPSTREAM_MCP_JSON",
+  "upstream_mcp": [
+    {
+      "name": "remote-mcp",
+      "transport": {
+        "type": "http-streamable",
+        "url": "https://remote-mcp.example/mcp"
+      },
+      "auth": {
+        "type": "bearer",
+        "value_from_env": "REMOTE_MCP_TOKEN"
+      },
+      "tool_prefix": "remote",
+      "tools": {
+        "allow": ["github_*"],
+        "deny": ["admin_*"]
+      },
+      "timeout_ms": 30000
+    }
+  ]
+}
+```
 
 **Profile selection**: If you set `profile_id` (or `profile_aliases`) and `openapi_spec_path`, you can launch the server with `--profile <id>` or `MCP4_PROFILE=<id>` without setting `--openapi-spec-path` or `MCP4_OPENAPI_SPEC_PATH`.
 

@@ -2715,6 +2715,275 @@ describe('ProfileLoader', () => {
     });
   });
 
+  describe('upstream MCP provider configuration', () => {
+    it('loads remote http-streamable upstream providers from profile JSON', async () => {
+      const loader = new ProfileLoader();
+      const fs = await import('fs/promises');
+      const tmpPath = `/tmp/upstream-mcp-static-${Date.now()}-${Math.random()}.json`;
+
+      await fs.writeFile(
+        tmpPath,
+        JSON.stringify({
+          profile_name: 'upstream-static',
+          tools: [
+            {
+              name: 'tool_a',
+              description: 'Tool A',
+              operations: { list: 'listItems' },
+              parameters: {},
+            },
+          ],
+          upstream_mcp: [
+            {
+              name: 'remote-mcp',
+              transport: {
+                type: 'http-streamable',
+                url: 'https://remote-mcp.example/mcp',
+              },
+              auth: {
+                type: 'bearer',
+                value_from_env: 'REMOTE_MCP_TOKEN',
+              },
+              tool_prefix: 'remote',
+              tools: {
+                allow: ['github_*'],
+                deny: ['admin_*'],
+              },
+              timeout_ms: 30000,
+            },
+          ],
+        }),
+        'utf-8',
+      );
+
+      const profile = await loader.load(tmpPath);
+
+      expect(profile.upstream_mcp).toEqual([
+        {
+          name: 'remote-mcp',
+          transport: {
+            type: 'http-streamable',
+            url: 'https://remote-mcp.example/mcp',
+          },
+          auth: {
+            type: 'bearer',
+            value_from_env: 'REMOTE_MCP_TOKEN',
+          },
+          tool_prefix: 'remote',
+          tools: {
+            allow: ['github_*'],
+            deny: ['admin_*'],
+          },
+          timeout_ms: 30000,
+        },
+      ]);
+    });
+
+    it('prefers upstream_mcp_from_env over static upstream_mcp', async () => {
+      const loader = new ProfileLoader();
+      const fs = await import('fs/promises');
+      const tmpPath = `/tmp/upstream-mcp-env-${Date.now()}-${Math.random()}.json`;
+      const previous = process.env.MCP4_UPSTREAM_MCP_JSON;
+      process.env.MCP4_UPSTREAM_MCP_JSON = JSON.stringify({
+        name: 'env-remote',
+        transport: {
+          type: 'http-streamable',
+          url: 'https://env-remote.example/mcp',
+        },
+        auth: {
+          type: 'custom-header',
+          header_name: 'X-Upstream-Key',
+          value_from_env: 'ENV_REMOTE_TOKEN',
+        },
+        tool_prefix: 'env_remote',
+      });
+
+      await fs.writeFile(
+        tmpPath,
+        JSON.stringify({
+          profile_name: 'upstream-env',
+          tools: [
+            {
+              name: 'tool_a',
+              description: 'Tool A',
+              operations: { list: 'listItems' },
+              parameters: {},
+            },
+          ],
+          upstream_mcp_from_env: 'MCP4_UPSTREAM_MCP_JSON',
+          upstream_mcp: [
+            {
+              name: 'static-remote',
+              transport: {
+                type: 'http-streamable',
+                url: 'https://static-remote.example/mcp',
+              },
+            },
+          ],
+        }),
+        'utf-8',
+      );
+
+      try {
+        const profile = await loader.load(tmpPath);
+        expect(profile.upstream_mcp).toEqual([
+          {
+            name: 'env-remote',
+            transport: {
+              type: 'http-streamable',
+              url: 'https://env-remote.example/mcp',
+            },
+            auth: {
+              type: 'custom-header',
+              header_name: 'X-Upstream-Key',
+              value_from_env: 'ENV_REMOTE_TOKEN',
+            },
+            tool_prefix: 'env_remote',
+          },
+        ]);
+      } finally {
+        if (previous === undefined) {
+          delete process.env.MCP4_UPSTREAM_MCP_JSON;
+        } else {
+          process.env.MCP4_UPSTREAM_MCP_JSON = previous;
+        }
+      }
+    });
+
+    it('rejects stdio upstream transport in the first iteration', async () => {
+      const loader = new ProfileLoader();
+      const fs = await import('fs/promises');
+      const tmpPath = `/tmp/upstream-mcp-stdio-${Date.now()}-${Math.random()}.json`;
+
+      await fs.writeFile(
+        tmpPath,
+        JSON.stringify({
+          profile_name: 'upstream-stdio',
+          tools: [
+            {
+              name: 'tool_a',
+              description: 'Tool A',
+              operations: { list: 'listItems' },
+              parameters: {},
+            },
+          ],
+          upstream_mcp: [
+            {
+              name: 'stdio-mcp',
+              transport: {
+                type: 'stdio',
+                command: 'npx',
+                args: ['-y', 'mcp-github'],
+              },
+            },
+          ],
+        }),
+        'utf-8',
+      );
+
+      await expect(loader.load(tmpPath)).rejects.toThrow(/invalid_literal|http-streamable/);
+    });
+
+    it('rejects invalid upstream auth combinations', async () => {
+      const loader = new ProfileLoader();
+      const fs = await import('fs/promises');
+      const tmpPath = `/tmp/upstream-mcp-auth-${Date.now()}-${Math.random()}.json`;
+
+      await fs.writeFile(
+        tmpPath,
+        JSON.stringify({
+          profile_name: 'upstream-auth',
+          tools: [
+            {
+              name: 'tool_a',
+              description: 'Tool A',
+              operations: { list: 'listItems' },
+              parameters: {},
+            },
+          ],
+          upstream_mcp: [
+            {
+              name: 'remote-mcp',
+              transport: {
+                type: 'http-streamable',
+                url: 'https://remote-mcp.example/mcp',
+              },
+              auth: {
+                type: 'custom-header',
+                value_from_env: 'REMOTE_MCP_TOKEN',
+              },
+            },
+          ],
+        }),
+        'utf-8',
+      );
+
+      await expect(loader.load(tmpPath)).rejects.toThrow(
+        'upstream_mcp[0].auth.header_name is required for custom-header auth',
+      );
+    });
+
+    it('rejects empty upstream_mcp_from_env references', async () => {
+      const loader = new ProfileLoader();
+      const fs = await import('fs/promises');
+      const tmpPath = `/tmp/upstream-mcp-env-ref-${Date.now()}-${Math.random()}.json`;
+
+      await fs.writeFile(
+        tmpPath,
+        JSON.stringify({
+          profile_name: 'upstream-env-ref',
+          tools: [
+            {
+              name: 'tool_a',
+              description: 'Tool A',
+              operations: { list: 'listItems' },
+              parameters: {},
+            },
+          ],
+          upstream_mcp_from_env: '   ',
+        }),
+        'utf-8',
+      );
+
+      await expect(loader.load(tmpPath)).rejects.toThrow('upstream_mcp_from_env must not be empty');
+    });
+
+    it('rejects invalid upstream MCP JSON from env', async () => {
+      const loader = new ProfileLoader();
+      const fs = await import('fs/promises');
+      const tmpPath = `/tmp/upstream-mcp-invalid-env-${Date.now()}-${Math.random()}.json`;
+      const previous = process.env.MCP4_UPSTREAM_MCP_JSON;
+      process.env.MCP4_UPSTREAM_MCP_JSON = '{not-json';
+
+      await fs.writeFile(
+        tmpPath,
+        JSON.stringify({
+          profile_name: 'upstream-invalid-env',
+          tools: [
+            {
+              name: 'tool_a',
+              description: 'Tool A',
+              operations: { list: 'listItems' },
+              parameters: {},
+            },
+          ],
+          upstream_mcp_from_env: 'MCP4_UPSTREAM_MCP_JSON',
+        }),
+        'utf-8',
+      );
+
+      try {
+        await expect(loader.load(tmpPath)).rejects.toThrow('MCP4_UPSTREAM_MCP_JSON must contain valid JSON');
+      } finally {
+        if (previous === undefined) {
+          delete process.env.MCP4_UPSTREAM_MCP_JSON;
+        } else {
+          process.env.MCP4_UPSTREAM_MCP_JSON = previous;
+        }
+      }
+    });
+  });
+
   describe('OpenAPI-backed validation', () => {
     it('rejects missing tool operations when parser is provided', async () => {
       const loader = new ProfileLoader();
