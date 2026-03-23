@@ -3,7 +3,7 @@ import { planPlannerTransition } from './agent-workflow-state.js';
 import { parseAgentMetadata } from './evaluator-runner.js';
 import {
   inspectPlannerArtifactComment,
-  parsePlannerArtifact,
+  parseTrustedPlannerArtifact,
   serializePlannerArtifact,
   type ReviewFixPlanArtifact,
 } from './planner-artifact.js';
@@ -139,7 +139,7 @@ export function collectPlannerAssignments(input: CollectPlannerAssignmentsInput)
       artifactSigning: input.artifactSigning,
     });
 
-    if (hasEquivalentPlannerDecisionComment(input.commentsByIssueNumber[issue.number] ?? [], decision, input.artifactSigning !== undefined)) {
+    if (hasEquivalentPlannerDecisionComment(input.commentsByIssueNumber[issue.number] ?? [], decision, input.artifactSigning)) {
       return [];
     }
 
@@ -242,23 +242,31 @@ function isPlannerActionableIssue(issue: PlannerIssue): boolean {
 function hasEquivalentPlannerDecisionComment(
   comments: readonly PlannerIssueComment[],
   decision: PlannerDecision,
-  signingRequired: boolean,
+  artifactSigning: ArtifactSigningConfig | undefined,
 ): boolean {
   const expectedStatus = getPlannerDecisionStatus(decision.remainsSuitable, decision.blocked);
   const expectedReasons = decision.reasons.join(',');
-  const expectedArtifact = decision.plannerArtifact ? JSON.stringify(decision.plannerArtifact) : undefined;
+  const expectedArtifact = decision.plannerArtifact;
 
   return comments.some((comment) => {
     const metadata = parseAgentMetadata(comment.body);
-    const parsedArtifact = tryInspectPlannerArtifactComment(comment.body);
-    const artifactMatches = JSON.stringify(parsedArtifact?.artifact) === JSON.stringify(expectedArtifact ? decision.plannerArtifact : undefined);
-    const signingMatches = !signingRequired || decision.plannerArtifact === undefined || parsedArtifact?.isSigned === true;
+    if (
+      metadata?.['agent-stage'] !== 'planner'
+      || metadata?.status !== expectedStatus
+      || metadata?.reasons !== expectedReasons
+    ) {
+      return false;
+    }
 
-    return metadata?.['agent-stage'] === 'planner'
-      && metadata?.status === expectedStatus
-      && metadata?.reasons === expectedReasons
-      && artifactMatches
-      && signingMatches;
+    if (expectedArtifact === undefined) {
+      return tryInspectPlannerArtifactComment(comment.body) === undefined;
+    }
+
+    const parsedArtifact = artifactSigning
+      ? tryParseTrustedPlannerArtifactComment(comment.body, artifactSigning)
+      : tryInspectPlannerArtifactComment(comment.body)?.artifact;
+
+    return isSameReviewFixPlanArtifact(parsedArtifact, expectedArtifact);
   });
 }
 
@@ -268,6 +276,47 @@ function tryInspectPlannerArtifactComment(body: string) {
   } catch {
     return undefined;
   }
+}
+
+function tryParseTrustedPlannerArtifactComment(
+  body: string,
+  artifactSigning: ArtifactSigningConfig,
+): ReviewFixPlanArtifact | undefined {
+  try {
+    return parseTrustedPlannerArtifact(body, {
+      trustConfig: {
+        allowUnsigned: false,
+        signing: artifactSigning,
+      },
+    });
+  } catch {
+    return undefined;
+  }
+}
+
+function isSameReviewFixPlanArtifact(
+  left: ReviewFixPlanArtifact | undefined,
+  right: ReviewFixPlanArtifact | undefined,
+): boolean {
+  if (left === right) {
+    return true;
+  }
+  if (!left || !right) {
+    return false;
+  }
+
+  return left.kind === right.kind
+    && left.threadId === right.threadId
+    && left.sourceCommentId === right.sourceCommentId
+    && left.headSha === right.headSha
+    && left.fixSummary === right.fixSummary
+    && arraysEqual(left.implementationSteps, right.implementationSteps)
+    && arraysEqual(left.testSteps, right.testSteps)
+    && arraysEqual(left.verificationSteps, right.verificationSteps);
+}
+
+function arraysEqual(left: readonly string[], right: readonly string[]): boolean {
+  return left.length === right.length && left.every((value, index) => value === right[index]);
 }
 
 function getPlannerDecisionStatus(remainsSuitable: boolean, blocked: boolean): 'planned' | 'blocked' | 'de-scoped' {

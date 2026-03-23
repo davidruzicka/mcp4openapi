@@ -187,36 +187,34 @@ describe('planner-runner', () => {
       expect(commentBody).not.toContain('AGENT-PLANNER-ARTIFACT');
     });
 
-    it('deduplicates equivalent planner decisions even when artifact signatures differ', () => {
-      const plannerArtifact = {
-        kind: 'review-follow-up' as const,
-        threadId: 'thread-1',
-        sourceCommentId: 'comment-1',
-        headSha: 'abc123',
-        fixSummary: 'Cover the fallback path',
-        implementationSteps: ['Update fallback handling.'],
-        testSteps: ['Add a regression test for the fallback path.'],
-        verificationSteps: ['Run targeted automation tests.'],
-      };
-      const commentBody = buildPlannerDecisionComment({
-        repository: 'davidruzicka/mcp4openapi',
-        issueNumber: 160,
-        agentId: 'planner',
-        runId: 'run-2',
-        timestamp: '2026-03-14T12:00:00Z',
-        remainsSuitable: true,
-        blocked: false,
-        reasons: [
-          'issue body provides enough structure for a bounded implementation plan',
-          'issue remains inside the low-risk autonomous planning lane',
-        ],
-        plan: '## Implementation plan\n- Step 1',
-        plannerArtifact,
-        artifactSigning: {
-          key: 'old-signing-secret',
-          keyId: 'old',
-        },
-      });
+    it('deduplicates equivalent planner decisions when artifact object keys appear in a different order', () => {
+      const reorderedArtifactComment = [
+        '🤖 Agent plan (planner)',
+        '',
+        'Planner decision: planned',
+        'Reasons:',
+        '- issue body provides enough structure for a bounded implementation plan',
+        '- issue remains inside the low-risk autonomous planning lane',
+        '',
+        '<!-- AGENT-PLANNER-ARTIFACT',
+        JSON.stringify({
+          fixSummary: 'Cover the fallback path',
+          verificationSteps: ['Run targeted automation tests.'],
+          kind: 'review-follow-up',
+          testSteps: ['Add a regression test for the fallback path.'],
+          headSha: 'abc123',
+          implementationSteps: ['Update fallback handling.'],
+          sourceCommentId: 'comment-1',
+          threadId: 'thread-1',
+        }),
+        '-->',
+        '',
+        '<!-- AGENT-METADATA',
+        'agent-stage: planner',
+        'status: planned',
+        'reasons: issue body provides enough structure for a bounded implementation plan,issue remains inside the low-risk autonomous planning lane',
+        '-->',
+      ].join('\n');
 
       const assignments = collectPlannerAssignments({
         issues: [buildIssue({
@@ -233,15 +231,11 @@ describe('planner-runner', () => {
             '- Run targeted automation tests.',
           ].join('\n'),
         })],
-        commentsByIssueNumber: { 160: [buildComment(commentBody)] },
+        commentsByIssueNumber: { 160: [buildComment(reorderedArtifactComment)] },
         repository: 'davidruzicka/mcp4openapi',
         agentId: 'planner',
         runId: 'run-2',
         now: '2026-03-14T12:00:00Z',
-        artifactSigning: {
-          key: 'new-signing-secret',
-          keyId: 'new',
-        },
       });
 
       expect(assignments).toHaveLength(0);
@@ -356,6 +350,66 @@ describe('planner-runner', () => {
           ].join('\n'),
         })],
         commentsByIssueNumber: { 160: [buildComment(malformedSignedComment)] },
+        repository: 'davidruzicka/mcp4openapi',
+        agentId: 'planner',
+        runId: 'run-2',
+        now: '2026-03-14T12:00:00Z',
+        artifactSigning: {
+          key: 'new-signing-secret',
+          keyId: 'new',
+        },
+      });
+
+      expect(assignments).toHaveLength(1);
+      expect(assignments[0]?.commentBody).toContain('"signature":');
+    });
+
+    it('does not treat tampered signed artifacts as equivalent when signed output is required', () => {
+      const signedComment = buildPlannerDecisionComment({
+        repository: 'davidruzicka/mcp4openapi',
+        issueNumber: 160,
+        agentId: 'planner',
+        runId: 'run-1',
+        timestamp: '2026-03-14T12:00:00Z',
+        remainsSuitable: true,
+        blocked: false,
+        reasons: [
+          'issue body provides enough structure for a bounded implementation plan',
+          'issue remains inside the low-risk autonomous planning lane',
+        ],
+        plan: '## Review follow-up implementation plan',
+        plannerArtifact: {
+          kind: 'review-follow-up',
+          threadId: 'thread-1',
+          sourceCommentId: 'comment-1',
+          headSha: 'abc123',
+          fixSummary: 'Cover the fallback path',
+          implementationSteps: ['Update fallback handling.'],
+          testSteps: ['Add a regression test for the fallback path.'],
+          verificationSteps: ['Run targeted automation tests.'],
+        },
+        artifactSigning: {
+          key: 'new-signing-secret',
+          keyId: 'new',
+        },
+      }).replace('Cover the fallback path', 'Tampered summary');
+
+      const assignments = collectPlannerAssignments({
+        issues: [buildIssue({
+          body: [
+            'Review thread: thread-1',
+            'Source comment ID: comment-1',
+            'Head SHA: abc123',
+            'Fix summary: Cover the fallback path',
+            'Implementation steps:',
+            '- Update fallback handling.',
+            'Test steps:',
+            '- Add a regression test for the fallback path.',
+            'Verification steps:',
+            '- Run targeted automation tests.',
+          ].join('\n'),
+        })],
+        commentsByIssueNumber: { 160: [buildComment(signedComment)] },
         repository: 'davidruzicka/mcp4openapi',
         agentId: 'planner',
         runId: 'run-2',
