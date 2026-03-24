@@ -442,12 +442,20 @@ function hasActiveImplementorLease(
 
   return comments.some((comment) => {
     const metadata = parseAgentMetadata(comment.body);
-    if (metadata?.['agent-stage'] !== 'implementor' || metadata.status !== 'implementing') {
+    if (!metadata || metadata['agent-stage'] !== 'implementor') {
+      return false;
+    }
+
+    if (metadata.status !== 'implementing' && !isPreflightBlockedCooldownComment(comment.body, metadata.status)) {
       return false;
     }
 
     return nowTimestamp - parseIsoTimestamp(comment.updatedAt) <= ttlMs;
   });
+}
+
+function isPreflightBlockedCooldownComment(body: string, status: string | undefined): boolean {
+  return status === 'blocked' && body.includes('Summary: Implementor preflight blocked:');
 }
 
 function parseIsoTimestamp(value: string): number {

@@ -221,6 +221,61 @@ describe('implementor-runner', () => {
       expect(assignments).toHaveLength(1);
       expect(assignments[0]?.issueNumber).toBe(161);
     });
+
+    it('skips issues while a recent implementor preflight-blocked comment is still within the lease TTL', () => {
+      const blockedComment = buildImplementorResultComment({
+        repository: 'davidruzicka/mcp4openapi',
+        issueNumber: 161,
+        agentId: 'implementor',
+        runId: 'run-3',
+        timestamp: '2026-03-14T12:00:00Z',
+        result: {
+          outcome: 'blocked',
+          summary: 'Implementor preflight blocked: planner artifact signature verification failed.',
+        },
+      });
+
+      const assignments = collectImplementorAssignments({
+        issues: [buildIssue()],
+        commentsByIssueNumber: { 161: [buildComment(blockedComment)] },
+        openPullRequestsByIssueNumber: {},
+        repository: 'davidruzicka/mcp4openapi',
+        agentId: 'implementor',
+        runId: 'run-4',
+        now: '2026-03-14T12:15:00Z',
+        leaseTtlMinutes: 30,
+      });
+
+      expect(assignments).toEqual([]);
+    });
+
+    it('requeues issues after a preflight-blocked cooldown comment expires', () => {
+      const blockedComment = buildImplementorResultComment({
+        repository: 'davidruzicka/mcp4openapi',
+        issueNumber: 161,
+        agentId: 'implementor',
+        runId: 'run-3',
+        timestamp: '2026-03-14T12:00:00Z',
+        result: {
+          outcome: 'blocked',
+          summary: 'Implementor preflight blocked: planner artifact signature verification failed.',
+        },
+      });
+
+      const assignments = collectImplementorAssignments({
+        issues: [buildIssue()],
+        commentsByIssueNumber: { 161: [buildComment(blockedComment)] },
+        openPullRequestsByIssueNumber: {},
+        repository: 'davidruzicka/mcp4openapi',
+        agentId: 'implementor',
+        runId: 'run-4',
+        now: '2026-03-14T12:31:00Z',
+        leaseTtlMinutes: 30,
+      });
+
+      expect(assignments).toHaveLength(1);
+      expect(assignments[0]?.issueNumber).toBe(161);
+    });
   });
 
   describe('parseImplementorCommandResult', () => {
