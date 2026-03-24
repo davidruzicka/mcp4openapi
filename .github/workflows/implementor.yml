@@ -50,6 +50,20 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Setup Codex auth
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          CODEX_AUTH_JSON: ${{ secrets.CODEX_AUTH_JSON }}
+        run: |
+          if [ -z "$OPENAI_API_KEY" ] && [ -n "$CODEX_AUTH_JSON" ]; then
+            mkdir -p ~/.codex
+            echo "$CODEX_AUTH_JSON" > ~/.codex/auth.json
+            echo "CODEX_AUTH_HASH=$(sha256sum ~/.codex/auth.json | cut -d' ' -f1)" >> "$GITHUB_ENV"
+            echo "Using Codex OAuth auth."
+          else
+            echo "Using OPENAI_API_KEY."
+          fi
+
       - name: Run implementor handoff
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -64,3 +78,20 @@ jobs:
           IMPLEMENTOR_COMMAND: ${{ github.event.inputs.command || vars.IMPLEMENTOR_COMMAND || 'node dist/scripts/run-implementor-codex.js' }}
           IMPLEMENTOR_FALLBACK_COMMAND: ${{ vars.IMPLEMENTOR_FALLBACK_COMMAND }}
         run: npm run agent:implementor
+
+      - name: Persist Codex OAuth token if refreshed
+        if: always() && env.CODEX_AUTH_HASH != ''
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT_FOR_SECRETS }}
+        run: |
+          if [ ! -f ~/.codex/auth.json ]; then
+            echo "auth.json missing after run, skipping."
+            exit 0
+          fi
+          NEW_HASH=$(sha256sum ~/.codex/auth.json | cut -d' ' -f1)
+          if [ "$NEW_HASH" != "$CODEX_AUTH_HASH" ]; then
+            gh secret set CODEX_AUTH_JSON --repo "$GITHUB_REPOSITORY" < ~/.codex/auth.json
+            echo "Token refreshed and persisted."
+          else
+            echo "Token unchanged, skipping."
+          fi
