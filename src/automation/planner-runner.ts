@@ -336,6 +336,7 @@ function isSameReviewFixPlanArtifact(
     && arraysEqual(left.verificationSteps, right.verificationSteps);
 }
 
+// Relies on upstream artifact validation - validatePlannerArtifact() guarantees these fields are string arrays before comparison.
 function arraysEqual(left: readonly string[], right: readonly string[]): boolean {
   return left.length === right.length && left.every((value, index) => value === right[index]);
 }
