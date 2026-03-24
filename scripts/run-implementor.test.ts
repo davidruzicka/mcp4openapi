@@ -92,7 +92,7 @@ describe('runImplementorCommandWithFallback', () => {
 
     await expect(
       runImplementorCommandWithFallback('primary-cmd', 'fallback-cmd', {}, _runCommand),
-    ).rejects.toThrow('fallback also crashed');
+    ).rejects.toThrow('Primary command failed: primary crashed; fallback also failed: fallback also crashed');
 
     expect(primaryRunner).toHaveBeenCalledOnce();
     expect(fallbackRunner).toHaveBeenCalledOnce();

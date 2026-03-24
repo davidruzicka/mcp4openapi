@@ -31,6 +31,12 @@ export async function runImplementorCommandWithFallback(
     if (!fallbackCommand) {
       throw primaryError;
     }
-    return await _runCommand(fallbackCommand, payload);
+    try {
+      return await _runCommand(fallbackCommand, payload);
+    } catch (fallbackError: unknown) {
+      const primaryMsg = primaryError instanceof Error ? primaryError.message : String(primaryError);
+      const fallbackMsg = fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
+      throw new Error(`Primary command failed: ${primaryMsg}; fallback also failed: ${fallbackMsg}`);
+    }
   }
 }
