@@ -8,7 +8,7 @@ import {
   type ImplementorCommandResult,
   type ImplementorTaskPayload,
 } from '../src/automation/implementor-runner.js';
-import { runImplementorCommandWithFallback } from './implementor-fallback.js';
+import { runImplementorCommandWithFallback } from './implementor-command.js';
 import type { ImplementorThreadReplyPayload } from '../src/automation/review-follow-up.js';
 import {
   addIssueLabels,

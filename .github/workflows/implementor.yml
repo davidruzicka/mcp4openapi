@@ -44,7 +44,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'npm'
 
       - name: Install dependencies
@@ -57,8 +57,7 @@ jobs:
         run: |
           if [ -z "$OPENAI_API_KEY" ] && [ -n "$CODEX_AUTH_JSON" ]; then
             mkdir -p ~/.codex
-            echo "$CODEX_AUTH_JSON" > ~/.codex/auth.json
-            chmod 600 ~/.codex/auth.json
+            (umask 077 && printf '%s\n' "$CODEX_AUTH_JSON" > ~/.codex/auth.json)
             echo "CODEX_AUTH_HASH=$(sha256sum ~/.codex/auth.json | cut -d' ' -f1)" >> "$GITHUB_ENV"
             echo "Using Codex OAuth auth."
           else

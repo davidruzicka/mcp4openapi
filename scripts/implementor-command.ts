@@ -23,16 +23,16 @@ export async function runImplementorCommandWithFallback(
   primaryCommand: string,
   fallbackCommand: string | undefined,
   payload: unknown,
-  _runCommand = runImplementorCommand,
+  runCommandFn = runImplementorCommand,
 ): Promise<ImplementorCommandResult> {
   try {
-    return await _runCommand(primaryCommand, payload);
+    return await runCommandFn(primaryCommand, payload);
   } catch (primaryError: unknown) {
     if (!fallbackCommand) {
       throw primaryError;
     }
     try {
-      return await _runCommand(fallbackCommand, payload);
+      return await runCommandFn(fallbackCommand, payload);
     } catch (fallbackError: unknown) {
       const primaryMsg = primaryError instanceof Error ? primaryError.message : String(primaryError);
       const fallbackMsg = fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
