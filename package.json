@@ -86,6 +86,7 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@mswjs/http-middleware": "^0.10.3",
+    "@openai/codex": "^0.116.0",
     "@types/escape-html": "^1.0.4",
     "@types/express": "^5.0.3",
     "@types/node": "^22.10.2",

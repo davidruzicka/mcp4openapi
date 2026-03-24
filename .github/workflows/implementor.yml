@@ -50,9 +50,6 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Install Codex CLI
-        run: npm install -g @openai/codex
-
       - name: Run implementor handoff
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -65,4 +62,5 @@ jobs:
           IMPLEMENTOR_LEASE_TTL_MINUTES: ${{ github.event.inputs.lease_ttl_minutes || '120' }}
           IMPLEMENTOR_AGENT_ID: ${{ github.event.inputs.agent_id || 'implementor' }}
           IMPLEMENTOR_COMMAND: ${{ github.event.inputs.command || vars.IMPLEMENTOR_COMMAND || 'node dist/scripts/run-implementor-codex.js' }}
+          IMPLEMENTOR_FALLBACK_COMMAND: ${{ vars.IMPLEMENTOR_FALLBACK_COMMAND }}
         run: npm run agent:implementor
