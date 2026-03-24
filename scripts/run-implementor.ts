@@ -1,16 +1,14 @@
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
 import { readArtifactTrustConfig } from '../src/automation/artifact-signing-config.js';
 import {
   buildImplementorResultComment,
   buildImplementorReviewThreadReplyPlans,
   collectImplementorAssignments,
-  parseImplementorCommandResult,
   planImplementorResultLabels,
   selectLatestTrustedPlannerArtifact,
   type ImplementorCommandResult,
   type ImplementorTaskPayload,
 } from '../src/automation/implementor-runner.js';
+import { runImplementorCommandWithFallback } from './implementor-fallback.js';
 import type { ImplementorThreadReplyPayload } from '../src/automation/review-follow-up.js';
 import {
   addIssueLabels,
@@ -30,7 +28,6 @@ import {
   updatePullRequestBody,
 } from './github-agent-runtime.js';
 
-const execFileAsync = promisify(execFile);
 const runtimeConfig = readIssueRuntimeConfig(process.env, 'IMPLEMENTOR', {
   lookbackHours: 72,
   maxCandidates: 5,
@@ -41,6 +38,8 @@ if (!implementorCommand) {
   process.stdout.write('Implementor runner skipped: IMPLEMENTOR_COMMAND is not configured.\n');
   process.exit(0);
 }
+
+const implementorFallbackCommand = process.env.IMPLEMENTOR_FALLBACK_COMMAND?.trim() || undefined;
 
 const leaseTtlMinutes = parsePositiveInteger(process.env.IMPLEMENTOR_LEASE_TTL_MINUTES, 120);
 const artifactTrustConfig = readArtifactTrustConfig(process.env);
@@ -127,7 +126,7 @@ for (const assignment of assignments.slice(0, runtimeConfig.maxCandidates)) {
     await removeIssueLabels(runtimeConfig, assignment.issueNumber, assignment.labelsToRemove);
     await createIssueComment(runtimeConfig, assignment.issueNumber, assignment.leaseCommentBody);
 
-    return await runImplementorCommand(implementorCommand, taskPayload).catch((error: unknown) => ({
+    return await runImplementorCommandWithFallback(implementorCommand, implementorFallbackCommand, taskPayload).catch((error: unknown) => ({
       outcome: 'failed',
       summary: error instanceof Error ? `Implementor command failed: ${error.message}` : 'Implementor command failed.',
     }));
@@ -167,18 +166,6 @@ for (const assignment of assignments.slice(0, runtimeConfig.maxCandidates)) {
 }
 
 process.stdout.write(`Implementor runner completed. Processed ${Math.min(assignments.length, runtimeConfig.maxCandidates)} issue(s).\n`);
-
-async function runImplementorCommand(command: string, payload: unknown) {
-  const { stdout } = await execFileAsync('bash', ['-lc', command], {
-    env: {
-      ...process.env,
-      IMPLEMENTOR_TASK_JSON: JSON.stringify(payload),
-    },
-    maxBuffer: 2 * 1024 * 1024,
-  });
-
-  return parseImplementorCommandResult(stdout.trim());
-}
 
 async function postImplementorReviewThreadReplies(
   runtimeConfig: IssueRuntimeConfig,
