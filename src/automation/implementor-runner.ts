@@ -77,6 +77,13 @@ export interface CollectImplementorAssignmentsInput {
   readonly leaseTtlMinutes?: number;
 }
 
+export interface TrustedPlannerArtifactSelectorOptions {
+  readonly trustedAuthorLogins?: readonly string[];
+  readonly trustedAgentIds?: readonly string[];
+}
+
+const DEFAULT_TRUSTED_PLANNER_AUTHOR_LOGINS = ['github-actions[bot]'] as const;
+
 export function collectImplementorAssignments(input: CollectImplementorAssignmentsInput): ImplementorAssignment[] {
   const leaseTtlMinutes = input.leaseTtlMinutes ?? 45;
 
@@ -331,9 +338,10 @@ function parsePlannerArtifactFromTaskString(rawArtifact: string, trustConfig: Ar
 export function selectLatestTrustedPlannerArtifact(
   comments: readonly ImplementorIssueComment[],
   trustConfig: ArtifactTrustConfig,
+  options?: TrustedPlannerArtifactSelectorOptions,
 ): ReviewFixPlanArtifact | undefined {
   const commentsNewestFirst = comments
-    .filter(isExecutablePlannerArtifactComment)
+    .filter((comment) => isExecutablePlannerArtifactComment(comment, options))
     .map((comment, index) => ({ comment, index }))
     .sort((left, right) => {
       const timestampDelta = Date.parse(right.comment.createdAt) - Date.parse(left.comment.createdAt);
@@ -351,9 +359,39 @@ export function selectLatestTrustedPlannerArtifact(
   return undefined;
 }
 
-function isExecutablePlannerArtifactComment(comment: ImplementorIssueComment): boolean {
+function isExecutablePlannerArtifactComment(
+  comment: ImplementorIssueComment,
+  options?: TrustedPlannerArtifactSelectorOptions,
+): boolean {
   const metadata = parseAgentMetadata(comment.body);
-  return metadata?.['agent-stage'] === 'planner' && metadata.status !== 'blocked';
+  if (metadata?.['agent-stage'] !== 'planner' || metadata.status === 'blocked') {
+    return false;
+  }
+
+  if (!isTrustedPlannerCommentAuthor(comment.authorLogin, options?.trustedAuthorLogins)) {
+    return false;
+  }
+
+  return isTrustedPlannerAgentId(metadata['agent-id'], options?.trustedAgentIds);
+}
+
+function isTrustedPlannerCommentAuthor(
+  authorLogin: string,
+  trustedAuthorLogins: readonly string[] | undefined,
+): boolean {
+  const expectedAuthors = trustedAuthorLogins ?? DEFAULT_TRUSTED_PLANNER_AUTHOR_LOGINS;
+  return expectedAuthors.includes(authorLogin);
+}
+
+function isTrustedPlannerAgentId(
+  agentId: string | undefined,
+  trustedAgentIds: readonly string[] | undefined,
+): boolean {
+  if (!trustedAgentIds || trustedAgentIds.length === 0) {
+    return true;
+  }
+
+  return agentId !== undefined && trustedAgentIds.includes(agentId);
 }
 
 export function buildImplementorReviewThreadReplyPlans(input: {

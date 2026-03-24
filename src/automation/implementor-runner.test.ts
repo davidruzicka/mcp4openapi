@@ -432,6 +432,122 @@ describe('implementor-runner', () => {
       ], strictTrustConfig)).toEqual(buildPlannerArtifact());
     });
 
+    it('ignores newer planner-metadata comments from untrusted authors in compatibility mode', () => {
+      const trustedArtifact = {
+        ...buildPlannerArtifact(),
+        sourceCommentId: 'comment-5',
+        fixSummary: 'Trusted planner artifact should win',
+      };
+      const trustedPlannerComment = [
+        '🤖 Agent plan (planner)',
+        '',
+        serializePlannerArtifact(trustedArtifact),
+        '',
+        '<!-- AGENT-METADATA',
+        'agent-id: planner',
+        'agent-stage: planner',
+        'status: planned',
+        '-->',
+      ].join('\n');
+      const untrustedPlannerComment = [
+        '🤖 Agent plan (planner)',
+        '',
+        serializePlannerArtifact({
+          ...buildPlannerArtifact(),
+          sourceCommentId: 'comment-6',
+          fixSummary: 'Untrusted planner artifact should be ignored',
+        }),
+        '',
+        '<!-- AGENT-METADATA',
+        'agent-id: planner',
+        'agent-stage: planner',
+        'status: planned',
+        '-->',
+      ].join('\n');
+
+      expect(selectLatestTrustedPlannerArtifact([
+        buildComment(trustedPlannerComment, {
+          id: 1,
+          createdAt: '2026-03-14T12:00:00Z',
+          updatedAt: '2026-03-14T12:00:00Z',
+          authorLogin: 'github-actions[bot]',
+        }),
+        buildComment(untrustedPlannerComment, {
+          id: 2,
+          createdAt: '2026-03-14T13:00:00Z',
+          updatedAt: '2026-03-14T13:00:00Z',
+          authorLogin: 'octocat',
+        }),
+      ], unsignedCompatibilityTrustConfig)).toEqual(trustedArtifact);
+    });
+
+    it('ignores newer planner-metadata comments from untrusted authors in strict mode', () => {
+      const trustedPlannerComment = [
+        '🤖 Agent plan (planner)',
+        '',
+        buildSignedPlannerArtifact(),
+        '',
+        '<!-- AGENT-METADATA',
+        'agent-id: planner',
+        'agent-stage: planner',
+        'status: planned',
+        '-->',
+      ].join('\n');
+      const untrustedPlannerComment = [
+        '🤖 Agent plan (planner)',
+        '',
+        serializePlannerArtifact({
+          ...buildPlannerArtifact(),
+          sourceCommentId: 'comment-7',
+          fixSummary: 'Untrusted unsigned planner artifact should not block strict mode',
+        }),
+        '',
+        '<!-- AGENT-METADATA',
+        'agent-id: planner',
+        'agent-stage: planner',
+        'status: planned',
+        '-->',
+      ].join('\n');
+
+      expect(selectLatestTrustedPlannerArtifact([
+        buildComment(trustedPlannerComment, {
+          id: 1,
+          createdAt: '2026-03-14T12:00:00Z',
+          updatedAt: '2026-03-14T12:00:00Z',
+          authorLogin: 'github-actions[bot]',
+        }),
+        buildComment(untrustedPlannerComment, {
+          id: 2,
+          createdAt: '2026-03-14T13:00:00Z',
+          updatedAt: '2026-03-14T13:00:00Z',
+          authorLogin: 'octocat',
+        }),
+      ], strictTrustConfig)).toEqual(buildPlannerArtifact());
+    });
+
+    it('returns undefined when only untrusted planner-metadata comments are present', () => {
+      const untrustedPlannerComment = [
+        '🤖 Agent plan (planner)',
+        '',
+        buildSignedPlannerArtifact(),
+        '',
+        '<!-- AGENT-METADATA',
+        'agent-id: planner',
+        'agent-stage: planner',
+        'status: planned',
+        '-->',
+      ].join('\n');
+
+      expect(selectLatestTrustedPlannerArtifact([
+        buildComment(untrustedPlannerComment, {
+          id: 1,
+          createdAt: '2026-03-14T12:00:00Z',
+          updatedAt: '2026-03-14T12:00:00Z',
+          authorLogin: 'octocat',
+        }),
+      ], strictTrustConfig)).toBeUndefined();
+    });
+
     it('orders planner artifacts by creation time instead of edit time', () => {
       const olderPlannerComment = [
         '🤖 Agent plan (planner)',
