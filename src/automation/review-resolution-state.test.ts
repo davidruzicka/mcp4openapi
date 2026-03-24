@@ -72,7 +72,7 @@ describe('review-resolution-state', () => {
     });
   });
 
-  it('keeps a resolved-but-unreplied current-head thread open conservatively', () => {
+  it('treats a resolved current-head thread as addressed even without an implementor reply', () => {
     const states = resolveReviewThreadStates({
       reviewThreads: [buildReviewThread({
         id: 'thread-1',
@@ -91,8 +91,8 @@ describe('review-resolution-state', () => {
     });
 
     expect(states[0]).toMatchObject({
-      state: 'open',
-      blocking: true,
+      state: 'addressed',
+      blocking: false,
     });
   });
 });

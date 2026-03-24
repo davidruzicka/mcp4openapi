@@ -365,9 +365,9 @@ If the head SHA changes, the prior approval is stale and must not count toward m
 
 Reviewer follow-up is now tracked with three shared per-thread states for the current automation lane:
 
-- `open` - current-head thread still needs action or lacks a current-head implementor follow-up reply.
-- `addressed` - current-head thread contains an implementor follow-up reply bound to the current head.
-- `obsolete` - thread metadata binds it to an older head SHA and it must not block the current head.
+- `open` - current-head thread is still unresolved on GitHub.
+- `addressed` - current-head thread is resolved on GitHub or contains a current-head implementor follow-up reply.
+- `obsolete` - thread metadata points at an older PR head, so the current merge decision ignores it.
 
 Rules:
 
