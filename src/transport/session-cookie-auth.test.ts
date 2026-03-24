@@ -14,13 +14,10 @@ import {
   SessionCookieBackoffError,
   SessionCookieMissingError,
 } from '../core/errors.js';
-import type { SSRFValidator } from '../security/ssrf-validator.js';
-
-const mockSSRFValidator = {
-  validate: async () => {},
-} as unknown as SSRFValidator;
+import { SSRFValidator } from '../security/ssrf-validator.js';
 
 const originalEnv = { ...process.env };
+
 
 function createSessionCookieConfig(overrides: Partial<NonNullable<InterceptorConfig['auth']>> = {}): InterceptorConfig {
   const authOverrides = overrides as Record<string, unknown>;
@@ -50,6 +47,7 @@ describe('session-cookie auth runtime', () => {
       ...originalEnv,
       LOGIN_USER: 'user@example.com',
       LOGIN_PASSWORD: 'secret-password',
+      MCP4_SSRF_ALLOW_PRIVATE_NETWORK: 'true',
     };
   });
 
@@ -411,7 +409,7 @@ describe('session-cookie auth runtime', () => {
       new InterceptorChain(config, manager),
       null,
       undefined,
-      mockSSRFValidator,
+      new SSRFValidator({ debug: () => {}, info: () => {}, warn: () => {}, error: () => {} } as any),
     );
 
     const callUrls: string[] = [];
