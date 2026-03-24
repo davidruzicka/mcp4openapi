@@ -247,7 +247,10 @@ export class SessionCookieAuthManager implements AuthRuntimeProvider {
     // To avoid circular dependency with console logger we just mock it if missing,
     // though in practice HTTP transport always passes one.
     this.ssrfValidator = new SSRFValidator(this.logger || {
-      debug: () => {}, info: () => {}, warn: () => {}, error: () => {}
+      /* istanbul ignore next */ debug: () => {},
+      /* istanbul ignore next */ info: () => {},
+      /* istanbul ignore next */ warn: () => {},
+      /* istanbul ignore next */ error: () => {}
     });
   }
 
