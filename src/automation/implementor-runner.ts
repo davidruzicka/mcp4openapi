@@ -3,6 +3,7 @@ import { planImplementorCompletion, planImplementorStart } from './agent-workflo
 import type { ArtifactTrustConfig } from './artifact-signing-config.js';
 import { parseAgentMetadata } from './evaluator-runner.js';
 import {
+  parsePlannerArtifactValue,
   parseTrustedPlannerArtifact,
   type ReviewFixPlanArtifact,
 } from './planner-artifact.js';
@@ -270,19 +271,34 @@ function parsePlannerArtifactFromTaskValue(
     return undefined;
   }
 
-  const artifactComment = normalizePlannerArtifactTaskValue(rawArtifact);
-  return parsePlannerArtifactFromTaskString(artifactComment, trustConfig);
-}
-
-function normalizePlannerArtifactTaskValue(rawArtifact: unknown): string {
   if (typeof rawArtifact === 'string') {
-    return rawArtifact;
+    return parsePlannerArtifactFromTaskString(rawArtifact, trustConfig);
   }
 
   if (!rawArtifact || typeof rawArtifact !== 'object' || Array.isArray(rawArtifact)) {
     throw new Error('Invalid IMPLEMENTOR_TASK_JSON payload: plannerArtifact must be a valid review-follow-up artifact.');
   }
 
+  if (isSignedPlannerArtifactEnvelope(rawArtifact)) {
+    return parsePlannerArtifactFromTaskString(serializePlannerArtifactTaskValue(rawArtifact), trustConfig);
+  }
+
+  return parsePlannerArtifactFromTrustedTaskObject(rawArtifact);
+}
+
+function parsePlannerArtifactFromTrustedTaskObject(rawArtifact: unknown): ReviewFixPlanArtifact {
+  try {
+    return parsePlannerArtifactValue(rawArtifact);
+  } catch {
+    throw new Error('Invalid IMPLEMENTOR_TASK_JSON payload: plannerArtifact must be a valid review-follow-up artifact.');
+  }
+}
+
+function isSignedPlannerArtifactEnvelope(rawArtifact: object): boolean {
+  return ['version', 'algorithm', 'keyId', 'payload', 'signature'].some((key) => key in rawArtifact);
+}
+
+function serializePlannerArtifactTaskValue(rawArtifact: object): string {
   return [
     '<!-- AGENT-PLANNER-ARTIFACT',
     JSON.stringify(rawArtifact),
@@ -317,7 +333,7 @@ export function selectLatestTrustedPlannerArtifact(
   trustConfig: ArtifactTrustConfig,
 ): ReviewFixPlanArtifact | undefined {
   const commentsNewestFirst = comments
-    .filter((comment) => parseAgentMetadata(comment.body)?.['agent-stage'] === 'planner')
+    .filter(isExecutablePlannerArtifactComment)
     .map((comment, index) => ({ comment, index }))
     .sort((left, right) => {
       const timestampDelta = Date.parse(right.comment.createdAt) - Date.parse(left.comment.createdAt);
@@ -333,6 +349,11 @@ export function selectLatestTrustedPlannerArtifact(
   }
 
   return undefined;
+}
+
+function isExecutablePlannerArtifactComment(comment: ImplementorIssueComment): boolean {
+  const metadata = parseAgentMetadata(comment.body);
+  return metadata?.['agent-stage'] === 'planner' && metadata.status !== 'blocked';
 }
 
 export function buildImplementorReviewThreadReplyPlans(input: {

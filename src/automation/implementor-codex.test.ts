@@ -5,6 +5,7 @@ import {
   parseImplementorTaskPayload,
   type ImplementorTaskPayload,
 } from './implementor-codex.js';
+import { selectLatestTrustedPlannerArtifact, type ImplementorIssueComment } from './implementor-runner.js';
 import { serializePlannerArtifact } from './planner-artifact.js';
 
 const strictTrustConfig = {
@@ -49,6 +50,17 @@ function buildTaskPayload(overrides: Partial<ImplementorTaskPayload> = {}): Impl
     runId: 'github-actions-12345',
     agentId: 'implementor',
     now: '2026-03-15T00:00:00Z',
+    ...overrides,
+  };
+}
+
+function buildComment(body: string, overrides: Partial<ImplementorIssueComment> = {}): ImplementorIssueComment {
+  return {
+    id: 1,
+    body,
+    createdAt: '2026-03-14T12:00:00Z',
+    updatedAt: '2026-03-14T12:00:00Z',
+    authorLogin: 'github-actions[bot]',
     ...overrides,
   };
 }
@@ -145,6 +157,52 @@ describe('implementor-codex', () => {
       }), {
         trustConfig: strictTrustConfig,
       })).toThrow('signature verification failed');
+    });
+
+    it('accepts already-selected trusted planner artifacts in strict Codex mode', () => {
+      const selectedArtifact = selectLatestTrustedPlannerArtifact([
+        buildComment([
+          '🤖 Agent plan (planner)',
+          '',
+          buildSignedPlannerArtifact(),
+          '',
+          '<!-- AGENT-METADATA',
+          'agent-stage: planner',
+          'status: planned',
+          '-->',
+        ].join('\n'), {
+          id: 2,
+          createdAt: '2026-03-14T13:00:00Z',
+          updatedAt: '2026-03-14T13:00:00Z',
+        }),
+      ], strictTrustConfig);
+
+      expect(selectedArtifact).toBeDefined();
+      expect(parseImplementorTaskPayload(JSON.stringify({
+        repository: 'davidruzicka/mcp4openapi',
+        issue: {
+          number: 163,
+          title: 'Scoped fix',
+          body: 'Add a targeted regression test.',
+          url: 'https://github.com/davidruzicka/mcp4openapi/issues/163',
+        },
+        reviewFollowUpItems: [{
+          threadId: 'thread-1',
+          headSha: 'abc123',
+          sourceCommentId: 'comment-2',
+          summary: 'Add a regression test for the fallback path',
+          actionability: 'actionable',
+          requiresReply: true,
+        }],
+        plannerArtifact: selectedArtifact,
+        runId: 'run-1',
+        agentId: 'implementor',
+        now: '2026-03-15T00:00:00Z',
+      }), {
+        trustConfig: strictTrustConfig,
+      })).toMatchObject({
+        plannerArtifact: selectedArtifact,
+      });
     });
   });
 

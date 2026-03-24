@@ -425,6 +425,72 @@ describe('implementor-runner', () => {
         }),
       ], strictTrustConfig)).toEqual(newerPlannerArtifact);
     });
+
+    it('ignores blocked planner artifacts when selecting the latest executable trusted artifact', () => {
+      const executableArtifact = {
+        ...buildPlannerArtifact(),
+        sourceCommentId: 'comment-3',
+        fixSummary: 'Use the executable planner artifact',
+      };
+
+      expect(selectLatestTrustedPlannerArtifact([
+        buildComment([
+          '🤖 Agent plan (planner)',
+          '',
+          serializePlannerArtifact({
+            ...buildPlannerArtifact(),
+            sourceCommentId: 'comment-4',
+            fixSummary: 'Blocked planner artifact should stay audit-only',
+          }, {
+            signing: strictTrustConfig.signing,
+          }),
+          '',
+          '<!-- AGENT-METADATA',
+          'agent-stage: planner',
+          'status: blocked',
+          '-->',
+        ].join('\n'), {
+          id: 2,
+          createdAt: '2026-03-14T13:00:00Z',
+          updatedAt: '2026-03-14T13:00:00Z',
+        }),
+        buildComment([
+          '🤖 Agent plan (planner)',
+          '',
+          serializePlannerArtifact(executableArtifact, {
+            signing: strictTrustConfig.signing,
+          }),
+          '',
+          '<!-- AGENT-METADATA',
+          'agent-stage: planner',
+          'status: planned',
+          '-->',
+        ].join('\n'), {
+          id: 1,
+          createdAt: '2026-03-14T12:00:00Z',
+          updatedAt: '2026-03-14T12:00:00Z',
+        }),
+      ], strictTrustConfig)).toEqual(executableArtifact);
+    });
+
+    it('returns undefined when only blocked planner artifacts are present', () => {
+      expect(selectLatestTrustedPlannerArtifact([
+        buildComment([
+          '🤖 Agent plan (planner)',
+          '',
+          buildSignedPlannerArtifact(),
+          '',
+          '<!-- AGENT-METADATA',
+          'agent-stage: planner',
+          'status: blocked',
+          '-->',
+        ].join('\n'), {
+          id: 2,
+          createdAt: '2026-03-14T13:00:00Z',
+          updatedAt: '2026-03-14T13:00:00Z',
+        }),
+      ], strictTrustConfig)).toBeUndefined();
+    });
   });
 
   describe('parseImplementorTaskPayload', () => {
@@ -711,8 +777,8 @@ describe('implementor-runner', () => {
       })).toThrow('plannerArtifact signing key is not configured');
     });
 
-    it('rejects object-form unsigned planner artifacts in strict mode', () => {
-      expect(() => parseImplementorTaskPayload(JSON.stringify({
+    it('accepts direct object-form planner artifacts as trusted internal handoff payloads in strict mode', () => {
+      const payload = parseImplementorTaskPayload(JSON.stringify({
         repository: 'davidruzicka/mcp4openapi',
         issue: {
           number: 161,
@@ -734,7 +800,9 @@ describe('implementor-runner', () => {
         now: '2026-03-14T12:00:00Z',
       }), {
         trustConfig: strictTrustConfig,
-      })).toThrow('plannerArtifact must be signed or explicitly allowed unsigned');
+      });
+
+      expect(payload.plannerArtifact).toEqual(buildPlannerArtifact());
     });
 
     it('accepts object-form signed planner envelopes after trust verification', () => {
@@ -765,6 +833,52 @@ describe('implementor-runner', () => {
       expect(payload.plannerArtifact).toEqual(parseTrustedPlannerArtifact(buildSignedPlannerArtifact(), {
         trustConfig: strictTrustConfig,
       }));
+    });
+
+    it('accepts already-selected trusted planner artifact objects in strict mode', () => {
+      const selectedArtifact = selectLatestTrustedPlannerArtifact([
+        buildComment([
+          '🤖 Agent plan (planner)',
+          '',
+          buildSignedPlannerArtifact(),
+          '',
+          '<!-- AGENT-METADATA',
+          'agent-stage: planner',
+          'status: planned',
+          '-->',
+        ].join('\n'), {
+          id: 2,
+          createdAt: '2026-03-14T13:00:00Z',
+          updatedAt: '2026-03-14T13:00:00Z',
+        }),
+      ], strictTrustConfig);
+
+      expect(selectedArtifact).toBeDefined();
+      const payload = parseImplementorTaskPayload(JSON.stringify({
+        repository: 'davidruzicka/mcp4openapi',
+        issue: {
+          number: 161,
+          title: 'Add cache invalidation metrics',
+          body: 'Need bounded instrumentation and tests.',
+          url: 'https://github.com/davidruzicka/mcp4openapi/issues/161',
+        },
+        reviewFollowUpItems: [{
+          threadId: 'thread-1',
+          headSha: 'abc123',
+          sourceCommentId: 'comment-2',
+          summary: 'Add a regression test for the fallback path',
+          actionability: 'actionable',
+          requiresReply: true,
+        }],
+        plannerArtifact: selectedArtifact,
+        runId: 'run-3',
+        agentId: 'implementor',
+        now: '2026-03-14T12:00:00Z',
+      }), {
+        trustConfig: strictTrustConfig,
+      });
+
+      expect(payload.plannerArtifact).toEqual(selectedArtifact);
     });
 
     it('rejects object-form tampered signed planner envelopes', () => {

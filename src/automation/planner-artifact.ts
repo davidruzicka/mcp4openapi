@@ -48,6 +48,15 @@ export function parsePlannerArtifact(body: string): ReviewFixPlanArtifact | unde
   return inspectPlannerArtifactComment(body)?.artifact;
 }
 
+export function parsePlannerArtifactValue(value: unknown): ReviewFixPlanArtifact {
+  if (isSignedEnvelopeCandidate(value)) {
+    return parseLenientSignedEnvelope(value);
+  }
+
+  validatePlannerArtifact(value);
+  return value;
+}
+
 export function inspectPlannerArtifactComment(body: string): ParsedPlannerArtifactComment | undefined {
   const rawJson = extractPlannerArtifactJson(body);
   if (rawJson === undefined) {
