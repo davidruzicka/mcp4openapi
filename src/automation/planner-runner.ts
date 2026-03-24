@@ -60,6 +60,7 @@ export interface CollectPlannerAssignmentsInput {
 
 const RISK_KEYWORDS = ['security', 'auth', 'oauth', 'token', 'secret', 'tenant', 'migration', 'breaking', 'architecture', 'refactor'];
 const STRUCTURE_HINTS = ['acceptance criteria', 'validation', '## ', '- [ ]', 'test'];
+const DEFAULT_TRUSTED_PLANNER_AUTHOR_LOGINS = ['github-actions[bot]'];
 
 export function evaluatePlannerDecision(issue: PlannerIssue): PlannerDecision {
   const haystack = `${issue.title}\n${issue.body}`.toLowerCase();
@@ -246,6 +247,10 @@ function hasEquivalentPlannerDecisionComment(
   const expectedArtifact = decision.plannerArtifact;
 
   return comments.some((comment) => {
+    if (!isTrustedPlannerCommentAuthor(comment.authorLogin)) {
+      return false;
+    }
+
     const metadata = parseAgentMetadata(comment.body);
     if (
       metadata?.['agent-stage'] !== 'planner'
@@ -263,6 +268,10 @@ function hasEquivalentPlannerDecisionComment(
 
     return isSameReviewFixPlanArtifact(parsedArtifact, expectedArtifact);
   });
+}
+
+function isTrustedPlannerCommentAuthor(authorLogin: string): boolean {
+  return DEFAULT_TRUSTED_PLANNER_AUTHOR_LOGINS.includes(authorLogin);
 }
 
 function tryInspectPlannerArtifactComment(body: string) {

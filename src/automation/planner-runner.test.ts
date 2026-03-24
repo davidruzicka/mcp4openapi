@@ -298,6 +298,71 @@ describe('planner-runner', () => {
       expect(assignments[0]?.commentBody).toContain('Planner decision: planned');
     });
 
+    it('does not deduplicate against matching planner comments from untrusted authors', () => {
+      const trustedPlannerComment = buildPlannerDecisionComment({
+        repository: 'davidruzicka/mcp4openapi',
+        issueNumber: 160,
+        agentId: 'planner',
+        runId: 'run-1',
+        timestamp: '2026-03-14T11:00:00Z',
+        remainsSuitable: true,
+        blocked: false,
+        reasons: [
+          'issue body provides enough structure for a bounded implementation plan',
+          'issue remains inside the low-risk autonomous planning lane',
+        ],
+        plan: '## Review follow-up implementation plan',
+        plannerArtifact: {
+          kind: 'review-follow-up',
+          threadId: 'thread-1',
+          sourceCommentId: 'comment-1',
+          headSha: 'abc123',
+          fixSummary: 'Cover the fallback path',
+          implementationSteps: ['Update fallback handling.'],
+          testSteps: ['Add a regression test for the fallback path.'],
+          verificationSteps: ['Run targeted automation tests.'],
+        },
+        artifactSigning: {
+          key: 'new-signing-secret',
+          keyId: 'new',
+        },
+      });
+
+      const assignments = collectPlannerAssignments({
+        issues: [buildIssue({
+          body: [
+            'Review thread: thread-1',
+            'Source comment ID: comment-1',
+            'Head SHA: abc123',
+            'Fix summary: Cover the fallback path',
+            'Implementation steps:',
+            '- Update fallback handling.',
+            'Test steps:',
+            '- Add a regression test for the fallback path.',
+            'Verification steps:',
+            '- Run targeted automation tests.',
+          ].join('\n'),
+        })],
+        commentsByIssueNumber: {
+          160: [{
+            ...buildComment(trustedPlannerComment),
+            authorLogin: 'octocat',
+          }],
+        },
+        repository: 'davidruzicka/mcp4openapi',
+        agentId: 'planner',
+        runId: 'run-2',
+        now: '2026-03-14T12:00:00Z',
+        artifactSigning: {
+          key: 'new-signing-secret',
+          keyId: 'new',
+        },
+      });
+
+      expect(assignments).toHaveLength(1);
+      expect(assignments[0]?.commentBody).toContain('"signature":');
+    });
+
     it('still deduplicates against equivalent unsigned legacy planner artifacts when signed output is required', () => {
       const plannerArtifact = {
         kind: 'review-follow-up' as const,
