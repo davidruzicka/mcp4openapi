@@ -39,14 +39,22 @@ export function resolveReviewThreadStates(input: ReviewThreadStateInput): Resolv
       };
     }
 
+    if (thread.isResolved) {
+      return {
+        threadId: thread.id,
+        headSha: input.currentHeadSha,
+        state: 'addressed',
+        blocking: false,
+        summary: 'Current-head review thread is resolved on GitHub and does not block merge readiness.',
+      };
+    }
+
     return {
       threadId: thread.id,
       headSha: input.currentHeadSha,
       state: 'open',
       blocking: true,
-      summary: thread.isResolved
-        ? 'Resolved thread remains open conservatively until a current-head implementor reply exists.'
-        : 'Current-head review thread remains open.',
+      summary: 'Current-head review thread remains open.',
     };
   });
 }

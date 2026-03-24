@@ -2,10 +2,12 @@ import { buildAgentMetadataBlock } from './agent-feedback.js';
 import { planPlannerTransition } from './agent-workflow-state.js';
 import { parseAgentMetadata } from './evaluator-runner.js';
 import {
-  parsePlannerArtifact,
+  inspectPlannerArtifactComment,
+  parseTrustedPlannerArtifact,
   serializePlannerArtifact,
   type ReviewFixPlanArtifact,
 } from './planner-artifact.js';
+import type { ArtifactSigningConfig } from './artifact-signing.js';
 import { findSemanticOpenDuplicate, type SemanticDuplicateBackendName } from './semantic-triage.js';
 
 export interface PlannerIssue {
@@ -53,10 +55,12 @@ export interface CollectPlannerAssignmentsInput {
   readonly runId: string;
   readonly now: string;
   readonly semanticDuplicateBackendName?: SemanticDuplicateBackendName;
+  readonly artifactSigning?: ArtifactSigningConfig;
 }
 
 const RISK_KEYWORDS = ['security', 'auth', 'oauth', 'token', 'secret', 'tenant', 'migration', 'breaking', 'architecture', 'refactor'];
 const STRUCTURE_HINTS = ['acceptance criteria', 'validation', '## ', '- [ ]', 'test'];
+const DEFAULT_TRUSTED_PLANNER_AUTHOR_LOGINS = ['github-actions[bot]'];
 
 export function evaluatePlannerDecision(issue: PlannerIssue): PlannerDecision {
   const haystack = `${issue.title}\n${issue.body}`.toLowerCase();
@@ -117,9 +121,6 @@ export function collectPlannerAssignments(input: CollectPlannerAssignmentsInput)
       remainsSuitable: decision.remainsSuitable,
       blocked: decision.blocked,
     });
-    if (transition.labelsToAdd.length === 0 && transition.labelsToRemove.length === 0) {
-      return [];
-    }
 
     const commentBody = buildPlannerDecisionComment({
       repository: input.repository,
@@ -133,9 +134,10 @@ export function collectPlannerAssignments(input: CollectPlannerAssignmentsInput)
       plan: decision.plan,
       plannerArtifact: decision.plannerArtifact,
       duplicateBackendName: decision.duplicateBackendName,
+      artifactSigning: input.artifactSigning,
     });
 
-    if (hasEquivalentPlannerDecisionComment(input.commentsByIssueNumber[issue.number] ?? [], decision)) {
+    if (hasEquivalentPlannerDecisionComment(input.commentsByIssueNumber[issue.number] ?? [], decision, input.artifactSigning)) {
       return [];
     }
 
@@ -164,6 +166,7 @@ export function buildPlannerDecisionComment(input: {
   readonly plan?: string;
   readonly plannerArtifact?: ReviewFixPlanArtifact;
   readonly duplicateBackendName?: string;
+  readonly artifactSigning?: ArtifactSigningConfig;
 }): string {
   const plannerStatus = getPlannerDecisionStatus(input.remainsSuitable, input.blocked);
   const metadataBlock = buildAgentMetadataBlock({
@@ -186,7 +189,7 @@ export function buildPlannerDecisionComment(input: {
     ...input.reasons.map((reason) => `- ${reason}`),
     ...buildDuplicateGuardNoteLines(input.reasons, input.duplicateBackendName),
     ...(input.plan ? ['', input.plan] : []),
-    ...(input.plannerArtifact ? ['', serializePlannerArtifact(input.plannerArtifact)] : []),
+    ...(input.plannerArtifact ? ['', serializePlannerArtifact(input.plannerArtifact, { signing: input.artifactSigning })] : []),
     '',
     metadataBlock,
   ];
@@ -237,27 +240,105 @@ function isPlannerActionableIssue(issue: PlannerIssue): boolean {
 function hasEquivalentPlannerDecisionComment(
   comments: readonly PlannerIssueComment[],
   decision: PlannerDecision,
+  artifactSigning: ArtifactSigningConfig | undefined,
 ): boolean {
   const expectedStatus = getPlannerDecisionStatus(decision.remainsSuitable, decision.blocked);
   const expectedReasons = decision.reasons.join(',');
-  const expectedArtifact = decision.plannerArtifact ? JSON.stringify(decision.plannerArtifact) : undefined;
+  const expectedArtifact = decision.plannerArtifact;
 
   return comments.some((comment) => {
+    if (!isTrustedPlannerCommentAuthor(comment.authorLogin)) {
+      return false;
+    }
+
     const metadata = parseAgentMetadata(comment.body);
-    const parsedArtifact = tryParsePlannerArtifact(comment.body);
-    return metadata?.['agent-stage'] === 'planner'
-      && metadata?.status === expectedStatus
-      && metadata?.reasons === expectedReasons
-      && JSON.stringify(parsedArtifact) === JSON.stringify(expectedArtifact ? decision.plannerArtifact : undefined);
+    if (
+      metadata?.['agent-stage'] !== 'planner'
+      || metadata?.status !== expectedStatus
+      || metadata?.reasons !== expectedReasons
+    ) {
+      return false;
+    }
+
+    if (expectedArtifact === undefined) {
+      return tryInspectPlannerArtifactComment(comment.body) === undefined;
+    }
+
+    const parsedArtifact = tryParsePlannerArtifactCommentForDedupe(comment.body, artifactSigning);
+
+    return isSameReviewFixPlanArtifact(parsedArtifact, expectedArtifact);
   });
 }
 
-function tryParsePlannerArtifact(body: string): ReviewFixPlanArtifact | undefined {
+function isTrustedPlannerCommentAuthor(authorLogin: string): boolean {
+  return DEFAULT_TRUSTED_PLANNER_AUTHOR_LOGINS.includes(authorLogin);
+}
+
+function tryInspectPlannerArtifactComment(body: string) {
   try {
-    return parsePlannerArtifact(body);
+    return inspectPlannerArtifactComment(body);
   } catch {
     return undefined;
   }
+}
+
+function tryParseTrustedPlannerArtifactComment(
+  body: string,
+  artifactSigning: ArtifactSigningConfig,
+): ReviewFixPlanArtifact | undefined {
+  try {
+    return parseTrustedPlannerArtifact(body, {
+      trustConfig: {
+        allowUnsigned: false,
+        signing: artifactSigning,
+      },
+    });
+  } catch {
+    return undefined;
+  }
+}
+
+function tryParsePlannerArtifactCommentForDedupe(
+  body: string,
+  artifactSigning: ArtifactSigningConfig | undefined,
+): ReviewFixPlanArtifact | undefined {
+  const inspected = tryInspectPlannerArtifactComment(body);
+  if (!inspected) {
+    return undefined;
+  }
+
+  if (!inspected.isSigned) {
+    return inspected.artifact;
+  }
+
+  if (!artifactSigning) {
+    return undefined;
+  }
+
+  return tryParseTrustedPlannerArtifactComment(body, artifactSigning);
+}
+
+function isSameReviewFixPlanArtifact(
+  left: ReviewFixPlanArtifact | undefined,
+  right: ReviewFixPlanArtifact | undefined,
+): boolean {
+  if (!left || !right) {
+    return false;
+  }
+
+  return left.kind === right.kind
+    && left.threadId === right.threadId
+    && left.sourceCommentId === right.sourceCommentId
+    && left.headSha === right.headSha
+    && left.fixSummary === right.fixSummary
+    && arraysEqual(left.implementationSteps, right.implementationSteps)
+    && arraysEqual(left.testSteps, right.testSteps)
+    && arraysEqual(left.verificationSteps, right.verificationSteps);
+}
+
+// Relies on upstream artifact validation - validatePlannerArtifact() guarantees these fields are string arrays before comparison.
+function arraysEqual(left: readonly string[], right: readonly string[]): boolean {
+  return left.length === right.length && left.every((value, index) => value === right[index]);
 }
 
 function getPlannerDecisionStatus(remainsSuitable: boolean, blocked: boolean): 'planned' | 'blocked' | 'de-scoped' {

@@ -183,6 +183,34 @@ describe('review-follow-up', () => {
       });
     });
 
+    it('uses the latest external review comment by timestamp when collecting follow-up items', () => {
+      const items = collectReviewFollowUpItems({
+        reviewThreads: [buildReviewThread({
+          comments: [
+            buildReviewThreadComment({
+              id: 'comment-1',
+              authorLogin: 'human-reviewer',
+              updatedAt: '2026-03-19T10:00:00Z',
+              body: 'Older request.',
+            }),
+            buildReviewThreadComment({
+              id: 'comment-2',
+              authorLogin: 'human-reviewer',
+              updatedAt: '2026-03-19T10:05:00Z',
+              body: 'Newest request should be summarized.',
+            }),
+          ],
+        })],
+        currentHeadSha: 'abc123',
+      });
+
+      expect(items).toHaveLength(1);
+      expect(items[0]).toMatchObject({
+        sourceCommentId: 'comment-2',
+        summary: 'Newest request should be summarized.',
+      });
+    });
+
     it('truncates long review comments in the follow-up summary', () => {
       const longComment = `${'Need more regression coverage on the fallback path. '.repeat(5)}Also validate telemetry.`;
 

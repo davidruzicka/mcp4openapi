@@ -1,7 +1,12 @@
 import { buildAgentMetadataBlock } from './agent-feedback.js';
 import { planImplementorCompletion, planImplementorStart } from './agent-workflow-state.js';
+import type { ArtifactTrustConfig } from './artifact-signing-config.js';
 import { parseAgentMetadata } from './evaluator-runner.js';
-import { parsePlannerArtifact, type ReviewFixPlanArtifact } from './planner-artifact.js';
+import {
+  parsePlannerArtifactValue,
+  parseTrustedPlannerArtifact,
+  type ReviewFixPlanArtifact,
+} from './planner-artifact.js';
 import { buildImplementorThreadReplyPlans, type ReviewFollowUpItem } from './review-follow-up.js';
 
 export interface ImplementorIssue {
@@ -71,6 +76,13 @@ export interface CollectImplementorAssignmentsInput {
   readonly now: string;
   readonly leaseTtlMinutes?: number;
 }
+
+export interface TrustedPlannerArtifactSelectorOptions {
+  readonly trustedAuthorLogins?: readonly string[];
+  readonly trustedAgentIds?: readonly string[];
+}
+
+const DEFAULT_TRUSTED_PLANNER_AUTHOR_LOGINS = ['github-actions[bot]'] as const;
 
 export function collectImplementorAssignments(input: CollectImplementorAssignmentsInput): ImplementorAssignment[] {
   const leaseTtlMinutes = input.leaseTtlMinutes ?? 45;
@@ -190,7 +202,14 @@ function buildReviewFollowUpCountLine(reviewFollowUpItems: readonly ReviewFollow
   return `Review follow-up items: ${reviewFollowUpItems.length}`;
 }
 
-export function parseImplementorTaskPayload(raw: string | undefined): ImplementorTaskPayload {
+export interface ParseImplementorTaskPayloadOptions {
+  readonly trustConfig?: ArtifactTrustConfig;
+}
+
+export function parseImplementorTaskPayload(
+  raw: string | undefined,
+  options?: ParseImplementorTaskPayloadOptions,
+): ImplementorTaskPayload {
   if (!raw) {
     throw new Error('Missing IMPLEMENTOR_TASK_JSON payload for implementor workflow.');
   }
@@ -206,7 +225,7 @@ export function parseImplementorTaskPayload(raw: string | undefined): Implemento
     throw new Error('Invalid IMPLEMENTOR_TASK_JSON payload: expected object payload.');
   }
 
-  const candidate = parsed as Partial<ImplementorTaskPayload> & { plannerArtifact?: string | ReviewFixPlanArtifact };
+  const candidate = parsed as Partial<ImplementorTaskPayload> & { plannerArtifact?: unknown };
   if (
     typeof candidate.repository !== 'string'
     || !candidate.issue
@@ -221,9 +240,8 @@ export function parseImplementorTaskPayload(raw: string | undefined): Implemento
     throw new Error('Invalid IMPLEMENTOR_TASK_JSON payload: missing required workflow fields.');
   }
 
-  const plannerArtifact = typeof candidate.plannerArtifact === 'string'
-    ? parsePlannerArtifact(candidate.plannerArtifact)
-    : candidate.plannerArtifact;
+  const trustConfig = options?.trustConfig ?? { allowUnsigned: true };
+  const plannerArtifact = parsePlannerArtifactFromTaskValue(candidate.plannerArtifact, trustConfig);
   if (candidate.plannerArtifact !== undefined && plannerArtifact === undefined) {
     throw new Error('Invalid IMPLEMENTOR_TASK_JSON payload: plannerArtifact must be a valid review-follow-up artifact.');
   }
@@ -250,6 +268,130 @@ export function parseImplementorTaskPayload(raw: string | undefined): Implemento
     agentId: candidate.agentId,
     now: candidate.now,
   };
+}
+
+function parsePlannerArtifactFromTaskValue(
+  rawArtifact: unknown,
+  trustConfig: ArtifactTrustConfig,
+): ReviewFixPlanArtifact | undefined {
+  if (rawArtifact === undefined) {
+    return undefined;
+  }
+
+  if (typeof rawArtifact === 'string') {
+    return parsePlannerArtifactFromTaskString(rawArtifact, trustConfig);
+  }
+
+  if (!rawArtifact || typeof rawArtifact !== 'object' || Array.isArray(rawArtifact)) {
+    throw new Error('Invalid IMPLEMENTOR_TASK_JSON payload: plannerArtifact must be a valid review-follow-up artifact.');
+  }
+
+  if (isSignedPlannerArtifactEnvelope(rawArtifact)) {
+    return parsePlannerArtifactFromTaskString(serializePlannerArtifactTaskValue(rawArtifact), trustConfig);
+  }
+
+  return parsePlannerArtifactFromTrustedTaskObject(rawArtifact);
+}
+
+function parsePlannerArtifactFromTrustedTaskObject(rawArtifact: unknown): ReviewFixPlanArtifact {
+  try {
+    return parsePlannerArtifactValue(rawArtifact);
+  } catch {
+    throw new Error('Invalid IMPLEMENTOR_TASK_JSON payload: plannerArtifact must be a valid review-follow-up artifact.');
+  }
+}
+
+function isSignedPlannerArtifactEnvelope(rawArtifact: object): boolean {
+  return ['version', 'algorithm', 'keyId', 'payload', 'signature'].some((key) => key in rawArtifact);
+}
+
+function serializePlannerArtifactTaskValue(rawArtifact: object): string {
+  return [
+    '<!-- AGENT-PLANNER-ARTIFACT',
+    JSON.stringify(rawArtifact),
+    '-->',
+  ].join('\n');
+}
+
+function parsePlannerArtifactFromTaskString(rawArtifact: string, trustConfig: ArtifactTrustConfig): ReviewFixPlanArtifact | undefined {
+  try {
+    return parseTrustedPlannerArtifact(rawArtifact, { trustConfig });
+  } catch (error) {
+    if (!(error instanceof Error)) {
+      throw error;
+    }
+
+    if (error.message.includes('unsigned artifacts are not trusted')) {
+      throw new Error('Invalid IMPLEMENTOR_TASK_JSON payload: plannerArtifact must be signed or explicitly allowed unsigned.');
+    }
+    if (error.message.includes('signature verification failed')) {
+      throw new Error('Invalid IMPLEMENTOR_TASK_JSON payload: plannerArtifact signature verification failed.');
+    }
+    if (error.message.includes('signing key is not configured')) {
+      throw new Error('Invalid IMPLEMENTOR_TASK_JSON payload: plannerArtifact signing key is not configured.');
+    }
+
+    throw new Error('Invalid IMPLEMENTOR_TASK_JSON payload: plannerArtifact must be a valid review-follow-up artifact.');
+  }
+}
+
+export function selectLatestTrustedPlannerArtifact(
+  comments: readonly ImplementorIssueComment[],
+  trustConfig: ArtifactTrustConfig,
+  options?: TrustedPlannerArtifactSelectorOptions,
+): ReviewFixPlanArtifact | undefined {
+  const commentsNewestFirst = comments
+    .filter((comment) => isExecutablePlannerArtifactComment(comment, options))
+    .map((comment, index) => ({ comment, index }))
+    .sort((left, right) => {
+      const timestampDelta = Date.parse(right.comment.createdAt) - Date.parse(left.comment.createdAt);
+      return timestampDelta !== 0 ? timestampDelta : right.index - left.index;
+    })
+    .map(({ comment }) => comment);
+
+  for (const comment of commentsNewestFirst) {
+    const artifact = parseTrustedPlannerArtifact(comment.body, { trustConfig });
+    if (artifact !== undefined) {
+      return artifact;
+    }
+  }
+
+  return undefined;
+}
+
+function isExecutablePlannerArtifactComment(
+  comment: ImplementorIssueComment,
+  options?: TrustedPlannerArtifactSelectorOptions,
+): boolean {
+  const metadata = parseAgentMetadata(comment.body);
+  if (metadata?.['agent-stage'] !== 'planner' || metadata.status === 'blocked') {
+    return false;
+  }
+
+  if (!isTrustedPlannerCommentAuthor(comment.authorLogin, options?.trustedAuthorLogins)) {
+    return false;
+  }
+
+  return isTrustedPlannerAgentId(metadata['agent-id'], options?.trustedAgentIds);
+}
+
+function isTrustedPlannerCommentAuthor(
+  authorLogin: string,
+  trustedAuthorLogins: readonly string[] | undefined,
+): boolean {
+  const expectedAuthors = trustedAuthorLogins ?? DEFAULT_TRUSTED_PLANNER_AUTHOR_LOGINS;
+  return expectedAuthors.includes(authorLogin);
+}
+
+function isTrustedPlannerAgentId(
+  agentId: string | undefined,
+  trustedAgentIds: readonly string[] | undefined,
+): boolean {
+  if (!trustedAgentIds || trustedAgentIds.length === 0) {
+    return true;
+  }
+
+  return agentId !== undefined && trustedAgentIds.includes(agentId);
 }
 
 export function buildImplementorReviewThreadReplyPlans(input: {
@@ -338,12 +480,20 @@ function hasActiveImplementorLease(
 
   return comments.some((comment) => {
     const metadata = parseAgentMetadata(comment.body);
-    if (metadata?.['agent-stage'] !== 'implementor' || metadata.status !== 'implementing') {
+    if (!metadata || metadata['agent-stage'] !== 'implementor') {
+      return false;
+    }
+
+    if (metadata.status !== 'implementing' && !isPreflightBlockedCooldownComment(comment.body, metadata.status)) {
       return false;
     }
 
     return nowTimestamp - parseIsoTimestamp(comment.updatedAt) <= ttlMs;
   });
+}
+
+function isPreflightBlockedCooldownComment(body: string, status: string | undefined): boolean {
+  return status === 'blocked' && body.includes('Summary: Implementor preflight blocked:');
 }
 
 function parseIsoTimestamp(value: string): number {

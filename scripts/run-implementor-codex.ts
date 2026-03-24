@@ -3,6 +3,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
+import { readArtifactTrustConfig } from '../src/automation/artifact-signing-config.js';
 import {
   buildCodexInvocationPlan,
   parseCodexResult,
@@ -10,7 +11,10 @@ import {
 } from '../src/automation/implementor-codex.js';
 
 const execFileAsync = promisify(execFile);
-const task = parseImplementorTaskPayload(process.env.IMPLEMENTOR_TASK_JSON);
+const artifactTrustConfig = readArtifactTrustConfig(process.env);
+const task = parseImplementorTaskPayload(process.env.IMPLEMENTOR_TASK_JSON, {
+  trustConfig: artifactTrustConfig,
+});
 const scratchDirectory = await mkdtemp(join(tmpdir(), 'mcp4openapi-implementor-codex-'));
 const outputPath = join(scratchDirectory, 'result.json');
 

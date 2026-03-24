@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Added repository-scoped autonomous-agent docs plus tested proposal-intake/issuer/planner/implementor/reviewer/merger automation helpers, bounded duplicate-candidate ranking/runtime scripts, a default Codex-backed implementor wrapper with machine-readable handoff output, implementor command disclosure reconciliation, and GitHub Actions workflows for the full multi-agent issue-to-PR pipeline.
+- Added signed planner-artifact trust primitives plus env-driven verification config so planner review-follow-up handoff can be verified on implementor execution paths while lenient planner dedupe still reads legacy artifacts.
 - Added shared review-follow-up/planner-artifact automation primitives for per-head review-thread state, machine-readable fix/test handoff, and implementor in-thread follow-up replies.
 - Added profile-driven MCP Apps support with `resources/list`, `resources/templates/list`, `resources/read`, template completion, stricter Apps mapping/path validation, session-aware fetch execution, and bounded fetch-result caching.
 - Expanded the GitHub security profile with Secret Scanning CRUD actions, stricter action-gated parameter validation (`allowed_for`/`forbidden_for`), and an upgraded `retrieve_security_overview` composite across code scanning + Dependabot + secret scanning.
@@ -21,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Updated `express-rate-limit` to `^8.3.1` to remediate the open GitHub Security / Dependabot alert for IPv4-mapped IPv6 rate-limit keying.
 
 ### Fixed
+- Hardened agent artifact rollout by wiring shipped workflows to pass `MCP4_AGENT_ARTIFACT_*`, rejecting strict trust mode without a signing key, restricting implementor artifact selection to planner-stage comments ordered by creation time, and keeping planner dedupe compatible with legacy unsigned comments while ignoring unverified signed envelopes on unsigned runs.
 - Preserved proposal-intake duplicate decisions and created-issue ownership across issuer runs so reject-as-duplicate proposals persist metadata, proposal-created issues stay in the planner lane, issuer keeps proposal-intake entry labels idempotent, and proposal-intake no longer recursively re-processes issues it previously created.
 - Fixed OSV scan gating for current dev dependencies by overriding transitive `flatted` to `3.4.2`, eliminating the reporter failure caused by known vulnerabilities in `3.3.3`.
 - Clarified proposal-intake candidate bounds by wiring `max_candidates` separately from the single-action side-effect budget, keeping legacy env fallbacks, and documenting the one-action-per-run guardrail.

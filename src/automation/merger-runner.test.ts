@@ -62,6 +62,53 @@ describe('merger-runner', () => {
       expect(evaluation.commentBody).toContain('head-sha: abc123');
     });
 
+    it('does not block merge readiness for a resolved current-head thread without an implementor reply when no follow-up is pending', () => {
+      const evaluation = evaluateMergeGate({
+        repository: 'davidruzicka/mcp4openapi',
+        agentId: 'merger',
+        runId: 'run-123',
+        timestamp: '2026-03-14T18:00:00Z',
+        leaseTtlMinutes: 45,
+        pullRequest: buildPullRequest({
+          number: 210,
+          headSha: 'abc123',
+          labels: ['agent:created', 'agent:review:required', 'agent:review:done'],
+        }),
+        threadComments: [],
+        reviews: [
+          buildReview({
+            id: 11,
+            submittedAt: '2026-03-14T17:55:00Z',
+            status: 'approved',
+            headSha: 'abc123',
+          }),
+        ],
+        reviewThreads: [
+          buildReviewThread({
+            id: 'thread-2',
+            isResolved: true,
+            comments: [buildReviewThreadComment({
+              id: 'thread-comment-2',
+              authorLogin: 'github-actions[bot]',
+              updatedAt: '2026-03-14T17:56:00Z',
+              body: buildReviewerThreadMetadataComment({
+                status: 'commented',
+                headSha: 'abc123',
+                timestamp: '2026-03-14T17:56:00Z',
+              }),
+            })],
+          }),
+        ],
+        ciChecks: [
+          { name: 'test', status: 'completed', conclusion: 'success' },
+        ],
+      });
+
+      expect(evaluation.ready).toBe(true);
+      expect(evaluation.reasons).not.toContain('unresolved-review-threads');
+      expect(evaluation.reasons).not.toContain('review-follow-up-pending');
+    });
+
     it('treats a legacy reviewed label as a migration-era review requirement signal', () => {
       const evaluation = evaluateMergeGate({
         repository: 'davidruzicka/mcp4openapi',

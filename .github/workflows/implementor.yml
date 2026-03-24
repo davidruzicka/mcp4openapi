@@ -57,6 +57,9 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          MCP4_AGENT_ARTIFACT_SIGNING_KEY: ${{ secrets.MCP4_AGENT_ARTIFACT_SIGNING_KEY }}
+          MCP4_AGENT_ARTIFACT_KEY_ID: ${{ vars.MCP4_AGENT_ARTIFACT_KEY_ID }}
+          MCP4_AGENT_ARTIFACT_ALLOW_UNSIGNED: ${{ vars.MCP4_AGENT_ARTIFACT_ALLOW_UNSIGNED }}
           IMPLEMENTOR_LOOKBACK_HOURS: ${{ github.event.inputs.lookback_hours || '72' }}
           IMPLEMENTOR_MAX_ISSUES: ${{ github.event.inputs.max_issues || '5' }}
           IMPLEMENTOR_LEASE_TTL_MINUTES: ${{ github.event.inputs.lease_ttl_minutes || '120' }}
