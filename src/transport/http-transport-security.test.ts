@@ -143,6 +143,8 @@ describe('HttpTransport security behavior (no listen)', () => {
     expect(response.headers['x-content-type-options']).toBe('nosniff');
     expect(response.headers['x-frame-options']).toBe('DENY');
     expect(response.headers['referrer-policy']).toBe('no-referrer');
+    expect(response.headers['strict-transport-security']).toBe('max-age=63072000; includeSubDomains');
+    expect(response.headers['x-xss-protection']).toBe('0');
     expect(response.headers['cross-origin-opener-policy']).toBe('same-origin');
     expect(response.headers['cross-origin-resource-policy']).toBe('same-origin');
     expect(response.headers['x-permitted-cross-domain-policies']).toBe('none');
