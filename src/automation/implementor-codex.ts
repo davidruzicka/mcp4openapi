@@ -1,3 +1,4 @@
+import { join } from 'node:path';
 import type {
   ImplementorCommandResult,
   ImplementorTaskPayload,
@@ -43,7 +44,7 @@ export function parseImplementorTaskPayload(
 }
 
 export function buildCodexInvocationPlan(input: BuildCodexInvocationPlanInput): CodexInvocationPlan {
-  const command = input.env.IMPLEMENTOR_CODEX_BIN?.trim() || 'codex';
+  const command = input.env.IMPLEMENTOR_CODEX_BIN?.trim() || join(input.defaultCwd, 'node_modules/.bin/codex');
   const mode = normalizeCodexMode(input.env.IMPLEMENTOR_CODEX_MODE);
   const cwd = input.env.IMPLEMENTOR_CODEX_CWD?.trim() || input.defaultCwd;
   const model = input.env.IMPLEMENTOR_CODEX_MODEL?.trim();
