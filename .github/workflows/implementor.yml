@@ -56,8 +56,7 @@ jobs:
           CODEX_AUTH_JSON: ${{ secrets.CODEX_AUTH_JSON }}
         run: |
           if [ -z "$OPENAI_API_KEY" ] && [ -n "$CODEX_AUTH_JSON" ]; then
-            mkdir -p ~/.codex
-            (umask 077 && printf '%s\n' "$CODEX_AUTH_JSON" > ~/.codex/auth.json)
+            (umask 077 && mkdir -p ~/.codex && printf '%s\n' "$CODEX_AUTH_JSON" > ~/.codex/auth.json)
             echo "CODEX_AUTH_HASH=$(sha256sum ~/.codex/auth.json | cut -d' ' -f1)" >> "$GITHUB_ENV"
             echo "Using Codex OAuth auth."
           else

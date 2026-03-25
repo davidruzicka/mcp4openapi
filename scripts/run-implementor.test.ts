@@ -1,13 +1,16 @@
 import { describe, expect, it, vi } from 'vitest';
 import { runImplementorCommandWithFallback } from './implementor-command.js';
-import type { ImplementorCommandResult } from '../src/automation/implementor-runner.js';
+import type { ImplementorCommandResult, RunImplementorCommandOptions } from './implementor-command.js';
 
-type RunnerFn = (command: string, payload: unknown) => Promise<ImplementorCommandResult>;
+type RunnerFn = (command: string, payload: unknown, options?: RunImplementorCommandOptions) => Promise<ImplementorCommandResult>;
 
 function makeDispatcher(primary: RunnerFn, fallback: RunnerFn): RunnerFn {
-  return (command, payload) =>
-    command === 'primary-cmd' ? primary(command, payload) : fallback(command, payload);
+  return (command, payload, options) =>
+    command === 'primary-cmd' ? primary(command, payload, options) : fallback(command, payload, options);
 }
+
+const TEST_PAYLOAD = { issueNumber: 42 };
+const TEST_OPTIONS: RunImplementorCommandOptions = { timeoutMs: 5000 };
 
 describe('runImplementorCommandWithFallback', () => {
   it('calls fallback when primary command throws at process level', async () => {
@@ -20,11 +23,13 @@ describe('runImplementorCommandWithFallback', () => {
     const fallbackRunner = vi.fn<RunnerFn>().mockResolvedValue(fallbackResult);
 
     const result = await runImplementorCommandWithFallback(
-      'primary-cmd', 'fallback-cmd', {}, makeDispatcher(primaryRunner, fallbackRunner),
+      'primary-cmd', 'fallback-cmd', TEST_PAYLOAD, TEST_OPTIONS, makeDispatcher(primaryRunner, fallbackRunner),
     );
 
     expect(primaryRunner).toHaveBeenCalledOnce();
+    expect(primaryRunner).toHaveBeenCalledWith('primary-cmd', TEST_PAYLOAD, TEST_OPTIONS);
     expect(fallbackRunner).toHaveBeenCalledOnce();
+    expect(fallbackRunner).toHaveBeenCalledWith('fallback-cmd', TEST_PAYLOAD, TEST_OPTIONS);
     expect(result).toEqual(fallbackResult);
   });
 
@@ -34,10 +39,11 @@ describe('runImplementorCommandWithFallback', () => {
     const fallbackSpy = vi.fn<RunnerFn>();
 
     const result = await runImplementorCommandWithFallback(
-      'primary-cmd', 'fallback-cmd', {}, makeDispatcher(primaryRunner, fallbackSpy),
+      'primary-cmd', 'fallback-cmd', TEST_PAYLOAD, TEST_OPTIONS, makeDispatcher(primaryRunner, fallbackSpy),
     );
 
     expect(primaryRunner).toHaveBeenCalledOnce();
+    expect(primaryRunner).toHaveBeenCalledWith('primary-cmd', TEST_PAYLOAD, TEST_OPTIONS);
     expect(fallbackSpy).not.toHaveBeenCalled();
     expect(result).toEqual(failedResult);
   });
@@ -48,10 +54,11 @@ describe('runImplementorCommandWithFallback', () => {
     const fallbackSpy = vi.fn<RunnerFn>();
 
     const result = await runImplementorCommandWithFallback(
-      'primary-cmd', 'fallback-cmd', {}, makeDispatcher(primaryRunner, fallbackSpy),
+      'primary-cmd', 'fallback-cmd', TEST_PAYLOAD, TEST_OPTIONS, makeDispatcher(primaryRunner, fallbackSpy),
     );
 
     expect(primaryRunner).toHaveBeenCalledOnce();
+    expect(primaryRunner).toHaveBeenCalledWith('primary-cmd', TEST_PAYLOAD, TEST_OPTIONS);
     expect(fallbackSpy).not.toHaveBeenCalled();
     expect(result).toEqual(blockedResult);
   });
@@ -60,10 +67,11 @@ describe('runImplementorCommandWithFallback', () => {
     const primaryRunner = vi.fn<RunnerFn>().mockRejectedValue(new Error('rate limited'));
 
     await expect(
-      runImplementorCommandWithFallback('primary-cmd', undefined, {}, primaryRunner),
+      runImplementorCommandWithFallback('primary-cmd', undefined, TEST_PAYLOAD, TEST_OPTIONS, primaryRunner),
     ).rejects.toThrow('rate limited');
 
     expect(primaryRunner).toHaveBeenCalledOnce();
+    expect(primaryRunner).toHaveBeenCalledWith('primary-cmd', TEST_PAYLOAD, TEST_OPTIONS);
   });
 
   it('reports fallback error when fallback also fails at process level', async () => {
@@ -72,7 +80,7 @@ describe('runImplementorCommandWithFallback', () => {
 
     await expect(
       runImplementorCommandWithFallback(
-        'primary-cmd', 'fallback-cmd', {}, makeDispatcher(primaryRunner, fallbackRunner),
+        'primary-cmd', 'fallback-cmd', TEST_PAYLOAD, TEST_OPTIONS, makeDispatcher(primaryRunner, fallbackRunner),
       ),
     ).rejects.toThrow('Primary command failed: primary crashed; fallback also failed: fallback also crashed');
 

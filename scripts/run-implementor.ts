@@ -126,7 +126,7 @@ for (const assignment of assignments.slice(0, runtimeConfig.maxCandidates)) {
     await removeIssueLabels(runtimeConfig, assignment.issueNumber, assignment.labelsToRemove);
     await createIssueComment(runtimeConfig, assignment.issueNumber, assignment.leaseCommentBody);
 
-    return await runImplementorCommandWithFallback(implementorCommand, implementorFallbackCommand, taskPayload).catch((error: unknown) => ({
+    return await runImplementorCommandWithFallback(implementorCommand, implementorFallbackCommand, taskPayload, { timeoutMs: leaseTtlMinutes * 60 * 1000 }).catch((error: unknown) => ({
       outcome: 'failed',
       summary: error instanceof Error ? `Implementor command failed: ${error.message}` : 'Implementor command failed.',
     }));
