@@ -55,12 +55,14 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           CODEX_AUTH_JSON: ${{ secrets.CODEX_AUTH_JSON }}
         run: |
-          if [ -z "$OPENAI_API_KEY" ] && [ -n "$CODEX_AUTH_JSON" ]; then
+          if [ -n "$OPENAI_API_KEY" ]; then
+            echo "Using OPENAI_API_KEY."
+          elif [ -n "$CODEX_AUTH_JSON" ]; then
             (umask 077 && mkdir -p ~/.codex && printf '%s\n' "$CODEX_AUTH_JSON" > ~/.codex/auth.json)
             echo "CODEX_AUTH_HASH=$(sha256sum ~/.codex/auth.json | cut -d' ' -f1)" >> "$GITHUB_ENV"
             echo "Using Codex OAuth auth."
           else
-            echo "Using OPENAI_API_KEY."
+            echo "Warning: neither OPENAI_API_KEY nor CODEX_AUTH_JSON is configured. Codex auth will not be available; ensure IMPLEMENTOR_COMMAND does not require it."
           fi
 
       - name: Run implementor handoff

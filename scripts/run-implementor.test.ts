@@ -13,6 +13,25 @@ const TEST_PAYLOAD = { issueNumber: 42 };
 const TEST_OPTIONS: RunImplementorCommandOptions = { timeoutMs: 5000 };
 
 describe('runImplementorCommandWithFallback', () => {
+  it('returns primary result and does not call fallback on success', async () => {
+    const successResult: ImplementorCommandResult = {
+      outcome: 'pr-created',
+      summary: 'PR created successfully',
+      pullRequest: { number: 7, url: 'https://github.com/owner/repo/pull/7' },
+    };
+    const primaryRunner = vi.fn<RunnerFn>().mockResolvedValue(successResult);
+    const fallbackSpy = vi.fn<RunnerFn>();
+
+    const result = await runImplementorCommandWithFallback(
+      'primary-cmd', 'fallback-cmd', TEST_PAYLOAD, TEST_OPTIONS, makeDispatcher(primaryRunner, fallbackSpy),
+    );
+
+    expect(primaryRunner).toHaveBeenCalledOnce();
+    expect(primaryRunner).toHaveBeenCalledWith('primary-cmd', TEST_PAYLOAD, TEST_OPTIONS);
+    expect(fallbackSpy).not.toHaveBeenCalled();
+    expect(result).toEqual(successResult);
+  });
+
   it('calls fallback when primary command throws at process level', async () => {
     const fallbackResult: ImplementorCommandResult = {
       outcome: 'pr-created',

@@ -215,7 +215,7 @@ describe('implementor-codex', () => {
         defaultCwd: '/workspace/github.com/davidruzicka/mcp4openapi/.worktrees/agent-automation',
       });
 
-      expect(plan.command).toBe('./node_modules/.bin/codex');
+      expect(plan.command).toBe('/workspace/github.com/davidruzicka/mcp4openapi/.worktrees/agent-automation/node_modules/.bin/codex');
       expect(plan.args.slice(0, 2)).toEqual(['exec', '--full-auto']);
       expect(plan.cwd).toBe('/workspace/github.com/davidruzicka/mcp4openapi/.worktrees/agent-automation');
       expect(plan.prompt).toContain('Issue #163');

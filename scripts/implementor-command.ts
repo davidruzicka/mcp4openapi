@@ -28,7 +28,18 @@ export async function runImplementorCommand(
     killSignal: 'SIGTERM',
   });
 
-  return parseImplementorCommandResult(stdout.trim());
+  try {
+    return parseImplementorCommandResult(stdout.trim());
+  } catch (parseError: unknown) {
+    // Parse errors indicate a buggy backend response, not a process-level failure.
+    // Return outcome: failed instead of throwing to avoid silently switching to the fallback backend.
+    return {
+      outcome: 'failed',
+      summary: parseError instanceof Error
+        ? `Implementor output parse error: ${parseError.message}`
+        : 'Implementor output parse error.',
+    };
+  }
 }
 
 export async function runImplementorCommandWithFallback(

@@ -7,9 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
-- Implementor pipeline now attempts IMPLEMENTOR_FALLBACK_COMMAND on process-level backend failures; @openai/codex moved to devDependencies for cached installs.
-
 ### Added
 - Added repository-scoped autonomous-agent docs plus tested proposal-intake/issuer/planner/implementor/reviewer/merger automation helpers, bounded duplicate-candidate ranking/runtime scripts, a default Codex-backed implementor wrapper with machine-readable handoff output, implementor command disclosure reconciliation, and GitHub Actions workflows for the full multi-agent issue-to-PR pipeline.
 - Added signed planner-artifact trust primitives plus env-driven verification config so planner review-follow-up handoff can be verified on implementor execution paths while lenient planner dedupe still reads legacy artifacts.
@@ -20,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added env-backed `enterprise_authorization` field resolution for issuer, audience, mode, selected access-policy settings, and claim mappings so deployments can override enterprise auth without editing profiles.
 
 ### Changed
+- Implementor pipeline now attempts IMPLEMENTOR_FALLBACK_COMMAND on process-level backend failures; @openai/codex moved to devDependencies for cached installs; Codex OAuth auth supported via CODEX_AUTH_JSON with automatic token refresh persistence.
 - Refined the autonomous-agent workflow to the final issue/PR label taxonomy, added shared state-machine helpers for issuer/planner/implementor/reviewer transitions, made reviewer/merger automation tolerate legacy review labels during on-touch migration and reconciliation, taught issuer/planner stronger semantic duplicate triage with a pluggable bounded backend contract, and preserved exact open-title duplicate detection as the minimum fallback guard.
 - Bumped transitive security-sensitive dependencies via overrides (`@hono/node-server` to `1.19.10`, `hono` to `4.12.4`) and aligned Semgrep SBOM negative test inputs/expectations with current `deploymentSlug`/`deployment_id` validation behavior.
 - Updated `express-rate-limit` to `^8.3.1` to remediate the open GitHub Security / Dependabot alert for IPv4-mapped IPv6 rate-limit keying.
