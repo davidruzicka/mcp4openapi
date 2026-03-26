@@ -105,7 +105,7 @@ When `enterprise_authorization.mode` is `required`, HTTP initialization accepts 
 - `transport.type` must be `"http-streamable"`
 - `transport.url` must be an absolute `http` or `https` URL without inline credentials
 - `auth.type` may be `bearer`, `query`, or `custom-header`
-- `auth.value_from_env` is required for every upstream auth type; inline secrets are not supported
+- `auth.value_from_env` names the env variable that holds the credential (token, header value, or query param value); inline secrets are not supported for any auth type
 - `upstream_mcp_from_env` may point to a JSON object or array and takes precedence over static `upstream_mcp`
 - `stdio` upstream definitions are intentionally rejected in this iteration so the later feature-gated implementation can add process lifecycle hardening separately
 

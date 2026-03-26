@@ -3,6 +3,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
+import { ValidationError } from '../core/errors.js';
 import { ProfileLoader } from './profile-loader.js';
 import path from 'path';
 
@@ -2980,6 +2981,108 @@ describe('ProfileLoader', () => {
         } else {
           process.env.MCP4_UPSTREAM_MCP_JSON = previous;
         }
+      }
+    });
+
+    it('rejects env upstream JSON with missing name as ValidationError', async () => {
+      const loader = new ProfileLoader();
+      const fs = await import('fs/promises');
+      const tmpPath = `/tmp/upstream-mcp-missing-name-${Date.now()}-${Math.random()}.json`;
+      const envVarName = `MCP4_TEST_UPSTREAM_${Date.now()}`;
+      const previous = process.env[envVarName];
+      process.env[envVarName] = JSON.stringify({
+        transport: { type: 'http-streamable', url: 'https://remote.example/mcp' },
+      });
+
+      await fs.writeFile(
+        tmpPath,
+        JSON.stringify({
+          profile_name: 'upstream-missing-name',
+          tools: [{ name: 'tool_a', description: 'Tool A', operations: { list: 'listItems' }, parameters: {} }],
+          upstream_mcp_from_env: envVarName,
+        }),
+        'utf-8',
+      );
+
+      try {
+        await expect(loader.load(tmpPath)).rejects.toThrow(ValidationError);
+      } finally {
+        if (previous === undefined) {
+          delete process.env[envVarName];
+        } else {
+          process.env[envVarName] = previous;
+        }
+        await fs.unlink(tmpPath).catch(() => undefined);
+      }
+    });
+
+    it('rejects env upstream JSON with missing auth.value_from_env as ValidationError', async () => {
+      const loader = new ProfileLoader();
+      const fs = await import('fs/promises');
+      const tmpPath = `/tmp/upstream-mcp-missing-auth-env-${Date.now()}-${Math.random()}.json`;
+      const envVarName = `MCP4_TEST_UPSTREAM_${Date.now()}`;
+      const previous = process.env[envVarName];
+      // auth.value_from_env is missing - would previously crash with TypeError
+      process.env[envVarName] = JSON.stringify({
+        name: 'remote-mcp',
+        transport: { type: 'http-streamable', url: 'https://remote.example/mcp' },
+        auth: { type: 'bearer' },
+      });
+
+      await fs.writeFile(
+        tmpPath,
+        JSON.stringify({
+          profile_name: 'upstream-missing-auth-env',
+          tools: [{ name: 'tool_a', description: 'Tool A', operations: { list: 'listItems' }, parameters: {} }],
+          upstream_mcp_from_env: envVarName,
+        }),
+        'utf-8',
+      );
+
+      try {
+        await expect(loader.load(tmpPath)).rejects.toThrow(ValidationError);
+      } finally {
+        if (previous === undefined) {
+          delete process.env[envVarName];
+        } else {
+          process.env[envVarName] = previous;
+        }
+        await fs.unlink(tmpPath).catch(() => undefined);
+      }
+    });
+
+    it('rejects env upstream JSON with non-array tools as ValidationError instead of silently dropping policy', async () => {
+      const loader = new ProfileLoader();
+      const fs = await import('fs/promises');
+      const tmpPath = `/tmp/upstream-mcp-tools-string-${Date.now()}-${Math.random()}.json`;
+      const envVarName = `MCP4_TEST_UPSTREAM_${Date.now()}`;
+      const previous = process.env[envVarName];
+      // tools as string would previously pass validateToolPolicy but crash or silently lose policy
+      process.env[envVarName] = JSON.stringify({
+        name: 'remote-mcp',
+        transport: { type: 'http-streamable', url: 'https://remote.example/mcp' },
+        tools: 'admin_*',
+      });
+
+      await fs.writeFile(
+        tmpPath,
+        JSON.stringify({
+          profile_name: 'upstream-tools-string',
+          tools: [{ name: 'tool_a', description: 'Tool A', operations: { list: 'listItems' }, parameters: {} }],
+          upstream_mcp_from_env: envVarName,
+        }),
+        'utf-8',
+      );
+
+      try {
+        await expect(loader.load(tmpPath)).rejects.toThrow(ValidationError);
+      } finally {
+        if (previous === undefined) {
+          delete process.env[envVarName];
+        } else {
+          process.env[envVarName] = previous;
+        }
+        await fs.unlink(tmpPath).catch(() => undefined);
       }
     });
   });

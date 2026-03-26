@@ -1,4 +1,5 @@
 import { ValidationError } from '../core/errors.js';
+import { upstreamMcpServerConfigSchema } from '../generated-schemas.js';
 import type {
   Profile,
   UpstreamMcpAuthConfig,
@@ -34,18 +35,32 @@ function parseUpstreamMcpJson(rawValue: string, path: string): UpstreamMcpServer
     throw new ValidationError(`${path} must contain valid JSON`, { path });
   }
 
+  let items: unknown[];
   if (Array.isArray(parsed)) {
     if (parsed.length === 0) {
       throw new ValidationError(`${path} must contain at least one upstream MCP provider`, { path });
     }
-    return parsed as UpstreamMcpServerConfig[];
+    items = parsed;
+  } else if (parsed !== null && typeof parsed === 'object') {
+    items = [parsed];
+  } else {
+    throw new ValidationError(`${path} must contain a JSON object or array of objects`, { path });
   }
 
-  if (parsed && typeof parsed === 'object') {
-    return [parsed as UpstreamMcpServerConfig];
-  }
-
-  throw new ValidationError(`${path} must contain a JSON object or array of objects`, { path });
+  return items.map((item, index) => {
+    const result = upstreamMcpServerConfigSchema.safeParse(item);
+    if (!result.success) {
+      const issue = result.error.issues[0];
+      const fieldPath = issue?.path.length
+        ? `${path}[${index}].${issue.path.join('.')}`
+        : `${path}[${index}]`;
+      throw new ValidationError(
+        `${fieldPath}: ${issue?.message ?? 'invalid upstream MCP provider'}`,
+        { path: fieldPath },
+      );
+    }
+    return result.data;
+  });
 }
 
 function resolveUpstreamMcpFromEnv(profile: Profile, env: EnvSource): UpstreamMcpServerConfig[] | undefined {
