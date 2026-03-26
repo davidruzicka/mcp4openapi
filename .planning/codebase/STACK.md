@@ -15,8 +15,7 @@
 | `express` | 5.2.1 | HTTP transport layer |
 | `zod` | 3.x | Runtime schema validation (auto-generated schemas) |
 | `jose` | 6.2.1 | JWT signing/verification, JWK handling (OAuth) |
-| `yaml` | 2.x | OpenAPI spec parsing (YAML + JSON) |
-| `swagger-parser` | 10.x | OpenAPI spec validation and $ref resolution |
+| `yaml` | 2.x | OpenAPI spec parsing (YAML + JSON) with custom $ref resolution |
 
 ## Testing
 

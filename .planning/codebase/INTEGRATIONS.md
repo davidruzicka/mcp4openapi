@@ -6,7 +6,7 @@
 |--------|-----|--------|
 | Local file | fs.readFile | `MCP4_OPENAPI_SPEC_PATH` or `openapi_spec_path` in profile |
 | Remote HTTP | fetch | Same env/profile field, accepts HTTPS URL |
-| YAML or JSON | auto-detected | `yaml` + `swagger-parser` for $ref resolution |
+| YAML or JSON | auto-detected | `yaml` + custom parser for $ref resolution |
 
 ## Downstream APIs (via Profiles)
 
@@ -50,7 +50,7 @@ mcp4openapi is a generic proxy - it connects to whatever API the loaded profile 
 - Stdio transport: `StdioServerTransport`
 - HTTP transport: custom implementation (MCP spec 2025-03-26)
   - POST/GET/DELETE endpoints, SSE, session management
-  - `src/transport/http-transport.ts` (Hono-based)
+  - `src/transport/http-transport.ts` (Express-based)
 
 ## Observability
 
@@ -64,7 +64,7 @@ mcp4openapi is a generic proxy - it connects to whatever API the loaded profile 
 ## GitHub Automation (`src/automation/`)
 
 The implementor pipeline integrates with:
-- **GitHub API** (via `@octokit/rest`) - issue read, PR create/update, labels
+- **GitHub API** (via direct `fetch` + GraphQL/REST helpers) - issue read, PR create/update, labels
 - **OpenAI Codex** (`@openai/codex`) - autonomous code generation agent
 - **GH_PAT_FOR_SECRETS** - GitHub PAT for writing workflow secrets
 - `CODEX_AUTH_JSON` or `OPENAI_API_KEY` - Codex authentication

@@ -149,9 +149,10 @@ describe('proposal-intake-runner', () => {
   });
 
   it('does not create a duplicate when a previously comment-existing proposal matches a now-closed issue', () => {
-    // Regression: proposal was resolved as comment-existing (matched open issue A).
-    // Issue A later closed. Without the fix, re-evaluation would produce create-and-link,
-    // bypassing the idempotency check because the action changed.
+    // Regression: proposal was resolved as comment-existing (matched open issue #173).
+    // Issue #173 later closed. Without the fix, re-evaluation with closed + regression
+    // relation produces create-and-link (would create a duplicate issue), bypassing the
+    // idempotency check because the action changed from comment-existing to create-and-link.
     const priorResolutionComment = buildProposalResolutionComment({
       repository: 'davidruzicka/mcp4openapi',
       issueNumber: 222,
@@ -173,7 +174,8 @@ describe('proposal-intake-runner', () => {
             kind: 'issue',
             state: 'closed',
             workflowState: 'unknown',
-            relation: 'near-duplicate',
+            // closed + regression → create-and-link (would create a duplicate issue)
+            relation: 'regression',
             title: 'Add bounded cache invalidation metrics for response cache',
             url: 'https://github.com/davidruzicka/mcp4openapi/issues/173',
           },

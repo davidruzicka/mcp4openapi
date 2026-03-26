@@ -59,7 +59,7 @@
 
 ### Transport & Auth
 - `src/transport/interceptors.ts` - Auth/rate-limit/retry/fetch interceptor chain
-- `src/transport/http-transport.ts` - HTTP transport (Hono-based, MCP 2025-03-26)
+- `src/transport/http-transport.ts` - HTTP transport (Express-based, MCP 2025-03-26)
 - `src/transport/http-client-factory.ts` - Per-session HTTP client management
 - `src/auth/oauth-provider.ts` - OAuth 2.0 + PKCE flow
 - `src/auth/enterprise-auth-provider.ts` - Enterprise JWKS/managed auth
