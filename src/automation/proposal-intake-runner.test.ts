@@ -122,7 +122,7 @@ describe('proposal-intake-runner', () => {
     expect(assignments).toEqual([]);
   });
 
-  it('deduplicates equivalent proposal-intake comments by proposal key and resolution', () => {
+  it('deduplicates proposal-intake comments by proposal key regardless of resolution action', () => {
     const commentBody = buildProposalResolutionComment({
       repository: 'davidruzicka/mcp4openapi',
       issueNumber: 155,
@@ -142,6 +142,48 @@ describe('proposal-intake-runner', () => {
       agentId: 'proposal-intake',
       runId: 'run-3',
       now: '2026-03-15T10:00:00Z',
+      maxActions: 1,
+    });
+
+    expect(assignments).toHaveLength(0);
+  });
+
+  it('does not create a duplicate when a previously comment-existing proposal matches a now-closed issue', () => {
+    // Regression: proposal was resolved as comment-existing (matched open issue A).
+    // Issue A later closed. Without the fix, re-evaluation would produce create-and-link,
+    // bypassing the idempotency check because the action changed.
+    const priorResolutionComment = buildProposalResolutionComment({
+      repository: 'davidruzicka/mcp4openapi',
+      issueNumber: 222,
+      agentId: 'proposal-intake',
+      runId: 'run-1',
+      timestamp: '2026-03-24T10:00:00Z',
+      action: 'comment-existing',
+      proposalKey: 'add-bounded-cache-invalidation-metrics-for-response-cache',
+      reason: 'open pre-implementation issue already tracks the same work',
+      targetIssueNumber: 173,
+    });
+
+    const assignments = collectProposalAssignments({
+      proposals: [buildProposal({
+        issueNumber: 222,
+        matches: [
+          {
+            number: 173,
+            kind: 'issue',
+            state: 'closed',
+            workflowState: 'unknown',
+            relation: 'near-duplicate',
+            title: 'Add bounded cache invalidation metrics for response cache',
+            url: 'https://github.com/davidruzicka/mcp4openapi/issues/173',
+          },
+        ],
+      })],
+      commentsByIssueNumber: { 222: [buildComment(priorResolutionComment)] },
+      repository: 'davidruzicka/mcp4openapi',
+      agentId: 'proposal-intake',
+      runId: 'run-2',
+      now: '2026-03-25T10:00:00Z',
       maxActions: 1,
     });
 

@@ -230,15 +230,17 @@ function buildProposalCreatedIssueBody(input: {
   ].join('\n');
 }
 
+// Checks only proposal-key, not action, so a proposal already resolved by any
+// action (e.g. comment-existing) is not re-processed if the matched issue is
+// later closed and the resolution would change to create-and-link.
 function hasEquivalentProposalComment(
   comments: readonly ProposalIssueComment[],
-  action: ProposalResolutionAction,
+  _action: ProposalResolutionAction,
   proposalKey: string,
 ): boolean {
   return comments.some((comment) => {
     const metadata = parseAgentMetadata(comment.body);
     return metadata?.['agent-stage'] === 'proposal-intake'
-      && metadata?.resolution === action
       && metadata?.['proposal-key'] === proposalKey;
   });
 }
