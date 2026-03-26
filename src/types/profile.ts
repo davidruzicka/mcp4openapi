@@ -18,10 +18,62 @@ export interface Profile {
   interceptors?: InterceptorConfig;
   parameter_aliases?: Record<string, string[]>; // e.g., {"id": ["resource_id", "project_id"]}
   enterprise_authorization?: EnterpriseAuthorizationConfig;
+  upstream_mcp?: UpstreamMcpServerConfig[];
+  upstream_mcp_from_env?: string;
   
   // OAuth resource metadata (optional overrides)
   resource_name?: string;           // OAuth resource name (overrides OpenAPI info.title)
   resource_documentation?: string;  // OAuth resource documentation URL (overrides OpenAPI externalDocs.url)
+}
+
+/**
+ * Upstream MCP provider configuration
+ *
+ * Why: MCP proxy support needs a transport-agnostic provider boundary so remote
+ * MCP discovery/invocation can evolve without overloading the OpenAPI profile model.
+ * The first iteration supports only remote HTTP streamable MCP upstreams.
+ */
+export interface UpstreamMcpServerConfig {
+  /** Stable provider name used for namespacing, logs, and policy. */
+  name: string;
+
+  /** Transport-specific connection settings. */
+  transport: UpstreamMcpTransportConfig;
+
+  /** Optional auth from mcp4openapi to the upstream MCP server. */
+  auth?: UpstreamMcpAuthConfig;
+
+  /** Optional prefix applied when exposing upstream tools downstream. */
+  tool_prefix?: string;
+
+  /** Optional allow/deny policy for upstream tool exposure. */
+  tools?: UpstreamMcpToolPolicy;
+
+  /** Optional request timeout for upstream MCP calls. */
+  timeout_ms?: number;
+}
+
+export type UpstreamMcpTransportConfig = UpstreamMcpHttpStreamableTransportConfig;
+
+export interface UpstreamMcpHttpStreamableTransportConfig {
+  type: 'http-streamable';
+  url: string;
+}
+
+/**
+ * Upstream auth is intentionally narrower than inbound profile auth.
+ * Secrets must be referenced via environment variables, never stored inline.
+ */
+export interface UpstreamMcpAuthConfig {
+  type: 'bearer' | 'query' | 'custom-header';
+  value_from_env: string;
+  header_name?: string;
+  query_param?: string;
+}
+
+export interface UpstreamMcpToolPolicy {
+  allow?: string[];
+  deny?: string[];
 }
 
 export interface ResourceDefinition {

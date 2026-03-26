@@ -45,6 +45,7 @@ Start with an existing profile in [`profiles/`](./profiles), then adapt only wha
 - **Composite actions**: chain API calls into reusable workflows
 - **Prompt definitions**: add reusable MCP prompts directly in profiles
 - **MCP Apps resources**: expose static or fetch-backed `resources/list`, `resources/templates/list`, `resources/read`, and template-variable completion from profiles
+- **Upstream MCP provider config**: profiles can declare remote HTTP streamable MCP upstreams (schema and validation first; transport execution follows in later roadmap issues)
 - **OAuth 2.0**: browser-based auth flow for HTTP transport (see [docs/OAUTH.md](./docs/OAUTH.md))
 - **Enterprise managed authorization**: inbound JWT bearer grant for HTTP transport with profile-driven issuer/JWKS policy and opaque MCP access tokens (see [docs/OAUTH.md](./docs/OAUTH.md))
 - **Multi-auth**: combine multiple auth methods with priority fallback (see [docs/MULTI-AUTH.md](./docs/MULTI-AUTH.md))
@@ -57,6 +58,45 @@ Start with an existing profile in [`profiles/`](./profiles), then adapt only wha
 - For remote deployments, bind to an explicit interface or place the server behind a reverse proxy that enforces strict Host checks and origin allowlists.
 
 Check example profiles in [profiles/](https://github.com/davidruzicka/mcp4openapi/tree/main/profiles).
+
+## Upstream MCP roadmap config
+
+Profiles can now declare `upstream_mcp[]` entries for remote MCP providers, or resolve them from an env-backed JSON blob via `upstream_mcp_from_env`.
+
+- Supported transport in the first iteration: `transport.type: "http-streamable"`
+- Supported upstream auth subset: `bearer`, `query`, `custom-header`
+- Secrets must be referenced with `value_from_env`; inline credentials are rejected
+- If `upstream_mcp_from_env` is set and resolves to non-empty JSON, it overrides the static `upstream_mcp[]` list
+- `stdio` upstream providers are intentionally deferred to a later, explicitly gated iteration
+
+Example:
+
+```json
+{
+  "upstream_mcp_from_env": "MCP4_UPSTREAM_MCP_JSON",
+  "upstream_mcp": [
+    {
+      "name": "remote-mcp",
+      "transport": {
+        "type": "http-streamable",
+        "url": "https://remote-mcp.example/mcp"
+      },
+      "auth": {
+        "type": "bearer",
+        "value_from_env": "REMOTE_MCP_TOKEN"
+      },
+      "tool_prefix": "remote",
+      "tools": {
+        "allow": ["github_*"],
+        "deny": ["admin_*"]
+      },
+      "timeout_ms": 30000
+    }
+  ]
+}
+```
+
+Use the env-backed path when deployment-specific upstreams differ between environments and you do not want to edit the checked-in profile file.
 
 ## MCP Apps Profiles
 

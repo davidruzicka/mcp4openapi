@@ -83,6 +83,15 @@
     "enterprise_authorization": {
       "$ref": "#/definitions/EnterpriseAuthorizationConfig"
     },
+    "upstream_mcp": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/UpstreamMcpServerConfig"
+      }
+    },
+    "upstream_mcp_from_env": {
+      "type": "string"
+    },
     "resource_name": {
       "type": "string",
       "description": "OAuth 2.0 Protected Resource name (overrides OpenAPI info.title). Defaults to 'MCP Server' if not specified.",
@@ -1399,14 +1408,14 @@
           ]
         },
         "overrides": {
-          "$ref": "#/definitions/Record%3Cstring%2Cstructure-1535101595-18530-18566-1535101595-18515-18567-1535101595-18501-18568-1535101595-18430-18570-1535101595-0-18710%3E"
+          "$ref": "#/definitions/Record%3Cstring%2Cstructure-1535101595-20095-20131-1535101595-20080-20132-1535101595-20066-20133-1535101595-19995-20135-1535101595-0-20275%3E"
         }
       },
       "required": [
         "max_requests_per_minute"
       ]
     },
-    "Record<string,structure-1535101595-18530-18566-1535101595-18515-18567-1535101595-18501-18568-1535101595-18430-18570-1535101595-0-18710>": {
+    "Record<string,structure-1535101595-20095-20131-1535101595-20080-20132-1535101595-20066-20133-1535101595-19995-20135-1535101595-0-20275>": {
       "type": "object",
       "additionalProperties": {
         "type": "object",
@@ -1728,6 +1737,117 @@
               "type": "string"
             }
           }
+        ]
+      }
+    },
+    "UpstreamMcpServerConfig": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Stable provider name used for namespacing, logs, and policy."
+        },
+        "transport": {
+          "$ref": "#/definitions/UpstreamMcpTransportConfig",
+          "description": "Transport-specific connection settings."
+        },
+        "auth": {
+          "$ref": "#/definitions/UpstreamMcpAuthConfig",
+          "description": "Optional auth from mcp4openapi to the upstream MCP server."
+        },
+        "tool_prefix": {
+          "type": "string",
+          "description": "Optional prefix applied when exposing upstream tools downstream."
+        },
+        "tools": {
+          "$ref": "#/definitions/UpstreamMcpToolPolicy",
+          "description": "Optional allow/deny policy for upstream tool exposure."
+        },
+        "timeout_ms": {
+          "type": "number",
+          "description": "Optional request timeout for upstream MCP calls."
+        }
+      },
+      "required": [
+        "name",
+        "transport"
+      ],
+      "description": "Upstream MCP provider configuration\n\nWhy: MCP proxy support needs a transport-agnostic provider boundary so remote MCP discovery/invocation can evolve without overloading the OpenAPI profile model. The first iteration supports only remote HTTP streamable MCP upstreams."
+    },
+    "UpstreamMcpTransportConfig": {
+      "$ref": "#/definitions/UpstreamMcpHttpStreamableTransportConfig"
+    },
+    "UpstreamMcpHttpStreamableTransportConfig": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "http-streamable"
+        },
+        "url": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "url"
+      ]
+    },
+    "UpstreamMcpAuthConfig": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "bearer",
+            "query",
+            "custom-header"
+          ]
+        },
+        "value_from_env": {
+          "type": "string"
+        },
+        "header_name": {
+          "type": "string"
+        },
+        "query_param": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "value_from_env"
+      ],
+      "description": "Upstream auth is intentionally narrower than inbound profile auth. Secrets must be referenced via environment variables, never stored inline."
+    },
+    "UpstreamMcpToolPolicy": {
+      "type": "object",
+      "properties": {
+        "allow": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "deny": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "Record<string,structure-1535101595-18530-18566-1535101595-18515-18567-1535101595-18501-18568-1535101595-18430-18570-1535101595-0-18710>": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "max_requests_per_minute": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "max_requests_per_minute"
         ]
       }
     },

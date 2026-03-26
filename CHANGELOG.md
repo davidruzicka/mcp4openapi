@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - Hardened agent artifact rollout by wiring shipped workflows to pass `MCP4_AGENT_ARTIFACT_*`, rejecting strict trust mode without a signing key, restricting implementor artifact selection to planner-stage comments ordered by creation time, and keeping planner dedupe compatible with legacy unsigned comments while ignoring unverified signed envelopes on unsigned runs.
+- Validated env-backed `upstream_mcp_from_env` entries through the Zod schema so malformed JSON (missing fields, wrong types, non-string tools policy) produces typed `ValidationError` instead of opaque `TypeError` at startup; added regression tests for the crash and silent-data-loss paths.
 - Preserved proposal-intake duplicate decisions and created-issue ownership across issuer runs so reject-as-duplicate proposals persist metadata, proposal-created issues stay in the planner lane, issuer keeps proposal-intake entry labels idempotent, and proposal-intake no longer recursively re-processes issues it previously created.
 - Fixed OSV scan gating for current dev dependencies by overriding transitive `flatted` to `3.4.2`, eliminating the reporter failure caused by known vulnerabilities in `3.3.3`.
 - Clarified proposal-intake candidate bounds by wiring `max_candidates` separately from the single-action side-effect budget, keeping legacy env fallbacks, and documenting the one-action-per-run guardrail.
