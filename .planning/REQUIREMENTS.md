@@ -10,7 +10,7 @@ Milestone: v1 - Proxy foundation + security gate
 
 ### Proxy Core
 
-- [ ] **PROXY-01**: A downstream client session connecting to a profile backed by an upstream MCP server
+- [x] **PROXY-01**: A downstream client session connecting to a profile backed by an upstream MCP server
   creates a per-session upstream HTTP connection on first tool use (lazy, not at session init)
 - [x] **PROXY-02**: Client-supplied upstream credentials (Bearer token, custom header, OAuth token)
   provided at session initialization are stored in the session context and forwarded to the upstream
@@ -56,7 +56,7 @@ Milestone: v1 - Proxy foundation + security gate
 
 - [x] **REL-01**: Application-level heartbeat pings are sent on upstream SSE connections at a
   configurable interval (default 30s) to detect silent disconnects before a tool call fails
-- [ ] **REL-02**: A session reaper runs on a configurable interval (default 60s) and closes
+- [x] **REL-02**: A session reaper runs on a configurable interval (default 60s) and closes
   upstream connections for sessions that have been inactive beyond the session timeout; no upstream
   connections are leaked when downstream clients disconnect without explicit close
 - [x] **REL-03**: Upstream failure cases (connection timeout, auth failure, server unavailable,
@@ -112,7 +112,7 @@ Milestone: v1 - Proxy foundation + security gate
 
 | REQ-ID | Phase | Status |
 |--------|-------|--------|
-| PROXY-01 | Phase 1 | Pending |
+| PROXY-01 | Phase 1 | Complete |
 | PROXY-02 | Phase 1 | Complete |
 | PROXY-03 | Phase 2 | Pending |
 | PROXY-04 | Phase 2 | Pending |
@@ -125,6 +125,6 @@ Milestone: v1 - Proxy foundation + security gate
 | OBS-02 | Phase 4 | Pending |
 | OBS-03 | Phase 4 | Pending |
 | REL-01 | Phase 1 | Complete |
-| REL-02 | Phase 1 | Pending |
+| REL-02 | Phase 1 | Complete |
 | REL-03 | Phase 1 | Complete |
 | REL-04 | Phase 2 | Pending |
