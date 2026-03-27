@@ -370,6 +370,35 @@ If you need a different callback URL:
 
 Allowed redirect hosts accept exact hostnames, wildcard subdomains (`*.example.com`), IPv4 addresses, IPv4 CIDR ranges (e.g., `10.0.0.0/8`), and IPv6 addresses/CIDR ranges (e.g., `2001:db8::/32`) so you can allow whole internal networks without listing individual machines.
 
+### Unregistered OAuth clients for multi-pod deployments
+
+When multiple pods or clusters share the same OAuth authorization surface, the authorize request can land on an instance that does not have the requesting `client_id` registered locally yet. You can allow that authorize request to continue, but only for explicitly approved redirect URI patterns.
+
+```json
+{
+  "oauth_config": {
+    "allow_unregistered_clients": true,
+    "allowed_unregistered_redirect_uris": [
+      "http://localhost",
+      "http://127.0.0.1",
+      "cursor://",
+      "cursor://anysphere.cursor-mcp"
+    ]
+  }
+}
+```
+
+Rules:
+
+- Disabled by default.
+- Only `authorize` requests are relaxed; the client is materialized locally only after its `redirect_uri` matches an approved rule.
+- Loopback approvals such as `http://localhost` and `http://127.0.0.1` allow dynamic callback ports.
+- Scheme-only custom URI approvals such as `cursor://` allow any host for that scheme.
+- Exact custom URI approvals such as `cursor://anysphere.cursor-mcp` restrict callbacks to that host only.
+- Invalid, dangerous, or confusing redirects (for example `javascript:`, `localhost.evil.test`, or `localhost@evil.test`) are rejected.
+
+This is intended as phase 1 compatibility for shared or failover deployments. It does not yet share pending OAuth state, authorization codes, or tokens across pods - use a shared backend such as Redis for that in a later phase.
+
 ### Additional OAuth Endpoints
 
 Optional endpoints for advanced features:

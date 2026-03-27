@@ -1782,7 +1782,7 @@ export class HttpTransport {
       }
 
       await profileState.oauthProvider.ensureEndpointsInitialized();
-      const client = await this.resolveOAuthClientForRequest(profileState, client_id);
+      const client = await this.resolveOAuthClientForRequest(profileState, client_id, redirect_uri);
       if (!client) {
         this.logger.warn('OAuth authorize rejected invalid client_id', {
           profileId: profileState.profileId,
@@ -1956,7 +1956,8 @@ export class HttpTransport {
 
   private async resolveOAuthClientForRequest(
     profileState: ProfileRuntimeState,
-    clientId: string
+    clientId: string,
+    redirectUri?: string,
   ): Promise<OAuthClientInformationFull | undefined> {
     if (!profileState.oauthProvider) {
       return undefined;
@@ -1971,6 +1972,14 @@ export class HttpTransport {
     // even when MCP_PROXY_CLIENT_ID is overridden in environment.
     if (clientId === 'mcp-proxy-client' && PROXY_CREDENTIALS.CLIENT_ID !== 'mcp-proxy-client') {
       return profileState.oauthProvider.clientsStore.getClient(PROXY_CREDENTIALS.CLIENT_ID);
+    }
+
+    if (
+      typeof redirectUri === 'string'
+      && redirectUri.length > 0
+      && typeof profileState.oauthProvider.getOrProvisionUnregisteredClient === 'function'
+    ) {
+      return profileState.oauthProvider.getOrProvisionUnregisteredClient(clientId, redirectUri);
     }
 
     return undefined;

@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Expanded the GitHub security profile with Secret Scanning CRUD actions, stricter action-gated parameter validation (`allowed_for`/`forbidden_for`), and an upgraded `retrieve_security_overview` composite across code scanning + Dependabot + secret scanning.
 - Added enterprise managed authorization for HTTP transport with profile-driven `enterprise_authorization`, JWT bearer grant support on `/oauth/token`, bounded JWKS/replay/token stores, metadata extensions, and security-focused validation/redaction coverage.
 - Added env-backed `enterprise_authorization` field resolution for issuer, audience, mode, selected access-policy settings, and claim mappings so deployments can override enterprise auth without editing profiles.
+- Added phase 1 support for approved unregistered OAuth clients so authorize requests can materialize local clients when `redirect_uri` matches an explicit allowlist, improving multi-pod OAuth compatibility without weakening redirect validation.
 
 ### Changed
 - Implementor pipeline now attempts IMPLEMENTOR_FALLBACK_COMMAND on process-level backend failures; @openai/codex moved to devDependencies for cached installs; Codex OAuth auth supported via CODEX_AUTH_JSON with automatic token refresh persistence.

@@ -33,6 +33,7 @@ import { escapeHtmlSafe } from '../validation/validation-utils.js';
 import { SSRFValidator } from '../security/ssrf-validator.js';
 import { parseOAuthMetadataEndpoints } from './oauth-metadata.js';
 import { InMemoryClientsStore } from './client-store/in-memory-clients-store.js';
+import { isApprovedUnregisteredClientRedirectUri } from './unregistered-client-redirect-policy.js';
 export { InMemoryClientsStore };
 export type { InMemoryClientsStoreOptions } from './client-store/types.js';
 
@@ -191,6 +192,43 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
 
   get scopes(): string[] {
     return this.config.scopes || [];
+  }
+
+  async getOrProvisionUnregisteredClient(
+    clientId: string,
+    redirectUri: string,
+  ): Promise<OAuthClientInformationFull | undefined> {
+    if (!this.config.allow_unregistered_clients) {
+      return undefined;
+    }
+
+    if (!isApprovedUnregisteredClientRedirectUri(
+      redirectUri,
+      this.config.allowed_unregistered_redirect_uris,
+      this.logger,
+    )) {
+      return undefined;
+    }
+
+    const existingClient = await this._clientsStore.getClient(clientId);
+    if (existingClient) {
+      return existingClient;
+    }
+
+    const client: OAuthClientInformationFull = {
+      client_id: clientId,
+      redirect_uris: [redirectUri],
+      grant_types: ['authorization_code', 'refresh_token'],
+      response_types: ['code'],
+      scope: this.config.scopes ? this.config.scopes.join(' ') : '',
+    };
+
+    await this._clientsStore.registerClient(client);
+    this.logger.info('Materialized approved unregistered OAuth client', {
+      clientId,
+      redirectUri,
+    });
+    return client;
   }
 
   /**

@@ -1230,6 +1230,17 @@
             "type": "string"
           },
           "description": "Optional: Allowed redirect hosts for OAuth callbacks\nUsed to prevent open redirect vulnerabilities\n\nSupports wildcards: \"*.example.com\" matches any subdomain\nDefaults to [\"localhost\", \"127.0.0.1\"] for security\n\nCan reference MCP4_ALLOWED_ORIGINS environment variable"
+        },
+        "allow_unregistered_clients": {
+          "type": "boolean",
+          "description": "Optional: Allow authorize requests for OAuth client IDs that are not registered on the current instance, but only when redirect_uri matches an approved rule. Disabled by default."
+        },
+        "allowed_unregistered_redirect_uris": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Optional: Approved redirect URI rules for unregistered OAuth clients. Examples:\n- \"http://localhost\"\n- \"http://127.0.0.1\"\n- \"cursor://\"\n- \"cursor://anysphere.cursor-mcp\""
         }
       },
       "description": "OAuth 2.0 configuration. Must provide EITHER 'issuer' (endpoints auto-derived) OR both 'authorization_endpoint' and 'token_endpoint' (explicit)."
@@ -1408,14 +1419,14 @@
           ]
         },
         "overrides": {
-          "$ref": "#/definitions/Record%3Cstring%2Cstructure-1535101595-20095-20131-1535101595-20080-20132-1535101595-20066-20133-1535101595-19995-20135-1535101595-0-20275%3E"
+          "$ref": "#/definitions/Record%3Cstring%2Cstructure-1535101595-20604-20640-1535101595-20589-20641-1535101595-20575-20642-1535101595-20504-20644-1535101595-0-20784%3E"
         }
       },
       "required": [
         "max_requests_per_minute"
       ]
     },
-    "Record<string,structure-1535101595-20095-20131-1535101595-20080-20132-1535101595-20066-20133-1535101595-19995-20135-1535101595-0-20275>": {
+    "Record<string,structure-1535101595-20604-20640-1535101595-20589-20641-1535101595-20575-20642-1535101595-20504-20644-1535101595-0-20784>": {
       "type": "object",
       "additionalProperties": {
         "type": "object",
@@ -1835,6 +1846,20 @@
             "type": "string"
           }
         }
+      }
+    },
+    "Record<string,structure-1535101595-20095-20131-1535101595-20080-20132-1535101595-20066-20133-1535101595-19995-20135-1535101595-0-20275>": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "max_requests_per_minute": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "max_requests_per_minute"
+        ]
       }
     },
     "Record<string,structure-1535101595-18530-18566-1535101595-18515-18567-1535101595-18501-18568-1535101595-18430-18570-1535101595-0-18710>": {
