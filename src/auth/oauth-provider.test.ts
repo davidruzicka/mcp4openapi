@@ -333,6 +333,91 @@ describe('ExternalOAuthProvider', () => {
     });
   });
 
+  describe('getOrProvisionUnregisteredClient', () => {
+    it('should return undefined when unregistered clients are disabled', async () => {
+      provider = new ExternalOAuthProvider(config, mockLogger);
+
+      await expect(
+        provider.getOrProvisionUnregisteredClient('cursor-client-id', 'cursor://anysphere.cursor-mcp/oauth/callback')
+      ).resolves.toBeUndefined();
+    });
+
+    it('should return undefined when redirect uri is not approved', async () => {
+      provider = new ExternalOAuthProvider({
+        ...config,
+        allow_unregistered_clients: true,
+        allowed_unregistered_redirect_uris: ['cursor://'],
+      }, mockLogger);
+
+      await expect(
+        provider.getOrProvisionUnregisteredClient('cursor-client-id', 'https://evil.example.com/callback')
+      ).resolves.toBeUndefined();
+    });
+
+    it('should return an existing materialized client without overwriting it', async () => {
+      provider = new ExternalOAuthProvider({
+        ...config,
+        allow_unregistered_clients: true,
+        allowed_unregistered_redirect_uris: ['cursor://'],
+      }, mockLogger);
+
+      const existingClient: OAuthClientInformationFull = {
+        client_id: 'cursor-client-id',
+        redirect_uris: ['cursor://existing-client/oauth/callback'],
+        grant_types: ['authorization_code'],
+        response_types: ['code'],
+        scope: 'existing-scope',
+      };
+      await provider.clientsStore.registerClient(existingClient);
+
+      await expect(
+        provider.getOrProvisionUnregisteredClient('cursor-client-id', 'cursor://anysphere.cursor-mcp/oauth/callback')
+      ).resolves.toBe(existingClient);
+    });
+
+    it('should materialize approved unregistered clients with an empty scope when config scopes are absent', async () => {
+      provider = new ExternalOAuthProvider({
+        authorization_endpoint: 'https://oauth.example.com/authorize',
+        token_endpoint: 'https://oauth.example.com/token',
+        client_id: 'test-client-id',
+        client_secret: 'test-client-secret',
+        redirect_uri: 'http://localhost:3003/oauth/callback',
+        allow_unregistered_clients: true,
+        allowed_unregistered_redirect_uris: ['cursor://'],
+      }, mockLogger);
+
+      const client = await provider.getOrProvisionUnregisteredClient(
+        'cursor-client-id',
+        'cursor://anysphere.cursor-mcp/oauth/callback',
+      );
+
+      expect(client).toMatchObject({
+        client_id: 'cursor-client-id',
+        redirect_uris: ['cursor://anysphere.cursor-mcp/oauth/callback'],
+        scope: '',
+      });
+    });
+  });
+
+  describe('isAllowedClientRedirectUri', () => {
+    it('should reject unregistered fallback redirects that are not on the materialized client', () => {
+      provider = new ExternalOAuthProvider({
+        ...config,
+        allow_unregistered_clients: true,
+        allowed_unregistered_redirect_uris: ['cursor://'],
+      }, mockLogger);
+
+      const client: OAuthClientInformationFull = {
+        client_id: 'cursor-client-id',
+        redirect_uris: ['cursor://existing-client/oauth/callback'],
+        grant_types: ['authorization_code'],
+        response_types: ['code'],
+      };
+
+      expect((provider as any).isAllowedClientRedirectUri(client, 'cursor://other-client/oauth/callback')).toBe(false);
+    });
+  });
+
   describe('authorize', () => {
     let mockRes: Partial<Response>;
 
