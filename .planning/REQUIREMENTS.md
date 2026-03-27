@@ -1,8 +1,8 @@
-# Requirements — Enterprise MCP Gateway
+# Requirements - Enterprise MCP Gateway
 
 Generated: 2026-03-27
 Project: mcp4openapi enterprise MCP proxy/gate
-Milestone: v1 — Proxy foundation + security gate
+Milestone: v1 - Proxy foundation + security gate
 
 ---
 
@@ -112,19 +112,19 @@ Milestone: v1 — Proxy foundation + security gate
 
 | REQ-ID | Phase | Status |
 |--------|-------|--------|
-| PROXY-01 | TBD | Pending |
-| PROXY-02 | TBD | Pending |
-| PROXY-03 | TBD | Pending |
-| PROXY-04 | TBD | Pending |
-| AUTH-01 | TBD | Pending |
-| AUTH-02 | TBD | Pending |
-| AUTH-03 | TBD | Pending |
-| SEC-01 | TBD | Pending |
-| SEC-02 | TBD | Pending |
-| OBS-01 | TBD | Pending |
-| OBS-02 | TBD | Pending |
-| OBS-03 | TBD | Pending |
-| REL-01 | TBD | Pending |
-| REL-02 | TBD | Pending |
-| REL-03 | TBD | Pending |
-| REL-04 | TBD | Pending |
+| PROXY-01 | Phase 1 | Pending |
+| PROXY-02 | Phase 1 | Pending |
+| PROXY-03 | Phase 2 | Pending |
+| PROXY-04 | Phase 2 | Pending |
+| AUTH-01 | Phase 3 | Pending |
+| AUTH-02 | Phase 3 | Pending |
+| AUTH-03 | Phase 3 | Pending |
+| SEC-01 | Phase 2 | Pending |
+| SEC-02 | Phase 1 | Pending |
+| OBS-01 | Phase 4 | Pending |
+| OBS-02 | Phase 4 | Pending |
+| OBS-03 | Phase 4 | Pending |
+| REL-01 | Phase 1 | Pending |
+| REL-02 | Phase 1 | Pending |
+| REL-03 | Phase 1 | Pending |
+| REL-04 | Phase 2 | Pending |
