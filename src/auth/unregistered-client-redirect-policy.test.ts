@@ -161,6 +161,15 @@ describe('isApprovedUnregisteredClientRedirectUri', () => {
     expect(isApprovedUnregisteredClientRedirectUri('javascript:alert(1)', ['javascript://'], logger)).toBe(false);
     expect(isApprovedUnregisteredClientRedirectUri('cursor://client/callback#fragment', ['cursor://'], logger)).toBe(false);
     expect(isApprovedUnregisteredClientRedirectUri('http:/callback', ['http://localhost'], logger)).toBe(false);
+    expect(isApprovedUnregisteredClientRedirectUri('https://user:secret@service.example.com/callback', ['https://service.example.com'], logger)).toBe(false);
+  });
+
+  it('allows non-hierarchical custom scheme redirects but rejects empty-host http-style approvals', () => {
+    const logger = createLogger();
+
+    expect(isApprovedUnregisteredClientRedirectUri('custom:/oauth/callback', ['custom://'], logger)).toBe(true);
+    expect(isApprovedUnregisteredClientRedirectUri('custom:path', ['custom://'], logger)).toBe(true);
+    expect(isApprovedUnregisteredClientRedirectUri('custom:/oauth/callback', ['http://'], logger)).toBe(false);
   });
 
   it('ignores invalid approval rules and logs a warning', () => {

@@ -72,15 +72,7 @@ function parseSafeRedirectUri(value: string): URL | null {
     return null;
   }
 
-  if (parsed.hostname.length === 0 && !isNonHierarchicalCustomScheme(parsed)) {
-    return null;
-  }
-
   return parsed;
-}
-
-function isNonHierarchicalCustomScheme(url: URL): boolean {
-  return !url.protocol.startsWith('http') && url.hostname.length === 0;
 }
 
 function matchesPort(candidate: URL, approved: URL): boolean {
