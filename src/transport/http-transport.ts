@@ -27,6 +27,7 @@ import type {
 } from '../types/http-transport.js';
 import { isInitializeRequest } from '../validation/jsonrpc-validator.js';
 import { MetricsCollector } from '../core/metrics.js';
+import type { UpstreamConnectionManager } from '../upstream/upstream-connection-manager.js';
 import type { MetricsContextLabels } from '../core/metrics.js';
 import { ExternalOAuthProvider } from '../auth/oauth-provider.js';
 import { EnterpriseAuthProvider } from '../auth/enterprise-auth-provider.js';
@@ -132,6 +133,7 @@ export class HttpTransport {
   private readonly enterpriseReplayStore: EnterpriseReplayStore;
   private readonly enterpriseGrantAttemptsByProfile = new Map<string, number[]>();
   private readonly enterpriseGrantConcurrencyByProfile = new Map<string, number>();
+  private upstreamConnectionManager: UpstreamConnectionManager | null = null;
 
   constructor(config: HttpTransportConfig, logger: Logger) {
     // Freeze config to prevent runtime mutation of security-critical settings (allowedOrigins, rate limits, etc.)
@@ -3479,6 +3481,23 @@ export class HttpTransport {
    */
   public onSessionDestroyed(listener: (profileId: string, sessionId: string) => void): void {
     this.sessionDestroyedListeners.push(listener);
+  }
+
+  /**
+   * Register UpstreamConnectionManager for session-scoped upstream cleanup.
+   *
+   * Wires closeAll into the session destruction lifecycle so upstream connections
+   * are closed when sessions expire (reaper), are explicitly terminated (DELETE /mcp),
+   * or during shutdown. Errors in closeAll are caught and logged to never break
+   * session destruction.
+   */
+  public setUpstreamConnectionManager(manager: UpstreamConnectionManager): void {
+    this.upstreamConnectionManager = manager;
+    this.onSessionDestroyed((_profileId: string, sessionId: string) => {
+      this.upstreamConnectionManager?.closeAll(sessionId).catch((error) => {
+        this.logger.error('Failed to close upstream connections on session destroy', error as Error);
+      });
+    });
   }
 
   /**
