@@ -12,7 +12,7 @@ Milestone: v1 - Proxy foundation + security gate
 
 - [ ] **PROXY-01**: A downstream client session connecting to a profile backed by an upstream MCP server
   creates a per-session upstream HTTP connection on first tool use (lazy, not at session init)
-- [ ] **PROXY-02**: Client-supplied upstream credentials (Bearer token, custom header, OAuth token)
+- [x] **PROXY-02**: Client-supplied upstream credentials (Bearer token, custom header, OAuth token)
   provided at session initialization are stored in the session context and forwarded to the upstream
   MCP server for all requests in that session; the gateway stores no credentials server-side
 - [ ] **PROXY-03**: A tools/list request from a downstream client returns the tool list fetched from
@@ -37,7 +37,7 @@ Milestone: v1 - Proxy foundation + security gate
 - [ ] **SEC-01**: Tool definitions received from an upstream MCP server are sanitized before being
   forwarded to downstream clients; tool names and descriptions are validated against a safe-string
   allowlist to prevent tool poisoning and prompt injection via upstream tool metadata
-- [ ] **SEC-02**: Upstream credential values are redacted from all logs, error responses, and
+- [x] **SEC-02**: Upstream credential values are redacted from all logs, error responses, and
   diagnostic output; existing token-redaction infrastructure is extended to cover the new
   upstream-credential session fields
 
@@ -54,12 +54,12 @@ Milestone: v1 - Proxy foundation + security gate
 
 ### Reliability
 
-- [ ] **REL-01**: Application-level heartbeat pings are sent on upstream SSE connections at a
+- [x] **REL-01**: Application-level heartbeat pings are sent on upstream SSE connections at a
   configurable interval (default 30s) to detect silent disconnects before a tool call fails
 - [ ] **REL-02**: A session reaper runs on a configurable interval (default 60s) and closes
   upstream connections for sessions that have been inactive beyond the session timeout; no upstream
   connections are leaked when downstream clients disconnect without explicit close
-- [ ] **REL-03**: Upstream failure cases (connection timeout, auth failure, server unavailable,
+- [x] **REL-03**: Upstream failure cases (connection timeout, auth failure, server unavailable,
   malformed response) produce typed error responses to the downstream client with correlation IDs;
   no raw stack traces or upstream credential fragments in error payloads
 - [ ] **REL-04**: Upstream notifications/tools/list_changed events received on a live upstream
@@ -113,18 +113,18 @@ Milestone: v1 - Proxy foundation + security gate
 | REQ-ID | Phase | Status |
 |--------|-------|--------|
 | PROXY-01 | Phase 1 | Pending |
-| PROXY-02 | Phase 1 | Pending |
+| PROXY-02 | Phase 1 | Complete |
 | PROXY-03 | Phase 2 | Pending |
 | PROXY-04 | Phase 2 | Pending |
 | AUTH-01 | Phase 3 | Pending |
 | AUTH-02 | Phase 3 | Pending |
 | AUTH-03 | Phase 3 | Pending |
 | SEC-01 | Phase 2 | Pending |
-| SEC-02 | Phase 1 | Pending |
+| SEC-02 | Phase 1 | Complete |
 | OBS-01 | Phase 4 | Pending |
 | OBS-02 | Phase 4 | Pending |
 | OBS-03 | Phase 4 | Pending |
-| REL-01 | Phase 1 | Pending |
+| REL-01 | Phase 1 | Complete |
 | REL-02 | Phase 1 | Pending |
-| REL-03 | Phase 1 | Pending |
+| REL-03 | Phase 1 | Complete |
 | REL-04 | Phase 2 | Pending |
