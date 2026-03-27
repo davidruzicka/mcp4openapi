@@ -202,11 +202,7 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
       return undefined;
     }
 
-    if (!isApprovedUnregisteredClientRedirectUri(
-      redirectUri,
-      this.config.allowed_unregistered_redirect_uris,
-      this.logger,
-    )) {
+    if (!this.isApprovedUnregisteredClientRedirectUri(redirectUri)) {
       return undefined;
     }
 
@@ -368,6 +364,33 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
       // Invalid URL
       return false;
     }
+  }
+
+  private isApprovedUnregisteredClientRedirectUri(redirectUri: string): boolean {
+    return isApprovedUnregisteredClientRedirectUri(
+      redirectUri,
+      this.config.allowed_unregistered_redirect_uris,
+      this.logger,
+    );
+  }
+
+  private isAllowedClientRedirectUri(
+    client: OAuthClientInformationFull,
+    redirectUri: string,
+  ): boolean {
+    if (this.isAllowedRedirectHost(redirectUri)) {
+      return true;
+    }
+
+    if (!this.config.allow_unregistered_clients) {
+      return false;
+    }
+
+    if (!client.redirect_uris?.includes(redirectUri)) {
+      return false;
+    }
+
+    return this.isApprovedUnregisteredClientRedirectUri(redirectUri);
   }
 
   /**
@@ -595,11 +618,12 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
       throw new Error('Unregistered redirect_uri');
     }
 
-    // Validate redirect host against allowlist to prevent open redirect
-    if (!this.isAllowedRedirectHost(params.redirectUri)) {
+    // Validate redirect against configured policies to prevent open redirect
+    if (!this.isAllowedClientRedirectUri(client, params.redirectUri)) {
       this.logger.error('Redirect URI not allowed', undefined, {
         providedUri: params.redirectUri,
         allowedHosts: this.config.allowed_redirect_hosts || ['localhost', '127.0.0.1'],
+        allowedUnregisteredRedirectUris: this.config.allowed_unregistered_redirect_uris,
       });
       throw new Error('Redirect URI not allowed');
     }
@@ -720,11 +744,12 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
         });
         this._clientsStore.markAuthCodeOpened(client.client_id);
 
-        // Re-validate redirect URI host + registration before redirect (defense-in-depth)
-        if (!this.isAllowedRedirectHost(storedState.clientRedirectUri)) {
+        // Re-validate redirect URI policy + registration before redirect (defense-in-depth)
+        if (!this.isAllowedClientRedirectUri(client, storedState.clientRedirectUri)) {
             this.logger.error('Redirect URI not allowed (callback)', undefined, {
                 storedUri: storedState.clientRedirectUri,
                 allowedHosts: this.config.allowed_redirect_hosts || ['localhost', '127.0.0.1'],
+                allowedUnregisteredRedirectUris: this.config.allowed_unregistered_redirect_uris,
             });
             res.status(400).send('Redirect URI not allowed');
             return;

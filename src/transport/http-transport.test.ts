@@ -2441,6 +2441,50 @@ describeIfListen('HttpTransport', () => {
 	        redirect_uris: ['http://localhost:43123/oauth/callback'],
 	      });
 	    });
+
+	    it('should allow approved custom scheme redirects for unregistered OAuth clients', async () => {
+	      await oauthTransport.stop();
+
+	      oauthTransport = new HttpTransport({
+	        host: '127.0.0.1',
+	        port: 0,
+	        sessionTimeoutMs: 1800000,
+	        heartbeatEnabled: false,
+	        heartbeatIntervalMs: 30000,
+	        metricsEnabled: false,
+	        metricsPath: '/metrics',
+	        oauthConfig: {
+	          issuer: 'https://auth.example.com',
+	          client_id: 'test-client',
+	          client_secret: 'test-secret',
+	          redirect_uri: 'http://127.0.0.1:3003/oauth/callback',
+	          scopes: ['read', 'write'],
+	          allow_unregistered_clients: true,
+	          allowed_unregistered_redirect_uris: ['cursor://'],
+	        },
+	      }, logger);
+	      oauthApp = (oauthTransport as any).app;
+
+	      const response = await request(oauthApp)
+	        .get('/oauth/authorize')
+	        .query({
+	          response_type: 'code',
+	          client_id: 'cursor-client-id',
+	          redirect_uri: 'cursor://anysphere.cursor-mcp/oauth/callback',
+	          code_challenge: 'challenge',
+	          code_challenge_method: 'S256',
+	        });
+
+	      expect(response.status).toBe(302);
+	      expect(response.headers.location).toContain('https://auth.example.com/oauth/authorize');
+
+	      const provider = (oauthTransport as any).profileStates.get('default').oauthProvider;
+	      const materializedClient = await provider.clientsStore.getClient('cursor-client-id');
+	      expect(materializedClient).toMatchObject({
+	        client_id: 'cursor-client-id',
+	        redirect_uris: ['cursor://anysphere.cursor-mcp/oauth/callback'],
+	      });
+	    });
 	  });
 
   describe('OAuth Well-Known Endpoint', () => {
