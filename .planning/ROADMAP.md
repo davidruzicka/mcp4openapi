@@ -29,12 +29,12 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. Upstream connection failures (timeout, auth rejection, unavailable, malformed response) return typed MCP error responses to the downstream client with correlation IDs and no leaked credentials or stack traces
   4. Inactive sessions are reaped on a configurable interval and all associated upstream connections are explicitly closed; no upstream connections leak when downstream clients disconnect without clean close
   5. Application-level heartbeat pings detect silent upstream SSE disconnects before a tool call fails
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 01-01: TBD
-- [ ] 01-02: TBD
-- [ ] 01-03: TBD
+- [ ] 01-01-PLAN.md - Types, errors, credential store, and redaction extension (PROXY-02, REL-03, SEC-02)
+- [ ] 01-02-PLAN.md - UpstreamConnectionManager with lazy getOrConnect and closeAll (PROXY-01, REL-02)
+- [ ] 01-03-PLAN.md - UpstreamHeartbeatManager with configurable pings (REL-01, REL-02, REL-03)
 
 ### Phase 2: Tool Discovery and Call Proxy
 **Goal**: Downstream clients can discover and invoke tools served by upstream MCP servers through the gateway
@@ -86,7 +86,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Upstream Session Foundation | 0/3 | Not started | - |
+| 1. Upstream Session Foundation | 0/3 | Planned | - |
 | 2. Tool Discovery and Call Proxy | 0/2 | Not started | - |
 | 3. Client Authentication Gate | 0/2 | Not started | - |
 | 4. Observability | 0/2 | Not started | - |
