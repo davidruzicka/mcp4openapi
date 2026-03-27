@@ -4,6 +4,11 @@ const SECRET_FIELD_NAMES = new Set([
   'access_token',
   'refresh_token',
   'authorization',
+  'upstream_token',
+  'upstream_credentials',
+  'x-api-key',
+  'x_api_key',
+  'api_key',
 ]);
 
 function looksLikeJwt(value: string): boolean {
@@ -50,5 +55,7 @@ export function redactAuthPayload<T>(value: T): T {
 }
 
 export function sanitizeAuthErrorMessage(message: string): string {
-  return message.replace(/[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g, '[REDACTED_JWT]');
+  return message
+    .replace(/[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g, '[REDACTED_JWT]')
+    .replace(/Bearer\s+\S{20,}/gi, 'Bearer [REDACTED]');
 }
