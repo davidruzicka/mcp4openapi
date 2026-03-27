@@ -33,7 +33,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 Plans:
 - [x] 01-01-PLAN.md - Types, errors, credential store, and redaction extension (PROXY-02, REL-03, SEC-02)
-- [ ] 01-02-PLAN.md - UpstreamConnectionManager with lazy getOrConnect and closeAll (PROXY-01, REL-02)
+- [x] 01-02-PLAN.md - UpstreamConnectionManager with lazy getOrConnect and closeAll (PROXY-01, REL-02)
 - [x] 01-03-PLAN.md - UpstreamHeartbeatManager with configurable pings (REL-01, REL-02, REL-03)
 
 ### Phase 2: Tool Discovery and Call Proxy
