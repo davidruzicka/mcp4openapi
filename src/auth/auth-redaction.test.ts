@@ -43,4 +43,40 @@ describe('auth-redaction', () => {
   it('sanitizes jwt-looking substrings from error messages', () => {
     expect(sanitizeAuthErrorMessage('bad token abc.def.ghi-jklmnopqrstuvwxyz')).toContain('[REDACTED_JWT]');
   });
+
+  describe('upstream credential field redaction', () => {
+    it('redacts upstream_token field', () => {
+      const redacted = redactAuthPayload({ upstream_token: 'my-secret-long-value-1234' });
+      expect(redacted.upstream_token).toBe('[REDACTED_SECRET]');
+    });
+
+    it('redacts x_api_key field', () => {
+      const redacted = redactAuthPayload({ x_api_key: 'my-secret-long-value-5678' });
+      expect(redacted.x_api_key).toBe('[REDACTED_SECRET]');
+    });
+
+    it('redacts api_key field', () => {
+      const redacted = redactAuthPayload({ api_key: 'long-api-key-value-here-yes' });
+      expect(redacted.api_key).toBe('[REDACTED_SECRET]');
+    });
+
+    it('redacts upstream_credentials field', () => {
+      const redacted = redactAuthPayload({ upstream_credentials: 'long-credential-string-here' });
+      expect(redacted.upstream_credentials).toBe('[REDACTED_SECRET]');
+    });
+  });
+
+  describe('sanitizeAuthErrorMessage with Bearer patterns', () => {
+    it('redacts long Bearer token values', () => {
+      const msg = 'failed with Bearer eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9xxxx';
+      const sanitized = sanitizeAuthErrorMessage(msg);
+      expect(sanitized).not.toContain('eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9xxxx');
+    });
+
+    it('preserves short non-secret text after Bearer', () => {
+      const msg = 'Bearer token required';
+      const sanitized = sanitizeAuthErrorMessage(msg);
+      expect(sanitized).toBe('Bearer token required');
+    });
+  });
 });
