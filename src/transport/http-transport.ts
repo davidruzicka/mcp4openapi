@@ -232,6 +232,8 @@ export class HttpTransport {
       res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
       res.setHeader('X-Permitted-Cross-Domain-Policies', 'none');
       res.setHeader('X-DNS-Prefetch-Control', 'off');
+      res.setHeader('Strict-Transport-Security', 'max-age=63072000; includeSubDomains');
+      res.setHeader('X-XSS-Protection', '0');
 
       next();
     });
