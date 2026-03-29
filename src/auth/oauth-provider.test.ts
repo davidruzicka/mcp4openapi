@@ -354,6 +354,53 @@ describe('ExternalOAuthProvider', () => {
       ).resolves.toBeUndefined();
     });
 
+    it('should return an existing registered client without mutating it', async () => {
+      provider = new ExternalOAuthProvider({
+        ...config,
+        allow_unregistered_clients: true,
+        allowed_unregistered_redirect_uris: ['cursor://'],
+      }, mockLogger);
+
+      const registeredClient: OAuthClientInformationFull = {
+        client_id: 'cursor-client-id',
+        redirect_uris: ['https://registered.example.com/callback'],
+        grant_types: ['authorization_code'],
+        response_types: ['code'],
+      };
+      provider.clientsStore.registerClient(registeredClient);
+
+      const client = await provider.getOrProvisionUnregisteredClient(
+        'cursor-client-id',
+        'cursor://anysphere.cursor-mcp/oauth/callback',
+      );
+
+      expect(client).toEqual(registeredClient);
+      expect(provider.hasMaterializedUnregisteredClient('cursor-client-id')).toBe(false);
+    });
+
+    it('should return an existing materialized client when the redirect uri is already present', async () => {
+      provider = new ExternalOAuthProvider({
+        ...config,
+        allow_unregistered_clients: true,
+        allowed_unregistered_redirect_uris: ['cursor://'],
+      }, mockLogger);
+
+      const firstClient = await provider.getOrProvisionUnregisteredClient(
+        'cursor-client-id',
+        'cursor://existing-client/oauth/callback',
+      );
+
+      const client = await provider.getOrProvisionUnregisteredClient(
+        'cursor-client-id',
+        'cursor://existing-client/oauth/callback',
+      );
+
+      expect(client).toEqual(firstClient);
+      expect(await provider.clientsStore.getClient('cursor-client-id')).toMatchObject({
+        redirect_uris: ['cursor://existing-client/oauth/callback'],
+      });
+    });
+
     it('should append a newly approved redirect uri to an existing materialized unregistered client', async () => {
       provider = new ExternalOAuthProvider({
         ...config,
@@ -385,6 +432,39 @@ describe('ExternalOAuthProvider', () => {
           'cursor://anysphere.cursor-mcp/oauth/callback',
         ],
       });
+    });
+
+    it('should refuse to append an approved redirect uri when the redirect uri count limit would be exceeded', async () => {
+      provider = new ExternalOAuthProvider({
+        ...config,
+        allow_unregistered_clients: true,
+        allowed_unregistered_redirect_uris: ['cursor://'],
+      }, mockLogger);
+
+      const limits = provider.clientsStore.getLimits();
+      const redirectUris = Array.from({ length: limits.maxRedirectUris }, (_, index) => `cursor://client-${index}/oauth/callback`);
+      const materializedClient: OAuthClientInformationFull = {
+        client_id: 'cursor-client-id',
+        redirect_uris: redirectUris,
+        grant_types: ['authorization_code'],
+        response_types: ['code'],
+      };
+      provider.clientsStore.registerClient(materializedClient);
+      (provider as any).materializedUnregisteredClientIds.add('cursor-client-id');
+
+      const client = await provider.getOrProvisionUnregisteredClient(
+        'cursor-client-id',
+        'cursor://overflow/oauth/callback',
+      );
+
+      expect(client).toBeUndefined();
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        'Refused to materialize unregistered OAuth client redirect URI: max redirect URI count exceeded',
+        expect.objectContaining({
+          redirectUriCount: limits.maxRedirectUris + 1,
+          maxRedirectUris: limits.maxRedirectUris,
+        }),
+      );
     });
 
     it('should refuse to materialize an oversized unregistered redirect uri payload', async () => {
@@ -1031,6 +1111,13 @@ describe('ExternalOAuthProvider', () => {
       provider = new ExternalOAuthProvider(configWithAllowed, mockLogger);
       
       expect((provider as any).isAllowedRedirectHost('http://evil.com/callback')).toBe(false);
+    });
+
+    it('should reject wildcard characters in the hostname or path', () => {
+      provider = new ExternalOAuthProvider(config, mockLogger);
+
+      expect((provider as any).isAllowedRedirectHost('http://local*host:3003/callback')).toBe(false);
+      expect((provider as any).isAllowedRedirectHost('http://localhost:3003/*')).toBe(false);
     });
 
     it('should handle invalid URLs gracefully', () => {
