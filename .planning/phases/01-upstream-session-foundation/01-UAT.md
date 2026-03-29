@@ -100,7 +100,17 @@ blocked: 0
   reason: "User reported: Every upstream mcp is isolated in its own profile - client sets his url mcp like https://mcp4openapi.local/profile/github-proxy/mcp and in headers it can set direct Authorization: Bearer. X-Upstream-Authorization is not required because we aren't creating aggregation-like mcp server."
   severity: major
   test: 1
-  artifacts: [src/upstream/upstream-credential-extractor.ts, src/upstream/upstream-credential-store.ts]
+  root_cause: "Planning assumed aggregation-server model (N upstream providers per session, per-provider token keying). Actual architecture is profile-per-upstream: one profile, one upstream, one token. X-Upstream-Authorization header, UpstreamCredentialStore, extractUpstreamCredentials, UpstreamCredentials interface, and SessionData.upstreamCredentials field are all dead code — none are wired into production. Fix: delete extractor and credential store, simplify buildAuthHeaders to accept token: string | undefined, change getOrConnect signature to match."
+  artifacts: [src/upstream/upstream-credential-extractor.ts, src/upstream/upstream-credential-extractor.test.ts, src/upstream/upstream-credential-store.ts, src/upstream/upstream-credential-store.test.ts, src/types/upstream-connection.ts, src/types/http-transport.ts, src/upstream/upstream-connection-manager.ts, src/upstream/upstream-connection-manager.test.ts]
+  missing: []
+
+- truth: "Bearer token redaction in logs should preserve a short suffix (last 4 chars) for diagnostic identity, e.g. Bearer [REDACTED]...xQ5g, rather than full erasure."
+  status: failed
+  reason: "User reported: Full redaction loses diagnostic value. Partial suffix like Bearer [REDACTED]...xQ5g would help identify which token is in use without exposing it."
+  severity: minor
+  test: 3
+  root_cause: "sanitizeAuthErrorMessage in src/auth/auth-redaction.ts line 60 uses .replace(/Bearer\\s+\\S{20,}/gi, 'Bearer [REDACTED]') which discards the token entirely. Fix: capture token in regex group, slice last 4 chars, return Bearer [REDACTED]...{suffix}. Only this Bearer-in-error-message path needs suffix treatment; structured log field redaction (redactString) stays fully redacted."
+  artifacts: [src/auth/auth-redaction.ts, src/auth/auth-redaction.test.ts]
   missing: []
 
 - truth: "No early auth validation at session init - upstream token validity only surfaces on first tool call. Profile should support an optional validation_endpoint to fail fast with a clean UpstreamAuthError during initialize."
@@ -108,13 +118,6 @@ blocked: 0
   reason: "User reported: missing authentication validation info for client when authentication invalid. Suggested validation_endpoint variant in mcp profile."
   severity: minor
   test: 5
+  root_cause: "UpstreamConnectionManager is deliberately lazy (by design), but there is no opt-in early-validation hook. The inbound equivalent (AuthInterceptor.validation_endpoint) already exists and is the reference model. Fix: add optional validation_endpoint/validation_method/validation_timeout_ms to UpstreamMcpServerConfig, add validateCredentials() to UpstreamConnectionManager that does a lightweight fetch probe using existing buildAuthHeaders + SSRFValidator, wire the call into the isInitialization block of http-transport.ts before createSession."
   artifacts: [src/upstream/upstream-connection-manager.ts, src/types/upstream-connection.ts]
-  missing: [upstream.validation_endpoint profile field, early auth check in session init path]
-
-- truth: "Bearer token redaction in logs should preserve a short suffix (last 4 chars) for diagnostic identity, e.g. Bearer [REDACTED]...xQ5g, rather than full erasure."
-  status: failed
-  reason: "User reported: Full redaction loses diagnostic value. Partial suffix like Bearer [REDACTED]...xQ5g would help identify which token is in use without exposing it."
-  severity: minor
-  test: 3
-  artifacts: [src/auth/auth-redaction.ts]
-  missing: []
+  missing: [UpstreamMcpServerConfig.validation_endpoint field in src/types/profile.ts, UpstreamConnectionManager.validateCredentials() method, wiring in http-transport.ts isInitialization block]
