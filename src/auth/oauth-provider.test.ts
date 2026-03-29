@@ -354,25 +354,59 @@ describe('ExternalOAuthProvider', () => {
       ).resolves.toBeUndefined();
     });
 
-    it('should return an existing materialized client without overwriting it', async () => {
+    it('should append a newly approved redirect uri to an existing materialized unregistered client', async () => {
       provider = new ExternalOAuthProvider({
         ...config,
         allow_unregistered_clients: true,
         allowed_unregistered_redirect_uris: ['cursor://'],
       }, mockLogger);
 
-      const existingClient: OAuthClientInformationFull = {
+      await provider.getOrProvisionUnregisteredClient(
+        'cursor-client-id',
+        'cursor://existing-client/oauth/callback',
+      );
+
+      const client = await provider.getOrProvisionUnregisteredClient(
+        'cursor-client-id',
+        'cursor://anysphere.cursor-mcp/oauth/callback',
+      );
+
+      expect(client).toMatchObject({
         client_id: 'cursor-client-id',
-        redirect_uris: ['cursor://existing-client/oauth/callback'],
-        grant_types: ['authorization_code'],
-        response_types: ['code'],
-        scope: 'existing-scope',
-      };
-      await provider.clientsStore.registerClient(existingClient);
+        redirect_uris: [
+          'cursor://existing-client/oauth/callback',
+          'cursor://anysphere.cursor-mcp/oauth/callback',
+        ],
+        scope: 'api read_user',
+      });
+      expect(await provider.clientsStore.getClient('cursor-client-id')).toMatchObject({
+        redirect_uris: [
+          'cursor://existing-client/oauth/callback',
+          'cursor://anysphere.cursor-mcp/oauth/callback',
+        ],
+      });
+    });
+
+    it('should refuse to materialize an oversized unregistered redirect uri payload', async () => {
+      provider = new ExternalOAuthProvider({
+        ...config,
+        allow_unregistered_clients: true,
+        allowed_unregistered_redirect_uris: ['cursor://'],
+      }, mockLogger);
+      const limits = provider.clientsStore.getLimits();
+      const oversizedRedirectUri = `cursor://${'a'.repeat(limits.maxRedirectUriLength + 1)}`;
 
       await expect(
-        provider.getOrProvisionUnregisteredClient('cursor-client-id', 'cursor://anysphere.cursor-mcp/oauth/callback')
-      ).resolves.toBe(existingClient);
+        provider.getOrProvisionUnregisteredClient('cursor-client-id', oversizedRedirectUri),
+      ).resolves.toBeUndefined();
+      await expect(provider.clientsStore.getClient('cursor-client-id')).resolves.toBeUndefined();
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        'Refused to materialize unregistered OAuth client redirect URI: redirect URI too long',
+        expect.objectContaining({
+          redirectUriLength: oversizedRedirectUri.length,
+          maxRedirectUriLength: limits.maxRedirectUriLength,
+        }),
+      );
     });
 
     it('should materialize approved unregistered clients with an empty scope when config scopes are absent', async () => {

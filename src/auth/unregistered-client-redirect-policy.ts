@@ -24,7 +24,15 @@ export function isApprovedUnregisteredClientRedirectUri(
 function matchesApprovedRedirectRule(candidate: URL, rule: string, logger: Logger): boolean {
   const schemeOnly = SCHEME_ONLY_RULE.exec(rule);
   if (schemeOnly) {
-    return candidate.protocol === `${schemeOnly[1].toLowerCase()}:`;
+    const scheme = schemeOnly[1].toLowerCase();
+    if (scheme === 'http' || scheme === 'https') {
+      logger.warn('Ignoring insecure scheme-only unregistered OAuth redirect URI rule', { rule });
+      return false;
+    }
+    // Scheme-only approvals are intentionally limited to custom schemes.
+    // They do not support wildcard host/path matching; runtime redirect URIs
+    // must still be concrete callback URLs without "*" components.
+    return candidate.protocol === `${scheme}:`;
   }
 
   const approved = parseSafeRedirectUri(rule);
@@ -69,6 +77,10 @@ function parseSafeRedirectUri(value: string): URL | null {
   }
 
   if (parsed.hash && parsed.hash.length > 0) {
+    return null;
+  }
+
+  if (parsed.hostname.includes('*') || parsed.pathname.includes('*')) {
     return null;
   }
 

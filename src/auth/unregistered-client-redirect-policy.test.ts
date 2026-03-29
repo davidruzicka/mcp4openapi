@@ -109,7 +109,7 @@ describe('isApprovedUnregisteredClientRedirectUri', () => {
     ).toBe(false);
   });
 
-  it('supports explicit scheme-only approvals', () => {
+  it('supports explicit scheme-only approvals for custom schemes only', () => {
     const logger = createLogger();
 
     expect(
@@ -126,6 +126,17 @@ describe('isApprovedUnregisteredClientRedirectUri', () => {
         logger,
       ),
     ).toBe(false);
+    expect(
+      isApprovedUnregisteredClientRedirectUri(
+        'http://localhost:43123/oauth/callback',
+        ['http://'],
+        logger,
+      ),
+    ).toBe(false);
+    expect(logger.warn).toHaveBeenCalledWith(
+      'Ignoring insecure scheme-only unregistered OAuth redirect URI rule',
+      { rule: 'http://' },
+    );
   });
 
   it('supports approved path prefixes and rejects sibling or protocol-mismatched paths', () => {
@@ -162,6 +173,8 @@ describe('isApprovedUnregisteredClientRedirectUri', () => {
     expect(isApprovedUnregisteredClientRedirectUri('cursor://client/callback#fragment', ['cursor://'], logger)).toBe(false);
     expect(isApprovedUnregisteredClientRedirectUri('http:/callback', ['http://localhost'], logger)).toBe(false);
     expect(isApprovedUnregisteredClientRedirectUri('https://user:secret@service.example.com/callback', ['https://service.example.com'], logger)).toBe(false);
+    expect(isApprovedUnregisteredClientRedirectUri('cursor://*/oauth/callback', ['cursor://'], logger)).toBe(false);
+    expect(isApprovedUnregisteredClientRedirectUri('cursor://client/*', ['cursor://'], logger)).toBe(false);
   });
 
   it('allows non-hierarchical custom scheme redirects but rejects empty-host http-style approvals', () => {

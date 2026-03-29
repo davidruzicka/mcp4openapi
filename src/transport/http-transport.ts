@@ -39,7 +39,15 @@ import { redactAuthPayload } from '../auth/auth-redaction.js';
 import { OAuthGrantRouter } from './oauth-grant-router.js';
 import { SSRFValidator } from '../security/ssrf-validator.js';
 import type { AuthInterceptor, OAuthConfig } from '../types/profile.js';
-import { HTTP_STATUS, MIME_TYPES, OAUTH_PATHS, TIMEOUTS, OAUTH_RATE_LIMIT, PROXY_CREDENTIALS } from '../core/constants.js';
+import {
+  DEFAULT_ALLOWED_REDIRECT_HOSTS,
+  HTTP_STATUS,
+  MIME_TYPES,
+  OAUTH_PATHS,
+  TIMEOUTS,
+  OAUTH_RATE_LIMIT,
+  PROXY_CREDENTIALS,
+} from '../core/constants.js';
 import { escapeHtmlSafe, isSafePropertyName } from '../validation/validation-utils.js';
 import type { OAuthClientInformationFull, OAuthTokens } from '@modelcontextprotocol/sdk/shared/auth.js';
 import {
@@ -255,7 +263,7 @@ export class HttpTransport {
       const hostCfg = this.config.host?.toLowerCase();
       if (hostCfg === 'localhost' || hostCfg === '127.0.0.1') {
         const hostHeader = (req.headers['host'] || '').toString().toLowerCase();
-        const expectedHosts = new Set(['localhost', '127.0.0.1']);
+        const expectedHosts = new Set<string>(DEFAULT_ALLOWED_REDIRECT_HOSTS);
         const headerHostOnly = hostHeader.split(':')[0];
         if (!expectedHosts.has(headerHostOnly)) {
           this.logger.warn('DNS rebinding protection: invalid Host header', {
@@ -1963,8 +1971,20 @@ export class HttpTransport {
       return undefined;
     }
 
+    const shouldTryUnregisteredProvisioning =
+      typeof redirectUri === 'string'
+      && redirectUri.length > 0
+      && typeof profileState.oauthProvider.getOrProvisionUnregisteredClient === 'function';
+
     const client = await profileState.oauthProvider.clientsStore.getClient(clientId);
     if (client) {
+      if (
+        shouldTryUnregisteredProvisioning
+        && typeof profileState.oauthProvider.hasMaterializedUnregisteredClient === 'function'
+        && profileState.oauthProvider.hasMaterializedUnregisteredClient(clientId)
+      ) {
+        return profileState.oauthProvider.getOrProvisionUnregisteredClient(clientId, redirectUri);
+      }
       return client;
     }
 
@@ -1974,11 +1994,7 @@ export class HttpTransport {
       return profileState.oauthProvider.clientsStore.getClient(PROXY_CREDENTIALS.CLIENT_ID);
     }
 
-    if (
-      typeof redirectUri === 'string'
-      && redirectUri.length > 0
-      && typeof profileState.oauthProvider.getOrProvisionUnregisteredClient === 'function'
-    ) {
+    if (shouldTryUnregisteredProvisioning) {
       return profileState.oauthProvider.getOrProvisionUnregisteredClient(clientId, redirectUri);
     }
 
