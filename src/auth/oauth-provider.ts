@@ -28,11 +28,18 @@ import type {
 import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
 import type { OAuthConfig } from '../types/profile.js';
 import type { Logger } from '../core/logger.js';
-import { OAUTH_CLEANUP, OAUTH_PATHS, PROXY_CREDENTIALS } from '../core/constants.js';
+import {
+  DEFAULT_ALLOWED_REDIRECT_HOSTS,
+  DEFAULT_OAUTH_LOOPBACK_CALLBACK_URIS,
+  OAUTH_CLEANUP,
+  OAUTH_PATHS,
+  PROXY_CREDENTIALS,
+} from '../core/constants.js';
 import { escapeHtmlSafe } from '../validation/validation-utils.js';
 import { SSRFValidator } from '../security/ssrf-validator.js';
 import { parseOAuthMetadataEndpoints } from './oauth-metadata.js';
 import { InMemoryClientsStore } from './client-store/in-memory-clients-store.js';
+import { isApprovedUnregisteredClientRedirectUri } from './unregistered-client-redirect-policy.js';
 export { InMemoryClientsStore };
 export type { InMemoryClientsStoreOptions } from './client-store/types.js';
 
@@ -82,6 +89,7 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
   private authorizationCodes = new Map<string, AuthorizationCodeData>();
   private accessTokens = new Map<string, AccessTokenData>();
   private stateStore = new Map<string, AuthorizationState>();
+  private materializedUnregisteredClientIds = new Set<string>();
 
   private endpointsInitialized: boolean = false;
   private initializationPromise: Promise<void> | null = null;
@@ -95,9 +103,12 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
     // Resolve environment variables in OAuth config
     this.config = this.resolveEnvVars(config);
     
-    // Pre-register mcp-proxy-client for VS Code compatibility
-    // VS Code doesn't call /oauth/register endpoint before calling /oauth/authorize
-    // This client has empty redirect_uris, allowing any redirect URI (validated at runtime)
+    // Pre-register mcp-proxy-client for VS Code compatibility.
+    // VS Code does not call /oauth/register before /oauth/authorize and uses one
+    // shared compatibility client_id across installs, so redirect validation must
+    // remain request-scoped instead of relying on a per-install registration record.
+    // Keep redirect_uris empty here to allow runtime validation without pinning one
+    // VS Code instance's redirect_uri onto another instance that reuses the same id.
     const proxyClient: OAuthClientInformationFull = {
       client_id: PROXY_CREDENTIALS.CLIENT_ID,
       client_secret: PROXY_CREDENTIALS.CLIENT_SECRET,
@@ -135,9 +146,8 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
         if (this.config.redirect_uri) {
           allowedUris.push(this.config.redirect_uri);
         }
-        // Also allow common localhost patterns for development/testing
-        allowedUris.push('http://localhost:3003/oauth/callback');
-        allowedUris.push('http://127.0.0.1:3003/oauth/callback');
+        // Also allow common loopback callbacks for development/testing
+        allowedUris.push(...DEFAULT_OAUTH_LOOPBACK_CALLBACK_URIS);
         
         const defaultClient: OAuthClientInformationFull = {
           client_id: this.config.client_id,
@@ -191,6 +201,108 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
 
   get scopes(): string[] {
     return this.config.scopes || [];
+  }
+
+  async getOrProvisionUnregisteredClient(
+    clientId: string,
+    redirectUri: string,
+  ): Promise<OAuthClientInformationFull | undefined> {
+    if (!this.config.allow_unregistered_clients) {
+      return undefined;
+    }
+
+    if (!this.isApprovedUnregisteredClientRedirectUri(redirectUri)) {
+      return undefined;
+    }
+
+    const existingClient = await this._clientsStore.getClient(clientId);
+    if (existingClient) {
+      if (!this.materializedUnregisteredClientIds.has(clientId)) {
+        return existingClient;
+      }
+
+      if (
+        existingClient.redirect_uris?.length === 0
+        || existingClient.redirect_uris?.includes(redirectUri)
+      ) {
+        return existingClient;
+      }
+
+      const redirectUris = this.buildValidatedUnregisteredRedirectUriList(
+        existingClient.redirect_uris,
+        redirectUri,
+      );
+      if (!redirectUris) {
+        return undefined;
+      }
+
+      // Some desktop clients (notably VS Code compatibility flows) reuse a shared
+      // client_id across installations. Preserve the existing materialized record,
+      // but append newly approved redirect_uris so one instance does not block
+      // another instance that reuses the same client_id with a different callback.
+      const updatedClient: OAuthClientInformationFull = {
+        ...existingClient,
+        redirect_uris: redirectUris,
+      };
+      await this._clientsStore.registerClient(updatedClient);
+      this.logger.info('Appended approved redirect URI to existing OAuth client', {
+        clientId,
+        redirectUri,
+        redirectUriCount: updatedClient.redirect_uris.length,
+      });
+      return updatedClient;
+    }
+
+    const redirectUris = this.buildValidatedUnregisteredRedirectUriList([], redirectUri);
+    if (!redirectUris) {
+      return undefined;
+    }
+
+    const client: OAuthClientInformationFull = {
+      client_id: clientId,
+      redirect_uris: redirectUris,
+      grant_types: ['authorization_code', 'refresh_token'],
+      response_types: ['code'],
+      scope: this.config.scopes ? this.config.scopes.join(' ') : '',
+    };
+
+    await this._clientsStore.registerClient(client);
+    this.materializedUnregisteredClientIds.add(clientId);
+    this.logger.info('Materialized approved unregistered OAuth client', {
+      clientId,
+      redirectUri,
+    });
+    return client;
+  }
+
+  hasMaterializedUnregisteredClient(clientId: string): boolean {
+    return this.materializedUnregisteredClientIds.has(clientId);
+  }
+
+  private buildValidatedUnregisteredRedirectUriList(
+    existingRedirectUris: readonly string[],
+    nextRedirectUri: string,
+  ): string[] | undefined {
+    const redirectUris = Array.from(new Set([...existingRedirectUris, nextRedirectUri]));
+    const limits = this._clientsStore.getLimits();
+
+    if (redirectUris.length > limits.maxRedirectUris) {
+      this.logger.warn('Refused to materialize unregistered OAuth client redirect URI: max redirect URI count exceeded', {
+        redirectUriCount: redirectUris.length,
+        maxRedirectUris: limits.maxRedirectUris,
+      });
+      return undefined;
+    }
+
+    if (nextRedirectUri.length > limits.maxRedirectUriLength) {
+      this.logger.warn('Refused to materialize unregistered OAuth client redirect URI: redirect URI too long', {
+        redirectUriLength: nextRedirectUri.length,
+        maxRedirectUriLength: limits.maxRedirectUriLength,
+      });
+      return undefined;
+    }
+
+    return redirectUris;
   }
 
   /**
@@ -315,9 +427,12 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
       }
 
       const hostname = url.hostname;
+      if (hostname.includes('*') || url.pathname.includes('*')) {
+        return false;
+      }
       
-      // Default to localhost only if not configured
-      const allowedHosts = this.config.allowed_redirect_hosts || ['localhost', '127.0.0.1'];
+      // Default to loopback hosts only if not configured
+      const allowedHosts = this.config.allowed_redirect_hosts || [...DEFAULT_ALLOWED_REDIRECT_HOSTS];
       
       for (const allowed of allowedHosts) {
         if (this.matchRedirectHost(hostname, allowed)) {
@@ -330,6 +445,33 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
       // Invalid URL
       return false;
     }
+  }
+
+  private isApprovedUnregisteredClientRedirectUri(redirectUri: string): boolean {
+    return isApprovedUnregisteredClientRedirectUri(
+      redirectUri,
+      this.config.allowed_unregistered_redirect_uris,
+      this.logger,
+    );
+  }
+
+  private isAllowedClientRedirectUri(
+    client: OAuthClientInformationFull,
+    redirectUri: string,
+  ): boolean {
+    if (this.isAllowedRedirectHost(redirectUri)) {
+      return true;
+    }
+
+    if (!this.config.allow_unregistered_clients) {
+      return false;
+    }
+
+    if (!client.redirect_uris?.includes(redirectUri)) {
+      return false;
+    }
+
+    return this.isApprovedUnregisteredClientRedirectUri(redirectUri);
   }
 
   /**
@@ -557,11 +699,12 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
       throw new Error('Unregistered redirect_uri');
     }
 
-    // Validate redirect host against allowlist to prevent open redirect
-    if (!this.isAllowedRedirectHost(params.redirectUri)) {
+    // Validate redirect against configured policies to prevent open redirect
+    if (!this.isAllowedClientRedirectUri(client, params.redirectUri)) {
       this.logger.error('Redirect URI not allowed', undefined, {
         providedUri: params.redirectUri,
-        allowedHosts: this.config.allowed_redirect_hosts || ['localhost', '127.0.0.1'],
+        allowedHosts: this.config.allowed_redirect_hosts || [...DEFAULT_ALLOWED_REDIRECT_HOSTS],
+        allowedUnregisteredRedirectUris: this.config.allowed_unregistered_redirect_uris,
       });
       throw new Error('Redirect URI not allowed');
     }
@@ -682,11 +825,12 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
         });
         this._clientsStore.markAuthCodeOpened(client.client_id);
 
-        // Re-validate redirect URI host + registration before redirect (defense-in-depth)
-        if (!this.isAllowedRedirectHost(storedState.clientRedirectUri)) {
+        // Re-validate redirect URI policy + registration before redirect (defense-in-depth)
+        if (!this.isAllowedClientRedirectUri(client, storedState.clientRedirectUri)) {
             this.logger.error('Redirect URI not allowed (callback)', undefined, {
                 storedUri: storedState.clientRedirectUri,
-                allowedHosts: this.config.allowed_redirect_hosts || ['localhost', '127.0.0.1'],
+                allowedHosts: this.config.allowed_redirect_hosts || [...DEFAULT_ALLOWED_REDIRECT_HOSTS],
+                allowedUnregisteredRedirectUris: this.config.allowed_unregistered_redirect_uris,
             });
             res.status(400).send('Redirect URI not allowed');
             return;

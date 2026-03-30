@@ -69,6 +69,17 @@ export const OAUTH_PATHS = {
 } as const;
 
 /**
+ * Default loopback redirect allowances for local OAuth clients.
+ *
+ * Why: Keep loopback host defaults centralized so logs, validation, and
+ * compatibility fallbacks stay aligned without scattering hardcoded hosts.
+ */
+export const DEFAULT_ALLOWED_REDIRECT_HOSTS = ['localhost', '127.0.0.1'] as const;
+export const DEFAULT_OAUTH_LOOPBACK_CALLBACK_URIS = DEFAULT_ALLOWED_REDIRECT_HOSTS.map(
+  (host) => `http://${host}:3003${OAUTH_PATHS.CALLBACK}`,
+);
+
+/**
  * Default timeout and interval values (in milliseconds)
  * 
  * Why: Centralized timing configuration for sessions, heartbeats, and cleanup.

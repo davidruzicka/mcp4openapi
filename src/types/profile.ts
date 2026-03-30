@@ -562,6 +562,23 @@ export interface OAuthConfig {
    * Can reference MCP4_ALLOWED_ORIGINS environment variable
    */
   allowed_redirect_hosts?: string[];
+
+  /**
+   * Optional: Allow authorize requests for OAuth client IDs that are not registered
+   * on the current instance, but only when redirect_uri matches an approved rule.
+   * Disabled by default.
+   */
+  allow_unregistered_clients?: boolean;
+
+  /**
+   * Optional: Approved redirect URI rules for unregistered OAuth clients.
+   * Examples:
+   * - "http://localhost"
+   * - "http://127.0.0.1"
+   * - "cursor://"
+   * - "cursor://anysphere.cursor-mcp"
+   */
+  allowed_unregistered_redirect_uris?: string[];
 }
 
 export interface EnterpriseAuthorizationConfig {
