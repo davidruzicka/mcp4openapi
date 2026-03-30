@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: verifying
-stopped_at: Completed 01-02-PLAN.md
-last_updated: "2026-03-27T06:44:53.289Z"
-last_activity: 2026-03-27
+status: executing
+stopped_at: Completed 01-04-PLAN.md
+last_updated: "2026-03-30T08:02:39.914Z"
+last_activity: 2026-03-30
 progress:
   total_phases: 4
-  completed_phases: 1
-  total_plans: 3
-  completed_plans: 3
+  completed_phases: 0
+  total_plans: 5
+  completed_plans: 4
   percent: 0
 ---
 
@@ -26,9 +26,9 @@ See: .planning/PROJECT.md (updated 2026-03-26)
 ## Current Position
 
 Phase: 01 (upstream-session-foundation) — EXECUTING
-Plan: 3 of 3 (complete)
-Status: Phase complete — ready for verification
-Last activity: 2026-03-27
+Plan: 2 of 5
+Status: Ready to execute
+Last activity: 2026-03-30
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -55,6 +55,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 01 P01 | 8min | 3 tasks | 10 files |
 | Phase 01 P03 | 2min | 2 tasks | 3 files |
 | Phase 01 P02 | 4min | 2 tasks | 3 files |
+| Phase 01 P04 | 5min | 2 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -72,6 +73,7 @@ Recent decisions affecting current work:
 - [Phase 01]: Factory injection (clientFactory, transportFactory) for testability in UpstreamConnectionManager
 - [Phase 01]: Promise-based pending connection dedup via Map key sessionId:providerName
 - [Phase 01]: Setter method setUpstreamConnectionManager in HttpTransport for clean optional wiring
+- [Phase 01]: Profile-per-upstream model confirmed: X-Upstream-Authorization and UpstreamCredentials were wrong-model dead code; buildAuthHeaders and getOrConnect now accept token: string | undefined directly
 
 ### Pending Todos
 
@@ -85,6 +87,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-27T06:44:53.287Z
-Stopped at: Completed 01-02-PLAN.md
+Last session: 2026-03-30T08:02:39.912Z
+Stopped at: Completed 01-04-PLAN.md
 Resume file: None

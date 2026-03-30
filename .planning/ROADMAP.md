@@ -35,7 +35,7 @@ Plans:
 - [x] 01-01-PLAN.md - Types, errors, credential store, and redaction extension (PROXY-02, REL-03, SEC-02)
 - [x] 01-02-PLAN.md - UpstreamConnectionManager with lazy getOrConnect and closeAll (PROXY-01, REL-02)
 - [x] 01-03-PLAN.md - UpstreamHeartbeatManager with configurable pings (REL-01, REL-02, REL-03)
-- [ ] 01-04-PLAN.md - GAP CLOSURE: Remove dead X-Upstream-Authorization code, simplify to profile-per-upstream credential model (PROXY-02, SEC-02)
+- [x] 01-04-PLAN.md - GAP CLOSURE: Remove dead X-Upstream-Authorization code, simplify to profile-per-upstream credential model (PROXY-02, SEC-02)
 - [ ] 01-05-PLAN.md - GAP CLOSURE: Bearer redaction suffix preservation and optional validation_endpoint (SEC-02, REL-03)
 
 ### Phase 2: Tool Discovery and Call Proxy
@@ -88,7 +88,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Upstream Session Foundation | 3/5 | Gap closure | - |
+| 1. Upstream Session Foundation | 4/5 | In Progress|  |
 | 2. Tool Discovery and Call Proxy | 0/2 | Not started | - |
 | 3. Client Authentication Gate | 0/2 | Not started | - |
 | 4. Observability | 0/2 | Not started | - |
