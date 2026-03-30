@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 02-01-PLAN.md
-last_updated: "2026-03-30T13:56:31.946Z"
+stopped_at: Completed 02-02-PLAN.md
+last_updated: "2026-03-30T14:10:09.607Z"
 last_activity: 2026-03-30
 progress:
   total_phases: 4
   completed_phases: 1
   total_plans: 8
-  completed_plans: 6
+  completed_plans: 7
   percent: 0
 ---
 
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-03-26)
 ## Current Position
 
 Phase: 02 (tool-discovery-and-call-proxy) — EXECUTING
-Plan: 2 of 3
+Plan: 3 of 3
 Status: Ready to execute
 Last activity: 2026-03-30
 
@@ -58,6 +58,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 01 P04 | 5min | 2 tasks | 8 files |
 | Phase 01 P05 | 7 | 3 tasks | 12 files |
 | Phase 02-tool-discovery-and-call-proxy P01 | 4min | 3 tasks | 6 files |
+| Phase 02-tool-discovery-and-call-proxy P02 | 8min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -81,6 +82,8 @@ Recent decisions affecting current work:
 - [Phase 02]: Truncate dropped tool names to 100 chars in SanitizationResult.dropped and logger.warn to prevent log injection of upstream tool names
 - [Phase 02]: NotificationQueue TTL eviction uses Date.now() not entry.timestamp - correct under clock skew
 - [Phase 02]: D-02 mutual-exclusivity check placed after resolveUpstreamMcpConfig so env-sourced config is resolved before check fires
+- [Phase 02]: Callback injection (setGetUpstreamClient) rather than direct UpstreamConnectionManager import avoids circular dependency and keeps module boundary clean
+- [Phase 02]: Provider name in error.data.providerName only - not in client-facing message string - prevents infrastructure name leakage at security boundary
 
 ### Pending Todos
 
@@ -94,6 +97,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-30T13:56:31.944Z
-Stopped at: Completed 02-01-PLAN.md
+Last session: 2026-03-30T14:10:09.601Z
+Stopped at: Completed 02-02-PLAN.md
 Resume file: None

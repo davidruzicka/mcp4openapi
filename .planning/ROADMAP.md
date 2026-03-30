@@ -51,7 +51,7 @@ Plans:
 
 Plans:
 - [x] 02-01-PLAN.md - Tool sanitizer, notification queue, and profile mutual-exclusivity validation (SEC-01, REL-04, PROXY-03)
-- [ ] 02-02-PLAN.md - Upstream tools/list and tools/call handler wiring with error mapping (PROXY-03, PROXY-04, SEC-01)
+- [x] 02-02-PLAN.md - Upstream tools/list and tools/call handler wiring with error mapping (PROXY-03, PROXY-04, SEC-01)
 - [ ] 02-03-PLAN.md - Notification forwarding from upstream to downstream SSE with bounded queue replay (REL-04)
 
 ### Phase 3: Client Authentication Gate
@@ -90,6 +90,6 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Upstream Session Foundation | 4/5 | In Progress|  |
-| 2. Tool Discovery and Call Proxy | 0/3 | Not started | - |
+| 2. Tool Discovery and Call Proxy | 2/3 | In Progress|  |
 | 3. Client Authentication Gate | 0/2 | Not started | - |
 | 4. Observability | 0/2 | Not started | - |
