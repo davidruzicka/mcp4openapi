@@ -1,0 +1,72 @@
+/**
+ * Upstream tool sanitizer
+ *
+ * Validates tool names and descriptions received from upstream MCP servers
+ * before exposing them to downstream clients. Drops offending tools with
+ * a warning instead of forwarding potentially injected content.
+ *
+ * Security: drops tools with names outside [a-zA-Z0-9_-] or descriptions
+ * containing injection-prone characters (<, >, backtick). Truncates tool
+ * names in dropped output to 100 chars to prevent log injection via
+ * maliciously long upstream tool names (D-03, D-04, D-05).
+ */
+
+import type { Tool } from '@modelcontextprotocol/sdk/types.js';
+import type { Logger } from '../core/logger.js';
+
+export interface SanitizationResult {
+  tools: Tool[];
+  dropped: { name: string; reason: string }[];
+}
+
+// Data-driven constraints - not exported (internal policy only)
+const TOOL_NAME_PATTERN = /^[a-zA-Z0-9_-]+$/;
+const DESCRIPTION_FORBIDDEN_CHARS = /[<>`]/;
+const MAX_TOOL_NAME_LENGTH = 255;
+const MAX_DESCRIPTION_LENGTH = 2048;
+const MAX_DROPPED_NAME_LENGTH = 100;
+
+const truncateName = (name: string): string =>
+  name.length > MAX_DROPPED_NAME_LENGTH
+    ? name.slice(0, MAX_DROPPED_NAME_LENGTH) + '...'
+    : name;
+
+/**
+ * Sanitize a list of tools received from an upstream MCP server.
+ *
+ * Each tool is checked in order:
+ *   1. Name length <= 255
+ *   2. Name matches [a-zA-Z0-9_-]
+ *   3. Description length <= 2048 (if present)
+ *   4. Description contains no <, >, or backtick (if present)
+ *
+ * Offending tools are dropped and logged. Safe tools pass through unchanged.
+ */
+export function sanitizeToolList(tools: Tool[], logger?: Logger): SanitizationResult {
+  const safe: Tool[] = [];
+  const dropped: { name: string; reason: string }[] = [];
+
+  for (const tool of tools) {
+    let reason: string | undefined;
+
+    if (tool.name.length > MAX_TOOL_NAME_LENGTH) {
+      reason = 'tool name too long';
+    } else if (!TOOL_NAME_PATTERN.test(tool.name)) {
+      reason = 'invalid characters in tool name';
+    } else if (tool.description && tool.description.length > MAX_DESCRIPTION_LENGTH) {
+      reason = 'tool description too long';
+    } else if (tool.description && DESCRIPTION_FORBIDDEN_CHARS.test(tool.description)) {
+      reason = 'forbidden characters in description';
+    }
+
+    if (reason !== undefined) {
+      const safeName = truncateName(tool.name);
+      dropped.push({ name: safeName, reason });
+      logger?.warn('Dropped upstream tool due to sanitization failure', { name: safeName, reason });
+    } else {
+      safe.push(tool);
+    }
+  }
+
+  return { tools: safe, dropped };
+}
