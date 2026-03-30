@@ -2,7 +2,8 @@
  * Tests for UpstreamConnectionManager
  *
  * Covers: lazy connect, concurrent dedup, closeAll, FAILED state replacement,
- * error mapping, session destruction integration, validateCredentials.
+ * error mapping, session destruction integration, validateCredentials,
+ * notification forwarding and queue buffering.
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -21,10 +22,25 @@ function createMockTransport() {
 }
 
 function createMockClient() {
+  // Capture notification handlers by schema method key for test invocation
+  const notificationHandlers = new Map<string, (notification: unknown) => Promise<void>>();
   return {
     connect: vi.fn().mockResolvedValue(undefined),
     close: vi.fn().mockResolvedValue(undefined),
     ping: vi.fn().mockResolvedValue(undefined),
+    setNotificationHandler: vi.fn().mockImplementation((schema: { shape?: { method?: { value?: string } } }, handler: (n: unknown) => Promise<void>) => {
+      // Extract method string from Zod schema shape used by MCP SDK
+      const method = schema?.shape?.method?.value ?? 'unknown';
+      notificationHandlers.set(method, handler);
+    }),
+    _notificationHandlers: notificationHandlers,
+    /** Helper: trigger a notification handler by method string */
+    _triggerNotification: async (method: string, params?: unknown) => {
+      const handler = notificationHandlers.get(method);
+      if (handler) {
+        await handler({ method, params });
+      }
+    },
   };
 }
 
@@ -514,6 +530,119 @@ describe('UpstreamConnectionManager', () => {
       // closeAll should not throw even when transport.close rejects
       await expect(manager.closeAll('session-1')).resolves.toBeUndefined();
       expect(manager.getActiveSessionCount()).toBe(0);
+    });
+  });
+
+  describe('notification forwarding', () => {
+    const TOOL_LIST_CHANGED = 'notifications/tools/list_changed';
+
+    it('calls downstreamNotifyFn when hasActiveStreamFn returns true and upstream sends notification', async () => {
+      const provider = createProvider();
+      const notifyFn = vi.fn();
+      const hasStreamFn = vi.fn().mockReturnValue(true);
+      manager.setDownstreamNotifyFn(notifyFn);
+      manager.setHasActiveStreamFn(hasStreamFn);
+
+      const client = await manager.getOrConnect('session-1', provider, 'token') as ReturnType<typeof createMockClient>;
+      await client._triggerNotification(TOOL_LIST_CHANGED);
+
+      expect(hasStreamFn).toHaveBeenCalledWith('session-1');
+      expect(notifyFn).toHaveBeenCalledWith('session-1', TOOL_LIST_CHANGED, undefined);
+    });
+
+    it('queues notification when hasActiveStreamFn returns false', async () => {
+      const provider = createProvider();
+      const notifyFn = vi.fn();
+      const hasStreamFn = vi.fn().mockReturnValue(false);
+      manager.setDownstreamNotifyFn(notifyFn);
+      manager.setHasActiveStreamFn(hasStreamFn);
+
+      const client = await manager.getOrConnect('session-1', provider, 'token') as ReturnType<typeof createMockClient>;
+      await client._triggerNotification(TOOL_LIST_CHANGED);
+
+      expect(notifyFn).not.toHaveBeenCalled();
+      const buffered = manager.drainNotifications('session-1');
+      expect(buffered).toHaveLength(1);
+      expect(buffered[0].method).toBe(TOOL_LIST_CHANGED);
+    });
+
+    it('queues notification when downstreamNotifyFn is not set', async () => {
+      const provider = createProvider();
+      const hasStreamFn = vi.fn().mockReturnValue(true);
+      // Do NOT set downstreamNotifyFn
+      manager.setHasActiveStreamFn(hasStreamFn);
+
+      const client = await manager.getOrConnect('session-1', provider, 'token') as ReturnType<typeof createMockClient>;
+      await client._triggerNotification(TOOL_LIST_CHANGED);
+
+      const buffered = manager.drainNotifications('session-1');
+      expect(buffered).toHaveLength(1);
+    });
+
+    it('queues notification when hasActiveStreamFn is not set', async () => {
+      const provider = createProvider();
+      const notifyFn = vi.fn();
+      // Do NOT set hasActiveStreamFn
+      manager.setDownstreamNotifyFn(notifyFn);
+
+      const client = await manager.getOrConnect('session-1', provider, 'token') as ReturnType<typeof createMockClient>;
+      await client._triggerNotification(TOOL_LIST_CHANGED);
+
+      expect(notifyFn).not.toHaveBeenCalled();
+      const buffered = manager.drainNotifications('session-1');
+      expect(buffered).toHaveLength(1);
+    });
+
+    it('drainNotifications returns buffered entries in order', async () => {
+      const provider = createProvider();
+      manager.setDownstreamNotifyFn(vi.fn());
+      manager.setHasActiveStreamFn(vi.fn().mockReturnValue(false));
+
+      const client = await manager.getOrConnect('session-1', provider, 'token') as ReturnType<typeof createMockClient>;
+      await client._triggerNotification(TOOL_LIST_CHANGED);
+      await client._triggerNotification(TOOL_LIST_CHANGED);
+      await client._triggerNotification(TOOL_LIST_CHANGED);
+
+      const buffered = manager.drainNotifications('session-1');
+      expect(buffered).toHaveLength(3);
+      expect(buffered[0].method).toBe(TOOL_LIST_CHANGED);
+    });
+
+    it('drainNotifications returns empty array for unknown session', () => {
+      const buffered = manager.drainNotifications('no-such-session');
+      expect(buffered).toEqual([]);
+    });
+
+    it('closeAll cleans up notification queue for session', async () => {
+      const provider = createProvider();
+      manager.setDownstreamNotifyFn(vi.fn());
+      manager.setHasActiveStreamFn(vi.fn().mockReturnValue(false));
+
+      const client = await manager.getOrConnect('session-1', provider, 'token') as ReturnType<typeof createMockClient>;
+      await client._triggerNotification(TOOL_LIST_CHANGED);
+
+      // Verify queue has entries before closeAll
+      const beforeClose = manager.drainNotifications('session-1');
+      expect(beforeClose).toHaveLength(1);
+
+      // Re-trigger so queue is non-empty, then closeAll should clear it
+      await client._triggerNotification(TOOL_LIST_CHANGED);
+      await manager.closeAll('session-1');
+
+      // After closeAll, queue should be gone (drain returns empty)
+      expect(manager.drainNotifications('session-1')).toEqual([]);
+    });
+
+    it('cleanupSessionQueue deletes queue for session', async () => {
+      const provider = createProvider();
+      manager.setDownstreamNotifyFn(vi.fn());
+      manager.setHasActiveStreamFn(vi.fn().mockReturnValue(false));
+
+      const client = await manager.getOrConnect('session-1', provider, 'token') as ReturnType<typeof createMockClient>;
+      await client._triggerNotification(TOOL_LIST_CHANGED);
+
+      manager.cleanupSessionQueue('session-1');
+      expect(manager.drainNotifications('session-1')).toEqual([]);
     });
   });
 });

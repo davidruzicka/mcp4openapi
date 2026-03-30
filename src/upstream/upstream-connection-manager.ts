@@ -12,6 +12,7 @@
  */
 
 import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { ToolListChangedNotificationSchema } from '@modelcontextprotocol/sdk/types.js';
 import type { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import type { UpstreamMcpServerConfig } from '../types/profile.js';
 import type { UpstreamConnection } from '../types/upstream-connection.js';
@@ -21,6 +22,8 @@ import { sanitizeAuthErrorMessage } from '../auth/auth-redaction.js';
 import { SSRFValidator } from '../security/ssrf-validator.js';
 import { ConsoleLogger } from '../core/logger.js';
 import type { Logger } from '../core/logger.js';
+import { NotificationQueue } from './upstream-notification-queue.js';
+import type { NotificationQueueEntry } from './upstream-notification-queue.js';
 
 /** Auth-related HTTP status codes */
 const AUTH_STATUS_CODES = new Set([401, 403]);
@@ -29,7 +32,7 @@ const AUTH_STATUS_CODES = new Set([401, 403]);
 const AUTH_ERROR_PATTERNS = /unauthorized|forbidden|authentication failed|invalid.*token/i;
 
 export interface UpstreamConnectionManagerOptions {
-  clientFactory?: () => Pick<Client, 'connect' | 'close'>;
+  clientFactory?: () => Pick<Client, 'connect' | 'close' | 'setNotificationHandler'>;
   transportFactory?: (url: URL, options: Record<string, unknown>) => Pick<StreamableHTTPClientTransport, 'close'> & {
     onerror: ((error: Error) => void) | null;
     onclose: (() => void) | null;
@@ -45,6 +48,36 @@ export class UpstreamConnectionManager {
   /** Key: `${sessionId}:${providerName}` - prevents concurrent duplicate connections */
   private readonly pendingConnections = new Map<string, Promise<Client>>();
 
+  /**
+   * Per-session notification queues for buffering when no SSE stream is attached.
+   * Key: sessionId (single-provider-per-profile assumption for phase 2).
+   * If multi-provider-per-session is needed in future, key should be `${sessionId}:${providerName}`.
+   */
+  private readonly notificationQueues = new Map<string, NotificationQueue>();
+
+  /** Callback to forward notification to downstream client. Set by HttpTransport. */
+  private downstreamNotifyFn: ((sessionId: string, method: string, params?: unknown) => void) | null = null;
+
+  /**
+   * Callback to check if downstream SSE stream is active. Set by HttpTransport.
+   * Replaces the anti-pattern of catching exceptions from downstreamNotifyFn to detect "no stream".
+   * Explicit check is more robust and does not rely on sendToClient's throw behavior as a
+   * control-flow signal.
+   */
+  private hasActiveStreamFn: ((sessionId: string) => boolean) | null = null;
+
+  /**
+   * Data-driven dispatch map for upstream notification types.
+   * Adding a new notification type is a one-liner (D-07).
+   */
+  private static readonly NOTIFICATION_DISPATCH: ReadonlyArray<{
+    schema: typeof ToolListChangedNotificationSchema;
+    method: string;
+  }> = [
+    { schema: ToolListChangedNotificationSchema, method: 'notifications/tools/list_changed' },
+    // Future: { schema: ResourceListChangedNotificationSchema, method: 'notifications/resources/list_changed' },
+  ];
+
   private readonly clientFactory: NonNullable<UpstreamConnectionManagerOptions['clientFactory']>;
   private readonly transportFactory: NonNullable<UpstreamConnectionManagerOptions['transportFactory']>;
   private readonly ssrfValidator: SSRFValidator;
@@ -59,6 +92,40 @@ export class UpstreamConnectionManager {
     });
     this.logger = options?.logger ?? new ConsoleLogger();
     this.ssrfValidator = options?.ssrfValidator ?? new SSRFValidator(this.logger);
+  }
+
+  /**
+   * Set callback for forwarding notifications to downstream clients.
+   * Called by HttpTransport to wire the notification path.
+   */
+  public setDownstreamNotifyFn(fn: (sessionId: string, method: string, params?: unknown) => void): void {
+    this.downstreamNotifyFn = fn;
+  }
+
+  /**
+   * Set callback for checking if a downstream SSE stream is active for a session.
+   * Called by HttpTransport to wire the stream presence check.
+   */
+  public setHasActiveStreamFn(fn: (sessionId: string) => boolean): void {
+    this.hasActiveStreamFn = fn;
+  }
+
+  /**
+   * Drain buffered notifications for a session. Called on SSE reconnect.
+   */
+  public drainNotifications(sessionId: string): NotificationQueueEntry[] {
+    const queue = this.notificationQueues.get(sessionId);
+    if (!queue) return [];
+    return queue.drain();
+  }
+
+  /**
+   * Clean up notification queue for a session.
+   * Exposed as public so HttpTransport can call it from session destruction hooks
+   * (timeout eviction, onSessionDestroy) that may bypass closeAll.
+   */
+  public cleanupSessionQueue(sessionId: string): void {
+    this.notificationQueues.delete(sessionId);
   }
 
   /**
@@ -105,6 +172,44 @@ export class UpstreamConnectionManager {
   }
 
   /**
+   * Get or create the notification queue for a session.
+   */
+  private getOrCreateQueue(sessionId: string): NotificationQueue {
+    let queue = this.notificationQueues.get(sessionId);
+    if (!queue) {
+      queue = new NotificationQueue();
+      this.notificationQueues.set(sessionId, queue);
+    }
+    return queue;
+  }
+
+  /**
+   * Wire notification listeners on an upstream MCP Client.
+   */
+  private wireNotificationListeners(client: Client, sessionId: string): void {
+    for (const { schema, method } of UpstreamConnectionManager.NOTIFICATION_DISPATCH) {
+      client.setNotificationHandler(schema, async (notification) => {
+        this.handleUpstreamNotification(sessionId, method, notification.params);
+      });
+    }
+  }
+
+  /**
+   * Handle an upstream notification: forward to downstream if stream active, otherwise queue.
+   * Uses explicit hasActiveStreamFn check to avoid exception-as-control-flow anti-pattern.
+   */
+  private handleUpstreamNotification(sessionId: string, method: string, params?: unknown): void {
+    if (this.downstreamNotifyFn && this.hasActiveStreamFn && this.hasActiveStreamFn(sessionId)) {
+      this.downstreamNotifyFn(sessionId, method, params);
+      return;
+    }
+    // Buffer in queue for replay on reconnect (D-08)
+    const queue = this.getOrCreateQueue(sessionId);
+    queue.push({ method, timestamp: Date.now(), params });
+    this.logger.debug('Queued upstream notification for disconnected client', { sessionId, method, queueSize: queue.size });
+  }
+
+  /**
    * Close all upstream connections for a session.
    * Transport close errors are swallowed to prevent cascading failures.
    */
@@ -127,6 +232,7 @@ export class UpstreamConnectionManager {
 
     await Promise.all(closePromises);
     this.connections.delete(sessionId);
+    this.notificationQueues.delete(sessionId);
   }
 
   /**
@@ -227,6 +333,9 @@ export class UpstreamConnectionManager {
       // Map error to typed upstream error
       throw this.mapConnectError(error, provider);
     }
+
+    // Wire upstream notification listeners after successful connection
+    this.wireNotificationListeners(client as Client, sessionId);
 
     // Store connection
     const now = Date.now();
