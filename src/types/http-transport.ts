@@ -35,8 +35,6 @@ export interface SessionData {
   tenantAuthMode?: 'oauth' | 'token';
   tenantOAuthConfig?: OAuthConfig;
   tenantAuthConfigs?: AuthInterceptor[];
-  /** Per-provider upstream credentials keyed by provider name (PROXY-02) */
-  upstreamCredentials?: Map<string, string>;
 }
 
 export interface SSEStreamState {

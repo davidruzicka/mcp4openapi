@@ -28,8 +28,3 @@ export interface UpstreamConnection {
   heartbeatTimer?: NodeJS.Timeout;
 }
 
-/** Interface for accessing per-provider upstream credentials */
-export interface UpstreamCredentials {
-  getToken(providerName: string): string | undefined;
-  hasCredentials(providerName: string): boolean;
-}
