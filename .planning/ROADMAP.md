@@ -52,7 +52,7 @@ Plans:
 Plans:
 - [x] 02-01-PLAN.md - Tool sanitizer, notification queue, and profile mutual-exclusivity validation (SEC-01, REL-04, PROXY-03)
 - [x] 02-02-PLAN.md - Upstream tools/list and tools/call handler wiring with error mapping (PROXY-03, PROXY-04, SEC-01)
-- [ ] 02-03-PLAN.md - Notification forwarding from upstream to downstream SSE with bounded queue replay (REL-04)
+- [x] 02-03-PLAN.md - Notification forwarding from upstream to downstream SSE with bounded queue replay (REL-04)
 
 ### Phase 3: Client Authentication Gate
 **Goal**: Only authenticated clients can create sessions; identity is resolved and attached before any upstream resource is consumed
