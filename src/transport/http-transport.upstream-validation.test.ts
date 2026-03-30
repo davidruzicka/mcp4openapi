@@ -63,7 +63,7 @@ describeIfListen('upstream credential validation at session init', () => {
 
   it('calls validateCredentials during isInitialization when upstreamMcp has validation_endpoint', async () => {
     const mockValidateCredentials = vi.fn().mockResolvedValue(undefined);
-    const mockUpstreamConnectionManager = { validateCredentials: mockValidateCredentials };
+    const mockUpstreamConnectionManager = { validateCredentials: mockValidateCredentials, setHasActiveStreamFn: vi.fn(), setDownstreamNotifyFn: vi.fn() };
     transport.setUpstreamConnectionManager(mockUpstreamConnectionManager as any);
 
     const provider = {
@@ -89,7 +89,7 @@ describeIfListen('upstream credential validation at session init', () => {
 
   it('returns 401 when validateCredentials throws UpstreamAuthError', async () => {
     const mockValidateCredentials = vi.fn().mockRejectedValue(new UpstreamAuthError('test-provider'));
-    const mockUpstreamConnectionManager = { validateCredentials: mockValidateCredentials };
+    const mockUpstreamConnectionManager = { validateCredentials: mockValidateCredentials, setHasActiveStreamFn: vi.fn(), setDownstreamNotifyFn: vi.fn() };
     transport.setUpstreamConnectionManager(mockUpstreamConnectionManager as any);
 
     const provider = {
@@ -113,7 +113,7 @@ describeIfListen('upstream credential validation at session init', () => {
   it('returns 502 when validateCredentials throws non-auth error', async () => {
     const networkError = new Error('ECONNREFUSED');
     const mockValidateCredentials = vi.fn().mockRejectedValue(networkError);
-    const mockUpstreamConnectionManager = { validateCredentials: mockValidateCredentials };
+    const mockUpstreamConnectionManager = { validateCredentials: mockValidateCredentials, setHasActiveStreamFn: vi.fn(), setDownstreamNotifyFn: vi.fn() };
     transport.setUpstreamConnectionManager(mockUpstreamConnectionManager as any);
 
     const provider = {
@@ -136,7 +136,7 @@ describeIfListen('upstream credential validation at session init', () => {
 
   it('skips validation when no upstreamMcp providers configured', async () => {
     const mockValidateCredentials = vi.fn();
-    const mockUpstreamConnectionManager = { validateCredentials: mockValidateCredentials };
+    const mockUpstreamConnectionManager = { validateCredentials: mockValidateCredentials, setHasActiveStreamFn: vi.fn(), setDownstreamNotifyFn: vi.fn() };
     transport.setUpstreamConnectionManager(mockUpstreamConnectionManager as any);
 
     createProfileState(transport as any, 'default', undefined);
@@ -152,7 +152,7 @@ describeIfListen('upstream credential validation at session init', () => {
 
   it('skips validation when provider has no validation_endpoint', async () => {
     const mockValidateCredentials = vi.fn();
-    const mockUpstreamConnectionManager = { validateCredentials: mockValidateCredentials };
+    const mockUpstreamConnectionManager = { validateCredentials: mockValidateCredentials, setHasActiveStreamFn: vi.fn(), setDownstreamNotifyFn: vi.fn() };
     transport.setUpstreamConnectionManager(mockUpstreamConnectionManager as any);
 
     const provider = {

@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Upstream MCP proxy: tools/list and tools/call forwarding with tool name/description sanitization, tools/list_changed notification relay with bounded queue buffering and replay on SSE reconnect.
 - Upstream tool sanitizer drops tools from upstream MCP servers with invalid names (outside `[a-zA-Z0-9_-]`, over 255 chars) or forbidden description characters (`<`, `>`, backtick, over 2048 chars); dropped names are truncated to 100 chars to prevent log injection.
 - Bounded notification queue buffers upstream MCP notifications with configurable size cap (default 50) and TTL (default 5 min) using wall-clock eviction; drains in insertion order.
 - Profile validation now rejects profiles that define both `upstream_mcp` and non-empty `tools[]` with a clear "mutually exclusive" error at load time.
