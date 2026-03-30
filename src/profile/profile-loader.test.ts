@@ -2726,14 +2726,7 @@ describe('ProfileLoader', () => {
         tmpPath,
         JSON.stringify({
           profile_name: 'upstream-static',
-          tools: [
-            {
-              name: 'tool_a',
-              description: 'Tool A',
-              operations: { list: 'listItems' },
-              parameters: {},
-            },
-          ],
+          tools: [],
           upstream_mcp: [
             {
               name: 'remote-mcp',
@@ -2803,14 +2796,7 @@ describe('ProfileLoader', () => {
         tmpPath,
         JSON.stringify({
           profile_name: 'upstream-env',
-          tools: [
-            {
-              name: 'tool_a',
-              description: 'Tool A',
-              operations: { list: 'listItems' },
-              parameters: {},
-            },
-          ],
+          tools: [],
           upstream_mcp_from_env: 'MCP4_UPSTREAM_MCP_JSON',
           upstream_mcp: [
             {
@@ -3198,7 +3184,7 @@ describe('ProfileLoader', () => {
         tmpPath,
         JSON.stringify({
           profile_name: 'upstream-no-auth',
-          tools: [{ name: 'tool_a', description: 'Tool A', operations: { list: 'listItems' }, parameters: {} }],
+          tools: [],
           upstream_mcp: [
             {
               name: 'no-auth-mcp',
