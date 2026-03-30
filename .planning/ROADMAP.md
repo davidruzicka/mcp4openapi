@@ -47,11 +47,12 @@ Plans:
   2. A tools/call request is routed to the upstream MCP server and the response is returned to the downstream client, with upstream failures mapped to typed MCP errors
   3. Tool definitions received from upstream are sanitized before forwarding - tool names and descriptions are validated against a safe-string allowlist to prevent tool poisoning and prompt injection
   4. Upstream notifications/tools/list_changed events are forwarded to the connected downstream SSE client, with queuing and replay on reconnect for disconnected clients
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 02-01: TBD
-- [ ] 02-02: TBD
+- [ ] 02-01-PLAN.md - Tool sanitizer, notification queue, and profile mutual-exclusivity validation (SEC-01, REL-04, PROXY-03)
+- [ ] 02-02-PLAN.md - Upstream tools/list and tools/call handler wiring with error mapping (PROXY-03, PROXY-04, SEC-01)
+- [ ] 02-03-PLAN.md - Notification forwarding from upstream to downstream SSE with bounded queue replay (REL-04)
 
 ### Phase 3: Client Authentication Gate
 **Goal**: Only authenticated clients can create sessions; identity is resolved and attached before any upstream resource is consumed
@@ -89,6 +90,6 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Upstream Session Foundation | 4/5 | In Progress|  |
-| 2. Tool Discovery and Call Proxy | 0/2 | Not started | - |
+| 2. Tool Discovery and Call Proxy | 0/3 | Not started | - |
 | 3. Client Authentication Gate | 0/2 | Not started | - |
 | 4. Observability | 0/2 | Not started | - |
