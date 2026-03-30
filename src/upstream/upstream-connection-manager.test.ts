@@ -2,13 +2,14 @@
  * Tests for UpstreamConnectionManager
  *
  * Covers: lazy connect, concurrent dedup, closeAll, FAILED state replacement,
- * error mapping, session destruction integration.
+ * error mapping, session destruction integration, validateCredentials.
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { UpstreamConnectionManager } from './upstream-connection-manager.js';
 import type { UpstreamMcpServerConfig } from '../types/profile.js';
 import { UpstreamConnectionError, UpstreamTimeoutError, UpstreamAuthError } from './upstream-errors.js';
+import { ValidationError } from '../core/errors.js';
 
 function createMockTransport() {
   return {
@@ -328,6 +329,143 @@ describe('UpstreamConnectionManager', () => {
 
       const conn = manager.getConnection('session-1', provider.name);
       expect(conn!.state).toBe('FAILED');
+    });
+  });
+
+  describe('validateCredentials', () => {
+    const SESSION_ID = 'validate-session';
+
+    function createValidationProvider(overrides?: Partial<UpstreamMcpServerConfig>): UpstreamMcpServerConfig {
+      return {
+        name: 'test-provider',
+        transport: { type: 'http-streamable' as const, url: 'https://upstream.example.com/mcp' },
+        auth: { type: 'bearer' as const, value_from_env: 'TEST_TOKEN' },
+        validation_endpoint: 'https://api.example.com/validate',
+        ...overrides,
+      };
+    }
+
+    let mockSsrfValidator: { validate: ReturnType<typeof vi.fn> };
+    let mockFetch: ReturnType<typeof vi.fn>;
+
+    beforeEach(() => {
+      mockSsrfValidator = { validate: vi.fn().mockResolvedValue(undefined) };
+      mockFetch = vi.fn();
+      vi.stubGlobal('fetch', mockFetch);
+    });
+
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    it('no-ops when no validation_endpoint configured', async () => {
+      const providerNoEndpoint = createValidationProvider({ validation_endpoint: undefined });
+      const mgr = new UpstreamConnectionManager({ clientFactory, transportFactory, ssrfValidator: mockSsrfValidator as never });
+      await expect(mgr.validateCredentials(SESSION_ID, providerNoEndpoint, 'valid-token')).resolves.toBeUndefined();
+      expect(mockSsrfValidator.validate).not.toHaveBeenCalled();
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it('no-ops when token is undefined', async () => {
+      const provider = createValidationProvider();
+      const mgr = new UpstreamConnectionManager({ clientFactory, transportFactory, ssrfValidator: mockSsrfValidator as never });
+      await expect(mgr.validateCredentials(SESSION_ID, provider, undefined)).resolves.toBeUndefined();
+      expect(mockSsrfValidator.validate).not.toHaveBeenCalled();
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it('throws ValidationError (SSRF blocked) when ssrfValidator.validate rejects', async () => {
+      const provider = createValidationProvider();
+      mockSsrfValidator.validate.mockRejectedValue(new ValidationError('IP address not allowed'));
+      const mgr = new UpstreamConnectionManager({ clientFactory, transportFactory, ssrfValidator: mockSsrfValidator as never });
+      await expect(mgr.validateCredentials(SESSION_ID, provider, 'some-token')).rejects.toThrow(ValidationError);
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it('resolves without error when ssrfValidator passes and fetch returns 200', async () => {
+      const provider = createValidationProvider();
+      mockFetch.mockResolvedValue({ status: 200 });
+      const mgr = new UpstreamConnectionManager({ clientFactory, transportFactory, ssrfValidator: mockSsrfValidator as never });
+      await expect(mgr.validateCredentials(SESSION_ID, provider, 'valid-token')).resolves.toBeUndefined();
+    });
+
+    it('throws UpstreamAuthError when fetch returns 401', async () => {
+      const provider = createValidationProvider();
+      mockFetch.mockResolvedValue({ status: 401 });
+      const mgr = new UpstreamConnectionManager({ clientFactory, transportFactory, ssrfValidator: mockSsrfValidator as never });
+      await expect(mgr.validateCredentials(SESSION_ID, provider, 'bad-token')).rejects.toThrow(UpstreamAuthError);
+    });
+
+    it('throws UpstreamAuthError when fetch returns 403', async () => {
+      const provider = createValidationProvider();
+      mockFetch.mockResolvedValue({ status: 403 });
+      const mgr = new UpstreamConnectionManager({ clientFactory, transportFactory, ssrfValidator: mockSsrfValidator as never });
+      await expect(mgr.validateCredentials(SESSION_ID, provider, 'bad-token')).rejects.toThrow(UpstreamAuthError);
+    });
+
+    it('includes provider name in UpstreamAuthError', async () => {
+      const provider = createValidationProvider({ name: 'my-provider' });
+      mockFetch.mockResolvedValue({ status: 401 });
+      const mgr = new UpstreamConnectionManager({ clientFactory, transportFactory, ssrfValidator: mockSsrfValidator as never });
+      const error = await mgr.validateCredentials(SESSION_ID, provider, 'bad-token').catch(e => e);
+      expect(error).toBeInstanceOf(UpstreamAuthError);
+      expect(error.message).toContain('my-provider');
+    });
+
+    it('throws UpstreamConnectionError when fetch rejects (network error)', async () => {
+      const provider = createValidationProvider();
+      mockFetch.mockRejectedValue(new Error('Network error'));
+      const mgr = new UpstreamConnectionManager({ clientFactory, transportFactory, ssrfValidator: mockSsrfValidator as never });
+      await expect(mgr.validateCredentials(SESSION_ID, provider, 'valid-token')).rejects.toThrow(UpstreamConnectionError);
+    });
+
+    it('throws UpstreamTimeoutError when fetch aborts (timeout)', async () => {
+      const provider = createValidationProvider();
+      const abortError = new Error('The operation was aborted');
+      abortError.name = 'AbortError';
+      mockFetch.mockRejectedValue(abortError);
+      const mgr = new UpstreamConnectionManager({ clientFactory, transportFactory, ssrfValidator: mockSsrfValidator as never });
+      await expect(mgr.validateCredentials(SESSION_ID, provider, 'valid-token')).rejects.toThrow(UpstreamTimeoutError);
+    });
+
+    it('uses HEAD method by default', async () => {
+      const provider = createValidationProvider();
+      mockFetch.mockResolvedValue({ status: 200 });
+      const mgr = new UpstreamConnectionManager({ clientFactory, transportFactory, ssrfValidator: mockSsrfValidator as never });
+      await mgr.validateCredentials(SESSION_ID, provider, 'valid-token');
+      expect(mockFetch).toHaveBeenCalledWith(
+        provider.validation_endpoint,
+        expect.objectContaining({ method: 'HEAD' }),
+      );
+    });
+
+    it('uses GET method when validation_method is GET', async () => {
+      const provider = createValidationProvider({ validation_method: 'GET' });
+      mockFetch.mockResolvedValue({ status: 200 });
+      const mgr = new UpstreamConnectionManager({ clientFactory, transportFactory, ssrfValidator: mockSsrfValidator as never });
+      await mgr.validateCredentials(SESSION_ID, provider, 'valid-token');
+      expect(mockFetch).toHaveBeenCalledWith(
+        provider.validation_endpoint,
+        expect.objectContaining({ method: 'GET' }),
+      );
+    });
+
+    it('uses default timeout of 5000ms when validation_timeout_ms not specified', async () => {
+      const provider = createValidationProvider();
+      mockFetch.mockResolvedValue({ status: 200 });
+      const mgr = new UpstreamConnectionManager({ clientFactory, transportFactory, ssrfValidator: mockSsrfValidator as never });
+      await mgr.validateCredentials(SESSION_ID, provider, 'valid-token');
+      const callArgs = mockFetch.mock.calls[0][1];
+      expect(callArgs.signal).toBeDefined();
+    });
+
+    it('respects custom validation_timeout_ms', async () => {
+      const provider = createValidationProvider({ validation_timeout_ms: 2000 });
+      mockFetch.mockResolvedValue({ status: 200 });
+      const mgr = new UpstreamConnectionManager({ clientFactory, transportFactory, ssrfValidator: mockSsrfValidator as never });
+      await mgr.validateCredentials(SESSION_ID, provider, 'valid-token');
+      const callArgs = mockFetch.mock.calls[0][1];
+      expect(callArgs.signal).toBeDefined();
     });
   });
 
