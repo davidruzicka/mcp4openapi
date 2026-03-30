@@ -81,6 +81,15 @@ export class ProfileLoader {
       profile.upstream_mcp = resolvedUpstreamMcp;
     }
 
+    // D-02: upstream_mcp and tools[] are mutually exclusive
+    if (profile.upstream_mcp?.length && profile.tools?.length) {
+      throw new ValidationError(
+        'Profile cannot define both "upstream_mcp" and "tools" - these are mutually exclusive. ' +
+        'When upstream_mcp is configured, tools are fetched from the upstream MCP server.',
+        { path: 'upstream_mcp' }
+      );
+    }
+
     return profile;
   }
 

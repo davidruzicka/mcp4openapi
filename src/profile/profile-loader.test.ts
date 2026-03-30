@@ -3259,4 +3259,80 @@ paths:
       await expect(loader.load(profilePath, parser)).rejects.toThrow("Operation 'missingOperation' in tool 'missing_operation' not found in OpenAPI spec");
     });
   });
+
+  describe('upstream_mcp and tools mutual exclusivity (D-02)', () => {
+    it('rejects profile with both upstream_mcp and non-empty tools[]', async () => {
+      const loader = new ProfileLoader();
+      const fs = await import('fs/promises');
+      const tmpPath = `/tmp/profile-mutex-both-${Date.now()}-${Math.random()}.json`;
+      await fs.writeFile(
+        tmpPath,
+        JSON.stringify({
+          profile_name: 'mutex-test',
+          upstream_mcp: [
+            {
+              name: 'test-upstream',
+              transport: { type: 'http-streamable', url: 'https://example.com/mcp' },
+            },
+          ],
+          tools: [
+            {
+              name: 'test_tool',
+              description: 'A tool',
+              parameters: {},
+              operations: { execute: 'op' },
+            },
+          ],
+        }),
+        'utf-8'
+      );
+
+      await expect(loader.load(tmpPath)).rejects.toThrow('mutually exclusive');
+    });
+
+    it('loads profile with upstream_mcp and empty tools[] (no conflict)', async () => {
+      const loader = new ProfileLoader();
+      const fs = await import('fs/promises');
+      const tmpPath = `/tmp/profile-mutex-upstream-only-${Date.now()}-${Math.random()}.json`;
+      await fs.writeFile(
+        tmpPath,
+        JSON.stringify({
+          profile_name: 'upstream-only',
+          upstream_mcp: [
+            {
+              name: 'test-upstream',
+              transport: { type: 'http-streamable', url: 'https://example.com/mcp' },
+            },
+          ],
+          tools: [],
+        }),
+        'utf-8'
+      );
+
+      await expect(loader.load(tmpPath)).resolves.toBeDefined();
+    });
+
+    it('loads profile with tools[] and no upstream_mcp', async () => {
+      const loader = new ProfileLoader();
+      const fs = await import('fs/promises');
+      const tmpPath = `/tmp/profile-mutex-tools-only-${Date.now()}-${Math.random()}.json`;
+      await fs.writeFile(
+        tmpPath,
+        JSON.stringify({
+          profile_name: 'tools-only',
+          tools: [
+            {
+              name: 'test_tool',
+              description: 'A tool',
+              parameters: {},
+              operations: { execute: 'op' },
+            },
+          ],
+        }),
+        'utf-8'
+      );
+
+      await expect(loader.load(tmpPath)).resolves.toBeDefined();
+    });
+  });
 });
