@@ -15,7 +15,7 @@ Milestone: v1 - Proxy foundation + security gate
 - [x] **PROXY-02**: Client-supplied upstream credentials (Bearer token, custom header, OAuth token)
   provided at session initialization are stored in the session context and forwarded to the upstream
   MCP server for all requests in that session; the gateway stores no credentials server-side
-- [ ] **PROXY-03**: A tools/list request from a downstream client returns the tool list fetched from
+- [x] **PROXY-03**: A tools/list request from a downstream client returns the tool list fetched from
   the upstream MCP server defined in the active profile (same profile-per-upstream model as OpenAPI
   profiles; no aggregation or namespacing across providers)
 - [ ] **PROXY-04**: A tools/call request is routed to the upstream MCP server defined in the active
@@ -34,7 +34,7 @@ Milestone: v1 - Proxy foundation + security gate
 
 ### Security
 
-- [ ] **SEC-01**: Tool definitions received from an upstream MCP server are sanitized before being
+- [x] **SEC-01**: Tool definitions received from an upstream MCP server are sanitized before being
   forwarded to downstream clients; tool names and descriptions are validated against a safe-string
   allowlist to prevent tool poisoning and prompt injection via upstream tool metadata
 - [x] **SEC-02**: Upstream credential values are redacted from all logs, error responses, and
@@ -62,7 +62,7 @@ Milestone: v1 - Proxy foundation + security gate
 - [x] **REL-03**: Upstream failure cases (connection timeout, auth failure, server unavailable,
   malformed response) produce typed error responses to the downstream client with correlation IDs;
   no raw stack traces or upstream credential fragments in error payloads
-- [ ] **REL-04**: Upstream notifications/tools/list_changed events received on a live upstream
+- [x] **REL-04**: Upstream notifications/tools/list_changed events received on a live upstream
   session are forwarded to the connected downstream SSE client; if no stream is attached,
   notifications are queued and replayed on reconnect using existing SSE replay infrastructure
 
@@ -114,12 +114,12 @@ Milestone: v1 - Proxy foundation + security gate
 |--------|-------|--------|
 | PROXY-01 | Phase 1 | Complete |
 | PROXY-02 | Phase 1 | Complete |
-| PROXY-03 | Phase 2 | Pending |
+| PROXY-03 | Phase 2 | Complete |
 | PROXY-04 | Phase 2 | Pending |
 | AUTH-01 | Phase 3 | Pending |
 | AUTH-02 | Phase 3 | Pending |
 | AUTH-03 | Phase 3 | Pending |
-| SEC-01 | Phase 2 | Pending |
+| SEC-01 | Phase 2 | Complete |
 | SEC-02 | Phase 1 | Complete |
 | OBS-01 | Phase 4 | Pending |
 | OBS-02 | Phase 4 | Pending |
@@ -127,4 +127,4 @@ Milestone: v1 - Proxy foundation + security gate
 | REL-01 | Phase 1 | Complete |
 | REL-02 | Phase 1 | Complete |
 | REL-03 | Phase 1 | Complete |
-| REL-04 | Phase 2 | Pending |
+| REL-04 | Phase 2 | Complete |
