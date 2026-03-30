@@ -3183,6 +3183,21 @@ export class HttpTransport {
       this.replayMessages(res, streamState);
     }
 
+    // Flush any buffered upstream notifications (D-08: replay on reconnect)
+    if (this.upstreamConnectionManager) {
+      const buffered = this.upstreamConnectionManager.drainNotifications(sessionId);
+      for (const entry of buffered) {
+        const notification: Record<string, unknown> = { jsonrpc: '2.0', method: entry.method };
+        if (entry.params !== undefined) notification.params = entry.params;
+        const eventId = Date.now();
+        res.write(`id: ${eventId}\n`);
+        res.write(`data: ${JSON.stringify(notification)}\n\n`);
+      }
+      if (buffered.length > 0) {
+        this.logger.debug('Replayed buffered upstream notifications', { sessionId, count: buffered.length });
+      }
+    }
+
     // Setup heartbeat if enabled
     let heartbeatInterval: NodeJS.Timeout | null = null;
     if (this.config.heartbeatEnabled) {
@@ -3247,10 +3262,20 @@ export class HttpTransport {
       if (streamState.active) {
         // Queue for resumability
         streamState.messageQueue.push(queuedMessage);
-        
+
         // Keep only last 100 messages
         if (streamState.messageQueue.length > 100) {
           streamState.messageQueue.shift();
+        }
+
+        // Write to active SSE stream for real-time delivery
+        try {
+          streamState.response.write(`id: ${eventId}\n`);
+          streamState.response.write(`data: ${JSON.stringify(message)}\n\n`);
+        } catch (writeError) {
+          // Stream may have closed between active check and write; mark inactive
+          streamState.active = false;
+          this.logger.debug('Failed to write to SSE stream', { sessionId, error: (writeError as Error).message });
         }
       }
     }
@@ -3530,11 +3555,61 @@ export class HttpTransport {
    */
   public setUpstreamConnectionManager(manager: UpstreamConnectionManager): void {
     this.upstreamConnectionManager = manager;
+
+    // Wire stream presence check: upstream manager checks if SSE stream is active
+    // before attempting to forward (avoids exception-as-control-flow anti-pattern)
+    manager.setHasActiveStreamFn((sessionId: string): boolean => {
+      return this.hasActiveStream(sessionId);
+    });
+
+    // Wire notification forwarding path: upstream -> downstream SSE
+    manager.setDownstreamNotifyFn((sessionId: string, method: string, params?: unknown) => {
+      const profileId = this.findProfileIdForSession(sessionId);
+      if (!profileId) {
+        // Session not found - likely already destroyed; caller will queue
+        return;
+      }
+      // Forward as JSON-RPC notification (no id field per spec)
+      const notification: Record<string, unknown> = { jsonrpc: '2.0', method };
+      if (params !== undefined) notification.params = params;
+      this.sendToClient(profileId, sessionId, notification);
+    });
+
     this.onSessionDestroyed((_profileId: string, sessionId: string) => {
       this.upstreamConnectionManager?.closeAll(sessionId).catch((error) => {
         this.logger.error('Failed to close upstream connections on session destroy', error as Error);
       });
     });
+  }
+
+  /**
+   * Check if a session has at least one active SSE stream attached.
+   * Used by UpstreamConnectionManager to decide between forwarding and queuing notifications.
+   */
+  public hasActiveStream(sessionId: string): boolean {
+    for (const [, profileState] of this.profileStates.entries()) {
+      const session = profileState.sessions.get(sessionId);
+      if (session) {
+        for (const streamState of session.sseStreams.values()) {
+          if (streamState.active) return true;
+        }
+        return false;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Find the profileId that owns a given sessionId.
+   * O(n) over profileStates - acceptable for phase 2 scale.
+   */
+  private findProfileIdForSession(sessionId: string): string | undefined {
+    for (const [profileId, profileState] of this.profileStates.entries()) {
+      if (profileState.sessions.has(sessionId)) {
+        return profileId;
+      }
+    }
+    return undefined;
   }
 
   /**
