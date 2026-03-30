@@ -655,6 +655,7 @@ export class MCPServer {
       resourceName: this.profile.resource_name || resourceMetadata.name || 'MCP Server',
       resourceDocumentation: this.profile.resource_documentation || resourceMetadata.documentation,
       parser: this.parser,
+      upstreamMcp: this.profile.upstream_mcp,
     };
   }
 

@@ -28,6 +28,7 @@ import type {
 import { isInitializeRequest } from '../validation/jsonrpc-validator.js';
 import { MetricsCollector } from '../core/metrics.js';
 import type { UpstreamConnectionManager } from '../upstream/upstream-connection-manager.js';
+import { UpstreamAuthError } from '../upstream/upstream-errors.js';
 import type { MetricsContextLabels } from '../core/metrics.js';
 import { ExternalOAuthProvider } from '../auth/oauth-provider.js';
 import { EnterpriseAuthProvider } from '../auth/enterprise-auth-provider.js';
@@ -2785,6 +2786,42 @@ export class HttpTransport {
             }
           }
           
+          // Validate upstream credentials if upstream_mcp providers have validation_endpoint
+          if (this.upstreamConnectionManager && profileState.context.upstreamMcp) {
+            for (const upstreamProvider of profileState.context.upstreamMcp) {
+              if (upstreamProvider.validation_endpoint) {
+                try {
+                  await this.upstreamConnectionManager.validateCredentials(
+                    'pre-session',
+                    upstreamProvider,
+                    authInfo.token,
+                  );
+                  this.logger.info('Upstream credential validation successful', {
+                    provider: upstreamProvider.name,
+                  });
+                } catch (error) {
+                  this.logger.warn('Upstream credential validation failed', {
+                    provider: upstreamProvider.name,
+                    error: error instanceof Error ? error.message : String(error),
+                  });
+                  if (error instanceof UpstreamAuthError) {
+                    res.status(HTTP_STATUS.UNAUTHORIZED).json({
+                      error: 'Unauthorized',
+                      message: `Upstream authentication failed for provider '${upstreamProvider.name}'`,
+                    });
+                    return;
+                  }
+                  // SSRF, timeout, or connection errors - return 502 Bad Gateway
+                  res.status(502).json({
+                    error: 'Bad Gateway',
+                    message: `Upstream credential validation failed for provider '${upstreamProvider.name}'`,
+                  });
+                  return;
+                }
+              }
+            }
+          }
+
           // Look up OAuth tokens if this is an OAuth token
           let refreshToken: string | undefined;
           let accessTokenExpiresAt: number | undefined;
