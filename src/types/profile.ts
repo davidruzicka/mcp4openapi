@@ -51,6 +51,13 @@ export interface UpstreamMcpServerConfig {
 
   /** Optional request timeout for upstream MCP calls. */
   timeout_ms?: number;
+
+  /** Optional endpoint to validate upstream credentials at session init (fail-fast). */
+  validation_endpoint?: string;
+  /** HTTP method for validation probe. Default: 'HEAD'. */
+  validation_method?: 'HEAD' | 'GET';
+  /** Timeout for validation probe in ms. Default: 5000. */
+  validation_timeout_ms?: number;
 }
 
 export type UpstreamMcpTransportConfig = UpstreamMcpHttpStreamableTransportConfig;

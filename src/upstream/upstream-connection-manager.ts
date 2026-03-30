@@ -18,6 +18,9 @@ import type { UpstreamConnection } from '../types/upstream-connection.js';
 import { UpstreamConnectionError, UpstreamTimeoutError, UpstreamAuthError } from './upstream-errors.js';
 import { buildAuthHeaders } from './upstream-credential-store.js';
 import { sanitizeAuthErrorMessage } from '../auth/auth-redaction.js';
+import { SSRFValidator } from '../security/ssrf-validator.js';
+import { ConsoleLogger } from '../core/logger.js';
+import type { Logger } from '../core/logger.js';
 
 /** Auth-related HTTP status codes */
 const AUTH_STATUS_CODES = new Set([401, 403]);
@@ -31,6 +34,8 @@ export interface UpstreamConnectionManagerOptions {
     onerror: ((error: Error) => void) | null;
     onclose: (() => void) | null;
   };
+  ssrfValidator?: SSRFValidator;
+  logger?: Logger;
 }
 
 export class UpstreamConnectionManager {
@@ -42,6 +47,8 @@ export class UpstreamConnectionManager {
 
   private readonly clientFactory: NonNullable<UpstreamConnectionManagerOptions['clientFactory']>;
   private readonly transportFactory: NonNullable<UpstreamConnectionManagerOptions['transportFactory']>;
+  private readonly ssrfValidator: SSRFValidator;
+  private readonly logger: Logger;
 
   constructor(options?: UpstreamConnectionManagerOptions) {
     this.clientFactory = options?.clientFactory ?? (() => {
@@ -50,6 +57,8 @@ export class UpstreamConnectionManager {
     this.transportFactory = options?.transportFactory ?? (() => {
       throw new Error('Default transportFactory not available in production - inject via options');
     });
+    this.logger = options?.logger ?? new ConsoleLogger();
+    this.ssrfValidator = options?.ssrfValidator ?? new SSRFValidator(this.logger);
   }
 
   /**
@@ -118,6 +127,57 @@ export class UpstreamConnectionManager {
 
     await Promise.all(closePromises);
     this.connections.delete(sessionId);
+  }
+
+  /**
+   * Opt-in early auth validation against upstream validation_endpoint.
+   * Performs SSRF validation then a lightweight HTTP probe to verify token is accepted.
+   * No-op when validation_endpoint is not configured or token is absent.
+   */
+  async validateCredentials(
+    sessionId: string,
+    provider: UpstreamMcpServerConfig,
+    token: string | undefined,
+  ): Promise<void> {
+    if (!provider.validation_endpoint || !token) {
+      return;
+    }
+
+    // SSRF check first - block private/loopback/link-local targets
+    await this.ssrfValidator.validate(provider.validation_endpoint, {
+      allowPrivateNetwork: process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK === 'true',
+    });
+
+    const authHeaders = buildAuthHeaders(provider, token);
+    const timeoutMs = provider.validation_timeout_ms ?? 5000;
+
+    let response: { status: number };
+    try {
+      response = await fetch(provider.validation_endpoint, {
+        method: provider.validation_method ?? 'HEAD',
+        headers: authHeaders,
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error(String(error));
+      if (err.name === 'TimeoutError' || err.name === 'AbortError') {
+        throw new UpstreamTimeoutError(provider.name, timeoutMs);
+      }
+      throw new UpstreamConnectionError(
+        sanitizeAuthErrorMessage(err.message),
+        provider.name,
+      );
+    }
+
+    if (response.status === 401 || response.status === 403) {
+      throw new UpstreamAuthError(provider.name);
+    }
+
+    this.logger.debug('Upstream credential validation passed', {
+      provider: provider.name,
+      sessionId,
+      status: response.status,
+    });
   }
 
   /** Get connection metadata for a session+provider, or undefined */

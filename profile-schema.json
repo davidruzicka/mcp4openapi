@@ -1419,14 +1419,14 @@
           ]
         },
         "overrides": {
-          "$ref": "#/definitions/Record%3Cstring%2Cstructure-1535101595-20604-20640-1535101595-20589-20641-1535101595-20575-20642-1535101595-20504-20644-1535101595-0-20784%3E"
+          "$ref": "#/definitions/Record%3Cstring%2Cstructure-1535101595-20918-20954-1535101595-20903-20955-1535101595-20889-20956-1535101595-20818-20958-1535101595-0-21098%3E"
         }
       },
       "required": [
         "max_requests_per_minute"
       ]
     },
-    "Record<string,structure-1535101595-20604-20640-1535101595-20589-20641-1535101595-20575-20642-1535101595-20504-20644-1535101595-0-20784>": {
+    "Record<string,structure-1535101595-20918-20954-1535101595-20903-20955-1535101595-20889-20956-1535101595-20818-20958-1535101595-0-21098>": {
       "type": "object",
       "additionalProperties": {
         "type": "object",
@@ -1777,6 +1777,22 @@
         "timeout_ms": {
           "type": "number",
           "description": "Optional request timeout for upstream MCP calls."
+        },
+        "validation_endpoint": {
+          "type": "string",
+          "description": "Optional endpoint to validate upstream credentials at session init (fail-fast)."
+        },
+        "validation_method": {
+          "type": "string",
+          "enum": [
+            "HEAD",
+            "GET"
+          ],
+          "description": "HTTP method for validation probe. Default: 'HEAD'."
+        },
+        "validation_timeout_ms": {
+          "type": "number",
+          "description": "Timeout for validation probe in ms. Default: 5000."
         }
       },
       "required": [
@@ -1846,6 +1862,20 @@
             "type": "string"
           }
         }
+      }
+    },
+    "Record<string,structure-1535101595-20409-20445-1535101595-20394-20446-1535101595-20380-20447-1535101595-20309-20449-1535101595-0-20589>": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "max_requests_per_minute": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "max_requests_per_minute"
+        ]
       }
     },
     "Record<string,structure-1535101595-20095-20131-1535101595-20080-20132-1535101595-20066-20133-1535101595-19995-20135-1535101595-0-20275>": {
