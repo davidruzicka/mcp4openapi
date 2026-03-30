@@ -1,9 +1,9 @@
 ---
 status: complete
 phase: 01-upstream-session-foundation
-source: [01-01-SUMMARY.md, 01-02-SUMMARY.md, 01-03-SUMMARY.md]
-started: 2026-03-27T07:00:00Z
-updated: 2026-03-29T00:00:00Z
+source: [01-04-SUMMARY.md, 01-05-SUMMARY.md]
+started: 2026-03-30T08:20:00Z
+updated: 2026-03-30T08:30:00Z
 ---
 
 ## Current Test
@@ -12,112 +12,42 @@ updated: 2026-03-29T00:00:00Z
 
 ## Tests
 
-### 1. X-Upstream-Authorization header parsing
+### 1. Credential model — direct token passthrough
 expected: |
-  extractUpstreamCredentials parses a header like
-  "X-Upstream-Authorization: github=ghp_token123,gitlab=glpat_abc"
-  into a Map with provider keys and token values.
-  Multiple providers work. Unknown providers are filtered if allowedProviders is set.
-  A missing header returns undefined gracefully (no error thrown).
-result: issue
-reported: "Every upstream mcp is isolated in its own profile - client sets his url mcp like https://mcp4openapi.local/profile/github-proxy/mcp and in headers it can set direct Authorization: Bearer ${input:github-token}. X-Upstream-Authorization is not required because we aren't creating aggregation-like mcp server."
-severity: major
+  buildAuthHeaders accepts (provider, token: string | undefined) directly — no UpstreamCredentials wrapper.
+  getOrConnect accepts token: string | undefined directly.
+  upstream-credential-extractor.ts and UpstreamCredentialStore class no longer exist.
+  SessionData has no upstreamCredentials field.
+  Passing a plain token string to buildAuthHeaders returns {"Authorization": "Bearer <token>"}.
+result: pass
+note: custom-header auth type also supported (returns {[header_name]: token}) — test expected bearer only
 
-### 2. Auth header builder produces correct format
+### 2. Bearer token redaction with diagnostic suffix
 expected: |
-  buildAuthHeaders given a bearer token produces {"Authorization": "Bearer <token>"}.
-  Given a custom-header config produces the custom header name with the token value.
-  No extra headers are added beyond what the auth config specifies.
+  sanitizeAuthErrorMessage applied to a string containing "Authorization: Bearer ghp_sometoken1234567890"
+  produces "Authorization: Bearer [REDACTED]...7890" — last 4 chars preserved.
+  Structured log field redaction (redactString) still fully redacts with no suffix.
+  JWT-format tokens are redacted as [REDACTED_JWT], not matched by the Bearer regex.
 result: pass
 
-### 3. Token redaction in logs
+### 3. Early upstream auth validation at session init
 expected: |
-  Fields named "upstream_token", "x_api_key", and "api_key" are redacted in log output.
-  A Bearer token pattern in an error message is stripped — only "Bearer [REDACTED]" remains.
-  Provider names (e.g. "github") are NOT redacted, only the token values.
-result: issue
-reported: "Full redaction loses diagnostic value. Partial suffix like Bearer [REDACTED]...xQ5g would help identify which token is in use without exposing it."
-severity: minor
-
-### 4. Typed upstream errors carry correlation IDs
-expected: |
-  UpstreamConnectionError, UpstreamTimeoutError, UpstreamAuthError each have a correlationId field.
-  toMcpErrorResponse returns a safe MCP error shape without stack traces.
-  sanitizeAuthErrorMessage strips long Bearer token strings from error messages.
-result: pass
-
-### 5. Lazy upstream connection — no connection at session init
-expected: |
-  UpstreamConnectionManager.getOrConnect creates the upstream MCP client only on the FIRST call,
-  not when the manager is instantiated. Before any getOrConnect call, getActiveSessionCount returns 0
-  and getConnection returns undefined for any sessionId.
-result: issue
-reported: "No early auth validation at session init - upstream token validity only surfaces on first tool call. User suggests validation_endpoint in profile config to fail fast with a clean auth error during initialize."
-severity: minor
-
-### 6. Concurrent getOrConnect deduplication
-expected: |
-  Two simultaneous getOrConnect calls for the same sessionId+providerName result in only ONE
-  upstream client being created (the second awaits the first's promise rather than starting a
-  parallel connection). The clientFactory is called exactly once.
-result: pass
-
-### 7. Session cleanup closes upstream connections
-expected: |
-  After setUpstreamConnectionManager is called on HttpTransport and a session is destroyed
-  (via reaper timeout, DELETE /mcp, or server shutdown), closeAll is invoked for that session.
-  Errors from transport.close are caught and logged — they do NOT propagate to break session destruction.
-result: pass
-
-### 8. Heartbeat pings fire at configured interval
-expected: |
-  UpstreamHeartbeatManager.start(sessionId, providerName, pingFn, config) triggers pingFn at
-  every intervalMs. isRunning returns true after start, false after stop.
-  A second start call for the same key is a no-op (idempotent — no duplicate timers).
-  stopAll() cancels all active timers.
-result: pass
-
-### 9. Heartbeat failure callback invoked on ping rejection
-expected: |
-  When pingFn rejects, the onFailure callback is called with an Error instance.
-  Non-Error rejections (bare strings, objects) are wrapped in Error before being passed to onFailure.
-  The heartbeat timer continues running after failure (does not auto-stop).
+  A profile with upstream_mcp.validation_endpoint set causes validateCredentials() to fire
+  during the MCP initialize handshake (isInitialization block in http-transport).
+  A 401 from the validation endpoint returns HTTP 401 to the client with an UpstreamAuthError.
+  A network failure / SSRF-blocked URL returns HTTP 502.
+  A profile without validation_endpoint skips validation entirely (no-op, no HTTP call made).
 result: pass
 
 ## Summary
 
-total: 9
-passed: 6
-issues: 3
+total: 3
+passed: 3
+issues: 0
 pending: 0
 skipped: 0
 blocked: 0
 
 ## Gaps
 
-- truth: "Upstream MCP credential delivery uses the standard Authorization: Bearer header — each upstream MCP is isolated in its own profile (e.g. /profile/github-proxy/mcp), so the client just sends a direct Authorization header. No multi-provider X-Upstream-Authorization header is needed."
-  status: failed
-  reason: "User reported: Every upstream mcp is isolated in its own profile - client sets his url mcp like https://mcp4openapi.local/profile/github-proxy/mcp and in headers it can set direct Authorization: Bearer. X-Upstream-Authorization is not required because we aren't creating aggregation-like mcp server."
-  severity: major
-  test: 1
-  root_cause: "Planning assumed aggregation-server model (N upstream providers per session, per-provider token keying). Actual architecture is profile-per-upstream: one profile, one upstream, one token. X-Upstream-Authorization header, UpstreamCredentialStore, extractUpstreamCredentials, UpstreamCredentials interface, and SessionData.upstreamCredentials field are all dead code — none are wired into production. Fix: delete extractor and credential store, simplify buildAuthHeaders to accept token: string | undefined, change getOrConnect signature to match."
-  artifacts: [src/upstream/upstream-credential-extractor.ts, src/upstream/upstream-credential-extractor.test.ts, src/upstream/upstream-credential-store.ts, src/upstream/upstream-credential-store.test.ts, src/types/upstream-connection.ts, src/types/http-transport.ts, src/upstream/upstream-connection-manager.ts, src/upstream/upstream-connection-manager.test.ts]
-  missing: []
-
-- truth: "Bearer token redaction in logs should preserve a short suffix (last 4 chars) for diagnostic identity, e.g. Bearer [REDACTED]...xQ5g, rather than full erasure."
-  status: failed
-  reason: "User reported: Full redaction loses diagnostic value. Partial suffix like Bearer [REDACTED]...xQ5g would help identify which token is in use without exposing it."
-  severity: minor
-  test: 3
-  root_cause: "sanitizeAuthErrorMessage in src/auth/auth-redaction.ts line 60 uses .replace(/Bearer\\s+\\S{20,}/gi, 'Bearer [REDACTED]') which discards the token entirely. Fix: capture token in regex group, slice last 4 chars, return Bearer [REDACTED]...{suffix}. Only this Bearer-in-error-message path needs suffix treatment; structured log field redaction (redactString) stays fully redacted."
-  artifacts: [src/auth/auth-redaction.ts, src/auth/auth-redaction.test.ts]
-  missing: []
-
-- truth: "No early auth validation at session init - upstream token validity only surfaces on first tool call. Profile should support an optional validation_endpoint to fail fast with a clean UpstreamAuthError during initialize."
-  status: failed
-  reason: "User reported: missing authentication validation info for client when authentication invalid. Suggested validation_endpoint variant in mcp profile."
-  severity: minor
-  test: 5
-  root_cause: "UpstreamConnectionManager is deliberately lazy (by design), but there is no opt-in early-validation hook. The inbound equivalent (AuthInterceptor.validation_endpoint) already exists and is the reference model. Fix: add optional validation_endpoint/validation_method/validation_timeout_ms to UpstreamMcpServerConfig, add validateCredentials() to UpstreamConnectionManager that does a lightweight fetch probe using existing buildAuthHeaders + SSRFValidator, wire the call into the isInitialization block of http-transport.ts before createSession."
-  artifacts: [src/upstream/upstream-connection-manager.ts, src/types/upstream-connection.ts]
-  missing: [UpstreamMcpServerConfig.validation_endpoint field in src/types/profile.ts, UpstreamConnectionManager.validateCredentials() method, wiring in http-transport.ts isInitialization block]
+[none yet]
