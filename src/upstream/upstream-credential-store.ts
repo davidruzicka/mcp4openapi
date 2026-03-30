@@ -1,33 +1,9 @@
 /**
- * Per-session credential storage for upstream MCP providers
- *
- * Stores client-supplied tokens keyed by provider name.
- * Tokens are extracted from the X-Upstream-Authorization header at session init
- * and cleared when the session is destroyed.
+ * Auth header builder for upstream MCP provider requests.
+ * Profile-per-upstream model: one token per session.
  */
 
-import type { UpstreamCredentials } from '../types/upstream-connection.js';
 import type { UpstreamMcpServerConfig } from '../types/profile.js';
-
-export class UpstreamCredentialStore implements UpstreamCredentials {
-  private readonly tokens = new Map<string, string>();
-
-  setToken(providerName: string, token: string): void {
-    this.tokens.set(providerName, token);
-  }
-
-  getToken(providerName: string): string | undefined {
-    return this.tokens.get(providerName);
-  }
-
-  hasCredentials(providerName: string): boolean {
-    return this.tokens.has(providerName);
-  }
-
-  clear(): void {
-    this.tokens.clear();
-  }
-}
 
 /**
  * Build HTTP auth headers for an upstream provider request.
@@ -39,11 +15,9 @@ export class UpstreamCredentialStore implements UpstreamCredentials {
  */
 export function buildAuthHeaders(
   provider: UpstreamMcpServerConfig,
-  credentials: UpstreamCredentials,
+  token: string | undefined,
 ): Record<string, string> {
   if (!provider.auth) return {};
-
-  const token = credentials.getToken(provider.name);
   if (!token) return {};
 
   const AUTH_HEADER_BUILDERS: Record<string, (tok: string) => Record<string, string>> = {

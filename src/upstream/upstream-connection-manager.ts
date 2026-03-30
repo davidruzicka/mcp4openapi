@@ -14,7 +14,7 @@
 import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import type { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import type { UpstreamMcpServerConfig } from '../types/profile.js';
-import type { UpstreamConnection, UpstreamCredentials } from '../types/upstream-connection.js';
+import type { UpstreamConnection } from '../types/upstream-connection.js';
 import { UpstreamConnectionError, UpstreamTimeoutError, UpstreamAuthError } from './upstream-errors.js';
 import { buildAuthHeaders } from './upstream-credential-store.js';
 import { sanitizeAuthErrorMessage } from '../auth/auth-redaction.js';
@@ -61,7 +61,7 @@ export class UpstreamConnectionManager {
   async getOrConnect(
     sessionId: string,
     provider: UpstreamMcpServerConfig,
-    credentials: UpstreamCredentials,
+    token: string | undefined,
   ): Promise<Client> {
     const dedupKey = `${sessionId}:${provider.name}`;
 
@@ -84,7 +84,7 @@ export class UpstreamConnectionManager {
       sessionMap?.delete(provider.name);
     }
 
-    const connectPromise = this.createConnection(sessionId, provider, credentials);
+    const connectPromise = this.createConnection(sessionId, provider, token);
     this.pendingConnections.set(dedupKey, connectPromise as Promise<Client>);
 
     try {
@@ -133,9 +133,9 @@ export class UpstreamConnectionManager {
   private async createConnection(
     sessionId: string,
     provider: UpstreamMcpServerConfig,
-    credentials: UpstreamCredentials,
+    token: string | undefined,
   ): Promise<Client> {
-    const authHeaders = buildAuthHeaders(provider, credentials);
+    const authHeaders = buildAuthHeaders(provider, token);
 
     const transport = this.transportFactory(
       new URL(provider.transport.url),

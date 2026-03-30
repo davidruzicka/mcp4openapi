@@ -8,7 +8,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { UpstreamConnectionManager } from './upstream-connection-manager.js';
 import type { UpstreamMcpServerConfig } from '../types/profile.js';
-import type { UpstreamCredentials } from '../types/upstream-connection.js';
 import { UpstreamConnectionError, UpstreamTimeoutError, UpstreamAuthError } from './upstream-errors.js';
 
 function createMockTransport() {
@@ -36,12 +35,6 @@ function createProvider(name = 'test-provider'): UpstreamMcpServerConfig {
   };
 }
 
-function createCredentials(): UpstreamCredentials {
-  return {
-    getToken: vi.fn().mockReturnValue('test-token'),
-    hasCredentials: vi.fn().mockReturnValue(true),
-  };
-}
 
 describe('UpstreamConnectionManager', () => {
   let manager: UpstreamConnectionManager;
@@ -69,7 +62,7 @@ describe('UpstreamConnectionManager', () => {
   describe('getOrConnect', () => {
     it('returns client instance on successful connect', async () => {
       const provider = createProvider();
-      const credentials = createCredentials();
+      const credentials = 'test-token';
 
       const client = await manager.getOrConnect('session-1', provider, credentials);
 
@@ -80,7 +73,7 @@ describe('UpstreamConnectionManager', () => {
 
     it('returns same client on second call (no duplicate connect)', async () => {
       const provider = createProvider();
-      const credentials = createCredentials();
+      const credentials = 'test-token';
 
       const client1 = await manager.getOrConnect('session-1', provider, credentials);
       const client2 = await manager.getOrConnect('session-1', provider, credentials);
@@ -91,7 +84,7 @@ describe('UpstreamConnectionManager', () => {
 
     it('deduplicates concurrent calls (same promise)', async () => {
       const provider = createProvider();
-      const credentials = createCredentials();
+      const credentials = 'test-token';
 
       // Make connect slow so both calls are in-flight
       let resolveConnect!: () => void;
@@ -113,7 +106,7 @@ describe('UpstreamConnectionManager', () => {
     it('creates separate connections for different providers', async () => {
       const providerA = createProvider('provider-a');
       const providerB = createProvider('provider-b');
-      const credentials = createCredentials();
+      const credentials = 'test-token';
 
       const mockClientA = createMockClient();
       const mockClientB = createMockClient();
@@ -133,7 +126,7 @@ describe('UpstreamConnectionManager', () => {
 
     it('creates separate connections for different sessions', async () => {
       const provider = createProvider();
-      const credentials = createCredentials();
+      const credentials = 'test-token';
 
       const mockClient1 = createMockClient();
       const mockClient2 = createMockClient();
@@ -153,7 +146,7 @@ describe('UpstreamConnectionManager', () => {
 
     it('replaces FAILED connection with fresh one', async () => {
       const provider = createProvider();
-      const credentials = createCredentials();
+      const credentials = 'test-token';
 
       await manager.getOrConnect('session-1', provider, credentials);
 
@@ -178,7 +171,7 @@ describe('UpstreamConnectionManager', () => {
     it('closes all transports for a session and removes from map', async () => {
       const providerA = createProvider('provider-a');
       const providerB = createProvider('provider-b');
-      const credentials = createCredentials();
+      const credentials = 'test-token';
 
       const tA = createMockTransport();
       const tB = createMockTransport();
@@ -203,7 +196,7 @@ describe('UpstreamConnectionManager', () => {
 
     it('allows fresh connection after closeAll', async () => {
       const provider = createProvider();
-      const credentials = createCredentials();
+      const credentials = 'test-token';
 
       await manager.getOrConnect('session-1', provider, credentials);
       await manager.closeAll('session-1');
@@ -223,7 +216,7 @@ describe('UpstreamConnectionManager', () => {
   describe('getConnection', () => {
     it('returns UpstreamConnection for existing connection', async () => {
       const provider = createProvider();
-      const credentials = createCredentials();
+      const credentials = 'test-token';
 
       await manager.getOrConnect('session-1', provider, credentials);
 
@@ -245,7 +238,7 @@ describe('UpstreamConnectionManager', () => {
   describe('error mapping', () => {
     it('throws UpstreamConnectionError on generic connect failure', async () => {
       const provider = createProvider();
-      const credentials = createCredentials();
+      const credentials = 'test-token';
 
       mockClient.connect.mockRejectedValue(new Error('ECONNREFUSED'));
 
@@ -255,7 +248,7 @@ describe('UpstreamConnectionManager', () => {
 
     it('throws UpstreamAuthError on 401-like connect failure', async () => {
       const provider = createProvider();
-      const credentials = createCredentials();
+      const credentials = 'test-token';
 
       const authError = new Error('Unauthorized');
       (authError as Record<string, unknown>).statusCode = 401;
@@ -267,7 +260,7 @@ describe('UpstreamConnectionManager', () => {
 
     it('throws UpstreamAuthError on 403 connect failure', async () => {
       const provider = createProvider();
-      const credentials = createCredentials();
+      const credentials = 'test-token';
 
       const authError = new Error('Forbidden');
       (authError as Record<string, unknown>).statusCode = 403;
@@ -280,7 +273,7 @@ describe('UpstreamConnectionManager', () => {
     it('throws UpstreamTimeoutError on timeout', async () => {
       const provider = createProvider();
       provider.timeout_ms = 5000;
-      const credentials = createCredentials();
+      const credentials = 'test-token';
 
       const timeoutError = new Error('Timeout');
       timeoutError.name = 'TimeoutError';
@@ -292,7 +285,7 @@ describe('UpstreamConnectionManager', () => {
 
     it('clears pending connection on error', async () => {
       const provider = createProvider();
-      const credentials = createCredentials();
+      const credentials = 'test-token';
 
       mockClient.connect.mockRejectedValue(new Error('fail'));
 
@@ -312,7 +305,7 @@ describe('UpstreamConnectionManager', () => {
   describe('transport event handlers', () => {
     it('sets state to FAILED on transport close', async () => {
       const provider = createProvider();
-      const credentials = createCredentials();
+      const credentials = 'test-token';
 
       await manager.getOrConnect('session-1', provider, credentials);
 
@@ -326,7 +319,7 @@ describe('UpstreamConnectionManager', () => {
 
     it('sets state to FAILED on transport error', async () => {
       const provider = createProvider();
-      const credentials = createCredentials();
+      const credentials = 'test-token';
 
       await manager.getOrConnect('session-1', provider, credentials);
 
@@ -341,7 +334,7 @@ describe('UpstreamConnectionManager', () => {
   describe('session destruction integration', () => {
     it('closeAll called via onSessionDestroyed listener closes upstream connections', async () => {
       const provider = createProvider();
-      const credentials = createCredentials();
+      const credentials = 'test-token';
 
       await manager.getOrConnect('session-1', provider, credentials);
       expect(manager.getActiveSessionCount()).toBe(1);
@@ -354,7 +347,7 @@ describe('UpstreamConnectionManager', () => {
 
     it('reaper scenario: closing one session does not affect another', async () => {
       const provider = createProvider();
-      const credentials = createCredentials();
+      const credentials = 'test-token';
 
       const t1 = createMockTransport();
       const t2 = createMockTransport();
@@ -374,7 +367,7 @@ describe('UpstreamConnectionManager', () => {
 
     it('closeAll error does not propagate when caught', async () => {
       const provider = createProvider();
-      const credentials = createCredentials();
+      const credentials = 'test-token';
 
       mockTransport.close.mockRejectedValue(new Error('close failed'));
 
