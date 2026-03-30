@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 01-05-PLAN.md
-last_updated: "2026-03-30T08:21:44.207Z"
+stopped_at: Completed 02-01-PLAN.md
+last_updated: "2026-03-30T13:56:31.946Z"
 last_activity: 2026-03-30
 progress:
   total_phases: 4
   completed_phases: 1
-  total_plans: 5
-  completed_plans: 5
+  total_plans: 8
+  completed_plans: 6
   percent: 0
 ---
 
@@ -21,12 +21,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-26)
 
 **Core value:** A security boundary between internal AI clients and all upstream MCP servers - one place to authenticate, authorize, audit, and proxy every tool call.
-**Current focus:** Phase 01 — upstream-session-foundation
+**Current focus:** Phase 02 — tool-discovery-and-call-proxy
 
 ## Current Position
 
-Phase: 2
-Plan: Not started
+Phase: 02 (tool-discovery-and-call-proxy) — EXECUTING
+Plan: 2 of 3
 Status: Ready to execute
 Last activity: 2026-03-30
 
@@ -57,6 +57,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 01 P02 | 4min | 2 tasks | 3 files |
 | Phase 01 P04 | 5min | 2 tasks | 8 files |
 | Phase 01 P05 | 7 | 3 tasks | 12 files |
+| Phase 02-tool-discovery-and-call-proxy P01 | 4min | 3 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -77,6 +78,9 @@ Recent decisions affecting current work:
 - [Phase 01]: Profile-per-upstream model confirmed: X-Upstream-Authorization and UpstreamCredentials were wrong-model dead code; buildAuthHeaders and getOrConnect now accept token: string | undefined directly
 - [Phase 01]: Bearer suffix preserves original case of Bearer keyword; JWT regex fires first so JWT tokens in error messages stay as [REDACTED_JWT]
 - [Phase 01]: HTTP 502 for SSRF/timeout/connection errors during upstream validation; 401 only for explicit auth rejection (UpstreamAuthError)
+- [Phase 02]: Truncate dropped tool names to 100 chars in SanitizationResult.dropped and logger.warn to prevent log injection of upstream tool names
+- [Phase 02]: NotificationQueue TTL eviction uses Date.now() not entry.timestamp - correct under clock skew
+- [Phase 02]: D-02 mutual-exclusivity check placed after resolveUpstreamMcpConfig so env-sourced config is resolved before check fires
 
 ### Pending Todos
 
@@ -90,6 +94,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-30T08:13:34.809Z
-Stopped at: Completed 01-05-PLAN.md
+Last session: 2026-03-30T13:56:31.944Z
+Stopped at: Completed 02-01-PLAN.md
 Resume file: None
