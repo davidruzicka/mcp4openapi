@@ -10,6 +10,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import {
   CallToolRequestSchema,
   CompleteRequestSchema,
+  ErrorCode,
   GetPromptRequestSchema,
   ListPromptsRequestSchema,
   ListResourceTemplatesRequestSchema,
@@ -48,7 +49,15 @@ import { OAUTH_RATE_LIMIT } from '../core/constants.js';
 import { HttpClient } from '../transport/interceptors.js';
 import { HttpClientFactory } from '../transport/http-client-factory.js';
 import { SchemaValidator } from '../validation/schema-validator.js';
-import type { Profile, ToolDefinition, AuthInterceptor, OAuthConfig, ProxyDownloadOperation } from '../types/profile.js';
+import type { Profile, ToolDefinition, AuthInterceptor, OAuthConfig, ProxyDownloadOperation, UpstreamMcpServerConfig } from '../types/profile.js';
+import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { sanitizeToolList } from '../upstream/upstream-tool-sanitizer.js';
+import {
+  UpstreamConnectionError,
+  UpstreamTimeoutError,
+  UpstreamAuthError,
+  UpstreamMalformedResponseError,
+} from '../upstream/upstream-errors.js';
 import type { Logger } from '../core/logger.js';
 import { ConsoleLogger, JsonLogger, LogLevel } from '../core/logger.js';
 import type { OperationInfo, SchemaInfo } from '../types/openapi.js';
@@ -77,6 +86,47 @@ import type { MetricsCollector, MetricsContextLabels } from '../core/metrics.js'
 
 type EnterpriseToolCategory = 'list' | 'read' | 'modify' | 'admin';
 
+/** Custom MCP timeout error code - not in MCP standard spec; used for upstream timeout distinction */
+const UPSTREAM_TIMEOUT_ERROR_CODE = -32001;
+
+/**
+ * Map an upstream error to a client-facing MCP error object.
+ * Provider name is placed in data only - never leaked into the client-facing message string.
+ */
+function mapUpstreamErrorToMcpError(
+  error: unknown,
+  providerName: string,
+): { code: number; message: string; data?: unknown } {
+  const DATA_DRIVEN_MAPPINGS: Array<[new (...args: never[]) => Error, number, string]> = [
+    [UpstreamConnectionError, ErrorCode.InternalError, 'Upstream connection failed'],
+    [UpstreamTimeoutError, UPSTREAM_TIMEOUT_ERROR_CODE, 'Upstream request timed out'],
+    [UpstreamAuthError, ErrorCode.InternalError, 'Upstream authentication failed'],
+    [UpstreamMalformedResponseError, ErrorCode.InternalError, 'Upstream returned malformed response'],
+  ];
+
+  const correlationId =
+    error instanceof Error && 'details' in error
+      ? ((error as Record<string, unknown>).details as Record<string, unknown> | undefined)
+          ?.correlationId as string | undefined
+      : undefined;
+
+  for (const [ErrorClass, code, messagePrefix] of DATA_DRIVEN_MAPPINGS) {
+    if (error instanceof ErrorClass) {
+      return {
+        code,
+        message: correlationId ? `${messagePrefix} (correlation: ${correlationId})` : messagePrefix,
+        data: { correlationId, providerName },
+      };
+    }
+  }
+
+  return {
+    code: ErrorCode.InternalError,
+    message: correlationId ? `Upstream error (correlation: ${correlationId})` : 'Upstream error',
+    data: { correlationId, providerName },
+  };
+}
+
 export class MCPServer {
   private server: Server;
   private parser: OpenAPIParser;
@@ -98,6 +148,11 @@ export class MCPServer {
     removedCount: number;
     patternCounts: Record<string, number>;
   };
+
+  /** Callback injected by HttpTransport to obtain a connected upstream MCP Client. HTTP-only. */
+  private getUpstreamClientFn:
+    | ((sessionId: string, provider: UpstreamMcpServerConfig, token: string | undefined) => Promise<Client>)
+    | null = null;
 
   /**
    * Execute a tools/call request via the JSON-RPC handler.
@@ -1355,6 +1410,16 @@ export class MCPServer {
     this.httpClientFactory.setMetricsCollector(metricsCollector);
   }
 
+  /**
+   * Inject the upstream MCP client factory callback.
+   * Called by HttpTransport after setUpstreamConnectionManager wires the manager.
+   */
+  public setGetUpstreamClient(
+    fn: (sessionId: string, provider: UpstreamMcpServerConfig, token: string | undefined) => Promise<Client>,
+  ): void {
+    this.getUpstreamClientFn = fn;
+  }
+
   public handleSessionDestroyed(profileId: string, sessionId: string): void {
     this.cleanupSessionClient(profileId, sessionId);
   }
@@ -1401,11 +1466,13 @@ export class MCPServer {
       this.applySessionToolFiltering(sessionId, profileId);
     }
 
+    const hasUpstream = !!(this.getUpstreamMcpConfig(profileId)?.length && this.getUpstreamClientFn);
+
     const result: {
       protocolVersion: string;
       serverInfo: { name: string; version: string };
       capabilities: {
-        tools: Record<string, never>;
+        tools: Record<string, unknown>;
         prompts: { listChanged: boolean };
         resources: { listChanged: boolean; subscribe: boolean };
         completions: Record<string, never>;
@@ -1418,7 +1485,7 @@ export class MCPServer {
         version: '0.1.0',
       },
       capabilities: {
-        tools: {},
+        tools: hasUpstream ? { listChanged: true } : {},
         prompts: {
           listChanged: false,
         },
@@ -1480,6 +1547,12 @@ export class MCPServer {
         };
         return errorResponse;
       }
+    }
+
+    // D-01: When upstream_mcp is set, forward call to upstream (after OAuth check, before local dispatch)
+    const upstreamMcpForCall = this.getUpstreamMcpConfig(profileId);
+    if (upstreamMcpForCall?.length && this.getUpstreamClientFn) {
+      return this.handleUpstreamToolCall(req, sessionId, profileId, upstreamMcpForCall[0]);
     }
 
     let args: Record<string, unknown> = rawArgs;
@@ -1606,6 +1679,113 @@ export class MCPServer {
           code: errorCode,
           message: errorMessage,
         },
+      };
+    }
+  }
+
+  /**
+   * Return upstream_mcp config for the given profileId.
+   * For HTTP transport, delegates to HttpTransport accessor.
+   * For stdio, reads profile directly and warns when upstream_mcp is configured
+   * but no upstream client is wired (upstream_mcp requires HTTP transport).
+   */
+  private getUpstreamMcpConfig(profileId?: string): UpstreamMcpServerConfig[] | undefined {
+    if (this.httpTransport && profileId) {
+      return this.httpTransport.getUpstreamMcpConfig(profileId);
+    }
+    // stdio path: upstream_mcp cannot be used without a wired client
+    if (this.profile?.upstream_mcp?.length && !this.getUpstreamClientFn) {
+      this.logger?.warn(
+        'upstream_mcp configured but no upstream client wired - upstream_mcp requires HTTP transport',
+        { profileId: profileId ?? this.profile?.profile_name },
+      );
+    }
+    return this.profile?.upstream_mcp;
+  }
+
+  /**
+   * Extract the downstream client's auth token for a session.
+   * Used as the pass-through credential to the upstream MCP server.
+   */
+  private getUpstreamToken(sessionId: string | undefined, profileId: string | undefined): string | undefined {
+    if (this.httpTransport && sessionId && profileId) {
+      return this.httpTransport.getSessionToken(profileId, sessionId);
+    }
+    return undefined;
+  }
+
+  /**
+   * Forward tools/list to upstream MCP server and return sanitized tool list.
+   * Requires a session context (HTTP transport only).
+   */
+  private async handleUpstreamToolsList(
+    req: Record<string, unknown>,
+    sessionId: string | undefined,
+    profileId: string | undefined,
+    provider: UpstreamMcpServerConfig,
+  ): Promise<unknown> {
+    if (!sessionId) {
+      throw new UpstreamConnectionError(
+        'upstream_mcp requires a session context (HTTP transport only)',
+        provider.name,
+      );
+    }
+    const token = this.getUpstreamToken(sessionId, profileId);
+    try {
+      const client = await this.getUpstreamClientFn!(sessionId, provider, token);
+      const result = await client.listTools();
+      const sanitized = sanitizeToolList(result.tools ?? [], this.logger);
+      return {
+        jsonrpc: '2.0',
+        id: (req as Record<string, unknown>).id,
+        result: { tools: sanitized.tools },
+      };
+    } catch (error) {
+      return {
+        jsonrpc: '2.0',
+        id: (req as Record<string, unknown>).id,
+        error: mapUpstreamErrorToMcpError(error, provider.name),
+      };
+    }
+  }
+
+  /**
+   * Forward tools/call to upstream MCP server.
+   * Forwards isError:true results as-is (tool-level errors are valid MCP results).
+   * Maps thrown exceptions to typed MCP error codes.
+   * Requires a session context (HTTP transport only).
+   */
+  private async handleUpstreamToolCall(
+    req: Record<string, unknown>,
+    sessionId: string | undefined,
+    profileId: string | undefined,
+    provider: UpstreamMcpServerConfig,
+  ): Promise<unknown> {
+    if (!sessionId) {
+      throw new UpstreamConnectionError(
+        'upstream_mcp requires a session context (HTTP transport only)',
+        provider.name,
+      );
+    }
+    const params = req.params as Record<string, unknown>;
+    const toolName = params.name as string;
+    const args = (params.arguments as Record<string, unknown>) || {};
+    const token = this.getUpstreamToken(sessionId, profileId);
+
+    try {
+      const client = await this.getUpstreamClientFn!(sessionId, provider, token);
+      const result = await client.callTool({ name: toolName, arguments: args });
+      // Forward as-is including isError: true (tool-level errors are valid MCP responses)
+      return {
+        jsonrpc: '2.0',
+        id: (req as Record<string, unknown>).id,
+        result,
+      };
+    } catch (error) {
+      return {
+        jsonrpc: '2.0',
+        id: (req as Record<string, unknown>).id,
+        error: mapUpstreamErrorToMcpError(error, provider.name),
       };
     }
   }
@@ -1802,6 +1982,12 @@ export class MCPServer {
 
     // Handle tools/list
     if (req.method === 'tools/list') {
+      // D-01: When upstream_mcp is set, return upstream tools (not local profile tools)
+      const upstreamMcpForList = this.getUpstreamMcpConfig(profileId);
+      if (upstreamMcpForList?.length && this.getUpstreamClientFn) {
+        return this.handleUpstreamToolsList(req, sessionId, profileId, upstreamMcpForList[0]);
+      }
+
       const sessionFilter = this.getToolFilterForSession(sessionId, profileId);
       const allowedSet = sessionFilter?.allowedToolNames;
       const tools = this.profile?.tools

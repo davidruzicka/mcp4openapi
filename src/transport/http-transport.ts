@@ -40,7 +40,7 @@ import { mapAuthError } from '../auth/auth-error-mapper.js';
 import { redactAuthPayload } from '../auth/auth-redaction.js';
 import { OAuthGrantRouter } from './oauth-grant-router.js';
 import { SSRFValidator } from '../security/ssrf-validator.js';
-import type { AuthInterceptor, OAuthConfig } from '../types/profile.js';
+import type { AuthInterceptor, OAuthConfig, UpstreamMcpServerConfig } from '../types/profile.js';
 import {
   DEFAULT_ALLOWED_REDIRECT_HOSTS,
   HTTP_STATUS,
@@ -3535,6 +3535,14 @@ export class HttpTransport {
         this.logger.error('Failed to close upstream connections on session destroy', error as Error);
       });
     });
+  }
+
+  /**
+   * Return upstream_mcp config for a profile.
+   * Used by MCPServer to determine whether to branch to upstream handling.
+   */
+  public getUpstreamMcpConfig(profileId: string): UpstreamMcpServerConfig[] | undefined {
+    return this.profileStates.get(profileId)?.context.upstreamMcp;
   }
 
   /**
