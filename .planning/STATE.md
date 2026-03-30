@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 01-04-PLAN.md
-last_updated: "2026-03-30T08:02:39.914Z"
+stopped_at: Completed 01-05-PLAN.md
+last_updated: "2026-03-30T08:13:34.811Z"
 last_activity: 2026-03-30
 progress:
   total_phases: 4
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-03-26)
 ## Current Position
 
 Phase: 01 (upstream-session-foundation) — EXECUTING
-Plan: 2 of 5
+Plan: 3 of 5
 Status: Ready to execute
 Last activity: 2026-03-30
 
@@ -56,6 +56,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 01 P03 | 2min | 2 tasks | 3 files |
 | Phase 01 P02 | 4min | 2 tasks | 3 files |
 | Phase 01 P04 | 5min | 2 tasks | 8 files |
+| Phase 01 P05 | 7 | 3 tasks | 12 files |
 
 ## Accumulated Context
 
@@ -74,6 +75,8 @@ Recent decisions affecting current work:
 - [Phase 01]: Promise-based pending connection dedup via Map key sessionId:providerName
 - [Phase 01]: Setter method setUpstreamConnectionManager in HttpTransport for clean optional wiring
 - [Phase 01]: Profile-per-upstream model confirmed: X-Upstream-Authorization and UpstreamCredentials were wrong-model dead code; buildAuthHeaders and getOrConnect now accept token: string | undefined directly
+- [Phase 01]: Bearer suffix preserves original case of Bearer keyword; JWT regex fires first so JWT tokens in error messages stay as [REDACTED_JWT]
+- [Phase 01]: HTTP 502 for SSRF/timeout/connection errors during upstream validation; 401 only for explicit auth rejection (UpstreamAuthError)
 
 ### Pending Todos
 
@@ -87,6 +90,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-30T08:02:39.912Z
-Stopped at: Completed 01-04-PLAN.md
+Last session: 2026-03-30T08:13:34.809Z
+Stopped at: Completed 01-05-PLAN.md
 Resume file: None
