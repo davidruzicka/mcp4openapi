@@ -31,13 +31,13 @@ authenticate, authorize, audit, and proxy every tool call in the company.
 - ✓ Prometheus metrics emission (prom-client) - existing
 - ✓ Upstream MCP provider config schema (UpstreamMcpProvider type, Zod schemas) - existing (PR #219)
 
-### Active
+### Validated
 
-- [ ] Remote upstream MCP session lifecycle - per-downstream-session upstream connection manager for
-  streamable HTTP MCP servers (#213)
-- [ ] Pass-through credential forwarding - client-supplied tokens (Bearer, custom header, OAuth)
-  provided at session initialize are forwarded to upstream MCP servers for that session; gateway
-  stores no upstream secrets
+- ✓ Upstream session lifecycle (Phase 01) - per-session `UpstreamConnectionManager` with lazy connect, concurrent-safe `getOrConnect`, heartbeat pings, and session-scoped cleanup wired into HTTP transport destruction lifecycle
+- ✓ Pass-through credential forwarding (Phase 01) - client-supplied Bearer token forwarded directly to upstream; profile-per-upstream model; no credential storage on gateway; `validateCredentials` with SSRF-protected `validation_endpoint` for early auth validation
+- ✓ Auth redaction hardening (Phase 01) - `sanitizeAuthErrorMessage` preserves last-4 Bearer suffix for debuggability; `redactString` fully redacts; token never appears in logs or error responses
+
+### Active
 - [ ] Upstream tool discovery and proxy - tools/list and tools/call forwarded to correct upstream
   provider; upstream tools appear in tools/list alongside (or instead of) OpenAPI-backed tools
 - [ ] Tool namespacing - upstream tool names prefixed/namespaced to prevent collisions across
@@ -99,14 +99,15 @@ authenticate, authorize, audit, and proxy every tool call in the company.
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| Pass-through upstream credentials | Gateway stores no secrets - client owns their own upstream tokens; simpler security model, no vault dependency | - Pending |
+| Pass-through upstream credentials | Gateway stores no secrets - client owns their own upstream tokens; simpler security model, no vault dependency | Validated in Phase 01 - profile-per-upstream model, `token: string \| undefined` passed directly |
+| Profile-per-upstream (not session-level credential aggregation) | Simpler than per-session credential bag; one profile = one upstream = one token env var | Validated in Phase 01 - dead X-Upstream-Authorization extractor removed |
 | Remote HTTP upstream first, stdio deferred | Stdio adds process isolation complexity; HTTP upstream covers the primary enterprise use case first | - Pending |
 | Build on mcp4openapi transport stack | Existing SSE session management, OAuth provider, multi-tenant HTTP transport are production-grade; extend rather than rewrite | - Pending |
 | Team-level allow/deny (not RBAC/ABAC) | Explicit allow/deny per team is auditable and predictable; ABAC adds authoring overhead before adoption | - Pending |
 | Tool namespacing by upstream provider | Prevents tool name collisions across providers; makes audit logs and policy rules unambiguous | - Pending |
 
 ---
-*Last updated: 2026-03-26 after initialization*
+*Last updated: 2026-03-30 after Phase 01 completion*
 
 ## Evolution
 
