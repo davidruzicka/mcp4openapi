@@ -68,6 +68,24 @@ describe('UpstreamConnectionManager', () => {
     manager = new UpstreamConnectionManager({ clientFactory, transportFactory });
   });
 
+  describe('default factory fallbacks', () => {
+    it('throws when transportFactory is not injected', async () => {
+      const bareManager = new UpstreamConnectionManager();
+      await expect(
+        bareManager.getOrConnect('session-x', createProvider(), 'token'),
+      ).rejects.toThrow('Default transportFactory not available in production');
+    });
+
+    it('throws when clientFactory is not injected but transportFactory is', async () => {
+      const bareManager = new UpstreamConnectionManager({
+        transportFactory: vi.fn().mockReturnValue(createMockTransport()),
+      });
+      await expect(
+        bareManager.getOrConnect('session-x', createProvider(), 'token'),
+      ).rejects.toThrow('Default clientFactory not available in production');
+    });
+  });
+
   describe('lazy initialization', () => {
     it('creates no connections at instantiation', () => {
       expect(manager.getActiveSessionCount()).toBe(0);
@@ -284,6 +302,17 @@ describe('UpstreamConnectionManager', () => {
       mockClient.connect.mockRejectedValue(authError);
 
       await expect(manager.getOrConnect('session-1', provider, credentials))
+        .rejects.toThrow(UpstreamAuthError);
+    });
+
+    it('throws UpstreamAuthError on connect failure with auth error message pattern', async () => {
+      const provider = createProvider();
+
+      // No statusCode - should match AUTH_ERROR_PATTERNS via message
+      const authError = new Error('unauthorized: token rejected');
+      mockClient.connect.mockRejectedValue(authError);
+
+      await expect(manager.getOrConnect('session-1', provider, 'token'))
         .rejects.toThrow(UpstreamAuthError);
     });
 
@@ -530,6 +559,23 @@ describe('UpstreamConnectionManager', () => {
       // closeAll should not throw even when transport.close rejects
       await expect(manager.closeAll('session-1')).resolves.toBeUndefined();
       expect(manager.getActiveSessionCount()).toBe(0);
+    });
+
+    it('closeAll clears heartbeatTimer when set on connection', async () => {
+      const provider = createProvider();
+
+      await manager.getOrConnect('session-1', provider, 'token');
+
+      // Manually attach a heartbeatTimer to simulate a running heartbeat
+      const conn = manager.getConnection('session-1', provider.name);
+      const fakeTimer = setInterval(() => {}, 100000);
+      conn!.heartbeatTimer = fakeTimer;
+
+      await manager.closeAll('session-1');
+
+      // Timer should have been cleared (no active connections remain)
+      expect(manager.getActiveSessionCount()).toBe(0);
+      clearInterval(fakeTimer); // cleanup in case clearInterval wasn't called
     });
   });
 

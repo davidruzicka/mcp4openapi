@@ -43,4 +43,20 @@ describe('buildAuthHeaders', () => {
     const provider = makeProvider(undefined);
     expect(buildAuthHeaders(provider, 'mytoken')).toEqual({});
   });
+
+  it('returns empty object for custom-header auth without header_name', () => {
+    const provider = makeProvider({
+      type: 'custom-header',
+      value_from_env: 'TOK_ENV',
+    } as UpstreamMcpServerConfig['auth']);
+    expect(buildAuthHeaders(provider, 'mytoken')).toEqual({});
+  });
+
+  it('returns empty object for unknown auth type', () => {
+    const provider = makeProvider({
+      type: 'unknown-type',
+      value_from_env: 'TOK_ENV',
+    } as unknown as UpstreamMcpServerConfig['auth']);
+    expect(buildAuthHeaders(provider, 'mytoken')).toEqual({});
+  });
 });
