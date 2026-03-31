@@ -3534,6 +3534,26 @@ paths:
         expect(response.error.code).toBe(-32603);
       });
 
+      it('maps unknown error type to InternalError with generic message (fallback case)', async () => {
+        // A plain Error that is not one of the 4 typed upstream errors
+        mockCallTool.mockRejectedValueOnce(new Error('unexpected internal failure'));
+
+        const response = await (upstreamServer as any).handleToolCall(
+          {
+            jsonrpc: '2.0',
+            id: '6',
+            method: 'tools/call',
+            params: { name: 'safe_tool', arguments: {} },
+          },
+          'session-123',
+          'upstream-profile',
+        ) as any;
+
+        expect(response.error).toBeDefined();
+        expect(response.error.code).toBe(-32603);
+        expect(response.error.message).toBe('Upstream error');
+      });
+
       it('error data includes correlationId and providerName but message does not contain provider name', async () => {
         mockCallTool.mockRejectedValueOnce(
           new UpstreamConnectionError('ECONNREFUSED', 'test-upstream'),
@@ -3597,6 +3617,56 @@ paths:
         ) as any;
 
         expect(response.result.capabilities.tools.listChanged).toBe(true);
+      });
+
+      it('logs warn when upstream_mcp configured but no upstream client wired (stdio path)', async () => {
+        const logger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+        const stdioServer = new MCPServer(logger as any);
+        (stdioServer as any).profile = {
+          profile_name: 'stdio-profile',
+          description: 'Stdio with upstream_mcp',
+          tools: [],
+          upstream_mcp: [{ name: 'my-upstream', transport: { type: 'http-streamable', url: 'https://upstream.example.com/mcp' } }],
+        };
+        // No httpTransport, no getUpstreamClientFn - stdio mode
+
+        // Trigger tools/list which calls getUpstreamMcpConfig
+        await (stdioServer as any).handleOtherRequest(
+          { jsonrpc: '2.0', id: '1', method: 'tools/list', params: {} },
+          undefined,
+          'stdio-profile',
+        );
+
+        expect(logger.warn).toHaveBeenCalledWith(
+          'upstream_mcp configured but no upstream client wired - upstream_mcp requires HTTP transport',
+          expect.objectContaining({ profileId: expect.anything() }),
+        );
+      });
+
+      it('getUpstreamToken returns undefined when no httpTransport (stdio path with client fn)', async () => {
+        const stdioProvider = { name: 'stdio-upstream', transport: { type: 'http-streamable', url: 'https://upstream.example.com/mcp' } };
+        const mockListFn = vi.fn().mockResolvedValue({ tools: [] });
+        const mockClientFn = vi.fn().mockResolvedValue({ listTools: mockListFn, callTool: vi.fn() });
+
+        const stdioServer = new MCPServer();
+        (stdioServer as any).profile = {
+          profile_name: 'no-transport-profile',
+          description: 'No transport',
+          tools: [],
+          upstream_mcp: [stdioProvider],
+        };
+        // No httpTransport - token will come back undefined from getUpstreamToken
+        stdioServer.setGetUpstreamClient(mockClientFn);
+
+        const response = await (stdioServer as any).handleOtherRequest(
+          { jsonrpc: '2.0', id: '1', method: 'tools/list', params: {} },
+          'session-abc',
+          'no-transport-profile',
+        ) as any;
+
+        // Should still succeed and call mockClientFn with undefined token
+        expect(mockClientFn).toHaveBeenCalledWith('session-abc', stdioProvider, undefined);
+        expect(response.result).toBeDefined();
       });
 
       it('does not advertise tools.listChanged for non-upstream profiles', async () => {
