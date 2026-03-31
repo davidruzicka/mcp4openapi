@@ -18,7 +18,7 @@ Milestone: v1 - Proxy foundation + security gate
 - [x] **PROXY-03**: A tools/list request from a downstream client returns the tool list fetched from
   the upstream MCP server defined in the active profile (same profile-per-upstream model as OpenAPI
   profiles; no aggregation or namespacing across providers)
-- [ ] **PROXY-04**: A tools/call request is routed to the upstream MCP server defined in the active
+- [x] **PROXY-04**: A tools/call request is routed to the upstream MCP server defined in the active
   profile and the upstream response is returned to the downstream client with typed error mapping for
   upstream failure cases
 
@@ -115,7 +115,7 @@ Milestone: v1 - Proxy foundation + security gate
 | PROXY-01 | Phase 1 | Complete |
 | PROXY-02 | Phase 1 | Complete |
 | PROXY-03 | Phase 2 | Complete |
-| PROXY-04 | Phase 2 | Pending |
+| PROXY-04 | Phase 2 | Complete |
 | AUTH-01 | Phase 3 | Pending |
 | AUTH-02 | Phase 3 | Pending |
 | AUTH-03 | Phase 3 | Pending |
