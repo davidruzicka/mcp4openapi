@@ -51,7 +51,7 @@ import { HttpClientFactory } from '../transport/http-client-factory.js';
 import { SchemaValidator } from '../validation/schema-validator.js';
 import type { Profile, ToolDefinition, AuthInterceptor, OAuthConfig, ProxyDownloadOperation, UpstreamMcpServerConfig } from '../types/profile.js';
 import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { sanitizeToolList } from '../upstream/upstream-tool-sanitizer.js';
+import { sanitizeToolList, isValidUpstreamToolName } from '../upstream/upstream-tool-sanitizer.js';
 import {
   UpstreamConnectionError,
   UpstreamTimeoutError,
@@ -1559,6 +1559,35 @@ export class MCPServer {
     // D-01: When upstream_mcp is set, forward call to upstream (after OAuth check, before local dispatch)
     const upstreamMcpForCall = this.getUpstreamMcpConfig(profileId);
     if (upstreamMcpForCall?.length && this.getUpstreamClientFn) {
+      // Apply tool filter (name-based) - same gate as local tools
+      const toolFilter = this.getToolFilterForSession(sessionId, profileId);
+      if (toolFilter && !toolFilter.allowedToolNames.has(toolName)) {
+        this.recordToolFilterRejection(toolName, 'session');
+        const reason = toolFilter.reasons.get(toolName)?.[0];
+        const reasonSuffix = reason ? ` Blocked by: ${reason}.` : '';
+        return { jsonrpc: '2.0', id: req.id, error: { code: -32002, message: `Tool '${toolName}' not allowed by X-Mcp4-Tools filter.${reasonSuffix}` } };
+      }
+      // Apply enterprise policy - upstream tools don't have OpenAPI operations so default to 'modify'
+      if (!this.isToolCategoryAllowedByEnterprisePolicy('modify', sessionId, profileId)) {
+        const allowedCategories = this.getEnterpriseAllowedToolCategoriesForSession(sessionId, profileId);
+        return {
+          jsonrpc: '2.0', id: req.id, error: {
+            code: -32002,
+            message: `Tool '${toolName}' not allowed by enterprise authorization policy. ` +
+              `Upstream tools require the 'modify' permission. ` +
+              `Allowed categories: ${Array.from(allowedCategories || []).join(', ')}.`,
+          },
+        };
+      }
+      // Validate tool name against the same sanitization policy as tools/list (D-05)
+      if (!isValidUpstreamToolName(toolName)) {
+        return {
+          jsonrpc: '2.0', id: req.id, error: {
+            code: -32002,
+            message: `Tool name '${toolName.slice(0, 100)}' is not allowed - upstream tool names must match [a-zA-Z0-9_-] and be at most 255 characters.`,
+          },
+        };
+      }
       return this.handleUpstreamToolCall(req, sessionId, profileId, upstreamMcpForCall[0]);
     }
 
@@ -1698,7 +1727,9 @@ export class MCPServer {
    */
   private getUpstreamMcpConfig(profileId?: string): UpstreamMcpServerConfig[] | undefined {
     if (this.httpTransport && profileId) {
-      return this.httpTransport.getUpstreamMcpConfig(profileId);
+      // Fall back to profile-level config when the HTTP transport profile context
+      // does not carry upstreamMcp (e.g. single-profile HTTP startup via runHttp).
+      return this.httpTransport.getUpstreamMcpConfig(profileId) ?? this.profile?.upstream_mcp;
     }
     // stdio path: upstream_mcp cannot be used without a wired client
     if (this.profile?.upstream_mcp?.length && !this.getUpstreamClientFn) {
@@ -1939,12 +1970,23 @@ export class MCPServer {
     sessionId?: string,
     profileId?: string,
   ): boolean {
+    return this.isToolCategoryAllowedByEnterprisePolicy(this.getToolCategory(toolDef), sessionId, profileId);
+  }
+
+  /**
+   * Check whether a given tool category is allowed by the enterprise policy for the session.
+   * Used for both local tools (with a known ToolDefinition) and upstream tools (defaulted to 'modify').
+   */
+  private isToolCategoryAllowedByEnterprisePolicy(
+    category: Exclude<EnterpriseToolCategory, 'admin'>,
+    sessionId?: string,
+    profileId?: string,
+  ): boolean {
     const allowedCategories = this.getEnterpriseAllowedToolCategoriesForSession(sessionId, profileId);
     if (!allowedCategories || allowedCategories.size === 0) {
       return true;
     }
-
-    return allowedCategories.has(this.getToolCategory(toolDef));
+    return allowedCategories.has(category);
   }
 
   private getFilteringOperationInfo(

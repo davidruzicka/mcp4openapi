@@ -19,7 +19,7 @@ export interface SanitizationResult {
   dropped: { name: string; reason: string }[];
 }
 
-// Data-driven constraints - not exported (internal policy only)
+// Data-driven constraints
 const TOOL_NAME_PATTERN = /^[a-zA-Z0-9_-]+$/;
 const DESCRIPTION_FORBIDDEN_CHARS = /[<>`]/;
 const MAX_TOOL_NAME_LENGTH = 255;
@@ -69,4 +69,13 @@ export function sanitizeToolList(tools: Tool[], logger?: Logger): SanitizationRe
   }
 
   return { tools: safe, dropped };
+}
+
+/**
+ * Check whether a tool name passes the upstream name policy.
+ * Used to validate tool names in tools/call before forwarding to upstream,
+ * preventing callers from invoking tools that were dropped from the sanitized list.
+ */
+export function isValidUpstreamToolName(name: string): boolean {
+  return name.length <= MAX_TOOL_NAME_LENGTH && TOOL_NAME_PATTERN.test(name);
 }

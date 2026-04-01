@@ -49,6 +49,13 @@ export class UpstreamConnectionManager {
   private readonly pendingConnections = new Map<string, Promise<Client>>();
 
   /**
+   * Sessions that have been destroyed (closeAll called).
+   * createConnection checks this after connect to close orphaned connections
+   * created while closeAll was in flight (REL-02 race guard).
+   */
+  private readonly destroyedSessions = new Set<string>();
+
+  /**
    * Per-session notification queues for buffering when no SSE stream is attached.
    * Key: sessionId (single-provider-per-profile assumption for phase 2).
    * If multi-provider-per-session is needed in future, key should be `${sessionId}:${providerName}`.
@@ -141,11 +148,19 @@ export class UpstreamConnectionManager {
   ): Promise<Client> {
     const dedupKey = `${sessionId}:${provider.name}`;
 
-    // Return existing CONNECTED client
+    // Return existing CONNECTED client, unless the token has changed
     const existing = this.getConnection(sessionId, provider.name);
     if (existing && existing.state === 'CONNECTED') {
-      existing.lastActivityAt = Date.now();
-      return existing.client as Client;
+      if (existing.token !== token) {
+        // Token rotated - close old connection and create a new one with the new credential
+        const sessionMap = this.connections.get(sessionId);
+        sessionMap?.delete(provider.name);
+        existing.client.close().catch(() => {});
+        existing.transport.close().catch(() => {});
+      } else {
+        existing.lastActivityAt = Date.now();
+        return existing.client as Client;
+      }
     }
 
     // Return in-flight promise for concurrent dedup
@@ -212,32 +227,47 @@ export class UpstreamConnectionManager {
   /**
    * Close all upstream connections for a session.
    * Transport close errors are swallowed to prevent cascading failures.
+   *
+   * Handles in-flight connections: marks the session as destroyed before awaiting
+   * pending promises so that createConnection() can detect the race and self-close
+   * any connection established after teardown began (REL-02).
    */
   async closeAll(sessionId: string): Promise<void> {
-    const sessionMap = this.connections.get(sessionId);
-    if (!sessionMap) return;
+    // Mark destroyed first so any in-flight createConnection checks this and self-closes
+    this.destroyedSessions.add(sessionId);
 
-    const closePromises: Promise<void>[] = [];
-
-    for (const [, conn] of sessionMap) {
-      if (conn.heartbeatTimer) {
-        clearInterval(conn.heartbeatTimer);
-      }
-      closePromises.push(
-        (conn.client.close() as Promise<void>).catch(() => {
-          // Swallow close errors - session is being destroyed anyway
-        }),
-      );
-      closePromises.push(
-        (conn.transport.close() as Promise<void>).catch(() => {
-          // Swallow close errors - session is being destroyed anyway
-        }),
-      );
+    // Wait for in-flight connections to settle - they will see destroyedSessions and abort
+    const pendingKeys = [...this.pendingConnections.keys()].filter(k => k.startsWith(`${sessionId}:`));
+    if (pendingKeys.length > 0) {
+      await Promise.allSettled(pendingKeys.map(k => this.pendingConnections.get(k)));
     }
 
-    await Promise.all(closePromises);
-    this.connections.delete(sessionId);
+    const sessionMap = this.connections.get(sessionId);
+    const closePromises: Promise<void>[] = [];
+
+    if (sessionMap) {
+      for (const [, conn] of sessionMap) {
+        if (conn.heartbeatTimer) {
+          clearInterval(conn.heartbeatTimer);
+        }
+        closePromises.push(
+          (conn.client.close() as Promise<void>).catch(() => {
+            // Swallow close errors - session is being destroyed anyway
+          }),
+        );
+        closePromises.push(
+          (conn.transport.close() as Promise<void>).catch(() => {
+            // Swallow close errors - session is being destroyed anyway
+          }),
+        );
+      }
+
+      await Promise.all(closePromises);
+      this.connections.delete(sessionId);
+    }
+
     this.notificationQueues.delete(sessionId);
+    this.destroyedSessions.delete(sessionId);
   }
 
   /**
@@ -351,6 +381,13 @@ export class UpstreamConnectionManager {
       throw this.mapConnectError(error, provider);
     }
 
+    // Guard: session may have been destroyed while we were connecting
+    if (this.destroyedSessions.has(sessionId)) {
+      client.close().catch(() => {});
+      (transport as StreamableHTTPClientTransport).close().catch(() => {});
+      throw new UpstreamConnectionError('Session destroyed during upstream connection', provider.name);
+    }
+
     // Wire upstream notification listeners after successful connection
     this.wireNotificationListeners(client as Client, sessionId);
 
@@ -363,6 +400,7 @@ export class UpstreamConnectionManager {
       providerName: provider.name,
       connectedAt: now,
       lastActivityAt: now,
+      token,
     };
 
     let sessionMap = this.connections.get(sessionId);
