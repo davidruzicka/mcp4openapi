@@ -90,6 +90,15 @@ export class ProfileLoader {
       );
     }
 
+    // D-03: upstream_mcp supports exactly one provider; multiple entries are not routed
+    if (profile.upstream_mcp && profile.upstream_mcp.length > 1) {
+      throw new ValidationError(
+        'upstream_mcp supports exactly one upstream provider. ' +
+        `Found ${profile.upstream_mcp.length}. Remove extra entries or split into separate profiles.`,
+        { path: 'upstream_mcp' }
+      );
+    }
+
     return profile;
   }
 
