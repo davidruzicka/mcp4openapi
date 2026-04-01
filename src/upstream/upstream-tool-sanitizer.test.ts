@@ -4,7 +4,7 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { Logger } from '../core/logger.js';
-import { sanitizeToolList, type SanitizationResult } from './upstream-tool-sanitizer.js';
+import { sanitizeToolList, type SanitizationResult, applyProviderToolPolicy, isToolAllowedByProviderPolicy } from './upstream-tool-sanitizer.js';
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 
 function makeTool(name: string, description?: string): Tool {
@@ -164,5 +164,66 @@ describe('sanitizeToolList', () => {
   it('works without logger (no error thrown)', () => {
     const tool = makeTool('bad!');
     expect(() => sanitizeToolList([tool])).not.toThrow();
+  });
+});
+
+describe('applyProviderToolPolicy', () => {
+  const tools = [makeTool('alpha'), makeTool('beta'), makeTool('gamma')];
+
+  it('returns all tools when no policy is given', () => {
+    expect(applyProviderToolPolicy(tools, undefined)).toEqual(tools);
+  });
+
+  it('returns all tools when policy has no allow or deny', () => {
+    expect(applyProviderToolPolicy(tools, {})).toEqual(tools);
+  });
+
+  it('filters to allow list only', () => {
+    const result = applyProviderToolPolicy(tools, { allow: ['alpha', 'gamma'] });
+    expect(result.map(t => t.name)).toEqual(['alpha', 'gamma']);
+  });
+
+  it('excludes tools in deny list', () => {
+    const result = applyProviderToolPolicy(tools, { deny: ['beta'] });
+    expect(result.map(t => t.name)).toEqual(['alpha', 'gamma']);
+  });
+
+  it('allow + deny: allow takes precedence, then deny applied', () => {
+    const result = applyProviderToolPolicy(tools, { allow: ['alpha', 'beta'], deny: ['beta'] });
+    expect(result.map(t => t.name)).toEqual(['alpha']);
+  });
+
+  it('returns empty list when allow list is empty', () => {
+    expect(applyProviderToolPolicy(tools, { allow: [] })).toEqual([]);
+  });
+
+  it('returns all tools when deny list is empty', () => {
+    expect(applyProviderToolPolicy(tools, { deny: [] })).toEqual(tools);
+  });
+});
+
+describe('isToolAllowedByProviderPolicy', () => {
+  it('allows all tools when no policy', () => {
+    expect(isToolAllowedByProviderPolicy('any_tool', undefined)).toBe(true);
+  });
+
+  it('allows tool in allow list', () => {
+    expect(isToolAllowedByProviderPolicy('alpha', { allow: ['alpha', 'beta'] })).toBe(true);
+  });
+
+  it('rejects tool not in allow list', () => {
+    expect(isToolAllowedByProviderPolicy('gamma', { allow: ['alpha', 'beta'] })).toBe(false);
+  });
+
+  it('rejects tool in deny list', () => {
+    expect(isToolAllowedByProviderPolicy('alpha', { deny: ['alpha'] })).toBe(false);
+  });
+
+  it('allows tool not in deny list', () => {
+    expect(isToolAllowedByProviderPolicy('beta', { deny: ['alpha'] })).toBe(true);
+  });
+
+  it('rejects tool in both allow and deny (deny wins)', () => {
+    expect(isToolAllowedByProviderPolicy('alpha', { allow: ['alpha'], deny: ['alpha'] })).toBe(false);
   });
 });

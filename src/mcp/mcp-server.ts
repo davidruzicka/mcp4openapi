@@ -51,7 +51,7 @@ import { HttpClientFactory } from '../transport/http-client-factory.js';
 import { SchemaValidator } from '../validation/schema-validator.js';
 import type { Profile, ToolDefinition, AuthInterceptor, OAuthConfig, ProxyDownloadOperation, UpstreamMcpServerConfig } from '../types/profile.js';
 import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { sanitizeToolList, isValidUpstreamToolName } from '../upstream/upstream-tool-sanitizer.js';
+import { sanitizeToolList, isValidUpstreamToolName, applyProviderToolPolicy, isToolAllowedByProviderPolicy } from '../upstream/upstream-tool-sanitizer.js';
 import {
   UpstreamConnectionError,
   UpstreamTimeoutError,
@@ -1588,6 +1588,15 @@ export class MCPServer {
           },
         };
       }
+      // Apply profile-level upstream tool allow/deny policy
+      if (!isToolAllowedByProviderPolicy(toolName, upstreamMcpForCall[0].tools)) {
+        return {
+          jsonrpc: '2.0', id: req.id, error: {
+            code: -32002,
+            message: `Tool '${toolName}' not allowed by upstream provider tool policy.`,
+          },
+        };
+      }
       return this.handleUpstreamToolCall(req, sessionId, profileId, upstreamMcpForCall[0]);
     }
 
@@ -1745,7 +1754,13 @@ export class MCPServer {
    * Extract the downstream client's auth token for a session.
    * Used as the pass-through credential to the upstream MCP server.
    */
-  private getUpstreamToken(sessionId: string | undefined, profileId: string | undefined): string | undefined {
+  private getUpstreamToken(sessionId: string | undefined, profileId: string | undefined, provider: UpstreamMcpServerConfig): string | undefined {
+    // Profile-configured upstream auth takes precedence over downstream session token.
+    // value_from_env is the only supported secret transport for upstream auth.
+    if (provider.auth?.value_from_env) {
+      return process.env[provider.auth.value_from_env];
+    }
+    // Pass-through: use downstream session token when no explicit upstream auth is configured.
     if (this.httpTransport && sessionId && profileId) {
       return this.httpTransport.getSessionToken(profileId, sessionId);
     }
@@ -1768,15 +1783,22 @@ export class MCPServer {
         provider.name,
       );
     }
-    const token = this.getUpstreamToken(sessionId, profileId);
+    if (provider.tool_prefix) {
+      this.logger.warn('upstream_mcp tool_prefix is configured but has no effect in the current version', {
+        provider: provider.name,
+        tool_prefix: provider.tool_prefix,
+      });
+    }
+    const token = this.getUpstreamToken(sessionId, profileId, provider);
     try {
       const client = await this.getUpstreamClientFn!(sessionId, provider, token);
       const result = await client.listTools();
       const sanitized = sanitizeToolList(result.tools ?? [], this.logger);
+      const policyFiltered = applyProviderToolPolicy(sanitized.tools, provider.tools);
       return {
         jsonrpc: '2.0',
         id: (req as Record<string, unknown>).id,
-        result: { tools: sanitized.tools },
+        result: { tools: policyFiltered },
       };
     } catch (error) {
       return {
@@ -1808,7 +1830,7 @@ export class MCPServer {
     const params = req.params as Record<string, unknown>;
     const toolName = params.name as string;
     const args = (params.arguments as Record<string, unknown>) || {};
-    const token = this.getUpstreamToken(sessionId, profileId);
+    const token = this.getUpstreamToken(sessionId, profileId, provider);
 
     try {
       const client = await this.getUpstreamClientFn!(sessionId, provider, token);

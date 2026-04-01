@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- `getUpstreamToken` now reads `upstream_mcp[].auth.value_from_env` first; previously it only used the downstream session token, causing all env-backed upstream auth configs to send no credentials.
+- `tools/list` and `tools/call` in upstream proxy mode now enforce `upstream_mcp[].tools.allow`/`deny` lists; previously the profile-level tool policy was validated at load time but never applied at runtime.
+- `tools/list` now emits a `WARN` log when `upstream_mcp[].tool_prefix` is configured, as prefixing is accepted by the schema but not yet applied at runtime.
 - `getUpstreamMcpConfig` now falls back to `profile.upstream_mcp` when `HttpTransport` profile context does not carry it (single-profile HTTP startup); previously upstream routing was silently bypassed.
 - `getOrConnect` now detects token rotation: a changed `token` argument closes the old upstream connection and opens a new one with the fresh credential.
 - `closeAll` marks the session as destroyed before awaiting in-flight connections so any `createConnection` resolving after teardown self-closes immediately, preventing orphaned upstream resources.

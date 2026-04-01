@@ -13,6 +13,7 @@
 
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 import type { Logger } from '../core/logger.js';
+import type { UpstreamMcpToolPolicy } from '../types/profile.js';
 
 export interface SanitizationResult {
   tools: Tool[];
@@ -78,4 +79,35 @@ export function sanitizeToolList(tools: Tool[], logger?: Logger): SanitizationRe
  */
 export function isValidUpstreamToolName(name: string): boolean {
   return name.length <= MAX_TOOL_NAME_LENGTH && TOOL_NAME_PATTERN.test(name);
+}
+
+/**
+ * Apply the profile-level upstream tool policy (allow/deny lists) to a tool list.
+ *
+ * Semantics:
+ *   - allow set: only listed tool names pass
+ *   - deny set: listed tool names are rejected
+ *   - both set: allow is evaluated first (tool must be in allow AND not in deny)
+ *   - neither set: all tools pass
+ */
+export function applyProviderToolPolicy(tools: Tool[], policy: UpstreamMcpToolPolicy | undefined): Tool[] {
+  if (!policy) return tools;
+  const allowSet = policy.allow ? new Set(policy.allow) : null;
+  const denySet = policy.deny ? new Set(policy.deny) : null;
+  return tools.filter((tool) => {
+    if (allowSet && !allowSet.has(tool.name)) return false;
+    if (denySet && denySet.has(tool.name)) return false;
+    return true;
+  });
+}
+
+/**
+ * Check whether a single tool name is permitted by the upstream tool policy.
+ * Used in tools/call to enforce allow/deny before forwarding.
+ */
+export function isToolAllowedByProviderPolicy(toolName: string, policy: UpstreamMcpToolPolicy | undefined): boolean {
+  if (!policy) return true;
+  if (policy.allow && !policy.allow.includes(toolName)) return false;
+  if (policy.deny && policy.deny.includes(toolName)) return false;
+  return true;
 }
