@@ -106,6 +106,28 @@ describe('NotificationQueue', () => {
     expect(second[0].method).toBe('c');
   });
 
+  it('drain evicts entries that expired while client was disconnected', () => {
+    vi.useFakeTimers();
+    const queue = new NotificationQueue({ ttlMs: 1000 });
+    queue.push({ method: 'old', timestamp: Date.now() });
+    vi.advanceTimersByTime(1500); // TTL has now passed without any push()
+    const result = queue.drain();
+    expect(result).toHaveLength(0); // stale entry must not be replayed
+    expect(queue.size).toBe(0);
+  });
+
+  it('drain returns only non-expired entries when some are stale', () => {
+    vi.useFakeTimers();
+    const queue = new NotificationQueue({ ttlMs: 1000 });
+    queue.push({ method: 'will-expire', timestamp: Date.now() });
+    vi.advanceTimersByTime(500);
+    queue.push({ method: 'still-valid', timestamp: Date.now() });
+    vi.advanceTimersByTime(600); // first entry now 1100ms old, second is 600ms old
+    const result = queue.drain();
+    expect(result).toHaveLength(1);
+    expect(result[0].method).toBe('still-valid');
+  });
+
   it('push supports optional params field', () => {
     const queue = new NotificationQueue();
     queue.push({ method: 'tools/list_changed', timestamp: Date.now(), params: { count: 5 } });

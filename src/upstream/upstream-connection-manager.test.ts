@@ -246,6 +246,46 @@ describe('UpstreamConnectionManager', () => {
       expect(result).toBe(freshClient);
       expect(freshClient.connect).toHaveBeenCalledTimes(1);
     });
+
+    it('calls client.close() as well as transport.close() for each connection', async () => {
+      const provider = createProvider();
+      await manager.getOrConnect('session-1', provider, 'token');
+
+      await manager.closeAll('session-1');
+
+      expect(mockClient.close).toHaveBeenCalled();
+      expect(mockTransport.close).toHaveBeenCalled();
+    });
+
+    it('does not propagate when client.close() rejects', async () => {
+      const provider = createProvider();
+      mockClient.close.mockRejectedValue(new Error('client close failed'));
+      await manager.getOrConnect('session-1', provider, 'token');
+
+      await expect(manager.closeAll('session-1')).resolves.toBeUndefined();
+      expect(manager.getActiveSessionCount()).toBe(0);
+    });
+  });
+
+  describe('query auth URL injection', () => {
+    it('passes URL with query param to transportFactory for query auth type', async () => {
+      const provider: UpstreamMcpServerConfig = {
+        name: 'query-provider',
+        transport: { type: 'http-streamable', url: 'https://upstream.example.com/mcp' },
+        auth: { type: 'query', value_from_env: 'TOK', query_param: 'api_key' },
+      };
+      await manager.getOrConnect('session-q', provider, 'secret');
+      const urlArg: URL = transportFactory.mock.calls[0][0];
+      expect(urlArg.searchParams.get('api_key')).toBe('secret');
+    });
+
+    it('passes original URL to transportFactory for bearer auth type', async () => {
+      const provider = createProvider(); // bearer auth
+      await manager.getOrConnect('session-b', provider, 'secret');
+      const urlArg: URL = transportFactory.mock.calls[0][0];
+      expect(urlArg.searchParams.has('api_key')).toBe(false);
+      expect(urlArg.toString()).toBe('https://upstream.example.com/mcp');
+    });
   });
 
   describe('getConnection', () => {
@@ -532,6 +572,46 @@ describe('UpstreamConnectionManager', () => {
       mockFetch.mockResolvedValue({ status: 503 });
       const mgr = new UpstreamConnectionManager({ clientFactory, transportFactory, ssrfValidator: mockSsrfValidator as never });
       await expect(mgr.validateCredentials(SESSION_ID, provider, 'valid-token')).rejects.toThrow(UpstreamConnectionError);
+    });
+
+    it('uses redirect: manual to prevent SSRF bypass via redirect', async () => {
+      const provider = createValidationProvider();
+      mockFetch.mockResolvedValue({ status: 200 });
+      const mgr = new UpstreamConnectionManager({ clientFactory, transportFactory, ssrfValidator: mockSsrfValidator as never });
+      await mgr.validateCredentials(SESSION_ID, provider, 'valid-token');
+      expect(mockFetch).toHaveBeenCalledWith(
+        provider.validation_endpoint,
+        expect.objectContaining({ redirect: 'manual' }),
+      );
+    });
+
+    it('throws UpstreamConnectionError when fetch returns 301 (redirect blocked)', async () => {
+      const provider = createValidationProvider();
+      mockFetch.mockResolvedValue({ status: 301 });
+      const mgr = new UpstreamConnectionManager({ clientFactory, transportFactory, ssrfValidator: mockSsrfValidator as never });
+      await expect(mgr.validateCredentials(SESSION_ID, provider, 'valid-token')).rejects.toThrow(UpstreamConnectionError);
+    });
+
+    it('appends query param to validation URL for query auth type', async () => {
+      const provider = createValidationProvider({
+        auth: { type: 'query', value_from_env: 'TOK', query_param: 'api_key' },
+      });
+      mockFetch.mockResolvedValue({ status: 200 });
+      const mgr = new UpstreamConnectionManager({ clientFactory, transportFactory, ssrfValidator: mockSsrfValidator as never });
+      await mgr.validateCredentials(SESSION_ID, provider, 'secret');
+      const fetchedUrl: string = mockFetch.mock.calls[0][0];
+      expect(fetchedUrl).toContain('api_key=secret');
+    });
+
+    it('does not append query param for bearer auth type', async () => {
+      const provider = createValidationProvider({
+        auth: { type: 'bearer', value_from_env: 'TOK' },
+      });
+      mockFetch.mockResolvedValue({ status: 200 });
+      const mgr = new UpstreamConnectionManager({ clientFactory, transportFactory, ssrfValidator: mockSsrfValidator as never });
+      await mgr.validateCredentials(SESSION_ID, provider, 'secret');
+      const fetchedUrl: string = mockFetch.mock.calls[0][0];
+      expect(fetchedUrl).not.toContain('secret');
     });
   });
 

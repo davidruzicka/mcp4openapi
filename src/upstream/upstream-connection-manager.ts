@@ -17,7 +17,7 @@ import type { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/cl
 import type { UpstreamMcpServerConfig } from '../types/profile.js';
 import type { UpstreamConnection } from '../types/upstream-connection.js';
 import { UpstreamConnectionError, UpstreamTimeoutError, UpstreamAuthError } from './upstream-errors.js';
-import { buildAuthHeaders } from './upstream-credential-store.js';
+import { buildAuthHeaders, buildAuthUrl } from './upstream-credential-store.js';
 import { sanitizeAuthErrorMessage } from '../auth/auth-redaction.js';
 import { SSRFValidator } from '../security/ssrf-validator.js';
 import { ConsoleLogger } from '../core/logger.js';
@@ -224,6 +224,11 @@ export class UpstreamConnectionManager {
         clearInterval(conn.heartbeatTimer);
       }
       closePromises.push(
+        (conn.client.close() as Promise<void>).catch(() => {
+          // Swallow close errors - session is being destroyed anyway
+        }),
+      );
+      closePromises.push(
         (conn.transport.close() as Promise<void>).catch(() => {
           // Swallow close errors - session is being destroyed anyway
         }),
@@ -255,14 +260,18 @@ export class UpstreamConnectionManager {
     });
 
     const authHeaders = buildAuthHeaders(provider, token);
+    const validationUrl = buildAuthUrl(provider, new URL(provider.validation_endpoint), token);
     const timeoutMs = provider.validation_timeout_ms ?? 5000;
 
     let response: { status: number };
     try {
-      response = await fetch(provider.validation_endpoint, {
+      response = await fetch(validationUrl.toString(), {
         method: provider.validation_method ?? 'HEAD',
         headers: authHeaders,
         signal: AbortSignal.timeout(timeoutMs),
+        // Prevent SSRF bypass: a redirect could send the probe to a private address
+        // that bypasses the pre-fetch SSRF validation above.
+        redirect: 'manual',
       });
     } catch (error) {
       const err = error instanceof Error ? error : new Error(String(error));
@@ -309,9 +318,10 @@ export class UpstreamConnectionManager {
     token: string | undefined,
   ): Promise<Client> {
     const authHeaders = buildAuthHeaders(provider, token);
+    const url = buildAuthUrl(provider, new URL(provider.transport.url), token);
 
     const transport = this.transportFactory(
-      new URL(provider.transport.url),
+      url,
       {
         requestInit: { headers: authHeaders },
         reconnectionOptions: {
