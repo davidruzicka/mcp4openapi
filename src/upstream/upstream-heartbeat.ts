@@ -47,11 +47,16 @@ export class UpstreamHeartbeatManager {
       return;
     }
 
+    let inFlight = false;
     const timer = setInterval(async () => {
+      if (inFlight) return;
+      inFlight = true;
       try {
         await pingFn();
       } catch (error: unknown) {
         onFailure(error instanceof Error ? error : new Error(String(error)));
+      } finally {
+        inFlight = false;
       }
     }, this.config.intervalMs);
 

@@ -279,6 +279,13 @@ export class UpstreamConnectionManager {
       throw new UpstreamAuthError(provider.name);
     }
 
+    if (response.status < 200 || response.status >= 300) {
+      throw new UpstreamConnectionError(
+        `Validation endpoint returned unexpected status ${response.status}`,
+        provider.name,
+      );
+    }
+
     this.logger.debug('Upstream credential validation passed', {
       provider: provider.name,
       sessionId,

@@ -69,12 +69,12 @@ export function toMcpErrorResponse(error: MCPError): {
   message: string;
   data?: { correlationId: string; code: string };
 } {
+  const correlationId = error.details?.correlationId as string | undefined;
   return {
     code: -32603,
     message: sanitizeAuthErrorMessage(error.message),
-    data: {
-      correlationId: error.details?.correlationId as string,
-      code: error.code,
-    },
+    ...(correlationId !== undefined
+      ? { data: { correlationId, code: error.code } }
+      : {}),
   };
 }

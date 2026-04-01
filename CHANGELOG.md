@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Upstream SSE reconnect now replays buffered upstream notifications via `sendToClient()` so they enter the resumability queue and survive a second reconnect.
+- `validateCredentials` now throws `UpstreamConnectionError` on non-2xx responses (404, 500, 503, etc.); previously only 401/403 were treated as failures.
+- Heartbeat `setInterval` callback now skips a tick when a previous ping is still in-flight, preventing concurrent overlapping pings during upstream slowness.
+- `toMcpErrorResponse` omits the `data` field when `correlationId` is absent instead of returning `{ correlationId: undefined }`.
+
 ### Added
 - Upstream MCP proxy: tools/list and tools/call forwarding with tool name/description sanitization, tools/list_changed notification relay with bounded queue buffering and replay on SSE reconnect.
 - Upstream tool sanitizer drops tools from upstream MCP servers with invalid names (outside `[a-zA-Z0-9_-]`, over 255 chars) or forbidden description characters (`<`, `>`, backtick, over 2048 chars); dropped names are truncated to 100 chars to prevent log injection.

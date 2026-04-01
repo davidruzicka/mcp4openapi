@@ -214,4 +214,34 @@ describe('UpstreamHeartbeatManager', () => {
       expect(manager.getActiveCount()).toBe(2);
     });
   });
+
+  describe('in-flight guard', () => {
+    it('skips overlapping ping when previous ping is still running', async () => {
+      // pingFn never resolves during the test - simulates a slow upstream
+      let resolveFirstPing!: () => void;
+      const slowPing = vi.fn().mockReturnValue(new Promise<void>(resolve => { resolveFirstPing = resolve; }));
+
+      const fastManager = new UpstreamHeartbeatManager({ intervalMs: 100 });
+      fastManager.start('session:provider', slowPing, onFailure);
+
+      // First tick - starts the slow ping
+      await vi.advanceTimersByTimeAsync(100);
+      expect(slowPing).toHaveBeenCalledTimes(1);
+
+      // Second tick fires while first ping is still in-flight - must be skipped
+      await vi.advanceTimersByTimeAsync(100);
+      expect(slowPing).toHaveBeenCalledTimes(1);
+
+      // Third tick also skipped
+      await vi.advanceTimersByTimeAsync(100);
+      expect(slowPing).toHaveBeenCalledTimes(1);
+
+      // First ping completes - next tick should fire
+      resolveFirstPing();
+      await vi.advanceTimersByTimeAsync(100);
+      expect(slowPing).toHaveBeenCalledTimes(2);
+
+      fastManager.stopAll();
+    });
+  });
 });
