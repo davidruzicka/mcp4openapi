@@ -54,10 +54,14 @@ export class NotificationQueue {
   }
 
   /**
-   * Return all queued entries in insertion order and clear the queue.
+   * Return all non-expired queued entries in insertion order and clear the queue.
+   *
+   * Re-applies TTL eviction at drain time so stale entries buffered during a
+   * long disconnection are never replayed to a reconnecting client.
    */
   drain(): NotificationQueueEntry[] {
-    const result = [...this.entries];
+    const now = Date.now();
+    const result = this.entries.filter(e => (now - e.timestamp) < this.ttlMs);
     this.entries = [];
     return result;
   }

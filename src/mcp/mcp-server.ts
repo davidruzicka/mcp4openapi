@@ -1388,7 +1388,14 @@ export class MCPServer {
     this.httpClientFactory.setMetricsCollector(metricsCollector);
 
     this.recordGlobalToolFilterMetrics();
-    
+
+    // Wire upstream connection manager so upstream_mcp profiles can proxy tool calls.
+    // Dynamic import avoids a circular-dep risk between mcp-server and upstream module.
+    const { UpstreamConnectionManager } = await import('../upstream/upstream-connection-manager.js');
+    const upstreamManager = new UpstreamConnectionManager({ logger: this.logger });
+    this.httpTransport.setUpstreamConnectionManager(upstreamManager);
+    this.setGetUpstreamClient((s, p, t) => upstreamManager.getOrConnect(s, p, t));
+
     // Set message handler to process JSON-RPC messages
     this.httpTransport.setMessageHandler(async (message: unknown, sessionId?: string, profileId?: string) => {
       return await this.handleJsonRpcMessage(message, sessionId, profileId);

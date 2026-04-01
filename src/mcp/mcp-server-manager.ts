@@ -8,6 +8,7 @@ import { MCPServer } from './mcp-server.js';
 import type { HttpProfileContext } from '../types/http-transport.js';
 import type { HttpTransport } from '../transport/http-transport.js';
 import { ProfileRegistry } from '../profile/profile-registry.js';
+import { UpstreamConnectionManager } from '../upstream/upstream-connection-manager.js';
 
 export class MCPServerManager {
   private registry: ProfileRegistry;
@@ -15,6 +16,7 @@ export class MCPServerManager {
   private httpTransport?: HttpTransport;
   private globalFiltering?: FilteringRules;
   private servers = new Map<string, Promise<MCPServer>>();
+  private upstreamManager: UpstreamConnectionManager;
 
   constructor(
     registry: ProfileRegistry,
@@ -26,6 +28,10 @@ export class MCPServerManager {
     this.logger = logger;
     this.httpTransport = httpTransport;
     this.globalFiltering = globalFiltering;
+    this.upstreamManager = new UpstreamConnectionManager({ logger });
+    if (httpTransport) {
+      httpTransport.setUpstreamConnectionManager(this.upstreamManager);
+    }
   }
 
   getDefaultProfileId(): string | undefined {
@@ -56,6 +62,7 @@ export class MCPServerManager {
     if (this.httpTransport) {
       server.attachHttpTransport(this.httpTransport);
     }
+    server.setGetUpstreamClient((s, p, t) => this.upstreamManager.getOrConnect(s, p, t));
     return server;
   }
 }

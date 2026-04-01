@@ -8,10 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- `upstream_mcp` proxy is now wired at HTTP startup in both single-profile and profile-routing modes; previously `getUpstreamClientFn` was never set, causing upstream tools to be silently unavailable.
+- `drain()` on `NotificationQueue` now re-applies TTL eviction before returning entries, preventing stale notifications from being replayed on reconnect after extended disconnection.
+- Query-auth upstream providers now have their token appended to the transport URL and validation endpoint URL; previously the token was never sent, causing all query-auth connections to fail authentication.
 - Upstream SSE reconnect now replays buffered upstream notifications via `sendToClient()` so they enter the resumability queue and survive a second reconnect.
 - `validateCredentials` now throws `UpstreamConnectionError` on non-2xx responses (404, 500, 503, etc.); previously only 401/403 were treated as failures.
 - Heartbeat `setInterval` callback now skips a tick when a previous ping is still in-flight, preventing concurrent overlapping pings during upstream slowness.
 - `toMcpErrorResponse` omits the `data` field when `correlationId` is absent instead of returning `{ correlationId: undefined }`.
+- `validateCredentials` now uses `redirect: 'manual'` to prevent SSRF bypass via HTTP redirects pointing to private/loopback addresses; 3xx responses are treated as failures.
+- `closeAll` now calls `client.close()` alongside `transport.close()` to release MCP SDK client resources (handlers, timers).
+- Session init no longer logs "Upstream credential validation successful" when no client token is present and validation was a no-op.
 
 ### Added
 - Upstream MCP proxy: tools/list and tools/call forwarding with tool name/description sanitization, tools/list_changed notification relay with bounded queue buffering and replay on SSE reconnect.
