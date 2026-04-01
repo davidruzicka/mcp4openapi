@@ -3321,4 +3321,47 @@ paths:
       await expect(loader.load(tmpPath)).resolves.toBeDefined();
     });
   });
+
+  describe('upstream_mcp single-provider constraint (D-03)', () => {
+    const makeUpstreamProvider = (name: string) => ({
+      name,
+      transport: { type: 'http-streamable', url: 'https://upstream.example.com/mcp' },
+      auth: { type: 'bearer', value_from_env: 'TOKEN' },
+    });
+
+    it('rejects upstream_mcp with more than one provider', async () => {
+      const loader = new ProfileLoader();
+      const fs = await import('fs/promises');
+      const tmpPath = `/tmp/profile-upstream-multi-${Date.now()}-${Math.random()}.json`;
+      await fs.writeFile(
+        tmpPath,
+        JSON.stringify({
+          profile_name: 'multi-upstream',
+          tools: [],
+          upstream_mcp: [makeUpstreamProvider('provider-a'), makeUpstreamProvider('provider-b')],
+        }),
+        'utf-8'
+      );
+
+      await expect(loader.load(tmpPath)).rejects.toThrow('upstream_mcp supports exactly one upstream provider');
+    });
+
+    it('loads profile with exactly one upstream_mcp provider', async () => {
+      const loader = new ProfileLoader();
+      const fs = await import('fs/promises');
+      const tmpPath = `/tmp/profile-upstream-single-${Date.now()}-${Math.random()}.json`;
+      await fs.writeFile(
+        tmpPath,
+        JSON.stringify({
+          profile_name: 'single-upstream',
+          tools: [],
+          upstream_mcp: [makeUpstreamProvider('provider-a')],
+        }),
+        'utf-8'
+      );
+
+      const profile = await loader.load(tmpPath);
+      expect(profile.upstream_mcp).toHaveLength(1);
+    });
+  });
 });

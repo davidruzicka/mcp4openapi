@@ -11,9 +11,9 @@
  * (reaper, DELETE /mcp, shutdown) to prevent connection leaks (REL-02).
  */
 
-import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { ToolListChangedNotificationSchema } from '@modelcontextprotocol/sdk/types.js';
-import type { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import type { UpstreamMcpServerConfig } from '../types/profile.js';
 import type { UpstreamConnection } from '../types/upstream-connection.js';
 import { UpstreamConnectionError, UpstreamTimeoutError, UpstreamAuthError } from './upstream-errors.js';
@@ -84,12 +84,12 @@ export class UpstreamConnectionManager {
   private readonly logger: Logger;
 
   constructor(options?: UpstreamConnectionManagerOptions) {
-    this.clientFactory = options?.clientFactory ?? (() => {
-      throw new Error('Default clientFactory not available in production - inject via options');
-    });
-    this.transportFactory = options?.transportFactory ?? (() => {
-      throw new Error('Default transportFactory not available in production - inject via options');
-    });
+    this.clientFactory = options?.clientFactory ?? (
+      () => new Client({ name: 'mcp4openapi', version: '0.1.0' })
+    );
+    this.transportFactory = options?.transportFactory ?? (
+      (url, opts) => new StreamableHTTPClientTransport(url, opts) as ReturnType<NonNullable<UpstreamConnectionManagerOptions['transportFactory']>>
+    );
     this.logger = options?.logger ?? new ConsoleLogger();
     this.ssrfValidator = options?.ssrfValidator ?? new SSRFValidator(this.logger);
   }

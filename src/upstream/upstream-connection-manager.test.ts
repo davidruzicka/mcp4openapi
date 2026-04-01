@@ -69,20 +69,19 @@ describe('UpstreamConnectionManager', () => {
   });
 
   describe('default factory fallbacks', () => {
-    it('throws when transportFactory is not injected', async () => {
-      const bareManager = new UpstreamConnectionManager();
-      await expect(
-        bareManager.getOrConnect('session-x', createProvider(), 'token'),
-      ).rejects.toThrow('Default transportFactory not available in production');
+    it('can be constructed without injecting factories (uses real SDK defaults)', () => {
+      // Production code creates UpstreamConnectionManager with only { logger };
+      // factories must not throw at construction time.
+      expect(() => new UpstreamConnectionManager()).not.toThrow();
     });
 
-    it('throws when clientFactory is not injected but transportFactory is', async () => {
-      const bareManager = new UpstreamConnectionManager({
-        transportFactory: vi.fn().mockReturnValue(createMockTransport()),
-      });
-      await expect(
-        bareManager.getOrConnect('session-x', createProvider(), 'token'),
-      ).rejects.toThrow('Default clientFactory not available in production');
+    it('real default transportFactory produces a StreamableHTTPClientTransport-compatible object', () => {
+      const mgr = new UpstreamConnectionManager();
+      // Access the private factory via any-cast to verify it returns a real transport object
+      const factory = (mgr as unknown as { transportFactory: (url: URL, opts: Record<string, unknown>) => unknown }).transportFactory;
+      const t = factory(new URL('https://example.com/mcp'), {});
+      expect(t).toBeDefined();
+      expect(typeof (t as { close: unknown }).close).toBe('function');
     });
   });
 
