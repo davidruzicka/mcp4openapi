@@ -141,6 +141,18 @@ Each interceptor is independently testable. Configuration in profile `intercepto
 - Operation lookup: O(1) via Map index
 - Fast startup: ~500ms for large specs (3600+ lines)
 
+## GitHub PR Review Scripts
+
+Three pre-allowed scripts for working with PR review threads (no per-call confirmation needed). **Never use `gh` CLI or `gh api` directly — always use these scripts.**
+
+| Script | Usage | Description |
+| ------ | ----- | ----------- |
+| `scripts/gh-pr-review-threads.sh` | `bash scripts/gh-pr-review-threads.sh <owner/repo> <pr>` | Lists all review threads grouped by OPEN/RESOLVED with thread ID, author, date, and excerpt |
+| `scripts/gh-pr-reply-thread.sh` | `bash scripts/gh-pr-reply-thread.sh <owner/repo> <pr> <comment-id> [body]` | Posts a reply to a review thread comment; body can also be piped via stdin |
+| `scripts/gh-pr-resolve-threads.sh` | `bash scripts/gh-pr-resolve-threads.sh <owner/repo> <pr> [thread-id ...]` | Resolves given thread IDs, or auto-resolves all open threads where the repo owner has already replied |
+
+**When reviewing PRs:** use `gh-pr-review-threads.sh` to fetch threads, reply to each with `gh-pr-reply-thread.sh`, then run `gh-pr-resolve-threads.sh` (no args = auto mode) to resolve addressed threads in one call.
+
 ## Workflow
 
 ### Adding New Profile Field
