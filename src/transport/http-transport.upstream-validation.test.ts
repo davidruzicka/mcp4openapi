@@ -198,6 +198,62 @@ describeIfListen('upstream credential validation at session init', () => {
     expect(successLogs).toHaveLength(0);
   });
 
+  it('validates using env var token when provider has value_from_env and client sends no Authorization', async () => {
+    const mockValidateCredentials = vi.fn().mockResolvedValue(undefined);
+    const mockUpstreamConnectionManager = { validateCredentials: mockValidateCredentials, setHasActiveStreamFn: vi.fn(), setDownstreamNotifyFn: vi.fn() };
+    transport.setUpstreamConnectionManager(mockUpstreamConnectionManager as any);
+    vi.stubEnv('UPSTREAM_API_KEY', 'env-secret-token');
+
+    const provider = {
+      name: 'env-provider',
+      transport: { type: 'http-streamable', url: 'https://upstream.example.com/mcp' },
+      auth: { type: 'bearer', value_from_env: 'UPSTREAM_API_KEY' },
+      validation_endpoint: 'https://api.example.com/validate',
+    };
+    createProfileState(transport as any, 'default', [provider]);
+
+    // No Authorization header - client token is undefined
+    await request(app)
+      .post('/mcp')
+      .set('Content-Type', 'application/json')
+      .set('Accept', 'application/json, text/event-stream')
+      .send(INIT_REQUEST);
+
+    expect(mockValidateCredentials).toHaveBeenCalledWith(
+      'pre-session',
+      provider,
+      'env-secret-token',
+    );
+  });
+
+  it('does not validate when provider has value_from_env but env var is not set and client has no token', async () => {
+    const mockValidateCredentials = vi.fn().mockResolvedValue(undefined);
+    const mockUpstreamConnectionManager = { validateCredentials: mockValidateCredentials, setHasActiveStreamFn: vi.fn(), setDownstreamNotifyFn: vi.fn() };
+    transport.setUpstreamConnectionManager(mockUpstreamConnectionManager as any);
+    delete process.env['UPSTREAM_API_KEY_MISSING'];
+
+    const provider = {
+      name: 'env-provider',
+      transport: { type: 'http-streamable', url: 'https://upstream.example.com/mcp' },
+      auth: { type: 'bearer', value_from_env: 'UPSTREAM_API_KEY_MISSING' },
+      validation_endpoint: 'https://api.example.com/validate',
+    };
+    createProfileState(transport as any, 'default', [provider]);
+
+    await request(app)
+      .post('/mcp')
+      .set('Content-Type', 'application/json')
+      .set('Accept', 'application/json, text/event-stream')
+      .send(INIT_REQUEST);
+
+    // validateCredentials called with undefined - it will no-op internally
+    expect(mockValidateCredentials).toHaveBeenCalledWith(
+      'pre-session',
+      provider,
+      undefined,
+    );
+  });
+
   it('skips validation when no upstreamConnectionManager registered', async () => {
     // No setUpstreamConnectionManager call
     const provider = {

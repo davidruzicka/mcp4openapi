@@ -1795,10 +1795,19 @@ export class MCPServer {
       const result = await client.listTools();
       const sanitized = sanitizeToolList(result.tools ?? [], this.logger);
       const policyFiltered = applyProviderToolPolicy(sanitized.tools, provider.tools);
+      // Apply session-level X-Mcp4-Tools name filter (same gate as local tools/list)
+      const sessionFilter = this.getToolFilterForSession(sessionId, profileId);
+      const nameFiltered = sessionFilter
+        ? policyFiltered.filter(t => sessionFilter.allowedToolNames.has(t.name))
+        : policyFiltered;
+      // Apply enterprise category policy - upstream tools default to 'modify' (no OpenAPI metadata)
+      const enterpriseFiltered = this.isToolCategoryAllowedByEnterprisePolicy('modify', sessionId, profileId)
+        ? nameFiltered
+        : [];
       return {
         jsonrpc: '2.0',
         id: (req as Record<string, unknown>).id,
-        result: { tools: policyFiltered },
+        result: { tools: enterpriseFiltered },
       };
     } catch (error) {
       return {

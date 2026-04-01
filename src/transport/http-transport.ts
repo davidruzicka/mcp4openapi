@@ -2791,12 +2791,20 @@ export class HttpTransport {
             for (const upstreamProvider of profileState.context.upstreamMcp) {
               if (upstreamProvider.validation_endpoint) {
                 try {
+                  // For env-backed upstream auth, resolve the env var token even when the client
+                  // sends no Authorization header. Without this, value_from_env providers are
+                  // silently skipped at init time and misconfigurations go undetected until the
+                  // first proxied tool request.
+                  const envToken = upstreamProvider.auth?.value_from_env
+                    ? process.env[upstreamProvider.auth.value_from_env]
+                    : undefined;
+                  const effectiveUpstreamToken = authInfo.token ?? envToken;
                   await this.upstreamConnectionManager.validateCredentials(
                     'pre-session',
                     upstreamProvider,
-                    authInfo.token,
+                    effectiveUpstreamToken,
                   );
-                  if (authInfo.token) {
+                  if (effectiveUpstreamToken) {
                     this.logger.info('Upstream credential validation successful', {
                       provider: upstreamProvider.name,
                     });

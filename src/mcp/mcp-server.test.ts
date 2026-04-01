@@ -3431,6 +3431,56 @@ paths:
         expect(response.error.code).toBe(-32603);
         expect(response.result).toBeUndefined();
       });
+
+      it('X-Mcp4-Tools session filter removes blocked tools from upstream tools/list', async () => {
+        const toolA = { name: 'tool_a', description: 'Tool A', inputSchema: { type: 'object', properties: {} } };
+        const toolB = { name: 'tool_b', description: 'Tool B', inputSchema: { type: 'object', properties: {} } };
+        mockListTools.mockResolvedValueOnce({ tools: [toolA, toolB] });
+        (upstreamServer as any).httpTransport.getSessionToolFilter = () => ({
+          allowedToolNames: new Set(['tool_a']),
+          reasons: new Map([['tool_b', ['blocked by header']]]),
+        });
+
+        const response = await (upstreamServer as any).handleOtherRequest(
+          { jsonrpc: '2.0', id: '1', method: 'tools/list', params: {} },
+          'session-123',
+          'upstream-profile',
+        ) as any;
+
+        expect(response.result.tools).toHaveLength(1);
+        expect(response.result.tools[0].name).toBe('tool_a');
+      });
+
+      it('enterprise policy hides all upstream tools when modify category is not permitted', async () => {
+        const toolA = { name: 'tool_a', description: 'Tool A', inputSchema: { type: 'object', properties: {} } };
+        mockListTools.mockResolvedValueOnce({ tools: [toolA] });
+        (upstreamServer as any).httpTransport.getSessionEnterpriseAllowedToolCategories = () =>
+          new Set(['read', 'list']); // 'modify' not in set
+
+        const response = await (upstreamServer as any).handleOtherRequest(
+          { jsonrpc: '2.0', id: '1', method: 'tools/list', params: {} },
+          'session-123',
+          'upstream-profile',
+        ) as any;
+
+        expect(response.result.tools).toHaveLength(0);
+      });
+
+      it('enterprise policy passes upstream tools when modify category is permitted', async () => {
+        const toolA = { name: 'tool_a', description: 'Tool A', inputSchema: { type: 'object', properties: {} } };
+        mockListTools.mockResolvedValueOnce({ tools: [toolA] });
+        (upstreamServer as any).httpTransport.getSessionEnterpriseAllowedToolCategories = () =>
+          new Set(['read', 'list', 'modify']);
+
+        const response = await (upstreamServer as any).handleOtherRequest(
+          { jsonrpc: '2.0', id: '1', method: 'tools/list', params: {} },
+          'session-123',
+          'upstream-profile',
+        ) as any;
+
+        expect(response.result.tools).toHaveLength(1);
+        expect(response.result.tools[0].name).toBe('tool_a');
+      });
     });
 
     // -------------------------------------------------------------------------
