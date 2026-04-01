@@ -819,6 +819,7 @@ paths:
             hasOAuthProvider(_profileId?: string) { return false; }
             getSessionToken(_profileId: string, _sessionId: string) { return undefined; }
             ensureValidSessionToken(_profileId: string, _sessionId: string) { return Promise.resolve(true); }
+            setUpstreamConnectionManager(_manager: any) {}
           }
         };
       });
@@ -3353,6 +3354,8 @@ paths:
         getSessionToolFilterHeader: () => undefined,
         getSessionToolFilterRequest: () => undefined,
         getSessionEnterpriseTiers: () => undefined,
+        getSessionEnterpriseAllowedToolCategories: () => undefined,
+        recordToolFilterRejection: () => {},
       };
       // Wire the upstream client callback
       upstreamServer.setGetUpstreamClient(mockGetUpstreamClient);
@@ -3685,6 +3688,121 @@ paths:
         ) as any;
 
         expect(response.result.capabilities.tools.listChanged).toBeUndefined();
+      });
+    });
+
+    // -------------------------------------------------------------------------
+    describe('getUpstreamMcpConfig HTTP fallback (fix: issue #1)', () => {
+      it('falls back to profile.upstream_mcp when httpTransport.getUpstreamMcpConfig returns undefined', async () => {
+        const server = new MCPServer();
+        const provider = { name: 'fallback-provider', transport: { type: 'http-streamable', url: 'https://upstream.example.com/mcp' } };
+        (server as any).profile = {
+          profile_name: 'fallback-profile',
+          description: 'Profile with upstream_mcp not reflected in httpTransport context',
+          tools: [],
+          upstream_mcp: [provider],
+        };
+        // httpTransport returns undefined for getUpstreamMcpConfig (single-profile HTTP startup case)
+        (server as any).httpTransport = {
+          hasOAuthProvider: () => false,
+          getUpstreamMcpConfig: (_profileId: string) => undefined,
+          getSessionToken: () => undefined,
+          getSessionTenantContext: () => undefined,
+          getMetricsCollector: () => null,
+          getSessionFiltering: () => undefined,
+          getSessionToolFilter: () => undefined,
+          getSessionEnterpriseAllowedToolCategories: () => undefined,
+        };
+
+        const mockClientFn = vi.fn().mockResolvedValue({ listTools: vi.fn().mockResolvedValue({ tools: [] }), callTool: vi.fn() });
+        server.setGetUpstreamClient(mockClientFn);
+
+        const response = await (server as any).handleOtherRequest(
+          { jsonrpc: '2.0', id: '1', method: 'tools/list', params: {} },
+          'session-1',
+          'fallback-profile',
+        ) as any;
+
+        // Should have routed to upstream (not local tools)
+        expect(mockClientFn).toHaveBeenCalledWith('session-1', provider, undefined);
+        expect(response.result).toBeDefined();
+      });
+    });
+
+    // -------------------------------------------------------------------------
+    describe('policy enforcement before upstream forwarding (fix: issue #4 + #5)', () => {
+      it('tool filter blocks upstream tool call', async () => {
+        (upstreamServer as any).httpTransport.getSessionToolFilter = () => ({
+          allowedToolNames: new Set(['allowed_tool']),
+          reasons: new Map([['safe_tool', ['blocked by filter']]]),
+        });
+
+        const response = await (upstreamServer as any).handleToolCall(
+          { jsonrpc: '2.0', id: '1', method: 'tools/call', params: { name: 'safe_tool', arguments: {} } },
+          'session-123',
+          'upstream-profile',
+        ) as any;
+
+        expect(response.error).toBeDefined();
+        expect(response.error.code).toBe(-32002);
+        expect(response.error.message).toMatch(/X-Mcp4-Tools filter/);
+        expect(mockCallTool).not.toHaveBeenCalled();
+      });
+
+      it('enterprise policy blocks upstream tool call (default modify category)', async () => {
+        (upstreamServer as any).httpTransport.getSessionEnterpriseAllowedToolCategories = () =>
+          new Set(['read', 'list']); // 'modify' not allowed
+
+        const response = await (upstreamServer as any).handleToolCall(
+          { jsonrpc: '2.0', id: '1', method: 'tools/call', params: { name: 'safe_tool', arguments: {} } },
+          'session-123',
+          'upstream-profile',
+        ) as any;
+
+        expect(response.error).toBeDefined();
+        expect(response.error.code).toBe(-32002);
+        expect(response.error.message).toMatch(/enterprise authorization policy/);
+        expect(mockCallTool).not.toHaveBeenCalled();
+      });
+
+      it('enterprise policy allows upstream tool call when modify is permitted', async () => {
+        (upstreamServer as any).httpTransport.getSessionEnterpriseAllowedToolCategories = () =>
+          new Set(['read', 'list', 'modify']);
+
+        const response = await (upstreamServer as any).handleToolCall(
+          { jsonrpc: '2.0', id: '1', method: 'tools/call', params: { name: 'safe_tool', arguments: {} } },
+          'session-123',
+          'upstream-profile',
+        ) as any;
+
+        expect(response.result).toBeDefined();
+        expect(mockCallTool).toHaveBeenCalled();
+      });
+
+      it('rejects upstream tool call with invalid tool name (prevents sanitizer bypass)', async () => {
+        const response = await (upstreamServer as any).handleToolCall(
+          { jsonrpc: '2.0', id: '1', method: 'tools/call', params: { name: 'has <script> injection', arguments: {} } },
+          'session-123',
+          'upstream-profile',
+        ) as any;
+
+        expect(response.error).toBeDefined();
+        expect(response.error.code).toBe(-32002);
+        expect(response.error.message).toMatch(/not allowed/);
+        expect(mockCallTool).not.toHaveBeenCalled();
+      });
+
+      it('rejects upstream tool call with tool name exceeding max length', async () => {
+        const longName = 'a'.repeat(256);
+        const response = await (upstreamServer as any).handleToolCall(
+          { jsonrpc: '2.0', id: '1', method: 'tools/call', params: { name: longName, arguments: {} } },
+          'session-123',
+          'upstream-profile',
+        ) as any;
+
+        expect(response.error).toBeDefined();
+        expect(response.error.code).toBe(-32002);
+        expect(mockCallTool).not.toHaveBeenCalled();
       });
     });
   });

@@ -2796,9 +2796,15 @@ export class HttpTransport {
                     upstreamProvider,
                     authInfo.token,
                   );
-                  this.logger.info('Upstream credential validation successful', {
-                    provider: upstreamProvider.name,
-                  });
+                  if (authInfo.token) {
+                    this.logger.info('Upstream credential validation successful', {
+                      provider: upstreamProvider.name,
+                    });
+                  } else {
+                    this.logger.debug('Upstream credential validation skipped - no client token', {
+                      provider: upstreamProvider.name,
+                    });
+                  }
                 } catch (error) {
                   this.logger.warn('Upstream credential validation failed', {
                     provider: upstreamProvider.name,

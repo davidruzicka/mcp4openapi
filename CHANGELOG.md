@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- `getUpstreamMcpConfig` now falls back to `profile.upstream_mcp` when `HttpTransport` profile context does not carry it (single-profile HTTP startup); previously upstream routing was silently bypassed.
+- `getOrConnect` now detects token rotation: a changed `token` argument closes the old upstream connection and opens a new one with the fresh credential.
+- `closeAll` marks the session as destroyed before awaiting in-flight connections so any `createConnection` resolving after teardown self-closes immediately, preventing orphaned upstream resources.
+- `handleToolCall` now enforces `X-Mcp4-Tools` filter and enterprise authorization policy before forwarding to upstream, matching the gates applied to local tools.
+- `tools/call` to upstream now validates the tool name against the sanitizer policy (`[a-zA-Z0-9_-]`, max 255 chars) before forwarding, preventing invocation of tools dropped from the sanitized list.
 - `UpstreamConnectionManager` now ships with real production `clientFactory`/`transportFactory` defaults (MCP SDK `Client` + `StreamableHTTPClientTransport`); previously both defaults threw, making all upstream proxy calls fail at runtime.
 - Profiles with more than one `upstream_mcp` entry are now rejected at load time with a clear error; previously extra providers were silently ignored while all calls were routed to the first.
 - `upstream_mcp` proxy is now wired at HTTP startup in both single-profile and profile-routing modes; previously `getUpstreamClientFn` was never set, causing upstream tools to be silently unavailable.

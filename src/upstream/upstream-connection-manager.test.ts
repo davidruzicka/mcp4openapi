@@ -199,6 +199,54 @@ describe('UpstreamConnectionManager', () => {
       expect(result).toBe(freshClient);
       expect(freshClient.connect).toHaveBeenCalledTimes(1);
     });
+
+    it('reconnects when token changes for an existing CONNECTED session', async () => {
+      const provider = createProvider();
+
+      // First connection with token-A
+      await manager.getOrConnect('session-1', provider, 'token-A');
+      const conn = manager.getConnection('session-1', provider.name);
+      expect(conn?.token).toBe('token-A');
+
+      // Second call with token-B - should reconnect
+      const newClient = createMockClient();
+      const newTransport = createMockTransport();
+      clientFactory.mockReturnValueOnce(newClient);
+      transportFactory.mockReturnValueOnce(newTransport);
+
+      const result = await manager.getOrConnect('session-1', provider, 'token-B');
+
+      expect(result).toBe(newClient);
+      expect(newClient.connect).toHaveBeenCalledTimes(1);
+      expect(manager.getConnection('session-1', provider.name)?.token).toBe('token-B');
+    });
+
+    it('does not reconnect when token is unchanged for CONNECTED session', async () => {
+      const provider = createProvider();
+      await manager.getOrConnect('session-1', provider, 'same-token');
+      const result = await manager.getOrConnect('session-1', provider, 'same-token');
+      expect(result).toBe(mockClient);
+      expect(mockClient.connect).toHaveBeenCalledTimes(1);
+    });
+
+    it('throws UpstreamConnectionError when session destroyed mid-connect', async () => {
+      const provider = createProvider();
+
+      // Slow connect so we can destroy the session while in-flight
+      let resolveConnect!: () => void;
+      mockClient.connect.mockReturnValue(
+        new Promise<void>((resolve) => { resolveConnect = resolve; }),
+      );
+
+      const connectPromise = manager.getOrConnect('session-1', provider, 'token');
+
+      // Destroy the session while connect is in-flight (don't await - closeAll waits for pending)
+      const closePromise = manager.closeAll('session-1');
+
+      resolveConnect(); // let connect resolve
+      await expect(connectPromise).rejects.toThrow('Session destroyed during upstream connection');
+      await closePromise;
+    });
   });
 
   describe('closeAll', () => {
@@ -226,6 +274,25 @@ describe('UpstreamConnectionManager', () => {
 
     it('is a no-op for non-existent session', async () => {
       await expect(manager.closeAll('nonexistent')).resolves.toBeUndefined();
+    });
+
+    it('cleans up when called before any connection is established (only pending exists)', async () => {
+      const provider = createProvider();
+
+      let resolveConnect!: () => void;
+      mockClient.connect.mockReturnValue(
+        new Promise<void>((resolve) => { resolveConnect = resolve; }),
+      );
+
+      const connectPromise = manager.getOrConnect('session-1', provider, 'token');
+      const closePromise = manager.closeAll('session-1');
+
+      resolveConnect();
+      await expect(connectPromise).rejects.toThrow('Session destroyed during upstream connection');
+      await closePromise;
+
+      // No connections should remain
+      expect(manager.getActiveSessionCount()).toBe(0);
     });
 
     it('allows fresh connection after closeAll', async () => {

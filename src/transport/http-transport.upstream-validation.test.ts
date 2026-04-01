@@ -171,6 +171,33 @@ describeIfListen('upstream credential validation at session init', () => {
     expect(mockValidateCredentials).not.toHaveBeenCalled();
   });
 
+  it('does not log validation successful when no token is present (no-op path)', async () => {
+    const mockValidateCredentials = vi.fn().mockResolvedValue(undefined);
+    const mockUpstreamConnectionManager = { validateCredentials: mockValidateCredentials, setHasActiveStreamFn: vi.fn(), setDownstreamNotifyFn: vi.fn() };
+    transport.setUpstreamConnectionManager(mockUpstreamConnectionManager as any);
+
+    const infoSpy = vi.spyOn(logger, 'info');
+
+    const provider = {
+      name: 'test-provider',
+      transport: { type: 'http-streamable', url: 'https://upstream.example.com/mcp' },
+      validation_endpoint: 'https://api.example.com/validate',
+    };
+    createProfileState(transport as any, 'default', [provider]);
+
+    // No Authorization header - token will be undefined
+    await request(app)
+      .post('/mcp')
+      .set('Content-Type', 'application/json')
+      .set('Accept', 'application/json, text/event-stream')
+      .send(INIT_REQUEST);
+
+    const successLogs = infoSpy.mock.calls.filter(
+      (args) => typeof args[0] === 'string' && args[0].includes('Upstream credential validation successful'),
+    );
+    expect(successLogs).toHaveLength(0);
+  });
+
   it('skips validation when no upstreamConnectionManager registered', async () => {
     // No setUpstreamConnectionManager call
     const provider = {
