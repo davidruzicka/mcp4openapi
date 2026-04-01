@@ -3805,5 +3805,200 @@ paths:
         expect(mockCallTool).not.toHaveBeenCalled();
       });
     });
+
+    // -------------------------------------------------------------------------
+    describe('upstream provider tool policy (allow/deny lists)', () => {
+      it('blocks tool call denied by provider deny list', async () => {
+        (upstreamServer as any).profile.upstream_mcp = [{
+          ...upstreamServer['profile'].upstream_mcp[0],
+          tools: { deny: ['safe_tool'] },
+        }];
+        (upstreamServer as any).httpTransport.getUpstreamMcpConfig = () =>
+          (upstreamServer as any).profile.upstream_mcp;
+
+        const response = await (upstreamServer as any).handleToolCall(
+          { jsonrpc: '2.0', id: '1', method: 'tools/call', params: { name: 'safe_tool', arguments: {} } },
+          'session-123',
+          'upstream-profile',
+        ) as any;
+
+        expect(response.error).toBeDefined();
+        expect(response.error.code).toBe(-32002);
+        expect(response.error.message).toMatch(/upstream provider tool policy/);
+        expect(mockCallTool).not.toHaveBeenCalled();
+      });
+
+      it('blocks tool call not in provider allow list', async () => {
+        (upstreamServer as any).profile.upstream_mcp = [{
+          ...upstreamServer['profile'].upstream_mcp[0],
+          tools: { allow: ['other_tool'] },
+        }];
+        (upstreamServer as any).httpTransport.getUpstreamMcpConfig = () =>
+          (upstreamServer as any).profile.upstream_mcp;
+
+        const response = await (upstreamServer as any).handleToolCall(
+          { jsonrpc: '2.0', id: '1', method: 'tools/call', params: { name: 'safe_tool', arguments: {} } },
+          'session-123',
+          'upstream-profile',
+        ) as any;
+
+        expect(response.error).toBeDefined();
+        expect(response.error.code).toBe(-32002);
+        expect(response.error.message).toMatch(/upstream provider tool policy/);
+        expect(mockCallTool).not.toHaveBeenCalled();
+      });
+
+      it('allows tool call that passes provider allow list', async () => {
+        (upstreamServer as any).profile.upstream_mcp = [{
+          ...upstreamServer['profile'].upstream_mcp[0],
+          tools: { allow: ['safe_tool'] },
+        }];
+        (upstreamServer as any).httpTransport.getUpstreamMcpConfig = () =>
+          (upstreamServer as any).profile.upstream_mcp;
+
+        const response = await (upstreamServer as any).handleToolCall(
+          { jsonrpc: '2.0', id: '1', method: 'tools/call', params: { name: 'safe_tool', arguments: {} } },
+          'session-123',
+          'upstream-profile',
+        ) as any;
+
+        expect(response.result).toBeDefined();
+        expect(mockCallTool).toHaveBeenCalledWith({ name: 'safe_tool', arguments: {} });
+      });
+
+      it('filters tools/list by provider allow list', async () => {
+        const anotherTool = { name: 'another_tool', description: 'Another', inputSchema: { type: 'object', properties: {} } };
+        mockListTools.mockResolvedValue({ tools: [safeTool, anotherTool] });
+        (upstreamServer as any).profile.upstream_mcp = [{
+          ...upstreamServer['profile'].upstream_mcp[0],
+          tools: { allow: ['safe_tool'] },
+        }];
+        (upstreamServer as any).httpTransport.getUpstreamMcpConfig = () =>
+          (upstreamServer as any).profile.upstream_mcp;
+
+        const response = await (upstreamServer as any).handleOtherRequest(
+          { jsonrpc: '2.0', id: '1', method: 'tools/list', params: {} },
+          'session-123',
+          'upstream-profile',
+        ) as any;
+
+        expect(response.result.tools).toHaveLength(1);
+        expect(response.result.tools[0].name).toBe('safe_tool');
+      });
+
+      it('filters tools/list by provider deny list', async () => {
+        const anotherTool = { name: 'another_tool', description: 'Another', inputSchema: { type: 'object', properties: {} } };
+        mockListTools.mockResolvedValue({ tools: [safeTool, anotherTool] });
+        (upstreamServer as any).profile.upstream_mcp = [{
+          ...upstreamServer['profile'].upstream_mcp[0],
+          tools: { deny: ['safe_tool'] },
+        }];
+        (upstreamServer as any).httpTransport.getUpstreamMcpConfig = () =>
+          (upstreamServer as any).profile.upstream_mcp;
+
+        const response = await (upstreamServer as any).handleOtherRequest(
+          { jsonrpc: '2.0', id: '1', method: 'tools/list', params: {} },
+          'session-123',
+          'upstream-profile',
+        ) as any;
+
+        expect(response.result.tools).toHaveLength(1);
+        expect(response.result.tools[0].name).toBe('another_tool');
+      });
+    });
+
+    // -------------------------------------------------------------------------
+    describe('getUpstreamToken auth fallback (fix: value_from_env)', () => {
+      it('uses env var from provider.auth.value_from_env when configured', async () => {
+        const providerWithAuth = {
+          ...upstreamProvider,
+          auth: { type: 'bearer' as const, value_from_env: 'UPSTREAM_SECRET' },
+        };
+        (upstreamServer as any).profile.upstream_mcp = [providerWithAuth];
+        (upstreamServer as any).httpTransport.getUpstreamMcpConfig = () => [providerWithAuth];
+
+        process.env['UPSTREAM_SECRET'] = 'env-token-value';
+        try {
+          await (upstreamServer as any).handleOtherRequest(
+            { jsonrpc: '2.0', id: '1', method: 'tools/list', params: {} },
+            'session-123',
+            'upstream-profile',
+          );
+          expect(mockGetUpstreamClient).toHaveBeenCalledWith('session-123', providerWithAuth, 'env-token-value');
+        } finally {
+          delete process.env['UPSTREAM_SECRET'];
+        }
+      });
+
+      it('falls back to session token when no provider.auth is configured', async () => {
+        // upstreamProvider has no auth - should use downstream session token
+        const response = await (upstreamServer as any).handleOtherRequest(
+          { jsonrpc: '2.0', id: '1', method: 'tools/list', params: {} },
+          'session-123',
+          'upstream-profile',
+        ) as any;
+
+        expect(mockGetUpstreamClient).toHaveBeenCalledWith('session-123', upstreamProvider, 'downstream-token');
+        expect(response.result).toBeDefined();
+      });
+
+      it('returns undefined when env var is not set', async () => {
+        const providerWithAuth = {
+          ...upstreamProvider,
+          auth: { type: 'bearer' as const, value_from_env: 'NONEXISTENT_ENV_VAR_XYZ' },
+        };
+        (upstreamServer as any).profile.upstream_mcp = [providerWithAuth];
+        (upstreamServer as any).httpTransport.getUpstreamMcpConfig = () => [providerWithAuth];
+
+        await (upstreamServer as any).handleOtherRequest(
+          { jsonrpc: '2.0', id: '1', method: 'tools/list', params: {} },
+          'session-123',
+          'upstream-profile',
+        );
+        expect(mockGetUpstreamClient).toHaveBeenCalledWith('session-123', providerWithAuth, undefined);
+      });
+    });
+
+    // -------------------------------------------------------------------------
+    describe('tool_prefix warning', () => {
+      it('emits a warning when tool_prefix is configured', async () => {
+        const mockLogger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+        const providerWithPrefix = { ...upstreamProvider, tool_prefix: 'myprefix_' };
+        const prefixServer = new MCPServer(mockLogger as any);
+        (prefixServer as any).profile = {
+          profile_name: 'upstream-profile',
+          description: 'Upstream profile',
+          tools: [],
+          upstream_mcp: [providerWithPrefix],
+        };
+        (prefixServer as any).httpTransport = {
+          hasOAuthProvider: () => false,
+          getUpstreamMcpConfig: () => [providerWithPrefix],
+          getSessionToken: () => undefined,
+          getSessionTenantContext: () => undefined,
+          getMetricsCollector: () => null,
+          getSessionFiltering: () => undefined,
+          getSessionToolFilter: () => undefined,
+          getSessionToolFilterHeader: () => undefined,
+          getSessionToolFilterRequest: () => undefined,
+          getSessionEnterpriseTiers: () => undefined,
+          getSessionEnterpriseAllowedToolCategories: () => undefined,
+          recordToolFilterRejection: () => {},
+        };
+        prefixServer.setGetUpstreamClient(vi.fn().mockResolvedValue({ listTools: vi.fn().mockResolvedValue({ tools: [] }), callTool: vi.fn() }));
+
+        await (prefixServer as any).handleOtherRequest(
+          { jsonrpc: '2.0', id: '1', method: 'tools/list', params: {} },
+          'session-123',
+          'upstream-profile',
+        );
+
+        expect(mockLogger.warn).toHaveBeenCalledWith(
+          expect.stringContaining('tool_prefix'),
+          expect.objectContaining({ tool_prefix: 'myprefix_' }),
+        );
+      });
+    });
   });
 });
+
