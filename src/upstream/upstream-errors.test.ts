@@ -121,5 +121,13 @@ describe('upstream-errors', () => {
       const response = toMcpErrorResponse(err);
       expect(response.message).not.toContain(jwt);
     });
+
+    it('omits data when correlationId is absent', () => {
+      const err = new MCPError('bare error', 'SOME_CODE');
+      const response = toMcpErrorResponse(err);
+      expect(response.code).toBe(-32603);
+      expect(response.message).toBeDefined();
+      expect(response.data).toBeUndefined();
+    });
   });
 });

@@ -3184,14 +3184,14 @@ export class HttpTransport {
     }
 
     // Flush any buffered upstream notifications (D-08: replay on reconnect)
+    // Route through sendToClient() so each notification enters the SSE resumability queue
+    // and can be re-replayed on a subsequent reconnect via Last-Event-ID.
     if (this.upstreamConnectionManager) {
       const buffered = this.upstreamConnectionManager.drainNotifications(sessionId);
       for (const entry of buffered) {
         const notification: Record<string, unknown> = { jsonrpc: '2.0', method: entry.method };
         if (entry.params !== undefined) notification.params = entry.params;
-        const eventId = Date.now();
-        res.write(`id: ${eventId}\n`);
-        res.write(`data: ${JSON.stringify(notification)}\n\n`);
+        this.sendToClient(profileState.profileId, sessionId, notification);
       }
       if (buffered.length > 0) {
         this.logger.debug('Replayed buffered upstream notifications', { sessionId, count: buffered.length });

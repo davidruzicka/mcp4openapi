@@ -512,6 +512,27 @@ describe('UpstreamConnectionManager', () => {
       const callArgs = mockFetch.mock.calls[0][1];
       expect(callArgs.signal).toBeDefined();
     });
+
+    it('throws UpstreamConnectionError when fetch returns 404', async () => {
+      const provider = createValidationProvider();
+      mockFetch.mockResolvedValue({ status: 404 });
+      const mgr = new UpstreamConnectionManager({ clientFactory, transportFactory, ssrfValidator: mockSsrfValidator as never });
+      await expect(mgr.validateCredentials(SESSION_ID, provider, 'valid-token')).rejects.toThrow(UpstreamConnectionError);
+    });
+
+    it('throws UpstreamConnectionError when fetch returns 500', async () => {
+      const provider = createValidationProvider();
+      mockFetch.mockResolvedValue({ status: 500 });
+      const mgr = new UpstreamConnectionManager({ clientFactory, transportFactory, ssrfValidator: mockSsrfValidator as never });
+      await expect(mgr.validateCredentials(SESSION_ID, provider, 'valid-token')).rejects.toThrow(UpstreamConnectionError);
+    });
+
+    it('throws UpstreamConnectionError when fetch returns 503', async () => {
+      const provider = createValidationProvider();
+      mockFetch.mockResolvedValue({ status: 503 });
+      const mgr = new UpstreamConnectionManager({ clientFactory, transportFactory, ssrfValidator: mockSsrfValidator as never });
+      await expect(mgr.validateCredentials(SESSION_ID, provider, 'valid-token')).rejects.toThrow(UpstreamConnectionError);
+    });
   });
 
   describe('session destruction integration', () => {
