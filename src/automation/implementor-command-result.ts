@@ -126,7 +126,7 @@ export function parseImplementorCommandResult(raw: string): ImplementorCommandRe
 function formatImplementorCommandResultValidationError(errors: readonly ErrorObject[] | null | undefined): string {
   const firstError = errors?.[0];
   if (!firstError) {
-    return 'Invalid implementor command result: schema validation failed.';
+    throw new Error('Invalid implementor command result: schema validation failed.');
   }
 
   if (firstError.keyword === 'additionalProperties') {

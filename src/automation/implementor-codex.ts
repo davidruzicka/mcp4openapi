@@ -35,11 +35,8 @@ export function parseImplementorTaskPayload(
   try {
     return parseImplementorWorkflowTaskPayload(raw, options);
   } catch (error) {
-    if (error instanceof Error) {
-      throw new Error(`Codex implementor backend: ${error.message}`);
-    }
-
-    throw error;
+    const detail = error instanceof Error ? error.message : 'unknown parse failure';
+    throw new Error(`Codex implementor backend: ${detail}`);
   }
 }
 
@@ -123,10 +120,7 @@ function extractEmbeddedJsonObject(raw: string): string | undefined {
   let escaping = false;
 
   for (let index = 0; index < raw.length; index += 1) {
-    const char = raw[index];
-    if (char === undefined) {
-      break;
-    }
+    const char = raw[index] as string;
 
     if (escaping) {
       escaping = false;

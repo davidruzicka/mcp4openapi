@@ -42,6 +42,12 @@ describe('implementor-command-result', () => {
 
     it('reports non-string summaries as generic schema validation failures', () => {
       expect(() => parseImplementorCommandResult('{"outcome":"failed","summary":1}')).toThrow('Invalid implementor command result: schema validation failed.');
+      expect(() => parseImplementorCommandResult('{"outcome":"pr-created","summary":1,"pullRequest":{"number":123,"url":"https://example.com/pull/123"}}')).toThrow('Invalid implementor command result: schema validation failed.');
+    });
+
+    it('rejects outcome-specific pull request combinations before schema compilation', () => {
+      expect(() => parseImplementorCommandResult('{"outcome":"pr-created","summary":"Opened a PR."}')).toThrow('Invalid implementor command result: pr-created outcome requires pullRequest metadata.');
+      expect(() => parseImplementorCommandResult('{"outcome":"failed","summary":"Tests failed.","pullRequest":{"number":123,"url":"https://example.com/pull/123"}}')).toThrow('Invalid implementor command result: schema validation failed.');
     });
 
     it('rejects malformed pull request metadata via the shared schema validator', () => {
