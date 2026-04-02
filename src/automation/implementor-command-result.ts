@@ -135,17 +135,13 @@ function formatImplementorCommandResultValidationError(errors: readonly ErrorObj
 
   if (firstError.keyword === 'required') {
     const missingProperty = (firstError.params as { missingProperty: string }).missingProperty;
+    if (missingProperty === 'pullRequest' && errors?.some((error) => error.keyword === 'type')) {
+      return 'Invalid implementor command result: schema validation failed.';
+    }
+
     return missingProperty === 'pullRequest'
       ? 'Invalid implementor command result: pr-created outcome requires pullRequest metadata.'
       : `Invalid implementor command result: missing ${missingProperty}.`;
-  }
-
-  if (firstError.keyword === 'minLength' && firstError.instancePath === '/summary') {
-    return 'Invalid implementor command result: missing summary.';
-  }
-
-  if (firstError.keyword === 'enum' || firstError.keyword === 'const') {
-    return 'Invalid implementor command result: unsupported outcome.';
   }
 
   if (firstError.instancePath.startsWith('/pullRequest')) {
@@ -160,29 +156,14 @@ function formatImplementorCommandResultValidationError(errors: readonly ErrorObj
 }
 
 function inferOneOfValidationError(errors: readonly ErrorObject[] | null | undefined): string {
-  const unsupportedOutcomeError = errors?.find((error) => error.keyword === 'enum' || error.keyword === 'const');
-  if (unsupportedOutcomeError) {
-    return 'Invalid implementor command result: unsupported outcome.';
+  const hasTypeError = errors?.some((error) => error.keyword === 'type');
+  if (hasTypeError) {
+    return 'Invalid implementor command result: schema validation failed.';
   }
 
   const missingPullRequestError = errors?.find((error) => error.keyword === 'required' && (error.params as { missingProperty?: string }).missingProperty === 'pullRequest');
   if (missingPullRequestError) {
     return 'Invalid implementor command result: pr-created outcome requires pullRequest metadata.';
-  }
-
-  const invalidPullRequestError = errors?.find((error) => error.instancePath.startsWith('/pullRequest'));
-  if (invalidPullRequestError) {
-    return 'Invalid implementor command result: invalid pullRequest payload.';
-  }
-
-  const missingSummaryError = errors?.find((error) => error.keyword === 'minLength' && error.instancePath === '/summary');
-  if (missingSummaryError) {
-    return 'Invalid implementor command result: missing summary.';
-  }
-
-  const unexpectedPropertyError = errors?.find((error) => error.keyword === 'additionalProperties');
-  if (unexpectedPropertyError) {
-    return `Invalid implementor command result: unexpected property ${(unexpectedPropertyError.params as { additionalProperty: string }).additionalProperty}.`;
   }
 
   return 'Invalid implementor command result: schema validation failed.';
