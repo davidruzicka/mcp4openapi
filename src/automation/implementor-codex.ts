@@ -117,16 +117,12 @@ function collectCodexResultCandidates(raw: string): string[] {
 }
 
 function extractEmbeddedJsonObject(raw: string): string | undefined {
-  const start = raw.indexOf('{');
-  if (start === -1) {
-    return undefined;
-  }
-
+  let start = -1;
   let depth = 0;
   let inString = false;
   let escaping = false;
 
-  for (let index = start; index < raw.length; index += 1) {
+  for (let index = 0; index < raw.length; index += 1) {
     const char = raw[index];
     if (char === undefined) {
       break;
@@ -152,13 +148,16 @@ function extractEmbeddedJsonObject(raw: string): string | undefined {
     }
 
     if (char === '{') {
+      if (depth === 0) {
+        start = index;
+      }
       depth += 1;
       continue;
     }
 
-    if (char === '}') {
+    if (char === '}' && depth > 0) {
       depth -= 1;
-      if (depth === 0) {
+      if (depth === 0 && start !== -1) {
         return raw.slice(start, index + 1);
       }
     }

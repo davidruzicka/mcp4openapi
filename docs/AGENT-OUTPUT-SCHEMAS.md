@@ -34,7 +34,8 @@ Purpose:
 
 - hand off the final result of an implementor backend run to the label/state reconciler
 - keep PR creation metadata machine-readable
-- fail closed when the backend emits prose, markdown fences, or schema-invalid JSON
+- accept schema-valid JSON objects even when surrounded by prose or markdown (including fenced code blocks)
+- fail closed only when no schema-valid JSON object can be extracted from the backend output
 
 ### Allowed outcomes
 

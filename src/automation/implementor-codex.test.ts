@@ -311,6 +311,20 @@ describe('implementor-codex', () => {
         summary: 'Tests failed before a safe patch was ready.',
       });
     });
+
+    it('extracts embedded JSON when earlier brace-like text appears inside strings', () => {
+      expect(parseCodexResult([
+        'Log output: "ignoring {placeholder} before the real payload"',
+        '{"outcome":"blocked","summary":"Needs follow-up for braces in strings."}',
+      ].join('\n'))).toEqual({
+        outcome: 'blocked',
+        summary: 'Needs follow-up for braces in strings.',
+      });
+    });
+
+    it('surfaces the final schema error when no candidate can be parsed', () => {
+      expect(() => parseCodexResult('Finished the run without writing any JSON payload.')).toThrow('Invalid implementor command result: expected JSON object.');
+    });
   });
 
   describe('buildMalformedCodexResult', () => {
@@ -319,6 +333,23 @@ describe('implementor-codex', () => {
         outcome: 'failed',
         summary: 'Codex backend returned malformed result (Invalid implementor command result: expected JSON object.).',
       });
+    });
+
+    it('includes a normalized output preview when malformed text is available', () => {
+      expect(buildMalformedCodexResult('```json\n{ not valid json }\n```', new Error('broken payload'))).toEqual({
+        outcome: 'failed',
+        summary: 'Codex backend returned malformed result (broken payload). Output preview: { not valid json }',
+      });
+    });
+
+    it('truncates long malformed output previews to a bounded summary', () => {
+      const longOutput = `${'word '.repeat(60)}{"outcome":"failed"}`;
+      const result = buildMalformedCodexResult(longOutput, new Error('broken payload'));
+
+      expect(result.outcome).toBe('failed');
+      expect(result.summary).toContain('Output preview:');
+      expect(result.summary.endsWith('...')).toBe(true);
+      expect(result.summary.length).toBeLessThan(320);
     });
   });
 });
