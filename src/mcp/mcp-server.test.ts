@@ -3958,8 +3958,9 @@ paths:
     });
 
     // -------------------------------------------------------------------------
-    describe('getUpstreamToken auth fallback (fix: value_from_env)', () => {
-      it('uses env var from provider.auth.value_from_env when configured', async () => {
+    describe('getUpstreamToken token precedence (client token first, env fallback)', () => {
+      it('uses downstream client token even when value_from_env is configured', async () => {
+        // Client sends a token → it wins regardless of value_from_env
         const providerWithAuth = {
           ...upstreamProvider,
           auth: { type: 'bearer' as const, value_from_env: 'UPSTREAM_SECRET' },
@@ -3974,13 +3975,59 @@ paths:
             'session-123',
             'upstream-profile',
           );
+          // getSessionToken returns 'downstream-token' - client token takes precedence
+          expect(mockGetUpstreamClient).toHaveBeenCalledWith('session-123', providerWithAuth, 'downstream-token');
+        } finally {
+          delete process.env['UPSTREAM_SECRET'];
+        }
+      });
+
+      it('falls back to env token when client sends no token and value_from_env is configured', async () => {
+        const providerWithAuth = {
+          ...upstreamProvider,
+          auth: { type: 'bearer' as const, value_from_env: 'UPSTREAM_SECRET' },
+        };
+        (upstreamServer as any).profile.upstream_mcp = [providerWithAuth];
+        (upstreamServer as any).httpTransport = {
+          ...(upstreamServer as any).httpTransport,
+          getUpstreamMcpConfig: () => [providerWithAuth],
+          getSessionToken: () => undefined, // no client token
+        };
+
+        process.env['UPSTREAM_SECRET'] = 'env-token-value';
+        try {
+          await (upstreamServer as any).handleOtherRequest(
+            { jsonrpc: '2.0', id: '1', method: 'tools/list', params: {} },
+            'session-123',
+            'upstream-profile',
+          );
           expect(mockGetUpstreamClient).toHaveBeenCalledWith('session-123', providerWithAuth, 'env-token-value');
         } finally {
           delete process.env['UPSTREAM_SECRET'];
         }
       });
 
-      it('falls back to session token when no provider.auth is configured', async () => {
+      it('returns undefined when client sends no token and env var is not set', async () => {
+        const providerWithAuth = {
+          ...upstreamProvider,
+          auth: { type: 'bearer' as const, value_from_env: 'NONEXISTENT_ENV_VAR_XYZ' },
+        };
+        (upstreamServer as any).profile.upstream_mcp = [providerWithAuth];
+        (upstreamServer as any).httpTransport = {
+          ...(upstreamServer as any).httpTransport,
+          getUpstreamMcpConfig: () => [providerWithAuth],
+          getSessionToken: () => undefined, // no client token
+        };
+
+        await (upstreamServer as any).handleOtherRequest(
+          { jsonrpc: '2.0', id: '1', method: 'tools/list', params: {} },
+          'session-123',
+          'upstream-profile',
+        );
+        expect(mockGetUpstreamClient).toHaveBeenCalledWith('session-123', providerWithAuth, undefined);
+      });
+
+      it('uses downstream session token when no provider.auth is configured', async () => {
         // upstreamProvider has no auth - should use downstream session token
         const response = await (upstreamServer as any).handleOtherRequest(
           { jsonrpc: '2.0', id: '1', method: 'tools/list', params: {} },
@@ -3990,22 +4037,6 @@ paths:
 
         expect(mockGetUpstreamClient).toHaveBeenCalledWith('session-123', upstreamProvider, 'downstream-token');
         expect(response.result).toBeDefined();
-      });
-
-      it('returns undefined when env var is not set', async () => {
-        const providerWithAuth = {
-          ...upstreamProvider,
-          auth: { type: 'bearer' as const, value_from_env: 'NONEXISTENT_ENV_VAR_XYZ' },
-        };
-        (upstreamServer as any).profile.upstream_mcp = [providerWithAuth];
-        (upstreamServer as any).httpTransport.getUpstreamMcpConfig = () => [providerWithAuth];
-
-        await (upstreamServer as any).handleOtherRequest(
-          { jsonrpc: '2.0', id: '1', method: 'tools/list', params: {} },
-          'session-123',
-          'upstream-profile',
-        );
-        expect(mockGetUpstreamClient).toHaveBeenCalledWith('session-123', providerWithAuth, undefined);
       });
     });
 
