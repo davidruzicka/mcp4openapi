@@ -322,6 +322,16 @@ describe('implementor-codex', () => {
       });
     });
 
+    it('extracts embedded JSON when earlier string content contains escaped quotes and braces', () => {
+      expect(parseCodexResult([
+        'Log output: "prefix with escaped quote: \\\" and brace {still-not-json}"',
+        '{"outcome":"blocked","summary":"Needs follow-up for escaped content."}',
+      ].join('\n'))).toEqual({
+        outcome: 'blocked',
+        summary: 'Needs follow-up for escaped content.',
+      });
+    });
+
     it('surfaces the final schema error when no candidate can be parsed', () => {
       expect(() => parseCodexResult('Finished the run without writing any JSON payload.')).toThrow('Invalid implementor command result: expected JSON object.');
     });

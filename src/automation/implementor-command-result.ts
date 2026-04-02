@@ -1,4 +1,4 @@
-import Ajv, { type ErrorObject, type JSONSchemaType } from 'ajv';
+import { Ajv, type ErrorObject, type JSONSchemaType } from 'ajv';
 
 export interface ImplementorCommandResult {
   readonly outcome: 'pr-created' | 'failed' | 'blocked';
@@ -73,7 +73,7 @@ export const implementorCommandResultJsonSchema: JSONSchemaType<ImplementorComma
   ],
 } as const;
 
-const ajv = new Ajv.default({ allErrors: true, strict: true });
+const ajv = new Ajv({ allErrors: true, strict: true });
 const validateImplementorCommandResultSchema = ajv.compile(implementorCommandResultJsonSchema);
 
 export function parseImplementorCommandResult(raw: string): ImplementorCommandResult {

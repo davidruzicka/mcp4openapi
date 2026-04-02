@@ -1,4 +1,4 @@
-import Ajv from 'ajv';
+import { Ajv } from 'ajv';
 import { describe, expect, it } from 'vitest';
 import {
   implementorCommandResultJsonSchema,
@@ -7,8 +7,8 @@ import {
 
 describe('implementor-command-result', () => {
   describe('Ajv runtime compatibility', () => {
-    it('supports the current Ajv.default constructor path used by the ESM runtime', () => {
-      expect(() => new Ajv.default({ allErrors: true, strict: true }).compile(implementorCommandResultJsonSchema)).not.toThrow();
+    it('supports the direct Ajv constructor path used by the ESM runtime', () => {
+      expect(() => new Ajv({ allErrors: true, strict: true }).compile(implementorCommandResultJsonSchema)).not.toThrow();
     });
   });
 
@@ -24,6 +24,17 @@ describe('implementor-command-result', () => {
       });
     });
 
+    it('accepts a valid pr-created payload with pull request metadata', () => {
+      expect(parseImplementorCommandResult('{"outcome":"pr-created","summary":"Opened a PR.","pullRequest":{"number":123,"url":"https://example.com/pull/123"}}')).toEqual({
+        outcome: 'pr-created',
+        summary: 'Opened a PR.',
+        pullRequest: {
+          number: 123,
+          url: 'https://example.com/pull/123',
+        },
+      });
+    });
+
     it('reports missing summary through schema validation', () => {
       expect(() => parseImplementorCommandResult('{"outcome":"failed"}')).toThrow('Invalid implementor command result: missing summary.');
     });
@@ -31,6 +42,10 @@ describe('implementor-command-result', () => {
     it('rejects malformed pull request metadata via the shared schema validator', () => {
       expect(() => parseImplementorCommandResult('{"outcome":"pr-created","summary":"Opened a PR.","pullRequest":{"number":"1","url":"https://example.com/pull/1"}}')).toThrow('Invalid implementor command result: invalid pullRequest payload.');
       expect(() => parseImplementorCommandResult('{"outcome":"pr-created","summary":"Opened a PR.","pullRequest":{"number":1}}')).toThrow('Invalid implementor command result: invalid pullRequest payload.');
+    });
+
+    it('reports schema-level pull request validation failures after the shape guard passes', () => {
+      expect(() => parseImplementorCommandResult('{"outcome":"pr-created","summary":"Opened a PR.","pullRequest":{"number":123,"url":""}}')).toThrow('Invalid implementor command result: invalid pullRequest payload.');
     });
 
     it('rejects nested additional properties deterministically', () => {
