@@ -148,24 +148,6 @@ function formatImplementorCommandResultValidationError(errors: readonly ErrorObj
     return 'Invalid implementor command result: invalid pullRequest payload.';
   }
 
-  if (firstError.keyword === 'oneOf') {
-    return inferOneOfValidationError(errors);
-  }
-
-  return 'Invalid implementor command result: schema validation failed.';
-}
-
-function inferOneOfValidationError(errors: readonly ErrorObject[] | null | undefined): string {
-  const hasTypeError = errors?.some((error) => error.keyword === 'type');
-  if (hasTypeError) {
-    return 'Invalid implementor command result: schema validation failed.';
-  }
-
-  const missingPullRequestError = errors?.find((error) => error.keyword === 'required' && (error.params as { missingProperty?: string }).missingProperty === 'pullRequest');
-  if (missingPullRequestError) {
-    return 'Invalid implementor command result: pr-created outcome requires pullRequest metadata.';
-  }
-
   return 'Invalid implementor command result: schema validation failed.';
 }
 
