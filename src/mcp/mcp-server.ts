@@ -1751,18 +1751,17 @@ export class MCPServer {
   }
 
   /**
-   * Extract the downstream client's auth token for a session.
-   * Used as the pass-through credential to the upstream MCP server.
+   * Extract the auth token to use for upstream MCP calls.
+   * Downstream client token takes precedence; value_from_env acts as local fallback
+   * when the client sends no token (e.g. server-side deployments with a shared env secret).
    */
   private getUpstreamToken(sessionId: string | undefined, profileId: string | undefined, provider: UpstreamMcpServerConfig): string | undefined {
-    // Profile-configured upstream auth takes precedence over downstream session token.
-    // value_from_env is the only supported secret transport for upstream auth.
+    if (this.httpTransport && sessionId && profileId) {
+      const sessionToken = this.httpTransport.getSessionToken(profileId, sessionId);
+      if (sessionToken) return sessionToken;
+    }
     if (provider.auth?.value_from_env) {
       return process.env[provider.auth.value_from_env];
-    }
-    // Pass-through: use downstream session token when no explicit upstream auth is configured.
-    if (this.httpTransport && sessionId && profileId) {
-      return this.httpTransport.getSessionToken(profileId, sessionId);
     }
     return undefined;
   }
