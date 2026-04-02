@@ -30,6 +30,10 @@ export class NotificationQueue {
   private readonly ttlMs: number;
 
   constructor(options?: NotificationQueueOptions) {
+    // No defensive clamping of maxSize/ttlMs: this class is internal and only instantiated
+    // by UpstreamConnectionManager with defaults or explicit positive values. Edge cases like
+    // maxSize=0 cannot occur in practice; adding clamping would hide programming errors
+    // instead of surfacing them at the call site.
     this.maxSize = options?.maxSize ?? DEFAULT_MAX_SIZE;
     this.ttlMs = options?.ttlMs ?? DEFAULT_TTL_MS;
   }

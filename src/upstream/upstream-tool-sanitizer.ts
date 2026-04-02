@@ -104,6 +104,14 @@ export function applyProviderToolPolicy(tools: Tool[], policy: UpstreamMcpToolPo
 /**
  * Check whether a single tool name is permitted by the upstream tool policy.
  * Used in tools/call to enforce allow/deny before forwarding.
+ *
+ * Uses Array.includes intentionally: policy lists are profile-config-bounded (human-authored,
+ * typically < 50 entries) and this function is called once per tools/call. Building a Set
+ * inline per call would be strictly worse (O(N) allocation + construction vs O(N) scan on a
+ * short array). Pre-caching Sets at profile-load time would be a valid future optimisation
+ * but is not warranted at current scale - the bottleneck on the tools/call path is upstream
+ * I/O, not these array lookups. applyProviderToolPolicy uses Sets because it iterates the
+ * full tool list (O(M*N) without Set vs O(M) with Set); that trade-off does not apply here.
  */
 export function isToolAllowedByProviderPolicy(toolName: string, policy: UpstreamMcpToolPolicy | undefined): boolean {
   if (!policy) return true;

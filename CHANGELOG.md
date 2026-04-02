@@ -20,6 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Profiles with more than one `upstream_mcp` entry are now rejected at load time with a clear error; previously extra providers were silently ignored while all calls were routed to the first.
 - `upstream_mcp` proxy is now wired at HTTP startup in both single-profile and profile-routing modes; previously `getUpstreamClientFn` was never set, causing upstream tools to be silently unavailable.
 - `drain()` on `NotificationQueue` now re-applies TTL eviction before returning entries, preventing stale notifications from being replayed on reconnect after extended disconnection.
+- `upstream_mcp[].validation_endpoint` is now checked during session init in single-profile HTTP mode; previously `upstreamMcp` was missing from `buildDefaultProfileContext`, so init validation was silently skipped.
+- `setUpstreamConnectionManager` now registers the `onSessionDestroyed` cleanup listener only once; previously each call added a new listener, causing `closeAll` to be invoked multiple times per session on repeated calls.
 - Query-auth upstream providers now have their token appended to the transport URL and validation endpoint URL; previously the token was never sent, causing all query-auth connections to fail authentication.
 - Upstream SSE reconnect now replays buffered upstream notifications via `sendToClient()` so they enter the resumability queue and survive a second reconnect.
 - `validateCredentials` now throws `UpstreamConnectionError` on non-2xx responses (404, 500, 503, etc.); previously only 401/403 were treated as failures.
