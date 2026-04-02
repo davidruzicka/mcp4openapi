@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildCodexInvocationPlan,
+  buildMalformedCodexResult,
   parseCodexResult,
   parseImplementorTaskPayload,
   type ImplementorTaskPayload,
@@ -222,6 +223,8 @@ describe('implementor-codex', () => {
       expect(plan.prompt).toContain('/tmp/implementor-result.json');
       expect(plan.prompt).toContain('Run targeted tests and typecheck before creating the PR');
       expect(plan.prompt).toContain('This PR was created by an automated agent.');
+      expect(plan.prompt).toContain('Return only the JSON object in that file - no markdown fences, headings, logs, or prose.');
+      expect(plan.prompt).toContain('Include pullRequest if and only if outcome is "pr-created".');
     });
 
     it('supports binary, mode, model, and cwd overrides via environment variables', () => {
@@ -284,6 +287,37 @@ describe('implementor-codex', () => {
       expect(parseCodexResult('{"outcome":"blocked","summary":"Needs human review."}')).toEqual({
         outcome: 'blocked',
         summary: 'Needs human review.',
+      });
+    });
+
+    it('accepts JSON wrapped in a fenced markdown block', () => {
+      expect(parseCodexResult([
+        '```json',
+        '{"outcome":"blocked","summary":"Needs human review."}',
+        '```',
+      ].join('\n'))).toEqual({
+        outcome: 'blocked',
+        summary: 'Needs human review.',
+      });
+    });
+
+    it('accepts a single JSON object surrounded by extra text', () => {
+      expect(parseCodexResult([
+        'Finished the run.',
+        '{"outcome":"failed","summary":"Tests failed before a safe patch was ready."}',
+        'See worktree notes above.',
+      ].join('\n'))).toEqual({
+        outcome: 'failed',
+        summary: 'Tests failed before a safe patch was ready.',
+      });
+    });
+  });
+
+  describe('buildMalformedCodexResult', () => {
+    it('returns a concise failed result instead of bubbling raw parser stacks', () => {
+      expect(buildMalformedCodexResult('', new Error('Invalid implementor command result: expected JSON object.'))).toEqual({
+        outcome: 'failed',
+        summary: 'Codex backend returned malformed result (Invalid implementor command result: expected JSON object.).',
       });
     });
   });

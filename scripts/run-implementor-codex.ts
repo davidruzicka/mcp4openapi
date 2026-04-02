@@ -6,6 +6,7 @@ import { promisify } from 'node:util';
 import { readArtifactTrustConfig } from '../src/automation/artifact-signing-config.js';
 import {
   buildCodexInvocationPlan,
+  buildMalformedCodexResult,
   parseCodexResult,
   parseImplementorTaskPayload,
 } from '../src/automation/implementor-codex.js';
@@ -34,7 +35,13 @@ try {
   });
 
   const rawResult = await readFile(outputPath, 'utf8');
-  process.stdout.write(`${JSON.stringify(parseCodexResult(rawResult.trim()))}\n`);
+  const trimmedResult = rawResult.trim();
+
+  try {
+    process.stdout.write(`${JSON.stringify(parseCodexResult(trimmedResult))}\n`);
+  } catch (error) {
+    process.stdout.write(`${JSON.stringify(buildMalformedCodexResult(trimmedResult, error))}\n`);
+  }
 } finally {
   await rm(scratchDirectory, { recursive: true, force: true });
 }

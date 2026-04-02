@@ -11,6 +11,7 @@ Reference canonical sources; never duplicate rules.
 | `src/types/profile.ts`        | Profile type definitions         | TypeScript interfaces for profiles                | Source of truth for profile structure            |
 | `profile-schema.json`         | JSON Schema for profiles         | IDE autocomplete, JSON validation                | Must stay in sync with TypeScript types         |
 | `src/generated-schemas.ts`    | Zod runtime schemas              | Runtime validation, parsing                      | Auto-generated from TypeScript types            |
+| `docs/AGENT-OUTPUT-SCHEMAS.md` | Autonomous agent JSON contracts | Agent machine-readable output schemas and examples | Canonical doc for agent structured-output docs |
 | `README.md`                   | User documentation               | Setup, configuration, environment variables      | User-facing features & usage                     |
 | `docs/HTTP-TRANSPORT.md`      | HTTP transport details           | HTTP transport, sessions, OAuth                  | Transport-specific configuration                |
 | `docs/OAUTH.md`               | OAuth 2.0 setup                 | OAuth authentication flow                        | OAuth configuration & troubleshooting           |

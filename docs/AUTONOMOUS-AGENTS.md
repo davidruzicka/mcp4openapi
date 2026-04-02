@@ -46,6 +46,7 @@ This document defines the repository-specific autonomous issue-to-PR workflow, i
 - Implements the change in a branch.
 - Opens a PR with tests and an explicit agent note.
 - The default GitHub Actions backend uses a Codex CLI wrapper that consumes `IMPLEMENTOR_TASK_JSON`, runs Codex inside the checked-out repository/worktree, and requires a machine-readable JSON result before the orchestration layer updates labels.
+- Structured output contracts are documented in [Agent Output Schemas](./AGENT-OUTPUT-SCHEMAS.md).
 
 ### `reviewer`
 

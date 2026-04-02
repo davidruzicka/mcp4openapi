@@ -69,7 +69,114 @@ export function buildCodexInvocationPlan(input: BuildCodexInvocationPlanInput): 
 }
 
 export function parseCodexResult(raw: string): ImplementorCommandResult {
-  return parseImplementorCommandResult(raw);
+  const candidates = collectCodexResultCandidates(raw);
+  let lastError: unknown;
+
+  for (const candidate of candidates) {
+    try {
+      return parseImplementorCommandResult(candidate);
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error('Invalid implementor command result: expected JSON object.');
+}
+
+export function buildMalformedCodexResult(raw: string, error: unknown): ImplementorCommandResult {
+  const detail = error instanceof Error ? error.message : 'Invalid Codex result payload.';
+  const preview = summarizeCodexOutput(raw);
+
+  return {
+    outcome: 'failed',
+    summary: preview
+      ? `Codex backend returned malformed result (${detail}). Output preview: ${preview}`
+      : `Codex backend returned malformed result (${detail}).`,
+  };
+}
+
+function collectCodexResultCandidates(raw: string): string[] {
+  const candidates = new Set<string>();
+  const trimmed = raw.trim();
+
+  if (trimmed.length > 0) {
+    candidates.add(trimmed);
+  }
+
+  const fencedJson = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1]?.trim();
+  if (fencedJson) {
+    candidates.add(fencedJson);
+  }
+
+  const embeddedJsonObject = extractEmbeddedJsonObject(trimmed);
+  if (embeddedJsonObject) {
+    candidates.add(embeddedJsonObject);
+  }
+
+  return [...candidates];
+}
+
+function extractEmbeddedJsonObject(raw: string): string | undefined {
+  const start = raw.indexOf('{');
+  if (start === -1) {
+    return undefined;
+  }
+
+  let depth = 0;
+  let inString = false;
+  let escaping = false;
+
+  for (let index = start; index < raw.length; index += 1) {
+    const char = raw[index];
+    if (char === undefined) {
+      break;
+    }
+
+    if (escaping) {
+      escaping = false;
+      continue;
+    }
+
+    if (char === '\\') {
+      escaping = true;
+      continue;
+    }
+
+    if (char === '"') {
+      inString = !inString;
+      continue;
+    }
+
+    if (inString) {
+      continue;
+    }
+
+    if (char === '{') {
+      depth += 1;
+      continue;
+    }
+
+    if (char === '}') {
+      depth -= 1;
+      if (depth === 0) {
+        return raw.slice(start, index + 1);
+      }
+    }
+  }
+
+  return undefined;
+}
+
+function summarizeCodexOutput(raw: string): string | undefined {
+  const normalized = raw
+    .replace(/\s+/g, ' ')
+    .replace(/```(?:json)?/gi, '')
+    .trim();
+  if (normalized.length === 0) {
+    return undefined;
+  }
+
+  return normalized.length <= 180 ? normalized : `${normalized.slice(0, 177)}...`;
 }
 
 function buildCodexImplementorPrompt(input: {
@@ -113,14 +220,16 @@ function buildCodexImplementorPrompt(input: {
     '',
     'Required final output:',
     `- Write exactly one JSON object to ${input.outputPath}`,
-    '- The JSON must match this schema:',
+    '- Return only the JSON object in that file - no markdown fences, headings, logs, or prose.',
+    '- The JSON must match this schema exactly:',
     '{',
     '  "outcome": "pr-created" | "failed" | "blocked",',
     '  "summary": "short human-readable summary",',
     '  "pullRequest": { "number": 123, "url": "https://github.com/owner/repo/pull/123" }',
     '}',
-    '- Include pullRequest only when outcome is "pr-created".',
-    '- Do not wrap the JSON in markdown.',
+    '- Include pullRequest if and only if outcome is "pr-created".',
+    '- Always include outcome and summary.',
+    '- If you cannot complete the task, still write a schema-valid object with outcome "failed" or "blocked" and a concrete summary.',
     '- Ensure the file contents are valid JSON before exiting.',
   ].join('\n');
 }

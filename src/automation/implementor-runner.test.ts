@@ -276,6 +276,61 @@ describe('implementor-runner', () => {
       expect(assignments).toHaveLength(1);
       expect(assignments[0]?.issueNumber).toBe(161);
     });
+
+    it('skips issues while a recent implementor failure comment is still within the cooldown window and the issue has not changed', () => {
+      const failedComment = buildImplementorResultComment({
+        repository: 'davidruzicka/mcp4openapi',
+        issueNumber: 161,
+        agentId: 'implementor',
+        runId: 'run-3',
+        timestamp: '2026-03-14T12:00:00Z',
+        result: {
+          outcome: 'failed',
+          summary: 'Implementor command failed: Command failed: bash -lc node dist/scripts/run-implementor-codex.js',
+        },
+      });
+
+      const assignments = collectImplementorAssignments({
+        issues: [buildIssue({ updatedAt: '2026-03-14T12:00:00Z' })],
+        commentsByIssueNumber: { 161: [buildComment(failedComment)] },
+        openPullRequestsByIssueNumber: {},
+        repository: 'davidruzicka/mcp4openapi',
+        agentId: 'implementor',
+        runId: 'run-4',
+        now: '2026-03-14T12:15:00Z',
+        leaseTtlMinutes: 30,
+      });
+
+      expect(assignments).toEqual([]);
+    });
+
+    it('requeues issues after a failure cooldown when the issue changed after the last failed comment', () => {
+      const failedComment = buildImplementorResultComment({
+        repository: 'davidruzicka/mcp4openapi',
+        issueNumber: 161,
+        agentId: 'implementor',
+        runId: 'run-3',
+        timestamp: '2026-03-14T12:00:00Z',
+        result: {
+          outcome: 'failed',
+          summary: 'Implementor command failed: Command failed: bash -lc node dist/scripts/run-implementor-codex.js',
+        },
+      });
+
+      const assignments = collectImplementorAssignments({
+        issues: [buildIssue({ updatedAt: '2026-03-14T12:10:00Z' })],
+        commentsByIssueNumber: { 161: [buildComment(failedComment)] },
+        openPullRequestsByIssueNumber: {},
+        repository: 'davidruzicka/mcp4openapi',
+        agentId: 'implementor',
+        runId: 'run-4',
+        now: '2026-03-14T12:15:00Z',
+        leaseTtlMinutes: 30,
+      });
+
+      expect(assignments).toHaveLength(1);
+      expect(assignments[0]?.issueNumber).toBe(161);
+    });
   });
 
   describe('parseImplementorCommandResult', () => {
@@ -300,11 +355,13 @@ describe('implementor-runner', () => {
     it('rejects invalid payloads', () => {
       expect(() => parseImplementorCommandResult('{"summary":"missing outcome"}')).toThrow('Invalid implementor command result');
       expect(() => parseImplementorCommandResult('not-json')).toThrow('expected JSON object');
-      expect(() => parseImplementorCommandResult('[]')).toThrow('unsupported outcome');
+      expect(() => parseImplementorCommandResult('[]')).toThrow('expected object payload');
       expect(() => parseImplementorCommandResult('null')).toThrow('expected object payload');
       expect(() => parseImplementorCommandResult('{"outcome":"unknown","summary":"x"}')).toThrow('unsupported outcome');
       expect(() => parseImplementorCommandResult('{"outcome":"blocked","summary":""}')).toThrow('missing summary');
       expect(() => parseImplementorCommandResult('{"outcome":"blocked","summary":"x","pullRequest":null}')).toThrow('invalid pullRequest payload');
+      expect(() => parseImplementorCommandResult('{"outcome":"blocked","summary":"x","pullRequest":{"number":1,"url":"https://example.com/pull/1"}}')).toThrow('schema validation failed');
+      expect(() => parseImplementorCommandResult('{"outcome":"blocked","summary":"x","extra":"noise"}')).toThrow('unexpected property extra');
       expect(() => parseImplementorCommandResult('{"outcome":"pr-created","summary":"x"}')).toThrow('pr-created outcome requires pullRequest metadata');
     });
   });
