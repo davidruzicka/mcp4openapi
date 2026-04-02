@@ -2822,14 +2822,14 @@ export class HttpTransport {
                   if (error instanceof UpstreamAuthError) {
                     res.status(HTTP_STATUS.UNAUTHORIZED).json({
                       error: 'Unauthorized',
-                      message: `Upstream authentication failed for provider '${upstreamProvider.name}'`,
+                      message: 'Upstream authentication failed',
                     });
                     return;
                   }
                   // SSRF, timeout, or connection errors - return 502 Bad Gateway
                   res.status(502).json({
                     error: 'Bad Gateway',
-                    message: `Upstream credential validation failed for provider '${upstreamProvider.name}'`,
+                    message: 'Upstream credential validation failed',
                   });
                   return;
                 }
@@ -3195,12 +3195,12 @@ export class HttpTransport {
 
     // Replay missed messages if resuming
     if (lastEventId) {
-      this.replayMessages(res, streamState);
+      this.replayMessages(res, streamState, session);
     }
 
     // Flush any buffered upstream notifications (D-08: replay on reconnect)
-    // Route through sendToClient() so each notification enters the SSE resumability queue
-    // and can be re-replayed on a subsequent reconnect via Last-Event-ID.
+    // Route through sendToClient() so each notification enters the session replayQueue
+    // and can be re-replayed on any subsequent reconnect via Last-Event-ID.
     if (this.upstreamConnectionManager) {
       const buffered = this.upstreamConnectionManager.drainNotifications(sessionId);
       for (const entry of buffered) {
@@ -3226,6 +3226,7 @@ export class HttpTransport {
     // Handle client disconnect
     res.on('close', () => {
       streamState.active = false;
+      session.sseStreams.delete(streamId);
       if (heartbeatInterval) {
         clearInterval(heartbeatInterval);
       }
@@ -3237,11 +3238,12 @@ export class HttpTransport {
 
   /**
    * Replay messages after Last-Event-ID
-   * 
-   * Why: Resumability - client can reconnect and receive missed messages
+   *
+   * Why: Resumability - client can reconnect and receive missed messages.
+   * Uses session-scoped replayQueue so messages survive across multiple reconnects.
    */
-  private replayMessages(res: Response, streamState: SSEStreamState): void {
-    const missedMessages = streamState.messageQueue.filter(
+  private replayMessages(res: Response, streamState: SSEStreamState, session: SessionData): void {
+    const missedMessages = session.replayQueue.filter(
       msg => msg.eventId > streamState.lastEventId
     );
 
@@ -3272,17 +3274,15 @@ export class HttpTransport {
       timestamp: Date.now(),
     };
 
+    // Push to session-scoped replay queue so messages survive stream reconnects
+    session.replayQueue.push(queuedMessage);
+    if (session.replayQueue.length > 100) {
+      session.replayQueue.shift();
+    }
+
     // Send to all active streams for this session
     for (const streamState of session.sseStreams.values()) {
       if (streamState.active) {
-        // Queue for resumability
-        streamState.messageQueue.push(queuedMessage);
-
-        // Keep only last 100 messages
-        if (streamState.messageQueue.length > 100) {
-          streamState.messageQueue.shift();
-        }
-
         // Write to active SSE stream for real-time delivery
         try {
           streamState.response.write(`id: ${eventId}\n`);
@@ -3429,6 +3429,7 @@ export class HttpTransport {
       createdAt: Date.now(),
       lastActivityAt: Date.now(),
       sseStreams: new Map(),
+      replayQueue: [],
       authToken,
       refreshToken,
       accessTokenExpiresAt,
