@@ -98,6 +98,7 @@ export interface HttpTransportConfig {
   parser?: OpenAPIParser; // OpenAPI parser for operation resolution (optional, for category filtering)
   tenantIndex?: HttpTenantIndex; // Preloaded tenant configuration index (optional)
   globalFiltering?: FilteringRules; // Process-wide baseline parameter filtering
+  upstreamMcp?: UpstreamMcpServerConfig[]; // Upstream MCP providers for single-profile mode
 }
 
 export interface HttpProfileContext {

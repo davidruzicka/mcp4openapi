@@ -438,6 +438,7 @@ export class HttpTransport {
       resourceName: this.config.resourceName,
       resourceDocumentation: this.config.resourceDocumentation,
       parser: this.config.parser,
+      upstreamMcp: this.config.upstreamMcp,
     };
   }
 
@@ -3549,6 +3550,7 @@ export class HttpTransport {
    * Session destruction listeners for cleanup in other components
    */
   private sessionDestroyedListeners: Array<(profileId: string, sessionId: string) => void> = [];
+  private upstreamManagerListenerRegistered = false;
 
   /**
    * Register listener for session destruction events
@@ -3589,11 +3591,14 @@ export class HttpTransport {
       this.sendToClient(profileId, sessionId, notification);
     });
 
-    this.onSessionDestroyed((_profileId: string, sessionId: string) => {
-      this.upstreamConnectionManager?.closeAll(sessionId).catch((error) => {
-        this.logger.error('Failed to close upstream connections on session destroy', error as Error);
+    if (!this.upstreamManagerListenerRegistered) {
+      this.upstreamManagerListenerRegistered = true;
+      this.onSessionDestroyed((_profileId: string, sessionId: string) => {
+        this.upstreamConnectionManager?.closeAll(sessionId).catch((error) => {
+          this.logger.error('Failed to close upstream connections on session destroy', error as Error);
+        });
       });
-    });
+    }
   }
 
   /**

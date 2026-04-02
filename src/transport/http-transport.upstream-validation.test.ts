@@ -254,6 +254,64 @@ describeIfListen('upstream credential validation at session init', () => {
     );
   });
 
+  it('calls validateCredentials via buildDefaultProfileContext when upstreamMcp is in transport config (single-profile mode)', async () => {
+    // This tests fix for: upstreamMcp was missing from buildDefaultProfileContext, so
+    // validateCredentials was silently skipped in single-profile (runHttp) mode even when
+    // upstream_mcp[].validation_endpoint was configured.
+    const provider = {
+      name: 'config-provider',
+      transport: { type: 'http-streamable', url: 'https://upstream.example.com/mcp' },
+      validation_endpoint: 'https://api.example.com/validate',
+    };
+    const configWithUpstream = {
+      host: '127.0.0.1',
+      port: 0,
+      sessionTimeoutMs: 1800000,
+      heartbeatEnabled: false,
+      heartbeatIntervalMs: 30000,
+      metricsEnabled: false,
+      metricsPath: '/metrics',
+      upstreamMcp: [provider],
+    };
+    const transportWithUpstream = new HttpTransport(configWithUpstream, logger);
+    transportWithUpstream.setMessageHandler(async () => ({ result: { protocolVersion: '2025-03-26', capabilities: {}, serverInfo: { name: 'test', version: '1.0' } } }));
+
+    const mockValidateCredentials = vi.fn().mockResolvedValue(undefined);
+    transportWithUpstream.setUpstreamConnectionManager({ validateCredentials: mockValidateCredentials, setHasActiveStreamFn: vi.fn(), setDownstreamNotifyFn: vi.fn() } as any);
+
+    try {
+      await request((transportWithUpstream as any).app)
+        .post('/mcp')
+        .set('Content-Type', 'application/json')
+        .set('Accept', 'application/json, text/event-stream')
+        .set('Authorization', 'Bearer config-test-token')
+        .send(INIT_REQUEST);
+
+      expect(mockValidateCredentials).toHaveBeenCalledWith('pre-session', provider, 'config-test-token');
+    } finally {
+      await transportWithUpstream.stop();
+    }
+  });
+
+  it('setUpstreamConnectionManager registers onSessionDestroyed listener only once even when called multiple times', async () => {
+    const manager1 = { closeAll: vi.fn().mockResolvedValue(undefined), setHasActiveStreamFn: vi.fn(), setDownstreamNotifyFn: vi.fn() };
+    const manager2 = { closeAll: vi.fn().mockResolvedValue(undefined), setHasActiveStreamFn: vi.fn(), setDownstreamNotifyFn: vi.fn() };
+
+    transport.setUpstreamConnectionManager(manager1 as any);
+    transport.setUpstreamConnectionManager(manager2 as any);
+
+    const listenerCount = (transport as any).sessionDestroyedListeners.length;
+    // Only one upstream closeAll listener should be registered regardless of how many times setter was called
+    const upstreamListeners = (transport as any).sessionDestroyedListeners.filter(
+      (fn: Function) => fn.toString().includes('closeAll') || fn.toString().includes('upstreamConnectionManager'),
+    );
+    // Trigger destruction to confirm closeAll fires exactly once (against current manager)
+    (transport as any).notifySessionDestroyed('default', 'session-x');
+    expect(manager2.closeAll).toHaveBeenCalledTimes(1);
+    expect(manager1.closeAll).toHaveBeenCalledTimes(0); // replaced by manager2
+    void listenerCount; void upstreamListeners;
+  });
+
   it('skips validation when no upstreamConnectionManager registered', async () => {
     // No setUpstreamConnectionManager call
     const provider = {

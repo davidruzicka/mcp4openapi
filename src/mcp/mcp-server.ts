@@ -1373,6 +1373,7 @@ export class MCPServer {
       resourceName: profileContext.resourceName,
       resourceDocumentation: profileContext.resourceDocumentation,
       parser: profileContext.parser,
+      upstreamMcp: profileContext.upstreamMcp,
       globalFiltering: this.globalFiltering,
     };
 
