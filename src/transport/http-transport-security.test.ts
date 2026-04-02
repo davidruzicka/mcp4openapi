@@ -1682,7 +1682,7 @@ describe('HttpTransport security behavior (no listen)', () => {
       authToken: 'token',
       refreshToken: 'refresh',
       oauthClientId: 'mcp-client-expired',
-      messageQueue: [],
+      replayQueue: [],
     });
 
     (transport as any).cleanupExpiredSessions();
@@ -1914,7 +1914,7 @@ describe('HttpTransport security behavior (no listen)', () => {
     await transport.stop();
   });
 
-  it('queues outbound SSE messages only for active streams', async () => {
+  it('queues outbound SSE messages in session replayQueue and delivers only to active streams', async () => {
     const transport = createTransport();
     const profileState = createProfileState(transport as any, 'default');
     const sessionId = 'session-1';
@@ -1922,33 +1922,35 @@ describe('HttpTransport security behavior (no listen)', () => {
     const activeStream = {
       streamId: 'active',
       lastEventId: 0,
-      messageQueue: [] as Array<{ eventId: number; data: unknown; timestamp: number }>,
       active: true,
       response: createMockSseResponse(),
     };
     const inactiveStream = {
       streamId: 'inactive',
       lastEventId: 0,
-      messageQueue: [] as Array<{ eventId: number; data: unknown; timestamp: number }>,
       active: false,
       response: createMockSseResponse(),
     };
 
-    profileState.sessions.set(sessionId, {
+    const session: any = {
       id: sessionId,
       createdAt: Date.now(),
       lastActivityAt: Date.now(),
+      replayQueue: [],
       sseStreams: new Map([
         ['active', activeStream as any],
         ['inactive', inactiveStream as any],
       ]),
-      messageQueue: [],
-    });
+    };
+    profileState.sessions.set(sessionId, session);
 
     (transport as any).sendToClient('default', sessionId, { type: 'ping' });
 
-    expect(activeStream.messageQueue).toHaveLength(1);
-    expect(inactiveStream.messageQueue).toHaveLength(0);
+    // Message enters the session-scoped replay queue (survives reconnects)
+    expect(session.replayQueue).toHaveLength(1);
+    // Only active stream receives real-time SSE write
+    expect(activeStream.response.write).toHaveBeenCalled();
+    expect(inactiveStream.response.write).not.toHaveBeenCalled();
 
     await transport.stop();
   });
@@ -1963,7 +1965,7 @@ describe('HttpTransport security behavior (no listen)', () => {
       lastActivityAt: Date.now(),
       sseStreams: new Map(),
       authToken: 'oauth-token',
-      messageQueue: [],
+      replayQueue: [],
     });
 
     const req: any = { headers: { }, sessionId: 's1' };
@@ -1981,7 +1983,7 @@ describe('HttpTransport security behavior (no listen)', () => {
       lastActivityAt: Date.now(),
       sseStreams: new Map(),
       authToken: 'session-token',
-      messageQueue: [],
+      replayQueue: [],
     });
 
     const req: any = { headers: { }, sessionId: 's1' };
@@ -2006,7 +2008,7 @@ describe('HttpTransport security behavior (no listen)', () => {
       lastActivityAt: Date.now(),
       sseStreams: new Map(),
       authToken: 'session-token',
-      messageQueue: [],
+      replayQueue: [],
     });
 
     const req: any = {
@@ -2092,7 +2094,7 @@ describe('HttpTransport security behavior (no listen)', () => {
       lastActivityAt: Date.now(),
       sseStreams: new Map(),
       authToken: 'old-token',
-      messageQueue: [],
+      replayQueue: [],
     });
 
     const res = createMockResponse();
@@ -2256,34 +2258,68 @@ describe('HttpTransport security behavior (no listen)', () => {
 
       (transport as any).startSSEStream(res, sessionId, '1', profileState);
 
-      const session = profileState.sessions.get(sessionId) as { sseStreams: Map<string, any> };
+      const session = profileState.sessions.get(sessionId) as { sseStreams: Map<string, any>; replayQueue: any[] };
       const [streamId, streamState] = Array.from(session.sseStreams.entries())[0];
-      streamState.messageQueue.push({ eventId: 1, data: { a: 1 }, timestamp: Date.now() });
-      streamState.messageQueue.push({ eventId: 2, data: { a: 2 }, timestamp: Date.now() });
-      streamState.messageQueue.push({ eventId: 3, data: { a: 3 }, timestamp: Date.now() });
 
-      (transport as any).replayMessages(res, streamState);
+      // Replay uses session-scoped replayQueue so messages survive reconnects
+      session.replayQueue.push({ eventId: 1, data: { a: 1 }, timestamp: Date.now() });
+      session.replayQueue.push({ eventId: 2, data: { a: 2 }, timestamp: Date.now() });
+      session.replayQueue.push({ eventId: 3, data: { a: 3 }, timestamp: Date.now() });
+
+      (transport as any).replayMessages(res, streamState, session);
       expect(res.write).toHaveBeenCalledWith('id: 2\n');
 
       // Heartbeat ping
       await vi.advanceTimersByTimeAsync(11);
       expect(res.write).toHaveBeenCalledWith(':ping\n\n');
 
-      // Message queue trimming to last 100
+      // Replay queue trimming to last 100 (session-scoped)
       streamState.active = true;
-      streamState.messageQueue = Array.from({ length: 100 }).map((_, i) => ({ eventId: i, data: i, timestamp: Date.now() }));
+      session.replayQueue = Array.from({ length: 100 }).map((_, i) => ({ eventId: i, data: i, timestamp: Date.now() }));
       (transport as any).sendToClient('default', sessionId, { hello: 'world' });
-      expect(streamState.messageQueue).toHaveLength(100);
+      expect(session.replayQueue).toHaveLength(100);
 
-      // Close stream
+      // Close stream - stream is removed from sseStreams map, not just marked inactive
       res.emit('close');
       expect(streamState.active).toBe(false);
-      expect(session.sseStreams.get(streamId).active).toBe(false);
+      expect(session.sseStreams.has(streamId)).toBe(false);
 
       await transport.stop();
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('replays session replayQueue messages on second reconnect', async () => {
+    const transport = createTransport();
+    const profileState = createProfileState(transport as any);
+    const sessionId = (transport as any).createSession(profileState, undefined, undefined, undefined, undefined, undefined);
+    const session = profileState.sessions.get(sessionId) as any;
+
+    // Seed the session replayQueue directly with deterministic eventIds
+    session.replayQueue.push({ eventId: 100, data: { msg: 'first' }, timestamp: Date.now() });
+    session.replayQueue.push({ eventId: 200, data: { msg: 'second' }, timestamp: Date.now() });
+
+    // First connection - then disconnect (stream removed from sseStreams map)
+    const res1 = createMockSseResponse();
+    (transport as any).startSSEStream(res1, sessionId, undefined, profileState);
+    res1.emit('close');
+    expect(session.sseStreams.size).toBe(0);
+    expect(session.replayQueue).toHaveLength(2); // replayQueue persists across reconnects
+
+    // Second reconnect with Last-Event-ID = 100 (first message's id)
+    const res2 = createMockSseResponse();
+    (transport as any).startSSEStream(res2, sessionId, '100', profileState);
+
+    // Should replay only the second message (eventId 200 > lastEventId 100)
+    const writeCalls = (res2.write as ReturnType<typeof vi.fn>).mock.calls.map((c: any[]) => c[0]);
+    const dataLine = writeCalls.find((line: string) => line.includes('"second"'));
+    expect(dataLine).toBeDefined();
+    // First message (eventId 100) should not be replayed (not > 100)
+    const firstDataLine = writeCalls.find((line: string) => line.includes('"first"'));
+    expect(firstDataLine).toBeUndefined();
+
+    await transport.stop();
   });
 
   it('destroys sessions, notifies listeners, and handles listener errors', async () => {
@@ -2328,7 +2364,7 @@ describe('HttpTransport security behavior (no listen)', () => {
       sseStreams: new Map(),
       authToken: 't1',
       refreshToken: 'r1',
-      messageQueue: [],
+      replayQueue: [],
     });
     profileState.sessions.set('plain-old', {
       id: 'plain-old',
@@ -2336,7 +2372,7 @@ describe('HttpTransport security behavior (no listen)', () => {
       lastActivityAt: now - 30,
       sseStreams: new Map(),
       authToken: 't2',
-      messageQueue: [],
+      replayQueue: [],
     });
     profileState.sessions.set('oauth-never', {
       id: 'oauth-never',
@@ -2345,7 +2381,7 @@ describe('HttpTransport security behavior (no listen)', () => {
       sseStreams: new Map(),
       authToken: 't3',
       refreshToken: 'r3',
-      messageQueue: [],
+      replayQueue: [],
     });
 
     (transport as any).cleanupExpiredSessions();

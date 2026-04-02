@@ -19,6 +19,7 @@ export interface SessionData {
   createdAt: number;
   lastActivityAt: number;
   sseStreams: Map<string, SSEStreamState>;
+  replayQueue: QueuedMessage[];
   authToken?: string;
   refreshToken?: string; // OAuth refresh token for automatic token renewal
   accessTokenExpiresAt?: number; // Access token expiration timestamp in ms
