@@ -41,7 +41,6 @@ export interface SessionData {
 export interface SSEStreamState {
   streamId: string;
   lastEventId: number;
-  messageQueue: QueuedMessage[];
   active: boolean;
   response: Response; // HTTP response object for closing the stream
 }
