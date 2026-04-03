@@ -1683,6 +1683,7 @@ describe('HttpTransport security behavior (no listen)', () => {
       refreshToken: 'refresh',
       oauthClientId: 'mcp-client-expired',
       replayQueue: [],
+      nextEventId: 0,
     });
 
     (transport as any).cleanupExpiredSessions();
@@ -1937,6 +1938,7 @@ describe('HttpTransport security behavior (no listen)', () => {
       createdAt: Date.now(),
       lastActivityAt: Date.now(),
       replayQueue: [],
+      nextEventId: 0,
       sseStreams: new Map([
         ['active', activeStream as any],
         ['inactive', inactiveStream as any],
@@ -1955,6 +1957,35 @@ describe('HttpTransport security behavior (no listen)', () => {
     await transport.stop();
   });
 
+  it('assigns strictly monotonic event IDs across concurrent sendToClient calls', async () => {
+    const transport = createTransport();
+    const profileState = createProfileState(transport as any, 'default');
+    const sessionId = 'session-mono';
+
+    const session: any = {
+      id: sessionId,
+      createdAt: Date.now(),
+      lastActivityAt: Date.now(),
+      replayQueue: [],
+      nextEventId: 0,
+      sseStreams: new Map(),
+    };
+    profileState.sessions.set(sessionId, session);
+
+    (transport as any).sendToClient('default', sessionId, { seq: 1 });
+    (transport as any).sendToClient('default', sessionId, { seq: 2 });
+    (transport as any).sendToClient('default', sessionId, { seq: 3 });
+
+    expect(session.replayQueue).toHaveLength(3);
+    const ids = session.replayQueue.map((m: any) => m.eventId);
+    // IDs must be strictly increasing and unique regardless of clock resolution
+    expect(ids[0]).toBeLessThan(ids[1]);
+    expect(ids[1]).toBeLessThan(ids[2]);
+    expect(new Set(ids).size).toBe(3);
+
+    await transport.stop();
+  });
+
   it('extracts OAuth token from session when session exists and OAuth is configured', async () => {
     const transport = createTransport();
     const profileState = createProfileState(transport as any);
@@ -1966,6 +1997,7 @@ describe('HttpTransport security behavior (no listen)', () => {
       sseStreams: new Map(),
       authToken: 'oauth-token',
       replayQueue: [],
+      nextEventId: 0,
     });
 
     const req: any = { headers: { }, sessionId: 's1' };
@@ -1984,6 +2016,7 @@ describe('HttpTransport security behavior (no listen)', () => {
       sseStreams: new Map(),
       authToken: 'session-token',
       replayQueue: [],
+      nextEventId: 0,
     });
 
     const req: any = { headers: { }, sessionId: 's1' };
@@ -2009,6 +2042,7 @@ describe('HttpTransport security behavior (no listen)', () => {
       sseStreams: new Map(),
       authToken: 'session-token',
       replayQueue: [],
+      nextEventId: 0,
     });
 
     const req: any = {
@@ -2095,6 +2129,7 @@ describe('HttpTransport security behavior (no listen)', () => {
       sseStreams: new Map(),
       authToken: 'old-token',
       replayQueue: [],
+      nextEventId: 0,
     });
 
     const res = createMockResponse();
@@ -2365,6 +2400,7 @@ describe('HttpTransport security behavior (no listen)', () => {
       authToken: 't1',
       refreshToken: 'r1',
       replayQueue: [],
+      nextEventId: 0,
     });
     profileState.sessions.set('plain-old', {
       id: 'plain-old',
@@ -2373,6 +2409,7 @@ describe('HttpTransport security behavior (no listen)', () => {
       sseStreams: new Map(),
       authToken: 't2',
       replayQueue: [],
+      nextEventId: 0,
     });
     profileState.sessions.set('oauth-never', {
       id: 'oauth-never',
@@ -2382,6 +2419,7 @@ describe('HttpTransport security behavior (no listen)', () => {
       authToken: 't3',
       refreshToken: 'r3',
       replayQueue: [],
+      nextEventId: 0,
     });
 
     (transport as any).cleanupExpiredSessions();

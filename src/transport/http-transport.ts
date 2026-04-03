@@ -2916,7 +2916,9 @@ export class HttpTransport {
         if (wantsOnlySSE) {
           // Return SSE response only when client explicitly wants text/event-stream only
           this.logger.debug('Sending SSE response', { response, newSessionId });
-          this.startSSEResponse(res, response, newSessionId);
+          const effectiveSessionId = isInitialization ? newSessionId! : sessionId!;
+          const sseSession = profileState.sessions.get(effectiveSessionId)!;
+          this.startSSEResponse(res, response, newSessionId, sseSession);
         } else {
           // Return JSON response (default for requests)
           if (newSessionId) {
@@ -3146,7 +3148,8 @@ export class HttpTransport {
   private startSSEResponse(
     res: Response,
     response: unknown,
-    newSessionId: string | undefined
+    newSessionId: string | undefined,
+    session?: SessionData
   ): void {
     res.setHeader('Content-Type', MIME_TYPES.EVENT_STREAM);
     res.setHeader('Cache-Control', 'no-cache');
@@ -3156,8 +3159,10 @@ export class HttpTransport {
       res.setHeader('Mcp-Session-Id', newSessionId);
     }
 
-    // Send response
-    const eventId = Date.now();
+    // Use session-scoped monotonic counter so Last-Event-ID from POST responses stays
+    // in the same ID space as GET SSE replay events. Fall back to Date.now() when no
+    // session exists (e.g. error responses before session creation).
+    const eventId = session ? ++session.nextEventId : Date.now();
     res.write(`id: ${eventId}\n`);
     res.write(`data: ${JSON.stringify(response)}\n\n`);
 
@@ -3266,7 +3271,7 @@ export class HttpTransport {
       return;
     }
 
-    const eventId = Date.now();
+    const eventId = ++session.nextEventId;
     const queuedMessage: QueuedMessage = {
       eventId,
       data: message,
@@ -3429,6 +3434,7 @@ export class HttpTransport {
       lastActivityAt: Date.now(),
       sseStreams: new Map(),
       replayQueue: [],
+      nextEventId: 0,
       authToken,
       refreshToken,
       accessTokenExpiresAt,

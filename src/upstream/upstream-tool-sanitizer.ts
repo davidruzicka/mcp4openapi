@@ -7,8 +7,8 @@
  *
  * Security: drops tools with names outside [a-zA-Z0-9_-] or descriptions
  * containing injection-prone characters (<, >, backtick). Truncates tool
- * names in dropped output to 100 chars to prevent log injection via
- * maliciously long upstream tool names (D-03, D-04, D-05).
+ * names in dropped output to 100 chars + ellipsis (103 chars max) to
+ * prevent log injection via maliciously long upstream tool names (D-03, D-04, D-05).
  */
 
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';

@@ -20,6 +20,7 @@ export interface SessionData {
   lastActivityAt: number;
   sseStreams: Map<string, SSEStreamState>;
   replayQueue: QueuedMessage[];
+  nextEventId: number; // Monotonic counter for SSE event IDs (shared across POST and GET SSE responses)
   authToken?: string;
   refreshToken?: string; // OAuth refresh token for automatic token renewal
   accessTokenExpiresAt?: number; // Access token expiration timestamp in ms
