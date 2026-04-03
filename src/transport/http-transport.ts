@@ -3186,7 +3186,6 @@ export class HttpTransport {
     const streamState: SSEStreamState = {
       streamId,
       lastEventId: lastEventId ? parseInt(lastEventId, 10) : 0,
-      messageQueue: [],
       active: true,
       response: res,
     };
