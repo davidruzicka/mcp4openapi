@@ -275,14 +275,10 @@ describe('MCPServer apps resources', () => {
       },
     });
 
-    expect(invalidReadResponse.error).toEqual({
-      code: -32602,
-      message: 'resources/read requires string parameter "uri"',
-    });
-    expect(invalidCompletionResponse.error).toEqual({
-      code: -32602,
-      message: 'completion/complete requires a resource ref',
-    });
+    expect(invalidReadResponse.error?.code).toEqual(-32602);
+    expect(invalidReadResponse.error?.message).toMatch(/^Validation error: resources\/read requires string parameter "uri" \(correlation ID: [a-f0-9-]+\)$/);
+    expect(invalidCompletionResponse.error?.code).toEqual(-32602);
+    expect(invalidCompletionResponse.error?.message).toMatch(/^Validation error: completion\/complete requires a resource ref \(correlation ID: [a-f0-9-]+\)$/);
   });
 
   it('propagates session context to fetch-backed resource and completion lookups', async () => {
