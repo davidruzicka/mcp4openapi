@@ -8,7 +8,12 @@ import {
 describe('implementor-command-result', () => {
   describe('Ajv runtime compatibility', () => {
     it('supports the direct Ajv constructor path used by the ESM runtime', () => {
-      expect(() => new Ajv.default({ allErrors: true, strict: true }).compile(implementorCommandResultJsonSchema)).not.toThrow();
+      expect(() => new Ajv({ allErrors: true, strict: true }).compile(implementorCommandResultJsonSchema)).not.toThrow();
+    });
+
+    it('supports the normalized constructor fallback used by interop wrappers', () => {
+      const AjvConstructor = (Ajv as typeof Ajv & { default?: typeof Ajv }).default ?? Ajv;
+      expect(() => new AjvConstructor({ allErrors: true, strict: true }).compile(implementorCommandResultJsonSchema)).not.toThrow();
     });
   });
 

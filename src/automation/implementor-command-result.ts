@@ -73,7 +73,8 @@ export const implementorCommandResultJsonSchema: JSONSchemaType<ImplementorComma
   ],
 } as const;
 
-const ajv = new Ajv.default({ allErrors: true, strict: true });
+const AjvConstructor = ((Ajv as unknown as { default?: typeof import('ajv').default }).default ?? Ajv) as typeof import('ajv').default;
+const ajv = new AjvConstructor({ allErrors: true, strict: true });
 const validateImplementorCommandResultSchema = ajv.compile(implementorCommandResultJsonSchema);
 
 export function parseImplementorCommandResult(raw: string): ImplementorCommandResult {

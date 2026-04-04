@@ -332,6 +332,16 @@ describe('implementor-codex', () => {
       });
     });
 
+    it('keeps scanning embedded JSON objects after earlier brace-delimited noise', () => {
+      expect(parseCodexResult([
+        'Log output: {"unexpected":"diagnostic"}',
+        '{"outcome":"blocked","summary":"Recovered the later valid payload."}',
+      ].join('\n'))).toEqual({
+        outcome: 'blocked',
+        summary: 'Recovered the later valid payload.',
+      });
+    });
+
     it('surfaces the final schema error when no candidate can be parsed', () => {
       expect(() => parseCodexResult('Finished the run without writing any JSON payload.')).toThrow('Invalid implementor command result: expected JSON object.');
     });

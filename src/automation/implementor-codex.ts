@@ -107,15 +107,15 @@ function collectCodexResultCandidates(raw: string): string[] {
     candidates.add(fencedJson);
   }
 
-  const embeddedJsonObject = extractEmbeddedJsonObject(trimmed);
-  if (embeddedJsonObject) {
+  for (const embeddedJsonObject of extractEmbeddedJsonObjects(trimmed)) {
     candidates.add(embeddedJsonObject);
   }
 
   return [...candidates];
 }
 
-function extractEmbeddedJsonObject(raw: string): string | undefined {
+function extractEmbeddedJsonObjects(raw: string): string[] {
+  const candidates: string[] = [];
   let start = -1;
   let depth = 0;
   let inString = false;
@@ -154,12 +154,13 @@ function extractEmbeddedJsonObject(raw: string): string | undefined {
     if (char === '}' && depth > 0) {
       depth -= 1;
       if (depth === 0 && start !== -1) {
-        return raw.slice(start, index + 1);
+        candidates.push(raw.slice(start, index + 1));
+        start = -1;
       }
     }
   }
 
-  return undefined;
+  return candidates;
 }
 
 function summarizeCodexOutput(raw: string): string | undefined {

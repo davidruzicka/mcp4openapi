@@ -18,11 +18,13 @@ For the implementor result contract:
 
 - TypeScript interface: `ImplementorCommandResult`
 - Runtime JSON schema: `implementorCommandResultJsonSchema`
-- Runtime parser/validator: `parseImplementorCommandResult(...)`
+- Strict schema parser/validator: `parseImplementorCommandResult(...)`
+- Codex wrapper parser: `parseCodexResult(...)`
 
 Validation characteristics:
 
-- strict JSON object only
+- `parseImplementorCommandResult(...)` accepts a strict JSON object only
+- `parseCodexResult(...)` can first extract a JSON object from fenced blocks or surrounding prose, then delegates schema validation to `parseImplementorCommandResult(...)`
 - `additionalProperties: false`
 - `summary` must be a non-empty string
 - `pullRequest` is required only for `outcome: "pr-created"`
@@ -34,8 +36,8 @@ Purpose:
 
 - hand off the final result of an implementor backend run to the label/state reconciler
 - keep PR creation metadata machine-readable
-- accept schema-valid JSON objects even when surrounded by prose or markdown (including fenced code blocks)
-- fail closed only when no schema-valid JSON object can be extracted from the backend output
+- let the Codex wrapper parser accept schema-valid JSON objects even when surrounded by prose or markdown (including fenced code blocks)
+- fail closed only when the wrapper cannot extract any schema-valid JSON object from the backend output
 
 ### Allowed outcomes
 
