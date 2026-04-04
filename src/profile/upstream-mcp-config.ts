@@ -187,6 +187,17 @@ function validateUpstreamProvider(provider: UpstreamMcpServerConfig, index: numb
     });
   }
 
+  if (provider.validation_endpoint !== undefined) {
+    validateUpstreamUrl(provider.validation_endpoint, `${path}.validation_endpoint`);
+  }
+
+  if (provider.validation_timeout_ms !== undefined && (!Number.isInteger(provider.validation_timeout_ms) || provider.validation_timeout_ms <= 0)) {
+    throw new ValidationError(`${path}.validation_timeout_ms must be a positive integer`, {
+      path: `${path}.validation_timeout_ms`,
+      value: provider.validation_timeout_ms,
+    });
+  }
+
   if (provider.tool_prefix !== undefined) {
     if (!provider.tool_prefix.trim()) {
       throw new ValidationError(`${path}.tool_prefix must not be empty`, { path: `${path}.tool_prefix` });
