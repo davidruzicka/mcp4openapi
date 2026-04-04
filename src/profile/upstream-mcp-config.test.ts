@@ -143,6 +143,60 @@ describe('resolveUpstreamMcpConfig – validator error branches', () => {
     expect(() => resolveUpstreamMcpConfig(profile)).toThrow(/timeout_ms must be a positive integer/);
   });
 
+  it('rejects relative validation_endpoint', () => {
+    const profile = makeProfile([{
+      name: 'p1',
+      transport: { type: 'http-streamable', url: 'https://example.com/mcp' },
+      validation_endpoint: '/validate',
+    }]);
+    expect(() => resolveUpstreamMcpConfig(profile)).toThrow(ValidationError);
+  });
+
+  it('rejects non-http validation_endpoint', () => {
+    const profile = makeProfile([{
+      name: 'p1',
+      transport: { type: 'http-streamable', url: 'https://example.com/mcp' },
+      validation_endpoint: 'ftp://example.com/validate',
+    }]);
+    expect(() => resolveUpstreamMcpConfig(profile)).toThrow(/http or https/);
+  });
+
+  it('rejects validation_endpoint with inline credentials', () => {
+    const profile = makeProfile([{
+      name: 'p1',
+      transport: { type: 'http-streamable', url: 'https://example.com/mcp' },
+      validation_endpoint: 'https://user:pass@example.com/validate',
+    }]);
+    expect(() => resolveUpstreamMcpConfig(profile)).toThrow(/inline credentials/);
+  });
+
+  it('accepts valid absolute validation_endpoint', () => {
+    const profile = makeProfile([{
+      name: 'p1',
+      transport: { type: 'http-streamable', url: 'https://example.com/mcp' },
+      validation_endpoint: 'https://example.com/validate',
+    }]);
+    expect(() => resolveUpstreamMcpConfig(profile)).not.toThrow();
+  });
+
+  it('rejects non-positive validation_timeout_ms', () => {
+    const profile = makeProfile([{
+      name: 'p1',
+      transport: { type: 'http-streamable', url: 'https://example.com/mcp' },
+      validation_timeout_ms: 0,
+    }]);
+    expect(() => resolveUpstreamMcpConfig(profile)).toThrow(/validation_timeout_ms must be a positive integer/);
+  });
+
+  it('rejects negative validation_timeout_ms', () => {
+    const profile = makeProfile([{
+      name: 'p1',
+      transport: { type: 'http-streamable', url: 'https://example.com/mcp' },
+      validation_timeout_ms: -100,
+    }]);
+    expect(() => resolveUpstreamMcpConfig(profile)).toThrow(/validation_timeout_ms must be a positive integer/);
+  });
+
   it('rejects empty tool_prefix', () => {
     const profile = makeProfile([{
       name: 'p1',
