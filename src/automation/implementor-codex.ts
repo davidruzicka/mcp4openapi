@@ -35,6 +35,8 @@ export function parseImplementorTaskPayload(
   try {
     return parseImplementorWorkflowTaskPayload(raw, options);
   } catch (error) {
+    // Normalize every parse failure at the backend boundary so callers always receive
+    // a deterministic Error instance instead of arbitrary thrown payloads.
     const detail = error instanceof Error ? error.message : 'unknown parse failure';
     throw new Error(`Codex implementor backend: ${detail}`);
   }
