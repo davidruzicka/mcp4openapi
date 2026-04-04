@@ -1,4 +1,4 @@
-import { Ajv } from 'ajv';
+import Ajv from 'ajv';
 import { describe, expect, it } from 'vitest';
 import {
   implementorCommandResultJsonSchema,
@@ -8,7 +8,7 @@ import {
 describe('implementor-command-result', () => {
   describe('Ajv runtime compatibility', () => {
     it('supports the direct Ajv constructor path used by the ESM runtime', () => {
-      expect(() => new Ajv({ allErrors: true, strict: true }).compile(implementorCommandResultJsonSchema)).not.toThrow();
+      expect(() => new Ajv.default({ allErrors: true, strict: true }).compile(implementorCommandResultJsonSchema)).not.toThrow();
     });
   });
 
