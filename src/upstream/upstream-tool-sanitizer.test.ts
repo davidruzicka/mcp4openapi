@@ -161,6 +161,13 @@ describe('sanitizeToolList', () => {
     expect(result.dropped[0].name).toBe('a'.repeat(100) + '...');
   });
 
+  it('sanitizes control characters in dropped tool name to prevent log injection', () => {
+    const tool = makeTool('tool\nfake-log-entry');
+    const result = sanitizeToolList([tool], logger);
+    expect(result.dropped[0].name).not.toContain('\n');
+    expect(result.dropped[0].name).toContain('\\n');
+  });
+
   it('works without logger (no error thrown)', () => {
     const tool = makeTool('bad!');
     expect(() => sanitizeToolList([tool])).not.toThrow();

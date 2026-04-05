@@ -2810,7 +2810,7 @@ export class HttpTransport {
                       provider: upstreamProvider.name,
                     });
                   } else {
-                    this.logger.debug('Upstream credential validation skipped - no client token', {
+                    this.logger.debug('Upstream credential validation skipped - no upstream credential available (no client token, no env token)', {
                       provider: upstreamProvider.name,
                     });
                   }

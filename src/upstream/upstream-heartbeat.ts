@@ -54,6 +54,10 @@ export class UpstreamHeartbeatManager {
       try {
         await pingFn();
       } catch (error: unknown) {
+        // Guard against stop()/stopAll() called while ping was in-flight:
+        // the promise outlives clearInterval, so we must not invoke onFailure
+        // after the heartbeat has been intentionally stopped.
+        if (!this.timers.has(key)) return;
         onFailure(error instanceof Error ? error : new Error(String(error)));
       } finally {
         inFlight = false;
