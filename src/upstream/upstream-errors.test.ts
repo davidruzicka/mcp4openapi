@@ -58,10 +58,11 @@ describe('upstream-errors', () => {
       expect(err.details?.providerName).toBe('provider-c');
     });
 
-    it('message does not contain credential values', () => {
+    it('message does not contain credential values or provider name', () => {
       const err = new UpstreamAuthError('provider-c');
       expect(err.message).not.toContain('Bearer');
       expect(err.message).not.toMatch(/eyJ[A-Za-z0-9_-]+/);
+      expect(err.message).not.toContain('provider-c');
     });
 
     it('is instanceof MCPError', () => {

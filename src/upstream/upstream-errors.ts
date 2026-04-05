@@ -38,7 +38,7 @@ export class UpstreamAuthError extends MCPError {
   constructor(providerName: string) {
     const correlationId = generateCorrelationId();
     super(
-      `Authentication failed for upstream provider '${providerName}'`,
+      sanitizeAuthErrorMessage('Authentication failed for upstream provider'),
       'UPSTREAM_AUTH_ERROR',
       { correlationId, providerName },
     );
@@ -62,7 +62,7 @@ export class UpstreamMalformedResponseError extends MCPError {
 
 /**
  * Convert an MCPError to a safe client-facing MCP error response.
- * Strips stack traces and raw details - only exposes correlation ID and error code.
+ * Strips stack traces and raw details - exposes a sanitized message, and optionally correlation ID and error code.
  */
 export function toMcpErrorResponse(error: MCPError): {
   code: number;

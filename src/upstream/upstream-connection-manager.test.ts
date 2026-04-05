@@ -560,7 +560,7 @@ describe('UpstreamConnectionManager', () => {
       const mgr = new UpstreamConnectionManager({ clientFactory, transportFactory, ssrfValidator: mockSsrfValidator as never });
       const error = await mgr.validateCredentials(SESSION_ID, provider, 'bad-token').catch(e => e);
       expect(error).toBeInstanceOf(UpstreamAuthError);
-      expect(error.message).toContain('my-provider');
+      expect(error.details?.providerName).toBe('my-provider');
     });
 
     it('throws UpstreamConnectionError when fetch rejects (network error)', async () => {
