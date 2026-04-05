@@ -332,6 +332,16 @@ describe('implementor-codex', () => {
       });
     });
 
+    it('ignores backslashes outside strings so windows-style paths do not swallow later payloads', () => {
+      expect(parseCodexResult([
+        'Log output: C:\\temp\\"quoted {still-not-json}"',
+        '{"outcome":"blocked","summary":"Recovered after windows-style path noise."}',
+      ].join('\n'))).toEqual({
+        outcome: 'blocked',
+        summary: 'Recovered after windows-style path noise.',
+      });
+    });
+
     it('keeps scanning embedded JSON objects after earlier brace-delimited noise', () => {
       expect(parseCodexResult([
         'Log output: {"unexpected":"diagnostic"}',

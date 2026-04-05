@@ -129,7 +129,7 @@ function extractEmbeddedJsonObjects(raw: string): string[] {
       continue;
     }
 
-    if (char === '\\') {
+    if (char === '\\' && inString) {
       escaping = true;
       continue;
     }
