@@ -172,6 +172,36 @@ describe('sanitizeToolList', () => {
     const tool = makeTool('bad!');
     expect(() => sanitizeToolList([tool])).not.toThrow();
   });
+
+  it('drops tool where name is a number (runtime type violation)', () => {
+    const tool = { name: 123, inputSchema: { type: 'object', properties: {} } } as unknown as Tool;
+    const result = sanitizeToolList([tool], logger);
+    expect(result.tools).toHaveLength(0);
+    expect(result.dropped).toHaveLength(1);
+    expect(result.dropped[0].reason).toBe('malformed tool definition: name is not a string');
+    expect(result.dropped[0].name).toBe('123');
+  });
+
+  it('drops tool where name is an object (runtime type violation)', () => {
+    const tool = { name: { evil: true }, inputSchema: { type: 'object', properties: {} } } as unknown as Tool;
+    const result = sanitizeToolList([tool], logger);
+    expect(result.tools).toHaveLength(0);
+    expect(result.dropped[0].reason).toBe('malformed tool definition: name is not a string');
+  });
+
+  it('drops tool where description is a number (runtime type violation)', () => {
+    const tool = { name: 'valid_tool', description: 42, inputSchema: { type: 'object', properties: {} } } as unknown as Tool;
+    const result = sanitizeToolList([tool], logger);
+    expect(result.tools).toHaveLength(0);
+    expect(result.dropped[0].reason).toBe('malformed tool definition: description is not a string');
+  });
+
+  it('passes tool where description is undefined (no type violation)', () => {
+    const tool = { name: 'valid_tool', inputSchema: { type: 'object', properties: {} } } as unknown as Tool;
+    const result = sanitizeToolList([tool], logger);
+    expect(result.tools).toHaveLength(1);
+    expect(result.dropped).toHaveLength(0);
+  });
 });
 
 describe('applyProviderToolPolicy', () => {

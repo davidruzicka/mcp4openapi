@@ -51,10 +51,15 @@ export function sanitizeToolList(tools: Tool[], logger?: Logger): SanitizationRe
   for (const tool of tools) {
     let reason: string | undefined;
 
-    if (tool.name.length > MAX_TOOL_NAME_LENGTH) {
+    // Runtime type guards: upstream may return non-string fields despite SDK types
+    if (typeof tool.name !== 'string') {
+      reason = 'malformed tool definition: name is not a string';
+    } else if (tool.name.length > MAX_TOOL_NAME_LENGTH) {
       reason = 'tool name too long';
     } else if (!TOOL_NAME_PATTERN.test(tool.name)) {
       reason = 'invalid characters in tool name';
+    } else if (tool.description !== undefined && typeof tool.description !== 'string') {
+      reason = 'malformed tool definition: description is not a string';
     } else if (tool.description && tool.description.length > MAX_DESCRIPTION_LENGTH) {
       reason = 'tool description too long';
     } else if (tool.description && DESCRIPTION_FORBIDDEN_CHARS.test(tool.description)) {
@@ -62,7 +67,9 @@ export function sanitizeToolList(tools: Tool[], logger?: Logger): SanitizationRe
     }
 
     if (reason !== undefined) {
-      const safeName = sanitizeLogMessage(truncateName(tool.name));
+      // Coerce non-string names to string for safe logging
+      const nameStr = typeof tool.name === 'string' ? tool.name : String(tool.name);
+      const safeName = sanitizeLogMessage(truncateName(nameStr));
       dropped.push({ name: safeName, reason });
       logger?.warn('Dropped upstream tool due to sanitization failure', { name: safeName, reason });
     } else {
