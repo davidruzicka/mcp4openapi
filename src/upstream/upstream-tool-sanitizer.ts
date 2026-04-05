@@ -12,6 +12,7 @@
  */
 
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
+import { sanitizeLogMessage } from '../core/logger.js';
 import type { Logger } from '../core/logger.js';
 import type { UpstreamMcpToolPolicy } from '../types/profile.js';
 
@@ -61,7 +62,7 @@ export function sanitizeToolList(tools: Tool[], logger?: Logger): SanitizationRe
     }
 
     if (reason !== undefined) {
-      const safeName = truncateName(tool.name);
+      const safeName = sanitizeLogMessage(truncateName(tool.name));
       dropped.push({ name: safeName, reason });
       logger?.warn('Dropped upstream tool due to sanitization failure', { name: safeName, reason });
     } else {

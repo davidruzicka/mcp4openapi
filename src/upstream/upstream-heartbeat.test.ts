@@ -243,5 +243,44 @@ describe('UpstreamHeartbeatManager', () => {
 
       fastManager.stopAll();
     });
+
+    it('does not invoke onFailure when stop() is called while ping is in-flight', async () => {
+      let rejectFirstPing!: (e: Error) => void;
+      const slowPing = vi.fn().mockReturnValue(
+        new Promise<void>((_, reject) => { rejectFirstPing = reject; }),
+      );
+
+      const fastManager = new UpstreamHeartbeatManager({ intervalMs: 100 });
+      fastManager.start('session:provider', slowPing, onFailure);
+
+      // First tick starts the in-flight ping
+      await vi.advanceTimersByTimeAsync(100);
+      expect(slowPing).toHaveBeenCalledTimes(1);
+
+      // Stop the heartbeat while ping is still in-flight
+      fastManager.stop('session:provider');
+
+      // Ping rejects after stop - onFailure must NOT be called
+      rejectFirstPing(new Error('upstream gone'));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(onFailure).not.toHaveBeenCalled();
+    });
+
+    it('does not invoke onFailure when stopAll() is called while ping is in-flight', async () => {
+      let rejectFirstPing!: (e: Error) => void;
+      const slowPing = vi.fn().mockReturnValue(
+        new Promise<void>((_, reject) => { rejectFirstPing = reject; }),
+      );
+
+      const fastManager = new UpstreamHeartbeatManager({ intervalMs: 100 });
+      fastManager.start('session:provider', slowPing, onFailure);
+
+      await vi.advanceTimersByTimeAsync(100);
+      fastManager.stopAll();
+
+      rejectFirstPing(new Error('upstream gone'));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(onFailure).not.toHaveBeenCalled();
+    });
   });
 });
