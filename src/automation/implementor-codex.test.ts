@@ -355,6 +355,13 @@ describe('implementor-codex', () => {
     it('surfaces the final schema error when no candidate can be parsed', () => {
       expect(() => parseCodexResult('Finished the run without writing any JSON payload.')).toThrow('Invalid implementor command result: expected JSON object.');
     });
+
+    it('rejects output containing two independently schema-valid JSON objects', () => {
+      expect(() => parseCodexResult([
+        '{"outcome":"failed","summary":"First valid result."}',
+        '{"outcome":"blocked","summary":"Second valid result."}',
+      ].join('\n'))).toThrow('Invalid implementor command result: multiple valid JSON candidates found.');
+    });
   });
 
   describe('buildMalformedCodexResult', () => {
@@ -365,21 +372,19 @@ describe('implementor-codex', () => {
       });
     });
 
-    it('includes a normalized output preview when malformed text is available', () => {
+    it('omits raw output from the summary to prevent token leakage in issue comments', () => {
       expect(buildMalformedCodexResult('```json\n{ not valid json }\n```', new Error('broken payload'))).toEqual({
         outcome: 'failed',
-        summary: 'Codex backend returned malformed result (broken payload). Output preview: { not valid json }',
+        summary: 'Codex backend returned malformed result (broken payload).',
       });
     });
 
-    it('truncates long malformed output previews to a bounded summary', () => {
+    it('omits raw output even for long malformed payloads', () => {
       const longOutput = `${'word '.repeat(60)}{"outcome":"failed"}`;
       const result = buildMalformedCodexResult(longOutput, new Error('broken payload'));
 
       expect(result.outcome).toBe('failed');
-      expect(result.summary).toContain('Output preview:');
-      expect(result.summary.endsWith('...')).toBe(true);
-      expect(result.summary.length).toBeLessThan(320);
+      expect(result.summary).toBe('Codex backend returned malformed result (broken payload).');
     });
   });
 });

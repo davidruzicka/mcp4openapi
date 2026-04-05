@@ -69,28 +69,30 @@ export function buildCodexInvocationPlan(input: BuildCodexInvocationPlanInput): 
 
 export function parseCodexResult(raw: string): ImplementorCommandResult {
   const candidates = collectCodexResultCandidates(raw);
+  const valid: ImplementorCommandResult[] = [];
   let lastError: unknown;
 
   for (const candidate of candidates) {
     try {
-      return parseImplementorCommandResult(candidate);
+      valid.push(parseImplementorCommandResult(candidate));
     } catch (error) {
       lastError = error;
     }
   }
 
+  if (valid.length === 1) return valid[0];
+  if (valid.length > 1) throw new Error('Invalid implementor command result: multiple valid JSON candidates found.');
   throw lastError instanceof Error ? lastError : new Error('Invalid implementor command result: expected JSON object.');
 }
 
-export function buildMalformedCodexResult(raw: string, error: unknown): ImplementorCommandResult {
+// Raw output is intentionally excluded from the summary - it may contain tokens or secrets
+// written to the scratch file by a misbehaving Codex run, and the summary propagates to
+// GitHub issue comments via the implementor runner.
+export function buildMalformedCodexResult(_raw: string, error: unknown): ImplementorCommandResult {
   const detail = error instanceof Error ? error.message : 'Invalid Codex result payload.';
-  const preview = summarizeCodexOutput(raw);
-
   return {
     outcome: 'failed',
-    summary: preview
-      ? `Codex backend returned malformed result (${detail}). Output preview: ${preview}`
-      : `Codex backend returned malformed result (${detail}).`,
+    summary: `Codex backend returned malformed result (${detail}).`,
   };
 }
 
@@ -161,18 +163,6 @@ function extractEmbeddedJsonObjects(raw: string): string[] {
   }
 
   return candidates;
-}
-
-function summarizeCodexOutput(raw: string): string | undefined {
-  const normalized = raw
-    .replace(/\s+/g, ' ')
-    .replace(/```(?:json)?/gi, '')
-    .trim();
-  if (normalized.length === 0) {
-    return undefined;
-  }
-
-  return normalized.length <= 180 ? normalized : `${normalized.slice(0, 177)}...`;
 }
 
 function buildCodexImplementorPrompt(input: {

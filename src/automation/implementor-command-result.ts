@@ -118,6 +118,11 @@ export function parseImplementorCommandResult(raw: string): ImplementorCommandRe
     throw new Error('Invalid implementor command result: schema validation failed.');
   }
 
+  // Intentional defense-in-depth: the manual guards above provide deterministic, human-friendly
+  // error messages for the common failure paths. Ajv here is a safety net that catches anything
+  // the guards missed (e.g. future schema changes where guards lag behind). Both layers test
+  // the same schema on purpose - do not collapse them into Ajv-only without also auditing that
+  // every error path still produces an actionable message via formatImplementorCommandResultValidationError.
   if (!validateImplementorCommandResultSchema(parsed)) {
     throw new Error(formatImplementorCommandResultValidationError(validateImplementorCommandResultSchema.errors));
   }
