@@ -220,7 +220,7 @@ export class UpstreamConnectionManager {
     }
     // Buffer in queue for replay on reconnect (D-08)
     const queue = this.getOrCreateQueue(sessionId);
-    queue.push({ method, timestamp: Date.now(), params });
+    queue.push({ method, params });
     this.logger.debug('Queued upstream notification for disconnected client', { sessionId, method, queueSize: queue.size });
   }
 
