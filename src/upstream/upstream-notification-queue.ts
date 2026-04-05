@@ -5,10 +5,10 @@
  * for replay on client reconnect. Enforces a size cap and TTL to prevent
  * unbounded memory growth under disconnected or slow clients (D-08, REL-04).
  *
- * TTL eviction computes age as (Date.now() - entry.timestamp). The "now"
- * reference is always sampled at push/drain time (wall-clock), not derived
- * from the latest entry's timestamp, so entries are evicted based on absolute
- * elapsed time since insertion regardless of push frequency.
+ * TTL eviction computes age as (Date.now() - entry.timestamp). The timestamp
+ * is always set internally by push() to Date.now() at insertion time - callers
+ * cannot supply or skew it. The "now" reference in drain() is also sampled at
+ * call time, so eviction is based on absolute elapsed time since insertion.
  */
 
 export interface NotificationQueueEntry {
@@ -46,8 +46,7 @@ export class NotificationQueue {
    * wall-clock time. If the queue is still at capacity after TTL eviction,
    * the oldest entry is shifted out.
    */
-  push(entry: NotificationQueueEntry): void {
-    // Evict entries older than ttlMs: age = Date.now() - entry.timestamp
+  push(entry: Omit<NotificationQueueEntry, 'timestamp'>): void {
     const now = Date.now();
     this.entries = this.entries.filter(e => (now - e.timestamp) < this.ttlMs);
 
@@ -55,7 +54,7 @@ export class NotificationQueue {
       this.entries.shift();
     }
 
-    this.entries.push(entry);
+    this.entries.push({ ...entry, timestamp: now });
   }
 
   /**
