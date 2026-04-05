@@ -4,7 +4,7 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { Logger } from '../core/logger.js';
-import { sanitizeToolList, type SanitizationResult, applyProviderToolPolicy, isToolAllowedByProviderPolicy } from './upstream-tool-sanitizer.js';
+import { sanitizeToolList, applyProviderToolPolicy, isToolAllowedByProviderPolicy, isValidUpstreamToolName } from './upstream-tool-sanitizer.js';
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 
 function makeTool(name: string, description?: string): Tool {
@@ -206,6 +206,40 @@ describe('applyProviderToolPolicy', () => {
 
   it('returns all tools when deny list is empty', () => {
     expect(applyProviderToolPolicy(tools, { deny: [] })).toEqual(tools);
+  });
+});
+
+describe('isValidUpstreamToolName', () => {
+  it('accepts valid names with letters, digits, underscores, hyphens', () => {
+    expect(isValidUpstreamToolName('valid_tool-1')).toBe(true);
+    expect(isValidUpstreamToolName('A')).toBe(true);
+    expect(isValidUpstreamToolName('abc-DEF_123')).toBe(true);
+  });
+
+  it('rejects empty string', () => {
+    expect(isValidUpstreamToolName('')).toBe(false);
+  });
+
+  it('accepts name of exactly 255 chars (boundary - should pass)', () => {
+    expect(isValidUpstreamToolName('a'.repeat(255))).toBe(true);
+  });
+
+  it('rejects name of 256 chars (boundary + 1 - should fail)', () => {
+    expect(isValidUpstreamToolName('a'.repeat(256))).toBe(false);
+  });
+
+  it('rejects names with spaces', () => {
+    expect(isValidUpstreamToolName('has space')).toBe(false);
+  });
+
+  it('rejects names with special characters', () => {
+    expect(isValidUpstreamToolName('tool<inject>')).toBe(false);
+    expect(isValidUpstreamToolName('tool!name')).toBe(false);
+    expect(isValidUpstreamToolName('tool.name')).toBe(false);
+  });
+
+  it('rejects names with newline (log injection attempt)', () => {
+    expect(isValidUpstreamToolName('tool\nfake-log')).toBe(false);
   });
 });
 
