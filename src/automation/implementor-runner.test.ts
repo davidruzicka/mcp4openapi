@@ -331,6 +331,39 @@ describe('implementor-runner', () => {
       expect(assignments).toHaveLength(1);
       expect(assignments[0]?.issueNumber).toBe(161);
     });
+
+    it('requeues issues when a failed comment was edited after the issue changed', () => {
+      const failedComment = buildImplementorResultComment({
+        repository: 'davidruzicka/mcp4openapi',
+        issueNumber: 161,
+        agentId: 'implementor',
+        runId: 'run-3',
+        timestamp: '2026-03-14T12:00:00Z',
+        result: {
+          outcome: 'failed',
+          summary: 'Implementor command failed: Command failed: bash -lc node dist/scripts/run-implementor-codex.js',
+        },
+      });
+
+      const assignments = collectImplementorAssignments({
+        issues: [buildIssue({ updatedAt: '2026-03-14T12:10:00Z' })],
+        commentsByIssueNumber: {
+          161: [buildComment(failedComment, {
+            createdAt: '2026-03-14T12:00:00Z',
+            updatedAt: '2026-03-14T12:20:00Z',
+          })],
+        },
+        openPullRequestsByIssueNumber: {},
+        repository: 'davidruzicka/mcp4openapi',
+        agentId: 'implementor',
+        runId: 'run-4',
+        now: '2026-03-14T12:25:00Z',
+        leaseTtlMinutes: 30,
+      });
+
+      expect(assignments).toHaveLength(1);
+      expect(assignments[0]?.issueNumber).toBe(161);
+    });
   });
 
   describe('parseImplementorCommandResult', () => {

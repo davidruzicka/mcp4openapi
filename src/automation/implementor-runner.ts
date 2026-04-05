@@ -480,9 +480,9 @@ function hasRecentUnchangedImplementorFailure(
       return false;
     }
 
-    const commentUpdatedAtTimestamp = parseIsoTimestamp(comment.updatedAt);
-    return nowTimestamp - commentUpdatedAtTimestamp <= ttlMs
-      && issueUpdatedAtTimestamp <= commentUpdatedAtTimestamp;
+    const failureCreatedAtTimestamp = parseIsoTimestamp(comment.createdAt);
+    return nowTimestamp - failureCreatedAtTimestamp <= ttlMs
+      && issueUpdatedAtTimestamp <= failureCreatedAtTimestamp;
   });
 }
 
