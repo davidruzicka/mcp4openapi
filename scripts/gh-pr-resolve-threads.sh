@@ -3,6 +3,7 @@
 #
 # Without thread IDs: resolves all open threads where the repo owner has replied
 # (i.e. threads that have been addressed but not yet marked resolved).
+# Thread list is fully paginated; fetches up to 100 comments per thread.
 #
 # With explicit thread IDs: resolves exactly those threads.
 set -euo pipefail
@@ -36,36 +37,55 @@ if [ ${#EXPLICIT_IDS[@]} -gt 0 ]; then
 else
   echo "Auto-detecting open threads with owner reply..."
 
-  GQL_RESULT=$(gh api graphql -f query="
-  {
-    repository(owner: \"$OWNER\", name: \"$NAME\") {
-      pullRequest(number: $PR) {
-        reviewThreads(first: 100) {
-          nodes {
-            id
-            isResolved
-            comments(first: 10) {
-              nodes { author { login } }
-            }
+  IDS_TO_RESOLVE=$(OWNER="$OWNER" NAME="$NAME" PR="$PR" python3 << 'PYEOF'
+import subprocess, json, os
+
+owner = os.environ['OWNER']
+name  = os.environ['NAME']
+pr    = os.environ['PR']
+
+def fetch_page(cursor=None):
+    after = f', after: "{cursor}"' if cursor else ''
+    query = """{
+  repository(owner: "%s", name: "%s") {
+    pullRequest(number: %s) {
+      reviewThreads(first: 100%s) {
+        pageInfo { hasNextPage endCursor }
+        nodes {
+          id
+          isResolved
+          comments(first: 100) {
+            nodes { author { login } }
           }
         }
       }
     }
-  }")
+  }
+}""" % (owner, name, pr, after)
+    result = subprocess.run(
+        ['gh', 'api', 'graphql', '-f', f'query={query}'],
+        capture_output=True, text=True, check=True
+    )
+    return json.loads(result.stdout)['data']['repository']['pullRequest']['reviewThreads']
 
-  IDS_TO_RESOLVE=$(echo "$GQL_RESULT" | python3 -c "
-import sys, json
-data = json.load(sys.stdin)
-threads = data['data']['repository']['pullRequest']['reviewThreads']['nodes']
-owner = '$OWNER'
-for t in threads:
+all_threads = []
+cursor = None
+while True:
+    page = fetch_page(cursor)
+    all_threads.extend(page['nodes'])
+    if not page['pageInfo']['hasNextPage']:
+        break
+    cursor = page['pageInfo']['endCursor']
+
+for t in all_threads:
     if t['isResolved']:
         continue
     authors = [c['author']['login'] for c in t['comments']['nodes']]
     # Resolve if owner has replied (not just as original poster)
     if owner in authors[1:]:
         print(t['id'])
-")
+PYEOF
+)
 
   if [ -z "$IDS_TO_RESOLVE" ]; then
     echo "No open threads with owner reply found."
