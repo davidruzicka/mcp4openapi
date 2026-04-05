@@ -8,6 +8,7 @@ import {
   type ImplementorCommandResult,
   type ImplementorTaskPayload,
 } from '../src/automation/implementor-runner.js';
+import { hasImplementorPullRequest } from '../src/automation/implementor-command-result.js';
 import { runImplementorCommandWithFallback } from './implementor-command.js';
 import type { ImplementorThreadReplyPayload } from '../src/automation/review-follow-up.js';
 import {
@@ -145,7 +146,7 @@ for (const assignment of assignments.slice(0, runtimeConfig.maxCandidates)) {
     reviewFollowUpItems,
   }));
 
-  if (result.pullRequest) {
+  if (hasImplementorPullRequest(result)) {
     const pullRequestNumber = result.pullRequest.number;
 
     await addPullRequestLabels(runtimeConfig, pullRequestNumber, labels.pullRequestLabelsToAdd);

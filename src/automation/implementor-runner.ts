@@ -1,5 +1,10 @@
 import { buildAgentMetadataBlock } from './agent-feedback.js';
-import { parseImplementorCommandResult as parseStructuredImplementorCommandResult, type ImplementorCommandResult } from './implementor-command-result.js';
+import {
+  hasImplementorPullRequest,
+  parseImplementorCommandResult as parseStructuredImplementorCommandResult,
+  type ImplementorCommandResult,
+  type ImplementorPullRequestMetadata,
+} from './implementor-command-result.js';
 import { planImplementorCompletion, planImplementorStart } from './agent-workflow-state.js';
 import type { ArtifactTrustConfig } from './artifact-signing-config.js';
 import { parseAgentMetadata } from './evaluator-runner.js';
@@ -149,13 +154,14 @@ export function buildImplementorResultComment(input: {
   readonly result: ImplementorCommandResult;
   readonly reviewFollowUpItems?: readonly ReviewFollowUpItem[];
 }): string {
+  const pullRequest = hasImplementorPullRequest(input.result) ? input.result.pullRequest : undefined;
   const metadataBlock = buildAgentMetadataBlock({
     'agent-id': input.agentId,
     'agent-stage': 'implementor',
     'agent-role': 'implementation',
     repository: input.repository,
     'issue-number': input.issueNumber,
-    'pr-number': input.result.pullRequest?.number,
+    'pr-number': pullRequest?.number,
     status: input.result.outcome,
     'run-id': input.runId,
     timestamp: input.timestamp,
@@ -168,7 +174,7 @@ export function buildImplementorResultComment(input: {
     `Summary: ${input.result.summary}`,
   ];
 
-  const pullRequestLine = buildImplementorPullRequestLine(input.result.pullRequest);
+  const pullRequestLine = buildImplementorPullRequestLine(pullRequest);
   if (pullRequestLine) {
     lines.push(pullRequestLine);
   }
@@ -183,7 +189,7 @@ export function buildImplementorResultComment(input: {
   return lines.join('\n');
 }
 
-function buildImplementorPullRequestLine(pullRequest: ImplementorCommandResult['pullRequest']): string | undefined {
+function buildImplementorPullRequestLine(pullRequest: ImplementorPullRequestMetadata | undefined): string | undefined {
   if (!pullRequest) {
     return undefined;
   }

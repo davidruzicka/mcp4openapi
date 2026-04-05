@@ -1,17 +1,11 @@
 import Ajv, { type ErrorObject, type JSONSchemaType } from 'ajv';
 
-export interface ImplementorCommandResult {
-  readonly outcome: 'pr-created' | 'failed' | 'blocked';
-  readonly summary: string;
-  readonly pullRequest?: {
-    readonly number: number;
-    readonly url: string;
-  };
+export interface ImplementorPullRequestMetadata {
+  readonly number: number;
+  readonly url: string;
 }
 
-type ImplementorPullRequestMetadata = NonNullable<ImplementorCommandResult['pullRequest']>;
-
-type ImplementorCommandResultSchema =
+export type ImplementorCommandResult =
   | {
     readonly outcome: 'pr-created';
     readonly summary: string;
@@ -21,6 +15,8 @@ type ImplementorCommandResultSchema =
     readonly outcome: 'failed' | 'blocked';
     readonly summary: string;
   };
+
+type ImplementorCommandResultSchema = ImplementorCommandResult;
 
 const implementorPullRequestSchema: JSONSchemaType<ImplementorPullRequestMetadata> = {
   type: 'object',
@@ -77,8 +73,13 @@ const AjvConstructor = ((Ajv as unknown as { default?: typeof import('ajv').defa
 const ajv = new AjvConstructor({ allErrors: true, strict: true });
 const validateImplementorCommandResultSchema = ajv.compile(implementorCommandResultJsonSchema);
 
+export function hasImplementorPullRequest(result: ImplementorCommandResult): result is Extract<ImplementorCommandResult, { readonly outcome: 'pr-created' }> {
+  return result.outcome === 'pr-created';
+}
+
 export function parseImplementorCommandResult(raw: string): ImplementorCommandResult {
   let parsed: unknown;
+
   try {
     parsed = JSON.parse(raw);
   } catch {

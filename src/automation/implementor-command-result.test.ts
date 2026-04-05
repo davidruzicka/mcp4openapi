@@ -3,7 +3,22 @@ import { describe, expect, it } from 'vitest';
 import {
   implementorCommandResultJsonSchema,
   parseImplementorCommandResult,
+  type ImplementorCommandResult,
 } from './implementor-command-result.js';
+
+const validCreatedResult: ImplementorCommandResult = {
+  outcome: 'pr-created',
+  summary: 'Opened a PR.',
+  pullRequest: {
+    number: 123,
+    url: 'https://example.com/pull/123',
+  },
+};
+
+const validFailedResult: ImplementorCommandResult = {
+  outcome: 'failed',
+  summary: 'Tests failed.',
+};
 
 describe('implementor-command-result', () => {
   describe('Ajv runtime compatibility', () => {
