@@ -268,6 +268,29 @@ describe('UpstreamConnectionManager', () => {
       expect(stopSpy).toHaveBeenCalledWith(`session-1:${provider.name}`);
     });
 
+    it('closes transport and client when replacing a FAILED connection (P1)', async () => {
+      const provider = createProvider();
+      await manager.getOrConnect('session-1', provider, 'token');
+
+      // Capture the original connection's client/transport to verify they are closed
+      const failedConn = manager.getConnection('session-1', provider.name)!;
+      const failedClient = failedConn.client;
+      const failedTransport = failedConn.transport;
+      failedConn.state = 'FAILED';
+
+      const freshClient = createMockClient();
+      const freshTransport = createMockTransport();
+      clientFactory.mockReturnValueOnce(freshClient);
+      transportFactory.mockReturnValueOnce(freshTransport);
+
+      await manager.getOrConnect('session-1', provider, 'token');
+
+      // Stale client and transport must be closed to release sockets and prevent
+      // onerror/onclose handlers from firing against the replacement connection (P1).
+      expect((failedClient as { close: ReturnType<typeof vi.fn> }).close).toHaveBeenCalled();
+      expect((failedTransport as { close: ReturnType<typeof vi.fn> }).close).toHaveBeenCalled();
+    });
+
     it('waits for in-flight connect to settle and uses new token when tokens mismatch (P2)', async () => {
       const provider = createProvider();
 

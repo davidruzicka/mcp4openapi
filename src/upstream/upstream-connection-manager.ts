@@ -198,11 +198,15 @@ export class UpstreamConnectionManager {
       return this.getOrConnect(sessionId, provider, token);
     }
 
-    // Remove FAILED connection before creating fresh one (stop stale heartbeat first)
+    // Remove FAILED connection before creating fresh one (stop stale heartbeat first,
+    // then close transport/client so stale onerror/onclose handlers cannot fire against
+    // the replacement connection and accumulated leaked sockets are released).
     if (existing && existing.state === 'FAILED') {
       this.heartbeatManager.stop(dedupKey);
       const sessionMap = this.connections.get(sessionId);
       sessionMap?.delete(provider.name);
+      existing.client.close().catch(() => {});
+      existing.transport.close().catch(() => {});
     }
 
     const connectPromise = this.createConnection(sessionId, provider, token);

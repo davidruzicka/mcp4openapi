@@ -31,7 +31,10 @@ const DESCRIPTION_FORBIDDEN_CHARS = /[<>`]/;
  * Depth limit guards against deeply nested schemas.
  */
 function schemaContainsForbiddenChars(value: unknown, depth = 0): boolean {
-  if (depth > 10) return false;
+  // Treat schemas exceeding the recursion limit as potentially malicious: a legitimate
+  // schema has no reason to be this deeply nested, and returning false here would allow
+  // a well-crafted upstream schema to hide forbidden characters beyond depth 10.
+  if (depth > 10) return true;
   if (typeof value === 'string') return DESCRIPTION_FORBIDDEN_CHARS.test(value);
   if (Array.isArray(value)) return value.some(v => schemaContainsForbiddenChars(v, depth + 1));
   if (typeof value === 'object' && value !== null) {
