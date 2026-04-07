@@ -1448,6 +1448,43 @@ describeIfListen('HttpTransport', () => {
       expect(response.text).toContain('id:');
       expect(response.text).toContain('data:');
     });
+
+    it('returns SSE response with Date.now() event ID when session is destroyed mid-flight (P2)', async () => {
+      // Simulate: session exists when POST is validated, but is destroyed before the SSE
+      // response is built (concurrent DELETE /mcp or reaper). The response must still be
+      // returned without throwing - startSSEResponse falls back to Date.now() for the event ID.
+      let capturedSessionId: string | undefined;
+      transport.setMessageHandler(async (_msg) => {
+        // Destroy the session from under the in-flight POST before the response path runs
+        if (capturedSessionId) {
+          const profileState = (transport as any).profileStates.get('default');
+          if (profileState) {
+            profileState.sessions.delete(capturedSessionId);
+          }
+        }
+        return { result: 'ok' };
+      });
+
+      // Initialize to get a session
+      const initResponse = await request(app)
+        .post('/mcp')
+        .set('Accept', 'application/json, text/event-stream')
+        .send({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} });
+      capturedSessionId = initResponse.headers['mcp-session-id'];
+
+      // POST with SSE-only Accept - session will be deleted inside the message handler
+      const response = await request(app)
+        .post('/mcp')
+        .set('Accept', 'text/event-stream')
+        .set('Mcp-Session-Id', capturedSessionId)
+        .send({ jsonrpc: '2.0', id: 2, method: 'tools/list' });
+
+      expect(response.status).toBe(200);
+      expect(response.headers['content-type']).toContain('text/event-stream');
+      // Event ID falls back to Date.now() (numeric) when session is absent
+      expect(response.text).toMatch(/^id: \d+/m);
+      expect(response.text).toContain('data:');
+    });
   });
 
   describe('POST - Request with Session', () => {
