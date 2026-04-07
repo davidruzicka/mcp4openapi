@@ -81,7 +81,7 @@ describeIfListen('upstream credential validation at session init', () => {
       .send(INIT_REQUEST);
 
     expect(mockValidateCredentials).toHaveBeenCalledWith(
-      'pre-session',
+      undefined,
       provider,
       'test-token-abc',
     );
@@ -220,7 +220,7 @@ describeIfListen('upstream credential validation at session init', () => {
       .send(INIT_REQUEST);
 
     expect(mockValidateCredentials).toHaveBeenCalledWith(
-      'pre-session',
+      undefined,
       provider,
       'env-secret-token',
     );
@@ -246,9 +246,9 @@ describeIfListen('upstream credential validation at session init', () => {
       .set('Accept', 'application/json, text/event-stream')
       .send(INIT_REQUEST);
 
-    // validateCredentials called with undefined - it will no-op internally
+    // validateCredentials called with undefined sessionId (pre-session) and undefined token - will no-op internally
     expect(mockValidateCredentials).toHaveBeenCalledWith(
-      'pre-session',
+      undefined,
       provider,
       undefined,
     );
@@ -287,7 +287,7 @@ describeIfListen('upstream credential validation at session init', () => {
         .set('Authorization', 'Bearer config-test-token')
         .send(INIT_REQUEST);
 
-      expect(mockValidateCredentials).toHaveBeenCalledWith('pre-session', provider, 'config-test-token');
+      expect(mockValidateCredentials).toHaveBeenCalledWith(undefined, provider, 'config-test-token');
     } finally {
       await transportWithUpstream.stop();
     }
