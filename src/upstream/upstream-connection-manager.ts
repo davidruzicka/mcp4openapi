@@ -292,7 +292,7 @@ export class UpstreamConnectionManager {
    * No-op when validation_endpoint is not configured or token is absent.
    */
   async validateCredentials(
-    sessionId: string,
+    sessionId: string | undefined,
     provider: UpstreamMcpServerConfig,
     token: string | undefined,
   ): Promise<void> {
@@ -343,7 +343,7 @@ export class UpstreamConnectionManager {
 
     this.logger.debug('Upstream credential validation passed', {
       provider: provider.name,
-      sessionId,
+      ...(sessionId ? { sessionId } : { phase: 'pre-session-init' }),
       status: response.status,
     });
   }

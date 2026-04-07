@@ -551,6 +551,25 @@ describe('UpstreamConnectionManager', () => {
       await expect(mgr.validateCredentials(SESSION_ID, provider, 'valid-token')).resolves.toBeUndefined();
     });
 
+    it('accepts undefined sessionId and logs phase:pre-session-init instead of sessionId', async () => {
+      const provider = createValidationProvider();
+      mockFetch.mockResolvedValue({ status: 200 });
+      const mockLogger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+      const mgr = new UpstreamConnectionManager({
+        clientFactory, transportFactory,
+        ssrfValidator: mockSsrfValidator as never,
+        logger: mockLogger as never,
+      });
+      await expect(mgr.validateCredentials(undefined, provider, 'valid-token')).resolves.toBeUndefined();
+      expect(mockLogger.debug).toHaveBeenCalledWith(
+        'Upstream credential validation passed',
+        expect.objectContaining({ phase: 'pre-session-init' }),
+      );
+      // sessionId must not appear in the log entry
+      const logArgs = mockLogger.debug.mock.calls[0][1];
+      expect(logArgs).not.toHaveProperty('sessionId');
+    });
+
     it('throws UpstreamAuthError when fetch returns 401', async () => {
       const provider = createValidationProvider();
       mockFetch.mockResolvedValue({ status: 401 });
