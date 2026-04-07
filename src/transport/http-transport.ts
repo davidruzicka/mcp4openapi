@@ -2917,7 +2917,10 @@ export class HttpTransport {
           // Return SSE response only when client explicitly wants text/event-stream only
           this.logger.debug('Sending SSE response', { response, newSessionId });
           const effectiveSessionId = isInitialization ? newSessionId! : sessionId!;
-          const sseSession = profileState.sessions.get(effectiveSessionId)!;
+          // Session may have been destroyed concurrently (DELETE /mcp or reaper) while
+          // this POST was in flight. startSSEResponse accepts undefined and falls back to
+          // Date.now() for the event ID, so a missing session is handled gracefully.
+          const sseSession = profileState.sessions.get(effectiveSessionId);
           this.startSSEResponse(res, response, newSessionId, sseSession);
         } else {
           // Return JSON response (default for requests)
