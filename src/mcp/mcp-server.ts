@@ -2710,7 +2710,10 @@ export class MCPServer {
     const sessionFilter = applySessionToolFilter(this.profile.tools, request, resolver);
     const allowedCount = sessionFilter.allowedToolNames.size;
 
-    if (allowedCount === originalCount) {
+    // Skip no-effect check when profile has no local tools (e.g. upstream_mcp profiles where
+    // tools[] is empty by design). 0-vs-0 is not a misconfigured filter, it is the expected
+    // state for a pure proxy profile.
+    if (originalCount > 0 && allowedCount === originalCount) {
       throw new ValidationError(
         `X-Mcp4-Tools filter has no effect for this session. Available tools: ${originalCount}, after filter: ${allowedCount}. Check patterns.`
       );

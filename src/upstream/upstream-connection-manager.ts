@@ -419,13 +419,22 @@ export class UpstreamConnectionManager {
 
     const client = this.clientFactory();
 
-    // Wire transport event handlers
+    // Wire transport event handlers.
+    // Identity check (conn.transport === transport) prevents a stale transport's delayed
+    // onerror/onclose from marking a replacement connection as FAILED after token rotation
+    // or recovery (P2 guard).
     transport.onerror = (error: Error) => {
-      this.handleTransportError(sessionId, provider.name, error);
+      const conn = this.getConnection(sessionId, provider.name);
+      if (conn && (conn.transport as unknown) === (transport as unknown)) {
+        this.handleTransportError(sessionId, provider.name, error);
+      }
     };
 
     transport.onclose = () => {
-      this.handleTransportClose(sessionId, provider.name);
+      const conn = this.getConnection(sessionId, provider.name);
+      if (conn && (conn.transport as unknown) === (transport as unknown)) {
+        this.handleTransportClose(sessionId, provider.name);
+      }
     };
 
     try {
