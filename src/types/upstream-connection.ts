@@ -25,7 +25,6 @@ export interface UpstreamConnection {
   connectedAt?: number;
   lastActivityAt: number;
   lastError?: Error;
-  heartbeatTimer?: NodeJS.Timeout;
   /** Token used to establish this connection - compared on reconnect to detect credential rotation */
   token?: string;
 }
