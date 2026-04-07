@@ -59,8 +59,11 @@ export class UpstreamConnectionManager {
   /** Outer key: sessionId, inner key: providerName */
   private readonly connections = new Map<string, Map<string, UpstreamConnection>>();
 
-  /** Key: `${sessionId}:${providerName}` - prevents concurrent duplicate connections */
-  private readonly pendingConnections = new Map<string, Promise<Client>>();
+  /**
+   * Key: `${sessionId}:${providerName}` - prevents concurrent duplicate connections.
+   * Stores the token alongside the promise to detect token-mismatch in concurrent callers (P2 guard).
+   */
+  private readonly pendingConnections = new Map<string, { promise: Promise<Client>; token: string | undefined }>();
 
   /**
    * Sessions that have been destroyed (closeAll called).
@@ -171,7 +174,8 @@ export class UpstreamConnectionManager {
     const existing = this.getConnection(sessionId, provider.name);
     if (existing && existing.state === 'CONNECTED') {
       if (existing.token !== token) {
-        // Token rotated - close old connection and create a new one with the new credential
+        // Token rotated - stop heartbeat and close old connection before creating a fresh one
+        this.heartbeatManager.stop(dedupKey);
         const sessionMap = this.connections.get(sessionId);
         sessionMap?.delete(provider.name);
         existing.client.close().catch(() => {});
@@ -182,26 +186,36 @@ export class UpstreamConnectionManager {
       }
     }
 
-    // Return in-flight promise for concurrent dedup
+    // Return in-flight promise for concurrent dedup - but only when the token matches.
+    // If the caller has a different token, wait for the in-flight to settle and start fresh
+    // so the session is not established under stale credentials (P2 guard).
     const pending = this.pendingConnections.get(dedupKey);
     if (pending) {
-      return pending;
+      if (pending.token === token) {
+        return pending.promise;
+      }
+      await pending.promise.catch(() => {});
+      return this.getOrConnect(sessionId, provider, token);
     }
 
-    // Remove FAILED connection before creating fresh one
+    // Remove FAILED connection before creating fresh one (stop stale heartbeat first)
     if (existing && existing.state === 'FAILED') {
+      this.heartbeatManager.stop(dedupKey);
       const sessionMap = this.connections.get(sessionId);
       sessionMap?.delete(provider.name);
     }
 
     const connectPromise = this.createConnection(sessionId, provider, token);
-    this.pendingConnections.set(dedupKey, connectPromise as Promise<Client>);
+    this.pendingConnections.set(dedupKey, { promise: connectPromise as Promise<Client>, token });
 
     try {
       const client = await connectPromise;
       return client;
     } finally {
-      this.pendingConnections.delete(dedupKey);
+      // Only delete if this is still the current pending entry (not replaced by a concurrent call)
+      if (this.pendingConnections.get(dedupKey)?.promise === (connectPromise as Promise<Client>)) {
+        this.pendingConnections.delete(dedupKey);
+      }
     }
   }
 
@@ -262,7 +276,7 @@ export class UpstreamConnectionManager {
     // Wait for in-flight connections to settle - they will see destroyedSessions and abort
     const pendingKeys = [...this.pendingConnections.keys()].filter(k => k.startsWith(`${sessionId}:`));
     if (pendingKeys.length > 0) {
-      await Promise.allSettled(pendingKeys.map(k => this.pendingConnections.get(k)));
+      await Promise.allSettled(pendingKeys.map(k => this.pendingConnections.get(k)?.promise));
     }
 
     const sessionMap = this.connections.get(sessionId);

@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - `createConnection` validates `transport.url` via `SSRFValidator` before any network call (SSRF guard); `inputSchema` recursively scanned for forbidden chars (`<>`` ); `null` tools field from `listTools` now throws `UpstreamMalformedResponseError`; notification handler errors logged instead of unhandled rejections; `destroyedSessions` pruned after 60s TTL; `NOTIFICATION_DISPATCH` schema type broadened to `$ZodType` for extensibility.
+- `getOrConnect` now stops the heartbeat timer before replacing a connection on token rotation or FAILED recovery, preventing stale timer from marking the new connection FAILED; token mismatch during in-flight connect now waits for the pending to settle and opens a fresh connection instead of reusing stale credentials.
 - REL-01: `UpstreamHeartbeatManager` is now wired into `UpstreamConnectionManager`
 - `UpstreamConnectionState` narrowed to `'CONNECTED' | 'FAILED'`; unused `IDLE`/`CONNECTING`/`RECONNECTING` states removed to eliminate misleading contract.
 - `UPSTREAM_ERROR_MAPPINGS` moved to module scope in `mcp-server.ts`; was re-allocated on every `tools/call` invocation.
