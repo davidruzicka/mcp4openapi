@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- `getOrConnect` now closes the stale client and transport when replacing a FAILED connection, preventing late `onerror`/`onclose` events from firing against the replacement and releasing accumulated leaked sockets (P1).
+- `schemaContainsForbiddenChars` now returns `true` when recursion depth exceeds 10, treating over-limit schemas as potentially malicious instead of silently passing them - closes the bypass where forbidden chars beyond depth 10 were invisible to the sanitizer (P2).
 - `createConnection` validates `transport.url` via `SSRFValidator` before any network call (SSRF guard); `inputSchema` recursively scanned for forbidden chars (`<>`` ); `null` tools field from `listTools` now throws `UpstreamMalformedResponseError`; notification handler errors logged instead of unhandled rejections; `destroyedSessions` pruned after 60s TTL; `NOTIFICATION_DISPATCH` schema type broadened to `$ZodType` for extensibility.
 - `getOrConnect` now stops the heartbeat timer before replacing a connection on token rotation or FAILED recovery, preventing stale timer from marking the new connection FAILED; token mismatch during in-flight connect now waits for the pending to settle and opens a fresh connection instead of reusing stale credentials.
 - REL-01: `UpstreamHeartbeatManager` is now wired into `UpstreamConnectionManager`

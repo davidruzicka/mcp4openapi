@@ -255,14 +255,32 @@ describe('sanitizeToolList', () => {
     expect(result.dropped).toHaveLength(0);
   });
 
-  it('does not crash on deeply nested inputSchema (depth > 10)', () => {
-    // Build a 15-level deep schema
+  it('drops tool with inputSchema exceeding recursion depth (depth > 10)', () => {
+    // Build a 15-level deep schema - the sanitizer cannot verify content beyond depth 10
+    // so it conservatively treats over-limit schemas as suspicious (P2 security guard).
     let nested: Record<string, unknown> = { type: 'string', description: 'deep' };
     for (let i = 0; i < 15; i++) {
       nested = { type: 'object', properties: { child: nested } };
     }
     const tool: Tool = { name: 'deep_tool', inputSchema: nested };
-    expect(() => sanitizeToolList([tool], logger)).not.toThrow();
+    const result = sanitizeToolList([tool], logger);
+    expect(result.tools).toHaveLength(0);
+    expect(result.dropped).toHaveLength(1);
+    expect(result.dropped[0].reason).toBe('forbidden characters in input schema');
+  });
+
+  it('passes tool with inputSchema within the recursion depth limit', () => {
+    // Each schema wrapper level adds 2 recursion depth (one for the wrapper object, one
+    // for its `properties` value). With k=4 wrapper levels, innermost string values land
+    // at recursion depth 9 which is within the depth ≤ 10 limit - tool should pass.
+    let nested: Record<string, unknown> = { type: 'string' };
+    for (let i = 0; i < 4; i++) {
+      nested = { type: 'object', properties: { child: nested } };
+    }
+    const tool: Tool = { name: 'boundary_tool', inputSchema: nested };
+    const result = sanitizeToolList([tool], logger);
+    expect(result.tools).toHaveLength(1);
+    expect(result.dropped).toHaveLength(0);
   });
 });
 
