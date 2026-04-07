@@ -232,6 +232,74 @@ describe('UpstreamConnectionManager', () => {
       expect(mockClient.connect).toHaveBeenCalledTimes(1);
     });
 
+    it('stops heartbeat before replacing a CONNECTED connection on token rotation (P1)', async () => {
+      const provider = createProvider();
+      await manager.getOrConnect('session-1', provider, 'token-A');
+
+      const heartbeatManager = (manager as unknown as { heartbeatManager: { isRunning: (k: string) => boolean; stop: (k: string) => void } }).heartbeatManager;
+      const stopSpy = vi.spyOn(heartbeatManager, 'stop');
+
+      const newClient = createMockClient();
+      clientFactory.mockReturnValueOnce(newClient);
+      transportFactory.mockReturnValueOnce(createMockTransport());
+
+      await manager.getOrConnect('session-1', provider, 'token-B');
+
+      expect(stopSpy).toHaveBeenCalledWith(`session-1:${provider.name}`);
+    });
+
+    it('stops heartbeat before replacing a FAILED connection (P1)', async () => {
+      const provider = createProvider();
+      await manager.getOrConnect('session-1', provider, 'token');
+
+      // Force connection to FAILED state
+      const conn = manager.getConnection('session-1', provider.name);
+      conn!.state = 'FAILED';
+
+      const heartbeatManager = (manager as unknown as { heartbeatManager: { isRunning: (k: string) => boolean; stop: (k: string) => void } }).heartbeatManager;
+      const stopSpy = vi.spyOn(heartbeatManager, 'stop');
+
+      const freshClient = createMockClient();
+      clientFactory.mockReturnValueOnce(freshClient);
+      transportFactory.mockReturnValueOnce(createMockTransport());
+
+      await manager.getOrConnect('session-1', provider, 'token');
+
+      expect(stopSpy).toHaveBeenCalledWith(`session-1:${provider.name}`);
+    });
+
+    it('waits for in-flight connect to settle and uses new token when tokens mismatch (P2)', async () => {
+      const provider = createProvider();
+
+      // Set up all factory calls upfront in call order:
+      // Call 1: token-A's createConnection → mockClient / mockTransport
+      // Call 2: token-B's recursive createConnection → clientB / transportB
+      const clientB = createMockClient();
+      const transportB = createMockTransport();
+      clientFactory.mockReturnValueOnce(mockClient).mockReturnValueOnce(clientB);
+      transportFactory.mockReturnValueOnce(mockTransport).mockReturnValueOnce(transportB);
+
+      // Make token-A's connect slow so it's still in-flight when token-B arrives
+      let resolveConnectA!: () => void;
+      mockClient.connect.mockReturnValue(
+        new Promise<void>((resolve) => { resolveConnectA = resolve; }),
+      );
+
+      // Start both concurrently
+      const promiseA = manager.getOrConnect('session-1', provider, 'token-A');
+      const promiseB = manager.getOrConnect('session-1', provider, 'token-B');
+
+      // Let token-A connect complete
+      resolveConnectA();
+      const [clientFromA, clientFromB] = await Promise.all([promiseA, promiseB]);
+
+      // token-A caller gets the token-A client
+      expect(clientFromA).toBe(mockClient);
+      // token-B caller must NOT reuse token-A connection - gets its own fresh client
+      expect(clientFromB).toBe(clientB);
+      expect(manager.getConnection('session-1', provider.name)?.token).toBe('token-B');
+    });
+
     it('throws UpstreamConnectionError when session destroyed mid-connect', async () => {
       const provider = createProvider();
 
