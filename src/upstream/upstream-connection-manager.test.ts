@@ -609,6 +609,45 @@ describe('UpstreamConnectionManager', () => {
       const conn = manager.getConnection('session-1', provider.name);
       expect(conn!.state).toBe('FAILED');
     });
+
+    it('stale transport onerror/onclose does not mark replacement connection as FAILED', async () => {
+      // Simulate token rotation: first connect stores transport A; connection is closed/replaced
+      // by a second getOrConnect call with a new token; delayed event from transport A must be ignored.
+      const provider = createProvider();
+
+      const transportA = createMockTransport();
+      const transportB = createMockTransport();
+      let callCount = 0;
+      transportFactory.mockImplementation(() => {
+        callCount++;
+        return callCount === 1 ? transportA : transportB;
+      });
+
+      // First connection
+      await manager.getOrConnect('session-r', provider, 'token-1');
+      expect(manager.getConnection('session-r', provider.name)!.state).toBe('CONNECTED');
+
+      // Manually mark as FAILED so getOrConnect replaces it
+      manager.getConnection('session-r', provider.name)!.state = 'FAILED';
+
+      // Second connection (replacement)
+      await manager.getOrConnect('session-r', provider, 'token-2');
+      const connAfterReplace = manager.getConnection('session-r', provider.name);
+      expect(connAfterReplace!.state).toBe('CONNECTED');
+
+      // Now fire stale events from the OLD transport - they must not mutate the new connection
+      expect(transportA.onclose).toBeTypeOf('function');
+      transportA.onclose!();
+      expect(manager.getConnection('session-r', provider.name)!.state).toBe('CONNECTED');
+
+      expect(transportA.onerror).toBeTypeOf('function');
+      transportA.onerror!(new Error('stale error'));
+      expect(manager.getConnection('session-r', provider.name)!.state).toBe('CONNECTED');
+
+      // Events from the NEW transport still work correctly
+      transportB.onclose!();
+      expect(manager.getConnection('session-r', provider.name)!.state).toBe('FAILED');
+    });
   });
 
   describe('validateCredentials', () => {

@@ -2344,6 +2344,29 @@ paths:
       expect(() => (localServer as any).applySessionToolFiltering('all-filtered')).toThrow(ValidationError);
     });
 
+    it('does not throw for upstream profiles with empty tools[] when X-Mcp4-Tools header is present', () => {
+      // upstream_mcp profiles have tools: [] by design - a 0-vs-0 no-op check must not block init
+      const s = new MCPServer();
+      const resolver = {
+        getOperationById: () => undefined,
+        getOperationForCall: () => undefined,
+      };
+      (s as any).buildToolFilterResolver = () => resolver;
+      (s as any).profile = {
+        profile_name: 'upstream-test',
+        description: 'upstream',
+        tools: [],
+        interceptors: {},
+      };
+      const filterRequest = parseSessionToolFilterHeader('some_tool');
+      (s as any).httpTransport = {
+        getSessionToolFilterRequest: () => filterRequest,
+        setSessionToolFilter: vi.fn(),
+      };
+      // Must not throw - upstream profiles skip the no-effect guard
+      expect(() => (s as any).applySessionToolFiltering('session-1')).not.toThrow();
+    });
+
     it('covers tool filter metrics helpers and threshold parsing', () => {
       const localServer = new MCPServer();
 
