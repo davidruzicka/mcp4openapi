@@ -1737,8 +1737,11 @@ export class MCPServer {
    */
   private getUpstreamMcpConfig(profileId?: string): UpstreamMcpServerConfig[] | undefined {
     if (this.httpTransport && profileId) {
-      // Fall back to profile-level config when the HTTP transport profile context
-      // does not carry upstreamMcp (e.g. single-profile HTTP startup via runHttp).
+      // In single-profile HTTP mode both paths should agree: runHttp() stores the profile under
+      // defaultProfileId and JSON-RPC dispatch resolves the same key. The fallback to
+      // this.profile?.upstream_mcp is a defensive safety net for any edge case where
+      // profileId normalization diverges (e.g. during startup races), keeping the common
+      // case fast and the error case auditable rather than silently broken.
       return this.httpTransport.getUpstreamMcpConfig(profileId) ?? this.profile?.upstream_mcp;
     }
     // stdio path: upstream_mcp cannot be used without a wired client
@@ -1808,6 +1811,12 @@ export class MCPServer {
       const enterpriseFiltered = this.isToolCategoryAllowedByEnterprisePolicy('modify', sessionId, profileId)
         ? nameFiltered
         : [];
+      if (enterpriseFiltered.length === 0 && nameFiltered.length > 0) {
+        this.logger.warn(
+          "All upstream tools blocked by enterprise policy - upstream tools require the 'modify' permission",
+          { provider: provider.name, sessionId, blockedCount: nameFiltered.length },
+        );
+      }
       return {
         jsonrpc: '2.0',
         id: (req as Record<string, unknown>).id,

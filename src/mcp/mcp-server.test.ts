@@ -3482,6 +3482,31 @@ paths:
         expect(response.result.tools).toHaveLength(0);
       });
 
+      it('emits a warn log when enterprise policy blocks all upstream tools', async () => {
+        const mockLogger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+        const server = new MCPServer(mockLogger as never);
+        (server as any).profile = (upstreamServer as any).profile;
+        (server as any).httpTransport = {
+          ...(upstreamServer as any).httpTransport,
+          getSessionEnterpriseAllowedToolCategories: () => new Set(['read', 'list']),
+        };
+        server.setGetUpstreamClient(mockGetUpstreamClient);
+
+        const toolA = { name: 'tool_a', description: 'Tool A', inputSchema: { type: 'object', properties: {} } };
+        mockListTools.mockResolvedValueOnce({ tools: [toolA] });
+
+        await (server as any).handleOtherRequest(
+          { jsonrpc: '2.0', id: '1', method: 'tools/list', params: {} },
+          'session-123',
+          'upstream-profile',
+        );
+
+        expect(mockLogger.warn).toHaveBeenCalledWith(
+          expect.stringContaining("upstream tools require the 'modify' permission"),
+          expect.objectContaining({ blockedCount: 1 }),
+        );
+      });
+
       it('enterprise policy passes upstream tools when modify category is permitted', async () => {
         const toolA = { name: 'tool_a', description: 'Tool A', inputSchema: { type: 'object', properties: {} } };
         mockListTools.mockResolvedValueOnce({ tools: [toolA] });

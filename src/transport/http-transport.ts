@@ -2801,7 +2801,7 @@ export class HttpTransport {
                     : undefined;
                   const effectiveUpstreamToken = authInfo.token ?? envToken;
                   await this.upstreamConnectionManager.validateCredentials(
-                    'pre-session',
+                    undefined,
                     upstreamProvider,
                     effectiveUpstreamToken,
                   );
