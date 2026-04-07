@@ -52,6 +52,7 @@ import { SchemaValidator } from '../validation/schema-validator.js';
 import type { Profile, ToolDefinition, AuthInterceptor, OAuthConfig, ProxyDownloadOperation, UpstreamMcpServerConfig } from '../types/profile.js';
 import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { sanitizeToolList, isValidUpstreamToolName, applyProviderToolPolicy, isToolAllowedByProviderPolicy } from '../upstream/upstream-tool-sanitizer.js';
+import { UpstreamConnectionManager } from '../upstream/upstream-connection-manager.js';
 import {
   UpstreamConnectionError,
   UpstreamTimeoutError,
@@ -89,6 +90,13 @@ type EnterpriseToolCategory = 'list' | 'read' | 'modify' | 'admin';
 /** Custom MCP timeout error code - not in MCP standard spec; used for upstream timeout distinction */
 const UPSTREAM_TIMEOUT_ERROR_CODE = -32001;
 
+const UPSTREAM_ERROR_MAPPINGS: ReadonlyArray<[new (...args: never[]) => Error, number, string]> = [
+  [UpstreamConnectionError, ErrorCode.InternalError, 'Upstream connection failed'],
+  [UpstreamTimeoutError, UPSTREAM_TIMEOUT_ERROR_CODE, 'Upstream request timed out'],
+  [UpstreamAuthError, ErrorCode.InternalError, 'Upstream authentication failed'],
+  [UpstreamMalformedResponseError, ErrorCode.InternalError, 'Upstream returned malformed response'],
+];
+
 /**
  * Map an upstream error to a client-facing MCP error object.
  * Provider name is placed in data only - never leaked into the client-facing message string.
@@ -97,12 +105,6 @@ function mapUpstreamErrorToMcpError(
   error: unknown,
   providerName: string,
 ): { code: number; message: string; data?: unknown } {
-  const DATA_DRIVEN_MAPPINGS: Array<[new (...args: never[]) => Error, number, string]> = [
-    [UpstreamConnectionError, ErrorCode.InternalError, 'Upstream connection failed'],
-    [UpstreamTimeoutError, UPSTREAM_TIMEOUT_ERROR_CODE, 'Upstream request timed out'],
-    [UpstreamAuthError, ErrorCode.InternalError, 'Upstream authentication failed'],
-    [UpstreamMalformedResponseError, ErrorCode.InternalError, 'Upstream returned malformed response'],
-  ];
 
   const correlationId =
     error instanceof Error && 'details' in error
@@ -110,7 +112,7 @@ function mapUpstreamErrorToMcpError(
           ?.correlationId as string | undefined
       : undefined;
 
-  for (const [ErrorClass, code, messagePrefix] of DATA_DRIVEN_MAPPINGS) {
+  for (const [ErrorClass, code, messagePrefix] of UPSTREAM_ERROR_MAPPINGS) {
     if (error instanceof ErrorClass) {
       return {
         code,
@@ -1391,8 +1393,6 @@ export class MCPServer {
     this.recordGlobalToolFilterMetrics();
 
     // Wire upstream connection manager so upstream_mcp profiles can proxy tool calls.
-    // Dynamic import avoids a circular-dep risk between mcp-server and upstream module.
-    const { UpstreamConnectionManager } = await import('../upstream/upstream-connection-manager.js');
     const upstreamManager = new UpstreamConnectionManager({ logger: this.logger });
     this.httpTransport.setUpstreamConnectionManager(upstreamManager);
     this.setGetUpstreamClient((s, p, t) => upstreamManager.getOrConnect(s, p, t));
@@ -1420,7 +1420,7 @@ export class MCPServer {
 
   /**
    * Inject the upstream MCP client factory callback.
-   * Called by HttpTransport after setUpstreamConnectionManager wires the manager.
+   * Called by runHttp() after wiring the UpstreamConnectionManager.
    */
   public setGetUpstreamClient(
     fn: (sessionId: string, provider: UpstreamMcpServerConfig, token: string | undefined) => Promise<Client>,

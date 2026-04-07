@@ -9,12 +9,7 @@ import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import type { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 
 /** Upstream connection lifecycle states */
-export type UpstreamConnectionState =
-  | 'IDLE'
-  | 'CONNECTING'
-  | 'CONNECTED'
-  | 'RECONNECTING'
-  | 'FAILED';
+export type UpstreamConnectionState = 'CONNECTED' | 'FAILED';
 
 /** A live connection to an upstream MCP server */
 export interface UpstreamConnection {

@@ -295,22 +295,33 @@ describe('UpstreamConnectionManager', () => {
       expect(manager.getActiveSessionCount()).toBe(0);
     });
 
-    it('allows fresh connection after closeAll', async () => {
+    it('allows fresh connection for a new session after another session is closed', async () => {
       const provider = createProvider();
       const credentials = 'test-token';
 
       await manager.getOrConnect('session-1', provider, credentials);
       await manager.closeAll('session-1');
 
+      // HTTP transport always assigns a new session ID - session-1 is never reused after closeAll.
       const freshClient = createMockClient();
       const freshTransport = createMockTransport();
       clientFactory.mockReturnValueOnce(freshClient);
       transportFactory.mockReturnValueOnce(freshTransport);
 
-      const result = await manager.getOrConnect('session-1', provider, credentials);
+      const result = await manager.getOrConnect('session-2', provider, credentials);
 
       expect(result).toBe(freshClient);
       expect(freshClient.connect).toHaveBeenCalledTimes(1);
+    });
+
+    it('rejects getOrConnect for a session that was already destroyed', async () => {
+      const provider = createProvider();
+
+      await manager.getOrConnect('session-1', provider, 'token');
+      await manager.closeAll('session-1');
+
+      await expect(manager.getOrConnect('session-1', provider, 'token'))
+        .rejects.toThrow('Session destroyed during upstream connection');
     });
 
     it('calls client.close() as well as transport.close() for each connection', async () => {

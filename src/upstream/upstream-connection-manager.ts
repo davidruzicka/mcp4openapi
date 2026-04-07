@@ -30,6 +30,16 @@ import type { HeartbeatConfig } from './upstream-heartbeat.js';
 /** Auth-related HTTP status codes */
 const AUTH_STATUS_CODES = new Set([401, 403]);
 
+/** Type guard for MCP SDK errors that carry an HTTP status code */
+function hasMcpStatusCode(e: unknown): e is { statusCode: number } {
+  return (
+    typeof e === 'object' &&
+    e !== null &&
+    'statusCode' in e &&
+    typeof (e as Record<string, unknown>).statusCode === 'number'
+  );
+}
+
 /** Patterns in error messages that indicate authentication failure */
 const AUTH_ERROR_PATTERNS = /unauthorized|forbidden|authentication failed|invalid.*token/i;
 
@@ -270,7 +280,10 @@ export class UpstreamConnectionManager {
     }
 
     this.notificationQueues.delete(sessionId);
-    this.destroyedSessions.delete(sessionId);
+    // Intentionally retain the destroyedSessions marker: a session, once destroyed, is never
+    // reused (HTTP transport removes it from profileStates). Retaining the marker prevents a
+    // race window where a reconnect attempt fires between closeAll() and the transport's own
+    // session removal, and would otherwise create a new orphaned upstream connection.
   }
 
   /**
@@ -425,7 +438,7 @@ export class UpstreamConnectionManager {
 
   private mapConnectError(error: unknown, provider: UpstreamMcpServerConfig): Error {
     const err = error instanceof Error ? error : new Error(String(error));
-    const statusCode = (error as Record<string, unknown>).statusCode as number | undefined;
+    const statusCode = hasMcpStatusCode(error) ? error.statusCode : undefined;
 
     // Auth errors: 401/403 or message pattern match
     if (statusCode && AUTH_STATUS_CODES.has(statusCode)) {
