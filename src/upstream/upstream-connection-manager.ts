@@ -427,14 +427,18 @@ export class UpstreamConnectionManager {
     try {
       await client.connect(transport as StreamableHTTPClientTransport);
     } catch (error) {
-      // Map error to typed upstream error
+      // Prevent resource leaks: close transport and client before rethrowing.
+      // Without this, orphaned transports keep retry timers/sockets alive across
+      // repeated connect failures.
+      transport.close().catch(() => {});
+      client.close().catch(() => {});
       throw this.mapConnectError(error, provider);
     }
 
     // Guard: session may have been destroyed while we were connecting
     if (this.destroyedSessions.has(sessionId)) {
-      client.close().catch(() => {});
       (transport as StreamableHTTPClientTransport).close().catch(() => {});
+      client.close().catch(() => {});
       throw new UpstreamConnectionError('Session destroyed during upstream connection', provider.name);
     }
 

@@ -534,6 +534,29 @@ describe('UpstreamConnectionManager', () => {
       const result = await manager.getOrConnect('session-1', provider, credentials);
       expect(result).toBe(freshClient);
     });
+
+    it('closes transport and client when connect throws to prevent resource leaks', async () => {
+      const provider = createProvider();
+
+      mockClient.connect.mockRejectedValue(new Error('connection refused'));
+
+      await expect(manager.getOrConnect('session-1', provider, 'token')).rejects.toThrow(UpstreamConnectionError);
+
+      expect(mockTransport.close).toHaveBeenCalled();
+      expect(mockClient.close).toHaveBeenCalled();
+    });
+
+    it('closes transport and client on auth failure to prevent orphaned sockets', async () => {
+      const provider = createProvider();
+      const authError = new Error('Unauthorized');
+      (authError as Record<string, unknown>).statusCode = 401;
+      mockClient.connect.mockRejectedValue(authError);
+
+      await expect(manager.getOrConnect('session-1', provider, 'bad-token')).rejects.toThrow(UpstreamAuthError);
+
+      expect(mockTransport.close).toHaveBeenCalled();
+      expect(mockClient.close).toHaveBeenCalled();
+    });
   });
 
   describe('transport event handlers', () => {

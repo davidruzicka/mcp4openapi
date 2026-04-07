@@ -157,6 +157,15 @@ export class MCPServer {
     | null = null;
 
   /**
+   * Cache of sanitized+policy-filtered tool names per session and provider.
+   * Populated by handleUpstreamToolsList; consulted by handleToolCall to prevent
+   * tools dropped by sanitization (bad description/inputSchema) from being invoked
+   * directly via tools/call with a valid name (sanitization bypass, D-05).
+   * Outer key: sessionId, inner key: providerName.
+   */
+  private readonly sanitizedAndPolicyFilteredToolNames = new Map<string, Map<string, Set<string>>>();
+
+  /**
    * Execute a tools/call request via the JSON-RPC handler.
    * Intended for internal use and tests to avoid accessing private methods.
    */
@@ -836,6 +845,7 @@ export class MCPServer {
     if (removed) {
       this.logger.info('Cleaned up session HTTP client', { profileId, sessionId });
     }
+    this.sanitizedAndPolicyFilteredToolNames.delete(sessionId);
   }
 
   /**
@@ -1598,6 +1608,25 @@ export class MCPServer {
           },
         };
       }
+      // Enforce membership in the sanitized upstream tool set when cache is available.
+      // Prevents invoking a tool dropped by sanitizeToolList (bad description/inputSchema)
+      // via a direct tools/call with its valid name, bypassing the sanitization boundary.
+      // Intentional gap: when tools/list was never called for this session the cache is absent
+      // and the gate is skipped. The tool name still passes isValidUpstreamToolName() above,
+      // but the bad description/inputSchema is not echoed back in tools/call responses, so the
+      // injection risk is constrained to the metadata display path (tools/list). Clients that
+      // skip tools/list bear responsibility for not seeing the sanitized view.
+      const sanitizedSet = sessionId
+        ? this.sanitizedAndPolicyFilteredToolNames.get(sessionId)?.get(upstreamMcpForCall[0].name)
+        : undefined;
+      if (sanitizedSet !== undefined && !sanitizedSet.has(toolName)) {
+        return {
+          jsonrpc: '2.0', id: req.id, error: {
+            code: -32002,
+            message: `Tool '${toolName.slice(0, 100)}' is not in the upstream sanitized tool set - it may have been removed by sanitization policy.`,
+          },
+        };
+      }
       return this.handleUpstreamToolCall(req, sessionId, profileId, upstreamMcpForCall[0]);
     }
 
@@ -1805,6 +1834,16 @@ export class MCPServer {
       const rawTools = result.tools;
       const sanitized = sanitizeToolList(rawTools, this.logger);
       const policyFiltered = applyProviderToolPolicy(sanitized.tools, provider.tools);
+      // Cache sanitized+policy-filtered tool names for tools/call gate enforcement.
+      // Tools dropped here (bad description/inputSchema) must not be callable via tools/call.
+      if (sessionId) {
+        let sessionCache = this.sanitizedAndPolicyFilteredToolNames.get(sessionId);
+        if (!sessionCache) {
+          sessionCache = new Map();
+          this.sanitizedAndPolicyFilteredToolNames.set(sessionId, sessionCache);
+        }
+        sessionCache.set(provider.name, new Set(policyFiltered.map(t => t.name)));
+      }
       // Apply session-level X-Mcp4-Tools name filter (same gate as local tools/list)
       const sessionFilter = this.getToolFilterForSession(sessionId, profileId);
       const nameFiltered = sessionFilter

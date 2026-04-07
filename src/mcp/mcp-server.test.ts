@@ -3912,6 +3912,177 @@ paths:
     });
 
     // -------------------------------------------------------------------------
+    describe('sanitized tool set enforcement (fix: sanitization bypass via tools/call)', () => {
+      it('blocks tool call for tool dropped by sanitization (bad description) after tools/list was called', async () => {
+        // tools/list returns a tool with a forbidden description - sanitizeToolList drops it
+        const toolWithBadDesc = {
+          name: 'dangerous_tool',
+          description: 'This has <script>injection</script>',
+          inputSchema: { type: 'object', properties: {} },
+        };
+        mockListTools.mockResolvedValueOnce({ tools: [toolWithBadDesc] });
+
+        // Call tools/list to populate the sanitized cache (dangerous_tool is dropped)
+        await (upstreamServer as any).handleOtherRequest(
+          { jsonrpc: '2.0', id: '1', method: 'tools/list', params: {} },
+          'session-sanitize',
+          'upstream-profile',
+        );
+
+        // Attempt to call the dropped tool directly via tools/call
+        const response = await (upstreamServer as any).handleToolCall(
+          { jsonrpc: '2.0', id: '2', method: 'tools/call', params: { name: 'dangerous_tool', arguments: {} } },
+          'session-sanitize',
+          'upstream-profile',
+        ) as any;
+
+        expect(response.error).toBeDefined();
+        expect(response.error.code).toBe(-32002);
+        expect(response.error.message).toMatch(/sanitized tool set/);
+        expect(mockCallTool).not.toHaveBeenCalled();
+      });
+
+      it('blocks tool call for tool dropped by sanitization (bad inputSchema) after tools/list was called', async () => {
+        const toolWithBadSchema = {
+          name: 'schema_tool',
+          description: 'Fine description',
+          inputSchema: { type: 'object', properties: { field: { description: 'contains <injection>' } } },
+        };
+        mockListTools.mockResolvedValueOnce({ tools: [toolWithBadSchema] });
+
+        await (upstreamServer as any).handleOtherRequest(
+          { jsonrpc: '2.0', id: '1', method: 'tools/list', params: {} },
+          'session-schema',
+          'upstream-profile',
+        );
+
+        const response = await (upstreamServer as any).handleToolCall(
+          { jsonrpc: '2.0', id: '2', method: 'tools/call', params: { name: 'schema_tool', arguments: {} } },
+          'session-schema',
+          'upstream-profile',
+        ) as any;
+
+        expect(response.error).toBeDefined();
+        expect(response.error.code).toBe(-32002);
+        expect(mockCallTool).not.toHaveBeenCalled();
+      });
+
+      it('allows tool call for tool that passed sanitization after tools/list was called', async () => {
+        // tools/list returns safe_tool which passes sanitization
+        await (upstreamServer as any).handleOtherRequest(
+          { jsonrpc: '2.0', id: '1', method: 'tools/list', params: {} },
+          'session-allow',
+          'upstream-profile',
+        );
+
+        const response = await (upstreamServer as any).handleToolCall(
+          { jsonrpc: '2.0', id: '2', method: 'tools/call', params: { name: 'safe_tool', arguments: {} } },
+          'session-allow',
+          'upstream-profile',
+        ) as any;
+
+        expect(response.result).toBeDefined();
+        expect(mockCallTool).toHaveBeenCalledWith({ name: 'safe_tool', arguments: {} });
+      });
+
+      it('skips sanitized set check when tools/list was never called for the session', async () => {
+        // No tools/list call - cache is empty - should fall through to upstream call
+        const response = await (upstreamServer as any).handleToolCall(
+          { jsonrpc: '2.0', id: '1', method: 'tools/call', params: { name: 'safe_tool', arguments: {} } },
+          'session-no-list',
+          'upstream-profile',
+        ) as any;
+
+        // No error from sanitized set check - normal upstream call proceeds
+        expect(response.result).toBeDefined();
+        expect(mockCallTool).toHaveBeenCalledWith({ name: 'safe_tool', arguments: {} });
+      });
+
+      it('cleans up sanitized cache on session destruction so gate no longer blocks', async () => {
+        const toolWithBadDesc = {
+          name: 'dangerous_tool',
+          description: 'This has <script>injection</script>',
+          inputSchema: { type: 'object', properties: {} },
+        };
+        mockListTools.mockResolvedValueOnce({ tools: [toolWithBadDesc] });
+
+        // Populate cache (dangerous_tool dropped by sanitization)
+        await (upstreamServer as any).handleOtherRequest(
+          { jsonrpc: '2.0', id: '1', method: 'tools/list', params: {} },
+          'session-cleanup',
+          'upstream-profile',
+        );
+
+        // Gate is active - dangerous_tool is blocked
+        const blocked = await (upstreamServer as any).handleToolCall(
+          { jsonrpc: '2.0', id: '2', method: 'tools/call', params: { name: 'dangerous_tool', arguments: {} } },
+          'session-cleanup',
+          'upstream-profile',
+        ) as any;
+        expect(blocked.error?.code).toBe(-32002);
+        expect(mockCallTool).not.toHaveBeenCalled();
+
+        // Simulate session destruction
+        (upstreamServer as any).httpClientFactory = { cleanupSessionClient: vi.fn().mockReturnValue(true) };
+        (upstreamServer as any).cleanupSessionClient('upstream-profile', 'session-cleanup');
+
+        // After cleanup, cache is cleared - gate is skipped, call proceeds
+        const allowed = await (upstreamServer as any).handleToolCall(
+          { jsonrpc: '2.0', id: '3', method: 'tools/call', params: { name: 'dangerous_tool', arguments: {} } },
+          'session-cleanup',
+          'upstream-profile',
+        ) as any;
+        expect(allowed.result).toBeDefined();
+        expect(mockCallTool).toHaveBeenCalledWith({ name: 'dangerous_tool', arguments: {} });
+      });
+
+      it('overwrites cached tool set when tools/list is called again for the same session+provider', async () => {
+        const toolA = { name: 'tool_a', description: 'First tool', inputSchema: { type: 'object', properties: {} } };
+        const toolB = { name: 'tool_b', description: 'Second tool', inputSchema: { type: 'object', properties: {} } };
+
+        // First tools/list - only tool_a
+        mockListTools.mockResolvedValueOnce({ tools: [toolA] });
+        await (upstreamServer as any).handleOtherRequest(
+          { jsonrpc: '2.0', id: '1', method: 'tools/list', params: {} },
+          'session-overwrite',
+          'upstream-profile',
+        );
+
+        // tool_b is blocked (not in cached set)
+        const blockToolB = await (upstreamServer as any).handleToolCall(
+          { jsonrpc: '2.0', id: '2', method: 'tools/call', params: { name: 'tool_b', arguments: {} } },
+          'session-overwrite',
+          'upstream-profile',
+        ) as any;
+        expect(blockToolB.error?.code).toBe(-32002);
+
+        // Second tools/list - only tool_b (tool_a is gone)
+        mockListTools.mockResolvedValueOnce({ tools: [toolB] });
+        await (upstreamServer as any).handleOtherRequest(
+          { jsonrpc: '2.0', id: '3', method: 'tools/list', params: {} },
+          'session-overwrite',
+          'upstream-profile',
+        );
+
+        // tool_b is now allowed
+        const allowToolB = await (upstreamServer as any).handleToolCall(
+          { jsonrpc: '2.0', id: '4', method: 'tools/call', params: { name: 'tool_b', arguments: {} } },
+          'session-overwrite',
+          'upstream-profile',
+        ) as any;
+        expect(allowToolB.result).toBeDefined();
+
+        // tool_a is blocked - cache was overwritten, not accumulated
+        const blockToolA = await (upstreamServer as any).handleToolCall(
+          { jsonrpc: '2.0', id: '5', method: 'tools/call', params: { name: 'tool_a', arguments: {} } },
+          'session-overwrite',
+          'upstream-profile',
+        ) as any;
+        expect(blockToolA.error?.code).toBe(-32002);
+      });
+    });
+
+    // -------------------------------------------------------------------------
     describe('upstream provider tool policy (allow/deny lists)', () => {
       it('blocks tool call denied by provider deny list', async () => {
         (upstreamServer as any).profile.upstream_mcp = [{
