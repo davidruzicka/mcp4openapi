@@ -13,6 +13,7 @@
 
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { ToolListChangedNotificationSchema } from '@modelcontextprotocol/sdk/types.js';
+import type { $ZodType } from 'zod/v4/core';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import type { UpstreamMcpServerConfig } from '../types/profile.js';
 import type { UpstreamConnection } from '../types/upstream-connection.js';
@@ -65,8 +66,11 @@ export class UpstreamConnectionManager {
    * Sessions that have been destroyed (closeAll called).
    * createConnection checks this after connect to close orphaned connections
    * created while closeAll was in flight (REL-02 race guard).
+   * Stored as Map<sessionId, destroyedAt ms> for TTL-based pruning (memory leak prevention).
    */
-  private readonly destroyedSessions = new Set<string>();
+  private readonly destroyedSessions = new Map<string, number>();
+
+  private static readonly DESTROYED_SESSION_TTL_MS = 60_000; // 60s grace period
 
   /**
    * Per-session notification queues for buffering when no SSE stream is attached.
@@ -91,7 +95,7 @@ export class UpstreamConnectionManager {
    * Adding a new notification type is a one-liner (D-07).
    */
   private static readonly NOTIFICATION_DISPATCH: ReadonlyArray<{
-    schema: typeof ToolListChangedNotificationSchema;
+    schema: $ZodType;
     method: string;
   }> = [
     { schema: ToolListChangedNotificationSchema, method: 'notifications/tools/list_changed' },
@@ -218,8 +222,12 @@ export class UpstreamConnectionManager {
    */
   private wireNotificationListeners(client: Client, sessionId: string): void {
     for (const { schema, method } of UpstreamConnectionManager.NOTIFICATION_DISPATCH) {
-      client.setNotificationHandler(schema, async (notification) => {
-        this.handleUpstreamNotification(sessionId, method, notification.params);
+      client.setNotificationHandler(schema, (notification) => {
+        try {
+          this.handleUpstreamNotification(sessionId, method, (notification as { params?: unknown }).params);
+        } catch (error) {
+          this.logger.error('Error handling upstream notification', error instanceof Error ? error : new Error(String(error)));
+        }
       });
     }
   }
@@ -249,7 +257,7 @@ export class UpstreamConnectionManager {
    */
   async closeAll(sessionId: string): Promise<void> {
     // Mark destroyed first so any in-flight createConnection checks this and self-closes
-    this.destroyedSessions.add(sessionId);
+    this.destroyedSessions.set(sessionId, Date.now());
 
     // Wait for in-flight connections to settle - they will see destroyedSessions and abort
     const pendingKeys = [...this.pendingConnections.keys()].filter(k => k.startsWith(`${sessionId}:`));
@@ -280,10 +288,17 @@ export class UpstreamConnectionManager {
     }
 
     this.notificationQueues.delete(sessionId);
-    // Intentionally retain the destroyedSessions marker: a session, once destroyed, is never
-    // reused (HTTP transport removes it from profileStates). Retaining the marker prevents a
-    // race window where a reconnect attempt fires between closeAll() and the transport's own
-    // session removal, and would otherwise create a new orphaned upstream connection.
+    // Intentionally retain the destroyedSessions marker for at least DESTROYED_SESSION_TTL_MS:
+    // a session, once destroyed, is never reused (HTTP transport removes it from profileStates).
+    // Retaining the marker prevents a race window where a reconnect attempt fires between
+    // closeAll() and the transport's own session removal, and would otherwise create a new
+    // orphaned upstream connection.
+
+    // Prune stale destroyed-session markers (memory leak prevention)
+    const cutoff = Date.now() - UpstreamConnectionManager.DESTROYED_SESSION_TTL_MS;
+    for (const [id, destroyedAt] of this.destroyedSessions) {
+      if (destroyedAt < cutoff) this.destroyedSessions.delete(id);
+    }
   }
 
   /**
@@ -363,6 +378,11 @@ export class UpstreamConnectionManager {
     provider: UpstreamMcpServerConfig,
     token: string | undefined,
   ): Promise<Client> {
+    // SSRF check: validate transport URL before opening any network connection
+    await this.ssrfValidator.validate(provider.transport.url, {
+      allowPrivateNetwork: process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK === 'true',
+    });
+
     const authHeaders = buildAuthHeaders(provider, token);
     const url = buildAuthUrl(provider, new URL(provider.transport.url), token);
 

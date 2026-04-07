@@ -3434,8 +3434,22 @@ paths:
       });
 
       it('returns UpstreamMalformedResponseError when listTools returns non-array tools field', async () => {
-        // Upstream returns a non-array for tools (e.g. object or string) - ?? won't catch it
         mockListTools.mockResolvedValueOnce({ tools: { unexpected: true } });
+
+        const response = await (upstreamServer as any).handleOtherRequest(
+          { jsonrpc: '2.0', id: '5', method: 'tools/list', params: {} },
+          'session-123',
+          'upstream-profile',
+        ) as any;
+
+        expect(response.error).toBeDefined();
+        expect(response.error.code).toBe(-32603);
+        expect(response.result).toBeUndefined();
+      });
+
+      it('returns UpstreamMalformedResponseError when listTools returns null tools field', async () => {
+        // null was previously silently coerced to [] via ??, now correctly detected
+        mockListTools.mockResolvedValueOnce({ tools: null });
 
         const response = await (upstreamServer as any).handleOtherRequest(
           { jsonrpc: '2.0', id: '5', method: 'tools/list', params: {} },

@@ -24,6 +24,21 @@ export interface SanitizationResult {
 // Data-driven constraints
 const TOOL_NAME_PATTERN = /^[a-zA-Z0-9_-]+$/;
 const DESCRIPTION_FORBIDDEN_CHARS = /[<>`]/;
+
+/**
+ * Recursively scan a JSON Schema object for forbidden characters in string values.
+ * Returns true if any string value contains forbidden chars.
+ * Depth limit guards against deeply nested schemas.
+ */
+function schemaContainsForbiddenChars(value: unknown, depth = 0): boolean {
+  if (depth > 10) return false;
+  if (typeof value === 'string') return DESCRIPTION_FORBIDDEN_CHARS.test(value);
+  if (Array.isArray(value)) return value.some(v => schemaContainsForbiddenChars(v, depth + 1));
+  if (typeof value === 'object' && value !== null) {
+    return Object.values(value as Record<string, unknown>).some(v => schemaContainsForbiddenChars(v, depth + 1));
+  }
+  return false;
+}
 const MAX_TOOL_NAME_LENGTH = 255;
 const MAX_DESCRIPTION_LENGTH = 2048;
 const MAX_DROPPED_NAME_LENGTH = 100;
@@ -64,6 +79,8 @@ export function sanitizeToolList(tools: Tool[], logger?: Logger): SanitizationRe
       reason = 'tool description too long';
     } else if (tool.description && DESCRIPTION_FORBIDDEN_CHARS.test(tool.description)) {
       reason = 'forbidden characters in description';
+    } else if (tool.inputSchema && schemaContainsForbiddenChars(tool.inputSchema)) {
+      reason = 'forbidden characters in input schema';
     }
 
     if (reason !== undefined) {
