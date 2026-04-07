@@ -3884,6 +3884,21 @@ paths:
         expect(mockCallTool).toHaveBeenCalled();
       });
 
+      it('rejects upstream tool call with non-string tool name without throwing (P2)', async () => {
+        // A malformed request sends name: 123 (number). The handler must return -32002
+        // rather than throwing TypeError from toolName.slice() on a non-string value.
+        const response = await (upstreamServer as any).handleToolCall(
+          { jsonrpc: '2.0', id: '1', method: 'tools/call', params: { name: 123, arguments: {} } },
+          'session-123',
+          'upstream-profile',
+        ) as any;
+
+        expect(response.error).toBeDefined();
+        expect(response.error.code).toBe(-32002);
+        expect(response.error.message).toContain('must be a string');
+        expect(mockCallTool).not.toHaveBeenCalled();
+      });
+
       it('rejects upstream tool call with invalid tool name (prevents sanitizer bypass)', async () => {
         const response = await (upstreamServer as any).handleToolCall(
           { jsonrpc: '2.0', id: '1', method: 'tools/call', params: { name: 'has <script> injection', arguments: {} } },

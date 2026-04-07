@@ -1570,6 +1570,16 @@ export class MCPServer {
     // D-01: When upstream_mcp is set, forward call to upstream (after OAuth check, before local dispatch)
     const upstreamMcpForCall = this.getUpstreamMcpConfig(profileId);
     if (upstreamMcpForCall?.length && this.getUpstreamClientFn) {
+      // Runtime guard: params.name is cast to string above but a malformed request may send
+      // a non-string (e.g. 123). Detect early so downstream .slice() calls never throw.
+      if (typeof toolName !== 'string') {
+        return {
+          jsonrpc: '2.0', id: req.id, error: {
+            code: -32002,
+            message: `Tool name must be a string, got: '${String(params.name).slice(0, 100)}'`,
+          },
+        };
+      }
       // Apply tool filter (name-based) - same gate as local tools
       const toolFilter = this.getToolFilterForSession(sessionId, profileId);
       if (toolFilter && !toolFilter.allowedToolNames.has(toolName)) {
