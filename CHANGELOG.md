@@ -8,7 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
-- REL-01: `UpstreamHeartbeatManager` is now wired into `UpstreamConnectionManager` - heartbeat pings start on each successful upstream connection and stop on `closeAll`, detecting silent SSE disconnects before tool calls fail.
+- REL-01: `UpstreamHeartbeatManager` is now wired into `UpstreamConnectionManager`
+- `UpstreamConnectionState` narrowed to `'CONNECTED' | 'FAILED'`; unused `IDLE`/`CONNECTING`/`RECONNECTING` states removed to eliminate misleading contract.
+- `UPSTREAM_ERROR_MAPPINGS` moved to module scope in `mcp-server.ts`; was re-allocated on every `tools/call` invocation.
+- `mapConnectError` now uses an explicit `hasMcpStatusCode` type guard instead of an unsafe cast, making the SDK status code assumption unit-testable and SDK-upgrade-safe.
+- `destroyedSessions` marker is now retained after `closeAll()` to prevent a race window where a reconnect attempt could create an orphaned upstream connection for a session being torn down.
+- `UpstreamConnectionManager` is now statically imported in `mcp-server.ts`; the dynamic import comment claiming a circular dep risk was unverified (confirmed no cycle via madge). - heartbeat pings start on each successful upstream connection and stop on `closeAll`, detecting silent SSE disconnects before tool calls fail.
 - `getUpstreamToken` now uses the downstream client token first and falls back to `upstream_mcp[].auth.value_from_env` when the client sends no token; previously env-configured providers always used the env token, ignoring the client-forwarded credential.
 - `tools/list` and `tools/call` in upstream proxy mode now enforce `upstream_mcp[].tools.allow`/`deny` lists; previously the profile-level tool policy was validated at load time but never applied at runtime.
 - `tools/list` now emits a `WARN` log when `upstream_mcp[].tool_prefix` is configured, as prefixing is accepted by the schema but not yet applied at runtime.
