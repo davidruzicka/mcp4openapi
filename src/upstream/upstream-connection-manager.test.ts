@@ -728,21 +728,19 @@ describe('UpstreamConnectionManager', () => {
       expect(manager.getActiveSessionCount()).toBe(0);
     });
 
-    it('closeAll clears heartbeatTimer when set on connection', async () => {
+    it('closeAll stops heartbeat for closed connection', async () => {
       const provider = createProvider();
 
       await manager.getOrConnect('session-1', provider, 'token');
 
-      // Manually attach a heartbeatTimer to simulate a running heartbeat
-      const conn = manager.getConnection('session-1', provider.name);
-      const fakeTimer = setInterval(() => {}, 100000);
-      conn!.heartbeatTimer = fakeTimer;
+      // Verify heartbeat is running before close
+      const heartbeatManager = (manager as unknown as { heartbeatManager: { isRunning: (k: string) => boolean } }).heartbeatManager;
+      expect(heartbeatManager.isRunning('session-1:test-provider')).toBe(true);
 
       await manager.closeAll('session-1');
 
-      // Timer should have been cleared (no active connections remain)
       expect(manager.getActiveSessionCount()).toBe(0);
-      clearInterval(fakeTimer); // cleanup in case clearInterval wasn't called
+      expect(heartbeatManager.isRunning('session-1:test-provider')).toBe(false);
     });
   });
 
@@ -856,6 +854,90 @@ describe('UpstreamConnectionManager', () => {
 
       manager.cleanupSessionQueue('session-1');
       expect(manager.drainNotifications('session-1')).toEqual([]);
+    });
+  });
+
+  describe('heartbeat integration (REL-01)', () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('starts heartbeat after successful connection', async () => {
+      const provider = createProvider();
+      await manager.getOrConnect('session-1', provider, 'token');
+
+      const heartbeatManager = (manager as unknown as { heartbeatManager: { isRunning: (k: string) => boolean } }).heartbeatManager;
+      expect(heartbeatManager.isRunning('session-1:test-provider')).toBe(true);
+    });
+
+    it('calls client.ping on each heartbeat interval', async () => {
+      const provider = createProvider();
+      manager = new UpstreamConnectionManager({
+        clientFactory,
+        transportFactory,
+        heartbeatConfig: { intervalMs: 1000, timeoutMs: 500 },
+      });
+
+      await manager.getOrConnect('session-1', provider, 'token');
+      expect(mockClient.ping).not.toHaveBeenCalled();
+
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(mockClient.ping).toHaveBeenCalledTimes(1);
+
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(mockClient.ping).toHaveBeenCalledTimes(2);
+    });
+
+    it('sets connection to FAILED state when ping fails', async () => {
+      const provider = createProvider();
+      manager = new UpstreamConnectionManager({
+        clientFactory,
+        transportFactory,
+        heartbeatConfig: { intervalMs: 1000, timeoutMs: 500 },
+      });
+
+      await manager.getOrConnect('session-1', provider, 'token');
+
+      mockClient.ping.mockRejectedValue(new Error('ping timeout'));
+      await vi.advanceTimersByTimeAsync(1000);
+      // Allow the async ping callback to settle
+      await Promise.resolve();
+
+      const conn = manager.getConnection('session-1', provider.name);
+      expect(conn?.state).toBe('FAILED');
+    });
+
+    it('does not start heartbeat when connect fails', async () => {
+      const provider = createProvider();
+      mockClient.connect.mockRejectedValue(new Error('connect failed'));
+
+      await expect(manager.getOrConnect('session-1', provider, 'token')).rejects.toThrow();
+
+      const heartbeatManager = (manager as unknown as { heartbeatManager: { isRunning: (k: string) => boolean } }).heartbeatManager;
+      expect(heartbeatManager.isRunning('session-1:test-provider')).toBe(false);
+    });
+
+    it('does not start heartbeat when session destroyed during connect', async () => {
+      const provider = createProvider();
+
+      let resolveConnect!: () => void;
+      mockClient.connect.mockReturnValue(
+        new Promise<void>((resolve) => { resolveConnect = resolve; }),
+      );
+
+      const connectPromise = manager.getOrConnect('session-1', provider, 'token');
+      const closePromise = manager.closeAll('session-1');
+
+      resolveConnect();
+      await expect(connectPromise).rejects.toThrow('Session destroyed during upstream connection');
+      await closePromise;
+
+      const heartbeatManager = (manager as unknown as { heartbeatManager: { isRunning: (k: string) => boolean } }).heartbeatManager;
+      expect(heartbeatManager.isRunning('session-1:test-provider')).toBe(false);
     });
   });
 });

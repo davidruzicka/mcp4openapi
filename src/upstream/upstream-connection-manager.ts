@@ -24,6 +24,8 @@ import { ConsoleLogger } from '../core/logger.js';
 import type { Logger } from '../core/logger.js';
 import { NotificationQueue } from './upstream-notification-queue.js';
 import type { NotificationQueueEntry } from './upstream-notification-queue.js';
+import { UpstreamHeartbeatManager } from './upstream-heartbeat.js';
+import type { HeartbeatConfig } from './upstream-heartbeat.js';
 
 /** Auth-related HTTP status codes */
 const AUTH_STATUS_CODES = new Set([401, 403]);
@@ -32,13 +34,14 @@ const AUTH_STATUS_CODES = new Set([401, 403]);
 const AUTH_ERROR_PATTERNS = /unauthorized|forbidden|authentication failed|invalid.*token/i;
 
 export interface UpstreamConnectionManagerOptions {
-  clientFactory?: () => Pick<Client, 'connect' | 'close' | 'setNotificationHandler'>;
+  clientFactory?: () => Pick<Client, 'connect' | 'close' | 'ping' | 'setNotificationHandler'>;
   transportFactory?: (url: URL, options: Record<string, unknown>) => Pick<StreamableHTTPClientTransport, 'close'> & {
     onerror: ((error: Error) => void) | null;
     onclose: (() => void) | null;
   };
   ssrfValidator?: SSRFValidator;
   logger?: Logger;
+  heartbeatConfig?: HeartbeatConfig;
 }
 
 export class UpstreamConnectionManager {
@@ -89,6 +92,7 @@ export class UpstreamConnectionManager {
   private readonly transportFactory: NonNullable<UpstreamConnectionManagerOptions['transportFactory']>;
   private readonly ssrfValidator: SSRFValidator;
   private readonly logger: Logger;
+  private readonly heartbeatManager: UpstreamHeartbeatManager;
 
   constructor(options?: UpstreamConnectionManagerOptions) {
     this.clientFactory = options?.clientFactory ?? (
@@ -99,6 +103,7 @@ export class UpstreamConnectionManager {
     );
     this.logger = options?.logger ?? new ConsoleLogger();
     this.ssrfValidator = options?.ssrfValidator ?? new SSRFValidator(this.logger);
+    this.heartbeatManager = new UpstreamHeartbeatManager(options?.heartbeatConfig);
   }
 
   /**
@@ -247,9 +252,7 @@ export class UpstreamConnectionManager {
 
     if (sessionMap) {
       for (const [, conn] of sessionMap) {
-        if (conn.heartbeatTimer) {
-          clearInterval(conn.heartbeatTimer);
-        }
+        this.heartbeatManager.stop(`${sessionId}:${conn.providerName}`);
         closePromises.push(
           (conn.client.close() as Promise<void>).catch(() => {
             // Swallow close errors - session is being destroyed anyway
@@ -409,6 +412,13 @@ export class UpstreamConnectionManager {
       this.connections.set(sessionId, sessionMap);
     }
     sessionMap.set(provider.name, connection);
+
+    const heartbeatKey = `${sessionId}:${provider.name}`;
+    this.heartbeatManager.start(
+      heartbeatKey,
+      async () => { await (client as Client).ping({ timeout: this.heartbeatManager.getConfig().timeoutMs }); },
+      (error) => this.handleTransportError(sessionId, provider.name, error),
+    );
 
     return client as Client;
   }

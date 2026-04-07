@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- REL-01: `UpstreamHeartbeatManager` is now wired into `UpstreamConnectionManager` - heartbeat pings start on each successful upstream connection and stop on `closeAll`, detecting silent SSE disconnects before tool calls fail.
 - `getUpstreamToken` now uses the downstream client token first and falls back to `upstream_mcp[].auth.value_from_env` when the client sends no token; previously env-configured providers always used the env token, ignoring the client-forwarded credential.
 - `tools/list` and `tools/call` in upstream proxy mode now enforce `upstream_mcp[].tools.allow`/`deny` lists; previously the profile-level tool policy was validated at load time but never applied at runtime.
 - `tools/list` now emits a `WARN` log when `upstream_mcp[].tool_prefix` is configured, as prefixing is accepted by the schema but not yet applied at runtime.
