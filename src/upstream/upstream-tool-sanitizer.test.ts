@@ -202,6 +202,68 @@ describe('sanitizeToolList', () => {
     expect(result.tools).toHaveLength(1);
     expect(result.dropped).toHaveLength(0);
   });
+
+  it('drops tool with forbidden chars in inputSchema property description', () => {
+    const tool: Tool = {
+      name: 'valid_tool',
+      description: 'safe',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          x: { type: 'string', description: '<script>alert(1)</script>' },
+        },
+      },
+    };
+    const result = sanitizeToolList([tool], logger);
+    expect(result.tools).toHaveLength(0);
+    expect(result.dropped).toHaveLength(1);
+    expect(result.dropped[0].reason).toBe('forbidden characters in input schema');
+    expect(logger.warn).toHaveBeenCalledOnce();
+  });
+
+  it('drops tool with backtick in nested inputSchema enum value', () => {
+    const tool: Tool = {
+      name: 'valid_tool',
+      description: 'safe',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          mode: { type: 'string', enum: ['ok', '`injection`'] },
+        },
+      },
+    };
+    const result = sanitizeToolList([tool], logger);
+    expect(result.tools).toHaveLength(0);
+    expect(result.dropped[0].reason).toBe('forbidden characters in input schema');
+  });
+
+  it('passes tool with clean inputSchema through unchanged', () => {
+    const tool: Tool = {
+      name: 'valid_tool',
+      description: 'safe',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          name: { type: 'string', description: 'A safe description' },
+          count: { type: 'integer' },
+        },
+        required: ['name'],
+      },
+    };
+    const result = sanitizeToolList([tool], logger);
+    expect(result.tools).toHaveLength(1);
+    expect(result.dropped).toHaveLength(0);
+  });
+
+  it('does not crash on deeply nested inputSchema (depth > 10)', () => {
+    // Build a 15-level deep schema
+    let nested: Record<string, unknown> = { type: 'string', description: 'deep' };
+    for (let i = 0; i < 15; i++) {
+      nested = { type: 'object', properties: { child: nested } };
+    }
+    const tool: Tool = { name: 'deep_tool', inputSchema: nested };
+    expect(() => sanitizeToolList([tool], logger)).not.toThrow();
+  });
 });
 
 describe('applyProviderToolPolicy', () => {

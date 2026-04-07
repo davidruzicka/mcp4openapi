@@ -1796,10 +1796,13 @@ export class MCPServer {
     try {
       const client = await this.getUpstreamClientFn!(sessionId, provider, token);
       const result = await client.listTools();
-      const rawTools = result.tools ?? [];
-      if (!Array.isArray(rawTools)) {
-        throw new UpstreamMalformedResponseError(provider.name, 'tools field is not an array');
+      if (!Array.isArray(result.tools)) {
+        throw new UpstreamMalformedResponseError(
+          provider.name,
+          `tools field is not an array (got ${result.tools === null ? 'null' : typeof result.tools})`,
+        );
       }
+      const rawTools = result.tools;
       const sanitized = sanitizeToolList(rawTools, this.logger);
       const policyFiltered = applyProviderToolPolicy(sanitized.tools, provider.tools);
       // Apply session-level X-Mcp4-Tools name filter (same gate as local tools/list)

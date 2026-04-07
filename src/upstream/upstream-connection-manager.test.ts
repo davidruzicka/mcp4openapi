@@ -59,13 +59,16 @@ describe('UpstreamConnectionManager', () => {
   let mockTransport: ReturnType<typeof createMockTransport>;
   let clientFactory: ReturnType<typeof vi.fn>;
   let transportFactory: ReturnType<typeof vi.fn>;
+  let mockSsrfValidator: { validate: ReturnType<typeof vi.fn> };
 
   beforeEach(() => {
     mockClient = createMockClient();
     mockTransport = createMockTransport();
     clientFactory = vi.fn().mockReturnValue(mockClient);
     transportFactory = vi.fn().mockReturnValue(mockTransport);
-    manager = new UpstreamConnectionManager({ clientFactory, transportFactory });
+    // Inject a permissive SSRF validator so unit tests don't do real DNS lookups
+    mockSsrfValidator = { validate: vi.fn().mockResolvedValue(undefined) };
+    manager = new UpstreamConnectionManager({ clientFactory, transportFactory, ssrfValidator: mockSsrfValidator as never });
   });
 
   describe('default factory fallbacks', () => {
@@ -909,6 +912,7 @@ describe('UpstreamConnectionManager', () => {
       manager = new UpstreamConnectionManager({
         clientFactory,
         transportFactory,
+        ssrfValidator: mockSsrfValidator as never,
         heartbeatConfig: { intervalMs: 1000, timeoutMs: 500 },
       });
 
@@ -927,6 +931,7 @@ describe('UpstreamConnectionManager', () => {
       manager = new UpstreamConnectionManager({
         clientFactory,
         transportFactory,
+        ssrfValidator: mockSsrfValidator as never,
         heartbeatConfig: { intervalMs: 1000, timeoutMs: 500 },
       });
 
@@ -968,6 +973,118 @@ describe('UpstreamConnectionManager', () => {
 
       const heartbeatManager = (manager as unknown as { heartbeatManager: { isRunning: (k: string) => boolean } }).heartbeatManager;
       expect(heartbeatManager.isRunning('session-1:test-provider')).toBe(false);
+    });
+  });
+
+  describe('SSRF validation on transport URL (Fix 1)', () => {
+    it('rejects createConnection when transport.url fails SSRF validation', async () => {
+      const mockSsrfValidator = { validate: vi.fn().mockRejectedValue(new ValidationError('Private IP blocked')) };
+      const mgr = new UpstreamConnectionManager({
+        clientFactory,
+        transportFactory,
+        ssrfValidator: mockSsrfValidator as never,
+      });
+      const provider = createProvider();
+
+      await expect(mgr.getOrConnect('session-ssrf', provider, 'token'))
+        .rejects.toThrow('Private IP blocked');
+
+      // Transport/client must not be created after SSRF rejection
+      expect(mockClient.connect).not.toHaveBeenCalled();
+    });
+
+    it('allows createConnection when transport.url passes SSRF validation', async () => {
+      const mockSsrfValidator = { validate: vi.fn().mockResolvedValue(undefined) };
+      const mgr = new UpstreamConnectionManager({
+        clientFactory,
+        transportFactory,
+        ssrfValidator: mockSsrfValidator as never,
+      });
+      const provider = createProvider();
+
+      const result = await mgr.getOrConnect('session-ok', provider, 'token');
+
+      expect(result).toBe(mockClient);
+      expect(mockSsrfValidator.validate).toHaveBeenCalledWith(
+        provider.transport.url,
+        expect.objectContaining({ allowPrivateNetwork: expect.any(Boolean) }),
+      );
+    });
+  });
+
+  describe('notification handler error isolation (Fix 3)', () => {
+    it('does not propagate errors thrown by downstreamNotifyFn - logs instead', async () => {
+      const provider = createProvider();
+      const mockLogger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+      const mgr = new UpstreamConnectionManager({ clientFactory, transportFactory, ssrfValidator: mockSsrfValidator as never, logger: mockLogger as never });
+
+      // downstreamNotifyFn throws synchronously
+      mgr.setDownstreamNotifyFn(() => { throw new Error('downstream blow-up'); });
+      mgr.setHasActiveStreamFn(() => true);
+
+      const client = await mgr.getOrConnect('session-1', provider, 'token') as ReturnType<typeof createMockClient>;
+
+      // Should not throw or produce an unhandled rejection
+      await expect(client._triggerNotification('notifications/tools/list_changed')).resolves.toBeUndefined();
+
+      // Error must be logged
+      expect(mockLogger.error).toHaveBeenCalledWith(
+        'Error handling upstream notification',
+        expect.any(Error),
+      );
+    });
+  });
+
+  describe('destroyedSessions TTL pruning (Fix 5)', () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('prunes stale destroyedSessions entries after TTL to prevent memory leak', async () => {
+      const provider = createProvider();
+      const ttlMs = 60_000;
+
+      // Close three sessions
+      const c1 = createMockClient();
+      const c2 = createMockClient();
+      const c3 = createMockClient();
+      const t1 = createMockTransport();
+      const t2 = createMockTransport();
+      const t3 = createMockTransport();
+      clientFactory
+        .mockReturnValueOnce(c1)
+        .mockReturnValueOnce(c2)
+        .mockReturnValueOnce(c3);
+      transportFactory
+        .mockReturnValueOnce(t1)
+        .mockReturnValueOnce(t2)
+        .mockReturnValueOnce(t3);
+
+      await manager.getOrConnect('session-a', provider, 'token');
+      await manager.getOrConnect('session-b', provider, 'token');
+      await manager.getOrConnect('session-c', provider, 'token');
+
+      await manager.closeAll('session-a');
+      await manager.closeAll('session-b');
+      await manager.closeAll('session-c');
+
+      const destroyed = (manager as unknown as { destroyedSessions: Map<string, number> }).destroyedSessions;
+      expect(destroyed.size).toBe(3);
+
+      // Advance time past TTL and trigger pruning via a new closeAll call
+      vi.advanceTimersByTime(ttlMs + 1);
+
+      // Close a new session to trigger pruning (or close a dummy session)
+      await manager.closeAll('session-trigger');
+
+      // Stale entries (a, b, c) must have been pruned
+      expect(destroyed.has('session-a')).toBe(false);
+      expect(destroyed.has('session-b')).toBe(false);
+      expect(destroyed.has('session-c')).toBe(false);
     });
   });
 });
