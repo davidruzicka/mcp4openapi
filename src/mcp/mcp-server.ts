@@ -1858,12 +1858,21 @@ export class MCPServer {
           code = -32601;
         }
 
+        const correlationId = generateCorrelationId();
+        this.logger.error('Prompt rendering failed',
+          error instanceof Error ? error : new Error(String(error)),
+          {
+            correlationId,
+            promptName: (req.params as Record<string, unknown>)?.name
+          }
+        );
+
         return {
           jsonrpc: '2.0',
           id: req.id,
           error: {
             code,
-            message: (error as Error).message,
+            message: this.formatErrorForClient(error, correlationId),
           },
         };
       }
@@ -1901,12 +1910,21 @@ export class MCPServer {
           result: await this.readResource(params.uri, sessionId, profileId),
         };
       } catch (error) {
+        const correlationId = generateCorrelationId();
+        this.logger.error('Resource read failed',
+          error instanceof Error ? error : new Error(String(error)),
+          {
+            correlationId,
+            uri: (req.params as Record<string, unknown>)?.uri
+          }
+        );
+
         return {
           jsonrpc: '2.0',
           id: req.id,
           error: {
             code: error instanceof ValidationError ? -32602 : -32601,
-            message: (error as Error).message,
+            message: this.formatErrorForClient(error, correlationId),
           },
         };
       }
@@ -1920,12 +1938,20 @@ export class MCPServer {
           result: await this.completeResourceArgument(req as CompleteRequest, sessionId, profileId),
         };
       } catch (error) {
+        const correlationId = generateCorrelationId();
+        this.logger.error('Completion failed',
+          error instanceof Error ? error : new Error(String(error)),
+          {
+            correlationId
+          }
+        );
+
         return {
           jsonrpc: '2.0',
           id: req.id,
           error: {
             code: error instanceof ValidationError ? -32602 : -32601,
-            message: (error as Error).message,
+            message: this.formatErrorForClient(error, correlationId),
           },
         };
       }
