@@ -12,14 +12,6 @@ let apiBaseUrl: string;
 const tempDirs: string[] = [];
 const originalAllowPrivateNetwork = process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK;
 
-async function writeTempFile(name: string, content: string): Promise<string> {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcp-server-apps-'));
-  tempDirs.push(dir);
-  const filePath = path.join(dir, name);
-  await fs.writeFile(filePath, content, 'utf8');
-  return filePath;
-}
-
 beforeAll(async () => {
   process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK = 'true';
   apiServer = createServer((req, res) => {
@@ -275,14 +267,14 @@ describe('MCPServer apps resources', () => {
       },
     });
 
-    expect(invalidReadResponse.error).toEqual({
+    expect(invalidReadResponse.error).toMatchObject({
       code: -32602,
-      message: 'resources/read requires string parameter "uri"',
     });
-    expect(invalidCompletionResponse.error).toEqual({
+    expect(invalidReadResponse.error.message).toMatch(/^Validation error: resources\/read requires string parameter "uri" \(correlation ID: .+\)$/);
+    expect(invalidCompletionResponse.error).toMatchObject({
       code: -32602,
-      message: 'completion/complete requires a resource ref',
     });
+    expect(invalidCompletionResponse.error.message).toMatch(/^Validation error: completion\/complete requires a resource ref \(correlation ID: .+\)$/);
   });
 
   it('propagates session context to fetch-backed resource and completion lookups', async () => {
