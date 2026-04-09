@@ -516,6 +516,7 @@ export class UpstreamConnectionManager {
     if (conn) {
       conn.state = 'FAILED';
       conn.lastError = new Error(sanitizeAuthErrorMessage(error.message));
+      this.heartbeatManager.stop(`${sessionId}:${providerName}`);
     }
   }
 
@@ -523,6 +524,7 @@ export class UpstreamConnectionManager {
     const conn = this.getConnection(sessionId, providerName);
     if (conn) {
       conn.state = 'FAILED';
+      this.heartbeatManager.stop(`${sessionId}:${providerName}`);
     }
   }
 }

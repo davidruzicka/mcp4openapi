@@ -610,6 +610,30 @@ describe('UpstreamConnectionManager', () => {
       expect(conn!.state).toBe('FAILED');
     });
 
+    it('stops heartbeat on transport close (P2)', async () => {
+      const provider = createProvider();
+      await manager.getOrConnect('session-hb', provider, 'test-token');
+
+      const heartbeatManager = (manager as unknown as { heartbeatManager: { stop: (k: string) => void } }).heartbeatManager;
+      const stopSpy = vi.spyOn(heartbeatManager, 'stop');
+
+      mockTransport.onclose!();
+
+      expect(stopSpy).toHaveBeenCalledWith(`session-hb:${provider.name}`);
+    });
+
+    it('stops heartbeat on transport error (P2)', async () => {
+      const provider = createProvider();
+      await manager.getOrConnect('session-hb2', provider, 'test-token');
+
+      const heartbeatManager = (manager as unknown as { heartbeatManager: { stop: (k: string) => void } }).heartbeatManager;
+      const stopSpy = vi.spyOn(heartbeatManager, 'stop');
+
+      mockTransport.onerror!(new Error('network error'));
+
+      expect(stopSpy).toHaveBeenCalledWith(`session-hb2:${provider.name}`);
+    });
+
     it('stale transport onerror/onclose does not mark replacement connection as FAILED', async () => {
       // Simulate token rotation: first connect stores transport A; connection is closed/replaced
       // by a second getOrConnect call with a new token; delayed event from transport A must be ignored.

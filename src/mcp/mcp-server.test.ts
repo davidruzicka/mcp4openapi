@@ -4222,6 +4222,61 @@ paths:
     });
 
     // -------------------------------------------------------------------------
+    describe('metrics recording for upstream tool calls (P2)', () => {
+      function makeMetrics() {
+        return { recordToolCall: vi.fn(), recordToolCallError: vi.fn() };
+      }
+
+      it('records success metric when upstream tool call succeeds', async () => {
+        const metrics = makeMetrics();
+        (upstreamServer as any).httpTransport.getMetricsCollector = () => metrics;
+
+        await (upstreamServer as any).handleToolCall(
+          { jsonrpc: '2.0', id: '1', method: 'tools/call', params: { name: 'safe_tool', arguments: {} } },
+          'session-metrics',
+          'upstream-profile',
+        );
+
+        expect(metrics.recordToolCall).toHaveBeenCalledWith(
+          'safe_tool', 'success', expect.any(Number), expect.any(Object),
+        );
+        expect(metrics.recordToolCallError).not.toHaveBeenCalled();
+      });
+
+      it('records error metric when upstream tool call throws', async () => {
+        const metrics = makeMetrics();
+        (upstreamServer as any).httpTransport.getMetricsCollector = () => metrics;
+        mockCallTool.mockRejectedValueOnce(new Error('upstream down'));
+
+        await (upstreamServer as any).handleToolCall(
+          { jsonrpc: '2.0', id: '1', method: 'tools/call', params: { name: 'safe_tool', arguments: {} } },
+          'session-metrics-err',
+          'upstream-profile',
+        );
+
+        expect(metrics.recordToolCall).toHaveBeenCalledWith(
+          'safe_tool', 'error', expect.any(Number), expect.any(Object),
+        );
+        expect(metrics.recordToolCallError).toHaveBeenCalledWith(
+          'safe_tool', expect.any(String), expect.any(Object),
+        );
+      });
+
+      it('skips metric recording when no collector is wired', async () => {
+        (upstreamServer as any).httpTransport.getMetricsCollector = () => null;
+
+        // Should not throw even without a metrics collector
+        const response = await (upstreamServer as any).handleToolCall(
+          { jsonrpc: '2.0', id: '1', method: 'tools/call', params: { name: 'safe_tool', arguments: {} } },
+          'session-no-metrics',
+          'upstream-profile',
+        ) as any;
+
+        expect(response.result).toBeDefined();
+      });
+    });
+
+    // -------------------------------------------------------------------------
     describe('getUpstreamToken token precedence (client token first, env fallback)', () => {
       it('uses downstream client token even when value_from_env is configured', async () => {
         // Client sends a token → it wins regardless of value_from_env
