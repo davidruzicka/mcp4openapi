@@ -1625,10 +1625,12 @@ export class HttpTransport {
     try {
       profiles = await this.profileIndexProvider();
     } catch (error) {
-      this.logger.error('Failed to load profile index', error instanceof Error ? error : new Error(String(error)));
+      const correlationId = generateCorrelationId();
+      this.logger.error('Failed to load profile index', error instanceof Error ? error : new Error(String(error)), { correlationId });
       res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
         error: 'Internal Server Error',
-        message: 'Failed to load profile index',
+        message: `Internal error (correlation ID: ${correlationId})`,
+        correlationId
       });
       return;
     }
