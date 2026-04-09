@@ -1637,7 +1637,13 @@ export class MCPServer {
           },
         };
       }
-      return this.handleUpstreamToolCall(req, sessionId, profileId, upstreamMcpForCall[0]);
+      return this.handleUpstreamToolCall(
+        req,
+        sessionId,
+        profileId,
+        upstreamMcpForCall[0],
+        metrics ? { collector: metrics, startTime, context: metricsContext } : undefined,
+      );
     }
 
     let args: Record<string, unknown> = rawArgs;
@@ -1894,6 +1900,7 @@ export class MCPServer {
     sessionId: string | undefined,
     profileId: string | undefined,
     provider: UpstreamMcpServerConfig,
+    metricsBundle?: { collector: MetricsCollector; startTime: number; context: MetricsContextLabels },
   ): Promise<unknown> {
     if (!sessionId) {
       throw new UpstreamConnectionError(
@@ -1909,6 +1916,10 @@ export class MCPServer {
     try {
       const client = await this.getUpstreamClientFn!(sessionId, provider, token);
       const result = await client.callTool({ name: toolName, arguments: args });
+      if (metricsBundle) {
+        const durationSeconds = (Date.now() - metricsBundle.startTime) / 1000;
+        metricsBundle.collector.recordToolCall(toolName, 'success', durationSeconds, metricsBundle.context);
+      }
       // Forward as-is including isError: true (tool-level errors are valid MCP responses)
       return {
         jsonrpc: '2.0',
@@ -1916,6 +1927,11 @@ export class MCPServer {
         result,
       };
     } catch (error) {
+      if (metricsBundle) {
+        const durationSeconds = (Date.now() - metricsBundle.startTime) / 1000;
+        metricsBundle.collector.recordToolCall(toolName, 'error', durationSeconds, metricsBundle.context);
+        metricsBundle.collector.recordToolCallError(toolName, this.getMetricsErrorType(error), metricsBundle.context);
+      }
       return {
         jsonrpc: '2.0',
         id: (req as Record<string, unknown>).id,
