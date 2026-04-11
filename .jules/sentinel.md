@@ -126,3 +126,14 @@ Error messages should never include raw values from sensitive sources like envir
 **Prevention:**
 1.  Avoid including raw values in error messages when the source is potentially sensitive (env vars, auth headers).
 2.  Use generic error messages for validation failures of sensitive data.
+
+## 2026-04-11 - [HIGH] Path Traversal Mitigation Bypass
+
+**Vulnerability:**
+The `encodeURIComponent` function does not encode the dot (`.`) character. Therefore, when user input containing `..` is substituted into a URL path using only `encodeURIComponent`, the directory traversal vector `..` remains intact, allowing attackers to access unintended endpoints.
+
+**Learning:**
+Relying solely on standard `encodeURIComponent` for path segment substitution is insufficient to prevent path traversal. While it successfully encodes `/` to `%2F`, preventing direct directory climbing in some servers, other servers or proxies may decode `%2F` or process `..` before decoding, leading to traversal.
+
+**Prevention:**
+1. Explicitly encode dot (`.`) characters in path segments after applying `encodeURIComponent`. For example: `encodeURIComponent(value).replace(/\./g, '%2E')`.
