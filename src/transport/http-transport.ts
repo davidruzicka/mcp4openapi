@@ -3579,6 +3579,12 @@ export class HttpTransport {
    * session destruction.
    */
   public setUpstreamConnectionManager(manager: UpstreamConnectionManager): void {
+    if (this.upstreamConnectionManager && this.upstreamConnectionManager !== manager) {
+      throw new Error(
+        'UpstreamConnectionManager already wired — setUpstreamConnectionManager must be called only once per HttpTransport lifetime. ' +
+        'Replacing the manager would orphan the first manager\'s connections (its closeAll is never called).',
+      );
+    }
     this.upstreamConnectionManager = manager;
 
     // Wire stream presence check: upstream manager checks if SSE stream is active

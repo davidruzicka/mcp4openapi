@@ -1054,7 +1054,7 @@ describe('UpstreamConnectionManager', () => {
       expect(manager.drainNotifications('session-1')).toEqual([]);
     });
 
-    it('cleanupSessionQueue deletes queue for session', async () => {
+    it('closeAll clears notification queue for session', async () => {
       const provider = createProvider();
       manager.setDownstreamNotifyFn(vi.fn());
       manager.setHasActiveStreamFn(vi.fn().mockReturnValue(false));
@@ -1062,7 +1062,14 @@ describe('UpstreamConnectionManager', () => {
       const client = await manager.getOrConnect('session-1', provider, 'token') as ReturnType<typeof createMockClient>;
       await client._triggerNotification(TOOL_LIST_CHANGED);
 
-      manager.cleanupSessionQueue('session-1');
+      // Verify queue is populated before closeAll
+      expect(manager.drainNotifications('session-1').length).toBeGreaterThan(0);
+
+      // Re-trigger so queue has an entry again (drain above cleared it)
+      await client._triggerNotification(TOOL_LIST_CHANGED);
+      await manager.closeAll('session-1');
+
+      // After closeAll, queue must be gone
       expect(manager.drainNotifications('session-1')).toEqual([]);
     });
   });

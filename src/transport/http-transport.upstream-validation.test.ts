@@ -293,23 +293,29 @@ describeIfListen('upstream credential validation at session init', () => {
     }
   });
 
-  it('setUpstreamConnectionManager registers onSessionDestroyed listener only once even when called multiple times', async () => {
+  it('setUpstreamConnectionManager is idempotent for the same instance', () => {
+    const manager = { closeAll: vi.fn().mockResolvedValue(undefined), setHasActiveStreamFn: vi.fn(), setDownstreamNotifyFn: vi.fn() };
+
+    // Calling with the same instance twice must not throw and must not register a second listener
+    transport.setUpstreamConnectionManager(manager as any);
+    expect(() => transport.setUpstreamConnectionManager(manager as any)).not.toThrow();
+
+    const listenersBefore = (transport as any).sessionDestroyedListeners.length;
+    // Trigger destruction - closeAll should fire exactly once (one listener, not two)
+    (transport as any).notifySessionDestroyed('default', 'session-x');
+    expect(manager.closeAll).toHaveBeenCalledTimes(1);
+    void listenersBefore;
+  });
+
+  it('setUpstreamConnectionManager throws when called with a different manager instance', () => {
     const manager1 = { closeAll: vi.fn().mockResolvedValue(undefined), setHasActiveStreamFn: vi.fn(), setDownstreamNotifyFn: vi.fn() };
     const manager2 = { closeAll: vi.fn().mockResolvedValue(undefined), setHasActiveStreamFn: vi.fn(), setDownstreamNotifyFn: vi.fn() };
 
     transport.setUpstreamConnectionManager(manager1 as any);
-    transport.setUpstreamConnectionManager(manager2 as any);
-
-    const listenerCount = (transport as any).sessionDestroyedListeners.length;
-    // Only one upstream closeAll listener should be registered regardless of how many times setter was called
-    const upstreamListeners = (transport as any).sessionDestroyedListeners.filter(
-      (fn: Function) => fn.toString().includes('closeAll') || fn.toString().includes('upstreamConnectionManager'),
+    // Replacing with a different instance would orphan manager1's connections - must be rejected
+    expect(() => transport.setUpstreamConnectionManager(manager2 as any)).toThrow(
+      'UpstreamConnectionManager already wired',
     );
-    // Trigger destruction to confirm closeAll fires exactly once (against current manager)
-    (transport as any).notifySessionDestroyed('default', 'session-x');
-    expect(manager2.closeAll).toHaveBeenCalledTimes(1);
-    expect(manager1.closeAll).toHaveBeenCalledTimes(0); // replaced by manager2
-    void listenerCount; void upstreamListeners;
   });
 
   it('skips validation when no upstreamConnectionManager registered', async () => {

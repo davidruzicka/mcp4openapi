@@ -150,10 +150,10 @@ export class UpstreamConnectionManager {
 
   /**
    * Clean up notification queue for a session.
-   * Exposed as public so HttpTransport can call it from session destruction hooks
-   * (timeout eviction, onSessionDestroy) that may bypass closeAll.
+   * Called internally by closeAll(). All session destruction paths route through
+   * onSessionDestroyed -> closeAll, so no external caller is needed.
    */
-  public cleanupSessionQueue(sessionId: string): void {
+  private cleanupSessionQueue(sessionId: string): void {
     this.notificationQueues.delete(sessionId);
   }
 
@@ -402,6 +402,13 @@ export class UpstreamConnectionManager {
     });
 
     const authHeaders = buildAuthHeaders(provider, token);
+    // For query-auth providers, the token is embedded in the URL as a query parameter.
+    // Security note: StreamableHTTPClientTransport (MCP SDK) does not log the URL it connects to
+    // and does not include the URL in error messages — verified against SDK source. The URL is only
+    // used as a fetch target and passed to auth() for OAuth metadata discovery (not relevant here).
+    // Network-level errors from fetch propagate through mapConnectError -> sanitizeAuthErrorMessage,
+    // which strips JWT and Bearer patterns; raw query params are not redacted by that function, but
+    // Node.js fetch (undici) error messages include the hostname only, not the full URL+query string.
     const url = buildAuthUrl(provider, new URL(provider.transport.url), token);
 
     const transport = this.transportFactory(
