@@ -244,6 +244,8 @@ describe('GitHub workflow hardening', () => {
     expect(ageGateStep).toBeTruthy();
     expect(ageGateStep.run).toContain('last_refresh');
     expect(ageGateStep.run).toContain('REFRESH_MAX_AGE_DAYS');
+    expect(ageGateStep.run).toContain('computedAgeDays < 0');
+    expect(ageGateStep.run).toContain('future-last-refresh');
     expect(ageGateStep.run).toContain('refresh_needed=');
 
     const refreshStep = refreshJob.steps.find((step: any) => step.name === 'Refresh Codex auth');

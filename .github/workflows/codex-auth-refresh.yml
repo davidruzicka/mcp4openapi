@@ -85,8 +85,13 @@ jobs:
                 const ageMs = Date.now() - lastRefreshTime;
                 const computedAgeDays = ageMs / (24 * 60 * 60 * 1000);
                 ageDays = computedAgeDays.toFixed(2);
-                refreshNeeded = computedAgeDays >= maxAgeDays;
-                reason = refreshNeeded ? 'stale-last-refresh' : 'fresh-last-refresh';
+                if (computedAgeDays < 0) {
+                  refreshNeeded = true;
+                  reason = 'future-last-refresh';
+                } else {
+                  refreshNeeded = computedAgeDays >= maxAgeDays;
+                  reason = refreshNeeded ? 'stale-last-refresh' : 'fresh-last-refresh';
+                }
               }
             }
           }
