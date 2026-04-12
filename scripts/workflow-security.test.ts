@@ -55,4 +55,15 @@ describe('GitHub workflow hardening', () => {
     expect(installStep.run).not.toContain('beejak/MCP_Scanner');
     expect(installStep.run).not.toContain('chmod +x mcp-sentinel');
   });
+
+  it('pins the OSV reusable workflows to the Node 24-compatible release', () => {
+    const workflow = loadWorkflow('.github/workflows/osv-scanner.yml');
+
+    expect(workflow.jobs['scan-scheduled'].uses).toBe(
+      'google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@c51854704019a247608d928f370c98740469d4b5',
+    );
+    expect(workflow.jobs['scan-pr'].uses).toBe(
+      'google/osv-scanner-action/.github/workflows/osv-scanner-reusable-pr.yml@c51854704019a247608d928f370c98740469d4b5',
+    );
+  });
 });
