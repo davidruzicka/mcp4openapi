@@ -22,13 +22,78 @@ function listWorkflowPaths(): string[] {
 }
 
 function parseNodeMajorVersion(version: unknown): number | null {
+  if (typeof version === 'number' && Number.isInteger(version)) {
+    return version;
+  }
+
   if (typeof version !== 'string') {
     return null;
   }
 
-  const match = version.match(/\d+/);
-  return match ? Number.parseInt(match[0], 10) : null;
+  const trimmedVersion = version.trim();
+  if (!/^\d+$/.test(trimmedVersion)) {
+    return null;
+  }
+
+  return Number.parseInt(trimmedVersion, 10);
 }
+
+function resolveNodeMajorVersion(
+  version: unknown,
+  env: {
+    workflowEnv: Record<string, unknown>;
+    jobEnv: Record<string, unknown>;
+  },
+): number | null {
+  const directVersion = parseNodeMajorVersion(version);
+  if (directVersion !== null) {
+    return directVersion;
+  }
+
+  if (typeof version !== 'string') {
+    return null;
+  }
+
+  const envReferenceMatch = version.trim().match(/^\$\{\{\s*env\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}$/);
+  if (!envReferenceMatch) {
+    return null;
+  }
+
+  const envName = envReferenceMatch[1];
+  const resolvedValue = env.jobEnv[envName] ?? env.workflowEnv[envName];
+  return parseNodeMajorVersion(resolvedValue);
+}
+
+describe('node-version parsing', () => {
+  it('resolves simple env references from merged workflow and job env maps', () => {
+    expect(resolveNodeMajorVersion('${{ env.CI_NODE_VERSION }}', {
+      workflowEnv: { CI_NODE_VERSION: '22' },
+      jobEnv: {},
+    })).toBe(22);
+
+    expect(resolveNodeMajorVersion('${{ env.CI_NODE_VERSION }}', {
+      workflowEnv: { CI_NODE_VERSION: '20' },
+      jobEnv: { CI_NODE_VERSION: '24' },
+    })).toBe(24);
+  });
+
+  it('rejects unresolved or non-literal env-backed node versions', () => {
+    expect(resolveNodeMajorVersion('${{ env.CI_NODE_VERSION }}', {
+      workflowEnv: {},
+      jobEnv: {},
+    })).toBeNull();
+
+    expect(resolveNodeMajorVersion('${{ env.CI_NODE_VERSION }}', {
+      workflowEnv: { CI_NODE_VERSION: '${{ vars.NODE_VERSION }}' },
+      jobEnv: {},
+    })).toBeNull();
+
+    expect(resolveNodeMajorVersion('${{ matrix.node }}', {
+      workflowEnv: { CI_NODE_VERSION: '22' },
+      jobEnv: {},
+    })).toBeNull();
+  });
+});
 
 describe('GitHub workflow hardening', () => {
   it('disables persisted git credentials on every checkout step', () => {
@@ -82,8 +147,11 @@ describe('GitHub workflow hardening', () => {
         setupNodeStepCount += setupNodeSteps.length;
 
         for (const step of setupNodeSteps) {
-          const nodeVersion = parseNodeMajorVersion(step.with?.['node-version']);
-          expect(nodeVersion, `${workflowPath} step ${step.name ?? '<unnamed>'} should declare a numeric node-version`).not.toBeNull();
+          const nodeVersion = resolveNodeMajorVersion(step.with?.['node-version'], {
+            workflowEnv: workflow.env ?? {},
+            jobEnv: job.env ?? {},
+          });
+          expect(nodeVersion, `${workflowPath} step ${step.name ?? '<unnamed>'} should declare a literal or statically resolvable env-backed node-version`).not.toBeNull();
           expect(nodeVersion, `${workflowPath} step ${step.name ?? '<unnamed>'} should use Node 22 or newer`).toBeGreaterThanOrEqual(22);
         }
       }
