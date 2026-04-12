@@ -3,6 +3,10 @@ import path from 'node:path';
 
 import { parseDocument } from 'yaml';
 
+const OSV_SCANNER_REUSABLE_SHA = 'c51854704019a247608d928f370c98740469d4b5';
+const OSV_SCANNER_SCHEDULED_WORKFLOW = `google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@${OSV_SCANNER_REUSABLE_SHA}`;
+const OSV_SCANNER_PR_WORKFLOW = `google/osv-scanner-action/.github/workflows/osv-scanner-reusable-pr.yml@${OSV_SCANNER_REUSABLE_SHA}`;
+
 function loadWorkflow(relativePath: string): any {
   const absolutePath = path.resolve(process.cwd(), relativePath);
   const source = readFileSync(absolutePath, 'utf8');
@@ -54,5 +58,12 @@ describe('GitHub workflow hardening', () => {
     expect(installStep.run).toContain('tar -xzf "$asset"');
     expect(installStep.run).not.toContain('beejak/MCP_Scanner');
     expect(installStep.run).not.toContain('chmod +x mcp-sentinel');
+  });
+
+  it('pins the OSV reusable workflows to the Node 24-compatible release', () => {
+    const workflow = loadWorkflow('.github/workflows/osv-scanner.yml');
+
+    expect(workflow.jobs['scan-scheduled'].uses).toBe(OSV_SCANNER_SCHEDULED_WORKFLOW);
+    expect(workflow.jobs['scan-pr'].uses).toBe(OSV_SCANNER_PR_WORKFLOW);
   });
 });
