@@ -44,6 +44,7 @@ function resolveNodeMajorVersion(
   env: {
     workflowEnv: Record<string, unknown>;
     jobEnv: Record<string, unknown>;
+    stepEnv: Record<string, unknown>;
   },
 ): number | null {
   const directVersion = parseNodeMajorVersion(version);
@@ -61,8 +62,13 @@ function resolveNodeMajorVersion(
   }
 
   const envName = envReferenceMatch[1];
-  const resolvedValue = env.jobEnv[envName] ?? env.workflowEnv[envName];
-  return parseNodeMajorVersion(resolvedValue);
+  for (const envScope of [env.stepEnv, env.jobEnv, env.workflowEnv]) {
+    if (Object.prototype.hasOwnProperty.call(envScope, envName)) {
+      return parseNodeMajorVersion(envScope[envName]);
+    }
+  }
+
+  return null;
 }
 
 describe('node-version parsing', () => {
@@ -70,33 +76,45 @@ describe('node-version parsing', () => {
     expect(resolveNodeMajorVersion('22', {
       workflowEnv: {},
       jobEnv: {},
+      stepEnv: {},
     })).toBe(22);
 
     expect(resolveNodeMajorVersion('22.x', {
       workflowEnv: {},
       jobEnv: {},
+      stepEnv: {},
     })).toBe(22);
 
     expect(resolveNodeMajorVersion('24.11.0', {
       workflowEnv: {},
       jobEnv: {},
+      stepEnv: {},
     })).toBe(24);
   });
 
-  it('resolves simple env references from merged workflow and job env maps', () => {
+  it('resolves env references with step-level precedence over job and workflow env', () => {
     expect(resolveNodeMajorVersion('${{ env.CI_NODE_VERSION }}', {
       workflowEnv: { CI_NODE_VERSION: '22' },
       jobEnv: {},
+      stepEnv: {},
     })).toBe(22);
 
     expect(resolveNodeMajorVersion('${{ env.CI_NODE_VERSION }}', {
       workflowEnv: { CI_NODE_VERSION: '20' },
       jobEnv: { CI_NODE_VERSION: '24' },
+      stepEnv: {},
     })).toBe(24);
+
+    expect(resolveNodeMajorVersion('${{ env.CI_NODE_VERSION }}', {
+      workflowEnv: { CI_NODE_VERSION: '24' },
+      jobEnv: { CI_NODE_VERSION: '22' },
+      stepEnv: { CI_NODE_VERSION: '23' },
+    })).toBe(23);
 
     expect(resolveNodeMajorVersion('${{ env.CI_NODE_VERSION }}', {
       workflowEnv: { CI_NODE_VERSION: '22.x' },
       jobEnv: {},
+      stepEnv: {},
     })).toBe(22);
   });
 
@@ -104,16 +122,25 @@ describe('node-version parsing', () => {
     expect(resolveNodeMajorVersion('${{ env.CI_NODE_VERSION }}', {
       workflowEnv: {},
       jobEnv: {},
+      stepEnv: {},
     })).toBeNull();
 
     expect(resolveNodeMajorVersion('${{ env.CI_NODE_VERSION }}', {
       workflowEnv: { CI_NODE_VERSION: '${{ vars.NODE_VERSION }}' },
       jobEnv: {},
+      stepEnv: {},
+    })).toBeNull();
+
+    expect(resolveNodeMajorVersion('${{ env.CI_NODE_VERSION }}', {
+      workflowEnv: { CI_NODE_VERSION: '22' },
+      jobEnv: { CI_NODE_VERSION: '23' },
+      stepEnv: { CI_NODE_VERSION: '${{ vars.NODE_VERSION }}' },
     })).toBeNull();
 
     expect(resolveNodeMajorVersion('${{ matrix.node }}', {
       workflowEnv: { CI_NODE_VERSION: '22' },
       jobEnv: {},
+      stepEnv: {},
     })).toBeNull();
   });
 });
@@ -173,6 +200,7 @@ describe('GitHub workflow hardening', () => {
           const nodeVersion = resolveNodeMajorVersion(step.with?.['node-version'], {
             workflowEnv: workflow.env ?? {},
             jobEnv: job.env ?? {},
+            stepEnv: step.env ?? {},
           });
           expect(nodeVersion, `${workflowPath} step ${step.name ?? '<unnamed>'} should declare a literal or statically resolvable env-backed node-version`).not.toBeNull();
           expect(nodeVersion, `${workflowPath} step ${step.name ?? '<unnamed>'} should use Node 22 or newer`).toBeGreaterThanOrEqual(22);
