@@ -21,6 +21,15 @@ function listWorkflowPaths(): string[] {
     .sort();
 }
 
+function parseNodeMajorVersion(version: unknown): number | null {
+  if (typeof version !== 'string') {
+    return null;
+  }
+
+  const match = version.match(/\d+/);
+  return match ? Number.parseInt(match[0], 10) : null;
+}
+
 describe('GitHub workflow hardening', () => {
   it('disables persisted git credentials on every checkout step', () => {
     const workflowPaths = listWorkflowPaths();
@@ -58,6 +67,29 @@ describe('GitHub workflow hardening', () => {
     expect(installStep.run).toContain('tar -xzf "$asset"');
     expect(installStep.run).not.toContain('beejak/MCP_Scanner');
     expect(installStep.run).not.toContain('chmod +x mcp-sentinel');
+  });
+
+  it('runs setup-node steps on Node 22 or newer unless a job intentionally uses a newer runtime', () => {
+    const workflowPaths = listWorkflowPaths();
+    let setupNodeStepCount = 0;
+
+    for (const workflowPath of workflowPaths) {
+      const workflow = loadWorkflow(workflowPath);
+      const jobs = Object.values<any>(workflow.jobs ?? {});
+
+      for (const job of jobs) {
+        const setupNodeSteps = (job.steps ?? []).filter((step: any) => step?.uses === 'actions/setup-node@v4');
+        setupNodeStepCount += setupNodeSteps.length;
+
+        for (const step of setupNodeSteps) {
+          const nodeVersion = parseNodeMajorVersion(step.with?.['node-version']);
+          expect(nodeVersion, `${workflowPath} step ${step.name ?? '<unnamed>'} should declare a numeric node-version`).not.toBeNull();
+          expect(nodeVersion, `${workflowPath} step ${step.name ?? '<unnamed>'} should use Node 22 or newer`).toBeGreaterThanOrEqual(22);
+        }
+      }
+    }
+
+    expect(setupNodeStepCount).toBeGreaterThan(0);
   });
 
   it('pins the OSV reusable workflows to the Node 24-compatible release', () => {
