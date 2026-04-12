@@ -156,6 +156,9 @@ export class MCPServer {
     | ((sessionId: string, provider: UpstreamMcpServerConfig, token: string | undefined) => Promise<Client>)
     | null = null;
 
+  /** Prevents the stdio upstream_mcp misconfiguration warning from repeating on every request. */
+  private upstreamStdioWarnLogged = false;
+
   /**
    * Cache of sanitized+policy-filtered tool names per session and provider.
    * Populated by handleUpstreamToolsList; consulted by handleToolCall to prevent
@@ -1403,6 +1406,10 @@ export class MCPServer {
     this.recordGlobalToolFilterMetrics();
 
     // Wire upstream connection manager so upstream_mcp profiles can proxy tool calls.
+    // TODO(phase-3/auth-gate): upstream proxy is wired unconditionally here; once the client
+    // authentication gate (Phase 3) lands, this wiring must be guarded so that upstream
+    // resources are only reachable after inbound identity has been verified and attached to
+    // the session. See .planning/phases/03-client-authentication-gate/ for the design.
     const upstreamManager = new UpstreamConnectionManager({ logger: this.logger });
     this.httpTransport.setUpstreamConnectionManager(upstreamManager);
     this.setGetUpstreamClient((s, p, t) => upstreamManager.getOrConnect(s, p, t));
@@ -1626,6 +1633,8 @@ export class MCPServer {
       // but the bad description/inputSchema is not echoed back in tools/call responses, so the
       // injection risk is constrained to the metadata display path (tools/list). Clients that
       // skip tools/list bear responsibility for not seeing the sanitized view.
+      // TODO(sec): consider seeding the cache on the first tools/call when absent, to close this
+      // gap for clients that invoke tools/call directly without a prior tools/list round-trip.
       const sanitizedSet = sessionId
         ? this.sanitizedAndPolicyFilteredToolNames.get(sessionId)?.get(upstreamMcpForCall[0].name)
         : undefined;
@@ -1790,7 +1799,8 @@ export class MCPServer {
       return this.httpTransport.getUpstreamMcpConfig(profileId) ?? this.profile?.upstream_mcp;
     }
     // stdio path: upstream_mcp cannot be used without a wired client
-    if (this.profile?.upstream_mcp?.length && !this.getUpstreamClientFn) {
+    if (!this.upstreamStdioWarnLogged && this.profile?.upstream_mcp?.length && !this.getUpstreamClientFn) {
+      this.upstreamStdioWarnLogged = true;
       this.logger?.warn(
         'upstream_mcp configured but no upstream client wired - upstream_mcp requires HTTP transport',
         { profileId: profileId ?? this.profile?.profile_name },
@@ -1852,14 +1862,13 @@ export class MCPServer {
       const policyFiltered = applyProviderToolPolicy(sanitized.tools, provider.tools);
       // Cache sanitized+policy-filtered tool names for tools/call gate enforcement.
       // Tools dropped here (bad description/inputSchema) must not be callable via tools/call.
-      if (sessionId) {
-        let sessionCache = this.sanitizedAndPolicyFilteredToolNames.get(sessionId);
-        if (!sessionCache) {
-          sessionCache = new Map();
-          this.sanitizedAndPolicyFilteredToolNames.set(sessionId, sessionCache);
-        }
-        sessionCache.set(provider.name, new Set(policyFiltered.map(t => t.name)));
+      // sessionId is always defined here: the method throws at line 1832 when !sessionId.
+      let sessionCache = this.sanitizedAndPolicyFilteredToolNames.get(sessionId);
+      if (!sessionCache) {
+        sessionCache = new Map();
+        this.sanitizedAndPolicyFilteredToolNames.set(sessionId, sessionCache);
       }
+      sessionCache.set(provider.name, new Set(policyFiltered.map(t => t.name)));
       // Apply session-level X-Mcp4-Tools name filter (same gate as local tools/list)
       const sessionFilter = this.getToolFilterForSession(sessionId, profileId);
       const nameFiltered = sessionFilter
@@ -1911,6 +1920,16 @@ export class MCPServer {
     const params = req.params as Record<string, unknown>;
     const toolName = params.name as string;
     const args = (params.arguments as Record<string, unknown>) || {};
+
+    // Enforce name validation at the function boundary, not only at call sites.
+    // Guards against future call paths that skip the outer isValidUpstreamToolName() check.
+    if (!isValidUpstreamToolName(toolName)) {
+      throw new UpstreamConnectionError(
+        `Invalid tool name rejected by upstream proxy: '${String(toolName).slice(0, 100)}'`,
+        provider.name,
+      );
+    }
+
     const token = this.getUpstreamToken(sessionId, profileId, provider);
 
     try {
