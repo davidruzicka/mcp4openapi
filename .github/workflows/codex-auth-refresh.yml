@@ -33,6 +33,7 @@ jobs:
         run: npm ci
 
       - name: Setup Codex auth
+        id: setup-auth
         env:
           CODEX_AUTH_JSON: ${{ secrets.CODEX_AUTH_JSON }}
         run: |
@@ -42,7 +43,8 @@ jobs:
           fi
 
           (umask 077 && mkdir -p ~/.codex && printf '%s\n' "$CODEX_AUTH_JSON" > ~/.codex/auth.json)
-          echo "CODEX_AUTH_HASH=$(sha256sum ~/.codex/auth.json | cut -d' ' -f1)" >> "$GITHUB_ENV"
+          AUTH_HASH=$(sha256sum ~/.codex/auth.json | cut -d' ' -f1)
+          echo "auth_hash=$AUTH_HASH" >> "$GITHUB_OUTPUT"
           echo "Using Codex OAuth auth."
 
       - name: Decide whether a refresh is needed
@@ -120,9 +122,10 @@ jobs:
           AGE_DAYS: ${{ steps.refresh-check.outputs.age_days }}
 
       - name: Persist Codex OAuth token if refreshed
-        if: always() && env.CODEX_AUTH_HASH != ''
+        if: always() && steps.setup-auth.outputs.auth_hash != ''
         env:
           GH_TOKEN: ${{ secrets.GH_PAT_FOR_SECRETS }}
+          ORIGINAL_HASH: ${{ steps.setup-auth.outputs.auth_hash }}
         run: |
           if [ -z "$GH_TOKEN" ]; then
             echo "GH_PAT_FOR_SECRETS not configured, skipping token persistence."
@@ -133,7 +136,7 @@ jobs:
             exit 0
           fi
           NEW_HASH=$(sha256sum ~/.codex/auth.json | cut -d' ' -f1)
-          if [ "$NEW_HASH" != "$CODEX_AUTH_HASH" ]; then
+          if [ "$NEW_HASH" != "$ORIGINAL_HASH" ]; then
             gh secret set CODEX_AUTH_JSON --repo "$GITHUB_REPOSITORY" < ~/.codex/auth.json
             echo "Token refreshed and persisted."
           else

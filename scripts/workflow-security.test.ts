@@ -253,8 +253,15 @@ describe('GitHub workflow hardening', () => {
     expect(refreshStep.run).toContain('codex exec');
     expect(refreshStep.run).toContain('Reply exactly with OK');
 
+    const setupAuthStep = refreshJob.steps.find((step: any) => step.name === 'Setup Codex auth');
+    expect(setupAuthStep.id).toBe('setup-auth');
+    expect(setupAuthStep.run).toContain('GITHUB_OUTPUT');
+    expect(setupAuthStep.run).toContain('auth_hash=');
+
     const persistStep = refreshJob.steps.find((step: any) => step.name === 'Persist Codex OAuth token if refreshed');
+    expect(persistStep.if).toContain("steps.setup-auth.outputs.auth_hash != ''");
     expect(persistStep.env).toMatchObject({ GH_TOKEN: '${{ secrets.GH_PAT_FOR_SECRETS }}' });
+    expect(persistStep.run).toContain('ORIGINAL_HASH');
     expect(persistStep.run).toContain('gh secret set CODEX_AUTH_JSON');
   });
 
