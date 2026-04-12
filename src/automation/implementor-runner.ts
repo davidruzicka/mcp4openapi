@@ -1,4 +1,10 @@
 import { buildAgentMetadataBlock } from './agent-feedback.js';
+import {
+  hasImplementorPullRequest,
+  parseImplementorCommandResult as parseStructuredImplementorCommandResult,
+  type ImplementorCommandResult,
+  type ImplementorPullRequestMetadata,
+} from './implementor-command-result.js';
 import { planImplementorCompletion, planImplementorStart } from './agent-workflow-state.js';
 import type { ArtifactTrustConfig } from './artifact-signing-config.js';
 import { parseAgentMetadata } from './evaluator-runner.js';
@@ -26,14 +32,7 @@ export interface ImplementorIssueComment {
   readonly authorLogin: string;
 }
 
-export interface ImplementorCommandResult {
-  readonly outcome: 'pr-created' | 'failed' | 'blocked';
-  readonly summary: string;
-  readonly pullRequest?: {
-    readonly number: number;
-    readonly url: string;
-  };
-}
+export type { ImplementorCommandResult } from './implementor-command-result.js';
 
 export interface ImplementorResultLabelPlan {
   readonly issueLabelsToAdd: readonly string[];
@@ -100,6 +99,9 @@ export function collectImplementorAssignments(input: CollectImplementorAssignmen
     if (hasActiveImplementorLease(comments, input.now, leaseTtlMinutes)) {
       return [];
     }
+    if (hasRecentUnchangedImplementorFailure(comments, issue.updatedAt, input.now, leaseTtlMinutes)) {
+      return [];
+    }
 
     return [{
       issueNumber: issue.number,
@@ -152,13 +154,14 @@ export function buildImplementorResultComment(input: {
   readonly result: ImplementorCommandResult;
   readonly reviewFollowUpItems?: readonly ReviewFollowUpItem[];
 }): string {
+  const pullRequest = hasImplementorPullRequest(input.result) ? input.result.pullRequest : undefined;
   const metadataBlock = buildAgentMetadataBlock({
     'agent-id': input.agentId,
     'agent-stage': 'implementor',
     'agent-role': 'implementation',
     repository: input.repository,
     'issue-number': input.issueNumber,
-    'pr-number': input.result.pullRequest?.number,
+    'pr-number': pullRequest?.number,
     status: input.result.outcome,
     'run-id': input.runId,
     timestamp: input.timestamp,
@@ -171,7 +174,7 @@ export function buildImplementorResultComment(input: {
     `Summary: ${input.result.summary}`,
   ];
 
-  const pullRequestLine = buildImplementorPullRequestLine(input.result.pullRequest);
+  const pullRequestLine = buildImplementorPullRequestLine(pullRequest);
   if (pullRequestLine) {
     lines.push(pullRequestLine);
   }
@@ -186,7 +189,7 @@ export function buildImplementorResultComment(input: {
   return lines.join('\n');
 }
 
-function buildImplementorPullRequestLine(pullRequest: ImplementorCommandResult['pullRequest']): string | undefined {
+function buildImplementorPullRequestLine(pullRequest: ImplementorPullRequestMetadata | undefined): string | undefined {
   if (!pullRequest) {
     return undefined;
   }
@@ -417,36 +420,7 @@ export function buildImplementorReviewThreadReplyPlans(input: {
 }
 
 export function parseImplementorCommandResult(raw: string): ImplementorCommandResult {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    throw new Error('Invalid implementor command result: expected JSON object.');
-  }
-
-  if (!parsed || typeof parsed !== 'object') {
-    throw new Error('Invalid implementor command result: expected object payload.');
-  }
-
-  const outcome = (parsed as { outcome?: unknown }).outcome;
-  const summary = (parsed as { summary?: unknown }).summary;
-  const pullRequest = (parsed as { pullRequest?: unknown }).pullRequest;
-  if (outcome !== 'pr-created' && outcome !== 'failed' && outcome !== 'blocked') {
-    throw new Error('Invalid implementor command result: unsupported outcome.');
-  }
-  if (typeof summary !== 'string' || summary.length === 0) {
-    throw new Error('Invalid implementor command result: missing summary.');
-  }
-  if (pullRequest !== undefined) {
-    if (!pullRequest || typeof pullRequest !== 'object' || typeof (pullRequest as { number?: unknown }).number !== 'number' || typeof (pullRequest as { url?: unknown }).url !== 'string') {
-      throw new Error('Invalid implementor command result: invalid pullRequest payload.');
-    }
-  }
-  if (outcome === 'pr-created' && pullRequest === undefined) {
-    throw new Error('Invalid implementor command result: pr-created outcome requires pullRequest metadata.');
-  }
-
-  return parsed as ImplementorCommandResult;
+  return parseStructuredImplementorCommandResult(raw);
 }
 
 export function planImplementorResultLabels(result: ImplementorCommandResult): ImplementorResultLabelPlan {
@@ -494,6 +468,28 @@ function hasActiveImplementorLease(
 
 function isPreflightBlockedCooldownComment(body: string, status: string | undefined): boolean {
   return status === 'blocked' && body.includes('Summary: Implementor preflight blocked:');
+}
+
+function hasRecentUnchangedImplementorFailure(
+  comments: readonly ImplementorIssueComment[],
+  issueUpdatedAt: string,
+  now: string,
+  leaseTtlMinutes: number,
+): boolean {
+  const nowTimestamp = parseIsoTimestamp(now);
+  const issueUpdatedAtTimestamp = parseIsoTimestamp(issueUpdatedAt);
+  const ttlMs = leaseTtlMinutes * 60 * 1000;
+
+  return comments.some((comment) => {
+    const metadata = parseAgentMetadata(comment.body);
+    if (metadata?.['agent-stage'] !== 'implementor' || metadata.status !== 'failed') {
+      return false;
+    }
+
+    const failureCreatedAtTimestamp = parseIsoTimestamp(comment.createdAt);
+    return nowTimestamp - failureCreatedAtTimestamp <= ttlMs
+      && issueUpdatedAtTimestamp <= failureCreatedAtTimestamp;
+  });
 }
 
 function parseIsoTimestamp(value: string): number {

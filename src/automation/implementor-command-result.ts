@@ -1,0 +1,164 @@
+import Ajv, { type ErrorObject, type JSONSchemaType } from 'ajv';
+
+export interface ImplementorPullRequestMetadata {
+  readonly number: number;
+  readonly url: string;
+}
+
+export type ImplementorCommandResult =
+  | {
+    readonly outcome: 'pr-created';
+    readonly summary: string;
+    readonly pullRequest: ImplementorPullRequestMetadata;
+  }
+  | {
+    readonly outcome: 'failed' | 'blocked';
+    readonly summary: string;
+  };
+
+type ImplementorCommandResultSchema = ImplementorCommandResult;
+
+const implementorPullRequestSchema: JSONSchemaType<ImplementorPullRequestMetadata> = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['number', 'url'],
+  properties: {
+    number: {
+      type: 'integer',
+    },
+    url: {
+      type: 'string',
+      minLength: 1,
+    },
+  },
+};
+
+export const implementorCommandResultJsonSchema: JSONSchemaType<ImplementorCommandResultSchema> = {
+  oneOf: [
+    {
+      type: 'object',
+      additionalProperties: false,
+      required: ['outcome', 'summary', 'pullRequest'],
+      properties: {
+        outcome: {
+          type: 'string',
+          const: 'pr-created',
+        },
+        summary: {
+          type: 'string',
+          minLength: 1,
+        },
+        pullRequest: implementorPullRequestSchema,
+      },
+    },
+    {
+      type: 'object',
+      additionalProperties: false,
+      required: ['outcome', 'summary'],
+      properties: {
+        outcome: {
+          type: 'string',
+          enum: ['failed', 'blocked'],
+        },
+        summary: {
+          type: 'string',
+          minLength: 1,
+        },
+      },
+    },
+  ],
+} as const;
+
+const AjvConstructor = ((Ajv as unknown as { default?: typeof import('ajv').default }).default ?? Ajv) as typeof import('ajv').default;
+const ajv = new AjvConstructor({ allErrors: true, strict: true });
+const validateImplementorCommandResultSchema = ajv.compile(implementorCommandResultJsonSchema);
+
+export function hasImplementorPullRequest(result: ImplementorCommandResult): result is Extract<ImplementorCommandResult, { readonly outcome: 'pr-created' }> {
+  return result.outcome === 'pr-created';
+}
+
+export function parseImplementorCommandResult(raw: string): ImplementorCommandResult {
+  let parsed: unknown;
+
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new Error('Invalid implementor command result: expected JSON object.');
+  }
+
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error('Invalid implementor command result: expected object payload.');
+  }
+
+  const candidate = parsed as { outcome?: unknown; summary?: unknown; pullRequest?: unknown };
+  if (candidate.outcome !== undefined && candidate.outcome !== 'pr-created' && candidate.outcome !== 'failed' && candidate.outcome !== 'blocked') {
+    throw new Error('Invalid implementor command result: unsupported outcome.');
+  }
+  const unexpectedProperty = findUnexpectedImplementorCommandResultProperty(candidate);
+  if (unexpectedProperty) {
+    throw new Error(`Invalid implementor command result: unexpected property ${unexpectedProperty}.`);
+  }
+  if (typeof candidate.summary === 'string' && candidate.summary.length === 0) {
+    throw new Error('Invalid implementor command result: missing summary.');
+  }
+  if (candidate.pullRequest !== undefined) {
+    if (
+      !candidate.pullRequest
+      || typeof candidate.pullRequest !== 'object'
+      || typeof (candidate.pullRequest as { number?: unknown }).number !== 'number'
+      || typeof (candidate.pullRequest as { url?: unknown }).url !== 'string'
+    ) {
+      throw new Error('Invalid implementor command result: invalid pullRequest payload.');
+    }
+  }
+  if (candidate.outcome === 'pr-created' && candidate.pullRequest === undefined) {
+    throw new Error('Invalid implementor command result: pr-created outcome requires pullRequest metadata.');
+  }
+  if ((candidate.outcome === 'blocked' || candidate.outcome === 'failed') && candidate.pullRequest !== undefined) {
+    throw new Error('Invalid implementor command result: schema validation failed.');
+  }
+
+  // Intentional defense-in-depth: the manual guards above provide deterministic, human-friendly
+  // error messages for the common failure paths. Ajv here is a safety net that catches anything
+  // the guards missed (e.g. future schema changes where guards lag behind). Both layers test
+  // the same schema on purpose - do not collapse them into Ajv-only without also auditing that
+  // every error path still produces an actionable message via formatImplementorCommandResultValidationError.
+  if (!validateImplementorCommandResultSchema(parsed)) {
+    throw new Error(formatImplementorCommandResultValidationError(validateImplementorCommandResultSchema.errors));
+  }
+
+  return parsed as ImplementorCommandResult;
+}
+
+function formatImplementorCommandResultValidationError(errors: readonly ErrorObject[] | null | undefined): string {
+  const firstError = errors?.[0];
+  if (!firstError) {
+    throw new Error('Invalid implementor command result: schema validation failed.');
+  }
+
+  if (firstError.keyword === 'additionalProperties') {
+    return `Invalid implementor command result: unexpected property ${(firstError.params as { additionalProperty: string }).additionalProperty}.`;
+  }
+
+  if (firstError.keyword === 'required') {
+    const missingProperty = (firstError.params as { missingProperty: string }).missingProperty;
+    if (missingProperty === 'pullRequest' && errors?.some((error) => error.keyword === 'type')) {
+      return 'Invalid implementor command result: schema validation failed.';
+    }
+
+    return missingProperty === 'pullRequest'
+      ? 'Invalid implementor command result: pr-created outcome requires pullRequest metadata.'
+      : `Invalid implementor command result: missing ${missingProperty}.`;
+  }
+
+  if (firstError.instancePath.startsWith('/pullRequest')) {
+    return 'Invalid implementor command result: invalid pullRequest payload.';
+  }
+
+  return 'Invalid implementor command result: schema validation failed.';
+}
+
+function findUnexpectedImplementorCommandResultProperty(candidate: { outcome?: unknown; [key: string]: unknown }): string | undefined {
+  const allowedProperties = new Set(['outcome', 'summary', 'pullRequest']);
+  return Object.keys(candidate).find((key) => !allowedProperties.has(key));
+}

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildCodexInvocationPlan,
+  buildMalformedCodexResult,
   parseCodexResult,
   parseImplementorTaskPayload,
   type ImplementorTaskPayload,
@@ -222,6 +223,8 @@ describe('implementor-codex', () => {
       expect(plan.prompt).toContain('/tmp/implementor-result.json');
       expect(plan.prompt).toContain('Run targeted tests and typecheck before creating the PR');
       expect(plan.prompt).toContain('This PR was created by an automated agent.');
+      expect(plan.prompt).toContain('Return only the JSON object in that file - no markdown fences, headings, logs, or prose.');
+      expect(plan.prompt).toContain('Include pullRequest if and only if outcome is "pr-created".');
     });
 
     it('supports binary, mode, model, and cwd overrides via environment variables', () => {
@@ -285,6 +288,103 @@ describe('implementor-codex', () => {
         outcome: 'blocked',
         summary: 'Needs human review.',
       });
+    });
+
+    it('accepts JSON wrapped in a fenced markdown block', () => {
+      expect(parseCodexResult([
+        '```json',
+        '{"outcome":"blocked","summary":"Needs human review."}',
+        '```',
+      ].join('\n'))).toEqual({
+        outcome: 'blocked',
+        summary: 'Needs human review.',
+      });
+    });
+
+    it('accepts a single JSON object surrounded by extra text', () => {
+      expect(parseCodexResult([
+        'Finished the run.',
+        '{"outcome":"failed","summary":"Tests failed before a safe patch was ready."}',
+        'See worktree notes above.',
+      ].join('\n'))).toEqual({
+        outcome: 'failed',
+        summary: 'Tests failed before a safe patch was ready.',
+      });
+    });
+
+    it('extracts embedded JSON when earlier brace-like text appears inside strings', () => {
+      expect(parseCodexResult([
+        'Log output: "ignoring {placeholder} before the real payload"',
+        '{"outcome":"blocked","summary":"Needs follow-up for braces in strings."}',
+      ].join('\n'))).toEqual({
+        outcome: 'blocked',
+        summary: 'Needs follow-up for braces in strings.',
+      });
+    });
+
+    it('extracts embedded JSON when earlier string content contains escaped quotes and braces', () => {
+      expect(parseCodexResult([
+        'Log output: "prefix with escaped quote: \\\" and brace {still-not-json}"',
+        '{"outcome":"blocked","summary":"Needs follow-up for escaped content."}',
+      ].join('\n'))).toEqual({
+        outcome: 'blocked',
+        summary: 'Needs follow-up for escaped content.',
+      });
+    });
+
+    it('ignores backslashes outside strings so windows-style paths do not swallow later payloads', () => {
+      expect(parseCodexResult([
+        'Log output: C:\\temp\\"quoted {still-not-json}"',
+        '{"outcome":"blocked","summary":"Recovered after windows-style path noise."}',
+      ].join('\n'))).toEqual({
+        outcome: 'blocked',
+        summary: 'Recovered after windows-style path noise.',
+      });
+    });
+
+    it('keeps scanning embedded JSON objects after earlier brace-delimited noise', () => {
+      expect(parseCodexResult([
+        'Log output: {"unexpected":"diagnostic"}',
+        '{"outcome":"blocked","summary":"Recovered the later valid payload."}',
+      ].join('\n'))).toEqual({
+        outcome: 'blocked',
+        summary: 'Recovered the later valid payload.',
+      });
+    });
+
+    it('surfaces the final schema error when no candidate can be parsed', () => {
+      expect(() => parseCodexResult('Finished the run without writing any JSON payload.')).toThrow('Invalid implementor command result: expected JSON object.');
+    });
+
+    it('rejects output containing two independently schema-valid JSON objects', () => {
+      expect(() => parseCodexResult([
+        '{"outcome":"failed","summary":"First valid result."}',
+        '{"outcome":"blocked","summary":"Second valid result."}',
+      ].join('\n'))).toThrow('Invalid implementor command result: multiple valid JSON candidates found.');
+    });
+  });
+
+  describe('buildMalformedCodexResult', () => {
+    it('returns a concise failed result instead of bubbling raw parser stacks', () => {
+      expect(buildMalformedCodexResult('', new Error('Invalid implementor command result: expected JSON object.'))).toEqual({
+        outcome: 'failed',
+        summary: 'Codex backend returned malformed result (Invalid implementor command result: expected JSON object.).',
+      });
+    });
+
+    it('omits raw output from the summary to prevent token leakage in issue comments', () => {
+      expect(buildMalformedCodexResult('```json\n{ not valid json }\n```', new Error('broken payload'))).toEqual({
+        outcome: 'failed',
+        summary: 'Codex backend returned malformed result (broken payload).',
+      });
+    });
+
+    it('omits raw output even for long malformed payloads', () => {
+      const longOutput = `${'word '.repeat(60)}{"outcome":"failed"}`;
+      const result = buildMalformedCodexResult(longOutput, new Error('broken payload'));
+
+      expect(result.outcome).toBe('failed');
+      expect(result.summary).toBe('Codex backend returned malformed result (broken payload).');
     });
   });
 });

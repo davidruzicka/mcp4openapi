@@ -12,34 +12,40 @@ permissions:
 jobs:
   mcp-scan:
     runs-on: ubuntu-latest
+    env:
+      MCP_SCANNER_VERSION: v0.1.1
+      MCP_SCANNER_LINUX_X64_SHA256: 3832e0fc1afa8abb27a71b77447b0bc6a51b0839dead5a548f967e2ea4cde25d
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
-      - name: Install MCP Sentinel
+      - name: Install MCP scanner
         run: |
           arch="$(uname -m)"
           case "$arch" in
             x86_64|amd64)
-              asset="mcp-sentinel-linux-x86_64"
-              ;;
-            aarch64|arm64)
-              asset="mcp-sentinel-linux-arm64"
+              asset="mcp-scanner-x86_64-unknown-linux-gnu.tar.gz"
+              expected_sha256="$MCP_SCANNER_LINUX_X64_SHA256"
               ;;
             *)
               echo "Unsupported runner architecture: $arch" >&2
               exit 1
               ;;
           esac
+          download_url="https://github.com/Oabraham1/mcp-scanner/releases/download/${MCP_SCANNER_VERSION}/${asset}"
           curl -fsSL \
-            -o mcp-sentinel \
-            "https://github.com/beejak/MCP_Scanner/releases/download/v2.6.0/${asset}"
-          chmod +x mcp-sentinel
+            -o "$asset" \
+            "$download_url"
+          printf '%s  %s\n' "$expected_sha256" "$asset" | sha256sum --check --strict
+          tar -xzf "$asset"
+          chmod +x mcp-scanner
 
-      - name: Run MCP Sentinel scan
+      - name: Run MCP scanner scan
         run: |
-          ./mcp-sentinel \
+          ./mcp-scanner \
             scan "${{ github.workspace }}" \
             --output sarif \
             --output-file "${{ github.workspace }}/mcp-scan.sarif" \

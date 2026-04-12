@@ -35,11 +35,10 @@ export function parseImplementorTaskPayload(
   try {
     return parseImplementorWorkflowTaskPayload(raw, options);
   } catch (error) {
-    if (error instanceof Error) {
-      throw new Error(`Codex implementor backend: ${error.message}`);
-    }
-
-    throw error;
+    // Normalize every parse failure at the backend boundary so callers always receive
+    // a deterministic Error instance instead of arbitrary thrown payloads.
+    const detail = error instanceof Error ? error.message : 'unknown parse failure';
+    throw new Error(`Codex implementor backend: ${detail}`);
   }
 }
 
@@ -69,7 +68,101 @@ export function buildCodexInvocationPlan(input: BuildCodexInvocationPlanInput): 
 }
 
 export function parseCodexResult(raw: string): ImplementorCommandResult {
-  return parseImplementorCommandResult(raw);
+  const candidates = collectCodexResultCandidates(raw);
+  const valid: ImplementorCommandResult[] = [];
+  let lastError: unknown;
+
+  for (const candidate of candidates) {
+    try {
+      valid.push(parseImplementorCommandResult(candidate));
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  if (valid.length === 1) return valid[0];
+  if (valid.length > 1) throw new Error('Invalid implementor command result: multiple valid JSON candidates found.');
+  throw lastError instanceof Error ? lastError : new Error('Invalid implementor command result: expected JSON object.');
+}
+
+// Raw output is intentionally excluded from the summary - it may contain tokens or secrets
+// written to the scratch file by a misbehaving Codex run, and the summary propagates to
+// GitHub issue comments via the implementor runner.
+export function buildMalformedCodexResult(_raw: string, error: unknown): ImplementorCommandResult {
+  const detail = error instanceof Error ? error.message : 'Invalid Codex result payload.';
+  return {
+    outcome: 'failed',
+    summary: `Codex backend returned malformed result (${detail}).`,
+  };
+}
+
+function collectCodexResultCandidates(raw: string): string[] {
+  const candidates = new Set<string>();
+  const trimmed = raw.trim();
+
+  if (trimmed.length > 0) {
+    candidates.add(trimmed);
+  }
+
+  const fencedJson = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1]?.trim();
+  if (fencedJson) {
+    candidates.add(fencedJson);
+  }
+
+  for (const embeddedJsonObject of extractEmbeddedJsonObjects(trimmed)) {
+    candidates.add(embeddedJsonObject);
+  }
+
+  return [...candidates];
+}
+
+function extractEmbeddedJsonObjects(raw: string): string[] {
+  const candidates: string[] = [];
+  let start = -1;
+  let depth = 0;
+  let inString = false;
+  let escaping = false;
+
+  for (let index = 0; index < raw.length; index += 1) {
+    const char = raw[index] as string;
+
+    if (escaping) {
+      escaping = false;
+      continue;
+    }
+
+    if (char === '\\' && inString) {
+      escaping = true;
+      continue;
+    }
+
+    if (char === '"') {
+      inString = !inString;
+      continue;
+    }
+
+    if (inString) {
+      continue;
+    }
+
+    if (char === '{') {
+      if (depth === 0) {
+        start = index;
+      }
+      depth += 1;
+      continue;
+    }
+
+    if (char === '}' && depth > 0) {
+      depth -= 1;
+      if (depth === 0 && start !== -1) {
+        candidates.push(raw.slice(start, index + 1));
+        start = -1;
+      }
+    }
+  }
+
+  return candidates;
 }
 
 function buildCodexImplementorPrompt(input: {
@@ -113,14 +206,16 @@ function buildCodexImplementorPrompt(input: {
     '',
     'Required final output:',
     `- Write exactly one JSON object to ${input.outputPath}`,
-    '- The JSON must match this schema:',
+    '- Return only the JSON object in that file - no markdown fences, headings, logs, or prose.',
+    '- The JSON must match this schema exactly:',
     '{',
     '  "outcome": "pr-created" | "failed" | "blocked",',
     '  "summary": "short human-readable summary",',
     '  "pullRequest": { "number": 123, "url": "https://github.com/owner/repo/pull/123" }',
     '}',
-    '- Include pullRequest only when outcome is "pr-created".',
-    '- Do not wrap the JSON in markdown.',
+    '- Include pullRequest if and only if outcome is "pr-created".',
+    '- Always include outcome and summary.',
+    '- If you cannot complete the task, still write a schema-valid object with outcome "failed" or "blocked" and a concrete summary.',
     '- Ensure the file contents are valid JSON before exiting.',
   ].join('\n');
 }

@@ -36,6 +36,7 @@ Start with an existing profile in [`profiles/`](./profiles), then adapt only wha
 - **I want to try it fast**: jump to [Quick Start](#quick-start) and use an existing bundled profile.
 - **I need remote access or OAuth**: use [HTTP transport](./docs/HTTP-TRANSPORT.md) and [OAuth setup](./docs/OAUTH.md).
 - **I want custom tool design**: start with the [Profile Guide](./docs/PROFILE-GUIDE.md).
+- **I want the autonomous-agent machine contracts**: see [Agent Output Schemas](./docs/AGENT-OUTPUT-SCHEMAS.md) and [Autonomous Agents](./docs/AUTONOMOUS-AGENTS.md).
 
 ## Core Capabilities
 
