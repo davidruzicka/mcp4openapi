@@ -31,11 +31,12 @@ function parseNodeMajorVersion(version: unknown): number | null {
   }
 
   const trimmedVersion = version.trim();
-  if (!/^\d+$/.test(trimmedVersion)) {
+  const semverLikeMatch = trimmedVersion.match(/^(\d+)(?:\.x|\.\d+(?:\.\d+)?)?$/i);
+  if (!semverLikeMatch) {
     return null;
   }
 
-  return Number.parseInt(trimmedVersion, 10);
+  return Number.parseInt(semverLikeMatch[1], 10);
 }
 
 function resolveNodeMajorVersion(
@@ -65,6 +66,23 @@ function resolveNodeMajorVersion(
 }
 
 describe('node-version parsing', () => {
+  it('resolves explicit numeric and semver-style node-version literals', () => {
+    expect(resolveNodeMajorVersion('22', {
+      workflowEnv: {},
+      jobEnv: {},
+    })).toBe(22);
+
+    expect(resolveNodeMajorVersion('22.x', {
+      workflowEnv: {},
+      jobEnv: {},
+    })).toBe(22);
+
+    expect(resolveNodeMajorVersion('24.11.0', {
+      workflowEnv: {},
+      jobEnv: {},
+    })).toBe(24);
+  });
+
   it('resolves simple env references from merged workflow and job env maps', () => {
     expect(resolveNodeMajorVersion('${{ env.CI_NODE_VERSION }}', {
       workflowEnv: { CI_NODE_VERSION: '22' },
@@ -75,6 +93,11 @@ describe('node-version parsing', () => {
       workflowEnv: { CI_NODE_VERSION: '20' },
       jobEnv: { CI_NODE_VERSION: '24' },
     })).toBe(24);
+
+    expect(resolveNodeMajorVersion('${{ env.CI_NODE_VERSION }}', {
+      workflowEnv: { CI_NODE_VERSION: '22.x' },
+      jobEnv: {},
+    })).toBe(22);
   });
 
   it('rejects unresolved or non-literal env-backed node versions', () => {
