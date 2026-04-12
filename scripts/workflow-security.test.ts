@@ -39,6 +39,15 @@ function parseNodeMajorVersion(version: unknown): number | null {
   return Number.parseInt(semverLikeMatch[1], 10);
 }
 
+function isSetupNodeActionReference(value: unknown): boolean {
+  if (typeof value !== 'string') {
+    return false;
+  }
+
+  const trimmedValue = value.trim();
+  return /^actions\/setup-node@[^\s]+$/i.test(trimmedValue);
+}
+
 function resolveNodeMajorVersion(
   version: unknown,
   env: {
@@ -70,6 +79,18 @@ function resolveNodeMajorVersion(
 
   return null;
 }
+
+describe('setup-node action matching', () => {
+  it('matches setup-node across tags and pinned SHAs without matching other actions', () => {
+    expect(isSetupNodeActionReference('actions/setup-node@v4')).toBe(true);
+    expect(isSetupNodeActionReference('actions/setup-node@v5')).toBe(true);
+    expect(isSetupNodeActionReference('actions/setup-node@8f4b7f84864484a7bf31766abe9204da3cbe65b3')).toBe(true);
+
+    expect(isSetupNodeActionReference('actions/setup-node2@v4')).toBe(false);
+    expect(isSetupNodeActionReference('actions/setup-node/subpath@v4')).toBe(false);
+    expect(isSetupNodeActionReference('docker://actions/setup-node@v4')).toBe(false);
+  });
+});
 
 describe('node-version parsing', () => {
   it('resolves explicit numeric and semver-style node-version literals', () => {
@@ -193,7 +214,7 @@ describe('GitHub workflow hardening', () => {
       const jobs = Object.values<any>(workflow.jobs ?? {});
 
       for (const job of jobs) {
-        const setupNodeSteps = (job.steps ?? []).filter((step: any) => step?.uses === 'actions/setup-node@v4');
+        const setupNodeSteps = (job.steps ?? []).filter((step: any) => isSetupNodeActionReference(step?.uses));
         setupNodeStepCount += setupNodeSteps.length;
 
         for (const step of setupNodeSteps) {
