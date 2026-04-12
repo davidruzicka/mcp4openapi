@@ -62,11 +62,12 @@ Plans:
   1. An inbound client presenting a JWT is validated against the JWKS endpoint of the configured identity provider; the session is rejected before any upstream connection if validation fails
   2. An inbound M2M client presenting an API key is validated against the configured key store and resolved to a client identity before session establishment
   3. The resolved client identity (from SSO JWT or API key) is attached to the session context and included in every audit log entry for that session
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 03-01: TBD
-- [ ] 03-02: TBD
+- [ ] 03-01-PLAN.md - Types, ClientAuthGateError, schema sync, and profile-load-time validator (AUTH-01, AUTH-02, AUTH-03)
+- [ ] 03-02-PLAN.md - ApiKeyStore interface, InlineApiKeyStore, SasankaApiKeyStore, and factory (AUTH-02)
+- [ ] 03-03-PLAN.md - ClientAuthGate orchestrator, http-transport wiring, session clientPrincipal attachment (AUTH-01, AUTH-02, AUTH-03)
 
 ### Phase 4: Observability
 **Goal**: Every tool call is audited with identity and outcome; operators have metrics and health endpoints to monitor the gateway
@@ -91,5 +92,5 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4
 |-------|----------------|--------|-----------|
 | 1. Upstream Session Foundation | 4/5 | In Progress|  |
 | 2. Tool Discovery and Call Proxy | 2/3 | In Progress|  |
-| 3. Client Authentication Gate | 0/2 | Not started | - |
+| 3. Client Authentication Gate | 0/3 | Not started | - |
 | 4. Observability | 0/2 | Not started | - |
