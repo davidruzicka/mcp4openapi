@@ -1,0 +1,136 @@
+name: Codex Auth Refresh
+
+on:
+  schedule:
+    - cron: '17 5 * * *'
+  workflow_dispatch:
+    inputs:
+      force_refresh:
+        description: Force a Codex auth refresh even when last_refresh is still fresh
+        required: false
+        default: 'false'
+
+jobs:
+  refresh-auth:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      REFRESH_MAX_AGE_DAYS: '4'
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Setup Codex auth
+        env:
+          CODEX_AUTH_JSON: ${{ secrets.CODEX_AUTH_JSON }}
+        run: |
+          if [ -z "$CODEX_AUTH_JSON" ]; then
+            echo "CODEX_AUTH_JSON is required for the refresh workflow." >&2
+            exit 1
+          fi
+
+          (umask 077 && mkdir -p ~/.codex && printf '%s\n' "$CODEX_AUTH_JSON" > ~/.codex/auth.json)
+          echo "CODEX_AUTH_HASH=$(sha256sum ~/.codex/auth.json | cut -d' ' -f1)" >> "$GITHUB_ENV"
+          echo "Using Codex OAuth auth."
+
+      - name: Decide whether a refresh is needed
+        id: refresh-check
+        env:
+          FORCE_REFRESH_INPUT: ${{ github.event.inputs.force_refresh || 'false' }}
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const os = require('node:os');
+          const path = require('node:path');
+
+          const authPath = path.join(os.homedir(), '.codex', 'auth.json');
+          const outputPath = process.env.GITHUB_OUTPUT;
+          const forceRefresh = String(process.env.FORCE_REFRESH_INPUT || '').toLowerCase() === 'true';
+          const maxAgeDaysRaw = process.env.REFRESH_MAX_AGE_DAYS || '4';
+          const maxAgeDays = Number.parseFloat(maxAgeDaysRaw);
+
+          if (!Number.isFinite(maxAgeDays) || maxAgeDays <= 0) {
+            throw new Error(`REFRESH_MAX_AGE_DAYS must be a positive number, received: ${maxAgeDaysRaw}`);
+          }
+
+          const auth = JSON.parse(fs.readFileSync(authPath, 'utf8'));
+          const lastRefresh = auth.last_refresh;
+
+          let refreshNeeded = forceRefresh;
+          let reason = forceRefresh ? 'forced' : 'age-check';
+          let ageDays = 'unknown';
+
+          if (!forceRefresh) {
+            if (typeof lastRefresh !== 'string' || lastRefresh.trim() === '') {
+              refreshNeeded = true;
+              reason = 'missing-last-refresh';
+            } else {
+              const lastRefreshTime = Date.parse(lastRefresh);
+              if (Number.isNaN(lastRefreshTime)) {
+                refreshNeeded = true;
+                reason = 'invalid-last-refresh';
+              } else {
+                const ageMs = Date.now() - lastRefreshTime;
+                const computedAgeDays = ageMs / (24 * 60 * 60 * 1000);
+                ageDays = computedAgeDays.toFixed(2);
+                refreshNeeded = computedAgeDays >= maxAgeDays;
+                reason = refreshNeeded ? 'stale-last-refresh' : 'fresh-last-refresh';
+              }
+            }
+          }
+
+          fs.appendFileSync(outputPath, `refresh_needed=${refreshNeeded ? 'true' : 'false'}\n`);
+          fs.appendFileSync(outputPath, `reason=${reason}\n`);
+          fs.appendFileSync(outputPath, `age_days=${ageDays}\n`);
+          NODE
+
+      - name: Refresh Codex auth
+        if: steps.refresh-check.outputs.refresh_needed == 'true'
+        run: |
+          ./node_modules/.bin/codex exec \
+            --skip-git-repo-check \
+            --ephemeral \
+            -C /tmp \
+            --full-auto \
+            "Reply exactly with OK. Do not modify files. Do not run shell commands."
+
+      - name: Report skipped refresh
+        if: steps.refresh-check.outputs.refresh_needed != 'true'
+        run: |
+          echo "Codex auth refresh skipped: ${REASON} (age_days=${AGE_DAYS})."
+        env:
+          REASON: ${{ steps.refresh-check.outputs.reason }}
+          AGE_DAYS: ${{ steps.refresh-check.outputs.age_days }}
+
+      - name: Persist Codex OAuth token if refreshed
+        if: always() && env.CODEX_AUTH_HASH != ''
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT_FOR_SECRETS }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "GH_PAT_FOR_SECRETS not configured, skipping token persistence."
+            exit 0
+          fi
+          if [ ! -f ~/.codex/auth.json ]; then
+            echo "auth.json missing after run, skipping."
+            exit 0
+          fi
+          NEW_HASH=$(sha256sum ~/.codex/auth.json | cut -d' ' -f1)
+          if [ "$NEW_HASH" != "$CODEX_AUTH_HASH" ]; then
+            gh secret set CODEX_AUTH_JSON --repo "$GITHUB_REPOSITORY" < ~/.codex/auth.json
+            echo "Token refreshed and persisted."
+          else
+            echo "Token unchanged, skipping."
+          fi

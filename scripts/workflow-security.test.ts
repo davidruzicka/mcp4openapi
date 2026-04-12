@@ -232,6 +232,30 @@ describe('GitHub workflow hardening', () => {
     expect(setupNodeStepCount).toBeGreaterThan(0);
   });
 
+  it('defines a dedicated Codex auth refresh workflow with an age gate and secret persistence', () => {
+    const workflow = loadWorkflow('.github/workflows/codex-auth-refresh.yml');
+    const refreshJob = workflow.jobs['refresh-auth'];
+
+    expect(workflow.on).toHaveProperty('schedule');
+    expect(workflow.on).toHaveProperty('workflow_dispatch');
+    expect(refreshJob.steps.some((step: any) => step.name === 'Setup Codex auth')).toBe(true);
+
+    const ageGateStep = refreshJob.steps.find((step: any) => step.id === 'refresh-check');
+    expect(ageGateStep).toBeTruthy();
+    expect(ageGateStep.run).toContain('last_refresh');
+    expect(ageGateStep.run).toContain('REFRESH_MAX_AGE_DAYS');
+    expect(ageGateStep.run).toContain('refresh_needed=');
+
+    const refreshStep = refreshJob.steps.find((step: any) => step.name === 'Refresh Codex auth');
+    expect(refreshStep.if).toContain("steps.refresh-check.outputs.refresh_needed == 'true'");
+    expect(refreshStep.run).toContain('codex exec');
+    expect(refreshStep.run).toContain('Reply exactly with OK');
+
+    const persistStep = refreshJob.steps.find((step: any) => step.name === 'Persist Codex OAuth token if refreshed');
+    expect(persistStep.env).toMatchObject({ GH_TOKEN: '${{ secrets.GH_PAT_FOR_SECRETS }}' });
+    expect(persistStep.run).toContain('gh secret set CODEX_AUTH_JSON');
+  });
+
   it('pins the OSV reusable workflows to the Node 24-compatible release', () => {
     const workflow = loadWorkflow('.github/workflows/osv-scanner.yml');
 
