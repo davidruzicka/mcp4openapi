@@ -21,6 +21,151 @@ function listWorkflowPaths(): string[] {
     .sort();
 }
 
+function parseNodeMajorVersion(version: unknown): number | null {
+  if (typeof version === 'number' && Number.isInteger(version)) {
+    return version;
+  }
+
+  if (typeof version !== 'string') {
+    return null;
+  }
+
+  const trimmedVersion = version.trim();
+  const semverLikeMatch = trimmedVersion.match(/^(\d+)(?:\.x|\.\d+(?:\.\d+)?)?$/i);
+  if (!semverLikeMatch) {
+    return null;
+  }
+
+  return Number.parseInt(semverLikeMatch[1], 10);
+}
+
+function isSetupNodeActionReference(value: unknown): boolean {
+  if (typeof value !== 'string') {
+    return false;
+  }
+
+  const trimmedValue = value.trim();
+  return /^actions\/setup-node@[^\s]+$/i.test(trimmedValue);
+}
+
+function resolveNodeMajorVersion(
+  version: unknown,
+  env: {
+    workflowEnv: Record<string, unknown>;
+    jobEnv: Record<string, unknown>;
+    stepEnv: Record<string, unknown>;
+  },
+): number | null {
+  const directVersion = parseNodeMajorVersion(version);
+  if (directVersion !== null) {
+    return directVersion;
+  }
+
+  if (typeof version !== 'string') {
+    return null;
+  }
+
+  const envReferenceMatch = version.trim().match(/^\$\{\{\s*env\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}$/);
+  if (!envReferenceMatch) {
+    return null;
+  }
+
+  const envName = envReferenceMatch[1];
+  for (const envScope of [env.stepEnv, env.jobEnv, env.workflowEnv]) {
+    if (Object.prototype.hasOwnProperty.call(envScope, envName)) {
+      return parseNodeMajorVersion(envScope[envName]);
+    }
+  }
+
+  return null;
+}
+
+describe('setup-node action matching', () => {
+  it('matches setup-node across tags and pinned SHAs without matching other actions', () => {
+    expect(isSetupNodeActionReference('actions/setup-node@v4')).toBe(true);
+    expect(isSetupNodeActionReference('actions/setup-node@v5')).toBe(true);
+    expect(isSetupNodeActionReference('actions/setup-node@8f4b7f84864484a7bf31766abe9204da3cbe65b3')).toBe(true);
+
+    expect(isSetupNodeActionReference('actions/setup-node2@v4')).toBe(false);
+    expect(isSetupNodeActionReference('actions/setup-node/subpath@v4')).toBe(false);
+    expect(isSetupNodeActionReference('docker://actions/setup-node@v4')).toBe(false);
+  });
+});
+
+describe('node-version parsing', () => {
+  it('resolves explicit numeric and semver-style node-version literals', () => {
+    expect(resolveNodeMajorVersion('22', {
+      workflowEnv: {},
+      jobEnv: {},
+      stepEnv: {},
+    })).toBe(22);
+
+    expect(resolveNodeMajorVersion('22.x', {
+      workflowEnv: {},
+      jobEnv: {},
+      stepEnv: {},
+    })).toBe(22);
+
+    expect(resolveNodeMajorVersion('24.11.0', {
+      workflowEnv: {},
+      jobEnv: {},
+      stepEnv: {},
+    })).toBe(24);
+  });
+
+  it('resolves env references with step-level precedence over job and workflow env', () => {
+    expect(resolveNodeMajorVersion('${{ env.CI_NODE_VERSION }}', {
+      workflowEnv: { CI_NODE_VERSION: '22' },
+      jobEnv: {},
+      stepEnv: {},
+    })).toBe(22);
+
+    expect(resolveNodeMajorVersion('${{ env.CI_NODE_VERSION }}', {
+      workflowEnv: { CI_NODE_VERSION: '20' },
+      jobEnv: { CI_NODE_VERSION: '24' },
+      stepEnv: {},
+    })).toBe(24);
+
+    expect(resolveNodeMajorVersion('${{ env.CI_NODE_VERSION }}', {
+      workflowEnv: { CI_NODE_VERSION: '24' },
+      jobEnv: { CI_NODE_VERSION: '22' },
+      stepEnv: { CI_NODE_VERSION: '23' },
+    })).toBe(23);
+
+    expect(resolveNodeMajorVersion('${{ env.CI_NODE_VERSION }}', {
+      workflowEnv: { CI_NODE_VERSION: '22.x' },
+      jobEnv: {},
+      stepEnv: {},
+    })).toBe(22);
+  });
+
+  it('rejects unresolved or non-literal env-backed node versions', () => {
+    expect(resolveNodeMajorVersion('${{ env.CI_NODE_VERSION }}', {
+      workflowEnv: {},
+      jobEnv: {},
+      stepEnv: {},
+    })).toBeNull();
+
+    expect(resolveNodeMajorVersion('${{ env.CI_NODE_VERSION }}', {
+      workflowEnv: { CI_NODE_VERSION: '${{ vars.NODE_VERSION }}' },
+      jobEnv: {},
+      stepEnv: {},
+    })).toBeNull();
+
+    expect(resolveNodeMajorVersion('${{ env.CI_NODE_VERSION }}', {
+      workflowEnv: { CI_NODE_VERSION: '22' },
+      jobEnv: { CI_NODE_VERSION: '23' },
+      stepEnv: { CI_NODE_VERSION: '${{ vars.NODE_VERSION }}' },
+    })).toBeNull();
+
+    expect(resolveNodeMajorVersion('${{ matrix.node }}', {
+      workflowEnv: { CI_NODE_VERSION: '22' },
+      jobEnv: {},
+      stepEnv: {},
+    })).toBeNull();
+  });
+});
+
 describe('GitHub workflow hardening', () => {
   it('disables persisted git credentials on every checkout step', () => {
     const workflowPaths = listWorkflowPaths();
@@ -58,6 +203,73 @@ describe('GitHub workflow hardening', () => {
     expect(installStep.run).toContain('tar -xzf "$asset"');
     expect(installStep.run).not.toContain('beejak/MCP_Scanner');
     expect(installStep.run).not.toContain('chmod +x mcp-sentinel');
+  });
+
+  it('runs setup-node steps on Node 22 or newer unless a job intentionally uses a newer runtime', () => {
+    const workflowPaths = listWorkflowPaths();
+    let setupNodeStepCount = 0;
+
+    for (const workflowPath of workflowPaths) {
+      const workflow = loadWorkflow(workflowPath);
+      const jobs = Object.values<any>(workflow.jobs ?? {});
+
+      for (const job of jobs) {
+        const setupNodeSteps = (job.steps ?? []).filter((step: any) => isSetupNodeActionReference(step?.uses));
+        setupNodeStepCount += setupNodeSteps.length;
+
+        for (const step of setupNodeSteps) {
+          const nodeVersion = resolveNodeMajorVersion(step.with?.['node-version'], {
+            workflowEnv: workflow.env ?? {},
+            jobEnv: job.env ?? {},
+            stepEnv: step.env ?? {},
+          });
+          expect(nodeVersion, `${workflowPath} step ${step.name ?? '<unnamed>'} should declare a literal or statically resolvable env-backed node-version`).not.toBeNull();
+          expect(nodeVersion, `${workflowPath} step ${step.name ?? '<unnamed>'} should use Node 22 or newer`).toBeGreaterThanOrEqual(22);
+        }
+      }
+    }
+
+    expect(setupNodeStepCount).toBeGreaterThan(0);
+  });
+
+  it('defines a dedicated Codex auth refresh workflow with concurrency, an age gate, and safe secret persistence', () => {
+    const workflow = loadWorkflow('.github/workflows/codex-auth-refresh.yml');
+    const refreshJob = workflow.jobs['refresh-auth'];
+
+    expect(workflow.on).toHaveProperty('schedule');
+    expect(workflow.on).toHaveProperty('workflow_dispatch');
+    expect(workflow.concurrency).toMatchObject({
+      group: 'codex-auth-refresh',
+      'cancel-in-progress': false,
+    });
+    expect(refreshJob.steps.some((step: any) => step.name === 'Setup Codex auth')).toBe(true);
+
+    const ageGateStep = refreshJob.steps.find((step: any) => step.id === 'refresh-check');
+    expect(ageGateStep).toBeTruthy();
+    expect(ageGateStep.run).toContain('last_refresh');
+    expect(ageGateStep.run).toContain('REFRESH_MAX_AGE_DAYS');
+    expect(ageGateStep.run).toContain('computedAgeDays < 0');
+    expect(ageGateStep.run).toContain('future-last-refresh');
+    expect(ageGateStep.run).toContain('refresh_needed=');
+
+    const refreshStep = refreshJob.steps.find((step: any) => step.name === 'Refresh Codex auth');
+    expect(refreshStep.id).toBe('refresh-codex-auth');
+    expect(refreshStep.if).toContain("steps.refresh-check.outputs.refresh_needed == 'true'");
+    expect(refreshStep.run).toContain('codex exec');
+    expect(refreshStep.run).toContain('Reply exactly with OK');
+
+    const setupAuthStep = refreshJob.steps.find((step: any) => step.name === 'Setup Codex auth');
+    expect(setupAuthStep.id).toBe('setup-auth');
+    expect(setupAuthStep.run).toContain('GITHUB_OUTPUT');
+    expect(setupAuthStep.run).toContain('auth_hash=');
+
+    const persistStep = refreshJob.steps.find((step: any) => step.name === 'Persist Codex OAuth token if refreshed');
+    expect(persistStep.if).toContain("steps.refresh-check.outputs.refresh_needed == 'true'");
+    expect(persistStep.if).toContain("steps.refresh-codex-auth.outcome == 'success'");
+    expect(persistStep.if).toContain("steps.setup-auth.outputs.auth_hash != ''");
+    expect(persistStep.env).toMatchObject({ GH_TOKEN: '${{ secrets.GH_PAT_FOR_SECRETS }}' });
+    expect(persistStep.run).toContain('ORIGINAL_HASH');
+    expect(persistStep.run).toContain('gh secret set CODEX_AUTH_JSON');
   });
 
   it('pins the OSV reusable workflows to the Node 24-compatible release', () => {
