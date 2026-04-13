@@ -232,6 +232,46 @@ describe('UpstreamConnectionManager', () => {
       expect(mockClient.connect).toHaveBeenCalledTimes(1);
     });
 
+    it('does not reconnect when token changes but provider has no auth configured', async () => {
+      // No-auth provider: upstream receives no credential; token rotation in downstream
+      // session is irrelevant and must not trigger unnecessary upstream reconnects.
+      const noAuthProvider: UpstreamMcpServerConfig = {
+        name: 'no-auth-provider',
+        transport: { type: 'http-streamable' as const, url: 'https://upstream.example.com/mcp' },
+        // auth is intentionally absent
+      };
+
+      await manager.getOrConnect('session-1', noAuthProvider, 'token-A');
+      expect(mockClient.connect).toHaveBeenCalledTimes(1);
+
+      // Token changes - should reuse existing connection, not reconnect
+      const result = await manager.getOrConnect('session-1', noAuthProvider, 'token-B');
+      expect(result).toBe(mockClient);
+      expect(mockClient.connect).toHaveBeenCalledTimes(1); // no additional connect
+    });
+
+    it('deduplicates concurrent calls with different tokens when provider has no auth', async () => {
+      const noAuthProvider: UpstreamMcpServerConfig = {
+        name: 'no-auth-provider',
+        transport: { type: 'http-streamable' as const, url: 'https://upstream.example.com/mcp' },
+      };
+
+      let resolveConnect!: () => void;
+      mockClient.connect.mockReturnValue(
+        new Promise<void>((resolve) => { resolveConnect = resolve; }),
+      );
+
+      // Two concurrent calls with different tokens - both should share the same promise
+      const p1 = manager.getOrConnect('session-1', noAuthProvider, 'token-A');
+      const p2 = manager.getOrConnect('session-1', noAuthProvider, 'token-B');
+
+      resolveConnect();
+      const [c1, c2] = await Promise.all([p1, p2]);
+
+      expect(c1).toBe(c2);
+      expect(clientFactory).toHaveBeenCalledTimes(1); // single connect, not two
+    });
+
     it('stops heartbeat before replacing a CONNECTED connection on token rotation (P1)', async () => {
       const provider = createProvider();
       await manager.getOrConnect('session-1', provider, 'token-A');

@@ -173,6 +173,41 @@ describe('sanitizeToolList', () => {
     expect(() => sanitizeToolList([tool])).not.toThrow();
   });
 
+  it('drops null entry without throwing TypeError', () => {
+    const tools = [null] as unknown as Tool[];
+    const result = sanitizeToolList(tools, logger);
+    expect(result.tools).toHaveLength(0);
+    expect(result.dropped).toHaveLength(1);
+    expect(result.dropped[0].reason).toBe('malformed tool definition: entry is not an object');
+    expect(result.dropped[0].name).toBe('null');
+    expect(logger.warn).toHaveBeenCalledOnce();
+  });
+
+  it('drops undefined entry without throwing TypeError', () => {
+    const tools = [undefined] as unknown as Tool[];
+    const result = sanitizeToolList(tools, logger);
+    expect(result.tools).toHaveLength(0);
+    expect(result.dropped).toHaveLength(1);
+    expect(result.dropped[0].reason).toBe('malformed tool definition: entry is not an object');
+  });
+
+  it('drops primitive string entry without throwing', () => {
+    const tools = ['not-a-tool'] as unknown as Tool[];
+    const result = sanitizeToolList(tools, logger);
+    expect(result.tools).toHaveLength(0);
+    expect(result.dropped[0].reason).toBe('malformed tool definition: entry is not an object');
+  });
+
+  it('handles mixed list with null entry: keeps safe tools, drops null', () => {
+    const safe = makeTool('ok', 'fine');
+    const tools = [safe, null] as unknown as Tool[];
+    const result = sanitizeToolList(tools, logger);
+    expect(result.tools).toHaveLength(1);
+    expect(result.tools[0].name).toBe('ok');
+    expect(result.dropped).toHaveLength(1);
+    expect(result.dropped[0].reason).toBe('malformed tool definition: entry is not an object');
+  });
+
   it('drops tool where name is a number (runtime type violation)', () => {
     const tool = { name: 123, inputSchema: { type: 'object', properties: {} } } as unknown as Tool;
     const result = sanitizeToolList([tool], logger);
