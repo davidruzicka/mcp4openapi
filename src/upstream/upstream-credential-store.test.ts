@@ -59,6 +59,24 @@ describe('buildAuthHeaders', () => {
     } as unknown as UpstreamMcpServerConfig['auth']);
     expect(buildAuthHeaders(provider, 'mytoken')).toEqual({});
   });
+
+  it('returns empty object for custom-header with CRLF in header_name (defensive injection guard)', () => {
+    const provider = makeProvider({
+      type: 'custom-header',
+      value_from_env: 'TOK_ENV',
+      header_name: "X-Header\r\nX-Inject: evil",
+    } as unknown as UpstreamMcpServerConfig['auth']);
+    expect(buildAuthHeaders(provider, 'mytoken')).toEqual({});
+  });
+
+  it('returns empty object for custom-header with space in header_name (defensive guard)', () => {
+    const provider = makeProvider({
+      type: 'custom-header',
+      value_from_env: 'TOK_ENV',
+      header_name: 'X Bad Header',
+    } as unknown as UpstreamMcpServerConfig['auth']);
+    expect(buildAuthHeaders(provider, 'mytoken')).toEqual({});
+  });
 });
 
 describe('buildAuthUrl', () => {

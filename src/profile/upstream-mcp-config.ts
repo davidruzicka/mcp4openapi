@@ -6,7 +6,7 @@ import type {
   UpstreamMcpServerConfig,
   UpstreamMcpToolPolicy,
 } from '../types/profile.js';
-import { isSafePropertyName, isUri } from '../validation/validation-utils.js';
+import { isSafePropertyName, isUri, isValidHttpHeaderName } from '../validation/validation-utils.js';
 
 type EnvSource = NodeJS.ProcessEnv;
 
@@ -127,6 +127,12 @@ function validateUpstreamAuth(auth: UpstreamMcpAuthConfig | undefined, path: str
         path: `${path}.header_name`,
         headerName: auth.header_name,
       });
+    }
+    if (!isValidHttpHeaderName(auth.header_name)) {
+      throw new ValidationError(
+        `${path}.header_name must be a valid HTTP header field-name (RFC7230 token); got '${auth.header_name}'`,
+        { path: `${path}.header_name`, headerName: auth.header_name },
+      );
     }
   }
 

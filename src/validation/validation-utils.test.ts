@@ -1,11 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { 
-  isEmail, 
-  isUri, 
-  redactHeader, 
-  redactQueryParam, 
+import {
+  isEmail,
+  isUri,
+  redactHeader,
+  redactQueryParam,
   redactParam,
   isSafePropertyName,
+  isValidHttpHeaderName,
   hasOwnKey,
   escapeRegExp,
   escapeHtmlSafe,
@@ -153,6 +154,46 @@ describe('Validation Utils', () => {
       expect(isSafePropertyName('hasOwnProperty')).toBe(false);
       expect(isSafePropertyName('toString')).toBe(false);
       expect(isSafePropertyName('valueOf')).toBe(false);
+    });
+  });
+
+  describe('isValidHttpHeaderName', () => {
+    it('accepts valid RFC7230 token names', () => {
+      expect(isValidHttpHeaderName('Authorization')).toBe(true);
+      expect(isValidHttpHeaderName('X-Api-Key')).toBe(true);
+      expect(isValidHttpHeaderName('Content-Type')).toBe(true);
+      expect(isValidHttpHeaderName('x-custom-header')).toBe(true);
+      expect(isValidHttpHeaderName('X-Token123')).toBe(true);
+    });
+
+    it('accepts all tchar special characters', () => {
+      expect(isValidHttpHeaderName('X!header')).toBe(true);
+      expect(isValidHttpHeaderName('X~header')).toBe(true);
+      expect(isValidHttpHeaderName("X'header")).toBe(true);
+    });
+
+    it('rejects header names with spaces', () => {
+      expect(isValidHttpHeaderName('My Header')).toBe(false);
+      expect(isValidHttpHeaderName(' X-Token')).toBe(false);
+    });
+
+    it('rejects header names with colons', () => {
+      expect(isValidHttpHeaderName('X:Header')).toBe(false);
+    });
+
+    it('rejects header names with CR or LF (header injection)', () => {
+      expect(isValidHttpHeaderName('X-Header\r\nX-Inject')).toBe(false);
+      expect(isValidHttpHeaderName('X-Header\r')).toBe(false);
+      expect(isValidHttpHeaderName('X-Header\n')).toBe(false);
+    });
+
+    it('rejects empty string', () => {
+      expect(isValidHttpHeaderName('')).toBe(false);
+    });
+
+    it('rejects control characters', () => {
+      expect(isValidHttpHeaderName('X-\x00Header')).toBe(false);
+      expect(isValidHttpHeaderName('X-\x7FHeader')).toBe(false);
     });
   });
 

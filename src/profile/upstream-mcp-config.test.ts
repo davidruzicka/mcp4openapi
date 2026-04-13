@@ -107,6 +107,33 @@ describe('resolveUpstreamMcpConfig – validator error branches', () => {
     expect(() => resolveUpstreamMcpConfig(profile)).toThrow(/header_name contains invalid/);
   });
 
+  it('rejects custom-header auth with space in header_name', () => {
+    const profile = makeProfile([{
+      name: 'p1',
+      transport: { type: 'http-streamable', url: 'https://example.com/mcp' },
+      auth: { type: 'custom-header', value_from_env: 'TOKEN', header_name: 'X My Header' },
+    }]);
+    expect(() => resolveUpstreamMcpConfig(profile)).toThrow(/RFC7230 token/);
+  });
+
+  it('rejects custom-header auth with colon in header_name', () => {
+    const profile = makeProfile([{
+      name: 'p1',
+      transport: { type: 'http-streamable', url: 'https://example.com/mcp' },
+      auth: { type: 'custom-header', value_from_env: 'TOKEN', header_name: 'X-Header:Colon' },
+    }]);
+    expect(() => resolveUpstreamMcpConfig(profile)).toThrow(/RFC7230 token/);
+  });
+
+  it('rejects custom-header auth with CRLF in header_name (header injection)', () => {
+    const profile = makeProfile([{
+      name: 'p1',
+      transport: { type: 'http-streamable', url: 'https://example.com/mcp' },
+      auth: { type: 'custom-header', value_from_env: 'TOKEN', header_name: "X-Header\r\nX-Inject: evil" },
+    }]);
+    expect(() => resolveUpstreamMcpConfig(profile)).toThrow(/RFC7230 token/);
+  });
+
   it('rejects query auth without query_param', () => {
     const profile = makeProfile([{
       name: 'p1',
