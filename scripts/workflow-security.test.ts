@@ -232,12 +232,16 @@ describe('GitHub workflow hardening', () => {
     expect(setupNodeStepCount).toBeGreaterThan(0);
   });
 
-  it('defines a dedicated Codex auth refresh workflow with an age gate and secret persistence', () => {
+  it('defines a dedicated Codex auth refresh workflow with concurrency, an age gate, and safe secret persistence', () => {
     const workflow = loadWorkflow('.github/workflows/codex-auth-refresh.yml');
     const refreshJob = workflow.jobs['refresh-auth'];
 
     expect(workflow.on).toHaveProperty('schedule');
     expect(workflow.on).toHaveProperty('workflow_dispatch');
+    expect(workflow.concurrency).toMatchObject({
+      group: 'codex-auth-refresh',
+      'cancel-in-progress': false,
+    });
     expect(refreshJob.steps.some((step: any) => step.name === 'Setup Codex auth')).toBe(true);
 
     const ageGateStep = refreshJob.steps.find((step: any) => step.id === 'refresh-check');
@@ -249,6 +253,7 @@ describe('GitHub workflow hardening', () => {
     expect(ageGateStep.run).toContain('refresh_needed=');
 
     const refreshStep = refreshJob.steps.find((step: any) => step.name === 'Refresh Codex auth');
+    expect(refreshStep.id).toBe('refresh-codex-auth');
     expect(refreshStep.if).toContain("steps.refresh-check.outputs.refresh_needed == 'true'");
     expect(refreshStep.run).toContain('codex exec');
     expect(refreshStep.run).toContain('Reply exactly with OK');
@@ -259,6 +264,8 @@ describe('GitHub workflow hardening', () => {
     expect(setupAuthStep.run).toContain('auth_hash=');
 
     const persistStep = refreshJob.steps.find((step: any) => step.name === 'Persist Codex OAuth token if refreshed');
+    expect(persistStep.if).toContain("steps.refresh-check.outputs.refresh_needed == 'true'");
+    expect(persistStep.if).toContain("steps.refresh-codex-auth.outcome == 'success'");
     expect(persistStep.if).toContain("steps.setup-auth.outputs.auth_hash != ''");
     expect(persistStep.env).toMatchObject({ GH_TOKEN: '${{ secrets.GH_PAT_FOR_SECRETS }}' });
     expect(persistStep.run).toContain('ORIGINAL_HASH');
