@@ -256,6 +256,38 @@ describe('sanitizeToolList', () => {
     expect(logger.warn).toHaveBeenCalledOnce();
   });
 
+  it('drops tool with forbidden char in inputSchema property key', () => {
+    const tool: Tool = {
+      name: 'valid_tool',
+      description: 'safe',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          '<inject>': { type: 'string' },
+        },
+      },
+    };
+    const result = sanitizeToolList([tool], logger);
+    expect(result.tools).toHaveLength(0);
+    expect(result.dropped[0].reason).toBe('forbidden characters in input schema');
+  });
+
+  it('drops tool with backtick in inputSchema property key', () => {
+    const tool: Tool = {
+      name: 'valid_tool',
+      description: 'safe',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          '`evil`': { type: 'string' },
+        },
+      },
+    };
+    const result = sanitizeToolList([tool], logger);
+    expect(result.tools).toHaveLength(0);
+    expect(result.dropped[0].reason).toBe('forbidden characters in input schema');
+  });
+
   it('drops tool with backtick in nested inputSchema enum value', () => {
     const tool: Tool = {
       name: 'valid_tool',

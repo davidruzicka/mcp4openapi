@@ -4,6 +4,7 @@
  */
 
 import type { UpstreamMcpServerConfig } from '../types/profile.js';
+import { isValidHttpHeaderName } from '../validation/validation-utils.js';
 
 /**
  * Build HTTP auth headers for an upstream provider request.
@@ -24,7 +25,10 @@ export function buildAuthHeaders(
     bearer: (tok) => ({ Authorization: `Bearer ${tok}` }),
     'custom-header': (tok) => {
       const headerName = provider.auth?.header_name;
-      return headerName ? { [headerName]: tok } : {};
+      // Defensive: profile load already rejects invalid names, but guard here too
+      // to prevent header injection if a misconfigured value somehow bypasses validation.
+      if (!headerName || !isValidHttpHeaderName(headerName)) return {};
+      return { [headerName]: tok };
     },
     query: () => ({}),
   };

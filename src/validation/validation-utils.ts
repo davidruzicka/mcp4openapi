@@ -33,6 +33,21 @@ export function isSafePropertyName(name: string): boolean {
 }
 
 /**
+ * RFC7230 token characters (tchar) — valid characters for HTTP header field names.
+ * Excludes spaces, colons, CR/LF, control characters, and non-ASCII to prevent header injection.
+ */
+// eslint-disable-next-line no-useless-escape
+const HTTP_HEADER_NAME_PATTERN = /^[a-zA-Z0-9!#$%&'*+\-.^_`|~]+$/;
+
+/**
+ * Validates that a string is a valid HTTP header field-name per RFC7230.
+ * Rejects spaces, colons, CR/LF, and all non-token characters to prevent header injection.
+ */
+export function isValidHttpHeaderName(name: string): boolean {
+  return HTTP_HEADER_NAME_PATTERN.test(name);
+}
+
+/**
  * Check whether object has an own property key (prototype-safe).
  */
 export function hasOwnKey(

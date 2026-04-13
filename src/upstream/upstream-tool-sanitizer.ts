@@ -26,8 +26,8 @@ const TOOL_NAME_PATTERN = /^[a-zA-Z0-9_-]+$/;
 const DESCRIPTION_FORBIDDEN_CHARS = /[<>`]/;
 
 /**
- * Recursively scan a JSON Schema object for forbidden characters in string values.
- * Returns true if any string value contains forbidden chars.
+ * Recursively scan a JSON Schema object for forbidden characters in both keys and string values.
+ * Returns true if any key or string value contains forbidden chars.
  * Depth limit guards against deeply nested schemas.
  */
 function schemaContainsForbiddenChars(value: unknown, depth = 0): boolean {
@@ -38,7 +38,11 @@ function schemaContainsForbiddenChars(value: unknown, depth = 0): boolean {
   if (typeof value === 'string') return DESCRIPTION_FORBIDDEN_CHARS.test(value);
   if (Array.isArray(value)) return value.some(v => schemaContainsForbiddenChars(v, depth + 1));
   if (typeof value === 'object' && value !== null) {
-    return Object.values(value as Record<string, unknown>).some(v => schemaContainsForbiddenChars(v, depth + 1));
+    const obj = value as Record<string, unknown>;
+    // Scan keys (e.g. property names under `properties`) as well as values;
+    // forbidden chars placed in keys would bypass a values-only scan.
+    return Object.keys(obj).some(k => DESCRIPTION_FORBIDDEN_CHARS.test(k)) ||
+      Object.values(obj).some(v => schemaContainsForbiddenChars(v, depth + 1));
   }
   return false;
 }
