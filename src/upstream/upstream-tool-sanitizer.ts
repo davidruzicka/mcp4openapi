@@ -67,6 +67,15 @@ export function sanitizeToolList(tools: Tool[], logger?: Logger): SanitizationRe
   const dropped: { name: string; reason: string }[] = [];
 
   for (const tool of tools) {
+    // Guard: upstream may return null or non-object entries (e.g. null items in tools array)
+    if (tool === null || typeof tool !== 'object') {
+      const safeName = sanitizeLogMessage(truncateName(String(tool)));
+      const reason = 'malformed tool definition: entry is not an object';
+      dropped.push({ name: safeName, reason });
+      logger?.warn('Dropped upstream tool due to sanitization failure', { name: safeName, reason });
+      continue;
+    }
+
     let reason: string | undefined;
 
     // Runtime type guards: upstream may return non-string fields despite SDK types

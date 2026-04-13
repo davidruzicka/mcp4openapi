@@ -170,10 +170,13 @@ export class UpstreamConnectionManager {
   ): Promise<Client> {
     const dedupKey = `${sessionId}:${provider.name}`;
 
-    // Return existing CONNECTED client, unless the token has changed
+    // Return existing CONNECTED client, unless the token has changed.
+    // Token comparison is skipped when provider.auth is not configured: no auth header/query
+    // is sent upstream, so token rotation has no effect on the upstream connection and forcing
+    // a reconnect would only cause unnecessary churn (P2 guard).
     const existing = this.getConnection(sessionId, provider.name);
     if (existing && existing.state === 'CONNECTED') {
-      if (existing.token !== token) {
+      if (provider.auth && existing.token !== token) {
         // Token rotated - stop heartbeat and close old connection before creating a fresh one
         this.heartbeatManager.stop(dedupKey);
         const sessionMap = this.connections.get(sessionId);
@@ -189,9 +192,11 @@ export class UpstreamConnectionManager {
     // Return in-flight promise for concurrent dedup - but only when the token matches.
     // If the caller has a different token, wait for the in-flight to settle and start fresh
     // so the session is not established under stale credentials (P2 guard).
+    // When provider.auth is absent, token differences are irrelevant - always reuse the
+    // in-flight promise to avoid duplicate connections.
     const pending = this.pendingConnections.get(dedupKey);
     if (pending) {
-      if (pending.token === token) {
+      if (!provider.auth || pending.token === token) {
         return pending.promise;
       }
       await pending.promise.catch(() => {});
