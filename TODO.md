@@ -7,7 +7,7 @@
 ## Contents
 
 - [P3: Optional](#p3-optional)
-  - [17. Eager SSRF validation for SasankaApiKeyStore at profile load](#17-eager-ssrf-validation-for-sasakaapiKeyStore-at-profile-load)
+  - [17. Eager SSRF validation for SasankaApiKeyStore at profile load](#17-eager-ssrf-validation-for-sasankaapikeystore-at-profile-load)
 - [P2: Nice-to-Have](#p2-nice-to-have)
   - [2. Export Profile Command](#2-export-profile-command)
   - [3. OpenAPI Operation Filter for Default Profile](#3-openapi-operation-filter-for-default-profile)
