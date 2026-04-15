@@ -1943,7 +1943,9 @@ export class MCPServer {
 
     try {
       const client = await this.getUpstreamClientFn!(sessionId, provider, token);
-      const result = await client.callTool({ name: toolName, arguments: args });
+      const result = await (provider.timeout_ms !== undefined
+        ? client.callTool({ name: toolName, arguments: args }, undefined, { timeout: provider.timeout_ms })
+        : client.callTool({ name: toolName, arguments: args }));
       if (metricsBundle) {
         const durationSeconds = (Date.now() - metricsBundle.startTime) / 1000;
         metricsBundle.collector.recordToolCall(toolName, 'success', durationSeconds, metricsBundle.context);

@@ -1,8 +1,8 @@
 ---
-status: diagnosed
+status: resolved
 trigger: "Diagnose root cause for UAT gap in Phase 01 (upstream-session-foundation): X-Upstream-Authorization multi-provider credential model is wrong for this architecture."
 created: 2026-03-27T00:00:00Z
-updated: 2026-03-27T00:00:00Z
+updated: 2026-04-15T00:00:00Z
 ---
 
 ## Current Focus
@@ -76,7 +76,15 @@ fix: |
   7. In createConnection, derive authToken from session.authToken (already present on SessionData) passed down from the tool-dispatch layer
   8. Update upstream-connection-manager.test.ts to pass a plain string token instead of a credentials object
 
-verification: empty until verified
+verification: |
+  Verified 2026-04-15: All fix steps confirmed complete.
+  - upstream-credential-extractor.ts + test: deleted (not present in src/upstream/)
+  - UpstreamCredentialStore class: removed (upstream-credential-store.ts contains only buildAuthHeaders + buildAuthUrl)
+  - SessionData.upstreamCredentials: removed (not present in src/types/http-transport.ts)
+  - UpstreamCredentials interface: removed (not present in src/types/upstream-connection.ts)
+  - getOrConnect signature: uses token: string | undefined (confirmed in upstream-connection-manager.ts:166)
+  - buildAuthHeaders signature: uses token: string | undefined (confirmed in upstream-credential-store.ts:18)
+  - 3105/3105 tests passing
 files_changed:
   - src/upstream/upstream-credential-extractor.ts (delete)
   - src/upstream/upstream-credential-extractor.test.ts (delete)
