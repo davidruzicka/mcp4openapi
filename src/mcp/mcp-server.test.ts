@@ -3629,6 +3629,32 @@ paths:
         expect(response.error).toBeUndefined();
       });
 
+      it('passes timeout_ms as RequestOptions.timeout to callTool when configured', async () => {
+        const providerWithTimeout = { ...upstreamProvider, timeout_ms: 7500 };
+        (upstreamServer as any).profile = {
+          ...(upstreamServer as any).profile,
+          upstream_mcp: [providerWithTimeout],
+        };
+        (upstreamServer as any).httpTransport.getUpstreamMcpConfig = () => [providerWithTimeout];
+
+        await (upstreamServer as any).handleToolCall(
+          {
+            jsonrpc: '2.0',
+            id: '1t',
+            method: 'tools/call',
+            params: { name: 'safe_tool', arguments: {} },
+          },
+          'session-123',
+          'upstream-profile',
+        );
+
+        expect(mockCallTool).toHaveBeenCalledWith(
+          { name: 'safe_tool', arguments: {} },
+          undefined,
+          { timeout: 7500 },
+        );
+      });
+
       it('forwards isError:true results as-is without converting to JSON-RPC error', async () => {
         mockCallTool.mockResolvedValueOnce({
           isError: true,

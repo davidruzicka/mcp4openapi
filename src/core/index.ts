@@ -315,15 +315,6 @@ export async function main() {
         return server.handleHttpMessage(message, sessionId, profileId);
       });
 
-      httpTransport.onSessionDestroyed(async (profileId, sessionId) => {
-        try {
-          const server = await manager.getServer(profileId);
-          server.handleSessionDestroyed(profileId, sessionId);
-        } catch (error) {
-          logger.error('Session cleanup failed', error as Error, { profileId, sessionId });
-        }
-      });
-
       await httpTransport.start();
       logger.info('MCP server running on HTTP', { host, port });
 

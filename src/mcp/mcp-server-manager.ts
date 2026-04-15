@@ -31,6 +31,16 @@ export class MCPServerManager {
     this.upstreamManager = new UpstreamConnectionManager({ logger });
     if (httpTransport) {
       httpTransport.setUpstreamConnectionManager(this.upstreamManager);
+      // Self-register cleanup so the manager works correctly when used outside
+      // the index.ts bootstrap (e.g. direct MCPServerManager + attachHttpTransport usage).
+      httpTransport.onSessionDestroyed(async (profileId, sessionId) => {
+        try {
+          const server = await this.getServer(profileId);
+          server.handleSessionDestroyed(profileId, sessionId);
+        } catch (error) {
+          this.logger.error('Session cleanup failed', error as Error, { profileId, sessionId });
+        }
+      });
     }
   }
 

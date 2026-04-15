@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import path from 'path';
 import fs from 'node:fs/promises';
 import os from 'node:os';
@@ -33,6 +33,43 @@ describe('MCPServerManager', () => {
     const context = await manager.getProfileContext('gitlab');
     expect(context?.profileId).toBe('gitlab');
     expect(context?.baseUrl).toBeTruthy();
+  });
+
+  it('self-registers onSessionDestroyed cleanup when httpTransport provided', async () => {
+    const logger = new ConsoleLogger();
+    const defaultProfile: ResolvedProfile = {
+      profileId: 'default',
+      profileName: 'Default Profile',
+      profilePath: '/tmp/profile.json',
+      specPath: '/tmp/openapi.yaml',
+    };
+    const registry = new ProfileRegistry({ defaultProfile });
+
+    const mockHandleSessionDestroyed = vi.fn();
+    const mockOnSessionDestroyed = vi.fn();
+    const mockSetUpstreamConnectionManager = vi.fn();
+    const mockTransport = {
+      onSessionDestroyed: mockOnSessionDestroyed,
+      setUpstreamConnectionManager: mockSetUpstreamConnectionManager,
+    } as unknown as HttpTransport;
+
+    new MCPServerManager(registry, logger, mockTransport);
+
+    expect(mockOnSessionDestroyed).toHaveBeenCalledTimes(1);
+    const handler = mockOnSessionDestroyed.mock.calls[0][0];
+    expect(typeof handler).toBe('function');
+
+    // Wire mock server returned by getServer
+    const mockGetServer = vi.fn().mockResolvedValue({ handleSessionDestroyed: mockHandleSessionDestroyed });
+    const manager = new MCPServerManager(registry, logger, mockTransport);
+    (manager as any).getServer = mockGetServer;
+
+    // Fire the handler registered by the second manager
+    const handler2 = mockOnSessionDestroyed.mock.calls[1][0];
+    await handler2('default', 'session-1');
+
+    expect(mockGetServer).toHaveBeenCalledWith('default');
+    expect(mockHandleSessionDestroyed).toHaveBeenCalledWith('default', 'session-1');
   });
 
   it('returns default profile id from registry', () => {

@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- `upstream_mcp[].timeout_ms` is now enforced on proxied `tools/call`: passed as `RequestOptions.timeout` to `client.callTool()` so a hung upstream is bounded by the configured value instead of the SDK default.
+- `MCPServerManager` self-registers the `onSessionDestroyed` cleanup hook in its constructor, eliminating the unbounded `sanitizedAndPolicyFilteredToolNames` map growth when the manager is used outside the `index.ts` bootstrap path.
 - `UpstreamAuthError` now maps to `ErrorCode.InvalidRequest` (-32600) instead of `InternalError`; `AuthenticationError` and OAuth-required responses also use `InvalidRequest` instead of `-32001` (`RequestTimeout`), eliminating the code collision that caused clients to trigger auth flows on upstream timeouts.
 - `X-Mcp4-Tools` session filter now correctly applies to upstream proxy profiles: exact-name and regex rules are evaluated as inline predicates at `tools/list` and `tools/call` time; `_allow_list`/`_allow_read` category rules are rejected at session init with an actionable error (OpenAPI metadata unavailable for upstream tools).
 - Broken TOC anchor in `TODO.md` for item 17 (`sasakaapiKeyStore` corrected to `sasankaapikeystore`).

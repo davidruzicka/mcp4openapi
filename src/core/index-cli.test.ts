@@ -61,6 +61,18 @@ function mockServerManager(options?: {
     MCPServerManager: class {
       getServer = getServer;
       getProfileContext = getProfileContext;
+      constructor(_registry: any, logger: any, httpTransport?: any) {
+        if (httpTransport) {
+          httpTransport.onSessionDestroyed(async (profileId: string, sessionId: string) => {
+            try {
+              const server = await getServer();
+              server.handleSessionDestroyed(profileId, sessionId);
+            } catch (error) {
+              logger.error('Session cleanup failed', error as Error, { profileId, sessionId });
+            }
+          });
+        }
+      }
     },
   }));
 }
