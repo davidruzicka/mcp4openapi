@@ -272,6 +272,26 @@ describe('GitHub workflow hardening', () => {
     expect(persistStep.run).toContain('gh secret set CODEX_AUTH_JSON');
   });
 
+  it('uses the same safe step-output persistence pattern in the implementor workflow', () => {
+    const workflow = loadWorkflow('.github/workflows/implementor.yml');
+    const implementorJob = workflow.jobs['implementor'];
+
+    const setupAuthStep = implementorJob.steps.find((step: any) => step.name === 'Setup Codex auth');
+    expect(setupAuthStep.id).toBe('setup-auth');
+    expect(setupAuthStep.run).toContain('GITHUB_OUTPUT');
+    expect(setupAuthStep.run).toContain('auth_hash=');
+    expect(setupAuthStep.run).not.toContain('GITHUB_ENV');
+
+    const persistStep = implementorJob.steps.find((step: any) => step.name === 'Persist Codex OAuth token if refreshed');
+    expect(persistStep.if).toContain("steps.setup-auth.outputs.auth_hash != ''");
+    expect(persistStep.env).toMatchObject({
+      GH_TOKEN: '${{ secrets.GH_PAT_FOR_SECRETS }}',
+      ORIGINAL_HASH: '${{ steps.setup-auth.outputs.auth_hash }}',
+    });
+    expect(persistStep.run).toContain('ORIGINAL_HASH');
+    expect(persistStep.run).not.toContain('CODEX_AUTH_HASH');
+  });
+
   it('pins the OSV reusable workflows to the Node 24-compatible release', () => {
     const workflow = loadWorkflow('.github/workflows/osv-scanner.yml');
 
