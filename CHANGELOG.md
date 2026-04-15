@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- `X-Mcp4-Tools` session filter now correctly applies to upstream proxy profiles: exact-name and regex rules are evaluated as inline predicates at `tools/list` and `tools/call` time; `_allow_list`/`_allow_read` category rules are rejected at session init with an actionable error (OpenAPI metadata unavailable for upstream tools).
+- Broken TOC anchor in `TODO.md` for item 17 (`sasakaapiKeyStore` corrected to `sasankaapikeystore`).
 - `getOrConnect` now closes the stale client and transport when replacing a FAILED connection, preventing late `onerror`/`onclose` events from firing against the replacement and releasing accumulated leaked sockets (P1).
 - `schemaContainsForbiddenChars` now returns `true` when recursion depth exceeds 10, treating over-limit schemas as potentially malicious instead of silently passing them - closes the bypass where forbidden chars beyond depth 10 were invisible to the sanitizer (P2).
 - `createConnection` validates `transport.url` via `SSRFValidator` before any network call (SSRF guard); `inputSchema` recursively scanned for forbidden chars (`<`, `>`, backtick); `null` tools field from `listTools` now throws `UpstreamMalformedResponseError`; notification handler errors logged instead of unhandled rejections; `destroyedSessions` pruned after 60s TTL; `NOTIFICATION_DISPATCH` schema type broadened to `$ZodType` for extensibility.

@@ -35,10 +35,11 @@ export { ToolFilterService } from './integration/tool-filter-service.js';
 export { normalizeToolName } from './utils.js';
 
 // Compatibility functions (for legacy code)
-export { 
-  normalizeToolFilterHeaderValue, 
+export {
+  normalizeToolFilterHeaderValue,
   parseSessionToolFilterHeader,
   applySessionToolFilter,
+  matchesSessionFilterByName,
   type SessionToolFilter as SessionToolFilterCompat
 } from './compat.js';
 

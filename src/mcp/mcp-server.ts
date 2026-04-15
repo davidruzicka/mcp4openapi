@@ -76,6 +76,7 @@ import {
   OpenAPIOperationResolver,
   OperationDetector,
   applySessionToolFilter,
+  matchesSessionFilterByName,
   type SessionToolFilterCompat as SessionToolFilter,
   type SessionToolFilterRequest,
 } from '../tool-filter/index.js';
@@ -1587,13 +1588,16 @@ export class MCPServer {
           },
         };
       }
-      // Apply tool filter (name-based) - same gate as local tools
-      const toolFilter = this.getToolFilterForSession(sessionId, profileId);
-      if (toolFilter && !toolFilter.allowedToolNames.has(toolName)) {
-        this.recordToolFilterRejection(toolName, 'session');
-        const reason = toolFilter.reasons.get(toolName)?.[0];
-        const reasonSuffix = reason ? ` Blocked by: ${reason}.` : '';
-        return { jsonrpc: '2.0', id: req.id, error: { code: -32002, message: `Tool '${toolName}' not allowed by X-Mcp4-Tools filter.${reasonSuffix}` } };
+      // Apply X-Mcp4-Tools filter as a pure name predicate (upstream tools have no OpenAPI metadata).
+      // Uses matchesSessionFilterByName for consistency with the local-tools filter path.
+      if (sessionId && typeof this.httpTransport?.getSessionToolFilterRequest === 'function') {
+        const upstreamFilterRequest = this.httpTransport.getSessionToolFilterRequest(
+          profileId || this.getProfileIdValue(), sessionId
+        );
+        if (upstreamFilterRequest?.hasRules && !matchesSessionFilterByName(upstreamFilterRequest, toolName)) {
+          this.recordToolFilterRejection(toolName, 'session');
+          return { jsonrpc: '2.0', id: req.id, error: { code: -32002, message: `Tool '${toolName}' not allowed by X-Mcp4-Tools filter.` } };
+        }
       }
       // Apply enterprise policy - upstream tools don't have OpenAPI operations so default to 'modify'
       if (!this.isToolCategoryAllowedByEnterprisePolicy('modify', sessionId, profileId)) {
@@ -1869,10 +1873,15 @@ export class MCPServer {
         this.sanitizedAndPolicyFilteredToolNames.set(sessionId, sessionCache);
       }
       sessionCache.set(provider.name, new Set(policyFiltered.map(t => t.name)));
-      // Apply session-level X-Mcp4-Tools name filter (same gate as local tools/list)
-      const sessionFilter = this.getToolFilterForSession(sessionId, profileId);
-      const nameFiltered = sessionFilter
-        ? policyFiltered.filter(t => sessionFilter.allowedToolNames.has(t.name))
+      // Apply X-Mcp4-Tools filter as a pure name predicate against upstream-discovered tools.
+      // Uses matchesSessionFilterByName (same abstraction as the local-tools path) - no
+      // pre-computation or storage needed for upstream proxy profiles.
+      const effectiveProfileIdForFilter = profileId || this.getProfileIdValue();
+      const upstreamFilterRequest = typeof this.httpTransport?.getSessionToolFilterRequest === 'function'
+        ? this.httpTransport.getSessionToolFilterRequest(effectiveProfileIdForFilter, sessionId)
+        : undefined;
+      const nameFiltered = upstreamFilterRequest?.hasRules
+        ? policyFiltered.filter(t => matchesSessionFilterByName(upstreamFilterRequest, t.name))
         : policyFiltered;
       // Apply enterprise category policy - upstream tools default to 'modify' (no OpenAPI metadata)
       const enterpriseFiltered = this.isToolCategoryAllowedByEnterprisePolicy('modify', sessionId, profileId)
@@ -2741,13 +2750,24 @@ export class MCPServer {
     }
 
     const originalCount = this.profile.tools.length;
+
+    // For upstream proxy profiles (tools[] is empty, upstream_mcp configured):
+    // - Category rules require OpenAPI metadata unavailable for upstream tools - reject at init.
+    // - Exact/regex rules are pure name predicates; evaluated inline at tools/list and tools/call.
+    if (originalCount === 0 && this.getUpstreamMcpConfig(profileId)?.length) {
+      if (request.allowCategories.size > 0) {
+        throw new ValidationError(
+          '_allow_list/_allow_read not supported for upstream proxy profiles. Use exact names or regex patterns instead.'
+        );
+      }
+      // No pre-computation needed - predicate evaluated inline at tools/list and tools/call time.
+      return;
+    }
+
     const resolver = this.buildToolFilterResolver();
     const sessionFilter = applySessionToolFilter(this.profile.tools, request, resolver);
     const allowedCount = sessionFilter.allowedToolNames.size;
 
-    // Skip no-effect check when profile has no local tools (e.g. upstream_mcp profiles where
-    // tools[] is empty by design). 0-vs-0 is not a misconfigured filter, it is the expected
-    // state for a pure proxy profile.
     if (originalCount > 0 && allowedCount === originalCount) {
       throw new ValidationError(
         `X-Mcp4-Tools filter has no effect for this session. Available tools: ${originalCount}, after filter: ${allowedCount}. Check patterns.`
