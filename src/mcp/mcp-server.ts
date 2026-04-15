@@ -88,13 +88,13 @@ import type { MetricsCollector, MetricsContextLabels } from '../core/metrics.js'
 
 type EnterpriseToolCategory = 'list' | 'read' | 'modify' | 'admin';
 
-/** Custom MCP timeout error code - not in MCP standard spec; used for upstream timeout distinction */
-const UPSTREAM_TIMEOUT_ERROR_CODE = -32001;
+/** MCP SDK RequestTimeout code (-32001); used for upstream timeout responses */
+const UPSTREAM_TIMEOUT_ERROR_CODE = ErrorCode.RequestTimeout;
 
 const UPSTREAM_ERROR_MAPPINGS: ReadonlyArray<[new (...args: never[]) => Error, number, string]> = [
   [UpstreamConnectionError, ErrorCode.InternalError, 'Upstream connection failed'],
   [UpstreamTimeoutError, UPSTREAM_TIMEOUT_ERROR_CODE, 'Upstream request timed out'],
-  [UpstreamAuthError, ErrorCode.InternalError, 'Upstream authentication failed'],
+  [UpstreamAuthError, ErrorCode.InvalidRequest, 'Upstream authentication failed'],
   [UpstreamMalformedResponseError, ErrorCode.InternalError, 'Upstream returned malformed response'],
 ];
 
@@ -1562,7 +1562,7 @@ export class MCPServer {
           jsonrpc: '2.0',
           id: req.id,
           error: {
-            code: -32001, // Application error
+            code: ErrorCode.InvalidRequest,
             message: 'Authentication required. Please authorize via OAuth.',
             data: {
               oauth_required: true,
@@ -1761,19 +1761,19 @@ export class MCPServer {
       const errorMessage = this.formatErrorForClient(error, correlationId);
       
       // Map error type to JSON-RPC error code
-      let errorCode = -32603; // Internal error (default)
+      let errorCode: number = ErrorCode.InternalError;
       if (error instanceof AuthenticationError) {
-        errorCode = -32001; // Authentication error
+        errorCode = ErrorCode.InvalidRequest;
       } else if (error instanceof AuthorizationError) {
-        errorCode = -32002; // Authorization error
+        errorCode = -32002; // Custom: authorization error
       } else if (error instanceof ValidationError) {
-        errorCode = -32602; // Invalid params
+        errorCode = ErrorCode.InvalidParams;
       } else if (error instanceof RateLimitError) {
-        errorCode = -32003; // Rate limit error
+        errorCode = -32003; // Custom: rate limit error
       } else if (error instanceof OperationNotFoundError) {
-        errorCode = -32601; // Method not found
+        errorCode = ErrorCode.MethodNotFound;
       } else if (error instanceof ResourceNotFoundError) {
-        errorCode = -32601; // Method not found
+        errorCode = ErrorCode.MethodNotFound;
       }
       
       return {
@@ -2156,7 +2156,7 @@ export class MCPServer {
           jsonrpc: '2.0',
           id: req.id,
           error: {
-            code: -32001, // Application error
+            code: ErrorCode.InvalidRequest,
             message: 'Authentication required. Please authorize via OAuth.',
             data: {
               oauth_required: true,

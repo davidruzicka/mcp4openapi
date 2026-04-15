@@ -593,7 +593,7 @@ paths:
       expect(error.code).toBe(-32003);
     });
 
-    it('should map AuthenticationError to error code -32001', async () => {
+    it('should map AuthenticationError to InvalidRequest error code (-32600)', async () => {
       const server = new MCPServer();
       const specPath = path.join(process.cwd(), 'profiles/gitlab/openapi.yaml');
       await server.initialize(specPath);
@@ -611,7 +611,7 @@ paths:
 
       const response = asToolCallResponse(await server.callToolRpc(simpleTool.name, {}, 'test-session', '1'));
       const error = response.error as { code?: number };
-      expect(error.code).toBe(-32001);
+      expect(error.code).toBe(-32600);
     });
 
     it('should return OAuth required error when httpTransport has OAuth provider but no auth token', async () => {
@@ -636,7 +636,7 @@ paths:
       const response = asToolCallResponse(await server.callToolRpc(simpleTool.name, {}, 'test-session', '1'));
       expect(response.error).toBeDefined();
       const error = response.error as { code?: number; message?: string; data?: { oauth_required?: boolean } };
-      expect(error.code).toBe(-32001);
+      expect(error.code).toBe(-32600);
       expect(error.message).toContain('Authentication required');
       expect(error.data?.oauth_required).toBe(true);
     });
@@ -3277,7 +3277,7 @@ paths:
         'test-session'
       );
       
-      expect(response.error.code).toBe(-32001);
+      expect(response.error.code).toBe(-32600);
       expect(response.error.data.oauth_required).toBe(true);
     });
   });
@@ -3355,7 +3355,7 @@ paths:
       const response = asToolCallResponse(await server.callToolRpc('some_tool', {}, 'test-session', 1));
       
       const error = response.error as { code?: number; data?: { oauth_required?: boolean } };
-      expect(error.code).toBe(-32001);
+      expect(error.code).toBe(-32600);
       expect(error.data?.oauth_required).toBe(true);
     });
   });
@@ -3694,7 +3694,7 @@ paths:
         expect(response.error.message).toMatch(/Upstream request timed out/);
       });
 
-      it('maps UpstreamAuthError to InternalError (-32603)', async () => {
+      it('maps UpstreamAuthError to InvalidRequest (-32600)', async () => {
         mockCallTool.mockRejectedValueOnce(
           new UpstreamAuthError('test-upstream'),
         );
@@ -3711,7 +3711,7 @@ paths:
         ) as any;
 
         expect(response.error).toBeDefined();
-        expect(response.error.code).toBe(-32603);
+        expect(response.error.code).toBe(-32600);
       });
 
       it('maps unknown error type to InternalError with generic message (fallback case)', async () => {
