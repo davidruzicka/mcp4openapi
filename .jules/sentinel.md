@@ -126,3 +126,14 @@ Error messages should never include raw values from sensitive sources like envir
 **Prevention:**
 1.  Avoid including raw values in error messages when the source is potentially sensitive (env vars, auth headers).
 2.  Use generic error messages for validation failures of sensitive data.
+
+## 2026-04-15 - [CRITICAL] Path Traversal Due To Incomplete URL Encoding
+
+**Vulnerability:**
+Both `CompositeExecutor` and `MCPServer` were incorrectly encoding URL path segments, leaving dots (`.`) unencoded (`encodeURIComponent` does not encode dots). This allowed path traversal sequences like `..` to be passed via parameter injection.
+
+**Learning:**
+When injecting user-controlled path parameters, relying solely on JavaScript's built-in `encodeURIComponent` is insufficient if the downstream components decode `%2E` or interpret raw `.` paths.
+
+**Prevention:**
+1. Explicitly encode dot characters `.replace(/\./g, '%2E')` whenever constructing path segments containing user input.
