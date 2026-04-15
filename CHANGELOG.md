@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- `UpstreamAuthError` now maps to `ErrorCode.InvalidRequest` (-32600) instead of `InternalError`; `AuthenticationError` and OAuth-required responses also use `InvalidRequest` instead of `-32001` (`RequestTimeout`), eliminating the code collision that caused clients to trigger auth flows on upstream timeouts.
 - `X-Mcp4-Tools` session filter now correctly applies to upstream proxy profiles: exact-name and regex rules are evaluated as inline predicates at `tools/list` and `tools/call` time; `_allow_list`/`_allow_read` category rules are rejected at session init with an actionable error (OpenAPI metadata unavailable for upstream tools).
 - Broken TOC anchor in `TODO.md` for item 17 (`sasakaapiKeyStore` corrected to `sasankaapikeystore`).
 - `getOrConnect` now closes the stale client and transport when replacing a FAILED connection, preventing late `onerror`/`onclose` events from firing against the replacement and releasing accumulated leaked sockets (P1).
