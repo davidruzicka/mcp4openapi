@@ -69,6 +69,19 @@ export function parseSessionToolFilterHeader(headerValue: string): SessionToolFi
  * @param resolver - Operation resolver (optional, for legacy compatibility)
  * @returns Session filter result
  */
+/**
+ * Evaluate whether a single tool name passes the session filter name predicate.
+ * For upstream proxy tools (no OpenAPI metadata); category rules must be rejected
+ * at session init (applySessionToolFiltering) before this function is ever called.
+ */
+export function matchesSessionFilterByName(
+  request: SessionToolFilterRequest,
+  name: string,
+): boolean {
+  return request.exactNames.has(name) ||
+    request.regexPatterns.some(p => p.test(name));
+}
+
 export function applySessionToolFilter(
   tools: ToolDefinition[],
   request: SessionToolFilterRequest,

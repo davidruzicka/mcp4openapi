@@ -2367,6 +2367,40 @@ paths:
       expect(() => (s as any).applySessionToolFiltering('session-1')).not.toThrow();
     });
 
+    it('throws ValidationError for _allow_list with upstream proxy profiles at session init', () => {
+      const s = new MCPServer();
+      (s as any).profile = {
+        profile_name: 'upstream-test',
+        tools: [],
+        upstream_mcp: [{ name: 'test', transport: { type: 'http', url: 'https://example.com/mcp' } }],
+      };
+      const filterRequest = parseSessionToolFilterHeader('_allow_list');
+      (s as any).httpTransport = {
+        getSessionToolFilterRequest: () => filterRequest,
+        getUpstreamMcpConfig: (_pid: string) =>
+          [{ name: 'test', transport: { type: 'http', url: 'https://example.com/mcp' } }],
+      };
+      expect(() => (s as any).applySessionToolFiltering('session-1'))
+        .toThrow('_allow_list/_allow_read not supported for upstream proxy profiles');
+    });
+
+    it('does not throw for exact/regex X-Mcp4-Tools rules with upstream proxy profiles at session init', () => {
+      const s = new MCPServer();
+      (s as any).profile = {
+        profile_name: 'upstream-test',
+        tools: [],
+        upstream_mcp: [{ name: 'test', transport: { type: 'http', url: 'https://example.com/mcp' } }],
+      };
+      const filterRequest = parseSessionToolFilterHeader('tool_a, regex:read_.*');
+      (s as any).httpTransport = {
+        getSessionToolFilterRequest: () => filterRequest,
+        getUpstreamMcpConfig: (_pid: string) =>
+          [{ name: 'test', transport: { type: 'http', url: 'https://example.com/mcp' } }],
+      };
+      // Must not throw - exact/regex rules are deferred predicates for upstream
+      expect(() => (s as any).applySessionToolFiltering('session-1')).not.toThrow();
+    });
+
     it('covers tool filter metrics helpers and threshold parsing', () => {
       const localServer = new MCPServer();
 
@@ -3489,10 +3523,8 @@ paths:
         const toolA = { name: 'tool_a', description: 'Tool A', inputSchema: { type: 'object', properties: {} } };
         const toolB = { name: 'tool_b', description: 'Tool B', inputSchema: { type: 'object', properties: {} } };
         mockListTools.mockResolvedValueOnce({ tools: [toolA, toolB] });
-        (upstreamServer as any).httpTransport.getSessionToolFilter = () => ({
-          allowedToolNames: new Set(['tool_a']),
-          reasons: new Map([['tool_b', ['blocked by header']]]),
-        });
+        const filterRequest = parseSessionToolFilterHeader('tool_a');
+        (upstreamServer as any).httpTransport.getSessionToolFilterRequest = () => filterRequest;
 
         const response = await (upstreamServer as any).handleOtherRequest(
           { jsonrpc: '2.0', id: '1', method: 'tools/list', params: {} },
@@ -3502,6 +3534,23 @@ paths:
 
         expect(response.result.tools).toHaveLength(1);
         expect(response.result.tools[0].name).toBe('tool_a');
+      });
+
+      it('applies regex predicate X-Mcp4-Tools filter to upstream tools/list', async () => {
+        const toolRead = { name: 'read_users', description: 'Read', inputSchema: { type: 'object', properties: {} } };
+        const toolWrite = { name: 'write_users', description: 'Write', inputSchema: { type: 'object', properties: {} } };
+        mockListTools.mockResolvedValueOnce({ tools: [toolRead, toolWrite] });
+        const filterRequest = parseSessionToolFilterHeader('regex:read_.*');
+        (upstreamServer as any).httpTransport.getSessionToolFilterRequest = () => filterRequest;
+
+        const response = await (upstreamServer as any).handleOtherRequest(
+          { jsonrpc: '2.0', id: '1', method: 'tools/list', params: {} },
+          'session-123',
+          'upstream-profile',
+        ) as any;
+
+        expect(response.result.tools).toHaveLength(1);
+        expect(response.result.tools[0].name).toBe('read_users');
       });
 
       it('enterprise policy hides all upstream tools when modify category is not permitted', async () => {
@@ -3860,10 +3909,38 @@ paths:
     // -------------------------------------------------------------------------
     describe('policy enforcement before upstream forwarding (fix: issue #4 + #5)', () => {
       it('tool filter blocks upstream tool call', async () => {
-        (upstreamServer as any).httpTransport.getSessionToolFilter = () => ({
-          allowedToolNames: new Set(['allowed_tool']),
-          reasons: new Map([['safe_tool', ['blocked by filter']]]),
-        });
+        const filterRequest = parseSessionToolFilterHeader('allowed_tool');
+        (upstreamServer as any).httpTransport.getSessionToolFilterRequest = () => filterRequest;
+
+        const response = await (upstreamServer as any).handleToolCall(
+          { jsonrpc: '2.0', id: '1', method: 'tools/call', params: { name: 'safe_tool', arguments: {} } },
+          'session-123',
+          'upstream-profile',
+        ) as any;
+
+        expect(response.error).toBeDefined();
+        expect(response.error.code).toBe(-32002);
+        expect(response.error.message).toMatch(/X-Mcp4-Tools filter/);
+        expect(mockCallTool).not.toHaveBeenCalled();
+      });
+
+      it('allows upstream tools/call when tool name matches X-Mcp4-Tools exact filter', async () => {
+        const filterRequest = parseSessionToolFilterHeader('safe_tool');
+        (upstreamServer as any).httpTransport.getSessionToolFilterRequest = () => filterRequest;
+
+        const response = await (upstreamServer as any).handleToolCall(
+          { jsonrpc: '2.0', id: '1', method: 'tools/call', params: { name: 'safe_tool', arguments: {} } },
+          'session-123',
+          'upstream-profile',
+        ) as any;
+
+        expect(response.result).toBeDefined();
+        expect(mockCallTool).toHaveBeenCalled();
+      });
+
+      it('blocks upstream tools/call when tool name does not match X-Mcp4-Tools regex filter', async () => {
+        const filterRequest = parseSessionToolFilterHeader('regex:read_.*');
+        (upstreamServer as any).httpTransport.getSessionToolFilterRequest = () => filterRequest;
 
         const response = await (upstreamServer as any).handleToolCall(
           { jsonrpc: '2.0', id: '1', method: 'tools/call', params: { name: 'safe_tool', arguments: {} } },
