@@ -85,15 +85,36 @@ export function parseCodexResult(raw: string): ImplementorCommandResult {
   throw lastError instanceof Error ? lastError : new Error('Invalid implementor command result: expected JSON object.');
 }
 
-// Raw output is intentionally excluded from the summary - it may contain tokens or secrets
-// written to the scratch file by a misbehaving Codex run, and the summary propagates to
-// GitHub issue comments via the implementor runner.
-export function buildMalformedCodexResult(_raw: string, error: unknown): ImplementorCommandResult {
+export function buildMalformedCodexResult(raw: string, error: unknown): ImplementorCommandResult {
   const detail = error instanceof Error ? error.message : 'Invalid Codex result payload.';
+  const preview = summarizeMalformedCodexOutput(raw);
   return {
     outcome: 'failed',
-    summary: `Codex backend returned malformed result (${detail}).`,
+    summary: preview
+      ? `Codex backend returned malformed result (${detail}). ${preview}`
+      : `Codex backend returned malformed result (${detail}).`,
   };
+}
+
+function summarizeMalformedCodexOutput(raw: string): string {
+  const trimmed = raw.trim();
+  if (trimmed.length === 0) {
+    return 'Received empty output.';
+  }
+
+  const unfenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)```$/i)?.[1]?.trim() ?? trimmed;
+  const collapsedWhitespace = unfenced.replace(/\s+/g, ' ').trim();
+  const redactedSecrets = collapsedWhitespace
+    .replace(/https?:\/\/\S+/gi, '[redacted-url]')
+    .replace(/\b(?:sk|gh[pousr])[-_][A-Za-z0-9_-]{12,}\b/g, '[redacted-secret]')
+    .replace(/\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9._-]+\.[A-Za-z0-9._-]+\b/g, '[redacted-secret]')
+    .replace(/\b[A-Za-z0-9_-]{40,}\b/g, '[redacted-secret]');
+
+  const preview = redactedSecrets.length > 160
+    ? `${redactedSecrets.slice(0, 159)}…`
+    : redactedSecrets;
+
+  return `Output preview: ${JSON.stringify(preview)}.`;
 }
 
 function collectCodexResultCandidates(raw: string): string[] {

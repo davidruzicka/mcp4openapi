@@ -368,23 +368,25 @@ describe('implementor-codex', () => {
     it('returns a concise failed result instead of bubbling raw parser stacks', () => {
       expect(buildMalformedCodexResult('', new Error('Invalid implementor command result: expected JSON object.'))).toEqual({
         outcome: 'failed',
-        summary: 'Codex backend returned malformed result (Invalid implementor command result: expected JSON object.).',
+        summary: 'Codex backend returned malformed result (Invalid implementor command result: expected JSON object.). Received empty output.',
       });
     });
 
-    it('omits raw output from the summary to prevent token leakage in issue comments', () => {
+    it('includes a sanitized preview of malformed output for debugging', () => {
       expect(buildMalformedCodexResult('```json\n{ not valid json }\n```', new Error('broken payload'))).toEqual({
         outcome: 'failed',
-        summary: 'Codex backend returned malformed result (broken payload).',
+        summary: 'Codex backend returned malformed result (broken payload). Output preview: "{ not valid json }".',
       });
     });
 
-    it('omits raw output even for long malformed payloads', () => {
-      const longOutput = `${'word '.repeat(60)}{"outcome":"failed"}`;
+    it('redacts token-like values and truncates long malformed payload previews', () => {
+      const longOutput = `Token: sk-super-secret-token-value-1234567890abcdef ${'word '.repeat(40)}{"outcome":"failed"}`;
       const result = buildMalformedCodexResult(longOutput, new Error('broken payload'));
 
       expect(result.outcome).toBe('failed');
-      expect(result.summary).toBe('Codex backend returned malformed result (broken payload).');
+      expect(result.summary).toContain('Codex backend returned malformed result (broken payload). Output preview: "Token: [redacted-secret]');
+      expect(result.summary).toContain('…');
+      expect(result.summary).not.toContain('sk-super-secret-token-value-1234567890abcdef');
     });
   });
 });
