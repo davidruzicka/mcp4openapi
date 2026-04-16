@@ -5,6 +5,7 @@ import {
   collectImplementorAssignments,
   planImplementorResultLabels,
   selectLatestTrustedPlannerArtifact,
+  selectStaleImplementorCommentIds,
   type ImplementorCommandResult,
   type ImplementorTaskPayload,
 } from '../src/automation/implementor-runner.js';
@@ -17,6 +18,7 @@ import {
   buildOpenPullRequestsByIssueNumber,
   createIssueComment,
   createReviewThreadReply,
+  deleteIssueComment,
   getPullRequest,
   listIssueComments,
   listOpenPullRequests,
@@ -146,6 +148,8 @@ for (const assignment of assignments.slice(0, runtimeConfig.maxCandidates)) {
     reviewFollowUpItems,
   }));
 
+  await cleanupImplementorComments(runtimeConfig, assignment.issueNumber);
+
   if (hasImplementorPullRequest(result)) {
     const pullRequestNumber = result.pullRequest.number;
 
@@ -167,6 +171,17 @@ for (const assignment of assignments.slice(0, runtimeConfig.maxCandidates)) {
 }
 
 process.stdout.write(`Implementor runner completed. Processed ${Math.min(assignments.length, runtimeConfig.maxCandidates)} issue(s).\n`);
+
+async function cleanupImplementorComments(
+  runtimeConfig: IssueRuntimeConfig,
+  issueNumber: number,
+): Promise<void> {
+  const latestComments = (await listIssueComments(runtimeConfig, issueNumber)).map(mapIssueComment);
+  const staleCommentIds = selectStaleImplementorCommentIds(latestComments);
+  for (const commentId of staleCommentIds) {
+    await deleteIssueComment(runtimeConfig, commentId);
+  }
+}
 
 async function postImplementorReviewThreadReplies(
   runtimeConfig: IssueRuntimeConfig,

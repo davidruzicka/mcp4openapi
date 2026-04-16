@@ -171,6 +171,12 @@ export async function createIssueComment(config: IssueRuntimeConfig, issueNumber
   });
 }
 
+export async function deleteIssueComment(config: IssueRuntimeConfig, commentId: number): Promise<void> {
+  await githubRequest(config, `/repos/${config.repository}/issues/comments/${commentId}`, {
+    method: 'DELETE',
+  });
+}
+
 export async function createRepositoryIssue(
   config: IssueRuntimeConfig,
   input: CreateRepositoryIssueInput,

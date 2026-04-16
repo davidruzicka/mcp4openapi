@@ -205,6 +205,76 @@ function buildReviewFollowUpCountLine(reviewFollowUpItems: readonly ReviewFollow
   return `Review follow-up items: ${reviewFollowUpItems.length}`;
 }
 
+export function selectStaleImplementorCommentIds(comments: readonly ImplementorIssueComment[]): number[] {
+  const latestCommentIdByClass = new Map<string, number>();
+  const commentsOldestFirst = [...comments].sort((left, right) => {
+    const timestampDelta = Date.parse(left.createdAt) - Date.parse(right.createdAt);
+    return timestampDelta !== 0 ? timestampDelta : left.id - right.id;
+  });
+
+  for (const comment of commentsOldestFirst) {
+    const classification = classifyImplementorComment(comment);
+    if (!classification) {
+      continue;
+    }
+
+    latestCommentIdByClass.set(classification, comment.id);
+  }
+
+  return commentsOldestFirst
+    .filter((comment) => {
+      const classification = classifyImplementorComment(comment);
+      return classification !== undefined && latestCommentIdByClass.get(classification) !== comment.id;
+    })
+    .map((comment) => comment.id);
+}
+
+function classifyImplementorComment(comment: ImplementorIssueComment): string | undefined {
+  if (comment.authorLogin !== 'github-actions[bot]') {
+    return undefined;
+  }
+
+  const metadata = parseAgentMetadata(comment.body);
+  if (metadata?.['agent-stage'] !== 'implementor') {
+    return undefined;
+  }
+
+  if (comment.body.includes('Implementation lease acquired for issue #')) {
+    return 'implementor-lease';
+  }
+
+  if (!comment.body.includes('Implementation result: failed')) {
+    return undefined;
+  }
+
+  const summaryLine = comment.body.split('\n').find((line) => line.startsWith('Summary: '));
+  if (!summaryLine) {
+    return 'implementor-failed:missing-summary';
+  }
+
+  return `implementor-failed:${normalizeImplementorFailureSignature(summaryLine.slice('Summary: '.length))}`;
+}
+
+function normalizeImplementorFailureSignature(summary: string): string {
+  const normalized = summary
+    .replace(/github-actions-\d+/g, 'github-actions-[id]')
+    .replace(/\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z\b/g, '[timestamp]')
+    .replace(/\breq_[A-Za-z0-9]+\b/g, 'req_[id]')
+    .replace(/\bcf-ray:\s*[^,\s]+/gi, 'cf-ray:[id]')
+    .replace(/\/tmp\/mcp4openapi-[^\s)]+/g, '/tmp/mcp4openapi-[temp]')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (normalized.includes('Codex backend returned malformed result')) {
+    return 'codex-malformed-result';
+  }
+  if (normalized.includes('failed to connect to websocket') || normalized.includes('401 Unauthorized')) {
+    return 'codex-auth-transport';
+  }
+
+  return normalized;
+}
+
 export interface ParseImplementorTaskPayloadOptions {
   readonly trustConfig?: ArtifactTrustConfig;
 }
