@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   createReviewThreadReply,
+  deleteIssueComment,
   listOpenPullRequests,
   listRecentIssues,
   mapIssueSummaryToProposalCandidate,
@@ -166,6 +167,48 @@ describe('github-agent-runtime listing bounds', () => {
         runId: 'manual-test',
         now: '2026-03-17T12:00:00.000Z',
       })).resolves.toMatchObject([{ number: 21 }, { number: 20 }]);
+    } finally {
+      globalThis.fetch = fetchMock;
+    }
+  });
+});
+
+describe('github-agent-runtime comment deletion', () => {
+  it('ignores 404 responses when deleting issue comments', async () => {
+    const fetchMock = globalThis.fetch;
+    globalThis.fetch = async () => new Response(JSON.stringify({ message: 'Not Found' }), { status: 404 });
+
+    try {
+      await expect(deleteIssueComment({
+        repository: 'davidruzicka/mcp4openapi',
+        token: 'token',
+        apiBaseUrl: 'https://api.github.com',
+        lookbackHours: 48,
+        maxCandidates: 2,
+        agentId: 'implementor',
+        runId: 'manual-test',
+        now: '2026-03-17T12:00:00.000Z',
+      }, 12345)).resolves.toBeUndefined();
+    } finally {
+      globalThis.fetch = fetchMock;
+    }
+  });
+
+  it('rethrows non-404 deletion failures', async () => {
+    const fetchMock = globalThis.fetch;
+    globalThis.fetch = async () => new Response(JSON.stringify({ message: 'Internal Server Error' }), { status: 500 });
+
+    try {
+      await expect(deleteIssueComment({
+        repository: 'davidruzicka/mcp4openapi',
+        token: 'token',
+        apiBaseUrl: 'https://api.github.com',
+        lookbackHours: 48,
+        maxCandidates: 2,
+        agentId: 'implementor',
+        runId: 'manual-test',
+        now: '2026-03-17T12:00:00.000Z',
+      }, 12345)).rejects.toThrow('GitHub API request failed (500) for /repos/davidruzicka/mcp4openapi/issues/comments/12345');
     } finally {
       globalThis.fetch = fetchMock;
     }
