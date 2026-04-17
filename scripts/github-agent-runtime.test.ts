@@ -175,7 +175,40 @@ describe('github-agent-runtime listing bounds', () => {
 });
 
 describe('github-agent-runtime issue comment listing', () => {
-  it('follows pagination links when listing issue comments', async () => {
+  it('stops after the first page by default', async () => {
+    const fetchMock = globalThis.fetch;
+    const requests: string[] = [];
+    globalThis.fetch = async (input) => {
+      requests.push(String(input));
+      return new Response(JSON.stringify([{ id: 101 }, { id: 102 }]), {
+        status: 200,
+        headers: {
+          link: '<https://api.github.com/repos/davidruzicka/mcp4openapi/issues/251/comments?per_page=100&page=2>; rel="next", <https://api.github.com/repos/davidruzicka/mcp4openapi/issues/251/comments?per_page=100&page=2>; rel="last"',
+        },
+      });
+    };
+
+    try {
+      await expect(listIssueComments({
+        repository: 'davidruzicka/mcp4openapi',
+        token: 'token',
+        apiBaseUrl: 'https://api.github.com',
+        lookbackHours: 48,
+        maxCandidates: 2,
+        agentId: 'implementor',
+        runId: 'manual-test',
+        now: '2026-03-17T12:00:00.000Z',
+      }, 251)).resolves.toEqual([{ id: 101 }, { id: 102 }]);
+    } finally {
+      globalThis.fetch = fetchMock;
+    }
+
+    expect(requests).toEqual([
+      'https://api.github.com/repos/davidruzicka/mcp4openapi/issues/251/comments?per_page=100',
+    ]);
+  });
+
+  it('follows pagination links when explicitly allowed', async () => {
     const fetchMock = globalThis.fetch;
     const requests: string[] = [];
     globalThis.fetch = async (input) => {
@@ -202,7 +235,7 @@ describe('github-agent-runtime issue comment listing', () => {
         agentId: 'implementor',
         runId: 'manual-test',
         now: '2026-03-17T12:00:00.000Z',
-      }, 251)).resolves.toEqual([{ id: 101 }, { id: 102 }, { id: 103 }]);
+      }, 251, { maxPages: undefined })).resolves.toEqual([{ id: 101 }, { id: 102 }, { id: 103 }]);
     } finally {
       globalThis.fetch = fetchMock;
     }
@@ -232,7 +265,7 @@ describe('github-agent-runtime issue comment listing', () => {
         agentId: 'implementor',
         runId: 'manual-test',
         now: '2026-03-17T12:00:00.000Z',
-      }, 251)).rejects.toThrow('GitHub pagination link escaped API base URL');
+      }, 251, { maxPages: undefined })).rejects.toThrow('GitHub pagination link escaped API base URL');
     } finally {
       globalThis.fetch = fetchMock;
     }

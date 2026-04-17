@@ -176,10 +176,15 @@ async function cleanupImplementorComments(
   runtimeConfig: IssueRuntimeConfig,
   issueNumber: number,
 ): Promise<void> {
-  const latestComments = (await listIssueComments(runtimeConfig, issueNumber)).map(mapIssueComment);
-  const staleCommentIds = selectStaleImplementorCommentIds(latestComments);
-  for (const commentId of staleCommentIds) {
-    await deleteIssueComment(runtimeConfig, commentId);
+  try {
+    const latestComments = (await listIssueComments(runtimeConfig, issueNumber, { maxPages: undefined })).map(mapIssueComment);
+    const staleCommentIds = selectStaleImplementorCommentIds(latestComments);
+    for (const commentId of staleCommentIds) {
+      await deleteIssueComment(runtimeConfig, commentId);
+    }
+  } catch (error) {
+    const summary = error instanceof Error ? error.message : 'unknown cleanup error';
+    process.stdout.write(`Implementor comment cleanup skipped for issue #${issueNumber}: ${summary}.\n`);
   }
 }
 

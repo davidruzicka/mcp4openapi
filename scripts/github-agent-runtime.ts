@@ -133,10 +133,21 @@ export async function listRecentClosedIssues(config: IssueRuntimeConfig): Promis
   return listRecentIssueSummaries(config, 'closed');
 }
 
-export async function listIssueComments(config: IssueRuntimeConfig, issueNumber: number): Promise<GitHubIssueComment[]> {
+export interface ListIssueCommentsOptions {
+  readonly maxPages?: number;
+}
+
+export async function listIssueComments(
+  config: IssueRuntimeConfig,
+  issueNumber: number,
+  options: ListIssueCommentsOptions = {},
+): Promise<GitHubIssueComment[]> {
+  const maxPages = Object.prototype.hasOwnProperty.call(options, 'maxPages') ? options.maxPages : 1;
   return githubRequestPaginated<GitHubIssueComment>(
     config,
     `/repos/${config.repository}/issues/${issueNumber}/comments?per_page=100`,
+    undefined,
+    { maxPages },
   );
 }
 
@@ -350,11 +361,18 @@ async function githubRequest<T = unknown>(config: IssueRuntimeConfig, path: stri
   return response.json() as Promise<T>;
 }
 
-async function githubRequestPaginated<T>(config: IssueRuntimeConfig, path: string, init: RequestInit = {}): Promise<T[]> {
+async function githubRequestPaginated<T>(
+  config: IssueRuntimeConfig,
+  path: string,
+  init: RequestInit = {},
+  options: { maxPages?: number } = {},
+): Promise<T[]> {
   const results: T[] = [];
   let nextPath: string | undefined = path;
+  let pageCount = 0;
 
   while (nextPath) {
+    pageCount += 1;
     const response = await fetch(`${config.apiBaseUrl}${nextPath}`, {
       ...init,
       headers: {
@@ -376,7 +394,8 @@ async function githubRequestPaginated<T>(config: IssueRuntimeConfig, path: strin
     }
 
     results.push(...page);
-    nextPath = parseNextLinkPath(response.headers.get('link'), config.apiBaseUrl);
+    const nextLinkPath = parseNextLinkPath(response.headers.get('link'), config.apiBaseUrl);
+    nextPath = options.maxPages !== undefined && pageCount >= options.maxPages ? undefined : nextLinkPath;
   }
 
   return results;
