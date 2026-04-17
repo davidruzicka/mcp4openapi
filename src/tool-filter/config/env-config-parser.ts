@@ -100,7 +100,7 @@ export class EnvConfigParser {
       }
 
       throw new ConfigurationError(
-        `MCP4_TOOL_FILTER_ALLOW_CATEGORIES supports only 'list' and 'read', got '${entry}'`
+        `MCP4_TOOL_FILTER_ALLOW_CATEGORIES supports only 'list' and 'read'`
       );
     }
 
