@@ -211,22 +211,24 @@ export function selectStaleImplementorCommentIds(comments: readonly ImplementorI
     const timestampDelta = Date.parse(left.createdAt) - Date.parse(right.createdAt);
     return timestampDelta !== 0 ? timestampDelta : left.id - right.id;
   });
+  const classifiedComments = commentsOldestFirst.map((comment) => ({
+    id: comment.id,
+    classification: classifyImplementorComment(comment),
+  }));
 
-  for (const comment of commentsOldestFirst) {
-    const classification = classifyImplementorComment(comment);
+  for (const { id, classification } of classifiedComments) {
     if (!classification) {
       continue;
     }
 
-    latestCommentIdByClass.set(classification, comment.id);
+    latestCommentIdByClass.set(classification, id);
   }
 
-  return commentsOldestFirst
-    .filter((comment) => {
-      const classification = classifyImplementorComment(comment);
-      return classification !== undefined && latestCommentIdByClass.get(classification) !== comment.id;
-    })
-    .map((comment) => comment.id);
+  return classifiedComments
+    .filter(
+      ({ id, classification }) => classification !== undefined && latestCommentIdByClass.get(classification) !== id,
+    )
+    .map(({ id }) => id);
 }
 
 function classifyImplementorComment(comment: ImplementorIssueComment): string | undefined {

@@ -134,7 +134,10 @@ export async function listRecentClosedIssues(config: IssueRuntimeConfig): Promis
 }
 
 export async function listIssueComments(config: IssueRuntimeConfig, issueNumber: number): Promise<GitHubIssueComment[]> {
-  return githubRequest<GitHubIssueComment[]>(config, `/repos/${config.repository}/issues/${issueNumber}/comments?per_page=100`);
+  return githubRequestPaginated<GitHubIssueComment>(
+    config,
+    `/repos/${config.repository}/issues/${issueNumber}/comments?per_page=100`,
+  );
 }
 
 export async function addIssueLabels(config: IssueRuntimeConfig, issueNumber: number, labels: readonly string[]): Promise<void> {
@@ -345,6 +348,67 @@ async function githubRequest<T = unknown>(config: IssueRuntimeConfig, path: stri
   }
 
   return response.json() as Promise<T>;
+}
+
+async function githubRequestPaginated<T>(config: IssueRuntimeConfig, path: string, init: RequestInit = {}): Promise<T[]> {
+  const results: T[] = [];
+  let nextPath: string | undefined = path;
+
+  while (nextPath) {
+    const response = await fetch(`${config.apiBaseUrl}${nextPath}`, {
+      ...init,
+      headers: {
+        Accept: 'application/vnd.github+json',
+        Authorization: `Bearer ${config.token}`,
+        'Content-Type': 'application/json',
+        'X-GitHub-Api-Version': '2022-11-28',
+        ...init.headers,
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`GitHub API request failed (${response.status}) for ${nextPath}: ${await response.text()}`);
+    }
+
+    const page = await response.json() as T[];
+    if (!Array.isArray(page)) {
+      throw new Error(`GitHub API request returned a non-array response for ${nextPath}.`);
+    }
+
+    results.push(...page);
+    nextPath = parseNextLinkPath(response.headers.get('link'), config.apiBaseUrl);
+  }
+
+  return results;
+}
+
+function parseNextLinkPath(linkHeader: string | null, apiBaseUrl: string): string | undefined {
+  if (!linkHeader) {
+    return undefined;
+  }
+
+  const nextLink = linkHeader
+    .split(',')
+    .map((segment) => segment.trim())
+    .find((segment) => segment.endsWith('rel="next"'));
+  if (!nextLink) {
+    return undefined;
+  }
+
+  const match = nextLink.match(/<([^>]+)>/);
+  if (!match?.[1]) {
+    return undefined;
+  }
+
+  const nextUrl = new URL(match[1]);
+  const apiBase = new URL(apiBaseUrl);
+  if (nextUrl.origin !== apiBase.origin || !nextUrl.pathname.startsWith(apiBase.pathname)) {
+    throw new Error(`GitHub pagination link escaped API base URL: ${match[1]}`);
+  }
+
+  const relativePathname = nextUrl.pathname.slice(apiBase.pathname.length) || '/';
+  const normalizedPathname = relativePathname.startsWith('/') ? relativePathname : `/${relativePathname}`;
+  return `${normalizedPathname}${nextUrl.search}`;
 }
 
 async function githubGraphQlRequest<T = unknown>(config: IssueRuntimeConfig, payload: Record<string, unknown>): Promise<T> {
