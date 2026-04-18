@@ -277,11 +277,11 @@ describe('MCPServer apps resources', () => {
 
     expect(invalidReadResponse.error).toEqual({
       code: -32602,
-      message: 'resources/read requires string parameter "uri"',
+      message: expect.stringMatching(/^Validation error: resources\/read requires string parameter "uri" \(correlation ID: [a-f0-9-]+\)$/),
     });
     expect(invalidCompletionResponse.error).toEqual({
       code: -32602,
-      message: 'completion/complete requires a resource ref',
+      message: expect.stringMatching(/^Validation error: completion\/complete requires a resource ref \(correlation ID: [a-f0-9-]+\)$/),
     });
   });
 
