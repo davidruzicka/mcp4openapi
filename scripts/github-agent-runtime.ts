@@ -153,15 +153,17 @@ export async function listIssueComments(
 }
 
 function resolveIssueCommentPageLimit(options: ListIssueCommentsOptions): number | undefined {
+  if (options.fetchAll && options.maxPages !== undefined) {
+    throw new Error('Invalid issue comment paging options: fetchAll cannot be combined with maxPages.');
+  }
+
   if (options.fetchAll) {
-    if (options.maxPages !== undefined) {
-      throw new Error('Invalid issue comment paging options: fetchAll cannot be combined with maxPages.');
-    }
     return undefined;
   }
 
   return options.maxPages ?? 1;
 }
+
 
 export async function addIssueLabels(config: IssueRuntimeConfig, issueNumber: number, labels: readonly string[]): Promise<void> {
   if (labels.length === 0) {
