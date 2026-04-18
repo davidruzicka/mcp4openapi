@@ -7,3 +7,4 @@ dist/
 coverage/
 junit.xml
 tmp/
+.claude/settings.local.json
