@@ -134,6 +134,7 @@ export async function listRecentClosedIssues(config: IssueRuntimeConfig): Promis
 }
 
 export interface ListIssueCommentsOptions {
+  readonly fetchAll?: boolean;
   readonly maxPages?: number;
 }
 
@@ -142,13 +143,24 @@ export async function listIssueComments(
   issueNumber: number,
   options: ListIssueCommentsOptions = {},
 ): Promise<GitHubIssueComment[]> {
-  const maxPages = Object.prototype.hasOwnProperty.call(options, 'maxPages') ? options.maxPages : 1;
+  const maxPages = resolveIssueCommentPageLimit(options);
   return githubRequestPaginated<GitHubIssueComment>(
     config,
     `/repos/${config.repository}/issues/${issueNumber}/comments?per_page=100`,
     undefined,
     { maxPages },
   );
+}
+
+function resolveIssueCommentPageLimit(options: ListIssueCommentsOptions): number | undefined {
+  if (options.fetchAll) {
+    if (options.maxPages !== undefined) {
+      throw new Error('Invalid issue comment paging options: fetchAll cannot be combined with maxPages.');
+    }
+    return undefined;
+  }
+
+  return options.maxPages ?? 1;
 }
 
 export async function addIssueLabels(config: IssueRuntimeConfig, issueNumber: number, labels: readonly string[]): Promise<void> {

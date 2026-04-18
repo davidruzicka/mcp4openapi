@@ -177,7 +177,7 @@ async function cleanupImplementorComments(
   issueNumber: number,
 ): Promise<void> {
   try {
-    const latestComments = (await listIssueComments(runtimeConfig, issueNumber, { maxPages: undefined })).map(mapIssueComment);
+    const latestComments = (await listIssueComments(runtimeConfig, issueNumber, { fetchAll: true })).map(mapIssueComment);
     const staleCommentIds = selectStaleImplementorCommentIds(latestComments);
     for (const commentId of staleCommentIds) {
       await deleteIssueComment(runtimeConfig, commentId);

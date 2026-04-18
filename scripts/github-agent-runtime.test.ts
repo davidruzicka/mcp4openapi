@@ -208,7 +208,7 @@ describe('github-agent-runtime issue comment listing', () => {
     ]);
   });
 
-  it('follows pagination links when explicitly allowed', async () => {
+  it('follows pagination links when fetchAll is enabled', async () => {
     const fetchMock = globalThis.fetch;
     const requests: string[] = [];
     globalThis.fetch = async (input) => {
@@ -235,7 +235,7 @@ describe('github-agent-runtime issue comment listing', () => {
         agentId: 'implementor',
         runId: 'manual-test',
         now: '2026-03-17T12:00:00.000Z',
-      }, 251, { maxPages: undefined })).resolves.toEqual([{ id: 101 }, { id: 102 }, { id: 103 }]);
+      }, 251, { fetchAll: true })).resolves.toEqual([{ id: 101 }, { id: 102 }, { id: 103 }]);
     } finally {
       globalThis.fetch = fetchMock;
     }
@@ -265,10 +265,25 @@ describe('github-agent-runtime issue comment listing', () => {
         agentId: 'implementor',
         runId: 'manual-test',
         now: '2026-03-17T12:00:00.000Z',
-      }, 251, { maxPages: undefined })).rejects.toThrow('GitHub pagination link escaped API base URL');
+      }, 251, { fetchAll: true })).rejects.toThrow('GitHub pagination link escaped API base URL');
     } finally {
       globalThis.fetch = fetchMock;
     }
+  });
+
+  it('rejects combining fetchAll with maxPages', async () => {
+    await expect(listIssueComments({
+      repository: 'davidruzicka/mcp4openapi',
+      token: 'token',
+      apiBaseUrl: 'https://api.github.com',
+      lookbackHours: 48,
+      maxCandidates: 2,
+      agentId: 'implementor',
+      runId: 'manual-test',
+      now: '2026-03-17T12:00:00.000Z',
+    }, 251, { fetchAll: true, maxPages: 2 })).rejects.toThrow(
+      'Invalid issue comment paging options: fetchAll cannot be combined with maxPages.',
+    );
   });
 });
 
