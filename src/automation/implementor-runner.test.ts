@@ -8,6 +8,7 @@ import {
   parseImplementorTaskPayload,
   planImplementorResultLabels,
   selectLatestTrustedPlannerArtifact,
+  selectStaleImplementorCommentIds,
   type ImplementorIssue,
   type ImplementorIssueComment,
 } from './implementor-runner.js';
@@ -752,6 +753,27 @@ describe('implementor-runner', () => {
         }),
       ], strictTrustConfig)).toBeUndefined();
     });
+
+    it('returns undefined when trusted agent IDs are required but agent-id metadata is missing', () => {
+      expect(selectLatestTrustedPlannerArtifact([
+        buildComment([
+          '🤖 Agent plan (planner)',
+          '',
+          buildSignedPlannerArtifact(),
+          '',
+          '<!-- AGENT-METADATA',
+          'agent-stage: planner',
+          'status: planned',
+          '-->',
+        ].join('\n'), {
+          id: 3,
+          createdAt: '2026-03-14T13:10:00Z',
+          updatedAt: '2026-03-14T13:10:00Z',
+        }),
+      ], strictTrustConfig, {
+        trustedAgentIds: ['planner'],
+      })).toBeUndefined();
+    });
   });
 
   describe('parseImplementorTaskPayload', () => {
@@ -1433,6 +1455,153 @@ describe('implementor-runner', () => {
         issueLabelsToRemove: ['agent:implementing'],
         pullRequestLabelsToAdd: [],
       });
+    });
+  });
+
+  describe('selectStaleImplementorCommentIds', () => {
+    it('keeps only the latest implementor lease comment', () => {
+      const leaseOne = buildComment(buildImplementorLeaseComment({
+        repository: 'davidruzicka/mcp4openapi',
+        issueNumber: 161,
+        agentId: 'implementor',
+        runId: 'run-1',
+        timestamp: '2026-03-14T12:00:00Z',
+      }), { id: 11, createdAt: '2026-03-14T12:00:00Z', updatedAt: '2026-03-14T12:00:00Z' });
+      const leaseTwo = buildComment(buildImplementorLeaseComment({
+        repository: 'davidruzicka/mcp4openapi',
+        issueNumber: 161,
+        agentId: 'implementor',
+        runId: 'run-2',
+        timestamp: '2026-03-14T12:10:00Z',
+      }), { id: 12, createdAt: '2026-03-14T12:10:00Z', updatedAt: '2026-03-14T12:10:00Z' });
+
+      expect(selectStaleImplementorCommentIds([leaseOne, leaseTwo])).toEqual([11]);
+    });
+
+    it('keeps the latest comment per distinct implementor failure signature', () => {
+      const authFailureOne = buildComment(buildImplementorResultComment({
+        repository: 'davidruzicka/mcp4openapi',
+        issueNumber: 161,
+        agentId: 'implementor',
+        runId: 'run-1',
+        timestamp: '2026-03-14T12:00:00Z',
+        result: {
+          outcome: 'failed',
+          summary: 'Implementor command failed: ERROR 2026-03-14T12:00:01Z failed to connect to websocket: HTTP error: 500 Internal Server Error. request id: req_abc123def456',
+        },
+      }), { id: 21, createdAt: '2026-03-14T12:00:00Z', updatedAt: '2026-03-14T12:00:00Z' });
+      const authFailureTwo = buildComment(buildImplementorResultComment({
+        repository: 'davidruzicka/mcp4openapi',
+        issueNumber: 161,
+        agentId: 'implementor',
+        runId: 'run-2',
+        timestamp: '2026-03-14T12:05:00Z',
+        result: {
+          outcome: 'failed',
+          summary: 'Implementor command failed: ERROR 2026-03-14T12:05:02Z failed to connect to websocket: HTTP error: 500 Internal Server Error. request id: req_xyz999uvw888',
+        },
+      }), { id: 22, createdAt: '2026-03-14T12:05:00Z', updatedAt: '2026-03-14T12:05:00Z' });
+      const malformedFailure = buildComment(buildImplementorResultComment({
+        repository: 'davidruzicka/mcp4openapi',
+        issueNumber: 161,
+        agentId: 'implementor',
+        runId: 'run-3',
+        timestamp: '2026-03-14T12:06:00Z',
+        result: {
+          outcome: 'failed',
+          summary: 'Codex backend returned malformed result (Invalid implementor command result: expected JSON object.). Output preview: "Plan: I updated tests".',
+        },
+      }), { id: 23, createdAt: '2026-03-14T12:06:00Z', updatedAt: '2026-03-14T12:06:00Z' });
+
+      expect(selectStaleImplementorCommentIds([authFailureOne, authFailureTwo, malformedFailure])).toEqual([21]);
+    });
+
+    it('keeps non-failed implementor result comments untouched', () => {
+      const blockedResult = buildComment(buildImplementorResultComment({
+        repository: 'davidruzicka/mcp4openapi',
+        issueNumber: 161,
+        agentId: 'implementor',
+        runId: 'run-blocked',
+        timestamp: '2026-03-14T12:15:00Z',
+        result: {
+          outcome: 'blocked',
+          summary: 'Needs a human decision.',
+        },
+      }), { id: 30, createdAt: '2026-03-14T12:15:00Z', updatedAt: '2026-03-14T12:15:00Z' });
+
+      expect(selectStaleImplementorCommentIds([blockedResult])).toEqual([]);
+    });
+
+    it('deduplicates malformed failure comments even when the summary line is missing', () => {
+      const missingSummaryOne = buildComment([
+        '🤖 Agent implementation note (implementor)',
+        '',
+        'Implementation result: failed',
+        '',
+        '<!-- AGENT-METADATA',
+        'agent-stage: implementor',
+        'status: failed',
+        'timestamp: 2026-03-14T12:00:00Z',
+        '-->',
+      ].join('\n'), { id: 33, createdAt: '2026-03-14T12:00:00Z', updatedAt: '2026-03-14T12:00:00Z' });
+      const missingSummaryTwo = buildComment([
+        '🤖 Agent implementation note (implementor)',
+        '',
+        'Implementation result: failed',
+        '',
+        '<!-- AGENT-METADATA',
+        'agent-stage: implementor',
+        'status: failed',
+        'timestamp: 2026-03-14T12:05:00Z',
+        '-->',
+      ].join('\n'), { id: 34, createdAt: '2026-03-14T12:05:00Z', updatedAt: '2026-03-14T12:05:00Z' });
+
+      expect(selectStaleImplementorCommentIds([missingSummaryOne, missingSummaryTwo])).toEqual([33]);
+    });
+
+    it('deduplicates generic failure signatures after normalizing volatile values', () => {
+      const genericFailureOne = buildComment(buildImplementorResultComment({
+        repository: 'davidruzicka/mcp4openapi',
+        issueNumber: 161,
+        agentId: 'implementor',
+        runId: 'run-generic-1',
+        timestamp: '2026-03-14T12:20:00Z',
+        result: {
+          outcome: 'failed',
+          summary: 'Unexpected backend crash at 2026-03-14T12:20:01Z in /tmp/mcp4openapi-abc123/worktree (cf-ray: deadbeef).',
+        },
+      }), { id: 35, createdAt: '2026-03-14T12:20:00Z', updatedAt: '2026-03-14T12:20:00Z' });
+      const genericFailureTwo = buildComment(buildImplementorResultComment({
+        repository: 'davidruzicka/mcp4openapi',
+        issueNumber: 161,
+        agentId: 'implementor',
+        runId: 'run-generic-2',
+        timestamp: '2026-03-14T12:25:00Z',
+        result: {
+          outcome: 'failed',
+          summary: 'Unexpected backend crash at 2026-03-14T12:25:09Z in /tmp/mcp4openapi-xyz999/worktree (cf-ray: feedface).',
+        },
+      }), { id: 36, createdAt: '2026-03-14T12:25:00Z', updatedAt: '2026-03-14T12:25:00Z' });
+
+      expect(selectStaleImplementorCommentIds([genericFailureOne, genericFailureTwo])).toEqual([35]);
+    });
+
+    it('does not delete human comments or non-implementor bot comments', () => {
+      const humanComment = buildComment('Human investigation note.', {
+        id: 31,
+        authorLogin: 'davidruzicka',
+      });
+      const plannerComment = buildComment([
+        '🤖 Agent plan (planner)',
+        '',
+        '<!-- AGENT-METADATA',
+        'agent-stage: planner',
+        'status: planned',
+        'timestamp: 2026-03-14T12:00:00Z',
+        '-->',
+      ].join('\n'), { id: 32 });
+
+      expect(selectStaleImplementorCommentIds([humanComment, plannerComment])).toEqual([]);
     });
   });
 

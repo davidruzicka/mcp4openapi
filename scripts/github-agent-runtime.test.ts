@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   createReviewThreadReply,
+  deleteIssueComment,
+  listIssueComments,
   listOpenPullRequests,
   listRecentIssues,
   mapIssueSummaryToProposalCandidate,
@@ -166,6 +168,161 @@ describe('github-agent-runtime listing bounds', () => {
         runId: 'manual-test',
         now: '2026-03-17T12:00:00.000Z',
       })).resolves.toMatchObject([{ number: 21 }, { number: 20 }]);
+    } finally {
+      globalThis.fetch = fetchMock;
+    }
+  });
+});
+
+describe('github-agent-runtime issue comment listing', () => {
+  it('stops after the first page by default', async () => {
+    const fetchMock = globalThis.fetch;
+    const requests: string[] = [];
+    globalThis.fetch = async (input) => {
+      requests.push(String(input));
+      return new Response(JSON.stringify([{ id: 101 }, { id: 102 }]), {
+        status: 200,
+        headers: {
+          link: '<https://api.github.com/repos/davidruzicka/mcp4openapi/issues/251/comments?per_page=100&page=2>; rel="next", <https://api.github.com/repos/davidruzicka/mcp4openapi/issues/251/comments?per_page=100&page=2>; rel="last"',
+        },
+      });
+    };
+
+    try {
+      await expect(listIssueComments({
+        repository: 'davidruzicka/mcp4openapi',
+        token: 'token',
+        apiBaseUrl: 'https://api.github.com',
+        lookbackHours: 48,
+        maxCandidates: 2,
+        agentId: 'implementor',
+        runId: 'manual-test',
+        now: '2026-03-17T12:00:00.000Z',
+      }, 251)).resolves.toEqual([{ id: 101 }, { id: 102 }]);
+    } finally {
+      globalThis.fetch = fetchMock;
+    }
+
+    expect(requests).toEqual([
+      'https://api.github.com/repos/davidruzicka/mcp4openapi/issues/251/comments?per_page=100',
+    ]);
+  });
+
+  it('follows pagination links when fetchAll is enabled', async () => {
+    const fetchMock = globalThis.fetch;
+    const requests: string[] = [];
+    globalThis.fetch = async (input) => {
+      requests.push(String(input));
+      if (requests.length === 1) {
+        return new Response(JSON.stringify([{ id: 101 }, { id: 102 }]), {
+          status: 200,
+          headers: {
+            link: '<https://api.github.com/repos/davidruzicka/mcp4openapi/issues/251/comments?per_page=100&page=2>; rel="next", <https://api.github.com/repos/davidruzicka/mcp4openapi/issues/251/comments?per_page=100&page=2>; rel="last"',
+          },
+        });
+      }
+
+      return new Response(JSON.stringify([{ id: 103 }]), { status: 200 });
+    };
+
+    try {
+      await expect(listIssueComments({
+        repository: 'davidruzicka/mcp4openapi',
+        token: 'token',
+        apiBaseUrl: 'https://api.github.com',
+        lookbackHours: 48,
+        maxCandidates: 2,
+        agentId: 'implementor',
+        runId: 'manual-test',
+        now: '2026-03-17T12:00:00.000Z',
+      }, 251, { fetchAll: true })).resolves.toEqual([{ id: 101 }, { id: 102 }, { id: 103 }]);
+    } finally {
+      globalThis.fetch = fetchMock;
+    }
+
+    expect(requests).toEqual([
+      'https://api.github.com/repos/davidruzicka/mcp4openapi/issues/251/comments?per_page=100',
+      'https://api.github.com/repos/davidruzicka/mcp4openapi/issues/251/comments?per_page=100&page=2',
+    ]);
+  });
+
+  it('rejects pagination links that escape the configured API base URL', async () => {
+    const fetchMock = globalThis.fetch;
+    globalThis.fetch = async () => new Response(JSON.stringify([{ id: 101 }]), {
+      status: 200,
+      headers: {
+        link: '<https://evil.example/repos/davidruzicka/mcp4openapi/issues/251/comments?page=2>; rel="next"',
+      },
+    });
+
+    try {
+      await expect(listIssueComments({
+        repository: 'davidruzicka/mcp4openapi',
+        token: 'token',
+        apiBaseUrl: 'https://api.github.com',
+        lookbackHours: 48,
+        maxCandidates: 2,
+        agentId: 'implementor',
+        runId: 'manual-test',
+        now: '2026-03-17T12:00:00.000Z',
+      }, 251, { fetchAll: true })).rejects.toThrow('GitHub pagination link escaped API base URL');
+    } finally {
+      globalThis.fetch = fetchMock;
+    }
+  });
+
+  it('rejects combining fetchAll with maxPages', async () => {
+    await expect(listIssueComments({
+      repository: 'davidruzicka/mcp4openapi',
+      token: 'token',
+      apiBaseUrl: 'https://api.github.com',
+      lookbackHours: 48,
+      maxCandidates: 2,
+      agentId: 'implementor',
+      runId: 'manual-test',
+      now: '2026-03-17T12:00:00.000Z',
+    }, 251, { fetchAll: true, maxPages: 2 })).rejects.toThrow(
+      'Invalid issue comment paging options: fetchAll cannot be combined with maxPages.',
+    );
+  });
+});
+
+describe('github-agent-runtime comment deletion', () => {
+  it('ignores 404 responses when deleting issue comments', async () => {
+    const fetchMock = globalThis.fetch;
+    globalThis.fetch = async () => new Response(JSON.stringify({ message: 'Not Found' }), { status: 404 });
+
+    try {
+      await expect(deleteIssueComment({
+        repository: 'davidruzicka/mcp4openapi',
+        token: 'token',
+        apiBaseUrl: 'https://api.github.com',
+        lookbackHours: 48,
+        maxCandidates: 2,
+        agentId: 'implementor',
+        runId: 'manual-test',
+        now: '2026-03-17T12:00:00.000Z',
+      }, 12345)).resolves.toBeUndefined();
+    } finally {
+      globalThis.fetch = fetchMock;
+    }
+  });
+
+  it('rethrows non-404 deletion failures', async () => {
+    const fetchMock = globalThis.fetch;
+    globalThis.fetch = async () => new Response(JSON.stringify({ message: 'Internal Server Error' }), { status: 500 });
+
+    try {
+      await expect(deleteIssueComment({
+        repository: 'davidruzicka/mcp4openapi',
+        token: 'token',
+        apiBaseUrl: 'https://api.github.com',
+        lookbackHours: 48,
+        maxCandidates: 2,
+        agentId: 'implementor',
+        runId: 'manual-test',
+        now: '2026-03-17T12:00:00.000Z',
+      }, 12345)).rejects.toThrow('GitHub API request failed (500) for /repos/davidruzicka/mcp4openapi/issues/comments/12345');
     } finally {
       globalThis.fetch = fetchMock;
     }
