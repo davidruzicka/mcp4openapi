@@ -126,3 +126,14 @@ Error messages should never include raw values from sensitive sources like envir
 **Prevention:**
 1.  Avoid including raw values in error messages when the source is potentially sensitive (env vars, auth headers).
 2.  Use generic error messages for validation failures of sensitive data.
+
+## 2026-03-24 - [CRITICAL] Path Traversal via URL Interpolation with Dots
+
+**Vulnerability:**
+The `encodeURIComponent` function used in URL interpolation (`CompositeExecutor` and `encodePathSegment` in `mcp-server.ts`) does not encode dot (`.`) characters. When user input containing `../` or `..` was processed, it was encoded as `..%2F` or left as `..`. Some HTTP clients and proxy servers normalize these path segments before processing the request, allowing an attacker to traverse directory structures in the API path.
+
+**Learning:**
+Relying solely on standard `encodeURIComponent` is insufficient for preventing path traversal when interpolating user inputs into URL paths, as standard URI encoding specifications do not require encoding of dots.
+
+**Prevention:**
+1.  Always encode dot characters (`.`) explicitly using `.replace(/\./g, '%2E')` after calling `encodeURIComponent()` when interpolating into URL path segments.

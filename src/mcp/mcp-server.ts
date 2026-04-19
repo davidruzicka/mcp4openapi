@@ -1107,7 +1107,8 @@ export class MCPServer {
    */
   private encodePathSegment(value: unknown): string {
     const val = String(value);
-    return val.includes('/') ? encodeURIComponent(val) : val;
+    // URL-encode slashes and dots to prevent path traversal when interpolating path parameters
+    return (val.includes('/') || val.includes('.')) ? encodeURIComponent(val).replace(/\./g, '%2E') : val;
   }
 
   /**
