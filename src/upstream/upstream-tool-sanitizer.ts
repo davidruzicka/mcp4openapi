@@ -123,21 +123,35 @@ export function isValidUpstreamToolName(name: string): boolean {
 }
 
 /**
+ * Match a single glob pattern against a tool name.
+ * Supports `*` as a wildcard (matches any sequence of valid tool name chars).
+ * Fast path skips regex for exact-match patterns (no `*`).
+ */
+function matchesGlobPattern(pattern: string, name: string): boolean {
+  if (!pattern.includes('*')) return pattern === name;
+  const regexStr = pattern
+    .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+    .replace(/\*/g, '[a-zA-Z0-9_-]*');
+  return new RegExp(`^${regexStr}$`).test(name);
+}
+
+/**
  * Apply the profile-level upstream tool policy (allow/deny lists) to a tool list.
  *
  * Semantics:
- *   - allow set: only listed tool names pass
- *   - deny set: listed tool names are rejected
- *   - both set: allow is evaluated first (tool must be in allow AND not in deny)
+ *   - allow list: only tools matching at least one pattern pass
+ *   - deny list: tools matching any pattern are rejected
+ *   - both set: allow is evaluated first (tool must match allow AND not match deny)
  *   - neither set: all tools pass
+ *
+ * Patterns support `*` as a wildcard (e.g. `github_*`, `admin_*`).
  */
 export function applyProviderToolPolicy(tools: Tool[], policy: UpstreamMcpToolPolicy | undefined): Tool[] {
   if (!policy) return tools;
-  const allowSet = policy.allow ? new Set(policy.allow) : null;
-  const denySet = policy.deny ? new Set(policy.deny) : null;
+  const { allow, deny } = policy;
   return tools.filter((tool) => {
-    if (allowSet && !allowSet.has(tool.name)) return false;
-    if (denySet && denySet.has(tool.name)) return false;
+    if (allow && !allow.some(p => matchesGlobPattern(p, tool.name))) return false;
+    if (deny && deny.some(p => matchesGlobPattern(p, tool.name))) return false;
     return true;
   });
 }
@@ -145,18 +159,11 @@ export function applyProviderToolPolicy(tools: Tool[], policy: UpstreamMcpToolPo
 /**
  * Check whether a single tool name is permitted by the upstream tool policy.
  * Used in tools/call to enforce allow/deny before forwarding.
- *
- * Uses Array.includes intentionally: policy lists are profile-config-bounded (human-authored,
- * typically < 50 entries) and this function is called once per tools/call. Building a Set
- * inline per call would be strictly worse (O(N) allocation + construction vs O(N) scan on a
- * short array). Pre-caching Sets at profile-load time would be a valid future optimisation
- * but is not warranted at current scale - the bottleneck on the tools/call path is upstream
- * I/O, not these array lookups. applyProviderToolPolicy uses Sets because it iterates the
- * full tool list (O(M*N) without Set vs O(M) with Set); that trade-off does not apply here.
+ * Patterns support `*` as a wildcard (e.g. `github_*`, `admin_*`).
  */
 export function isToolAllowedByProviderPolicy(toolName: string, policy: UpstreamMcpToolPolicy | undefined): boolean {
   if (!policy) return true;
-  if (policy.allow && !policy.allow.includes(toolName)) return false;
-  if (policy.deny && policy.deny.includes(toolName)) return false;
+  if (policy.allow && !policy.allow.some(p => matchesGlobPattern(p, toolName))) return false;
+  if (policy.deny && policy.deny.some(p => matchesGlobPattern(p, toolName))) return false;
   return true;
 }
