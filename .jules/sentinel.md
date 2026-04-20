@@ -126,3 +126,15 @@ Error messages should never include raw values from sensitive sources like envir
 **Prevention:**
 1.  Avoid including raw values in error messages when the source is potentially sensitive (env vars, auth headers).
 2.  Use generic error messages for validation failures of sensitive data.
+
+## 2026-04-20 - [MEDIUM] Environment Variable Leakage in Configuration Error Messages
+
+**Vulnerability:**
+Several configuration parsers (`EnvConfigParser`, `MCPServer`, and `artifact-signing-config`) were throwing `ConfigurationError` messages that included the raw, invalid values provided by environment variables. For example, `throw new ConfigurationError(\`...got '${entry}'\`);`. If an administrator mistakenly mapped an environment variable containing a sensitive secret (like an API key or a secret threshold) to one of these configuration fields, the invalid value (the secret) would be logged or returned to the user in the error message.
+
+**Learning:**
+Validation and configuration error messages must be careful not to echo back the exact invalid input when that input originates from a source that might contain sensitive data, such as environment variables. A seemingly harmless error message can inadvertently become an information disclosure vector.
+
+**Prevention:**
+1. Do not include raw input values in error messages for configuration parameters derived from environment variables.
+2. State the expected format or type in the error message without reflecting the invalid input.
