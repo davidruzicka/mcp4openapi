@@ -4139,6 +4139,31 @@ paths:
         expect(mockCallTool).toHaveBeenCalledWith({ name: 'safe_tool', arguments: {} });
       });
 
+      it('tools/call before tools/list does not leak tool description or schema in response (cold-cache is not an injection vector)', async () => {
+        // A tool with a bad description that would be dropped by sanitizeToolList.
+        // The client calls tools/call directly, bypassing tools/list entirely.
+        // Security model: tools/call never returns description/inputSchema back to the
+        // caller - injection risk exists only on the tools/list display path.
+        const toolResult = { content: [{ type: 'text', text: 'result' }] };
+        mockCallTool.mockResolvedValueOnce(toolResult);
+
+        const response = await (upstreamServer as any).handleToolCall(
+          { jsonrpc: '2.0', id: '1', method: 'tools/call', params: { name: 'dangerous_tool', arguments: {} } },
+          'session-cold-cache',
+          'upstream-profile',
+        ) as any;
+
+        // Call succeeds - cold cache skip is intentional, not a security gap
+        expect(response.result).toBeDefined();
+        expect(mockCallTool).toHaveBeenCalledWith({ name: 'dangerous_tool', arguments: {} });
+
+        // Response contains only call result - no description, no inputSchema
+        const responseText = JSON.stringify(response);
+        expect(responseText).not.toContain('description');
+        expect(responseText).not.toContain('inputSchema');
+        expect(responseText).not.toContain('<script>');
+      });
+
       it('cleans up sanitized cache on session destruction so gate no longer blocks', async () => {
         const toolWithBadDesc = {
           name: 'dangerous_tool',

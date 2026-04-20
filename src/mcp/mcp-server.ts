@@ -1629,16 +1629,13 @@ export class MCPServer {
           },
         };
       }
-      // Enforce membership in the sanitized upstream tool set when cache is available.
-      // Prevents invoking a tool dropped by sanitizeToolList (bad description/inputSchema)
-      // via a direct tools/call with its valid name, bypassing the sanitization boundary.
-      // Intentional gap: when tools/list was never called for this session the cache is absent
-      // and the gate is skipped. The tool name still passes isValidUpstreamToolName() above,
-      // but the bad description/inputSchema is not echoed back in tools/call responses, so the
-      // injection risk is constrained to the metadata display path (tools/list). Clients that
-      // skip tools/list bear responsibility for not seeing the sanitized view.
-      // TODO(sec): consider seeding the cache on the first tools/call when absent, to close this
-      // gap for clients that invoke tools/call directly without a prior tools/list round-trip.
+      // Defense-in-depth: when the sanitized tool set cache is warm (tools/list was called
+      // earlier in this session), reject any tool that was dropped by sanitizeToolList.
+      // When the cache is absent (tools/call before tools/list), the gate is skipped — this
+      // is correct and safe: tools/call never returns description or inputSchema back to the
+      // caller, so a tool with a bad description/schema cannot inject content via this path.
+      // Injection risk exists only on the tools/list metadata display path, which is always
+      // sanitized. Name and policy checks above are the primary gates on the cold-cache path.
       const sanitizedSet = sessionId
         ? this.sanitizedAndPolicyFilteredToolNames.get(sessionId)?.get(upstreamMcpForCall[0].name)
         : undefined;

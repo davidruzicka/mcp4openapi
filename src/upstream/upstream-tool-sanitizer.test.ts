@@ -384,6 +384,24 @@ describe('applyProviderToolPolicy', () => {
   it('returns all tools when deny list is empty', () => {
     expect(applyProviderToolPolicy(tools, { deny: [] })).toEqual(tools);
   });
+
+  it('apply wildcard allow: github_* keeps only matching tools', () => {
+    const mixed = [makeTool('github_create'), makeTool('github_list'), makeTool('admin_delete'), makeTool('other_tool')];
+    const result = applyProviderToolPolicy(mixed, { allow: ['github_*'] });
+    expect(result.map(t => t.name)).toEqual(['github_create', 'github_list']);
+  });
+
+  it('apply wildcard deny: admin_* removes matching tools', () => {
+    const mixed = [makeTool('github_create'), makeTool('admin_delete'), makeTool('admin_update')];
+    const result = applyProviderToolPolicy(mixed, { deny: ['admin_*'] });
+    expect(result.map(t => t.name)).toEqual(['github_create']);
+  });
+
+  it('apply wildcard allow+deny combined: github_* allowed except github_admin', () => {
+    const mixed = [makeTool('github_create'), makeTool('github_admin'), makeTool('other_tool')];
+    const result = applyProviderToolPolicy(mixed, { allow: ['github_*'], deny: ['github_admin'] });
+    expect(result.map(t => t.name)).toEqual(['github_create']);
+  });
 });
 
 describe('isValidUpstreamToolName', () => {
@@ -443,5 +461,29 @@ describe('isToolAllowedByProviderPolicy', () => {
 
   it('rejects tool in both allow and deny (deny wins)', () => {
     expect(isToolAllowedByProviderPolicy('alpha', { allow: ['alpha'], deny: ['alpha'] })).toBe(false);
+  });
+
+  it('allows tool matching wildcard allow pattern (github_*)', () => {
+    expect(isToolAllowedByProviderPolicy('github_create', { allow: ['github_*'] })).toBe(true);
+  });
+
+  it('allows tool matching wildcard allow pattern (github_*) - second tool', () => {
+    expect(isToolAllowedByProviderPolicy('github_list', { allow: ['github_*'] })).toBe(true);
+  });
+
+  it('rejects tool not matching wildcard allow pattern', () => {
+    expect(isToolAllowedByProviderPolicy('admin_delete', { allow: ['github_*'] })).toBe(false);
+  });
+
+  it('rejects tool matching wildcard deny pattern (admin_*)', () => {
+    expect(isToolAllowedByProviderPolicy('admin_delete', { deny: ['admin_*'] })).toBe(false);
+  });
+
+  it('allows tool not matching wildcard deny pattern', () => {
+    expect(isToolAllowedByProviderPolicy('github_create', { deny: ['admin_*'] })).toBe(true);
+  });
+
+  it('rejects tool matching wildcard deny with allow+deny combined', () => {
+    expect(isToolAllowedByProviderPolicy('github_admin', { allow: ['github_*'], deny: ['github_admin'] })).toBe(false);
   });
 });
