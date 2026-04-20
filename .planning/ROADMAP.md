@@ -14,8 +14,9 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [ ] **Phase 1: Upstream Session Foundation** - Per-session upstream MCP connections with credential forwarding, heartbeats, cleanup, and typed error handling
 - [ ] **Phase 2: Tool Discovery and Call Proxy** - tools/list and tools/call forwarded to upstream MCP servers with sanitization and notification relay
-- [ ] **Phase 3: Client Authentication Gate** - OIDC and API key identity verification before any upstream resource is consumed
-- [ ] **Phase 4: Observability** - Structured audit logging, Prometheus gateway metrics, and health/readiness endpoints
+- [ ] **Phase 3: Client Authentication Gate — API Keys** - M2M API key identity verification before any upstream resource is consumed
+- [ ] **Phase 4: Client Authentication Gate — JWT/OIDC** - SSO JWT/OIDC identity verification deferred from Phase 3
+- [ ] **Phase 5: Observability** - Structured audit logging, Prometheus gateway metrics, and health/readiness endpoints
 
 ## Phase Details
 
@@ -54,22 +55,36 @@ Plans:
 - [x] 02-02-PLAN.md - Upstream tools/list and tools/call handler wiring with error mapping (PROXY-03, PROXY-04, SEC-01)
 - [x] 02-03-PLAN.md - Notification forwarding from upstream to downstream SSE with bounded queue replay (REL-04)
 
-### Phase 3: Client Authentication Gate
-**Goal**: Only authenticated clients can create sessions; identity is resolved and attached before any upstream resource is consumed
+### Phase 3: Client Authentication Gate — API Keys
+**Goal**: M2M API key clients are verified before any upstream resource is consumed; resolved identity is attached to the session
 **Depends on**: Phase 1
-**Requirements**: AUTH-01, AUTH-02, AUTH-03
+**Requirements**: AUTH-02, AUTH-03
 **Success Criteria** (what must be TRUE):
-  1. An inbound client presenting a JWT is validated against the JWKS endpoint of the configured identity provider; the session is rejected before any upstream connection if validation fails
-  2. An inbound M2M client presenting an API key is validated against the configured key store and resolved to a client identity before session establishment
-  3. The resolved client identity (from SSO JWT or API key) is attached to the session context and included in every audit log entry for that session
+  1. An inbound M2M client presenting a valid API key (inline or Sasanka) is resolved to an AuthorizedPrincipal before session establishment; invalid or missing keys are rejected with HTTP 401 when mode='required'
+  2. API key validation uses constant-time comparison (inline) or the Sasanka /api/v1/users/me endpoint; raw key values never appear in logs, error responses, or metrics labels
+  3. The resolved client identity is attached to session.clientPrincipal; session-creation log includes subject and authType structured fields; auth success/failure events are emitted as structured log entries
 **Plans**: 3 plans
 
 Plans:
-- [ ] 03-01-PLAN.md - Types, ClientAuthGateError, schema sync, and profile-load-time validator (AUTH-01, AUTH-02, AUTH-03)
+- [ ] 03-01-PLAN.md - Types, ClientAuthGateError, schema sync, and profile-load-time validator (AUTH-02, AUTH-03; JWT types defined as prereq for Phase 4)
 - [ ] 03-02-PLAN.md - ApiKeyStore interface, InlineApiKeyStore, SasankaApiKeyStore, and factory (AUTH-02)
-- [ ] 03-03-PLAN.md - ClientAuthGate orchestrator, http-transport wiring, session clientPrincipal attachment (AUTH-01, AUTH-02, AUTH-03)
+- [ ] 03-03-PLAN.md - ClientAuthGate orchestrator (API key only), http-transport wiring, session clientPrincipal attachment, auth event logging (AUTH-02, AUTH-03)
 
-### Phase 4: Observability
+### Phase 4: Client Authentication Gate — JWT/OIDC
+**Goal**: SSO JWT clients are verified against a configured JWKS endpoint before any upstream resource is consumed
+**Depends on**: Phase 3
+**Requirements**: AUTH-01
+**Success Criteria** (what must be TRUE):
+  1. An inbound client presenting a JWT is validated against the JWKS endpoint of the configured identity provider; the session is rejected before any upstream connection if validation fails
+  2. OIDC discovery validates that the discovered issuer matches the configured issuer (JWKS hijacking prevention)
+  3. The resolved JWT identity (authType='oauth') is attached to session.clientPrincipal using the same flow established in Phase 3; JWT-shaped tokens that fail validation do not fall through to the API key path
+**Plans**: TBD
+
+Plans:
+- [ ] 04-01: TBD (oidc-discovery utility, JwksCache integration, JWT path in ClientAuthGate)
+- [ ] 04-02: TBD (transport wiring, integration tests, CHANGELOG)
+
+### Phase 5: Observability
 **Goal**: Every tool call is audited with identity and outcome; operators have metrics and health endpoints to monitor the gateway
 **Depends on**: Phase 2, Phase 3
 **Requirements**: OBS-01, OBS-02, OBS-03
@@ -80,17 +95,18 @@ Plans:
 **Plans**: TBD
 
 Plans:
-- [ ] 04-01: TBD
-- [ ] 04-02: TBD
+- [ ] 05-01: TBD
+- [ ] 05-02: TBD
 
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 -> 2 -> 3 -> 4
+Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Upstream Session Foundation | 4/5 | In Progress|  |
-| 2. Tool Discovery and Call Proxy | 2/3 | In Progress|  |
-| 3. Client Authentication Gate | 0/3 | Not started | - |
-| 4. Observability | 0/2 | Not started | - |
+| 1. Upstream Session Foundation | 5/5 | Complete | |
+| 2. Tool Discovery and Call Proxy | 3/3 | Complete | |
+| 3. Client Auth Gate — API Keys | 0/3 | Not started | - |
+| 4. Client Auth Gate — JWT/OIDC | 0/2 | Not started | - |
+| 5. Observability | 0/2 | Not started | - |
