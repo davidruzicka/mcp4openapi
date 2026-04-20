@@ -4308,6 +4308,64 @@ paths:
         expect(mockCallTool).toHaveBeenCalledWith({ name: 'safe_tool', arguments: {} });
       });
 
+      it('blocks tool call denied by wildcard deny pattern (cold cache, no prior tools/list)', async () => {
+        (upstreamServer as any).profile.upstream_mcp = [{
+          ...upstreamServer['profile'].upstream_mcp[0],
+          tools: { deny: ['safe_*'] },
+        }];
+        (upstreamServer as any).httpTransport.getUpstreamMcpConfig = () =>
+          (upstreamServer as any).profile.upstream_mcp;
+
+        const response = await (upstreamServer as any).handleToolCall(
+          { jsonrpc: '2.0', id: '1', method: 'tools/call', params: { name: 'safe_tool', arguments: {} } },
+          'session-wildcard-deny',
+          'upstream-profile',
+        ) as any;
+
+        expect(response.error).toBeDefined();
+        expect(response.error.code).toBe(-32002);
+        expect(response.error.message).toMatch(/upstream provider tool policy/);
+        expect(mockCallTool).not.toHaveBeenCalled();
+      });
+
+      it('allows tool call matching wildcard allow pattern (cold cache, no prior tools/list)', async () => {
+        (upstreamServer as any).profile.upstream_mcp = [{
+          ...upstreamServer['profile'].upstream_mcp[0],
+          tools: { allow: ['safe_*'] },
+        }];
+        (upstreamServer as any).httpTransport.getUpstreamMcpConfig = () =>
+          (upstreamServer as any).profile.upstream_mcp;
+
+        const response = await (upstreamServer as any).handleToolCall(
+          { jsonrpc: '2.0', id: '1', method: 'tools/call', params: { name: 'safe_tool', arguments: {} } },
+          'session-wildcard-allow',
+          'upstream-profile',
+        ) as any;
+
+        expect(response.result).toBeDefined();
+        expect(mockCallTool).toHaveBeenCalledWith({ name: 'safe_tool', arguments: {} });
+      });
+
+      it('blocks tool call not matching wildcard allow pattern (cold cache, no prior tools/list)', async () => {
+        (upstreamServer as any).profile.upstream_mcp = [{
+          ...upstreamServer['profile'].upstream_mcp[0],
+          tools: { allow: ['github_*'] },
+        }];
+        (upstreamServer as any).httpTransport.getUpstreamMcpConfig = () =>
+          (upstreamServer as any).profile.upstream_mcp;
+
+        const response = await (upstreamServer as any).handleToolCall(
+          { jsonrpc: '2.0', id: '1', method: 'tools/call', params: { name: 'safe_tool', arguments: {} } },
+          'session-wildcard-allow-miss',
+          'upstream-profile',
+        ) as any;
+
+        expect(response.error).toBeDefined();
+        expect(response.error.code).toBe(-32002);
+        expect(response.error.message).toMatch(/upstream provider tool policy/);
+        expect(mockCallTool).not.toHaveBeenCalled();
+      });
+
       it('filters tools/list by provider allow list', async () => {
         const anotherTool = { name: 'another_tool', description: 'Another', inputSchema: { type: 'object', properties: {} } };
         mockListTools.mockResolvedValue({ tools: [safeTool, anotherTool] });
