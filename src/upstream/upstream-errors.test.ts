@@ -13,10 +13,9 @@ const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12
 describe('upstream-errors', () => {
   describe('UpstreamConnectionError', () => {
     it('has correct code and details', () => {
-      const err = new UpstreamConnectionError('connect failed', 'provider-a', { url: 'https://x' });
+      const err = new UpstreamConnectionError('connect failed', 'provider-a');
       expect(err.code).toBe('UPSTREAM_CONNECTION_ERROR');
       expect(err.details?.providerName).toBe('provider-a');
-      expect(err.details?.url).toBe('https://x');
       expect(err.message).toContain('connect failed');
     });
 

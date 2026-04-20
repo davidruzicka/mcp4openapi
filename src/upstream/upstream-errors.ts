@@ -9,12 +9,12 @@ import { MCPError, generateCorrelationId } from '../core/errors.js';
 import { sanitizeAuthErrorMessage } from '../auth/auth-redaction.js';
 
 export class UpstreamConnectionError extends MCPError {
-  constructor(message: string, providerName: string, extraDetails?: Record<string, unknown>) {
+  constructor(message: string, providerName: string) {
     const correlationId = generateCorrelationId();
     super(
       sanitizeAuthErrorMessage(message),
       'UPSTREAM_CONNECTION_ERROR',
-      { correlationId, providerName, ...extraDetails },
+      { correlationId, providerName },
     );
     this.name = 'UpstreamConnectionError';
   }
