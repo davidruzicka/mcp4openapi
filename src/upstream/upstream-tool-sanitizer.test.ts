@@ -486,4 +486,15 @@ describe('isToolAllowedByProviderPolicy', () => {
   it('rejects tool matching wildcard deny with allow+deny combined', () => {
     expect(isToolAllowedByProviderPolicy('github_admin', { allow: ['github_*'], deny: ['github_admin'] })).toBe(false);
   });
+
+  it('does not treat ? in pattern as regex quantifier when combined with *', () => {
+    // "tool?_*" should not match "too_x" (which regex `tool?_.*` would match)
+    expect(isToolAllowedByProviderPolicy('too_x', { allow: ['tool?_*'] })).toBe(false);
+  });
+
+  it('does not match tool name when ? appears in wildcard pattern (literal, not quantifier)', () => {
+    // ? is escaped to \? so the pattern toolA?_* requires a literal ? in the name.
+    // No valid tool name contains ?, so the deny rule never fires and the tool is allowed.
+    expect(isToolAllowedByProviderPolicy('toolA_create', { deny: ['toolA?_*'] })).toBe(true);
+  });
 });

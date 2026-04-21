@@ -130,7 +130,7 @@ export function isValidUpstreamToolName(name: string): boolean {
 function matchesGlobPattern(pattern: string, name: string): boolean {
   if (!pattern.includes('*')) return pattern === name;
   const regexStr = pattern
-    .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+    .replace(/[.+?^${}()|[\]\\]/g, '\\$&')
     .replace(/\*/g, '[a-zA-Z0-9_-]*');
   return new RegExp(`^${regexStr}$`).test(name);
 }
