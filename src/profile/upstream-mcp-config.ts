@@ -123,14 +123,14 @@ function validateUpstreamAuth(auth: UpstreamMcpAuthConfig | undefined, path: str
       throw new ValidationError(`${path}.header_name is required for custom-header auth`, { path: `${path}.header_name` });
     }
     if (!isSafePropertyName(auth.header_name)) {
-      throw new ValidationError(`${path}.header_name contains invalid header name '${auth.header_name}'`, {
+      throw new ValidationError(`${path}.header_name contains invalid header name ${JSON.stringify(auth.header_name)}`, {
         path: `${path}.header_name`,
         headerName: auth.header_name,
       });
     }
     if (!isValidHttpHeaderName(auth.header_name)) {
       throw new ValidationError(
-        `${path}.header_name must be a valid HTTP header field-name (RFC7230 token); got '${auth.header_name}'`,
+        `${path}.header_name must be a valid HTTP header field-name (RFC7230 token); got ${JSON.stringify(auth.header_name)}`,
         { path: `${path}.header_name`, headerName: auth.header_name },
       );
     }
