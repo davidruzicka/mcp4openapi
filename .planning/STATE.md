@@ -7,7 +7,7 @@ stopped_at: Completed 02-03-PLAN.md
 last_updated: "2026-03-30T14:22:05.195Z"
 last_activity: 2026-03-30
 progress:
-  total_phases: 4
+  total_phases: 5
   completed_phases: 2
   total_plans: 8
   completed_plans: 8
@@ -68,7 +68,7 @@ Progress: [░░░░░░░░░░] 0%
 Decisions are logged in PROJECT.md Key Decisions table.
 Recent decisions affecting current work:
 
-- [Roadmap]: 4-phase structure derived from 16 requirements; upstream connections first, auth third (can be stubbed for dev), observability last as cross-cutting cap
+- [Roadmap]: 5-phase structure (revised 2026-04-22): Phase 3=API keys only, Phase 4=OIDC JWT, Phase 5=Observability; original 4-phase had JWT+API keys bundled in Phase 3
 - [Roadmap]: Profile-per-upstream model confirmed - no aggregation across providers in a single session
 - [Phase 01]: X-Upstream-Authorization HTTP header for credential delivery (resolves RESEARCH.md Open Question #1)
 - [Phase 01]: Data-driven auth header builders via lookup table; per-provider token Map in SessionData

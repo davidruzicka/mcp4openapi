@@ -116,14 +116,14 @@ Milestone: v1 - Proxy foundation + security gate
 | PROXY-02 | Phase 1 | Complete |
 | PROXY-03 | Phase 2 | Complete |
 | PROXY-04 | Phase 2 | Complete |
-| AUTH-01 | Phase 3 | Pending |
+| AUTH-01 | Phase 4 | Pending |
 | AUTH-02 | Phase 3 | Pending |
-| AUTH-03 | Phase 3 | Pending |
+| AUTH-03 | Phase 3 (partial), Phase 4 (complete) | Pending |
 | SEC-01 | Phase 2 | Complete |
 | SEC-02 | Phase 1 | Complete |
-| OBS-01 | Phase 4 | Pending |
-| OBS-02 | Phase 4 | Pending |
-| OBS-03 | Phase 4 | Pending |
+| OBS-01 | Phase 5 | Pending |
+| OBS-02 | Phase 5 | Pending |
+| OBS-03 | Phase 5 | Pending |
 | REL-01 | Phase 1 | Complete |
 | REL-02 | Phase 1 | Complete |
 | REL-03 | Phase 1 | Complete |

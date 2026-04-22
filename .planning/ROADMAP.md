@@ -2,7 +2,7 @@
 
 ## Overview
 
-Transform mcp4openapi from an OpenAPI-to-MCP adapter into an enterprise MCP gateway that proxies tool calls to upstream remote HTTP MCP servers. The build order follows the dependency graph: upstream session infrastructure first (everything depends on it), then tool discovery and call forwarding, then client authentication, then observability as a cross-cutting cap. Each phase delivers a coherent, testable capability on top of the existing HTTP transport, session management, and interceptor chain.
+Transform mcp4openapi from an OpenAPI-to-MCP adapter into an enterprise MCP gateway that proxies tool calls to upstream remote HTTP MCP servers. The build order follows the dependency graph: upstream session infrastructure first (everything depends on it), then tool discovery and call forwarding, then API key auth gate, then OIDC JWT auth gate, then observability as a cross-cutting cap. Each phase delivers a coherent, testable capability on top of the existing HTTP transport, session management, and interceptor chain.
 
 ## Phases
 
@@ -14,8 +14,9 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [ ] **Phase 1: Upstream Session Foundation** - Per-session upstream MCP connections with credential forwarding, heartbeats, cleanup, and typed error handling
 - [ ] **Phase 2: Tool Discovery and Call Proxy** - tools/list and tools/call forwarded to upstream MCP servers with sanitization and notification relay
-- [ ] **Phase 3: Client Authentication Gate** - OIDC and API key identity verification before any upstream resource is consumed
-- [ ] **Phase 4: Observability** - Structured audit logging, Prometheus gateway metrics, and health/readiness endpoints
+- [ ] **Phase 3: Client Authentication Gate (API Keys)** - API key identity verification before any upstream resource is consumed
+- [ ] **Phase 4: Client Authentication Gate (OIDC JWT)** - JWT/JWKS identity verification, OIDC discovery, session identity completion
+- [ ] **Phase 5: Observability** - Structured audit logging, Prometheus gateway metrics, and health/readiness endpoints
 
 ## Phase Details
 
@@ -54,24 +55,38 @@ Plans:
 - [x] 02-02-PLAN.md - Upstream tools/list and tools/call handler wiring with error mapping (PROXY-03, PROXY-04, SEC-01)
 - [x] 02-03-PLAN.md - Notification forwarding from upstream to downstream SSE with bounded queue replay (REL-04)
 
-### Phase 3: Client Authentication Gate
-**Goal**: Only authenticated clients can create sessions; identity is resolved and attached before any upstream resource is consumed
+### Phase 3: Client Authentication Gate (API Keys)
+**Goal**: M2M clients can be authenticated via API keys before any upstream resource is consumed; resolved identity attached to session
 **Depends on**: Phase 1
-**Requirements**: AUTH-01, AUTH-02, AUTH-03
+**Requirements**: AUTH-02, AUTH-03 (partial)
 **Success Criteria** (what must be TRUE):
-  1. An inbound client presenting a JWT is validated against the JWKS endpoint of the configured identity provider; the session is rejected before any upstream connection if validation fails
-  2. An inbound M2M client presenting an API key is validated against the configured key store and resolved to a client identity before session establishment
-  3. The resolved client identity (from SSO JWT or API key) is attached to the session context and included in every audit log entry for that session
+  1. An inbound M2M client presenting an API key is validated against the configured key store (inline env-var keys or Sasanka) and resolved to a client identity before session establishment
+  2. An invalid or missing API key when mode=required is rejected with HTTP 401 before any upstream connection
+  3. The resolved client identity (API key path) is attached to the session as clientPrincipal and included in session-creation log entries
 **Plans**: 3 plans
 
 Plans:
-- [ ] 03-01-PLAN.md - Types, ClientAuthGateError, schema sync, and profile-load-time validator (AUTH-01, AUTH-02, AUTH-03)
+- [ ] 03-01-PLAN.md - Types (ApiKeyStoreConfig, ClientAuthGateConfig without jwt), ClientAuthGateError, schema sync, and profile-load-time validator (AUTH-02, AUTH-03)
 - [ ] 03-02-PLAN.md - ApiKeyStore interface, InlineApiKeyStore, SasankaApiKeyStore, and factory (AUTH-02)
-- [ ] 03-03-PLAN.md - ClientAuthGate orchestrator, http-transport wiring, session clientPrincipal attachment (AUTH-01, AUTH-02, AUTH-03)
+- [ ] 03-03-PLAN.md - ClientAuthGate orchestrator (API key path only), http-transport wiring, session clientPrincipal attachment (AUTH-02, AUTH-03)
 
-### Phase 4: Observability
+### Phase 4: Client Authentication Gate (OIDC JWT)
+**Goal**: Clients bearing OIDC JWTs are validated against a JWKS endpoint; resolved identity completes AUTH-03
+**Depends on**: Phase 3
+**Requirements**: AUTH-01, AUTH-03 (complete)
+**Success Criteria** (what must be TRUE):
+  1. An inbound client presenting a JWT is validated against the JWKS endpoint of the configured identity provider (Entra ID, Okta, Keycloak); session is rejected before any upstream connection if validation fails
+  2. OIDC discovery validates that the discovered issuer matches the configured issuer (prevents JWKS hijacking)
+  3. The resolved JWT identity is attached to the session as clientPrincipal (authType='oauth') — completing AUTH-03 for the JWT path
+**Plans**: TBD
+
+Plans:
+- [ ] 04-01: ClientAuthJwtConfig types, oidc-discovery utility, EnterpriseAuthProvider refactor (AUTH-01)
+- [ ] 04-02: JWT path in ClientAuthGate, JwksCache wiring, integration tests (AUTH-01, AUTH-03)
+
+### Phase 5: Observability
 **Goal**: Every tool call is audited with identity and outcome; operators have metrics and health endpoints to monitor the gateway
-**Depends on**: Phase 2, Phase 3
+**Depends on**: Phase 2, Phase 4
 **Requirements**: OBS-01, OBS-02, OBS-03
 **Success Criteria** (what must be TRUE):
   1. Every tools/call request produces a structured audit log entry containing session ID, resolved client identity, tool name, upstream server URL (host only), invocation outcome, and wall-clock duration
@@ -80,17 +95,18 @@ Plans:
 **Plans**: TBD
 
 Plans:
-- [ ] 04-01: TBD
-- [ ] 04-02: TBD
+- [ ] 05-01: TBD
+- [ ] 05-02: TBD
 
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 -> 2 -> 3 -> 4
+Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Upstream Session Foundation | 4/5 | In Progress|  |
-| 2. Tool Discovery and Call Proxy | 2/3 | In Progress|  |
-| 3. Client Authentication Gate | 0/3 | Not started | - |
-| 4. Observability | 0/2 | Not started | - |
+| 1. Upstream Session Foundation | 5/5 | Complete | 2026-03-30 |
+| 2. Tool Discovery and Call Proxy | 3/3 | Complete | 2026-03-30 |
+| 3. Client Auth Gate (API Keys) | 0/3 | Not started | - |
+| 4. Client Auth Gate (OIDC JWT) | 0/2 | Not started | - |
+| 5. Observability | 0/2 | Not started | - |

@@ -1,6 +1,6 @@
 ---
 name: auto-update-skills
-description: Propose creating a new skill or update existing after a correction reveals reusable existing knowledge, tools, policies, or preferred communication style. Trigger immediately for critical issues and on repetition for trivial patterns.
+description: After correction/feedback: propose new skill or update existing to capture reusable pattern. Covers knowledge, tools, policies, preferred style. Trigger immediately for critical issues, on repetition for trivial patterns.
 ---
 
 ## Goal

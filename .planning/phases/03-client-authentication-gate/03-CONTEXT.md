@@ -6,32 +6,23 @@
 <domain>
 ## Phase Boundary
 
-Gate inbound MCP client session initialization: validate the client's identity (JWT or API key)
-and attach the resolved principal to the session before any upstream resource is consumed.
+Gate inbound MCP client session initialization via API keys; attach resolved principal to the
+session before any upstream resource is consumed.
 
-Scope: AUTH-01, AUTH-02, AUTH-03 only. No policy enforcement (Phase X). No audit log emission
-(Phase 4). No changes to upstream credential pass-through (Phase 1 work is untouched).
+Scope: AUTH-02, AUTH-03 (partial) only.
+- AUTH-01 (JWT/OIDC gate) is Phase 4.
+- No policy enforcement (Phase X). No audit log emission (Phase 5).
+- No changes to upstream credential pass-through (Phase 1 work is untouched).
 
 </domain>
 
 <decisions>
 ## Implementation Decisions
 
-### JWT Validation Path (AUTH-01)
+### JWT Validation Path (AUTH-01) — DEFERRED TO PHASE 4
 
-- **D-01:** Client presents their OIDC access token directly as `Authorization: Bearer <jwt>` at
-  POST `/mcp` initialization. The gateway validates the JWT inline via JWKS — no separate token
-  exchange step required from the client. The existing enterprise token exchange endpoint (`/token`
-  with `grant_type=jwt-bearer`) is untouched and remains available for its own use cases.
-- **D-02:** A JWT is distinguished from an opaque API key by attempting `decodeProtectedHeader()`:
-  if it succeeds (has `alg` field), it is treated as a JWT and goes through JWKS validation. If it
-  fails or the token has no `.` separators, it is routed to the `ApiKeyStore`.
-- **D-03:** JWKS resolution follows the existing `JwksCache` pattern: `trust_mode: 'discovery'`
-  fetches `/.well-known/openid-configuration` from the issuer URL; `trust_mode: 'explicit'`
-  uses `jwks_uri` directly. Existing SSRF protection applies.
-- **D-04:** JWT validation rejects the session (HTTP 401) if: issuer mismatch, audience mismatch,
-  signature invalid, expired, algorithm not in `allowed_algs`, or `client_auth_gate.mode` is
-  `'required'` and no valid identity is resolved.
+D-01 through D-04 (JWT/OIDC decisions) moved to Phase 4 context. Phase 3 does not implement
+any JWT validation, JWKS fetching, or OIDC discovery.
 
 ### API Key Store - Pluggable Interface (AUTH-02)
 
@@ -53,39 +44,28 @@ Scope: AUTH-01, AUTH-02, AUTH-03 only. No policy enforcement (Phase X). No audit
   `'inline'` or `'sasanka'`. Downstream implementations register via a factory/registry keyed on
   type string — adding a new backend does not require changes to the gate logic.
 
-### Profile Config Structure (AUTH-01 + AUTH-02)
+### Profile Config Structure (AUTH-02)
 
 - **D-10:** A new optional `client_auth_gate` field is added to the `Profile` type. It is
   deliberately separate from the existing `enterprise_authorization` to keep concerns distinct.
   Existing profiles with no `client_auth_gate` field are unaffected.
-- **D-11:** `client_auth_gate` structure (TypeScript pseudocode — authoritative type in
-  `src/types/profile.ts`):
+- **D-11:** `client_auth_gate` structure for Phase 3 (authoritative type in `src/types/profile.ts`):
   ```
   ClientAuthGateConfig {
     mode?: 'required' | 'optional'   // default: 'required'
     mode_from_env?: string
-    jwt?: {
-      issuer: string
-      issuer_from_env?: string
-      jwks_uri?: string
-      trust_mode?: 'discovery' | 'explicit'   // default: 'discovery'
-      audience?: string | string[]
-      audience_from_env?: string
-      allowed_algs?: ('RS256'|'RS384'|'RS512'|'ES256'|'ES384'|'ES512')[]
-      clock_skew_seconds?: number
-    }
     api_keys?: (
       { type: 'inline'; keys: {key_from_env: string; subject: string; scopes?: string[]}[] }
       | { type: 'sasanka'; base_url?: string; base_url_from_env?: string; timeout_ms?: number }
     )
+    // jwt? field added in Phase 4
   }
   ```
-- **D-12:** Both `jwt` and `api_keys` may be present simultaneously. The gate tries JWT first
-  (if the token is decodable as JWT and `jwt` config exists), then API key store. First success
-  wins. If both are absent and `mode` is `'required'`, all session inits are rejected.
+- **D-12 (Phase 4):** JWT-first routing (decodeProtectedHeader → JWT path, opaque → API key) is
+  a Phase 4 decision. Phase 3 ClientAuthGate routes all tokens to ApiKeyStore only.
 - **D-13:** A profile with `client_auth_gate` AND no `upstream_mcp` is valid (auth gate applies
   to OpenAPI-backed tool calls too). Profile-level validation at load time checks config
-  completeness (e.g., `issuer` required when `jwt` block is present).
+  completeness.
 
 ### Session Identity Attachment (AUTH-03)
 
@@ -94,17 +74,15 @@ Scope: AUTH-01, AUTH-02, AUTH-03 only. No policy enforcement (Phase X). No audit
   auth gate validation and is immutable for the session lifetime.
 - **D-15:** The resolved `clientPrincipal` is the full `AuthorizedPrincipal` type (existing type
   in `src/auth/inbound-auth-principal.ts`) — subject, authType, groups, scopes, expiresAt,
-  tenantId. Phase 4 audit log reads it directly from session without needing further SessionData
+  tenantId. Phase 5 audit log reads it directly from session without needing further SessionData
   changes.
-- **D-16:** Phase 3 does NOT emit structured audit log entries (that is Phase 4). It only attaches
+- **D-16:** Phase 3 does NOT emit structured audit log entries (that is Phase 5). It only attaches
   the principal to the session. Existing `logger.info` calls at session init will be updated to
   include `subject` and `authType` as structured fields for debug visibility.
 
 ### Claude's Discretion
 
-- Auth gate execution order within session init: JWT check before API key check (JWT is
-  cryptographically verifiable without a network call when JWKS is cached; API key requires a
-  round trip).
+- Auth gate execution in Phase 3: API key only. JWT ordering decisions deferred to Phase 4.
 - `SasankaApiKeyStore` HTTP client: use Node.js native `fetch` with `AbortSignal.timeout()`
   (same pattern as existing `jwks-cache.ts` and validation endpoint calls). No new HTTP client
   dependency.
@@ -125,20 +103,16 @@ Scope: AUTH-01, AUTH-02, AUTH-03 only. No policy enforcement (Phase X). No audit
 **Downstream agents MUST read these before planning or implementing.**
 
 ### Types and Schema (modify these)
-- `src/types/profile.ts` — add `ClientAuthGateConfig`, `ClientAuthJwtConfig`, `ApiKeyStoreConfig`
-  types and `client_auth_gate?: ClientAuthGateConfig` field to `Profile`
+- `src/types/profile.ts` — add `ClientAuthGateConfig` (no jwt field), `ApiKeyStoreConfig`
+  types and `client_auth_gate?: ClientAuthGateConfig` field to `Profile`; ClientAuthJwtConfig added in Phase 4
 - `src/types/http-transport.ts` — add `clientPrincipal?: AuthorizedPrincipal` to `SessionData`
 - `src/generated-schemas.ts` — auto-regenerated via `npm run generate-schemas` after type changes
 
 ### Existing Auth Infrastructure (reuse)
 - `src/auth/inbound-auth-principal.ts` — `AuthorizedPrincipal` type; this is what the gate
-  produces for both JWT and API key paths
-- `src/auth/jwks-cache.ts` — `JwksCache.getResolver()` is the JWKS validation primitive for
-  AUTH-01; reuse directly, do not duplicate
-- `src/auth/enterprise-auth-provider.ts` — reference implementation of JWKS + jose JWT validation
-  pattern; the new JWT gate reuses the same jose primitives (`jwtVerify`, `decodeProtectedHeader`)
-- `src/core/errors.ts` — error taxonomy; check whether existing errors suffice or new typed
-  errors are needed for auth gate failures
+  produces for the API key path
+- `src/auth/jwks-cache.ts` — NOT used in Phase 3; Phase 4 injects it into ClientAuthGate for JWT
+- `src/core/errors.ts` — error taxonomy; ClientAuthGateError added here
 
 ### Transport Integration Point
 - `src/transport/http-transport.ts` — session init gate is around line 2731 (enterprise auth
@@ -229,5 +203,6 @@ Scope: AUTH-01, AUTH-02, AUTH-03 only. No policy enforcement (Phase X). No audit
 
 ---
 
-*Phase: 03-client-authentication-gate*
+*Phase: 03-client-authentication-gate (API Keys only)*
 *Context gathered: 2026-04-12*
+*Revised: 2026-04-22 — JWT/OIDC work moved to Phase 4*
