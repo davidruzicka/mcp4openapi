@@ -3491,6 +3491,20 @@ paths:
         expect(response.result).toBeUndefined();
       });
 
+      it('returns UpstreamMalformedResponseError when listTools returns null result', async () => {
+        mockListTools.mockResolvedValueOnce(null);
+
+        const response = await (upstreamServer as any).handleOtherRequest(
+          { jsonrpc: '2.0', id: '5', method: 'tools/list', params: {} },
+          'session-123',
+          'upstream-profile',
+        ) as any;
+
+        expect(response.error).toBeDefined();
+        expect(response.error.code).toBe(-32603);
+        expect(response.result).toBeUndefined();
+      });
+
       it('returns UpstreamMalformedResponseError when listTools returns non-array tools field', async () => {
         mockListTools.mockResolvedValueOnce({ tools: { unexpected: true } });
 

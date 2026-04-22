@@ -1878,6 +1878,12 @@ export class MCPServer {
     try {
       const client = await this.getUpstreamClientFn!(sessionId, provider, token);
       const result = await client.listTools();
+      if (!result || typeof result !== 'object') {
+        throw new UpstreamMalformedResponseError(
+          provider.name,
+          `listTools returned non-object (got ${result === null ? 'null' : typeof result})`,
+        );
+      }
       if (!Array.isArray(result.tools)) {
         throw new UpstreamMalformedResponseError(
           provider.name,
