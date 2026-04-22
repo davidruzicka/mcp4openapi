@@ -4270,6 +4270,45 @@ paths:
         ) as any;
         expect(blockToolA.error?.code).toBe(-32002);
       });
+
+      it('invalidateUpstreamToolCache clears provider cache so newly added tool is not blocked', async () => {
+        const toolA = { name: 'tool_a', description: 'Existing tool', inputSchema: { type: 'object', properties: {} } };
+        const providerName = (upstreamServer as any).profile.upstream_mcp[0].name as string;
+
+        // Populate cache with only tool_a
+        mockListTools.mockResolvedValueOnce({ tools: [toolA] });
+        await (upstreamServer as any).handleOtherRequest(
+          { jsonrpc: '2.0', id: '1', method: 'tools/list', params: {} },
+          'session-invalidate',
+          'upstream-profile',
+        );
+
+        // tool_b not in cache → blocked
+        const blocked = await (upstreamServer as any).handleToolCall(
+          { jsonrpc: '2.0', id: '2', method: 'tools/call', params: { name: 'tool_b', arguments: {} } },
+          'session-invalidate',
+          'upstream-profile',
+        ) as any;
+        expect(blocked.error?.code).toBe(-32002);
+
+        // Invalidate cache (simulates tools/list_changed hook)
+        (upstreamServer as any).invalidateUpstreamToolCache('session-invalidate', providerName);
+
+        // After invalidation, cold-cache path: gate skipped, call proceeds
+        const allowed = await (upstreamServer as any).handleToolCall(
+          { jsonrpc: '2.0', id: '3', method: 'tools/call', params: { name: 'tool_b', arguments: {} } },
+          'session-invalidate',
+          'upstream-profile',
+        ) as any;
+        expect(allowed.result).toBeDefined();
+        expect(mockCallTool).toHaveBeenCalledWith({ name: 'tool_b', arguments: {} });
+      });
+
+      it('invalidateUpstreamToolCache is a no-op for unknown session', () => {
+        expect(() => {
+          (upstreamServer as any).invalidateUpstreamToolCache('no-such-session', 'no-such-provider');
+        }).not.toThrow();
+      });
     });
 
     // -------------------------------------------------------------------------

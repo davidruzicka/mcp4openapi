@@ -85,6 +85,9 @@ export class UpstreamConnectionManager {
   /** Callback to forward notification to downstream client. Set by HttpTransport. */
   private downstreamNotifyFn: ((sessionId: string, method: string, params?: unknown) => void) | null = null;
 
+  /** Callbacks invoked when upstream sends notifications/tools/list_changed. */
+  private readonly toolsListChangedHooks: Array<(sessionId: string, providerName: string) => void> = [];
+
   /**
    * Callback to check if downstream SSE stream is active. Set by HttpTransport.
    * Replaces the anti-pattern of catching exceptions from downstreamNotifyFn to detect "no stream".
@@ -137,6 +140,15 @@ export class UpstreamConnectionManager {
    */
   public setHasActiveStreamFn(fn: (sessionId: string) => boolean): void {
     this.hasActiveStreamFn = fn;
+  }
+
+  /**
+   * Register a hook called whenever upstream sends notifications/tools/list_changed.
+   * MCPServer registers this to invalidate its sanitized-tool cache so that newly
+   * added upstream tools are not incorrectly blocked on the next tools/call.
+   */
+  public addToolsListChangedHook(fn: (sessionId: string, providerName: string) => void): void {
+    this.toolsListChangedHooks.push(fn);
   }
 
   /**
@@ -243,11 +255,11 @@ export class UpstreamConnectionManager {
   /**
    * Wire notification listeners on an upstream MCP Client.
    */
-  private wireNotificationListeners(client: Client, sessionId: string): void {
+  private wireNotificationListeners(client: Client, sessionId: string, providerName: string): void {
     for (const { schema, method } of UpstreamConnectionManager.NOTIFICATION_DISPATCH) {
       client.setNotificationHandler(schema, (notification) => {
         try {
-          this.handleUpstreamNotification(sessionId, method, (notification as { params?: unknown }).params);
+          this.handleUpstreamNotification(sessionId, providerName, method, (notification as { params?: unknown }).params);
         } catch (error) {
           this.logger.error('Error handling upstream notification', error instanceof Error ? error : new Error(String(error)));
         }
@@ -258,8 +270,19 @@ export class UpstreamConnectionManager {
   /**
    * Handle an upstream notification: forward to downstream if stream active, otherwise queue.
    * Uses explicit hasActiveStreamFn check to avoid exception-as-control-flow anti-pattern.
+   * Fires toolsListChangedHooks when method is notifications/tools/list_changed so callers
+   * can invalidate stale caches before the next tools/call.
    */
-  private handleUpstreamNotification(sessionId: string, method: string, params?: unknown): void {
+  private handleUpstreamNotification(sessionId: string, providerName: string, method: string, params?: unknown): void {
+    if (method === 'notifications/tools/list_changed') {
+      for (const hook of this.toolsListChangedHooks) {
+        try {
+          hook(sessionId, providerName);
+        } catch (error) {
+          this.logger.error('Error in toolsListChangedHook', error instanceof Error ? error : new Error(String(error)));
+        }
+      }
+    }
     if (this.downstreamNotifyFn && this.hasActiveStreamFn && this.hasActiveStreamFn(sessionId)) {
       this.downstreamNotifyFn(sessionId, method, params);
       return;
@@ -468,7 +491,7 @@ export class UpstreamConnectionManager {
     }
 
     // Wire upstream notification listeners after successful connection
-    this.wireNotificationListeners(client as Client, sessionId);
+    this.wireNotificationListeners(client as Client, sessionId, provider.name);
 
     // Store connection
     const now = Date.now();

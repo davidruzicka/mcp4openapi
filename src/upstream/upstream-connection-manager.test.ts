@@ -1114,6 +1114,52 @@ describe('UpstreamConnectionManager', () => {
     });
   });
 
+  describe('addToolsListChangedHook', () => {
+    const TOOL_LIST_CHANGED = 'notifications/tools/list_changed';
+
+    it('calls hook with sessionId and providerName on tools/list_changed', async () => {
+      const provider = createProvider();
+      const hook = vi.fn();
+      manager.addToolsListChangedHook(hook);
+      manager.setDownstreamNotifyFn(vi.fn());
+      manager.setHasActiveStreamFn(vi.fn().mockReturnValue(true));
+
+      const client = await manager.getOrConnect('session-1', provider, 'token') as ReturnType<typeof createMockClient>;
+      await client._triggerNotification(TOOL_LIST_CHANGED);
+
+      expect(hook).toHaveBeenCalledWith('session-1', provider.name);
+    });
+
+    it('calls multiple hooks on tools/list_changed', async () => {
+      const provider = createProvider();
+      const hook1 = vi.fn();
+      const hook2 = vi.fn();
+      manager.addToolsListChangedHook(hook1);
+      manager.addToolsListChangedHook(hook2);
+      manager.setDownstreamNotifyFn(vi.fn());
+      manager.setHasActiveStreamFn(vi.fn().mockReturnValue(true));
+
+      const client = await manager.getOrConnect('session-1', provider, 'token') as ReturnType<typeof createMockClient>;
+      await client._triggerNotification(TOOL_LIST_CHANGED);
+
+      expect(hook1).toHaveBeenCalledWith('session-1', provider.name);
+      expect(hook2).toHaveBeenCalledWith('session-1', provider.name);
+    });
+
+    it('swallows errors thrown by toolsListChangedHook and still forwards notification', async () => {
+      const provider = createProvider();
+      const notifyFn = vi.fn();
+      manager.addToolsListChangedHook(() => { throw new Error('hook blow-up'); });
+      manager.setDownstreamNotifyFn(notifyFn);
+      manager.setHasActiveStreamFn(vi.fn().mockReturnValue(true));
+
+      const client = await manager.getOrConnect('session-1', provider, 'token') as ReturnType<typeof createMockClient>;
+      await expect(client._triggerNotification(TOOL_LIST_CHANGED)).resolves.toBeUndefined();
+
+      expect(notifyFn).toHaveBeenCalledWith('session-1', TOOL_LIST_CHANGED, undefined);
+    });
+  });
+
   describe('heartbeat integration (REL-01)', () => {
     beforeEach(() => {
       vi.useFakeTimers();

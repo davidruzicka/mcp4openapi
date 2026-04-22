@@ -73,6 +73,7 @@ export class MCPServerManager {
       server.attachHttpTransport(this.httpTransport);
     }
     server.setGetUpstreamClient((s, p, t) => this.upstreamManager.getOrConnect(s, p, t));
+    this.upstreamManager.addToolsListChangedHook((s, p) => server.invalidateUpstreamToolCache(s, p));
     return server;
   }
 }

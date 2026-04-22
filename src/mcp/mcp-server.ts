@@ -863,6 +863,15 @@ export class MCPServer {
   }
 
   /**
+   * Invalidate the sanitized-tool cache for one provider within a session.
+   * Called when upstream sends notifications/tools/list_changed so that the next
+   * tools/call falls through to the cold-cache path instead of blocking newly added tools.
+   */
+  public invalidateUpstreamToolCache(sessionId: string, providerName: string): void {
+    this.sanitizedAndPolicyFilteredToolNames.get(sessionId)?.delete(providerName);
+  }
+
+  /**
    * Setup MCP request handlers
    */
   private setupHandlers(): void {
@@ -1424,6 +1433,7 @@ export class MCPServer {
     const upstreamManager = new UpstreamConnectionManager({ logger: this.logger });
     this.httpTransport.setUpstreamConnectionManager(upstreamManager);
     this.setGetUpstreamClient((s, p, t) => upstreamManager.getOrConnect(s, p, t));
+    upstreamManager.addToolsListChangedHook((s, p) => this.invalidateUpstreamToolCache(s, p));
 
     // Set message handler to process JSON-RPC messages
     this.httpTransport.setMessageHandler(async (message: unknown, sessionId?: string, profileId?: string) => {
