@@ -1600,6 +1600,7 @@ export class MCPServer {
     if (upstreamMcpForCall?.length && this.getUpstreamClientFn) {
       // Runtime guard: params.name is cast to string above but a malformed request may send
       // a non-string (e.g. 123). Detect early so downstream .slice() calls never throw.
+      // No metrics recorded here — no valid tool name to label the counter.
       if (typeof toolName !== 'string') {
         return {
           jsonrpc: '2.0', id: req.id, error: {
@@ -1616,12 +1617,14 @@ export class MCPServer {
         );
         if (upstreamFilterRequest?.hasRules && !matchesSessionFilterByName(upstreamFilterRequest, toolName)) {
           this.recordToolFilterRejection(toolName, 'session');
+          this.recordUpstreamReject(toolName, 'FilterRejection', metrics, startTime, metricsContext);
           return { jsonrpc: '2.0', id: req.id, error: { code: -32002, message: `Tool '${toolName}' not allowed by X-Mcp4-Tools filter.` } };
         }
       }
       // Apply enterprise policy - upstream tools don't have OpenAPI operations so default to 'modify'
       if (!this.isToolCategoryAllowedByEnterprisePolicy('modify', sessionId, profileId)) {
         const allowedCategories = this.getEnterpriseAllowedToolCategoriesForSession(sessionId, profileId);
+        this.recordUpstreamReject(toolName, 'PolicyRejection', metrics, startTime, metricsContext);
         return {
           jsonrpc: '2.0', id: req.id, error: {
             code: -32002,
@@ -1633,6 +1636,7 @@ export class MCPServer {
       }
       // Validate tool name against the same sanitization policy as tools/list (D-05)
       if (!isValidUpstreamToolName(toolName)) {
+        this.recordUpstreamReject(toolName, 'InvalidToolName', metrics, startTime, metricsContext);
         return {
           jsonrpc: '2.0', id: req.id, error: {
             code: -32002,
@@ -1642,6 +1646,7 @@ export class MCPServer {
       }
       // Apply profile-level upstream tool allow/deny policy
       if (!isToolAllowedByProviderPolicy(toolName, upstreamMcpForCall[0].tools)) {
+        this.recordUpstreamReject(toolName, 'PolicyRejection', metrics, startTime, metricsContext);
         return {
           jsonrpc: '2.0', id: req.id, error: {
             code: -32002,
@@ -1660,6 +1665,7 @@ export class MCPServer {
         ? this.sanitizedAndPolicyFilteredToolNames.get(sessionId)?.get(upstreamMcpForCall[0].name)
         : undefined;
       if (sanitizedSet !== undefined && !sanitizedSet.has(toolName)) {
+        this.recordUpstreamReject(toolName, 'SanitizationRejection', metrics, startTime, metricsContext);
         return {
           jsonrpc: '2.0', id: req.id, error: {
             code: -32002,
@@ -2930,6 +2936,19 @@ export class MCPServer {
       return;
     }
     this.httpTransport.recordToolFilterRejection(toolName, source);
+  }
+
+  private recordUpstreamReject(
+    toolName: string,
+    errorType: 'FilterRejection' | 'PolicyRejection' | 'InvalidToolName' | 'SanitizationRejection',
+    metrics: MetricsCollector | null,
+    startTime: number,
+    metricsContext: MetricsContextLabels,
+  ): void {
+    if (!metrics) return;
+    const durationSeconds = (Date.now() - startTime) / 1000;
+    metrics.recordToolCall(toolName, 'error', durationSeconds, metricsContext);
+    metrics.recordToolCallError(toolName, errorType, metricsContext);
   }
 
   /**

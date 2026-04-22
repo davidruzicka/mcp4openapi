@@ -4523,6 +4523,112 @@ paths:
 
         expect(response.result).toBeDefined();
       });
+
+      it('records FilterRejection error metric when X-Mcp4-Tools filter blocks tool', async () => {
+        const metrics = makeMetrics();
+        (upstreamServer as any).httpTransport.getMetricsCollector = () => metrics;
+        (upstreamServer as any).httpTransport.getSessionToolFilterRequest = () =>
+          parseSessionToolFilterHeader('other_tool');
+
+        const response = await (upstreamServer as any).handleToolCall(
+          { jsonrpc: '2.0', id: '1', method: 'tools/call', params: { name: 'safe_tool', arguments: {} } },
+          'session-filter',
+          'upstream-profile',
+        ) as any;
+
+        expect(response.error).toBeDefined();
+        expect(metrics.recordToolCall).toHaveBeenCalledWith(
+          'safe_tool', 'error', expect.any(Number), expect.any(Object),
+        );
+        expect(metrics.recordToolCallError).toHaveBeenCalledWith(
+          'safe_tool', 'FilterRejection', expect.any(Object),
+        );
+      });
+
+      it('records PolicyRejection error metric when enterprise policy blocks tool', async () => {
+        const metrics = makeMetrics();
+        (upstreamServer as any).httpTransport.getMetricsCollector = () => metrics;
+        (upstreamServer as any).httpTransport.getSessionEnterpriseTiers = () => ['read'];
+        (upstreamServer as any).httpTransport.getSessionEnterpriseAllowedToolCategories = () => new Set(['read']);
+
+        const response = await (upstreamServer as any).handleToolCall(
+          { jsonrpc: '2.0', id: '1', method: 'tools/call', params: { name: 'safe_tool', arguments: {} } },
+          'session-enterprise',
+          'upstream-profile',
+        ) as any;
+
+        expect(response.error).toBeDefined();
+        expect(metrics.recordToolCall).toHaveBeenCalledWith(
+          'safe_tool', 'error', expect.any(Number), expect.any(Object),
+        );
+        expect(metrics.recordToolCallError).toHaveBeenCalledWith(
+          'safe_tool', 'PolicyRejection', expect.any(Object),
+        );
+      });
+
+      it('records InvalidToolName error metric when tool name contains invalid chars', async () => {
+        const metrics = makeMetrics();
+        (upstreamServer as any).httpTransport.getMetricsCollector = () => metrics;
+
+        const response = await (upstreamServer as any).handleToolCall(
+          { jsonrpc: '2.0', id: '1', method: 'tools/call', params: { name: 'bad tool name!', arguments: {} } },
+          'session-invalid-name',
+          'upstream-profile',
+        ) as any;
+
+        expect(response.error).toBeDefined();
+        expect(metrics.recordToolCall).toHaveBeenCalledWith(
+          'bad tool name!', 'error', expect.any(Number), expect.any(Object),
+        );
+        expect(metrics.recordToolCallError).toHaveBeenCalledWith(
+          'bad tool name!', 'InvalidToolName', expect.any(Object),
+        );
+      });
+
+      it('records PolicyRejection error metric when provider tool policy blocks tool', async () => {
+        const metrics = makeMetrics();
+        (upstreamServer as any).httpTransport.getMetricsCollector = () => metrics;
+        const providerWithPolicy = { ...upstreamProvider, tools: { allow: ['other_tool'] } };
+        (upstreamServer as any).profile.upstream_mcp = [providerWithPolicy];
+        (upstreamServer as any).httpTransport.getUpstreamMcpConfig = () => [providerWithPolicy];
+
+        const response = await (upstreamServer as any).handleToolCall(
+          { jsonrpc: '2.0', id: '1', method: 'tools/call', params: { name: 'safe_tool', arguments: {} } },
+          'session-provider-policy',
+          'upstream-profile',
+        ) as any;
+
+        expect(response.error).toBeDefined();
+        expect(metrics.recordToolCall).toHaveBeenCalledWith(
+          'safe_tool', 'error', expect.any(Number), expect.any(Object),
+        );
+        expect(metrics.recordToolCallError).toHaveBeenCalledWith(
+          'safe_tool', 'PolicyRejection', expect.any(Object),
+        );
+      });
+
+      it('records SanitizationRejection error metric when tool was dropped by sanitization', async () => {
+        const metrics = makeMetrics();
+        (upstreamServer as any).httpTransport.getMetricsCollector = () => metrics;
+        // Warm the sanitized cache with a set that does not include safe_tool
+        const sessionCache = new Map<string, Set<string>>();
+        sessionCache.set(upstreamProvider.name, new Set(['other_tool']));
+        (upstreamServer as any).sanitizedAndPolicyFilteredToolNames.set('session-sanitized', sessionCache);
+
+        const response = await (upstreamServer as any).handleToolCall(
+          { jsonrpc: '2.0', id: '1', method: 'tools/call', params: { name: 'safe_tool', arguments: {} } },
+          'session-sanitized',
+          'upstream-profile',
+        ) as any;
+
+        expect(response.error).toBeDefined();
+        expect(metrics.recordToolCall).toHaveBeenCalledWith(
+          'safe_tool', 'error', expect.any(Number), expect.any(Object),
+        );
+        expect(metrics.recordToolCallError).toHaveBeenCalledWith(
+          'safe_tool', 'SanitizationRejection', expect.any(Object),
+        );
+      });
     });
 
     // -------------------------------------------------------------------------
