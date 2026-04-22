@@ -16,6 +16,7 @@ import {
   ListResourceTemplatesRequestSchema,
   ListResourcesRequestSchema,
   ListToolsRequestSchema,
+  McpError,
   ReadResourceRequestSchema,
   type CompleteRequest,
 } from '@modelcontextprotocol/sdk/types.js';
@@ -121,6 +122,15 @@ function mapUpstreamErrorToMcpError(
         data: { correlationId, providerName },
       };
     }
+  }
+
+  // Preserve MCP SDK error codes (e.g. McpError/RequestTimeout thrown by client.callTool)
+  if (error instanceof McpError) {
+    return {
+      code: error.code,
+      message: correlationId ? `Upstream error (correlation: ${correlationId})` : 'Upstream error',
+      data: { correlationId, providerName },
+    };
   }
 
   return {

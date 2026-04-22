@@ -349,6 +349,41 @@ describe('sanitizeToolList', () => {
     expect(result.tools).toHaveLength(1);
     expect(result.dropped).toHaveLength(0);
   });
+
+  it('drops tool with null inputSchema (falsy but defined)', () => {
+    const tool = { name: 'tool', inputSchema: null } as unknown as Tool;
+    const result = sanitizeToolList([tool], logger);
+    expect(result.tools).toHaveLength(0);
+    expect(result.dropped[0].reason).toBe('malformed tool definition: inputSchema is not an object');
+  });
+
+  it('drops tool with false inputSchema (falsy but defined)', () => {
+    const tool = { name: 'tool', inputSchema: false } as unknown as Tool;
+    const result = sanitizeToolList([tool], logger);
+    expect(result.tools).toHaveLength(0);
+    expect(result.dropped[0].reason).toBe('malformed tool definition: inputSchema is not an object');
+  });
+
+  it('drops tool with numeric 0 inputSchema (falsy but defined)', () => {
+    const tool = { name: 'tool', inputSchema: 0 } as unknown as Tool;
+    const result = sanitizeToolList([tool], logger);
+    expect(result.tools).toHaveLength(0);
+    expect(result.dropped[0].reason).toBe('malformed tool definition: inputSchema is not an object');
+  });
+
+  it('drops tool with empty-string inputSchema (falsy but defined)', () => {
+    const tool = { name: 'tool', inputSchema: '' } as unknown as Tool;
+    const result = sanitizeToolList([tool], logger);
+    expect(result.tools).toHaveLength(0);
+    expect(result.dropped[0].reason).toBe('malformed tool definition: inputSchema is not an object');
+  });
+
+  it('passes tool with undefined inputSchema (no schema provided)', () => {
+    const tool = { name: 'tool', inputSchema: undefined } as unknown as Tool;
+    const result = sanitizeToolList([tool], logger);
+    expect(result.tools).toHaveLength(1);
+    expect(result.dropped).toHaveLength(0);
+  });
 });
 
 describe('applyProviderToolPolicy', () => {

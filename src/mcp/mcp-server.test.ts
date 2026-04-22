@@ -29,6 +29,7 @@ import {
   UpstreamAuthError,
   UpstreamMalformedResponseError,
 } from '../upstream/upstream-errors.js';
+import { McpError, ErrorCode } from '@modelcontextprotocol/sdk/types.js';
 
 type ToolCallResponse = {
   result?: {
@@ -3757,6 +3758,29 @@ paths:
 
         expect(response.error).toBeDefined();
         expect(response.error.code).toBe(-32603);
+        expect(response.error.message).toBe('Upstream error');
+      });
+
+      it('preserves SDK McpError code instead of collapsing to InternalError', async () => {
+        // SDK throws McpError (e.g. RequestTimeout) from client.callTool — the mapper must
+        // forward the original code so callers can apply correct retry/re-auth logic.
+        mockCallTool.mockRejectedValueOnce(
+          new McpError(ErrorCode.RequestTimeout, 'upstream call timed out'),
+        );
+
+        const response = await (upstreamServer as any).handleToolCall(
+          {
+            jsonrpc: '2.0',
+            id: '7',
+            method: 'tools/call',
+            params: { name: 'safe_tool', arguments: {} },
+          },
+          'session-123',
+          'upstream-profile',
+        ) as any;
+
+        expect(response.error).toBeDefined();
+        expect(response.error.code).toBe(ErrorCode.RequestTimeout);
         expect(response.error.message).toBe('Upstream error');
       });
 

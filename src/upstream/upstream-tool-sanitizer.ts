@@ -99,6 +99,8 @@ export function sanitizeToolList(tools: Tool[], logger?: Logger): SanitizationRe
       reason = 'tool description too long';
     } else if (tool.description && DESCRIPTION_FORBIDDEN_CHARS.test(tool.description)) {
       reason = 'forbidden characters in description';
+    } else if (tool.inputSchema !== undefined && (typeof tool.inputSchema !== 'object' || tool.inputSchema === null)) {
+      reason = 'malformed tool definition: inputSchema is not an object';
     } else if (tool.inputSchema && schemaContainsForbiddenChars(tool.inputSchema)) {
       reason = 'forbidden characters in input schema';
     }
