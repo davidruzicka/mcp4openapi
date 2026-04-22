@@ -57,5 +57,8 @@ export function redactAuthPayload<T>(value: T): T {
 export function sanitizeAuthErrorMessage(message: string): string {
   return message
     .replace(/[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g, '[REDACTED_JWT]')
-    .replace(/(Bearer)\s+(\S{20,})/gi, (_, prefix: string, token: string) => `${prefix} [REDACTED]...${token.slice(-4)}`);
+    .replace(/(Bearer)\s+(\S{20,})/gi, (_, prefix: string, token: string) => {
+      const suffix = token.length < 12 ? token.slice(-1) : token.slice(-4);
+      return `${prefix} [REDACTED]...${suffix}`;
+    });
 }
