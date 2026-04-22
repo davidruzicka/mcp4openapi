@@ -10,16 +10,7 @@
 import { stripVTControlCharacters } from 'node:util';
 import type { AuthInterceptor } from '../types/profile.js';
 import { redactHeader, redactQueryParam, redactParam } from '../validation/validation-utils.js';
-
-const WELL_KNOWN_SECRET_KEYS = new Set([
-  'access_token',
-  'refresh_token',
-  'id_token',
-  'client_secret',
-  'client_assertion',
-  'code',
-  'code_verifier',
-]);
+import { SECRET_FIELD_NAMES } from '../auth/auth-redaction.js';
 
 function deepRedactWellKnownSecrets(value: unknown, depth: number = 0, seen?: WeakSet<object>): unknown {
   if (depth > 20) return value;
@@ -36,7 +27,7 @@ function deepRedactWellKnownSecrets(value: unknown, depth: number = 0, seen?: We
   const record = value as Record<string, unknown>;
   const out: Record<string, unknown> = {};
   for (const [key, val] of Object.entries(record)) {
-    if (WELL_KNOWN_SECRET_KEYS.has(key)) {
+    if (SECRET_FIELD_NAMES.has(key)) {
       out[key] = '[REDACTED]';
       continue;
     }

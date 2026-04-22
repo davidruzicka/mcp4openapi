@@ -449,15 +449,16 @@ describe('Token Redaction', () => {
       const logger = new ConsoleLogger(LogLevel.INFO);
       logger.info('Request', {
         headers: { Authorization: 'Bearer token123' },
-        params: { api_key: 'key123' }
+        params: { page: 'val123' }
       });
-      
-      // Should log as-is without redaction
+
+      // Auth-config-dependent redaction does not apply without auth config;
+      // well-known secret keys are still redacted by deepRedactWellKnownSecrets
       expect(consoleErrorSpy).toHaveBeenCalledWith(
         expect.stringContaining('Bearer token123')
       );
       expect(consoleErrorSpy).toHaveBeenCalledWith(
-        expect.stringContaining('key123')
+        expect.stringContaining('val123')
       );
     });
 

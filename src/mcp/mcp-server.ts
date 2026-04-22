@@ -1883,7 +1883,7 @@ export class MCPServer {
       const policyFiltered = applyProviderToolPolicy(sanitized.tools, provider.tools);
       // Cache sanitized+policy-filtered tool names for tools/call gate enforcement.
       // Tools dropped here (bad description/inputSchema) must not be callable via tools/call.
-      // sessionId is always defined here: the method throws at line 1832 when !sessionId.
+      // sessionId is always defined here: the method throws above when !sessionId.
       let sessionCache = this.sanitizedAndPolicyFilteredToolNames.get(sessionId);
       if (!sessionCache) {
         sessionCache = new Map();

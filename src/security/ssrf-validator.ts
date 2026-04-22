@@ -31,6 +31,11 @@ export class SSRFValidator {
    */
   async validate(url: string, options: SSRFOptions = {}): Promise<void> {
     const parsedUrl = new URL(url);
+
+    if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
+      throw new ValidationError(`Unsupported URL scheme: ${parsedUrl.protocol}`);
+    }
+
     const hostnameRaw = parsedUrl.hostname.toLowerCase();
 
     // Remove brackets from IPv6 literals for checking

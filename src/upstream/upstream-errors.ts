@@ -60,22 +60,3 @@ export class UpstreamMalformedResponseError extends MCPError {
   }
 }
 
-/**
- * Convert an MCPError to a safe client-facing MCP error response.
- * Strips stack traces and raw details - exposes a sanitized message, and optionally correlation ID and error code.
- * Reserved for external error mapping; not currently used in production paths.
- */
-export function toMcpErrorResponse(error: MCPError): {
-  code: number;
-  message: string;
-  data?: { correlationId: string; code: string };
-} {
-  const correlationId = error.details?.correlationId as string | undefined;
-  return {
-    code: -32603,
-    message: sanitizeAuthErrorMessage(error.message),
-    ...(correlationId !== undefined
-      ? { data: { correlationId, code: error.code } }
-      : {}),
-  };
-}

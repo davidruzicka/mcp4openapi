@@ -1,4 +1,4 @@
-const SECRET_FIELD_NAMES = new Set([
+export const SECRET_FIELD_NAMES = new Set([
   'assertion',
   'subject_token',
   'access_token',
@@ -9,6 +9,11 @@ const SECRET_FIELD_NAMES = new Set([
   'x-api-key',
   'x_api_key',
   'api_key',
+  'id_token',
+  'client_secret',
+  'client_assertion',
+  'code',
+  'code_verifier',
 ]);
 
 function looksLikeJwt(value: string): boolean {

@@ -4,7 +4,6 @@ import {
   UpstreamTimeoutError,
   UpstreamAuthError,
   UpstreamMalformedResponseError,
-  toMcpErrorResponse,
 } from './upstream-errors.js';
 import { MCPError } from '../core/errors.js';
 
@@ -101,33 +100,4 @@ describe('upstream-errors', () => {
     });
   });
 
-  describe('toMcpErrorResponse', () => {
-    it('returns correct shape with no stack property', () => {
-      const err = new UpstreamConnectionError('test msg', 'prov');
-      const response = toMcpErrorResponse(err);
-
-      expect(response.code).toBe(-32603);
-      expect(response.message).toContain('test msg');
-      expect(response.data).toBeDefined();
-      expect(response.data?.correlationId).toMatch(UUID_REGEX);
-      expect(response.data?.code).toBe('UPSTREAM_CONNECTION_ERROR');
-      expect('stack' in response).toBe(false);
-      expect(response.data && 'stack' in response.data).toBe(false);
-    });
-
-    it('sanitizes error messages in the response', () => {
-      const jwt = 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.abcdefghijklmnopqrstuv';
-      const err = new UpstreamConnectionError(`token was ${jwt}`, 'p');
-      const response = toMcpErrorResponse(err);
-      expect(response.message).not.toContain(jwt);
-    });
-
-    it('omits data when correlationId is absent', () => {
-      const err = new MCPError('bare error', 'SOME_CODE');
-      const response = toMcpErrorResponse(err);
-      expect(response.code).toBe(-32603);
-      expect(response.message).toBeDefined();
-      expect(response.data).toBeUndefined();
-    });
-  });
 });

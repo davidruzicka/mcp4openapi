@@ -147,8 +147,12 @@ export class UpstreamConnectionManager {
    * MCPServer registers this to invalidate its sanitized-tool cache so that newly
    * added upstream tools are not incorrectly blocked on the next tools/call.
    */
-  public addToolsListChangedHook(fn: (sessionId: string, providerName: string) => void): void {
+  public addToolsListChangedHook(fn: (sessionId: string, providerName: string) => void): () => void {
     this.toolsListChangedHooks.push(fn);
+    return () => {
+      const idx = this.toolsListChangedHooks.indexOf(fn);
+      if (idx !== -1) this.toolsListChangedHooks.splice(idx, 1);
+    };
   }
 
   /**
@@ -361,13 +365,15 @@ export class UpstreamConnectionManager {
       return;
     }
 
-    // SSRF check first - block private/loopback/link-local targets
-    await this.ssrfValidator.validate(provider.validation_endpoint, {
+    // SSRF check first - block private/loopback/link-local targets.
+    // Parse once and reuse: validate() must see the same normalized form that fetch() connects to.
+    const parsedValidationUrl = new URL(provider.validation_endpoint);
+    await this.ssrfValidator.validate(parsedValidationUrl.toString(), {
       allowPrivateNetwork: process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK === 'true',
     });
 
     const authHeaders = buildAuthHeaders(provider, token);
-    const validationUrl = buildAuthUrl(provider, new URL(provider.validation_endpoint), token);
+    const validationUrl = buildAuthUrl(provider, parsedValidationUrl, token);
     const timeoutMs = provider.validation_timeout_ms ?? 5000;
 
     let response: { status: number };
@@ -386,7 +392,7 @@ export class UpstreamConnectionManager {
         throw new UpstreamTimeoutError(provider.name, timeoutMs);
       }
       throw new UpstreamConnectionError(
-        sanitizeAuthErrorMessage(err.message),
+        err.message,
         provider.name,
       );
     }
@@ -424,8 +430,10 @@ export class UpstreamConnectionManager {
     provider: UpstreamMcpServerConfig,
     token: string | undefined,
   ): Promise<Client> {
-    // SSRF check: validate transport URL before opening any network connection
-    await this.ssrfValidator.validate(provider.transport.url, {
+    // SSRF check: validate transport URL before opening any network connection.
+    // Parse once and reuse: validate() must see the same normalized form that the transport connects to.
+    const parsedTransportUrl = new URL(provider.transport.url);
+    await this.ssrfValidator.validate(parsedTransportUrl.toString(), {
       allowPrivateNetwork: process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK === 'true',
     });
 
@@ -434,10 +442,10 @@ export class UpstreamConnectionManager {
     // Security note: StreamableHTTPClientTransport (MCP SDK) does not log the URL it connects to
     // and does not include the URL in error messages — verified against SDK source. The URL is only
     // used as a fetch target and passed to auth() for OAuth metadata discovery (not relevant here).
-    // Network-level errors from fetch propagate through mapConnectError -> sanitizeAuthErrorMessage,
-    // which strips JWT and Bearer patterns; raw query params are not redacted by that function, but
-    // Node.js fetch (undici) error messages include the hostname only, not the full URL+query string.
-    const url = buildAuthUrl(provider, new URL(provider.transport.url), token);
+    // Network-level errors from fetch propagate through mapConnectError → UpstreamConnectionError,
+    // which sanitizes internally; raw query params are not redacted, but Node.js fetch (undici)
+    // error messages include the hostname only, not the full URL+query string.
+    const url = buildAuthUrl(provider, parsedTransportUrl, token);
 
     const transport = this.transportFactory(
       url,
@@ -541,7 +549,7 @@ export class UpstreamConnectionManager {
 
     // Generic connection error
     return new UpstreamConnectionError(
-      sanitizeAuthErrorMessage(`Failed to connect to upstream provider '${provider.name}': ${err.message}`),
+      `Failed to connect to upstream provider '${provider.name}': ${err.message}`,
       provider.name,
     );
   }

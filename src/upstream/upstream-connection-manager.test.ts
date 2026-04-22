@@ -1258,6 +1258,8 @@ describe('UpstreamConnectionManager', () => {
 
       await expect(mgr.getOrConnect('session-ssrf', provider, 'token'))
         .rejects.toThrow('Private IP blocked');
+      await expect(mgr.getOrConnect('session-ssrf', provider, 'token'))
+        .rejects.toBeInstanceOf(ValidationError);
 
       // Transport/client must not be created after SSRF rejection
       expect(mockClient.connect).not.toHaveBeenCalled();

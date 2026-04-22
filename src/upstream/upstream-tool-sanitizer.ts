@@ -133,12 +133,19 @@ export function isValidUpstreamToolName(name: string): boolean {
  * Supports `*` as a wildcard (matches any sequence of valid tool name chars).
  * Fast path skips regex for exact-match patterns (no `*`).
  */
+const compiledGlobCache = new Map<string, RegExp>();
+
 function matchesGlobPattern(pattern: string, name: string): boolean {
   if (!pattern.includes('*')) return pattern === name;
-  const regexStr = pattern
-    .replace(/[.+?^${}()|[\]\\]/g, '\\$&')
-    .replace(/\*/g, '[a-zA-Z0-9_-]*');
-  return new RegExp(`^${regexStr}$`).test(name);
+  let re = compiledGlobCache.get(pattern);
+  if (!re) {
+    const regexStr = pattern
+      .replace(/[.+?^${}()|[\]\\]/g, '\\$&')
+      .replace(/\*/g, '[a-zA-Z0-9_-]*');
+    re = new RegExp(`^${regexStr}$`);
+    compiledGlobCache.set(pattern, re);
+  }
+  return re.test(name);
 }
 
 /**
