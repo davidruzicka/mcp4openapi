@@ -5,9 +5,11 @@
  * before exposing them to downstream clients. Drops offending tools with
  * a warning instead of forwarding potentially injected content.
  *
- * Security: drops tools with names outside [a-zA-Z0-9_-] or descriptions
- * containing injection-prone characters (<, >, backtick). Truncates tool
- * names in dropped output to 100 chars + ellipsis (103 chars max) to
+ * Security: drops tools whose name is outside [a-zA-Z0-9_-], whose description
+ * contains injection-prone characters (<, >, backtick), or whose inputSchema
+ * contains forbidden characters in any key or string value (recursive scan to
+ * depth 10; schemas exceeding the depth limit are treated as malicious). Truncates
+ * tool names in dropped output to 100 chars + ellipsis (103 chars max) to
  * prevent log injection via maliciously long upstream tool names (D-03, D-04, D-05).
  */
 
@@ -63,6 +65,8 @@ const truncateName = (name: string): string =>
  *   2. Name matches [a-zA-Z0-9_-]
  *   3. Description length <= 2048 (if present)
  *   4. Description contains no <, >, or backtick (if present)
+ *   5. inputSchema contains no forbidden characters in any key or string value
+ *      (recursive scan to depth 10; schemas exceeding the depth limit are dropped)
  *
  * Offending tools are dropped and logged. Safe tools pass through unchanged.
  */

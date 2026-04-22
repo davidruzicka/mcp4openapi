@@ -10,9 +10,18 @@ describe('NotificationQueue', () => {
     vi.useRealTimers();
   });
 
-  it('creates queue with default maxSize=50 and ttlMs=300000', () => {
+  it('creates queue with zero initial size', () => {
     const queue = new NotificationQueue();
     expect(queue.size).toBe(0);
+  });
+
+  it('respects default ttlMs of 300000ms', () => {
+    vi.useFakeTimers();
+    const queue = new NotificationQueue();
+    queue.push({ method: 'will-expire' });
+    vi.advanceTimersByTime(300000); // exactly at TTL boundary
+    queue.push({ method: 'trigger' }); // evicts the first entry
+    expect(queue.size).toBe(1); // only 'trigger' remains
   });
 
   it('creates queue with custom maxSize and ttlMs', () => {
