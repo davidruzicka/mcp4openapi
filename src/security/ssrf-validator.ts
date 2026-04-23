@@ -31,6 +31,13 @@ export class SSRFValidator {
    */
   async validate(url: string, options: SSRFOptions = {}): Promise<void> {
     const parsedUrl = new URL(url);
+    const protocol = parsedUrl.protocol.toLowerCase();
+
+    if (!ALLOWED_HTTP_PROTOCOLS.has(protocol)) {
+      this.logger.warn('SSRF blocked: URL scheme not allowed', { protocol, url });
+      throw new ValidationError(`URL scheme not allowed: '${protocol}'`);
+    }
+
     const hostnameRaw = parsedUrl.hostname.toLowerCase();
 
     // Remove brackets from IPv6 literals for checking
@@ -172,6 +179,8 @@ export class SSRFValidator {
     return IPV6_CIDR_BLOCKS.some(block => addr.match(block));
   }
 }
+
+const ALLOWED_HTTP_PROTOCOLS = new Set(['http:', 'https:']);
 
 const IPV4_CIDR_BLOCKS: Array<[ipaddr.IPv4, number]> = [
   '127.0.0.0/8', // loopback

@@ -33,6 +33,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed OSV scan gating for current dev dependencies by overriding transitive `flatted` to `3.4.2`, eliminating the reporter failure caused by known vulnerabilities in `3.3.3`.
 - Clarified proposal-intake candidate bounds by wiring `max_candidates` separately from the single-action side-effect budget, keeping legacy env fallbacks, and documenting the one-action-per-run guardrail.
 - Blocked dangerous URI schemes during URI validation to prevent XSS through attacker-controlled links and redirects.
+- Restricted shared SSRF validation to `http:` and `https:` URLs so outbound bootstrap/OAuth/proxy guards reject unsupported schemes before hostname or DNS checks.
 - Removed raw environment variable values from selected configuration error messages and added regression checks to prevent secret leakage in errors.
 - Hardened MCP Apps resource loading so `file_path` stays inside the profile directory after normalization and symlink resolution, while keeping `resources/read` output shape consistent across inline, file-backed, and fetch-backed resources.
 - Fixed HTTP single-profile startup to carry `enterprise_authorization` into transport runtime so enterprise JWT bearer exchange and authenticated initialization work outside profile-routing mode, with dedicated E2E coverage.

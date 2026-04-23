@@ -31,9 +31,23 @@ describe('SSRFValidator', () => {
   });
 
   describe('validate', () => {
-    it('should allow valid public domains', async () => {
+    it('should allow valid public HTTP(S) domains', async () => {
       (lookup as any).mockResolvedValue([{ address: '93.184.216.34', family: 4 }]);
       await expect(validator.validate('http://example.com')).resolves.not.toThrow();
+      await expect(validator.validate('https://example.com')).resolves.not.toThrow();
+    });
+
+    it('should reject non-HTTP(S) URL schemes before hostname validation', async () => {
+      await expect(validator.validate('ftp://example.com')).rejects.toThrow(
+        "URL scheme not allowed: 'ftp:'"
+      );
+      await expect(validator.validate('file:///etc/passwd')).rejects.toThrow(
+        "URL scheme not allowed: 'file:'"
+      );
+      await expect(validator.validate('gopher://example.com')).rejects.toThrow(
+        "URL scheme not allowed: 'gopher:'"
+      );
+      expect(lookup).not.toHaveBeenCalled();
     });
 
     it('should block localhost by hostname', async () => {
