@@ -37,6 +37,7 @@ import {
 } from '../core/constants.js';
 import { escapeHtmlSafe } from '../validation/validation-utils.js';
 import { SSRFValidator } from '../security/ssrf-validator.js';
+import { generateCorrelationId } from '../core/errors.js';
 import { parseOAuthMetadataEndpoints } from './oauth-metadata.js';
 import { InMemoryClientsStore } from './client-store/in-memory-clients-store.js';
 import { isApprovedUnregisteredClientRedirectUri } from './unregistered-client-redirect-policy.js';
@@ -867,8 +868,9 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
         res.redirect(clientUrl.toString());
 
     } catch (err) {
-        this.logger.error('Callback handling failed', err as Error);
-        res.status(500).send('Internal Server Error during token exchange');
+        const correlationId = generateCorrelationId();
+        this.logger.error('Callback handling failed', err as Error, { correlationId });
+        res.status(500).send(`Internal Server Error during token exchange (correlation ID: ${correlationId})`);
     }
   }
 
