@@ -4643,6 +4643,26 @@ paths:
           'safe_tool', 'SanitizationRejection', expect.any(Object),
         );
       });
+
+      it('truncates oversized tool name to 64 chars in reject metric labels', async () => {
+        const metrics = makeMetrics();
+        (upstreamServer as any).httpTransport.getMetricsCollector = () => metrics;
+        const longName = 'a'.repeat(300);
+
+        const response = await (upstreamServer as any).handleToolCall(
+          { jsonrpc: '2.0', id: '1', method: 'tools/call', params: { name: longName, arguments: {} } },
+          'session-truncate',
+          'upstream-profile',
+        ) as any;
+
+        expect(response.error).toBeDefined();
+        expect(metrics.recordToolCall).toHaveBeenCalledWith(
+          'a'.repeat(64), 'error', expect.any(Number), expect.any(Object),
+        );
+        expect(metrics.recordToolCallError).toHaveBeenCalledWith(
+          'a'.repeat(64), 'InvalidToolName', expect.any(Object),
+        );
+      });
     });
 
     // -------------------------------------------------------------------------

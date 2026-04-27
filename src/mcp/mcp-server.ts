@@ -2952,9 +2952,11 @@ export class MCPServer {
     metricsContext: MetricsContextLabels,
   ): void {
     if (!metrics) return;
+    // Truncate before use as Prometheus label to bound cardinality.
+    const safeToolName = toolName.slice(0, 64);
     const durationSeconds = (Date.now() - startTime) / 1000;
-    metrics.recordToolCall(toolName, 'error', durationSeconds, metricsContext);
-    metrics.recordToolCallError(toolName, errorType, metricsContext);
+    metrics.recordToolCall(safeToolName, 'error', durationSeconds, metricsContext);
+    metrics.recordToolCallError(safeToolName, errorType, metricsContext);
   }
 
   /**

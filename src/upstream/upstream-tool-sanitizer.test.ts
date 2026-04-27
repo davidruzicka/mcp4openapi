@@ -378,6 +378,20 @@ describe('sanitizeToolList', () => {
     expect(result.dropped[0].reason).toBe('malformed tool definition: inputSchema is not an object');
   });
 
+  it('drops tool with array inputSchema (malformed — must be an object)', () => {
+    const tool = { name: 'tool', inputSchema: [] } as unknown as Tool;
+    const result = sanitizeToolList([tool], logger);
+    expect(result.tools).toHaveLength(0);
+    expect(result.dropped[0].reason).toBe('malformed tool definition: inputSchema is not an object');
+  });
+
+  it('drops tool with non-empty array inputSchema', () => {
+    const tool = { name: 'tool', inputSchema: [{ type: 'string' }] } as unknown as Tool;
+    const result = sanitizeToolList([tool], logger);
+    expect(result.tools).toHaveLength(0);
+    expect(result.dropped[0].reason).toBe('malformed tool definition: inputSchema is not an object');
+  });
+
   it('passes tool with undefined inputSchema (no schema provided)', () => {
     const tool = { name: 'tool', inputSchema: undefined } as unknown as Tool;
     const result = sanitizeToolList([tool], logger);
