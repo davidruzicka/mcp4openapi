@@ -1840,6 +1840,10 @@ export class MCPServer {
    * Extract the auth token to use for upstream MCP calls.
    * Downstream client token takes precedence; value_from_env acts as local fallback
    * when the client sends no token (e.g. server-side deployments with a shared env secret).
+   *
+   * Security invariant: value_from_env (server-held credential) is only used when inbound
+   * authentication is configured on the profile. Without this guard an unauthenticated caller
+   * could reach privileged upstream resources using server-side secrets.
    */
   private getUpstreamToken(sessionId: string | undefined, profileId: string | undefined, provider: UpstreamMcpServerConfig): string | undefined {
     if (this.httpTransport && sessionId && profileId) {
@@ -1847,6 +1851,13 @@ export class MCPServer {
       if (sessionToken) return sessionToken;
     }
     if (provider.auth?.value_from_env) {
+      if (this.getAuthConfigs().length === 0) {
+        throw new UpstreamConnectionError(
+          'upstream_mcp.auth.value_from_env requires inbound authentication (interceptors.auth) ' +
+          'to be configured on the profile — without it any caller can reach upstream using server credentials.',
+          provider.name,
+        );
+      }
       return process.env[provider.auth.value_from_env];
     }
     return undefined;
@@ -1874,8 +1885,8 @@ export class MCPServer {
         tool_prefix: provider.tool_prefix,
       });
     }
-    const token = this.getUpstreamToken(sessionId, profileId, provider);
     try {
+      const token = this.getUpstreamToken(sessionId, profileId, provider);
       const client = await this.getUpstreamClientFn!(sessionId, provider, token);
       const result = await client.listTools();
       if (!result || typeof result !== 'object') {
@@ -1968,9 +1979,8 @@ export class MCPServer {
       );
     }
 
-    const token = this.getUpstreamToken(sessionId, profileId, provider);
-
     try {
+      const token = this.getUpstreamToken(sessionId, profileId, provider);
       const client = await this.getUpstreamClientFn!(sessionId, provider, token);
       const result = await (provider.timeout_ms !== undefined
         ? client.callTool({ name: toolName, arguments: args }, undefined, { timeout: provider.timeout_ms })

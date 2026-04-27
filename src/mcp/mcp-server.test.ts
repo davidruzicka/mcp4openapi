@@ -4690,12 +4690,14 @@ paths:
         }
       });
 
-      it('falls back to env token when client sends no token and value_from_env is configured', async () => {
+      it('falls back to env token when client sends no token, value_from_env is configured, and inbound auth is present', async () => {
         const providerWithAuth = {
           ...upstreamProvider,
           auth: { type: 'bearer' as const, value_from_env: 'UPSTREAM_SECRET' },
         };
         (upstreamServer as any).profile.upstream_mcp = [providerWithAuth];
+        // Inbound auth required: prevents open-proxy privilege escalation
+        (upstreamServer as any).profile.interceptors = { auth: [{ type: 'bearer', value_from_env: 'INBOUND_TOKEN' }] };
         (upstreamServer as any).httpTransport = {
           ...(upstreamServer as any).httpTransport,
           getUpstreamMcpConfig: () => [providerWithAuth],
@@ -4712,27 +4714,65 @@ paths:
           expect(mockGetUpstreamClient).toHaveBeenCalledWith('session-123', providerWithAuth, 'env-token-value');
         } finally {
           delete process.env['UPSTREAM_SECRET'];
+          delete (upstreamServer as any).profile.interceptors;
         }
       });
 
-      it('returns undefined when client sends no token and env var is not set', async () => {
+      it('returns error when value_from_env used without inbound auth (open-proxy guard)', async () => {
         const providerWithAuth = {
           ...upstreamProvider,
-          auth: { type: 'bearer' as const, value_from_env: 'NONEXISTENT_ENV_VAR_XYZ' },
+          auth: { type: 'bearer' as const, value_from_env: 'UPSTREAM_SECRET' },
         };
         (upstreamServer as any).profile.upstream_mcp = [providerWithAuth];
+        // No interceptors.auth — simulates misconfigured open-proxy deployment
+        delete (upstreamServer as any).profile.interceptors;
         (upstreamServer as any).httpTransport = {
           ...(upstreamServer as any).httpTransport,
           getUpstreamMcpConfig: () => [providerWithAuth],
           getSessionToken: () => undefined, // no client token
         };
 
-        await (upstreamServer as any).handleOtherRequest(
-          { jsonrpc: '2.0', id: '1', method: 'tools/list', params: {} },
-          'session-123',
-          'upstream-profile',
-        );
-        expect(mockGetUpstreamClient).toHaveBeenCalledWith('session-123', providerWithAuth, undefined);
+        process.env['UPSTREAM_SECRET'] = 'env-token-value';
+        try {
+          const response = await (upstreamServer as any).handleOtherRequest(
+            { jsonrpc: '2.0', id: '1', method: 'tools/list', params: {} },
+            'session-123',
+            'upstream-profile',
+          ) as any;
+          // Must NOT forward the call — returns a JSON-RPC error instead
+          expect(mockGetUpstreamClient).not.toHaveBeenCalled();
+          expect(response.error).toBeDefined();
+          // mapUpstreamErrorToMcpError strips original message; check code (-32603 = InternalError)
+          expect(response.error.code).toBe(-32603);
+        } finally {
+          delete process.env['UPSTREAM_SECRET'];
+        }
+      });
+
+      it('returns undefined when client sends no token and env var is not set (with inbound auth)', async () => {
+        const providerWithAuth = {
+          ...upstreamProvider,
+          auth: { type: 'bearer' as const, value_from_env: 'NONEXISTENT_ENV_VAR_XYZ' },
+        };
+        (upstreamServer as any).profile.upstream_mcp = [providerWithAuth];
+        // Inbound auth required: prevents open-proxy privilege escalation
+        (upstreamServer as any).profile.interceptors = { auth: [{ type: 'bearer', value_from_env: 'INBOUND_TOKEN' }] };
+        (upstreamServer as any).httpTransport = {
+          ...(upstreamServer as any).httpTransport,
+          getUpstreamMcpConfig: () => [providerWithAuth],
+          getSessionToken: () => undefined, // no client token
+        };
+
+        try {
+          await (upstreamServer as any).handleOtherRequest(
+            { jsonrpc: '2.0', id: '1', method: 'tools/list', params: {} },
+            'session-123',
+            'upstream-profile',
+          );
+          expect(mockGetUpstreamClient).toHaveBeenCalledWith('session-123', providerWithAuth, undefined);
+        } finally {
+          delete (upstreamServer as any).profile.interceptors;
+        }
       });
 
       it('uses downstream session token when no provider.auth is configured', async () => {
