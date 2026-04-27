@@ -2483,7 +2483,7 @@ export class MCPServer {
     const parsed = Number(raw);
     if (Number.isNaN(parsed) || parsed <= 0) {
       throw new ConfigurationError(
-        `Invalid MCP4_TOOL_FILTER_WARN_THRESHOLD_PCT: expected positive number, got '${raw}'.`
+        `Invalid MCP4_TOOL_FILTER_WARN_THRESHOLD_PCT: expected positive number.`
       );
     }
     return parsed;

@@ -53,5 +53,5 @@ function parseExplicitBoolean(value: string | undefined, envName: string): boole
     return false;
   }
 
-  throw new ConfigurationError(`${envName} must be either 'true' or 'false', got '${normalized}'.`);
+  throw new ConfigurationError(`${envName} must be either 'true' or 'false'.`);
 }
