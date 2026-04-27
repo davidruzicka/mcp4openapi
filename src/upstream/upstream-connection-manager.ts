@@ -53,6 +53,7 @@ export interface UpstreamConnectionManagerOptions {
   ssrfValidator?: SSRFValidator;
   logger?: Logger;
   heartbeatConfig?: HeartbeatConfig;
+  heartbeatManager?: UpstreamHeartbeatManager;
 }
 
 export class UpstreamConnectionManager {
@@ -123,7 +124,7 @@ export class UpstreamConnectionManager {
     );
     this.logger = options?.logger ?? new ConsoleLogger();
     this.ssrfValidator = options?.ssrfValidator ?? new SSRFValidator(this.logger);
-    this.heartbeatManager = new UpstreamHeartbeatManager(options?.heartbeatConfig);
+    this.heartbeatManager = options?.heartbeatManager ?? new UpstreamHeartbeatManager(options?.heartbeatConfig);
   }
 
   /**
@@ -521,7 +522,14 @@ export class UpstreamConnectionManager {
     this.heartbeatManager.start(
       heartbeatKey,
       async () => { await (client as Client).ping({ timeout: this.heartbeatManager.getConfig().timeoutMs }); },
-      (error) => this.handleTransportError(sessionId, provider.name, error),
+      // Identity guard: reject stale heartbeat failures from a previous connection instance
+      // that was stopped during token rotation but had an in-flight ping. Without this guard,
+      // the old ping's rejection would mark the freshly created replacement connection as FAILED.
+      (error) => {
+        if (this.getConnection(sessionId, provider.name) === connection) {
+          this.handleTransportError(sessionId, provider.name, error);
+        }
+      },
     );
 
     return client as Client;

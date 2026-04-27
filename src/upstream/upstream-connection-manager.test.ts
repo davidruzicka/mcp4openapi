@@ -1310,6 +1310,51 @@ describe('UpstreamConnectionManager', () => {
       const heartbeatManager = (manager as unknown as { heartbeatManager: { isRunning: (k: string) => boolean } }).heartbeatManager;
       expect(heartbeatManager.isRunning('session-1:test-provider')).toBe(false);
     });
+
+    it('does not mark replacement connection as FAILED when stale heartbeat ping rejects after reconnect', async () => {
+      const capturedFailures = new Map<string, (error: Error) => void>();
+      const mockHeartbeatMgr = {
+        start: vi.fn((key: string, _pingFn: () => Promise<void>, onFailure: (error: Error) => void) => {
+          capturedFailures.set(key, onFailure);
+        }),
+        stop: vi.fn(),
+        stopAll: vi.fn(),
+        isRunning: vi.fn().mockReturnValue(false),
+        getActiveCount: vi.fn().mockReturnValue(0),
+        getConfig: vi.fn().mockReturnValue({ intervalMs: 30000, timeoutMs: 5000 }),
+      };
+
+      manager = new UpstreamConnectionManager({
+        clientFactory,
+        transportFactory,
+        ssrfValidator: mockSsrfValidator as never,
+        heartbeatManager: mockHeartbeatMgr as never,
+      });
+
+      const provider = createProvider();
+
+      // First connection
+      const client1 = createMockClient();
+      const transport1 = createMockTransport();
+      clientFactory.mockReturnValueOnce(client1).mockReturnValueOnce(createMockClient());
+      transportFactory.mockReturnValueOnce(transport1).mockReturnValueOnce(createMockTransport());
+
+      await manager.getOrConnect('session-1', provider, 'token');
+      const onFailure1 = capturedFailures.get('session-1:test-provider')!;
+      expect(onFailure1).toBeDefined();
+
+      // Simulate reconnect: mark connection FAILED so getOrConnect creates a replacement
+      manager.getConnection('session-1', provider.name)!.state = 'FAILED';
+      await manager.getOrConnect('session-1', provider, 'token');
+
+      const newConn = manager.getConnection('session-1', provider.name)!;
+      expect(newConn.state).toBe('CONNECTED');
+
+      // Stale in-flight ping from old connection rejects — must NOT affect new connection
+      onFailure1(new Error('stale ping timeout'));
+
+      expect(newConn.state).toBe('CONNECTED');
+    });
   });
 
   describe('SSRF validation on transport URL (Fix 1)', () => {
