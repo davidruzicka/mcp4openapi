@@ -1158,6 +1158,29 @@ describe('UpstreamConnectionManager', () => {
 
       expect(notifyFn).toHaveBeenCalledWith('session-1', TOOL_LIST_CHANGED, undefined);
     });
+
+    it('remove function returned by addToolsListChangedHook deregisters the hook', async () => {
+      const provider = createProvider();
+      const hook = vi.fn();
+      manager.setDownstreamNotifyFn(vi.fn());
+      manager.setHasActiveStreamFn(vi.fn().mockReturnValue(true));
+
+      const remove = manager.addToolsListChangedHook(hook);
+      // Deregister before any notification fires
+      remove();
+
+      const client = await manager.getOrConnect('session-1', provider, 'token') as ReturnType<typeof createMockClient>;
+      await client._triggerNotification(TOOL_LIST_CHANGED);
+
+      expect(hook).not.toHaveBeenCalled();
+    });
+
+    it('calling the remove function twice is idempotent (no error)', () => {
+      const hook = vi.fn();
+      const remove = manager.addToolsListChangedHook(hook);
+      remove();
+      expect(() => remove()).not.toThrow();
+    });
   });
 
   describe('heartbeat integration (REL-01)', () => {

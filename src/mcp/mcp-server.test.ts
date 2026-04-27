@@ -4818,6 +4818,114 @@ paths:
         );
       });
     });
+
+    // -------------------------------------------------------------------------
+    describe('getUpstreamToken stdio path / boundary coverage', () => {
+      it('getUpstreamToken reads value_from_env on stdio path (no httpTransport)', async () => {
+        // Covers mcp-server.ts:1867 — the non-HTTP branch where value_from_env is resolved
+        // from process.env because there is no session token concept in stdio mode.
+        const providerWithAuth = {
+          name: 'stdio-auth-upstream',
+          transport: { type: 'http-streamable' as const, url: 'https://upstream.example.com/mcp' },
+          auth: { type: 'bearer' as const, value_from_env: 'UPSTREAM_SECRET_TEST_VAR' },
+        };
+        const mockListFn = vi.fn().mockResolvedValue({ tools: [] });
+        const mockClientFn = vi.fn().mockResolvedValue({ listTools: mockListFn, callTool: vi.fn() });
+
+        const stdioServer = new MCPServer();
+        (stdioServer as any).profile = {
+          profile_name: 'stdio-auth-profile',
+          description: 'Stdio server with value_from_env auth',
+          tools: [],
+          upstream_mcp: [providerWithAuth],
+        };
+        // No httpTransport — getUpstreamToken must fall through to the stdio branch.
+        stdioServer.setGetUpstreamClient(mockClientFn);
+
+        const originalEnvValue = process.env['UPSTREAM_SECRET_TEST_VAR'];
+        process.env['UPSTREAM_SECRET_TEST_VAR'] = 'stdio-env-token';
+        try {
+          await (stdioServer as any).handleUpstreamToolsList(
+            { jsonrpc: '2.0', id: '1' },
+            'session-1',
+            'profile-1',
+            providerWithAuth,
+          );
+        } finally {
+          if (originalEnvValue === undefined) {
+            delete process.env['UPSTREAM_SECRET_TEST_VAR'];
+          } else {
+            process.env['UPSTREAM_SECRET_TEST_VAR'] = originalEnvValue;
+          }
+        }
+
+        expect(mockClientFn).toHaveBeenCalledWith('session-1', providerWithAuth, 'stdio-env-token');
+      });
+
+      it('handleUpstreamToolCall forwards callTool with empty args when arguments field is absent', async () => {
+        // Covers mcp-server.ts:1977 branch — the `|| {}` fallback when params.arguments is missing.
+        // Call handleUpstreamToolCall directly (bypassing the outer handleToolCall gate that also
+        // does an || {} cast) to ensure the inner branch is actually exercised.
+        mockCallTool.mockResolvedValueOnce({ content: [{ type: 'text', text: 'result' }] });
+
+        const response = await (upstreamServer as any).handleUpstreamToolCall(
+          { jsonrpc: '2.0', id: '2', params: { name: 'safe_tool' } }, // no 'arguments' field
+          'session-123',
+          'upstream-profile',
+          upstreamProvider,
+        ) as any;
+
+        expect(response.result).toBeDefined();
+        // callTool must have been called with an empty object for arguments
+        expect(mockCallTool).toHaveBeenCalledWith(
+          { name: 'safe_tool', arguments: {} },
+        );
+      });
+
+      it('handleUpstreamToolCall with invalid tool name throws UpstreamConnectionError (covers line 1982)', async () => {
+        // Covers mcp-server.ts:1981/1982 — the isValidUpstreamToolName guard inside
+        // handleUpstreamToolCall. The throw is BEFORE the try block, so it propagates out
+        // of the function as a rejection rather than being caught and returned as an error response.
+        await expect(
+          (upstreamServer as any).handleUpstreamToolCall(
+            { jsonrpc: '2.0', id: '3', params: { name: 'invalid<name>' } },
+            'session-123',
+            'upstream-profile',
+            upstreamProvider,
+          ),
+        ).rejects.toBeInstanceOf(UpstreamConnectionError);
+      });
+
+      it('handleUpstreamToolsList returns error when listTools returns null (covers null branch in ternary at 1901)', async () => {
+        // Covers mcp-server.ts:1901[255] — the `result === null ? 'null' : typeof result` ternary.
+        // Existing tests only exercise undefined/non-object; this forces the null branch.
+        mockListTools.mockResolvedValueOnce(null);
+
+        const response = await (upstreamServer as any).handleOtherRequest(
+          { jsonrpc: '2.0', id: '4', method: 'tools/list', params: {} },
+          'session-123',
+          'upstream-profile',
+        ) as any;
+
+        expect(response.error).toBeDefined();
+        expect(response.error.code).toBe(-32603);
+      });
+
+      it('handleUpstreamToolsList uses getProfileIdValue() when profileId is undefined (covers line 1925)', async () => {
+        // Covers mcp-server.ts:1925[259] — `profileId || this.getProfileIdValue()`.
+        // The || short-circuits when profileId is truthy; passing undefined forces the right side.
+        const response = await (upstreamServer as any).handleUpstreamToolsList(
+          { jsonrpc: '2.0', id: '5' },
+          'session-123',
+          undefined, // profileId undefined — forces getProfileIdValue() fallback
+          upstreamProvider,
+        ) as any;
+
+        // Should still succeed and return a tools list
+        expect(response.result).toBeDefined();
+        expect(response.result.tools).toBeDefined();
+      });
+    });
   });
 });
 

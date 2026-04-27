@@ -398,6 +398,23 @@ describe('sanitizeToolList', () => {
     expect(result.tools).toHaveLength(1);
     expect(result.dropped).toHaveLength(0);
   });
+
+  it('passes tool with numeric primitive in inputSchema (e.g. minimum: 5 — not a forbidden-char carrier)', () => {
+    // schemaContainsForbiddenChars reaches the primitive-non-string branch (line 49: return false)
+    // when a schema value is a number. The tool should pass sanitization cleanly.
+    const tool: Tool = {
+      name: 'valid_tool',
+      description: 'safe',
+      inputSchema: {
+        type: 'object',
+        properties: {},
+        minimum: 5,
+      } as unknown as Tool['inputSchema'],
+    };
+    const result = sanitizeToolList([tool], logger);
+    expect(result.tools).toHaveLength(1);
+    expect(result.dropped).toHaveLength(0);
+  });
 });
 
 describe('applyProviderToolPolicy', () => {

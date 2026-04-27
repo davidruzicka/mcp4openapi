@@ -165,15 +165,6 @@ export class UpstreamConnectionManager {
   }
 
   /**
-   * Clean up notification queue for a session.
-   * Called internally by closeAll(). All session destruction paths route through
-   * onSessionDestroyed -> closeAll, so no external caller is needed.
-   */
-  private cleanupSessionQueue(sessionId: string): void {
-    this.notificationQueues.delete(sessionId);
-  }
-
-  /**
    * Get an existing connected client or create a new connection.
    *
    * Concurrent calls for the same session+provider return the same promise
