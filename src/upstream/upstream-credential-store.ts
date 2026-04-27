@@ -1,61 +1,88 @@
-/**
- * Auth header builder for upstream MCP provider requests.
- * Profile-per-upstream model: one token per session.
- */
-
-import type { UpstreamMcpServerConfig } from '../types/profile.js';
+import type { AuthTokenConfig, UpstreamMcpServerConfig } from '../types/profile.js';
+import type { UpstreamAuthStrategy } from '../types/upstream-connection.js';
 import { isValidHttpHeaderName } from '../validation/validation-utils.js';
 
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function redactLiteral(token: string, message: string): string {
+  if (token.length < 8) return message;
+  return message.replace(new RegExp(escapeRegex(token), 'g'), '[REDACTED]');
+}
+
+const NOOP_STRATEGY: UpstreamAuthStrategy = {
+  buildHeaders: () => ({}),
+  buildUrl: (url) => url,
+  sanitize: (_, msg) => msg,
+};
+
 /**
- * Build HTTP auth headers for an upstream provider request.
+ * Build an auth strategy for bearer/query/custom-header token configs.
+ * Accepts any AuthTokenConfig-shaped value — works for both UpstreamMcpAuthConfig
+ * and the bearer/query/custom-header subset of AuthInterceptor.
  *
- * - bearer: { Authorization: 'Bearer <token>' }
- * - custom-header: { [header_name]: token }
- * - query: empty (token appended to URL via buildAuthUrl instead)
- * - no auth or no token: empty
+ * Contextual regexes (header name, query param) are pre-compiled in the closure.
+ * Token regex is compiled per sanitize() call because the token is not known at strategy creation.
  */
+export function createAuthStrategy(auth: AuthTokenConfig | undefined): UpstreamAuthStrategy {
+  if (!auth) return NOOP_STRATEGY;
+
+  switch (auth.type) {
+    case 'bearer':
+      return {
+        buildHeaders: (tok) => ({ Authorization: `Bearer ${tok}` }),
+        buildUrl: (url) => url,
+        sanitize: redactLiteral,
+      };
+
+    case 'custom-header': {
+      const headerName = auth.header_name;
+      // Defensive: profile load already rejects invalid names, but guard here too
+      // to prevent header injection if a misconfigured value somehow bypasses validation.
+      if (!headerName || !isValidHttpHeaderName(headerName)) return NOOP_STRATEGY;
+      const contextualRe = new RegExp(`(${escapeRegex(headerName)}:\\s*)\\S{8,}`, 'gi');
+      return {
+        buildHeaders: (tok) => ({ [headerName]: tok }),
+        buildUrl: (url) => url,
+        sanitize: (tok, msg) => redactLiteral(tok, msg).replace(contextualRe, '$1[REDACTED]'),
+      };
+    }
+
+    case 'query': {
+      const param = auth.query_param;
+      if (!param) return NOOP_STRATEGY;
+      const contextualRe = new RegExp(`([?&]${escapeRegex(param)}=)[^&\\s]{8,}`, 'gi');
+      return {
+        buildHeaders: () => ({}),
+        buildUrl: (url, tok) => {
+          const result = new URL(url.toString());
+          result.searchParams.set(param, tok);
+          return result;
+        },
+        sanitize: (tok, msg) => redactLiteral(tok, msg).replace(contextualRe, '$1[REDACTED]'),
+      };
+    }
+
+    default:
+      return NOOP_STRATEGY;
+  }
+}
+
+// Backward-compat wrappers for callers that don't need the strategy object directly.
 export function buildAuthHeaders(
   provider: UpstreamMcpServerConfig,
   token: string | undefined,
 ): Record<string, string> {
-  if (!provider.auth) return {};
-  if (!token) return {};
-
-  switch (provider.auth.type) {
-    case 'bearer':
-      return { Authorization: `Bearer ${token}` };
-    case 'custom-header': {
-      const headerName = provider.auth.header_name;
-      // Defensive: profile load already rejects invalid names, but guard here too
-      // to prevent header injection if a misconfigured value somehow bypasses validation.
-      if (!headerName || !isValidHttpHeaderName(headerName)) return {};
-      return { [headerName]: token };
-    }
-    case 'query':
-      return {};
-    default:
-      return {};
-  }
+  if (!provider.auth || !token) return {};
+  return createAuthStrategy(provider.auth).buildHeaders(token);
 }
 
-/**
- * Return a URL with the query auth token appended for `auth.type: "query"` providers.
- * For all other auth types the original URL is returned unchanged.
- *
- * Callers must use this alongside buildAuthHeaders so that query-auth providers
- * actually receive their credentials.
- */
 export function buildAuthUrl(
   provider: UpstreamMcpServerConfig,
   url: URL,
   token: string | undefined,
 ): URL {
-  if (!provider.auth || provider.auth.type !== 'query' || !token) {
-    return url;
-  }
-  const paramName = provider.auth.query_param;
-  if (!paramName) return url;
-  const result = new URL(url.toString());
-  result.searchParams.set(paramName, token);
-  return result;
+  if (!provider.auth || !token) return url;
+  return createAuthStrategy(provider.auth).buildUrl(url, token);
 }

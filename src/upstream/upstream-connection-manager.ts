@@ -18,8 +18,7 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import type { UpstreamMcpServerConfig } from '../types/profile.js';
 import type { UpstreamConnection } from '../types/upstream-connection.js';
 import { UpstreamConnectionError, UpstreamTimeoutError, UpstreamAuthError } from './upstream-errors.js';
-import { buildAuthHeaders, buildAuthUrl } from './upstream-credential-store.js';
-import { sanitizeAuthErrorMessage } from '../auth/auth-redaction.js';
+import { createAuthStrategy } from './upstream-credential-store.js';
 import { SSRFValidator } from '../security/ssrf-validator.js';
 import { ConsoleLogger } from '../core/logger.js';
 import type { Logger } from '../core/logger.js';
@@ -370,8 +369,9 @@ export class UpstreamConnectionManager {
       allowPrivateNetwork: process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK === 'true',
     });
 
-    const authHeaders = buildAuthHeaders(provider, token);
-    const validationUrl = buildAuthUrl(provider, parsedValidationUrl, token);
+    const valStrategy = createAuthStrategy(provider.auth);
+    const authHeaders = token ? valStrategy.buildHeaders(token) : {};
+    const validationUrl = token ? valStrategy.buildUrl(parsedValidationUrl, token) : parsedValidationUrl;
     const timeoutMs = provider.validation_timeout_ms ?? 5000;
 
     let response: { status: number };
@@ -390,7 +390,7 @@ export class UpstreamConnectionManager {
         throw new UpstreamTimeoutError(provider.name, timeoutMs);
       }
       throw new UpstreamConnectionError(
-        err.message,
+        createAuthStrategy(provider.auth).sanitize(token ?? '', err.message),
         provider.name,
       );
     }
@@ -435,7 +435,8 @@ export class UpstreamConnectionManager {
       allowPrivateNetwork: process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK === 'true',
     });
 
-    const authHeaders = buildAuthHeaders(provider, token);
+    const strategy = createAuthStrategy(provider.auth);
+    const authHeaders = token ? strategy.buildHeaders(token) : {};
     // For query-auth providers, the token is embedded in the URL as a query parameter.
     // Security note: StreamableHTTPClientTransport (MCP SDK) does not log the URL it connects to
     // and does not include the URL in error messages — verified against SDK source. The URL is only
@@ -443,7 +444,7 @@ export class UpstreamConnectionManager {
     // Network-level errors from fetch propagate through mapConnectError → UpstreamConnectionError,
     // which sanitizes internally; raw query params are not redacted, but Node.js fetch (undici)
     // error messages include the hostname only, not the full URL+query string.
-    const url = buildAuthUrl(provider, parsedTransportUrl, token);
+    const url = token ? strategy.buildUrl(parsedTransportUrl, token) : parsedTransportUrl;
 
     const transport = this.transportFactory(
       url,
@@ -486,7 +487,7 @@ export class UpstreamConnectionManager {
       // repeated connect failures.
       transport.close().catch(() => {});
       client.close().catch(() => {});
-      throw this.mapConnectError(error, provider);
+      throw this.mapConnectError(error, provider, token, strategy);
     }
 
     // Guard: session may have been destroyed while we were connecting
@@ -509,6 +510,7 @@ export class UpstreamConnectionManager {
       connectedAt: now,
       lastActivityAt: now,
       token,
+      authStrategy: strategy,
     };
 
     let sessionMap = this.connections.get(sessionId);
@@ -535,7 +537,12 @@ export class UpstreamConnectionManager {
     return client as Client;
   }
 
-  private mapConnectError(error: unknown, provider: UpstreamMcpServerConfig): Error {
+  private mapConnectError(
+    error: unknown,
+    provider: UpstreamMcpServerConfig,
+    token?: string,
+    strategy = createAuthStrategy(provider.auth),
+  ): Error {
     const err = error instanceof Error ? error : new Error(String(error));
     const statusCode = hasMcpStatusCode(error) ? error.statusCode : undefined;
 
@@ -552,9 +559,10 @@ export class UpstreamConnectionManager {
       return new UpstreamTimeoutError(provider.name, provider.timeout_ms ?? 30000);
     }
 
-    // Generic connection error
+    // Generic connection error — sanitize token value before embedding in message
+    const sanitized = strategy.sanitize(token ?? '', err.message);
     return new UpstreamConnectionError(
-      `Failed to connect to upstream provider '${provider.name}': ${err.message}`,
+      `Failed to connect to upstream provider '${provider.name}': ${sanitized}`,
       provider.name,
     );
   }
@@ -563,7 +571,7 @@ export class UpstreamConnectionManager {
     const conn = this.getConnection(sessionId, providerName);
     if (conn) {
       conn.state = 'FAILED';
-      conn.lastError = new Error(sanitizeAuthErrorMessage(error.message));
+      conn.lastError = new Error(conn.authStrategy.sanitize(conn.token ?? '', error.message));
       this.heartbeatManager.stop(`${sessionId}:${providerName}`);
     }
   }

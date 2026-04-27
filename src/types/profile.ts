@@ -67,15 +67,19 @@ export interface UpstreamMcpHttpStreamableTransportConfig {
   url: string;
 }
 
+/** Minimal shape shared by auth configs that use bearer/query/custom-header token types. */
+export interface AuthTokenConfig {
+  type: 'bearer' | 'query' | 'custom-header';
+  header_name?: string;
+  query_param?: string;
+}
+
 /**
  * Upstream auth is intentionally narrower than inbound profile auth.
  * Secrets must be referenced via environment variables, never stored inline.
  */
-export interface UpstreamMcpAuthConfig {
-  type: 'bearer' | 'query' | 'custom-header';
+export interface UpstreamMcpAuthConfig extends AuthTokenConfig {
   value_from_env: string;
-  header_name?: string;
-  query_param?: string;
 }
 
 export interface UpstreamMcpToolPolicy {

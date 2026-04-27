@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { buildAuthHeaders, buildAuthUrl } from './upstream-credential-store.js';
-import type { UpstreamMcpServerConfig } from '../types/profile.js';
+import { buildAuthHeaders, buildAuthUrl, createAuthStrategy } from './upstream-credential-store.js';
+import type { AuthTokenConfig, UpstreamMcpServerConfig } from '../types/profile.js';
 
 const makeProvider = (
   auth?: UpstreamMcpServerConfig['auth'],
@@ -131,5 +131,168 @@ describe('buildAuthUrl', () => {
     const result = buildAuthUrl(provider, url, 'secret');
     expect(result.searchParams.get('version')).toBe('2');
     expect(result.searchParams.get('api_key')).toBe('secret');
+  });
+});
+
+describe('createAuthStrategy', () => {
+  const makeAuth = (overrides: Partial<AuthTokenConfig> & { type: AuthTokenConfig['type'] }): AuthTokenConfig =>
+    overrides;
+
+  describe('NOOP strategy — undefined auth', () => {
+    it('returns empty headers', () => {
+      expect(createAuthStrategy(undefined).buildHeaders('tok')).toEqual({});
+    });
+    it('returns url unchanged', () => {
+      const url = new URL('https://example.com');
+      expect(createAuthStrategy(undefined).buildUrl(url, 'tok').toString()).toBe(url.toString());
+    });
+    it('returns message unchanged', () => {
+      expect(createAuthStrategy(undefined).sanitize('tok', 'some message')).toBe('some message');
+    });
+  });
+
+  describe('bearer strategy', () => {
+    const strategy = createAuthStrategy(makeAuth({ type: 'bearer' }));
+
+    it('buildHeaders returns Authorization Bearer', () => {
+      expect(strategy.buildHeaders('mytoken')).toEqual({ Authorization: 'Bearer mytoken' });
+    });
+
+    it('buildUrl returns url unchanged', () => {
+      const url = new URL('https://example.com');
+      expect(strategy.buildUrl(url, 'tok').toString()).toBe(url.toString());
+    });
+
+    it('sanitize redacts literal token', () => {
+      const tok = 'supersecrettoken123';
+      expect(strategy.sanitize(tok, `error with ${tok} here`)).toBe('error with [REDACTED] here');
+    });
+
+    it('sanitize replaces all occurrences', () => {
+      const tok = 'supersecrettoken123';
+      expect(strategy.sanitize(tok, `${tok} and again ${tok}`)).toBe('[REDACTED] and again [REDACTED]');
+    });
+
+    it('sanitize does nothing for token shorter than 8 chars', () => {
+      expect(strategy.sanitize('short', 'msg with short')).toBe('msg with short');
+    });
+
+    it('sanitize handles token with regex special chars', () => {
+      const tok = 'tok.en+val*ue?foo';
+      const strategy2 = createAuthStrategy(makeAuth({ type: 'bearer' }));
+      expect(strategy2.sanitize(tok, `error ${tok} here`)).toBe('error [REDACTED] here');
+    });
+  });
+
+  describe('custom-header strategy', () => {
+    const strategy = createAuthStrategy(makeAuth({ type: 'custom-header', header_name: 'X-Api-Key' }));
+
+    it('buildHeaders returns custom header', () => {
+      expect(strategy.buildHeaders('mytoken')).toEqual({ 'X-Api-Key': 'mytoken' });
+    });
+
+    it('buildUrl returns url unchanged', () => {
+      const url = new URL('https://example.com');
+      expect(strategy.buildUrl(url, 'tok').toString()).toBe(url.toString());
+    });
+
+    it('sanitize redacts literal token', () => {
+      const tok = 'supersecrettoken123';
+      expect(strategy.sanitize(tok, `header value ${tok} found`)).toBe('header value [REDACTED] found');
+    });
+
+    it('sanitize redacts contextual header pattern', () => {
+      expect(strategy.sanitize('', 'request: x-api-key: supersecrettoken123 failed')).toBe(
+        'request: x-api-key: [REDACTED] failed',
+      );
+    });
+
+    it('sanitize redacts both literal and contextual pattern', () => {
+      const tok = 'supersecrettoken123';
+      expect(strategy.sanitize(tok, `X-Api-Key: ${tok}`)).toBe('X-Api-Key: [REDACTED]');
+    });
+
+    it('sanitize handles header_name with regex special chars', () => {
+      const strategy2 = createAuthStrategy(makeAuth({ type: 'custom-header', header_name: 'X-My.Key' }));
+      expect(strategy2.sanitize('', 'request X-My.Key: supersecrettoken123')).toBe(
+        'request X-My.Key: [REDACTED]',
+      );
+    });
+
+    it('returns NOOP strategy when header_name is missing', () => {
+      const s = createAuthStrategy(makeAuth({ type: 'custom-header' }));
+      expect(s.buildHeaders('tok')).toEqual({});
+      expect(s.sanitize('tok', 'msg')).toBe('msg');
+    });
+
+    it('returns NOOP strategy when header_name is invalid (CRLF injection)', () => {
+      const s = createAuthStrategy(makeAuth({ type: 'custom-header', header_name: "X-Key\r\nX-Inject: evil" }));
+      expect(s.buildHeaders('tok')).toEqual({});
+      expect(s.sanitize('tok', 'msg')).toBe('msg');
+    });
+  });
+
+  describe('query strategy', () => {
+    const strategy = createAuthStrategy(makeAuth({ type: 'query', query_param: 'api_key' }));
+    const base = new URL('https://example.com/mcp');
+
+    it('buildHeaders returns empty', () => {
+      expect(strategy.buildHeaders('tok')).toEqual({});
+    });
+
+    it('buildUrl appends query param', () => {
+      const result = strategy.buildUrl(base, 'secret');
+      expect(result.searchParams.get('api_key')).toBe('secret');
+    });
+
+    it('buildUrl does not mutate original url', () => {
+      strategy.buildUrl(base, 'secret');
+      expect(base.searchParams.has('api_key')).toBe(false);
+    });
+
+    it('sanitize redacts literal token', () => {
+      const tok = 'supersecrettoken123';
+      expect(strategy.sanitize(tok, `url?api_key=${tok}&other=1`)).toBe('url?api_key=[REDACTED]&other=1');
+    });
+
+    it('sanitize redacts contextual query pattern', () => {
+      expect(strategy.sanitize('', 'request failed: url?foo=1&api_key=supersecrettoken123')).toBe(
+        'request failed: url?foo=1&api_key=[REDACTED]',
+      );
+    });
+
+    it('sanitize handles query_param with regex special chars', () => {
+      const strategy2 = createAuthStrategy(makeAuth({ type: 'query', query_param: 'api.key' }));
+      expect(strategy2.sanitize('', 'url?api.key=supersecrettoken123&other=1')).toBe(
+        'url?api.key=[REDACTED]&other=1',
+      );
+    });
+
+    it('returns NOOP strategy when query_param is missing', () => {
+      const s = createAuthStrategy(makeAuth({ type: 'query' }));
+      expect(s.buildHeaders('tok')).toEqual({});
+      expect(s.sanitize('tok', 'msg')).toBe('msg');
+    });
+  });
+
+  describe('unknown auth type', () => {
+    it('returns NOOP strategy', () => {
+      const s = createAuthStrategy({ type: 'unknown-type' } as unknown as AuthTokenConfig);
+      expect(s.buildHeaders('tok')).toEqual({});
+      expect(s.sanitize('tok', 'msg')).toBe('msg');
+    });
+  });
+
+  describe('AuthInterceptor duck-type compatibility', () => {
+    it('accepts AuthInterceptor-shaped object with extra fields', () => {
+      const authInterceptorShape = {
+        type: 'bearer' as const,
+        value_from_env: 'TOK_ENV',
+        priority: 1,
+        validation_endpoint: '/api/user',
+      };
+      const s = createAuthStrategy(authInterceptorShape);
+      expect(s.buildHeaders('mytoken')).toEqual({ Authorization: 'Bearer mytoken' });
+    });
   });
 });
