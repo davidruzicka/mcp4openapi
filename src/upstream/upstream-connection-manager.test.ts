@@ -224,6 +224,49 @@ describe('UpstreamConnectionManager', () => {
       expect(manager.getConnection('session-1', provider.name)?.token).toBe('token-B');
     });
 
+    it('fires toolsListChangedHooks on token rotation to invalidate sanitized-tool cache', async () => {
+      const provider = createProvider();
+      const hook = vi.fn();
+      manager.addToolsListChangedHook(hook);
+
+      await manager.getOrConnect('session-1', provider, 'token-A');
+
+      const newClient = createMockClient();
+      const newTransport = createMockTransport();
+      clientFactory.mockReturnValueOnce(newClient);
+      transportFactory.mockReturnValueOnce(newTransport);
+
+      await manager.getOrConnect('session-1', provider, 'token-B');
+
+      expect(hook).toHaveBeenCalledOnce();
+      expect(hook).toHaveBeenCalledWith('session-1', provider.name);
+    });
+
+    it('does not fire toolsListChangedHooks when token is unchanged', async () => {
+      const provider = createProvider();
+      const hook = vi.fn();
+      manager.addToolsListChangedHook(hook);
+
+      await manager.getOrConnect('session-1', provider, 'same-token');
+      await manager.getOrConnect('session-1', provider, 'same-token');
+
+      expect(hook).not.toHaveBeenCalled();
+    });
+
+    it('does not fire toolsListChangedHooks on token change when provider has no auth', async () => {
+      const noAuthProvider: UpstreamMcpServerConfig = {
+        name: 'no-auth-provider',
+        transport: { type: 'http-streamable' as const, url: 'https://upstream.example.com/mcp' },
+      };
+      const hook = vi.fn();
+      manager.addToolsListChangedHook(hook);
+
+      await manager.getOrConnect('session-1', noAuthProvider, 'token-A');
+      await manager.getOrConnect('session-1', noAuthProvider, 'token-B');
+
+      expect(hook).not.toHaveBeenCalled();
+    });
+
     it('does not reconnect when token is unchanged for CONNECTED session', async () => {
       const provider = createProvider();
       await manager.getOrConnect('session-1', provider, 'same-token');

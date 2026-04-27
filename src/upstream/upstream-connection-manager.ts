@@ -190,6 +190,8 @@ export class UpstreamConnectionManager {
         sessionMap?.delete(provider.name);
         existing.client.close().catch(() => {});
         existing.transport.close().catch(() => {});
+        // Invalidate sanitized-tool cache: reconnection under new token may expose different tools
+        this.fireToolsListChangedHooks(sessionId, provider.name);
       } else {
         existing.lastActivityAt = Date.now();
         return existing.client as Client;
@@ -262,6 +264,16 @@ export class UpstreamConnectionManager {
     }
   }
 
+  private fireToolsListChangedHooks(sessionId: string, providerName: string): void {
+    for (const hook of this.toolsListChangedHooks) {
+      try {
+        hook(sessionId, providerName);
+      } catch (error) {
+        this.logger.error('Error in toolsListChangedHook', error instanceof Error ? error : new Error(String(error)));
+      }
+    }
+  }
+
   /**
    * Handle an upstream notification: forward to downstream if stream active, otherwise queue.
    * Uses explicit hasActiveStreamFn check to avoid exception-as-control-flow anti-pattern.
@@ -270,13 +282,7 @@ export class UpstreamConnectionManager {
    */
   private handleUpstreamNotification(sessionId: string, providerName: string, method: string, params?: unknown): void {
     if (method === 'notifications/tools/list_changed') {
-      for (const hook of this.toolsListChangedHooks) {
-        try {
-          hook(sessionId, providerName);
-        } catch (error) {
-          this.logger.error('Error in toolsListChangedHook', error instanceof Error ? error : new Error(String(error)));
-        }
-      }
+      this.fireToolsListChangedHooks(sessionId, providerName);
     }
     if (this.downstreamNotifyFn && this.hasActiveStreamFn && this.hasActiveStreamFn(sessionId)) {
       this.downstreamNotifyFn(sessionId, method, params);
