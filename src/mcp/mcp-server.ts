@@ -1839,25 +1839,31 @@ export class MCPServer {
   /**
    * Extract the auth token to use for upstream MCP calls.
    * Downstream client token takes precedence; value_from_env acts as local fallback
-   * when the client sends no token (e.g. server-side deployments with a shared env secret).
+   * only for non-HTTP contexts (stdio) where there is no session concept.
    *
-   * Security invariant: value_from_env (server-held credential) is only used when inbound
-   * authentication is configured on the profile. Without this guard an unauthenticated caller
-   * could reach privileged upstream resources using server-side secrets.
+   * Security invariant: for HTTP transport, value_from_env (server-held upstream credential)
+   * is NEVER used — an HTTP session with no verified client token is an anonymous session
+   * (e.g. allowed by hasServerEnvAuthToken on the inbound side) and must not receive
+   * privileged upstream access. This closes the open-proxy escalation path regardless of
+   * whether inbound auth is configured.
    */
   private getUpstreamToken(sessionId: string | undefined, profileId: string | undefined, provider: UpstreamMcpServerConfig): string | undefined {
     if (this.httpTransport && sessionId && profileId) {
       const sessionToken = this.httpTransport.getSessionToken(profileId, sessionId);
       if (sessionToken) return sessionToken;
-    }
-    if (provider.auth?.value_from_env) {
-      if (this.getAuthConfigs().length === 0) {
+      // HTTP session carries no verified client token — refuse to forward server-held
+      // upstream credentials to an anonymous caller.
+      if (provider.auth?.value_from_env) {
         throw new UpstreamConnectionError(
-          'upstream_mcp.auth.value_from_env requires inbound authentication (interceptors.auth) ' +
-          'to be configured on the profile — without it any caller can reach upstream using server credentials.',
+          'upstream_mcp.auth.value_from_env requires an authenticated HTTP session — ' +
+          'the inbound caller must supply a verified identity token.',
           provider.name,
         );
       }
+      return undefined;
+    }
+    // Non-HTTP path (stdio): no session concept; value_from_env allowed for service-account use.
+    if (provider.auth?.value_from_env) {
       return process.env[provider.auth.value_from_env];
     }
     return undefined;
