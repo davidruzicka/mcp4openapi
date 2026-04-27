@@ -21,20 +21,21 @@ export function buildAuthHeaders(
   if (!provider.auth) return {};
   if (!token) return {};
 
-  const AUTH_HEADER_BUILDERS: Record<string, (tok: string) => Record<string, string>> = {
-    bearer: (tok) => ({ Authorization: `Bearer ${tok}` }),
-    'custom-header': (tok) => {
-      const headerName = provider.auth?.header_name;
+  switch (provider.auth.type) {
+    case 'bearer':
+      return { Authorization: `Bearer ${token}` };
+    case 'custom-header': {
+      const headerName = provider.auth.header_name;
       // Defensive: profile load already rejects invalid names, but guard here too
       // to prevent header injection if a misconfigured value somehow bypasses validation.
       if (!headerName || !isValidHttpHeaderName(headerName)) return {};
-      return { [headerName]: tok };
-    },
-    query: () => ({}),
-  };
-
-  const builder = AUTH_HEADER_BUILDERS[provider.auth.type];
-  return builder ? builder(token) : {};
+      return { [headerName]: token };
+    }
+    case 'query':
+      return {};
+    default:
+      return {};
+  }
 }
 
 /**
