@@ -198,7 +198,11 @@ describeIfListen('upstream credential validation at session init', () => {
     expect(successLogs).toHaveLength(0);
   });
 
-  it('validates using env var token when provider has value_from_env and client sends no Authorization', async () => {
+  it('does NOT use env var token when client sends no Authorization (information disclosure prevention)', async () => {
+    // Security: env-backed upstream credentials must never be used for unauthenticated HTTP
+    // clients. getUpstreamToken throws for this case at tool-call time; init-time validation
+    // must be consistent — falling back to envToken would expose upstream reachability and
+    // credential validity to anonymous callers.
     const mockValidateCredentials = vi.fn().mockResolvedValue(undefined);
     const mockUpstreamConnectionManager = { validateCredentials: mockValidateCredentials, setHasActiveStreamFn: vi.fn(), setDownstreamNotifyFn: vi.fn() };
     transport.setUpstreamConnectionManager(mockUpstreamConnectionManager as any);
@@ -212,17 +216,18 @@ describeIfListen('upstream credential validation at session init', () => {
     };
     createProfileState(transport as any, 'default', [provider]);
 
-    // No Authorization header - client token is undefined
+    // No Authorization header — anonymous client
     await request(app)
       .post('/mcp')
       .set('Content-Type', 'application/json')
       .set('Accept', 'application/json, text/event-stream')
       .send(INIT_REQUEST);
 
+    // Must be called with undefined token, NOT 'env-secret-token'
     expect(mockValidateCredentials).toHaveBeenCalledWith(
       undefined,
       provider,
-      'env-secret-token',
+      undefined,
     );
   });
 
