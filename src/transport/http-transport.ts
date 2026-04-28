@@ -1625,10 +1625,11 @@ export class HttpTransport {
     try {
       profiles = await this.profileIndexProvider();
     } catch (error) {
-      this.logger.error('Failed to load profile index', error instanceof Error ? error : new Error(String(error)));
+      const correlationId = generateCorrelationId();
+      this.logger.error('Failed to load profile index', error instanceof Error ? error : new Error(String(error)), { correlationId });
       res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
         error: 'Internal Server Error',
-        message: 'Failed to load profile index',
+        message: `Internal error (correlation ID: ${correlationId})`,
       });
       return;
     }
@@ -1814,8 +1815,9 @@ export class HttpTransport {
 
       await profileState.oauthProvider.authorize(client, params, res);
     } catch (error) {
-      this.logger.error('OAuth authorize error', error instanceof Error ? error : new Error(String(error)));
-      res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).send('OAuth authorization failed');
+      const correlationId = generateCorrelationId();
+      this.logger.error('OAuth authorize error', error instanceof Error ? error : new Error(String(error)), { correlationId });
+      res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).send(`Internal error (correlation ID: ${correlationId})`);
     }
   }
 
@@ -2077,9 +2079,10 @@ export class HttpTransport {
 
       await profileState.oauthProvider.handleCallback(req, res);
     } catch (error) {
-      this.logger.error('OAuth callback error', error instanceof Error ? error : new Error(String(error)));
+      const correlationId = generateCorrelationId();
+      this.logger.error('OAuth callback error', error instanceof Error ? error : new Error(String(error)), { correlationId });
       if (!res.headersSent) {
-        res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).send('OAuth callback failed');
+        res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).send(`Internal error (correlation ID: ${correlationId})`);
       }
     }
   }
@@ -2113,8 +2116,9 @@ export class HttpTransport {
       };
       res.json(buildAuthorizationServerMetadata(metadata, profileState.context.enterpriseAuthorization));
     } catch (error) {
-      this.logger.error('OAuth authorization server metadata error', error instanceof Error ? error : new Error(String(error)));
-      res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).send('OAuth metadata failed');
+      const correlationId = generateCorrelationId();
+      this.logger.error('OAuth authorization server metadata error', error instanceof Error ? error : new Error(String(error)), { correlationId });
+      res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).send(`Internal error (correlation ID: ${correlationId})`);
     }
   }
 
@@ -2180,8 +2184,9 @@ export class HttpTransport {
         return;
       }
 
-      this.logger.error('Client registration failed', error instanceof Error ? error : new Error(String(error)));
-      res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ error: 'server_error', error_description: 'Registration failed' });
+      const correlationId = generateCorrelationId();
+      this.logger.error('Client registration failed', error instanceof Error ? error : new Error(String(error)), { correlationId });
+      res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ error: 'server_error', error_description: `Internal error (correlation ID: ${correlationId})` });
     }
   }
 
@@ -2690,7 +2695,9 @@ export class HttpTransport {
       // If contains requests, process and return response
       if (messageType === 'request') {
         if (!this.messageHandler) {
-          res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ error: 'Internal Server Error', message: 'Message handler not configured' });
+          const correlationId = generateCorrelationId();
+          this.logger.error('Message handler not configured', undefined, { correlationId });
+          res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ error: 'Internal Server Error', message: `Internal error (correlation ID: ${correlationId})` });
           return;
         }
 
