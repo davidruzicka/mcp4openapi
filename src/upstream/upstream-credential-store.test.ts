@@ -173,8 +173,8 @@ describe('createAuthStrategy', () => {
       expect(strategy.sanitize(tok, `${tok} and again ${tok}`)).toBe('[REDACTED] and again [REDACTED]');
     });
 
-    it('sanitize does nothing for token shorter than 8 chars', () => {
-      expect(strategy.sanitize('short', 'msg with short')).toBe('msg with short');
+    it('sanitize redacts short tokens (< 8 chars)', () => {
+      expect(strategy.sanitize('short', 'msg with short')).toBe('msg with [REDACTED]');
     });
 
     it('sanitize handles token with regex special chars', () => {

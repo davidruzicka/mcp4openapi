@@ -7,7 +7,7 @@ function escapeRegex(s: string): string {
 }
 
 function redactLiteral(token: string, message: string): string {
-  if (token.length < 8) return message;
+  if (!token) return message;
   return message.replace(new RegExp(escapeRegex(token), 'g'), '[REDACTED]');
 }
 
@@ -41,7 +41,7 @@ export function createAuthStrategy(auth: AuthTokenConfig | undefined): UpstreamA
       // Defensive: profile load already rejects invalid names, but guard here too
       // to prevent header injection if a misconfigured value somehow bypasses validation.
       if (!headerName || !isValidHttpHeaderName(headerName)) return NOOP_STRATEGY;
-      const contextualRe = new RegExp(`(${escapeRegex(headerName)}:\\s*)\\S{8,}`, 'gi');
+      const contextualRe = new RegExp(`(${escapeRegex(headerName)}:\\s*)\\S+`, 'gi');
       return {
         buildHeaders: (tok) => ({ [headerName]: tok }),
         buildUrl: (url) => url,
@@ -52,7 +52,7 @@ export function createAuthStrategy(auth: AuthTokenConfig | undefined): UpstreamA
     case 'query': {
       const param = auth.query_param;
       if (!param) return NOOP_STRATEGY;
-      const contextualRe = new RegExp(`([?&]${escapeRegex(param)}=)[^&\\s]{8,}`, 'gi');
+      const contextualRe = new RegExp(`([?&]${escapeRegex(param)}=)[^&\\s]+`, 'gi');
       return {
         buildHeaders: () => ({}),
         buildUrl: (url, tok) => {
