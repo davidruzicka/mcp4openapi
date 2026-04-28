@@ -675,7 +675,7 @@ function buildConnectionSnippets(
     ? buildEnvValue(tokenEnv, inputMap, isSensitiveEnvVar(tokenEnv), 'vscode')
     : '<token>';
   const cursorToken = tokenEnv
-    ? `\${${tokenEnv}}`
+    ? `\${env:${tokenEnv}}`
     : '<token>';
   const jetbrainsToken = tokenEnv
     ? buildEnvValue(tokenEnv, inputMap, isSensitiveEnvVar(tokenEnv), 'jetbrains')
@@ -742,12 +742,6 @@ function buildConnectionSnippets(
     appendComma(cursorLines);
     cursorLines.push('      "headers": {');
     cursorLines.push(`        "${headerName}": "${cursorHeaderValue}"`);
-    cursorLines.push('      }');
-  }
-  if (tokenEnv) {
-    appendComma(cursorLines);
-    cursorLines.push('      "env": {');
-    cursorLines.push(`        "${tokenEnv}": "${buildEnvValue(tokenEnv, inputMap, false, 'cursor')}"`);
     cursorLines.push('      }');
   }
   cursorLines.push('    }', '  }', '}');
