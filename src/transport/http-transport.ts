@@ -27,6 +27,8 @@ import type {
 } from '../types/http-transport.js';
 import { isInitializeRequest } from '../validation/jsonrpc-validator.js';
 import { MetricsCollector } from '../core/metrics.js';
+import type { UpstreamConnectionManager } from '../upstream/upstream-connection-manager.js';
+import { UpstreamAuthError } from '../upstream/upstream-errors.js';
 import type { MetricsContextLabels } from '../core/metrics.js';
 import { ExternalOAuthProvider } from '../auth/oauth-provider.js';
 import { EnterpriseAuthProvider } from '../auth/enterprise-auth-provider.js';
@@ -38,7 +40,7 @@ import { mapAuthError } from '../auth/auth-error-mapper.js';
 import { redactAuthPayload } from '../auth/auth-redaction.js';
 import { OAuthGrantRouter } from './oauth-grant-router.js';
 import { SSRFValidator } from '../security/ssrf-validator.js';
-import type { AuthInterceptor, OAuthConfig } from '../types/profile.js';
+import type { AuthInterceptor, OAuthConfig, UpstreamMcpServerConfig } from '../types/profile.js';
 import {
   DEFAULT_ALLOWED_REDIRECT_HOSTS,
   HTTP_STATUS,
@@ -132,6 +134,7 @@ export class HttpTransport {
   private readonly enterpriseReplayStore: EnterpriseReplayStore;
   private readonly enterpriseGrantAttemptsByProfile = new Map<string, number[]>();
   private readonly enterpriseGrantConcurrencyByProfile = new Map<string, number>();
+  private upstreamConnectionManager: UpstreamConnectionManager | null = null;
 
   constructor(config: HttpTransportConfig, logger: Logger) {
     // Freeze config to prevent runtime mutation of security-critical settings (allowedOrigins, rate limits, etc.)
@@ -435,6 +438,7 @@ export class HttpTransport {
       resourceName: this.config.resourceName,
       resourceDocumentation: this.config.resourceDocumentation,
       parser: this.config.parser,
+      upstreamMcp: this.config.upstreamMcp,
     };
   }
 
@@ -2783,6 +2787,53 @@ export class HttpTransport {
             }
           }
           
+          // Validate upstream credentials if upstream_mcp providers have validation_endpoint
+          if (this.upstreamConnectionManager && profileState.context.upstreamMcp) {
+            for (const upstreamProvider of profileState.context.upstreamMcp) {
+              if (upstreamProvider.validation_endpoint) {
+                try {
+                  // Use only the verified client token. env-backed upstream credentials are
+                  // never forwarded in HTTP mode (getUpstreamToken throws for unauthenticated
+                  // HTTP sessions) — falling back to envToken here would expose upstream
+                  // reachability and credential validity to unauthenticated callers.
+                  const effectiveUpstreamToken = authInfo?.token;
+                  await this.upstreamConnectionManager.validateCredentials(
+                    undefined,
+                    upstreamProvider,
+                    effectiveUpstreamToken,
+                  );
+                  if (effectiveUpstreamToken) {
+                    this.logger.info('Upstream credential validation successful', {
+                      provider: upstreamProvider.name,
+                    });
+                  } else {
+                    this.logger.debug('Upstream credential validation skipped - no client token present', {
+                      provider: upstreamProvider.name,
+                    });
+                  }
+                } catch (error) {
+                  this.logger.warn('Upstream credential validation failed', {
+                    provider: upstreamProvider.name,
+                    error: error instanceof Error ? error.message : String(error),
+                  });
+                  if (error instanceof UpstreamAuthError) {
+                    res.status(HTTP_STATUS.UNAUTHORIZED).json({
+                      error: 'Unauthorized',
+                      message: 'Upstream authentication failed',
+                    });
+                    return;
+                  }
+                  // SSRF, timeout, or connection errors - return 502 Bad Gateway
+                  res.status(502).json({
+                    error: 'Bad Gateway',
+                    message: 'Upstream credential validation failed',
+                  });
+                  return;
+                }
+              }
+            }
+          }
+
           // Look up OAuth tokens if this is an OAuth token
           let refreshToken: string | undefined;
           let accessTokenExpiresAt: number | undefined;
@@ -2862,7 +2913,12 @@ export class HttpTransport {
         if (wantsOnlySSE) {
           // Return SSE response only when client explicitly wants text/event-stream only
           this.logger.debug('Sending SSE response', { response, newSessionId });
-          this.startSSEResponse(res, response, newSessionId);
+          const effectiveSessionId = isInitialization ? newSessionId! : sessionId!;
+          // Session may have been destroyed concurrently (DELETE /mcp or reaper) while
+          // this POST was in flight. startSSEResponse accepts undefined and falls back to
+          // Date.now() for the event ID, so a missing session is handled gracefully.
+          const sseSession = profileState.sessions.get(effectiveSessionId);
+          this.startSSEResponse(res, response, newSessionId, sseSession);
         } else {
           // Return JSON response (default for requests)
           if (newSessionId) {
@@ -3092,7 +3148,8 @@ export class HttpTransport {
   private startSSEResponse(
     res: Response,
     response: unknown,
-    newSessionId: string | undefined
+    newSessionId: string | undefined,
+    session?: SessionData
   ): void {
     res.setHeader('Content-Type', MIME_TYPES.EVENT_STREAM);
     res.setHeader('Cache-Control', 'no-cache');
@@ -3102,8 +3159,10 @@ export class HttpTransport {
       res.setHeader('Mcp-Session-Id', newSessionId);
     }
 
-    // Send response
-    const eventId = Date.now();
+    // Use session-scoped monotonic counter so Last-Event-ID from POST responses stays
+    // in the same ID space as GET SSE replay events. Fall back to Date.now() when no
+    // session exists (e.g. error responses before session creation).
+    const eventId = session ? ++session.nextEventId : Date.now();
     res.write(`id: ${eventId}\n`);
     res.write(`data: ${JSON.stringify(response)}\n\n`);
 
@@ -3132,7 +3191,6 @@ export class HttpTransport {
     const streamState: SSEStreamState = {
       streamId,
       lastEventId: lastEventId ? parseInt(lastEventId, 10) : 0,
-      messageQueue: [],
       active: true,
       response: res,
     };
@@ -3141,7 +3199,22 @@ export class HttpTransport {
 
     // Replay missed messages if resuming
     if (lastEventId) {
-      this.replayMessages(res, streamState);
+      this.replayMessages(res, streamState, session);
+    }
+
+    // Flush any buffered upstream notifications (D-08: replay on reconnect)
+    // Route through sendToClient() so each notification enters the session replayQueue
+    // and can be re-replayed on any subsequent reconnect via Last-Event-ID.
+    if (this.upstreamConnectionManager) {
+      const buffered = this.upstreamConnectionManager.drainNotifications(sessionId);
+      for (const entry of buffered) {
+        const notification: Record<string, unknown> = { jsonrpc: '2.0', method: entry.method };
+        if (entry.params !== undefined) notification.params = entry.params;
+        this.sendToClient(profileState.profileId, sessionId, notification);
+      }
+      if (buffered.length > 0) {
+        this.logger.debug('Replayed buffered upstream notifications', { sessionId, count: buffered.length });
+      }
     }
 
     // Setup heartbeat if enabled
@@ -3157,6 +3230,7 @@ export class HttpTransport {
     // Handle client disconnect
     res.on('close', () => {
       streamState.active = false;
+      session.sseStreams.delete(streamId);
       if (heartbeatInterval) {
         clearInterval(heartbeatInterval);
       }
@@ -3168,11 +3242,12 @@ export class HttpTransport {
 
   /**
    * Replay messages after Last-Event-ID
-   * 
-   * Why: Resumability - client can reconnect and receive missed messages
+   *
+   * Why: Resumability - client can reconnect and receive missed messages.
+   * Uses session-scoped replayQueue so messages survive across multiple reconnects.
    */
-  private replayMessages(res: Response, streamState: SSEStreamState): void {
-    const missedMessages = streamState.messageQueue.filter(
+  private replayMessages(res: Response, streamState: SSEStreamState, session: SessionData): void {
+    const missedMessages = session.replayQueue.filter(
       msg => msg.eventId > streamState.lastEventId
     );
 
@@ -3196,22 +3271,30 @@ export class HttpTransport {
       return;
     }
 
-    const eventId = Date.now();
+    const eventId = ++session.nextEventId;
     const queuedMessage: QueuedMessage = {
       eventId,
       data: message,
       timestamp: Date.now(),
     };
 
+    // Push to session-scoped replay queue so messages survive stream reconnects
+    session.replayQueue.push(queuedMessage);
+    if (session.replayQueue.length > 100) {
+      session.replayQueue.shift();
+    }
+
     // Send to all active streams for this session
     for (const streamState of session.sseStreams.values()) {
       if (streamState.active) {
-        // Queue for resumability
-        streamState.messageQueue.push(queuedMessage);
-        
-        // Keep only last 100 messages
-        if (streamState.messageQueue.length > 100) {
-          streamState.messageQueue.shift();
+        // Write to active SSE stream for real-time delivery
+        try {
+          streamState.response.write(`id: ${eventId}\n`);
+          streamState.response.write(`data: ${JSON.stringify(message)}\n\n`);
+        } catch (writeError) {
+          // Stream may have closed between active check and write; mark inactive
+          streamState.active = false;
+          this.logger.debug('Failed to write to SSE stream', { sessionId, error: (writeError as Error).message });
         }
       }
     }
@@ -3350,6 +3433,8 @@ export class HttpTransport {
       createdAt: Date.now(),
       lastActivityAt: Date.now(),
       sseStreams: new Map(),
+      replayQueue: [],
+      nextEventId: 0,
       authToken,
       refreshToken,
       accessTokenExpiresAt,
@@ -3471,6 +3556,7 @@ export class HttpTransport {
    * Session destruction listeners for cleanup in other components
    */
   private sessionDestroyedListeners: Array<(profileId: string, sessionId: string) => void> = [];
+  private upstreamManagerListenerRegistered = false;
 
   /**
    * Register listener for session destruction events
@@ -3479,6 +3565,90 @@ export class HttpTransport {
    */
   public onSessionDestroyed(listener: (profileId: string, sessionId: string) => void): void {
     this.sessionDestroyedListeners.push(listener);
+  }
+
+  /**
+   * Register UpstreamConnectionManager for session-scoped upstream cleanup.
+   *
+   * Wires closeAll into the session destruction lifecycle so upstream connections
+   * are closed when sessions expire (reaper), are explicitly terminated (DELETE /mcp),
+   * or during shutdown. Errors in closeAll are caught and logged to never break
+   * session destruction.
+   */
+  public setUpstreamConnectionManager(manager: UpstreamConnectionManager): void {
+    if (this.upstreamConnectionManager && this.upstreamConnectionManager !== manager) {
+      throw new Error(
+        'UpstreamConnectionManager already wired — setUpstreamConnectionManager must be called only once per HttpTransport lifetime. ' +
+        'Replacing the manager would orphan the first manager\'s connections (its closeAll is never called).',
+      );
+    }
+    this.upstreamConnectionManager = manager;
+
+    // Wire stream presence check: upstream manager checks if SSE stream is active
+    // before attempting to forward (avoids exception-as-control-flow anti-pattern)
+    manager.setHasActiveStreamFn((sessionId: string): boolean => {
+      return this.hasActiveStream(sessionId);
+    });
+
+    // Wire notification forwarding path: upstream -> downstream SSE
+    manager.setDownstreamNotifyFn((sessionId: string, method: string, params?: unknown) => {
+      const profileId = this.findProfileIdForSession(sessionId);
+      if (!profileId) {
+        // Session not found - likely already destroyed; caller will queue
+        return;
+      }
+      // Forward as JSON-RPC notification (no id field per spec)
+      const notification: Record<string, unknown> = { jsonrpc: '2.0', method };
+      if (params !== undefined) notification.params = params;
+      this.sendToClient(profileId, sessionId, notification);
+    });
+
+    if (!this.upstreamManagerListenerRegistered) {
+      this.upstreamManagerListenerRegistered = true;
+      this.onSessionDestroyed((_profileId: string, sessionId: string) => {
+        this.upstreamConnectionManager?.closeAll(sessionId).catch((error) => {
+          this.logger.error('Failed to close upstream connections on session destroy', error as Error);
+        });
+      });
+    }
+  }
+
+  /**
+   * Check if a session has at least one active SSE stream attached.
+   * Used by UpstreamConnectionManager to decide between forwarding and queuing notifications.
+   */
+  public hasActiveStream(sessionId: string): boolean {
+    for (const [, profileState] of this.profileStates.entries()) {
+      const session = profileState.sessions.get(sessionId);
+      if (session) {
+        for (const streamState of session.sseStreams.values()) {
+          if (streamState.active) return true;
+        }
+        return false;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Find the profileId that owns a given sessionId.
+   * O(n) over profileStates - acceptable for phase 2 scale.
+   */
+  private findProfileIdForSession(sessionId: string): string | undefined {
+    for (const [profileId, profileState] of this.profileStates.entries()) {
+      if (profileState.sessions.has(sessionId)) {
+        return profileId;
+      }
+    }
+    return undefined;
+  }
+
+  /**
+   * Return upstream_mcp config for a profile.
+   * Used by MCPServer to determine whether to branch to upstream handling.
+   */
+  public getUpstreamMcpConfig(profileId: string): UpstreamMcpServerConfig[] | undefined {
+    return this.profileStates.get(profileId)?.context.upstreamMcp;
   }
 
   /**

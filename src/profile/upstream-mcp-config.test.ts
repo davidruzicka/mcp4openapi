@@ -107,6 +107,33 @@ describe('resolveUpstreamMcpConfig – validator error branches', () => {
     expect(() => resolveUpstreamMcpConfig(profile)).toThrow(/header_name contains invalid/);
   });
 
+  it('rejects custom-header auth with space in header_name', () => {
+    const profile = makeProfile([{
+      name: 'p1',
+      transport: { type: 'http-streamable', url: 'https://example.com/mcp' },
+      auth: { type: 'custom-header', value_from_env: 'TOKEN', header_name: 'X My Header' },
+    }]);
+    expect(() => resolveUpstreamMcpConfig(profile)).toThrow(/RFC7230 token/);
+  });
+
+  it('rejects custom-header auth with colon in header_name', () => {
+    const profile = makeProfile([{
+      name: 'p1',
+      transport: { type: 'http-streamable', url: 'https://example.com/mcp' },
+      auth: { type: 'custom-header', value_from_env: 'TOKEN', header_name: 'X-Header:Colon' },
+    }]);
+    expect(() => resolveUpstreamMcpConfig(profile)).toThrow(/RFC7230 token/);
+  });
+
+  it('rejects custom-header auth with CRLF in header_name (header injection)', () => {
+    const profile = makeProfile([{
+      name: 'p1',
+      transport: { type: 'http-streamable', url: 'https://example.com/mcp' },
+      auth: { type: 'custom-header', value_from_env: 'TOKEN', header_name: "X-Header\r\nX-Inject: evil" },
+    }]);
+    expect(() => resolveUpstreamMcpConfig(profile)).toThrow(/RFC7230 token/);
+  });
+
   it('rejects query auth without query_param', () => {
     const profile = makeProfile([{
       name: 'p1',
@@ -141,6 +168,60 @@ describe('resolveUpstreamMcpConfig – validator error branches', () => {
       timeout_ms: 0,
     }]);
     expect(() => resolveUpstreamMcpConfig(profile)).toThrow(/timeout_ms must be a positive integer/);
+  });
+
+  it('rejects relative validation_endpoint', () => {
+    const profile = makeProfile([{
+      name: 'p1',
+      transport: { type: 'http-streamable', url: 'https://example.com/mcp' },
+      validation_endpoint: '/validate',
+    }]);
+    expect(() => resolveUpstreamMcpConfig(profile)).toThrow(ValidationError);
+  });
+
+  it('rejects non-http validation_endpoint', () => {
+    const profile = makeProfile([{
+      name: 'p1',
+      transport: { type: 'http-streamable', url: 'https://example.com/mcp' },
+      validation_endpoint: 'ftp://example.com/validate',
+    }]);
+    expect(() => resolveUpstreamMcpConfig(profile)).toThrow(/http or https/);
+  });
+
+  it('rejects validation_endpoint with inline credentials', () => {
+    const profile = makeProfile([{
+      name: 'p1',
+      transport: { type: 'http-streamable', url: 'https://example.com/mcp' },
+      validation_endpoint: 'https://user:pass@example.com/validate',
+    }]);
+    expect(() => resolveUpstreamMcpConfig(profile)).toThrow(/inline credentials/);
+  });
+
+  it('accepts valid absolute validation_endpoint', () => {
+    const profile = makeProfile([{
+      name: 'p1',
+      transport: { type: 'http-streamable', url: 'https://example.com/mcp' },
+      validation_endpoint: 'https://example.com/validate',
+    }]);
+    expect(() => resolveUpstreamMcpConfig(profile)).not.toThrow();
+  });
+
+  it('rejects non-positive validation_timeout_ms', () => {
+    const profile = makeProfile([{
+      name: 'p1',
+      transport: { type: 'http-streamable', url: 'https://example.com/mcp' },
+      validation_timeout_ms: 0,
+    }]);
+    expect(() => resolveUpstreamMcpConfig(profile)).toThrow(/validation_timeout_ms must be a positive integer/);
+  });
+
+  it('rejects negative validation_timeout_ms', () => {
+    const profile = makeProfile([{
+      name: 'p1',
+      transport: { type: 'http-streamable', url: 'https://example.com/mcp' },
+      validation_timeout_ms: -100,
+    }]);
+    expect(() => resolveUpstreamMcpConfig(profile)).toThrow(/validation_timeout_ms must be a positive integer/);
   });
 
   it('rejects empty tool_prefix', () => {

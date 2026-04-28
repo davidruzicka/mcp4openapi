@@ -6,7 +6,7 @@
  */
 
 import type { Request as ExpressRequest, Response } from 'express';
-import type { OAuthConfig, AuthInterceptor, EnterpriseAuthorizationConfig } from './profile.js';
+import type { OAuthConfig, AuthInterceptor, EnterpriseAuthorizationConfig, UpstreamMcpServerConfig } from './profile.js';
 import type { HttpTenantIndex } from './http-tenants.js';
 import type { SessionToolFilterRequest, SessionToolFilterCompat as SessionToolFilter } from '../tool-filter/index.js';
 import type { OpenAPIParser } from '../openapi/openapi-parser.js';
@@ -19,6 +19,8 @@ export interface SessionData {
   createdAt: number;
   lastActivityAt: number;
   sseStreams: Map<string, SSEStreamState>;
+  replayQueue: QueuedMessage[];
+  nextEventId: number; // Monotonic counter for SSE event IDs (shared across POST and GET SSE responses)
   authToken?: string;
   refreshToken?: string; // OAuth refresh token for automatic token renewal
   accessTokenExpiresAt?: number; // Access token expiration timestamp in ms
@@ -40,7 +42,6 @@ export interface SessionData {
 export interface SSEStreamState {
   streamId: string;
   lastEventId: number;
-  messageQueue: QueuedMessage[];
   active: boolean;
   response: Response; // HTTP response object for closing the stream
 }
@@ -98,6 +99,7 @@ export interface HttpTransportConfig {
   parser?: OpenAPIParser; // OpenAPI parser for operation resolution (optional, for category filtering)
   tenantIndex?: HttpTenantIndex; // Preloaded tenant configuration index (optional)
   globalFiltering?: FilteringRules; // Process-wide baseline parameter filtering
+  upstreamMcp?: UpstreamMcpServerConfig[]; // Upstream MCP providers for single-profile mode
 }
 
 export interface HttpProfileContext {
@@ -111,6 +113,7 @@ export interface HttpProfileContext {
   resourceName?: string;
   resourceDocumentation?: string;
   parser?: OpenAPIParser;
+  upstreamMcp?: UpstreamMcpServerConfig[];
 }
 
 export interface McpRequest extends ExpressRequest {

@@ -51,6 +51,13 @@ export interface UpstreamMcpServerConfig {
 
   /** Optional request timeout for upstream MCP calls. */
   timeout_ms?: number;
+
+  /** Optional endpoint to validate upstream credentials at session init (fail-fast). */
+  validation_endpoint?: string;
+  /** HTTP method for validation probe. Default: 'HEAD'. */
+  validation_method?: 'HEAD' | 'GET';
+  /** Timeout for validation probe in ms. Default: 5000. */
+  validation_timeout_ms?: number;
 }
 
 export type UpstreamMcpTransportConfig = UpstreamMcpHttpStreamableTransportConfig;
@@ -60,15 +67,19 @@ export interface UpstreamMcpHttpStreamableTransportConfig {
   url: string;
 }
 
+/** Minimal shape shared by auth configs that use bearer/query/custom-header token types. */
+export interface AuthTokenConfig {
+  type: 'bearer' | 'query' | 'custom-header';
+  header_name?: string;
+  query_param?: string;
+}
+
 /**
  * Upstream auth is intentionally narrower than inbound profile auth.
  * Secrets must be referenced via environment variables, never stored inline.
  */
-export interface UpstreamMcpAuthConfig {
-  type: 'bearer' | 'query' | 'custom-header';
+export interface UpstreamMcpAuthConfig extends AuthTokenConfig {
   value_from_env: string;
-  header_name?: string;
-  query_param?: string;
 }
 
 export interface UpstreamMcpToolPolicy {

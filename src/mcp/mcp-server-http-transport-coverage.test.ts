@@ -11,6 +11,7 @@ vi.mock('../transport/http-transport.js', () => {
     public getServerUrl = vi.fn(() => 'http://127.0.0.1:0');
     public ensureValidSessionToken = vi.fn(async (_profileId: string, _sessionId: string) => true);
     public getSessionToken = vi.fn((_profileId: string, _sessionId: string) => undefined);
+    public setUpstreamConnectionManager = vi.fn((_manager: any) => {});
 
     constructor(public config: any, public logger: any) {}
   }

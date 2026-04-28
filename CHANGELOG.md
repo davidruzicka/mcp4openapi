@@ -7,7 +7,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- `upstream_mcp[].timeout_ms` is now enforced on proxied `tools/call`: passed as `RequestOptions.timeout` to `client.callTool()` so a hung upstream is bounded by the configured value instead of the SDK default.
+- `MCPServerManager` self-registers the `onSessionDestroyed` cleanup hook in its constructor, eliminating the unbounded `sanitizedAndPolicyFilteredToolNames` map growth when the manager is used outside the `index.ts` bootstrap path.
+- `UpstreamAuthError` now maps to `ErrorCode.InvalidRequest` (-32600) instead of `InternalError`; `AuthenticationError` and OAuth-required responses also use `InvalidRequest` instead of `-32001` (`RequestTimeout`), eliminating the code collision that caused clients to trigger auth flows on upstream timeouts.
+- `X-Mcp4-Tools` session filter now correctly applies to upstream proxy profiles: exact-name and regex rules are evaluated as inline predicates at `tools/list` and `tools/call` time; `_allow_list`/`_allow_read` category rules are rejected at session init with an actionable error (OpenAPI metadata unavailable for upstream tools).
+- Broken TOC anchor in `TODO.md` for item 17 (`sasakaapiKeyStore` corrected to `sasankaapikeystore`).
+- `getOrConnect` now closes the stale client and transport when replacing a FAILED connection, preventing late `onerror`/`onclose` events from firing against the replacement and releasing accumulated leaked sockets (P1).
+- `schemaContainsForbiddenChars` now returns `true` when recursion depth exceeds 10, treating over-limit schemas as potentially malicious instead of silently passing them - closes the bypass where forbidden chars beyond depth 10 were invisible to the sanitizer (P2).
+- `createConnection` validates `transport.url` via `SSRFValidator` before any network call (SSRF guard); `inputSchema` recursively scanned for forbidden chars (`<`, `>`, backtick); `null` tools field from `listTools` now throws `UpstreamMalformedResponseError`; notification handler errors logged instead of unhandled rejections; `destroyedSessions` pruned after 60s TTL; `NOTIFICATION_DISPATCH` schema type broadened to `$ZodType` for extensibility.
+- `getOrConnect` now stops the heartbeat timer before replacing a connection on token rotation or FAILED recovery, preventing stale timer from marking the new connection FAILED; token mismatch during in-flight connect now waits for the pending to settle and opens a fresh connection instead of reusing stale credentials.
+- REL-01: `UpstreamHeartbeatManager` is now wired into `UpstreamConnectionManager`
+- `UpstreamConnectionState` narrowed to `'CONNECTED' | 'FAILED'`; unused `IDLE`/`CONNECTING`/`RECONNECTING` states removed to eliminate misleading contract.
+- `UPSTREAM_ERROR_MAPPINGS` moved to module scope in `mcp-server.ts`; was re-allocated on every `tools/call` invocation.
+- `mapConnectError` now uses an explicit `hasMcpStatusCode` type guard instead of an unsafe cast, making the SDK status code assumption unit-testable and SDK-upgrade-safe.
+- `destroyedSessions` marker is now retained after `closeAll()`
+- `tools/list` now emits a `WARN` log when enterprise policy silently blocks all upstream tools (all require `'modify'` permission with no OpenAPI metadata to infer category).
+- `validateCredentials` now accepts `sessionId: string | undefined`; pre-session calls log `phase: 'pre-session-init'` instead of the sentinel string `'pre-session'` that polluted log traces, preventing a race window where a reconnect attempt could create an orphaned upstream connection for a session being torn down.
+- `UpstreamConnectionManager` is now statically imported in `mcp-server.ts`; the dynamic import comment claiming a circular dep risk was unverified (confirmed no cycle via madge); heartbeat pings start on each successful upstream connection and stop on `closeAll`, detecting silent SSE disconnects before tool calls fail.
+- `getUpstreamToken` now uses the downstream client token first and falls back to `upstream_mcp[].auth.value_from_env` when the client sends no token; previously env-configured providers always used the env token, ignoring the client-forwarded credential.
+- `tools/list` and `tools/call` in upstream proxy mode now enforce `upstream_mcp[].tools.allow`/`deny` lists; previously the profile-level tool policy was validated at load time but never applied at runtime.
+- `tools/list` now emits a `WARN` log when `upstream_mcp[].tool_prefix` is configured, as prefixing is accepted by the schema but not yet applied at runtime.
+- `getUpstreamMcpConfig` now falls back to `profile.upstream_mcp` when `HttpTransport` profile context does not carry it (single-profile HTTP startup); previously upstream routing was silently bypassed.
+- `getOrConnect` now detects token rotation: a changed `token` argument closes the old upstream connection and opens a new one with the fresh credential.
+- `closeAll` marks the session as destroyed before awaiting in-flight connections so any `createConnection` resolving after teardown self-closes immediately, preventing orphaned upstream resources.
+- `handleToolCall` now enforces `X-Mcp4-Tools` filter and enterprise authorization policy before forwarding to upstream, matching the gates applied to local tools.
+- `tools/call` to upstream now validates the tool name against the sanitizer policy (`[a-zA-Z0-9_-]`, max 255 chars) before forwarding, preventing invocation of tools dropped from the sanitized list.
+- `UpstreamConnectionManager` now ships with real production `clientFactory`/`transportFactory` defaults (MCP SDK `Client` + `StreamableHTTPClientTransport`); previously both defaults threw, making all upstream proxy calls fail at runtime.
+- Profiles with more than one `upstream_mcp` entry are now rejected at load time with a clear error; previously extra providers were silently ignored while all calls were routed to the first.
+- `upstream_mcp` proxy is now wired at HTTP startup in both single-profile and profile-routing modes; previously `getUpstreamClientFn` was never set, causing upstream tools to be silently unavailable.
+- `drain()` on `NotificationQueue` now re-applies TTL eviction before returning entries, preventing stale notifications from being replayed on reconnect after extended disconnection.
+- `upstream_mcp[].validation_endpoint` is now checked during session init in single-profile HTTP mode; previously `upstreamMcp` was missing from `buildDefaultProfileContext`, so init validation was silently skipped.
+- `setUpstreamConnectionManager` now registers the `onSessionDestroyed` cleanup listener only once; previously each call added a new listener, causing `closeAll` to be invoked multiple times per session on repeated calls.
+- Query-auth upstream providers now have their token appended to the transport URL and validation endpoint URL; previously the token was never sent, causing all query-auth connections to fail authentication.
+- Upstream SSE reconnect now replays buffered upstream notifications via `sendToClient()` so they enter the resumability queue and survive a second reconnect.
+- `validateCredentials` now throws `UpstreamConnectionError` on non-2xx responses (404, 500, 503, etc.); previously only 401/403 were treated as failures.
+- Heartbeat `setInterval` callback now skips a tick when a previous ping is still in-flight, preventing concurrent overlapping pings during upstream slowness.
+- `toMcpErrorResponse` omits the `data` field when `correlationId` is absent instead of returning `{ correlationId: undefined }`.
+- `validateCredentials` now uses `redirect: 'manual'` to prevent SSRF bypass via HTTP redirects pointing to private/loopback addresses; 3xx responses are treated as failures.
+- `closeAll` now calls `client.close()` alongside `transport.close()` to release MCP SDK client resources (handlers, timers).
+- Session init no longer logs "Upstream credential validation successful" when no client token is present and validation was a no-op.
+
 ### Added
+- Upstream MCP proxy: tools/list and tools/call forwarding with tool name/description sanitization, tools/list_changed notification relay with bounded queue buffering and replay on SSE reconnect.
+- Upstream tool sanitizer drops tools from upstream MCP servers with invalid names (outside `[a-zA-Z0-9_-]`, over 255 chars) or forbidden description characters (`<`, `>`, backtick, over 2048 chars); dropped names are truncated to 100 chars + ellipsis (103 chars max) to prevent log injection.
+- Bounded notification queue buffers upstream MCP notifications with configurable size cap (default 50) and TTL (default 5 min) using wall-clock eviction; drains in insertion order.
+- Profile validation now rejects profiles that define both `upstream_mcp` and non-empty `tools[]` with a clear "mutually exclusive" error at load time.
+- Upstream MCP session foundation: lazy connection manager, per-session credential store with downstream token passthrough and `value_from_env` fallback, heartbeat health monitoring, typed upstream errors with correlation IDs, and session-scoped connection cleanup.
+- Upstream credential validation at session init: optional `validation_endpoint`/`validation_method`/`validation_timeout_ms` fields on `UpstreamMcpServerConfig` enable SSRF-protected early auth checks so invalid tokens surface immediately at session initialization rather than on first tool call.
+- Bearer token redaction in error messages now preserves last 4 chars as diagnostic suffix (e.g. `Bearer [REDACTED]...xQ5g`) to help identify which token failed without exposing it.
 - Added repository-scoped autonomous-agent docs plus tested proposal-intake/issuer/planner/implementor/reviewer/merger automation helpers, bounded duplicate-candidate ranking/runtime scripts, a default Codex-backed implementor wrapper with machine-readable handoff output, implementor command disclosure reconciliation, and GitHub Actions workflows for the full multi-agent issue-to-PR pipeline.
 - Added signed planner-artifact trust primitives plus env-driven verification config so planner review-follow-up handoff can be verified on implementor execution paths while lenient planner dedupe still reads legacy artifacts.
 - Added shared review-follow-up/planner-artifact automation primitives for per-head review-thread state, machine-readable fix/test handoff, and implementor in-thread follow-up replies.

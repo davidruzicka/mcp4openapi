@@ -10,11 +10,13 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import {
   CallToolRequestSchema,
   CompleteRequestSchema,
+  ErrorCode,
   GetPromptRequestSchema,
   ListPromptsRequestSchema,
   ListResourceTemplatesRequestSchema,
   ListResourcesRequestSchema,
   ListToolsRequestSchema,
+  McpError,
   ReadResourceRequestSchema,
   type CompleteRequest,
 } from '@modelcontextprotocol/sdk/types.js';
@@ -48,7 +50,16 @@ import { OAUTH_RATE_LIMIT } from '../core/constants.js';
 import { HttpClient } from '../transport/interceptors.js';
 import { HttpClientFactory } from '../transport/http-client-factory.js';
 import { SchemaValidator } from '../validation/schema-validator.js';
-import type { Profile, ToolDefinition, AuthInterceptor, OAuthConfig, ProxyDownloadOperation } from '../types/profile.js';
+import type { Profile, ToolDefinition, AuthInterceptor, OAuthConfig, ProxyDownloadOperation, UpstreamMcpServerConfig } from '../types/profile.js';
+import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { sanitizeToolList, isValidUpstreamToolName, applyProviderToolPolicy, isToolAllowedByProviderPolicy } from '../upstream/upstream-tool-sanitizer.js';
+import { UpstreamConnectionManager } from '../upstream/upstream-connection-manager.js';
+import {
+  UpstreamConnectionError,
+  UpstreamTimeoutError,
+  UpstreamAuthError,
+  UpstreamMalformedResponseError,
+} from '../upstream/upstream-errors.js';
 import type { Logger } from '../core/logger.js';
 import { ConsoleLogger, JsonLogger, LogLevel } from '../core/logger.js';
 import type { OperationInfo, SchemaInfo } from '../types/openapi.js';
@@ -66,6 +77,7 @@ import {
   OpenAPIOperationResolver,
   OperationDetector,
   applySessionToolFilter,
+  matchesSessionFilterByName,
   type SessionToolFilterCompat as SessionToolFilter,
   type SessionToolFilterRequest,
 } from '../tool-filter/index.js';
@@ -76,6 +88,57 @@ import { renderPrompt } from '../prompt/prompt-renderer.js';
 import type { MetricsCollector, MetricsContextLabels } from '../core/metrics.js';
 
 type EnterpriseToolCategory = 'list' | 'read' | 'modify' | 'admin';
+
+/** MCP SDK RequestTimeout code (-32001); used for upstream timeout responses */
+const UPSTREAM_TIMEOUT_ERROR_CODE = ErrorCode.RequestTimeout;
+
+const UPSTREAM_ERROR_MAPPINGS: ReadonlyArray<[new (...args: never[]) => Error, number, string]> = [
+  [UpstreamConnectionError, ErrorCode.InternalError, 'Upstream connection failed'],
+  [UpstreamTimeoutError, UPSTREAM_TIMEOUT_ERROR_CODE, 'Upstream request timed out'],
+  [UpstreamAuthError, ErrorCode.InvalidRequest, 'Upstream authentication failed'],
+  [UpstreamMalformedResponseError, ErrorCode.InternalError, 'Upstream returned malformed response'],
+];
+
+/**
+ * Map an upstream error to a client-facing MCP error object.
+ * Provider name is placed in data only - never leaked into the client-facing message string.
+ */
+function mapUpstreamErrorToMcpError(
+  error: unknown,
+  providerName: string,
+): { code: number; message: string; data?: unknown } {
+
+  const correlationId =
+    error instanceof Error && 'details' in error
+      ? ((error as Record<string, unknown>).details as Record<string, unknown> | undefined)
+          ?.correlationId as string | undefined
+      : undefined;
+
+  for (const [ErrorClass, code, messagePrefix] of UPSTREAM_ERROR_MAPPINGS) {
+    if (error instanceof ErrorClass) {
+      return {
+        code,
+        message: correlationId ? `${messagePrefix} (correlation: ${correlationId})` : messagePrefix,
+        data: { correlationId, providerName },
+      };
+    }
+  }
+
+  // Preserve MCP SDK error codes (e.g. McpError/RequestTimeout thrown by client.callTool)
+  if (error instanceof McpError) {
+    return {
+      code: error.code,
+      message: correlationId ? `Upstream error (correlation: ${correlationId})` : 'Upstream error',
+      data: { correlationId, providerName },
+    };
+  }
+
+  return {
+    code: ErrorCode.InternalError,
+    message: correlationId ? `Upstream error (correlation: ${correlationId})` : 'Upstream error',
+    data: { correlationId, providerName },
+  };
+}
 
 export class MCPServer {
   private server: Server;
@@ -98,6 +161,23 @@ export class MCPServer {
     removedCount: number;
     patternCounts: Record<string, number>;
   };
+
+  /** Callback injected by HttpTransport to obtain a connected upstream MCP Client. HTTP-only. */
+  private getUpstreamClientFn:
+    | ((sessionId: string, provider: UpstreamMcpServerConfig, token: string | undefined) => Promise<Client>)
+    | null = null;
+
+  /** Prevents the stdio upstream_mcp misconfiguration warning from repeating on every request. */
+  private upstreamStdioWarnLogged = false;
+
+  /**
+   * Cache of sanitized+policy-filtered tool names per session and provider.
+   * Populated by handleUpstreamToolsList; consulted by handleToolCall to prevent
+   * tools dropped by sanitization (bad description/inputSchema) from being invoked
+   * directly via tools/call with a valid name (sanitization bypass, D-05).
+   * Outer key: sessionId, inner key: providerName.
+   */
+  private readonly sanitizedAndPolicyFilteredToolNames = new Map<string, Map<string, Set<string>>>();
 
   /**
    * Execute a tools/call request via the JSON-RPC handler.
@@ -655,6 +735,7 @@ export class MCPServer {
       resourceName: this.profile.resource_name || resourceMetadata.name || 'MCP Server',
       resourceDocumentation: this.profile.resource_documentation || resourceMetadata.documentation,
       parser: this.parser,
+      upstreamMcp: this.profile.upstream_mcp,
     };
   }
 
@@ -778,6 +859,16 @@ export class MCPServer {
     if (removed) {
       this.logger.info('Cleaned up session HTTP client', { profileId, sessionId });
     }
+    this.sanitizedAndPolicyFilteredToolNames.delete(sessionId);
+  }
+
+  /**
+   * Invalidate the sanitized-tool cache for one provider within a session.
+   * Called when upstream sends notifications/tools/list_changed so that the next
+   * tools/call falls through to the cold-cache path instead of blocking newly added tools.
+   */
+  public invalidateUpstreamToolCache(sessionId: string, providerName: string): void {
+    this.sanitizedAndPolicyFilteredToolNames.get(sessionId)?.delete(providerName);
   }
 
   /**
@@ -1317,6 +1408,7 @@ export class MCPServer {
       resourceName: profileContext.resourceName,
       resourceDocumentation: profileContext.resourceDocumentation,
       parser: profileContext.parser,
+      upstreamMcp: profileContext.upstreamMcp,
       globalFiltering: this.globalFiltering,
     };
 
@@ -1332,7 +1424,17 @@ export class MCPServer {
     this.httpClientFactory.setMetricsCollector(metricsCollector);
 
     this.recordGlobalToolFilterMetrics();
-    
+
+    // Wire upstream connection manager so upstream_mcp profiles can proxy tool calls.
+    // TODO(phase-3/auth-gate): upstream proxy is wired unconditionally here; once the client
+    // authentication gate (Phase 3) lands, this wiring must be guarded so that upstream
+    // resources are only reachable after inbound identity has been verified and attached to
+    // the session. See .planning/phases/03-client-authentication-gate/ for the design.
+    const upstreamManager = new UpstreamConnectionManager({ logger: this.logger });
+    this.httpTransport.setUpstreamConnectionManager(upstreamManager);
+    this.setGetUpstreamClient((s, p, t) => upstreamManager.getOrConnect(s, p, t));
+    upstreamManager.addToolsListChangedHook((s, p) => this.invalidateUpstreamToolCache(s, p));
+
     // Set message handler to process JSON-RPC messages
     this.httpTransport.setMessageHandler(async (message: unknown, sessionId?: string, profileId?: string) => {
       return await this.handleJsonRpcMessage(message, sessionId, profileId);
@@ -1352,6 +1454,16 @@ export class MCPServer {
     this.httpTransport = transport;
     const metricsCollector = this.httpTransport.getMetricsCollector?.() || null;
     this.httpClientFactory.setMetricsCollector(metricsCollector);
+  }
+
+  /**
+   * Inject the upstream MCP client factory callback.
+   * Called by runHttp() after wiring the UpstreamConnectionManager.
+   */
+  public setGetUpstreamClient(
+    fn: (sessionId: string, provider: UpstreamMcpServerConfig, token: string | undefined) => Promise<Client>,
+  ): void {
+    this.getUpstreamClientFn = fn;
   }
 
   public handleSessionDestroyed(profileId: string, sessionId: string): void {
@@ -1400,11 +1512,13 @@ export class MCPServer {
       this.applySessionToolFiltering(sessionId, profileId);
     }
 
+    const hasUpstream = !!(this.getUpstreamMcpConfig(profileId)?.length && this.getUpstreamClientFn);
+
     const result: {
       protocolVersion: string;
       serverInfo: { name: string; version: string };
       capabilities: {
-        tools: Record<string, never>;
+        tools: Record<string, unknown>;
         prompts: { listChanged: boolean };
         resources: { listChanged: boolean; subscribe: boolean };
         completions: Record<string, never>;
@@ -1417,7 +1531,7 @@ export class MCPServer {
         version: '0.1.0',
       },
       capabilities: {
-        tools: {},
+        tools: hasUpstream ? { listChanged: true } : {},
         prompts: {
           listChanged: false,
         },
@@ -1468,7 +1582,7 @@ export class MCPServer {
           jsonrpc: '2.0',
           id: req.id,
           error: {
-            code: -32001, // Application error
+            code: ErrorCode.InvalidRequest,
             message: 'Authentication required. Please authorize via OAuth.',
             data: {
               oauth_required: true,
@@ -1479,6 +1593,93 @@ export class MCPServer {
         };
         return errorResponse;
       }
+    }
+
+    // D-01: When upstream_mcp is set, forward call to upstream (after OAuth check, before local dispatch)
+    const upstreamMcpForCall = this.getUpstreamMcpConfig(profileId);
+    if (upstreamMcpForCall?.length && this.getUpstreamClientFn) {
+      // Runtime guard: params.name is cast to string above but a malformed request may send
+      // a non-string (e.g. 123). Detect early so downstream .slice() calls never throw.
+      // No metrics recorded here — no valid tool name to label the counter.
+      if (typeof toolName !== 'string') {
+        return {
+          jsonrpc: '2.0', id: req.id, error: {
+            code: -32002,
+            message: `Tool name must be a string, got: '${String(params.name).slice(0, 100)}'`,
+          },
+        };
+      }
+      // Apply X-Mcp4-Tools filter as a pure name predicate (upstream tools have no OpenAPI metadata).
+      // Uses matchesSessionFilterByName for consistency with the local-tools filter path.
+      if (sessionId && typeof this.httpTransport?.getSessionToolFilterRequest === 'function') {
+        const upstreamFilterRequest = this.httpTransport.getSessionToolFilterRequest(
+          profileId || this.getProfileIdValue(), sessionId
+        );
+        if (upstreamFilterRequest?.hasRules && !matchesSessionFilterByName(upstreamFilterRequest, toolName)) {
+          this.recordToolFilterRejection(toolName, 'session');
+          this.recordUpstreamReject(toolName, 'FilterRejection', metrics, startTime, metricsContext);
+          return { jsonrpc: '2.0', id: req.id, error: { code: -32002, message: `Tool '${toolName}' not allowed by X-Mcp4-Tools filter.` } };
+        }
+      }
+      // Apply enterprise policy - upstream tools don't have OpenAPI operations so default to 'modify'
+      if (!this.isToolCategoryAllowedByEnterprisePolicy('modify', sessionId, profileId)) {
+        const allowedCategories = this.getEnterpriseAllowedToolCategoriesForSession(sessionId, profileId);
+        this.recordUpstreamReject(toolName, 'PolicyRejection', metrics, startTime, metricsContext);
+        return {
+          jsonrpc: '2.0', id: req.id, error: {
+            code: -32002,
+            message: `Tool '${toolName}' not allowed by enterprise authorization policy. ` +
+              `Upstream tools require the 'modify' permission. ` +
+              `Allowed categories: ${Array.from(allowedCategories || []).join(', ')}.`,
+          },
+        };
+      }
+      // Validate tool name against the same sanitization policy as tools/list (D-05)
+      if (!isValidUpstreamToolName(toolName)) {
+        this.recordUpstreamReject(toolName, 'InvalidToolName', metrics, startTime, metricsContext);
+        return {
+          jsonrpc: '2.0', id: req.id, error: {
+            code: -32002,
+            message: `Tool name '${toolName.slice(0, 100)}' is not allowed - upstream tool names must match [a-zA-Z0-9_-] and be at most 255 characters.`,
+          },
+        };
+      }
+      // Apply profile-level upstream tool allow/deny policy
+      if (!isToolAllowedByProviderPolicy(toolName, upstreamMcpForCall[0].tools)) {
+        this.recordUpstreamReject(toolName, 'PolicyRejection', metrics, startTime, metricsContext);
+        return {
+          jsonrpc: '2.0', id: req.id, error: {
+            code: -32002,
+            message: `Tool '${toolName}' not allowed by upstream provider tool policy.`,
+          },
+        };
+      }
+      // Defense-in-depth: when the sanitized tool set cache is warm (tools/list was called
+      // earlier in this session), reject any tool that was dropped by sanitizeToolList.
+      // When the cache is absent (tools/call before tools/list), the gate is skipped — this
+      // is correct and safe: tools/call never returns description or inputSchema back to the
+      // caller, so a tool with a bad description/schema cannot inject content via this path.
+      // Injection risk exists only on the tools/list metadata display path, which is always
+      // sanitized. Name and policy checks above are the primary gates on the cold-cache path.
+      const sanitizedSet = sessionId
+        ? this.sanitizedAndPolicyFilteredToolNames.get(sessionId)?.get(upstreamMcpForCall[0].name)
+        : undefined;
+      if (sanitizedSet !== undefined && !sanitizedSet.has(toolName)) {
+        this.recordUpstreamReject(toolName, 'SanitizationRejection', metrics, startTime, metricsContext);
+        return {
+          jsonrpc: '2.0', id: req.id, error: {
+            code: -32002,
+            message: `Tool '${toolName.slice(0, 100)}' is not in the upstream sanitized tool set - it may have been removed by sanitization policy.`,
+          },
+        };
+      }
+      return this.handleUpstreamToolCall(
+        req,
+        sessionId,
+        profileId,
+        upstreamMcpForCall[0],
+        metrics ? { collector: metrics, startTime, context: metricsContext } : undefined,
+      );
     }
 
     let args: Record<string, unknown> = rawArgs;
@@ -1583,19 +1784,19 @@ export class MCPServer {
       const errorMessage = this.formatErrorForClient(error, correlationId);
       
       // Map error type to JSON-RPC error code
-      let errorCode = -32603; // Internal error (default)
+      let errorCode: number = ErrorCode.InternalError;
       if (error instanceof AuthenticationError) {
-        errorCode = -32001; // Authentication error
+        errorCode = ErrorCode.InvalidRequest;
       } else if (error instanceof AuthorizationError) {
-        errorCode = -32002; // Authorization error
+        errorCode = -32002; // Custom: authorization error
       } else if (error instanceof ValidationError) {
-        errorCode = -32602; // Invalid params
+        errorCode = ErrorCode.InvalidParams;
       } else if (error instanceof RateLimitError) {
-        errorCode = -32003; // Rate limit error
+        errorCode = -32003; // Custom: rate limit error
       } else if (error instanceof OperationNotFoundError) {
-        errorCode = -32601; // Method not found
+        errorCode = ErrorCode.MethodNotFound;
       } else if (error instanceof ResourceNotFoundError) {
-        errorCode = -32601; // Method not found
+        errorCode = ErrorCode.MethodNotFound;
       }
       
       return {
@@ -1605,6 +1806,211 @@ export class MCPServer {
           code: errorCode,
           message: errorMessage,
         },
+      };
+    }
+  }
+
+  /**
+   * Return upstream_mcp config for the given profileId.
+   * For HTTP transport, delegates to HttpTransport accessor.
+   * For stdio, reads profile directly and warns when upstream_mcp is configured
+   * but no upstream client is wired (upstream_mcp requires HTTP transport).
+   */
+  private getUpstreamMcpConfig(profileId?: string): UpstreamMcpServerConfig[] | undefined {
+    if (this.httpTransport && profileId) {
+      // In single-profile HTTP mode both paths should agree: runHttp() stores the profile under
+      // defaultProfileId and JSON-RPC dispatch resolves the same key. The fallback to
+      // this.profile?.upstream_mcp is a defensive safety net for any edge case where
+      // profileId normalization diverges (e.g. during startup races), keeping the common
+      // case fast and the error case auditable rather than silently broken.
+      return this.httpTransport.getUpstreamMcpConfig(profileId) ?? this.profile?.upstream_mcp;
+    }
+    // stdio path: upstream_mcp cannot be used without a wired client
+    if (!this.upstreamStdioWarnLogged && this.profile?.upstream_mcp?.length && !this.getUpstreamClientFn) {
+      this.upstreamStdioWarnLogged = true;
+      this.logger?.warn(
+        'upstream_mcp configured but no upstream client wired - upstream_mcp requires HTTP transport',
+        { profileId: profileId ?? this.profile?.profile_name },
+      );
+    }
+    return this.profile?.upstream_mcp;
+  }
+
+  /**
+   * Extract the auth token to use for upstream MCP calls.
+   * Downstream client token takes precedence; value_from_env acts as local fallback
+   * only for non-HTTP contexts (stdio) where there is no session concept.
+   *
+   * Security invariant: for HTTP transport, value_from_env (server-held upstream credential)
+   * is NEVER used — an HTTP session with no verified client token is an anonymous session
+   * (e.g. allowed by hasServerEnvAuthToken on the inbound side) and must not receive
+   * privileged upstream access. This closes the open-proxy escalation path regardless of
+   * whether inbound auth is configured.
+   */
+  private getUpstreamToken(sessionId: string | undefined, profileId: string | undefined, provider: UpstreamMcpServerConfig): string | undefined {
+    if (this.httpTransport && sessionId && profileId) {
+      const sessionToken = this.httpTransport.getSessionToken(profileId, sessionId);
+      if (sessionToken) return sessionToken;
+      // HTTP session carries no verified client token — refuse to forward server-held
+      // upstream credentials to an anonymous caller.
+      if (provider.auth?.value_from_env) {
+        throw new UpstreamConnectionError(
+          'upstream_mcp.auth.value_from_env requires an authenticated HTTP session — ' +
+          'the inbound caller must supply a verified identity token.',
+          provider.name,
+        );
+      }
+      return undefined;
+    }
+    // Non-HTTP path (stdio): no session concept; value_from_env allowed for service-account use.
+    if (provider.auth?.value_from_env) {
+      return process.env[provider.auth.value_from_env];
+    }
+    return undefined;
+  }
+
+  /**
+   * Forward tools/list to upstream MCP server and return sanitized tool list.
+   * Requires a session context (HTTP transport only).
+   */
+  private async handleUpstreamToolsList(
+    req: Record<string, unknown>,
+    sessionId: string | undefined,
+    profileId: string | undefined,
+    provider: UpstreamMcpServerConfig,
+  ): Promise<unknown> {
+    if (!sessionId) {
+      throw new UpstreamConnectionError(
+        'upstream_mcp requires a session context (HTTP transport only)',
+        provider.name,
+      );
+    }
+    if (provider.tool_prefix) {
+      this.logger.warn('upstream_mcp tool_prefix is configured but has no effect in the current version', {
+        provider: provider.name,
+        tool_prefix: provider.tool_prefix,
+      });
+    }
+    try {
+      const token = this.getUpstreamToken(sessionId, profileId, provider);
+      const client = await this.getUpstreamClientFn!(sessionId, provider, token);
+      const result = await client.listTools();
+      if (!result || typeof result !== 'object') {
+        throw new UpstreamMalformedResponseError(
+          provider.name,
+          `listTools returned non-object (got ${result === null ? 'null' : typeof result})`,
+        );
+      }
+      if (!Array.isArray(result.tools)) {
+        throw new UpstreamMalformedResponseError(
+          provider.name,
+          `tools field is not an array (got ${result.tools === null ? 'null' : typeof result.tools})`,
+        );
+      }
+      const rawTools = result.tools;
+      const sanitized = sanitizeToolList(rawTools, this.logger);
+      const policyFiltered = applyProviderToolPolicy(sanitized.tools, provider.tools);
+      // Cache sanitized+policy-filtered tool names for tools/call gate enforcement.
+      // Tools dropped here (bad description/inputSchema) must not be callable via tools/call.
+      // sessionId is always defined here: the method throws above when !sessionId.
+      let sessionCache = this.sanitizedAndPolicyFilteredToolNames.get(sessionId);
+      if (!sessionCache) {
+        sessionCache = new Map();
+        this.sanitizedAndPolicyFilteredToolNames.set(sessionId, sessionCache);
+      }
+      sessionCache.set(provider.name, new Set(policyFiltered.map(t => t.name)));
+      // Apply X-Mcp4-Tools filter as a pure name predicate against upstream-discovered tools.
+      // Uses matchesSessionFilterByName (same abstraction as the local-tools path) - no
+      // pre-computation or storage needed for upstream proxy profiles.
+      const effectiveProfileIdForFilter = profileId || this.getProfileIdValue();
+      const upstreamFilterRequest = typeof this.httpTransport?.getSessionToolFilterRequest === 'function'
+        ? this.httpTransport.getSessionToolFilterRequest(effectiveProfileIdForFilter, sessionId)
+        : undefined;
+      const nameFiltered = upstreamFilterRequest?.hasRules
+        ? policyFiltered.filter(t => matchesSessionFilterByName(upstreamFilterRequest, t.name))
+        : policyFiltered;
+      // Apply enterprise category policy - upstream tools default to 'modify' (no OpenAPI metadata)
+      const enterpriseFiltered = this.isToolCategoryAllowedByEnterprisePolicy('modify', sessionId, profileId)
+        ? nameFiltered
+        : [];
+      if (enterpriseFiltered.length === 0 && nameFiltered.length > 0) {
+        this.logger.warn(
+          "All upstream tools blocked by enterprise policy - upstream tools require the 'modify' permission",
+          { provider: provider.name, sessionId, blockedCount: nameFiltered.length },
+        );
+      }
+      return {
+        jsonrpc: '2.0',
+        id: (req as Record<string, unknown>).id,
+        result: { tools: enterpriseFiltered },
+      };
+    } catch (error) {
+      return {
+        jsonrpc: '2.0',
+        id: (req as Record<string, unknown>).id,
+        error: mapUpstreamErrorToMcpError(error, provider.name),
+      };
+    }
+  }
+
+  /**
+   * Forward tools/call to upstream MCP server.
+   * Forwards isError:true results as-is (tool-level errors are valid MCP results).
+   * Maps thrown exceptions to typed MCP error codes.
+   * Requires a session context (HTTP transport only).
+   */
+  private async handleUpstreamToolCall(
+    req: Record<string, unknown>,
+    sessionId: string | undefined,
+    profileId: string | undefined,
+    provider: UpstreamMcpServerConfig,
+    metricsBundle?: { collector: MetricsCollector; startTime: number; context: MetricsContextLabels },
+  ): Promise<unknown> {
+    if (!sessionId) {
+      throw new UpstreamConnectionError(
+        'upstream_mcp requires a session context (HTTP transport only)',
+        provider.name,
+      );
+    }
+    const params = req.params as Record<string, unknown>;
+    const toolName = params.name as string;
+    const args = (params.arguments as Record<string, unknown>) || {};
+
+    // Enforce name validation at the function boundary, not only at call sites.
+    // Guards against future call paths that skip the outer isValidUpstreamToolName() check.
+    if (!isValidUpstreamToolName(toolName)) {
+      throw new UpstreamConnectionError(
+        `Invalid tool name rejected by upstream proxy: '${String(toolName).slice(0, 100)}'`,
+        provider.name,
+      );
+    }
+
+    try {
+      const token = this.getUpstreamToken(sessionId, profileId, provider);
+      const client = await this.getUpstreamClientFn!(sessionId, provider, token);
+      const result = await (provider.timeout_ms !== undefined
+        ? client.callTool({ name: toolName, arguments: args }, undefined, { timeout: provider.timeout_ms })
+        : client.callTool({ name: toolName, arguments: args }));
+      if (metricsBundle) {
+        const durationSeconds = (Date.now() - metricsBundle.startTime) / 1000;
+        metricsBundle.collector.recordToolCall(toolName, 'success', durationSeconds, metricsBundle.context);
+      }
+      // Forward as-is including isError: true (tool-level errors are valid MCP responses)
+      return {
+        jsonrpc: '2.0',
+        id: (req as Record<string, unknown>).id,
+        result,
+      };
+    } catch (error) {
+      if (metricsBundle) {
+        const durationSeconds = (Date.now() - metricsBundle.startTime) / 1000;
+        metricsBundle.collector.recordToolCall(toolName, 'error', durationSeconds, metricsBundle.context);
+        metricsBundle.collector.recordToolCallError(toolName, this.getMetricsErrorType(error), metricsBundle.context);
+      }
+      return {
+        jsonrpc: '2.0',
+        id: (req as Record<string, unknown>).id,
+        error: mapUpstreamErrorToMcpError(error, provider.name),
       };
     }
   }
@@ -1751,12 +2157,23 @@ export class MCPServer {
     sessionId?: string,
     profileId?: string,
   ): boolean {
+    return this.isToolCategoryAllowedByEnterprisePolicy(this.getToolCategory(toolDef), sessionId, profileId);
+  }
+
+  /**
+   * Check whether a given tool category is allowed by the enterprise policy for the session.
+   * Used for both local tools (with a known ToolDefinition) and upstream tools (defaulted to 'modify').
+   */
+  private isToolCategoryAllowedByEnterprisePolicy(
+    category: Exclude<EnterpriseToolCategory, 'admin'>,
+    sessionId?: string,
+    profileId?: string,
+  ): boolean {
     const allowedCategories = this.getEnterpriseAllowedToolCategoriesForSession(sessionId, profileId);
     if (!allowedCategories || allowedCategories.size === 0) {
       return true;
     }
-
-    return allowedCategories.has(this.getToolCategory(toolDef));
+    return allowedCategories.has(category);
   }
 
   private getFilteringOperationInfo(
@@ -1786,7 +2203,7 @@ export class MCPServer {
           jsonrpc: '2.0',
           id: req.id,
           error: {
-            code: -32001, // Application error
+            code: ErrorCode.InvalidRequest,
             message: 'Authentication required. Please authorize via OAuth.',
             data: {
               oauth_required: true,
@@ -1801,6 +2218,12 @@ export class MCPServer {
 
     // Handle tools/list
     if (req.method === 'tools/list') {
+      // D-01: When upstream_mcp is set, return upstream tools (not local profile tools)
+      const upstreamMcpForList = this.getUpstreamMcpConfig(profileId);
+      if (upstreamMcpForList?.length && this.getUpstreamClientFn) {
+        return this.handleUpstreamToolsList(req, sessionId, profileId, upstreamMcpForList[0]);
+      }
+
       const sessionFilter = this.getToolFilterForSession(sessionId, profileId);
       const allowedSet = sessionFilter?.allowedToolNames;
       const tools = this.profile?.tools
@@ -2374,11 +2797,25 @@ export class MCPServer {
     }
 
     const originalCount = this.profile.tools.length;
+
+    // For upstream proxy profiles (tools[] is empty, upstream_mcp configured):
+    // - Category rules require OpenAPI metadata unavailable for upstream tools - reject at init.
+    // - Exact/regex rules are pure name predicates; evaluated inline at tools/list and tools/call.
+    if (originalCount === 0 && this.getUpstreamMcpConfig(profileId)?.length) {
+      if (request.allowCategories.size > 0) {
+        throw new ValidationError(
+          '_allow_list/_allow_read not supported for upstream proxy profiles. Use exact names or regex patterns instead.'
+        );
+      }
+      // No pre-computation needed - predicate evaluated inline at tools/list and tools/call time.
+      return;
+    }
+
     const resolver = this.buildToolFilterResolver();
     const sessionFilter = applySessionToolFilter(this.profile.tools, request, resolver);
     const allowedCount = sessionFilter.allowedToolNames.size;
 
-    if (allowedCount === originalCount) {
+    if (originalCount > 0 && allowedCount === originalCount) {
       throw new ValidationError(
         `X-Mcp4-Tools filter has no effect for this session. Available tools: ${originalCount}, after filter: ${allowedCount}. Check patterns.`
       );
@@ -2521,6 +2958,21 @@ export class MCPServer {
       return;
     }
     this.httpTransport.recordToolFilterRejection(toolName, source);
+  }
+
+  private recordUpstreamReject(
+    toolName: string,
+    errorType: 'FilterRejection' | 'PolicyRejection' | 'InvalidToolName' | 'SanitizationRejection',
+    metrics: MetricsCollector | null,
+    startTime: number,
+    metricsContext: MetricsContextLabels,
+  ): void {
+    if (!metrics) return;
+    // Truncate before use as Prometheus label to bound cardinality.
+    const safeToolName = toolName.slice(0, 64);
+    const durationSeconds = (Date.now() - startTime) / 1000;
+    metrics.recordToolCall(safeToolName, 'error', durationSeconds, metricsContext);
+    metrics.recordToolCallError(safeToolName, errorType, metricsContext);
   }
 
   /**

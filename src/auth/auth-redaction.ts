@@ -1,16 +1,26 @@
-const SECRET_FIELD_NAMES = new Set([
+export const SECRET_FIELD_NAMES = new Set([
   'assertion',
   'subject_token',
   'access_token',
   'refresh_token',
   'authorization',
+  'upstream_token',
+  'upstream_credentials',
+  'x-api-key',
+  'x_api_key',
+  'api_key',
+  'id_token',
+  'client_secret',
+  'client_assertion',
+  'code',
+  'code_verifier',
 ]);
 
 function looksLikeJwt(value: string): boolean {
   return value.split('.').length === 3 && value.length > 24;
 }
 
-function redactString(value: string): string {
+export function redactString(value: string): string {
   if (looksLikeJwt(value)) {
     return '[REDACTED_JWT]';
   }
@@ -50,5 +60,9 @@ export function redactAuthPayload<T>(value: T): T {
 }
 
 export function sanitizeAuthErrorMessage(message: string): string {
-  return message.replace(/[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g, '[REDACTED_JWT]');
+  return message
+    .replace(/[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g, '[REDACTED_JWT]')
+    .replace(/(Bearer)\s+(\S{20,})/gi, (_, prefix: string, token: string) => {
+      return `${prefix} [REDACTED]...${token.slice(-4)}`;
+    });
 }

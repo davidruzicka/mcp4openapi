@@ -338,7 +338,10 @@ export const upstreamMcpServerConfigSchema = z.object({
     auth: upstreamMcpAuthConfigSchema.optional(),
     tool_prefix: z.string().optional(),
     tools: upstreamMcpToolPolicySchema.optional(),
-    timeout_ms: z.number().optional()
+    timeout_ms: z.number().optional(),
+    validation_endpoint: z.string().optional(),
+    validation_method: z.union([z.literal("HEAD"), z.literal("GET")]).optional(),
+    validation_timeout_ms: z.number().optional()
 });
 
 export const profileSchema = z.object({

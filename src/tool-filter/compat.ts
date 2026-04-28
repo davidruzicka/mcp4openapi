@@ -59,11 +59,24 @@ export function parseSessionToolFilterHeader(headerValue: string): SessionToolFi
 }
 
 /**
+ * Evaluate whether a single tool name passes the session filter name predicate.
+ * For upstream proxy tools (no OpenAPI metadata); category rules must be rejected
+ * at session init (applySessionToolFiltering) before this function is ever called.
+ */
+export function matchesSessionFilterByName(
+  request: SessionToolFilterRequest,
+  name: string,
+): boolean {
+  return request.exactNames.has(name) ||
+    request.regexPatterns.some(p => p.test(name));
+}
+
+/**
  * Apply session tool filter
- * 
+ *
  * Legacy function for backward compatibility.
  * New code should use SessionToolFilter class directly.
- * 
+ *
  * @param tools - Tools to filter
  * @param request - Filter request from header
  * @param resolver - Operation resolver (optional, for legacy compatibility)

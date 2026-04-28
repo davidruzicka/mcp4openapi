@@ -8,6 +8,7 @@ import { MCPServer } from './mcp-server.js';
 import type { HttpProfileContext } from '../types/http-transport.js';
 import type { HttpTransport } from '../transport/http-transport.js';
 import { ProfileRegistry } from '../profile/profile-registry.js';
+import { UpstreamConnectionManager } from '../upstream/upstream-connection-manager.js';
 
 export class MCPServerManager {
   private registry: ProfileRegistry;
@@ -15,6 +16,7 @@ export class MCPServerManager {
   private httpTransport?: HttpTransport;
   private globalFiltering?: FilteringRules;
   private servers = new Map<string, Promise<MCPServer>>();
+  private upstreamManager: UpstreamConnectionManager;
 
   constructor(
     registry: ProfileRegistry,
@@ -26,6 +28,20 @@ export class MCPServerManager {
     this.logger = logger;
     this.httpTransport = httpTransport;
     this.globalFiltering = globalFiltering;
+    this.upstreamManager = new UpstreamConnectionManager({ logger });
+    if (httpTransport) {
+      httpTransport.setUpstreamConnectionManager(this.upstreamManager);
+      // Self-register cleanup so the manager works correctly when used outside
+      // the index.ts bootstrap (e.g. direct MCPServerManager + attachHttpTransport usage).
+      httpTransport.onSessionDestroyed(async (profileId, sessionId) => {
+        try {
+          const server = await this.getServer(profileId);
+          server.handleSessionDestroyed(profileId, sessionId);
+        } catch (error) {
+          this.logger.error('Session cleanup failed', error as Error, { profileId, sessionId });
+        }
+      });
+    }
   }
 
   getDefaultProfileId(): string | undefined {
@@ -56,6 +72,8 @@ export class MCPServerManager {
     if (this.httpTransport) {
       server.attachHttpTransport(this.httpTransport);
     }
+    server.setGetUpstreamClient((s, p, t) => this.upstreamManager.getOrConnect(s, p, t));
+    this.upstreamManager.addToolsListChangedHook((s, p) => server.invalidateUpstreamToolCache(s, p));
     return server;
   }
 }

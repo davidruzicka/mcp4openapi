@@ -6,7 +6,7 @@ import type {
   UpstreamMcpServerConfig,
   UpstreamMcpToolPolicy,
 } from '../types/profile.js';
-import { isSafePropertyName, isUri } from '../validation/validation-utils.js';
+import { isSafePropertyName, isUri, isValidHttpHeaderName } from '../validation/validation-utils.js';
 
 type EnvSource = NodeJS.ProcessEnv;
 
@@ -123,10 +123,16 @@ function validateUpstreamAuth(auth: UpstreamMcpAuthConfig | undefined, path: str
       throw new ValidationError(`${path}.header_name is required for custom-header auth`, { path: `${path}.header_name` });
     }
     if (!isSafePropertyName(auth.header_name)) {
-      throw new ValidationError(`${path}.header_name contains invalid header name '${auth.header_name}'`, {
+      throw new ValidationError(`${path}.header_name contains invalid header name ${JSON.stringify(auth.header_name)}`, {
         path: `${path}.header_name`,
         headerName: auth.header_name,
       });
+    }
+    if (!isValidHttpHeaderName(auth.header_name)) {
+      throw new ValidationError(
+        `${path}.header_name must be a valid HTTP header field-name (RFC7230 token); got ${JSON.stringify(auth.header_name)}`,
+        { path: `${path}.header_name`, headerName: auth.header_name },
+      );
     }
   }
 
@@ -184,6 +190,17 @@ function validateUpstreamProvider(provider: UpstreamMcpServerConfig, index: numb
     throw new ValidationError(`${path}.timeout_ms must be a positive integer`, {
       path: `${path}.timeout_ms`,
       value: provider.timeout_ms,
+    });
+  }
+
+  if (provider.validation_endpoint !== undefined) {
+    validateUpstreamUrl(provider.validation_endpoint, `${path}.validation_endpoint`);
+  }
+
+  if (provider.validation_timeout_ms !== undefined && (!Number.isInteger(provider.validation_timeout_ms) || provider.validation_timeout_ms <= 0)) {
+    throw new ValidationError(`${path}.validation_timeout_ms must be a positive integer`, {
+      path: `${path}.validation_timeout_ms`,
+      value: provider.validation_timeout_ms,
     });
   }
 

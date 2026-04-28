@@ -2726,14 +2726,7 @@ describe('ProfileLoader', () => {
         tmpPath,
         JSON.stringify({
           profile_name: 'upstream-static',
-          tools: [
-            {
-              name: 'tool_a',
-              description: 'Tool A',
-              operations: { list: 'listItems' },
-              parameters: {},
-            },
-          ],
+          tools: [],
           upstream_mcp: [
             {
               name: 'remote-mcp',
@@ -2803,14 +2796,7 @@ describe('ProfileLoader', () => {
         tmpPath,
         JSON.stringify({
           profile_name: 'upstream-env',
-          tools: [
-            {
-              name: 'tool_a',
-              description: 'Tool A',
-              operations: { list: 'listItems' },
-              parameters: {},
-            },
-          ],
+          tools: [],
           upstream_mcp_from_env: 'MCP4_UPSTREAM_MCP_JSON',
           upstream_mcp: [
             {
@@ -3198,7 +3184,7 @@ describe('ProfileLoader', () => {
         tmpPath,
         JSON.stringify({
           profile_name: 'upstream-no-auth',
-          tools: [{ name: 'tool_a', description: 'Tool A', operations: { list: 'listItems' }, parameters: {} }],
+          tools: [],
           upstream_mcp: [
             {
               name: 'no-auth-mcp',
@@ -3257,6 +3243,125 @@ paths:
       await parser.load(specPath);
 
       await expect(loader.load(profilePath, parser)).rejects.toThrow("Operation 'missingOperation' in tool 'missing_operation' not found in OpenAPI spec");
+    });
+  });
+
+  describe('upstream_mcp and tools mutual exclusivity (D-02)', () => {
+    it('rejects profile with both upstream_mcp and non-empty tools[]', async () => {
+      const loader = new ProfileLoader();
+      const fs = await import('fs/promises');
+      const tmpPath = `/tmp/profile-mutex-both-${Date.now()}-${Math.random()}.json`;
+      await fs.writeFile(
+        tmpPath,
+        JSON.stringify({
+          profile_name: 'mutex-test',
+          upstream_mcp: [
+            {
+              name: 'test-upstream',
+              transport: { type: 'http-streamable', url: 'https://example.com/mcp' },
+            },
+          ],
+          tools: [
+            {
+              name: 'test_tool',
+              description: 'A tool',
+              parameters: {},
+              operations: { execute: 'op' },
+            },
+          ],
+        }),
+        'utf-8'
+      );
+
+      await expect(loader.load(tmpPath)).rejects.toThrow('mutually exclusive');
+    });
+
+    it('loads profile with upstream_mcp and empty tools[] (no conflict)', async () => {
+      const loader = new ProfileLoader();
+      const fs = await import('fs/promises');
+      const tmpPath = `/tmp/profile-mutex-upstream-only-${Date.now()}-${Math.random()}.json`;
+      await fs.writeFile(
+        tmpPath,
+        JSON.stringify({
+          profile_name: 'upstream-only',
+          upstream_mcp: [
+            {
+              name: 'test-upstream',
+              transport: { type: 'http-streamable', url: 'https://example.com/mcp' },
+            },
+          ],
+          tools: [],
+        }),
+        'utf-8'
+      );
+
+      await expect(loader.load(tmpPath)).resolves.toBeDefined();
+    });
+
+    it('loads profile with tools[] and no upstream_mcp', async () => {
+      const loader = new ProfileLoader();
+      const fs = await import('fs/promises');
+      const tmpPath = `/tmp/profile-mutex-tools-only-${Date.now()}-${Math.random()}.json`;
+      await fs.writeFile(
+        tmpPath,
+        JSON.stringify({
+          profile_name: 'tools-only',
+          tools: [
+            {
+              name: 'test_tool',
+              description: 'A tool',
+              parameters: {},
+              operations: { execute: 'op' },
+            },
+          ],
+        }),
+        'utf-8'
+      );
+
+      await expect(loader.load(tmpPath)).resolves.toBeDefined();
+    });
+  });
+
+  describe('upstream_mcp single-provider constraint (D-03)', () => {
+    const makeUpstreamProvider = (name: string) => ({
+      name,
+      transport: { type: 'http-streamable', url: 'https://upstream.example.com/mcp' },
+      auth: { type: 'bearer', value_from_env: 'TOKEN' },
+    });
+
+    it('rejects upstream_mcp with more than one provider', async () => {
+      const loader = new ProfileLoader();
+      const fs = await import('fs/promises');
+      const tmpPath = `/tmp/profile-upstream-multi-${Date.now()}-${Math.random()}.json`;
+      await fs.writeFile(
+        tmpPath,
+        JSON.stringify({
+          profile_name: 'multi-upstream',
+          tools: [],
+          upstream_mcp: [makeUpstreamProvider('provider-a'), makeUpstreamProvider('provider-b')],
+        }),
+        'utf-8'
+      );
+
+      await expect(loader.load(tmpPath)).rejects.toThrow('upstream_mcp supports exactly one upstream provider');
+    });
+
+    it('loads profile with exactly one upstream_mcp provider', async () => {
+      const loader = new ProfileLoader();
+      const fs = await import('fs/promises');
+      const tmpPath = `/tmp/profile-upstream-single-${Date.now()}-${Math.random()}.json`;
+      await fs.writeFile(
+        tmpPath,
+        JSON.stringify({
+          profile_name: 'single-upstream',
+          tools: [],
+          upstream_mcp: [makeUpstreamProvider('provider-a')],
+        }),
+        'utf-8'
+      );
+
+      const profile = await loader.load(tmpPath);
+      expect(profile.upstream_mcp).toHaveLength(1);
     });
   });
 });

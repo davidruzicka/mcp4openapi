@@ -6,6 +6,8 @@
 
 ## Contents
 
+- [P3: Optional](#p3-optional)
+  - [17. Eager SSRF validation for SasankaApiKeyStore at profile load](#17-eager-ssrf-validation-for-sasankaapikeystore-at-profile-load)
 - [P2: Nice-to-Have](#p2-nice-to-have)
   - [2. Export Profile Command](#2-export-profile-command)
   - [3. OpenAPI Operation Filter for Default Profile](#3-openapi-operation-filter-for-default-profile)
@@ -343,3 +345,32 @@ export DEFAULT_PROFILE_EXCLUDE_TAGS="admin,system"
 - optional new module(s): `src/transport/tenant-session-service.ts`
 
 **Estimated effort**: 3-5 hours
+
+---
+
+## P3: Optional
+
+### 17. Eager SSRF validation for SasankaApiKeyStore at profile load
+
+**Background**: Phase 3 (`SasankaApiKeyStore`) defers full SSRF validation (private IP range checks via `SSRFValidator`) to the first `validate()` call at session init time. Only the `https:` protocol check is enforced at profile load. A misconfigured `base_url` pointing at a private address (e.g., `https://10.0.0.5/`) passes profile loading and only fails on the first real client session.
+
+**Goal**: Fail at profile load rather than at first session. Move the `SSRFValidator.validate()` call into `ClientAuthGate` construction (or a dedicated `async init()` method called from `getProfileState()`).
+
+**Benefits**:
+- **Fail-fast**: misconfigured `base_url` is caught during server startup or profile reload, not under real user load.
+- **Operator clarity**: the error surfaces in startup logs with a clear message, not buried in a session-init 401.
+- **Consistent with `JwksCache`**: `JwksCache` validates SSRF on every JWKS refresh; eager validation for Sasanka aligns the two auth paths.
+- **No runtime overhead**: SSRF check runs once at construction, not per session.
+
+**Implementation approach**:
+- Add `async init(): Promise<void>` to `ClientAuthGate` that calls `ssrfValidator.validate(base_url)` on the `SasankaApiKeyStore` if configured.
+- In `getProfileState()` (http-transport.ts), call `await state.clientAuthGate.init()` after construction.
+
+**Trade-off**: adds an async step to profile state initialization (first request for a profile, or server startup). Low overhead since it is a single DNS+TCP probe. The simpler current approach (lazy-with-flag) is acceptable for most deployments.
+
+**Files to modify**:
+- `src/auth/client-auth-gate.ts` - add `async init()` method
+- `src/auth/sasanka-api-key-store.ts` - expose `validateSsrf(): Promise<void>`
+- `src/transport/http-transport.ts::getProfileState()` - await `clientAuthGate.init()`
+
+**Estimated effort**: 1-2 hours
