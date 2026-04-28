@@ -68,8 +68,8 @@ describe('profile index helpers', () => {
     expect(vscode?.content).toContain('"Authorization": "Bearer ${input:gitlab-token}"');
     expect(cursor?.content).toContain('"type": "http"');
     expect(cursor?.content).toContain('"url": "__PROFILE_URL__"');
-    expect(cursor?.content).toContain('"Authorization": "Bearer ${GITLAB_TOKEN}"');
-    expect(cursor?.content).toContain('"GITLAB_TOKEN": "${env:GITLAB_TOKEN}"');
+    expect(cursor?.content).toContain('"Authorization": "Bearer ${env:GITLAB_TOKEN}"');
+    expect(cursor?.content).not.toContain('"env": {');
     expect(cursor?.content).not.toContain('"mcp-remote"');
     expect(jetbrains?.content).toContain('"requestInit"');
     expect(jetbrains?.content).toContain('"Authorization": "Bearer ${input:gitlab-token}"');
@@ -237,9 +237,9 @@ describe('profile index helpers', () => {
     expect(profile.mcpUrl).toBe('http://localhost:3003/profile/youtrack/mcp');
     expect(vscode?.content).toContain('"url": "__PROFILE_URL__?api_key=${input:yt-token}"');
     expect(vscode?.content).not.toContain('"headers"');
-    expect(cursor?.content).toContain('"url": "__PROFILE_URL__?api_key=${YT_TOKEN}"');
+    expect(cursor?.content).toContain('"url": "__PROFILE_URL__?api_key=${env:YT_TOKEN}"');
     expect(cursor?.content).not.toContain('"mcp-remote"');
-    expect(cursor?.content).toContain('"YT_TOKEN": "${env:YT_TOKEN}"');
+    expect(cursor?.content).not.toContain('"env": {');
     expect(jetbrains?.content).toContain('"url": "__PROFILE_URL__?api_key=${input:yt-token}"');
     expect(claudeJson?.content).toContain('"url": "__PROFILE_URL__?api_key=${YT_TOKEN}"');
     expect(claudeCli?.content).toContain('__PROFILE_URL__?api_key=\\${YT_TOKEN}');
