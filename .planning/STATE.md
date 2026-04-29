@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: Ready to execute
-stopped_at: Completed 03-02-PLAN.md
-last_updated: "2026-04-29T13:13:33.577Z"
+status: Phase complete — ready for verification
+stopped_at: Completed 03-03-PLAN.md
+last_updated: "2026-04-29T13:29:46.148Z"
 progress:
   total_phases: 5
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 11
-  completed_plans: 10
+  completed_plans: 11
 ---
 
 # Project State
@@ -56,6 +56,7 @@ Plan: 3 of 3
 | Phase 02-tool-discovery-and-call-proxy P03 | 12min | 2 tasks | 5 files |
 | Phase 03-client-authentication-gate P01 | 5min | 3 tasks | 9 files |
 | Phase 03-client-authentication-gate P02 | 6min | 3 tasks | 5 files |
+| Phase 03-client-authentication-gate P03 | 10min | 3 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -87,6 +88,10 @@ Recent decisions affecting current work:
 - [Phase 03-client-authentication-gate]: Per-instance random HMAC secret used purely as a length-normalization device (not an authenticator); HMAC-SHA256 always emits 32 bytes so timingSafeEqual is invoked on equal-length buffers regardless of raw key lengths
 - [Phase 03-client-authentication-gate]: createApiKeyStore uses direct if-branch on config.type (not registry table) so Phase 4's union widening with 'sasanka' triggers a TS exhaustiveness error at the extension site — type-system-enforced safety a Record<string,Creator> registry cannot provide. Logger param retained on factory for Phase 4 SasankaApiKeyStore additivity.
 - [Phase 03-client-authentication-gate]: Test ESM-namespace mocking pattern adopted: vi.mock + vi.hoisted wrapper that delegates to vi.importActual is the canonical pattern in this codebase for asserting on calls into Node built-ins (node:crypto etc.) since vi.spyOn fails on ESM namespace exports with 'Cannot redefine property'
+- [Phase 03-client-authentication-gate]: [Phase 03-03]: Gate placement after enterprise auth, before authConfigs token-required guard, with !gate bypass prefix on the legacy guard so mode='optional' can allow anonymous sessions on profiles with authConfigs configured
+- [Phase 03-client-authentication-gate]: [Phase 03-03]: ALL client auth gate exceptions map to HTTP 401 (not 500); warn log records errorType to distinguish ClientAuthGateError from unknown errors without leaking validator internals to clients
+- [Phase 03-client-authentication-gate]: [Phase 03-03]: Phase 4 deferral pinned by source-text guard test (no jose/jwks-cache imports or runtime calls); test will start failing intentionally when Phase 4 lands the JWT path, signaling the deferral guard has been lifted
+- [Phase 03-client-authentication-gate]: [Phase 03-03]: ClientAuthGate constructed once per profile in getProfileState() (not per-request) so the underlying InlineApiKeyStore HMAC secret persists for constant-time comparison; gate lifecycle ties to ProfileRuntimeState
 
 ### Pending Todos
 
@@ -100,6 +105,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-04-29T13:13:33.575Z
-Stopped at: Completed 03-02-PLAN.md
+Last session: 2026-04-29T13:26:45.700Z
+Stopped at: Completed 03-03-PLAN.md
 Resume file: None
