@@ -83,6 +83,9 @@
     "enterprise_authorization": {
       "$ref": "#/definitions/EnterpriseAuthorizationConfig"
     },
+    "client_auth_gate": {
+      "$ref": "#/definitions/ClientAuthGateConfig"
+    },
     "upstream_mcp": {
       "type": "array",
       "items": {
@@ -113,7 +116,6 @@
     "profile_name",
     "tools"
   ],
-  "description": "Configuration schema for MCP from OpenAPI tool profiles",
   "definitions": {
     "Tool": {
       "type": "object",
@@ -1419,14 +1421,14 @@
           ]
         },
         "overrides": {
-          "$ref": "#/definitions/Record%3Cstring%2Cstructure-1535101595-21073-21109-1535101595-21058-21110-1535101595-21044-21111-1535101595-20973-21113-1535101595-0-21253%3E"
+          "$ref": "#/definitions/Record%3Cstring%2Cstructure-1535101595-22780-22816-1535101595-22765-22817-1535101595-22751-22818-1535101595-22680-22820-1535101595-0-22960%3E"
         }
       },
       "required": [
         "max_requests_per_minute"
       ]
     },
-    "Record<string,structure-1535101595-21073-21109-1535101595-21058-21110-1535101595-21044-21111-1535101595-20973-21113-1535101595-0-21253>": {
+    "Record<string,structure-1535101595-22780-22816-1535101595-22765-22817-1535101595-22751-22818-1535101595-22680-22820-1535101595-0-22960>": {
       "type": "object",
       "additionalProperties": {
         "type": "object",
@@ -1751,6 +1753,73 @@
         ]
       }
     },
+    "ClientAuthGateConfig": {
+      "type": "object",
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": [
+            "required",
+            "optional"
+          ],
+          "description": "'required' (default): reject session if no valid identity resolved. 'optional': allow anonymous sessions."
+        },
+        "mode_from_env": {
+          "type": "string",
+          "description": "Resolve mode from env var."
+        },
+        "api_keys": {
+          "$ref": "#/definitions/ApiKeyStoreConfig",
+          "description": "API key store config. Phase 4 adds jwt?: ClientAuthJwtConfig."
+        }
+      },
+      "description": "Client authentication gate configuration.\n\nDefines how the gateway authenticates inbound MCP clients before any tool call is processed. Phase 3 supports API keys only; Phase 4 adds an OIDC JWT gate via a future `jwt?: ClientAuthJwtConfig` field on this interface."
+    },
+    "ApiKeyStoreConfig": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "inline"
+        },
+        "keys": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/InlineApiKeyEntry"
+          }
+        }
+      },
+      "required": [
+        "type",
+        "keys"
+      ],
+      "description": "Backing store for client API keys.\n\nPhase 3 supports only `'inline'` — keys defined directly on the profile and resolved from env vars. Phase 4 will extend the union to include `{ type: 'sasanka'; ... }` for the centralized key service."
+    },
+    "InlineApiKeyEntry": {
+      "type": "object",
+      "properties": {
+        "key_from_env": {
+          "type": "string",
+          "description": "Env var name containing the raw API key value."
+        },
+        "subject": {
+          "type": "string",
+          "description": "Subject identifier for this key (mapped to AuthorizedPrincipal.subject)."
+        },
+        "scopes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Optional scopes granted to this key."
+        }
+      },
+      "required": [
+        "key_from_env",
+        "subject"
+      ],
+      "description": "Inline API key entry for the client auth gate.\n\nUsed by `ApiKeyStoreConfig` of type `'inline'`. Each entry references an environment variable that holds the raw API key value (so secrets stay out of profile JSON) and maps that key to a stable subject identity."
+    },
     "UpstreamMcpServerConfig": {
       "type": "object",
       "properties": {
@@ -1862,6 +1931,20 @@
             "type": "string"
           }
         }
+      }
+    },
+    "Record<string,structure-1535101595-21073-21109-1535101595-21058-21110-1535101595-21044-21111-1535101595-20973-21113-1535101595-0-21253>": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "max_requests_per_minute": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "max_requests_per_minute"
+        ]
       }
     },
     "Record<string,structure-1535101595-20918-20954-1535101595-20903-20955-1535101595-20889-20956-1535101595-20818-20958-1535101595-0-21098>": {
@@ -2036,6 +2119,7 @@
       "type": "object"
     }
   },
+  "description": "Configuration schema for MCP from OpenAPI tool profiles",
   "$id": "https://github.com/davidruzicka/mcp4openapi/profile-schema.json",
   "title": "MCP Profile"
 }

@@ -35,12 +35,16 @@ import { EnterpriseAuthProvider } from '../auth/enterprise-auth-provider.js';
 import { InboundAuthTokenStore } from '../auth/inbound-auth-token-store.js';
 import { EnterpriseReplayStore } from '../auth/enterprise-replay-store.js';
 import { JwksCache } from '../auth/jwks-cache.js';
+import { ClientAuthGate } from '../auth/client-auth-gate.js';
+import type { AuthorizedPrincipal } from '../auth/inbound-auth-principal.js';
+import { ClientAuthGateError } from '../core/errors.js';
 import { buildAuthorizationServerMetadata, buildProtectedResourceMetadata } from '../auth/enterprise-metadata.js';
 import { mapAuthError } from '../auth/auth-error-mapper.js';
 import { redactAuthPayload } from '../auth/auth-redaction.js';
 import { OAuthGrantRouter } from './oauth-grant-router.js';
 import { SSRFValidator } from '../security/ssrf-validator.js';
 import type { AuthInterceptor, OAuthConfig, UpstreamMcpServerConfig } from '../types/profile.js';
+import { resolveClientAuthGateConfig } from '../profile/client-auth-gate-validator.js';
 import {
   DEFAULT_ALLOWED_REDIRECT_HOSTS,
   HTTP_STATUS,
@@ -92,6 +96,12 @@ interface ProfileRuntimeState {
   context: HttpProfileContext;
   oauthProvider: ExternalOAuthProvider | null;
   enterpriseAuthProvider: EnterpriseAuthProvider | null;
+  /**
+   * Inbound client auth gate (Phase 3: API key path only). Constructed lazily
+   * inside `getProfileState()` from `context.client_auth_gate`. Phase 4 will
+   * widen this gate to cover JWT validation; the field stays the same.
+   */
+  clientAuthGate?: ClientAuthGate;
   toolFilterService?: ToolFilterService;
   oauthTokensByAccessToken: Map<string, { refreshToken?: string; expiresAt?: number; clientId: string; scopes: string[] }>;
   sessions: Map<string, SessionData>;
@@ -439,6 +449,7 @@ export class HttpTransport {
       resourceDocumentation: this.config.resourceDocumentation,
       parser: this.config.parser,
       upstreamMcp: this.config.upstreamMcp,
+      client_auth_gate: this.config.client_auth_gate,
     };
   }
 
@@ -511,6 +522,24 @@ export class HttpTransport {
 
     if (tenantIndex.enabled) {
       this.logger.info('HTTP tenant configuration enabled', { profileId, tenantCount: tenantIndex.byTenantId.size });
+    }
+
+    // Construct the client auth gate when the profile context carries config.
+    // No JwksCache injection in Phase 3 — the API key path does not need it.
+    // Phase 4 will pass `this.enterpriseJwksCache` (or a dedicated cache) here
+    // when the JWT path lands.
+    if (context.client_auth_gate) {
+      // Normalize config before construction: resolves mode_from_env, validates
+      // api_keys env vars. In the profile-loader path this is a no-op (validator
+      // already ran at load time and mode is a literal string). For direct
+      // HttpTransport construction the call provides the same fail-fast guarantees.
+      const gateConfig = resolveClientAuthGateConfig(context.client_auth_gate);
+      state.clientAuthGate = new ClientAuthGate(profileId, gateConfig, this.logger);
+      this.logger.info('Client auth gate initialized', {
+        profileId,
+        mode: gateConfig.mode,
+        hasApiKeys: !!gateConfig.api_keys,
+      });
     }
 
     this.profileStates.set(profileId, state);
@@ -2741,9 +2770,41 @@ export class HttpTransport {
             }
           }
 
-          // Require a client token only when auth is configured and server env fallback is unavailable
+          // CLIENT AUTH GATE (AUTH-02, AUTH-03 partial — Phase 3)
+          //
+          // Runs AFTER the enterprise auth check (so enterprise tokens still
+          // gate first when configured) and BEFORE the authConfigs token guard
+          // below. Placement matters: when mode='optional' the gate must be
+          // able to allow anonymous sessions even if authConfigs are present
+          // (the gate is the inbound auth authority once configured), so we
+          // also bypass that downstream guard when the gate is present.
+          let resolvedClientPrincipal: AuthorizedPrincipal | undefined;
+          if (profileState.clientAuthGate) {
+            try {
+              const gatePrincipal = await profileState.clientAuthGate.validate(authInfo.token);
+              resolvedClientPrincipal = gatePrincipal ?? undefined;
+            } catch (err) {
+              // ALL gate exceptions map to 401 to avoid leaking validator
+              // internals (e.g., upstream Sasanka HTTP body) to clients.
+              const isClientAuthGateError = err instanceof ClientAuthGateError;
+              this.logger.warn('Client auth gate rejected session init', {
+                profileId: requestProfileId,
+                error: err instanceof Error ? err.message : String(err),
+                errorType: isClientAuthGateError ? 'ClientAuthGateError' : 'unknown',
+              });
+              res.status(HTTP_STATUS.UNAUTHORIZED).json({
+                error: 'Unauthorized',
+                message: 'Client authentication failed',
+              });
+              return;
+            }
+          }
+
+          // Require a client token only when auth is configured and server env fallback is unavailable.
+          // Skip this guard when the client auth gate is configured — the gate is the inbound auth authority,
+          // and mode='optional' must be able to allow anonymous sessions independently of authConfigs.
           const authConfigs = effectiveAuthContext.authConfigs;
-          if (authConfigs.length > 0 && !authInfo.token && !this.hasServerEnvAuthToken(authConfigs)) {
+          if (!profileState.clientAuthGate && authConfigs.length > 0 && !authInfo.token && !this.hasServerEnvAuthToken(authConfigs)) {
             this.logger.debug('Auth configured but no token provided, rejecting initialization', {
               profileId: requestProfileId,
               authConfigsCount: authConfigs.length
@@ -2756,7 +2817,7 @@ export class HttpTransport {
           }
 
           // Validate token if auth is configured and token is provided
-          if (authInfo && authInfo.token && !internalToken && authConfigs.length > 0 && (resolvedTenant?.tenantBaseUrl || profileState.context.baseUrl)) {
+          if (!profileState.clientAuthGate && authInfo && authInfo.token && !internalToken && authConfigs.length > 0 && (resolvedTenant?.tenantBaseUrl || profileState.context.baseUrl)) {
             // Find matching auth config based on priority (authConfigs is sorted)
             // For 'bearer' token type, 'oauth' config is also a match
             const authConfig = authConfigs.find(c =>
@@ -2882,7 +2943,8 @@ export class HttpTransport {
             parsedToolFilter,
             normalizedToolFilterHeader,
             resolvedTenant,
-            tenantBaseUrlHeaderValue
+            tenantBaseUrlHeaderValue,
+            resolvedClientPrincipal,
           );
         }
 
@@ -3418,7 +3480,8 @@ export class HttpTransport {
     toolFilterRequest?: SessionToolFilterRequest,
     toolFilterHeader?: string,
     tenantContext?: ResolvedTenantContext | null,
-    tenantHeaderValue?: string
+    tenantHeaderValue?: string,
+    clientPrincipal?: AuthorizedPrincipal,
   ): string {
     // Validate token if provided (defense in depth)
     if (authToken) {
@@ -3426,7 +3489,7 @@ export class HttpTransport {
     }
 
     const effectiveFiltering = mergeFilteringRules(this.config.globalFiltering, filtering);
-    
+
     const sessionId = crypto.randomUUID();
     const session: SessionData = {
       id: sessionId,
@@ -3450,17 +3513,23 @@ export class HttpTransport {
       tenantAuthMode: tenantContext?.tenantAuthMode,
       tenantOAuthConfig: tenantContext?.tenantOAuthConfig,
       tenantAuthConfigs: tenantContext?.tenantAuthConfigs,
+      clientPrincipal,
     };
     profileState.sessions.set(sessionId, session);
     if (oauthClientId) {
       this.attachOAuthClientSession(profileState, session, oauthClientId);
     }
-    this.logger.info('Session created', { 
+    this.logger.info('Session created', {
       profileId: profileState.profileId,
-      sessionId, 
+      sessionId,
       hasAuthToken: !!authToken,
       hasRefreshToken: !!refreshToken,
       hasExpiration: !!accessTokenExpiresAt,
+      // Phase 3 partial AUTH-03: include resolved client identity in
+      // session-creation log entries. Phase 5 (audit log) reads
+      // session.clientPrincipal directly for per-tool-call attribution.
+      clientSubject: clientPrincipal?.subject,
+      clientAuthType: clientPrincipal?.authType,
     });
 
     // Record metrics

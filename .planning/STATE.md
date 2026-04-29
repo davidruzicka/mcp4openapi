@@ -2,16 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: verifying
-stopped_at: Completed 02-03-PLAN.md
-last_updated: "2026-03-30T14:22:05.195Z"
-last_activity: 2026-03-30
+status: Ready to plan
+stopped_at: Completed 03-03-PLAN.md
+last_updated: "2026-04-29T13:36:55.375Z"
 progress:
   total_phases: 5
-  completed_phases: 2
-  total_plans: 8
-  completed_plans: 8
-  percent: 0
+  completed_phases: 3
+  total_plans: 11
+  completed_plans: 11
 ---
 
 # Project State
@@ -21,16 +19,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-26)
 
 **Core value:** A security boundary between internal AI clients and all upstream MCP servers - one place to authenticate, authorize, audit, and proxy every tool call.
-**Current focus:** Phase 02 — tool-discovery-and-call-proxy
+**Current focus:** Phase 03 — client-authentication-gate
 
 ## Current Position
 
-Phase: 02 (tool-discovery-and-call-proxy) — EXECUTING
-Plan: 3 of 3
-Status: Phase complete — ready for verification
-Last activity: 2026-03-30
-
-Progress: [░░░░░░░░░░] 0%
+Phase: 4
+Plan: Not started
 
 ## Performance Metrics
 
@@ -60,6 +54,9 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 02-tool-discovery-and-call-proxy P01 | 4min | 3 tasks | 6 files |
 | Phase 02-tool-discovery-and-call-proxy P02 | 8min | 2 tasks | 3 files |
 | Phase 02-tool-discovery-and-call-proxy P03 | 12min | 2 tasks | 5 files |
+| Phase 03-client-authentication-gate P01 | 5min | 3 tasks | 9 files |
+| Phase 03-client-authentication-gate P02 | 6min | 3 tasks | 5 files |
+| Phase 03-client-authentication-gate P03 | 10min | 3 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -86,6 +83,15 @@ Recent decisions affecting current work:
 - [Phase 02]: Callback injection (setGetUpstreamClient) rather than direct UpstreamConnectionManager import avoids circular dependency and keeps module boundary clean
 - [Phase 02]: Provider name in error.data.providerName only - not in client-facing message string - prevents infrastructure name leakage at security boundary
 - [Phase 02-tool-discovery-and-call-proxy]: NOTIFICATION_DISPATCH is private static readonly - constant data shared across instances; hasActiveStreamFn callback injected from HttpTransport avoids circular dependency; sendToClient fixed to write to SSE response in real-time
+- [Phase 03-client-authentication-gate]: Phase 3 client auth gate ships ClientAuthGateConfig without jwt? field; Phase 4 extends same interface (no breaking change). ApiKeyStoreConfig union ships only 'inline'; 'sasanka' rejected with explicit 'not supported' error so misconfigured profiles fail fast. key_from_env existence is validated at load time — prevents silent runtime rejection of all keys when env var typo is present.
+- [Phase 03-client-authentication-gate]: Mutual exclusion limited to OAuth interceptors: bearer/custom-header/query interceptors target upstream APIs and are allowed alongside client_auth_gate; only OAuth on inbound creates ambiguous identity flow. Default mode='required' (closed by default); required without api_keys is rejected so an unconfigured gate fails fast at startup.
+- [Phase 03-client-authentication-gate]: Per-instance random HMAC secret used purely as a length-normalization device (not an authenticator); HMAC-SHA256 always emits 32 bytes so timingSafeEqual is invoked on equal-length buffers regardless of raw key lengths
+- [Phase 03-client-authentication-gate]: createApiKeyStore uses direct if-branch on config.type (not registry table) so Phase 4's union widening with 'sasanka' triggers a TS exhaustiveness error at the extension site — type-system-enforced safety a Record<string,Creator> registry cannot provide. Logger param retained on factory for Phase 4 SasankaApiKeyStore additivity.
+- [Phase 03-client-authentication-gate]: Test ESM-namespace mocking pattern adopted: vi.mock + vi.hoisted wrapper that delegates to vi.importActual is the canonical pattern in this codebase for asserting on calls into Node built-ins (node:crypto etc.) since vi.spyOn fails on ESM namespace exports with 'Cannot redefine property'
+- [Phase 03-client-authentication-gate]: [Phase 03-03]: Gate placement after enterprise auth, before authConfigs token-required guard, with !gate bypass prefix on the legacy guard so mode='optional' can allow anonymous sessions on profiles with authConfigs configured
+- [Phase 03-client-authentication-gate]: [Phase 03-03]: ALL client auth gate exceptions map to HTTP 401 (not 500); warn log records errorType to distinguish ClientAuthGateError from unknown errors without leaking validator internals to clients
+- [Phase 03-client-authentication-gate]: [Phase 03-03]: Phase 4 deferral pinned by source-text guard test (no jose/jwks-cache imports or runtime calls); test will start failing intentionally when Phase 4 lands the JWT path, signaling the deferral guard has been lifted
+- [Phase 03-client-authentication-gate]: [Phase 03-03]: ClientAuthGate constructed once per profile in getProfileState() (not per-request) so the underlying InlineApiKeyStore HMAC secret persists for constant-time comparison; gate lifecycle ties to ProfileRuntimeState
 
 ### Pending Todos
 
@@ -99,6 +105,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-30T14:22:05.192Z
-Stopped at: Completed 02-03-PLAN.md
+Last session: 2026-04-29T13:26:45.700Z
+Stopped at: Completed 03-03-PLAN.md
 Resume file: None
