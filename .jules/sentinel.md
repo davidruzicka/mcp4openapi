@@ -126,3 +126,8 @@ Error messages should never include raw values from sensitive sources like envir
 **Prevention:**
 1.  Avoid including raw values in error messages when the source is potentially sensitive (env vars, auth headers).
 2.  Use generic error messages for validation failures of sensitive data.
+
+## 2024-05-20 - [Information Leakage in JSON-RPC Handlers]
+**Vulnerability:** The MCP Server's JSON-RPC handlers for `prompts/get`, `resources/read`, and `completion/complete` were directly passing internal error messages `(error as Error).message` to the client. This exposed internal error details and potentially sensitive stack traces.
+**Learning:** Even when handling non-tool execution endpoints, error messages must be sanitized before being sent to external clients to prevent information leakage.
+**Prevention:** Always use the `this.formatErrorForClient(error, correlationId)` method in conjunction with generating a `correlationId` to ensure client-facing errors are safely generic (e.g., `Internal error`), while securely logging the detailed internal error using `this.logger.error`.
