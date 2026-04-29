@@ -7598,6 +7598,89 @@ paths:
       responses:
         "204":
           description: Award emoji removed
+  /projects/{id}/snippets/{snippet_id}/notes:
+    get:
+      tags:
+        - snippets
+      summary: List snippet notes
+      description: Get all notes (comments) for a snippet
+      operationId: getApiV4ProjectsIdSnippetsSnippetIdNotes
+      parameters:
+        - $ref: "#/components/parameters/ProjectIdOrPath"
+        - name: snippet_id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: page
+          in: query
+          description: Page number
+          schema:
+            type: integer
+            default: 1
+        - name: per_page
+          in: query
+          description: Number of items per page
+          schema:
+            type: integer
+            default: 20
+        - name: sort
+          in: query
+          description: Return notes sorted in created order
+          schema:
+            type: string
+            enum:
+              - asc
+              - desc
+            default: desc
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/API_Entities_Note"
+        "404":
+          description: Snippet not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/API_Error"
+  /projects/{id}/snippets/{snippet_id}/notes/{note_id}:
+    get:
+      tags:
+        - snippets
+      summary: Get a single snippet note
+      description: Get details of a specific snippet note
+      operationId: getApiV4ProjectsIdSnippetsSnippetIdNotesNoteId
+      parameters:
+        - $ref: "#/components/parameters/ProjectIdOrPath"
+        - name: snippet_id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: note_id
+          in: path
+          required: true
+          description: The ID of the note
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/API_Entities_Note"
+        "404":
+          description: Note not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/API_Error"
   /projects/{id}/snippets/{snippet_id}/notes/{note_id}/award_emoji:
     get:
       tags:

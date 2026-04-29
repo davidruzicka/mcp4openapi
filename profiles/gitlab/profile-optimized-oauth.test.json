@@ -424,6 +424,49 @@
       }
     },
     {
+      "name": "Snippets - List Notes",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "list_snippet_notes",
+        "project_id": "{{projectId}}",
+        "snippet_id": "{{snippetId}}"
+      },
+      "mocks": [
+        {
+          "operationId": "getApiV4ProjectsIdSnippetsSnippetIdNotes",
+          "response": {
+            "body": [{"id": 10, "body": "Great snippet!", "author": {"username": "alice"}}]
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": [{"id": 10, "body": "Great snippet!", "author": {"username": "alice"}}]
+      }
+    },
+    {
+      "name": "Snippets - Get Note",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "get_snippet_note",
+        "project_id": "{{projectId}}",
+        "snippet_id": "{{snippetId}}",
+        "note_id": "{{noteId}}"
+      },
+      "mocks": [
+        {
+          "operationId": "getApiV4ProjectsIdSnippetsSnippetIdNotesNoteId",
+          "response": {
+            "body": {"id": 10, "body": "Great snippet!", "author": {"username": "alice"}}
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": {"id": 10, "body": "Great snippet!", "author": {"username": "alice"}}
+      }
+    },
+    {
       "name": "Snippets - List Award Emoji",
       "tool": "retrieve_content",
       "arguments": {

@@ -407,7 +407,7 @@
 
     {
       "name": "manage_snippets",
-      "description": "Work with project snippets. Actions: 'list_snippets', 'get_snippet', 'download_snippet', 'list_award_emoji', 'get_award_emoji', 'create_award_emoji', 'delete_award_emoji', 'list_note_award_emoji', 'get_note_award_emoji', 'create_note_award_emoji', 'delete_note_award_emoji'. For snippet-specific actions, pass 'snippet_id'. For note award emoji actions, also pass 'note_id'.",
+      "description": "Work with project snippets. Actions: 'list_snippets', 'get_snippet', 'download_snippet', 'list_notes', 'get_note', 'list_award_emoji', 'get_award_emoji', 'create_award_emoji', 'delete_award_emoji', 'list_note_award_emoji', 'get_note_award_emoji', 'create_note_award_emoji', 'delete_note_award_emoji'. For snippet-specific actions, pass 'snippet_id'. For note actions, also pass 'note_id'.",
       "metadata_params": ["action", "project_id", "snippet_id", "note_id", "award_id"],
       "operations": {
         "list_snippets": "getApiV4ProjectsIdSnippets",
@@ -417,6 +417,8 @@
           "metadata_endpoint": "getApiV4ProjectsIdSnippetsSnippetId",
           "download_endpoint": "getApiV4ProjectsIdSnippetsSnippetIdRaw"
         },
+        "list_notes": "getApiV4ProjectsIdSnippetsSnippetIdNotes",
+        "get_note": "getApiV4ProjectsIdSnippetsSnippetIdNotesNoteId",
         "list_award_emoji": "getApiV4ProjectsIdSnippetsSnippetIdAwardEmoji",
         "get_award_emoji": "getApiV4ProjectsIdSnippetsSnippetIdAwardEmojiAwardId",
         "create_award_emoji": "postApiV4ProjectsIdSnippetsSnippetIdAwardEmoji",
@@ -429,6 +431,8 @@
       "response_fields": {
         "list_snippets": ["id", "title", "file_name", "visibility"],
         "get_snippet": ["id", "title", "file_name", "description", "visibility"],
+        "list_notes": ["id", "body", "author", "created_at", "updated_at", "system"],
+        "get_note": ["id", "body", "author", "created_at", "updated_at", "system", "attachment"],
         "list_award_emoji": ["id", "name", "user", "created_at"],
         "get_award_emoji": ["id", "name", "user", "created_at"],
         "create_award_emoji": ["id", "name", "user", "created_at"],
@@ -439,7 +443,7 @@
       "parameters": {
         "action": {
           "type": "string",
-          "enum": ["list_snippets", "get_snippet", "download_snippet", "list_award_emoji", "get_award_emoji", "create_award_emoji", "delete_award_emoji", "list_note_award_emoji", "get_note_award_emoji", "create_note_award_emoji", "delete_note_award_emoji"],
+          "enum": ["list_snippets", "get_snippet", "download_snippet", "list_notes", "get_note", "list_award_emoji", "get_award_emoji", "create_award_emoji", "delete_award_emoji", "list_note_award_emoji", "get_note_award_emoji", "create_note_award_emoji", "delete_note_award_emoji"],
           "description": "Action to perform",
           "required": true
         },
@@ -451,12 +455,12 @@
         "snippet_id": {
           "type": "integer",
           "description": "Snippet ID",
-          "required_for": ["get_snippet", "download_snippet", "list_award_emoji", "get_award_emoji", "create_award_emoji", "delete_award_emoji", "list_note_award_emoji", "get_note_award_emoji", "create_note_award_emoji", "delete_note_award_emoji"]
+          "required_for": ["get_snippet", "download_snippet", "list_notes", "get_note", "list_award_emoji", "get_award_emoji", "create_award_emoji", "delete_award_emoji", "list_note_award_emoji", "get_note_award_emoji", "create_note_award_emoji", "delete_note_award_emoji"]
         },
         "note_id": {
           "type": "integer",
           "description": "The ID of the snippet note",
-          "required_for": ["list_note_award_emoji", "get_note_award_emoji", "create_note_award_emoji", "delete_note_award_emoji"]
+          "required_for": ["get_note", "list_note_award_emoji", "get_note_award_emoji", "create_note_award_emoji", "delete_note_award_emoji"]
         },
         "award_id": {
           "type": "integer",

@@ -3473,6 +3473,50 @@
       }
     },
     {
+      "name": "Snippets - List Notes",
+      "tool": "manage_snippets",
+      "arguments": {
+        "action": "list_notes",
+        "project_id": "{{projectId}}",
+        "snippet_id": 1
+      },
+      "mocks": [
+        {
+          "operationId": "getApiV4ProjectsIdSnippetsSnippetIdNotes",
+          "response": {
+            "body": [{"id": 10, "body": "Great snippet!", "author": {"username": "alice"}}]
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": [{"id": 10, "body": "Great snippet!", "author": {"username": "alice"}}]
+      }
+    },
+    {
+      "name": "Snippets - Get Note",
+      "tool": "manage_snippets",
+      "arguments": {
+        "action": "get_note",
+        "project_id": "{{projectId}}",
+        "snippet_id": 1,
+        "note_id": 10
+      },
+      "mocks": [
+        {
+          "operationId": "getApiV4ProjectsIdSnippetsSnippetIdNotesNoteId",
+          "response": {
+            "status": 200,
+            "body": {"id": 10, "body": "Great snippet!", "author": {"username": "alice"}}
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": {"id": 10, "body": "Great snippet!", "author": {"username": "alice"}}
+      }
+    },
+    {
       "name": "Snippets - List Award Emoji",
       "tool": "manage_snippets",
       "arguments": {
