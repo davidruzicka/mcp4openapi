@@ -1847,7 +1847,7 @@ export class HttpTransport {
 
     router.register('authorization_code', {
       required: ['code', 'client_id'],
-      optional: ['redirect_uri', 'client_secret', 'code_verifier'],
+      optional: ['redirect_uri', 'client_secret', 'code_verifier', 'resource', 'scope', 'client_assertion', 'client_assertion_type'],
       handler: async (request, response) => {
         if (!profileState.oauthProvider) {
           response.status(HTTP_STATUS.NOT_FOUND).json({ error: 'server_error', error_description: 'OAuth provider not initialized' });
@@ -1870,7 +1870,7 @@ export class HttpTransport {
 
     router.register('refresh_token', {
       required: ['refresh_token', 'client_id'],
-      optional: ['client_secret'],
+      optional: ['client_secret', 'resource', 'scope', 'client_assertion', 'client_assertion_type'],
       handler: async (request, response) => {
         if (!profileState.oauthProvider) {
           response.status(HTTP_STATUS.NOT_FOUND).json({ error: 'server_error', error_description: 'OAuth provider not initialized' });
