@@ -736,6 +736,7 @@ export class MCPServer {
       resourceDocumentation: this.profile.resource_documentation || resourceMetadata.documentation,
       parser: this.parser,
       upstreamMcp: this.profile.upstream_mcp,
+      client_auth_gate: this.profile.client_auth_gate,
     };
   }
 
