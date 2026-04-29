@@ -31,6 +31,7 @@ import { shortenToolName, NamingStrategy, levenshteinDistance, type OperationFor
 import { normalizeToolName } from '../tool-filter/utils.js';
 import { isSafePropertyName, isUri } from '../validation/validation-utils.js';
 import { validateEnterpriseAuthorizationProfile } from './enterprise-profile-validator.js';
+import { validateClientAuthGateProfile } from './client-auth-gate-validator.js';
 import { resolveUpstreamMcpConfig } from './upstream-mcp-config.js';
 
 // Schemas are now auto-generated from TypeScript types!
@@ -74,6 +75,11 @@ export class ProfileLoader {
     const normalizedEnterpriseAuthorization = validateEnterpriseAuthorizationProfile(profile);
     if (normalizedEnterpriseAuthorization) {
       profile.enterprise_authorization = normalizedEnterpriseAuthorization;
+    }
+
+    const resolvedClientAuthGate = validateClientAuthGateProfile(profile);
+    if (resolvedClientAuthGate) {
+      profile.client_auth_gate = resolvedClientAuthGate;
     }
 
     const resolvedUpstreamMcp = resolveUpstreamMcpConfig(profile);
