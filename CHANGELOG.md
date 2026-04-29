@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Client auth gate types (`ClientAuthGateConfig`, `ApiKeyStoreConfig`, `InlineApiKeyEntry`), `ClientAuthGateError`, `SessionData.clientPrincipal` field, and profile-load-time validator (`validateClientAuthGateProfile`) for AUTH-02/AUTH-03. Phase 3 ships inline API keys only; JWT/OIDC types and the `sasanka` API key backend are added in Phase 4.
+
 ### Fixed
 - `upstream_mcp[].timeout_ms` is now enforced on proxied `tools/call`: passed as `RequestOptions.timeout` to `client.callTool()` so a hung upstream is bounded by the configured value instead of the SDK default.
 - `MCPServerManager` self-registers the `onSessionDestroyed` cleanup hook in its constructor, eliminating the unbounded `sanitizedAndPolicyFilteredToolNames` map growth when the manager is used outside the `index.ts` bootstrap path.
