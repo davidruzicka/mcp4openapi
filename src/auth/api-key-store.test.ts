@@ -99,6 +99,19 @@ describe('InlineApiKeyStore', () => {
     });
   });
 
+  it('returns null when the env var for a key entry is set to whitespace-only', async () => {
+    // Pins the `!configured?.trim()` guard: whitespace-only values must be
+    // treated as "not configured" — not validated against inbound keys.
+    const entries: InlineApiKeyEntry[] = [
+      { key_from_env: 'WHITESPACE_API_KEY_ENV_VAR', subject: 'svc-account-ws' },
+    ];
+    await withEnv({ WHITESPACE_API_KEY_ENV_VAR: '   ' }, async () => {
+      const store = new InlineApiKeyStore(PROFILE_ID, entries);
+      expect(await store.validate('   ')).toBeNull();
+      expect(await store.validate('whatever')).toBeNull();
+    });
+  });
+
   it('returns null when supplied key has different length than configured key', async () => {
     const entries: InlineApiKeyEntry[] = [
       { key_from_env: 'TEST_API_KEY_LEN', subject: 'svc-account-1' },

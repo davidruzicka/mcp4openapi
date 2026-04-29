@@ -339,4 +339,67 @@ describe('Client auth gate (Phase 3) — session init integration', () => {
       expect.objectContaining({ errorType: 'unknown' }),
     );
   });
+
+  // Scenario 9 — ClientAuthGateError logs errorType='ClientAuthGateError'
+  it('ClientAuthGateError from gate -> 401 + warn log with errorType=ClientAuthGateError', async () => {
+    // Pins the discriminator in the warn log: ops teams distinguish known auth
+    // rejections ('ClientAuthGateError') from unexpected store failures ('unknown').
+    const profileContext: HttpProfileContext = {
+      profileId: 'default',
+      client_auth_gate: {
+        mode: 'required',
+        api_keys: {
+          type: 'inline',
+          keys: [{ key_from_env: VALID_KEY_ENV, subject: SUBJECT }],
+        },
+      },
+    };
+    transport.setProfileContextProvider(async () => profileContext);
+
+    const logger = (transport as unknown as { logger: { warn: ReturnType<typeof vi.fn> } }).logger;
+    const warnSpy = vi.spyOn(logger, 'warn');
+
+    const req = makeReq('Bearer wrong-key');
+    const res = makeRes();
+    await (transport as unknown as { handlePost: (r: unknown, s: unknown) => Promise<void> }).handlePost(req, res);
+
+    expect(res.statusCode).toBe(401);
+    expect(warnSpy).toHaveBeenCalledWith(
+      'Client auth gate rejected session init',
+      expect.objectContaining({ errorType: 'ClientAuthGateError' }),
+    );
+  });
+
+  // Scenario 10 — session-creation log includes clientSubject + clientAuthType
+  it('valid API key -> session-creation log includes clientSubject and clientAuthType', async () => {
+    // Pins AUTH-03 (partial): structured identity fields must appear in logger.info
+    // at session creation so Phase 5 audit log can read them from session context.
+    const profileContext: HttpProfileContext = {
+      profileId: 'default',
+      client_auth_gate: {
+        mode: 'required',
+        api_keys: {
+          type: 'inline',
+          keys: [{ key_from_env: VALID_KEY_ENV, subject: SUBJECT, scopes: ['read'] }],
+        },
+      } satisfies ClientAuthGateConfig,
+    };
+    transport.setProfileContextProvider(async () => profileContext);
+
+    const logger = (transport as unknown as { logger: { info: ReturnType<typeof vi.fn> } }).logger;
+    const infoSpy = vi.spyOn(logger, 'info');
+
+    const req = makeReq(`Bearer ${VALID_KEY}`);
+    const res = makeRes();
+    await (transport as unknown as { handlePost: (r: unknown, s: unknown) => Promise<void> }).handlePost(req, res);
+
+    expect(res.statusCode).toBe(200);
+    const sessionCreatedCall = infoSpy.mock.calls.find(
+      (c) => typeof c[0] === 'string' && c[0].includes('Session created'),
+    );
+    expect(sessionCreatedCall).toBeDefined();
+    const logFields = sessionCreatedCall![1] as Record<string, unknown>;
+    expect(logFields['clientSubject']).toBe(SUBJECT);
+    expect(logFields['clientAuthType']).toBe('token');
+  });
 });
