@@ -221,6 +221,14 @@ describe('ClientAuthGate (API key path only)', () => {
     }
   });
 
+  it('throws ClientAuthGateError when token is provided, no api_keys store, and mode=required', async () => {
+    // Pins the fall-through path: token present, apiKeyStore absent, mode=required
+    // → must throw rather than silently returning null.
+    const gate = new ClientAuthGate('profile-a', { mode: 'required' }, makeLogger());
+    await expect(gate.validate('any-token')).rejects.toBeInstanceOf(ClientAuthGateError);
+    await expect(gate.validate('any-token')).rejects.toThrow(/no valid identity resolved/);
+  });
+
   it('Phase 3 sanity: client-auth-gate.ts contains no JWT/JWKS imports', async () => {
     // Pin Phase 4 deferral: importing ClientAuthGate must NOT pull in jose/jwks-cache.
     // Read the source file and assert the absence of those imports/runtime calls.

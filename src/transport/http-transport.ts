@@ -44,6 +44,7 @@ import { redactAuthPayload } from '../auth/auth-redaction.js';
 import { OAuthGrantRouter } from './oauth-grant-router.js';
 import { SSRFValidator } from '../security/ssrf-validator.js';
 import type { AuthInterceptor, OAuthConfig, UpstreamMcpServerConfig } from '../types/profile.js';
+import { resolveClientAuthGateConfig } from '../profile/client-auth-gate-validator.js';
 import {
   DEFAULT_ALLOWED_REDIRECT_HOSTS,
   HTTP_STATUS,
@@ -528,15 +529,16 @@ export class HttpTransport {
     // Phase 4 will pass `this.enterpriseJwksCache` (or a dedicated cache) here
     // when the JWT path lands.
     if (context.client_auth_gate) {
-      state.clientAuthGate = new ClientAuthGate(
-        profileId,
-        context.client_auth_gate,
-        this.logger,
-      );
+      // Normalize config before construction: resolves mode_from_env, validates
+      // api_keys env vars. In the profile-loader path this is a no-op (validator
+      // already ran at load time and mode is a literal string). For direct
+      // HttpTransport construction the call provides the same fail-fast guarantees.
+      const gateConfig = resolveClientAuthGateConfig(context.client_auth_gate);
+      state.clientAuthGate = new ClientAuthGate(profileId, gateConfig, this.logger);
       this.logger.info('Client auth gate initialized', {
         profileId,
-        mode: context.client_auth_gate.mode ?? 'required',
-        hasApiKeys: !!context.client_auth_gate.api_keys,
+        mode: gateConfig.mode,
+        hasApiKeys: !!gateConfig.api_keys,
       });
     }
 

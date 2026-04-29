@@ -307,4 +307,26 @@ describe('validateClientAuthGateProfile', () => {
 
     expect(() => validateClientAuthGateProfile(profile)).not.toThrow();
   });
+
+  it('rejects when client_auth_gate is combined with bearer interceptor that has validation_endpoint', () => {
+    process.env.TEST_API_KEY_A = 'secret-a';
+    const profile = createProfile({
+      interceptors: {
+        auth: {
+          type: 'bearer',
+          value_from_env: 'SOME_TOKEN',
+          validation_endpoint: 'https://auth.internal/validate',
+        },
+      },
+      client_auth_gate: {
+        api_keys: {
+          type: 'inline',
+          keys: [{ key_from_env: 'TEST_API_KEY_A', subject: 'svc' }],
+        },
+      },
+    });
+
+    expect(() => validateClientAuthGateProfile(profile)).toThrow(ClientAuthGateError);
+    expect(() => validateClientAuthGateProfile(profile)).toThrow(/validation_endpoint/);
+  });
 });

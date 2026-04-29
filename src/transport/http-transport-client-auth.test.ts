@@ -259,7 +259,13 @@ describe('Client auth gate (Phase 3) — session init integration', () => {
     const profileContext: HttpProfileContext = {
       profileId: 'default',
       authConfigs: [authConfig],
-      client_auth_gate: { mode: 'required' },
+      client_auth_gate: {
+        mode: 'required',
+        api_keys: {
+          type: 'inline',
+          keys: [{ key_from_env: VALID_KEY_ENV, subject: SUBJECT }],
+        },
+      },
     };
     transport.setProfileContextProvider(async () => profileContext);
 
