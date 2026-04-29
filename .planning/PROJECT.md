@@ -36,6 +36,8 @@ authenticate, authorize, audit, and proxy every tool call in the company.
 - ✓ Upstream session lifecycle (Phase 01) - per-session `UpstreamConnectionManager` with lazy connect, concurrent-safe `getOrConnect`, heartbeat pings, and session-scoped cleanup wired into HTTP transport destruction lifecycle
 - ✓ Pass-through credential forwarding (Phase 01) - client-supplied Bearer token forwarded directly to upstream; profile-per-upstream model; no credential storage on gateway; `validateCredentials` with SSRF-protected `validation_endpoint` for early auth validation
 - ✓ Auth redaction hardening (Phase 01) - `sanitizeAuthErrorMessage` preserves last-4 Bearer suffix for debuggability; `redactString` fully redacts; token never appears in logs or error responses
+- ✓ Upstream tool discovery and proxy (Phase 02) - `tools/list` and `tools/call` forwarded to correct upstream provider; upstream tools namespaced by provider; `NotificationQueue` with TTL eviction for `tools/list_changed` replay on reconnect; `sendToClient` SSE real-time dispatch
+- ✓ API key authentication gate (Phase 03) - inbound M2M clients validated via inline env-var API keys before session establishment; `ClientAuthGate` runs after enterprise auth, before any upstream connection; `SessionData.clientPrincipal` populated with resolved identity (`subject`, `authType`, `scopes`); HMAC-SHA256 timing-safe comparison; fail-fast profile-load validator
 
 ### Active
 - [ ] Upstream tool discovery and proxy - tools/list and tools/call forwarded to correct upstream
@@ -107,7 +109,7 @@ authenticate, authorize, audit, and proxy every tool call in the company.
 | Tool namespacing by upstream provider | Prevents tool name collisions across providers; makes audit logs and policy rules unambiguous | - Pending |
 
 ---
-*Last updated: 2026-03-30 after Phase 01 completion*
+*Last updated: 2026-04-29 after Phase 03 completion*
 
 ## Evolution
 
