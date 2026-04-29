@@ -441,7 +441,7 @@
       ],
       "expect": {
         "success": true,
-        "result": [{"id": 7}]
+        "result": [{"id": 7, "name": "thumbsup"}]
       }
     },
     {
@@ -463,7 +463,7 @@
       ],
       "expect": {
         "success": true,
-        "result": {"id": 7}
+        "result": {"id": 7, "name": "thumbsup"}
       }
     },
     {
@@ -485,7 +485,7 @@
       ],
       "expect": {
         "success": true,
-        "result": [{"id": 7}]
+        "result": [{"id": 7, "name": "thumbsup"}]
       }
     },
     {
@@ -508,7 +508,7 @@
       ],
       "expect": {
         "success": true,
-        "result": {"id": 7}
+        "result": {"id": 7, "name": "thumbsup"}
       }
     },
     {
@@ -983,7 +983,7 @@
       ],
       "expect": {
         "success": true,
-        "result": [{"id": 7}]
+        "result": [{"id": 7, "name": "thumbsup"}]
       }
     },
     {
@@ -1006,7 +1006,7 @@
       ],
       "expect": {
         "success": true,
-        "result": {"id": 7}
+        "result": {"id": 7, "name": "thumbsup"}
       }
     },
     {
@@ -1027,7 +1027,7 @@
       ],
       "expect": {
         "success": true,
-        "result": [{"id": 7}]
+        "result": [{"id": 7, "name": "thumbsup"}]
       }
     },
     {
@@ -1049,7 +1049,7 @@
       ],
       "expect": {
         "success": true,
-        "result": {"id": 7}
+        "result": {"id": 7, "name": "thumbsup"}
       }
     },
     {
@@ -1403,7 +1403,7 @@
       ],
       "expect": {
         "success": true,
-        "result": {"id": 7}
+        "result": {"id": 7, "name": "thumbsup"}
       }
     },
     {
@@ -1427,7 +1427,7 @@
       ],
       "expect": {
         "success": true,
-        "result": {"id": 7}
+        "result": {"id": 7, "name": "thumbsup"}
       }
     },
     {
@@ -1450,7 +1450,7 @@
       ],
       "expect": {
         "success": true,
-        "result": {"id": 7}
+        "result": {"id": 7, "name": "thumbsup"}
       }
     },
     {
@@ -1474,7 +1474,7 @@
       ],
       "expect": {
         "success": true,
-        "result": {"id": 7}
+        "result": {"id": 7, "name": "thumbsup"}
       }
     },
     {
@@ -1867,7 +1867,7 @@
       ],
       "expect": {
         "success": true,
-        "result": [{"id": 7}]
+        "result": [{"id": 7, "name": "thumbsup"}]
       }
     },
     {
@@ -1889,7 +1889,7 @@
       ],
       "expect": {
         "success": true,
-        "result": {"id": 7}
+        "result": {"id": 7, "name": "thumbsup"}
       }
     },
     {
@@ -1934,7 +1934,7 @@
       ],
       "expect": {
         "success": true,
-        "result": {"id": 7}
+        "result": {"id": 7, "name": "thumbsup"}
       }
     },
     {
@@ -1957,7 +1957,7 @@
       ],
       "expect": {
         "success": true,
-        "result": {"id": 7}
+        "result": {"id": 7, "name": "thumbsup"}
       }
     },
     {

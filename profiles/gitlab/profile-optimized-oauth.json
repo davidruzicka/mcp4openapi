@@ -397,14 +397,6 @@
           "type": "integer",
           "description": "Limit to projects with at least the specified access level"
         },
-        "owned": {
-          "type": "boolean",
-          "description": "Limit to projects owned by current user"
-        },
-        "membership": {
-          "type": "boolean",
-          "description": "Limit to projects current user is a member of"
-        },
         "simple": {
           "type": "boolean",
           "description": "Return only limited fields for each project"
@@ -447,7 +439,7 @@
         "create_issue_note_award_emoji": ["id", "name", "user", "created_at"],
         "create_merge_request_pipeline": ["id", "status", "ref", "sha", "web_url"],
         "create_merge_request_discussion": ["id", "notes", "resolved"],
-        "reply_merge_request_discussion": ["id", "body", "author", "created_at"],
+        "reply_merge_request_discussion": ["id", "notes", "resolved"],
         "create_merge_request_award_emoji": ["id", "name", "user", "created_at"],
         "create_merge_request_note_award_emoji": ["id", "name", "user", "created_at"],
         "create_snippet_award_emoji": ["id", "name", "user", "created_at"],
