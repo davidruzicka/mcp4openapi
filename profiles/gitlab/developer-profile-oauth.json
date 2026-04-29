@@ -407,8 +407,8 @@
 
     {
       "name": "manage_snippets",
-      "description": "Read project snippets and download raw content via proxy. Actions: 'list_snippets', 'get_snippet', 'download_snippet'. For 'get_snippet' and 'download_snippet', pass 'snippet_id'.",
-      "metadata_params": ["action", "project_id", "snippet_id"],
+      "description": "Work with project snippets. Actions: 'list_snippets', 'get_snippet', 'download_snippet', 'list_notes', 'get_note', 'list_award_emoji', 'get_award_emoji', 'create_award_emoji', 'delete_award_emoji', 'list_note_award_emoji', 'get_note_award_emoji', 'create_note_award_emoji', 'delete_note_award_emoji'. For snippet-specific actions, pass 'snippet_id'. For note actions, also pass 'note_id'.",
+      "metadata_params": ["action", "project_id", "snippet_id", "note_id", "award_id"],
       "operations": {
         "list_snippets": "getApiV4ProjectsIdSnippets",
         "get_snippet": "getApiV4ProjectsIdSnippetsSnippetId",
@@ -416,16 +416,34 @@
           "type": "proxy_download",
           "metadata_endpoint": "getApiV4ProjectsIdSnippetsSnippetId",
           "download_endpoint": "getApiV4ProjectsIdSnippetsSnippetIdRaw"
-        }
+        },
+        "list_notes": "getApiV4ProjectsIdSnippetsSnippetIdNotes",
+        "get_note": "getApiV4ProjectsIdSnippetsSnippetIdNotesNoteId",
+        "list_award_emoji": "getApiV4ProjectsIdSnippetsSnippetIdAwardEmoji",
+        "get_award_emoji": "getApiV4ProjectsIdSnippetsSnippetIdAwardEmojiAwardId",
+        "create_award_emoji": "postApiV4ProjectsIdSnippetsSnippetIdAwardEmoji",
+        "delete_award_emoji": "deleteApiV4ProjectsIdSnippetsSnippetIdAwardEmojiAwardId",
+        "list_note_award_emoji": "getApiV4ProjectsIdSnippetsSnippetIdNotesNoteIdAwardEmoji",
+        "get_note_award_emoji": "getApiV4ProjectsIdSnippetsSnippetIdNotesNoteIdAwardEmojiAwardId",
+        "create_note_award_emoji": "postApiV4ProjectsIdSnippetsSnippetIdNotesNoteIdAwardEmoji",
+        "delete_note_award_emoji": "deleteApiV4ProjectsIdSnippetsSnippetIdNotesNoteIdAwardEmojiAwardId"
       },
       "response_fields": {
         "list_snippets": ["id", "title", "file_name", "visibility"],
-        "get_snippet": ["id", "title", "file_name", "description", "visibility"]
+        "get_snippet": ["id", "title", "file_name", "description", "visibility"],
+        "list_notes": ["id", "body", "author", "created_at", "updated_at", "system"],
+        "get_note": ["id", "body", "author", "created_at", "updated_at", "system", "attachment"],
+        "list_award_emoji": ["id", "name", "user", "created_at"],
+        "get_award_emoji": ["id", "name", "user", "created_at"],
+        "create_award_emoji": ["id", "name", "user", "created_at"],
+        "list_note_award_emoji": ["id", "name", "user", "created_at"],
+        "get_note_award_emoji": ["id", "name", "user", "created_at"],
+        "create_note_award_emoji": ["id", "name", "user", "created_at"]
       },
       "parameters": {
         "action": {
           "type": "string",
-          "enum": ["list_snippets", "get_snippet", "download_snippet"],
+          "enum": ["list_snippets", "get_snippet", "download_snippet", "list_notes", "get_note", "list_award_emoji", "get_award_emoji", "create_award_emoji", "delete_award_emoji", "list_note_award_emoji", "get_note_award_emoji", "create_note_award_emoji", "delete_note_award_emoji"],
           "description": "Action to perform",
           "required": true
         },
@@ -437,7 +455,22 @@
         "snippet_id": {
           "type": "integer",
           "description": "Snippet ID",
-          "required_for": ["get_snippet", "download_snippet"]
+          "required_for": ["get_snippet", "download_snippet", "list_notes", "get_note", "list_award_emoji", "get_award_emoji", "create_award_emoji", "delete_award_emoji", "list_note_award_emoji", "get_note_award_emoji", "create_note_award_emoji", "delete_note_award_emoji"]
+        },
+        "note_id": {
+          "type": "integer",
+          "description": "The ID of the snippet note",
+          "required_for": ["get_note", "list_note_award_emoji", "get_note_award_emoji", "create_note_award_emoji", "delete_note_award_emoji"]
+        },
+        "award_id": {
+          "type": "integer",
+          "description": "The ID of the award emoji",
+          "required_for": ["get_award_emoji", "delete_award_emoji", "get_note_award_emoji", "delete_note_award_emoji"]
+        },
+        "name": {
+          "type": "string",
+          "description": "Emoji name (for award emoji actions)",
+          "required_for": ["create_award_emoji", "create_note_award_emoji"]
         }
       }
     },
@@ -1248,8 +1281,8 @@
 
     {
       "name": "manage_issues",
-      "description": "Work with issues. Actions: 'list' (all issues in project), 'list_global' (issues across projects), 'get' (single issue details), 'create' (create new issue), 'update' (update issue), 'delete' (delete issue - admins only), 'list_notes' (get all comments), 'get_note' (single comment), 'create_note' (add comment), 'update_note' (edit comment), 'delete_note' (remove comment), 'list_discussions', 'get_discussion', 'create_discussion', 'reply_discussion', 'delete_discussion', 'set_discussion_resolved', 'list_note_award_emoji', 'get_note_award_emoji', 'create_note_award_emoji', 'delete_note_award_emoji'. Use 'list' to see all issues, filter by state (opened, closed, all). For actions that target a specific issue, pass 'issue_iid'. For 'create', pass 'title'. For note and discussion actions, pass 'body' and/or 'note_id' or 'discussion_id' as required.",
-      "metadata_params": ["action", "project_id", "issue_iid", "note_id"],
+      "description": "Work with issues. Actions: 'list' (all issues in project), 'list_global' (issues across projects), 'get' (single issue details), 'create' (create new issue), 'update' (update issue), 'delete' (delete issue - admins only), 'list_notes' (get all comments), 'get_note' (single comment), 'create_note' (add comment), 'update_note' (edit comment), 'delete_note' (remove comment), 'list_discussions', 'get_discussion', 'create_discussion', 'reply_discussion', 'delete_discussion', 'set_discussion_resolved', 'list_award_emoji', 'get_award_emoji', 'create_award_emoji', 'delete_award_emoji', 'list_note_award_emoji', 'get_note_award_emoji', 'create_note_award_emoji', 'delete_note_award_emoji'. Use 'list' to see all issues, filter by state (opened, closed, all). For actions that target a specific issue, pass 'issue_iid'. For 'create', pass 'title'. For note and discussion actions, pass 'body' and/or 'note_id' or 'discussion_id' as required.",
+      "metadata_params": ["action", "project_id", "issue_iid", "note_id", "award_id", "discussion_id"],
       "operations": {
         "list": "getApiV4ProjectsIdIssues",
         "list_global": "getApiV4Issues",
@@ -1268,6 +1301,10 @@
         "reply_discussion": "postApiV4ProjectsIdIssuesIssueIidDiscussionsDiscussionIdNotes",
         "delete_discussion": "deleteApiV4ProjectsIdIssuesIssueIidDiscussionsDiscussionId",
         "set_discussion_resolved": "putApiV4ProjectsIdIssuesIssueIidDiscussionsDiscussionId",
+        "list_award_emoji": "getApiV4ProjectsIdIssuesIssueIidAwardEmoji",
+        "get_award_emoji": "getApiV4ProjectsIdIssuesIssueIidAwardEmojiAwardId",
+        "create_award_emoji": "postApiV4ProjectsIdIssuesIssueIidAwardEmoji",
+        "delete_award_emoji": "deleteApiV4ProjectsIdIssuesIssueIidAwardEmojiAwardId",
         "list_note_award_emoji": "getApiV4ProjectsIdIssuesIssueIidNotesNoteIdAwardEmoji",
         "get_note_award_emoji": "getApiV4ProjectsIdIssuesIssueIidNotesNoteIdAwardEmojiAwardId",
         "create_note_award_emoji": "postApiV4ProjectsIdIssuesIssueIidNotesNoteIdAwardEmoji",
@@ -1287,6 +1324,9 @@
         "create_discussion": ["id", "notes", "resolved"],
         "reply_discussion": ["id", "notes", "resolved"],
         "set_discussion_resolved": ["id", "notes", "resolved"],
+        "list_award_emoji": ["id", "name", "user", "created_at"],
+        "get_award_emoji": ["id", "name", "user", "created_at"],
+        "create_award_emoji": ["id", "name", "user", "created_at"],
         "list_note_award_emoji": ["id", "name", "user", "created_at"],
         "get_note_award_emoji": ["id", "name", "user", "created_at"],
         "create_note_award_emoji": ["id", "name", "user", "created_at"]
@@ -1294,20 +1334,20 @@
       "parameters": {
         "action": {
           "type": "string",
-          "enum": ["list", "list_global", "get", "create", "update", "delete", "list_notes", "get_note", "create_note", "update_note", "delete_note", "list_discussions", "get_discussion", "create_discussion", "reply_discussion", "delete_discussion", "set_discussion_resolved", "list_note_award_emoji", "get_note_award_emoji", "create_note_award_emoji", "delete_note_award_emoji"],
+          "enum": ["list", "list_global", "get", "create", "update", "delete", "list_notes", "get_note", "create_note", "update_note", "delete_note", "list_discussions", "get_discussion", "create_discussion", "reply_discussion", "delete_discussion", "set_discussion_resolved", "list_award_emoji", "get_award_emoji", "create_award_emoji", "delete_award_emoji", "list_note_award_emoji", "get_note_award_emoji", "create_note_award_emoji", "delete_note_award_emoji"],
           "description": "Action to perform",
           "required": true
         },
         "project_id": {
           "type": "string",
           "description": "Project ID. Use numeric ID (e.g. '123') or URL-encoded path (e.g. 'group%2Fproject').",
-          "required_for": ["list", "get", "create", "update", "delete", "list_notes", "get_note", "create_note", "update_note", "delete_note", "list_discussions", "get_discussion", "create_discussion", "reply_discussion", "delete_discussion", "set_discussion_resolved", "list_note_award_emoji", "get_note_award_emoji", "create_note_award_emoji", "delete_note_award_emoji"],
+          "required_for": ["list", "get", "create", "update", "delete", "list_notes", "get_note", "create_note", "update_note", "delete_note", "list_discussions", "get_discussion", "create_discussion", "reply_discussion", "delete_discussion", "set_discussion_resolved", "list_award_emoji", "get_award_emoji", "create_award_emoji", "delete_award_emoji", "list_note_award_emoji", "get_note_award_emoji", "create_note_award_emoji", "delete_note_award_emoji"],
           "example": "123"
         },
         "issue_iid": {
           "type": "integer",
           "description": "The internal ID of the issue",
-          "required_for": ["get", "update", "delete", "list_notes", "get_note", "create_note", "update_note", "delete_note", "list_discussions", "get_discussion", "create_discussion", "reply_discussion", "delete_discussion", "set_discussion_resolved", "list_note_award_emoji", "get_note_award_emoji", "create_note_award_emoji", "delete_note_award_emoji"]
+          "required_for": ["get", "update", "delete", "list_notes", "get_note", "create_note", "update_note", "delete_note", "list_discussions", "get_discussion", "create_discussion", "reply_discussion", "delete_discussion", "set_discussion_resolved", "list_award_emoji", "get_award_emoji", "create_award_emoji", "delete_award_emoji", "list_note_award_emoji", "get_note_award_emoji", "create_note_award_emoji", "delete_note_award_emoji"]
         },
         "note_id": {
           "type": "integer",
@@ -1322,12 +1362,12 @@
         "award_id": {
           "type": "integer",
           "description": "The ID of the award emoji",
-          "required_for": ["get_note_award_emoji", "delete_note_award_emoji"]
+          "required_for": ["get_award_emoji", "delete_award_emoji", "get_note_award_emoji", "delete_note_award_emoji"]
         },
         "name": {
           "type": "string",
           "description": "Emoji name (for award emoji actions)",
-          "required_for": ["create_note_award_emoji"]
+          "required_for": ["create_award_emoji", "create_note_award_emoji"]
         },
         "state": {
           "type": "string",

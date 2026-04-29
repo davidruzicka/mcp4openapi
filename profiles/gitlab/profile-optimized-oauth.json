@@ -27,8 +27,8 @@
   "tools": [
     {
       "name": "retrieve_content",
-      "description": "Read-only access to GitLab content (projects, issues, merge requests, snippets, repository, members, labels, milestones, pipelines, hooks, variables). Actions: 'list_projects', 'get_project', 'list_project_members', 'list_project_hooks', 'get_project_hook', 'list_project_variables', 'get_project_variable', 'list_issues', 'list_issues_global', 'get_issue', 'list_issue_notes', 'get_issue_note', 'list_issue_discussions', 'get_issue_discussion', 'list_issue_note_award_emoji', 'get_issue_note_award_emoji', 'list_merge_requests', 'get_merge_request', 'list_merge_request_notes', 'get_merge_request_note', 'list_merge_request_commits', 'list_merge_request_diffs', 'list_merge_request_raw_diffs', 'list_merge_request_pipelines', 'list_snippets', 'get_snippet', 'download_snippet', 'get_file', 'download_file', 'list_repository_tree', 'compare_refs', 'get_commit', 'list_pipelines', 'list_pipeline_jobs', 'get_job', 'download_job_artifacts', 'download_job_artifact', 'list_project_labels', 'list_group_labels', 'list_project_milestones', 'list_group_milestones'.",
-      "metadata_params": ["action", "project_id", "issue_iid", "merge_request_iid", "note_id", "snippet_id", "file_path", "pipeline_id", "job_id", "hook_id", "key"],
+      "description": "Read-only access to GitLab content (projects, issues, merge requests, snippets, repository, members, labels, milestones, pipelines, hooks, variables). Actions: 'list_projects', 'get_project', 'list_project_members', 'list_project_hooks', 'get_project_hook', 'list_project_variables', 'get_project_variable', 'list_issues', 'list_issues_global', 'get_issue', 'list_issue_notes', 'get_issue_note', 'list_issue_discussions', 'get_issue_discussion', 'list_issue_award_emoji', 'get_issue_award_emoji', 'list_issue_note_award_emoji', 'get_issue_note_award_emoji', 'list_merge_requests', 'get_merge_request', 'list_merge_request_notes', 'get_merge_request_note', 'list_merge_request_commits', 'list_merge_request_diffs', 'list_merge_request_raw_diffs', 'list_merge_request_pipelines', 'list_merge_request_discussions', 'get_merge_request_discussion', 'list_merge_request_award_emoji', 'get_merge_request_award_emoji', 'list_merge_request_note_award_emoji', 'get_merge_request_note_award_emoji', 'list_snippets', 'get_snippet', 'download_snippet', 'list_snippet_award_emoji', 'get_snippet_award_emoji', 'list_snippet_notes', 'get_snippet_note', 'list_snippet_note_award_emoji', 'get_snippet_note_award_emoji', 'get_file', 'download_file', 'list_repository_tree', 'compare_refs', 'get_commit', 'list_pipelines', 'list_pipeline_jobs', 'get_job', 'download_job_artifacts', 'download_job_artifact', 'list_project_labels', 'list_group_labels', 'list_project_milestones', 'list_group_milestones'.",
+      "metadata_params": ["action", "project_id", "issue_iid", "merge_request_iid", "note_id", "discussion_id", "snippet_id", "award_id", "file_path", "pipeline_id", "job_id", "hook_id", "key"],
       "operations": {
         "list_projects": "getApiV4Projects",
         "get_project": "getApiV4ProjectsId",
@@ -44,6 +44,8 @@
         "get_issue_note": "getApiV4ProjectsIdIssuesIssueIidNotesNoteId",
         "list_issue_discussions": "getApiV4ProjectsIdIssuesIssueIidDiscussions",
         "get_issue_discussion": "getApiV4ProjectsIdIssuesIssueIidDiscussionsDiscussionId",
+        "list_issue_award_emoji": "getApiV4ProjectsIdIssuesIssueIidAwardEmoji",
+        "get_issue_award_emoji": "getApiV4ProjectsIdIssuesIssueIidAwardEmojiAwardId",
         "list_issue_note_award_emoji": "getApiV4ProjectsIdIssuesIssueIidNotesNoteIdAwardEmoji",
         "get_issue_note_award_emoji": "getApiV4ProjectsIdIssuesIssueIidNotesNoteIdAwardEmojiAwardId",
         "list_merge_requests": "getApiV4ProjectsIdMergeRequests",
@@ -54,6 +56,12 @@
         "list_merge_request_diffs": "getApiV4ProjectsIdMergeRequestsMergeRequestIidDiffs",
         "list_merge_request_raw_diffs": "getApiV4ProjectsIdMergeRequestsMergeRequestIidRawDiffs",
         "list_merge_request_pipelines": "getApiV4ProjectsIdMergeRequestsMergeRequestIidPipelines",
+        "list_merge_request_discussions": "getApiV4ProjectsIdMergeRequestsMergeRequestIidDiscussions",
+        "get_merge_request_discussion": "getApiV4ProjectsIdMergeRequestsMergeRequestIidDiscussionsDiscussionId",
+        "list_merge_request_award_emoji": "getApiV4ProjectsIdMergeRequestsMergeRequestIidAwardEmoji",
+        "get_merge_request_award_emoji": "getApiV4ProjectsIdMergeRequestsMergeRequestIidAwardEmojiAwardId",
+        "list_merge_request_note_award_emoji": "getApiV4ProjectsIdMergeRequestsMergeRequestIidNotesNoteIdAwardEmoji",
+        "get_merge_request_note_award_emoji": "getApiV4ProjectsIdMergeRequestsMergeRequestIidNotesNoteIdAwardEmojiAwardId",
         "list_snippets": "getApiV4ProjectsIdSnippets",
         "get_snippet": "getApiV4ProjectsIdSnippetsSnippetId",
         "download_snippet": {
@@ -61,6 +69,12 @@
           "metadata_endpoint": "getApiV4ProjectsIdSnippetsSnippetId",
           "download_endpoint": "getApiV4ProjectsIdSnippetsSnippetIdRaw"
         },
+        "list_snippet_award_emoji": "getApiV4ProjectsIdSnippetsSnippetIdAwardEmoji",
+        "get_snippet_award_emoji": "getApiV4ProjectsIdSnippetsSnippetIdAwardEmojiAwardId",
+        "list_snippet_notes": "getApiV4ProjectsIdSnippetsSnippetIdNotes",
+        "get_snippet_note": "getApiV4ProjectsIdSnippetsSnippetIdNotesNoteId",
+        "list_snippet_note_award_emoji": "getApiV4ProjectsIdSnippetsSnippetIdNotesNoteIdAwardEmoji",
+        "get_snippet_note_award_emoji": "getApiV4ProjectsIdSnippetsSnippetIdNotesNoteIdAwardEmojiAwardId",
         "get_file": "getApiV4ProjectsIdRepositoryFilesFilePath",
         "download_file": "getApiV4ProjectsIdRepositoryFilesFilePathRaw",
         "list_repository_tree": "getApiV4ProjectsIdRepositoryTree",
@@ -98,6 +112,8 @@
         "get_issue_note": ["id", "body", "author", "created_at", "updated_at", "system", "confidential", "attachment"],
         "list_issue_discussions": ["id", "notes", "resolved"],
         "get_issue_discussion": ["id", "notes", "resolved"],
+        "list_issue_award_emoji": ["id", "name", "user", "created_at"],
+        "get_issue_award_emoji": ["id", "name", "user", "created_at"],
         "list_issue_note_award_emoji": ["id", "name", "user", "created_at"],
         "get_issue_note_award_emoji": ["id", "name", "user", "created_at"],
         "list_merge_requests": ["id", "iid", "title", "description", "state", "web_url", "author", "created_at", "updated_at"],
@@ -107,8 +123,20 @@
         "list_merge_request_commits": ["id", "short_id", "title", "message", "author_name", "authored_date", "committed_date"],
         "list_merge_request_diffs": ["old_path", "new_path", "new_file", "renamed_file", "deleted_file", "diff"],
         "list_merge_request_pipelines": ["id", "status", "ref", "sha", "web_url"],
+        "list_merge_request_discussions": ["id", "notes", "resolved"],
+        "get_merge_request_discussion": ["id", "notes", "resolved"],
+        "list_merge_request_award_emoji": ["id", "name", "user", "created_at"],
+        "get_merge_request_award_emoji": ["id", "name", "user", "created_at"],
+        "list_merge_request_note_award_emoji": ["id", "name", "user", "created_at"],
+        "get_merge_request_note_award_emoji": ["id", "name", "user", "created_at"],
         "list_snippets": ["id", "title", "file_name", "visibility"],
         "get_snippet": ["id", "title", "file_name", "description", "visibility"],
+        "list_snippet_award_emoji": ["id", "name", "user", "created_at"],
+        "get_snippet_award_emoji": ["id", "name", "user", "created_at"],
+        "list_snippet_notes": ["id", "body", "author", "created_at", "updated_at", "system"],
+        "get_snippet_note": ["id", "body", "author", "created_at", "updated_at", "system", "attachment"],
+        "list_snippet_note_award_emoji": ["id", "name", "user", "created_at"],
+        "get_snippet_note_award_emoji": ["id", "name", "user", "created_at"],
         "get_file": ["file_name", "file_path", "size", "encoding", "content", "ref", "blob_id", "commit_id", "last_commit_id"],
         "list_pipelines": ["id", "status", "ref", "web_url"],
         "list_pipeline_jobs": ["id", "status", "stage", "name", "ref", "web_url"],
@@ -121,50 +149,48 @@
       "parameters": {
         "action": {
           "type": "string",
-          "enum": ["list_projects", "get_project", "list_project_members", "list_project_hooks", "get_project_hook", "list_project_variables", "get_project_variable", "list_issues", "list_issues_global", "get_issue", "list_issue_notes", "get_issue_note", "list_issue_discussions", "get_issue_discussion", "list_issue_note_award_emoji", "get_issue_note_award_emoji", "list_merge_requests", "get_merge_request", "list_merge_request_notes", "get_merge_request_note", "list_merge_request_commits", "list_merge_request_diffs", "list_merge_request_raw_diffs", "list_merge_request_pipelines", "list_snippets", "get_snippet", "download_snippet", "get_file", "download_file", "list_repository_tree", "compare_refs", "get_commit", "list_pipelines", "list_pipeline_jobs", "get_job", "download_job_artifacts", "download_job_artifact", "list_project_labels", "list_group_labels", "list_project_milestones", "list_group_milestones"],
+          "enum": ["list_projects", "get_project", "list_project_members", "list_project_hooks", "get_project_hook", "list_project_variables", "get_project_variable", "list_issues", "list_issues_global", "get_issue", "list_issue_notes", "get_issue_note", "list_issue_discussions", "get_issue_discussion", "list_issue_award_emoji", "get_issue_award_emoji", "list_issue_note_award_emoji", "get_issue_note_award_emoji", "list_merge_requests", "get_merge_request", "list_merge_request_notes", "get_merge_request_note", "list_merge_request_commits", "list_merge_request_diffs", "list_merge_request_raw_diffs", "list_merge_request_pipelines", "list_merge_request_discussions", "get_merge_request_discussion", "list_merge_request_award_emoji", "get_merge_request_award_emoji", "list_merge_request_note_award_emoji", "get_merge_request_note_award_emoji", "list_snippets", "get_snippet", "download_snippet", "list_snippet_award_emoji", "get_snippet_award_emoji", "list_snippet_notes", "get_snippet_note", "list_snippet_note_award_emoji", "get_snippet_note_award_emoji", "get_file", "download_file", "list_repository_tree", "compare_refs", "get_commit", "list_pipelines", "list_pipeline_jobs", "get_job", "download_job_artifacts", "download_job_artifact", "list_project_labels", "list_group_labels", "list_project_milestones", "list_group_milestones"],
           "description": "Action to perform",
           "required": true
         },
         "owned": {
           "type": "boolean",
-          "description": "Limit by projects explicitly owned by the current user",
-          "required_for": ["list_projects"]
+          "description": "Limit by projects explicitly owned by the current user"
         },
         "membership": {
           "type": "boolean",
-          "description": "Limit by projects that the current user is a member of",
-          "required_for": ["list_projects"]
+          "description": "Limit by projects that the current user is a member of"
         },
         "project_id": {
           "type": "string",
           "description": "Project ID. Use numeric ID (e.g. '123') or URL-encoded path (e.g. 'group%2Fproject').",
-          "required_for": ["get_project", "list_project_members", "list_project_hooks", "get_project_hook", "list_project_variables", "get_project_variable", "list_issues", "get_issue", "list_issue_notes", "get_issue_note", "list_issue_discussions", "get_issue_discussion", "list_issue_note_award_emoji", "get_issue_note_award_emoji", "list_merge_requests", "get_merge_request", "list_merge_request_notes", "get_merge_request_note", "list_merge_request_commits", "list_merge_request_diffs", "list_merge_request_raw_diffs", "list_merge_request_pipelines", "list_snippets", "get_snippet", "download_snippet", "get_file", "download_file", "list_repository_tree", "compare_refs", "get_commit", "list_pipelines", "list_pipeline_jobs", "get_job", "download_job_artifacts", "download_job_artifact", "list_project_labels", "list_project_milestones"],
+          "required_for": ["get_project", "list_project_members", "list_project_hooks", "get_project_hook", "list_project_variables", "get_project_variable", "list_issues", "get_issue", "list_issue_notes", "get_issue_note", "list_issue_discussions", "get_issue_discussion", "list_issue_award_emoji", "get_issue_award_emoji", "list_issue_note_award_emoji", "get_issue_note_award_emoji", "list_merge_requests", "get_merge_request", "list_merge_request_notes", "get_merge_request_note", "list_merge_request_commits", "list_merge_request_diffs", "list_merge_request_raw_diffs", "list_merge_request_pipelines", "list_merge_request_discussions", "get_merge_request_discussion", "list_merge_request_award_emoji", "get_merge_request_award_emoji", "list_merge_request_note_award_emoji", "get_merge_request_note_award_emoji", "list_snippets", "get_snippet", "download_snippet", "list_snippet_award_emoji", "get_snippet_award_emoji", "list_snippet_notes", "get_snippet_note", "list_snippet_note_award_emoji", "get_snippet_note_award_emoji", "get_file", "download_file", "list_repository_tree", "compare_refs", "get_commit", "list_pipelines", "list_pipeline_jobs", "get_job", "download_job_artifacts", "download_job_artifact", "list_project_labels", "list_project_milestones"],
           "example": "123"
         },
         "issue_iid": {
           "type": "integer",
           "description": "The internal ID of the issue",
-          "required_for": ["get_issue", "list_issue_notes", "get_issue_note", "list_issue_discussions", "get_issue_discussion", "list_issue_note_award_emoji", "get_issue_note_award_emoji"]
+          "required_for": ["get_issue", "list_issue_notes", "get_issue_note", "list_issue_discussions", "get_issue_discussion", "list_issue_award_emoji", "get_issue_award_emoji", "list_issue_note_award_emoji", "get_issue_note_award_emoji"]
         },
         "merge_request_iid": {
           "type": "integer",
           "description": "The internal ID of the merge request",
-          "required_for": ["get_merge_request", "list_merge_request_notes", "get_merge_request_note", "list_merge_request_commits", "list_merge_request_diffs", "list_merge_request_raw_diffs", "list_merge_request_pipelines"]
+          "required_for": ["get_merge_request", "list_merge_request_notes", "get_merge_request_note", "list_merge_request_commits", "list_merge_request_diffs", "list_merge_request_raw_diffs", "list_merge_request_pipelines", "list_merge_request_discussions", "get_merge_request_discussion", "list_merge_request_award_emoji", "get_merge_request_award_emoji", "list_merge_request_note_award_emoji", "get_merge_request_note_award_emoji"]
         },
         "note_id": {
           "type": "integer",
           "description": "The ID of the note",
-          "required_for": ["get_issue_note", "get_merge_request_note", "list_issue_note_award_emoji", "get_issue_note_award_emoji"]
+          "required_for": ["get_issue_note", "get_merge_request_note", "list_issue_note_award_emoji", "get_issue_note_award_emoji", "list_merge_request_note_award_emoji", "get_merge_request_note_award_emoji", "get_snippet_note", "list_snippet_note_award_emoji", "get_snippet_note_award_emoji"]
         },
         "discussion_id": {
           "type": "string",
           "description": "The ID of the discussion",
-          "required_for": ["get_issue_discussion"]
+          "required_for": ["get_issue_discussion", "get_merge_request_discussion"]
         },
         "award_id": {
           "type": "integer",
           "description": "The ID of the award emoji",
-          "required_for": ["get_issue_note_award_emoji"]
+          "required_for": ["get_issue_award_emoji", "get_issue_note_award_emoji", "get_merge_request_award_emoji", "get_merge_request_note_award_emoji", "get_snippet_award_emoji", "get_snippet_note_award_emoji"]
         },
         "hook_id": {
           "type": "integer",
@@ -184,7 +210,7 @@
         "snippet_id": {
           "type": "integer",
           "description": "Snippet ID",
-          "required_for": ["get_snippet", "download_snippet"]
+          "required_for": ["get_snippet", "download_snippet", "list_snippet_award_emoji", "get_snippet_award_emoji", "list_snippet_notes", "get_snippet_note", "list_snippet_note_award_emoji", "get_snippet_note_award_emoji"]
         },
         "file_path": {
           "type": "string",
@@ -373,14 +399,6 @@
           "type": "integer",
           "description": "Limit to projects with at least the specified access level"
         },
-        "owned": {
-          "type": "boolean",
-          "description": "Limit to projects owned by current user"
-        },
-        "membership": {
-          "type": "boolean",
-          "description": "Limit to projects current user is a member of"
-        },
         "simple": {
           "type": "boolean",
           "description": "Return only limited fields for each project"
@@ -390,8 +408,8 @@
 
     {
       "name": "create_content",
-      "description": "Create GitLab content. Actions: 'create_issue', 'create_merge_request', 'create_issue_note', 'create_merge_request_note', 'create_issue_discussion', 'reply_issue_discussion', 'create_issue_note_award_emoji', 'create_merge_request_pipeline', 'create_file', 'create_project_variable', 'create_project_hook'.",
-      "metadata_params": ["action", "project_id", "issue_iid", "merge_request_iid"],
+      "description": "Create GitLab content. Actions: 'create_issue', 'create_merge_request', 'create_issue_note', 'create_merge_request_note', 'create_issue_discussion', 'reply_issue_discussion', 'create_issue_award_emoji', 'create_issue_note_award_emoji', 'create_merge_request_pipeline', 'create_merge_request_discussion', 'reply_merge_request_discussion', 'create_merge_request_award_emoji', 'create_merge_request_note_award_emoji', 'create_snippet_award_emoji', 'create_snippet_note_award_emoji', 'create_file', 'create_project_variable', 'create_project_hook'.",
+      "metadata_params": ["action", "project_id", "issue_iid", "merge_request_iid", "snippet_id", "note_id", "discussion_id"],
       "operations": {
         "create_issue": "postApiV4ProjectsIdIssues",
         "create_merge_request": "postApiV4ProjectsIdMergeRequests",
@@ -399,8 +417,15 @@
         "create_merge_request_note": "postApiV4ProjectsIdMergeRequestsMergeRequestIidNotes",
         "create_issue_discussion": "postApiV4ProjectsIdIssuesIssueIidDiscussions",
         "reply_issue_discussion": "postApiV4ProjectsIdIssuesIssueIidDiscussionsDiscussionIdNotes",
+        "create_issue_award_emoji": "postApiV4ProjectsIdIssuesIssueIidAwardEmoji",
         "create_issue_note_award_emoji": "postApiV4ProjectsIdIssuesIssueIidNotesNoteIdAwardEmoji",
         "create_merge_request_pipeline": "postApiV4ProjectsIdMergeRequestsMergeRequestIidPipelines",
+        "create_merge_request_discussion": "postApiV4ProjectsIdMergeRequestsMergeRequestIidDiscussions",
+        "reply_merge_request_discussion": "postApiV4ProjectsIdMergeRequestsMergeRequestIidDiscussionsDiscussionIdNotes",
+        "create_merge_request_award_emoji": "postApiV4ProjectsIdMergeRequestsMergeRequestIidAwardEmoji",
+        "create_merge_request_note_award_emoji": "postApiV4ProjectsIdMergeRequestsMergeRequestIidNotesNoteIdAwardEmoji",
+        "create_snippet_award_emoji": "postApiV4ProjectsIdSnippetsSnippetIdAwardEmoji",
+        "create_snippet_note_award_emoji": "postApiV4ProjectsIdSnippetsSnippetIdNotesNoteIdAwardEmoji",
         "create_file": "postApiV4ProjectsIdRepositoryFilesFilePath",
         "create_project_variable": "postApiV4ProjectsIdVariables",
         "create_project_hook": "postApiV4ProjectsIdHooks"
@@ -412,8 +437,15 @@
         "create_merge_request_note": ["id", "body", "author", "created_at", "system", "confidential"],
         "create_issue_discussion": ["id", "notes", "resolved"],
         "reply_issue_discussion": ["id", "notes", "resolved"],
+        "create_issue_award_emoji": ["id", "name", "user", "created_at"],
         "create_issue_note_award_emoji": ["id", "name", "user", "created_at"],
         "create_merge_request_pipeline": ["id", "status", "ref", "sha", "web_url"],
+        "create_merge_request_discussion": ["id", "notes", "resolved"],
+        "reply_merge_request_discussion": ["id", "notes", "resolved"],
+        "create_merge_request_award_emoji": ["id", "name", "user", "created_at"],
+        "create_merge_request_note_award_emoji": ["id", "name", "user", "created_at"],
+        "create_snippet_award_emoji": ["id", "name", "user", "created_at"],
+        "create_snippet_note_award_emoji": ["id", "name", "user", "created_at"],
         "create_file": ["file_name", "file_path", "size", "encoding", "content", "ref", "blob_id", "commit_id", "last_commit_id"],
         "create_project_variable": ["key", "value", "protected", "masked", "environment_scope"],
         "create_project_hook": ["id", "url", "push_events", "issues_events", "merge_requests_events"]
@@ -421,7 +453,7 @@
       "parameters": {
         "action": {
           "type": "string",
-          "enum": ["create_issue", "create_merge_request", "create_issue_note", "create_merge_request_note", "create_issue_discussion", "reply_issue_discussion", "create_issue_note_award_emoji", "create_merge_request_pipeline", "create_file", "create_project_variable", "create_project_hook"],
+          "enum": ["create_issue", "create_merge_request", "create_issue_note", "create_merge_request_note", "create_issue_discussion", "reply_issue_discussion", "create_issue_award_emoji", "create_issue_note_award_emoji", "create_merge_request_pipeline", "create_merge_request_discussion", "reply_merge_request_discussion", "create_merge_request_award_emoji", "create_merge_request_note_award_emoji", "create_snippet_award_emoji", "create_snippet_note_award_emoji", "create_file", "create_project_variable", "create_project_hook"],
           "description": "Action to perform",
           "required": true
         },
@@ -434,27 +466,32 @@
         "issue_iid": {
           "type": "integer",
           "description": "The internal ID of the issue",
-          "required_for": ["create_issue_note", "create_issue_discussion", "reply_issue_discussion", "create_issue_note_award_emoji"]
+          "required_for": ["create_issue_note", "create_issue_discussion", "reply_issue_discussion", "create_issue_award_emoji", "create_issue_note_award_emoji"]
         },
         "merge_request_iid": {
           "type": "integer",
           "description": "The internal ID of the merge request",
-          "required_for": ["create_merge_request_note", "create_merge_request_pipeline"]
+          "required_for": ["create_merge_request_note", "create_merge_request_pipeline", "create_merge_request_discussion", "reply_merge_request_discussion", "create_merge_request_award_emoji", "create_merge_request_note_award_emoji"]
         },
         "discussion_id": {
           "type": "string",
           "description": "The ID of the discussion",
-          "required_for": ["reply_issue_discussion"]
+          "required_for": ["reply_issue_discussion", "reply_merge_request_discussion"]
+        },
+        "snippet_id": {
+          "type": "integer",
+          "description": "Snippet ID",
+          "required_for": ["create_snippet_award_emoji", "create_snippet_note_award_emoji"]
         },
         "note_id": {
           "type": "integer",
           "description": "The ID of the note",
-          "required_for": ["create_issue_note_award_emoji"]
+          "required_for": ["create_issue_note_award_emoji", "create_merge_request_note_award_emoji", "create_snippet_note_award_emoji"]
         },
         "name": {
           "type": "string",
           "description": "Emoji name (for award emoji actions)",
-          "required_for": ["create_issue_note_award_emoji"]
+          "required_for": ["create_issue_award_emoji", "create_issue_note_award_emoji", "create_merge_request_award_emoji", "create_merge_request_note_award_emoji", "create_snippet_award_emoji", "create_snippet_note_award_emoji"]
         },
         "title": {
           "type": "string",
@@ -482,7 +519,7 @@
         "body": {
           "type": "string",
           "description": "Note body",
-          "required_for": ["create_issue_note", "create_merge_request_note", "create_issue_discussion", "reply_issue_discussion"],
+          "required_for": ["create_issue_note", "create_merge_request_note", "create_issue_discussion", "reply_issue_discussion", "create_merge_request_discussion", "reply_merge_request_discussion"],
           "example": "Looks good to me."
         },
         "assignee_id": {
@@ -570,14 +607,15 @@
 
     {
       "name": "update_content",
-      "description": "Update GitLab content. Actions: 'update_issue', 'update_merge_request', 'update_issue_note', 'update_merge_request_note', 'set_issue_discussion_resolved', 'update_file', 'retry_job', 'cancel_job', 'update_project_variable', 'update_project_hook'.",
-      "metadata_params": ["action", "project_id", "merge_request_iid", "issue_iid", "note_id", "job_id", "key", "hook_id"],
+      "description": "Update GitLab content. Actions: 'update_issue', 'update_merge_request', 'update_issue_note', 'update_merge_request_note', 'set_issue_discussion_resolved', 'set_merge_request_discussion_resolved', 'update_file', 'retry_job', 'cancel_job', 'update_project_variable', 'update_project_hook'.",
+      "metadata_params": ["action", "project_id", "merge_request_iid", "issue_iid", "note_id", "discussion_id", "job_id", "key", "hook_id"],
       "operations": {
         "update_issue": "putApiV4ProjectsIdIssuesIssueIid",
         "update_merge_request": "putApiV4ProjectsIdMergeRequestsMergeRequestIid",
         "update_issue_note": "putApiV4ProjectsIdIssuesIssueIidNotesNoteId",
         "update_merge_request_note": "putApiV4ProjectsIdMergeRequestsMergeRequestIidNotesNoteId",
         "set_issue_discussion_resolved": "putApiV4ProjectsIdIssuesIssueIidDiscussionsDiscussionId",
+        "set_merge_request_discussion_resolved": "putApiV4ProjectsIdMergeRequestsMergeRequestIidDiscussionsDiscussionId",
         "update_file": "putApiV4ProjectsIdRepositoryFilesFilePath",
         "retry_job": "postApiV4ProjectsIdJobsJobIdRetry",
         "cancel_job": "postApiV4ProjectsIdJobsJobIdCancel",
@@ -590,6 +628,7 @@
         "update_issue_note": ["id", "body", "author", "created_at", "updated_at", "system", "confidential"],
         "update_merge_request_note": ["id", "body", "author", "created_at", "updated_at", "system", "confidential"],
         "set_issue_discussion_resolved": ["id", "notes", "resolved"],
+        "set_merge_request_discussion_resolved": ["id", "notes", "resolved"],
         "update_file": ["file_name", "file_path", "size", "encoding", "content", "ref", "blob_id", "commit_id", "last_commit_id"],
         "update_project_variable": ["key", "value", "protected", "masked", "environment_scope"],
         "update_project_hook": ["id", "url", "push_events", "issues_events", "merge_requests_events"]
@@ -597,7 +636,7 @@
       "parameters": {
         "action": {
           "type": "string",
-          "enum": ["update_issue", "update_merge_request", "update_issue_note", "update_merge_request_note", "set_issue_discussion_resolved", "update_file", "retry_job", "cancel_job", "update_project_variable", "update_project_hook"],
+          "enum": ["update_issue", "update_merge_request", "update_issue_note", "update_merge_request_note", "set_issue_discussion_resolved", "set_merge_request_discussion_resolved", "update_file", "retry_job", "cancel_job", "update_project_variable", "update_project_hook"],
           "description": "Action to perform",
           "required": true
         },
@@ -610,7 +649,7 @@
         "merge_request_iid": {
           "type": "integer",
           "description": "The internal ID of the merge request",
-          "required_for": ["update_merge_request", "update_merge_request_note"]
+          "required_for": ["update_merge_request", "update_merge_request_note", "set_merge_request_discussion_resolved"]
         },
         "issue_iid": {
           "type": "integer",
@@ -625,7 +664,7 @@
         "discussion_id": {
           "type": "string",
           "description": "The ID of the discussion",
-          "required_for": ["set_issue_discussion_resolved"]
+          "required_for": ["set_issue_discussion_resolved", "set_merge_request_discussion_resolved"]
         },
         "job_id": {
           "type": "integer",
@@ -679,7 +718,7 @@
         "resolved": {
           "type": "boolean",
           "description": "Resolve or unresolve discussion",
-          "required_for": ["set_issue_discussion_resolved"]
+          "required_for": ["set_issue_discussion_resolved", "set_merge_request_discussion_resolved"]
         },
         "file_path": {
           "type": "string",
@@ -740,15 +779,21 @@
 
     {
       "name": "delete_content",
-      "description": "Delete GitLab content. Actions: 'delete_issue', 'delete_merge_request', 'delete_issue_note', 'delete_merge_request_note', 'delete_issue_discussion', 'delete_issue_note_award_emoji', 'delete_file', 'delete_project_variable', 'delete_project_hook'.",
-      "metadata_params": ["action", "project_id", "issue_iid", "merge_request_iid", "note_id", "discussion_id", "award_id", "file_path", "key", "hook_id"],
+      "description": "Delete GitLab content. Actions: 'delete_issue', 'delete_merge_request', 'delete_issue_note', 'delete_merge_request_note', 'delete_issue_discussion', 'delete_merge_request_discussion', 'delete_issue_award_emoji', 'delete_issue_note_award_emoji', 'delete_merge_request_award_emoji', 'delete_merge_request_note_award_emoji', 'delete_snippet_award_emoji', 'delete_snippet_note_award_emoji', 'delete_file', 'delete_project_variable', 'delete_project_hook'.",
+      "metadata_params": ["action", "project_id", "issue_iid", "merge_request_iid", "snippet_id", "note_id", "discussion_id", "award_id", "file_path", "key", "hook_id"],
       "operations": {
         "delete_issue": "deleteApiV4ProjectsIdIssuesIssueIid",
         "delete_merge_request": "deleteApiV4ProjectsIdMergeRequestsMergeRequestIid",
         "delete_issue_note": "deleteApiV4ProjectsIdIssuesIssueIidNotesNoteId",
         "delete_merge_request_note": "deleteApiV4ProjectsIdMergeRequestsMergeRequestIidNotesNoteId",
         "delete_issue_discussion": "deleteApiV4ProjectsIdIssuesIssueIidDiscussionsDiscussionId",
+        "delete_merge_request_discussion": "deleteApiV4ProjectsIdMergeRequestsMergeRequestIidDiscussionsDiscussionId",
+        "delete_issue_award_emoji": "deleteApiV4ProjectsIdIssuesIssueIidAwardEmojiAwardId",
         "delete_issue_note_award_emoji": "deleteApiV4ProjectsIdIssuesIssueIidNotesNoteIdAwardEmojiAwardId",
+        "delete_merge_request_award_emoji": "deleteApiV4ProjectsIdMergeRequestsMergeRequestIidAwardEmojiAwardId",
+        "delete_merge_request_note_award_emoji": "deleteApiV4ProjectsIdMergeRequestsMergeRequestIidNotesNoteIdAwardEmojiAwardId",
+        "delete_snippet_award_emoji": "deleteApiV4ProjectsIdSnippetsSnippetIdAwardEmojiAwardId",
+        "delete_snippet_note_award_emoji": "deleteApiV4ProjectsIdSnippetsSnippetIdNotesNoteIdAwardEmojiAwardId",
         "delete_file": "deleteApiV4ProjectsIdRepositoryFilesFilePath",
         "delete_project_variable": "deleteApiV4ProjectsIdVariablesKey",
         "delete_project_hook": "deleteApiV4ProjectsIdHooksHookId"
@@ -756,7 +801,7 @@
       "parameters": {
         "action": {
           "type": "string",
-          "enum": ["delete_issue", "delete_merge_request", "delete_issue_note", "delete_merge_request_note", "delete_issue_discussion", "delete_issue_note_award_emoji", "delete_file", "delete_project_variable", "delete_project_hook"],
+          "enum": ["delete_issue", "delete_merge_request", "delete_issue_note", "delete_merge_request_note", "delete_issue_discussion", "delete_merge_request_discussion", "delete_issue_award_emoji", "delete_issue_note_award_emoji", "delete_merge_request_award_emoji", "delete_merge_request_note_award_emoji", "delete_snippet_award_emoji", "delete_snippet_note_award_emoji", "delete_file", "delete_project_variable", "delete_project_hook"],
           "description": "Action to perform",
           "required": true
         },
@@ -769,27 +814,32 @@
         "issue_iid": {
           "type": "integer",
           "description": "The internal ID of the issue",
-          "required_for": ["delete_issue", "delete_issue_note"]
+          "required_for": ["delete_issue", "delete_issue_note", "delete_issue_discussion", "delete_issue_award_emoji", "delete_issue_note_award_emoji"]
         },
         "merge_request_iid": {
           "type": "integer",
           "description": "The internal ID of the merge request",
-          "required_for": ["delete_merge_request", "delete_merge_request_note"]
+          "required_for": ["delete_merge_request", "delete_merge_request_note", "delete_merge_request_discussion", "delete_merge_request_award_emoji", "delete_merge_request_note_award_emoji"]
+        },
+        "snippet_id": {
+          "type": "integer",
+          "description": "Snippet ID",
+          "required_for": ["delete_snippet_award_emoji", "delete_snippet_note_award_emoji"]
         },
         "note_id": {
           "type": "integer",
           "description": "The ID of the note",
-          "required_for": ["delete_issue_note", "delete_merge_request_note", "delete_issue_note_award_emoji"]
+          "required_for": ["delete_issue_note", "delete_merge_request_note", "delete_issue_note_award_emoji", "delete_merge_request_note_award_emoji", "delete_snippet_note_award_emoji"]
         },
         "discussion_id": {
           "type": "string",
           "description": "The ID of the discussion",
-          "required_for": ["delete_issue_discussion"]
+          "required_for": ["delete_issue_discussion", "delete_merge_request_discussion"]
         },
         "award_id": {
           "type": "integer",
           "description": "The ID of the award emoji",
-          "required_for": ["delete_issue_note_award_emoji"]
+          "required_for": ["delete_issue_award_emoji", "delete_issue_note_award_emoji", "delete_merge_request_award_emoji", "delete_merge_request_note_award_emoji", "delete_snippet_award_emoji", "delete_snippet_note_award_emoji"]
         },
         "file_path": {
           "type": "string",
