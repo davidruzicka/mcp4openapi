@@ -2,16 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: verifying
-stopped_at: Completed 02-03-PLAN.md
-last_updated: "2026-03-30T14:22:05.195Z"
-last_activity: 2026-03-30
+status: Ready to execute
+stopped_at: Completed 03-01-PLAN.md
+last_updated: "2026-04-29T13:04:36.999Z"
 progress:
   total_phases: 5
   completed_phases: 2
-  total_plans: 8
-  completed_plans: 8
-  percent: 0
+  total_plans: 11
+  completed_plans: 9
 ---
 
 # Project State
@@ -21,16 +19,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-26)
 
 **Core value:** A security boundary between internal AI clients and all upstream MCP servers - one place to authenticate, authorize, audit, and proxy every tool call.
-**Current focus:** Phase 02 — tool-discovery-and-call-proxy
+**Current focus:** Phase 03 — client-authentication-gate
 
 ## Current Position
 
-Phase: 02 (tool-discovery-and-call-proxy) — EXECUTING
-Plan: 3 of 3
-Status: Phase complete — ready for verification
-Last activity: 2026-03-30
-
-Progress: [░░░░░░░░░░] 0%
+Phase: 03 (client-authentication-gate) — EXECUTING
+Plan: 2 of 3
 
 ## Performance Metrics
 
@@ -60,6 +54,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 02-tool-discovery-and-call-proxy P01 | 4min | 3 tasks | 6 files |
 | Phase 02-tool-discovery-and-call-proxy P02 | 8min | 2 tasks | 3 files |
 | Phase 02-tool-discovery-and-call-proxy P03 | 12min | 2 tasks | 5 files |
+| Phase 03-client-authentication-gate P01 | 5min | 3 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -86,6 +81,8 @@ Recent decisions affecting current work:
 - [Phase 02]: Callback injection (setGetUpstreamClient) rather than direct UpstreamConnectionManager import avoids circular dependency and keeps module boundary clean
 - [Phase 02]: Provider name in error.data.providerName only - not in client-facing message string - prevents infrastructure name leakage at security boundary
 - [Phase 02-tool-discovery-and-call-proxy]: NOTIFICATION_DISPATCH is private static readonly - constant data shared across instances; hasActiveStreamFn callback injected from HttpTransport avoids circular dependency; sendToClient fixed to write to SSE response in real-time
+- [Phase 03-client-authentication-gate]: Phase 3 client auth gate ships ClientAuthGateConfig without jwt? field; Phase 4 extends same interface (no breaking change). ApiKeyStoreConfig union ships only 'inline'; 'sasanka' rejected with explicit 'not supported' error so misconfigured profiles fail fast. key_from_env existence is validated at load time — prevents silent runtime rejection of all keys when env var typo is present.
+- [Phase 03-client-authentication-gate]: Mutual exclusion limited to OAuth interceptors: bearer/custom-header/query interceptors target upstream APIs and are allowed alongside client_auth_gate; only OAuth on inbound creates ambiguous identity flow. Default mode='required' (closed by default); required without api_keys is rejected so an unconfigured gate fails fast at startup.
 
 ### Pending Todos
 
@@ -99,6 +96,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-30T14:22:05.192Z
-Stopped at: Completed 02-03-PLAN.md
+Last session: 2026-04-29T13:04:36.996Z
+Stopped at: Completed 03-01-PLAN.md
 Resume file: None

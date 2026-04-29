@@ -27,9 +27,9 @@ Milestone: v1 - Proxy foundation + security gate
 - [ ] **AUTH-01**: Inbound client presenting a JWT is validated against the JWKS endpoint of the
   configured identity provider (Entra ID, Okta, or Keycloak); session is rejected if validation
   fails before any upstream connection is made
-- [ ] **AUTH-02**: Inbound M2M client presenting an API key is validated against a configured API
+- [x] **AUTH-02**: Inbound M2M client presenting an API key is validated against a configured API
   key store; a valid key resolves to a client identity before session is established
-- [ ] **AUTH-03**: Client identity (resolved from SSO JWT or API key) is attached to the session
+- [x] **AUTH-03**: Client identity (resolved from SSO JWT or API key) is attached to the session
   context and included in every audit log entry for that session
 
 ### Security
@@ -117,8 +117,8 @@ Milestone: v1 - Proxy foundation + security gate
 | PROXY-03 | Phase 2 | Complete |
 | PROXY-04 | Phase 2 | Complete |
 | AUTH-01 | Phase 4 | Pending |
-| AUTH-02 | Phase 3 | Pending |
-| AUTH-03 | Phase 3 (partial), Phase 4 (complete) | Pending |
+| AUTH-02 | Phase 3 | Complete |
+| AUTH-03 | Phase 3 (partial), Phase 4 (complete) | Complete |
 | SEC-01 | Phase 2 | Complete |
 | SEC-02 | Phase 1 | Complete |
 | OBS-01 | Phase 5 | Pending |
