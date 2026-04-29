@@ -36,10 +36,27 @@ export class ClientAuthGate {
   // additive across phases.
   private readonly logger: Logger;
   private readonly apiKeyStore?: ApiKeyStore;
+  private readonly resolvedMode: 'required' | 'optional';
 
   constructor(profileId: string, config: ClientAuthGateConfig, logger: Logger) {
     this.config = config;
     this.logger = logger;
+    let resolvedMode = config.mode;
+    if (!resolvedMode && config.mode_from_env) {
+      const envValue = process.env[config.mode_from_env];
+      if (!envValue) {
+        throw new ClientAuthGateError(
+          `client_auth_gate.mode_from_env: env var '${config.mode_from_env}' is not set`,
+        );
+      }
+      if (envValue !== 'required' && envValue !== 'optional') {
+        throw new ClientAuthGateError(
+          `client_auth_gate.mode must be 'required' or 'optional', got '${envValue}'`,
+        );
+      }
+      resolvedMode = envValue;
+    }
+    this.resolvedMode = resolvedMode ?? 'required';
     if (config.api_keys) {
       this.apiKeyStore = createApiKeyStore(config.api_keys, profileId, logger);
     }
@@ -56,7 +73,7 @@ export class ClientAuthGate {
    * BEFORE the API key store call (JWT-first), based on `decodeProtectedHeader`.
    */
   async validate(token: string | undefined): Promise<AuthorizedPrincipal | null> {
-    const mode = this.config.mode ?? 'required';
+    const mode = this.resolvedMode;
 
     if (!token) {
       if (mode === 'optional') return null;

@@ -14,9 +14,6 @@
 import { ClientAuthGateError } from '../core/errors.js';
 import type { ApiKeyStoreConfig, ClientAuthGateConfig, Profile } from '../types/profile.js';
 
-const ALLOWED_API_KEY_TYPES = ['inline'] as const;
-// Phase 4 adds 'sasanka' to ALLOWED_API_KEY_TYPES
-
 function resolveEnv(
   value: string | undefined,
   fromEnv: string | undefined,
@@ -56,6 +53,12 @@ export function validateClientAuthGateProfile(profile: Profile): ClientAuthGateC
       { path: 'client_auth_gate' },
     );
   }
+  if (auths.some((a) => a.validation_endpoint)) {
+    throw new ClientAuthGateError(
+      'client_auth_gate cannot be combined with auth interceptors that have validation_endpoint; configure separate profiles',
+      { path: 'client_auth_gate' },
+    );
+  }
 
   // Resolve mode (default to 'required' when neither inline value nor env override is set).
   const resolvedMode =
@@ -73,9 +76,9 @@ export function validateClientAuthGateProfile(profile: Profile): ClientAuthGateC
     ? ({ ...config.api_keys } as ApiKeyStoreConfig)
     : undefined;
   if (apiKeys) {
-    if (!ALLOWED_API_KEY_TYPES.includes(apiKeys.type as never)) {
+    if (apiKeys.type !== 'inline') {
       throw new ClientAuthGateError(
-        `client_auth_gate.api_keys.type '${apiKeys.type}' is not supported. Allowed: ${ALLOWED_API_KEY_TYPES.join(', ')}`,
+        `client_auth_gate.api_keys.type '${apiKeys.type}' is not supported. Allowed: inline`,
         { path: 'client_auth_gate.api_keys.type', value: apiKeys.type },
       );
     }

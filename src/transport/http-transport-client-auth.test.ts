@@ -17,7 +17,7 @@
  * and read `profileStates` directly to verify session.clientPrincipal.
  */
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { HttpTransport } from './http-transport.js';
 import { ConsoleLogger } from '../core/logger.js';
 import type { AuthInterceptor, ClientAuthGateConfig } from '../types/profile.js';
@@ -325,11 +325,18 @@ describe('Client auth gate (Phase 3) — session init integration', () => {
       throw new Error('upstream store unreachable');
     };
 
+    const logger = (transport as unknown as { logger: { warn: ReturnType<typeof vi.fn> } }).logger;
+    const warnSpy = vi.spyOn(logger, 'warn');
+
     const req = makeReq(`Bearer ${VALID_KEY}`);
     const res = makeRes();
     await (transport as unknown as { handlePost: (r: unknown, s: unknown) => Promise<void> }).handlePost(req, res);
 
     expect(res.statusCode).toBe(401);
     expect(res.body).toEqual(expect.objectContaining({ error: 'Unauthorized' }));
+    expect(warnSpy).toHaveBeenCalledWith(
+      'Client auth gate rejected session init',
+      expect.objectContaining({ errorType: 'unknown' }),
+    );
   });
 });

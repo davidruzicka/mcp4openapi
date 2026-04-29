@@ -124,6 +124,27 @@ describe('validateClientAuthGateProfile', () => {
     expect(() => validateClientAuthGateProfile(profile)).toThrow(/must be 'required' or 'optional'/);
   });
 
+  it('returns config when mode=optional and no api_keys configured', () => {
+    const profile = createProfile({ client_auth_gate: { mode: 'optional' } });
+    const result = validateClientAuthGateProfile(profile);
+    expect(result).toEqual({ mode: 'optional', api_keys: undefined });
+  });
+
+  it('resolves mode=required from mode_from_env', () => {
+    process.env.TEST_API_KEY_A = 'secret-a';
+    process.env.TEST_GATE_MODE = 'required';
+    const profile = createProfile({
+      client_auth_gate: {
+        mode_from_env: 'TEST_GATE_MODE',
+        api_keys: {
+          type: 'inline',
+          keys: [{ key_from_env: 'TEST_API_KEY_A', subject: 'svc' }],
+        },
+      },
+    });
+    expect(validateClientAuthGateProfile(profile)?.mode).toBe('required');
+  });
+
   it("rejects api_keys.type='sasanka' (Phase 4 only)", () => {
     const profile = createProfile({
       client_auth_gate: {

@@ -2815,7 +2815,7 @@ export class HttpTransport {
           }
 
           // Validate token if auth is configured and token is provided
-          if (authInfo && authInfo.token && !internalToken && authConfigs.length > 0 && (resolvedTenant?.tenantBaseUrl || profileState.context.baseUrl)) {
+          if (!profileState.clientAuthGate && authInfo && authInfo.token && !internalToken && authConfigs.length > 0 && (resolvedTenant?.tenantBaseUrl || profileState.context.baseUrl)) {
             // Find matching auth config based on priority (authConfigs is sorted)
             // For 'bearer' token type, 'oauth' config is also a match
             const authConfig = authConfigs.find(c =>

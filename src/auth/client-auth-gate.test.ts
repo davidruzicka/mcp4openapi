@@ -150,6 +150,55 @@ describe('ClientAuthGate (API key path only)', () => {
     expect(await gate.validate('any-token')).toBeNull();
   });
 
+  it('resolves mode from mode_from_env when env var is set to optional', async () => {
+    const modeEnv = 'CLIENT_AUTH_GATE_TEST_MODE';
+    process.env[modeEnv] = 'optional';
+    try {
+      const gate = new ClientAuthGate(
+        'profile-a',
+        {
+          mode_from_env: modeEnv,
+          api_keys: {
+            type: 'inline',
+            keys: [{ key_from_env: ENV_VAR, subject: 'service-a' }],
+          },
+        },
+        makeLogger(),
+      );
+      expect(await gate.validate('wrong-key')).toBeNull();
+    } finally {
+      delete process.env[modeEnv];
+    }
+  });
+
+  it('throws ClientAuthGateError in constructor when mode_from_env env var is not set', () => {
+    expect(
+      () =>
+        new ClientAuthGate(
+          'profile-a',
+          { mode_from_env: 'CLIENT_AUTH_GATE_TEST_MODE_UNSET' },
+          makeLogger(),
+        ),
+    ).toThrow(ClientAuthGateError);
+  });
+
+  it('throws ClientAuthGateError in constructor when mode_from_env env var has invalid value', () => {
+    const modeEnv = 'CLIENT_AUTH_GATE_TEST_MODE';
+    process.env[modeEnv] = 'superuser';
+    try {
+      expect(
+        () =>
+          new ClientAuthGate(
+            'profile-a',
+            { mode_from_env: modeEnv },
+            makeLogger(),
+          ),
+      ).toThrow(ClientAuthGateError);
+    } finally {
+      delete process.env[modeEnv];
+    }
+  });
+
   it('Phase 3 sanity: client-auth-gate.ts contains no JWT/JWKS imports', async () => {
     // Pin Phase 4 deferral: importing ClientAuthGate must NOT pull in jose/jwks-cache.
     // Read the source file and assert the absence of those imports/runtime calls.
