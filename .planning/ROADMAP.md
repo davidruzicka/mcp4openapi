@@ -60,14 +60,14 @@ Plans:
 **Depends on**: Phase 1
 **Requirements**: AUTH-02, AUTH-03 (partial)
 **Success Criteria** (what must be TRUE):
-  1. An inbound M2M client presenting an API key is validated against the configured key store (inline env-var keys or Sasanka) and resolved to a client identity before session establishment
+  1. An inbound M2M client presenting an API key is validated against the configured key store (inline env-var keys) and resolved to a client identity before session establishment; Sasanka token-passthrough store added in Phase 4
   2. An invalid or missing API key when mode=required is rejected with HTTP 401 before any upstream connection
   3. The resolved client identity (API key path) is attached to the session as clientPrincipal and included in session-creation log entries
 **Plans**: 3 plans
 
 Plans:
 - [ ] 03-01-PLAN.md - Types (ApiKeyStoreConfig, ClientAuthGateConfig without jwt), ClientAuthGateError, schema sync, and profile-load-time validator (AUTH-02, AUTH-03)
-- [ ] 03-02-PLAN.md - ApiKeyStore interface, InlineApiKeyStore, SasankaApiKeyStore, and factory (AUTH-02)
+- [ ] 03-02-PLAN.md - ApiKeyStore interface, InlineApiKeyStore, and factory (AUTH-02; SasankaApiKeyStore deferred to Phase 4)
 - [ ] 03-03-PLAN.md - ClientAuthGate orchestrator (API key path only), http-transport wiring, session clientPrincipal attachment (AUTH-02, AUTH-03)
 
 ### Phase 4: Client Authentication Gate (OIDC JWT)
@@ -83,6 +83,7 @@ Plans:
 Plans:
 - [ ] 04-01: ClientAuthJwtConfig types, oidc-discovery utility, EnterpriseAuthProvider refactor (AUTH-01)
 - [ ] 04-02: JWT path in ClientAuthGate, JwksCache wiring, integration tests (AUTH-01, AUTH-03)
+- [ ] 04-03: SasankaApiKeyStore (token-passthrough via /api/v1/users/me), sasanka variant in ApiKeyStoreConfig, factory extension (AUTH-02)
 
 ### Phase 5: Observability
 **Goal**: Every tool call is audited with identity and outcome; operators have metrics and health endpoints to monitor the gateway

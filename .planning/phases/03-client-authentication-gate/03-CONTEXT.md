@@ -1,5 +1,11 @@
 # Phase 3: Client Authentication Gate - Context
 
+> **⚠ IMPORTANT — Sasanka deferred to Phase 4 (updated 2026-04-28)**
+> Decisions D-05, D-07, D-08, and D-09 below reference `SasankaApiKeyStore` as a Phase 3
+> deliverable. That decision was reversed. `SasankaApiKeyStore` and the `'sasanka'` variant of
+> `ApiKeyStoreConfig` are Phase 4 work (plan 04-03). Phase 3 implements `'inline'` only.
+> Executors MUST ignore any Sasanka-related code/config in this file and follow the plans.
+
 **Gathered:** 2026-04-12
 **Status:** Ready for planning
 
