@@ -1419,14 +1419,14 @@
           ]
         },
         "overrides": {
-          "$ref": "#/definitions/Record%3Cstring%2Cstructure-1535101595-20918-20954-1535101595-20903-20955-1535101595-20889-20956-1535101595-20818-20958-1535101595-0-21098%3E"
+          "$ref": "#/definitions/Record%3Cstring%2Cstructure-1535101595-21073-21109-1535101595-21058-21110-1535101595-21044-21111-1535101595-20973-21113-1535101595-0-21253%3E"
         }
       },
       "required": [
         "max_requests_per_minute"
       ]
     },
-    "Record<string,structure-1535101595-20918-20954-1535101595-20903-20955-1535101595-20889-20956-1535101595-20818-20958-1535101595-0-21098>": {
+    "Record<string,structure-1535101595-21073-21109-1535101595-21058-21110-1535101595-21044-21111-1535101595-20973-21113-1535101595-0-21253>": {
       "type": "object",
       "additionalProperties": {
         "type": "object",
@@ -1831,13 +1831,13 @@
             "custom-header"
           ]
         },
-        "value_from_env": {
-          "type": "string"
-        },
         "header_name": {
           "type": "string"
         },
         "query_param": {
+          "type": "string"
+        },
+        "value_from_env": {
           "type": "string"
         }
       },
@@ -1862,6 +1862,20 @@
             "type": "string"
           }
         }
+      }
+    },
+    "Record<string,structure-1535101595-20918-20954-1535101595-20903-20955-1535101595-20889-20956-1535101595-20818-20958-1535101595-0-21098>": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "max_requests_per_minute": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "max_requests_per_minute"
+        ]
       }
     },
     "Record<string,structure-1535101595-20409-20445-1535101595-20394-20446-1535101595-20380-20447-1535101595-20309-20449-1535101595-0-20589>": {
