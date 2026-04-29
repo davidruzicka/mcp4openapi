@@ -415,7 +415,7 @@
     {
       "name": "create_content",
       "description": "Create GitLab content. Actions: 'create_issue', 'create_merge_request', 'create_issue_note', 'create_merge_request_note', 'create_issue_discussion', 'reply_issue_discussion', 'create_issue_award_emoji', 'create_issue_note_award_emoji', 'create_merge_request_pipeline', 'create_merge_request_discussion', 'reply_merge_request_discussion', 'create_merge_request_award_emoji', 'create_merge_request_note_award_emoji', 'create_snippet_award_emoji', 'create_snippet_note_award_emoji', 'create_file', 'create_project_variable', 'create_project_hook'.",
-      "metadata_params": ["action", "project_id", "issue_iid", "merge_request_iid", "snippet_id", "discussion_id"],
+      "metadata_params": ["action", "project_id", "issue_iid", "merge_request_iid", "snippet_id", "note_id", "discussion_id"],
       "operations": {
         "create_issue": "postApiV4ProjectsIdIssues",
         "create_merge_request": "postApiV4ProjectsIdMergeRequests",

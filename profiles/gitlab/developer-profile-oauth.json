@@ -408,7 +408,7 @@
     {
       "name": "manage_snippets",
       "description": "Work with project snippets. Actions: 'list_snippets', 'get_snippet', 'download_snippet', 'list_award_emoji', 'get_award_emoji', 'create_award_emoji', 'delete_award_emoji', 'list_note_award_emoji', 'get_note_award_emoji', 'create_note_award_emoji', 'delete_note_award_emoji'. For snippet-specific actions, pass 'snippet_id'. For note award emoji actions, also pass 'note_id'.",
-      "metadata_params": ["action", "project_id", "snippet_id", "note_id"],
+      "metadata_params": ["action", "project_id", "snippet_id", "note_id", "award_id"],
       "operations": {
         "list_snippets": "getApiV4ProjectsIdSnippets",
         "get_snippet": "getApiV4ProjectsIdSnippetsSnippetId",
@@ -1278,7 +1278,7 @@
     {
       "name": "manage_issues",
       "description": "Work with issues. Actions: 'list' (all issues in project), 'list_global' (issues across projects), 'get' (single issue details), 'create' (create new issue), 'update' (update issue), 'delete' (delete issue - admins only), 'list_notes' (get all comments), 'get_note' (single comment), 'create_note' (add comment), 'update_note' (edit comment), 'delete_note' (remove comment), 'list_discussions', 'get_discussion', 'create_discussion', 'reply_discussion', 'delete_discussion', 'set_discussion_resolved', 'list_award_emoji', 'get_award_emoji', 'create_award_emoji', 'delete_award_emoji', 'list_note_award_emoji', 'get_note_award_emoji', 'create_note_award_emoji', 'delete_note_award_emoji'. Use 'list' to see all issues, filter by state (opened, closed, all). For actions that target a specific issue, pass 'issue_iid'. For 'create', pass 'title'. For note and discussion actions, pass 'body' and/or 'note_id' or 'discussion_id' as required.",
-      "metadata_params": ["action", "project_id", "issue_iid", "note_id"],
+      "metadata_params": ["action", "project_id", "issue_iid", "note_id", "award_id", "discussion_id"],
       "operations": {
         "list": "getApiV4ProjectsIdIssues",
         "list_global": "getApiV4Issues",
