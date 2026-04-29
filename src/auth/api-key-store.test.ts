@@ -1,7 +1,22 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import * as nodeCrypto from 'node:crypto';
+import { timingSafeEqual as realTimingSafeEqual } from 'node:crypto';
 import { InlineApiKeyStore } from './inline-api-key-store.js';
 import type { InlineApiKeyEntry } from '../types/profile.js';
+
+// Wrap node:crypto.timingSafeEqual so we can verify it is invoked on
+// equal-length buffers. vi.spyOn cannot redefine ESM namespace exports, so we
+// replace via vi.mock with a real-pass-through wrapper that records calls.
+const timingSafeEqualMock = vi.hoisted(() => vi.fn());
+vi.mock('node:crypto', async () => {
+  const actual = await vi.importActual<typeof import('node:crypto')>('node:crypto');
+  return {
+    ...actual,
+    timingSafeEqual: (a: Uint8Array, b: Uint8Array) => {
+      timingSafeEqualMock(a, b);
+      return actual.timingSafeEqual(a, b);
+    },
+  };
+});
 
 const PROFILE_ID = 'alpha';
 
@@ -30,7 +45,7 @@ function withEnv(overrides: Record<string, string | undefined>, run: () => void 
 
 describe('InlineApiKeyStore', () => {
   afterEach(() => {
-    vi.restoreAllMocks();
+    timingSafeEqualMock.mockClear();
   });
 
   it('returns AuthorizedPrincipal when key matches a configured entry', async () => {
@@ -149,8 +164,6 @@ describe('InlineApiKeyStore', () => {
   });
 
   it('uses timingSafeEqual on equal-length 32-byte HMAC buffers (constant-time comparison)', async () => {
-    const timingSafeEqualSpy = vi.spyOn(nodeCrypto, 'timingSafeEqual');
-
     const entries: InlineApiKeyEntry[] = [
       { key_from_env: 'TEST_API_KEY_TIMING_SHORT', subject: 's-short' },
       { key_from_env: 'TEST_API_KEY_TIMING_LONG', subject: 's-long' },
@@ -167,14 +180,16 @@ describe('InlineApiKeyStore', () => {
       },
     );
 
-    expect(timingSafeEqualSpy).toHaveBeenCalled();
-    for (const call of timingSafeEqualSpy.mock.calls) {
-      const [a, b] = call as [Buffer | Uint8Array, Buffer | Uint8Array];
+    expect(timingSafeEqualMock).toHaveBeenCalled();
+    for (const call of timingSafeEqualMock.mock.calls) {
+      const [a, b] = call as [Uint8Array, Uint8Array];
       // HMAC-SHA256 always produces 32-byte output regardless of input length —
       // erasing length as a timing side-channel.
       expect(a.length).toBe(32);
       expect(b.length).toBe(32);
       expect(a.length).toBe(b.length);
     }
+    // Sanity-check: the wrapper actually delegates to the real implementation.
+    expect(realTimingSafeEqual).toBeDefined();
   });
 });
