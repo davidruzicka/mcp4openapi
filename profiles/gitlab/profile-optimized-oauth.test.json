@@ -424,6 +424,94 @@
       }
     },
     {
+      "name": "Snippets - List Award Emoji",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "list_snippet_award_emoji",
+        "project_id": "{{projectId}}",
+        "snippet_id": "{{snippetId}}"
+      },
+      "mocks": [
+        {
+          "operationId": "getApiV4ProjectsIdSnippetsSnippetIdAwardEmoji",
+          "response": {
+            "body": [{"id": 7, "name": "thumbsup"}]
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": [{"id": 7}]
+      }
+    },
+    {
+      "name": "Snippets - Get Award Emoji",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "get_snippet_award_emoji",
+        "project_id": "{{projectId}}",
+        "snippet_id": "{{snippetId}}",
+        "award_id": "{{awardId}}"
+      },
+      "mocks": [
+        {
+          "operationId": "getApiV4ProjectsIdSnippetsSnippetIdAwardEmojiAwardId",
+          "response": {
+            "body": {"id": 7, "name": "thumbsup"}
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": {"id": 7}
+      }
+    },
+    {
+      "name": "Snippets - List Note Award Emoji",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "list_snippet_note_award_emoji",
+        "project_id": "{{projectId}}",
+        "snippet_id": "{{snippetId}}",
+        "note_id": "{{noteId}}"
+      },
+      "mocks": [
+        {
+          "operationId": "getApiV4ProjectsIdSnippetsSnippetIdNotesNoteIdAwardEmoji",
+          "response": {
+            "body": [{"id": 7, "name": "thumbsup"}]
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": [{"id": 7}]
+      }
+    },
+    {
+      "name": "Snippets - Get Note Award Emoji",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "get_snippet_note_award_emoji",
+        "project_id": "{{projectId}}",
+        "snippet_id": "{{snippetId}}",
+        "note_id": "{{noteId}}",
+        "award_id": "{{awardId}}"
+      },
+      "mocks": [
+        {
+          "operationId": "getApiV4ProjectsIdSnippetsSnippetIdNotesNoteIdAwardEmojiAwardId",
+          "response": {
+            "body": {"id": 7, "name": "thumbsup"}
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": {"id": 7}
+      }
+    },
+    {
       "name": "Repository Files - Get",
       "tool": "retrieve_content",
       "arguments": {
@@ -922,6 +1010,49 @@
       }
     },
     {
+      "name": "Issues - List Award Emoji",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "list_issue_award_emoji",
+        "project_id": "{{projectId}}",
+        "issue_iid": "{{issueIid}}"
+      },
+      "mocks": [
+        {
+          "operationId": "getApiV4ProjectsIdIssuesIssueIidAwardEmoji",
+          "response": {
+            "body": [{"id": 7, "name": "thumbsup"}]
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": [{"id": 7}]
+      }
+    },
+    {
+      "name": "Issues - Get Award Emoji",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "get_issue_award_emoji",
+        "project_id": "{{projectId}}",
+        "issue_iid": "{{issueIid}}",
+        "award_id": "{{awardId}}"
+      },
+      "mocks": [
+        {
+          "operationId": "getApiV4ProjectsIdIssuesIssueIidAwardEmojiAwardId",
+          "response": {
+            "body": {"id": 7, "name": "thumbsup"}
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": {"id": 7}
+      }
+    },
+    {
       "name": "Repository - List Tree",
       "tool": "retrieve_content",
       "arguments": {
@@ -1253,6 +1384,29 @@
       }
     },
     {
+      "name": "Issues - Create Award Emoji",
+      "tool": "create_content",
+      "arguments": {
+        "action": "create_issue_award_emoji",
+        "project_id": "{{projectId}}",
+        "issue_iid": "{{issueIid}}",
+        "name": "thumbsup"
+      },
+      "mocks": [
+        {
+          "operationId": "postApiV4ProjectsIdIssuesIssueIidAwardEmoji",
+          "response": {
+            "status": 201,
+            "body": {"id": 7, "name": "thumbsup"}
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": {"id": 7}
+      }
+    },
+    {
       "name": "Issues - Create Note Award Emoji",
       "tool": "create_content",
       "arguments": {
@@ -1265,6 +1419,53 @@
       "mocks": [
         {
           "operationId": "postApiV4ProjectsIdIssuesIssueIidNotesNoteIdAwardEmoji",
+          "response": {
+            "status": 201,
+            "body": {"id": 7, "name": "thumbsup"}
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": {"id": 7}
+      }
+    },
+    {
+      "name": "Snippets - Create Award Emoji",
+      "tool": "create_content",
+      "arguments": {
+        "action": "create_snippet_award_emoji",
+        "project_id": "{{projectId}}",
+        "snippet_id": "{{snippetId}}",
+        "name": "thumbsup"
+      },
+      "mocks": [
+        {
+          "operationId": "postApiV4ProjectsIdSnippetsSnippetIdAwardEmoji",
+          "response": {
+            "status": 201,
+            "body": {"id": 7, "name": "thumbsup"}
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": {"id": 7}
+      }
+    },
+    {
+      "name": "Snippets - Create Note Award Emoji",
+      "tool": "create_content",
+      "arguments": {
+        "action": "create_snippet_note_award_emoji",
+        "project_id": "{{projectId}}",
+        "snippet_id": "{{snippetId}}",
+        "note_id": "{{noteId}}",
+        "name": "thumbsup"
+      },
+      "mocks": [
+        {
+          "operationId": "postApiV4ProjectsIdSnippetsSnippetIdNotesNoteIdAwardEmoji",
           "response": {
             "status": 201,
             "body": {"id": 7, "name": "thumbsup"}
@@ -1501,6 +1702,27 @@
       }
     },
     {
+      "name": "Issues - Delete Award Emoji",
+      "tool": "delete_content",
+      "arguments": {
+        "action": "delete_issue_award_emoji",
+        "project_id": "{{projectId}}",
+        "issue_iid": "{{issueIid}}",
+        "award_id": "{{awardId}}"
+      },
+      "mocks": [
+        {
+          "operationId": "deleteApiV4ProjectsIdIssuesIssueIidAwardEmojiAwardId",
+          "response": {
+            "status": 204
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
       "name": "Issues - Delete Note Award Emoji",
       "tool": "delete_content",
       "arguments": {
@@ -1513,6 +1735,49 @@
       "mocks": [
         {
           "operationId": "deleteApiV4ProjectsIdIssuesIssueIidNotesNoteIdAwardEmojiAwardId",
+          "response": {
+            "status": 204
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Snippets - Delete Award Emoji",
+      "tool": "delete_content",
+      "arguments": {
+        "action": "delete_snippet_award_emoji",
+        "project_id": "{{projectId}}",
+        "snippet_id": "{{snippetId}}",
+        "award_id": "{{awardId}}"
+      },
+      "mocks": [
+        {
+          "operationId": "deleteApiV4ProjectsIdSnippetsSnippetIdAwardEmojiAwardId",
+          "response": {
+            "status": 204
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Snippets - Delete Note Award Emoji",
+      "tool": "delete_content",
+      "arguments": {
+        "action": "delete_snippet_note_award_emoji",
+        "project_id": "{{projectId}}",
+        "snippet_id": "{{snippetId}}",
+        "note_id": "{{noteId}}",
+        "award_id": "{{awardId}}"
+      },
+      "mocks": [
+        {
+          "operationId": "deleteApiV4ProjectsIdSnippetsSnippetIdNotesNoteIdAwardEmojiAwardId",
           "response": {
             "status": 204
           }
@@ -1575,6 +1840,318 @@
       "mocks": [
         {
           "operationId": "deleteApiV4ProjectsIdHooksHookId",
+          "response": {
+            "status": 204
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Merge Requests - List Award Emoji",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "list_merge_request_award_emoji",
+        "project_id": "{{projectId}}",
+        "merge_request_iid": "{{mergeRequestIid}}"
+      },
+      "mocks": [
+        {
+          "operationId": "getApiV4ProjectsIdMergeRequestsMergeRequestIidAwardEmoji",
+          "response": {
+            "body": [{"id": 7, "name": "thumbsup"}]
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": [{"id": 7}]
+      }
+    },
+    {
+      "name": "Merge Requests - Get Award Emoji",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "get_merge_request_award_emoji",
+        "project_id": "{{projectId}}",
+        "merge_request_iid": "{{mergeRequestIid}}",
+        "award_id": "{{awardId}}"
+      },
+      "mocks": [
+        {
+          "operationId": "getApiV4ProjectsIdMergeRequestsMergeRequestIidAwardEmojiAwardId",
+          "response": {
+            "body": {"id": 7, "name": "thumbsup"}
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": {"id": 7}
+      }
+    },
+    {
+      "name": "Merge Requests - List Note Award Emoji",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "list_merge_request_note_award_emoji",
+        "project_id": "{{projectId}}",
+        "merge_request_iid": "{{mergeRequestIid}}",
+        "note_id": "{{noteId}}"
+      },
+      "mocks": [
+        {
+          "operationId": "getApiV4ProjectsIdMergeRequestsMergeRequestIidNotesNoteIdAwardEmoji",
+          "response": {
+            "body": [{"id": 8, "name": "heart"}]
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": [{"id": 8}]
+      }
+    },
+    {
+      "name": "Merge Requests - Get Note Award Emoji",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "get_merge_request_note_award_emoji",
+        "project_id": "{{projectId}}",
+        "merge_request_iid": "{{mergeRequestIid}}",
+        "note_id": "{{noteId}}",
+        "award_id": "{{awardId}}"
+      },
+      "mocks": [
+        {
+          "operationId": "getApiV4ProjectsIdMergeRequestsMergeRequestIidNotesNoteIdAwardEmojiAwardId",
+          "response": {
+            "body": {"id": 7, "name": "thumbsup"}
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": {"id": 7}
+      }
+    },
+    {
+      "name": "Merge Requests - Create Award Emoji",
+      "tool": "create_content",
+      "arguments": {
+        "action": "create_merge_request_award_emoji",
+        "project_id": "{{projectId}}",
+        "merge_request_iid": "{{mergeRequestIid}}",
+        "name": "thumbsup"
+      },
+      "mocks": [
+        {
+          "operationId": "postApiV4ProjectsIdMergeRequestsMergeRequestIidAwardEmoji",
+          "response": {
+            "status": 201,
+            "body": {"id": 7, "name": "thumbsup"}
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": {"id": 7}
+      }
+    },
+    {
+      "name": "Merge Requests - Create Note Award Emoji",
+      "tool": "create_content",
+      "arguments": {
+        "action": "create_merge_request_note_award_emoji",
+        "project_id": "{{projectId}}",
+        "merge_request_iid": "{{mergeRequestIid}}",
+        "note_id": "{{noteId}}",
+        "name": "heart"
+      },
+      "mocks": [
+        {
+          "operationId": "postApiV4ProjectsIdMergeRequestsMergeRequestIidNotesNoteIdAwardEmoji",
+          "response": {
+            "status": 201,
+            "body": {"id": 8, "name": "heart"}
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": {"id": 8}
+      }
+    },
+    {
+      "name": "Merge Requests - Delete Award Emoji",
+      "tool": "delete_content",
+      "arguments": {
+        "action": "delete_merge_request_award_emoji",
+        "project_id": "{{projectId}}",
+        "merge_request_iid": "{{mergeRequestIid}}",
+        "award_id": "{{awardId}}"
+      },
+      "mocks": [
+        {
+          "operationId": "deleteApiV4ProjectsIdMergeRequestsMergeRequestIidAwardEmojiAwardId",
+          "response": {
+            "status": 204
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Merge Requests - Delete Note Award Emoji",
+      "tool": "delete_content",
+      "arguments": {
+        "action": "delete_merge_request_note_award_emoji",
+        "project_id": "{{projectId}}",
+        "merge_request_iid": "{{mergeRequestIid}}",
+        "note_id": "{{noteId}}",
+        "award_id": "{{awardId}}"
+      },
+      "mocks": [
+        {
+          "operationId": "deleteApiV4ProjectsIdMergeRequestsMergeRequestIidNotesNoteIdAwardEmojiAwardId",
+          "response": {
+            "status": 204
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Merge Requests - List Discussions",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "list_merge_request_discussions",
+        "project_id": "{{projectId}}",
+        "merge_request_iid": "{{mergeRequestIid}}"
+      },
+      "mocks": [
+        {
+          "operationId": "getApiV4ProjectsIdMergeRequestsMergeRequestIidDiscussions",
+          "response": {
+            "body": [{"id": "discussion-2", "resolved": false}]
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": [{"id": "discussion-2"}]
+      }
+    },
+    {
+      "name": "Merge Requests - Get Discussion",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "get_merge_request_discussion",
+        "project_id": "{{projectId}}",
+        "merge_request_iid": "{{mergeRequestIid}}",
+        "discussion_id": "{{discussionId}}"
+      },
+      "mocks": [
+        {
+          "operationId": "getApiV4ProjectsIdMergeRequestsMergeRequestIidDiscussionsDiscussionId",
+          "response": {
+            "body": {"id": "discussion-1", "resolved": false}
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": {"id": "discussion-1"}
+      }
+    },
+    {
+      "name": "Merge Requests - Create Discussion",
+      "tool": "create_content",
+      "arguments": {
+        "action": "create_merge_request_discussion",
+        "project_id": "{{projectId}}",
+        "merge_request_iid": "{{mergeRequestIid}}",
+        "body": "Discussion"
+      },
+      "mocks": [
+        {
+          "operationId": "postApiV4ProjectsIdMergeRequestsMergeRequestIidDiscussions",
+          "response": {
+            "status": 201,
+            "body": {"id": "discussion-2", "resolved": false}
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": {"id": "discussion-2"}
+      }
+    },
+    {
+      "name": "Merge Requests - Reply Discussion",
+      "tool": "create_content",
+      "arguments": {
+        "action": "reply_merge_request_discussion",
+        "project_id": "{{projectId}}",
+        "merge_request_iid": "{{mergeRequestIid}}",
+        "discussion_id": "{{discussionId}}",
+        "body": "Reply"
+      },
+      "mocks": [
+        {
+          "operationId": "postApiV4ProjectsIdMergeRequestsMergeRequestIidDiscussionsDiscussionIdNotes",
+          "response": {
+            "status": 201,
+            "body": {"id": 20, "body": "Reply"}
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": {"id": 20}
+      }
+    },
+    {
+      "name": "Merge Requests - Resolve Discussion",
+      "tool": "update_content",
+      "arguments": {
+        "action": "set_merge_request_discussion_resolved",
+        "project_id": "{{projectId}}",
+        "merge_request_iid": "{{mergeRequestIid}}",
+        "discussion_id": "{{discussionId}}",
+        "resolved": true
+      },
+      "mocks": [
+        {
+          "operationId": "putApiV4ProjectsIdMergeRequestsMergeRequestIidDiscussionsDiscussionId",
+          "response": {
+            "body": {"id": "discussion-1", "resolved": true}
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": {"resolved": true}
+      }
+    },
+    {
+      "name": "Merge Requests - Delete Discussion",
+      "tool": "delete_content",
+      "arguments": {
+        "action": "delete_merge_request_discussion",
+        "project_id": "{{projectId}}",
+        "merge_request_iid": "{{mergeRequestIid}}",
+        "discussion_id": "{{discussionId}}"
+      },
+      "mocks": [
+        {
+          "operationId": "deleteApiV4ProjectsIdMergeRequestsMergeRequestIidDiscussionsDiscussionId",
           "response": {
             "status": 204
           }

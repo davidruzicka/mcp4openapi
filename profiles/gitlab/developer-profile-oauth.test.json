@@ -3473,6 +3473,184 @@
       }
     },
     {
+      "name": "Snippets - List Award Emoji",
+      "tool": "manage_snippets",
+      "arguments": {
+        "action": "list_award_emoji",
+        "project_id": "{{projectId}}",
+        "snippet_id": 1
+      },
+      "mocks": [
+        {
+          "operationId": "getApiV4ProjectsIdSnippetsSnippetIdAwardEmoji",
+          "response": {
+            "body": [{"id": 7, "name": "thumbsup"}]
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": [{"id": 7}]
+      }
+    },
+    {
+      "name": "Snippets - Get Award Emoji",
+      "tool": "manage_snippets",
+      "arguments": {
+        "action": "get_award_emoji",
+        "project_id": "{{projectId}}",
+        "snippet_id": 1,
+        "award_id": "{{awardId}}"
+      },
+      "mocks": [
+        {
+          "operationId": "getApiV4ProjectsIdSnippetsSnippetIdAwardEmojiAwardId",
+          "response": {
+            "body": {"id": 7, "name": "thumbsup"}
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": {"id": 7}
+      }
+    },
+    {
+      "name": "Snippets - Create Award Emoji",
+      "tool": "manage_snippets",
+      "arguments": {
+        "action": "create_award_emoji",
+        "project_id": "{{projectId}}",
+        "snippet_id": 1,
+        "name": "thumbsup"
+      },
+      "mocks": [
+        {
+          "operationId": "postApiV4ProjectsIdSnippetsSnippetIdAwardEmoji",
+          "response": {
+            "status": 201,
+            "body": {"id": 7, "name": "thumbsup"}
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": {"id": 7}
+      }
+    },
+    {
+      "name": "Snippets - Delete Award Emoji",
+      "tool": "manage_snippets",
+      "arguments": {
+        "action": "delete_award_emoji",
+        "project_id": "{{projectId}}",
+        "snippet_id": 1,
+        "award_id": "{{awardId}}"
+      },
+      "mocks": [
+        {
+          "operationId": "deleteApiV4ProjectsIdSnippetsSnippetIdAwardEmojiAwardId",
+          "response": {
+            "status": 204
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Snippets - List Note Award Emoji",
+      "tool": "manage_snippets",
+      "arguments": {
+        "action": "list_note_award_emoji",
+        "project_id": "{{projectId}}",
+        "snippet_id": 1,
+        "note_id": "{{noteId}}"
+      },
+      "mocks": [
+        {
+          "operationId": "getApiV4ProjectsIdSnippetsSnippetIdNotesNoteIdAwardEmoji",
+          "response": {
+            "body": [{"id": 7, "name": "thumbsup"}]
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": [{"id": 7}]
+      }
+    },
+    {
+      "name": "Snippets - Get Note Award Emoji",
+      "tool": "manage_snippets",
+      "arguments": {
+        "action": "get_note_award_emoji",
+        "project_id": "{{projectId}}",
+        "snippet_id": 1,
+        "note_id": "{{noteId}}",
+        "award_id": "{{awardId}}"
+      },
+      "mocks": [
+        {
+          "operationId": "getApiV4ProjectsIdSnippetsSnippetIdNotesNoteIdAwardEmojiAwardId",
+          "response": {
+            "body": {"id": 7, "name": "thumbsup"}
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": {"id": 7}
+      }
+    },
+    {
+      "name": "Snippets - Create Note Award Emoji",
+      "tool": "manage_snippets",
+      "arguments": {
+        "action": "create_note_award_emoji",
+        "project_id": "{{projectId}}",
+        "snippet_id": 1,
+        "note_id": "{{noteId}}",
+        "name": "thumbsup"
+      },
+      "mocks": [
+        {
+          "operationId": "postApiV4ProjectsIdSnippetsSnippetIdNotesNoteIdAwardEmoji",
+          "response": {
+            "status": 201,
+            "body": {"id": 7, "name": "thumbsup"}
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": {"id": 7}
+      }
+    },
+    {
+      "name": "Snippets - Delete Note Award Emoji",
+      "tool": "manage_snippets",
+      "arguments": {
+        "action": "delete_note_award_emoji",
+        "project_id": "{{projectId}}",
+        "snippet_id": 1,
+        "note_id": "{{noteId}}",
+        "award_id": "{{awardId}}"
+      },
+      "mocks": [
+        {
+          "operationId": "deleteApiV4ProjectsIdSnippetsSnippetIdNotesNoteIdAwardEmojiAwardId",
+          "response": {
+            "status": 204
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
       "name": "Branches - Unprotect",
       "tool": "manage_branches",
       "arguments": {
@@ -4262,6 +4440,93 @@
       "mocks": [
         {
           "operationId": "deleteApiV4ProjectsIdIssuesIssueIidNotesNoteIdAwardEmojiAwardId",
+          "response": {
+            "status": 204
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Issues - List Award Emoji",
+      "tool": "manage_issues",
+      "arguments": {
+        "action": "list_award_emoji",
+        "project_id": "{{projectId}}",
+        "issue_iid": "{{issueIid}}"
+      },
+      "mocks": [
+        {
+          "operationId": "getApiV4ProjectsIdIssuesIssueIidAwardEmoji",
+          "response": {
+            "body": [{"id": 7, "name": "thumbsup"}]
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": [{"id": 7}]
+      }
+    },
+    {
+      "name": "Issues - Get Award Emoji",
+      "tool": "manage_issues",
+      "arguments": {
+        "action": "get_award_emoji",
+        "project_id": "{{projectId}}",
+        "issue_iid": "{{issueIid}}",
+        "award_id": "{{awardId}}"
+      },
+      "mocks": [
+        {
+          "operationId": "getApiV4ProjectsIdIssuesIssueIidAwardEmojiAwardId",
+          "response": {
+            "body": {"id": 7, "name": "thumbsup"}
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": {"id": 7}
+      }
+    },
+    {
+      "name": "Issues - Create Award Emoji",
+      "tool": "manage_issues",
+      "arguments": {
+        "action": "create_award_emoji",
+        "project_id": "{{projectId}}",
+        "issue_iid": "{{issueIid}}",
+        "name": "thumbsup"
+      },
+      "mocks": [
+        {
+          "operationId": "postApiV4ProjectsIdIssuesIssueIidAwardEmoji",
+          "response": {
+            "status": 201,
+            "body": {"id": 7, "name": "thumbsup"}
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": {"id": 7}
+      }
+    },
+    {
+      "name": "Issues - Delete Award Emoji",
+      "tool": "manage_issues",
+      "arguments": {
+        "action": "delete_award_emoji",
+        "project_id": "{{projectId}}",
+        "issue_iid": "{{issueIid}}",
+        "award_id": "{{awardId}}"
+      },
+      "mocks": [
+        {
+          "operationId": "deleteApiV4ProjectsIdIssuesIssueIidAwardEmojiAwardId",
           "response": {
             "status": 204
           }

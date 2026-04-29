@@ -3076,6 +3076,109 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/API_Error"
+  /projects/{id}/issues/{issue_iid}/award_emoji:
+    get:
+      tags:
+        - issues
+      summary: List award emoji on issue
+      description: List award emoji for a specific issue
+      operationId: getApiV4ProjectsIdIssuesIssueIidAwardEmoji
+      parameters:
+        - $ref: "#/components/parameters/ProjectIdOrPath"
+        - name: issue_iid
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/API_Entities_AwardEmoji"
+    post:
+      tags:
+        - issues
+      summary: Add award emoji to issue
+      description: Add award emoji to a specific issue
+      operationId: postApiV4ProjectsIdIssuesIssueIidAwardEmoji
+      parameters:
+        - $ref: "#/components/parameters/ProjectIdOrPath"
+        - name: issue_iid
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+              properties:
+                name:
+                  type: string
+                  description: Emoji name
+                  example: thumbs_up
+      responses:
+        "201":
+          description: Award emoji added
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/API_Entities_AwardEmoji"
+  /projects/{id}/issues/{issue_iid}/award_emoji/{award_id}:
+    get:
+      tags:
+        - issues
+      summary: Get award emoji on issue
+      description: Get a specific award emoji for an issue
+      operationId: getApiV4ProjectsIdIssuesIssueIidAwardEmojiAwardId
+      parameters:
+        - $ref: "#/components/parameters/ProjectIdOrPath"
+        - name: issue_iid
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: award_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/API_Entities_AwardEmoji"
+    delete:
+      tags:
+        - issues
+      summary: Delete award emoji from issue
+      description: Delete a specific award emoji from an issue
+      operationId: deleteApiV4ProjectsIdIssuesIssueIidAwardEmojiAwardId
+      parameters:
+        - $ref: "#/components/parameters/ProjectIdOrPath"
+        - name: issue_iid
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: award_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Award emoji removed
   /projects/{id}/issues/{issue_iid}/notes/{note_id}/award_emoji:
     get:
       tags:
@@ -7392,6 +7495,232 @@ paths:
             text/plain:
               schema:
                 type: string
+  /projects/{id}/snippets/{snippet_id}/award_emoji:
+    get:
+      tags:
+        - snippets
+      summary: List award emoji on snippet
+      description: List award emoji for a specific snippet
+      operationId: getApiV4ProjectsIdSnippetsSnippetIdAwardEmoji
+      parameters:
+        - $ref: "#/components/parameters/ProjectIdOrPath"
+        - name: snippet_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/API_Entities_AwardEmoji"
+    post:
+      tags:
+        - snippets
+      summary: Add award emoji to snippet
+      description: Add award emoji to a specific snippet
+      operationId: postApiV4ProjectsIdSnippetsSnippetIdAwardEmoji
+      parameters:
+        - $ref: "#/components/parameters/ProjectIdOrPath"
+        - name: snippet_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+              properties:
+                name:
+                  type: string
+                  description: Emoji name
+                  example: thumbs_up
+      responses:
+        "201":
+          description: Award emoji added
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/API_Entities_AwardEmoji"
+  /projects/{id}/snippets/{snippet_id}/award_emoji/{award_id}:
+    get:
+      tags:
+        - snippets
+      summary: Get award emoji on snippet
+      description: Get a specific award emoji for a snippet
+      operationId: getApiV4ProjectsIdSnippetsSnippetIdAwardEmojiAwardId
+      parameters:
+        - $ref: "#/components/parameters/ProjectIdOrPath"
+        - name: snippet_id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: award_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/API_Entities_AwardEmoji"
+    delete:
+      tags:
+        - snippets
+      summary: Delete award emoji from snippet
+      description: Delete a specific award emoji from a snippet
+      operationId: deleteApiV4ProjectsIdSnippetsSnippetIdAwardEmojiAwardId
+      parameters:
+        - $ref: "#/components/parameters/ProjectIdOrPath"
+        - name: snippet_id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: award_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Award emoji removed
+  /projects/{id}/snippets/{snippet_id}/notes/{note_id}/award_emoji:
+    get:
+      tags:
+        - snippets
+      summary: List award emoji on snippet note
+      description: List award emoji for a specific snippet note
+      operationId: getApiV4ProjectsIdSnippetsSnippetIdNotesNoteIdAwardEmoji
+      parameters:
+        - $ref: "#/components/parameters/ProjectIdOrPath"
+        - name: snippet_id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: note_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/API_Entities_AwardEmoji"
+    post:
+      tags:
+        - snippets
+      summary: Add award emoji to snippet note
+      description: Add award emoji to a specific snippet note
+      operationId: postApiV4ProjectsIdSnippetsSnippetIdNotesNoteIdAwardEmoji
+      parameters:
+        - $ref: "#/components/parameters/ProjectIdOrPath"
+        - name: snippet_id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: note_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+              properties:
+                name:
+                  type: string
+                  description: Emoji name
+                  example: thumbs_up
+      responses:
+        "201":
+          description: Award emoji added
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/API_Entities_AwardEmoji"
+  /projects/{id}/snippets/{snippet_id}/notes/{note_id}/award_emoji/{award_id}:
+    get:
+      tags:
+        - snippets
+      summary: Get award emoji on snippet note
+      description: Get a specific award emoji for a snippet note
+      operationId: getApiV4ProjectsIdSnippetsSnippetIdNotesNoteIdAwardEmojiAwardId
+      parameters:
+        - $ref: "#/components/parameters/ProjectIdOrPath"
+        - name: snippet_id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: note_id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: award_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/API_Entities_AwardEmoji"
+    delete:
+      tags:
+        - snippets
+      summary: Delete award emoji from snippet note
+      description: Delete a specific award emoji from a snippet note
+      operationId: deleteApiV4ProjectsIdSnippetsSnippetIdNotesNoteIdAwardEmojiAwardId
+      parameters:
+        - $ref: "#/components/parameters/ProjectIdOrPath"
+        - name: snippet_id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: note_id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: award_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Award emoji removed
 components:
   parameters:
     ProjectIdOrPath:
