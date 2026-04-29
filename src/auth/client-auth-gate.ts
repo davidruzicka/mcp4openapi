@@ -34,7 +34,6 @@ export class ClientAuthGate {
   // validation needs structured logs for JWKS misses, kid mismatches, etc.).
   // Keeping the field private + readonly keeps the constructor signature
   // additive across phases.
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   private readonly logger: Logger;
   private readonly apiKeyStore?: ApiKeyStore;
 

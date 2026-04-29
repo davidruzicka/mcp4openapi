@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Client auth gate types (`ClientAuthGateConfig`, `ApiKeyStoreConfig`, `InlineApiKeyEntry`), `ClientAuthGateError`, `SessionData.clientPrincipal` field, and profile-load-time validator (`validateClientAuthGateProfile`) for AUTH-02/AUTH-03. Phase 3 ships inline API keys only; JWT/OIDC types and the `sasanka` API key backend are added in Phase 4.
 - `ApiKeyStore` interface with `InlineApiKeyStore` (constant-time HMAC-SHA256 comparison via `timingSafeEqual` on equal-length 32-byte digests, erasing length as a timing side-channel) and extensible `createApiKeyStore` factory for AUTH-02 M2M API key validation. `SasankaApiKeyStore` is added in Phase 4.
+- `ClientAuthGate` orchestrator wired into HTTP transport session init: validates inbound client API key before session establishment; resolves `AuthorizedPrincipal` (authType=`token`) and attaches it as `session.clientPrincipal`; mode-aware (`required` rejects with HTTP 401 when no identity is resolved, `optional` allows anonymous sessions); when configured, the gate becomes the inbound auth authority and bypasses the legacy `authConfigs` token-required guard so `mode='optional'` can permit anonymous initialization (AUTH-02; partial AUTH-03). JWT/OIDC gate added in Phase 4.
 
 ### Fixed
 - `upstream_mcp[].timeout_ms` is now enforced on proxied `tools/call`: passed as `RequestOptions.timeout` to `client.callTool()` so a hung upstream is bounded by the configured value instead of the SDK default.
