@@ -6,6 +6,49 @@
  * (admin vs developer vs readonly) without code changes.
  */
 
+/**
+ * Inline API key entry for the client auth gate.
+ *
+ * Used by `ApiKeyStoreConfig` of type `'inline'`. Each entry references an
+ * environment variable that holds the raw API key value (so secrets stay out of
+ * profile JSON) and maps that key to a stable subject identity.
+ */
+export interface InlineApiKeyEntry {
+  /** Env var name containing the raw API key value. */
+  key_from_env: string;
+  /** Subject identifier for this key (mapped to AuthorizedPrincipal.subject). */
+  subject: string;
+  /** Optional scopes granted to this key. */
+  scopes?: string[];
+}
+
+/**
+ * Backing store for client API keys.
+ *
+ * Phase 3 supports only `'inline'` — keys defined directly on the profile and
+ * resolved from env vars. Phase 4 will extend the union to include
+ * `{ type: 'sasanka'; ... }` for the centralized key service.
+ */
+export type ApiKeyStoreConfig =
+  | { type: 'inline'; keys: InlineApiKeyEntry[] };
+  // Phase 4 adds: | { type: 'sasanka'; base_url?: string; base_url_from_env?: string; timeout_ms?: number }
+
+/**
+ * Client authentication gate configuration.
+ *
+ * Defines how the gateway authenticates inbound MCP clients before any tool
+ * call is processed. Phase 3 supports API keys only; Phase 4 adds an OIDC JWT
+ * gate via a future `jwt?: ClientAuthJwtConfig` field on this interface.
+ */
+export interface ClientAuthGateConfig {
+  /** 'required' (default): reject session if no valid identity resolved. 'optional': allow anonymous sessions. */
+  mode?: 'required' | 'optional';
+  /** Resolve mode from env var. */
+  mode_from_env?: string;
+  /** API key store config. Phase 4 adds jwt?: ClientAuthJwtConfig. */
+  api_keys?: ApiKeyStoreConfig;
+}
+
 export interface Profile {
   profile_name: string;
   profile_id?: string;
@@ -18,9 +61,10 @@ export interface Profile {
   interceptors?: InterceptorConfig;
   parameter_aliases?: Record<string, string[]>; // e.g., {"id": ["resource_id", "project_id"]}
   enterprise_authorization?: EnterpriseAuthorizationConfig;
+  client_auth_gate?: ClientAuthGateConfig;
   upstream_mcp?: UpstreamMcpServerConfig[];
   upstream_mcp_from_env?: string;
-  
+
   // OAuth resource metadata (optional overrides)
   resource_name?: string;           // OAuth resource name (overrides OpenAPI info.title)
   resource_documentation?: string;  // OAuth resource documentation URL (overrides OpenAPI externalDocs.url)

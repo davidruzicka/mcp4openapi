@@ -145,6 +145,13 @@ export class EnterpriseIssuerDiscoveryError extends MCPError {
   }
 }
 
+export class ClientAuthGateError extends MCPError {
+  constructor(message: string, details?: Record<string, unknown>) {
+    super(message, 'CLIENT_AUTH_GATE_ERROR', details);
+    this.name = 'ClientAuthGateError';
+  }
+}
+
 export class EnterprisePolicyViolationError extends MCPError {
   constructor(message: string, details?: Record<string, unknown>) {
     super(message, 'ENTERPRISE_POLICY_VIOLATION_ERROR', details);

@@ -6,11 +6,12 @@
  */
 
 import type { Request as ExpressRequest, Response } from 'express';
-import type { OAuthConfig, AuthInterceptor, EnterpriseAuthorizationConfig, UpstreamMcpServerConfig } from './profile.js';
+import type { OAuthConfig, AuthInterceptor, EnterpriseAuthorizationConfig, UpstreamMcpServerConfig, ClientAuthGateConfig } from './profile.js';
 import type { HttpTenantIndex } from './http-tenants.js';
 import type { SessionToolFilterRequest, SessionToolFilterCompat as SessionToolFilter } from '../tool-filter/index.js';
 import type { OpenAPIParser } from '../openapi/openapi-parser.js';
 import type { FilteringRules } from '../core/filtering.js';
+import type { AuthorizedPrincipal } from '../auth/inbound-auth-principal.js';
 
 export type { SessionToolFilter, SessionToolFilterRequest };
 
@@ -37,6 +38,15 @@ export interface SessionData {
   tenantAuthMode?: 'oauth' | 'token';
   tenantOAuthConfig?: OAuthConfig;
   tenantAuthConfigs?: AuthInterceptor[];
+  /**
+   * Authenticated client identity resolved by the client auth gate.
+   *
+   * Populated during session init when `client_auth_gate` is configured on the
+   * profile. Downstream policy/audit code reads this to attribute tool calls
+   * to a specific subject. Undefined when the gate is absent or `mode=optional`
+   * and no identity was resolved.
+   */
+  clientPrincipal?: AuthorizedPrincipal;
 }
 
 export interface SSEStreamState {
@@ -100,6 +110,7 @@ export interface HttpTransportConfig {
   tenantIndex?: HttpTenantIndex; // Preloaded tenant configuration index (optional)
   globalFiltering?: FilteringRules; // Process-wide baseline parameter filtering
   upstreamMcp?: UpstreamMcpServerConfig[]; // Upstream MCP providers for single-profile mode
+  client_auth_gate?: ClientAuthGateConfig; // Inbound client auth gate (single-profile mode)
 }
 
 export interface HttpProfileContext {
@@ -114,6 +125,7 @@ export interface HttpProfileContext {
   resourceDocumentation?: string;
   parser?: OpenAPIParser;
   upstreamMcp?: UpstreamMcpServerConfig[];
+  client_auth_gate?: ClientAuthGateConfig;
 }
 
 export interface McpRequest extends ExpressRequest {
