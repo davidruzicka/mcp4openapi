@@ -28,7 +28,6 @@ import { ClientAuthGateError } from '../core/errors.js';
  *   3. Phase 4's JWT path slots in here without duplicating the mode logic.
  */
 export class ClientAuthGate {
-  private readonly config: ClientAuthGateConfig;
   // Logger is unused on the Phase 3 happy path (the API key store is silent
   // on success and `null`-on-failure), but is retained for Phase 4 (JWT
   // validation needs structured logs for JWKS misses, kid mismatches, etc.).
@@ -39,7 +38,6 @@ export class ClientAuthGate {
   private readonly resolvedMode: 'required' | 'optional';
 
   constructor(profileId: string, config: ClientAuthGateConfig, logger: Logger) {
-    this.config = config;
     this.logger = logger;
     let resolvedMode = config.mode;
     if (!resolvedMode && config.mode_from_env) {

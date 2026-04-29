@@ -1410,6 +1410,7 @@ export class MCPServer {
       resourceDocumentation: profileContext.resourceDocumentation,
       parser: profileContext.parser,
       upstreamMcp: profileContext.upstreamMcp,
+      client_auth_gate: profileContext.client_auth_gate,
       globalFiltering: this.globalFiltering,
     };
 

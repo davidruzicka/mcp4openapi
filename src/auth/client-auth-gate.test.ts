@@ -150,6 +150,28 @@ describe('ClientAuthGate (API key path only)', () => {
     expect(await gate.validate('any-token')).toBeNull();
   });
 
+  it('mode takes precedence over mode_from_env when both are set', async () => {
+    const modeEnv = 'CLIENT_AUTH_GATE_TEST_MODE';
+    process.env[modeEnv] = 'optional'; // would make gate optional if read
+    try {
+      const gate = new ClientAuthGate(
+        'profile-a',
+        {
+          mode: 'required', // explicit mode wins — mode_from_env must be ignored
+          mode_from_env: modeEnv,
+          api_keys: {
+            type: 'inline',
+            keys: [{ key_from_env: ENV_VAR, subject: 'service-a' }],
+          },
+        },
+        makeLogger(),
+      );
+      await expect(gate.validate('wrong-key')).rejects.toBeInstanceOf(ClientAuthGateError);
+    } finally {
+      delete process.env[modeEnv];
+    }
+  });
+
   it('resolves mode from mode_from_env when env var is set to optional', async () => {
     const modeEnv = 'CLIENT_AUTH_GATE_TEST_MODE';
     process.env[modeEnv] = 'optional';

@@ -220,15 +220,9 @@ describe('createApiKeyStore', () => {
     // Cast to ApiKeyStoreConfig to bypass exhaustiveness — this models a runtime
     // arrival of an unsupported type (Phase 4 will add 'sasanka' here directly).
     const config = { type: 'sasanka', keys: [] } as unknown as ApiKeyStoreConfig;
-    expect(() => createApiKeyStore(config, PROFILE_ID, createSilentLogger())).toThrow(
-      ClientAuthGateError,
-    );
-    try {
-      createApiKeyStore(config, PROFILE_ID, createSilentLogger());
-    } catch (err) {
-      expect(err).toBeInstanceOf(ClientAuthGateError);
-      expect((err as ClientAuthGateError).message).toContain('sasanka');
-    }
+    const throwFn = () => createApiKeyStore(config, PROFILE_ID, createSilentLogger());
+    expect(throwFn).toThrow(ClientAuthGateError);
+    expect(throwFn).toThrow('sasanka');
   });
 
   it('returned store validates configured keys end-to-end', async () => {

@@ -104,7 +104,7 @@ export function validateClientAuthGateProfile(profile: Profile): ClientAuthGateC
         }
         // Fail-fast: catch misconfigured env vars at load time so operators get
         // an actionable error instead of silent all-key rejection at runtime.
-        if (!process.env[entry.key_from_env]) {
+        if (!process.env[entry.key_from_env]?.trim()) {
           throw new ClientAuthGateError(
             `client_auth_gate.api_keys.keys[].key_from_env: env var '${entry.key_from_env}' is not set`,
             {

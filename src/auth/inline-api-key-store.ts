@@ -64,10 +64,9 @@ export class InlineApiKeyStore implements ApiKeyStore {
     const keyDigest = this.digest(key);
     for (const entry of this.entries) {
       const configured = process.env[entry.key_from_env];
-      // Empty string and `undefined` both treated as "not configured" — this
-      // matches operator intent (an env var explicitly set to "" is still a
-      // misconfiguration) and avoids the surprise of validating against "".
-      if (!configured) continue;
+      // Empty string and whitespace-only values treated as "not configured" —
+      // matches operator intent and avoids validating against accidental whitespace.
+      if (!configured?.trim()) continue;
       // Both digests are always 32 bytes — `timingSafeEqual` is safe with no
       // padding and no length branch.
       if (timingSafeEqual(keyDigest, this.digest(configured))) {
