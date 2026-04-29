@@ -150,15 +150,25 @@ describe('ClientAuthGate (API key path only)', () => {
     expect(await gate.validate('any-token')).toBeNull();
   });
 
-  it('Phase 3 sanity: client-auth-gate.ts contains no JWT/JWKS references', async () => {
+  it('Phase 3 sanity: client-auth-gate.ts contains no JWT/JWKS imports', async () => {
     // Pin Phase 4 deferral: importing ClientAuthGate must NOT pull in jose/jwks-cache.
-    // Read the source file and assert the absence of those imports.
+    // Read the source file and assert the absence of those imports/runtime calls.
+    // We match `import` statements and direct calls (not arbitrary comment text)
+    // so the file can document Phase 4 plans inline without tripping this guard.
     const fs = await import('node:fs');
     const url = await import('node:url');
     const sourcePath = url.fileURLToPath(new URL('./client-auth-gate.ts', import.meta.url));
     const source = fs.readFileSync(sourcePath, 'utf8');
-    expect(source).not.toMatch(/from ['"]jose['"]/);
-    expect(source).not.toMatch(/jwks-cache/);
-    expect(source).not.toMatch(/decodeProtectedHeader/);
+
+    // No `import ... from 'jose'` or `import ... from '...jwks-cache.js'`
+    expect(source).not.toMatch(/^\s*import[\s\S]+?from\s+['"]jose['"];?/m);
+    expect(source).not.toMatch(/^\s*import[\s\S]+?from\s+['"][^'"]*jwks-cache[^'"]*['"];?/m);
+
+    // No runtime calls into jose primitives that the Phase 4 design uses.
+    // Match `decodeProtectedHeader(` or `jwtVerify(` (not the string in JSDoc).
+    expect(source).not.toMatch(/\bdecodeProtectedHeader\s*\(/);
+    expect(source).not.toMatch(/\bjwtVerify\s*\(/);
+    expect(source).not.toMatch(/\bcreateLocalJWKSet\s*\(/);
+    expect(source).not.toMatch(/\bnew\s+JwksCache\s*\(/);
   });
 });
