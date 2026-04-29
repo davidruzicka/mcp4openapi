@@ -1,7 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { timingSafeEqual as realTimingSafeEqual } from 'node:crypto';
 import { InlineApiKeyStore } from './inline-api-key-store.js';
-import type { InlineApiKeyEntry } from '../types/profile.js';
+import { createApiKeyStore } from './api-key-store-factory.js';
+import { ClientAuthGateError } from '../core/errors.js';
+import type { InlineApiKeyEntry, ApiKeyStoreConfig } from '../types/profile.js';
+import type { Logger } from '../core/logger.js';
 
 // Wrap node:crypto.timingSafeEqual so we can verify it is invoked on
 // equal-length buffers. vi.spyOn cannot redefine ESM namespace exports, so we
@@ -191,5 +194,62 @@ describe('InlineApiKeyStore', () => {
     }
     // Sanity-check: the wrapper actually delegates to the real implementation.
     expect(realTimingSafeEqual).toBeDefined();
+  });
+});
+
+function createSilentLogger(): Logger {
+  return {
+    debug: vi.fn(),
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+  } as unknown as Logger;
+}
+
+describe('createApiKeyStore', () => {
+  it('returns InlineApiKeyStore when config.type is "inline"', () => {
+    const config: ApiKeyStoreConfig = {
+      type: 'inline',
+      keys: [{ key_from_env: 'TEST_FACTORY_INLINE_KEY', subject: 'svc-1' }],
+    };
+    const store = createApiKeyStore(config, PROFILE_ID, createSilentLogger());
+    expect(store).toBeInstanceOf(InlineApiKeyStore);
+  });
+
+  it('throws ClientAuthGateError for an unknown type', () => {
+    // Cast to ApiKeyStoreConfig to bypass exhaustiveness — this models a runtime
+    // arrival of an unsupported type (Phase 4 will add 'sasanka' here directly).
+    const config = { type: 'sasanka', keys: [] } as unknown as ApiKeyStoreConfig;
+    expect(() => createApiKeyStore(config, PROFILE_ID, createSilentLogger())).toThrow(
+      ClientAuthGateError,
+    );
+    try {
+      createApiKeyStore(config, PROFILE_ID, createSilentLogger());
+    } catch (err) {
+      expect(err).toBeInstanceOf(ClientAuthGateError);
+      expect((err as ClientAuthGateError).message).toContain('sasanka');
+    }
+  });
+
+  it('returned store validates configured keys end-to-end', async () => {
+    const config: ApiKeyStoreConfig = {
+      type: 'inline',
+      keys: [{ key_from_env: 'TEST_FACTORY_E2E_KEY', subject: 'svc-e2e', scopes: ['s1'] }],
+    };
+    const previous = process.env.TEST_FACTORY_E2E_KEY;
+    process.env.TEST_FACTORY_E2E_KEY = 'e2e-key';
+    try {
+      const store = createApiKeyStore(config, PROFILE_ID, createSilentLogger());
+      const principal = await store.validate('e2e-key');
+      expect(principal?.subject).toBe('svc-e2e');
+      expect(principal?.scopes).toEqual(['s1']);
+      expect(principal?.profileId).toBe(PROFILE_ID);
+    } finally {
+      if (previous === undefined) {
+        delete process.env.TEST_FACTORY_E2E_KEY;
+      } else {
+        process.env.TEST_FACTORY_E2E_KEY = previous;
+      }
+    }
   });
 });
