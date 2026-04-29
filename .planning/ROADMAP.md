@@ -67,7 +67,7 @@ Plans:
 
 Plans:
 - [x] 03-01-PLAN.md - Types (ApiKeyStoreConfig, ClientAuthGateConfig without jwt), ClientAuthGateError, schema sync, and profile-load-time validator (AUTH-02, AUTH-03)
-- [ ] 03-02-PLAN.md - ApiKeyStore interface, InlineApiKeyStore, and factory (AUTH-02; SasankaApiKeyStore deferred to Phase 4)
+- [x] 03-02-PLAN.md - ApiKeyStore interface, InlineApiKeyStore, and factory (AUTH-02; SasankaApiKeyStore deferred to Phase 4)
 - [ ] 03-03-PLAN.md - ClientAuthGate orchestrator (API key path only), http-transport wiring, session clientPrincipal attachment (AUTH-02, AUTH-03)
 
 ### Phase 4: Client Authentication Gate (OIDC JWT)

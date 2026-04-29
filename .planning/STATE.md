@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: Ready to execute
-stopped_at: Completed 03-01-PLAN.md
-last_updated: "2026-04-29T13:04:36.999Z"
+stopped_at: Completed 03-02-PLAN.md
+last_updated: "2026-04-29T13:13:33.577Z"
 progress:
   total_phases: 5
   completed_phases: 2
   total_plans: 11
-  completed_plans: 9
+  completed_plans: 10
 ---
 
 # Project State
@@ -24,7 +24,7 @@ See: .planning/PROJECT.md (updated 2026-03-26)
 ## Current Position
 
 Phase: 03 (client-authentication-gate) — EXECUTING
-Plan: 2 of 3
+Plan: 3 of 3
 
 ## Performance Metrics
 
@@ -55,6 +55,7 @@ Plan: 2 of 3
 | Phase 02-tool-discovery-and-call-proxy P02 | 8min | 2 tasks | 3 files |
 | Phase 02-tool-discovery-and-call-proxy P03 | 12min | 2 tasks | 5 files |
 | Phase 03-client-authentication-gate P01 | 5min | 3 tasks | 9 files |
+| Phase 03-client-authentication-gate P02 | 6min | 3 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -83,6 +84,9 @@ Recent decisions affecting current work:
 - [Phase 02-tool-discovery-and-call-proxy]: NOTIFICATION_DISPATCH is private static readonly - constant data shared across instances; hasActiveStreamFn callback injected from HttpTransport avoids circular dependency; sendToClient fixed to write to SSE response in real-time
 - [Phase 03-client-authentication-gate]: Phase 3 client auth gate ships ClientAuthGateConfig without jwt? field; Phase 4 extends same interface (no breaking change). ApiKeyStoreConfig union ships only 'inline'; 'sasanka' rejected with explicit 'not supported' error so misconfigured profiles fail fast. key_from_env existence is validated at load time — prevents silent runtime rejection of all keys when env var typo is present.
 - [Phase 03-client-authentication-gate]: Mutual exclusion limited to OAuth interceptors: bearer/custom-header/query interceptors target upstream APIs and are allowed alongside client_auth_gate; only OAuth on inbound creates ambiguous identity flow. Default mode='required' (closed by default); required without api_keys is rejected so an unconfigured gate fails fast at startup.
+- [Phase 03-client-authentication-gate]: Per-instance random HMAC secret used purely as a length-normalization device (not an authenticator); HMAC-SHA256 always emits 32 bytes so timingSafeEqual is invoked on equal-length buffers regardless of raw key lengths
+- [Phase 03-client-authentication-gate]: createApiKeyStore uses direct if-branch on config.type (not registry table) so Phase 4's union widening with 'sasanka' triggers a TS exhaustiveness error at the extension site — type-system-enforced safety a Record<string,Creator> registry cannot provide. Logger param retained on factory for Phase 4 SasankaApiKeyStore additivity.
+- [Phase 03-client-authentication-gate]: Test ESM-namespace mocking pattern adopted: vi.mock + vi.hoisted wrapper that delegates to vi.importActual is the canonical pattern in this codebase for asserting on calls into Node built-ins (node:crypto etc.) since vi.spyOn fails on ESM namespace exports with 'Cannot redefine property'
 
 ### Pending Todos
 
@@ -96,6 +100,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-04-29T13:04:36.996Z
-Stopped at: Completed 03-01-PLAN.md
+Last session: 2026-04-29T13:13:33.575Z
+Stopped at: Completed 03-02-PLAN.md
 Resume file: None
