@@ -63,8 +63,8 @@ export class HeaderConfigParser {
     for (const part of parts) {
       if (part.length > MAX_HEADER_ENTRY_LENGTH) {
         throw new ValidationError(
-          `X-Mcp4-Tools entry exceeds ${MAX_HEADER_ENTRY_LENGTH} chars: ` +
-          `'${part}' (${part.length} chars)`
+          `X-Mcp4-Tools entry exceeds ${MAX_HEADER_ENTRY_LENGTH} chars ` +
+          `(${part.length} chars)`
         );
       }
     }
