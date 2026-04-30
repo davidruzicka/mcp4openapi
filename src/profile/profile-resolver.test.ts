@@ -74,6 +74,22 @@ describe('profile-resolver', () => {
     await expect(resolveProfileById('missing', profilesDir)).rejects.toThrow('openapi_spec_path');
   });
 
+  it('returns specPath=undefined for upstream_mcp proxy profile with no openapi_spec_path', async () => {
+    const root = await createTempDir();
+    const profilesDir = path.join(root, 'profiles');
+    const profilePath = path.join(profilesDir, 'proxy.json');
+
+    await writeJson(profilePath, {
+      profile_name: 'proxy-profile',
+      profile_id: 'proxy',
+      tools: [],
+      upstream_mcp: [{ server_url: 'https://example.com/mcp' }],
+    });
+
+    const resolved = await resolveProfileById('proxy', profilesDir);
+    expect(resolved.specPath).toBeUndefined();
+  });
+
   it('extracts env vars and auth methods for profile index', async () => {
     const root = await createTempDir();
     const profilesDir = path.join(root, 'profiles');
