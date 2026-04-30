@@ -1847,6 +1847,11 @@
           "type": "number",
           "description": "Optional request timeout for upstream MCP calls."
         },
+        "html_description_policy": {
+          "type": "string",
+          "enum": ["allow", "strip", "drop"],
+          "description": "Controls how HTML tags in upstream tool descriptions and inputSchema are handled.\n- drop (default): tools containing HTML chars (<, >, backtick) are dropped\n- strip: HTML tags are stripped from descriptions/schema string values; tool is kept\n- allow: HTML checks are skipped entirely; tool passes through as-is"
+        },
         "validation_endpoint": {
           "type": "string",
           "description": "Optional endpoint to validate upstream credentials at session init (fail-fast)."

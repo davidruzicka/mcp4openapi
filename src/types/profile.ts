@@ -96,6 +96,14 @@ export interface UpstreamMcpServerConfig {
   /** Optional request timeout for upstream MCP calls. */
   timeout_ms?: number;
 
+  /**
+   * Controls how HTML tags in upstream tool descriptions and inputSchema are handled.
+   * - drop (default): tools containing HTML chars (<, >, backtick) are dropped
+   * - strip: HTML tags are stripped from descriptions/schema values; tool is kept
+   * - allow: HTML checks are skipped entirely; tool passes through as-is
+   */
+  html_description_policy?: 'allow' | 'strip' | 'drop';
+
   /** Optional endpoint to validate upstream credentials at session init (fail-fast). */
   validation_endpoint?: string;
   /** HTTP method for validation probe. Default: 'HEAD'. */
