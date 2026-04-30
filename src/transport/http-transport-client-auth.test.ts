@@ -216,11 +216,19 @@ describe('Client auth gate (Phase 3) — session init integration', () => {
     };
     transport.setProfileContextProvider(async () => profileContext);
 
+    const logger = (transport as unknown as { logger: { warn: ReturnType<typeof vi.fn> } }).logger;
+    const warnSpy = vi.spyOn(logger, 'warn');
+
     const req = makeReq();
     const res = makeRes();
     await (transport as unknown as { handlePost: (r: unknown, s: unknown) => Promise<void> }).handlePost(req, res);
 
     expect(res.statusCode).toBe(401);
+    expect(res.body).toEqual(expect.objectContaining({ error: 'Unauthorized', message: 'Client authentication failed' }));
+    expect(warnSpy).toHaveBeenCalledWith(
+      'Client auth gate rejected session init',
+      expect.objectContaining({ errorType: 'ClientAuthGateError', profileId: 'default' }),
+    );
   });
 
   // Scenario 5
@@ -269,11 +277,19 @@ describe('Client auth gate (Phase 3) — session init integration', () => {
     };
     transport.setProfileContextProvider(async () => profileContext);
 
+    const logger = (transport as unknown as { logger: { warn: ReturnType<typeof vi.fn> } }).logger;
+    const warnSpy = vi.spyOn(logger, 'warn');
+
     const req = makeReq();
     const res = makeRes();
     await (transport as unknown as { handlePost: (r: unknown, s: unknown) => Promise<void> }).handlePost(req, res);
 
     expect(res.statusCode).toBe(401);
+    expect(res.body).toEqual(expect.objectContaining({ error: 'Unauthorized', message: 'Client authentication failed' }));
+    expect(warnSpy).toHaveBeenCalledWith(
+      'Client auth gate rejected session init',
+      expect.objectContaining({ errorType: 'ClientAuthGateError', profileId: 'default' }),
+    );
   });
 
   // Scenario 7
@@ -339,10 +355,14 @@ describe('Client auth gate (Phase 3) — session init integration', () => {
     await (transport as unknown as { handlePost: (r: unknown, s: unknown) => Promise<void> }).handlePost(req, res);
 
     expect(res.statusCode).toBe(401);
-    expect(res.body).toEqual(expect.objectContaining({ error: 'Unauthorized' }));
+    expect(res.body).toEqual(expect.objectContaining({ error: 'Unauthorized', message: 'Client authentication failed' }));
     expect(warnSpy).toHaveBeenCalledWith(
       'Client auth gate rejected session init',
-      expect.objectContaining({ errorType: 'unknown' }),
+      expect.objectContaining({
+        errorType: 'unknown',
+        profileId: 'default',
+        error: 'upstream store unreachable',
+      }),
     );
   });
 
@@ -370,10 +390,81 @@ describe('Client auth gate (Phase 3) — session init integration', () => {
     await (transport as unknown as { handlePost: (r: unknown, s: unknown) => Promise<void> }).handlePost(req, res);
 
     expect(res.statusCode).toBe(401);
+    expect(res.body).toEqual(expect.objectContaining({ error: 'Unauthorized', message: 'Client authentication failed' }));
     expect(warnSpy).toHaveBeenCalledWith(
       'Client auth gate rejected session init',
-      expect.objectContaining({ errorType: 'ClientAuthGateError' }),
+      expect.objectContaining({
+        errorType: 'ClientAuthGateError',
+        profileId: 'default',
+      }),
     );
+  });
+
+  // Scenario 11 — mode=optional + valid key → principal populated
+  it('mode=optional + valid key -> 200 + session.clientPrincipal populated', async () => {
+    // Pins that optional mode does NOT degrade all requests to anonymous — a client
+    // that presents a valid key still receives a populated principal for audit/policy.
+    const profileContext: HttpProfileContext = {
+      profileId: 'default',
+      client_auth_gate: {
+        mode: 'optional',
+        api_keys: {
+          type: 'inline',
+          keys: [{ key_from_env: VALID_KEY_ENV, subject: SUBJECT, scopes: ['read'] }],
+        },
+      } satisfies ClientAuthGateConfig,
+    };
+    transport.setProfileContextProvider(async () => profileContext);
+
+    const req = makeReq(`Bearer ${VALID_KEY}`);
+    const res = makeRes();
+    await (transport as unknown as { handlePost: (r: unknown, s: unknown) => Promise<void> }).handlePost(req, res);
+
+    expect(res.statusCode).toBe(200);
+    const sessionId = res.headers['Mcp-Session-Id'];
+    expect(sessionId).toBeTruthy();
+    const session = getSession(transport, 'default', sessionId!) as
+      | { clientPrincipal?: { authType: string; subject: string; scopes: string[] } }
+      | undefined;
+    expect(session).toBeDefined();
+    expect(session!.clientPrincipal).toBeDefined();
+    expect(session!.clientPrincipal!.authType).toBe('token');
+    expect(session!.clientPrincipal!.subject).toBe(SUBJECT);
+    expect(session!.clientPrincipal!.scopes).toEqual(['read']);
+  });
+
+  // Scenario 12 — gate-initialized log fires with correct fields
+  it('gate construction logs "Client auth gate initialized" with mode and hasApiKeys', async () => {
+    // Pins that the initialization log (used by ops to confirm gate config at startup)
+    // includes the correct structured fields.
+    const profileContext: HttpProfileContext = {
+      profileId: 'default',
+      client_auth_gate: {
+        mode: 'required',
+        api_keys: {
+          type: 'inline',
+          keys: [{ key_from_env: VALID_KEY_ENV, subject: SUBJECT }],
+        },
+      },
+    };
+    transport.setProfileContextProvider(async () => profileContext);
+
+    const logger = (transport as unknown as { logger: { info: ReturnType<typeof vi.fn> } }).logger;
+    const infoSpy = vi.spyOn(logger, 'info');
+
+    // Drive a request to trigger getProfileState() and gate construction.
+    const req = makeReq(`Bearer ${VALID_KEY}`);
+    const res = makeRes();
+    await (transport as unknown as { handlePost: (r: unknown, s: unknown) => Promise<void> }).handlePost(req, res);
+
+    const initCall = infoSpy.mock.calls.find(
+      (c) => typeof c[0] === 'string' && c[0].includes('Client auth gate initialized'),
+    );
+    expect(initCall).toBeDefined();
+    const logFields = initCall![1] as Record<string, unknown>;
+    expect(logFields['mode']).toBe('required');
+    expect(logFields['hasApiKeys']).toBe(true);
+    expect(logFields['profileId']).toBe('default');
   });
 
   // Scenario 10 — session-creation log includes clientSubject + clientAuthType

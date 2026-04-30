@@ -39,22 +39,18 @@ export class ClientAuthGate {
 
   constructor(profileId: string, config: ClientAuthGateConfig, logger: Logger) {
     this.logger = logger;
-    let resolvedMode = config.mode;
-    if (!resolvedMode && config.mode_from_env) {
-      const envValue = process.env[config.mode_from_env];
-      if (!envValue) {
-        throw new ClientAuthGateError(
-          `client_auth_gate.mode_from_env: env var '${config.mode_from_env}' is not set`,
-        );
-      }
-      if (envValue !== 'required' && envValue !== 'optional') {
-        throw new ClientAuthGateError(
-          `client_auth_gate.mode must be 'required' or 'optional', got '${envValue}'`,
-        );
-      }
-      resolvedMode = envValue;
+    // Precondition: config.mode must already be a resolved literal ('required' |
+    // 'optional'). mode_from_env resolution belongs in resolveClientAuthGateConfig(),
+    // which is always called before constructing ClientAuthGate in the transport.
+    // Keeping resolution outside the constructor avoids duplicating the env-var
+    // lookup and ensures a single source of truth for mode normalization.
+    const mode = config.mode ?? 'required';
+    if (mode !== 'required' && mode !== 'optional') {
+      throw new ClientAuthGateError(
+        `client_auth_gate.mode must be 'required' or 'optional', got '${mode}'`,
+      );
     }
-    this.resolvedMode = resolvedMode ?? 'required';
+    this.resolvedMode = mode;
     if (config.api_keys) {
       this.apiKeyStore = createApiKeyStore(config.api_keys, profileId, logger);
     }
