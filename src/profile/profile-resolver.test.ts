@@ -74,6 +74,124 @@ describe('profile-resolver', () => {
     await expect(resolveProfileById('missing', profilesDir)).rejects.toThrow('openapi_spec_path');
   });
 
+  it('collects env vars from upstream_mcp bearer auth', async () => {
+    const root = await createTempDir();
+    const profilesDir = path.join(root, 'profiles');
+
+    await writeJson(path.join(profilesDir, 'proxy-auth.json'), {
+      profile_name: 'proxy-auth-profile',
+      profile_id: 'proxy-auth',
+      tools: [],
+      upstream_mcp: [
+        {
+          name: 'youtrack',
+          transport: { type: 'http-streamable', url: 'https://youtrack.example.com/mcp' },
+          auth: { type: 'bearer', value_from_env: 'YOUTRACK_TOKEN' },
+        },
+      ],
+    });
+
+    const profiles = await listProfilesDetailed(profilesDir);
+    expect(profiles).toHaveLength(1);
+    expect(profiles[0].envVars).toEqual(['YOUTRACK_TOKEN']);
+    expect(profiles[0].authMethods).toEqual([]);
+  });
+
+  it('collects env vars from multiple upstream_mcp entries with different auth types', async () => {
+    const root = await createTempDir();
+    const profilesDir = path.join(root, 'profiles');
+
+    await writeJson(path.join(profilesDir, 'multi-upstream.json'), {
+      profile_name: 'multi-upstream',
+      profile_id: 'multi-upstream',
+      tools: [],
+      upstream_mcp: [
+        {
+          name: 'svc-a',
+          transport: { type: 'http-streamable', url: 'https://svc-a.example.com/mcp' },
+          auth: { type: 'bearer', value_from_env: 'SVC_A_TOKEN' },
+        },
+        {
+          name: 'svc-b',
+          transport: { type: 'http-streamable', url: 'https://svc-b.example.com/mcp' },
+          auth: { type: 'custom-header', header_name: 'X-Api-Key', value_from_env: 'SVC_B_KEY' },
+        },
+        {
+          name: 'svc-c',
+          transport: { type: 'http-streamable', url: 'https://svc-c.example.com/mcp' },
+        },
+      ],
+    });
+
+    const profiles = await listProfilesDetailed(profilesDir);
+    expect(profiles).toHaveLength(1);
+    expect(profiles[0].envVars).toEqual(['SVC_A_TOKEN', 'SVC_B_KEY']);
+    expect(profiles[0].authMethods).toEqual([]);
+  });
+
+  it('collects env vars from upstream_mcp session-cookie auth', async () => {
+    const root = await createTempDir();
+    const profilesDir = path.join(root, 'profiles');
+
+    await writeJson(path.join(profilesDir, 'upstream-cookie.json'), {
+      profile_name: 'upstream-cookie',
+      profile_id: 'upstream-cookie',
+      tools: [],
+      upstream_mcp: [
+        {
+          name: 'legacy',
+          transport: { type: 'http-streamable', url: 'https://legacy.example.com/mcp' },
+          auth: {
+            type: 'session-cookie',
+            session_cookie_config: {
+              login_endpoint: '/login',
+              login_method: 'POST',
+              login_content_type: 'application/json',
+              username_field: 'user',
+              username_from_env: 'LEGACY_USER',
+              password_field: 'pass',
+              password_from_env: 'LEGACY_PASS',
+              cookie_names: ['sid'],
+            },
+          },
+        },
+      ],
+    });
+
+    const profiles = await listProfilesDetailed(profilesDir);
+    expect(profiles).toHaveLength(1);
+    expect(profiles[0].envVars).toEqual(['LEGACY_PASS', 'LEGACY_USER']);
+    expect(profiles[0].authMethods).toEqual([]);
+  });
+
+  it('merges env vars from both interceptors.auth and upstream_mcp auth without duplication', async () => {
+    const root = await createTempDir();
+    const profilesDir = path.join(root, 'profiles');
+
+    await writeJson(path.join(profilesDir, 'combined.json'), {
+      profile_name: 'combined',
+      profile_id: 'combined',
+      tools: [],
+      interceptors: {
+        auth: { type: 'bearer', value_from_env: 'CLIENT_TOKEN' },
+      },
+      upstream_mcp: [
+        {
+          name: 'upstream',
+          transport: { type: 'http-streamable', url: 'https://upstream.example.com/mcp' },
+          auth: { type: 'bearer', value_from_env: 'UPSTREAM_TOKEN' },
+        },
+      ],
+    });
+
+    const profiles = await listProfilesDetailed(profilesDir);
+    expect(profiles).toHaveLength(1);
+    expect(profiles[0].envVars).toEqual(['CLIENT_TOKEN', 'UPSTREAM_TOKEN']);
+    expect(profiles[0].authMethods).toEqual([
+      { type: 'bearer', headerName: undefined, queryParam: undefined, valueFromEnv: 'CLIENT_TOKEN' },
+    ]);
+  });
+
   it('returns specPath=undefined for upstream_mcp proxy profile with no openapi_spec_path', async () => {
     const root = await createTempDir();
     const profilesDir = path.join(root, 'profiles');

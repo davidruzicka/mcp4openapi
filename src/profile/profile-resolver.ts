@@ -183,6 +183,18 @@ function extractEnvVars(profile: Record<string, unknown>): string[] {
     }
   }
 
+  const upstreamMcp = profile.upstream_mcp;
+  if (Array.isArray(upstreamMcp)) {
+    for (const upstream of upstreamMcp) {
+      if (!upstream || typeof upstream !== 'object') continue;
+      const upstreamRecord = upstream as Record<string, unknown>;
+      const auth = upstreamRecord.auth;
+      if (auth && typeof auth === 'object') {
+        collectEnvVarsFromAuth(auth as Record<string, unknown>, envVars);
+      }
+    }
+  }
+
   return Array.from(envVars).sort((a, b) => a.localeCompare(b));
 }
 
