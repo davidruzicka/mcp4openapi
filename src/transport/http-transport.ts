@@ -533,13 +533,24 @@ export class HttpTransport {
       // api_keys env vars. In the profile-loader path this is a no-op (validator
       // already ran at load time and mode is a literal string). For direct
       // HttpTransport construction the call provides the same fail-fast guarantees.
-      const gateConfig = resolveClientAuthGateConfig(context.client_auth_gate);
-      state.clientAuthGate = new ClientAuthGate(profileId, gateConfig, this.logger);
-      this.logger.info('Client auth gate initialized', {
-        profileId,
-        mode: gateConfig.mode,
-        hasApiKeys: !!gateConfig.api_keys,
-      });
+      // Wrap in try/catch so a misconfigured gate produces a clear error log and a
+      // descriptive 500 (via the handlePost outer catch) rather than a generic one.
+      try {
+        const gateConfig = resolveClientAuthGateConfig(context.client_auth_gate);
+        state.clientAuthGate = new ClientAuthGate(profileId, gateConfig, this.logger);
+        this.logger.info('Client auth gate initialized', {
+          profileId,
+          mode: gateConfig.mode,
+          hasApiKeys: !!gateConfig.api_keys,
+        });
+      } catch (err) {
+        this.logger.error(
+          'Client auth gate configuration error — profile will be unavailable',
+          err instanceof Error ? err : new Error(String(err)),
+          { profileId },
+        );
+        throw err;
+      }
     }
 
     this.profileStates.set(profileId, state);
@@ -2791,6 +2802,7 @@ export class HttpTransport {
                 profileId: requestProfileId,
                 error: err instanceof Error ? err.message : String(err),
                 errorType: isClientAuthGateError ? 'ClientAuthGateError' : 'unknown',
+                ...(isClientAuthGateError ? {} : { errorStack: err instanceof Error ? err.stack : undefined }),
               });
               res.status(HTTP_STATUS.UNAUTHORIZED).json({
                 error: 'Unauthorized',
@@ -3020,6 +3032,10 @@ export class HttpTransport {
         status = HTTP_STATUS.TOO_MANY_REQUESTS;
         errorLabel = 'Too Many Requests';
         message = `Rate limit exceeded: ${error.message} (correlation ID: ${correlationId})`;
+      } else if (error instanceof ClientAuthGateError) {
+        status = 500;
+        errorLabel = 'Gateway Configuration Error';
+        message = `Client auth gate misconfigured: ${error.message} (correlation ID: ${correlationId})`;
       }
 
       res.status(status).json({ error: errorLabel, message, correlationId });

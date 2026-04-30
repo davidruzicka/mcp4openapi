@@ -71,6 +71,27 @@ describe('ClientAuthGate (API key path only)', () => {
     );
 
     await expect(gate.validate('wrong-key')).rejects.toBeInstanceOf(ClientAuthGateError);
+    await expect(gate.validate('wrong-key')).rejects.toThrow(/no valid identity resolved/);
+  });
+
+  it('returns principal when mode=optional and valid key is presented', async () => {
+    const gate = new ClientAuthGate(
+      'profile-a',
+      {
+        mode: 'optional',
+        api_keys: {
+          type: 'inline',
+          keys: [{ key_from_env: ENV_VAR, subject: 'service-a', scopes: ['read'] }],
+        },
+      },
+      makeLogger(),
+    );
+
+    const principal = await gate.validate(VALID_KEY);
+    expect(principal).not.toBeNull();
+    expect(principal!.authType).toBe('token');
+    expect(principal!.subject).toBe('service-a');
+    expect(principal!.scopes).toEqual(['read']);
   });
 
   it('returns null when API key is invalid and mode=optional', async () => {
@@ -121,6 +142,7 @@ describe('ClientAuthGate (API key path only)', () => {
     );
 
     await expect(gate.validate(undefined)).rejects.toBeInstanceOf(ClientAuthGateError);
+    await expect(gate.validate(undefined)).rejects.toThrow(/no token presented/);
   });
 
   it('defaults mode to "required" when omitted (closed by default)', async () => {
@@ -137,6 +159,10 @@ describe('ClientAuthGate (API key path only)', () => {
 
     await expect(gate.validate(undefined)).rejects.toBeInstanceOf(ClientAuthGateError);
     await expect(gate.validate('wrong-key')).rejects.toBeInstanceOf(ClientAuthGateError);
+    // Happy path: valid key still resolves a principal even when mode was omitted.
+    const principal = await gate.validate(VALID_KEY);
+    expect(principal).not.toBeNull();
+    expect(principal!.authType).toBe('token');
   });
 
   it('returns null when mode=optional and no api_keys store is configured', async () => {
@@ -150,14 +176,17 @@ describe('ClientAuthGate (API key path only)', () => {
     expect(await gate.validate('any-token')).toBeNull();
   });
 
-  it('mode takes precedence over mode_from_env when both are set', async () => {
+  it('mode_from_env field is ignored when mode is already set (constructor receives pre-resolved config)', async () => {
+    // Constructor precondition: config.mode is always a resolved literal by the time
+    // ClientAuthGate is constructed (resolveClientAuthGateConfig runs first in the
+    // transport). mode_from_env resolution is tested in client-auth-gate-validator.test.ts.
     const modeEnv = 'CLIENT_AUTH_GATE_TEST_MODE';
-    process.env[modeEnv] = 'optional'; // would make gate optional if read
+    process.env[modeEnv] = 'optional'; // would flip mode if the constructor read it
     try {
       const gate = new ClientAuthGate(
         'profile-a',
         {
-          mode: 'required', // explicit mode wins — mode_from_env must be ignored
+          mode: 'required', // explicit resolved mode wins; mode_from_env is ignored
           mode_from_env: modeEnv,
           api_keys: {
             type: 'inline',
@@ -167,55 +196,6 @@ describe('ClientAuthGate (API key path only)', () => {
         makeLogger(),
       );
       await expect(gate.validate('wrong-key')).rejects.toBeInstanceOf(ClientAuthGateError);
-    } finally {
-      delete process.env[modeEnv];
-    }
-  });
-
-  it('resolves mode from mode_from_env when env var is set to optional', async () => {
-    const modeEnv = 'CLIENT_AUTH_GATE_TEST_MODE';
-    process.env[modeEnv] = 'optional';
-    try {
-      const gate = new ClientAuthGate(
-        'profile-a',
-        {
-          mode_from_env: modeEnv,
-          api_keys: {
-            type: 'inline',
-            keys: [{ key_from_env: ENV_VAR, subject: 'service-a' }],
-          },
-        },
-        makeLogger(),
-      );
-      expect(await gate.validate('wrong-key')).toBeNull();
-    } finally {
-      delete process.env[modeEnv];
-    }
-  });
-
-  it('throws ClientAuthGateError in constructor when mode_from_env env var is not set', () => {
-    expect(
-      () =>
-        new ClientAuthGate(
-          'profile-a',
-          { mode_from_env: 'CLIENT_AUTH_GATE_TEST_MODE_UNSET' },
-          makeLogger(),
-        ),
-    ).toThrow(ClientAuthGateError);
-  });
-
-  it('throws ClientAuthGateError in constructor when mode_from_env env var has invalid value', () => {
-    const modeEnv = 'CLIENT_AUTH_GATE_TEST_MODE';
-    process.env[modeEnv] = 'superuser';
-    try {
-      expect(
-        () =>
-          new ClientAuthGate(
-            'profile-a',
-            { mode_from_env: modeEnv },
-            makeLogger(),
-          ),
-      ).toThrow(ClientAuthGateError);
     } finally {
       delete process.env[modeEnv];
     }
