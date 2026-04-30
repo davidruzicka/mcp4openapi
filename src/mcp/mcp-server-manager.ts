@@ -68,7 +68,12 @@ export class MCPServerManager {
     const resolved = await this.registry.resolveProfile(profileId);
     const server = new MCPServer(this.logger);
     server.setGlobalFiltering(this.globalFiltering);
-    await server.initialize(resolved.specPath, resolved.profilePath);
+
+    if (resolved.specPath != null) {
+      await server.initialize(resolved.specPath, resolved.profilePath);
+    } else {
+      await server.initializeWithoutSpec(resolved.profilePath);
+    }
     if (this.httpTransport) {
       server.attachHttpTransport(this.httpTransport);
     }

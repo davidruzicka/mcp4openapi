@@ -240,23 +240,34 @@ testFiles.forEach(testFile => {
       const profileLoader = new ProfileLoader();
       profile = await profileLoader.load(fullProfilePath);
       validateTestAgainstProfile(testDef, profile);
-      const fullSpecPath = resolveOpenApiSpecPath(testDir, files, profile);
 
-      parser = new OpenAPIParser();
-      await parser.load(fullSpecPath);
-
-      const baseUrl = `https://mock-api-${profileName.replace(/[^a-zA-Z0-9-]/g, '-')}.com`;
-      mockEngine = new DynamicMockEngine(parser, baseUrl);
-      mockEngine.start();
-
-      process.env.MCP4_API_TOKEN = 'test-token';
-      process.env.MCP4_API_BASE_URL = baseUrl;
-      originalAllowPrivateNetwork = process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK;
-      process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK = 'true';
-      configureProfileEnv(profile, baseUrl);
+      const isUpstreamProxy =
+        Array.isArray(profile.upstream_mcp) &&
+        (profile.upstream_mcp as unknown[]).length > 0 &&
+        !profile.openapi_spec_path;
 
       server = new MCPServer();
-      await server.initialize(fullSpecPath, fullProfilePath);
+
+      if (isUpstreamProxy) {
+        await server.initializeWithoutSpec(fullProfilePath);
+      } else {
+        const fullSpecPath = resolveOpenApiSpecPath(testDir, files, profile);
+
+        parser = new OpenAPIParser();
+        await parser.load(fullSpecPath);
+
+        const baseUrl = `https://mock-api-${profileName.replace(/[^a-zA-Z0-9-]/g, '-')}.com`;
+        mockEngine = new DynamicMockEngine(parser, baseUrl);
+        mockEngine.start();
+
+        process.env.MCP4_API_TOKEN = 'test-token';
+        process.env.MCP4_API_BASE_URL = baseUrl;
+        originalAllowPrivateNetwork = process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK;
+        process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK = 'true';
+        configureProfileEnv(profile, baseUrl);
+
+        await server.initialize(fullSpecPath, fullProfilePath);
+      }
     }, 30000);
 
     afterAll(() => {
@@ -269,12 +280,17 @@ testFiles.forEach(testFile => {
     });
 
     beforeEach(() => {
+      if (!mockEngine) return;
       mockEngine.reset();
       if (testDef.global_mocks) {
         const context = { ...testDef.variables };
         const processedGlobalMocks = processTemplate(testDef.global_mocks, context);
         mockEngine.configureMocks(processedGlobalMocks);
       }
+    });
+
+    it('server initializes successfully', () => {
+      expect(server['profile']).toBeDefined();
     });
 
     testDef.scenarios.forEach(scenario => {

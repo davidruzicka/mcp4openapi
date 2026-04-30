@@ -504,11 +504,16 @@ export class MCPServer {
   }
 
   async initialize(specPath: string, profilePath?: string): Promise<void> {
-    // Load OpenAPI spec
     await this.parser.load(specPath);
     this.logger.info('Loaded OpenAPI spec', { specPath });
+    await this.initializeProfile(profilePath);
+  }
 
-    // Load or create MCP profile
+  async initializeWithoutSpec(profilePath: string): Promise<void> {
+    await this.initializeProfile(profilePath);
+  }
+
+  private async initializeProfile(profilePath?: string): Promise<void> {
     this.appsModel = undefined;
     this.appsFetchCache.clear();
     if (profilePath) {
@@ -526,26 +531,19 @@ export class MCPServer {
         profile: this.profile.profile_name,
         toolCount: this.profile.tools.length,
       });
-      
-      // Check if we should warn about long names
       this.checkToolNameLengths();
     }
 
     this.applyGlobalToolFiltering();
 
-    // Re-create logger with auth config for token redaction
     const authConfigs = this.getAuthConfigs();
     if (authConfigs.length > 0) {
-      // Use first auth config for logger (primary)
       this.logger = this.createLoggerWithAuth(authConfigs[0]);
       this.logger.info('Logger re-configured with auth token redaction', {
         authMethods: authConfigs.length,
       });
     }
 
-    // Setup HTTP client with interceptors
-    // For stdio transport, create client with env token
-    // For HTTP transport, clients are created per-session with user's token
     const baseUrl = this.getBaseUrl();
     const envAuthConfig = this.getEnvBackedAuthConfig();
     const primaryRuntimeAuthConfig = authConfigs.find(config => config.type !== 'oauth');
@@ -553,7 +551,6 @@ export class MCPServer {
     const envToken = envVarName ? process.env[envVarName] : undefined;
 
     if ((envAuthConfig && envToken) || authConfigs.length === 0 || primaryRuntimeAuthConfig?.type === 'session-cookie') {
-      // Token available in env (stdio) or no auth required - create global client
       const httpClient = this.httpClientFactory.createGlobalClient({
         profile: this.profile,
         baseUrl,
@@ -562,10 +559,9 @@ export class MCPServer {
       });
       this.compositeExecutor = new CompositeExecutor(this.parser, httpClient, this.profile.parameter_aliases);
     } else {
-      // No env token or no auth - will use per-session clients (HTTP transport)
       this.compositeExecutor = new CompositeExecutor(this.parser, undefined, this.profile.parameter_aliases);
     }
-    
+
     this.logger.info('MCP server initialized', {
       baseUrl,
       toolCount: this.profile.tools.length,

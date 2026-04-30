@@ -337,6 +337,30 @@ paths:
     });
   });
 
+  describe('initializeWithoutSpec', () => {
+    it('initializes successfully with upstream_mcp proxy profile', async () => {
+      const profilePath = path.join(os.tmpdir(), `proxy-profile-${Date.now()}-${Math.random()}.json`);
+
+      const profile = {
+        profile_name: 'proxy-profile',
+        description: 'Pure upstream proxy',
+        tools: [],
+        upstream_mcp: [{
+          name: 'example',
+          transport: { type: 'http-streamable', url: 'https://example.com/mcp' },
+        }],
+      };
+
+      await fs.writeFile(profilePath, JSON.stringify(profile));
+      try {
+        await expect(server.initializeWithoutSpec(profilePath)).resolves.toBeUndefined();
+        expect(server['profile']!.tools).toHaveLength(0);
+      } finally {
+        await fs.unlink(profilePath);
+      }
+    });
+  });
+
   describe('runStdio', () => {
     it('should connect MCP server via StdioServerTransport', async () => {
       const logger = {

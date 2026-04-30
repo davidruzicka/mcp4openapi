@@ -1,0 +1,16 @@
+{
+  "$schema": "../../profile-schema.json",
+  "profile_name": "upstream-mcp-proxy",
+  "profile_id": "upstream-mcp-proxy",
+  "description": "Generic test profile for pure upstream MCP proxy — no local OpenAPI tools",
+  "tools": [],
+  "upstream_mcp": [
+    {
+      "name": "test-upstream",
+      "transport": {
+        "type": "http-streamable",
+        "url": "https://upstream.example.com/mcp"
+      }
+    }
+  ]
+}

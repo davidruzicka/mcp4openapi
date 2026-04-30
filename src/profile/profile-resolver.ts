@@ -17,7 +17,7 @@ export interface ResolvedProfile {
   profileName: string;
   profileAliases?: string[];
   profilePath: string;
-  specPath: string;
+  specPath: string | undefined;
 }
 
 export interface ListedProfile {
@@ -81,6 +81,7 @@ interface ProfileIndexEntry {
   aliases: string[];
   profilePath: string;
   specPathRaw?: string;
+  hasUpstreamMcp: boolean;
 }
 
 const DEFAULT_PROFILES_DIR = 'profiles';
@@ -379,12 +380,20 @@ function normalizeSpecPath(value?: string): string | undefined {
   return trimmed.length > 0 ? trimmed : undefined;
 }
 
-function resolveSpecPath(profilePath: string, specPathRaw?: string, overrideSpecPath?: string): string {
+function resolveSpecPath(
+  profilePath: string,
+  specPathRaw?: string,
+  overrideSpecPath?: string,
+  isUpstreamMcpProxy = false,
+): string | undefined {
   const trimmed = normalizeSpecPath(specPathRaw);
   if (!trimmed) {
     const override = normalizeSpecPath(overrideSpecPath);
     if (override) {
       return override;
+    }
+    if (isUpstreamMcpProxy) {
+      return undefined;
     }
     throw new ConfigurationError('Profile is missing openapi_spec_path', { profilePath });
   }
@@ -425,6 +434,7 @@ async function loadProfileIndexEntry(profilePath: string): Promise<ProfileIndexE
     aliases,
     profilePath,
     specPathRaw: typeof profile.openapi_spec_path === 'string' ? profile.openapi_spec_path : undefined,
+    hasUpstreamMcp: Array.isArray(profile.upstream_mcp) && (profile.upstream_mcp as unknown[]).length > 0,
   };
 }
 
@@ -536,7 +546,7 @@ export async function resolveProfileById(
   }
 
   const match = matches[0];
-  const specPath = resolveSpecPath(match.profilePath, match.specPathRaw, options?.specPathOverride);
+  const specPath = resolveSpecPath(match.profilePath, match.specPathRaw, options?.specPathOverride, match.hasUpstreamMcp);
 
   return {
     profileId: match.profileId,
@@ -594,7 +604,7 @@ export async function resolveProfileFromPath(
     throw new ConfigurationError('Profile file does not look like a valid profile', { profilePath: resolvedPath });
   }
 
-  const specPath = resolveSpecPath(resolvedPath, entry.specPathRaw, options?.specPathOverride);
+  const specPath = resolveSpecPath(resolvedPath, entry.specPathRaw, options?.specPathOverride, entry.hasUpstreamMcp);
 
   return {
     profileId: entry.profileId,
