@@ -18,6 +18,8 @@ import { sanitizeLogMessage } from '../core/logger.js';
 import type { Logger } from '../core/logger.js';
 import type { UpstreamMcpToolPolicy } from '../types/profile.js';
 
+export type HtmlDescriptionPolicy = 'allow' | 'strip' | 'drop';
+
 export interface SanitizationResult {
   tools: Tool[];
   dropped: { name: string; reason: string }[];
@@ -26,6 +28,38 @@ export interface SanitizationResult {
 // Data-driven constraints
 const TOOL_NAME_PATTERN = /^[a-zA-Z0-9_-]+$/;
 const DESCRIPTION_FORBIDDEN_CHARS = /[<>`]/;
+const HTML_TAG_PATTERN = /<[^>]*>/g;
+
+const MAX_EXCERPT_CONTEXT = 40;
+
+function firstForbiddenExcerpt(text: string): string {
+  const idx = text.search(DESCRIPTION_FORBIDDEN_CHARS);
+  if (idx === -1) return '';
+  const start = Math.max(0, idx - MAX_EXCERPT_CONTEXT);
+  const end = Math.min(text.length, idx + MAX_EXCERPT_CONTEXT + 1);
+  const prefix = start > 0 ? '…' : '';
+  const suffix = end < text.length ? '…' : '';
+  return prefix + text.slice(start, end) + suffix;
+}
+
+function stripHtmlTags(text: string): string {
+  return text.replace(HTML_TAG_PATTERN, '');
+}
+
+function stripHtmlFromSchema(value: unknown, depth = 0): unknown {
+  if (depth > 10) return value;
+  if (typeof value === 'string') return stripHtmlTags(value);
+  if (Array.isArray(value)) return value.map(v => stripHtmlFromSchema(v, depth + 1));
+  if (typeof value === 'object' && value !== null) {
+    const obj = value as Record<string, unknown>;
+    const result: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(obj)) {
+      result[k] = stripHtmlFromSchema(v, depth + 1);
+    }
+    return result;
+  }
+  return value;
+}
 
 /**
  * Recursively scan a JSON Schema object for forbidden characters in both keys and string values.
@@ -64,17 +98,18 @@ const truncateName = (name: string): string =>
  *   1. Name length <= 255
  *   2. Name matches [a-zA-Z0-9_-]
  *   3. Description length <= 2048 (if present)
- *   4. Description contains no <, >, or backtick (if present)
- *   5. inputSchema contains no forbidden characters in any key or string value
- *      (recursive scan to depth 10; schemas exceeding the depth limit are dropped)
+ *   4. HTML policy (html_description_policy):
+ *      - drop (default): tools with <, >, or backtick in description/inputSchema are dropped
+ *      - strip: HTML tags stripped from description and inputSchema string values; tool kept
+ *      - allow: HTML checks skipped entirely; tool passes through as-is
  *
  * Offending tools are dropped and logged. Safe tools pass through unchanged.
  */
-export function sanitizeToolList(tools: Tool[], logger?: Logger): SanitizationResult {
+export function sanitizeToolList(tools: Tool[], logger?: Logger, htmlPolicy: HtmlDescriptionPolicy = 'drop'): SanitizationResult {
   const safe: Tool[] = [];
   const dropped: { name: string; reason: string }[] = [];
 
-  for (const tool of tools) {
+  for (let tool of tools) {
     // Guard: upstream may return null or non-object entries (e.g. null items in tools array)
     if (tool === null || typeof tool !== 'object') {
       const safeName = sanitizeLogMessage(truncateName(String(tool)));
@@ -85,6 +120,7 @@ export function sanitizeToolList(tools: Tool[], logger?: Logger): SanitizationRe
     }
 
     let reason: string | undefined;
+    let excerpt: string | undefined;
 
     // Runtime type guards: upstream may return non-string fields despite SDK types
     if (typeof tool.name !== 'string') {
@@ -97,20 +133,38 @@ export function sanitizeToolList(tools: Tool[], logger?: Logger): SanitizationRe
       reason = 'malformed tool definition: description is not a string';
     } else if (tool.description && tool.description.length > MAX_DESCRIPTION_LENGTH) {
       reason = 'tool description too long';
-    } else if (tool.description && DESCRIPTION_FORBIDDEN_CHARS.test(tool.description)) {
-      reason = 'forbidden characters in description';
     } else if (tool.inputSchema !== undefined && (typeof tool.inputSchema !== 'object' || tool.inputSchema === null || Array.isArray(tool.inputSchema))) {
       reason = 'malformed tool definition: inputSchema is not an object';
-    } else if (tool.inputSchema && schemaContainsForbiddenChars(tool.inputSchema)) {
-      reason = 'forbidden characters in input schema';
+    } else if (htmlPolicy === 'drop') {
+      if (tool.description && DESCRIPTION_FORBIDDEN_CHARS.test(tool.description)) {
+        reason = 'forbidden characters in description';
+        excerpt = firstForbiddenExcerpt(tool.description);
+      } else if (tool.inputSchema && schemaContainsForbiddenChars(tool.inputSchema)) {
+        reason = 'forbidden characters in input schema';
+        const schemaStr = JSON.stringify(tool.inputSchema);
+        excerpt = firstForbiddenExcerpt(schemaStr);
+      }
+    } else if (htmlPolicy === 'strip') {
+      if (tool.description) {
+        tool = { ...tool, description: stripHtmlTags(tool.description) };
+      }
+      if (tool.inputSchema) {
+        tool = { ...tool, inputSchema: stripHtmlFromSchema(tool.inputSchema) as Tool['inputSchema'] };
+      }
     }
+    // htmlPolicy === 'allow': skip all HTML checks, pass tool through unchanged
 
     if (reason !== undefined) {
       // Coerce non-string names to string for safe logging
       const nameStr = typeof tool.name === 'string' ? tool.name : String(tool.name);
       const safeName = sanitizeLogMessage(truncateName(nameStr));
+      const safeExcerpt = excerpt ? sanitizeLogMessage(excerpt) : undefined;
       dropped.push({ name: safeName, reason });
-      logger?.warn('Dropped upstream tool due to sanitization failure', { name: safeName, reason });
+      logger?.warn('Dropped upstream tool due to sanitization failure', {
+        name: safeName,
+        reason,
+        ...(safeExcerpt !== undefined && { excerpt: safeExcerpt }),
+      });
     } else {
       safe.push(tool);
     }

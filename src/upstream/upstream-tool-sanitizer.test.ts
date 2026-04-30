@@ -417,6 +417,92 @@ describe('sanitizeToolList', () => {
   });
 });
 
+describe('sanitizeToolList — html_description_policy', () => {
+  let logger: Logger;
+
+  beforeEach(() => {
+    logger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+  });
+
+  describe('drop (default)', () => {
+    it('drops tool with HTML in description', () => {
+      const tool = makeTool('t', 'Creates <b>bold</b> text');
+      const result = sanitizeToolList([tool], logger);
+      expect(result.tools).toHaveLength(0);
+      expect(result.dropped[0].reason).toBe('forbidden characters in description');
+    });
+
+    it('drops tool with HTML in inputSchema string value', () => {
+      const tool: Tool = { name: 't', inputSchema: { type: 'object', properties: { x: { type: 'string', description: '<b>bad</b>' } } } };
+      const result = sanitizeToolList([tool], logger);
+      expect(result.tools).toHaveLength(0);
+      expect(result.dropped[0].reason).toBe('forbidden characters in input schema');
+    });
+  });
+
+  describe('strip', () => {
+    it('strips HTML tags from description and keeps tool', () => {
+      const tool = makeTool('t', 'Creates <b>bold</b> issue <br/> in project');
+      const result = sanitizeToolList([tool], logger, 'strip');
+      expect(result.tools).toHaveLength(1);
+      expect(result.tools[0].description).toBe('Creates bold issue  in project');
+      expect(result.dropped).toHaveLength(0);
+      expect(logger.warn).not.toHaveBeenCalled();
+    });
+
+    it('strips HTML tags from inputSchema string values', () => {
+      const tool: Tool = {
+        name: 't',
+        description: 'plain',
+        inputSchema: { type: 'object', properties: { x: { type: 'string', description: 'Use <code>format</code> param' } } },
+      };
+      const result = sanitizeToolList([tool], logger, 'strip');
+      expect(result.tools).toHaveLength(1);
+      const xDesc = (result.tools[0].inputSchema as any).properties.x.description;
+      expect(xDesc).toBe('Use format param');
+    });
+
+    it('does not mutate original tool object', () => {
+      const tool = makeTool('t', 'Has <b>HTML</b>');
+      sanitizeToolList([tool], logger, 'strip');
+      expect(tool.description).toBe('Has <b>HTML</b>');
+    });
+
+    it('still drops tool with invalid name regardless of strip policy', () => {
+      const tool = makeTool('bad name!', 'Has <b>HTML</b>');
+      const result = sanitizeToolList([tool], logger, 'strip');
+      expect(result.tools).toHaveLength(0);
+      expect(result.dropped[0].reason).toBe('invalid characters in tool name');
+    });
+  });
+
+  describe('allow', () => {
+    it('passes tool with HTML description through unchanged', () => {
+      const tool = makeTool('t', 'Creates <b>bold</b> text');
+      const result = sanitizeToolList([tool], logger, 'allow');
+      expect(result.tools).toHaveLength(1);
+      expect(result.tools[0].description).toBe('Creates <b>bold</b> text');
+      expect(result.dropped).toHaveLength(0);
+      expect(logger.warn).not.toHaveBeenCalled();
+    });
+
+    it('passes tool with HTML in inputSchema through unchanged', () => {
+      const schema = { type: 'object', properties: { x: { type: 'string', description: '<b>bad</b>' } } };
+      const tool: Tool = { name: 't', inputSchema: schema };
+      const result = sanitizeToolList([tool], logger, 'allow');
+      expect(result.tools).toHaveLength(1);
+      expect((result.tools[0].inputSchema as any).properties.x.description).toBe('<b>bad</b>');
+    });
+
+    it('still drops tool with invalid name regardless of allow policy', () => {
+      const tool = makeTool('bad name!', 'Has <b>HTML</b>');
+      const result = sanitizeToolList([tool], logger, 'allow');
+      expect(result.tools).toHaveLength(0);
+      expect(result.dropped[0].reason).toBe('invalid characters in tool name');
+    });
+  });
+});
+
 describe('applyProviderToolPolicy', () => {
   const tools = [makeTool('alpha'), makeTool('beta'), makeTool('gamma')];
 
