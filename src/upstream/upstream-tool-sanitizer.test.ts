@@ -5,6 +5,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { Logger } from '../core/logger.js';
 import { sanitizeToolList, applyProviderToolPolicy, isToolAllowedByProviderPolicy, isValidUpstreamToolName } from './upstream-tool-sanitizer.js';
+import type { ToolDescriptionLengthPolicy } from './upstream-tool-sanitizer.js';
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 
 function makeTool(name: string, description?: string): Tool {
@@ -499,6 +500,125 @@ describe('sanitizeToolList — html_description_policy', () => {
       const result = sanitizeToolList([tool], logger, 'allow');
       expect(result.tools).toHaveLength(0);
       expect(result.dropped[0].reason).toBe('invalid characters in tool name');
+    });
+  });
+});
+
+describe('sanitizeToolList — tool_description_length_policy', () => {
+  const LONG_DESC = 'a'.repeat(2049);
+  const EXACT_DESC = 'a'.repeat(2048);
+  let logger: Logger;
+
+  beforeEach(() => {
+    logger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+  });
+
+  describe('drop (default)', () => {
+    it('drops tool with description > 2048 chars', () => {
+      const tool = makeTool('t', LONG_DESC);
+      const result = sanitizeToolList([tool], logger, 'drop', 'drop');
+      expect(result.tools).toHaveLength(0);
+      expect(result.dropped[0].reason).toBe('tool description too long');
+    });
+
+    it('passes tool with description exactly 2048 chars', () => {
+      const tool = makeTool('t', EXACT_DESC);
+      const result = sanitizeToolList([tool], logger, 'drop', 'drop');
+      expect(result.tools).toHaveLength(1);
+      expect(result.dropped).toHaveLength(0);
+    });
+  });
+
+  describe('truncate', () => {
+    it('keeps tool and truncates description to 2048 chars', () => {
+      const tool = makeTool('t', LONG_DESC);
+      const result = sanitizeToolList([tool], logger, 'drop', 'truncate');
+      expect(result.tools).toHaveLength(1);
+      expect(result.tools[0].description).toHaveLength(2048);
+      expect(result.tools[0].description).toBe(LONG_DESC.slice(0, 2048));
+      expect(result.dropped).toHaveLength(0);
+      expect(logger.warn).not.toHaveBeenCalled();
+    });
+
+    it('does not mutate original tool object', () => {
+      const tool = makeTool('t', LONG_DESC);
+      sanitizeToolList([tool], logger, 'drop', 'truncate');
+      expect(tool.description).toBe(LONG_DESC);
+    });
+
+    it('passes tool with description exactly 2048 chars unchanged', () => {
+      const tool = makeTool('t', EXACT_DESC);
+      const result = sanitizeToolList([tool], logger, 'drop', 'truncate');
+      expect(result.tools).toHaveLength(1);
+      expect(result.tools[0].description).toHaveLength(2048);
+    });
+
+    it('still drops tool with invalid name regardless of truncate policy', () => {
+      const tool = makeTool('bad name!', LONG_DESC);
+      const result = sanitizeToolList([tool], logger, 'drop', 'truncate');
+      expect(result.tools).toHaveLength(0);
+      expect(result.dropped[0].reason).toBe('invalid characters in tool name');
+    });
+
+    it('still drops tool with malformed inputSchema regardless of truncate policy', () => {
+      const tool = { name: 'valid', description: LONG_DESC, inputSchema: null } as unknown as Tool;
+      const result = sanitizeToolList([tool], logger, 'drop', 'truncate');
+      expect(result.tools).toHaveLength(0);
+      expect(result.dropped[0].reason).toBe('malformed tool definition: inputSchema is not an object');
+    });
+  });
+
+  describe('allow', () => {
+    it('passes tool with overlong description through unchanged', () => {
+      const tool = makeTool('t', LONG_DESC);
+      const result = sanitizeToolList([tool], logger, 'drop', 'allow');
+      expect(result.tools).toHaveLength(1);
+      expect(result.tools[0].description).toBe(LONG_DESC);
+      expect(result.dropped).toHaveLength(0);
+      expect(logger.warn).not.toHaveBeenCalled();
+    });
+
+    it('still drops tool with invalid name regardless of allow policy', () => {
+      const tool = makeTool('bad name!', LONG_DESC);
+      const result = sanitizeToolList([tool], logger, 'drop', 'allow');
+      expect(result.tools).toHaveLength(0);
+      expect(result.dropped[0].reason).toBe('invalid characters in tool name');
+    });
+
+    it('still drops tool with malformed inputSchema regardless of allow policy', () => {
+      const tool = { name: 'valid', description: LONG_DESC, inputSchema: null } as unknown as Tool;
+      const result = sanitizeToolList([tool], logger, 'drop', 'allow');
+      expect(result.tools).toHaveLength(0);
+      expect(result.dropped[0].reason).toBe('malformed tool definition: inputSchema is not an object');
+    });
+  });
+
+  describe('interactions with html_description_policy', () => {
+    it('truncate length + strip html: truncates first then strips HTML from truncated string', () => {
+      // desc = '<b>' + 'a' * 2049 + '</b>' = 2056 chars
+      // truncate to 2048: '<b>' + 'a' * 2045 (first 2048 chars)
+      // then strip HTML: 'a' * 2045
+      const desc = '<b>' + 'a'.repeat(2049) + '</b>';
+      const tool = makeTool('t', desc);
+      const result = sanitizeToolList([tool], logger, 'strip', 'truncate');
+      expect(result.tools).toHaveLength(1);
+      expect(result.tools[0].description).toBe('a'.repeat(2045));
+      expect(result.dropped).toHaveLength(0);
+    });
+
+    it('allow length + drop html: still drops tool with HTML chars in description', () => {
+      const tool = makeTool('t', '<b>' + 'a'.repeat(2049) + '</b>');
+      const result = sanitizeToolList([tool], logger, 'drop', 'allow');
+      expect(result.tools).toHaveLength(0);
+      expect(result.dropped[0].reason).toBe('forbidden characters in description');
+    });
+
+    it('allow length + allow html: passes overlong HTML description through unchanged', () => {
+      const desc = '<b>' + 'a'.repeat(2049) + '</b>';
+      const tool = makeTool('t', desc);
+      const result = sanitizeToolList([tool], logger, 'allow', 'allow');
+      expect(result.tools).toHaveLength(1);
+      expect(result.tools[0].description).toBe(desc);
     });
   });
 });

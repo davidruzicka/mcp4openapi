@@ -104,6 +104,14 @@ export interface UpstreamMcpServerConfig {
    */
   html_description_policy?: 'allow' | 'strip' | 'drop';
 
+  /**
+   * Controls how upstream tools with descriptions exceeding the internal length limit are handled.
+   * - drop (default): tools with overlong descriptions are dropped
+   * - truncate: description is truncated to the limit; tool is kept
+   * - allow: description length check is skipped; tool passes through unchanged
+   */
+  tool_description_length_policy?: 'drop' | 'truncate' | 'allow';
+
   /** Optional endpoint to validate upstream credentials at session init (fail-fast). */
   validation_endpoint?: string;
   /** HTTP method for validation probe. Default: 'HEAD'. */
