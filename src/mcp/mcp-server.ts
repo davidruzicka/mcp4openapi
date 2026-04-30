@@ -1906,7 +1906,7 @@ export class MCPServer {
         );
       }
       const rawTools = result.tools;
-      const sanitized = sanitizeToolList(rawTools, this.logger, provider.html_description_policy ?? 'drop');
+      const sanitized = sanitizeToolList(rawTools, this.logger, provider.html_description_policy ?? 'drop', provider.tool_description_length_policy ?? 'drop');
       const policyFiltered = applyProviderToolPolicy(sanitized.tools, provider.tools);
       // Cache sanitized+policy-filtered tool names for tools/call gate enforcement.
       // Tools dropped here (bad description/inputSchema) must not be callable via tools/call.

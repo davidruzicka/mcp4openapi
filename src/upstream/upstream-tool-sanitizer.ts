@@ -19,6 +19,7 @@ import type { Logger } from '../core/logger.js';
 import type { UpstreamMcpToolPolicy } from '../types/profile.js';
 
 export type HtmlDescriptionPolicy = 'allow' | 'strip' | 'drop';
+export type ToolDescriptionLengthPolicy = 'drop' | 'truncate' | 'allow';
 
 export interface SanitizationResult {
   tools: Tool[];
@@ -97,7 +98,10 @@ const truncateName = (name: string): string =>
  * Each tool is checked in order:
  *   1. Name length <= 255
  *   2. Name matches [a-zA-Z0-9_-]
- *   3. Description length <= 2048 (if present)
+ *   3. Description length policy (tool_description_length_policy):
+ *      - drop (default): tools with description > 2048 chars are dropped
+ *      - truncate: description is truncated to 2048 chars; tool is kept
+ *      - allow: description length check is skipped; tool passes through unchanged
  *   4. HTML policy (html_description_policy):
  *      - drop (default): tools with <, >, or backtick in description/inputSchema are dropped
  *      - strip: HTML tags stripped from description and inputSchema string values; tool kept
@@ -105,7 +109,12 @@ const truncateName = (name: string): string =>
  *
  * Offending tools are dropped and logged. Safe tools pass through unchanged.
  */
-export function sanitizeToolList(tools: Tool[], logger?: Logger, htmlPolicy: HtmlDescriptionPolicy = 'drop'): SanitizationResult {
+export function sanitizeToolList(
+  tools: Tool[],
+  logger?: Logger,
+  htmlPolicy: HtmlDescriptionPolicy = 'drop',
+  lengthPolicy: ToolDescriptionLengthPolicy = 'drop',
+): SanitizationResult {
   const safe: Tool[] = [];
   const dropped: { name: string; reason: string }[] = [];
 
@@ -131,28 +140,41 @@ export function sanitizeToolList(tools: Tool[], logger?: Logger, htmlPolicy: Htm
       reason = 'invalid characters in tool name';
     } else if (tool.description !== undefined && typeof tool.description !== 'string') {
       reason = 'malformed tool definition: description is not a string';
-    } else if (tool.description && tool.description.length > MAX_DESCRIPTION_LENGTH) {
-      reason = 'tool description too long';
-    } else if (tool.inputSchema !== undefined && (typeof tool.inputSchema !== 'object' || tool.inputSchema === null || Array.isArray(tool.inputSchema))) {
-      reason = 'malformed tool definition: inputSchema is not an object';
-    } else if (htmlPolicy === 'drop') {
-      if (tool.description && DESCRIPTION_FORBIDDEN_CHARS.test(tool.description)) {
-        reason = 'forbidden characters in description';
-        excerpt = firstForbiddenExcerpt(tool.description);
-      } else if (tool.inputSchema && schemaContainsForbiddenChars(tool.inputSchema)) {
-        reason = 'forbidden characters in input schema';
-        const schemaStr = JSON.stringify(tool.inputSchema);
-        excerpt = firstForbiddenExcerpt(schemaStr);
+    } else {
+      // Description length policy: applies only to description length, not to other checks.
+      // Evaluated independently so that 'allow'/'truncate' can still fall through to HTML checks.
+      if (tool.description && tool.description.length > MAX_DESCRIPTION_LENGTH) {
+        if (lengthPolicy === 'drop') {
+          reason = 'tool description too long';
+        } else if (lengthPolicy === 'truncate') {
+          tool = { ...tool, description: tool.description.slice(0, MAX_DESCRIPTION_LENGTH) };
+        }
+        // lengthPolicy === 'allow': skip length check, continue to other checks unchanged
       }
-    } else if (htmlPolicy === 'strip') {
-      if (tool.description) {
-        tool = { ...tool, description: stripHtmlTags(tool.description) };
-      }
-      if (tool.inputSchema) {
-        tool = { ...tool, inputSchema: stripHtmlFromSchema(tool.inputSchema) as Tool['inputSchema'] };
+
+      if (reason === undefined) {
+        if (tool.inputSchema !== undefined && (typeof tool.inputSchema !== 'object' || tool.inputSchema === null || Array.isArray(tool.inputSchema))) {
+          reason = 'malformed tool definition: inputSchema is not an object';
+        } else if (htmlPolicy === 'drop') {
+          if (tool.description && DESCRIPTION_FORBIDDEN_CHARS.test(tool.description)) {
+            reason = 'forbidden characters in description';
+            excerpt = firstForbiddenExcerpt(tool.description);
+          } else if (tool.inputSchema && schemaContainsForbiddenChars(tool.inputSchema)) {
+            reason = 'forbidden characters in input schema';
+            const schemaStr = JSON.stringify(tool.inputSchema);
+            excerpt = firstForbiddenExcerpt(schemaStr);
+          }
+        } else if (htmlPolicy === 'strip') {
+          if (tool.description) {
+            tool = { ...tool, description: stripHtmlTags(tool.description) };
+          }
+          if (tool.inputSchema) {
+            tool = { ...tool, inputSchema: stripHtmlFromSchema(tool.inputSchema) as Tool['inputSchema'] };
+          }
+        }
+        // htmlPolicy === 'allow': skip all HTML checks, pass tool through unchanged
       }
     }
-    // htmlPolicy === 'allow': skip all HTML checks, pass tool through unchanged
 
     if (reason !== undefined) {
       // Coerce non-string names to string for safe logging
