@@ -224,6 +224,15 @@ describe('resolveUpstreamMcpConfig – validator error branches', () => {
     expect(() => resolveUpstreamMcpConfig(profile)).toThrow(/validation_timeout_ms must be a positive integer/);
   });
 
+  it('rejects non-integer validation_timeout_ms', () => {
+    const profile = makeProfile({
+      name: 'p1',
+      transport: { type: 'http-streamable', url: 'https://example.com/mcp' },
+      validation_timeout_ms: 1.5,
+    });
+    expect(() => resolveUpstreamMcpConfig(profile)).toThrow(/validation_timeout_ms must be a positive integer/);
+  });
+
   it('rejects empty tool_prefix', () => {
     const profile = makeProfile({
       name: 'p1',

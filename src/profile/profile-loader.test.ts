@@ -3357,6 +3357,29 @@ paths:
       expect(err.message).toContain('upstream_mcp schema validation failed');
     });
 
+    it('re-throws raw ZodError when upstream_mcp array fails alongside other field errors', async () => {
+      const loader = new ProfileLoader();
+      const fs = await import('fs/promises');
+      const tmpPath = `/tmp/profile-upstream-mixed-${Date.now()}-${Math.random()}.json`;
+      await fs.writeFile(
+        tmpPath,
+        JSON.stringify({
+          // profile_name intentionally omitted — triggers a separate Zod issue
+          tools: [],
+          upstream_mcp: [{ name: 'p', transport: { type: 'http-streamable', url: 'https://u.example.com/mcp' } }],
+        }),
+        'utf-8',
+      );
+      expect.assertions(2);
+      const err = await loader.load(tmpPath).catch((e) => e);
+      // Mixed failure: both upstream_mcp (array) and profile_name (missing) fail Zod.
+      // The wrapping condition requires ALL issues to be upstream_mcp-rooted, so the
+      // raw ZodError must be re-thrown to preserve the profile_name error.
+      const { ZodError } = await import('zod');
+      expect(err).toBeInstanceOf(ZodError);
+      expect((err as import('zod').ZodError).issues.some((i) => i.path[0] !== 'upstream_mcp')).toBe(true);
+    });
+
     it('loads profile with single-object upstream_mcp', async () => {
       const loader = new ProfileLoader();
       const fs = await import('fs/promises');

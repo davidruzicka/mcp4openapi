@@ -342,6 +342,7 @@ describeIfListen('upstream credential validation at session init', () => {
       .send(INIT_REQUEST);
 
     // Should succeed (session created) since no validation manager
-    expect(res.status).not.toBe(500);
+    expect(res.status).toBe(200);
+    expect(res.body).not.toHaveProperty('error');
   });
 });

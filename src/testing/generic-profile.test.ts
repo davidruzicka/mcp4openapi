@@ -8,7 +8,6 @@ import { loadTestDefinitionSync, validateTestAgainstProfile } from './test-loade
 import { processTemplate } from './template-utils.js';
 import { Profile } from '../types/profile.js';
 import { ProfileLoader } from '../profile/profile-loader.js';
-import { hasUpstreamMcpFlag } from '../profile/upstream-mcp-config.js';
 import { assertRequestMatches, assertRequestsSequence } from './request-assertions.js';
 
 type ToolCallResponse = {
@@ -243,7 +242,7 @@ testFiles.forEach(testFile => {
       validateTestAgainstProfile(testDef, profile);
 
       const isUpstreamProxy =
-        hasUpstreamMcpFlag(profile.upstream_mcp) &&
+        !!profile.upstream_mcp &&
         !profile.openapi_spec_path;
 
       server = new MCPServer();
