@@ -1816,12 +1816,16 @@ export class MCPServer {
    */
   private getUpstreamMcpConfig(profileId?: string): UpstreamMcpServerConfig | undefined {
     if (this.httpTransport && profileId) {
-      // In single-profile HTTP mode both paths should agree: runHttp() stores the profile under
-      // defaultProfileId and JSON-RPC dispatch resolves the same key. The fallback to
-      // this.profile?.upstream_mcp is a defensive safety net for any edge case where
-      // profileId normalization diverges (e.g. during startup races), keeping the common
-      // case fast and the error case auditable rather than silently broken.
-      return this.httpTransport.getUpstreamMcpConfig(profileId) ?? this.profile?.upstream_mcp;
+      const fromTransport = this.httpTransport.getUpstreamMcpConfig(profileId);
+      if (fromTransport !== undefined) return fromTransport;
+      // Fallback: safe only in single-profile HTTP mode where runHttp() stores the profile
+      // under defaultProfileId. If profileId normalization diverges (e.g. startup race),
+      // this recovers. In multi-profile mode this would return the wrong profile's config —
+      // the warn log makes the mismatch auditable rather than silent.
+      if (this.profile?.upstream_mcp) {
+        this.logger?.warn('getUpstreamMcpConfig: profileId not found in transport context, falling back to this.profile.upstream_mcp', { profileId });
+      }
+      return this.profile?.upstream_mcp;
     }
     // stdio path: upstream_mcp cannot be used without a wired client
     if (!this.upstreamStdioWarnLogged && this.profile?.upstream_mcp && !this.getUpstreamClientFn) {

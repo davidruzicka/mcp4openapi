@@ -27,6 +27,9 @@ function getTrimmedEnvReference(reference: string | undefined, path: string): st
   return trimmed;
 }
 
+export const UPSTREAM_MCP_ARRAY_REJECTION_MESSAGE =
+  'upstream_mcp must contain a single JSON object, not an array. Change [{...}] to {...}';
+
 function parseUpstreamMcpJson(rawValue: string, path: string): UpstreamMcpServerConfig {
   let parsed: unknown;
   try {
@@ -36,10 +39,7 @@ function parseUpstreamMcpJson(rawValue: string, path: string): UpstreamMcpServer
   }
 
   if (Array.isArray(parsed)) {
-    throw new ValidationError(
-      `${path} must contain a single JSON object, not an array. Change [{...}] to {...}`,
-      { path },
-    );
+    throw new ValidationError(UPSTREAM_MCP_ARRAY_REJECTION_MESSAGE, { path });
   }
   if (parsed === null || typeof parsed !== 'object') {
     throw new ValidationError(`${path} must contain a JSON object`, { path });
@@ -209,6 +209,21 @@ function validateUpstreamProvider(provider: UpstreamMcpServerConfig): void {
       );
     }
   }
+}
+
+/**
+ * Returns true only when the raw value looks like a valid upstream MCP proxy config —
+ * requires at minimum a transport object with type='http-streamable' and a non-empty url.
+ * Use this as the gate for suppressing the openapi_spec_path requirement in resolveSpecPath.
+ * Contrast with hasUpstreamMcpFlag (loose, for list-view display only).
+ */
+export function looksLikeUpstreamMcpProxy(value: unknown): boolean {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const v = value as Record<string, unknown>;
+  const transport = v.transport;
+  if (!transport || typeof transport !== 'object' || Array.isArray(transport)) return false;
+  const t = transport as Record<string, unknown>;
+  return t.type === 'http-streamable' && typeof t.url === 'string' && t.url.trim().length > 0;
 }
 
 // MIGRATION-CLEANUP(phase-03.1): remove this function and all its callers once

@@ -3311,7 +3311,7 @@ paths:
       const err = await loader.load(tmpPath).catch((e) => e);
       expect(err).toBeInstanceOf(ValidationError);
       expect((err as ValidationError).details?.path).toBe('upstream_mcp');
-      expect(err.message).toMatch(/must be a single object, not an array/);
+      expect(err.message).toMatch(/must contain a single JSON object, not an array/);
       expect(err.message).toMatch(/Change \[/);
     });
 
@@ -3333,7 +3333,7 @@ paths:
       const err = await loader.load(tmpPath).catch((e) => e);
       expect(err).toBeInstanceOf(ValidationError);
       expect((err as ValidationError).details?.path).toBe('upstream_mcp');
-      expect(err.message).toMatch(/must be a single object, not an array/);
+      expect(err.message).toMatch(/must contain a single JSON object, not an array/);
       expect(err.message).toMatch(/Change \[/);
     });
 

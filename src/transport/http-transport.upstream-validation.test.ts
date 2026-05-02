@@ -63,8 +63,9 @@ describeIfListen('upstream credential validation at session init', () => {
 
   it('calls validateCredentials during isInitialization when upstreamMcp has validation_endpoint', async () => {
     const mockValidateCredentials = vi.fn().mockResolvedValue(undefined);
-    const mockUpstreamConnectionManager = { validateCredentials: mockValidateCredentials, setHasActiveStreamFn: vi.fn(), setDownstreamNotifyFn: vi.fn() };
+    const mockUpstreamConnectionManager = { validateCredentials: mockValidateCredentials, closeAll: vi.fn().mockResolvedValue(undefined), setHasActiveStreamFn: vi.fn(), setDownstreamNotifyFn: vi.fn() };
     transport.setUpstreamConnectionManager(mockUpstreamConnectionManager as any);
+    const errorSpy = vi.spyOn(logger, 'error');
 
     const provider = {
       name: 'test-provider',
@@ -85,11 +86,12 @@ describeIfListen('upstream credential validation at session init', () => {
       provider,
       'test-token-abc',
     );
+    expect(errorSpy).not.toHaveBeenCalled();
   });
 
   it('returns 401 when validateCredentials throws UpstreamAuthError', async () => {
     const mockValidateCredentials = vi.fn().mockRejectedValue(new UpstreamAuthError('test-provider'));
-    const mockUpstreamConnectionManager = { validateCredentials: mockValidateCredentials, setHasActiveStreamFn: vi.fn(), setDownstreamNotifyFn: vi.fn() };
+    const mockUpstreamConnectionManager = { validateCredentials: mockValidateCredentials, closeAll: vi.fn().mockResolvedValue(undefined), setHasActiveStreamFn: vi.fn(), setDownstreamNotifyFn: vi.fn() };
     transport.setUpstreamConnectionManager(mockUpstreamConnectionManager as any);
 
     const provider = {
@@ -113,7 +115,7 @@ describeIfListen('upstream credential validation at session init', () => {
   it('returns 502 when validateCredentials throws non-auth error', async () => {
     const networkError = new Error('ECONNREFUSED');
     const mockValidateCredentials = vi.fn().mockRejectedValue(networkError);
-    const mockUpstreamConnectionManager = { validateCredentials: mockValidateCredentials, setHasActiveStreamFn: vi.fn(), setDownstreamNotifyFn: vi.fn() };
+    const mockUpstreamConnectionManager = { validateCredentials: mockValidateCredentials, closeAll: vi.fn().mockResolvedValue(undefined), setHasActiveStreamFn: vi.fn(), setDownstreamNotifyFn: vi.fn() };
     transport.setUpstreamConnectionManager(mockUpstreamConnectionManager as any);
 
     const provider = {
@@ -136,7 +138,7 @@ describeIfListen('upstream credential validation at session init', () => {
 
   it('skips validation when no upstreamMcp providers configured', async () => {
     const mockValidateCredentials = vi.fn();
-    const mockUpstreamConnectionManager = { validateCredentials: mockValidateCredentials, setHasActiveStreamFn: vi.fn(), setDownstreamNotifyFn: vi.fn() };
+    const mockUpstreamConnectionManager = { validateCredentials: mockValidateCredentials, closeAll: vi.fn().mockResolvedValue(undefined), setHasActiveStreamFn: vi.fn(), setDownstreamNotifyFn: vi.fn() };
     transport.setUpstreamConnectionManager(mockUpstreamConnectionManager as any);
 
     createProfileState(transport as any, 'default', undefined);
@@ -152,7 +154,7 @@ describeIfListen('upstream credential validation at session init', () => {
 
   it('skips validation when provider has no validation_endpoint', async () => {
     const mockValidateCredentials = vi.fn();
-    const mockUpstreamConnectionManager = { validateCredentials: mockValidateCredentials, setHasActiveStreamFn: vi.fn(), setDownstreamNotifyFn: vi.fn() };
+    const mockUpstreamConnectionManager = { validateCredentials: mockValidateCredentials, closeAll: vi.fn().mockResolvedValue(undefined), setHasActiveStreamFn: vi.fn(), setDownstreamNotifyFn: vi.fn() };
     transport.setUpstreamConnectionManager(mockUpstreamConnectionManager as any);
 
     const provider = {
@@ -173,7 +175,7 @@ describeIfListen('upstream credential validation at session init', () => {
 
   it('does not log validation successful when no token is present (no-op path)', async () => {
     const mockValidateCredentials = vi.fn().mockResolvedValue(undefined);
-    const mockUpstreamConnectionManager = { validateCredentials: mockValidateCredentials, setHasActiveStreamFn: vi.fn(), setDownstreamNotifyFn: vi.fn() };
+    const mockUpstreamConnectionManager = { validateCredentials: mockValidateCredentials, closeAll: vi.fn().mockResolvedValue(undefined), setHasActiveStreamFn: vi.fn(), setDownstreamNotifyFn: vi.fn() };
     transport.setUpstreamConnectionManager(mockUpstreamConnectionManager as any);
 
     const infoSpy = vi.spyOn(logger, 'info');
@@ -204,7 +206,7 @@ describeIfListen('upstream credential validation at session init', () => {
     // must be consistent — falling back to envToken would expose upstream reachability and
     // credential validity to anonymous callers.
     const mockValidateCredentials = vi.fn().mockResolvedValue(undefined);
-    const mockUpstreamConnectionManager = { validateCredentials: mockValidateCredentials, setHasActiveStreamFn: vi.fn(), setDownstreamNotifyFn: vi.fn() };
+    const mockUpstreamConnectionManager = { validateCredentials: mockValidateCredentials, closeAll: vi.fn().mockResolvedValue(undefined), setHasActiveStreamFn: vi.fn(), setDownstreamNotifyFn: vi.fn() };
     transport.setUpstreamConnectionManager(mockUpstreamConnectionManager as any);
     vi.stubEnv('UPSTREAM_API_KEY', 'env-secret-token');
 
@@ -233,7 +235,7 @@ describeIfListen('upstream credential validation at session init', () => {
 
   it('does not validate when provider has value_from_env but env var is not set and client has no token', async () => {
     const mockValidateCredentials = vi.fn().mockResolvedValue(undefined);
-    const mockUpstreamConnectionManager = { validateCredentials: mockValidateCredentials, setHasActiveStreamFn: vi.fn(), setDownstreamNotifyFn: vi.fn() };
+    const mockUpstreamConnectionManager = { validateCredentials: mockValidateCredentials, closeAll: vi.fn().mockResolvedValue(undefined), setHasActiveStreamFn: vi.fn(), setDownstreamNotifyFn: vi.fn() };
     transport.setUpstreamConnectionManager(mockUpstreamConnectionManager as any);
     delete process.env['UPSTREAM_API_KEY_MISSING'];
 
@@ -282,7 +284,7 @@ describeIfListen('upstream credential validation at session init', () => {
     transportWithUpstream.setMessageHandler(async () => ({ result: { protocolVersion: '2025-03-26', capabilities: {}, serverInfo: { name: 'test', version: '1.0' } } }));
 
     const mockValidateCredentials = vi.fn().mockResolvedValue(undefined);
-    transportWithUpstream.setUpstreamConnectionManager({ validateCredentials: mockValidateCredentials, setHasActiveStreamFn: vi.fn(), setDownstreamNotifyFn: vi.fn() } as any);
+    transportWithUpstream.setUpstreamConnectionManager({ validateCredentials: mockValidateCredentials, closeAll: vi.fn().mockResolvedValue(undefined), setHasActiveStreamFn: vi.fn(), setDownstreamNotifyFn: vi.fn() } as any);
 
     try {
       await request((transportWithUpstream as any).app)

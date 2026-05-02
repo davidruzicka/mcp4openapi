@@ -202,11 +202,28 @@ describe('profile-resolver', () => {
       profile_name: 'proxy-profile',
       profile_id: 'proxy',
       tools: [],
-      upstream_mcp: { server_url: 'https://example.com/mcp' },
+      upstream_mcp: { name: 'p', transport: { type: 'http-streamable', url: 'https://example.com/mcp' } },
     });
 
     const resolved = await resolveProfileById('proxy', profilesDir);
     expect(resolved.specPath).toBeUndefined();
+  });
+
+  it('throws missing openapi_spec_path for upstream_mcp with invalid shape (no transport.url)', async () => {
+    // looksLikeUpstreamMcpProxy rejects objects that don't have transport.type + transport.url,
+    // so resolveSpecPath treats the profile as non-proxy and throws for missing spec path.
+    const root = await createTempDir();
+    const profilesDir = path.join(root, 'profiles');
+    const profilePath = path.join(profilesDir, 'bad-proxy.json');
+
+    await writeJson(profilePath, {
+      profile_name: 'bad-proxy',
+      profile_id: 'bad-proxy',
+      tools: [],
+      upstream_mcp: {},
+    });
+
+    await expect(resolveProfileById('bad-proxy', profilesDir)).rejects.toThrow('openapi_spec_path');
   });
 
   it('extracts env vars and auth methods for profile index', async () => {

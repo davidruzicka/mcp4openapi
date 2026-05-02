@@ -3992,6 +3992,42 @@ paths:
         expect(mockClientFn).toHaveBeenCalledWith('session-1', provider, undefined);
         expect(response.result).toBeDefined();
       });
+
+      it('logs warn when fallback fires for profileId not in transport context', async () => {
+        // The fallback is safe only in single-profile mode. When it fires for a foreign
+        // profileId it returns this.profile.upstream_mcp (potentially the wrong config).
+        // The warn log makes this auditable rather than silent.
+        const logger = new JsonLogger();
+        const warnSpy = vi.spyOn(logger, 'warn');
+
+        const server = new MCPServer(logger);
+        const provider = { name: 'profile-a-provider', transport: { type: 'http-streamable', url: 'https://a.example.com/mcp' } };
+        (server as any).profile = { profile_name: 'profile-a', tools: [], upstream_mcp: provider };
+        (server as any).httpTransport = {
+          hasOAuthProvider: () => false,
+          getUpstreamMcpConfig: (_profileId: string) => undefined,
+          getSessionToken: () => undefined,
+          getSessionTenantContext: () => undefined,
+          getMetricsCollector: () => null,
+          getSessionFiltering: () => undefined,
+          getSessionToolFilter: () => undefined,
+          getSessionEnterpriseAllowedToolCategories: () => undefined,
+        };
+
+        const mockClientFn = vi.fn().mockResolvedValue({ listTools: vi.fn().mockResolvedValue({ tools: [] }), callTool: vi.fn() });
+        server.setGetUpstreamClient(mockClientFn);
+
+        await (server as any).handleOtherRequest(
+          { jsonrpc: '2.0', id: '1', method: 'tools/list', params: {} },
+          'session-1',
+          'profile-b',
+        );
+
+        expect(warnSpy).toHaveBeenCalledWith(
+          expect.stringContaining('falling back to this.profile.upstream_mcp'),
+          expect.objectContaining({ profileId: 'profile-b' }),
+        );
+      });
     });
 
     // -------------------------------------------------------------------------

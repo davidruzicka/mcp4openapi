@@ -33,7 +33,7 @@ import { normalizeToolName } from '../tool-filter/utils.js';
 import { isSafePropertyName, isUri } from '../validation/validation-utils.js';
 import { validateEnterpriseAuthorizationProfile } from './enterprise-profile-validator.js';
 import { validateClientAuthGateProfile } from './client-auth-gate-validator.js';
-import { resolveUpstreamMcpConfig } from './upstream-mcp-config.js';
+import { resolveUpstreamMcpConfig, UPSTREAM_MCP_ARRAY_REJECTION_MESSAGE } from './upstream-mcp-config.js';
 
 // Schemas are now auto-generated from TypeScript types!
 // See scripts/generate-schemas.js for details.
@@ -78,7 +78,7 @@ export class ProfileLoader {
           );
           throw new ValidationError(
             arrayIssue
-              ? 'upstream_mcp must be a single object, not an array. Change [{...}] to {...}'
+              ? UPSTREAM_MCP_ARRAY_REJECTION_MESSAGE
               : `upstream_mcp schema validation failed: ${upstreamIssues
                   .map((i) => {
                     const field = i.path.slice(1).join('.');

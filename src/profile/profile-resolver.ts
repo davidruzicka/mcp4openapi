@@ -10,7 +10,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ConfigurationError } from '../core/errors.js';
 import { isFilteringKeySupported } from '../core/filtering.js';
-import { hasUpstreamMcpFlag } from './upstream-mcp-config.js';
+import { hasUpstreamMcpFlag, looksLikeUpstreamMcpProxy } from './upstream-mcp-config.js';
 import type { ParameterDefinition, ToolDefinition } from '../types/profile.js';
 
 export interface ResolvedProfile {
@@ -82,7 +82,8 @@ interface ProfileIndexEntry {
   aliases: string[];
   profilePath: string;
   specPathRaw?: string;
-  hasUpstreamMcp: boolean;
+  hasUpstreamMcp: boolean;        // list-view display (loose: tolerates legacy array + any object)
+  isUpstreamMcpProxy: boolean;    // spec-path gate (strict: requires transport.type + transport.url)
 }
 
 const DEFAULT_PROFILES_DIR = 'profiles';
@@ -461,6 +462,7 @@ async function loadProfileIndexEntry(profilePath: string): Promise<ProfileIndexE
     profilePath,
     specPathRaw: typeof profile.openapi_spec_path === 'string' ? profile.openapi_spec_path : undefined,
     hasUpstreamMcp: hasUpstreamMcpFlag(profile.upstream_mcp),
+    isUpstreamMcpProxy: looksLikeUpstreamMcpProxy(profile.upstream_mcp),
   };
 }
 
@@ -572,7 +574,7 @@ export async function resolveProfileById(
   }
 
   const match = matches[0];
-  const specPath = resolveSpecPath(match.profilePath, match.specPathRaw, options?.specPathOverride, match.hasUpstreamMcp);
+  const specPath = resolveSpecPath(match.profilePath, match.specPathRaw, options?.specPathOverride, match.isUpstreamMcpProxy);
 
   return {
     profileId: match.profileId,
@@ -630,7 +632,7 @@ export async function resolveProfileFromPath(
     throw new ConfigurationError('Profile file does not look like a valid profile', { profilePath: resolvedPath });
   }
 
-  const specPath = resolveSpecPath(resolvedPath, entry.specPathRaw, options?.specPathOverride, entry.hasUpstreamMcp);
+  const specPath = resolveSpecPath(resolvedPath, entry.specPathRaw, options?.specPathOverride, entry.isUpstreamMcpProxy);
 
   return {
     profileId: entry.profileId,
