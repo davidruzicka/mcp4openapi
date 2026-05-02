@@ -80,7 +80,7 @@ Plans:
 Plans:
 - [x] 03.1-01-PLAN.md — Source-of-truth types narrowed (profile.ts, http-transport.ts), generated schemas regenerated, resolver/parser/validator in upstream-mcp-config.ts singularised, profile-loader D-02 presence check + D-07 dead-code removal
 - [x] 03.1-02-PLAN.md — Call-site cleanup in mcp-server.ts, http-transport.ts, profile-resolver.ts, generic-profile.test.ts, and the in-repo profile fixture (singular access end-to-end; legacy-array tolerance preserved in list-view UX per Open Question 1)
-- [ ] 03.1-03-PLAN.md — Test fixture migration across 5 test files (~112 sites), D-01 + D-03 negative test additions, dead loader-D-03 + empty-array tests removed; phase gate via full npm test green
+- [x] 03.1-03-PLAN.md — Test fixture migration across 5 test files (~112 sites), D-01 + D-03 negative test additions, dead loader-D-03 + empty-array tests removed; phase gate via full npm test green
 
 ### Phase 4: Client Authentication Gate (OIDC JWT)
 **Goal**: Clients bearing OIDC JWTs are validated against a JWKS endpoint; resolved identity completes AUTH-03
