@@ -75,7 +75,7 @@ Plans:
 **Goal**: Profile.upstream_mcp narrowed end-to-end from UpstreamMcpServerConfig[] to UpstreamMcpServerConfig (singular). The runtime single-provider constraint already exists in profile-loader (D-03 check); this phase relocates it into the type system (Zod + TS), removes the now-dead loader runtime check, and migrates all consumers + test fixtures to the singular shape. Breaking change for end-user profile JSON/YAML using array syntax.
 **Requirements**: (none — internal type-narrowing refactor; preserves PROXY-01..04 and SEC-02 without modifying them)
 **Depends on:** Phase 03
-**Plans:** 2/3 plans executed
+**Plans:** 3/3 plans complete
 
 Plans:
 - [x] 03.1-01-PLAN.md — Source-of-truth types narrowed (profile.ts, http-transport.ts), generated schemas regenerated, resolver/parser/validator in upstream-mcp-config.ts singularised, profile-loader D-02 presence check + D-07 dead-code removal
