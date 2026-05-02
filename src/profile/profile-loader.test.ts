@@ -3146,28 +3146,6 @@ describe('ProfileLoader', () => {
       }
     });
 
-    it('rejects static upstream_mcp provided as array (schema rejects array at parse time)', async () => {
-      const loader = new ProfileLoader();
-      const fs = await import('fs/promises');
-      const tmpPath = `/tmp/upstream-mcp-empty-static-${Date.now()}-${Math.random()}.json`;
-
-      await fs.writeFile(
-        tmpPath,
-        JSON.stringify({
-          profile_name: 'upstream-empty-static',
-          tools: [{ name: 'tool_a', description: 'Tool A', operations: { list: 'listItems' }, parameters: {} }],
-          upstream_mcp: [],
-        }),
-        'utf-8',
-      );
-
-      try {
-        await expect(loader.load(tmpPath)).rejects.toThrow(ZodError);
-      } finally {
-        await fs.unlink(tmpPath).catch(() => undefined);
-      }
-    });
-
     it('validates provider without auth and with deny-only tools policy', async () => {
       const loader = new ProfileLoader();
       const fs = await import('fs/promises');
@@ -3309,14 +3287,39 @@ paths:
     });
   });
 
-  describe('upstream_mcp single-provider constraint (D-03)', () => {
+  describe('upstream_mcp single-provider constraint (D-03 — schema-level)', () => {
     const makeUpstreamProvider = (name: string) => ({
       name,
       transport: { type: 'http-streamable', url: 'https://upstream.example.com/mcp' },
       auth: { type: 'bearer', value_from_env: 'TOKEN' },
     });
 
-    it('rejects upstream_mcp provided as array (Zod schema rejects array at parse time)', async () => {
+    it('rejects array-typed upstream_mcp at schema parse time', async () => {
+      const loader = new ProfileLoader();
+      const fs = await import('fs/promises');
+      const tmpPath = `/tmp/profile-upstream-array-${Date.now()}-${Math.random()}.json`;
+      await fs.writeFile(
+        tmpPath,
+        JSON.stringify({
+          profile_name: 'array-upstream',
+          tools: [],
+          upstream_mcp: [makeUpstreamProvider('provider-a')],
+        }),
+        'utf-8',
+      );
+      // Zod profileSchema rejects the array shape; loader never reaches the
+      // legacy D-03 runtime check (deleted per phase 03.1 D-07).
+      const err = await loader.load(tmpPath).catch(e => e);
+      expect(err).toBeInstanceOf(ZodError);
+      expect(err.issues[0]).toMatchObject({
+        code: 'invalid_type',
+        expected: 'object',
+        received: 'array',
+        path: ['upstream_mcp'],
+      });
+    });
+
+    it('rejects multi-entry array upstream_mcp at schema parse time', async () => {
       const loader = new ProfileLoader();
       const fs = await import('fs/promises');
       const tmpPath = `/tmp/profile-upstream-multi-${Date.now()}-${Math.random()}.json`;
@@ -3327,13 +3330,21 @@ paths:
           tools: [],
           upstream_mcp: [makeUpstreamProvider('provider-a'), makeUpstreamProvider('provider-b')],
         }),
-        'utf-8'
+        'utf-8',
       );
-
-      await expect(loader.load(tmpPath)).rejects.toThrow(ZodError);
+      // Zod rejects the array shape; the old loader-level "supports exactly
+      // one upstream provider" message no longer fires (deleted per phase 03.1 D-07).
+      const err = await loader.load(tmpPath).catch(e => e);
+      expect(err).toBeInstanceOf(ZodError);
+      expect(err.issues[0]).toMatchObject({
+        code: 'invalid_type',
+        expected: 'object',
+        received: 'array',
+        path: ['upstream_mcp'],
+      });
     });
 
-    it('loads profile with singular upstream_mcp provider (object, not array)', async () => {
+    it('loads profile with single-object upstream_mcp', async () => {
       const loader = new ProfileLoader();
       const fs = await import('fs/promises');
       const tmpPath = `/tmp/profile-upstream-single-${Date.now()}-${Math.random()}.json`;
@@ -3344,10 +3355,11 @@ paths:
           tools: [],
           upstream_mcp: makeUpstreamProvider('provider-a'),
         }),
-        'utf-8'
+        'utf-8',
       );
 
       const profile = await loader.load(tmpPath);
+      expect(profile.upstream_mcp).toBeDefined();
       expect(profile.upstream_mcp?.name).toBe('provider-a');
     });
   });
