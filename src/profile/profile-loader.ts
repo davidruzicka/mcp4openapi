@@ -88,19 +88,10 @@ export class ProfileLoader {
     }
 
     // D-02: upstream_mcp and tools[] are mutually exclusive
-    if (profile.upstream_mcp?.length && profile.tools?.length) {
+    if (profile.upstream_mcp && profile.tools?.length) {
       throw new ValidationError(
         'Profile cannot define both "upstream_mcp" and "tools" - these are mutually exclusive. ' +
         'When upstream_mcp is configured, tools are fetched from the upstream MCP server.',
-        { path: 'upstream_mcp' }
-      );
-    }
-
-    // D-03: upstream_mcp supports exactly one provider; multiple entries are not routed
-    if (profile.upstream_mcp && profile.upstream_mcp.length > 1) {
-      throw new ValidationError(
-        'upstream_mcp supports exactly one upstream provider. ' +
-        `Found ${profile.upstream_mcp.length}. Remove extra entries or split into separate profiles.`,
         { path: 'upstream_mcp' }
       );
     }

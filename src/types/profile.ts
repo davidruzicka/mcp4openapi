@@ -62,7 +62,7 @@ export interface Profile {
   parameter_aliases?: Record<string, string[]>; // e.g., {"id": ["resource_id", "project_id"]}
   enterprise_authorization?: EnterpriseAuthorizationConfig;
   client_auth_gate?: ClientAuthGateConfig;
-  upstream_mcp?: UpstreamMcpServerConfig[];
+  upstream_mcp?: UpstreamMcpServerConfig;
   upstream_mcp_from_env?: string;
 
   // OAuth resource metadata (optional overrides)

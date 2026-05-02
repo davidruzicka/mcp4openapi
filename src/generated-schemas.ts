@@ -359,8 +359,8 @@ export const upstreamMcpServerConfigSchema = z.object({
     tool_prefix: z.string().optional(),
     tools: upstreamMcpToolPolicySchema.optional(),
     timeout_ms: z.number().optional(),
-    html_description_policy: z.enum(['allow', 'strip', 'drop']).optional(),
-    tool_description_length_policy: z.enum(['drop', 'truncate', 'allow']).optional(),
+    html_description_policy: z.union([z.literal("allow"), z.literal("strip"), z.literal("drop")]).optional(),
+    tool_description_length_policy: z.union([z.literal("drop"), z.literal("truncate"), z.literal("allow")]).optional(),
     validation_endpoint: z.string().optional(),
     validation_method: z.union([z.literal("HEAD"), z.literal("GET")]).optional(),
     validation_timeout_ms: z.number().optional()
@@ -379,7 +379,7 @@ export const profileSchema = z.object({
     parameter_aliases: z.record(z.string(), z.array(z.string())).optional(),
     enterprise_authorization: enterpriseAuthorizationConfigSchema.optional(),
     client_auth_gate: clientAuthGateConfigSchema.optional(),
-    upstream_mcp: z.array(upstreamMcpServerConfigSchema).optional(),
+    upstream_mcp: upstreamMcpServerConfigSchema.optional(),
     upstream_mcp_from_env: z.string().optional(),
     resource_name: z.string().optional(),
     resource_documentation: z.string().optional()

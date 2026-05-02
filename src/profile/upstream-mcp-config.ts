@@ -27,7 +27,7 @@ function getTrimmedEnvReference(reference: string | undefined, path: string): st
   return trimmed;
 }
 
-function parseUpstreamMcpJson(rawValue: string, path: string): UpstreamMcpServerConfig[] {
+function parseUpstreamMcpJson(rawValue: string, path: string): UpstreamMcpServerConfig {
   let parsed: unknown;
   try {
     parsed = JSON.parse(rawValue);
@@ -35,35 +35,29 @@ function parseUpstreamMcpJson(rawValue: string, path: string): UpstreamMcpServer
     throw new ValidationError(`${path} must contain valid JSON`, { path });
   }
 
-  let items: unknown[];
   if (Array.isArray(parsed)) {
-    if (parsed.length === 0) {
-      throw new ValidationError(`${path} must contain at least one upstream MCP provider`, { path });
-    }
-    items = parsed;
-  } else if (parsed !== null && typeof parsed === 'object') {
-    items = [parsed];
-  } else {
-    throw new ValidationError(`${path} must contain a JSON object or array of objects`, { path });
+    throw new ValidationError(
+      `${path} must contain a single JSON object, not an array. Change [{...}] to {...}`,
+      { path },
+    );
+  }
+  if (parsed === null || typeof parsed !== 'object') {
+    throw new ValidationError(`${path} must contain a JSON object`, { path });
   }
 
-  return items.map((item, index) => {
-    const result = upstreamMcpServerConfigSchema.safeParse(item);
-    if (!result.success) {
-      const issue = result.error.issues[0];
-      const fieldPath = issue?.path.length
-        ? `${path}[${index}].${issue.path.join('.')}`
-        : `${path}[${index}]`;
-      throw new ValidationError(
-        `${fieldPath}: ${issue?.message ?? 'invalid upstream MCP provider'}`,
-        { path: fieldPath },
-      );
-    }
-    return result.data;
-  });
+  const result = upstreamMcpServerConfigSchema.safeParse(parsed);
+  if (!result.success) {
+    const issue = result.error.issues[0];
+    const fieldPath = issue?.path.length ? `${path}.${issue.path.join('.')}` : path;
+    throw new ValidationError(
+      `${fieldPath}: ${issue?.message ?? 'invalid upstream MCP provider'}`,
+      { path: fieldPath },
+    );
+  }
+  return result.data;
 }
 
-function resolveUpstreamMcpFromEnv(profile: Profile, env: EnvSource): UpstreamMcpServerConfig[] | undefined {
+function resolveUpstreamMcpFromEnv(profile: Profile, env: EnvSource): UpstreamMcpServerConfig | undefined {
   const envVarName = getTrimmedEnvReference(profile.upstream_mcp_from_env, 'upstream_mcp_from_env');
   if (!envVarName) {
     return undefined;
@@ -164,8 +158,8 @@ function validateUpstreamUrl(urlValue: string, path: string): void {
   }
 }
 
-function validateUpstreamProvider(provider: UpstreamMcpServerConfig, index: number): void {
-  const path = `upstream_mcp[${index}]`;
+function validateUpstreamProvider(provider: UpstreamMcpServerConfig): void {
+  const path = 'upstream_mcp';
 
   if (!provider.name.trim()) {
     throw new ValidationError(`${path}.name must not be empty`, { path: `${path}.name` });
@@ -217,32 +211,17 @@ function validateUpstreamProvider(provider: UpstreamMcpServerConfig, index: numb
   }
 }
 
-export function resolveUpstreamMcpConfig(profile: Profile, env: EnvSource = process.env): UpstreamMcpServerConfig[] | undefined {
+export function resolveUpstreamMcpConfig(
+  profile: Profile,
+  env: EnvSource = process.env,
+): UpstreamMcpServerConfig | undefined {
   const envResolved = resolveUpstreamMcpFromEnv(profile, env);
-  const providers = envResolved ?? (profile.upstream_mcp ? [...profile.upstream_mcp] : undefined);
+  const provider = envResolved ?? profile.upstream_mcp;
+  if (!provider) return undefined;
 
-  if (!providers) {
-    return undefined;
-  }
+  validateUpstreamProvider(provider);
 
-  if (providers.length === 0) {
-    throw new ValidationError('upstream_mcp must contain at least one upstream MCP provider', { path: 'upstream_mcp' });
-  }
-
-  const seenNames = new Set<string>();
-  providers.forEach((provider, index) => {
-    validateUpstreamProvider(provider, index);
-    const normalizedName = provider.name.trim();
-    if (seenNames.has(normalizedName)) {
-      throw new ValidationError(`Duplicate upstream_mcp provider name '${normalizedName}'`, {
-        path: `upstream_mcp[${index}].name`,
-        providerName: normalizedName,
-      });
-    }
-    seenNames.add(normalizedName);
-  });
-
-  return providers.map((provider) => ({
+  return {
     ...provider,
     name: provider.name.trim(),
     tool_prefix: provider.tool_prefix?.trim(),
@@ -260,5 +239,5 @@ export function resolveUpstreamMcpConfig(profile: Profile, env: EnvSource = proc
       ...provider.transport,
       url: provider.transport.url.trim(),
     },
-  }));
+  };
 }
