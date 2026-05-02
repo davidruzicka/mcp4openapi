@@ -256,3 +256,39 @@ describe('resolveUpstreamMcpConfig – validator error branches', () => {
     expect(result?.name).toBe('static');
   });
 });
+
+describe('upstream_mcp_from_env D-01 migration', () => {
+  it('rejects array-typed upstream_mcp_from_env JSON with migration message', () => {
+    const profile: Profile = {
+      profile_name: 'test',
+      tools: minimalTools,
+      upstream_mcp_from_env: 'MCP4_UPSTREAM_MCP_JSON',
+    };
+    const env = {
+      MCP4_UPSTREAM_MCP_JSON: JSON.stringify([{
+        name: 'p1',
+        transport: { type: 'http-streamable', url: 'https://example.com/mcp' },
+      }]),
+    } as NodeJS.ProcessEnv;
+    expect(() => resolveUpstreamMcpConfig(profile, env)).toThrowError(
+      /must contain a single JSON object, not an array/,
+    );
+  });
+
+  it('accepts single-object upstream_mcp_from_env JSON', () => {
+    const profile: Profile = {
+      profile_name: 'test',
+      tools: minimalTools,
+      upstream_mcp_from_env: 'MCP4_UPSTREAM_MCP_JSON',
+    };
+    const env = {
+      MCP4_UPSTREAM_MCP_JSON: JSON.stringify({
+        name: 'p1',
+        transport: { type: 'http-streamable', url: 'https://example.com/mcp' },
+      }),
+    } as NodeJS.ProcessEnv;
+    const resolved = resolveUpstreamMcpConfig(profile, env);
+    expect(resolved).toBeDefined();
+    expect(resolved?.name).toBe('p1');
+  });
+});
