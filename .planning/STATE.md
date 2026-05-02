@@ -3,10 +3,10 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: Ready to plan
-stopped_at: Completed 03-03-PLAN.md
-last_updated: "2026-04-29T13:36:55.375Z"
+stopped_at: Phase 03.1 context gathered
+last_updated: "2026-05-02T05:38:56.702Z"
 progress:
-  total_phases: 5
+  total_phases: 6
   completed_phases: 3
   total_plans: 11
   completed_plans: 11
@@ -93,6 +93,10 @@ Recent decisions affecting current work:
 - [Phase 03-client-authentication-gate]: [Phase 03-03]: Phase 4 deferral pinned by source-text guard test (no jose/jwks-cache imports or runtime calls); test will start failing intentionally when Phase 4 lands the JWT path, signaling the deferral guard has been lifted
 - [Phase 03-client-authentication-gate]: [Phase 03-03]: ClientAuthGate constructed once per profile in getProfileState() (not per-request) so the underlying InlineApiKeyStore HMAC secret persists for constant-time comparison; gate lifecycle ties to ProfileRuntimeState
 
+### Roadmap Evolution
+
+- Phase 03.1 inserted after Phase 03: Odstranění multi upstream mcp supportu (URGENT)
+
 ### Pending Todos
 
 None yet.
@@ -105,6 +109,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-04-29T13:26:45.700Z
-Stopped at: Completed 03-03-PLAN.md
-Resume file: None
+Last session: 2026-05-02T05:38:56.699Z
+Stopped at: Phase 03.1 context gathered
+Resume file: .planning/phases/03.1-odstran-n-multi-upstream-mcp-supportu/03.1-CONTEXT.md
