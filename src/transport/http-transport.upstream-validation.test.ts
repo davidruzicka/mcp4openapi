@@ -29,7 +29,7 @@ describeIfListen('upstream credential validation at session init', () => {
   let app: Express;
   const logger = new ConsoleLogger();
 
-  function createProfileState(target: any, profileId: string = 'default', upstreamMcp?: any[]) {
+  function createProfileState(target: any, profileId: string = 'default', upstreamMcp?: any) {
     const state = {
       profileId,
       context: { profileId, upstreamMcp },
@@ -71,7 +71,7 @@ describeIfListen('upstream credential validation at session init', () => {
       transport: { type: 'http-streamable', url: 'https://upstream.example.com/mcp' },
       validation_endpoint: 'https://api.example.com/validate',
     };
-    createProfileState(transport as any, 'default', [provider]);
+    createProfileState(transport as any, 'default', provider);
 
     await request(app)
       .post('/mcp')
@@ -97,7 +97,7 @@ describeIfListen('upstream credential validation at session init', () => {
       transport: { type: 'http-streamable', url: 'https://upstream.example.com/mcp' },
       validation_endpoint: 'https://api.example.com/validate',
     };
-    createProfileState(transport as any, 'default', [provider]);
+    createProfileState(transport as any, 'default', provider);
 
     const res = await request(app)
       .post('/mcp')
@@ -121,7 +121,7 @@ describeIfListen('upstream credential validation at session init', () => {
       transport: { type: 'http-streamable', url: 'https://upstream.example.com/mcp' },
       validation_endpoint: 'https://api.example.com/validate',
     };
-    createProfileState(transport as any, 'default', [provider]);
+    createProfileState(transport as any, 'default', provider);
 
     const res = await request(app)
       .post('/mcp')
@@ -160,7 +160,7 @@ describeIfListen('upstream credential validation at session init', () => {
       transport: { type: 'http-streamable', url: 'https://upstream.example.com/mcp' },
       // no validation_endpoint
     };
-    createProfileState(transport as any, 'default', [provider]);
+    createProfileState(transport as any, 'default', provider);
 
     await request(app)
       .post('/mcp')
@@ -183,7 +183,7 @@ describeIfListen('upstream credential validation at session init', () => {
       transport: { type: 'http-streamable', url: 'https://upstream.example.com/mcp' },
       validation_endpoint: 'https://api.example.com/validate',
     };
-    createProfileState(transport as any, 'default', [provider]);
+    createProfileState(transport as any, 'default', provider);
 
     // No Authorization header - token will be undefined
     await request(app)
@@ -214,7 +214,7 @@ describeIfListen('upstream credential validation at session init', () => {
       auth: { type: 'bearer', value_from_env: 'UPSTREAM_API_KEY' },
       validation_endpoint: 'https://api.example.com/validate',
     };
-    createProfileState(transport as any, 'default', [provider]);
+    createProfileState(transport as any, 'default', provider);
 
     // No Authorization header — anonymous client
     await request(app)
@@ -243,7 +243,7 @@ describeIfListen('upstream credential validation at session init', () => {
       auth: { type: 'bearer', value_from_env: 'UPSTREAM_API_KEY_MISSING' },
       validation_endpoint: 'https://api.example.com/validate',
     };
-    createProfileState(transport as any, 'default', [provider]);
+    createProfileState(transport as any, 'default', provider);
 
     await request(app)
       .post('/mcp')
@@ -276,7 +276,7 @@ describeIfListen('upstream credential validation at session init', () => {
       heartbeatIntervalMs: 30000,
       metricsEnabled: false,
       metricsPath: '/metrics',
-      upstreamMcp: [provider],
+      upstreamMcp: provider,
     };
     const transportWithUpstream = new HttpTransport(configWithUpstream, logger);
     transportWithUpstream.setMessageHandler(async () => ({ result: { protocolVersion: '2025-03-26', capabilities: {}, serverInfo: { name: 'test', version: '1.0' } } }));
@@ -330,7 +330,7 @@ describeIfListen('upstream credential validation at session init', () => {
       transport: { type: 'http-streamable', url: 'https://upstream.example.com/mcp' },
       validation_endpoint: 'https://api.example.com/validate',
     };
-    createProfileState(transport as any, 'default', [provider]);
+    createProfileState(transport as any, 'default', provider);
 
     // Should not throw - validation is skipped when manager is null
     const res = await request(app)
