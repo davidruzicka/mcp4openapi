@@ -213,6 +213,8 @@ function validateUpstreamProvider(provider: UpstreamMcpServerConfig): void {
 
 // MIGRATION-CLEANUP(phase-03.1): remove this function and all its callers once
 // all deployed profiles have been migrated to singular upstream_mcp object.
+// Both cleanup sites (this function + the Array.isArray branch in profile-resolver.ts
+// extractEnvVars) MUST be removed together — they serve the same migration window.
 // Removal: grep -rn "MIGRATION-CLEANUP(phase-03.1)" src/ — exactly 2 sites.
 /**
  * Returns true if the raw profile.upstream_mcp value indicates an upstream MCP

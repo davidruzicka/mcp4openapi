@@ -2403,7 +2403,7 @@ paths:
       (s as any).httpTransport = {
         getSessionToolFilterRequest: () => filterRequest,
         getUpstreamMcpConfig: (_pid: string) =>
-          { return { name: 'test', transport: { type: 'http', url: 'https://example.com/mcp' } }; },
+          ({ name: 'test', transport: { type: 'http', url: 'https://example.com/mcp' } }),
       };
       expect(() => (s as any).applySessionToolFiltering('session-1'))
         .toThrow('_allow_list/_allow_read not supported for upstream proxy profiles');

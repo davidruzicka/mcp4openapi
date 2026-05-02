@@ -277,6 +277,10 @@ describe('hasUpstreamMcpFlag', () => {
   it('returns false for undefined', () => {
     expect(hasUpstreamMcpFlag(undefined)).toBe(false);
   });
+
+  it('returns true for empty object (not a valid config but passes the presence check)', () => {
+    expect(hasUpstreamMcpFlag({})).toBe(true);
+  });
 });
 
 describe('parseUpstreamMcpJson – via upstream_mcp_from_env', () => {

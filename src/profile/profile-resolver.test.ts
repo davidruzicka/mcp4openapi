@@ -175,6 +175,24 @@ describe('profile-resolver', () => {
     ]);
   });
 
+  it('collects env vars from legacy array-shaped upstream_mcp (migration tolerance)', async () => {
+    const root = await createTempDir();
+    const profilesDir = path.join(root, 'profiles');
+
+    await writeJson(path.join(profilesDir, 'legacy-array.json'), {
+      profile_name: 'legacy-array',
+      profile_id: 'legacy-array',
+      tools: [],
+      // Array shape rejected by Zod at load time, but extractEnvVars reads raw JSON
+      // before validation to support list-view display of un-migrated profiles.
+      upstream_mcp: [{ auth: { value_from_env: 'LEGACY_UPSTREAM_TOKEN' } }],
+    });
+
+    const profiles = await listProfilesDetailed(profilesDir);
+    expect(profiles).toHaveLength(1);
+    expect(profiles[0].envVars).toContain('LEGACY_UPSTREAM_TOKEN');
+  });
+
   it('returns specPath=undefined for upstream_mcp proxy profile with no openapi_spec_path', async () => {
     const root = await createTempDir();
     const profilesDir = path.join(root, 'profiles');

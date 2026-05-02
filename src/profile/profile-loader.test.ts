@@ -3306,9 +3306,11 @@ paths:
         }),
         'utf-8',
       );
+      expect.assertions(4);
       // Loader wraps Zod's array-rejection into a friendly ValidationError.
-      const err = await loader.load(tmpPath).catch(e => e);
+      const err = await loader.load(tmpPath).catch((e) => e);
       expect(err).toBeInstanceOf(ValidationError);
+      expect((err as ValidationError).details?.path).toBe('upstream_mcp');
       expect(err.message).toMatch(/must be a single object, not an array/);
       expect(err.message).toMatch(/Change \[/);
     });
@@ -3326,11 +3328,33 @@ paths:
         }),
         'utf-8',
       );
+      expect.assertions(4);
       // Loader wraps Zod's array-rejection into a friendly ValidationError.
-      const err = await loader.load(tmpPath).catch(e => e);
+      const err = await loader.load(tmpPath).catch((e) => e);
       expect(err).toBeInstanceOf(ValidationError);
+      expect((err as ValidationError).details?.path).toBe('upstream_mcp');
       expect(err.message).toMatch(/must be a single object, not an array/);
       expect(err.message).toMatch(/Change \[/);
+    });
+
+    it('surfaces non-array upstream_mcp schema errors as ValidationError', async () => {
+      const loader = new ProfileLoader();
+      const fs = await import('fs/promises');
+      const tmpPath = `/tmp/profile-upstream-scalar-${Date.now()}-${Math.random()}.json`;
+      await fs.writeFile(
+        tmpPath,
+        JSON.stringify({
+          profile_name: 'bad-upstream',
+          tools: [],
+          upstream_mcp: 42,
+        }),
+        'utf-8',
+      );
+      expect.assertions(3);
+      const err = await loader.load(tmpPath).catch((e) => e);
+      expect(err).toBeInstanceOf(ValidationError);
+      expect((err as ValidationError).details?.path).toBe('upstream_mcp');
+      expect(err.message).toContain('upstream_mcp schema validation failed');
     });
 
     it('loads profile with single-object upstream_mcp', async () => {

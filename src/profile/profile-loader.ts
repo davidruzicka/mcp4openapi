@@ -71,15 +71,20 @@ export class ProfileLoader {
       profile = enhancedProfileSchema.parse(json) as Profile;
     } catch (err) {
       if (err instanceof ZodError) {
-        const issue = err.issues.find(
-          (i) =>
-            i.path[0] === 'upstream_mcp' &&
-            i.code === 'invalid_type' &&
-            (i as { received?: string }).received === 'array',
-        );
-        if (issue) {
+        const upstreamIssues = err.issues.filter((i) => i.path[0] === 'upstream_mcp');
+        if (upstreamIssues.length > 0) {
+          const arrayIssue = upstreamIssues.find(
+            (i) => i.code === 'invalid_type' && 'received' in i && i.received === 'array',
+          );
           throw new ValidationError(
-            'upstream_mcp must be a single object, not an array. Change [{...}] to {...}',
+            arrayIssue
+              ? 'upstream_mcp must be a single object, not an array. Change [{...}] to {...}'
+              : `upstream_mcp schema validation failed: ${upstreamIssues
+                  .map((i) => {
+                    const field = i.path.slice(1).join('.');
+                    return field ? `${field}: ${i.message}` : i.message;
+                  })
+                  .join('; ')}`,
             { path: 'upstream_mcp' },
           );
         }
