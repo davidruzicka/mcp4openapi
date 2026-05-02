@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: Ready to plan
-stopped_at: Phase 03.1 context gathered
-last_updated: "2026-05-02T05:38:56.702Z"
+status: Ready to execute
+stopped_at: Completed 03.1-02-PLAN.md
+last_updated: "2026-05-02T07:13:44.216Z"
 progress:
   total_phases: 6
   completed_phases: 3
-  total_plans: 11
-  completed_plans: 11
+  total_plans: 14
+  completed_plans: 13
 ---
 
 # Project State
@@ -19,12 +19,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-26)
 
 **Core value:** A security boundary between internal AI clients and all upstream MCP servers - one place to authenticate, authorize, audit, and proxy every tool call.
-**Current focus:** Phase 03 — client-authentication-gate
+**Current focus:** Phase 03.1 — odstran-n-multi-upstream-mcp-supportu
 
 ## Current Position
 
-Phase: 4
-Plan: Not started
+Phase: 03.1 (odstran-n-multi-upstream-mcp-supportu) — EXECUTING
+Plan: 3 of 3
 
 ## Performance Metrics
 
@@ -57,6 +57,8 @@ Plan: Not started
 | Phase 03-client-authentication-gate P01 | 5min | 3 tasks | 9 files |
 | Phase 03-client-authentication-gate P02 | 6min | 3 tasks | 5 files |
 | Phase 03-client-authentication-gate P03 | 10min | 3 tasks | 6 files |
+| Phase 03.1-odstran-n-multi-upstream-mcp-supportu P01 | 5 | 3 tasks | 8 files |
+| Phase 03.1-odstran-n-multi-upstream-mcp-supportu P02 | 8min | 3 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -92,6 +94,10 @@ Recent decisions affecting current work:
 - [Phase 03-client-authentication-gate]: [Phase 03-03]: ALL client auth gate exceptions map to HTTP 401 (not 500); warn log records errorType to distinguish ClientAuthGateError from unknown errors without leaking validator internals to clients
 - [Phase 03-client-authentication-gate]: [Phase 03-03]: Phase 4 deferral pinned by source-text guard test (no jose/jwks-cache imports or runtime calls); test will start failing intentionally when Phase 4 lands the JWT path, signaling the deferral guard has been lifted
 - [Phase 03-client-authentication-gate]: [Phase 03-03]: ClientAuthGate constructed once per profile in getProfileState() (not per-request) so the underlying InlineApiKeyStore HMAC secret persists for constant-time comparison; gate lifecycle ties to ProfileRuntimeState
+- [Phase 03.1-odstran-n-multi-upstream-mcp-supportu]: ZodError (not ValidationError) thrown when upstream_mcp: [...] array is present in YAML/JSON profile - Zod schema catches it before loader runtime validation runs
+- [Phase 03.1-odstran-n-multi-upstream-mcp-supportu]: validateUpstreamProvider path changed to 'upstream_mcp' (no [N] index) - all error paths are now upstream_mcp.transport.url, upstream_mcp.auth.header_name, etc.
+- [Phase 03.1-odstran-n-multi-upstream-mcp-supportu]: hasUpstreamMcpFlag lives in upstream-mcp-config.ts (semantic owner of all upstream_mcp logic) not profile-resolver.ts
+- [Phase 03.1-odstran-n-multi-upstream-mcp-supportu]: Legacy-array tolerance preserved at MIGRATION-CLEANUP sites: env-var collector (reads raw JSON pre-Zod) and hasUpstreamMcpFlag (list-view UX) for migration period
 
 ### Roadmap Evolution
 
@@ -109,6 +115,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-02T05:38:56.699Z
-Stopped at: Phase 03.1 context gathered
-Resume file: .planning/phases/03.1-odstran-n-multi-upstream-mcp-supportu/03.1-CONTEXT.md
+Last session: 2026-05-02T07:13:44.213Z
+Stopped at: Completed 03.1-02-PLAN.md
+Resume file: None

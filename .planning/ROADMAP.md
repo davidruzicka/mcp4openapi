@@ -75,11 +75,11 @@ Plans:
 **Goal**: Profile.upstream_mcp narrowed end-to-end from UpstreamMcpServerConfig[] to UpstreamMcpServerConfig (singular). The runtime single-provider constraint already exists in profile-loader (D-03 check); this phase relocates it into the type system (Zod + TS), removes the now-dead loader runtime check, and migrates all consumers + test fixtures to the singular shape. Breaking change for end-user profile JSON/YAML using array syntax.
 **Requirements**: (none — internal type-narrowing refactor; preserves PROXY-01..04 and SEC-02 without modifying them)
 **Depends on:** Phase 03
-**Plans:** 3 plans
+**Plans:** 2/3 plans executed
 
 Plans:
-- [ ] 03.1-01-PLAN.md — Source-of-truth types narrowed (profile.ts, http-transport.ts), generated schemas regenerated, resolver/parser/validator in upstream-mcp-config.ts singularised, profile-loader D-02 presence check + D-07 dead-code removal
-- [ ] 03.1-02-PLAN.md — Call-site cleanup in mcp-server.ts, http-transport.ts, profile-resolver.ts, generic-profile.test.ts, and the in-repo profile fixture (singular access end-to-end; legacy-array tolerance preserved in list-view UX per Open Question 1)
+- [x] 03.1-01-PLAN.md — Source-of-truth types narrowed (profile.ts, http-transport.ts), generated schemas regenerated, resolver/parser/validator in upstream-mcp-config.ts singularised, profile-loader D-02 presence check + D-07 dead-code removal
+- [x] 03.1-02-PLAN.md — Call-site cleanup in mcp-server.ts, http-transport.ts, profile-resolver.ts, generic-profile.test.ts, and the in-repo profile fixture (singular access end-to-end; legacy-array tolerance preserved in list-view UX per Open Question 1)
 - [ ] 03.1-03-PLAN.md — Test fixture migration across 5 test files (~112 sites), D-01 + D-03 negative test additions, dead loader-D-03 + empty-array tests removed; phase gate via full npm test green
 
 ### Phase 4: Client Authentication Gate (OIDC JWT)
