@@ -1510,7 +1510,7 @@ export class MCPServer {
       this.applySessionToolFiltering(sessionId, profileId);
     }
 
-    const hasUpstream = !!(this.getUpstreamMcpConfig(profileId)?.length && this.getUpstreamClientFn);
+    const hasUpstream = !!(this.getUpstreamMcpConfig(profileId) && this.getUpstreamClientFn);
 
     const result: {
       protocolVersion: string;
@@ -1595,7 +1595,7 @@ export class MCPServer {
 
     // D-01: When upstream_mcp is set, forward call to upstream (after OAuth check, before local dispatch)
     const upstreamMcpForCall = this.getUpstreamMcpConfig(profileId);
-    if (upstreamMcpForCall?.length && this.getUpstreamClientFn) {
+    if (upstreamMcpForCall && this.getUpstreamClientFn) {
       // Runtime guard: params.name is cast to string above but a malformed request may send
       // a non-string (e.g. 123). Detect early so downstream .slice() calls never throw.
       // No metrics recorded here — no valid tool name to label the counter.
@@ -1643,7 +1643,7 @@ export class MCPServer {
         };
       }
       // Apply profile-level upstream tool allow/deny policy
-      if (!isToolAllowedByProviderPolicy(toolName, upstreamMcpForCall[0].tools)) {
+      if (!isToolAllowedByProviderPolicy(toolName, upstreamMcpForCall.tools)) {
         this.recordUpstreamReject(toolName, 'PolicyRejection', metrics, startTime, metricsContext);
         return {
           jsonrpc: '2.0', id: req.id, error: {
@@ -1660,7 +1660,7 @@ export class MCPServer {
       // Injection risk exists only on the tools/list metadata display path, which is always
       // sanitized. Name and policy checks above are the primary gates on the cold-cache path.
       const sanitizedSet = sessionId
-        ? this.sanitizedAndPolicyFilteredToolNames.get(sessionId)?.get(upstreamMcpForCall[0].name)
+        ? this.sanitizedAndPolicyFilteredToolNames.get(sessionId)?.get(upstreamMcpForCall.name)
         : undefined;
       if (sanitizedSet !== undefined && !sanitizedSet.has(toolName)) {
         this.recordUpstreamReject(toolName, 'SanitizationRejection', metrics, startTime, metricsContext);
@@ -1675,7 +1675,7 @@ export class MCPServer {
         req,
         sessionId,
         profileId,
-        upstreamMcpForCall[0],
+        upstreamMcpForCall,
         metrics ? { collector: metrics, startTime, context: metricsContext } : undefined,
       );
     }
@@ -1814,17 +1814,17 @@ export class MCPServer {
    * For stdio, reads profile directly and warns when upstream_mcp is configured
    * but no upstream client is wired (upstream_mcp requires HTTP transport).
    */
-  private getUpstreamMcpConfig(profileId?: string): UpstreamMcpServerConfig[] | undefined {
+  private getUpstreamMcpConfig(profileId?: string): UpstreamMcpServerConfig | undefined {
     if (this.httpTransport && profileId) {
-      // In single-profile HTTP mode both paths should agree: runHttp() stores the profile under
-      // defaultProfileId and JSON-RPC dispatch resolves the same key. The fallback to
-      // this.profile?.upstream_mcp is a defensive safety net for any edge case where
-      // profileId normalization diverges (e.g. during startup races), keeping the common
-      // case fast and the error case auditable rather than silently broken.
-      return this.httpTransport.getUpstreamMcpConfig(profileId) ?? this.profile?.upstream_mcp;
+      const fromTransport = this.httpTransport.getUpstreamMcpConfig(profileId);
+      if (fromTransport !== undefined) return fromTransport;
+      if (this.profile?.upstream_mcp) {
+        this.logger?.warn('getUpstreamMcpConfig: profileId not found in transport context; refusing to fall back to this.profile.upstream_mcp', { profileId });
+      }
+      return undefined;
     }
     // stdio path: upstream_mcp cannot be used without a wired client
-    if (!this.upstreamStdioWarnLogged && this.profile?.upstream_mcp?.length && !this.getUpstreamClientFn) {
+    if (!this.upstreamStdioWarnLogged && this.profile?.upstream_mcp && !this.getUpstreamClientFn) {
       this.upstreamStdioWarnLogged = true;
       this.logger?.warn(
         'upstream_mcp configured but no upstream client wired - upstream_mcp requires HTTP transport',
@@ -2218,8 +2218,8 @@ export class MCPServer {
     if (req.method === 'tools/list') {
       // D-01: When upstream_mcp is set, return upstream tools (not local profile tools)
       const upstreamMcpForList = this.getUpstreamMcpConfig(profileId);
-      if (upstreamMcpForList?.length && this.getUpstreamClientFn) {
-        return this.handleUpstreamToolsList(req, sessionId, profileId, upstreamMcpForList[0]);
+      if (upstreamMcpForList && this.getUpstreamClientFn) {
+        return this.handleUpstreamToolsList(req, sessionId, profileId, upstreamMcpForList);
       }
 
       const sessionFilter = this.getToolFilterForSession(sessionId, profileId);
@@ -2799,7 +2799,7 @@ export class MCPServer {
     // For upstream proxy profiles (tools[] is empty, upstream_mcp configured):
     // - Category rules require OpenAPI metadata unavailable for upstream tools - reject at init.
     // - Exact/regex rules are pure name predicates; evaluated inline at tools/list and tools/call.
-    if (originalCount === 0 && this.getUpstreamMcpConfig(profileId)?.length) {
+    if (originalCount === 0 && this.getUpstreamMcpConfig(profileId)) {
       if (request.allowCategories.size > 0) {
         throw new ValidationError(
           '_allow_list/_allow_read not supported for upstream proxy profiles. Use exact names or regex patterns instead.'

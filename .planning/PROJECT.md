@@ -38,6 +38,7 @@ authenticate, authorize, audit, and proxy every tool call in the company.
 - ✓ Auth redaction hardening (Phase 01) - `sanitizeAuthErrorMessage` preserves last-4 Bearer suffix for debuggability; `redactString` fully redacts; token never appears in logs or error responses
 - ✓ Upstream tool discovery and proxy (Phase 02) - `tools/list` and `tools/call` forwarded to correct upstream provider; upstream tools namespaced by provider; `NotificationQueue` with TTL eviction for `tools/list_changed` replay on reconnect; `sendToClient` SSE real-time dispatch
 - ✓ API key authentication gate (Phase 03) - inbound M2M clients validated via inline env-var API keys before session establishment; `ClientAuthGate` runs after enterprise auth, before any upstream connection; `SessionData.clientPrincipal` populated with resolved identity (`subject`, `authType`, `scopes`); HMAC-SHA256 timing-safe comparison; fail-fast profile-load validator
+- ✓ upstream_mcp singular constraint (Phase 03.1) - Profile.upstream_mcp narrowed from UpstreamMcpServerConfig[] to UpstreamMcpServerConfig; Zod schema rejects array shape at parse time with migration hint; all call sites (mcp-server.ts, http-transport.ts, profile-resolver.ts) narrowed; BREAKING CHANGE: profile JSON must use `upstream_mcp: {...}` not `upstream_mcp: [{...}]`
 
 ### Active
 - [ ] Upstream tool discovery and proxy - tools/list and tools/call forwarded to correct upstream
@@ -109,7 +110,7 @@ authenticate, authorize, audit, and proxy every tool call in the company.
 | Tool namespacing by upstream provider | Prevents tool name collisions across providers; makes audit logs and policy rules unambiguous | - Pending |
 
 ---
-*Last updated: 2026-04-29 after Phase 03 completion*
+*Last updated: 2026-05-02 after Phase 03.1 completion — upstream_mcp narrowed from array to singular; BREAKING CHANGE for profile JSON format*
 
 ## Evolution
 

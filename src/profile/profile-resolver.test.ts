@@ -82,13 +82,11 @@ describe('profile-resolver', () => {
       profile_name: 'proxy-auth-profile',
       profile_id: 'proxy-auth',
       tools: [],
-      upstream_mcp: [
-        {
-          name: 'youtrack',
-          transport: { type: 'http-streamable', url: 'https://youtrack.example.com/mcp' },
-          auth: { type: 'bearer', value_from_env: 'YOUTRACK_TOKEN' },
-        },
-      ],
+      upstream_mcp: {
+        name: 'youtrack',
+        transport: { type: 'http-streamable', url: 'https://youtrack.example.com/mcp' },
+        auth: { type: 'bearer', value_from_env: 'YOUTRACK_TOKEN' },
+      },
     });
 
     const profiles = await listProfilesDetailed(profilesDir);
@@ -97,35 +95,24 @@ describe('profile-resolver', () => {
     expect(profiles[0].authMethods).toEqual([]);
   });
 
-  it('collects env vars from multiple upstream_mcp entries with different auth types', async () => {
+  it('collects env vars from upstream_mcp custom-header auth', async () => {
     const root = await createTempDir();
     const profilesDir = path.join(root, 'profiles');
 
-    await writeJson(path.join(profilesDir, 'multi-upstream.json'), {
-      profile_name: 'multi-upstream',
-      profile_id: 'multi-upstream',
+    await writeJson(path.join(profilesDir, 'upstream-custom-header.json'), {
+      profile_name: 'upstream-custom-header',
+      profile_id: 'upstream-custom-header',
       tools: [],
-      upstream_mcp: [
-        {
-          name: 'svc-a',
-          transport: { type: 'http-streamable', url: 'https://svc-a.example.com/mcp' },
-          auth: { type: 'bearer', value_from_env: 'SVC_A_TOKEN' },
-        },
-        {
-          name: 'svc-b',
-          transport: { type: 'http-streamable', url: 'https://svc-b.example.com/mcp' },
-          auth: { type: 'custom-header', header_name: 'X-Api-Key', value_from_env: 'SVC_B_KEY' },
-        },
-        {
-          name: 'svc-c',
-          transport: { type: 'http-streamable', url: 'https://svc-c.example.com/mcp' },
-        },
-      ],
+      upstream_mcp: {
+        name: 'svc-b',
+        transport: { type: 'http-streamable', url: 'https://svc-b.example.com/mcp' },
+        auth: { type: 'custom-header', header_name: 'X-Api-Key', value_from_env: 'SVC_B_KEY' },
+      },
     });
 
     const profiles = await listProfilesDetailed(profilesDir);
     expect(profiles).toHaveLength(1);
-    expect(profiles[0].envVars).toEqual(['SVC_A_TOKEN', 'SVC_B_KEY']);
+    expect(profiles[0].envVars).toEqual(['SVC_B_KEY']);
     expect(profiles[0].authMethods).toEqual([]);
   });
 
@@ -137,25 +124,23 @@ describe('profile-resolver', () => {
       profile_name: 'upstream-cookie',
       profile_id: 'upstream-cookie',
       tools: [],
-      upstream_mcp: [
-        {
-          name: 'legacy',
-          transport: { type: 'http-streamable', url: 'https://legacy.example.com/mcp' },
-          auth: {
-            type: 'session-cookie',
-            session_cookie_config: {
-              login_endpoint: '/login',
-              login_method: 'POST',
-              login_content_type: 'application/json',
-              username_field: 'user',
-              username_from_env: 'LEGACY_USER',
-              password_field: 'pass',
-              password_from_env: 'LEGACY_PASS',
-              cookie_names: ['sid'],
-            },
+      upstream_mcp: {
+        name: 'legacy',
+        transport: { type: 'http-streamable', url: 'https://legacy.example.com/mcp' },
+        auth: {
+          type: 'session-cookie',
+          session_cookie_config: {
+            login_endpoint: '/login',
+            login_method: 'POST',
+            login_content_type: 'application/json',
+            username_field: 'user',
+            username_from_env: 'LEGACY_USER',
+            password_field: 'pass',
+            password_from_env: 'LEGACY_PASS',
+            cookie_names: ['sid'],
           },
         },
-      ],
+      },
     });
 
     const profiles = await listProfilesDetailed(profilesDir);
@@ -175,13 +160,11 @@ describe('profile-resolver', () => {
       interceptors: {
         auth: { type: 'bearer', value_from_env: 'CLIENT_TOKEN' },
       },
-      upstream_mcp: [
-        {
-          name: 'upstream',
-          transport: { type: 'http-streamable', url: 'https://upstream.example.com/mcp' },
-          auth: { type: 'bearer', value_from_env: 'UPSTREAM_TOKEN' },
-        },
-      ],
+      upstream_mcp: {
+        name: 'upstream',
+        transport: { type: 'http-streamable', url: 'https://upstream.example.com/mcp' },
+        auth: { type: 'bearer', value_from_env: 'UPSTREAM_TOKEN' },
+      },
     });
 
     const profiles = await listProfilesDetailed(profilesDir);
@@ -190,6 +173,24 @@ describe('profile-resolver', () => {
     expect(profiles[0].authMethods).toEqual([
       { type: 'bearer', headerName: undefined, queryParam: undefined, valueFromEnv: 'CLIENT_TOKEN' },
     ]);
+  });
+
+  it('collects env vars from legacy array-shaped upstream_mcp (migration tolerance)', async () => {
+    const root = await createTempDir();
+    const profilesDir = path.join(root, 'profiles');
+
+    await writeJson(path.join(profilesDir, 'legacy-array.json'), {
+      profile_name: 'legacy-array',
+      profile_id: 'legacy-array',
+      tools: [],
+      // Array shape rejected by Zod at load time, but extractEnvVars reads raw JSON
+      // before validation to support list-view display of un-migrated profiles.
+      upstream_mcp: [{ auth: { value_from_env: 'LEGACY_UPSTREAM_TOKEN' } }],
+    });
+
+    const profiles = await listProfilesDetailed(profilesDir);
+    expect(profiles).toHaveLength(1);
+    expect(profiles[0].envVars).toContain('LEGACY_UPSTREAM_TOKEN');
   });
 
   it('returns specPath=undefined for upstream_mcp proxy profile with no openapi_spec_path', async () => {
@@ -201,11 +202,41 @@ describe('profile-resolver', () => {
       profile_name: 'proxy-profile',
       profile_id: 'proxy',
       tools: [],
-      upstream_mcp: [{ server_url: 'https://example.com/mcp' }],
+      upstream_mcp: { name: 'p', transport: { type: 'http-streamable', url: 'https://example.com/mcp' } },
     });
 
     const resolved = await resolveProfileById('proxy', profilesDir);
     expect(resolved.specPath).toBeUndefined();
+  });
+
+  it('throws invalid upstream_mcp for object shape missing transport.url', async () => {
+    const root = await createTempDir();
+    const profilesDir = path.join(root, 'profiles');
+    const profilePath = path.join(profilesDir, 'bad-proxy.json');
+
+    await writeJson(profilePath, {
+      profile_name: 'bad-proxy',
+      profile_id: 'bad-proxy',
+      tools: [],
+      upstream_mcp: {},
+    });
+
+    await expect(resolveProfileById('bad-proxy', profilesDir)).rejects.toThrow('invalid upstream_mcp');
+  });
+
+  it('throws invalid upstream_mcp for legacy array shape without openapi_spec_path', async () => {
+    const root = await createTempDir();
+    const profilesDir = path.join(root, 'profiles');
+    const profilePath = path.join(profilesDir, 'legacy-array-proxy.json');
+
+    await writeJson(profilePath, {
+      profile_name: 'legacy-array-proxy',
+      profile_id: 'legacy-array-proxy',
+      tools: [],
+      upstream_mcp: [{ name: 'legacy', transport: { type: 'http-streamable', url: 'https://example.com/mcp' } }],
+    });
+
+    await expect(resolveProfileById('legacy-array-proxy', profilesDir)).rejects.toThrow('invalid upstream_mcp');
   });
 
   it('extracts env vars and auth methods for profile index', async () => {

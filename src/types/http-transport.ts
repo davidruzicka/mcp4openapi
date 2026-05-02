@@ -109,7 +109,7 @@ export interface HttpTransportConfig {
   parser?: OpenAPIParser; // OpenAPI parser for operation resolution (optional, for category filtering)
   tenantIndex?: HttpTenantIndex; // Preloaded tenant configuration index (optional)
   globalFiltering?: FilteringRules; // Process-wide baseline parameter filtering
-  upstreamMcp?: UpstreamMcpServerConfig[]; // Upstream MCP providers for single-profile mode
+  upstreamMcp?: UpstreamMcpServerConfig; // Upstream MCP provider for this profile
   client_auth_gate?: ClientAuthGateConfig; // Inbound client auth gate (single-profile mode)
 }
 
@@ -124,7 +124,7 @@ export interface HttpProfileContext {
   resourceName?: string;
   resourceDocumentation?: string;
   parser?: OpenAPIParser;
-  upstreamMcp?: UpstreamMcpServerConfig[];
+  upstreamMcp?: UpstreamMcpServerConfig;
   client_auth_gate?: ClientAuthGateConfig;
 }
 

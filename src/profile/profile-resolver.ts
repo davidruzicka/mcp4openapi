@@ -10,6 +10,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ConfigurationError } from '../core/errors.js';
 import { isFilteringKeySupported } from '../core/filtering.js';
+import { hasUpstreamMcpFlag, looksLikeUpstreamMcpProxy } from './upstream-mcp-config.js';
 import type { ParameterDefinition, ToolDefinition } from '../types/profile.js';
 
 export interface ResolvedProfile {
@@ -81,7 +82,8 @@ interface ProfileIndexEntry {
   aliases: string[];
   profilePath: string;
   specPathRaw?: string;
-  hasUpstreamMcp: boolean;
+  hasUpstreamMcp: boolean;        // list-view display (loose: tolerates legacy array + any object)
+  isUpstreamMcpProxy: boolean;    // spec-path gate (strict: requires transport.type + transport.url)
 }
 
 const DEFAULT_PROFILES_DIR = 'profiles';
@@ -184,6 +186,13 @@ function extractEnvVars(profile: Record<string, unknown>): string[] {
   }
 
   const upstreamMcp = profile.upstream_mcp;
+  // MIGRATION-CLEANUP(phase-03.1): remove the Array.isArray branch below once
+  // all deployed profiles have been migrated to singular upstream_mcp object.
+  // upstream_mcp is now a single object (post-phase 03.1). Legacy array shape
+  // is rejected at Zod parse time, but this site reads RAW profile JSON before
+  // validation, so we tolerate both shapes for env-var discovery during migration:
+  // - Array shape (legacy): collect from each entry's auth (will fail Zod later)
+  // - Object shape (current): collect from the singular auth
   if (Array.isArray(upstreamMcp)) {
     for (const upstream of upstreamMcp) {
       if (!upstream || typeof upstream !== 'object') continue;
@@ -192,6 +201,12 @@ function extractEnvVars(profile: Record<string, unknown>): string[] {
       if (auth && typeof auth === 'object') {
         collectEnvVarsFromAuth(auth as Record<string, unknown>, envVars);
       }
+    }
+  } else if (upstreamMcp && typeof upstreamMcp === 'object') {
+    const upstreamRecord = upstreamMcp as Record<string, unknown>;
+    const auth = upstreamRecord.auth;
+    if (auth && typeof auth === 'object') {
+      collectEnvVarsFromAuth(auth as Record<string, unknown>, envVars);
     }
   }
 
@@ -396,6 +411,7 @@ function resolveSpecPath(
   profilePath: string,
   specPathRaw?: string,
   overrideSpecPath?: string,
+  hasUpstreamMcp = false,
   isUpstreamMcpProxy = false,
 ): string | undefined {
   const trimmed = normalizeSpecPath(specPathRaw);
@@ -406,6 +422,12 @@ function resolveSpecPath(
     }
     if (isUpstreamMcpProxy) {
       return undefined;
+    }
+    if (hasUpstreamMcp) {
+      throw new ConfigurationError('Profile has invalid upstream_mcp configuration', {
+        profilePath,
+        path: 'upstream_mcp',
+      });
     }
     throw new ConfigurationError('Profile is missing openapi_spec_path', { profilePath });
   }
@@ -446,7 +468,8 @@ async function loadProfileIndexEntry(profilePath: string): Promise<ProfileIndexE
     aliases,
     profilePath,
     specPathRaw: typeof profile.openapi_spec_path === 'string' ? profile.openapi_spec_path : undefined,
-    hasUpstreamMcp: Array.isArray(profile.upstream_mcp) && (profile.upstream_mcp as unknown[]).length > 0,
+    hasUpstreamMcp: hasUpstreamMcpFlag(profile.upstream_mcp),
+    isUpstreamMcpProxy: looksLikeUpstreamMcpProxy(profile.upstream_mcp),
   };
 }
 
@@ -558,7 +581,13 @@ export async function resolveProfileById(
   }
 
   const match = matches[0];
-  const specPath = resolveSpecPath(match.profilePath, match.specPathRaw, options?.specPathOverride, match.hasUpstreamMcp);
+  const specPath = resolveSpecPath(
+    match.profilePath,
+    match.specPathRaw,
+    options?.specPathOverride,
+    match.hasUpstreamMcp,
+    match.isUpstreamMcpProxy,
+  );
 
   return {
     profileId: match.profileId,
@@ -616,7 +645,13 @@ export async function resolveProfileFromPath(
     throw new ConfigurationError('Profile file does not look like a valid profile', { profilePath: resolvedPath });
   }
 
-  const specPath = resolveSpecPath(resolvedPath, entry.specPathRaw, options?.specPathOverride, entry.hasUpstreamMcp);
+  const specPath = resolveSpecPath(
+    resolvedPath,
+    entry.specPathRaw,
+    options?.specPathOverride,
+    entry.hasUpstreamMcp,
+    entry.isUpstreamMcpProxy,
+  );
 
   return {
     profileId: entry.profileId,

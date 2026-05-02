@@ -345,10 +345,10 @@ paths:
         profile_name: 'proxy-profile',
         description: 'Pure upstream proxy',
         tools: [],
-        upstream_mcp: [{
+        upstream_mcp: {
           name: 'example',
           transport: { type: 'http-streamable', url: 'https://example.com/mcp' },
-        }],
+        },
       };
 
       await fs.writeFile(profilePath, JSON.stringify(profile));
@@ -2397,13 +2397,13 @@ paths:
       (s as any).profile = {
         profile_name: 'upstream-test',
         tools: [],
-        upstream_mcp: [{ name: 'test', transport: { type: 'http', url: 'https://example.com/mcp' } }],
+        upstream_mcp: { name: 'test', transport: { type: 'http', url: 'https://example.com/mcp' } },
       };
       const filterRequest = parseSessionToolFilterHeader('_allow_list');
       (s as any).httpTransport = {
         getSessionToolFilterRequest: () => filterRequest,
         getUpstreamMcpConfig: (_pid: string) =>
-          [{ name: 'test', transport: { type: 'http', url: 'https://example.com/mcp' } }],
+          ({ name: 'test', transport: { type: 'http', url: 'https://example.com/mcp' } }),
       };
       expect(() => (s as any).applySessionToolFiltering('session-1'))
         .toThrow('_allow_list/_allow_read not supported for upstream proxy profiles');
@@ -2414,13 +2414,13 @@ paths:
       (s as any).profile = {
         profile_name: 'upstream-test',
         tools: [],
-        upstream_mcp: [{ name: 'test', transport: { type: 'http', url: 'https://example.com/mcp' } }],
+        upstream_mcp: { name: 'test', transport: { type: 'http', url: 'https://example.com/mcp' } },
       };
       const filterRequest = parseSessionToolFilterHeader('tool_a, regex:read_.*');
       (s as any).httpTransport = {
         getSessionToolFilterRequest: () => filterRequest,
         getUpstreamMcpConfig: (_pid: string) =>
-          [{ name: 'test', transport: { type: 'http', url: 'https://example.com/mcp' } }],
+          ({ name: 'test', transport: { type: 'http', url: 'https://example.com/mcp' } }),
       };
       // Must not throw - exact/regex rules are deferred predicates for upstream
       expect(() => (s as any).applySessionToolFiltering('session-1')).not.toThrow();
@@ -3423,12 +3423,12 @@ paths:
         profile_name: 'upstream-profile',
         description: 'Upstream profile',
         tools: [],
-        upstream_mcp: [upstreamProvider],
+        upstream_mcp: upstreamProvider,
       };
       // Wire a mock httpTransport that returns upstreamMcp config
       (upstreamServer as any).httpTransport = {
         hasOAuthProvider: () => false,
-        getUpstreamMcpConfig: (_profileId: string) => [upstreamProvider],
+        getUpstreamMcpConfig: (_profileId: string) => upstreamProvider,
         getSessionToken: (_profileId: string, _sessionId: string) => 'downstream-token',
         getSessionTenantContext: () => undefined,
         getMetricsCollector: () => null,
@@ -3672,9 +3672,9 @@ paths:
         const providerWithTimeout = { ...upstreamProvider, timeout_ms: 7500 };
         (upstreamServer as any).profile = {
           ...(upstreamServer as any).profile,
-          upstream_mcp: [providerWithTimeout],
+          upstream_mcp: providerWithTimeout,
         };
-        (upstreamServer as any).httpTransport.getUpstreamMcpConfig = () => [providerWithTimeout];
+        (upstreamServer as any).httpTransport.getUpstreamMcpConfig = () => providerWithTimeout;
 
         await (upstreamServer as any).handleToolCall(
           {
@@ -3894,7 +3894,7 @@ paths:
           profile_name: 'stdio-profile',
           description: 'Stdio with upstream_mcp',
           tools: [],
-          upstream_mcp: [{ name: 'my-upstream', transport: { type: 'http-streamable', url: 'https://upstream.example.com/mcp' } }],
+          upstream_mcp: { name: 'my-upstream', transport: { type: 'http-streamable', url: 'https://upstream.example.com/mcp' } },
         };
         // No httpTransport, no getUpstreamClientFn - stdio mode
 
@@ -3921,7 +3921,7 @@ paths:
           profile_name: 'no-transport-profile',
           description: 'No transport',
           tools: [],
-          upstream_mcp: [stdioProvider],
+          upstream_mcp: stdioProvider,
         };
         // No httpTransport - token will come back undefined from getUpstreamToken
         stdioServer.setGetUpstreamClient(mockClientFn);
@@ -3958,14 +3958,14 @@ paths:
 
     // -------------------------------------------------------------------------
     describe('getUpstreamMcpConfig HTTP fallback (fix: issue #1)', () => {
-      it('falls back to profile.upstream_mcp when httpTransport.getUpstreamMcpConfig returns undefined', async () => {
+      it('does not fall back to profile.upstream_mcp when httpTransport.getUpstreamMcpConfig returns undefined', async () => {
         const server = new MCPServer();
         const provider = { name: 'fallback-provider', transport: { type: 'http-streamable', url: 'https://upstream.example.com/mcp' } };
         (server as any).profile = {
           profile_name: 'fallback-profile',
           description: 'Profile with upstream_mcp not reflected in httpTransport context',
           tools: [],
-          upstream_mcp: [provider],
+          upstream_mcp: provider,
         };
         // httpTransport returns undefined for getUpstreamMcpConfig (single-profile HTTP startup case)
         (server as any).httpTransport = {
@@ -3988,9 +3988,44 @@ paths:
           'fallback-profile',
         ) as any;
 
-        // Should have routed to upstream (not local tools)
-        expect(mockClientFn).toHaveBeenCalledWith('session-1', provider, undefined);
+        // Fail closed: no upstream routing when the transport context does not own the profile.
+        expect(mockClientFn).not.toHaveBeenCalled();
         expect(response.result).toBeDefined();
+        expect(response.result.tools).toEqual([]);
+      });
+
+      it('logs warn when upstream config lookup misses for profileId not in transport context', async () => {
+        const logger = new JsonLogger();
+        const warnSpy = vi.spyOn(logger, 'warn');
+
+        const server = new MCPServer(logger);
+        const provider = { name: 'profile-a-provider', transport: { type: 'http-streamable', url: 'https://a.example.com/mcp' } };
+        (server as any).profile = { profile_name: 'profile-a', tools: [], upstream_mcp: provider };
+        (server as any).httpTransport = {
+          hasOAuthProvider: () => false,
+          getUpstreamMcpConfig: (_profileId: string) => undefined,
+          getSessionToken: () => undefined,
+          getSessionTenantContext: () => undefined,
+          getMetricsCollector: () => null,
+          getSessionFiltering: () => undefined,
+          getSessionToolFilter: () => undefined,
+          getSessionEnterpriseAllowedToolCategories: () => undefined,
+        };
+
+        const mockClientFn = vi.fn().mockResolvedValue({ listTools: vi.fn().mockResolvedValue({ tools: [] }), callTool: vi.fn() });
+        server.setGetUpstreamClient(mockClientFn);
+
+        await (server as any).handleOtherRequest(
+          { jsonrpc: '2.0', id: '1', method: 'tools/list', params: {} },
+          'session-1',
+          'profile-b',
+        );
+
+        expect(warnSpy).toHaveBeenCalledWith(
+          expect.stringContaining('refusing to fall back to this.profile.upstream_mcp'),
+          expect.objectContaining({ profileId: 'profile-b' }),
+        );
+        expect(mockClientFn).not.toHaveBeenCalled();
       });
     });
 
@@ -4311,7 +4346,7 @@ paths:
 
       it('invalidateUpstreamToolCache clears provider cache so newly added tool is not blocked', async () => {
         const toolA = { name: 'tool_a', description: 'Existing tool', inputSchema: { type: 'object', properties: {} } };
-        const providerName = (upstreamServer as any).profile.upstream_mcp[0].name as string;
+        const providerName = (upstreamServer as any).profile.upstream_mcp.name as string;
 
         // Populate cache with only tool_a
         mockListTools.mockResolvedValueOnce({ tools: [toolA] });
@@ -4352,10 +4387,10 @@ paths:
     // -------------------------------------------------------------------------
     describe('upstream provider tool policy (allow/deny lists)', () => {
       it('blocks tool call denied by provider deny list', async () => {
-        (upstreamServer as any).profile.upstream_mcp = [{
-          ...upstreamServer['profile'].upstream_mcp[0],
+        (upstreamServer as any).profile.upstream_mcp = {
+          ...upstreamServer['profile'].upstream_mcp,
           tools: { deny: ['safe_tool'] },
-        }];
+        };
         (upstreamServer as any).httpTransport.getUpstreamMcpConfig = () =>
           (upstreamServer as any).profile.upstream_mcp;
 
@@ -4372,10 +4407,10 @@ paths:
       });
 
       it('blocks tool call not in provider allow list', async () => {
-        (upstreamServer as any).profile.upstream_mcp = [{
-          ...upstreamServer['profile'].upstream_mcp[0],
+        (upstreamServer as any).profile.upstream_mcp = {
+          ...upstreamServer['profile'].upstream_mcp,
           tools: { allow: ['other_tool'] },
-        }];
+        };
         (upstreamServer as any).httpTransport.getUpstreamMcpConfig = () =>
           (upstreamServer as any).profile.upstream_mcp;
 
@@ -4392,10 +4427,10 @@ paths:
       });
 
       it('allows tool call that passes provider allow list', async () => {
-        (upstreamServer as any).profile.upstream_mcp = [{
-          ...upstreamServer['profile'].upstream_mcp[0],
+        (upstreamServer as any).profile.upstream_mcp = {
+          ...upstreamServer['profile'].upstream_mcp,
           tools: { allow: ['safe_tool'] },
-        }];
+        };
         (upstreamServer as any).httpTransport.getUpstreamMcpConfig = () =>
           (upstreamServer as any).profile.upstream_mcp;
 
@@ -4410,10 +4445,10 @@ paths:
       });
 
       it('blocks tool call denied by wildcard deny pattern (cold cache, no prior tools/list)', async () => {
-        (upstreamServer as any).profile.upstream_mcp = [{
-          ...upstreamServer['profile'].upstream_mcp[0],
+        (upstreamServer as any).profile.upstream_mcp = {
+          ...upstreamServer['profile'].upstream_mcp,
           tools: { deny: ['safe_*'] },
-        }];
+        };
         (upstreamServer as any).httpTransport.getUpstreamMcpConfig = () =>
           (upstreamServer as any).profile.upstream_mcp;
 
@@ -4430,10 +4465,10 @@ paths:
       });
 
       it('allows tool call matching wildcard allow pattern (cold cache, no prior tools/list)', async () => {
-        (upstreamServer as any).profile.upstream_mcp = [{
-          ...upstreamServer['profile'].upstream_mcp[0],
+        (upstreamServer as any).profile.upstream_mcp = {
+          ...upstreamServer['profile'].upstream_mcp,
           tools: { allow: ['safe_*'] },
-        }];
+        };
         (upstreamServer as any).httpTransport.getUpstreamMcpConfig = () =>
           (upstreamServer as any).profile.upstream_mcp;
 
@@ -4448,10 +4483,10 @@ paths:
       });
 
       it('blocks tool call not matching wildcard allow pattern (cold cache, no prior tools/list)', async () => {
-        (upstreamServer as any).profile.upstream_mcp = [{
-          ...upstreamServer['profile'].upstream_mcp[0],
+        (upstreamServer as any).profile.upstream_mcp = {
+          ...upstreamServer['profile'].upstream_mcp,
           tools: { allow: ['github_*'] },
-        }];
+        };
         (upstreamServer as any).httpTransport.getUpstreamMcpConfig = () =>
           (upstreamServer as any).profile.upstream_mcp;
 
@@ -4470,10 +4505,10 @@ paths:
       it('filters tools/list by provider allow list', async () => {
         const anotherTool = { name: 'another_tool', description: 'Another', inputSchema: { type: 'object', properties: {} } };
         mockListTools.mockResolvedValue({ tools: [safeTool, anotherTool] });
-        (upstreamServer as any).profile.upstream_mcp = [{
-          ...upstreamServer['profile'].upstream_mcp[0],
+        (upstreamServer as any).profile.upstream_mcp = {
+          ...upstreamServer['profile'].upstream_mcp,
           tools: { allow: ['safe_tool'] },
-        }];
+        };
         (upstreamServer as any).httpTransport.getUpstreamMcpConfig = () =>
           (upstreamServer as any).profile.upstream_mcp;
 
@@ -4490,10 +4525,10 @@ paths:
       it('filters tools/list by provider deny list', async () => {
         const anotherTool = { name: 'another_tool', description: 'Another', inputSchema: { type: 'object', properties: {} } };
         mockListTools.mockResolvedValue({ tools: [safeTool, anotherTool] });
-        (upstreamServer as any).profile.upstream_mcp = [{
-          ...upstreamServer['profile'].upstream_mcp[0],
+        (upstreamServer as any).profile.upstream_mcp = {
+          ...upstreamServer['profile'].upstream_mcp,
           tools: { deny: ['safe_tool'] },
-        }];
+        };
         (upstreamServer as any).httpTransport.getUpstreamMcpConfig = () =>
           (upstreamServer as any).profile.upstream_mcp;
 
@@ -4627,8 +4662,8 @@ paths:
         const metrics = makeMetrics();
         (upstreamServer as any).httpTransport.getMetricsCollector = () => metrics;
         const providerWithPolicy = { ...upstreamProvider, tools: { allow: ['other_tool'] } };
-        (upstreamServer as any).profile.upstream_mcp = [providerWithPolicy];
-        (upstreamServer as any).httpTransport.getUpstreamMcpConfig = () => [providerWithPolicy];
+        (upstreamServer as any).profile.upstream_mcp = providerWithPolicy;
+        (upstreamServer as any).httpTransport.getUpstreamMcpConfig = () => providerWithPolicy;
 
         const response = await (upstreamServer as any).handleToolCall(
           { jsonrpc: '2.0', id: '1', method: 'tools/call', params: { name: 'safe_tool', arguments: {} } },
@@ -4697,8 +4732,8 @@ paths:
           ...upstreamProvider,
           auth: { type: 'bearer' as const, value_from_env: 'UPSTREAM_SECRET' },
         };
-        (upstreamServer as any).profile.upstream_mcp = [providerWithAuth];
-        (upstreamServer as any).httpTransport.getUpstreamMcpConfig = () => [providerWithAuth];
+        (upstreamServer as any).profile.upstream_mcp = providerWithAuth;
+        (upstreamServer as any).httpTransport.getUpstreamMcpConfig = () => providerWithAuth;
 
         process.env['UPSTREAM_SECRET'] = 'env-token-value';
         try {
@@ -4721,11 +4756,11 @@ paths:
           ...upstreamProvider,
           auth: { type: 'bearer' as const, value_from_env: 'UPSTREAM_SECRET' },
         };
-        (upstreamServer as any).profile.upstream_mcp = [providerWithAuth];
+        (upstreamServer as any).profile.upstream_mcp = providerWithAuth;
         (upstreamServer as any).profile.interceptors = { auth: [{ type: 'bearer', value_from_env: 'INBOUND_TOKEN' }] };
         (upstreamServer as any).httpTransport = {
           ...(upstreamServer as any).httpTransport,
-          getUpstreamMcpConfig: () => [providerWithAuth],
+          getUpstreamMcpConfig: () => providerWithAuth,
           getSessionToken: () => undefined, // anonymous HTTP session — no verified client token
         };
 
@@ -4750,11 +4785,11 @@ paths:
           ...upstreamProvider,
           auth: { type: 'bearer' as const, value_from_env: 'UPSTREAM_SECRET' },
         };
-        (upstreamServer as any).profile.upstream_mcp = [providerWithAuth];
+        (upstreamServer as any).profile.upstream_mcp = providerWithAuth;
         delete (upstreamServer as any).profile.interceptors;
         (upstreamServer as any).httpTransport = {
           ...(upstreamServer as any).httpTransport,
-          getUpstreamMcpConfig: () => [providerWithAuth],
+          getUpstreamMcpConfig: () => providerWithAuth,
           getSessionToken: () => undefined,
         };
 
@@ -4777,7 +4812,7 @@ paths:
         // No provider.auth — upstream call proceeds without a token (upstream decides how to handle)
         (upstreamServer as any).httpTransport = {
           ...(upstreamServer as any).httpTransport,
-          getUpstreamMcpConfig: () => [upstreamProvider],
+          getUpstreamMcpConfig: () => upstreamProvider,
           getSessionToken: () => undefined,
         };
 
@@ -4812,11 +4847,11 @@ paths:
           profile_name: 'upstream-profile',
           description: 'Upstream profile',
           tools: [],
-          upstream_mcp: [providerWithPrefix],
+          upstream_mcp: providerWithPrefix,
         };
         (prefixServer as any).httpTransport = {
           hasOAuthProvider: () => false,
-          getUpstreamMcpConfig: () => [providerWithPrefix],
+          getUpstreamMcpConfig: () => providerWithPrefix,
           getSessionToken: () => undefined,
           getSessionTenantContext: () => undefined,
           getMetricsCollector: () => null,
@@ -4861,7 +4896,7 @@ paths:
           profile_name: 'stdio-auth-profile',
           description: 'Stdio server with value_from_env auth',
           tools: [],
-          upstream_mcp: [providerWithAuth],
+          upstream_mcp: providerWithAuth,
         };
         // No httpTransport — getUpstreamToken must fall through to the stdio branch.
         stdioServer.setGetUpstreamClient(mockClientFn);

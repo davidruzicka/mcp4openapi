@@ -87,10 +87,7 @@
       "$ref": "#/definitions/ClientAuthGateConfig"
     },
     "upstream_mcp": {
-      "type": "array",
-      "items": {
-        "$ref": "#/definitions/UpstreamMcpServerConfig"
-      }
+      "$ref": "#/definitions/UpstreamMcpServerConfig"
     },
     "upstream_mcp_from_env": {
       "type": "string"
@@ -1421,14 +1418,14 @@
           ]
         },
         "overrides": {
-          "$ref": "#/definitions/Record%3Cstring%2Cstructure-1535101595-22780-22816-1535101595-22765-22817-1535101595-22751-22818-1535101595-22680-22820-1535101595-0-22960%3E"
+          "$ref": "#/definitions/Record%3Cstring%2Cstructure-1535101595-23568-23604-1535101595-23553-23605-1535101595-23539-23606-1535101595-23468-23608-1535101595-0-23748%3E"
         }
       },
       "required": [
         "max_requests_per_minute"
       ]
     },
-    "Record<string,structure-1535101595-22780-22816-1535101595-22765-22817-1535101595-22751-22818-1535101595-22680-22820-1535101595-0-22960>": {
+    "Record<string,structure-1535101595-23568-23604-1535101595-23553-23605-1535101595-23539-23606-1535101595-23468-23608-1535101595-0-23748>": {
       "type": "object",
       "additionalProperties": {
         "type": "object",
@@ -1849,8 +1846,21 @@
         },
         "html_description_policy": {
           "type": "string",
-          "enum": ["allow", "strip", "drop"],
+          "enum": [
+            "allow",
+            "strip",
+            "drop"
+          ],
           "description": "Controls how HTML tags in upstream tool descriptions and inputSchema are handled.\n- drop (default): tools containing HTML chars (<, >, backtick) are dropped\n- strip: HTML tags are stripped from descriptions/schema string values; tool is kept\n- allow: HTML checks are skipped entirely; tool passes through as-is"
+        },
+        "tool_description_length_policy": {
+          "type": "string",
+          "enum": [
+            "drop",
+            "truncate",
+            "allow"
+          ],
+          "description": "Controls how upstream tools with descriptions exceeding the internal length limit are handled.\n- drop (default): tools with overlong descriptions are dropped\n- truncate: description is truncated to the limit; tool is kept\n- allow: description length check is skipped; tool passes through unchanged"
         },
         "validation_endpoint": {
           "type": "string",
@@ -1936,6 +1946,20 @@
             "type": "string"
           }
         }
+      }
+    },
+    "Record<string,structure-1535101595-22780-22816-1535101595-22765-22817-1535101595-22751-22818-1535101595-22680-22820-1535101595-0-22960>": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "max_requests_per_minute": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "max_requests_per_minute"
+        ]
       }
     },
     "Record<string,structure-1535101595-21073-21109-1535101595-21058-21110-1535101595-21044-21111-1535101595-20973-21113-1535101595-0-21253>": {

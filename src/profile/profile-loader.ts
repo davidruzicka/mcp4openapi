@@ -22,6 +22,7 @@ import type {
   PromptDefinition,
   SessionCookieConfig,
 } from '../types/profile.js';
+import { ZodError } from 'zod';
 import { ValidationError, ConfigurationError } from '../core/errors.js';
 import { profileSchema, authInterceptorSchema } from '../generated-schemas.js';
 import type { OpenAPIParser } from '../openapi/openapi-parser.js';
@@ -32,7 +33,7 @@ import { normalizeToolName } from '../tool-filter/utils.js';
 import { isSafePropertyName, isUri } from '../validation/validation-utils.js';
 import { validateEnterpriseAuthorizationProfile } from './enterprise-profile-validator.js';
 import { validateClientAuthGateProfile } from './client-auth-gate-validator.js';
-import { resolveUpstreamMcpConfig } from './upstream-mcp-config.js';
+import { resolveUpstreamMcpConfig, UPSTREAM_MCP_ARRAY_REJECTION_MESSAGE } from './upstream-mcp-config.js';
 
 // Schemas are now auto-generated from TypeScript types!
 // See scripts/generate-schemas.js for details.
@@ -65,7 +66,33 @@ export class ProfileLoader {
     const json = JSON.parse(content);
 
     // Validate with Zod - throws detailed error if invalid
-    const profile = enhancedProfileSchema.parse(json) as Profile;
+    let profile: Profile;
+    try {
+      profile = enhancedProfileSchema.parse(json) as Profile;
+    } catch (err) {
+      if (err instanceof ZodError) {
+        const upstreamIssues = err.issues.filter((i) => i.path[0] === 'upstream_mcp');
+        // Only wrap when ALL Zod issues are upstream_mcp — if other fields also failed,
+        // re-throw the raw ZodError so the caller sees every problem, not just upstream_mcp.
+        if (upstreamIssues.length > 0 && upstreamIssues.length === err.issues.length) {
+          const arrayIssue = upstreamIssues.find(
+            (i) => i.code === 'invalid_type' && 'received' in i && i.received === 'array',
+          );
+          throw new ValidationError(
+            arrayIssue
+              ? UPSTREAM_MCP_ARRAY_REJECTION_MESSAGE
+              : `upstream_mcp schema validation failed: ${upstreamIssues
+                  .map((i) => {
+                    const field = i.path.slice(1).join('.');
+                    return field ? `${field}: ${i.message}` : i.message;
+                  })
+                  .join('; ')}`,
+            { path: 'upstream_mcp' },
+          );
+        }
+      }
+      throw err;
+    }
 
     ProfileLoader.normalizeToolNames(profile);
     this.validateLogic(profile);
@@ -88,19 +115,10 @@ export class ProfileLoader {
     }
 
     // D-02: upstream_mcp and tools[] are mutually exclusive
-    if (profile.upstream_mcp?.length && profile.tools?.length) {
+    if (profile.upstream_mcp && profile.tools?.length) {
       throw new ValidationError(
         'Profile cannot define both "upstream_mcp" and "tools" - these are mutually exclusive. ' +
         'When upstream_mcp is configured, tools are fetched from the upstream MCP server.',
-        { path: 'upstream_mcp' }
-      );
-    }
-
-    // D-03: upstream_mcp supports exactly one provider; multiple entries are not routed
-    if (profile.upstream_mcp && profile.upstream_mcp.length > 1) {
-      throw new ValidationError(
-        'upstream_mcp supports exactly one upstream provider. ' +
-        `Found ${profile.upstream_mcp.length}. Remove extra entries or split into separate profiles.`,
         { path: 'upstream_mcp' }
       );
     }

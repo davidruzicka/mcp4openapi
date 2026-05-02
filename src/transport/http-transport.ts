@@ -2860,50 +2860,47 @@ export class HttpTransport {
             }
           }
           
-          // Validate upstream credentials if upstream_mcp providers have validation_endpoint
-          if (this.upstreamConnectionManager && profileState.context.upstreamMcp) {
-            for (const upstreamProvider of profileState.context.upstreamMcp) {
-              if (upstreamProvider.validation_endpoint) {
-                try {
-                  // Use only the verified client token. env-backed upstream credentials are
-                  // never forwarded in HTTP mode (getUpstreamToken throws for unauthenticated
-                  // HTTP sessions) — falling back to envToken here would expose upstream
-                  // reachability and credential validity to unauthenticated callers.
-                  const effectiveUpstreamToken = authInfo?.token;
-                  await this.upstreamConnectionManager.validateCredentials(
-                    undefined,
-                    upstreamProvider,
-                    effectiveUpstreamToken,
-                  );
-                  if (effectiveUpstreamToken) {
-                    this.logger.info('Upstream credential validation successful', {
-                      provider: upstreamProvider.name,
-                    });
-                  } else {
-                    this.logger.debug('Upstream credential validation skipped - no client token present', {
-                      provider: upstreamProvider.name,
-                    });
-                  }
-                } catch (error) {
-                  this.logger.warn('Upstream credential validation failed', {
-                    provider: upstreamProvider.name,
-                    error: error instanceof Error ? error.message : String(error),
-                  });
-                  if (error instanceof UpstreamAuthError) {
-                    res.status(HTTP_STATUS.UNAUTHORIZED).json({
-                      error: 'Unauthorized',
-                      message: 'Upstream authentication failed',
-                    });
-                    return;
-                  }
-                  // SSRF, timeout, or connection errors - return 502 Bad Gateway
-                  res.status(502).json({
-                    error: 'Bad Gateway',
-                    message: 'Upstream credential validation failed',
-                  });
-                  return;
-                }
+          // Validate upstream credentials if upstream_mcp.validation_endpoint is set
+          const upstreamProvider = profileState.context.upstreamMcp;
+          if (this.upstreamConnectionManager && upstreamProvider?.validation_endpoint) {
+            try {
+              // Use only the verified client token. env-backed upstream credentials are
+              // never forwarded in HTTP mode (getUpstreamToken throws for unauthenticated
+              // HTTP sessions) — falling back to envToken here would expose upstream
+              // reachability and credential validity to unauthenticated callers.
+              const effectiveUpstreamToken = authInfo?.token;
+              await this.upstreamConnectionManager.validateCredentials(
+                undefined,
+                upstreamProvider,
+                effectiveUpstreamToken,
+              );
+              if (effectiveUpstreamToken) {
+                this.logger.info('Upstream credential validation successful', {
+                  provider: upstreamProvider.name,
+                });
+              } else {
+                this.logger.debug('Upstream credential validation skipped - no client token present', {
+                  provider: upstreamProvider.name,
+                });
               }
+            } catch (error) {
+              this.logger.warn('Upstream credential validation failed', {
+                provider: upstreamProvider.name,
+                error: error instanceof Error ? error.message : String(error),
+              });
+              if (error instanceof UpstreamAuthError) {
+                res.status(HTTP_STATUS.UNAUTHORIZED).json({
+                  error: 'Unauthorized',
+                  message: 'Upstream authentication failed',
+                });
+                return;
+              }
+              // SSRF, timeout, or connection errors - return 502 Bad Gateway
+              res.status(502).json({
+                error: 'Bad Gateway',
+                message: 'Upstream credential validation failed',
+              });
+              return;
             }
           }
 
@@ -3732,7 +3729,7 @@ export class HttpTransport {
    * Return upstream_mcp config for a profile.
    * Used by MCPServer to determine whether to branch to upstream handling.
    */
-  public getUpstreamMcpConfig(profileId: string): UpstreamMcpServerConfig[] | undefined {
+  public getUpstreamMcpConfig(profileId: string): UpstreamMcpServerConfig | undefined {
     return this.profileStates.get(profileId)?.context.upstreamMcp;
   }
 

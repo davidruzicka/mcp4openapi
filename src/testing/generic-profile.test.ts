@@ -242,8 +242,7 @@ testFiles.forEach(testFile => {
       validateTestAgainstProfile(testDef, profile);
 
       const isUpstreamProxy =
-        Array.isArray(profile.upstream_mcp) &&
-        (profile.upstream_mcp as unknown[]).length > 0 &&
+        !!profile.upstream_mcp &&
         !profile.openapi_spec_path;
 
       server = new MCPServer();
