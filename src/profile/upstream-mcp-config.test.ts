@@ -6,7 +6,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { ValidationError } from '../core/errors.js';
-import { resolveUpstreamMcpConfig } from './upstream-mcp-config.js';
+import { resolveUpstreamMcpConfig, hasUpstreamMcpFlag } from './upstream-mcp-config.js';
 import type { Profile } from '../types/profile.js';
 
 /** Minimal valid tool definition to satisfy Profile type. */
@@ -254,6 +254,81 @@ describe('resolveUpstreamMcpConfig – validator error branches', () => {
     };
     const result = resolveUpstreamMcpConfig(profile, {});
     expect(result?.name).toBe('static');
+  });
+});
+
+describe('hasUpstreamMcpFlag', () => {
+  it('returns true for non-empty array (legacy shape)', () => {
+    expect(hasUpstreamMcpFlag([{ name: 'p1' }])).toBe(true);
+  });
+
+  it('returns false for empty array', () => {
+    expect(hasUpstreamMcpFlag([])).toBe(false);
+  });
+
+  it('returns true for singular object (current shape)', () => {
+    expect(hasUpstreamMcpFlag({ name: 'p1' })).toBe(true);
+  });
+
+  it('returns false for null', () => {
+    expect(hasUpstreamMcpFlag(null)).toBe(false);
+  });
+
+  it('returns false for undefined', () => {
+    expect(hasUpstreamMcpFlag(undefined)).toBe(false);
+  });
+});
+
+describe('parseUpstreamMcpJson – via upstream_mcp_from_env', () => {
+  it('rejects invalid JSON', () => {
+    const profile: Profile = {
+      profile_name: 'test',
+      tools: minimalTools,
+      upstream_mcp_from_env: 'MCP4_UPSTREAM_MCP_JSON',
+    };
+    const env = { MCP4_UPSTREAM_MCP_JSON: 'not-valid-json' } as NodeJS.ProcessEnv;
+    expect(() => resolveUpstreamMcpConfig(profile, env)).toThrowError(ValidationError);
+    expect(() => resolveUpstreamMcpConfig(profile, env)).toThrowError(/must contain valid JSON/);
+  });
+
+  it('rejects null JSON value', () => {
+    const profile: Profile = {
+      profile_name: 'test',
+      tools: minimalTools,
+      upstream_mcp_from_env: 'MCP4_UPSTREAM_MCP_JSON',
+    };
+    const env = { MCP4_UPSTREAM_MCP_JSON: 'null' } as NodeJS.ProcessEnv;
+    expect(() => resolveUpstreamMcpConfig(profile, env)).toThrowError(/must contain a JSON object/);
+  });
+
+  it('rejects string JSON value', () => {
+    const profile: Profile = {
+      profile_name: 'test',
+      tools: minimalTools,
+      upstream_mcp_from_env: 'MCP4_UPSTREAM_MCP_JSON',
+    };
+    const env = { MCP4_UPSTREAM_MCP_JSON: '"just-a-string"' } as NodeJS.ProcessEnv;
+    expect(() => resolveUpstreamMcpConfig(profile, env)).toThrowError(/must contain a JSON object/);
+  });
+
+  it('error message does not leak env var name', () => {
+    const profile: Profile = {
+      profile_name: 'test',
+      tools: minimalTools,
+      upstream_mcp_from_env: 'SECRET_INTERNAL_VAR_NAME',
+    };
+    const env = {
+      SECRET_INTERNAL_VAR_NAME: JSON.stringify([{ name: 'p1', transport: { type: 'http-streamable', url: 'https://example.com/mcp' } }]),
+    } as NodeJS.ProcessEnv;
+    let err: Error | undefined;
+    try {
+      resolveUpstreamMcpConfig(profile, env);
+    } catch (e) {
+      err = e as Error;
+    }
+    expect(err).toBeDefined();
+    expect(err?.message).not.toContain('SECRET_INTERNAL_VAR_NAME');
+    expect(err?.message).toMatch(/must contain a single JSON object/);
   });
 });
 

@@ -68,7 +68,7 @@ function resolveUpstreamMcpFromEnv(profile: Profile, env: EnvSource): UpstreamMc
     return undefined;
   }
 
-  return parseUpstreamMcpJson(rawValue, envVarName);
+  return parseUpstreamMcpJson(rawValue, 'upstream_mcp');
 }
 
 function validateToolPolicyList(values: string[] | undefined, path: string): void {
