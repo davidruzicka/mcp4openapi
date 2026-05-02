@@ -3,7 +3,6 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { ZodError } from 'zod';
 import { ValidationError } from '../core/errors.js';
 import { ProfileLoader } from './profile-loader.js';
 import path from 'path';
@@ -2953,7 +2952,7 @@ describe('ProfileLoader', () => {
       );
 
       try {
-        await expect(loader.load(tmpPath)).rejects.toThrow('MCP4_UPSTREAM_MCP_JSON must contain valid JSON');
+        await expect(loader.load(tmpPath)).rejects.toThrow('upstream_mcp must contain valid JSON');
       } finally {
         if (previous === undefined) {
           delete process.env.MCP4_UPSTREAM_MCP_JSON;
@@ -3307,16 +3306,11 @@ paths:
         }),
         'utf-8',
       );
-      // Zod profileSchema rejects the array shape; loader never reaches the
-      // legacy D-03 runtime check (deleted per phase 03.1 D-07).
+      // Loader wraps Zod's array-rejection into a friendly ValidationError.
       const err = await loader.load(tmpPath).catch(e => e);
-      expect(err).toBeInstanceOf(ZodError);
-      expect(err.issues[0]).toMatchObject({
-        code: 'invalid_type',
-        expected: 'object',
-        received: 'array',
-        path: ['upstream_mcp'],
-      });
+      expect(err).toBeInstanceOf(ValidationError);
+      expect(err.message).toMatch(/must be a single object, not an array/);
+      expect(err.message).toMatch(/Change \[/);
     });
 
     it('rejects multi-entry array upstream_mcp at schema parse time', async () => {
@@ -3332,16 +3326,11 @@ paths:
         }),
         'utf-8',
       );
-      // Zod rejects the array shape; the old loader-level "supports exactly
-      // one upstream provider" message no longer fires (deleted per phase 03.1 D-07).
+      // Loader wraps Zod's array-rejection into a friendly ValidationError.
       const err = await loader.load(tmpPath).catch(e => e);
-      expect(err).toBeInstanceOf(ZodError);
-      expect(err.issues[0]).toMatchObject({
-        code: 'invalid_type',
-        expected: 'object',
-        received: 'array',
-        path: ['upstream_mcp'],
-      });
+      expect(err).toBeInstanceOf(ValidationError);
+      expect(err.message).toMatch(/must be a single object, not an array/);
+      expect(err.message).toMatch(/Change \[/);
     });
 
     it('loads profile with single-object upstream_mcp', async () => {

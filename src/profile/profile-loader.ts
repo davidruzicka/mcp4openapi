@@ -22,6 +22,7 @@ import type {
   PromptDefinition,
   SessionCookieConfig,
 } from '../types/profile.js';
+import { ZodError } from 'zod';
 import { ValidationError, ConfigurationError } from '../core/errors.js';
 import { profileSchema, authInterceptorSchema } from '../generated-schemas.js';
 import type { OpenAPIParser } from '../openapi/openapi-parser.js';
@@ -65,7 +66,26 @@ export class ProfileLoader {
     const json = JSON.parse(content);
 
     // Validate with Zod - throws detailed error if invalid
-    const profile = enhancedProfileSchema.parse(json) as Profile;
+    let profile: Profile;
+    try {
+      profile = enhancedProfileSchema.parse(json) as Profile;
+    } catch (err) {
+      if (err instanceof ZodError) {
+        const issue = err.issues.find(
+          (i) =>
+            i.path[0] === 'upstream_mcp' &&
+            i.code === 'invalid_type' &&
+            (i as { received?: string }).received === 'array',
+        );
+        if (issue) {
+          throw new ValidationError(
+            'upstream_mcp must be a single object, not an array. Change [{...}] to {...}',
+            { path: 'upstream_mcp' },
+          );
+        }
+      }
+      throw err;
+    }
 
     ProfileLoader.normalizeToolNames(profile);
     this.validateLogic(profile);
