@@ -209,9 +209,7 @@ describe('profile-resolver', () => {
     expect(resolved.specPath).toBeUndefined();
   });
 
-  it('throws missing openapi_spec_path for upstream_mcp with invalid shape (no transport.url)', async () => {
-    // looksLikeUpstreamMcpProxy rejects objects that don't have transport.type + transport.url,
-    // so resolveSpecPath treats the profile as non-proxy and throws for missing spec path.
+  it('throws invalid upstream_mcp for object shape missing transport.url', async () => {
     const root = await createTempDir();
     const profilesDir = path.join(root, 'profiles');
     const profilePath = path.join(profilesDir, 'bad-proxy.json');
@@ -223,7 +221,22 @@ describe('profile-resolver', () => {
       upstream_mcp: {},
     });
 
-    await expect(resolveProfileById('bad-proxy', profilesDir)).rejects.toThrow('openapi_spec_path');
+    await expect(resolveProfileById('bad-proxy', profilesDir)).rejects.toThrow('invalid upstream_mcp');
+  });
+
+  it('throws invalid upstream_mcp for legacy array shape without openapi_spec_path', async () => {
+    const root = await createTempDir();
+    const profilesDir = path.join(root, 'profiles');
+    const profilePath = path.join(profilesDir, 'legacy-array-proxy.json');
+
+    await writeJson(profilePath, {
+      profile_name: 'legacy-array-proxy',
+      profile_id: 'legacy-array-proxy',
+      tools: [],
+      upstream_mcp: [{ name: 'legacy', transport: { type: 'http-streamable', url: 'https://example.com/mcp' } }],
+    });
+
+    await expect(resolveProfileById('legacy-array-proxy', profilesDir)).rejects.toThrow('invalid upstream_mcp');
   });
 
   it('extracts env vars and auth methods for profile index', async () => {

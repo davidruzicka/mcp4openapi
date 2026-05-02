@@ -411,6 +411,7 @@ function resolveSpecPath(
   profilePath: string,
   specPathRaw?: string,
   overrideSpecPath?: string,
+  hasUpstreamMcp = false,
   isUpstreamMcpProxy = false,
 ): string | undefined {
   const trimmed = normalizeSpecPath(specPathRaw);
@@ -421,6 +422,12 @@ function resolveSpecPath(
     }
     if (isUpstreamMcpProxy) {
       return undefined;
+    }
+    if (hasUpstreamMcp) {
+      throw new ConfigurationError('Profile has invalid upstream_mcp configuration', {
+        profilePath,
+        path: 'upstream_mcp',
+      });
     }
     throw new ConfigurationError('Profile is missing openapi_spec_path', { profilePath });
   }
@@ -574,7 +581,13 @@ export async function resolveProfileById(
   }
 
   const match = matches[0];
-  const specPath = resolveSpecPath(match.profilePath, match.specPathRaw, options?.specPathOverride, match.isUpstreamMcpProxy);
+  const specPath = resolveSpecPath(
+    match.profilePath,
+    match.specPathRaw,
+    options?.specPathOverride,
+    match.hasUpstreamMcp,
+    match.isUpstreamMcpProxy,
+  );
 
   return {
     profileId: match.profileId,
@@ -632,7 +645,13 @@ export async function resolveProfileFromPath(
     throw new ConfigurationError('Profile file does not look like a valid profile', { profilePath: resolvedPath });
   }
 
-  const specPath = resolveSpecPath(resolvedPath, entry.specPathRaw, options?.specPathOverride, entry.isUpstreamMcpProxy);
+  const specPath = resolveSpecPath(
+    resolvedPath,
+    entry.specPathRaw,
+    options?.specPathOverride,
+    entry.hasUpstreamMcp,
+    entry.isUpstreamMcpProxy,
+  );
 
   return {
     profileId: entry.profileId,

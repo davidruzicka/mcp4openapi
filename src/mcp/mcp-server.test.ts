@@ -3958,7 +3958,7 @@ paths:
 
     // -------------------------------------------------------------------------
     describe('getUpstreamMcpConfig HTTP fallback (fix: issue #1)', () => {
-      it('falls back to profile.upstream_mcp when httpTransport.getUpstreamMcpConfig returns undefined', async () => {
+      it('does not fall back to profile.upstream_mcp when httpTransport.getUpstreamMcpConfig returns undefined', async () => {
         const server = new MCPServer();
         const provider = { name: 'fallback-provider', transport: { type: 'http-streamable', url: 'https://upstream.example.com/mcp' } };
         (server as any).profile = {
@@ -3988,15 +3988,13 @@ paths:
           'fallback-profile',
         ) as any;
 
-        // Should have routed to upstream (not local tools)
-        expect(mockClientFn).toHaveBeenCalledWith('session-1', provider, undefined);
+        // Fail closed: no upstream routing when the transport context does not own the profile.
+        expect(mockClientFn).not.toHaveBeenCalled();
         expect(response.result).toBeDefined();
+        expect(response.result.tools).toEqual([]);
       });
 
-      it('logs warn when fallback fires for profileId not in transport context', async () => {
-        // The fallback is safe only in single-profile mode. When it fires for a foreign
-        // profileId it returns this.profile.upstream_mcp (potentially the wrong config).
-        // The warn log makes this auditable rather than silent.
+      it('logs warn when upstream config lookup misses for profileId not in transport context', async () => {
         const logger = new JsonLogger();
         const warnSpy = vi.spyOn(logger, 'warn');
 
@@ -4024,9 +4022,10 @@ paths:
         );
 
         expect(warnSpy).toHaveBeenCalledWith(
-          expect.stringContaining('falling back to this.profile.upstream_mcp'),
+          expect.stringContaining('refusing to fall back to this.profile.upstream_mcp'),
           expect.objectContaining({ profileId: 'profile-b' }),
         );
+        expect(mockClientFn).not.toHaveBeenCalled();
       });
     });
 
