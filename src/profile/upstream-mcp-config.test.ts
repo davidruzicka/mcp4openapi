@@ -6,7 +6,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { ValidationError } from '../core/errors.js';
-import { resolveUpstreamMcpConfig, hasUpstreamMcpFlag } from './upstream-mcp-config.js';
+import { resolveUpstreamMcpConfig, hasUpstreamMcpFlag, looksLikeUpstreamMcpProxy } from './upstream-mcp-config.js';
 import type { Profile } from '../types/profile.js';
 
 /** Minimal valid tool definition to satisfy Profile type. */
@@ -369,5 +369,59 @@ describe('upstream_mcp_from_env D-01 migration', () => {
     const resolved = resolveUpstreamMcpConfig(profile, env);
     expect(resolved).toBeDefined();
     expect(resolved?.name).toBe('p1');
+  });
+});
+
+describe('looksLikeUpstreamMcpProxy', () => {
+  it('returns true for valid http-streamable object', () => {
+    expect(looksLikeUpstreamMcpProxy({
+      name: 'p1',
+      transport: { type: 'http-streamable', url: 'https://example.com/mcp' },
+    })).toBe(true);
+  });
+
+  it('returns false for null', () => {
+    expect(looksLikeUpstreamMcpProxy(null)).toBe(false);
+  });
+
+  it('returns false for undefined', () => {
+    expect(looksLikeUpstreamMcpProxy(undefined)).toBe(false);
+  });
+
+  it('returns false for array (legacy shape)', () => {
+    expect(looksLikeUpstreamMcpProxy([{ transport: { type: 'http-streamable', url: 'https://example.com/mcp' } }])).toBe(false);
+  });
+
+  it('returns false for empty object', () => {
+    expect(looksLikeUpstreamMcpProxy({})).toBe(false);
+  });
+
+  it('returns false when transport is missing', () => {
+    expect(looksLikeUpstreamMcpProxy({ name: 'p1' })).toBe(false);
+  });
+
+  it('returns false for stdio transport', () => {
+    expect(looksLikeUpstreamMcpProxy({
+      name: 'p1',
+      transport: { type: 'stdio', command: 'npx' },
+    })).toBe(false);
+  });
+
+  it('returns false when url is empty string', () => {
+    expect(looksLikeUpstreamMcpProxy({
+      name: 'p1',
+      transport: { type: 'http-streamable', url: '   ' },
+    })).toBe(false);
+  });
+
+  it('returns false when url is missing', () => {
+    expect(looksLikeUpstreamMcpProxy({
+      name: 'p1',
+      transport: { type: 'http-streamable' },
+    })).toBe(false);
+  });
+
+  it('returns false when transport is an array', () => {
+    expect(looksLikeUpstreamMcpProxy({ transport: [{ type: 'http-streamable', url: 'https://example.com' }] })).toBe(false);
   });
 });

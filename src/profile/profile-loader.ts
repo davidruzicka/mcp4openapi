@@ -72,7 +72,9 @@ export class ProfileLoader {
     } catch (err) {
       if (err instanceof ZodError) {
         const upstreamIssues = err.issues.filter((i) => i.path[0] === 'upstream_mcp');
-        if (upstreamIssues.length > 0) {
+        // Only wrap when ALL Zod issues are upstream_mcp — if other fields also failed,
+        // re-throw the raw ZodError so the caller sees every problem, not just upstream_mcp.
+        if (upstreamIssues.length > 0 && upstreamIssues.length === err.issues.length) {
           const arrayIssue = upstreamIssues.find(
             (i) => i.code === 'invalid_type' && 'received' in i && i.received === 'array',
           );

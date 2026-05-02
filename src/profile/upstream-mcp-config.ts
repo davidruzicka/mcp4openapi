@@ -230,7 +230,8 @@ export function looksLikeUpstreamMcpProxy(value: unknown): boolean {
 // all deployed profiles have been migrated to singular upstream_mcp object.
 // Both cleanup sites (this function + the Array.isArray branch in profile-resolver.ts
 // extractEnvVars) MUST be removed together — they serve the same migration window.
-// Removal: grep -rn "MIGRATION-CLEANUP(phase-03.1)" src/ — exactly 2 sites.
+// Removal: grep -rn "MIGRATION-CLEANUP(phase-03.1)" src/ — 2 code sites (grep returns 3 lines
+// because this comment block spans 2 lines; the third hit is in profile-resolver.ts).
 /**
  * Returns true if the raw profile.upstream_mcp value indicates an upstream MCP
  * provider is configured. Tolerates BOTH the legacy array shape and the post
