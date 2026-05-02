@@ -14,231 +14,231 @@ const minimalTools: Profile['tools'] = [
   { name: 'tool_a', description: 'Tool A', operations: { list: 'listItems' }, parameters: {} },
 ];
 
-function makeProfile(upstream_mcp: unknown[]): Profile {
+function makeProfile(upstream_mcp: unknown): Profile {
   return { profile_name: 'test', tools: minimalTools, upstream_mcp: upstream_mcp as Profile['upstream_mcp'] };
 }
 
 describe('resolveUpstreamMcpConfig – validator error branches', () => {
   it('rejects invalid auth type', () => {
-    const profile = makeProfile([{
+    const profile = makeProfile({
       name: 'p1',
       transport: { type: 'http-streamable', url: 'https://example.com/mcp' },
       auth: { type: 'api-key', value_from_env: 'TOKEN' },
-    }]);
+    });
     expect(() => resolveUpstreamMcpConfig(profile)).toThrow(ValidationError);
   });
 
   it('rejects missing transport object', () => {
-    const profile = makeProfile([{ name: 'p1', transport: null }]);
+    const profile = makeProfile({ name: 'p1', transport: null });
     expect(() => resolveUpstreamMcpConfig(profile)).toThrow(ValidationError);
   });
 
   it('rejects unsupported transport type', () => {
-    const profile = makeProfile([{
+    const profile = makeProfile({
       name: 'p1',
       transport: { type: 'stdio', command: 'npx' },
-    }]);
+    });
     expect(() => resolveUpstreamMcpConfig(profile)).toThrow(ValidationError);
   });
 
   it('rejects empty provider name', () => {
-    const profile = makeProfile([{
+    const profile = makeProfile({
       name: '  ',
       transport: { type: 'http-streamable', url: 'https://example.com/mcp' },
-    }]);
+    });
     expect(() => resolveUpstreamMcpConfig(profile)).toThrow(/name must not be empty/);
   });
 
   it('rejects empty transport URL', () => {
-    const profile = makeProfile([{
+    const profile = makeProfile({
       name: 'p1',
       transport: { type: 'http-streamable', url: '' },
-    }]);
+    });
     expect(() => resolveUpstreamMcpConfig(profile)).toThrow(ValidationError);
   });
 
   it('rejects non-absolute transport URL', () => {
-    const profile = makeProfile([{
+    const profile = makeProfile({
       name: 'p1',
       transport: { type: 'http-streamable', url: 'not-a-url' },
-    }]);
+    });
     expect(() => resolveUpstreamMcpConfig(profile)).toThrow(ValidationError);
   });
 
   it('rejects non-http/https transport URL', () => {
-    const profile = makeProfile([{
+    const profile = makeProfile({
       name: 'p1',
       transport: { type: 'http-streamable', url: 'ftp://example.com/mcp' },
-    }]);
+    });
     expect(() => resolveUpstreamMcpConfig(profile)).toThrow(/http or https/);
   });
 
   it('rejects transport URL with inline credentials', () => {
-    const profile = makeProfile([{
+    const profile = makeProfile({
       name: 'p1',
       transport: { type: 'http-streamable', url: 'https://user:pass@example.com/mcp' },
-    }]);
+    });
     expect(() => resolveUpstreamMcpConfig(profile)).toThrow(/inline credentials/);
   });
 
   it('rejects transport URL with fragment', () => {
-    const profile = makeProfile([{
+    const profile = makeProfile({
       name: 'p1',
       transport: { type: 'http-streamable', url: 'https://example.com/mcp#section' },
-    }]);
+    });
     expect(() => resolveUpstreamMcpConfig(profile)).toThrow(/fragment/);
   });
 
   it('rejects empty auth value_from_env', () => {
-    const profile = makeProfile([{
+    const profile = makeProfile({
       name: 'p1',
       transport: { type: 'http-streamable', url: 'https://example.com/mcp' },
       auth: { type: 'bearer', value_from_env: '  ' },
-    }]);
+    });
     expect(() => resolveUpstreamMcpConfig(profile)).toThrow(/value_from_env must not be empty/);
   });
 
   it('rejects custom-header auth with unsafe header_name', () => {
-    const profile = makeProfile([{
+    const profile = makeProfile({
       name: 'p1',
       transport: { type: 'http-streamable', url: 'https://example.com/mcp' },
       auth: { type: 'custom-header', value_from_env: 'TOKEN', header_name: '__proto__' },
-    }]);
+    });
     expect(() => resolveUpstreamMcpConfig(profile)).toThrow(/header_name contains invalid/);
   });
 
   it('rejects custom-header auth with space in header_name', () => {
-    const profile = makeProfile([{
+    const profile = makeProfile({
       name: 'p1',
       transport: { type: 'http-streamable', url: 'https://example.com/mcp' },
       auth: { type: 'custom-header', value_from_env: 'TOKEN', header_name: 'X My Header' },
-    }]);
+    });
     expect(() => resolveUpstreamMcpConfig(profile)).toThrow(/RFC7230 token/);
   });
 
   it('rejects custom-header auth with colon in header_name', () => {
-    const profile = makeProfile([{
+    const profile = makeProfile({
       name: 'p1',
       transport: { type: 'http-streamable', url: 'https://example.com/mcp' },
       auth: { type: 'custom-header', value_from_env: 'TOKEN', header_name: 'X-Header:Colon' },
-    }]);
+    });
     expect(() => resolveUpstreamMcpConfig(profile)).toThrow(/RFC7230 token/);
   });
 
   it('rejects custom-header auth with CRLF in header_name (header injection)', () => {
-    const profile = makeProfile([{
+    const profile = makeProfile({
       name: 'p1',
       transport: { type: 'http-streamable', url: 'https://example.com/mcp' },
       auth: { type: 'custom-header', value_from_env: 'TOKEN', header_name: "X-Header\r\nX-Inject: evil" },
-    }]);
+    });
     expect(() => resolveUpstreamMcpConfig(profile)).toThrow(/RFC7230 token/);
   });
 
   it('rejects query auth without query_param', () => {
-    const profile = makeProfile([{
+    const profile = makeProfile({
       name: 'p1',
       transport: { type: 'http-streamable', url: 'https://example.com/mcp' },
       auth: { type: 'query', value_from_env: 'TOKEN' },
-    }]);
+    });
     expect(() => resolveUpstreamMcpConfig(profile)).toThrow(/query_param is required/);
   });
 
   it('rejects empty tool policy allow list', () => {
-    const profile = makeProfile([{
+    const profile = makeProfile({
       name: 'p1',
       transport: { type: 'http-streamable', url: 'https://example.com/mcp' },
       tools: { allow: [] },
-    }]);
+    });
     expect(() => resolveUpstreamMcpConfig(profile)).toThrow(/must contain at least one tool pattern/);
   });
 
   it('rejects tool policy allow list with empty pattern', () => {
-    const profile = makeProfile([{
+    const profile = makeProfile({
       name: 'p1',
       transport: { type: 'http-streamable', url: 'https://example.com/mcp' },
       tools: { allow: ['valid_tool', ''] },
-    }]);
+    });
     expect(() => resolveUpstreamMcpConfig(profile)).toThrow(/must not be empty/);
   });
 
   it('rejects non-positive timeout_ms', () => {
-    const profile = makeProfile([{
+    const profile = makeProfile({
       name: 'p1',
       transport: { type: 'http-streamable', url: 'https://example.com/mcp' },
       timeout_ms: 0,
-    }]);
+    });
     expect(() => resolveUpstreamMcpConfig(profile)).toThrow(/timeout_ms must be a positive integer/);
   });
 
   it('rejects relative validation_endpoint', () => {
-    const profile = makeProfile([{
+    const profile = makeProfile({
       name: 'p1',
       transport: { type: 'http-streamable', url: 'https://example.com/mcp' },
       validation_endpoint: '/validate',
-    }]);
+    });
     expect(() => resolveUpstreamMcpConfig(profile)).toThrow(ValidationError);
   });
 
   it('rejects non-http validation_endpoint', () => {
-    const profile = makeProfile([{
+    const profile = makeProfile({
       name: 'p1',
       transport: { type: 'http-streamable', url: 'https://example.com/mcp' },
       validation_endpoint: 'ftp://example.com/validate',
-    }]);
+    });
     expect(() => resolveUpstreamMcpConfig(profile)).toThrow(/http or https/);
   });
 
   it('rejects validation_endpoint with inline credentials', () => {
-    const profile = makeProfile([{
+    const profile = makeProfile({
       name: 'p1',
       transport: { type: 'http-streamable', url: 'https://example.com/mcp' },
       validation_endpoint: 'https://user:pass@example.com/validate',
-    }]);
+    });
     expect(() => resolveUpstreamMcpConfig(profile)).toThrow(/inline credentials/);
   });
 
   it('accepts valid absolute validation_endpoint', () => {
-    const profile = makeProfile([{
+    const profile = makeProfile({
       name: 'p1',
       transport: { type: 'http-streamable', url: 'https://example.com/mcp' },
       validation_endpoint: 'https://example.com/validate',
-    }]);
+    });
     expect(() => resolveUpstreamMcpConfig(profile)).not.toThrow();
   });
 
   it('rejects non-positive validation_timeout_ms', () => {
-    const profile = makeProfile([{
+    const profile = makeProfile({
       name: 'p1',
       transport: { type: 'http-streamable', url: 'https://example.com/mcp' },
       validation_timeout_ms: 0,
-    }]);
+    });
     expect(() => resolveUpstreamMcpConfig(profile)).toThrow(/validation_timeout_ms must be a positive integer/);
   });
 
   it('rejects negative validation_timeout_ms', () => {
-    const profile = makeProfile([{
+    const profile = makeProfile({
       name: 'p1',
       transport: { type: 'http-streamable', url: 'https://example.com/mcp' },
       validation_timeout_ms: -100,
-    }]);
+    });
     expect(() => resolveUpstreamMcpConfig(profile)).toThrow(/validation_timeout_ms must be a positive integer/);
   });
 
   it('rejects empty tool_prefix', () => {
-    const profile = makeProfile([{
+    const profile = makeProfile({
       name: 'p1',
       transport: { type: 'http-streamable', url: 'https://example.com/mcp' },
       tool_prefix: '  ',
-    }]);
+    });
     expect(() => resolveUpstreamMcpConfig(profile)).toThrow(/tool_prefix must not be empty/);
   });
 
   it('rejects tool_prefix with invalid characters', () => {
-    const profile = makeProfile([{
+    const profile = makeProfile({
       name: 'p1',
       transport: { type: 'http-streamable', url: 'https://example.com/mcp' },
       tool_prefix: 'bad prefix!',
-    }]);
+    });
     expect(() => resolveUpstreamMcpConfig(profile)).toThrow(/tool_prefix may only contain/);
   });
 
@@ -247,12 +247,12 @@ describe('resolveUpstreamMcpConfig – validator error branches', () => {
       profile_name: 'test',
       tools: minimalTools,
       upstream_mcp_from_env: 'MCP4_UNSET_VAR_THAT_DOES_NOT_EXIST',
-      upstream_mcp: [{
+      upstream_mcp: {
         name: 'static',
         transport: { type: 'http-streamable' as const, url: 'https://example.com/mcp' },
-      }],
+      },
     };
     const result = resolveUpstreamMcpConfig(profile, {});
-    expect(result?.[0]?.name).toBe('static');
+    expect(result?.name).toBe('static');
   });
 });
