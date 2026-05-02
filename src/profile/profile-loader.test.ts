@@ -3,6 +3,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
+import { ZodError } from 'zod';
 import { ValidationError } from '../core/errors.js';
 import { ProfileLoader } from './profile-loader.js';
 import path from 'path';
@@ -2727,32 +2728,30 @@ describe('ProfileLoader', () => {
         JSON.stringify({
           profile_name: 'upstream-static',
           tools: [],
-          upstream_mcp: [
-            {
-              name: 'remote-mcp',
-              transport: {
-                type: 'http-streamable',
-                url: 'https://remote-mcp.example/mcp',
-              },
-              auth: {
-                type: 'bearer',
-                value_from_env: 'REMOTE_MCP_TOKEN',
-              },
-              tool_prefix: 'remote',
-              tools: {
-                allow: ['github_*'],
-                deny: ['admin_*'],
-              },
-              timeout_ms: 30000,
+          upstream_mcp: {
+            name: 'remote-mcp',
+            transport: {
+              type: 'http-streamable',
+              url: 'https://remote-mcp.example/mcp',
             },
-          ],
+            auth: {
+              type: 'bearer',
+              value_from_env: 'REMOTE_MCP_TOKEN',
+            },
+            tool_prefix: 'remote',
+            tools: {
+              allow: ['github_*'],
+              deny: ['admin_*'],
+            },
+            timeout_ms: 30000,
+          },
         }),
         'utf-8',
       );
 
       const profile = await loader.load(tmpPath);
 
-      expect(profile.upstream_mcp).toEqual([
+      expect(profile.upstream_mcp).toEqual(
         {
           name: 'remote-mcp',
           transport: {
@@ -2770,7 +2769,7 @@ describe('ProfileLoader', () => {
           },
           timeout_ms: 30000,
         },
-      ]);
+      );
     });
 
     it('prefers upstream_mcp_from_env over static upstream_mcp', async () => {
@@ -2798,22 +2797,20 @@ describe('ProfileLoader', () => {
           profile_name: 'upstream-env',
           tools: [],
           upstream_mcp_from_env: 'MCP4_UPSTREAM_MCP_JSON',
-          upstream_mcp: [
-            {
-              name: 'static-remote',
-              transport: {
-                type: 'http-streamable',
-                url: 'https://static-remote.example/mcp',
-              },
+          upstream_mcp: {
+            name: 'static-remote',
+            transport: {
+              type: 'http-streamable',
+              url: 'https://static-remote.example/mcp',
             },
-          ],
+          },
         }),
         'utf-8',
       );
 
       try {
         const profile = await loader.load(tmpPath);
-        expect(profile.upstream_mcp).toEqual([
+        expect(profile.upstream_mcp).toEqual(
           {
             name: 'env-remote',
             transport: {
@@ -2827,7 +2824,7 @@ describe('ProfileLoader', () => {
             },
             tool_prefix: 'env_remote',
           },
-        ]);
+        );
       } finally {
         if (previous === undefined) {
           delete process.env.MCP4_UPSTREAM_MCP_JSON;
@@ -2854,16 +2851,14 @@ describe('ProfileLoader', () => {
               parameters: {},
             },
           ],
-          upstream_mcp: [
-            {
-              name: 'stdio-mcp',
-              transport: {
-                type: 'stdio',
-                command: 'npx',
-                args: ['-y', 'mcp-github'],
-              },
+          upstream_mcp: {
+            name: 'stdio-mcp',
+            transport: {
+              type: 'stdio',
+              command: 'npx',
+              args: ['-y', 'mcp-github'],
             },
-          ],
+          },
         }),
         'utf-8',
       );
@@ -2888,25 +2883,23 @@ describe('ProfileLoader', () => {
               parameters: {},
             },
           ],
-          upstream_mcp: [
-            {
-              name: 'remote-mcp',
-              transport: {
-                type: 'http-streamable',
-                url: 'https://remote-mcp.example/mcp',
-              },
-              auth: {
-                type: 'custom-header',
-                value_from_env: 'REMOTE_MCP_TOKEN',
-              },
+          upstream_mcp: {
+            name: 'remote-mcp',
+            transport: {
+              type: 'http-streamable',
+              url: 'https://remote-mcp.example/mcp',
             },
-          ],
+            auth: {
+              type: 'custom-header',
+              value_from_env: 'REMOTE_MCP_TOKEN',
+            },
+          },
         }),
         'utf-8',
       );
 
       await expect(loader.load(tmpPath)).rejects.toThrow(
-        'upstream_mcp[0].auth.header_name is required for custom-header auth',
+        'upstream_mcp.auth.header_name is required for custom-header auth',
       );
     });
 
@@ -3124,7 +3117,7 @@ describe('ProfileLoader', () => {
       }
     });
 
-    it('rejects duplicate provider names in env upstream MCP JSON array', async () => {
+    it('rejects array JSON in env upstream MCP (must be single object after D-01 migration)', async () => {
       const loader = new ProfileLoader();
       const fs = await import('fs/promises');
       const tmpPath = `/tmp/upstream-mcp-dup-names-${Date.now()}-${Math.random()}.json`;
@@ -3146,14 +3139,14 @@ describe('ProfileLoader', () => {
       );
 
       try {
-        await expect(loader.load(tmpPath)).rejects.toThrow(/[Dd]uplicate/);
+        await expect(loader.load(tmpPath)).rejects.toThrow(/single JSON object, not an array/);
       } finally {
         if (previous === undefined) { delete process.env[envVarName]; } else { process.env[envVarName] = previous; }
         await fs.unlink(tmpPath).catch(() => undefined);
       }
     });
 
-    it('rejects empty static upstream_mcp array', async () => {
+    it('rejects static upstream_mcp provided as array (schema rejects array at parse time)', async () => {
       const loader = new ProfileLoader();
       const fs = await import('fs/promises');
       const tmpPath = `/tmp/upstream-mcp-empty-static-${Date.now()}-${Math.random()}.json`;
@@ -3169,7 +3162,7 @@ describe('ProfileLoader', () => {
       );
 
       try {
-        await expect(loader.load(tmpPath)).rejects.toThrow(ValidationError);
+        await expect(loader.load(tmpPath)).rejects.toThrow(ZodError);
       } finally {
         await fs.unlink(tmpPath).catch(() => undefined);
       }
@@ -3185,22 +3178,20 @@ describe('ProfileLoader', () => {
         JSON.stringify({
           profile_name: 'upstream-no-auth',
           tools: [],
-          upstream_mcp: [
-            {
-              name: 'no-auth-mcp',
-              transport: { type: 'http-streamable', url: 'https://public.example/mcp' },
-              tools: { deny: ['blocked_tool'] },
-            },
-          ],
+          upstream_mcp: {
+            name: 'no-auth-mcp',
+            transport: { type: 'http-streamable', url: 'https://public.example/mcp' },
+            tools: { deny: ['blocked_tool'] },
+          },
         }),
         'utf-8',
       );
 
       try {
         const profile = await loader.load(tmpPath);
-        expect(profile.upstream_mcp?.[0]?.name).toBe('no-auth-mcp');
-        expect(profile.upstream_mcp?.[0]?.auth).toBeUndefined();
-        expect(profile.upstream_mcp?.[0]?.tools?.deny).toEqual(['blocked_tool']);
+        expect(profile.upstream_mcp?.name).toBe('no-auth-mcp');
+        expect(profile.upstream_mcp?.auth).toBeUndefined();
+        expect(profile.upstream_mcp?.tools?.deny).toEqual(['blocked_tool']);
       } finally {
         await fs.unlink(tmpPath).catch(() => undefined);
       }
@@ -3255,12 +3246,10 @@ paths:
         tmpPath,
         JSON.stringify({
           profile_name: 'mutex-test',
-          upstream_mcp: [
-            {
-              name: 'test-upstream',
-              transport: { type: 'http-streamable', url: 'https://example.com/mcp' },
-            },
-          ],
+          upstream_mcp: {
+            name: 'test-upstream',
+            transport: { type: 'http-streamable', url: 'https://example.com/mcp' },
+          },
           tools: [
             {
               name: 'test_tool',
@@ -3284,12 +3273,10 @@ paths:
         tmpPath,
         JSON.stringify({
           profile_name: 'upstream-only',
-          upstream_mcp: [
-            {
-              name: 'test-upstream',
-              transport: { type: 'http-streamable', url: 'https://example.com/mcp' },
-            },
-          ],
+          upstream_mcp: {
+            name: 'test-upstream',
+            transport: { type: 'http-streamable', url: 'https://example.com/mcp' },
+          },
           tools: [],
         }),
         'utf-8'
@@ -3329,7 +3316,7 @@ paths:
       auth: { type: 'bearer', value_from_env: 'TOKEN' },
     });
 
-    it('rejects upstream_mcp with more than one provider', async () => {
+    it('rejects upstream_mcp provided as array (Zod schema rejects array at parse time)', async () => {
       const loader = new ProfileLoader();
       const fs = await import('fs/promises');
       const tmpPath = `/tmp/profile-upstream-multi-${Date.now()}-${Math.random()}.json`;
@@ -3343,10 +3330,10 @@ paths:
         'utf-8'
       );
 
-      await expect(loader.load(tmpPath)).rejects.toThrow('upstream_mcp supports exactly one upstream provider');
+      await expect(loader.load(tmpPath)).rejects.toThrow(ZodError);
     });
 
-    it('loads profile with exactly one upstream_mcp provider', async () => {
+    it('loads profile with singular upstream_mcp provider (object, not array)', async () => {
       const loader = new ProfileLoader();
       const fs = await import('fs/promises');
       const tmpPath = `/tmp/profile-upstream-single-${Date.now()}-${Math.random()}.json`;
@@ -3355,13 +3342,13 @@ paths:
         JSON.stringify({
           profile_name: 'single-upstream',
           tools: [],
-          upstream_mcp: [makeUpstreamProvider('provider-a')],
+          upstream_mcp: makeUpstreamProvider('provider-a'),
         }),
         'utf-8'
       );
 
       const profile = await loader.load(tmpPath);
-      expect(profile.upstream_mcp).toHaveLength(1);
+      expect(profile.upstream_mcp?.name).toBe('provider-a');
     });
   });
 });
