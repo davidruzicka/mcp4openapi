@@ -211,6 +211,23 @@ function validateUpstreamProvider(provider: UpstreamMcpServerConfig): void {
   }
 }
 
+// MIGRATION-CLEANUP(phase-03.1): remove this function and all its callers once
+// all deployed profiles have been migrated to singular upstream_mcp object.
+// Removal: grep -rn "MIGRATION-CLEANUP(phase-03.1)" src/ — exactly 2 sites.
+/**
+ * Returns true if the raw profile.upstream_mcp value indicates an upstream MCP
+ * provider is configured. Tolerates BOTH the legacy array shape and the post
+ * phase-03.1 singular-object shape so list-view UX still flags un-migrated
+ * profiles as "uses upstream MCP" until the user opens them and gets the
+ * migration error from Zod (see CONTEXT.md D-03).
+ */
+export function hasUpstreamMcpFlag(value: unknown): boolean {
+  if (Array.isArray(value)) {
+    return value.length > 0;
+  }
+  return value !== null && typeof value === 'object';
+}
+
 export function resolveUpstreamMcpConfig(
   profile: Profile,
   env: EnvSource = process.env,

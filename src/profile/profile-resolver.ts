@@ -10,6 +10,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ConfigurationError } from '../core/errors.js';
 import { isFilteringKeySupported } from '../core/filtering.js';
+import { hasUpstreamMcpFlag } from './upstream-mcp-config.js';
 import type { ParameterDefinition, ToolDefinition } from '../types/profile.js';
 
 export interface ResolvedProfile {
@@ -184,6 +185,13 @@ function extractEnvVars(profile: Record<string, unknown>): string[] {
   }
 
   const upstreamMcp = profile.upstream_mcp;
+  // MIGRATION-CLEANUP(phase-03.1): remove the Array.isArray branch below once
+  // all deployed profiles have been migrated to singular upstream_mcp object.
+  // upstream_mcp is now a single object (post-phase 03.1). Legacy array shape
+  // is rejected at Zod parse time, but this site reads RAW profile JSON before
+  // validation, so we tolerate both shapes for env-var discovery during migration:
+  // - Array shape (legacy): collect from each entry's auth (will fail Zod later)
+  // - Object shape (current): collect from the singular auth
   if (Array.isArray(upstreamMcp)) {
     for (const upstream of upstreamMcp) {
       if (!upstream || typeof upstream !== 'object') continue;
@@ -192,6 +200,12 @@ function extractEnvVars(profile: Record<string, unknown>): string[] {
       if (auth && typeof auth === 'object') {
         collectEnvVarsFromAuth(auth as Record<string, unknown>, envVars);
       }
+    }
+  } else if (upstreamMcp && typeof upstreamMcp === 'object') {
+    const upstreamRecord = upstreamMcp as Record<string, unknown>;
+    const auth = upstreamRecord.auth;
+    if (auth && typeof auth === 'object') {
+      collectEnvVarsFromAuth(auth as Record<string, unknown>, envVars);
     }
   }
 
@@ -446,7 +460,7 @@ async function loadProfileIndexEntry(profilePath: string): Promise<ProfileIndexE
     aliases,
     profilePath,
     specPathRaw: typeof profile.openapi_spec_path === 'string' ? profile.openapi_spec_path : undefined,
-    hasUpstreamMcp: Array.isArray(profile.upstream_mcp) && (profile.upstream_mcp as unknown[]).length > 0,
+    hasUpstreamMcp: hasUpstreamMcpFlag(profile.upstream_mcp),
   };
 }
 
