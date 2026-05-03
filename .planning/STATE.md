@@ -3,10 +3,10 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: Ready to plan
-stopped_at: Completed 03.1-02-PLAN.md
-last_updated: "2026-05-02T08:47:31.771Z"
+stopped_at: Phase 03.2 context gathered
+last_updated: "2026-05-03T20:29:04.939Z"
 progress:
-  total_phases: 6
+  total_phases: 7
   completed_phases: 4
   total_plans: 14
   completed_plans: 14
@@ -102,6 +102,7 @@ Recent decisions affecting current work:
 ### Roadmap Evolution
 
 - Phase 03.1 inserted after Phase 03: Odstranění multi upstream mcp supportu (URGENT)
+- Phase 03.2 inserted after Phase 03.1: Profile env-var description field — optional per-env-var description shown before profile description in HTML index, for admin configuration guidance (URGENT)
 
 ### Pending Todos
 
@@ -115,6 +116,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-02T07:13:44.213Z
-Stopped at: Completed 03.1-02-PLAN.md
-Resume file: None
+Last session: 2026-05-03T20:29:04.935Z
+Stopped at: Phase 03.2 context gathered
+Resume file: .planning/phases/03.2-profile-env-var-description/03.2-CONTEXT.md
