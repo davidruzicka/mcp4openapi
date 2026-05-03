@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: Ready to execute
-stopped_at: Completed 03.2-02-PLAN.md
-last_updated: "2026-05-03T22:44:14.983Z"
+status: Phase complete — ready for verification
+stopped_at: Completed 03.2-03-PLAN.md
+last_updated: "2026-05-03T22:51:53.269Z"
 progress:
   total_phases: 7
-  completed_phases: 4
+  completed_phases: 5
   total_plans: 17
-  completed_plans: 16
+  completed_plans: 17
 ---
 
 # Project State
@@ -61,6 +61,7 @@ Plan: 3 of 3
 | Phase 03.1-odstran-n-multi-upstream-mcp-supportu P02 | 8min | 3 tasks | 6 files |
 | Phase 03.2-profile-env-var-description P01 | 3min | 2 tasks | 2 files |
 | Phase 03.2-profile-env-var-description P02 | 4min | 3 tasks | 4 files |
+| Phase 03.2-profile-env-var-description P03 | 5min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -103,6 +104,8 @@ Recent decisions affecting current work:
 - [Phase 03.2-profile-env-var-description]: Parse-time D-05 conflict detection skipped: profile list unavailable at parse time; deferred to resolveProfileAdminDescriptions which receives both map and profiles
 - [Phase 03.2-profile-env-var-description]: adminDescription field rides inside existing safeJsonForHtml(enriched) blob — no separate template variable needed; Plan 03 reads it client-side from the JSON payload
 - [Phase 03.2-profile-env-var-description]: null -> undefined conversion at HttpTransport call site (this.profileAdminDescriptions ?? undefined) so setter accepts Map|null while buildProfileIndexPayload signature uses Map|undefined
+- [Phase 03.2-profile-env-var-description]: Admin description inserted between profile-title and profile-subtitle via ternary (not ||) — both undefined and empty string suppress the div
+- [Phase 03.2-profile-env-var-description]: safeJsonForHtml escapes only '<' not '>'; test assertions must use literal '>' for tag closings in expected rendered output
 
 ### Roadmap Evolution
 
@@ -121,6 +124,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-03T22:44:14.980Z
-Stopped at: Completed 03.2-02-PLAN.md
+Last session: 2026-05-03T22:51:53.266Z
+Stopped at: Completed 03.2-03-PLAN.md
 Resume file: None

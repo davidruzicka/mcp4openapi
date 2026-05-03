@@ -75,12 +75,12 @@ Plans:
 **Goal:** Add optional admin-supplied HTML description per profile via a server-wide `MCP4_PROFILES_DESCRIPTION` env var (JSON map of profile-id/name/alias → HTML string). Description renders raw (no sanitization) in the HTML index detail card immediately before the profile's own description. Sidebar list view is unchanged. Fail-fast at startup on invalid JSON or duplicate-resolution conflicts.
 **Requirements**: TBD (locked decisions D-01..D-12 in 03.2-CONTEXT.md serve as acceptance criteria)
 **Depends on:** Phase 03
-**Plans:** 2/3 plans executed
+**Plans:** 3/3 plans complete
 
 Plans:
 - [x] 03.2-01-PLAN.md — Pure module: parseProfilesDescriptionEnv + resolveProfileAdminDescriptions helpers + unit tests (D-01..D-09)
 - [x] 03.2-02-PLAN.md — Wiring: buildProfileIndexPayload 4th-arg adminDescriptions + HttpTransport.setProfileAdminDescriptions setter + main() startup parse/resolve/setter (D-01, D-04, D-05, D-07..D-10)
-- [ ] 03.2-03-PLAN.md — HTML template patch: raw-HTML adminDescription div in renderDetail before profile.description; sidebar untouched; end-to-end raw-HTML pass-through tests (D-06, D-10, D-11, D-12)
+- [x] 03.2-03-PLAN.md — HTML template patch: raw-HTML adminDescription div in renderDetail before profile.description; sidebar untouched; end-to-end raw-HTML pass-through tests (D-06, D-10, D-11, D-12)
 
 ### Phase 03.1: Odstranění multi upstream mcp supportu (INSERTED)
 
