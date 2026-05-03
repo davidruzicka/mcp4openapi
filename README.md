@@ -62,12 +62,12 @@ Check example profiles in [profiles/](https://github.com/davidruzicka/mcp4openap
 
 ## Upstream MCP roadmap config
 
-Profiles can now declare `upstream_mcp[]` entries for remote MCP providers, or resolve them from an env-backed JSON blob via `upstream_mcp_from_env`.
+Profiles declare a single `upstream_mcp` object for a remote MCP provider, or resolve it from an env-backed JSON object via `upstream_mcp_from_env`.
 
 - Supported transport in the first iteration: `transport.type: "http-streamable"`
 - Supported upstream auth subset: `bearer`, `query`, `custom-header`
 - Secrets must be referenced with `value_from_env`; inline credentials are rejected
-- If `upstream_mcp_from_env` is set and resolves to non-empty JSON, it overrides the static `upstream_mcp[]` list
+- If `upstream_mcp_from_env` is set and resolves to non-empty JSON, it overrides the static `upstream_mcp` object
 - `stdio` upstream providers are intentionally deferred to a later, explicitly gated iteration
 
 Example:
@@ -75,25 +75,23 @@ Example:
 ```json
 {
   "upstream_mcp_from_env": "MCP4_UPSTREAM_MCP_JSON",
-  "upstream_mcp": [
-    {
-      "name": "remote-mcp",
-      "transport": {
-        "type": "http-streamable",
-        "url": "https://remote-mcp.example/mcp"
-      },
-      "auth": {
-        "type": "bearer",
-        "value_from_env": "REMOTE_MCP_TOKEN"
-      },
-      "tool_prefix": "remote",
-      "tools": {
-        "allow": ["github_*"],
-        "deny": ["admin_*"]
-      },
-      "timeout_ms": 30000
-    }
-  ]
+  "upstream_mcp": {
+    "name": "remote-mcp",
+    "transport": {
+      "type": "http-streamable",
+      "url": "https://remote-mcp.example/mcp"
+    },
+    "auth": {
+      "type": "bearer",
+      "value_from_env": "REMOTE_MCP_TOKEN"
+    },
+    "tool_prefix": "remote",
+    "tools": {
+      "allow": ["github_*"],
+      "deny": ["admin_*"]
+    },
+    "timeout_ms": 30000
+  }
 }
 ```
 

@@ -81,8 +81,8 @@ This guide explains how to create custom MCP tool profiles for any OpenAPI-compl
 - **`resources`** (optional): Array of MCP Apps/static/template resource definitions exposed via `resources/*`
 - **`interceptors`** (optional): Auth, rate limiting, retry configuration
 - **`enterprise_authorization`** (optional): HTTP-only inbound authorization policy for enterprise-managed JWT bearer grant exchange
-- **`upstream_mcp`** (optional): Remote upstream MCP provider definitions for proxy/federation roadmap support
-- **`upstream_mcp_from_env`** (optional): Env var name containing JSON object/array of upstream MCP providers; overrides `upstream_mcp` when set to non-empty JSON
+- **`upstream_mcp`** (optional): Remote upstream MCP provider object for proxy/federation roadmap support (singular — exactly one upstream per profile)
+- **`upstream_mcp_from_env`** (optional): Env var name containing a single JSON object describing the upstream MCP provider; overrides `upstream_mcp` when set to non-empty JSON
 
 `enterprise_authorization` supports selective env-backed fields so deployments can override issuer and policy settings without editing the profile file. Supported `*_from_env` fields in the first iteration:
 
@@ -106,7 +106,7 @@ When `enterprise_authorization.mode` is `required`, HTTP initialization accepts 
 - `transport.url` must be an absolute `http` or `https` URL without inline credentials
 - `auth.type` may be `bearer`, `query`, or `custom-header`
 - `auth.value_from_env` names the env variable that holds the credential (token, header value, or query param value); inline secrets are not supported for any auth type. The downstream client token always takes precedence - `value_from_env` is used only as a local fallback when the client sends no token (e.g. server-side deployments sharing a fixed env secret)
-- `upstream_mcp_from_env` may point to a JSON object or array and takes precedence over static `upstream_mcp`
+- `upstream_mcp_from_env` must point to a single JSON object (arrays are rejected with a migration error) and takes precedence over static `upstream_mcp`
 - `stdio` upstream definitions are intentionally rejected in this iteration so the later feature-gated implementation can add process lifecycle hardening separately
 
 Example:
@@ -114,25 +114,23 @@ Example:
 ```json
 {
   "upstream_mcp_from_env": "MCP4_UPSTREAM_MCP_JSON",
-  "upstream_mcp": [
-    {
-      "name": "remote-mcp",
-      "transport": {
-        "type": "http-streamable",
-        "url": "https://remote-mcp.example/mcp"
-      },
-      "auth": {
-        "type": "bearer",
-        "value_from_env": "REMOTE_MCP_TOKEN"
-      },
-      "tool_prefix": "remote",
-      "tools": {
-        "allow": ["github_*"],
-        "deny": ["admin_*"]
-      },
-      "timeout_ms": 30000
-    }
-  ]
+  "upstream_mcp": {
+    "name": "remote-mcp",
+    "transport": {
+      "type": "http-streamable",
+      "url": "https://remote-mcp.example/mcp"
+    },
+    "auth": {
+      "type": "bearer",
+      "value_from_env": "REMOTE_MCP_TOKEN"
+    },
+    "tool_prefix": "remote",
+    "tools": {
+      "allow": ["github_*"],
+      "deny": ["admin_*"]
+    },
+    "timeout_ms": 30000
+  }
 }
 ```
 
