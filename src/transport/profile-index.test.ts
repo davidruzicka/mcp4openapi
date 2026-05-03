@@ -1,3 +1,6 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, it, expect } from 'vitest';
 import {
   buildProfileIndexPayload,
@@ -812,5 +815,97 @@ describe('profile index helpers', () => {
     expect(html).toContain('"supportsFilterHeader":true');
     expect(html).toContain('"supportsFilterHeader":false');
     expect(html).toContain('if (parameter.supportsFilterHeader === false) continue;');
+  });
+});
+
+describe('adminDescription enrichment (Phase 03.2)', () => {
+  const fixture: ListedProfileDetails[] = [
+    {
+      profileId: 'gitlab',
+      profileName: 'gitlab',
+      profileAliases: ['gl'],
+      description: 'GitLab profile description',
+      envVars: ['GITLAB_TOKEN'],
+      authMethods: [{ type: 'bearer', valueFromEnv: 'GITLAB_TOKEN' }],
+    },
+    {
+      profileId: 'github',
+      profileName: 'github',
+      profileAliases: [],
+      description: 'GitHub profile description',
+      envVars: ['GITHUB_TOKEN'],
+      authMethods: [{ type: 'bearer', valueFromEnv: 'GITHUB_TOKEN' }],
+    },
+  ];
+
+  it('D-10 (back-compat): omitting adminDescriptions arg leaves adminDescription undefined', () => {
+    const { payload } = buildProfileIndexPayload(fixture, 'http://localhost:3003', 'en');
+    for (const p of payload.profiles) {
+      expect(p.adminDescription).toBeUndefined();
+    }
+  });
+
+  it('D-08 / D-10: passing undefined adminDescriptions leaves adminDescription undefined', () => {
+    const { payload } = buildProfileIndexPayload(fixture, 'http://localhost:3003', 'en', undefined);
+    for (const p of payload.profiles) {
+      expect(p.adminDescription).toBeUndefined();
+    }
+  });
+
+  it('D-10: matching map key sets adminDescription to the raw HTML value', () => {
+    const map = new Map<string, string>([['gitlab', '<b>hi</b>']]);
+    const { payload } = buildProfileIndexPayload(fixture, 'http://localhost:3003', 'en', map);
+    const gitlab = payload.profiles.find(p => p.profileId === 'gitlab');
+    const github = payload.profiles.find(p => p.profileId === 'github');
+    expect(gitlab?.adminDescription).toBe('<b>hi</b>');
+    expect(github?.adminDescription).toBeUndefined();
+  });
+
+  it('D-09: map keys with no matching profileId do not enrich any profile', () => {
+    const map = new Map<string, string>([['nonexistent', 'orphan']]);
+    const { payload } = buildProfileIndexPayload(fixture, 'http://localhost:3003', 'en', map);
+    for (const p of payload.profiles) {
+      expect(p.adminDescription).toBeUndefined();
+    }
+  });
+
+  it('D-06 / D-12: raw HTML survives the safeJsonForHtml embed in templateData.profile_data', () => {
+    const map = new Map<string, string>([['gitlab', '<a href="https://x.example/">link</a>']]);
+    const { templateData } = buildProfileIndexPayload(fixture, 'http://localhost:3003', 'en', map);
+    // safeJsonForHtml escapes ALL "<" → "<" to prevent XSS via HTML tag injection.
+    // The value is embedded in a JSON string inside the HTML, so angle brackets must be escaped.
+    // Verify the admin description value is present in the payload (with escaping applied).
+    expect(templateData.profile_data).toContain('\\u003ca href=');
+    // The closing tag is also escaped. Verify the structure is there.
+    expect(templateData.profile_data).toContain('\\u003c/a>');
+  });
+
+  it('D-10: empty-string admin description flows through to enrichment as empty string', () => {
+    const map = new Map<string, string>([['gitlab', '']]);
+    const { payload } = buildProfileIndexPayload(fixture, 'http://localhost:3003', 'en', map);
+    const gitlab = payload.profiles.find(p => p.profileId === 'gitlab');
+    expect(gitlab?.adminDescription).toBe('');
+  });
+
+  it('D-11: html/profile-index.html renderList body does NOT reference adminDescription', () => {
+    // Why: D-11 forbids the sidebar list item from showing the admin description.
+    // Lock this with a structural check on the template so a future edit cannot regress it.
+    const moduleDir = path.dirname(fileURLToPath(import.meta.url));
+    // profile-index.test.ts lives at src/transport/, template lives at <repo>/html/profile-index.html
+    let dir = moduleDir;
+    while (!fs.existsSync(path.join(dir, 'package.json'))) {
+      const parent = path.dirname(dir);
+      if (parent === dir) throw new Error('repo root not found');
+      dir = parent;
+    }
+    const html = fs.readFileSync(path.join(dir, 'html', 'profile-index.html'), 'utf-8');
+    const listStart = html.indexOf('function renderList(');
+    expect(listStart).toBeGreaterThan(-1);
+    // Slice from `function renderList(` to the next `function ` after it.
+    const afterListStart = listStart + 'function renderList('.length;
+    const nextFnRel = html.slice(afterListStart).search(/\n\s{6}function\s/);
+    expect(nextFnRel).toBeGreaterThan(-1);
+    const renderListBody = html.slice(listStart, afterListStart + nextFnRel);
+    expect(renderListBody).not.toContain('adminDescription');
   });
 });

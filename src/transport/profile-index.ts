@@ -109,6 +109,7 @@ interface ProfileIndexProfile extends ListedProfileDetails {
   authTabs: ProfileIndexTab[];
   modeTabs: ProfileIndexTab[];
   tenantSummary?: ProfileIndexTenantSummary;
+  adminDescription?: string;
 }
 
 export interface ProfileIndexPayload {
@@ -286,7 +287,8 @@ export function buildProfileIndexI18n(locale: ProfileIndexLocale): ProfileIndexI
 export function buildProfileIndexPayload(
   profiles: ProfileIndexSourceProfile[],
   origin: string,
-  locale: ProfileIndexLocale
+  locale: ProfileIndexLocale,
+  adminDescriptions?: Map<string, string>
 ): { payload: ProfileIndexPayload; templateData: Record<string, string> } {
   const i18n = buildProfileIndexI18n(locale);
   const enriched = profiles.map(profile => {
@@ -305,6 +307,7 @@ export function buildProfileIndexPayload(
       modeTabs,
       tenantSummary: profile.tenantSummary,
       toolCatalog: profile.toolCatalog || [],
+      adminDescription: adminDescriptions?.get(profile.profileId),
     };
   });
 
