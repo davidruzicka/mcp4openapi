@@ -106,7 +106,7 @@ When `enterprise_authorization.mode` is `required`, HTTP initialization accepts 
 - `transport.url` must be an absolute `http` or `https` URL without inline credentials
 - `auth.type` may be `bearer`, `query`, or `custom-header`
 - `auth.value_from_env` names the env variable that holds the credential (token, header value, or query param value); inline secrets are not supported for any auth type. The downstream client token always takes precedence - `value_from_env` is used only as a local fallback when the client sends no token (e.g. server-side deployments sharing a fixed env secret)
-- `upstream_mcp_from_env` must point to a single JSON object (arrays are rejected with a migration error) and takes precedence over static `upstream_mcp`
+- `upstream_mcp_from_env` must point to a single JSON object and takes precedence over static `upstream_mcp`
 - `stdio` upstream definitions are intentionally rejected in this iteration so the later feature-gated implementation can add process lifecycle hardening separately
 
 Example:

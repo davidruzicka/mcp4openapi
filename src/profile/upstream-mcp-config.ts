@@ -28,7 +28,7 @@ function getTrimmedEnvReference(reference: string | undefined, path: string): st
 }
 
 export const UPSTREAM_MCP_ARRAY_REJECTION_MESSAGE =
-  'upstream_mcp must contain a single JSON object, not an array. Change [{...}] to {...}';
+  'upstream_mcp must be a JSON object, not an array';
 
 function parseUpstreamMcpJson(rawValue: string, path: string): UpstreamMcpServerConfig {
   let parsed: unknown;

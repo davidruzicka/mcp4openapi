@@ -12,9 +12,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `ApiKeyStore` interface with `InlineApiKeyStore` (constant-time HMAC-SHA256 comparison via `timingSafeEqual` on equal-length 32-byte digests, erasing length as a timing side-channel) and extensible `createApiKeyStore` factory for AUTH-02 M2M API key validation. `SasankaApiKeyStore` is added in Phase 4.
 - `ClientAuthGate` orchestrator wired into HTTP transport session init: validates inbound client API key before session establishment; resolves `AuthorizedPrincipal` (authType=`token`) and attaches it as `session.clientPrincipal`; mode-aware (`required` rejects with HTTP 401 when no identity is resolved, `optional` allows anonymous sessions); when configured, the gate becomes the inbound auth authority and bypasses the legacy `authConfigs` token-required guard so `mode='optional'` can permit anonymous initialization (AUTH-02; partial AUTH-03). JWT/OIDC gate added in Phase 4.
 
-### Changed
-- **BREAKING**: `upstream_mcp` is now a singular object (`UpstreamMcpServerConfig`), not an array. Profiles using `upstream_mcp: [{...}]` must be migrated to `upstream_mcp: {...}`. Array-shaped values are rejected at profile load time with an actionable migration error; `upstream_mcp_from_env` likewise rejects array JSON.
-
 ### Fixed
 - `upstream_mcp.timeout_ms` is now enforced on proxied `tools/call`: passed as `RequestOptions.timeout` to `client.callTool()` so a hung upstream is bounded by the configured value instead of the SDK default.
 - `MCPServerManager` self-registers the `onSessionDestroyed` cleanup hook in its constructor, eliminating the unbounded `sanitizedAndPolicyFilteredToolNames` map growth when the manager is used outside the `index.ts` bootstrap path.
@@ -42,7 +39,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `handleToolCall` now enforces `X-Mcp4-Tools` filter and enterprise authorization policy before forwarding to upstream, matching the gates applied to local tools.
 - `tools/call` to upstream now validates the tool name against the sanitizer policy (`[a-zA-Z0-9_-]`, max 255 chars) before forwarding, preventing invocation of tools dropped from the sanitized list.
 - `UpstreamConnectionManager` now ships with real production `clientFactory`/`transportFactory` defaults (MCP SDK `Client` + `StreamableHTTPClientTransport`); previously both defaults threw, making all upstream proxy calls fail at runtime.
-- Profiles with more than one `upstream_mcp` entry are now rejected at load time with a clear error; previously extra providers were silently ignored while all calls were routed to the first.
 - `upstream_mcp` proxy is now wired at HTTP startup in both single-profile and profile-routing modes; previously `getUpstreamClientFn` was never set, causing upstream tools to be silently unavailable.
 - `drain()` on `NotificationQueue` now re-applies TTL eviction before returning entries, preventing stale notifications from being replayed on reconnect after extended disconnection.
 - `upstream_mcp.validation_endpoint` is now checked during session init in single-profile HTTP mode; previously `upstreamMcp` was missing from `buildDefaultProfileContext`, so init validation was silently skipped.

@@ -341,12 +341,12 @@ describe('parseUpstreamMcpJson – via upstream_mcp_from_env', () => {
     }
     expect(err).toBeDefined();
     expect(err?.message).not.toContain('SECRET_INTERNAL_VAR_NAME');
-    expect(err?.message).toMatch(/must contain a single JSON object/);
+    expect(err?.message).toMatch(/must be a JSON object/);
   });
 });
 
-describe('upstream_mcp_from_env D-01 migration', () => {
-  it('rejects array-typed upstream_mcp_from_env JSON with migration message', () => {
+describe('upstream_mcp_from_env D-01 array rejection', () => {
+  it('rejects array-typed upstream_mcp_from_env JSON', () => {
     const profile: Profile = {
       profile_name: 'test',
       tools: minimalTools,
@@ -359,7 +359,7 @@ describe('upstream_mcp_from_env D-01 migration', () => {
       }]),
     } as NodeJS.ProcessEnv;
     expect(() => resolveUpstreamMcpConfig(profile, env)).toThrowError(
-      /must contain a single JSON object, not an array/,
+      /must be a JSON object, not an array/,
     );
   });
 

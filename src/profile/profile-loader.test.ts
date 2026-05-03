@@ -3138,7 +3138,7 @@ describe('ProfileLoader', () => {
       );
 
       try {
-        await expect(loader.load(tmpPath)).rejects.toThrow(/single JSON object, not an array/);
+        await expect(loader.load(tmpPath)).rejects.toThrow(/must be a JSON object, not an array/);
       } finally {
         if (previous === undefined) { delete process.env[envVarName]; } else { process.env[envVarName] = previous; }
         await fs.unlink(tmpPath).catch(() => undefined);
@@ -3306,13 +3306,11 @@ paths:
         }),
         'utf-8',
       );
-      expect.assertions(4);
-      // Loader wraps Zod's array-rejection into a friendly ValidationError.
+      expect.assertions(3);
       const err = await loader.load(tmpPath).catch((e) => e);
       expect(err).toBeInstanceOf(ValidationError);
       expect((err as ValidationError).details?.path).toBe('upstream_mcp');
-      expect(err.message).toMatch(/must contain a single JSON object, not an array/);
-      expect(err.message).toMatch(/Change \[/);
+      expect(err.message).toMatch(/must be a JSON object, not an array/);
     });
 
     it('rejects multi-entry array upstream_mcp at schema parse time', async () => {
@@ -3328,13 +3326,11 @@ paths:
         }),
         'utf-8',
       );
-      expect.assertions(4);
-      // Loader wraps Zod's array-rejection into a friendly ValidationError.
+      expect.assertions(3);
       const err = await loader.load(tmpPath).catch((e) => e);
       expect(err).toBeInstanceOf(ValidationError);
       expect((err as ValidationError).details?.path).toBe('upstream_mcp');
-      expect(err.message).toMatch(/must contain a single JSON object, not an array/);
-      expect(err.message).toMatch(/Change \[/);
+      expect(err.message).toMatch(/must be a JSON object, not an array/);
     });
 
     it('surfaces non-array upstream_mcp schema errors as ValidationError', async () => {
