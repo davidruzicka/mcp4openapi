@@ -909,3 +909,96 @@ describe('adminDescription enrichment (Phase 03.2)', () => {
     expect(renderListBody).not.toContain('adminDescription');
   });
 });
+
+describe('Phase 03.2 HTML rendering', () => {
+  function repoRoot(): string {
+    const moduleDir = path.dirname(fileURLToPath(import.meta.url));
+    let dir = moduleDir;
+    while (!fs.existsSync(path.join(dir, 'package.json'))) {
+      const parent = path.dirname(dir);
+      if (parent === dir) throw new Error('repo root not found');
+      dir = parent;
+    }
+    return dir;
+  }
+
+  function readTemplate(): string {
+    return fs.readFileSync(path.join(repoRoot(), 'html', 'profile-index.html'), 'utf-8');
+  }
+
+  function sliceRenderDetail(html: string): string {
+    const start = html.indexOf('function renderDetail(');
+    if (start < 0) throw new Error('renderDetail not found');
+    const after = start + 'function renderDetail('.length;
+    // Match the next function definition at the same nesting (6 leading spaces) — same heuristic
+    // used by the renderList grep test added in Plan 02.
+    const nextRel = html.slice(after).search(/\n\s{6}function\s/);
+    if (nextRel < 0) throw new Error('end of renderDetail not found');
+    return html.slice(start, after + nextRel);
+  }
+
+  it('D-06 / D-12: raw HTML in adminDescription survives end-to-end through renderProfileIndexHtml', async () => {
+    const profiles: ListedProfileDetails[] = [
+      {
+        profileId: 'gitlab',
+        profileName: 'gitlab',
+        profileAliases: [],
+        description: 'GitLab',
+        envVars: ['GITLAB_TOKEN'],
+        authMethods: [{ type: 'bearer', valueFromEnv: 'GITLAB_TOKEN' }],
+      },
+    ];
+    const adminDescriptions = new Map<string, string>([
+      ['gitlab', '<a href="https://x.example/">link</a>'],
+    ]);
+    const { templateData } = buildProfileIndexPayload(
+      profiles,
+      'http://localhost:3003',
+      'en',
+      adminDescriptions,
+    );
+    const template = await loadProfileIndexTemplate();
+    const rendered = renderProfileIndexHtml(template, templateData, 'test-nonce');
+
+    // Why: profile_data is embedded as a JSON string literal inside a <script> tag.
+    // safeJsonForHtml escapes ALL "<" to "<" (6 literal chars) to prevent HTML tag injection.
+    // JSON also escapes double quotes inside the string to \". ">" is NOT escaped (only "<" is).
+    // So the literal we expect in the rendered HTML is:
+    //   <a href=\"https://x.example/\">link</a>
+    // This string proves raw HTML survives — no &lt;, no &amp;quot;.
+    expect(rendered).toContain('\\u003ca href=\\"https://x.example/\\">link\\u003c/a>');
+    // Negative: must NOT contain any HTML-entity-encoded form of the link.
+    expect(rendered).not.toContain('&lt;a href');
+    expect(rendered).not.toContain('&amp;lt;a href');
+  });
+
+  it('D-12: renderDetail interpolates profile.adminDescription WITHOUT escapeHtml wrapper', () => {
+    const html = readTemplate();
+    const renderDetailBody = sliceRenderDetail(html);
+    // The field must be referenced at least once.
+    expect(renderDetailBody).toContain('profile.adminDescription');
+    // It must NEVER be wrapped in escapeHtml in the renderDetail body.
+    expect(renderDetailBody).not.toMatch(/escapeHtml\(\s*profile\.adminDescription/);
+  });
+
+  it('D-10: admin-description div appears BEFORE the existing escaped description div', () => {
+    const html = readTemplate();
+    const renderDetailBody = sliceRenderDetail(html);
+    const adminIdx = renderDetailBody.indexOf('profile-admin-description');
+    const descIdx = renderDetailBody.indexOf('${escapeHtml(description)}');
+    expect(adminIdx).toBeGreaterThan(-1);
+    expect(descIdx).toBeGreaterThan(-1);
+    expect(adminIdx).toBeLessThan(descIdx);
+  });
+
+  it('D-11 (reaffirm): renderList body still does NOT reference adminDescription', () => {
+    const html = readTemplate();
+    const start = html.indexOf('function renderList(');
+    expect(start).toBeGreaterThan(-1);
+    const after = start + 'function renderList('.length;
+    const nextRel = html.slice(after).search(/\n\s{6}function\s/);
+    expect(nextRel).toBeGreaterThan(-1);
+    const renderListBody = html.slice(start, after + nextRel);
+    expect(renderListBody).not.toContain('adminDescription');
+  });
+});
