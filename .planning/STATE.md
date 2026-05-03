@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: Ready to execute
-stopped_at: Completed 03.2-01-PLAN.md
-last_updated: "2026-05-03T22:36:59.342Z"
+stopped_at: Completed 03.2-02-PLAN.md
+last_updated: "2026-05-03T22:44:14.983Z"
 progress:
   total_phases: 7
   completed_phases: 4
   total_plans: 17
-  completed_plans: 15
+  completed_plans: 16
 ---
 
 # Project State
@@ -24,7 +24,7 @@ See: .planning/PROJECT.md (updated 2026-03-26)
 ## Current Position
 
 Phase: 03.2 (profile-env-var-description) — EXECUTING
-Plan: 2 of 3
+Plan: 3 of 3
 
 ## Performance Metrics
 
@@ -60,6 +60,7 @@ Plan: 2 of 3
 | Phase 03.1-odstran-n-multi-upstream-mcp-supportu P01 | 5 | 3 tasks | 8 files |
 | Phase 03.1-odstran-n-multi-upstream-mcp-supportu P02 | 8min | 3 tasks | 6 files |
 | Phase 03.2-profile-env-var-description P01 | 3min | 2 tasks | 2 files |
+| Phase 03.2-profile-env-var-description P02 | 4min | 3 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -100,6 +101,8 @@ Recent decisions affecting current work:
 - [Phase 03.1-odstran-n-multi-upstream-mcp-supportu]: hasUpstreamMcpFlag lives in upstream-mcp-config.ts (semantic owner of all upstream_mcp logic) not profile-resolver.ts
 - [Phase 03.1-odstran-n-multi-upstream-mcp-supportu]: Legacy-array tolerance preserved at MIGRATION-CLEANUP sites: env-var collector (reads raw JSON pre-Zod) and hasUpstreamMcpFlag (list-view UX) for migration period
 - [Phase 03.2-profile-env-var-description]: Parse-time D-05 conflict detection skipped: profile list unavailable at parse time; deferred to resolveProfileAdminDescriptions which receives both map and profiles
+- [Phase 03.2-profile-env-var-description]: adminDescription field rides inside existing safeJsonForHtml(enriched) blob — no separate template variable needed; Plan 03 reads it client-side from the JSON payload
+- [Phase 03.2-profile-env-var-description]: null -> undefined conversion at HttpTransport call site (this.profileAdminDescriptions ?? undefined) so setter accepts Map|null while buildProfileIndexPayload signature uses Map|undefined
 
 ### Roadmap Evolution
 
@@ -118,6 +121,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-03T22:36:59.339Z
-Stopped at: Completed 03.2-01-PLAN.md
+Last session: 2026-05-03T22:44:14.980Z
+Stopped at: Completed 03.2-02-PLAN.md
 Resume file: None
