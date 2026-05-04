@@ -25,3 +25,5 @@ Use native Edit/StrReplace when available. If Edit requires Read and Read is una
 use `ctx_edit(path, old_string, new_string)` — it reads, replaces, and writes in one MCP call.
 NEVER loop trying to make Edit work. If it fails, switch to ctx_edit immediately.
 Write, Delete have no lean-ctx equivalent — use them normally.
+
+Always follow @AGENTS.md

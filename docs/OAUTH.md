@@ -141,6 +141,8 @@ export MCP4_OAUTH_ISSUER=https://www.gitlab.com
 export MCP4_OAUTH_CLIENT_ID=your_application_id_here
 export MCP4_OAUTH_CLIENT_SECRET=your_secret_here
 export MCP4_OAUTH_REDIRECT_URI=http://<mcp-server-url>:<mcp-server-port>/oauth/callback
+export MCP4_ALLOW_UNREGISTERED_CLIENTS=true
+export MCP4_ALLOWED_UNREGISTERED_REDIRECT_URIS=http://localhost,cursor://
 ```
 
 Windows PowerShell (`$PROFILE`):
@@ -154,6 +156,8 @@ Windows PowerShell (`$PROFILE`):
 [Environment]::SetEnvironmentVariable("MCP4_OAUTH_CLIENT_ID", "your_application_id_here", "User")
 [Environment]::SetEnvironmentVariable("MCP4_OAUTH_CLIENT_SECRET", "your_secret_here", "User")
 [Environment]::SetEnvironmentVariable("MCP4_OAUTH_REDIRECT_URI", "http://<mcp-server-url>:<mcp-server-port>/oauth/callback", "User")
+[Environment]::SetEnvironmentVariable("MCP4_ALLOW_UNREGISTERED_CLIENTS", "true", "User")
+[Environment]::SetEnvironmentVariable("MCP4_ALLOWED_UNREGISTERED_REDIRECT_URIS", "http://localhost,cursor://", "User")
 ```
 
 Optional for providers with non-standard OAuth paths:
@@ -175,6 +179,11 @@ Complete environment variable reference: See [env.example](../env.example).
 - `MCP4_OAUTH_CLIENT_STORE_MAX_REDIRECT_URIS` (default: `10`)
 - `MCP4_OAUTH_CLIENT_STORE_MAX_REDIRECT_URI_LENGTH` (default: `256`)
 - `MCP4_OAUTH_CLIENT_STORE_IDLE_GRACE_MS` (default: `0`)
+
+**Optional unregistered client controls:**
+- `MCP4_ALLOW_UNREGISTERED_CLIENTS=true` enables authorize requests for unregistered OAuth clients
+- `MCP4_ALLOWED_UNREGISTERED_REDIRECT_URIS` defines the approved redirect URI rules for those clients
+- CLI equivalents: `--allow-unregistered-clients true` and `--allowed-unregistered-redirect-uris http://localhost,cursor://`
 
 Dynamic registration eviction policy:
 - Idle dynamic clients are evicted first (`mcp-client-*`), while clients with active session usage or pending OAuth state/code are protected from eviction.

@@ -829,6 +829,44 @@ paths:
       expect(context.oauthConfig?.allowed_redirect_hosts).toEqual(['*.allowed.test', 'app.example.com']);
     });
 
+    it('getHttpProfileContext merges unregistered OAuth client env config', async () => {
+      const serverWithMock = new MCPServer({
+        info: () => {},
+        warn: () => {},
+        error: () => {},
+        debug: () => {},
+      } as any);
+
+      (serverWithMock as any).parser = {
+        getBaseUrl: () => 'https://api.test',
+        getResourceMetadata: () => ({ name: 'Test', documentation: 'Docs' })
+      };
+
+      (serverWithMock as any).profile = {
+        profile_name: 'test',
+        description: 'test profile',
+        tools: [],
+        interceptors: {
+          auth: [{
+            type: 'oauth',
+            priority: 1,
+            oauth_config: {
+              issuer: 'https://issuer.test',
+              client_id: 'client-id',
+              redirect_uri: 'https://app.test/callback'
+            }
+          }]
+        }
+      };
+
+      process.env.MCP4_ALLOW_UNREGISTERED_CLIENTS = 'true';
+      process.env.MCP4_ALLOWED_UNREGISTERED_REDIRECT_URIS = 'http://localhost, cursor://';
+
+      const context = serverWithMock.getHttpProfileContext();
+      expect(context.oauthConfig?.allow_unregistered_clients).toBe(true);
+      expect(context.oauthConfig?.allowed_unregistered_redirect_uris).toEqual(['http://localhost', 'cursor://']);
+    });
+
     it('should derive OAuth redirect hosts and token limits from environment', async () => {
       const capturedConfigs: any[] = [];
 

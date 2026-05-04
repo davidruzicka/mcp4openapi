@@ -714,12 +714,18 @@ export MCP4_OAUTH_REDIRECT_URI=http://127.0.0.1:3003/oauth/callback
 **Environment variables:**
 - `MCP4_OAUTH_CLIENT_ID`, `MCP4_OAUTH_CLIENT_SECRET`: OAuth client credentials (required)
 - `MCP4_OAUTH_REDIRECT_URI`: OAuth redirect URI (required, must match registered URI)
+- `MCP4_ALLOW_UNREGISTERED_CLIENTS`: Allow authorize requests for unregistered OAuth clients when redirect URIs match the approved allowlist (optional, default: `false`)
+- `MCP4_ALLOWED_UNREGISTERED_REDIRECT_URIS`: Comma-separated approved redirect URI rules for unregistered OAuth clients, e.g. `http://localhost,cursor://` (optional)
 - `MCP4_OAUTH_ISSUER`: OAuth provider issuer URL (optional, auto-derives endpoints)
 - `MCP4_OAUTH_AUTHORIZATION_URL`, `MCP4_OAUTH_TOKEN_URL`: OAuth endpoints (optional, for non-standard paths)
 - `MCP4_OAUTH_CLIENT_STORE_MAX_CLIENTS`: Max dynamic OAuth clients stored in memory (default: `1000`)
 - `MCP4_OAUTH_CLIENT_STORE_MAX_REDIRECT_URIS`: Max `redirect_uris` per dynamic client (default: `10`)
 - `MCP4_OAUTH_CLIENT_STORE_MAX_REDIRECT_URI_LENGTH`: Max length of one redirect URI (default: `256`)
 - `MCP4_OAUTH_CLIENT_STORE_IDLE_GRACE_MS`: Minimum age (ms) before an idle OAuth client is evictable (default: `0`)
+
+CLI equivalents:
+- `--allow-unregistered-clients true`
+- `--allowed-unregistered-redirect-uris http://localhost,cursor://`
 
 Dynamic client store eviction behavior:
 - Eviction prefers idle dynamic clients (`mcp-client-*`) and does not evict clients that are currently active in session/state/code flows.
