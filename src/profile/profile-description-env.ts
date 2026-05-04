@@ -66,6 +66,12 @@ export function parseProfilesDescriptionEnv(
         receivedType: value === null ? 'null' : typeof value,
       });
     }
+    if (value.length > 10_000) {
+      throw new ConfigurationError(
+        'MCP4_PROFILES_DESCRIPTION values must not exceed 10000 characters',
+        { envVar: PROFILES_DESCRIPTION_ENV_VAR, key, receivedLength: value.length }
+      );
+    }
     map.set(key, value);
   }
   return map;
@@ -104,6 +110,9 @@ export function resolveProfileAdminDescriptions(
       }
 
       const existingKey = firstKeyByProfile.get(profile.profileId);
+      // existingKey !== key guards against a false D-05 conflict when one key
+      // matches a profile through multiple attributes simultaneously (e.g.
+      // profileId === profileName === key satisfies both conditions for the same key).
       if (existingKey !== undefined && existingKey !== key) {
         throw new ConfigurationError(
           'MCP4_PROFILES_DESCRIPTION has multiple keys resolving to the same profile',

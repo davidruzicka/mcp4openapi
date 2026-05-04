@@ -1692,7 +1692,11 @@ export class HttpTransport {
     );
 
     if (prefersJson) {
-      res.json(payload);
+      const safePayload = {
+        ...payload,
+        profiles: payload.profiles.map(({ adminDescription: _omit, ...rest }) => rest),
+      };
+      res.json(safePayload);
       return;
     }
 
@@ -1704,7 +1708,7 @@ export class HttpTransport {
     res.setHeader('Cache-Control', 'no-store');
     res.setHeader(
       'Content-Security-Policy',
-      `default-src 'self'; frame-ancestors 'none'; object-src 'none'; base-uri 'self'; script-src 'self' 'nonce-${nonce}'; style-src 'self' 'nonce-${nonce}'`
+      `default-src 'self'; frame-ancestors 'none'; object-src 'none'; base-uri 'self'; script-src 'self' 'nonce-${nonce}'; style-src 'self' 'nonce-${nonce}'; img-src 'self' data:; connect-src 'none'`
     );
     res.send(html);
   }

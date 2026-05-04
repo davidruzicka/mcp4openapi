@@ -328,10 +328,16 @@ export async function main() {
         httpTransport.setProfileAdminDescriptions(
           resolvedAdminDescriptions.size > 0 ? resolvedAdminDescriptions : null,
         );
-        logger.info('MCP4_PROFILES_DESCRIPTION loaded', {
-          keysProvided: parsedProfileDescriptions.size,
-          profilesEnriched: resolvedAdminDescriptions.size,
-        });
+        if (resolvedAdminDescriptions.size === 0) {
+          logger.warn('MCP4_PROFILES_DESCRIPTION set but no profiles matched', {
+            keysProvided: parsedProfileDescriptions.size,
+          });
+        } else {
+          logger.info('MCP4_PROFILES_DESCRIPTION loaded', {
+            keysProvided: parsedProfileDescriptions.size,
+            profilesEnriched: resolvedAdminDescriptions.size,
+          });
+        }
       }
 
       httpTransport.setMessageHandler(async (message, sessionId, profileId) => {

@@ -41,17 +41,19 @@ describe('parseProfilesDescriptionEnv', () => {
   });
 
   it('D-07: throws ConfigurationError on invalid JSON', () => {
-    expect(() => parseProfilesDescriptionEnv('{not valid json')).toThrow(ConfigurationError);
+    let caught: unknown;
     try {
       parseProfilesDescriptionEnv('{not valid json');
     } catch (e) {
-      const err = e as ConfigurationError;
-      expect(err.code).toBe('CONFIGURATION_ERROR');
-      expect(err.message).toBe('MCP4_PROFILES_DESCRIPTION is not valid JSON');
-      expect(err.details?.envVar).toBe('MCP4_PROFILES_DESCRIPTION');
-      expect(typeof err.details?.error).toBe('string');
-      expect((err.details?.error as string).length).toBeGreaterThan(0);
+      caught = e;
     }
+    expect(caught).toBeInstanceOf(ConfigurationError);
+    const err = caught as ConfigurationError;
+    expect(err.code).toBe('CONFIGURATION_ERROR');
+    expect(err.message).toBe('MCP4_PROFILES_DESCRIPTION is not valid JSON');
+    expect(err.details?.envVar).toBe('MCP4_PROFILES_DESCRIPTION');
+    expect(typeof err.details?.error).toBe('string');
+    expect((err.details?.error as string).length).toBeGreaterThan(0);
   });
 
   it('D-02: throws ConfigurationError on JSON null', () => {
@@ -135,6 +137,50 @@ describe('parseProfilesDescriptionEnv', () => {
     const map = parseProfilesDescriptionEnv('{"gitlab":"a","gitlab":"b"}');
     expect(map?.size).toBe(1);
     expect(map?.get('gitlab')).toBe('b');
+  });
+
+  it('D-02 / D-03: throws when an entry value is a boolean', () => {
+    try {
+      parseProfilesDescriptionEnv('{"gitlab": true}');
+      throw new Error('should have thrown');
+    } catch (e) {
+      const err = e as ConfigurationError;
+      expect(err.message).toBe('MCP4_PROFILES_DESCRIPTION values must be strings');
+      expect(err.details?.key).toBe('gitlab');
+      expect(err.details?.receivedType).toBe('boolean');
+    }
+  });
+
+  it('D-02 / D-03: throws when an entry value is a nested object', () => {
+    try {
+      parseProfilesDescriptionEnv('{"gitlab": {"html": "<b>x</b>"}}');
+      throw new Error('should have thrown');
+    } catch (e) {
+      const err = e as ConfigurationError;
+      expect(err.message).toBe('MCP4_PROFILES_DESCRIPTION values must be strings');
+      expect(err.details?.key).toBe('gitlab');
+      expect(err.details?.receivedType).toBe('object');
+    }
+  });
+
+  it('length limit: throws ConfigurationError when value exceeds 10000 characters', () => {
+    const longValue = 'a'.repeat(10_001);
+    try {
+      parseProfilesDescriptionEnv(JSON.stringify({ gitlab: longValue }));
+      throw new Error('should have thrown');
+    } catch (e) {
+      const err = e as ConfigurationError;
+      expect(err).toBeInstanceOf(ConfigurationError);
+      expect(err.message).toBe('MCP4_PROFILES_DESCRIPTION values must not exceed 10000 characters');
+      expect(err.details?.key).toBe('gitlab');
+      expect(err.details?.receivedLength).toBe(10_001);
+    }
+  });
+
+  it('length limit: accepts value of exactly 10000 characters', () => {
+    const exactValue = 'a'.repeat(10_000);
+    const map = parseProfilesDescriptionEnv(JSON.stringify({ gitlab: exactValue }));
+    expect(map?.get('gitlab')).toBe(exactValue);
   });
 });
 
@@ -234,5 +280,21 @@ describe('resolveProfileAdminDescriptions', () => {
     );
     expect(out.size).toBe(1);
     expect(out.get('gitlab')).toBe('');
+  });
+
+  it('D-09: non-empty descriptions with empty profiles list returns empty map', () => {
+    const out = resolveProfileAdminDescriptions(new Map([['gitlab', 'desc']]), []);
+    expect(out.size).toBe(0);
+  });
+
+  it('false-conflict guard: single key matching profileId and profileName of same profile does not throw', () => {
+    // profileId === profileName === key — matches both id and name conditions for the same key,
+    // must not trigger D-05 conflict (existingKey !== key guard prevents false positive).
+    const out = resolveProfileAdminDescriptions(
+      new Map([['gitlab', 'desc']]),
+      [profile('gitlab', 'gitlab')]
+    );
+    expect(out.size).toBe(1);
+    expect(out.get('gitlab')).toBe('desc');
   });
 });

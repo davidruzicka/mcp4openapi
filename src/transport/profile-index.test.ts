@@ -878,6 +878,8 @@ describe('adminDescription enrichment (Phase 03.2)', () => {
     expect(templateData.profile_data).toContain('\\u003ca href=');
     // The closing tag is also escaped. Verify the structure is there.
     expect(templateData.profile_data).toContain('\\u003c/a>');
+    // ">" is NOT unicode-escaped — safeJsonForHtml only escapes "<", not ">".
+    expect(templateData.profile_data).not.toContain('\\u003e');
   });
 
   it('D-10: empty-string admin description flows through to enrichment as empty string', () => {
@@ -885,6 +887,13 @@ describe('adminDescription enrichment (Phase 03.2)', () => {
     const { payload } = buildProfileIndexPayload(fixture, 'http://localhost:3003', 'en', map);
     const gitlab = payload.profiles.find(p => p.profileId === 'gitlab');
     expect(gitlab?.adminDescription).toBe('');
+  });
+
+  it('D-08: empty Map (defined but empty) leaves adminDescription undefined', () => {
+    const { payload } = buildProfileIndexPayload(fixture, 'http://localhost:3003', 'en', new Map());
+    for (const p of payload.profiles) {
+      expect(p.adminDescription).toBeUndefined();
+    }
   });
 
   it('D-11: html/profile-index.html renderList body does NOT reference adminDescription', () => {
@@ -991,14 +1000,24 @@ describe('Phase 03.2 HTML rendering', () => {
     expect(adminIdx).toBeLessThan(descIdx);
   });
 
-  it('D-11 (reaffirm): renderList body still does NOT reference adminDescription', () => {
-    const html = readTemplate();
-    const start = html.indexOf('function renderList(');
-    expect(start).toBeGreaterThan(-1);
-    const after = start + 'function renderList('.length;
-    const nextRel = html.slice(after).search(/\n\s{6}function\s/);
-    expect(nextRel).toBeGreaterThan(-1);
-    const renderListBody = html.slice(start, after + nextRel);
-    expect(renderListBody).not.toContain('adminDescription');
+  it('D-08 / truthy guard: undefined adminDescription absent from embedded profile_data JSON', async () => {
+    // The template JS source always contains the string "profile-admin-description" as a literal,
+    // so we cannot check rendered HTML directly. Instead we verify that when adminDescription is
+    // undefined, JSON.stringify omits the key from the profile_data blob — meaning the client-side
+    // truthy guard `profile.adminDescription ?` will evaluate falsy and emit no div.
+    const profiles: ListedProfileDetails[] = [
+      {
+        profileId: 'gitlab',
+        profileName: 'gitlab',
+        profileAliases: [],
+        description: 'GitLab',
+        envVars: ['GITLAB_TOKEN'],
+        authMethods: [{ type: 'bearer', valueFromEnv: 'GITLAB_TOKEN' }],
+      },
+    ];
+    const { templateData } = buildProfileIndexPayload(profiles, 'http://localhost:3003', 'en');
+    const template = await loadProfileIndexTemplate();
+    const rendered = renderProfileIndexHtml(template, templateData, 'test-nonce');
+    expect(rendered).not.toContain('"adminDescription"');
   });
 });
