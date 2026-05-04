@@ -1848,8 +1848,8 @@ export class MCPServer {
     if (!raw) return undefined;
     const configs = Array.isArray(raw) ? raw : [raw];
     const sorted = [...configs].sort((a, b) => (a.priority ?? 0) - (b.priority ?? 0));
-    const selected = sorted.find(c => !['oauth', 'session-cookie'].includes(c.type)) ?? sorted[0];
-    if (!selected || !['bearer', 'query', 'custom-header'].includes(selected.type)) return undefined;
+    const selected = sorted.find(c => ['bearer', 'query', 'custom-header'].includes(c.type));
+    if (!selected) return undefined;
     return {
       type: selected.type as UpstreamMcpAuthConfig['type'],
       header_name: selected.header_name,
@@ -1877,8 +1877,14 @@ export class MCPServer {
     if (this.httpTransport && sessionId && profileId) {
       const sessionToken = this.httpTransport.getSessionToken(profileId, sessionId);
       if (sessionToken) return sessionToken;
-      // Reject anonymous HTTP sessions when auth is configured (directly or inherited)
-      if (effectiveAuth) {
+      // Reject anonymous HTTP sessions when ANY auth is configured (directly or inherited).
+      // effectiveAuth is undefined for oauth/session-cookie-only interceptors (those types can't
+      // be forwarded), but the presence of auth config still signals the endpoint must be protected.
+      const interceptorsAuth = this.profile?.interceptors?.auth;
+      const hasAnyInterceptorsAuth = Array.isArray(interceptorsAuth)
+        ? interceptorsAuth.length > 0
+        : !!interceptorsAuth;
+      if (provider.auth || hasAnyInterceptorsAuth) {
         throw new UpstreamConnectionError(
           'upstream_mcp proxy requires an authenticated HTTP session — ' +
           'the inbound client must supply a verified token.',

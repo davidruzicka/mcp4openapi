@@ -4838,6 +4838,106 @@ paths:
     });
 
     // -------------------------------------------------------------------------
+    describe('getEffectiveUpstreamAuth', () => {
+      it('skips oauth and returns bearer when interceptors.auth = [oauth, bearer]', async () => {
+        const provider = { ...upstreamProvider }; // no provider.auth
+        (upstreamServer as any).profile.interceptors = {
+          auth: [
+            { type: 'oauth' },
+            { type: 'bearer', value_from_env: 'BEARER_TOKEN' },
+          ],
+        };
+        (upstreamServer as any).httpTransport = {
+          ...(upstreamServer as any).httpTransport,
+          getUpstreamMcpConfig: () => provider,
+          getSessionToken: () => 'client-token',
+        };
+        try {
+          await (upstreamServer as any).handleOtherRequest(
+            { jsonrpc: '2.0', id: '1', method: 'tools/list', params: {} },
+            'session-123',
+            'upstream-profile',
+          );
+          // effectiveAuth should be bearer; effectiveProvider passed to client should have auth.type === 'bearer'
+          expect(mockGetUpstreamClient).toHaveBeenCalledWith(
+            'session-123',
+            expect.objectContaining({ auth: expect.objectContaining({ type: 'bearer' }) }),
+            'client-token',
+          );
+        } finally {
+          delete (upstreamServer as any).profile.interceptors;
+        }
+      });
+
+      it('returns undefined when interceptors.auth = [session-cookie] only', () => {
+        const server = new MCPServer();
+        (server as any).profile = {
+          profile_name: 'p',
+          tools: [],
+          interceptors: { auth: [{ type: 'session-cookie' }] },
+        };
+        const result = (server as any).getEffectiveUpstreamAuth({ name: 'x', transport: { type: 'http-streamable', url: 'https://example.com' } });
+        expect(result).toBeUndefined();
+      });
+
+      it('priority sort: lower priority value wins — query(priority:1) before bearer(priority:5)', () => {
+        const server = new MCPServer();
+        (server as any).profile = {
+          profile_name: 'p',
+          tools: [],
+          interceptors: {
+            auth: [
+              { type: 'bearer', value_from_env: 'T', priority: 5 },
+              { type: 'query', value_from_env: 'T', query_param: 'token', priority: 1 },
+            ],
+          },
+        };
+        const result = (server as any).getEffectiveUpstreamAuth({ name: 'x', transport: { type: 'http-streamable', url: 'https://example.com' } });
+        expect(result?.type).toBe('query');
+      });
+
+      it('uses provider.auth directly and ignores interceptors.auth when provider.auth set', () => {
+        const server = new MCPServer();
+        (server as any).profile = {
+          profile_name: 'p',
+          tools: [],
+          interceptors: { auth: [{ type: 'bearer', value_from_env: 'INTERCEPTOR_TOKEN' }] },
+        };
+        const providerAuth = { type: 'bearer' as const, value_from_env: 'PROVIDER_TOKEN' };
+        const result = (server as any).getEffectiveUpstreamAuth({
+          name: 'x',
+          transport: { type: 'http-streamable', url: 'https://example.com' },
+          auth: providerAuth,
+        });
+        expect(result).toBe(providerAuth);
+      });
+
+      it('blocks anonymous HTTP session when interceptors.auth contains only oauth (gate bypass fix)', async () => {
+        const provider = { ...upstreamProvider }; // no provider.auth
+        (upstreamServer as any).profile.interceptors = {
+          auth: [{ type: 'oauth' }],
+        };
+        (upstreamServer as any).httpTransport = {
+          ...(upstreamServer as any).httpTransport,
+          getUpstreamMcpConfig: () => provider,
+          getSessionToken: () => undefined, // anonymous HTTP session
+        };
+        try {
+          const response = await (upstreamServer as any).handleOtherRequest(
+            { jsonrpc: '2.0', id: '1', method: 'tools/list', params: {} },
+            'session-123',
+            'upstream-profile',
+          ) as any;
+          expect(mockGetUpstreamClient).not.toHaveBeenCalled();
+          expect(response.error).toBeDefined();
+          expect(response.error.code).toBe(-32603);
+        } finally {
+          delete (upstreamServer as any).profile.interceptors;
+        }
+      });
+    });
+
+    // -------------------------------------------------------------------------
     describe('tool_prefix warning', () => {
       it('emits a warning when tool_prefix is configured', async () => {
         const mockLogger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
