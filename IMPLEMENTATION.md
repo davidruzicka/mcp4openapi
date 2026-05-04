@@ -432,6 +432,7 @@ scripts/
 - Origin validation with CIDR/wildcard support
 - Optional heartbeat for reverse proxies
 - Health endpoint (`/health`)
+- Optional HTML profile index with admin-supplied detail-card descriptions via `MCP4_PROFILES_DESCRIPTION`
 - Configurable via environment variables
 
 **Security**:
@@ -440,6 +441,7 @@ scripts/
 - CIDR ranges for corporate networks
 - Wildcard subdomains (`*.company.com`)
 - Session timeout enforcement
+- Startup validation for profile-index admin descriptions (JSON shape, duplicate resolution, length limit)
 
 ### Prometheus Metrics (Complete)
 

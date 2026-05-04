@@ -568,6 +568,7 @@ export MCP4_TOOLNAME_MAX=30
 - `MCP4_FILTER_MAX_VALUES`: Max values per filtering key (default: `10`)
 - `MCP4_HTTP_PROFILE_ROUTING`: Enable profile routing (`/profile/:id/mcp`). If enabled without a default profile, `/mcp` is not registered.
 - `MCP4_HTTP_PROFILE_INDEX`: Enable profile index on `GET /` for routed profiles.
+- `MCP4_PROFILES_DESCRIPTION`: Optional JSON object mapping profile id/name/alias to an admin-supplied HTML snippet shown in the HTML profile detail card before the profile description. Parsed once at startup, ignored for JSON index responses, and rejected on invalid JSON, non-string values, duplicate resolution conflicts, or values longer than `10000` characters.
 - `MCP4_ALLOW_PROFILES`: Comma-separated profile ids/names/aliases allowed for routed profiles.
 - `MCP4_ALLOW_PROFILES_REGEX`: Regex for allowed profile ids/names/aliases (applies only when routing is enabled).
 - `MCP4_HTTP_TENANTS_FILE`: Path to tenant selector config JSON.
@@ -597,6 +598,18 @@ npx mcp4openapi --transport http \
 ```bash
 curl -X POST http://localhost:3003/profile/mcp-profile-name/mcp -H "Content-Type: application/json" -d '{"jsonrpc":"2.0","id":1,"method":"initialize"}'
 ```
+
+**Profile index admin descriptions**:
+```bash
+export MCP4_HTTP_PROFILE_ROUTING=true
+export MCP4_HTTP_PROFILE_INDEX=true
+export MCP4_PROFILES_DESCRIPTION='{"gitlab":"<p><strong>Internal:</strong> Use SSO token.</p>","youtrack":"<p>Use permanent token from Hub.</p>"}'
+```
+
+Notes:
+- Keys are matched against `profileId`, `profileName`, and aliases.
+- The HTML is rendered only in the HTML profile index detail card on `GET /`, not in the JSON payload.
+- The value is rendered as raw HTML, so only trusted administrator-supplied content should be used.
 
 If `MCP4_PROFILE_PATH` (or `--profile-path`) is set, `/mcp` remains available alongside `/profile/:id/mcp`.
 
