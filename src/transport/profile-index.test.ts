@@ -879,6 +879,13 @@ describe('profile index helpers', () => {
     expect(html).toContain('"supportsFilterHeader":false');
     expect(html).toContain('if (parameter.supportsFilterHeader === false) continue;');
   });
+
+  it('hides filter cards for profiles with empty toolCatalog (guard code present in template)', async () => {
+    const template = await loadProfileIndexTemplate();
+
+    expect(template).toContain("if (catalog.length === 0) return '';");
+    expect(template).toContain("if (parameters.length === 0) return '';");
+  });
 });
 
 describe('adminDescription enrichment (Phase 03.2)', () => {
