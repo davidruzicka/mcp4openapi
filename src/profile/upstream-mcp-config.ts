@@ -108,8 +108,8 @@ function validateUpstreamAuth(auth: UpstreamMcpAuthConfig | undefined, path: str
     );
   }
 
-  if (!auth.value_from_env.trim()) {
-    throw new ValidationError(`${path}.value_from_env must not be empty`, { path: `${path}.value_from_env` });
+  if (auth.value_from_env !== undefined && !auth.value_from_env.trim()) {
+    throw new ValidationError(`${path}.value_from_env must not be empty when provided`, { path: `${path}.value_from_env` });
   }
 
   if (auth.type === 'custom-header') {
@@ -263,7 +263,7 @@ export function resolveUpstreamMcpConfig(
     tool_prefix: provider.tool_prefix?.trim(),
     auth: provider.auth ? {
       ...provider.auth,
-      value_from_env: provider.auth.value_from_env.trim(),
+      value_from_env: provider.auth.value_from_env?.trim(),
       header_name: provider.auth.header_name?.trim(),
       query_param: provider.auth.query_param?.trim(),
     } : undefined,

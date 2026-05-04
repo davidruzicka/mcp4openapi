@@ -50,7 +50,7 @@ import { OAUTH_RATE_LIMIT } from '../core/constants.js';
 import { HttpClient } from '../transport/interceptors.js';
 import { HttpClientFactory } from '../transport/http-client-factory.js';
 import { SchemaValidator } from '../validation/schema-validator.js';
-import type { Profile, ToolDefinition, AuthInterceptor, OAuthConfig, ProxyDownloadOperation, UpstreamMcpServerConfig } from '../types/profile.js';
+import type { Profile, ToolDefinition, AuthInterceptor, OAuthConfig, ProxyDownloadOperation, UpstreamMcpServerConfig, UpstreamMcpAuthConfig } from '../types/profile.js';
 import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { sanitizeToolList, isValidUpstreamToolName, applyProviderToolPolicy, isToolAllowedByProviderPolicy } from '../upstream/upstream-tool-sanitizer.js';
 import { UpstreamConnectionManager } from '../upstream/upstream-connection-manager.js';
@@ -1835,34 +1835,67 @@ export class MCPServer {
   }
 
   /**
-   * Extract the auth token to use for upstream MCP calls.
-   * Downstream client token takes precedence; value_from_env acts as local fallback
-   * only for non-HTTP contexts (stdio) where there is no session concept.
-   *
-   * Security invariant: for HTTP transport, value_from_env (server-held upstream credential)
-   * is NEVER used — an HTTP session with no verified client token is an anonymous session
-   * (e.g. allowed by hasServerEnvAuthToken on the inbound side) and must not receive
-   * privileged upstream access. This closes the open-proxy escalation path regardless of
-   * whether inbound auth is configured.
+   * Resolve the effective upstream auth config for a provider.
+   * If upstream_mcp.auth is explicitly set, use it as-is.
+   * Otherwise inherit from interceptors.auth using the same selection logic as
+   * AuthStrategyRegistry (priority sort, first non-oauth/session-cookie entry).
+   * Only bearer/query/custom-header types are inherited — oauth and session-cookie
+   * cannot be meaningfully forwarded to an upstream MCP server.
    */
-  private getUpstreamToken(sessionId: string | undefined, profileId: string | undefined, provider: UpstreamMcpServerConfig): string | undefined {
+  private getEffectiveUpstreamAuth(provider: UpstreamMcpServerConfig): UpstreamMcpAuthConfig | undefined {
+    if (provider.auth) return provider.auth;
+    const raw = this.profile?.interceptors?.auth;
+    if (!raw) return undefined;
+    const configs = Array.isArray(raw) ? raw : [raw];
+    const sorted = [...configs].sort((a, b) => (a.priority ?? 0) - (b.priority ?? 0));
+    const selected = sorted.find(c => ['bearer', 'query', 'custom-header'].includes(c.type));
+    if (!selected) return undefined;
+    return {
+      type: selected.type as UpstreamMcpAuthConfig['type'],
+      header_name: selected.header_name,
+      query_param: selected.query_param,
+      value_from_env: selected.value_from_env,
+    };
+  }
+
+  /**
+   * Extract the auth token to use for upstream MCP calls.
+   * On HTTP transport the downstream client's session token is always forwarded directly.
+   * On stdio, value_from_env from the effective auth config (upstream_mcp.auth or inherited
+   * from interceptors.auth) is used as the service-account credential.
+   *
+   * Security invariant: if any auth is configured (directly or inherited), an HTTP session
+   * with no verified client token is rejected — prevents anonymous clients from reaching
+   * privileged upstream resources.
+   */
+  private getUpstreamToken(
+    sessionId: string | undefined,
+    profileId: string | undefined,
+    provider: UpstreamMcpServerConfig,
+    effectiveAuth: UpstreamMcpAuthConfig | undefined,
+  ): string | undefined {
     if (this.httpTransport && sessionId && profileId) {
       const sessionToken = this.httpTransport.getSessionToken(profileId, sessionId);
       if (sessionToken) return sessionToken;
-      // HTTP session carries no verified client token — refuse to forward server-held
-      // upstream credentials to an anonymous caller.
-      if (provider.auth?.value_from_env) {
+      // Reject anonymous HTTP sessions when ANY auth is configured (directly or inherited).
+      // effectiveAuth is undefined for oauth/session-cookie-only interceptors (those types can't
+      // be forwarded), but the presence of auth config still signals the endpoint must be protected.
+      const interceptorsAuth = this.profile?.interceptors?.auth;
+      const hasAnyInterceptorsAuth = Array.isArray(interceptorsAuth)
+        ? interceptorsAuth.length > 0
+        : !!interceptorsAuth;
+      if (provider.auth || hasAnyInterceptorsAuth) {
         throw new UpstreamConnectionError(
-          'upstream_mcp.auth.value_from_env requires an authenticated HTTP session — ' +
-          'the inbound caller must supply a verified identity token.',
+          'upstream_mcp proxy requires an authenticated HTTP session — ' +
+          'the inbound client must supply a verified token.',
           provider.name,
         );
       }
       return undefined;
     }
-    // Non-HTTP path (stdio): no session concept; value_from_env allowed for service-account use.
-    if (provider.auth?.value_from_env) {
-      return process.env[provider.auth.value_from_env];
+    // Non-HTTP path (stdio): use value_from_env from effective auth (may come from interceptors.auth)
+    if (effectiveAuth?.value_from_env) {
+      return process.env[effectiveAuth.value_from_env];
     }
     return undefined;
   }
@@ -1890,8 +1923,10 @@ export class MCPServer {
       });
     }
     try {
-      const token = this.getUpstreamToken(sessionId, profileId, provider);
-      const client = await this.getUpstreamClientFn!(sessionId, provider, token);
+      const effectiveAuth = this.getEffectiveUpstreamAuth(provider);
+      const effectiveProvider = effectiveAuth !== provider.auth ? { ...provider, auth: effectiveAuth } : provider;
+      const token = this.getUpstreamToken(sessionId, profileId, provider, effectiveAuth);
+      const client = await this.getUpstreamClientFn!(sessionId, effectiveProvider, token);
       const result = await client.listTools();
       if (!result || typeof result !== 'object') {
         throw new UpstreamMalformedResponseError(
@@ -1984,8 +2019,10 @@ export class MCPServer {
     }
 
     try {
-      const token = this.getUpstreamToken(sessionId, profileId, provider);
-      const client = await this.getUpstreamClientFn!(sessionId, provider, token);
+      const effectiveAuth = this.getEffectiveUpstreamAuth(provider);
+      const effectiveProvider = effectiveAuth !== provider.auth ? { ...provider, auth: effectiveAuth } : provider;
+      const token = this.getUpstreamToken(sessionId, profileId, provider, effectiveAuth);
+      const client = await this.getUpstreamClientFn!(sessionId, effectiveProvider, token);
       const result = await (provider.timeout_ms !== undefined
         ? client.callTool({ name: toolName, arguments: args }, undefined, { timeout: provider.timeout_ms })
         : client.callTool({ name: toolName, arguments: args }));

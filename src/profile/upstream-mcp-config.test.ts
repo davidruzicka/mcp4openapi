@@ -98,6 +98,15 @@ describe('resolveUpstreamMcpConfig – validator error branches', () => {
     expect(() => resolveUpstreamMcpConfig(profile)).toThrow(/value_from_env must not be empty/);
   });
 
+  it('accepts bearer auth without value_from_env (HTTP session-passthrough)', () => {
+    const profile = makeProfile({
+      name: 'p1',
+      transport: { type: 'http-streamable', url: 'https://example.com/mcp' },
+      auth: { type: 'bearer' },
+    });
+    expect(() => resolveUpstreamMcpConfig(profile)).not.toThrow();
+  });
+
   it('rejects custom-header auth with unsafe header_name', () => {
     const profile = makeProfile({
       name: 'p1',

@@ -104,31 +104,59 @@ When `enterprise_authorization.mode` is `required`, HTTP initialization accepts 
 
 - `transport.type` must be `"http-streamable"`
 - `transport.url` must be an absolute `http` or `https` URL without inline credentials
-- `auth.type` may be `bearer`, `query`, or `custom-header`
-- `auth.value_from_env` names the env variable that holds the credential (token, header value, or query param value); inline secrets are not supported for any auth type. The downstream client token always takes precedence - `value_from_env` is used only as a local fallback when the client sends no token (e.g. server-side deployments sharing a fixed env secret)
+- `auth` is **optional**. When omitted, the auth format is inherited from `interceptors.auth` (see below).
+- `auth.type` may be `bearer`, `query`, or `custom-header`. Set explicitly only when the upstream expects a different format than inbound clients use.
+- `auth.value_from_env` names the env variable holding the credential — **stdio transport only**. On HTTP transport the downstream client's session token is always forwarded directly; `value_from_env` is never read.
 - `upstream_mcp_from_env` must point to a single JSON object and takes precedence over static `upstream_mcp`
 - `stdio` upstream definitions are intentionally rejected in this iteration so the later feature-gated implementation can add process lifecycle hardening separately
 
-Example:
+#### Auth inheritance from `interceptors.auth`
+
+When `upstream_mcp.auth` is omitted, the gateway inherits the auth format from `interceptors.auth` using the same priority-based selection as outbound OpenAPI calls. Only `bearer`, `query`, and `custom-header` types are inherited — `oauth` and `session-cookie` are not forwarded.
+
+**Common case — client Bearer token forwarded as Bearer to upstream (zero config):**
 
 ```json
 {
-  "upstream_mcp_from_env": "MCP4_UPSTREAM_MCP_JSON",
+  "interceptors": {
+    "auth": { "type": "bearer", "value_from_env": "MY_API_TOKEN" }
+  },
   "upstream_mcp": {
     "name": "remote-mcp",
-    "transport": {
-      "type": "http-streamable",
-      "url": "https://remote-mcp.example/mcp"
-    },
-    "auth": {
-      "type": "bearer",
-      "value_from_env": "REMOTE_MCP_TOKEN"
-    },
+    "transport": { "type": "http-streamable", "url": "https://remote-mcp.example/mcp" }
+  }
+}
+```
+
+The client's `Authorization: Bearer <token>` is extracted from the inbound request and forwarded as-is to the upstream. If the inbound request carries no token, the upstream connection is refused. On stdio, `value_from_env` from `interceptors.auth` is used as the service-account credential.
+
+**Override — upstream expects a different format than inbound clients:**
+
+```json
+{
+  "interceptors": {
+    "auth": { "type": "custom-header", "header_name": "X-Client-Key", "value_from_env": "CLIENT_KEY" }
+  },
+  "upstream_mcp": {
+    "name": "remote-mcp",
+    "transport": { "type": "http-streamable", "url": "https://remote-mcp.example/mcp" },
+    "auth": { "type": "bearer" }
+  }
+}
+```
+
+Clients authenticate with `X-Client-Key`; gateway forwards to upstream as `Authorization: Bearer`.
+
+**Explicit `value_from_env` on `upstream_mcp.auth` (stdio only):**
+
+```json
+{
+  "upstream_mcp": {
+    "name": "remote-mcp",
+    "transport": { "type": "http-streamable", "url": "https://remote-mcp.example/mcp" },
+    "auth": { "type": "bearer", "value_from_env": "UPSTREAM_TOKEN" },
     "tool_prefix": "remote",
-    "tools": {
-      "allow": ["github_*"],
-      "deny": ["admin_*"]
-    },
+    "tools": { "allow": ["github_*"], "deny": ["admin_*"] },
     "timeout_ms": 30000
   }
 }

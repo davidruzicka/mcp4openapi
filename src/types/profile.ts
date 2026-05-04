@@ -137,9 +137,13 @@ export interface AuthTokenConfig {
 /**
  * Upstream auth is intentionally narrower than inbound profile auth.
  * Secrets must be referenced via environment variables, never stored inline.
+ *
+ * value_from_env is only effective on stdio transport. On HTTP transport the
+ * downstream client's session Bearer token is always forwarded directly to the
+ * upstream; value_from_env is never read and may be omitted.
  */
 export interface UpstreamMcpAuthConfig extends AuthTokenConfig {
-  value_from_env: string;
+  value_from_env?: string;
 }
 
 export interface UpstreamMcpToolPolicy {
