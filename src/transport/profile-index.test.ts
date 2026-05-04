@@ -429,6 +429,7 @@ describe('profile index helpers', () => {
       { key: 'local', label: 'Local stdio' },
     ]);
     expect(profile.authTabs[0].label).toBe('Session cookie');
+    expect(profile.authTabs.every(t => t.key !== 'oauth')).toBe(true);
     expect(profile.snippets.find(s => s.key === 'vscode-session-cookie')).toBeUndefined();
     expect(profile.snippets.find(s => s.key === 'cursor-session-cookie')).toBeUndefined();
 
@@ -445,6 +446,68 @@ describe('profile index helpers', () => {
     expect(claudeLocalCli?.content).toContain('--env "N8N_NODES_BASE_URL=https://admin.isatky.cz"');
     expect(codexLocalToml?.content).toContain('env_vars = ["N8N_NODES_LOGIN_PASSWORD", "N8N_NODES_LOGIN_USER"]');
     expect(codexLocalToml?.content).toContain('N8N_NODES_BASE_URL = "https://admin.isatky.cz"');
+  });
+
+  it('emits authTabs=[none] for proxy profile with no interceptors.auth (regression: no OAuth leak)', () => {
+    const profiles: ListedProfileDetails[] = [
+      {
+        profileId: 'seznam-scif',
+        profileName: 'seznam-scif',
+        profileAliases: [],
+        description: 'MCP proxy profile for Seznam SCIF',
+        envVars: [],
+        authMethods: [],
+      },
+    ];
+
+    const { payload } = buildProfileIndexPayload(profiles, 'https://mcp.example.com', 'en');
+    const [profile] = payload.profiles;
+    expect(profile.authTabs).toHaveLength(1);
+    expect(profile.authTabs[0].key).toBe('none');
+    expect(profile.authTabs[0].label).toBe('No auth');
+    expect(profile.authTabs.every(t => t.key !== 'oauth')).toBe(true);
+  });
+
+  it('emits authTabs=[none] with Czech label for no-auth proxy profile', () => {
+    const profiles: ListedProfileDetails[] = [
+      {
+        profileId: 'seznam-ai-adoption',
+        profileName: 'seznam-ai-adoption',
+        profileAliases: [],
+        description: 'MCP proxy profile for Seznam AI Adoption',
+        envVars: [],
+        authMethods: [],
+      },
+    ];
+
+    const { payload } = buildProfileIndexPayload(profiles, 'https://mcp.example.com', 'cs');
+    const [profile] = payload.profiles;
+    expect(profile.authTabs).toHaveLength(1);
+    expect(profile.authTabs[0].key).toBe('none');
+    expect(profile.authTabs[0].label).toBe('Bez autentizace');
+    expect(profile.authTabs.every(t => t.key !== 'oauth')).toBe(true);
+  });
+
+  it('does not include oauth authTab even when upstream_mcp env vars are present', () => {
+    // Regression: upstream_mcp.auth env vars appear in profile.envVars but must NOT
+    // create an oauth auth tab — authMethods reflects only interceptors.auth.
+    const profiles: ListedProfileDetails[] = [
+      {
+        profileId: 'proxy-with-upstream-auth',
+        profileName: 'proxy-with-upstream-auth',
+        profileAliases: [],
+        description: 'Proxy with server-to-server upstream auth',
+        envVars: ['UPSTREAM_TOKEN'],
+        authMethods: [],
+      },
+    ];
+
+    const { payload } = buildProfileIndexPayload(profiles, 'https://mcp.example.com', 'en');
+    const [profile] = payload.profiles;
+    expect(profile.authTabs).toHaveLength(1);
+    expect(profile.authTabs[0].key).toBe('none');
+    expect(profile.authTabs.every(t => t.key !== 'oauth')).toBe(true);
+    expect(profile.authTabs.every(t => t.key !== 'bearer')).toBe(true);
   });
 
   it('renders template placeholders', () => {

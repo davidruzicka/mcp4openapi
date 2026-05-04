@@ -193,6 +193,27 @@ describe('profile-resolver', () => {
     expect(profiles[0].envVars).toContain('LEGACY_UPSTREAM_TOKEN');
   });
 
+  it('reports authMethods=[] and envVars=[] for upstream_mcp proxy with no auth anywhere', async () => {
+    const root = await createTempDir();
+    const profilesDir = path.join(root, 'profiles');
+
+    await writeJson(path.join(profilesDir, 'no-auth-proxy.json'), {
+      profile_name: 'seznam-scif',
+      profile_id: 'seznam-scif',
+      tools: [],
+      upstream_mcp: {
+        name: 'scif',
+        transport: { type: 'http-streamable', url: 'https://scif.example.com/mcp' },
+      },
+    });
+
+    const profiles = await listProfilesDetailed(profilesDir);
+    expect(profiles).toHaveLength(1);
+    expect(profiles[0].authMethods).toEqual([]);
+    expect(profiles[0].envVars).toEqual([]);
+    expect(profiles[0].oauthEnvVars).toEqual([]);
+  });
+
   it('returns specPath=undefined for upstream_mcp proxy profile with no openapi_spec_path', async () => {
     const root = await createTempDir();
     const profilesDir = path.join(root, 'profiles');
