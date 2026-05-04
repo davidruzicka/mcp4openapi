@@ -35,7 +35,7 @@ export const authTokenConfigSchema = z.object({
 });
 
 export const upstreamMcpAuthConfigSchema = authTokenConfigSchema.extend({
-    value_from_env: z.string()
+    value_from_env: z.string().optional()
 });
 
 export const resourceFetchDefinitionSchema = z.object({

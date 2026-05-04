@@ -105,7 +105,7 @@ When `enterprise_authorization.mode` is `required`, HTTP initialization accepts 
 - `transport.type` must be `"http-streamable"`
 - `transport.url` must be an absolute `http` or `https` URL without inline credentials
 - `auth.type` may be `bearer`, `query`, or `custom-header`
-- `auth.value_from_env` names the env variable that holds the credential (token, header value, or query param value); inline secrets are not supported for any auth type. The downstream client token always takes precedence - `value_from_env` is used only as a local fallback when the client sends no token (e.g. server-side deployments sharing a fixed env secret)
+- `auth.value_from_env` names the env variable holding the credential — **stdio transport only**. On HTTP transport the downstream client's session Bearer token is always forwarded directly to the upstream; `value_from_env` is never read and may be omitted. Inline secrets are not supported for any auth type.
 - `upstream_mcp_from_env` must point to a single JSON object and takes precedence over static `upstream_mcp`
 - `stdio` upstream definitions are intentionally rejected in this iteration so the later feature-gated implementation can add process lifecycle hardening separately
 
@@ -133,6 +133,23 @@ Example:
   }
 }
 ```
+
+For HTTP session-passthrough deployments (client's own token forwarded upstream), omit `value_from_env`:
+
+```json
+{
+  "upstream_mcp": {
+    "name": "remote-mcp",
+    "transport": {
+      "type": "http-streamable",
+      "url": "https://remote-mcp.example/mcp"
+    },
+    "auth": { "type": "bearer" }
+  }
+}
+```
+
+The client's `Authorization: Bearer <token>` sent to the gateway is forwarded as-is to the upstream. If the inbound request carries no token, the upstream connection is refused.
 
 **Profile selection**: If you set `profile_id` (or `profile_aliases`) and `openapi_spec_path`, you can launch the server with `--profile <id>` or `MCP4_PROFILE=<id>` without setting `--openapi-spec-path` or `MCP4_OPENAPI_SPEC_PATH`.
 

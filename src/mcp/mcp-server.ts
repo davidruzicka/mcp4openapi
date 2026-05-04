@@ -1849,12 +1849,14 @@ export class MCPServer {
     if (this.httpTransport && sessionId && profileId) {
       const sessionToken = this.httpTransport.getSessionToken(profileId, sessionId);
       if (sessionToken) return sessionToken;
-      // HTTP session carries no verified client token — refuse to forward server-held
-      // upstream credentials to an anonymous caller.
+      // HTTP session carries no verified client token — refuse to connect upstream
+      // on behalf of an anonymous caller. value_from_env is stdio-only and is never
+      // read on HTTP transport; its presence here signals an explicit auth requirement.
       if (provider.auth?.value_from_env) {
         throw new UpstreamConnectionError(
-          'upstream_mcp.auth.value_from_env requires an authenticated HTTP session — ' +
-          'the inbound caller must supply a verified identity token.',
+          'upstream_mcp proxy requires an authenticated HTTP session — ' +
+          'the inbound client must supply a Bearer token ' +
+          '(value_from_env has no effect on HTTP transport).',
           provider.name,
         );
       }
