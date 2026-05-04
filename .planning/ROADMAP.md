@@ -2,7 +2,7 @@
 
 ## Overview
 
-Transform mcp4openapi from an OpenAPI-to-MCP adapter into an enterprise MCP gateway that proxies tool calls to upstream remote HTTP MCP servers. The build order follows the dependency graph: upstream session infrastructure first (everything depends on it), then tool discovery and call forwarding, then API key auth gate, then OIDC JWT auth gate, then observability as a cross-cutting cap. Each phase delivers a coherent, testable capability on top of the existing HTTP transport, session management, and interceptor chain.
+Transform mcp4openapi from an OpenAPI-to-MCP adapter into an enterprise MCP gateway that proxies tool calls to upstream remote HTTP MCP servers. The build order follows the dependency graph: upstream session infrastructure first (everything depends on it), then tool discovery and call forwarding, then API key auth gate, then observability, then upstream OAuth proxy (encrypted token payload, refresh token support), then OIDC JWT auth gate. Each phase delivers a coherent, testable capability on top of the existing HTTP transport, session management, and interceptor chain.
 
 ## Phases
 
@@ -15,8 +15,9 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [ ] **Phase 1: Upstream Session Foundation** - Per-session upstream MCP connections with credential forwarding, heartbeats, cleanup, and typed error handling
 - [ ] **Phase 2: Tool Discovery and Call Proxy** - tools/list and tools/call forwarded to upstream MCP servers with sanitization and notification relay
 - [ ] **Phase 3: Client Authentication Gate (API Keys)** - API key identity verification before any upstream resource is consumed
-- [ ] **Phase 4: Client Authentication Gate (OIDC JWT)** - JWT/JWKS identity verification, OIDC discovery, session identity completion
-- [ ] **Phase 5: Observability** - Structured audit logging, Prometheus gateway metrics, and health/readiness endpoints
+- [ ] **Phase 4: Observability** - Structured audit logging, Prometheus gateway metrics, and health/readiness endpoints
+- [ ] **Phase 5: Upstream OAuth Proxy** - Gateway-initiated OAuth authorization code flow against upstream MCP servers; encrypted refresh token payload in gateway token; zero-reauth on restart
+- [ ] **Phase 6: Client Authentication Gate (OIDC JWT)** - JWT/JWKS identity verification, OIDC discovery, session identity completion
 
 ## Phase Details
 
@@ -94,7 +95,38 @@ Plans:
 - [x] 03.1-02-PLAN.md — Call-site cleanup in mcp-server.ts, http-transport.ts, profile-resolver.ts, generic-profile.test.ts, and the in-repo profile fixture (singular access end-to-end; legacy-array tolerance preserved in list-view UX per Open Question 1)
 - [x] 03.1-03-PLAN.md — Test fixture migration across 5 test files (~112 sites), D-01 + D-03 negative test additions, dead loader-D-03 + empty-array tests removed; phase gate via full npm test green
 
-### Phase 4: Client Authentication Gate (OIDC JWT)
+### Phase 4: Observability
+**Goal**: Every tool call is audited with identity and outcome; operators have metrics and health endpoints to monitor the gateway
+**Depends on**: Phase 2, Phase 3
+**Requirements**: OBS-01, OBS-02, OBS-03
+**Success Criteria** (what must be TRUE):
+  1. Every tools/call request produces a structured audit log entry containing session ID, resolved client identity, tool name, upstream server URL (host only), invocation outcome, and wall-clock duration
+  2. Prometheus metrics expose per-upstream and per-client-identity counters and latency histograms for tools/list and tools/call requests, extending the existing prom-client registry
+  3. GET /health returns 200 when the server is running; GET /ready returns 200 when at least one profile is loaded and the server can accept sessions; both endpoints are unauthenticated
+**Plans**: TBD
+
+Plans:
+- [ ] 04-01: TBD
+- [ ] 04-02: TBD
+
+### Phase 5: Upstream OAuth Proxy
+**Goal**: Non-technical users can authorize gateway access to upstream MCP servers via a single OAuth browser confirmation; upstream tokens survive gateway restarts via encrypted payload in the gateway token
+**Depends on**: Phase 1, Phase 3
+**Requirements**: AUTH-04 (new)
+**Success Criteria** (what must be TRUE):
+  1. When a profile has an OAuth-protected upstream, connecting the profile in an MCP client (e.g. Cursor) triggers a single browser OAuth flow against the upstream's authorization server; no manual token handling required
+  2. The upstream access token and refresh token are encrypted (AES-GCM, key from env var) and embedded in the gateway token issued to the client; gateway restart does not require re-authorization as long as the refresh token is valid
+  3. When the upstream access token is expired, the gateway silently exchanges the refresh token for a new access token and re-issues the gateway token to the client without user interaction
+  4. Upstream OAuth configuration (client_id, client_secret, authorization_endpoint, token_endpoint, scopes) is supplied per-profile in the profile config; gateway acts as confidential OAuth client
+  5. SSRF validation applied to all upstream OAuth endpoint URLs; redirect URI registered with upstream matches gateway's configured base URL
+**Plans**: TBD
+
+Plans:
+- [ ] 05-01: TBD
+- [ ] 05-02: TBD
+- [ ] 05-03: TBD
+
+### Phase 6: Client Authentication Gate (OIDC JWT)
 **Goal**: Clients bearing OIDC JWTs are validated against a JWKS endpoint; resolved identity completes AUTH-03
 **Depends on**: Phase 3
 **Requirements**: AUTH-01, AUTH-03 (complete)
@@ -105,33 +137,20 @@ Plans:
 **Plans**: TBD
 
 Plans:
-- [ ] 04-01: ClientAuthJwtConfig types, oidc-discovery utility, EnterpriseAuthProvider refactor (AUTH-01)
-- [ ] 04-02: JWT path in ClientAuthGate, JwksCache wiring, integration tests (AUTH-01, AUTH-03)
-- [ ] 04-03: SasankaApiKeyStore (token-passthrough via /api/v1/users/me), sasanka variant in ApiKeyStoreConfig, factory extension (AUTH-02)
-
-### Phase 5: Observability
-**Goal**: Every tool call is audited with identity and outcome; operators have metrics and health endpoints to monitor the gateway
-**Depends on**: Phase 2, Phase 4
-**Requirements**: OBS-01, OBS-02, OBS-03
-**Success Criteria** (what must be TRUE):
-  1. Every tools/call request produces a structured audit log entry containing session ID, resolved client identity, tool name, upstream server URL (host only), invocation outcome, and wall-clock duration
-  2. Prometheus metrics expose per-upstream and per-client-identity counters and latency histograms for tools/list and tools/call requests, extending the existing prom-client registry
-  3. GET /health returns 200 when the server is running; GET /ready returns 200 when at least one profile is loaded and the server can accept sessions; both endpoints are unauthenticated
-**Plans**: TBD
-
-Plans:
-- [ ] 05-01: TBD
-- [ ] 05-02: TBD
+- [ ] 06-01: ClientAuthJwtConfig types, oidc-discovery utility, EnterpriseAuthProvider refactor (AUTH-01)
+- [ ] 06-02: JWT path in ClientAuthGate, JwksCache wiring, integration tests (AUTH-01, AUTH-03)
+- [ ] 06-03: SasankaApiKeyStore (token-passthrough via /api/v1/users/me), sasanka variant in ApiKeyStoreConfig, factory extension (AUTH-02)
 
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5
+Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Upstream Session Foundation | 5/5 | Complete | 2026-03-30 |
 | 2. Tool Discovery and Call Proxy | 3/3 | Complete | 2026-03-30 |
-| 3. Client Auth Gate (API Keys) | 0/3 | Not started | - |
-| 4. Client Auth Gate (OIDC JWT) | 0/2 | Not started | - |
-| 5. Observability | 0/2 | Not started | - |
+| 3. Client Auth Gate (API Keys) | 3/3 | Complete | 2026-04-30 |
+| 4. Observability | 0/2 | Not started | - |
+| 5. Upstream OAuth Proxy | 0/3 | Not started | - |
+| 6. Client Auth Gate (OIDC JWT) | 0/3 | Not started | - |
