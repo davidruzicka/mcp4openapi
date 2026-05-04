@@ -18,6 +18,11 @@ import { MCPServerManager } from '../mcp/mcp-server-manager.js';
 import { getHttpProfileRoutingErrorMessage } from '../profile/startup-validation.js';
 import { listProfiles } from '../profile/profile-resolver.js';
 import { resolveStartupProfile } from '../profile/startup-profile.js';
+import {
+  parseProfilesDescriptionEnv,
+  resolveProfileAdminDescriptions,
+  PROFILES_DESCRIPTION_ENV_VAR,
+} from '../profile/profile-description-env.js';
 import { isProfileAllowed, parseProfileAllowlistConfig } from '../profile/profile-allowlist.js';
 import { SSRFValidator } from '../security/ssrf-validator.js';
 import { parseOAuthMetadataEndpoints } from '../auth/oauth-metadata.js';
@@ -306,6 +311,34 @@ export async function main() {
 
       httpTransport.setProfileContextProvider(async (id) => manager.getProfileContext(id));
       httpTransport.setProfileIndexProvider(async () => registry.listProfilesForIndex());
+
+      // Phase 03.2: parse MCP4_PROFILES_DESCRIPTION at startup, resolve against the
+      // current profile catalog, and plumb the resulting per-profile-id map down to the
+      // HTTP transport so the HTML index detail-card can render admin descriptions
+      // (D-01 / D-04 / D-05 / D-07 / D-08 / D-09). Fail-fast on bad input — the
+      // surrounding try/catch handles process.exit on ConfigurationError.
+      const profilesDescriptionsRaw = process.env[PROFILES_DESCRIPTION_ENV_VAR];
+      const parsedProfileDescriptions = parseProfilesDescriptionEnv(profilesDescriptionsRaw);
+      if (parsedProfileDescriptions !== undefined) {
+        const profilesForResolution = await registry.listProfilesForIndex();
+        const resolvedAdminDescriptions = resolveProfileAdminDescriptions(
+          parsedProfileDescriptions,
+          profilesForResolution,
+        );
+        httpTransport.setProfileAdminDescriptions(
+          resolvedAdminDescriptions.size > 0 ? resolvedAdminDescriptions : null,
+        );
+        if (resolvedAdminDescriptions.size === 0) {
+          logger.warn('MCP4_PROFILES_DESCRIPTION set but no profiles matched', {
+            keysProvided: parsedProfileDescriptions.size,
+          });
+        } else {
+          logger.info('MCP4_PROFILES_DESCRIPTION loaded', {
+            keysProvided: parsedProfileDescriptions.size,
+            profilesEnriched: resolvedAdminDescriptions.size,
+          });
+        }
+      }
 
       httpTransport.setMessageHandler(async (message, sessionId, profileId) => {
         if (!profileId) {

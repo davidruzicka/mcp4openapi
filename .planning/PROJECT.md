@@ -39,6 +39,7 @@ authenticate, authorize, audit, and proxy every tool call in the company.
 - ✓ Upstream tool discovery and proxy (Phase 02) - `tools/list` and `tools/call` forwarded to correct upstream provider; upstream tools namespaced by provider; `NotificationQueue` with TTL eviction for `tools/list_changed` replay on reconnect; `sendToClient` SSE real-time dispatch
 - ✓ API key authentication gate (Phase 03) - inbound M2M clients validated via inline env-var API keys before session establishment; `ClientAuthGate` runs after enterprise auth, before any upstream connection; `SessionData.clientPrincipal` populated with resolved identity (`subject`, `authType`, `scopes`); HMAC-SHA256 timing-safe comparison; fail-fast profile-load validator
 - ✓ upstream_mcp singular constraint (Phase 03.1) - Profile.upstream_mcp narrowed from UpstreamMcpServerConfig[] to UpstreamMcpServerConfig; Zod schema rejects array shape at parse time with migration hint; all call sites (mcp-server.ts, http-transport.ts, profile-resolver.ts) narrowed; BREAKING CHANGE: profile JSON must use `upstream_mcp: {...}` not `upstream_mcp: [{...}]`
+- ✓ Admin-supplied HTML profile descriptions (Phase 03.2) - `MCP4_PROFILES_DESCRIPTION` env var (JSON object: profile key → HTML string) parsed once at startup; keys matched against profileId/profileName/aliases; resolved adminDescription stored per-profile and rendered raw (no escaping) in HTML index detail card before the profile's own description; duplicate-key resolution and invalid JSON cause process exit at startup (fail-fast); sidebar list view unchanged
 
 ### Active
 - [ ] Upstream tool discovery and proxy - tools/list and tools/call forwarded to correct upstream
@@ -110,7 +111,7 @@ authenticate, authorize, audit, and proxy every tool call in the company.
 | Tool namespacing by upstream provider | Prevents tool name collisions across providers; makes audit logs and policy rules unambiguous | - Pending |
 
 ---
-*Last updated: 2026-05-02 after Phase 03.1 completion — upstream_mcp narrowed from array to singular; BREAKING CHANGE for profile JSON format*
+*Last updated: 2026-05-03 after Phase 03.2 completion — MCP4_PROFILES_DESCRIPTION env var for admin HTML profile descriptions; fail-fast startup validation; raw-HTML rendering in detail card*
 
 ## Evolution
 

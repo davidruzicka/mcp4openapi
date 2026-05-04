@@ -136,6 +136,7 @@ export class HttpTransport {
   private profileHintsByClient: Map<string, { profileId: string; lastSeen: number }> = new Map();
   private static readonly PROFILE_HINT_TTL_MS = 10 * 60 * 1000;
   private profileIndexProvider: (() => Promise<ListedProfileDetails[]>) | null = null;
+  private profileAdminDescriptions: Map<string, string> | null = null;
   private ssrfValidator: SSRFValidator;
   private rawTenantConfig: HttpTenantsConfig | null;
   private readonly enterpriseRuntimeConfig: Required<EnterpriseAuthorizationRuntimeConfig>;
@@ -231,6 +232,10 @@ export class HttpTransport {
 
   setProfileIndexProvider(provider: (() => Promise<ListedProfileDetails[]>) | null): void {
     this.profileIndexProvider = provider;
+  }
+
+  setProfileAdminDescriptions(map: Map<string, string> | null): void {
+    this.profileAdminDescriptions = map;
   }
 
   /**
@@ -1679,10 +1684,19 @@ export class HttpTransport {
 
     const profilesWithTenantSummary = await this.enrichProfilesForIndexWithTenants(profiles);
     const origin = this.getRequestOrigin(req);
-    const { payload, templateData } = buildProfileIndexPayload(profilesWithTenantSummary, origin, locale);
+    const { payload, templateData } = buildProfileIndexPayload(
+      profilesWithTenantSummary,
+      origin,
+      locale,
+      this.profileAdminDescriptions ?? undefined
+    );
 
     if (prefersJson) {
-      res.json(payload);
+      const safePayload = {
+        ...payload,
+        profiles: payload.profiles.map(({ adminDescription: _omit, ...rest }) => rest),
+      };
+      res.json(safePayload);
       return;
     }
 
@@ -1694,7 +1708,7 @@ export class HttpTransport {
     res.setHeader('Cache-Control', 'no-store');
     res.setHeader(
       'Content-Security-Policy',
-      `default-src 'self'; frame-ancestors 'none'; object-src 'none'; base-uri 'self'; script-src 'self' 'nonce-${nonce}'; style-src 'self' 'nonce-${nonce}'`
+      `default-src 'self'; frame-ancestors 'none'; object-src 'none'; base-uri 'self'; script-src 'self' 'nonce-${nonce}'; style-src 'self' 'nonce-${nonce}'; img-src 'self' data:; connect-src 'none'`
     );
     res.send(html);
   }

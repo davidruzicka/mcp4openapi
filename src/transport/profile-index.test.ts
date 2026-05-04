@@ -1,3 +1,6 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, it, expect } from 'vitest';
 import {
   buildProfileIndexPayload,
@@ -812,5 +815,209 @@ describe('profile index helpers', () => {
     expect(html).toContain('"supportsFilterHeader":true');
     expect(html).toContain('"supportsFilterHeader":false');
     expect(html).toContain('if (parameter.supportsFilterHeader === false) continue;');
+  });
+});
+
+describe('adminDescription enrichment (Phase 03.2)', () => {
+  const fixture: ListedProfileDetails[] = [
+    {
+      profileId: 'gitlab',
+      profileName: 'gitlab',
+      profileAliases: ['gl'],
+      description: 'GitLab profile description',
+      envVars: ['GITLAB_TOKEN'],
+      authMethods: [{ type: 'bearer', valueFromEnv: 'GITLAB_TOKEN' }],
+    },
+    {
+      profileId: 'github',
+      profileName: 'github',
+      profileAliases: [],
+      description: 'GitHub profile description',
+      envVars: ['GITHUB_TOKEN'],
+      authMethods: [{ type: 'bearer', valueFromEnv: 'GITHUB_TOKEN' }],
+    },
+  ];
+
+  it('D-10 (back-compat): omitting adminDescriptions arg leaves adminDescription undefined', () => {
+    const { payload } = buildProfileIndexPayload(fixture, 'http://localhost:3003', 'en');
+    for (const p of payload.profiles) {
+      expect(p.adminDescription).toBeUndefined();
+    }
+  });
+
+  it('D-08 / D-10: passing undefined adminDescriptions leaves adminDescription undefined', () => {
+    const { payload } = buildProfileIndexPayload(fixture, 'http://localhost:3003', 'en', undefined);
+    for (const p of payload.profiles) {
+      expect(p.adminDescription).toBeUndefined();
+    }
+  });
+
+  it('D-10: matching map key sets adminDescription to the raw HTML value', () => {
+    const map = new Map<string, string>([['gitlab', '<b>hi</b>']]);
+    const { payload } = buildProfileIndexPayload(fixture, 'http://localhost:3003', 'en', map);
+    const gitlab = payload.profiles.find(p => p.profileId === 'gitlab');
+    const github = payload.profiles.find(p => p.profileId === 'github');
+    expect(gitlab?.adminDescription).toBe('<b>hi</b>');
+    expect(github?.adminDescription).toBeUndefined();
+  });
+
+  it('D-09: map keys with no matching profileId do not enrich any profile', () => {
+    const map = new Map<string, string>([['nonexistent', 'orphan']]);
+    const { payload } = buildProfileIndexPayload(fixture, 'http://localhost:3003', 'en', map);
+    for (const p of payload.profiles) {
+      expect(p.adminDescription).toBeUndefined();
+    }
+  });
+
+  it('D-06 / D-12: raw HTML survives the safeJsonForHtml embed in templateData.profile_data', () => {
+    const map = new Map<string, string>([['gitlab', '<a href="https://x.example/">link</a>']]);
+    const { templateData } = buildProfileIndexPayload(fixture, 'http://localhost:3003', 'en', map);
+    // safeJsonForHtml escapes ALL "<" → "<" to prevent XSS via HTML tag injection.
+    // The value is embedded in a JSON string inside the HTML, so angle brackets must be escaped.
+    // Verify the admin description value is present in the payload (with escaping applied).
+    expect(templateData.profile_data).toContain('\\u003ca href=');
+    // The closing tag is also escaped. Verify the structure is there.
+    expect(templateData.profile_data).toContain('\\u003c/a>');
+    // ">" is NOT unicode-escaped — safeJsonForHtml only escapes "<", not ">".
+    expect(templateData.profile_data).not.toContain('\\u003e');
+  });
+
+  it('D-10: empty-string admin description flows through to enrichment as empty string', () => {
+    const map = new Map<string, string>([['gitlab', '']]);
+    const { payload } = buildProfileIndexPayload(fixture, 'http://localhost:3003', 'en', map);
+    const gitlab = payload.profiles.find(p => p.profileId === 'gitlab');
+    expect(gitlab?.adminDescription).toBe('');
+  });
+
+  it('D-08: empty Map (defined but empty) leaves adminDescription undefined', () => {
+    const { payload } = buildProfileIndexPayload(fixture, 'http://localhost:3003', 'en', new Map());
+    for (const p of payload.profiles) {
+      expect(p.adminDescription).toBeUndefined();
+    }
+  });
+
+  it('D-11: html/profile-index.html renderList body does NOT reference adminDescription', () => {
+    // Why: D-11 forbids the sidebar list item from showing the admin description.
+    // Lock this with a structural check on the template so a future edit cannot regress it.
+    const moduleDir = path.dirname(fileURLToPath(import.meta.url));
+    // profile-index.test.ts lives at src/transport/, template lives at <repo>/html/profile-index.html
+    let dir = moduleDir;
+    while (!fs.existsSync(path.join(dir, 'package.json'))) {
+      const parent = path.dirname(dir);
+      if (parent === dir) throw new Error('repo root not found');
+      dir = parent;
+    }
+    const html = fs.readFileSync(path.join(dir, 'html', 'profile-index.html'), 'utf-8');
+    const listStart = html.indexOf('function renderList(');
+    expect(listStart).toBeGreaterThan(-1);
+    // Slice from `function renderList(` to the next `function ` after it.
+    const afterListStart = listStart + 'function renderList('.length;
+    const nextFnRel = html.slice(afterListStart).search(/\n\s{6}function\s/);
+    expect(nextFnRel).toBeGreaterThan(-1);
+    const renderListBody = html.slice(listStart, afterListStart + nextFnRel);
+    expect(renderListBody).not.toContain('adminDescription');
+  });
+});
+
+describe('Phase 03.2 HTML rendering', () => {
+  function repoRoot(): string {
+    const moduleDir = path.dirname(fileURLToPath(import.meta.url));
+    let dir = moduleDir;
+    while (!fs.existsSync(path.join(dir, 'package.json'))) {
+      const parent = path.dirname(dir);
+      if (parent === dir) throw new Error('repo root not found');
+      dir = parent;
+    }
+    return dir;
+  }
+
+  function readTemplate(): string {
+    return fs.readFileSync(path.join(repoRoot(), 'html', 'profile-index.html'), 'utf-8');
+  }
+
+  function sliceRenderDetail(html: string): string {
+    const start = html.indexOf('function renderDetail(');
+    if (start < 0) throw new Error('renderDetail not found');
+    const after = start + 'function renderDetail('.length;
+    // Match the next function definition at the same nesting (6 leading spaces) — same heuristic
+    // used by the renderList grep test added in Plan 02.
+    const nextRel = html.slice(after).search(/\n\s{6}function\s/);
+    if (nextRel < 0) throw new Error('end of renderDetail not found');
+    return html.slice(start, after + nextRel);
+  }
+
+  it('D-06 / D-12: raw HTML in adminDescription survives end-to-end through renderProfileIndexHtml', async () => {
+    const profiles: ListedProfileDetails[] = [
+      {
+        profileId: 'gitlab',
+        profileName: 'gitlab',
+        profileAliases: [],
+        description: 'GitLab',
+        envVars: ['GITLAB_TOKEN'],
+        authMethods: [{ type: 'bearer', valueFromEnv: 'GITLAB_TOKEN' }],
+      },
+    ];
+    const adminDescriptions = new Map<string, string>([
+      ['gitlab', '<a href="https://x.example/">link</a>'],
+    ]);
+    const { templateData } = buildProfileIndexPayload(
+      profiles,
+      'http://localhost:3003',
+      'en',
+      adminDescriptions,
+    );
+    const template = await loadProfileIndexTemplate();
+    const rendered = renderProfileIndexHtml(template, templateData, 'test-nonce');
+
+    // Why: profile_data is embedded as a JSON string literal inside a <script> tag.
+    // safeJsonForHtml escapes ALL "<" to "<" (6 literal chars) to prevent HTML tag injection.
+    // JSON also escapes double quotes inside the string to \". ">" is NOT escaped (only "<" is).
+    // So the literal we expect in the rendered HTML is:
+    //   <a href=\"https://x.example/\">link</a>
+    // This string proves raw HTML survives — no &lt;, no &amp;quot;.
+    expect(rendered).toContain('\\u003ca href=\\"https://x.example/\\">link\\u003c/a>');
+    // Negative: must NOT contain any HTML-entity-encoded form of the link.
+    expect(rendered).not.toContain('&lt;a href');
+    expect(rendered).not.toContain('&amp;lt;a href');
+  });
+
+  it('D-12: renderDetail interpolates profile.adminDescription WITHOUT escapeHtml wrapper', () => {
+    const html = readTemplate();
+    const renderDetailBody = sliceRenderDetail(html);
+    // The field must be referenced at least once.
+    expect(renderDetailBody).toContain('profile.adminDescription');
+    // It must NEVER be wrapped in escapeHtml in the renderDetail body.
+    expect(renderDetailBody).not.toMatch(/escapeHtml\(\s*profile\.adminDescription/);
+  });
+
+  it('D-10: admin-description div appears BEFORE the existing escaped description div', () => {
+    const html = readTemplate();
+    const renderDetailBody = sliceRenderDetail(html);
+    const adminIdx = renderDetailBody.indexOf('profile-admin-description');
+    const descIdx = renderDetailBody.indexOf('${escapeHtml(description)}');
+    expect(adminIdx).toBeGreaterThan(-1);
+    expect(descIdx).toBeGreaterThan(-1);
+    expect(adminIdx).toBeLessThan(descIdx);
+  });
+
+  it('D-08 / truthy guard: undefined adminDescription absent from embedded profile_data JSON', async () => {
+    // The template JS source always contains the string "profile-admin-description" as a literal,
+    // so we cannot check rendered HTML directly. Instead we verify that when adminDescription is
+    // undefined, JSON.stringify omits the key from the profile_data blob — meaning the client-side
+    // truthy guard `profile.adminDescription ?` will evaluate falsy and emit no div.
+    const profiles: ListedProfileDetails[] = [
+      {
+        profileId: 'gitlab',
+        profileName: 'gitlab',
+        profileAliases: [],
+        description: 'GitLab',
+        envVars: ['GITLAB_TOKEN'],
+        authMethods: [{ type: 'bearer', valueFromEnv: 'GITLAB_TOKEN' }],
+      },
+    ];
+    const { templateData } = buildProfileIndexPayload(profiles, 'http://localhost:3003', 'en');
+    const template = await loadProfileIndexTemplate();
+    const rendered = renderProfileIndexHtml(template, templateData, 'test-nonce');
+    expect(rendered).not.toContain('"adminDescription"');
   });
 });

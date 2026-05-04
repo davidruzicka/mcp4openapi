@@ -1964,6 +1964,7 @@
           <div class="detail-card">
             <h3>${escapeHtml(i18n.profileLabel || '')}</h3>
             <div class="profile-title">${escapeHtml(title)}</div>
+            ${profile.adminDescription ? `<div class="profile-subtitle profile-admin-description">${profile.adminDescription}</div>` : ''}
             <div class="profile-subtitle">${escapeHtml(description)}</div>
           </div>
           <div class="detail-card">

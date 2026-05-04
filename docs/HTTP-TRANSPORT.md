@@ -127,6 +127,7 @@ Routes:
 - Legacy alias: `POST|GET|DELETE /profile/:profileId/sse`
 - Optional HTML profile index: `GET /` (when `MCP4_HTTP_PROFILE_INDEX=true`)
   - Keeps current API endpoint display semantics (env/default source)
+  - Can show admin-supplied raw HTML descriptions from `MCP4_PROFILES_DESCRIPTION` in the detail card before the profile description
   - When tenant config is available for a profile, shows tenant availability and tenant list per profile
   - Includes interactive tenant picker for supported remote snippet formats and injects `X-Mcp4-Tenant-Id` into copied snippet output
   - Includes a per-profile tool catalog with interactive builders for `X-Mcp4-Tools` and `X-Mcp4-Params`
@@ -144,6 +145,21 @@ Default profile behavior:
 Allowlist controls (only when routing is enabled):
 - `MCP4_ALLOW_PROFILES`: Comma-separated profile ids/names/aliases that can be routed.
 - `MCP4_ALLOW_PROFILES_REGEX`: Regex pattern that can match profile ids/names/aliases.
+
+Profile index admin descriptions:
+- `MCP4_PROFILES_DESCRIPTION`: Optional JSON object mapping `profileId`, `profileName`, or alias to an HTML snippet rendered in the HTML detail card before the profile's own description.
+- Parsed once at startup and resolved against the loaded profile catalog.
+- Startup fails fast on invalid JSON, non-object payloads, non-string values, duplicate keys resolving to the same profile, or values longer than `10000` characters.
+- Keys that do not match any loaded profile are ignored.
+- The HTML is rendered only for the HTML index response on `GET /`; the JSON profile index omits this field.
+- The content is rendered as raw HTML, so it must be treated as trusted administrator input.
+
+Example:
+```bash
+export MCP4_HTTP_PROFILE_ROUTING=true
+export MCP4_HTTP_PROFILE_INDEX=true
+export MCP4_PROFILES_DESCRIPTION='{"gitlab":"<p><strong>Internal:</strong> Use SSO token.</p>","gl":"<p>Alias-based entry also works.</p>"}'
+```
 
 OAuth and metadata endpoints are scoped per profile when routing is enabled:
 - `/.well-known/oauth-protected-resource/mcp` -> `/profile/:profileId/.well-known/oauth-protected-resource/mcp`

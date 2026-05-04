@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: Ready to plan
-stopped_at: Phase 03.2 context gathered
-last_updated: "2026-05-03T20:29:04.939Z"
+stopped_at: Completed 03.2-03-PLAN.md
+last_updated: "2026-05-03T22:56:32.129Z"
 progress:
   total_phases: 7
-  completed_phases: 4
-  total_plans: 14
-  completed_plans: 14
+  completed_phases: 5
+  total_plans: 17
+  completed_plans: 17
 ---
 
 # Project State
@@ -19,11 +19,11 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-26)
 
 **Core value:** A security boundary between internal AI clients and all upstream MCP servers - one place to authenticate, authorize, audit, and proxy every tool call.
-**Current focus:** Phase 03.1 — odstran-n-multi-upstream-mcp-supportu
+**Current focus:** Phase 03.2 — profile-env-var-description
 
 ## Current Position
 
-Phase: 4
+Phase: 04
 Plan: Not started
 
 ## Performance Metrics
@@ -59,6 +59,9 @@ Plan: Not started
 | Phase 03-client-authentication-gate P03 | 10min | 3 tasks | 6 files |
 | Phase 03.1-odstran-n-multi-upstream-mcp-supportu P01 | 5 | 3 tasks | 8 files |
 | Phase 03.1-odstran-n-multi-upstream-mcp-supportu P02 | 8min | 3 tasks | 6 files |
+| Phase 03.2-profile-env-var-description P01 | 3min | 2 tasks | 2 files |
+| Phase 03.2-profile-env-var-description P02 | 4min | 3 tasks | 4 files |
+| Phase 03.2-profile-env-var-description P03 | 5min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -98,6 +101,11 @@ Recent decisions affecting current work:
 - [Phase 03.1-odstran-n-multi-upstream-mcp-supportu]: validateUpstreamProvider path changed to 'upstream_mcp' (no [N] index) - all error paths are now upstream_mcp.transport.url, upstream_mcp.auth.header_name, etc.
 - [Phase 03.1-odstran-n-multi-upstream-mcp-supportu]: hasUpstreamMcpFlag lives in upstream-mcp-config.ts (semantic owner of all upstream_mcp logic) not profile-resolver.ts
 - [Phase 03.1-odstran-n-multi-upstream-mcp-supportu]: Legacy-array tolerance preserved at MIGRATION-CLEANUP sites: env-var collector (reads raw JSON pre-Zod) and hasUpstreamMcpFlag (list-view UX) for migration period
+- [Phase 03.2-profile-env-var-description]: Parse-time D-05 conflict detection skipped: profile list unavailable at parse time; deferred to resolveProfileAdminDescriptions which receives both map and profiles
+- [Phase 03.2-profile-env-var-description]: adminDescription field rides inside existing safeJsonForHtml(enriched) blob — no separate template variable needed; Plan 03 reads it client-side from the JSON payload
+- [Phase 03.2-profile-env-var-description]: null -> undefined conversion at HttpTransport call site (this.profileAdminDescriptions ?? undefined) so setter accepts Map|null while buildProfileIndexPayload signature uses Map|undefined
+- [Phase 03.2-profile-env-var-description]: Admin description inserted between profile-title and profile-subtitle via ternary (not ||) — both undefined and empty string suppress the div
+- [Phase 03.2-profile-env-var-description]: safeJsonForHtml escapes only '<' not '>'; test assertions must use literal '>' for tag closings in expected rendered output
 
 ### Roadmap Evolution
 
@@ -116,6 +124,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-03T20:29:04.935Z
-Stopped at: Phase 03.2 context gathered
-Resume file: .planning/phases/03.2-profile-env-var-description/03.2-CONTEXT.md
+Last session: 2026-05-03T22:51:53.266Z
+Stopped at: Completed 03.2-03-PLAN.md
+Resume file: None
