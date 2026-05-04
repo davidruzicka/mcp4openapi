@@ -1586,6 +1586,7 @@
 
       function renderToolFilterCard(profile, isCzech) {
         const catalog = Array.isArray(profile.toolCatalog) ? profile.toolCatalog : [];
+        if (catalog.length === 0) return '';
         const selection = getToolSelection(profile.profileId);
         const title = isCzech ? 'Filtr toolu' : 'Tool Filter';
         const emptyText = isCzech ? 'Tento profil nema zadne definovane tooly.' : 'This profile has no defined tools.';
@@ -1743,6 +1744,7 @@
 
       function renderParameterFilterCard(profile, isCzech) {
         const parameters = collectProfileParameters(profile);
+        if (parameters.length === 0) return '';
         const selection = getParamSelection(profile.profileId);
         const title = isCzech ? 'Filtr parametru' : 'Parameter Filter';
         const emptyText = isCzech ? 'Tento profil nema zadne parametry vhodne pro filtraci.' : 'This profile has no parameters available for filtering.';
