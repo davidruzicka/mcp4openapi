@@ -90,6 +90,16 @@ describe('cli-config', () => {
     expect(process.env.MCP4_OAUTH_TOKEN_URL).toBe('https://auth/token');
   });
 
+  it('allows unregistered OAuth client env vars', () => {
+    const parsed = parseCliArgs([
+      '--allow-unregistered-clients', 'true',
+      '--allowed-unregistered-redirect-uris', 'http://localhost,cursor://',
+    ]);
+    applyCliEnvOverrides(parsed);
+    expect(process.env.MCP4_ALLOW_UNREGISTERED_CLIENTS).toBe('true');
+    expect(process.env.MCP4_ALLOWED_UNREGISTERED_REDIRECT_URIS).toBe('http://localhost,cursor://');
+  });
+
   it('allows bootstrap SSRF control env vars', () => {
     const parsed = parseCliArgs([
       '--ssrf-allow-private-network', 'true',

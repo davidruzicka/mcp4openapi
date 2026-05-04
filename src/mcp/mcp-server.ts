@@ -676,11 +676,22 @@ export class MCPServer {
       return undefined;
     }
 
+    const allowedUnregisteredRedirectUris = process.env.MCP4_ALLOWED_UNREGISTERED_REDIRECT_URIS
+      ?.split(',')
+      .map(value => value.trim())
+      .filter(value => value.length > 0);
+
     return {
       ...oauthConfig,
       allowed_redirect_hosts: oauthConfig.allowed_redirect_hosts
         || (process.env.MCP4_ALLOWED_ORIGINS
           ? this.extractHostsFromOrigins(process.env.MCP4_ALLOWED_ORIGINS)
+          : undefined),
+      allow_unregistered_clients: oauthConfig.allow_unregistered_clients
+        ?? (process.env.MCP4_ALLOW_UNREGISTERED_CLIENTS === 'true'),
+      allowed_unregistered_redirect_uris: oauthConfig.allowed_unregistered_redirect_uris
+        || (allowedUnregisteredRedirectUris && allowedUnregisteredRedirectUris.length > 0
+          ? allowedUnregisteredRedirectUris
           : undefined),
     };
   }
