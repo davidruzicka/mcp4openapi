@@ -2242,9 +2242,16 @@ describe('HttpTransport security behavior (no listen)', () => {
       const res = createMockResponse();
       await (transport as any).handlePost(req, res);
 
-      expect(res.statusCode).toBe(403);
+      expect(res.statusCode).toBe(200);
       expect(res.headers['www-authenticate']).toBeUndefined();
-      expect(res.body).toHaveProperty('message', 'Invalid or expired authentication token');
+      expect(res.body).toEqual({
+        jsonrpc: '2.0',
+        id: 1,
+        error: {
+          code: -32600,
+          message: 'Supplied authentication token is invalid or expired',
+        },
+      });
     } finally {
       global.fetch = originalFetch;
       await transport.stop();

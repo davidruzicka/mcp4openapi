@@ -56,6 +56,7 @@ import {
 } from '../core/constants.js';
 import { escapeHtmlSafe, isSafePropertyName } from '../validation/validation-utils.js';
 import type { OAuthClientInformationFull, OAuthTokens } from '@modelcontextprotocol/sdk/shared/auth.js';
+import { ErrorCode } from '@modelcontextprotocol/sdk/types.js';
 import {
   AuthenticationError,
   AuthorizationError,
@@ -2899,11 +2900,11 @@ export class HttpTransport {
                 this.logger.warn('Auth token validation failed during initialization', {
                   authType: authInfo.type,
                 });
-                // A supplied but invalid token is an authorization failure, not an auth challenge.
-                res.status(HTTP_STATUS.FORBIDDEN).json({
-                  error: 'Unauthorized',
-                  message: 'Invalid or expired authentication token'
-                });
+                this.sendInitializeJsonRpcError(
+                  res,
+                  body,
+                  'Supplied authentication token is invalid or expired',
+                );
                 return;
               }
               
@@ -2934,10 +2935,11 @@ export class HttpTransport {
                 this.logger.warn('Server-side env auth token validation failed during initialization', {
                   authType: config.type,
                 });
-                res.status(HTTP_STATUS.FORBIDDEN).json({
-                  error: 'Unauthorized',
-                  message: 'Invalid or expired server-side authentication token',
-                });
+                this.sendInitializeJsonRpcError(
+                  res,
+                  body,
+                  'Configured server-side authentication token is invalid or expired',
+                );
                 return;
               }
               this.logger.info('Server-side env auth token validation successful', {
@@ -3831,6 +3833,27 @@ export class HttpTransport {
         this.logger.error('Session destroyed listener error', error as Error);
       }
     }
+  }
+
+  private sendInitializeJsonRpcError(res: Response, body: unknown, message: string): void {
+    const requestId = this.getJsonRpcRequestId(body);
+    res.status(HTTP_STATUS.OK).json({
+      jsonrpc: '2.0',
+      id: requestId,
+      error: {
+        code: ErrorCode.InvalidRequest,
+        message,
+      },
+    });
+  }
+
+  private getJsonRpcRequestId(body: unknown): string | number | null {
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+      return null;
+    }
+
+    const value = (body as Record<string, unknown>).id;
+    return typeof value === 'string' || typeof value === 'number' ? value : null;
   }
 
   /**

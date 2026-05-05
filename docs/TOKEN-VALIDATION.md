@@ -203,7 +203,7 @@ Authorization: Bearer valid_token
 → Tools available
 ```
 
-### Failure (403)
+### Failure During Initialize
 
 Token is invalid → connection rejected → user sees error
 
@@ -211,10 +211,14 @@ Token is invalid → connection rejected → user sees error
 POST /mcp (initialize)
 Authorization: Bearer invalid_token
 
-→ 403 Forbidden
+→ 200 OK
 {
-  "error": "Unauthorized",
-  "message": "Invalid or expired authentication token"
+  "jsonrpc": "2.0",
+  "id": 1,
+  "error": {
+    "code": -32600,
+    "message": "Supplied authentication token is invalid or expired"
+  }
 }
 ```
 
@@ -223,10 +227,14 @@ Authorization: Bearer invalid_token
 If validation takes longer than `validation_timeout_ms`:
 
 ```
-→ 403 Forbidden
+→ 200 OK
 {
-  "error": "Unauthorized",
-  "message": "Invalid or expired authentication token"
+  "jsonrpc": "2.0",
+  "id": 1,
+  "error": {
+    "code": -32600,
+    "message": "Supplied authentication token is invalid or expired"
+  }
 }
 ```
 
