@@ -3201,6 +3201,81 @@ describeIfListen('HttpTransport', () => {
 
       degradedOauthTransport.stop();
     });
+
+    it('does not send OAuth WWW-Authenticate challenge when tenant OAuth config is not operational', async () => {
+      // Tenant has its own OAuth config (incomplete — no redirect_uri).
+      // Profile has no OAuth config so oauthDisabledReason is not set.
+      // Before fix: oauthActive=true → 401 with WWW-Authenticate: Bearer (OAuth challenge)
+      //   that the client can never complete (provider construction would fail).
+      // After fix: isOAuthConfigOperational(tenantConfig).operational=false → oauthActive=false
+      //   → no OAuth-specific challenge. A general 401 'Authentication required' may still fire
+      //   from the authConfigs guard, but that is a different code path and expected behavior.
+      const inoperationalTenantContext = {
+        tenantId: 'tenant-degraded',
+        tenantBaseUrl: 'https://tenant.example.com/api',
+        tenantAuthMode: 'oauth' as const,
+        tenantAuthConfigs: [{ type: 'oauth' as const }],
+        tenantOAuthConfig: {
+          // No redirect_uri → isOAuthConfigOperational returns false
+          authorization_endpoint: 'https://auth.example.com/oauth/authorize',
+          token_endpoint: 'https://auth.example.com/oauth/token',
+          client_id: 'tenant-client',
+        },
+        tenantSelectorType: 'exact' as const,
+        tenantSelectorValue: 'https://tenant.example.com/api',
+      };
+
+      const degradedTenantTransport = new HttpTransport(
+        {
+          host: '127.0.0.1',
+          port: 0,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: false,
+          metricsPath: '/metrics',
+          // No profile-level oauthConfig — oauthDisabledReason stays undefined
+          tenantIndex: {
+            enabled: true,
+            byTenantId: new Map([['tenant-degraded', inoperationalTenantContext]]),
+            byBaseUrl: new Map(),
+            maskSelectors: [],
+            selectorTypeByTenantId: new Map([['tenant-degraded', 'exact' as const]]),
+          },
+        },
+        logger,
+      );
+      degradedTenantTransport.setMessageHandler(async () => ({
+        result: {
+          protocolVersion: '2025-03-26',
+          capabilities: {},
+          serverInfo: { name: 'test', version: '0.0.1' },
+        },
+      }));
+      const degradedTenantApp = (degradedTenantTransport as any).app;
+
+      const response = await request(degradedTenantApp)
+        .post('/mcp')
+        .set('Accept', 'application/json, text/event-stream')
+        .set('Content-Type', 'application/json')
+        .set('X-Mcp4-Tenant-Id', 'tenant-degraded')
+        // No Authorization header — would trigger 401 if oauthActive were true
+        .send({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'initialize',
+          params: { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 'test', version: '0.0.1' } },
+        });
+
+      // OAuth-specific challenge must NOT be sent (no WWW-Authenticate header)
+      expect(response.headers['www-authenticate']).toBeUndefined();
+      // If 401 occurs it must be the general auth guard, not an OAuth challenge
+      if (response.status === 401) {
+        expect(response.body.message).not.toBe('Authentication required for OAuth');
+      }
+
+      degradedTenantTransport.stop();
+    });
   });
 
   describe('getOAuthAuthorizationUrl', () => {
@@ -3373,6 +3448,22 @@ describeIfListen('HttpTransport', () => {
 
       (transport as any).destroySession(profileState, sessionId);
       expect((profileState as any).tenantOAuthProvidersBySessionId.has(sessionId)).toBe(false);
+    });
+
+    it('returns null from getOAuthProviderForSession when tenant OAuth config is not operational', async () => {
+      const profileState = createProfileState(transport as any);
+
+      const inoperationalTenantConfig = {
+        // No redirect_uri — isOAuthConfigOperational returns false
+        authorization_endpoint: 'https://auth.example.com/oauth/authorize',
+        token_endpoint: 'https://auth.example.com/oauth/token',
+        client_id: 'tenant-client',
+      };
+      // Minimal session shape — only fields accessed by getOAuthProviderForSession
+      const session = { id: 'degraded-session', tenantOAuthConfig: inoperationalTenantConfig };
+
+      const result = (transport as any).getOAuthProviderForSession(profileState, session);
+      expect(result).toBeNull();
     });
 
     it('should handle token refresh without expires_in', async () => {

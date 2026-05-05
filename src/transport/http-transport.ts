@@ -2799,8 +2799,13 @@ export class HttpTransport {
           this.logger.debug('Auth token extracted', { authType: authInfo?.type, hasToken: !!authInfo?.token });
 
           // If OAuth is configured (and operational), require authentication for initialization
-          // This ensures clients like Cursor properly handle OAuth flow
-          const oauthActive = !!effectiveAuthContext.oauthConfig && !profileState.oauthDisabledReason;
+          // This ensures clients like Cursor properly handle OAuth flow.
+          // Two-part operational check: profile-level uses cached oauthDisabledReason;
+          // effectiveAuthContext.oauthConfig may be a tenant-specific config (different object
+          // from profile-level), so run isOAuthConfigOperational on it directly.
+          const oauthActive = !!effectiveAuthContext.oauthConfig &&
+            !profileState.oauthDisabledReason &&
+            isOAuthConfigOperational(effectiveAuthContext.oauthConfig).operational;
           if (oauthActive && !authInfo.token) {
             this.logger.debug('OAuth configured but no token provided, triggering OAuth flow');
             const resourceMetadataUrl = this.getOAuthProtectedResourceUrl(requestProfileId);
