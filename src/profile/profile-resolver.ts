@@ -11,7 +11,8 @@ import { fileURLToPath } from 'node:url';
 import { ConfigurationError } from '../core/errors.js';
 import { isFilteringKeySupported } from '../core/filtering.js';
 import { hasUpstreamMcpFlag, looksLikeUpstreamMcpProxy } from './upstream-mcp-config.js';
-import type { ParameterDefinition, ToolDefinition } from '../types/profile.js';
+import type { ParameterDefinition, ToolDefinition, OAuthConfig } from '../types/profile.js';
+import { isOAuthConfigOperational } from '../auth/oauth-provider.js';
 
 export interface ResolvedProfile {
   profileId: string;
@@ -281,6 +282,16 @@ function extractAuthMethods(profile: Record<string, unknown>): ProfileAuthMethod
     const type = record.type;
     if (type !== 'bearer' && type !== 'query' && type !== 'custom-header' && type !== 'oauth' && type !== 'session-cookie') {
       continue;
+    }
+    // For OAuth entries, skip if config is operationally incomplete (missing env vars or required fields).
+    // Uses safe property access via unknown cast + type guard rather than direct cast.
+    if (type === 'oauth') {
+      const rawConfig = (record as unknown as { oauth_config?: OAuthConfig }).oauth_config;
+      if (rawConfig && typeof rawConfig === 'object') {
+        const { operational } = isOAuthConfigOperational(rawConfig as OAuthConfig);
+        if (!operational) continue; // skip - OAuth not available with current config/env
+      }
+      // If oauth_config absent: no env-ref dependencies to check, include as-is
     }
     const sessionCookieConfig = record.session_cookie_config;
     methods.push({

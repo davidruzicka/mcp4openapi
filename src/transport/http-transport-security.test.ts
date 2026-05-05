@@ -353,6 +353,7 @@ describe('HttpTransport security behavior (no listen)', () => {
           issuer: 'https://auth.example.com',
           client_id: 'test-client',
           client_secret: 'test-secret',
+          redirect_uri: 'https://example.com/oauth/callback',
           scopes: [],
         },
       } as any,
@@ -390,6 +391,7 @@ describe('HttpTransport security behavior (no listen)', () => {
           issuer: 'https://auth.example.com',
           client_id: 'test-client',
           client_secret: 'test-secret',
+          redirect_uri: 'https://example.com/oauth/callback',
           scopes: ['read'],
         },
         resourceName: 'Test MCP Server',
@@ -472,6 +474,7 @@ describe('HttpTransport security behavior (no listen)', () => {
           issuer: 'https://auth.example.com',
           client_id: 'test-client',
           client_secret: 'test-secret',
+          redirect_uri: 'https://example.com/oauth/callback',
           scopes: ['read'],
         },
       } as any,
@@ -504,6 +507,7 @@ describe('HttpTransport security behavior (no listen)', () => {
           issuer: 'https://auth.example.com',
           client_id: 'test-client',
           client_secret: 'test-secret',
+          redirect_uri: 'https://example.com/oauth/callback',
           scopes: ['read'],
         },
       } as any,
@@ -757,6 +761,7 @@ describe('HttpTransport security behavior (no listen)', () => {
           issuer: 'https://auth.example.com',
           client_id: 'test-client',
           client_secret: 'test-secret',
+          redirect_uri: 'https://example.com/oauth/callback',
           scopes: ['read'],
         },
       } as any,
@@ -789,6 +794,7 @@ describe('HttpTransport security behavior (no listen)', () => {
           issuer: 'https://auth.example.com',
           client_id: 'test-client',
           client_secret: 'test-secret',
+          redirect_uri: 'https://example.com/oauth/callback',
           scopes: ['read'],
         },
       } as any,
@@ -821,6 +827,7 @@ describe('HttpTransport security behavior (no listen)', () => {
           issuer: 'https://auth.example.com',
           client_id: 'test-client',
           client_secret: 'test-secret',
+          redirect_uri: 'https://example.com/oauth/callback',
           scopes: ['read'],
         },
       } as any,
@@ -1257,6 +1264,7 @@ describe('HttpTransport security behavior (no listen)', () => {
           issuer: 'https://auth.example.com',
           client_id: 'test-client',
           client_secret: 'test-secret',
+          redirect_uri: 'https://example.com/oauth/callback',
           scopes: ['read'],
         },
       } as any,
@@ -1293,6 +1301,7 @@ describe('HttpTransport security behavior (no listen)', () => {
           issuer: 'https://auth.example.com',
           client_id: 'test-client',
           client_secret: 'test-secret',
+          redirect_uri: 'https://example.com/oauth/callback',
           scopes: ['read'],
         },
       } as any,
@@ -2181,6 +2190,7 @@ describe('HttpTransport security behavior (no listen)', () => {
         issuer: 'https://auth.example.com',
         client_id: 'test-client',
         client_secret: 'test-secret',
+        redirect_uri: 'https://example.com/oauth/callback',
         scopes: ['api'],
       },
     });
@@ -2232,8 +2242,16 @@ describe('HttpTransport security behavior (no listen)', () => {
       const res = createMockResponse();
       await (transport as any).handlePost(req, res);
 
-      expect(res.statusCode).toBe(401);
-      expect(res.body).toHaveProperty('message', 'Invalid or expired authentication token');
+      expect(res.statusCode).toBe(200);
+      expect(res.headers['www-authenticate']).toBeUndefined();
+      expect(res.body).toEqual({
+        jsonrpc: '2.0',
+        id: 1,
+        error: {
+          code: -32600,
+          message: 'Supplied authentication token is invalid or expired',
+        },
+      });
     } finally {
       global.fetch = originalFetch;
       await transport.stop();

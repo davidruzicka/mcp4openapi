@@ -2219,6 +2219,7 @@ describeIfListen('HttpTransport', () => {
           issuer: 'https://auth.example.com',
           client_id: 'test-client',
           client_secret: 'test-secret',
+          redirect_uri: 'https://example.com/oauth/callback',
           scopes: ['read', 'write'],
         },
       };
@@ -2336,6 +2337,7 @@ describeIfListen('HttpTransport', () => {
           issuer: 'https://auth.example.com',
           client_id: 'test-client',
           client_secret: 'test-secret',
+          redirect_uri: 'https://example.com/oauth/callback',
           scopes: ['read', 'write'],
         },
       };
@@ -2398,6 +2400,7 @@ describeIfListen('HttpTransport', () => {
           issuer: 'https://auth.example.com',
           client_id: 'test-client',
           client_secret: 'test-secret',
+          redirect_uri: 'https://example.com/oauth/callback',
           scopes: ['read', 'write'],
         },
       };
@@ -2597,6 +2600,7 @@ describeIfListen('HttpTransport', () => {
           issuer: 'https://auth.example.com',
           client_id: 'test-client',
           client_secret: 'test-secret',
+          redirect_uri: 'https://example.com/oauth/callback',
           scopes: ['read', 'write'],
         },
         resourceName: 'Test MCP Server',
@@ -2658,6 +2662,7 @@ describeIfListen('HttpTransport', () => {
           issuer: 'https://auth.example.com',
           client_id: 'test-client',
           client_secret: 'test-secret',
+          redirect_uri: 'https://example.com/oauth/callback',
           scopes: [],
         },
       };
@@ -2772,8 +2777,16 @@ describeIfListen('HttpTransport', () => {
           .set('Host', 'localhost')
           .send({ jsonrpc: '2.0', id: 1, method: 'initialize' });
 
-        expect(response.status).toBe(401);
-        expect(response.body).toHaveProperty('message', 'Invalid or expired authentication token');
+        expect(response.status).toBe(200);
+        expect(response.headers['www-authenticate']).toBeUndefined();
+        expect(response.body).toEqual({
+          jsonrpc: '2.0',
+          id: 1,
+          error: {
+            code: -32600,
+            message: 'Supplied authentication token is invalid or expired',
+          },
+        });
       } finally {
         global.fetch = originalFetch;
         await tokenTransport.stop();
@@ -2826,6 +2839,163 @@ describeIfListen('HttpTransport', () => {
           delete process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK;
         } else {
           process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK = originalAllowPrivateNetwork;
+        }
+        await tokenTransport.stop();
+      }
+    });
+  });
+
+  describe('Server-side env token validation (validation_endpoint)', () => {
+    it('rejects session init when server-side env token fails validation_endpoint', async () => {
+      const savedToken = process.env.MCP4_SERVER_TOKEN;
+      process.env.MCP4_SERVER_TOKEN = 'invalid-server-token';
+
+      const tokenTransport = new HttpTransport(
+        {
+          host: '127.0.0.1',
+          port: 0,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: false,
+          metricsPath: '/metrics',
+          baseUrl: 'https://api.example.com',
+          authConfigs: [
+            {
+              type: 'bearer',
+              value_from_env: 'MCP4_SERVER_TOKEN',
+              validation_endpoint: '/validate',
+            } as any,
+          ],
+        } as any,
+        logger,
+      );
+      tokenTransport.setMessageHandler(async () => ({ result: 'ok' }));
+      const tokenApp = (tokenTransport as any).app;
+
+      const originalFetch = global.fetch;
+      global.fetch = vi.fn(async () => ({ status: 401 }) as any);
+      try {
+        const response = await request(tokenApp)
+          .post('/mcp')
+          .set('Accept', 'application/json, text/event-stream')
+          .set('Content-Type', 'application/json')
+          // No Authorization header — server uses MCP4_SERVER_TOKEN
+          .send({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 'test', version: '1' } } });
+
+        expect(response.status).toBe(200);
+        expect(response.headers['www-authenticate']).toBeUndefined();
+        expect(response.body).toEqual({
+          jsonrpc: '2.0',
+          id: 1,
+          error: {
+            code: -32600,
+            message: 'Configured server-side authentication token is invalid or expired',
+          },
+        });
+      } finally {
+        global.fetch = originalFetch;
+        if (savedToken === undefined) {
+          delete process.env.MCP4_SERVER_TOKEN;
+        } else {
+          process.env.MCP4_SERVER_TOKEN = savedToken;
+        }
+        await tokenTransport.stop();
+      }
+    });
+
+    it('allows session init when server-side env token passes validation_endpoint', async () => {
+      const savedToken = process.env.MCP4_SERVER_TOKEN;
+      const savedSsrf = process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK;
+      process.env.MCP4_SERVER_TOKEN = 'valid-server-token';
+      process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK = 'true';
+
+      const tokenTransport = new HttpTransport(
+        {
+          host: '127.0.0.1',
+          port: 0,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: false,
+          metricsPath: '/metrics',
+          baseUrl: 'http://127.0.0.1', // avoids DNS lookup — SSRF passes with allow_private
+          authConfigs: [
+            {
+              type: 'bearer',
+              value_from_env: 'MCP4_SERVER_TOKEN',
+              validation_endpoint: '/validate',
+            } as any,
+          ],
+        } as any,
+        logger,
+      );
+      tokenTransport.setMessageHandler(async () => ({ result: 'ok' }));
+      const tokenApp = (tokenTransport as any).app;
+
+      const originalFetch = global.fetch;
+      global.fetch = vi.fn(async () => ({ status: 204 }) as any);
+      try {
+        const response = await request(tokenApp)
+          .post('/mcp')
+          .set('Accept', 'application/json, text/event-stream')
+          .set('Content-Type', 'application/json')
+          .send({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 'test', version: '1' } } });
+
+        expect(response.status).toBe(200);
+        expect(response.headers['mcp-session-id']).toBeDefined();
+      } finally {
+        global.fetch = originalFetch;
+        if (savedToken === undefined) delete process.env.MCP4_SERVER_TOKEN;
+        else process.env.MCP4_SERVER_TOKEN = savedToken;
+        if (savedSsrf === undefined) delete process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK;
+        else process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK = savedSsrf;
+        await tokenTransport.stop();
+      }
+    });
+
+    it('skips server-side env token validation when no validation_endpoint configured', async () => {
+      const savedToken = process.env.MCP4_SERVER_TOKEN;
+      process.env.MCP4_SERVER_TOKEN = 'some-token';
+
+      const tokenTransport = new HttpTransport(
+        {
+          host: '127.0.0.1',
+          port: 0,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: false,
+          metricsPath: '/metrics',
+          baseUrl: 'https://api.example.com',
+          authConfigs: [
+            {
+              type: 'bearer',
+              value_from_env: 'MCP4_SERVER_TOKEN',
+              // No validation_endpoint — validation skipped
+            } as any,
+          ],
+        } as any,
+        logger,
+      );
+      tokenTransport.setMessageHandler(async () => ({ result: 'ok' }));
+      const tokenApp = (tokenTransport as any).app;
+
+      try {
+        const response = await request(tokenApp)
+          .post('/mcp')
+          .set('Accept', 'application/json, text/event-stream')
+          .set('Content-Type', 'application/json')
+          .send({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 'test', version: '1' } } });
+
+        // Session is created without validation (no validation_endpoint configured)
+        expect(response.status).toBe(200);
+        expect(response.headers['mcp-session-id']).toBeDefined();
+      } finally {
+        if (savedToken === undefined) {
+          delete process.env.MCP4_SERVER_TOKEN;
+        } else {
+          process.env.MCP4_SERVER_TOKEN = savedToken;
         }
         await tokenTransport.stop();
       }
@@ -3095,6 +3265,7 @@ describeIfListen('HttpTransport', () => {
           token_endpoint: 'https://example.com/oauth/token',
           client_id: 'test-client',
           client_secret: 'test-secret',
+          redirect_uri: 'https://example.com/oauth/callback',
         },
       };
 
@@ -3102,6 +3273,173 @@ describeIfListen('HttpTransport', () => {
       await (oauthTransport as any).getProfileState('default');
       expect(oauthTransport.hasOAuthProvider()).toBe(true);
       oauthTransport.stop();
+    });
+
+    it('sets oauthDisabledReason and leaves oauthProvider null when oauth config is missing redirect_uri', async () => {
+      const warnSpy = vi.spyOn(logger, 'warn');
+
+      const incompleteOauthConfig = {
+        host: '127.0.0.1',
+        port: 0,
+        sessionTimeoutMs: 1800000,
+        heartbeatEnabled: false,
+        heartbeatIntervalMs: 30000,
+        metricsEnabled: false,
+        metricsPath: '/metrics',
+        oauthConfig: {
+          authorization_endpoint: 'https://example.com/oauth/authorize',
+          token_endpoint: 'https://example.com/oauth/token',
+          client_id: 'test-client',
+          client_secret: 'test-secret',
+          // No redirect_uri - should trigger graceful degradation
+        },
+      };
+
+      const degradedTransport = new HttpTransport(incompleteOauthConfig, logger);
+      await (degradedTransport as any).getProfileState('default');
+
+      const profileState = (degradedTransport as any).profileStates.get('default');
+      expect(profileState.oauthProvider).toBeNull();
+      expect(typeof profileState.oauthDisabledReason).toBe('string');
+      expect(profileState.oauthDisabledReason).toContain('redirect_uri');
+
+      // hasOAuthProvider should return false for degraded profile
+      expect(degradedTransport.hasOAuthProvider()).toBe(false);
+
+      // Warning must be logged with the reason
+      const warnCalls = warnSpy.mock.calls;
+      const oauthWarn = warnCalls.find(args => {
+        const msg = typeof args[0] === 'string' ? args[0] : '';
+        return msg.includes('OAuth config not operational');
+      });
+      expect(oauthWarn).toBeDefined();
+
+      warnSpy.mockRestore();
+      degradedTransport.stop();
+    });
+  });
+
+  describe('OAuth degradation HTTP behavior', () => {
+    it('allows POST /mcp initialize without auth token when OAuth config is degraded (no 401 challenge)', async () => {
+      const degradedOauthTransport = new HttpTransport(
+        {
+          host: '127.0.0.1',
+          port: 0,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: false,
+          metricsPath: '/metrics',
+          oauthConfig: {
+            authorization_endpoint: 'https://example.com/oauth/authorize',
+            token_endpoint: 'https://example.com/oauth/token',
+            client_id: 'test-client',
+            client_secret: 'test-secret',
+            // No redirect_uri — triggers graceful degradation
+          },
+        },
+        logger,
+      );
+      degradedOauthTransport.setMessageHandler(async () => ({
+        result: {
+          protocolVersion: '2025-03-26',
+          capabilities: {},
+          serverInfo: { name: 'test', version: '0.0.1' },
+        },
+      }));
+      const degradedApp = (degradedOauthTransport as any).app;
+
+      const response = await request(degradedApp)
+        .post('/mcp')
+        .set('Accept', 'application/json, text/event-stream')
+        .set('Content-Type', 'application/json')
+        // No Authorization header — would normally trigger 401 OAuth challenge
+        .send({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'initialize',
+          params: { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 'test', version: '0.0.1' } },
+        });
+
+      expect(response.status).not.toBe(401);
+      expect(response.headers['www-authenticate']).toBeUndefined();
+
+      degradedOauthTransport.stop();
+    });
+
+    it('does not send OAuth WWW-Authenticate challenge when tenant OAuth config is not operational', async () => {
+      // Tenant has its own OAuth config (incomplete — no redirect_uri).
+      // Profile has no OAuth config so oauthDisabledReason is not set.
+      // Before fix: oauthActive=true → 401 with WWW-Authenticate: Bearer (OAuth challenge)
+      //   that the client can never complete (provider construction would fail).
+      // After fix: isOAuthConfigOperational(tenantConfig).operational=false → oauthActive=false
+      //   → no OAuth-specific challenge. A general 401 'Authentication required' may still fire
+      //   from the authConfigs guard, but that is a different code path and expected behavior.
+      const inoperationalTenantContext = {
+        tenantId: 'tenant-degraded',
+        tenantBaseUrl: 'https://tenant.example.com/api',
+        tenantAuthMode: 'oauth' as const,
+        tenantAuthConfigs: [{ type: 'oauth' as const }],
+        tenantOAuthConfig: {
+          // No redirect_uri → isOAuthConfigOperational returns false
+          authorization_endpoint: 'https://auth.example.com/oauth/authorize',
+          token_endpoint: 'https://auth.example.com/oauth/token',
+          client_id: 'tenant-client',
+        },
+        tenantSelectorType: 'exact' as const,
+        tenantSelectorValue: 'https://tenant.example.com/api',
+      };
+
+      const degradedTenantTransport = new HttpTransport(
+        {
+          host: '127.0.0.1',
+          port: 0,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: false,
+          metricsPath: '/metrics',
+          // No profile-level oauthConfig — oauthDisabledReason stays undefined
+          tenantIndex: {
+            enabled: true,
+            byTenantId: new Map([['tenant-degraded', inoperationalTenantContext]]),
+            byBaseUrl: new Map(),
+            maskSelectors: [],
+            selectorTypeByTenantId: new Map([['tenant-degraded', 'exact' as const]]),
+          },
+        },
+        logger,
+      );
+      degradedTenantTransport.setMessageHandler(async () => ({
+        result: {
+          protocolVersion: '2025-03-26',
+          capabilities: {},
+          serverInfo: { name: 'test', version: '0.0.1' },
+        },
+      }));
+      const degradedTenantApp = (degradedTenantTransport as any).app;
+
+      const response = await request(degradedTenantApp)
+        .post('/mcp')
+        .set('Accept', 'application/json, text/event-stream')
+        .set('Content-Type', 'application/json')
+        .set('X-Mcp4-Tenant-Id', 'tenant-degraded')
+        // No Authorization header — would trigger 401 if oauthActive were true
+        .send({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'initialize',
+          params: { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 'test', version: '0.0.1' } },
+        });
+
+      // OAuth-specific challenge must NOT be sent (no WWW-Authenticate header)
+      expect(response.headers['www-authenticate']).toBeUndefined();
+      // If 401 occurs it must be the general auth guard, not an OAuth challenge
+      if (response.status === 401) {
+        expect(response.body.message).not.toBe('Authentication required for OAuth');
+      }
+
+      degradedTenantTransport.stop();
     });
   });
 
@@ -3124,6 +3462,7 @@ describeIfListen('HttpTransport', () => {
           token_endpoint: 'https://example.com/oauth/token',
           client_id: 'test-client',
           client_secret: 'test-secret',
+          redirect_uri: 'https://example.com/oauth/callback',
         },
       };
 
@@ -3153,6 +3492,7 @@ describeIfListen('HttpTransport', () => {
           token_endpoint: 'https://example.com/oauth/token',
           client_id: 'test-client',
           client_secret: 'test-secret',
+          redirect_uri: 'https://example.com/oauth/callback',
           scopes: ['api', 'read_user'],
         },
       };
@@ -3242,6 +3582,7 @@ describeIfListen('HttpTransport', () => {
         token_endpoint: 'https://auth.example.com/oauth/token',
         client_id: 'tenant-client',
         client_secret: 'tenant-secret',
+        redirect_uri: 'https://example.com/oauth/callback',
       };
       const sessionId = (transport as any).createSession(
         profileState,
@@ -3272,6 +3613,22 @@ describeIfListen('HttpTransport', () => {
 
       (transport as any).destroySession(profileState, sessionId);
       expect((profileState as any).tenantOAuthProvidersBySessionId.has(sessionId)).toBe(false);
+    });
+
+    it('returns null from getOAuthProviderForSession when tenant OAuth config is not operational', async () => {
+      const profileState = createProfileState(transport as any);
+
+      const inoperationalTenantConfig = {
+        // No redirect_uri — isOAuthConfigOperational returns false
+        authorization_endpoint: 'https://auth.example.com/oauth/authorize',
+        token_endpoint: 'https://auth.example.com/oauth/token',
+        client_id: 'tenant-client',
+      };
+      // Minimal session shape — only fields accessed by getOAuthProviderForSession
+      const session = { id: 'degraded-session', tenantOAuthConfig: inoperationalTenantConfig };
+
+      const result = (transport as any).getOAuthProviderForSession(profileState, session);
+      expect(result).toBeNull();
     });
 
     it('should handle token refresh without expires_in', async () => {

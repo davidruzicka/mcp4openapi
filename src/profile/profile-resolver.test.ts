@@ -326,9 +326,10 @@ describe('profile-resolver', () => {
       'SAMPLE_API_BASE_URL',
     ]);
     expect(profiles[0].oauthEnvVars).toEqual(['OAUTH_ISSUER']);
+    // OAuth is filtered from authMethods because OAUTH_ISSUER env var is not set
+    // (isOAuthConfigOperational returns false for incomplete configs)
     expect(profiles[0].authMethods).toEqual([
       { type: 'bearer', headerName: undefined, queryParam: undefined, valueFromEnv: 'API_TOKEN' },
-      { type: 'oauth', headerName: undefined, queryParam: undefined, valueFromEnv: undefined },
       { type: 'custom-header', headerName: 'X-API-KEY', queryParam: undefined, valueFromEnv: 'CUSTOM_KEY' },
       { type: 'query', headerName: undefined, queryParam: 'api_key', valueFromEnv: 'QUERY_TOKEN' },
       {
@@ -877,6 +878,143 @@ describe('profile-resolver', () => {
 
     const resolved = await resolveProfileFromPath(profilePath);
     expect(resolved.specPath).toBe(specPath);
+  });
+
+  it('filters OAuth from authMethods when oauth_config has unresolved env var', async () => {
+    const root = await createTempDir();
+    const profilesDir = path.join(root, 'profiles');
+
+    const savedOauthIssuer = process.env.OAUTH_DEGRADATION_ISSUER;
+    delete process.env.OAUTH_DEGRADATION_ISSUER;
+
+    try {
+      await writeJson(path.join(profilesDir, 'degraded-oauth.json'), {
+        profile_name: 'degraded-oauth',
+        profile_id: 'degraded-oauth',
+        openapi_spec_path: './openapi.yaml',
+        interceptors: {
+          auth: [
+            { type: 'bearer', value_from_env: 'API_TOKEN' },
+            {
+              type: 'oauth',
+              oauth_config: {
+                issuer: '${env:OAUTH_DEGRADATION_ISSUER}',
+                redirect_uri: 'https://example.com/callback',
+              },
+            },
+            { type: 'custom-header', header_name: 'X-Key', value_from_env: 'CUSTOM_KEY' },
+          ],
+        },
+        tools: [],
+      });
+
+      const profiles = await listProfilesDetailed(profilesDir);
+      expect(profiles).toHaveLength(1);
+      // OAuth is filtered because OAUTH_DEGRADATION_ISSUER is not set
+      expect(profiles[0].authMethods.every(m => m.type !== 'oauth')).toBe(true);
+      // Other auth methods remain
+      expect(profiles[0].authMethods.some(m => m.type === 'bearer')).toBe(true);
+      expect(profiles[0].authMethods.some(m => m.type === 'custom-header')).toBe(true);
+      // oauthEnvVars still collected (env var collection is independent of operational check)
+      expect(profiles[0].oauthEnvVars).toContain('OAUTH_DEGRADATION_ISSUER');
+    } finally {
+      if (savedOauthIssuer !== undefined) {
+        process.env.OAUTH_DEGRADATION_ISSUER = savedOauthIssuer;
+      }
+    }
+  });
+
+  it('keeps OAuth in authMethods when oauth_config is complete (redirect_uri set, env vars resolved)', async () => {
+    const root = await createTempDir();
+    const profilesDir = path.join(root, 'profiles');
+
+    const savedOauthIssuer = process.env.OAUTH_DEGRADATION_ISSUER;
+    process.env.OAUTH_DEGRADATION_ISSUER = 'https://accounts.example.com';
+
+    try {
+      await writeJson(path.join(profilesDir, 'complete-oauth.json'), {
+        profile_name: 'complete-oauth',
+        profile_id: 'complete-oauth',
+        openapi_spec_path: './openapi.yaml',
+        interceptors: {
+          auth: [
+            { type: 'bearer', value_from_env: 'API_TOKEN' },
+            {
+              type: 'oauth',
+              oauth_config: {
+                issuer: '${env:OAUTH_DEGRADATION_ISSUER}',
+                redirect_uri: 'https://example.com/callback',
+              },
+            },
+          ],
+        },
+        tools: [],
+      });
+
+      const profiles = await listProfilesDetailed(profilesDir);
+      expect(profiles).toHaveLength(1);
+      // OAuth is present because OAUTH_DEGRADATION_ISSUER is set and redirect_uri is provided
+      expect(profiles[0].authMethods.some(m => m.type === 'oauth')).toBe(true);
+    } finally {
+      if (savedOauthIssuer !== undefined) {
+        process.env.OAUTH_DEGRADATION_ISSUER = savedOauthIssuer;
+      } else {
+        delete process.env.OAUTH_DEGRADATION_ISSUER;
+      }
+    }
+  });
+
+  it('keeps OAuth in authMethods when oauth_config has allow_unregistered_clients=true and no redirect_uri', async () => {
+    const root = await createTempDir();
+    const profilesDir = path.join(root, 'profiles');
+
+    await writeJson(path.join(profilesDir, 'unregistered-oauth.json'), {
+      profile_name: 'unregistered-oauth',
+      profile_id: 'unregistered-oauth',
+      openapi_spec_path: './openapi.yaml',
+      interceptors: {
+        auth: [
+          {
+            type: 'oauth',
+            oauth_config: {
+              issuer: 'https://accounts.example.com',
+              allow_unregistered_clients: true,
+              // No redirect_uri — required field skipped when allow_unregistered_clients=true
+            },
+          },
+        ],
+      },
+      tools: [],
+    });
+
+    const profiles = await listProfilesDetailed(profilesDir);
+    expect(profiles).toHaveLength(1);
+    // OAuth is operational with allow_unregistered_clients=true even without redirect_uri
+    expect(profiles[0].authMethods.some(m => m.type === 'oauth')).toBe(true);
+  });
+
+  it('keeps OAuth in authMethods when oauth entry has no oauth_config field (passthrough)', async () => {
+    const root = await createTempDir();
+    const profilesDir = path.join(root, 'profiles');
+
+    await writeJson(path.join(profilesDir, 'oauth-no-config.json'), {
+      profile_name: 'oauth-no-config',
+      profile_id: 'oauth-no-config',
+      openapi_spec_path: './openapi.yaml',
+      interceptors: {
+        auth: [
+          { type: 'bearer', value_from_env: 'API_TOKEN' },
+          { type: 'oauth' }, // no oauth_config — passthrough, operational check skipped
+        ],
+      },
+      tools: [],
+    });
+
+    const profiles = await listProfilesDetailed(profilesDir);
+    expect(profiles).toHaveLength(1);
+    // OAuth entry without oauth_config is included as-is (profile-loader validates minimum fields at load time)
+    expect(profiles[0].authMethods.some(m => m.type === 'oauth')).toBe(true);
+    expect(profiles[0].authMethods.some(m => m.type === 'bearer')).toBe(true);
   });
 
   it('lists profiles with aliases for index summaries', async () => {

@@ -43,6 +43,66 @@ import { isApprovedUnregisteredClientRedirectUri } from './unregistered-client-r
 export { InMemoryClientsStore };
 export type { InMemoryClientsStoreOptions } from './client-store/types.js';
 
+// --- OAuth operational-check helpers (module-private + exported) ---
+
+const ENV_REF_PATTERN = /^\$\{env:([^}]+)\}$/;
+
+/**
+ * Safely resolves a single `${env:VAR}` reference. Returns the env var value
+ * when the var is set, undefined when unset, or the literal value when no
+ * env reference pattern is present. Does NOT throw - callers rely on this
+ * for pre-flight checks before ExternalOAuthProvider construction.
+ */
+function tryResolveEnvRef(value: string | undefined): string | undefined {
+  if (!value) return value;
+  const envVarName = value.match(ENV_REF_PATTERN)?.[1];
+  if (envVarName !== undefined) return process.env[envVarName]; // undefined when var not set
+  return value;
+}
+
+/** Result returned by isOAuthConfigOperational(). */
+export interface OAuthOperationalCheck {
+  operational: boolean;
+  /** Names of required fields that are absent or have unresolved env refs. */
+  missing: string[];
+}
+
+/**
+ * Pre-flight check: returns whether an OAuthConfig has the minimum required
+ * fields available at runtime (env vars resolved). Safe to call before
+ * ExternalOAuthProvider construction - does not throw.
+ *
+ * Required after env-var resolution:
+ * - `issuer` OR (`authorization_endpoint` AND `token_endpoint`)
+ * - `redirect_uri` - unless `allow_unregistered_clients: true`
+ */
+export function isOAuthConfigOperational(config: OAuthConfig): OAuthOperationalCheck {
+  const missing: string[] = [];
+
+  const issuer = tryResolveEnvRef(config.issuer);
+  const authEndpoint = tryResolveEnvRef(config.authorization_endpoint);
+  const tokenEndpoint = tryResolveEnvRef(config.token_endpoint);
+
+  if (!issuer && !(authEndpoint && tokenEndpoint)) {
+    missing.push('issuer or (authorization_endpoint + token_endpoint)');
+  }
+
+  // redirect_uri required only for pre-registered clients;
+  // allow_unregistered_clients flows provide redirect_uri at runtime.
+  if (!config.allow_unregistered_clients) {
+    const redirectUri = tryResolveEnvRef(config.redirect_uri);
+    if (!redirectUri) missing.push('redirect_uri');
+    // client_id: only flag when declared as an env ref but var is unset.
+    // Absent (undefined) is not flagged — ExternalOAuthProvider does not throw for it,
+    // and allow_unregistered_clients flows may set it via DCR at runtime.
+    if (config.client_id !== undefined && !tryResolveEnvRef(config.client_id)) {
+      missing.push('client_id');
+    }
+  }
+
+  return { operational: missing.length === 0, missing };
+}
+
 /**
  * State preserved across the redirect to external provider
  */
@@ -339,13 +399,11 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
   private resolveEnvVars(config: OAuthConfig): OAuthConfig {
     const resolve = (value: string | undefined): string | undefined => {
       if (!value) return value;
-      
-      const match = value.match(/^\$\{env:([^}]+)\}$/);
-      if (match) {
-        const envVar = match[1];
-        const envValue = process.env[envVar];
+      const envVarName = value.match(ENV_REF_PATTERN)?.[1];
+      if (envVarName !== undefined) {
+        const envValue = process.env[envVarName];
         if (!envValue) {
-          throw new Error(`Environment variable ${envVar} not found (referenced in OAuth config)`);
+          throw new Error(`Environment variable ${envVarName} not found (referenced in OAuth config)`);
         }
         return envValue;
       }

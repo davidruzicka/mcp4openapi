@@ -886,6 +886,38 @@ describe('profile index helpers', () => {
     expect(template).toContain("if (catalog.length === 0) return '';");
     expect(template).toContain("if (parameters.length === 0) return '';");
   });
+
+  it('does not emit oauth authTab when OAuth is not in authMethods (operationally degraded)', () => {
+    // Simulates the output after profile-resolver filters out OAuth due to incomplete config.
+    // The authMethods no longer contain an oauth entry, so the index must NOT emit an oauth tab.
+    const profiles: ListedProfileDetails[] = [
+      {
+        profileId: 'degraded-oauth-profile',
+        profileName: 'degraded-oauth-profile',
+        profileAliases: [],
+        description: 'Profile with degraded OAuth (missing env vars)',
+        envVars: ['OAUTH_ISSUER', 'API_TOKEN'],
+        oauthEnvVars: ['OAUTH_ISSUER'],
+        // OAuth entry was filtered by profile-resolver (isOAuthConfigOperational returned false)
+        authMethods: [
+          {
+            type: 'bearer',
+            valueFromEnv: 'API_TOKEN',
+            headerName: undefined,
+            queryParam: undefined,
+          },
+        ],
+      },
+    ];
+
+    const { payload } = buildProfileIndexPayload(profiles, 'http://localhost:3003', 'en');
+    const [profile] = payload.profiles;
+
+    // No oauth authTab because authMethods has no oauth entry
+    expect(profile.authTabs.every(t => t.key !== 'oauth')).toBe(true);
+    // Bearer tab is present
+    expect(profile.authTabs.some(t => t.key === 'bearer')).toBe(true);
+  });
 });
 
 describe('adminDescription enrichment (Phase 03.2)', () => {

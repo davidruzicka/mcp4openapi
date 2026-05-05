@@ -71,6 +71,17 @@ Plans:
 - [x] 03-02-PLAN.md - ApiKeyStore interface, InlineApiKeyStore, and factory (AUTH-02; SasankaApiKeyStore deferred to Phase 4)
 - [x] 03-03-PLAN.md - ClientAuthGate orchestrator (API key path only), http-transport wiring, session clientPrincipal attachment (AUTH-02, AUTH-03)
 
+### Phase 03.3: Graceful OAuth degradation for incomplete config (INSERTED)
+
+**Goal:** When an MCP profile has `auth.type = 'oauth'` but OAuth config is operationally incomplete (missing redirect_uri, or env vars not set), degrade gracefully instead of crashing with 500 or starting a broken OAuth flow. Reflect degradation on the HTML profile index page (hide OAuth auth tab/snippets when not operational).
+**Requirements**: DEGRADE-01
+**Depends on:** Phase 3
+**Plans:** 2/2 plans complete
+
+Plans:
+- [x] 03.3-01-PLAN.md — isOAuthConfigOperational helper + OAuthOperationalCheck interface in oauth-provider.ts + unit tests (DEGRADE-01)
+- [x] 03.3-02-PLAN.md — Wiring: profile-resolver extractAuthMethods filter + http-transport ProfileRuntimeState + getProfileState pre-flight + auth gate guard + test coverage (DEGRADE-01)
+
 ### Phase 03.2: Profile env-var description field (INSERTED)
 
 **Goal:** Add optional admin-supplied HTML description per profile via a server-wide `MCP4_PROFILES_DESCRIPTION` env var (JSON map of profile-id/name/alias → HTML string). Description renders raw (no sanitization) in the HTML index detail card immediately before the profile's own description. Sidebar list view is unchanged. Fail-fast at startup on invalid JSON or duplicate-resolution conflicts.
@@ -83,7 +94,7 @@ Plans:
 - [x] 03.2-02-PLAN.md — Wiring: buildProfileIndexPayload 4th-arg adminDescriptions + HttpTransport.setProfileAdminDescriptions setter + main() startup parse/resolve/setter (D-01, D-04, D-05, D-07..D-10)
 - [x] 03.2-03-PLAN.md — HTML template patch: raw-HTML adminDescription div in renderDetail before profile.description; sidebar untouched; end-to-end raw-HTML pass-through tests (D-06, D-10, D-11, D-12)
 
-### Phase 03.1: Odstranění multi upstream mcp supportu (INSERTED)
+### Phase 03.1: Remove multi upstream MCP support (INSERTED)
 
 **Goal**: Profile.upstream_mcp narrowed end-to-end from UpstreamMcpServerConfig[] to UpstreamMcpServerConfig (singular). The runtime single-provider constraint already exists in profile-loader (D-03 check); this phase relocates it into the type system (Zod + TS), removes the now-dead loader runtime check, and migrates all consumers + test fixtures to the singular shape. Breaking change for end-user profile JSON/YAML using array syntax.
 **Requirements**: (none — internal type-narrowing refactor; preserves PROXY-01..04 and SEC-02 without modifying them)

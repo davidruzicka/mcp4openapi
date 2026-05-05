@@ -30,7 +30,7 @@ import { MetricsCollector } from '../core/metrics.js';
 import type { UpstreamConnectionManager } from '../upstream/upstream-connection-manager.js';
 import { UpstreamAuthError } from '../upstream/upstream-errors.js';
 import type { MetricsContextLabels } from '../core/metrics.js';
-import { ExternalOAuthProvider } from '../auth/oauth-provider.js';
+import { ExternalOAuthProvider, isOAuthConfigOperational } from '../auth/oauth-provider.js';
 import { EnterpriseAuthProvider } from '../auth/enterprise-auth-provider.js';
 import { InboundAuthTokenStore } from '../auth/inbound-auth-token-store.js';
 import { EnterpriseReplayStore } from '../auth/enterprise-replay-store.js';
@@ -56,6 +56,7 @@ import {
 } from '../core/constants.js';
 import { escapeHtmlSafe, isSafePropertyName } from '../validation/validation-utils.js';
 import type { OAuthClientInformationFull, OAuthTokens } from '@modelcontextprotocol/sdk/shared/auth.js';
+import { ErrorCode } from '@modelcontextprotocol/sdk/types.js';
 import {
   AuthenticationError,
   AuthorizationError,
@@ -95,6 +96,14 @@ interface ProfileRuntimeState {
   profileId: string;
   context: HttpProfileContext;
   oauthProvider: ExternalOAuthProvider | null;
+  /**
+   * Set when OAuth config is present but not operationally complete (missing env vars or
+   * required fields). When set, oauthProvider is null and no OAuth challenge is sent.
+   * Two independent checks: profile-resolver (HTML index) and http-transport (auth gate).
+   * Both checks are intentional - profile-resolver filters the UI surface while
+   * http-transport guards the runtime auth gate; they operate on different config shapes.
+   */
+  oauthDisabledReason?: string;
   enterpriseAuthProvider: EnterpriseAuthProvider | null;
   /**
    * Inbound client auth gate (Phase 3: API key path only). Constructed lazily
@@ -487,17 +496,38 @@ export class HttpTransport {
     }
 
     let oauthProvider: ExternalOAuthProvider | null = null;
+    let oauthDisabledReason: string | undefined;
+
     if (context.oauthConfig) {
-      this.logger.info('Initializing OAuth provider with config', {
-        profileId,
-        hasClientId: !!context.oauthConfig.client_id,
-      });
-      oauthProvider = new ExternalOAuthProvider(context.oauthConfig, this.logger);
-      this.logger.info('OAuth provider initialized', {
-        profileId,
-        endpoint: oauthProvider.authorizationEndpoint || '(to be derived from issuer)',
-        hasIssuer: !!context.oauthConfig.issuer,
-      });
+      // Pre-flight check before constructor to intercept synchronous throws from unresolved env vars.
+      const { operational, missing } = isOAuthConfigOperational(context.oauthConfig);
+      if (!operational) {
+        oauthDisabledReason = `incomplete OAuth config, missing: ${missing.join(', ')}`;
+      } else {
+        this.logger.info('Initializing OAuth provider with config', {
+          profileId,
+          hasClientId: !!context.oauthConfig.client_id,
+        });
+        try {
+          oauthProvider = new ExternalOAuthProvider(context.oauthConfig, this.logger);
+          this.logger.info('OAuth provider initialized', {
+            profileId,
+            endpoint: oauthProvider.authorizationEndpoint || '(to be derived from issuer)',
+            hasIssuer: !!context.oauthConfig.issuer,
+          });
+        } catch (err) {
+          // Catches edge cases: env var changed between check and construction, etc.
+          // Use a generic message — err.message from resolveEnvVars contains raw env var names.
+          oauthDisabledReason = 'OAuth provider construction failed after pre-flight check (env var removed at runtime)';
+        }
+      }
+
+      if (oauthDisabledReason) {
+        this.logger.warn('OAuth config not operational - OAuth disabled for profile', {
+          profileId,
+          reason: oauthDisabledReason,
+        });
+      }
     } else {
       this.logger.info('No OAuth config provided - OAuth provider not initialized', { profileId });
     }
@@ -518,6 +548,7 @@ export class HttpTransport {
       profileId,
       context,
       oauthProvider,
+      oauthDisabledReason,
       enterpriseAuthProvider,
       oauthTokensByAccessToken: new Map(),
       sessions: new Map(),
@@ -2768,12 +2799,18 @@ export class HttpTransport {
             : undefined;
           this.logger.debug('Auth token extracted', { authType: authInfo?.type, hasToken: !!authInfo?.token });
 
-          // If OAuth is configured, require authentication for initialization
-          // This ensures clients like Cursor properly handle OAuth flow
-          if (effectiveAuthContext.oauthConfig && !authInfo.token) {
+          // If OAuth is configured (and operational), require authentication for initialization
+          // This ensures clients like Cursor properly handle OAuth flow.
+          // Two-part operational check: profile-level uses cached oauthDisabledReason;
+          // effectiveAuthContext.oauthConfig may be a tenant-specific config (different object
+          // from profile-level), so run isOAuthConfigOperational on it directly.
+          const oauthActive = !!effectiveAuthContext.oauthConfig &&
+            !profileState.oauthDisabledReason &&
+            isOAuthConfigOperational(effectiveAuthContext.oauthConfig).operational;
+          if (oauthActive && !authInfo.token) {
             this.logger.debug('OAuth configured but no token provided, triggering OAuth flow');
             const resourceMetadataUrl = this.getOAuthProtectedResourceUrl(requestProfileId);
-            const scopeValue = effectiveAuthContext.oauthConfig.scopes?.join(' ') || 'api';
+            const scopeValue = effectiveAuthContext.oauthConfig?.scopes?.join(' ') || 'api';
             res.setHeader('WWW-Authenticate', `Bearer resource_metadata="${resourceMetadataUrl}", scope="${scopeValue}"`);
             res.status(HTTP_STATUS.UNAUTHORIZED).json({
               error: 'Unauthorized',
@@ -2863,17 +2900,55 @@ export class HttpTransport {
                 this.logger.warn('Auth token validation failed during initialization', {
                   authType: authInfo.type,
                 });
-                res.status(HTTP_STATUS.UNAUTHORIZED).json({
-                  error: 'Unauthorized',
-                  message: 'Invalid or expired authentication token'
-                });
+                this.sendInitializeJsonRpcError(
+                  res,
+                  body,
+                  'Supplied authentication token is invalid or expired',
+                );
                 return;
               }
               
               this.logger.info('Auth token validation successful');
             }
           }
-          
+
+          // Validate server-side env token when client provided no token.
+          // Fail-fast: surface invalid/expired env tokens at session init rather than
+          // at first tool call, avoiding misleading successful connections.
+          if (!profileState.clientAuthGate && !authInfo.token && authConfigs.length > 0
+            && (resolvedTenant?.tenantBaseUrl || profileState.context.baseUrl)) {
+            for (const config of authConfigs) {
+              if (!config.value_from_env || !config.validation_endpoint) continue;
+              const envToken = process.env[config.value_from_env]?.trim();
+              if (!envToken) continue;
+
+              this.logger.info('Validating server-side env auth token during initialization', {
+                authType: config.type,
+                endpoint: config.validation_endpoint,
+              });
+              const isValid = await this.validateAuthToken(
+                config,
+                envToken,
+                resolvedTenant?.tenantBaseUrl || profileState.context.baseUrl || '',
+              );
+              if (!isValid) {
+                this.logger.warn('Server-side env auth token validation failed during initialization', {
+                  authType: config.type,
+                });
+                this.sendInitializeJsonRpcError(
+                  res,
+                  body,
+                  'Configured server-side authentication token is invalid or expired',
+                );
+                return;
+              }
+              this.logger.info('Server-side env auth token validation successful', {
+                authType: config.type,
+              });
+              break; // validate highest-priority config with validation_endpoint only
+            }
+          }
+
           // Validate upstream credentials if upstream_mcp.validation_endpoint is set
           const upstreamProvider = profileState.context.upstreamMcp;
           if (this.upstreamConnectionManager && upstreamProvider?.validation_endpoint) {
@@ -3760,6 +3835,27 @@ export class HttpTransport {
     }
   }
 
+  private sendInitializeJsonRpcError(res: Response, body: unknown, message: string): void {
+    const requestId = this.getJsonRpcRequestId(body);
+    res.status(HTTP_STATUS.OK).json({
+      jsonrpc: '2.0',
+      id: requestId,
+      error: {
+        code: ErrorCode.InvalidRequest,
+        message,
+      },
+    });
+  }
+
+  private getJsonRpcRequestId(body: unknown): string | number | null {
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+      return null;
+    }
+
+    const value = (body as Record<string, unknown>).id;
+    return typeof value === 'string' || typeof value === 'number' ? value : null;
+  }
+
   /**
    * Store OAuth tokens in internal map for later session initialization
    * 
@@ -4045,9 +4141,28 @@ export class HttpTransport {
       if (cachedProvider) {
         return cachedProvider;
       }
-      const newProvider = new ExternalOAuthProvider(session.tenantOAuthConfig, this.logger);
-      providerCache.set(session.id, newProvider);
-      return newProvider;
+      const { operational } = isOAuthConfigOperational(session.tenantOAuthConfig);
+      if (!operational) {
+        this.logger.warn('Tenant OAuth config not operational - tenant OAuth disabled for session', {
+          profileId: profileState.profileId,
+          sessionId: session.id,
+        });
+        return null;
+      }
+      try {
+        const newProvider = new ExternalOAuthProvider(session.tenantOAuthConfig, this.logger);
+        providerCache.set(session.id, newProvider);
+        return newProvider;
+      } catch (err) {
+        // Catches edge cases: env var changed between check and construction, etc.
+        // Generic message — err.message from resolveEnvVars contains raw env var names.
+        this.logger.warn('Tenant OAuth provider construction failed - tenant OAuth disabled for session', {
+          profileId: profileState.profileId,
+          sessionId: session.id,
+          reason: 'Tenant OAuth provider construction failed after pre-flight check (env var removed at runtime)',
+        });
+        return null;
+      }
     }
     return profileState.oauthProvider;
   }

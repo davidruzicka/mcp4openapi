@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: Ready to plan
-stopped_at: Completed 03.2-03-PLAN.md
-last_updated: "2026-05-03T22:56:32.129Z"
+stopped_at: Completed 03.3-02-PLAN.md
+last_updated: "2026-05-05T11:07:39.889Z"
 progress:
-  total_phases: 7
-  completed_phases: 5
-  total_plans: 17
-  completed_plans: 17
+  total_phases: 9
+  completed_phases: 6
+  total_plans: 19
+  completed_plans: 19
 ---
 
 # Project State
@@ -19,7 +19,7 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-26)
 
 **Core value:** A security boundary between internal AI clients and all upstream MCP servers - one place to authenticate, authorize, audit, and proxy every tool call.
-**Current focus:** Phase 03.2 — profile-env-var-description
+**Current focus:** Phase 03.3 — graceful-oauth-degradation
 
 ## Current Position
 
@@ -57,11 +57,13 @@ Plan: Not started
 | Phase 03-client-authentication-gate P01 | 5min | 3 tasks | 9 files |
 | Phase 03-client-authentication-gate P02 | 6min | 3 tasks | 5 files |
 | Phase 03-client-authentication-gate P03 | 10min | 3 tasks | 6 files |
-| Phase 03.1-odstran-n-multi-upstream-mcp-supportu P01 | 5 | 3 tasks | 8 files |
-| Phase 03.1-odstran-n-multi-upstream-mcp-supportu P02 | 8min | 3 tasks | 6 files |
+| Phase 03.1-remove-multi-upstream-mcp-support P01 | 5 | 3 tasks | 8 files |
+| Phase 03.1-remove-multi-upstream-mcp-support P02 | 8min | 3 tasks | 6 files |
 | Phase 03.2-profile-env-var-description P01 | 3min | 2 tasks | 2 files |
 | Phase 03.2-profile-env-var-description P02 | 4min | 3 tasks | 4 files |
 | Phase 03.2-profile-env-var-description P03 | 5min | 2 tasks | 2 files |
+| Phase 03.3-graceful-oauth-degradation P01 | 4min | 1 tasks | 2 files |
+| Phase 03.3-graceful-oauth-degradation P02 | 13min | 3 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -97,20 +99,25 @@ Recent decisions affecting current work:
 - [Phase 03-client-authentication-gate]: [Phase 03-03]: ALL client auth gate exceptions map to HTTP 401 (not 500); warn log records errorType to distinguish ClientAuthGateError from unknown errors without leaking validator internals to clients
 - [Phase 03-client-authentication-gate]: [Phase 03-03]: Phase 4 deferral pinned by source-text guard test (no jose/jwks-cache imports or runtime calls); test will start failing intentionally when Phase 4 lands the JWT path, signaling the deferral guard has been lifted
 - [Phase 03-client-authentication-gate]: [Phase 03-03]: ClientAuthGate constructed once per profile in getProfileState() (not per-request) so the underlying InlineApiKeyStore HMAC secret persists for constant-time comparison; gate lifecycle ties to ProfileRuntimeState
-- [Phase 03.1-odstran-n-multi-upstream-mcp-supportu]: ZodError (not ValidationError) thrown when upstream_mcp: [...] array is present in YAML/JSON profile - Zod schema catches it before loader runtime validation runs
-- [Phase 03.1-odstran-n-multi-upstream-mcp-supportu]: validateUpstreamProvider path changed to 'upstream_mcp' (no [N] index) - all error paths are now upstream_mcp.transport.url, upstream_mcp.auth.header_name, etc.
-- [Phase 03.1-odstran-n-multi-upstream-mcp-supportu]: hasUpstreamMcpFlag lives in upstream-mcp-config.ts (semantic owner of all upstream_mcp logic) not profile-resolver.ts
-- [Phase 03.1-odstran-n-multi-upstream-mcp-supportu]: Legacy-array tolerance preserved at MIGRATION-CLEANUP sites: env-var collector (reads raw JSON pre-Zod) and hasUpstreamMcpFlag (list-view UX) for migration period
+- [Phase 03.1-remove-multi-upstream-mcp-support]: ZodError (not ValidationError) thrown when upstream_mcp: [...] array is present in YAML/JSON profile - Zod schema catches it before loader runtime validation runs
+- [Phase 03.1-remove-multi-upstream-mcp-support]: validateUpstreamProvider path changed to 'upstream_mcp' (no [N] index) - all error paths are now upstream_mcp.transport.url, upstream_mcp.auth.header_name, etc.
+- [Phase 03.1-remove-multi-upstream-mcp-support]: hasUpstreamMcpFlag lives in upstream-mcp-config.ts (semantic owner of all upstream_mcp logic) not profile-resolver.ts
+- [Phase 03.1-remove-multi-upstream-mcp-support]: Legacy-array tolerance preserved at MIGRATION-CLEANUP sites: env-var collector (reads raw JSON pre-Zod) and hasUpstreamMcpFlag (list-view UX) for migration period
 - [Phase 03.2-profile-env-var-description]: Parse-time D-05 conflict detection skipped: profile list unavailable at parse time; deferred to resolveProfileAdminDescriptions which receives both map and profiles
 - [Phase 03.2-profile-env-var-description]: adminDescription field rides inside existing safeJsonForHtml(enriched) blob — no separate template variable needed; Plan 03 reads it client-side from the JSON payload
 - [Phase 03.2-profile-env-var-description]: null -> undefined conversion at HttpTransport call site (this.profileAdminDescriptions ?? undefined) so setter accepts Map|null while buildProfileIndexPayload signature uses Map|undefined
 - [Phase 03.2-profile-env-var-description]: Admin description inserted between profile-title and profile-subtitle via ternary (not ||) — both undefined and empty string suppress the div
 - [Phase 03.2-profile-env-var-description]: safeJsonForHtml escapes only '<' not '>'; test assertions must use literal '>' for tag closings in expected rendered output
+- [Phase 03.3-graceful-oauth-degradation]: tryResolveEnvRef is module-private - callers only need isOAuthConfigOperational; exposing the resolver separately would allow misuse and bypass the intended API boundary
+- [Phase 03.3-graceful-oauth-degradation]: isOAuthConfigOperational placed before ExternalOAuthProvider class - enables pre-flight check without constructing the class (which throws on bad env vars)
+- [Phase 03.3-graceful-oauth-degradation]: oauthDisabledReason set in ProfileRuntimeState when pre-flight check fails - auth gate skips OAuth challenge without crashing
+- [Phase 03.3-graceful-oauth-degradation]: extractAuthMethods filters OAuth entries when isOAuthConfigOperational returns false - hiding oauth tab from HTML index when env vars are missing
 
 ### Roadmap Evolution
 
-- Phase 03.1 inserted after Phase 03: Odstranění multi upstream mcp supportu (URGENT)
+- Phase 03.1 inserted after Phase 03: Remove multi upstream MCP support (URGENT)
 - Phase 03.2 inserted after Phase 03.1: Profile env-var description field — optional per-env-var description shown before profile description in HTML index, for admin configuration guidance (URGENT)
+- Phase 03.3 inserted after Phase 03.2: Graceful OAuth degradation for incomplete config (URGENT)
 
 ### Pending Todos
 
@@ -124,6 +131,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-03T22:51:53.266Z
-Stopped at: Completed 03.2-03-PLAN.md
+Last session: 2026-05-05T11:03:37.024Z
+Stopped at: Completed 03.3-02-PLAN.md
 Resume file: None
