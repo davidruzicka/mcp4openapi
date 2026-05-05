@@ -2909,7 +2909,43 @@ export class HttpTransport {
               this.logger.info('Auth token validation successful');
             }
           }
-          
+
+          // Validate server-side env token when client provided no token.
+          // Fail-fast: surface invalid/expired env tokens at session init rather than
+          // at first tool call, avoiding misleading successful connections.
+          if (!profileState.clientAuthGate && !authInfo.token && authConfigs.length > 0
+            && (resolvedTenant?.tenantBaseUrl || profileState.context.baseUrl)) {
+            for (const config of authConfigs) {
+              if (!config.value_from_env || !config.validation_endpoint) continue;
+              const envToken = process.env[config.value_from_env]?.trim();
+              if (!envToken) continue;
+
+              this.logger.info('Validating server-side env auth token during initialization', {
+                authType: config.type,
+                endpoint: config.validation_endpoint,
+              });
+              const isValid = await this.validateAuthToken(
+                config,
+                envToken,
+                resolvedTenant?.tenantBaseUrl || profileState.context.baseUrl || '',
+              );
+              if (!isValid) {
+                this.logger.warn('Server-side env auth token validation failed during initialization', {
+                  authType: config.type,
+                });
+                res.status(HTTP_STATUS.UNAUTHORIZED).json({
+                  error: 'Unauthorized',
+                  message: 'Invalid or expired server-side authentication token',
+                });
+                return;
+              }
+              this.logger.info('Server-side env auth token validation successful', {
+                authType: config.type,
+              });
+              break; // validate highest-priority config with validation_endpoint only
+            }
+          }
+
           // Validate upstream credentials if upstream_mcp.validation_endpoint is set
           const upstreamProvider = profileState.context.upstreamMcp;
           if (this.upstreamConnectionManager && upstreamProvider?.validation_endpoint) {

@@ -2837,6 +2837,155 @@ describeIfListen('HttpTransport', () => {
     });
   });
 
+  describe('Server-side env token validation (validation_endpoint)', () => {
+    it('rejects session init when server-side env token fails validation_endpoint', async () => {
+      const savedToken = process.env.MCP4_SERVER_TOKEN;
+      process.env.MCP4_SERVER_TOKEN = 'invalid-server-token';
+
+      const tokenTransport = new HttpTransport(
+        {
+          host: '127.0.0.1',
+          port: 0,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: false,
+          metricsPath: '/metrics',
+          baseUrl: 'https://api.example.com',
+          authConfigs: [
+            {
+              type: 'bearer',
+              value_from_env: 'MCP4_SERVER_TOKEN',
+              validation_endpoint: '/validate',
+            } as any,
+          ],
+        } as any,
+        logger,
+      );
+      tokenTransport.setMessageHandler(async () => ({ result: 'ok' }));
+      const tokenApp = (tokenTransport as any).app;
+
+      const originalFetch = global.fetch;
+      global.fetch = vi.fn(async () => ({ status: 401 }) as any);
+      try {
+        const response = await request(tokenApp)
+          .post('/mcp')
+          .set('Accept', 'application/json, text/event-stream')
+          .set('Content-Type', 'application/json')
+          // No Authorization header — server uses MCP4_SERVER_TOKEN
+          .send({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 'test', version: '1' } } });
+
+        expect(response.status).toBe(401);
+        expect(response.body.message).toBe('Invalid or expired server-side authentication token');
+      } finally {
+        global.fetch = originalFetch;
+        if (savedToken === undefined) {
+          delete process.env.MCP4_SERVER_TOKEN;
+        } else {
+          process.env.MCP4_SERVER_TOKEN = savedToken;
+        }
+        await tokenTransport.stop();
+      }
+    });
+
+    it('allows session init when server-side env token passes validation_endpoint', async () => {
+      const savedToken = process.env.MCP4_SERVER_TOKEN;
+      const savedSsrf = process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK;
+      process.env.MCP4_SERVER_TOKEN = 'valid-server-token';
+      process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK = 'true';
+
+      const tokenTransport = new HttpTransport(
+        {
+          host: '127.0.0.1',
+          port: 0,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: false,
+          metricsPath: '/metrics',
+          baseUrl: 'http://127.0.0.1', // avoids DNS lookup — SSRF passes with allow_private
+          authConfigs: [
+            {
+              type: 'bearer',
+              value_from_env: 'MCP4_SERVER_TOKEN',
+              validation_endpoint: '/validate',
+            } as any,
+          ],
+        } as any,
+        logger,
+      );
+      tokenTransport.setMessageHandler(async () => ({ result: 'ok' }));
+      const tokenApp = (tokenTransport as any).app;
+
+      const originalFetch = global.fetch;
+      global.fetch = vi.fn(async () => ({ status: 204 }) as any);
+      try {
+        const response = await request(tokenApp)
+          .post('/mcp')
+          .set('Accept', 'application/json, text/event-stream')
+          .set('Content-Type', 'application/json')
+          .send({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 'test', version: '1' } } });
+
+        expect(response.status).toBe(200);
+        expect(response.headers['mcp-session-id']).toBeDefined();
+      } finally {
+        global.fetch = originalFetch;
+        if (savedToken === undefined) delete process.env.MCP4_SERVER_TOKEN;
+        else process.env.MCP4_SERVER_TOKEN = savedToken;
+        if (savedSsrf === undefined) delete process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK;
+        else process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK = savedSsrf;
+        await tokenTransport.stop();
+      }
+    });
+
+    it('skips server-side env token validation when no validation_endpoint configured', async () => {
+      const savedToken = process.env.MCP4_SERVER_TOKEN;
+      process.env.MCP4_SERVER_TOKEN = 'some-token';
+
+      const tokenTransport = new HttpTransport(
+        {
+          host: '127.0.0.1',
+          port: 0,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: false,
+          metricsPath: '/metrics',
+          baseUrl: 'https://api.example.com',
+          authConfigs: [
+            {
+              type: 'bearer',
+              value_from_env: 'MCP4_SERVER_TOKEN',
+              // No validation_endpoint — validation skipped
+            } as any,
+          ],
+        } as any,
+        logger,
+      );
+      tokenTransport.setMessageHandler(async () => ({ result: 'ok' }));
+      const tokenApp = (tokenTransport as any).app;
+
+      try {
+        const response = await request(tokenApp)
+          .post('/mcp')
+          .set('Accept', 'application/json, text/event-stream')
+          .set('Content-Type', 'application/json')
+          .send({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 'test', version: '1' } } });
+
+        // Session is created without validation (no validation_endpoint configured)
+        expect(response.status).toBe(200);
+        expect(response.headers['mcp-session-id']).toBeDefined();
+      } finally {
+        if (savedToken === undefined) {
+          delete process.env.MCP4_SERVER_TOKEN;
+        } else {
+          process.env.MCP4_SERVER_TOKEN = savedToken;
+        }
+        await tokenTransport.stop();
+      }
+    });
+  });
+
   describe('Auth Header Validation', () => {
     it('should return 400 for invalid Authorization header format', async () => {
       transport.setMessageHandler(async () => ({ result: 'ok' }));

@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - Tenant OAuth degradation: auth gate now checks `isOAuthConfigOperational` on the effective OAuth config (which may be tenant-specific) so an inoperational tenant OAuth config no longer sends an uncompletable 401 OAuth challenge.
+- Server-side env token validation at session init: when a profile auth config has both `value_from_env` and `validation_endpoint`, the resolved env token is validated via the endpoint before the session is established, failing fast with HTTP 401 instead of accepting the connection and returning 401 on every tool call.
 - `upstream_mcp.timeout_ms` is now enforced on proxied `tools/call`: passed as `RequestOptions.timeout` to `client.callTool()` so a hung upstream is bounded by the configured value instead of the SDK default.
 - `MCPServerManager` self-registers the `onSessionDestroyed` cleanup hook in its constructor, eliminating the unbounded `sanitizedAndPolicyFilteredToolNames` map growth when the manager is used outside the `index.ts` bootstrap path.
 - `UpstreamAuthError` now maps to `ErrorCode.InvalidRequest` (-32600) instead of `InternalError`; `AuthenticationError` and OAuth-required responses also use `InvalidRequest` instead of `-32001` (`RequestTimeout`), eliminating the code collision that caused clients to trigger auth flows on upstream timeouts.
