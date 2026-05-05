@@ -3154,6 +3154,55 @@ describeIfListen('HttpTransport', () => {
     });
   });
 
+  describe('OAuth degradation HTTP behavior', () => {
+    it('allows POST /mcp initialize without auth token when OAuth config is degraded (no 401 challenge)', async () => {
+      const degradedOauthTransport = new HttpTransport(
+        {
+          host: '127.0.0.1',
+          port: 0,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: false,
+          metricsPath: '/metrics',
+          oauthConfig: {
+            authorization_endpoint: 'https://example.com/oauth/authorize',
+            token_endpoint: 'https://example.com/oauth/token',
+            client_id: 'test-client',
+            client_secret: 'test-secret',
+            // No redirect_uri — triggers graceful degradation
+          },
+        },
+        logger,
+      );
+      degradedOauthTransport.setMessageHandler(async () => ({
+        result: {
+          protocolVersion: '2025-03-26',
+          capabilities: {},
+          serverInfo: { name: 'test', version: '0.0.1' },
+        },
+      }));
+      const degradedApp = (degradedOauthTransport as any).app;
+
+      const response = await request(degradedApp)
+        .post('/mcp')
+        .set('Accept', 'application/json, text/event-stream')
+        .set('Content-Type', 'application/json')
+        // No Authorization header — would normally trigger 401 OAuth challenge
+        .send({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'initialize',
+          params: { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 'test', version: '0.0.1' } },
+        });
+
+      expect(response.status).not.toBe(401);
+      expect(response.headers['www-authenticate']).toBeUndefined();
+
+      degradedOauthTransport.stop();
+    });
+  });
+
   describe('getOAuthAuthorizationUrl', () => {
     it('should return empty string when OAuth is not configured', () => {
       expect(transport.getOAuthAuthorizationUrl()).toBe('');
@@ -3293,6 +3342,7 @@ describeIfListen('HttpTransport', () => {
         token_endpoint: 'https://auth.example.com/oauth/token',
         client_id: 'tenant-client',
         client_secret: 'tenant-secret',
+        redirect_uri: 'https://example.com/oauth/callback',
       };
       const sessionId = (transport as any).createSession(
         profileState,

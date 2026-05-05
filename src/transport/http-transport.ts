@@ -4074,9 +4074,27 @@ export class HttpTransport {
       if (cachedProvider) {
         return cachedProvider;
       }
-      const newProvider = new ExternalOAuthProvider(session.tenantOAuthConfig, this.logger);
-      providerCache.set(session.id, newProvider);
-      return newProvider;
+      const { operational } = isOAuthConfigOperational(session.tenantOAuthConfig);
+      if (!operational) {
+        this.logger.warn('Tenant OAuth config not operational - tenant OAuth disabled for session', {
+          profileId: profileState.profileId,
+          sessionId: session.id,
+        });
+        return null;
+      }
+      try {
+        const newProvider = new ExternalOAuthProvider(session.tenantOAuthConfig, this.logger);
+        providerCache.set(session.id, newProvider);
+        return newProvider;
+      } catch (err) {
+        // Catches edge cases: env var changed between check and construction, etc.
+        this.logger.warn('Tenant OAuth provider construction failed - tenant OAuth disabled for session', {
+          profileId: profileState.profileId,
+          sessionId: session.id,
+          reason: err instanceof Error ? err.message : String(err),
+        });
+        return null;
+      }
     }
     return profileState.oauthProvider;
   }

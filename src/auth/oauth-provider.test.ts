@@ -2140,6 +2140,37 @@ describe('ExternalOAuthProvider', () => {
       expect(result.operational).toBe(false);
       expect(result.missing).toContain('issuer or (authorization_endpoint + token_endpoint)');
     });
+
+    it('operational=false when client_id env var is not set', () => {
+      const result = isOAuthConfigOperational({
+        issuer: 'https://ok.example.com',
+        redirect_uri: 'https://app/callback',
+        client_id: '${env:UNSET_CLIENT_ID_VAR}',
+      });
+      expect(result.operational).toBe(false);
+      expect(result.missing).toContain('client_id');
+    });
+
+    it('operational=true when client_id env var is set', () => {
+      vi.stubEnv('TEST_CLIENT_ID', 'my-client');
+      const result = isOAuthConfigOperational({
+        issuer: 'https://ok.example.com',
+        redirect_uri: 'https://app/callback',
+        client_id: '${env:TEST_CLIENT_ID}',
+      });
+      expect(result.operational).toBe(true);
+      expect(result.missing).toEqual([]);
+    });
+
+    it('operational=true when allow_unregistered_clients=true and client_id absent', () => {
+      const result = isOAuthConfigOperational({
+        issuer: 'https://ok.example.com',
+        allow_unregistered_clients: true,
+        // no client_id, no redirect_uri — both skipped for unregistered clients
+      });
+      expect(result.operational).toBe(true);
+      expect(result.missing).toEqual([]);
+    });
   });
 
   describe('client store eviction safety integration', () => {

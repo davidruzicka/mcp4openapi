@@ -964,6 +964,30 @@ describe('profile-resolver', () => {
     }
   });
 
+  it('keeps OAuth in authMethods when oauth entry has no oauth_config field (passthrough)', async () => {
+    const root = await createTempDir();
+    const profilesDir = path.join(root, 'profiles');
+
+    await writeJson(path.join(profilesDir, 'oauth-no-config.json'), {
+      profile_name: 'oauth-no-config',
+      profile_id: 'oauth-no-config',
+      openapi_spec_path: './openapi.yaml',
+      interceptors: {
+        auth: [
+          { type: 'bearer', value_from_env: 'API_TOKEN' },
+          { type: 'oauth' }, // no oauth_config — passthrough, operational check skipped
+        ],
+      },
+      tools: [],
+    });
+
+    const profiles = await listProfilesDetailed(profilesDir);
+    expect(profiles).toHaveLength(1);
+    // OAuth entry without oauth_config is included as-is (profile-loader validates minimum fields at load time)
+    expect(profiles[0].authMethods.some(m => m.type === 'oauth')).toBe(true);
+    expect(profiles[0].authMethods.some(m => m.type === 'bearer')).toBe(true);
+  });
+
   it('lists profiles with aliases for index summaries', async () => {
     const root = await createTempDir();
     const profilesDir = path.join(root, 'profiles');
