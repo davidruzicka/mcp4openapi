@@ -291,7 +291,7 @@ function extractAuthMethods(profile: Record<string, unknown>): ProfileAuthMethod
         const { operational } = isOAuthConfigOperational(rawConfig as OAuthConfig);
         if (!operational) continue; // skip - OAuth not available with current config/env
       }
-      // If oauth_config absent, push method normally (minimum field validation done at load time)
+      // If oauth_config absent: no env-ref dependencies to check, include as-is
     }
     const sessionCookieConfig = record.session_cookie_config;
     methods.push({

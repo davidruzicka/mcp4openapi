@@ -2199,6 +2199,27 @@ describe('ExternalOAuthProvider', () => {
       expect(result.operational).toBe(true);
       expect(result.missing).toEqual([]);
     });
+
+    it('operational=true when allow_unregistered_clients=true and client_id is an unresolved env ref', () => {
+      // allow_unregistered_clients skips the entire client_id + redirect_uri block,
+      // so an unresolved client_id env ref must NOT mark the config non-operational.
+      const result = isOAuthConfigOperational({
+        issuer: 'https://ok.example.com',
+        allow_unregistered_clients: true,
+        client_id: '${env:UNSET_CLIENT_ID_UNREGISTERED}',
+      });
+      expect(result.operational).toBe(true);
+      expect(result.missing).toEqual([]);
+    });
+
+    it('operational=false when only token_endpoint provided but not authorization_endpoint and no issuer', () => {
+      const result = isOAuthConfigOperational({
+        token_endpoint: 'https://ok.example.com/token',
+        redirect_uri: 'https://app/callback',
+      });
+      expect(result.operational).toBe(false);
+      expect(result.missing).toContain('issuer or (authorization_endpoint + token_endpoint)');
+    });
   });
 
   describe('client store eviction safety integration', () => {
