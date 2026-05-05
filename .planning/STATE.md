@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: Ready to plan
-stopped_at: Completed 03.2-03-PLAN.md
-last_updated: "2026-05-03T22:56:32.129Z"
+status: Ready to execute
+stopped_at: Completed 03.3-01-PLAN.md
+last_updated: "2026-05-05T10:49:02.178Z"
 progress:
-  total_phases: 7
+  total_phases: 9
   completed_phases: 5
-  total_plans: 17
-  completed_plans: 17
+  total_plans: 19
+  completed_plans: 18
 ---
 
 # Project State
@@ -19,12 +19,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-26)
 
 **Core value:** A security boundary between internal AI clients and all upstream MCP servers - one place to authenticate, authorize, audit, and proxy every tool call.
-**Current focus:** Phase 03.2 — profile-env-var-description
+**Current focus:** Phase 03.3 — graceful-oauth-degradation
 
 ## Current Position
 
-Phase: 04
-Plan: Not started
+Phase: 03.3 (graceful-oauth-degradation) — EXECUTING
+Plan: 2 of 2
 
 ## Performance Metrics
 
@@ -62,6 +62,7 @@ Plan: Not started
 | Phase 03.2-profile-env-var-description P01 | 3min | 2 tasks | 2 files |
 | Phase 03.2-profile-env-var-description P02 | 4min | 3 tasks | 4 files |
 | Phase 03.2-profile-env-var-description P03 | 5min | 2 tasks | 2 files |
+| Phase 03.3-graceful-oauth-degradation P01 | 4min | 1 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -106,6 +107,8 @@ Recent decisions affecting current work:
 - [Phase 03.2-profile-env-var-description]: null -> undefined conversion at HttpTransport call site (this.profileAdminDescriptions ?? undefined) so setter accepts Map|null while buildProfileIndexPayload signature uses Map|undefined
 - [Phase 03.2-profile-env-var-description]: Admin description inserted between profile-title and profile-subtitle via ternary (not ||) — both undefined and empty string suppress the div
 - [Phase 03.2-profile-env-var-description]: safeJsonForHtml escapes only '<' not '>'; test assertions must use literal '>' for tag closings in expected rendered output
+- [Phase 03.3-graceful-oauth-degradation]: tryResolveEnvRef is module-private - callers only need isOAuthConfigOperational; exposing the resolver separately would allow misuse and bypass the intended API boundary
+- [Phase 03.3-graceful-oauth-degradation]: isOAuthConfigOperational placed before ExternalOAuthProvider class - enables pre-flight check without constructing the class (which throws on bad env vars)
 
 ### Roadmap Evolution
 
@@ -125,6 +128,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-03T22:51:53.266Z
-Stopped at: Completed 03.2-03-PLAN.md
+Last session: 2026-05-05T10:49:02.175Z
+Stopped at: Completed 03.3-01-PLAN.md
 Resume file: None
