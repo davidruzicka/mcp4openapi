@@ -40,6 +40,7 @@ authenticate, authorize, audit, and proxy every tool call in the company.
 - ✓ API key authentication gate (Phase 03) - inbound M2M clients validated via inline env-var API keys before session establishment; `ClientAuthGate` runs after enterprise auth, before any upstream connection; `SessionData.clientPrincipal` populated with resolved identity (`subject`, `authType`, `scopes`); HMAC-SHA256 timing-safe comparison; fail-fast profile-load validator
 - ✓ upstream_mcp singular constraint (Phase 03.1) - Profile.upstream_mcp narrowed from UpstreamMcpServerConfig[] to UpstreamMcpServerConfig; Zod schema rejects array shape at parse time with migration hint; all call sites (mcp-server.ts, http-transport.ts, profile-resolver.ts) narrowed; BREAKING CHANGE: profile JSON must use `upstream_mcp: {...}` not `upstream_mcp: [{...}]`
 - ✓ Admin-supplied HTML profile descriptions (Phase 03.2) - `MCP4_PROFILES_DESCRIPTION` env var (JSON object: profile key → HTML string) parsed once at startup; keys matched against profileId/profileName/aliases; resolved adminDescription stored per-profile and rendered raw (no escaping) in HTML index detail card before the profile's own description; duplicate-key resolution and invalid JSON cause process exit at startup (fail-fast); sidebar list view unchanged
+- ✓ Graceful OAuth degradation (Phase 03.3) - `isOAuthConfigOperational()` pre-flight check added to `oauth-provider.ts`; when OAuth config is incomplete (missing env vars, missing redirect_uri) the server sets `oauthDisabledReason` in `ProfileRuntimeState`, skips `ExternalOAuthProvider` construction, omits the OAuth tab from the HTML index, and never sends a 401 OAuth challenge; warning logged once per profile at load time; complete OAuth config behavior unchanged
 
 ### Active
 - [ ] Upstream tool discovery and proxy - tools/list and tools/call forwarded to correct upstream
@@ -111,7 +112,7 @@ authenticate, authorize, audit, and proxy every tool call in the company.
 | Tool namespacing by upstream provider | Prevents tool name collisions across providers; makes audit logs and policy rules unambiguous | - Pending |
 
 ---
-*Last updated: 2026-05-03 after Phase 03.2 completion — MCP4_PROFILES_DESCRIPTION env var for admin HTML profile descriptions; fail-fast startup validation; raw-HTML rendering in detail card*
+*Last updated: 2026-05-05 after Phase 03.3 completion — graceful OAuth degradation; isOAuthConfigOperational pre-flight check; oauthDisabledReason in ProfileRuntimeState; no OAuth tab / no 401 challenge when config incomplete*
 
 ## Evolution
 
