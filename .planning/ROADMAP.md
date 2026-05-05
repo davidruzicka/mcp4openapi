@@ -71,6 +71,17 @@ Plans:
 - [x] 03-02-PLAN.md - ApiKeyStore interface, InlineApiKeyStore, and factory (AUTH-02; SasankaApiKeyStore deferred to Phase 4)
 - [x] 03-03-PLAN.md - ClientAuthGate orchestrator (API key path only), http-transport wiring, session clientPrincipal attachment (AUTH-02, AUTH-03)
 
+### Phase 03.3: Graceful OAuth degradation for incomplete config (INSERTED)
+
+**Goal:** When an MCP profile has `auth.type = 'oauth'` but OAuth config is operationally incomplete (missing redirect_uri, or env vars not set), degrade gracefully instead of crashing with 500 or starting a broken OAuth flow. Reflect degradation on the HTML profile index page (hide OAuth auth tab/snippets when not operational).
+**Requirements**: DEGRADE-01
+**Depends on:** Phase 3
+**Plans:** 2 plans
+
+Plans:
+- [ ] 03.3-01-PLAN.md — isOAuthConfigOperational helper + OAuthOperationalCheck interface in oauth-provider.ts + unit tests (DEGRADE-01)
+- [ ] 03.3-02-PLAN.md — Wiring: profile-resolver extractAuthMethods filter + http-transport ProfileRuntimeState + getProfileState pre-flight + auth gate guard + test coverage (DEGRADE-01)
+
 ### Phase 03.2: Profile env-var description field (INSERTED)
 
 **Goal:** Add optional admin-supplied HTML description per profile via a server-wide `MCP4_PROFILES_DESCRIPTION` env var (JSON map of profile-id/name/alias → HTML string). Description renders raw (no sanitization) in the HTML index detail card immediately before the profile's own description. Sidebar list view is unchanged. Fail-fast at startup on invalid JSON or duplicate-resolution conflicts.
