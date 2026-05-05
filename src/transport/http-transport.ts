@@ -30,7 +30,7 @@ import { MetricsCollector } from '../core/metrics.js';
 import type { UpstreamConnectionManager } from '../upstream/upstream-connection-manager.js';
 import { UpstreamAuthError } from '../upstream/upstream-errors.js';
 import type { MetricsContextLabels } from '../core/metrics.js';
-import { ExternalOAuthProvider } from '../auth/oauth-provider.js';
+import { ExternalOAuthProvider, isOAuthConfigOperational } from '../auth/oauth-provider.js';
 import { EnterpriseAuthProvider } from '../auth/enterprise-auth-provider.js';
 import { InboundAuthTokenStore } from '../auth/inbound-auth-token-store.js';
 import { EnterpriseReplayStore } from '../auth/enterprise-replay-store.js';
@@ -95,6 +95,14 @@ interface ProfileRuntimeState {
   profileId: string;
   context: HttpProfileContext;
   oauthProvider: ExternalOAuthProvider | null;
+  /**
+   * Set when OAuth config is present but not operationally complete (missing env vars or
+   * required fields). When set, oauthProvider is null and no OAuth challenge is sent.
+   * Two independent checks: profile-resolver (HTML index) and http-transport (auth gate).
+   * Both checks are intentional - profile-resolver filters the UI surface while
+   * http-transport guards the runtime auth gate; they operate on different config shapes.
+   */
+  oauthDisabledReason?: string;
   enterpriseAuthProvider: EnterpriseAuthProvider | null;
   /**
    * Inbound client auth gate (Phase 3: API key path only). Constructed lazily
@@ -487,17 +495,37 @@ export class HttpTransport {
     }
 
     let oauthProvider: ExternalOAuthProvider | null = null;
+    let oauthDisabledReason: string | undefined;
+
     if (context.oauthConfig) {
-      this.logger.info('Initializing OAuth provider with config', {
-        profileId,
-        hasClientId: !!context.oauthConfig.client_id,
-      });
-      oauthProvider = new ExternalOAuthProvider(context.oauthConfig, this.logger);
-      this.logger.info('OAuth provider initialized', {
-        profileId,
-        endpoint: oauthProvider.authorizationEndpoint || '(to be derived from issuer)',
-        hasIssuer: !!context.oauthConfig.issuer,
-      });
+      // Pre-flight check before constructor to intercept synchronous throws from unresolved env vars.
+      const { operational, missing } = isOAuthConfigOperational(context.oauthConfig);
+      if (!operational) {
+        oauthDisabledReason = `incomplete OAuth config, missing: ${missing.join(', ')}`;
+      } else {
+        this.logger.info('Initializing OAuth provider with config', {
+          profileId,
+          hasClientId: !!context.oauthConfig.client_id,
+        });
+        try {
+          oauthProvider = new ExternalOAuthProvider(context.oauthConfig, this.logger);
+          this.logger.info('OAuth provider initialized', {
+            profileId,
+            endpoint: oauthProvider.authorizationEndpoint || '(to be derived from issuer)',
+            hasIssuer: !!context.oauthConfig.issuer,
+          });
+        } catch (err) {
+          // Catches edge cases: env var changed between check and construction, etc.
+          oauthDisabledReason = err instanceof Error ? err.message : String(err);
+        }
+      }
+
+      if (oauthDisabledReason) {
+        this.logger.warn('OAuth config not operational - OAuth disabled for profile', {
+          profileId,
+          reason: oauthDisabledReason,
+        });
+      }
     } else {
       this.logger.info('No OAuth config provided - OAuth provider not initialized', { profileId });
     }
@@ -518,6 +546,7 @@ export class HttpTransport {
       profileId,
       context,
       oauthProvider,
+      oauthDisabledReason,
       enterpriseAuthProvider,
       oauthTokensByAccessToken: new Map(),
       sessions: new Map(),
@@ -2768,9 +2797,9 @@ export class HttpTransport {
             : undefined;
           this.logger.debug('Auth token extracted', { authType: authInfo?.type, hasToken: !!authInfo?.token });
 
-          // If OAuth is configured, require authentication for initialization
+          // If OAuth is configured (and operational), require authentication for initialization
           // This ensures clients like Cursor properly handle OAuth flow
-          if (effectiveAuthContext.oauthConfig && !authInfo.token) {
+          if (effectiveAuthContext.oauthConfig && !profileState.oauthDisabledReason && !authInfo.token) {
             this.logger.debug('OAuth configured but no token provided, triggering OAuth flow');
             const resourceMetadataUrl = this.getOAuthProtectedResourceUrl(requestProfileId);
             const scopeValue = effectiveAuthContext.oauthConfig.scopes?.join(' ') || 'api';
