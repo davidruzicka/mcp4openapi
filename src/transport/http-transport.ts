@@ -2899,7 +2899,8 @@ export class HttpTransport {
                 this.logger.warn('Auth token validation failed during initialization', {
                   authType: authInfo.type,
                 });
-                res.status(HTTP_STATUS.UNAUTHORIZED).json({
+                // A supplied but invalid token is an authorization failure, not an auth challenge.
+                res.status(HTTP_STATUS.FORBIDDEN).json({
                   error: 'Unauthorized',
                   message: 'Invalid or expired authentication token'
                 });
@@ -2933,7 +2934,7 @@ export class HttpTransport {
                 this.logger.warn('Server-side env auth token validation failed during initialization', {
                   authType: config.type,
                 });
-                res.status(HTTP_STATUS.UNAUTHORIZED).json({
+                res.status(HTTP_STATUS.FORBIDDEN).json({
                   error: 'Unauthorized',
                   message: 'Invalid or expired server-side authentication token',
                 });

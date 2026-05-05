@@ -2777,7 +2777,8 @@ describeIfListen('HttpTransport', () => {
           .set('Host', 'localhost')
           .send({ jsonrpc: '2.0', id: 1, method: 'initialize' });
 
-        expect(response.status).toBe(401);
+        expect(response.status).toBe(403);
+        expect(response.headers['www-authenticate']).toBeUndefined();
         expect(response.body).toHaveProperty('message', 'Invalid or expired authentication token');
       } finally {
         global.fetch = originalFetch;
@@ -2875,7 +2876,8 @@ describeIfListen('HttpTransport', () => {
           // No Authorization header — server uses MCP4_SERVER_TOKEN
           .send({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 'test', version: '1' } } });
 
-        expect(response.status).toBe(401);
+        expect(response.status).toBe(403);
+        expect(response.headers['www-authenticate']).toBeUndefined();
         expect(response.body.message).toBe('Invalid or expired server-side authentication token');
       } finally {
         global.fetch = originalFetch;

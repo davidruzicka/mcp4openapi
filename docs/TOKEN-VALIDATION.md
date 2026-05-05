@@ -203,7 +203,7 @@ Authorization: Bearer valid_token
 → Tools available
 ```
 
-### Failure (401)
+### Failure (403)
 
 Token is invalid → connection rejected → user sees error
 
@@ -211,7 +211,7 @@ Token is invalid → connection rejected → user sees error
 POST /mcp (initialize)
 Authorization: Bearer invalid_token
 
-→ 401 Unauthorized
+→ 403 Forbidden
 {
   "error": "Unauthorized",
   "message": "Invalid or expired authentication token"
@@ -223,7 +223,7 @@ Authorization: Bearer invalid_token
 If validation takes longer than `validation_timeout_ms`:
 
 ```
-→ 401 Unauthorized
+→ 403 Forbidden
 {
   "error": "Unauthorized",
   "message": "Invalid or expired authentication token"
