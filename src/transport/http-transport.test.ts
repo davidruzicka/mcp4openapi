@@ -2219,6 +2219,7 @@ describeIfListen('HttpTransport', () => {
           issuer: 'https://auth.example.com',
           client_id: 'test-client',
           client_secret: 'test-secret',
+          redirect_uri: 'https://example.com/oauth/callback',
           scopes: ['read', 'write'],
         },
       };
@@ -2336,6 +2337,7 @@ describeIfListen('HttpTransport', () => {
           issuer: 'https://auth.example.com',
           client_id: 'test-client',
           client_secret: 'test-secret',
+          redirect_uri: 'https://example.com/oauth/callback',
           scopes: ['read', 'write'],
         },
       };
@@ -2398,6 +2400,7 @@ describeIfListen('HttpTransport', () => {
           issuer: 'https://auth.example.com',
           client_id: 'test-client',
           client_secret: 'test-secret',
+          redirect_uri: 'https://example.com/oauth/callback',
           scopes: ['read', 'write'],
         },
       };
@@ -2597,6 +2600,7 @@ describeIfListen('HttpTransport', () => {
           issuer: 'https://auth.example.com',
           client_id: 'test-client',
           client_secret: 'test-secret',
+          redirect_uri: 'https://example.com/oauth/callback',
           scopes: ['read', 'write'],
         },
         resourceName: 'Test MCP Server',
@@ -2658,6 +2662,7 @@ describeIfListen('HttpTransport', () => {
           issuer: 'https://auth.example.com',
           client_id: 'test-client',
           client_secret: 'test-secret',
+          redirect_uri: 'https://example.com/oauth/callback',
           scopes: [],
         },
       };
@@ -3095,6 +3100,7 @@ describeIfListen('HttpTransport', () => {
           token_endpoint: 'https://example.com/oauth/token',
           client_id: 'test-client',
           client_secret: 'test-secret',
+          redirect_uri: 'https://example.com/oauth/callback',
         },
       };
 
@@ -3102,6 +3108,49 @@ describeIfListen('HttpTransport', () => {
       await (oauthTransport as any).getProfileState('default');
       expect(oauthTransport.hasOAuthProvider()).toBe(true);
       oauthTransport.stop();
+    });
+
+    it('sets oauthDisabledReason and leaves oauthProvider null when oauth config is missing redirect_uri', async () => {
+      const warnSpy = vi.spyOn(logger, 'warn');
+
+      const incompleteOauthConfig = {
+        host: '127.0.0.1',
+        port: 0,
+        sessionTimeoutMs: 1800000,
+        heartbeatEnabled: false,
+        heartbeatIntervalMs: 30000,
+        metricsEnabled: false,
+        metricsPath: '/metrics',
+        oauthConfig: {
+          authorization_endpoint: 'https://example.com/oauth/authorize',
+          token_endpoint: 'https://example.com/oauth/token',
+          client_id: 'test-client',
+          client_secret: 'test-secret',
+          // No redirect_uri - should trigger graceful degradation
+        },
+      };
+
+      const degradedTransport = new HttpTransport(incompleteOauthConfig, logger);
+      await (degradedTransport as any).getProfileState('default');
+
+      const profileState = (degradedTransport as any).profileStates.get('default');
+      expect(profileState.oauthProvider).toBeNull();
+      expect(typeof profileState.oauthDisabledReason).toBe('string');
+      expect(profileState.oauthDisabledReason).toContain('redirect_uri');
+
+      // hasOAuthProvider should return false for degraded profile
+      expect(degradedTransport.hasOAuthProvider()).toBe(false);
+
+      // Warning must be logged with the reason
+      const warnCalls = warnSpy.mock.calls;
+      const oauthWarn = warnCalls.find(args => {
+        const msg = typeof args[0] === 'string' ? args[0] : '';
+        return msg.includes('OAuth config not operational');
+      });
+      expect(oauthWarn).toBeDefined();
+
+      warnSpy.mockRestore();
+      degradedTransport.stop();
     });
   });
 
@@ -3124,6 +3173,7 @@ describeIfListen('HttpTransport', () => {
           token_endpoint: 'https://example.com/oauth/token',
           client_id: 'test-client',
           client_secret: 'test-secret',
+          redirect_uri: 'https://example.com/oauth/callback',
         },
       };
 
@@ -3153,6 +3203,7 @@ describeIfListen('HttpTransport', () => {
           token_endpoint: 'https://example.com/oauth/token',
           client_id: 'test-client',
           client_secret: 'test-secret',
+          redirect_uri: 'https://example.com/oauth/callback',
           scopes: ['api', 'read_user'],
         },
       };
