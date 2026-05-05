@@ -2162,6 +2162,34 @@ describe('ExternalOAuthProvider', () => {
       expect(result.missing).toEqual([]);
     });
 
+    it('operational=false when issuer is empty string (treated as absent)', () => {
+      const result = isOAuthConfigOperational({ issuer: '', redirect_uri: 'https://app/callback' });
+      expect(result.operational).toBe(false);
+      expect(result.missing).toContain('issuer or (authorization_endpoint + token_endpoint)');
+    });
+
+    it('operational=true when issuer is set and authorization_endpoint has unresolved env var (issuer path takes precedence)', () => {
+      // When issuer is set, authorization_endpoint is optional — it will be derived from issuer discovery.
+      // An unresolved authorization_endpoint env ref does not make the config non-operational.
+      const result = isOAuthConfigOperational({
+        issuer: 'https://ok.example.com',
+        authorization_endpoint: '${env:UNSET_AUTH_ENDPOINT}',
+        redirect_uri: 'https://app/callback',
+      });
+      expect(result.operational).toBe(true);
+      expect(result.missing).toEqual([]);
+    });
+
+    it('operational=false when authorization_endpoint has unresolved env var and no issuer', () => {
+      const result = isOAuthConfigOperational({
+        authorization_endpoint: '${env:UNSET_AUTH_ENDPOINT}',
+        token_endpoint: 'https://ok.example.com/token',
+        redirect_uri: 'https://app/callback',
+      });
+      expect(result.operational).toBe(false);
+      expect(result.missing).toContain('issuer or (authorization_endpoint + token_endpoint)');
+    });
+
     it('operational=true when allow_unregistered_clients=true and client_id absent', () => {
       const result = isOAuthConfigOperational({
         issuer: 'https://ok.example.com',

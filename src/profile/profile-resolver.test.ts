@@ -964,6 +964,35 @@ describe('profile-resolver', () => {
     }
   });
 
+  it('keeps OAuth in authMethods when oauth_config has allow_unregistered_clients=true and no redirect_uri', async () => {
+    const root = await createTempDir();
+    const profilesDir = path.join(root, 'profiles');
+
+    await writeJson(path.join(profilesDir, 'unregistered-oauth.json'), {
+      profile_name: 'unregistered-oauth',
+      profile_id: 'unregistered-oauth',
+      openapi_spec_path: './openapi.yaml',
+      interceptors: {
+        auth: [
+          {
+            type: 'oauth',
+            oauth_config: {
+              issuer: 'https://accounts.example.com',
+              allow_unregistered_clients: true,
+              // No redirect_uri — required field skipped when allow_unregistered_clients=true
+            },
+          },
+        ],
+      },
+      tools: [],
+    });
+
+    const profiles = await listProfilesDetailed(profilesDir);
+    expect(profiles).toHaveLength(1);
+    // OAuth is operational with allow_unregistered_clients=true even without redirect_uri
+    expect(profiles[0].authMethods.some(m => m.type === 'oauth')).toBe(true);
+  });
+
   it('keeps OAuth in authMethods when oauth entry has no oauth_config field (passthrough)', async () => {
     const root = await createTempDir();
     const profilesDir = path.join(root, 'profiles');

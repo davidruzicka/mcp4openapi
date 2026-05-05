@@ -516,7 +516,8 @@ export class HttpTransport {
           });
         } catch (err) {
           // Catches edge cases: env var changed between check and construction, etc.
-          oauthDisabledReason = err instanceof Error ? err.message : String(err);
+          // Use a generic message — err.message from resolveEnvVars contains raw env var names.
+          oauthDisabledReason = 'OAuth provider construction failed after pre-flight check (env var removed at runtime)';
         }
       }
 
@@ -2799,10 +2800,11 @@ export class HttpTransport {
 
           // If OAuth is configured (and operational), require authentication for initialization
           // This ensures clients like Cursor properly handle OAuth flow
-          if (effectiveAuthContext.oauthConfig && !profileState.oauthDisabledReason && !authInfo.token) {
+          const oauthActive = !!effectiveAuthContext.oauthConfig && !profileState.oauthDisabledReason;
+          if (oauthActive && !authInfo.token) {
             this.logger.debug('OAuth configured but no token provided, triggering OAuth flow');
             const resourceMetadataUrl = this.getOAuthProtectedResourceUrl(requestProfileId);
-            const scopeValue = effectiveAuthContext.oauthConfig.scopes?.join(' ') || 'api';
+            const scopeValue = effectiveAuthContext.oauthConfig?.scopes?.join(' ') || 'api';
             res.setHeader('WWW-Authenticate', `Bearer resource_metadata="${resourceMetadataUrl}", scope="${scopeValue}"`);
             res.status(HTTP_STATUS.UNAUTHORIZED).json({
               error: 'Unauthorized',
@@ -4088,10 +4090,11 @@ export class HttpTransport {
         return newProvider;
       } catch (err) {
         // Catches edge cases: env var changed between check and construction, etc.
+        // Generic message — err.message from resolveEnvVars contains raw env var names.
         this.logger.warn('Tenant OAuth provider construction failed - tenant OAuth disabled for session', {
           profileId: profileState.profileId,
           sessionId: session.id,
-          reason: err instanceof Error ? err.message : String(err),
+          reason: 'Tenant OAuth provider construction failed after pre-flight check (env var removed at runtime)',
         });
         return null;
       }

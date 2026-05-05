@@ -53,7 +53,7 @@ describeIfListen('HttpTransport — OAuth TOCTOU catch path', () => {
     const profileState = (transport as any).profileStates.get('default');
     expect(profileState.oauthProvider).toBeNull();
     expect(typeof profileState.oauthDisabledReason).toBe('string');
-    expect(profileState.oauthDisabledReason).toContain('TOCTOU');
+    expect(profileState.oauthDisabledReason).toContain('pre-flight check');
 
     transport.stop();
   });
