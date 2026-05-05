@@ -76,11 +76,11 @@ Plans:
 **Goal:** When an MCP profile has `auth.type = 'oauth'` but OAuth config is operationally incomplete (missing redirect_uri, or env vars not set), degrade gracefully instead of crashing with 500 or starting a broken OAuth flow. Reflect degradation on the HTML profile index page (hide OAuth auth tab/snippets when not operational).
 **Requirements**: DEGRADE-01
 **Depends on:** Phase 3
-**Plans:** 2 plans
+**Plans:** 2/2 plans complete
 
 Plans:
-- [ ] 03.3-01-PLAN.md — isOAuthConfigOperational helper + OAuthOperationalCheck interface in oauth-provider.ts + unit tests (DEGRADE-01)
-- [ ] 03.3-02-PLAN.md — Wiring: profile-resolver extractAuthMethods filter + http-transport ProfileRuntimeState + getProfileState pre-flight + auth gate guard + test coverage (DEGRADE-01)
+- [x] 03.3-01-PLAN.md — isOAuthConfigOperational helper + OAuthOperationalCheck interface in oauth-provider.ts + unit tests (DEGRADE-01)
+- [x] 03.3-02-PLAN.md — Wiring: profile-resolver extractAuthMethods filter + http-transport ProfileRuntimeState + getProfileState pre-flight + auth gate guard + test coverage (DEGRADE-01)
 
 ### Phase 03.2: Profile env-var description field (INSERTED)
 

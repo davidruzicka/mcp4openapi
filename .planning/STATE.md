@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: Ready to execute
-stopped_at: Completed 03.3-01-PLAN.md
-last_updated: "2026-05-05T10:49:02.178Z"
+status: Phase complete — ready for verification
+stopped_at: Completed 03.3-02-PLAN.md
+last_updated: "2026-05-05T11:03:37.027Z"
 progress:
   total_phases: 9
-  completed_phases: 5
+  completed_phases: 6
   total_plans: 19
-  completed_plans: 18
+  completed_plans: 19
 ---
 
 # Project State
@@ -63,6 +63,7 @@ Plan: 2 of 2
 | Phase 03.2-profile-env-var-description P02 | 4min | 3 tasks | 4 files |
 | Phase 03.2-profile-env-var-description P03 | 5min | 2 tasks | 2 files |
 | Phase 03.3-graceful-oauth-degradation P01 | 4min | 1 tasks | 2 files |
+| Phase 03.3-graceful-oauth-degradation P02 | 13min | 3 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -109,6 +110,8 @@ Recent decisions affecting current work:
 - [Phase 03.2-profile-env-var-description]: safeJsonForHtml escapes only '<' not '>'; test assertions must use literal '>' for tag closings in expected rendered output
 - [Phase 03.3-graceful-oauth-degradation]: tryResolveEnvRef is module-private - callers only need isOAuthConfigOperational; exposing the resolver separately would allow misuse and bypass the intended API boundary
 - [Phase 03.3-graceful-oauth-degradation]: isOAuthConfigOperational placed before ExternalOAuthProvider class - enables pre-flight check without constructing the class (which throws on bad env vars)
+- [Phase 03.3-graceful-oauth-degradation]: oauthDisabledReason set in ProfileRuntimeState when pre-flight check fails - auth gate skips OAuth challenge without crashing
+- [Phase 03.3-graceful-oauth-degradation]: extractAuthMethods filters OAuth entries when isOAuthConfigOperational returns false - hiding oauth tab from HTML index when env vars are missing
 
 ### Roadmap Evolution
 
@@ -128,6 +131,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-05T10:49:02.175Z
-Stopped at: Completed 03.3-01-PLAN.md
+Last session: 2026-05-05T11:03:37.024Z
+Stopped at: Completed 03.3-02-PLAN.md
 Resume file: None
