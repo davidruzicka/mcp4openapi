@@ -94,7 +94,7 @@ Plans:
 - [x] 03.2-02-PLAN.md — Wiring: buildProfileIndexPayload 4th-arg adminDescriptions + HttpTransport.setProfileAdminDescriptions setter + main() startup parse/resolve/setter (D-01, D-04, D-05, D-07..D-10)
 - [x] 03.2-03-PLAN.md — HTML template patch: raw-HTML adminDescription div in renderDetail before profile.description; sidebar untouched; end-to-end raw-HTML pass-through tests (D-06, D-10, D-11, D-12)
 
-### Phase 03.1: Odstranění multi upstream mcp supportu (INSERTED)
+### Phase 03.1: Remove multi upstream MCP support (INSERTED)
 
 **Goal**: Profile.upstream_mcp narrowed end-to-end from UpstreamMcpServerConfig[] to UpstreamMcpServerConfig (singular). The runtime single-provider constraint already exists in profile-loader (D-03 check); this phase relocates it into the type system (Zod + TS), removes the now-dead loader runtime check, and migrates all consumers + test fixtures to the singular shape. Breaking change for end-user profile JSON/YAML using array syntax.
 **Requirements**: (none — internal type-narrowing refactor; preserves PROXY-01..04 and SEC-02 without modifying them)
