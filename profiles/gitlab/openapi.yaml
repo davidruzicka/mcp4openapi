@@ -3846,6 +3846,30 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/API_Entities_Job"
+  /projects/{id}/jobs/{job_id}/trace:
+    get:
+      tags:
+        - jobs
+      summary: Get job log
+      description: Get the raw log (trace) of a job
+      operationId: getJobLog
+      parameters:
+        - $ref: "#/components/parameters/ProjectIdOrPath"
+        - name: job_id
+          in: path
+          required: true
+          description: The ID of the job
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Job log content
+          content:
+            text/plain:
+              schema:
+                type: string
+        "404":
+          description: Job not found
   /projects/{id}/labels:
     get:
       tags:

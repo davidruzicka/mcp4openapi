@@ -1223,6 +1223,30 @@
       }
     },
     {
+      "name": "Jobs - Get Job Log",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "get_job_log",
+        "project_id": "{{projectId}}",
+        "job_id": "{{jobId}}"
+      },
+      "mocks": [
+        {
+          "operationId": "getJobLog",
+          "response": {
+            "status": 200,
+            "body": "Running with gitlab-runner...\nJob succeeded",
+            "headers": {
+              "content-type": "text/plain"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
       "name": "Jobs - Download Artifacts Archive",
       "tool": "retrieve_content",
       "arguments": {

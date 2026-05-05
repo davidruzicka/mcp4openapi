@@ -80,7 +80,7 @@
 
     {
       "name": "manage_pipelines_jobs",
-      "description": "Run and inspect pipelines/jobs. Actions: 'list_pipelines', 'run_pipeline', 'get_pipeline', 'list_pipeline_jobs', 'get_job', 'retry_job', 'cancel_job', 'play_job', 'download_job_artifacts' (proxy download), 'download_job_artifact' (single file). For 'list_pipelines', optionally pass 'ref'. For 'run_pipeline', pass 'ref'. For 'get_pipeline' and 'list_pipeline_jobs', pass 'pipeline_id'. For job actions, pass 'job_id'. For 'download_job_artifact', pass 'artifact_path'.",
+      "description": "Run and inspect pipelines/jobs. Actions: 'list_pipelines', 'run_pipeline', 'get_pipeline', 'list_pipeline_jobs', 'get_job', 'get_job_log', 'retry_job', 'cancel_job', 'play_job', 'download_job_artifacts' (proxy download), 'download_job_artifact' (single file). For 'list_pipelines', optionally pass 'ref'. For 'run_pipeline', pass 'ref'. For 'get_pipeline' and 'list_pipeline_jobs', pass 'pipeline_id'. For job actions, pass 'job_id'. For 'download_job_artifact', pass 'artifact_path'.",
       "metadata_params": ["action", "project_id", "pipeline_id", "job_id"],
       "operations": {
         "list_pipelines": "getApiV4ProjectsIdPipelines",
@@ -88,6 +88,7 @@
         "get_pipeline": "getApiV4ProjectsIdPipelinesPipelineId",
         "list_pipeline_jobs": "getApiV4ProjectsIdPipelinesPipelineIdJobs",
         "get_job": "getSingleJob",
+        "get_job_log": "getJobLog",
         "retry_job": "postApiV4ProjectsIdJobsJobIdRetry",
         "play_job": "triggerManualJob",
         "cancel_job": "postApiV4ProjectsIdJobsJobIdCancel",
@@ -112,7 +113,7 @@
       "parameters": {
         "action": {
           "type": "string",
-          "enum": ["list_pipelines", "run_pipeline", "get_pipeline", "list_pipeline_jobs", "get_job", "retry_job", "cancel_job", "play_job", "download_job_artifacts", "download_job_artifact"],
+          "enum": ["list_pipelines", "run_pipeline", "get_pipeline", "list_pipeline_jobs", "get_job", "get_job_log", "retry_job", "cancel_job", "play_job", "download_job_artifacts", "download_job_artifact"],
           "description": "Pipeline/job action to perform",
           "required": true
         },
@@ -129,7 +130,7 @@
         "job_id": {
           "type": "integer",
           "description": "Job ID",
-          "required_for": ["get_job", "retry_job", "cancel_job", "play_job", "download_job_artifacts", "download_job_artifact"]
+          "required_for": ["get_job", "get_job_log", "retry_job", "cancel_job", "play_job", "download_job_artifacts", "download_job_artifact"]
         },
         "ref": {
           "type": "string",

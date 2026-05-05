@@ -1418,14 +1418,14 @@
           ]
         },
         "overrides": {
-          "$ref": "#/definitions/Record%3Cstring%2Cstructure-1535101595-23568-23604-1535101595-23553-23605-1535101595-23539-23606-1535101595-23468-23608-1535101595-0-23748%3E"
+          "$ref": "#/definitions/Record%3Cstring%2Cstructure-1535101595-23792-23828-1535101595-23777-23829-1535101595-23763-23830-1535101595-23692-23832-1535101595-0-23972%3E"
         }
       },
       "required": [
         "max_requests_per_minute"
       ]
     },
-    "Record<string,structure-1535101595-23568-23604-1535101595-23553-23605-1535101595-23539-23606-1535101595-23468-23608-1535101595-0-23748>": {
+    "Record<string,structure-1535101595-23792-23828-1535101595-23777-23829-1535101595-23763-23830-1535101595-23692-23832-1535101595-0-23972>": {
       "type": "object",
       "additionalProperties": {
         "type": "object",
@@ -1926,8 +1926,7 @@
         }
       },
       "required": [
-        "type",
-        "value_from_env"
+        "type"
       ],
       "description": "Upstream auth is intentionally narrower than inbound profile auth. Secrets must be referenced via environment variables, never stored inline."
     },
@@ -1946,6 +1945,20 @@
             "type": "string"
           }
         }
+      }
+    },
+    "Record<string,structure-1535101595-23568-23604-1535101595-23553-23605-1535101595-23539-23606-1535101595-23468-23608-1535101595-0-23748>": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "max_requests_per_minute": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "max_requests_per_minute"
+        ]
       }
     },
     "Record<string,structure-1535101595-22780-22816-1535101595-22765-22817-1535101595-22751-22818-1535101595-22680-22820-1535101595-0-22960>": {

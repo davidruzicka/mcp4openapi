@@ -3094,6 +3094,30 @@
       }
     },
     {
+      "name": "Jobs - Get Job Log",
+      "tool": "manage_pipelines_jobs",
+      "arguments": {
+        "action": "get_job_log",
+        "project_id": "{{projectId}}",
+        "job_id": 1234
+      },
+      "mocks": [
+        {
+          "operationId": "getJobLog",
+          "response": {
+            "status": 200,
+            "body": "Running with gitlab-runner...\nJob succeeded",
+            "headers": {
+              "content-type": "text/plain"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
       "name": "Jobs - Retry Job",
       "tool": "manage_pipelines_jobs",
       "arguments": {
