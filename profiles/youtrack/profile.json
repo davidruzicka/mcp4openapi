@@ -27,7 +27,8 @@
     },
     "auth": {
       "type": "bearer",
-      "value_from_env": "YOUTRACK_TOKEN"
+      "value_from_env": "YOUTRACK_TOKEN",
+      "validation_endpoint": "users/me"
     }
   },
 
