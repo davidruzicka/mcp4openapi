@@ -94,6 +94,15 @@ export interface HttpTransportConfig {
   rateLimitOAuthMax?: number; // Max OAuth requests per window (default: 10)
   rateLimitOAuthWindowMs?: number; // OAuth rate limit window in ms (default: 1 minute)
   maxTokenLength?: number; // Maximum token length in characters (default: 1000)
+  /**
+   * 32-byte symmetric key used to encrypt/decrypt token envelopes (mcp4.v1.* tokens).
+   * Derived from `MCP4_TOKEN_KEY` env var by `deriveTokenKey()`:
+   *   - 64-char hex string -> Buffer.from(raw, 'hex')
+   *   - anything else      -> SHA-256(raw)
+   * When undefined, the gateway operates in plain-token mode (backward compat).
+   * See src/auth/token-envelope.ts for the envelope format and security boundary.
+   */
+  tokenKey?: Buffer;
   trustProxy?: boolean | number | string; // Express trust proxy setting
   oauthConfig?: OAuthConfig; // OAuth 2.0 configuration (optional)
   baseUrl?: string; // Base URL for API (for token validation)

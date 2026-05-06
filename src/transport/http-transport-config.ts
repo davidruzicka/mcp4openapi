@@ -4,6 +4,7 @@
 
 import { TIMEOUTS } from '../core/constants.js';
 import { ConfigurationError } from '../core/errors.js';
+import { deriveTokenKey } from '../auth/token-envelope.js';
 import type { HttpTransportConfig } from '../types/http-transport.js';
 
 function parseTrustProxy(value: string): boolean | number | string {
@@ -37,6 +38,11 @@ export function buildHttpTransportBaseConfig(host: string, port: number): HttpTr
     maxTokenLength: process.env.MCP4_TOKEN_MAX_LENGTH
       ? parseInt(process.env.MCP4_TOKEN_MAX_LENGTH, 10)
       : undefined,
+    tokenKey: (() => {
+      const raw = process.env.MCP4_TOKEN_KEY;
+      if (!raw || !raw.trim()) return undefined;
+      return deriveTokenKey(raw.trim());
+    })(),
     trustProxy: process.env.MCP4_TRUST_PROXY
       ? parseTrustProxy(process.env.MCP4_TRUST_PROXY)
       : undefined,
