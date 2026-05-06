@@ -92,6 +92,8 @@ import {
 } from './profile-index.js';
 import type { ProfileIndexSourceProfile, ProfileIndexTenantSummary } from './profile-index.js';
 const DEFAULT_MAX_TOKEN_LENGTH = 4096;
+// Envelopes older than 30 days are rejected during restart-recovery to bound token lifetime at rest.
+const MAX_ENVELOPE_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 
 interface ProfileRuntimeState {
   profileId: string;
@@ -113,7 +115,7 @@ interface ProfileRuntimeState {
    */
   clientAuthGate?: ClientAuthGate;
   toolFilterService?: ToolFilterService;
-  oauthTokensByAccessToken: Map<string, { refreshToken?: string; expiresAt?: number; clientId: string; scopes: string[] }>;
+  oauthTokensByAccessToken: Map<string, { refreshToken?: string; expiresAt?: number; clientId: string; scopes: string[]; rawAccessToken?: string }>;
   sessions: Map<string, SessionData>;
   tenantIndex: HttpTenantIndex;
   tenantOAuthProvidersBySessionId: Map<string, ExternalOAuthProvider>;
@@ -167,6 +169,14 @@ export class HttpTransport {
         'OAuth clients will need to re-authenticate after every gateway restart. ' +
         'Set MCP4_TOKEN_KEY (any passphrase, or a 64-char hex string) for restart-resilient OAuth.',
       );
+    } else {
+      const rawKey = process.env.MCP4_TOKEN_KEY?.trim();
+      if (rawKey && !(rawKey.length === 64 && /^[0-9a-fA-F]+$/.test(rawKey))) {
+        this.logger.warn(
+          'MCP4_TOKEN_KEY is a passphrase (SHA-256 derived, no salt/work factor). ' +
+          'Weak passphrases offer little protection. For production use a random hex key: openssl rand -hex 32',
+        );
+      }
     }
     this.ssrfValidator = new SSRFValidator(logger);
     this.rawTenantConfig = loadRawTenantsConfigFromEnv();
@@ -3064,26 +3074,67 @@ export class HttpTransport {
                 profileState.profileId,
               );
               if (envelope) {
-                refreshToken = envelope.rt;
-                accessTokenExpiresAt = envelope.exp;
-                scopes = envelope.sc;
-                oauthClientId = envelope.cid;
-                if (envelope.creg && profileState.oauthProvider) {
-                  await profileState.oauthProvider.clientsStore.registerClient({
-                    client_id: envelope.creg.id,
-                    redirect_uris: envelope.creg.ru ?? [],
-                    grant_types: envelope.creg.gt ?? ['authorization_code', 'refresh_token'],
-                    response_types: envelope.creg.rt_ ?? ['code'],
-                    scope: envelope.creg.sc ?? '',
+                // Issue #3: reject stale envelopes to bound token lifetime at rest.
+                if (Date.now() - envelope.iat > MAX_ENVELOPE_AGE_MS) {
+                  this.logger.debug('Encrypted token envelope expired (iat too old) - treating as plain bearer', {
+                    profileId: profileState.profileId,
+                    ageMs: Date.now() - envelope.iat,
+                    maxAgeMs: MAX_ENVELOPE_AGE_MS,
+                  });
+                } else {
+                  refreshToken = envelope.rt;
+                  accessTokenExpiresAt = envelope.exp;
+                  scopes = envelope.sc;
+                  oauthClientId = envelope.cid;
+
+                  // Populate the per-profile map so getSessionToken returns the raw
+                  // access_token for upstream API calls, not the mcp4.v1.* envelope.
+                  profileState.oauthTokensByAccessToken.set(authInfo.token, {
+                    refreshToken: envelope.rt,
+                    expiresAt: envelope.exp,
+                    clientId: envelope.cid ?? '',
+                    scopes: envelope.sc ?? [],
+                    rawAccessToken: envelope.at,
+                  });
+
+                  let restoredClientReg = false;
+                  if (envelope.creg && profileState.oauthProvider) {
+                    // Issue #4: skip registration if client already exists to avoid
+                    // overwriting active registrations with envelope-embedded data.
+                    const existingClient = await profileState.oauthProvider.clientsStore.getClient(envelope.creg.id);
+                    if (!existingClient) {
+                      try {
+                        await profileState.oauthProvider.clientsStore.registerClient({
+                          client_id: envelope.creg.id,
+                          redirect_uris: envelope.creg.ru ?? [],
+                          grant_types: envelope.creg.gt ?? ['authorization_code', 'refresh_token'],
+                          response_types: envelope.creg.rt_ ?? ['code'],
+                          scope: envelope.creg.sc ?? '',
+                        });
+                        restoredClientReg = true;
+                      } catch (regErr) {
+                        // Issue #2: OAuthClientStoreCapacityError must not crash session init.
+                        // Session partially rehydrates without DCR re-registration - the
+                        // refresh token is still available for token renewal on next tool call.
+                        this.logger.warn('Failed to re-register OAuth client from envelope during restart recovery', {
+                          profileId: profileState.profileId,
+                          clientId: envelope.creg.id,
+                          errorType: regErr instanceof Error ? regErr.constructor.name : 'unknown',
+                        });
+                      }
+                    } else {
+                      restoredClientReg = true;
+                    }
+                  }
+
+                  this.logger.info('Session restored from encrypted token envelope after restart', {
+                    profileId: profileState.profileId,
+                    hasRefreshToken: !!refreshToken,
+                    hasExpiry: !!accessTokenExpiresAt,
+                    oauthClientId,
+                    restoredClientReg,
                   });
                 }
-                this.logger.info('Session restored from encrypted token envelope after restart', {
-                  profileId: profileState.profileId,
-                  hasRefreshToken: !!refreshToken,
-                  hasExpiry: !!accessTokenExpiresAt,
-                  oauthClientId,
-                  restoredClientReg: !!envelope.creg,
-                });
               } else {
                 this.logger.debug(
                   'Encrypted token failed to decrypt (wrong key, tampered, or wrong profile)',
@@ -3941,8 +3992,7 @@ export class HttpTransport {
     registeredClient?: OAuthClientInformationFull,
   ): string {
     if (!tokens.access_token) {
-      this.logger.warn('OAuth tokens missing access_token, skipping storage');
-      return '';
+      throw new AuthenticationError('OAuth tokens missing access_token');
     }
 
     const expiresAt = tokens.expires_in
@@ -3988,6 +4038,7 @@ export class HttpTransport {
       expiresAt,
       clientId,
       scopes,
+      rawAccessToken: clientToken !== tokens.access_token ? tokens.access_token : undefined,
     });
     this.inboundAuthTokenStore.store(clientToken, {
       authType: 'oauth',
@@ -4073,8 +4124,13 @@ export class HttpTransport {
    * Why public: Allows MCPServer to securely access session tokens without breaking encapsulation
    */
   public getSessionToken(profileId: string, sessionId: string): string | undefined {
-    const session = this.profileStates.get(profileId)?.sessions.get(sessionId);
-    return session?.authToken;
+    const profileState = this.profileStates.get(profileId);
+    const session = profileState?.sessions.get(sessionId);
+    if (!session?.authToken) return undefined;
+    // When session.authToken is an encrypted envelope (mcp4.v1.*), the envelope is only
+    // the inbound session-lookup key. Upstream API calls must use the embedded raw access_token.
+    const tokenData = profileState?.oauthTokensByAccessToken.get(session.authToken);
+    return tokenData?.rawAccessToken ?? session.authToken;
   }
 
   public getSessionFiltering(profileId: string, sessionId: string): Record<string, string[]> | undefined {
@@ -4356,9 +4412,9 @@ export class HttpTransport {
         this.inboundAuthTokenStore.delete(oldAccessToken);
       }
       // Issue new envelope (or plain token in plain-token mode) and use it as the new session.authToken.
-      // No registeredClient passed - internal refresh does not need to re-embed creg (already embedded
-      // at initial /oauth/token issuance, and the existing session has the client registered already).
-      const newClientToken = this.storeOAuthTokens(profileState, tokens, client.client_id, session.scopes || []);
+      // Pass client so creg is re-embedded: without it, post-refresh envelopes lose the client
+      // registration and a subsequent restart can no longer re-register the DCR client.
+      const newClientToken = this.storeOAuthTokens(profileState, tokens, client.client_id, session.scopes || [], client);
       session.authToken = newClientToken;
 
       this.logger.info('Access token refreshed successfully', {

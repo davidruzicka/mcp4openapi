@@ -28,6 +28,7 @@
  */
 
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto';
+import { ValidationError } from '../core/errors.js';
 
 const TOKEN_PREFIX = 'mcp4.v1.';
 const NONCE_BYTES = 12;
@@ -91,7 +92,7 @@ export function encryptTokenPayload(payload: TokenEnvelopePayload, key: Buffer):
     !Buffer.isBuffer(key) ||
     key.length !== KEY_BYTES
   ) {
-    throw new Error(
+    throw new ValidationError(
       `encryptTokenPayload: payload.pid must be non-empty and key must be a ${KEY_BYTES}-byte Buffer`,
     );
   }
@@ -169,7 +170,7 @@ export function decryptTokenPayload(
     if (candidate.v !== 1) {
       return null;
     }
-    if (typeof candidate.at !== 'string') {
+    if (typeof candidate.at !== 'string' || candidate.at.length === 0) {
       return null;
     }
     if (candidate.pid !== profileId) {

@@ -2396,10 +2396,10 @@ describe('HttpTransport security behavior (no listen)', () => {
     await transport.stop();
   });
 
-  it('stores OAuth tokens and handles missing access_token', async () => {
+  it('stores OAuth tokens and throws AuthenticationError on missing access_token', async () => {
     const transport = createTransport();
     const profileState = createProfileState(transport as any);
-    (transport as any).storeOAuthTokens(profileState, {}, 'client', ['a']);
+    expect(() => (transport as any).storeOAuthTokens(profileState, {}, 'client', ['a'])).toThrow('OAuth tokens missing access_token');
     (transport as any).storeOAuthTokens(profileState, { access_token: 'a', token_type: 'Bearer', expires_in: 1, refresh_token: 'r' }, 'client', ['a']);
     expect(profileState.oauthTokensByAccessToken.has('a')).toBe(true);
     await transport.stop();

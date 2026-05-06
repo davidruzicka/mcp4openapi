@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { createHash, randomBytes } from 'node:crypto';
+import { createCipheriv as nodeCipheriv, createHash, randomBytes } from 'node:crypto';
+import { ValidationError } from '../core/errors.js';
 import {
   decryptTokenPayload,
   deriveTokenKey,
@@ -219,8 +220,73 @@ describe('token-envelope', () => {
     expect(out?.creg).toBeUndefined();
     expect('creg' in (out as object)).toBe(false);
   });
+
+  it('encryptTokenPayload throws ValidationError on empty pid', () => {
+    expect(() =>
+      encryptTokenPayload({ ...FULL_PAYLOAD, pid: '' }, KEY),
+    ).toThrow(ValidationError);
+  });
+
+  it('encryptTokenPayload throws ValidationError when key is wrong length (31 bytes)', () => {
+    const shortKey = randomBytes(31);
+    expect(() =>
+      encryptTokenPayload(FULL_PAYLOAD, shortKey),
+    ).toThrow(ValidationError);
+  });
+
+  it('decryptTokenPayload returns null for 31-byte (wrong-length) key without throwing', () => {
+    const token = encryptTokenPayload(FULL_PAYLOAD, KEY);
+    const shortKey = randomBytes(31);
+    let result: TokenEnvelopePayload | null = FULL_PAYLOAD;
+    expect(() => {
+      result = decryptTokenPayload(token, shortKey, PROFILE_ID);
+    }).not.toThrow();
+    expect(result).toBeNull();
+  });
+
+  it('decryptTokenPayload returns null for empty profileId without throwing', () => {
+    const token = encryptTokenPayload(FULL_PAYLOAD, KEY);
+    let result: TokenEnvelopePayload | null = FULL_PAYLOAD;
+    expect(() => {
+      result = decryptTokenPayload(token, KEY, '');
+    }).not.toThrow();
+    expect(result).toBeNull();
+  });
+
+  it('decryptTokenPayload returns null when at field is empty string', () => {
+    // Craft raw ciphertext with at='' since encryptTokenPayload does not validate at
+    const nonce = randomBytes(12);
+    const cipher = nodeCipheriv('aes-256-gcm', KEY, nonce);
+    cipher.setAAD(Buffer.from(PROFILE_ID, 'utf8'));
+    const plain = Buffer.from(JSON.stringify({ ...FULL_PAYLOAD, at: '' }), 'utf8');
+    const ct = Buffer.concat([cipher.update(plain), cipher.final()]);
+    const tag = cipher.getAuthTag();
+    const token = 'mcp4.v1.' + Buffer.concat([nonce, ct, tag]).toString('base64url');
+    expect(decryptTokenPayload(token, KEY, PROFILE_ID)).toBeNull();
+  });
+
+  it('decryptTokenPayload returns null when v !== 1', () => {
+    const nonce = randomBytes(12);
+    const cipher = nodeCipheriv('aes-256-gcm', KEY, nonce);
+    cipher.setAAD(Buffer.from(PROFILE_ID, 'utf8'));
+    const plain = Buffer.from(JSON.stringify({ ...FULL_PAYLOAD, v: 2 }), 'utf8');
+    const ct = Buffer.concat([cipher.update(plain), cipher.final()]);
+    const tag = cipher.getAuthTag();
+    const token = 'mcp4.v1.' + Buffer.concat([nonce, ct, tag]).toString('base64url');
+    expect(decryptTokenPayload(token, KEY, PROFILE_ID)).toBeNull();
+  });
+
+  it('decryptTokenPayload returns null when iat is a string (non-number)', () => {
+    const nonce = randomBytes(12);
+    const cipher = nodeCipheriv('aes-256-gcm', KEY, nonce);
+    cipher.setAAD(Buffer.from(PROFILE_ID, 'utf8'));
+    const plain = Buffer.from(JSON.stringify({ ...FULL_PAYLOAD, iat: 'not-a-number' }), 'utf8');
+    const ct = Buffer.concat([cipher.update(plain), cipher.final()]);
+    const tag = cipher.getAuthTag();
+    const token = 'mcp4.v1.' + Buffer.concat([nonce, ct, tag]).toString('base64url');
+    expect(decryptTokenPayload(token, KEY, PROFILE_ID)).toBeNull();
+  });
 });
 
 // Touch unused imports so eslint never trips on tree-shaken helpers in test contexts.
-void randomBytes;
 void TAG_BYTES;
