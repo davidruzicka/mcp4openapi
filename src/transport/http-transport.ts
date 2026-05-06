@@ -31,7 +31,7 @@ import type { UpstreamConnectionManager } from '../upstream/upstream-connection-
 import { UpstreamAuthError } from '../upstream/upstream-errors.js';
 import type { MetricsContextLabels } from '../core/metrics.js';
 import { ExternalOAuthProvider, isOAuthConfigOperational } from '../auth/oauth-provider.js';
-import { encryptTokenPayload, decryptTokenPayload, isEncryptedToken } from '../auth/token-envelope.js';
+import { encryptTokenPayload, decryptTokenPayload, isEncryptedToken, type TokenEnvelopePayload } from '../auth/token-envelope.js';
 import { EnterpriseAuthProvider } from '../auth/enterprise-auth-provider.js';
 import { InboundAuthTokenStore } from '../auth/inbound-auth-token-store.js';
 import { EnterpriseReplayStore } from '../auth/enterprise-replay-store.js';
@@ -3027,6 +3027,7 @@ export class HttpTransport {
           let accessTokenExpiresAt: number | undefined;
           let scopes: string[] | undefined;
           let oauthClientId: string | undefined;
+          let recoveredEnvelope: TokenEnvelopePayload | null = null;
           
           if (authInfo.token && (authInfo.type === 'oauth' || authInfo.type === 'bearer')) {
             if (internalToken) {
@@ -3064,7 +3065,7 @@ export class HttpTransport {
             // gateway restart without re-running the OAuth browser flow.
             if (
               !internalToken &&
-              !refreshToken &&
+              !tokenData &&
               this.config.tokenKey &&
               isEncryptedToken(authInfo.token)
             ) {
@@ -3076,26 +3077,26 @@ export class HttpTransport {
               if (envelope) {
                 // Issue #3: reject stale envelopes to bound token lifetime at rest.
                 if (Date.now() - envelope.iat > MAX_ENVELOPE_AGE_MS) {
-                  this.logger.debug('Encrypted token envelope expired (iat too old) - treating as plain bearer', {
+                  this.logger.warn('Encrypted token envelope expired (iat too old)', {
                     profileId: profileState.profileId,
                     ageMs: Date.now() - envelope.iat,
                     maxAgeMs: MAX_ENVELOPE_AGE_MS,
                   });
+                  res.status(HTTP_STATUS.UNAUTHORIZED).json({
+                    error: 'Unauthorized',
+                    message: 'Session token expired, please re-authenticate',
+                  });
+                  return;
                 } else {
                   refreshToken = envelope.rt;
                   accessTokenExpiresAt = envelope.exp;
                   scopes = envelope.sc;
                   oauthClientId = envelope.cid;
 
-                  // Populate the per-profile map so getSessionToken returns the raw
-                  // access_token for upstream API calls, not the mcp4.v1.* envelope.
-                  profileState.oauthTokensByAccessToken.set(authInfo.token, {
-                    refreshToken: envelope.rt,
-                    expiresAt: envelope.exp,
-                    clientId: envelope.cid ?? '',
-                    scopes: envelope.sc ?? [],
-                    rawAccessToken: envelope.at,
-                  });
+                  // Save envelope for post-createSession map population (both stores must be
+                  // populated atomically after the session is confirmed created, to avoid leaking
+                  // map entries if createSession throws).
+                  recoveredEnvelope = envelope;
 
                   let restoredClientReg = false;
                   if (envelope.creg && profileState.oauthProvider) {
@@ -3159,6 +3160,29 @@ export class HttpTransport {
             tenantBaseUrlHeaderValue,
             resolvedClientPrincipal,
           );
+
+          // Populate token stores after session is confirmed created to avoid
+          // leaking map entries on createSession failure. Both stores keyed by
+          // authInfo.token (the envelope) so getSessionToken and enterprise
+          // enforcement checks can resolve the restored session correctly.
+          if (recoveredEnvelope !== null) {
+            const envelopeToken = authInfo.token!;
+            profileState.oauthTokensByAccessToken.set(envelopeToken, {
+              refreshToken: recoveredEnvelope.rt,
+              expiresAt: recoveredEnvelope.exp,
+              clientId: recoveredEnvelope.cid ?? '',
+              scopes: recoveredEnvelope.sc ?? [],
+              rawAccessToken: recoveredEnvelope.at,
+            });
+            this.inboundAuthTokenStore.store(envelopeToken, {
+              authType: 'oauth',
+              profileId: profileState.profileId,
+              subject: recoveredEnvelope.cid ?? '',
+              clientId: recoveredEnvelope.cid ?? '',
+              scopes: recoveredEnvelope.sc ?? [],
+              expiresAt: recoveredEnvelope.exp,
+            });
+          }
         }
 
         this.logger.debug('Calling messageHandler', { body, sessionId: isInitialization ? newSessionId : sessionId });

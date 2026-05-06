@@ -2783,13 +2783,31 @@ describeIfListen('HttpTransport', () => {
     });
 
     it('does not warn about MCP4_TOKEN_KEY when tokenKey is set', async () => {
+      const savedKey = process.env.MCP4_TOKEN_KEY;
+      delete process.env.MCP4_TOKEN_KEY;
       const mockLogger = buildMockLogger();
       const t = new HttpTransport({ ...baseConfig, tokenKey: Buffer.alloc(32) }, mockLogger);
+      if (savedKey !== undefined) process.env.MCP4_TOKEN_KEY = savedKey;
       const warnCalls = mockLogger.warn.mock.calls;
       const matchingCall = warnCalls.find((args: unknown[]) =>
         typeof args[0] === 'string' && (args[0] as string).includes('MCP4_TOKEN_KEY'),
       );
       expect(matchingCall).toBeUndefined();
+      await t.stop();
+    });
+
+    it('warns when MCP4_TOKEN_KEY is a passphrase (non-hex key)', async () => {
+      const savedKey = process.env.MCP4_TOKEN_KEY;
+      process.env.MCP4_TOKEN_KEY = 'my-weak-passphrase';
+      const mockLogger = buildMockLogger();
+      const t = new HttpTransport({ ...baseConfig, tokenKey: Buffer.alloc(32) }, mockLogger);
+      if (savedKey !== undefined) process.env.MCP4_TOKEN_KEY = savedKey;
+      else delete process.env.MCP4_TOKEN_KEY;
+      const warnCalls = mockLogger.warn.mock.calls;
+      const matchingCall = warnCalls.find((args: unknown[]) =>
+        typeof args[0] === 'string' && (args[0] as string).includes('MCP4_TOKEN_KEY is a passphrase'),
+      );
+      expect(matchingCall).toBeDefined();
       await t.stop();
     });
 
@@ -3881,6 +3899,8 @@ describeIfListen('HttpTransport', () => {
       expect(returned.startsWith('mcp4.v1.')).toBe(true);
       expect(profileState.oauthTokensByAccessToken.has(returned)).toBe(true);
       expect(profileState.oauthTokensByAccessToken.has(tokens.access_token)).toBe(false);
+      const mapEntry = profileState.oauthTokensByAccessToken.get(returned);
+      expect(mapEntry?.rawAccessToken).toBe('idp-access-d');
       await t.stop();
     });
 
@@ -4481,6 +4501,165 @@ describeIfListen('HttpTransport', () => {
       expect(restoredCall).toBeUndefined();
       await t.stop();
     });
+
+    it('Test S: stale envelope (>30 days old) returns 401 with warn log', async () => {
+      const { encryptTokenPayload } = await import('../auth/token-envelope.js');
+      const mockLogger = mkLogger();
+      const key = buildKey();
+      const t = buildTransport({ tokenKey: key, testLogger: mockLogger });
+      const tApp = (t as any).app;
+      t.setMessageHandler(async () => ({ protocolVersion: '2025-03-26', serverInfo: { name: 'test' } }));
+
+      const staleIat = Date.now() - (31 * 24 * 60 * 60 * 1000);
+      const envelope = encryptTokenPayload(
+        { v: 1, at: 'idp-access-s', rt: 'idp-refresh-s', pid: 'default', iat: staleIat },
+        key,
+      );
+
+      const response = await request(tApp)
+        .post('/mcp')
+        .set('Accept', 'application/json, text/event-stream')
+        .set('Authorization', `Bearer ${envelope}`)
+        .send({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} });
+
+      expect(response.status).toBe(401);
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        'Encrypted token envelope expired (iat too old)',
+        expect.objectContaining({ profileId: 'default' }),
+      );
+      // No session created
+      const profileState = (t as any).__test_profileState;
+      expect(profileState.sessions.size).toBe(0);
+      await t.stop();
+    });
+
+    it('Test T: envelope with creg but client already exists - registerClient NOT called, restoredClientReg=true', async () => {
+      const { encryptTokenPayload } = await import('../auth/token-envelope.js');
+      const key = buildKey();
+      const mockLogger = mkLogger();
+      const t = buildTransport({ tokenKey: key, testLogger: mockLogger });
+      const tApp = (t as any).app;
+      t.setMessageHandler(async () => ({ protocolVersion: '2025-03-26', serverInfo: { name: 'test' } }));
+
+      // Override getClient to return an existing client
+      const profileState = (t as any).__test_profileState;
+      const registerClientSpy = (t as any).__test_registerClientSpy;
+      profileState.oauthProvider.clientsStore.getClient = vi.fn(async () => ({ client_id: 'existing-t' }));
+
+      const envelope = encryptTokenPayload(
+        {
+          v: 1,
+          at: 'at-t',
+          rt: 'rt-t',
+          pid: 'default',
+          iat: Date.now(),
+          creg: { id: 'existing-t', ru: ['https://x/cb'] },
+        },
+        key,
+      );
+
+      await request(tApp)
+        .post('/mcp')
+        .set('Accept', 'application/json, text/event-stream')
+        .set('Authorization', `Bearer ${envelope}`)
+        .send({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} });
+
+      expect(registerClientSpy).not.toHaveBeenCalled();
+      expect(mockLogger.info).toHaveBeenCalledWith(
+        'Session restored from encrypted token envelope after restart',
+        expect.objectContaining({ restoredClientReg: true }),
+      );
+      await t.stop();
+    });
+
+    it('Test U: registerClient throws during recovery - warn logged but session still created', async () => {
+      const { encryptTokenPayload } = await import('../auth/token-envelope.js');
+      const key = buildKey();
+      const mockLogger = mkLogger();
+      const t = buildTransport({ tokenKey: key, testLogger: mockLogger });
+      const tApp = (t as any).app;
+      t.setMessageHandler(async () => ({ protocolVersion: '2025-03-26', serverInfo: { name: 'test' } }));
+
+      const profileState = (t as any).__test_profileState;
+      class OAuthClientStoreCapacityError extends Error {
+        constructor() { super('capacity exceeded'); this.name = 'OAuthClientStoreCapacityError'; }
+      }
+      profileState.oauthProvider.clientsStore.registerClient = vi.fn(async () => { throw new OAuthClientStoreCapacityError(); });
+
+      const envelope = encryptTokenPayload(
+        {
+          v: 1,
+          at: 'at-u',
+          rt: 'rt-u',
+          pid: 'default',
+          iat: Date.now(),
+          creg: { id: 'client-u' },
+        },
+        key,
+      );
+
+      const response = await request(tApp)
+        .post('/mcp')
+        .set('Accept', 'application/json, text/event-stream')
+        .set('Authorization', `Bearer ${envelope}`)
+        .send({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} });
+
+      expect(response.status).toBe(200);
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        'Failed to re-register OAuth client from envelope during restart recovery',
+        expect.objectContaining({ clientId: 'client-u', errorType: 'OAuthClientStoreCapacityError' }),
+      );
+      // Session still created with refresh token
+      const session = findOnlySession(t);
+      expect(session).toBeDefined();
+      expect(session.refreshToken).toBe('rt-u');
+      await t.stop();
+    });
+
+    it('Test V: recovered envelope populates both oauthTokensByAccessToken and inboundAuthTokenStore', async () => {
+      const { encryptTokenPayload } = await import('../auth/token-envelope.js');
+      const key = buildKey();
+      const t = buildTransport({ tokenKey: key });
+      const tApp = (t as any).app;
+      t.setMessageHandler(async () => ({ protocolVersion: '2025-03-26', serverInfo: { name: 'test' } }));
+
+      const envelope = encryptTokenPayload(
+        {
+          v: 1,
+          at: 'raw-access-v',
+          rt: 'refresh-v',
+          exp: Date.now() + 60_000,
+          cid: 'client-v',
+          sc: ['read'],
+          pid: 'default',
+          iat: Date.now(),
+        },
+        key,
+      );
+
+      const response = await request(tApp)
+        .post('/mcp')
+        .set('Accept', 'application/json, text/event-stream')
+        .set('Authorization', `Bearer ${envelope}`)
+        .send({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} });
+
+      expect(response.status).toBe(200);
+
+      const profileState = (t as any).__test_profileState;
+      // oauthTokensByAccessToken must hold rawAccessToken for upstream calls
+      const mapEntry = profileState.oauthTokensByAccessToken.get(envelope);
+      expect(mapEntry).toBeDefined();
+      expect(mapEntry.rawAccessToken).toBe('raw-access-v');
+
+      // inboundAuthTokenStore must hold entry so enterprise/session checks resolve
+      const inboundStore = (t as any).inboundAuthTokenStore;
+      const record = inboundStore.get(envelope);
+      expect(record).toBeDefined();
+      expect(record.principal.authType).toBe('oauth');
+      expect(record.principal.clientId).toBe('client-v');
+
+      await t.stop();
+    });
   });
 
   describe('getSessionToken', () => {
@@ -4489,6 +4668,22 @@ describeIfListen('HttpTransport', () => {
       const sessionId = (transport as any).createSession(profileState, 'my-auth-token');
       const token = transport.getSessionToken('default', sessionId);
       expect(token).toBe('my-auth-token');
+    });
+
+    it('returns rawAccessToken when session.authToken is an encrypted envelope', () => {
+      const profileState = createProfileState(transport as any);
+      const envelopeToken = 'mcp4.v1.fake-envelope-token';
+      const rawAccessToken = 'real-idp-access-token';
+      const sessionId = (transport as any).createSession(profileState, envelopeToken);
+      profileState.oauthTokensByAccessToken.set(envelopeToken, {
+        refreshToken: 'refresh-x',
+        expiresAt: Date.now() + 60_000,
+        clientId: 'client-x',
+        scopes: ['read'],
+        rawAccessToken,
+      });
+      const token = transport.getSessionToken('default', sessionId);
+      expect(token).toBe(rawAccessToken);
     });
   });
 

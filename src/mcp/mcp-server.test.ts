@@ -867,6 +867,119 @@ paths:
       expect(context.oauthConfig?.allowed_unregistered_redirect_uris).toEqual(['http://localhost', 'cursor://']);
     });
 
+    it('MCP4_ALLOW_UNREGISTERED_CLIENTS=true overrides profile allow_unregistered_clients=false', () => {
+      const serverWithMock = new MCPServer({
+        info: () => {},
+        warn: () => {},
+        error: () => {},
+        debug: () => {},
+      } as any);
+
+      (serverWithMock as any).parser = {
+        getBaseUrl: () => 'https://api.test',
+        getResourceMetadata: () => ({ name: 'Test', documentation: 'Docs' })
+      };
+
+      (serverWithMock as any).profile = {
+        profile_name: 'test',
+        description: 'test profile',
+        tools: [],
+        interceptors: {
+          auth: [{
+            type: 'oauth',
+            priority: 1,
+            oauth_config: {
+              issuer: 'https://issuer.test',
+              client_id: 'client-id',
+              redirect_uri: 'https://app.test/callback',
+              allow_unregistered_clients: false,
+            }
+          }]
+        }
+      };
+
+      process.env.MCP4_ALLOW_UNREGISTERED_CLIENTS = 'true';
+      process.env.MCP4_ALLOWED_UNREGISTERED_REDIRECT_URIS = 'http://localhost';
+
+      const context = serverWithMock.getHttpProfileContext();
+      expect(context.oauthConfig?.allow_unregistered_clients).toBe(true);
+    });
+
+    it('MCP4_ALLOWED_UNREGISTERED_REDIRECT_URIS overrides profile allowed_unregistered_redirect_uris', () => {
+      const serverWithMock = new MCPServer({
+        info: () => {},
+        warn: () => {},
+        error: () => {},
+        debug: () => {},
+      } as any);
+
+      (serverWithMock as any).parser = {
+        getBaseUrl: () => 'https://api.test',
+        getResourceMetadata: () => ({ name: 'Test', documentation: 'Docs' })
+      };
+
+      (serverWithMock as any).profile = {
+        profile_name: 'test',
+        description: 'test profile',
+        tools: [],
+        interceptors: {
+          auth: [{
+            type: 'oauth',
+            priority: 1,
+            oauth_config: {
+              issuer: 'https://issuer.test',
+              client_id: 'client-id',
+              redirect_uri: 'https://app.test/callback',
+              allow_unregistered_clients: true,
+              allowed_unregistered_redirect_uris: ['http://profile-only.example.com'],
+            }
+          }]
+        }
+      };
+
+      process.env.MCP4_ALLOWED_UNREGISTERED_REDIRECT_URIS = 'http://localhost,http://127.0.0.1';
+
+      const context = serverWithMock.getHttpProfileContext();
+      expect(context.oauthConfig?.allowed_unregistered_redirect_uris).toEqual(['http://localhost', 'http://127.0.0.1']);
+    });
+
+    it('MCP4_ALLOWED_ORIGINS overrides profile allowed_redirect_hosts', () => {
+      const serverWithMock = new MCPServer({
+        info: () => {},
+        warn: () => {},
+        error: () => {},
+        debug: () => {},
+      } as any);
+
+      (serverWithMock as any).parser = {
+        getBaseUrl: () => 'https://api.test',
+        getResourceMetadata: () => ({ name: 'Test', documentation: 'Docs' })
+      };
+
+      (serverWithMock as any).profile = {
+        profile_name: 'test',
+        description: 'test profile',
+        tools: [],
+        interceptors: {
+          auth: [{
+            type: 'oauth',
+            priority: 1,
+            oauth_config: {
+              issuer: 'https://issuer.test',
+              client_id: 'client-id',
+              redirect_uri: 'https://app.test/callback',
+              allowed_redirect_hosts: ['profile-host.example.com'],
+            }
+          }]
+        }
+      };
+
+      process.env.MCP4_ALLOWED_ORIGINS = 'https://env-host.example.com';
+
+      const context = serverWithMock.getHttpProfileContext();
+      expect(context.oauthConfig?.allowed_redirect_hosts).toEqual(['env-host.example.com']);
+    });
+
     it('should derive OAuth redirect hosts and token limits from environment', async () => {
       const capturedConfigs: any[] = [];
 
