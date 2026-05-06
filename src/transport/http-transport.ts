@@ -1953,8 +1953,14 @@ export class HttpTransport {
             return;
           }
           const tokens = await profileState.oauthProvider.exchangeAuthorizationCode(client, request.body.code, request.body.code_verifier, request.body.redirect_uri);
-          this.storeOAuthTokens(profileState, tokens, client.client_id, client.scope?.split(' ') || []);
-          response.json(tokens);
+          // Fetch the registered client so creg can be embedded for restart-resilient session recovery.
+          const registeredClient = await profileState.oauthProvider.clientsStore.getClient(client.client_id);
+          const clientToken = this.storeOAuthTokens(profileState, tokens, client.client_id, client.scope?.split(' ') || [], registeredClient ?? undefined);
+          response.json(
+            clientToken !== tokens.access_token
+              ? { ...tokens, access_token: clientToken }
+              : tokens,
+          );
         } catch {
           response.status(HTTP_STATUS.BAD_REQUEST).json({ error: 'invalid_grant', error_description: 'Token exchange failed' });
         }
@@ -1976,8 +1982,13 @@ export class HttpTransport {
             return;
           }
           const tokens = await profileState.oauthProvider.exchangeRefreshToken(client, request.body.refresh_token);
-          this.storeOAuthTokens(profileState, tokens, client.client_id, client.scope?.split(' ') || []);
-          response.json(tokens);
+          const registeredClient = await profileState.oauthProvider.clientsStore.getClient(client.client_id);
+          const clientToken = this.storeOAuthTokens(profileState, tokens, client.client_id, client.scope?.split(' ') || [], registeredClient ?? undefined);
+          response.json(
+            clientToken !== tokens.access_token
+              ? { ...tokens, access_token: clientToken }
+              : tokens,
+          );
         } catch {
           response.status(HTTP_STATUS.BAD_REQUEST).json({ error: 'invalid_grant', error_description: 'Token exchange failed' });
         }
@@ -3865,33 +3876,75 @@ export class HttpTransport {
   }
 
   /**
-   * Store OAuth tokens in internal map for later session initialization
-   * 
-   * Why: Bridge between /oauth/token endpoint (where we see OAuthTokens) 
-   * and session initialization (where we only see access token in Authorization header)
+   * Store OAuth tokens in internal map for later session initialization.
+   *
+   * When MCP4_TOKEN_KEY is configured AND tokens.refresh_token is present, builds an encrypted
+   * `mcp4.v1.*` envelope binding {access_token, refresh_token, expiry, client_id, scopes,
+   * profile_id, optional client registration} under AES-256-GCM with profile_id as AAD.
+   * Both the per-profile map and InboundAuthTokenStore are keyed by the RETURNED token (envelope
+   * if encryption succeeded, raw access_token otherwise). On encryption failure - logs warn and
+   * falls back to plain access_token (no crash).
+   *
+   * @returns the token string the caller should give to the OAuth client
+   *          (mcp4.v1.* envelope, or tokens.access_token unchanged in plain-token mode)
    */
   private storeOAuthTokens(
     profileState: ProfileRuntimeState,
     tokens: OAuthTokens,
     clientId: string,
-    scopes: string[]
-  ): void {
+    scopes: string[],
+    registeredClient?: OAuthClientInformationFull,
+  ): string {
     if (!tokens.access_token) {
       this.logger.warn('OAuth tokens missing access_token, skipping storage');
-      return;
+      return '';
     }
 
-    const expiresAt = tokens.expires_in 
-      ? Date.now() + tokens.expires_in * 1000 
+    const expiresAt = tokens.expires_in
+      ? Date.now() + tokens.expires_in * 1000
       : undefined;
 
-    profileState.oauthTokensByAccessToken.set(tokens.access_token, {
+    let clientToken = tokens.access_token;
+    if (this.config.tokenKey && tokens.refresh_token) {
+      try {
+        clientToken = encryptTokenPayload(
+          {
+            v: 1,
+            at: tokens.access_token,
+            rt: tokens.refresh_token,
+            exp: expiresAt,
+            cid: clientId,
+            sc: scopes,
+            pid: profileState.profileId,
+            iat: Date.now(),
+            creg: registeredClient
+              ? {
+                  id: registeredClient.client_id,
+                  ru: registeredClient.redirect_uris,
+                  gt: registeredClient.grant_types,
+                  rt_: registeredClient.response_types,
+                  sc: registeredClient.scope,
+                }
+              : undefined,
+          },
+          this.config.tokenKey,
+        );
+      } catch (err) {
+        this.logger.warn('Token envelope encryption failed - falling back to plain access_token', {
+          profileId: profileState.profileId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+        clientToken = tokens.access_token;
+      }
+    }
+
+    profileState.oauthTokensByAccessToken.set(clientToken, {
       refreshToken: tokens.refresh_token,
       expiresAt,
       clientId,
       scopes,
     });
-    this.inboundAuthTokenStore.store(tokens.access_token, {
+    this.inboundAuthTokenStore.store(clientToken, {
       authType: 'oauth',
       profileId: profileState.profileId,
       subject: clientId,
@@ -3906,7 +3959,11 @@ export class HttpTransport {
       expiresAt,
       clientId,
       scopesCount: scopes.length,
+      encrypted: clientToken !== tokens.access_token,
+      hasClientRegistration: !!registeredClient,
     });
+
+    return clientToken;
   }
 
   /**
@@ -4243,10 +4300,9 @@ export class HttpTransport {
 
       // Update session with new tokens
       const oldAccessToken = session.authToken;
-      session.authToken = tokens.access_token;
       session.refreshToken = tokens.refresh_token || session.refreshToken; // Keep old refresh token if new one not provided
-      session.accessTokenExpiresAt = tokens.expires_in 
-        ? Date.now() + tokens.expires_in * 1000 
+      session.accessTokenExpiresAt = tokens.expires_in
+        ? Date.now() + tokens.expires_in * 1000
         : undefined;
 
       // Update token map: remove old token, add new one
@@ -4254,7 +4310,11 @@ export class HttpTransport {
         profileState.oauthTokensByAccessToken.delete(oldAccessToken);
         this.inboundAuthTokenStore.delete(oldAccessToken);
       }
-      this.storeOAuthTokens(profileState, tokens, client.client_id, session.scopes || []);
+      // Issue new envelope (or plain token in plain-token mode) and use it as the new session.authToken.
+      // No registeredClient passed - internal refresh does not need to re-embed creg (already embedded
+      // at initial /oauth/token issuance, and the existing session has the client registered already).
+      const newClientToken = this.storeOAuthTokens(profileState, tokens, client.client_id, session.scopes || []);
+      session.authToken = newClientToken;
 
       this.logger.info('Access token refreshed successfully', {
         profileId,

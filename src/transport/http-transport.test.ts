@@ -801,7 +801,13 @@ describeIfListen('HttpTransport', () => {
         'DNS rebinding protection: invalid Host header',
         expect.anything()
       );
-      expect(testLogger.warn).not.toHaveBeenCalled();
+      // Note: a single warn is emitted at construction time when MCP4_TOKEN_KEY is unset;
+      // the assertion below excludes that startup warn so DNS-rebinding-related warns are isolated.
+      const dnsRelatedWarns = (testLogger.warn as any).mock.calls.filter(
+        (args: unknown[]) =>
+          typeof args[0] !== 'string' || !(args[0] as string).includes('MCP4_TOKEN_KEY'),
+      );
+      expect(dnsRelatedWarns).toHaveLength(0);
 
       const metricsResponse = await request(localApp)
         .get('/metrics')
