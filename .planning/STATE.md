@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: Ready to execute
-stopped_at: Completed 03.4-02-PLAN.md
-last_updated: "2026-05-06T07:12:01.561Z"
+stopped_at: Completed 03.4-03-PLAN.md
+last_updated: "2026-05-06T07:29:43.164Z"
 progress:
   total_phases: 10
   completed_phases: 6
   total_plans: 23
-  completed_plans: 21
+  completed_plans: 22
 ---
 
 # Project State
@@ -24,7 +24,7 @@ See: .planning/PROJECT.md (updated 2026-03-26)
 ## Current Position
 
 Phase: 03.4 (encrypted-token-envelope) — EXECUTING
-Plan: 3 of 4
+Plan: 4 of 4
 
 ## Performance Metrics
 
@@ -66,6 +66,7 @@ Plan: 3 of 4
 | Phase 03.3-graceful-oauth-degradation P02 | 13min | 3 tasks | 6 files |
 | Phase 03.4 P01 | 4min | 2 tasks | 3 files |
 | Phase 03.4-encrypted-token-envelope P02 | 3min | 1 tasks | 3 files |
+| Phase 03.4-encrypted-token-envelope P03 | 12min | 3 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -122,6 +123,11 @@ Recent decisions affecting current work:
 - [Phase 03.4]: IIFE env-var parser pattern matches existing oauthSessionTimeoutMs/oauthRefreshThresholdMs blocks - keeps the config builder uniform
 - [Phase 03.4]: Whitespace trim happens BEFORE deriveTokenKey() not inside it - keeps the token-envelope module pure (no input normalization assumptions); env-var ergonomics belong to the config layer that owns the env-var read
 - [Phase 03.4]: MCP4_TOKEN_KEY added to ENV_KEYS sentinel list in test file so beforeEach() unsets it deterministically; prevents test cross-contamination from ambient env on developer machines
+- [Phase 03.4-encrypted-token-envelope]: [Phase 03.4-03]: storeOAuthTokens returns the client-facing token (envelope or raw); both maps keyed by RETURNED token so the warm-cache lookup wins on the no-restart path and the decrypt fallback runs at most once per session
+- [Phase 03.4-encrypted-token-envelope]: [Phase 03.4-03]: refreshAccessToken removed the unconditional 'session.authToken = tokens.access_token' line and now assigns the storeOAuthTokens return value - prevents envelope/raw mismatch within a long-lived session immediately after a refresh
+- [Phase 03.4-encrypted-token-envelope]: [Phase 03.4-03]: Session-init envelope-decrypt fallback gated by !internalToken && !refreshToken && tokenKey && isEncryptedToken; warm-cache always wins, fallback only runs for restart recovery; cross-profile rejection via AAD - debug log + plain-bearer continuation, no crash, no 401
+- [Phase 03.4-encrypted-token-envelope]: [Phase 03.4-03]: registerClient guarded by 'profileState.oauthProvider' (Phase 03.3 graceful degradation can leave it null); session metadata still rehydrates from envelope in degraded-OAuth mode, only DCR re-registration is skipped
+- [Phase 03.4-encrypted-token-envelope]: [Phase 03.4-03]: Encryption-failure availability bias - try/catch around encryptTokenPayload falls back to plain access_token + warn so /oauth/token never crashes on tokenKey misconfiguration; client_secret NEVER embedded in envelope.creg (DCR public PKCE clients have none)
 
 ### Roadmap Evolution
 
@@ -142,6 +148,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-06T07:10:32.075Z
-Stopped at: Completed 03.4-02-PLAN.md
+Last session: 2026-05-06T07:29:26.142Z
+Stopped at: Completed 03.4-03-PLAN.md
 Resume file: None
