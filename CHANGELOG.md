@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Token envelope crypto module (AES-256-GCM, AAD profile binding) for restart-resilient OAuth sessions; wired into HTTP transport in Plan 03.
 - GitLab profiles: added `get_job_log` action (`GET /projects/:id/jobs/:job_id/trace`) to `retrieve_content` and `manage_pipelines_jobs` tools, including OpenAPI spec entry and test coverage.
 - Client auth gate types (`ClientAuthGateConfig`, `ApiKeyStoreConfig`, `InlineApiKeyEntry`), `ClientAuthGateError`, `SessionData.clientPrincipal` field, and profile-load-time validator (`validateClientAuthGateProfile`) for AUTH-02/AUTH-03. Phase 3 ships inline API keys only; JWT/OIDC types and the `sasanka` API key backend are added in Phase 4.
 - `ApiKeyStore` interface with `InlineApiKeyStore` (constant-time HMAC-SHA256 comparison via `timingSafeEqual` on equal-length 32-byte digests, erasing length as a timing side-channel) and extensible `createApiKeyStore` factory for AUTH-02 M2M API key validation. `SasankaApiKeyStore` is added in Phase 4.
