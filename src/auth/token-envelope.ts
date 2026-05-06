@@ -54,7 +54,7 @@ export interface TokenEnvelopePayload {
     gt?: string[]; // grant_types
     rt_?: string[]; // response_types (suffix `_` avoids collision with payload-level rt)
     sc?: string; // scope (single string, matches OAuth registration shape)
-    // NB: client_secret intentionally absent - DCR public PKCE clients have none.
+    // NB: secret intentionally absent - DCR public PKCE clients have none.
   };
 }
 
