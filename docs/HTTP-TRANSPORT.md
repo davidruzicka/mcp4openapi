@@ -608,6 +608,71 @@ Sessions store:
 - Last activity timestamp
 - Active SSE streams (for resumability)
 
+## Encrypted Token Envelopes
+
+When `MCP4_TOKEN_KEY` is configured, the gateway wraps OAuth tokens in encrypted envelopes so MCP
+clients can survive arbitrary gateway restarts (for example k8s pod evictions) without re-running
+the OAuth browser flow.
+
+### Token format
+
+```
+mcp4.v1.<base64url(12-byte-nonce + AES-256-GCM-ciphertext + 16-byte-tag)>
+```
+
+- Algorithm: AES-256-GCM with a fresh 12-byte random nonce per token.
+- Additional Authenticated Data (AAD): the profile_id as UTF-8 bytes. This binds an envelope to
+  exactly one profile and prevents cross-profile replay.
+- Payload (encrypted): IdP access_token, IdP refresh_token (optional), expiry, OAuth client_id,
+  scopes, profile_id, issued-at timestamp, and an optional OAuth client registration snapshot
+  (creg) so the client does not need to re-register on restart.
+- `client_secret` is NEVER embedded - DCR clients are public PKCE clients without one.
+
+### When envelopes are issued
+
+The gateway returns an envelope as `access_token` in the `/oauth/token` response only when ALL of:
+1. `MCP4_TOKEN_KEY` is configured at startup.
+2. The IdP returned a `refresh_token` (envelopes without a refresh path provide no recovery
+   benefit, so plain access_token is returned instead).
+
+If encryption fails for any reason, the gateway logs a warn and falls back to the plain IdP
+access_token - the response shape is unchanged. Clients ALWAYS work, with or without envelopes.
+
+### Restart-recovery flow
+
+1. The MCP client stores the `mcp4.v1.*` token from the OAuth response.
+2. The gateway is restarted (k8s rolling deploy, OOM kill, etc.) and all in-memory state is lost.
+3. The client reconnects and re-presents the same envelope on the next MCP `initialize` request.
+4. The gateway detects the `mcp4.v1.` prefix, decrypts using `MCP4_TOKEN_KEY` and the
+   request-profile_id (as AAD). On success, it rehydrates the session: refresh_token, expiry,
+   client_id, scopes, and (if creg is present) the OAuth client registration in memory.
+5. If the access token is already expired, the existing refresh-token path silently exchanges
+   it for a fresh access token in the next request - the client sees no auth challenge.
+
+### Key derivation (`MCP4_TOKEN_KEY`)
+
+- 64-char hex string: decoded directly as 32 raw bytes (AES-256 key).
+- Anything else: SHA-256(value) yields 32 bytes - any passphrase works.
+- Whitespace around the value is trimmed before derivation (k8s ConfigMap newline tolerance).
+- Unset: plain-token mode is active and a startup warn is logged. Behavior matches earlier
+  releases byte-for-byte.
+
+### Limitation: rotating refresh tokens
+
+If your IdP issues rotating refresh tokens AND the gateway restarts after at least one in-session
+token refresh, the client still holds the original envelope with the now-stale `rt`. Re-auth is
+required in that case (same as today). For non-rotating refresh tokens, zero-reauth across
+arbitrary restarts is supported.
+
+### Security boundary
+
+- The AES-GCM auth tag IS the integrity signature - any tamper to nonce, ciphertext, or tag
+  produces a `null` decrypt result, NOT a partial recovery.
+- profile_id is bound as AAD AND post-decrypt-validated - even an attacker who possessed the
+  symmetric key could not present a profile-A envelope to profile-B.
+- All decrypt failures are silent (debug log only) - the session falls back to plain-bearer
+  treatment without a 500 or 401.
+
 ## SSE Resumability
 
 Resume SSE streams after network disconnection.

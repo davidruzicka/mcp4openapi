@@ -8,8 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- Token envelope crypto module (AES-256-GCM, AAD profile binding) for restart-resilient OAuth sessions; wired into HTTP transport in Plan 03.
-- HTTP transport now issues encrypted `mcp4.v1.*` token envelopes from `/oauth/token` (auth_code + refresh_token grants) and from internal token refresh when `MCP4_TOKEN_KEY` is set; on initialize, presented envelopes restore session metadata (refresh token, expiry, scopes, client_id, optional client registration) so OAuth clients survive arbitrary gateway restarts. `MCP4_TOKEN_KEY` unset emits a startup warn and preserves byte-identical plain-token behavior. `DEFAULT_MAX_TOKEN_LENGTH` raised from 1000 to 4096 to fit envelope tokens.
+- Encrypted token envelopes (`mcp4.v1.*`, AES-256-GCM, profile_id as AAD) for restart-resilient OAuth: when `MCP4_TOKEN_KEY` is set, OAuth clients survive k8s pod restarts without re-authentication; backward-compatible (unset = plain-token mode + startup warn).
 - GitLab profiles: added `get_job_log` action (`GET /projects/:id/jobs/:job_id/trace`) to `retrieve_content` and `manage_pipelines_jobs` tools, including OpenAPI spec entry and test coverage.
 - Client auth gate types (`ClientAuthGateConfig`, `ApiKeyStoreConfig`, `InlineApiKeyEntry`), `ClientAuthGateError`, `SessionData.clientPrincipal` field, and profile-load-time validator (`validateClientAuthGateProfile`) for AUTH-02/AUTH-03. Phase 3 ships inline API keys only; JWT/OIDC types and the `sasanka` API key backend are added in Phase 4.
 - `ApiKeyStore` interface with `InlineApiKeyStore` (constant-time HMAC-SHA256 comparison via `timingSafeEqual` on equal-length 32-byte digests, erasing length as a timing side-channel) and extensible `createApiKeyStore` factory for AUTH-02 M2M API key validation. `SasankaApiKeyStore` is added in Phase 4.

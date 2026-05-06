@@ -275,6 +275,7 @@ tool-filter/
 - Session management with UUID, 30min timeout default (OAuth sessions: 24h default)
 - **OAuth session auto-refresh**: `HttpTransport` stores refresh tokens in `SessionData` and automatically refreshes expired access tokens via `ensureValidSessionToken()` before outbound API calls
 - OAuth sessions have extended timeout policy (24h default, configurable) vs static token sessions (30min)
+- **Restart-resilient OAuth via encrypted token envelopes**: when `MCP4_TOKEN_KEY` is set, `storeOAuthTokens()` issues `mcp4.v1.*` envelopes (AES-256-GCM, profile_id as AAD) carrying access/refresh/expiry/client_id/scopes/optional creg snapshot; in-memory token maps are keyed by the issued envelope (not the raw IdP access_token); session init detects the `mcp4.v1.` prefix and rehydrates session metadata + DCR client registration directly from the envelope on gateway restart. See `src/auth/token-envelope.ts` and `docs/HTTP-TRANSPORT.md` -> Encrypted Token Envelopes.
 - SSE resumability via `Last-Event-ID`
 - Optional heartbeat for reverse proxy keepalive
 - Origin validation (DNS rebinding protection)
