@@ -31,6 +31,7 @@ import type { UpstreamConnectionManager } from '../upstream/upstream-connection-
 import { UpstreamAuthError } from '../upstream/upstream-errors.js';
 import type { MetricsContextLabels } from '../core/metrics.js';
 import { ExternalOAuthProvider, isOAuthConfigOperational } from '../auth/oauth-provider.js';
+import { encryptTokenPayload, decryptTokenPayload, isEncryptedToken } from '../auth/token-envelope.js';
 import { EnterpriseAuthProvider } from '../auth/enterprise-auth-provider.js';
 import { InboundAuthTokenStore } from '../auth/inbound-auth-token-store.js';
 import { EnterpriseReplayStore } from '../auth/enterprise-replay-store.js';
@@ -90,7 +91,7 @@ import {
   renderProfileIndexHtml,
 } from './profile-index.js';
 import type { ProfileIndexSourceProfile, ProfileIndexTenantSummary } from './profile-index.js';
-const DEFAULT_MAX_TOKEN_LENGTH = 1000;
+const DEFAULT_MAX_TOKEN_LENGTH = 4096;
 
 interface ProfileRuntimeState {
   profileId: string;
@@ -160,6 +161,13 @@ export class HttpTransport {
     // Freeze config to prevent runtime mutation of security-critical settings (allowedOrigins, rate limits, etc.)
     this.config = Object.freeze({ ...config });
     this.logger = logger;
+    if (!this.config.tokenKey) {
+      this.logger.warn(
+        'MCP4_TOKEN_KEY not set - encrypted token envelopes disabled. ' +
+        'OAuth clients will need to re-authenticate after every gateway restart. ' +
+        'Set MCP4_TOKEN_KEY (any passphrase, or a 64-char hex string) for restart-resilient OAuth.',
+      );
+    }
     this.ssrfValidator = new SSRFValidator(logger);
     this.rawTenantConfig = loadRawTenantsConfigFromEnv();
     this.enterpriseRuntimeConfig = this.resolveEnterpriseRuntimeConfig(config.enterpriseAuthorizationRuntimeConfig);
