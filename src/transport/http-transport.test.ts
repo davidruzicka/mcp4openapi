@@ -3845,6 +3845,324 @@ describeIfListen('HttpTransport', () => {
     });
   });
 
+  describe('storeOAuthTokens encrypted envelope path', () => {
+    const KEY_HEX_64 = 'a'.repeat(64);
+    const buildKey = (): Buffer => Buffer.from(KEY_HEX_64, 'hex');
+
+    const buildTransportWithKey = async (key?: Buffer): Promise<HttpTransport> => {
+      const config: any = {
+        host: '127.0.0.1',
+        port: 0,
+        sessionTimeoutMs: 1800000,
+        heartbeatEnabled: false,
+        heartbeatIntervalMs: 30000,
+        metricsEnabled: false,
+        metricsPath: '/metrics',
+      };
+      if (key !== undefined) config.tokenKey = key;
+      return new HttpTransport(config, logger);
+    };
+
+    it('Test D: returns mcp4.v1.* envelope when tokenKey set AND refresh_token present', async () => {
+      const t = await buildTransportWithKey(buildKey());
+      const profileState = createProfileState(t as any);
+      const tokens = {
+        access_token: 'idp-access-d',
+        refresh_token: 'idp-refresh-d',
+        expires_in: 3600,
+      };
+      const returned: string = (t as any).storeOAuthTokens(profileState, tokens, 'client-d', ['read']);
+      expect(returned.startsWith('mcp4.v1.')).toBe(true);
+      expect(profileState.oauthTokensByAccessToken.has(returned)).toBe(true);
+      expect(profileState.oauthTokensByAccessToken.has(tokens.access_token)).toBe(false);
+      await t.stop();
+    });
+
+    it('Test E: returns plain access_token when tokenKey set but refresh_token missing', async () => {
+      const t = await buildTransportWithKey(buildKey());
+      const profileState = createProfileState(t as any);
+      const tokens = { access_token: 'idp-access-e', expires_in: 3600 };
+      const returned: string = (t as any).storeOAuthTokens(profileState, tokens, 'client-e', []);
+      expect(returned).toBe('idp-access-e');
+      expect(profileState.oauthTokensByAccessToken.has('idp-access-e')).toBe(true);
+      await t.stop();
+    });
+
+    it('Test F: returns plain access_token when tokenKey UNSET (backward compat)', async () => {
+      const t = await buildTransportWithKey(undefined);
+      const profileState = createProfileState(t as any);
+      const tokens = {
+        access_token: 'idp-access-f',
+        refresh_token: 'idp-refresh-f',
+        expires_in: 3600,
+      };
+      const returned: string = (t as any).storeOAuthTokens(profileState, tokens, 'client-f', []);
+      expect(returned).toBe('idp-access-f');
+      expect(profileState.oauthTokensByAccessToken.has('idp-access-f')).toBe(true);
+      await t.stop();
+    });
+
+    it('Test G: envelope round-trips creg from registeredClient parameter', async () => {
+      const { decryptTokenPayload } = await import('../auth/token-envelope.js');
+      const key = buildKey();
+      const t = await buildTransportWithKey(key);
+      const profileState = createProfileState(t as any);
+      const tokens = {
+        access_token: 'idp-access-g',
+        refresh_token: 'idp-refresh-g',
+        expires_in: 3600,
+      };
+      const registeredClient = {
+        client_id: 'rc-1',
+        redirect_uris: ['https://example.com/cb'],
+        grant_types: ['authorization_code'],
+        response_types: ['code'],
+        scope: 'openid profile',
+      } as any;
+      const returned: string = (t as any).storeOAuthTokens(
+        profileState,
+        tokens,
+        'rc-1',
+        ['openid'],
+        registeredClient,
+      );
+      expect(returned.startsWith('mcp4.v1.')).toBe(true);
+      const envelope = decryptTokenPayload(returned, key, profileState.profileId);
+      expect(envelope).not.toBeNull();
+      expect(envelope!.creg).toEqual({
+        id: 'rc-1',
+        ru: ['https://example.com/cb'],
+        gt: ['authorization_code'],
+        rt_: ['code'],
+        sc: 'openid profile',
+      });
+      await t.stop();
+    });
+
+    it('Test H: envelope creg is undefined when no registeredClient passed', async () => {
+      const { decryptTokenPayload } = await import('../auth/token-envelope.js');
+      const key = buildKey();
+      const t = await buildTransportWithKey(key);
+      const profileState = createProfileState(t as any);
+      const tokens = {
+        access_token: 'idp-access-h',
+        refresh_token: 'idp-refresh-h',
+      };
+      const returned: string = (t as any).storeOAuthTokens(profileState, tokens, 'client-h', ['scope-1']);
+      expect(returned.startsWith('mcp4.v1.')).toBe(true);
+      const envelope = decryptTokenPayload(returned, key, profileState.profileId);
+      expect(envelope).not.toBeNull();
+      expect(envelope!.creg).toBeUndefined();
+      await t.stop();
+    });
+
+    it('Test I: encryption failure (wrong key length) falls back to plain access_token + warn', async () => {
+      const mockLogger: any = {
+        debug: vi.fn(),
+        info: vi.fn(),
+        warn: vi.fn(),
+        error: vi.fn(),
+      };
+      const config: any = {
+        host: '127.0.0.1',
+        port: 0,
+        sessionTimeoutMs: 1800000,
+        heartbeatEnabled: false,
+        heartbeatIntervalMs: 30000,
+        metricsEnabled: false,
+        metricsPath: '/metrics',
+        tokenKey: Buffer.alloc(31), // wrong length
+      };
+      const t = new HttpTransport(config, mockLogger);
+      const profileState = createProfileState(t as any);
+      const tokens = {
+        access_token: 'idp-access-i',
+        refresh_token: 'idp-refresh-i',
+      };
+      const returned: string = (t as any).storeOAuthTokens(profileState, tokens, 'client-i', []);
+      expect(returned).toBe('idp-access-i');
+      expect(profileState.oauthTokensByAccessToken.has('idp-access-i')).toBe(true);
+      const warnCalls = mockLogger.warn.mock.calls;
+      const matchingCall = warnCalls.find((args: unknown[]) =>
+        typeof args[0] === 'string' && (args[0] as string).includes('Token envelope encryption failed'),
+      );
+      expect(matchingCall).toBeDefined();
+      await t.stop();
+    });
+  });
+
+  describe('OAuth /oauth/token response wrapping with envelope', () => {
+    const buildOauthTransport = async (tokenKey?: Buffer) => {
+      const config: any = {
+        host: '127.0.0.1',
+        port: 0,
+        sessionTimeoutMs: 1800000,
+        heartbeatEnabled: false,
+        heartbeatIntervalMs: 30000,
+        metricsEnabled: false,
+        metricsPath: '/metrics',
+        oauthConfig: {
+          issuer: 'https://auth.example.com',
+          client_id: 'test-client',
+          client_secret: 'test-secret',
+          redirect_uri: 'https://example.com/oauth/callback',
+          scopes: ['read', 'write'],
+        },
+      };
+      if (tokenKey !== undefined) config.tokenKey = tokenKey;
+      return new HttpTransport(config, logger);
+    };
+
+    it('Test J: authorization_code response wraps access_token with mcp4.v1.* envelope when tokenKey set', async () => {
+      const t = await buildOauthTransport(Buffer.from('a'.repeat(64), 'hex'));
+      const tApp = (t as any).app;
+      // Access profileState and stub OAuth provider methods
+      const profileState = (t as any).profileStates.get('default') ?? createProfileState(t as any);
+      profileState.oauthProvider = {
+        ensureEndpointsInitialized: async () => {},
+        clientsStore: {
+          getClient: async (id: string) =>
+            id === 'test-client'
+              ? {
+                  client_id: 'test-client',
+                  redirect_uris: ['https://example.com/cb'],
+                  grant_types: ['authorization_code', 'refresh_token'],
+                  response_types: ['code'],
+                  scope: 'read write',
+                }
+              : undefined,
+          registerClient: async (c: any) => c,
+        },
+        exchangeAuthorizationCode: async () => ({
+          access_token: 'raw-idp-access-j',
+          refresh_token: 'raw-idp-refresh-j',
+          expires_in: 3600,
+          token_type: 'Bearer',
+        }),
+      };
+      // Stub validateOAuthClientCredentials by injecting client via resolveOAuthClientForRequest path:
+      // simpler: stub the method directly
+      (t as any).validateOAuthClientCredentials = async (_ps: any, _id: any, _s: any, _res: any) => ({
+        client_id: 'test-client',
+        scope: 'read write',
+      });
+
+      const response = await request(tApp)
+        .post('/oauth/token')
+        .send({
+          grant_type: 'authorization_code',
+          client_id: 'test-client',
+          code: 'auth-code-j',
+          code_verifier: 'verifier-j',
+          redirect_uri: 'https://example.com/cb',
+        });
+      expect(response.status).toBe(200);
+      expect(typeof response.body.access_token).toBe('string');
+      expect(response.body.access_token.startsWith('mcp4.v1.')).toBe(true);
+      expect(response.body.refresh_token).toBe('raw-idp-refresh-j');
+      await t.stop();
+    });
+
+    it('Test K: authorization_code response keeps raw access_token when tokenKey is unset', async () => {
+      const t = await buildOauthTransport(undefined);
+      const tApp = (t as any).app;
+      const profileState = (t as any).profileStates.get('default') ?? createProfileState(t as any);
+      profileState.oauthProvider = {
+        ensureEndpointsInitialized: async () => {},
+        clientsStore: {
+          getClient: async (id: string) =>
+            id === 'test-client'
+              ? {
+                  client_id: 'test-client',
+                  redirect_uris: ['https://example.com/cb'],
+                  grant_types: ['authorization_code', 'refresh_token'],
+                  response_types: ['code'],
+                  scope: 'read write',
+                }
+              : undefined,
+          registerClient: async (c: any) => c,
+        },
+        exchangeAuthorizationCode: async () => ({
+          access_token: 'raw-idp-access-k',
+          refresh_token: 'raw-idp-refresh-k',
+          expires_in: 3600,
+          token_type: 'Bearer',
+        }),
+      };
+      (t as any).validateOAuthClientCredentials = async () => ({
+        client_id: 'test-client',
+        scope: 'read write',
+      });
+
+      const response = await request(tApp)
+        .post('/oauth/token')
+        .send({
+          grant_type: 'authorization_code',
+          client_id: 'test-client',
+          code: 'auth-code-k',
+          code_verifier: 'verifier-k',
+          redirect_uri: 'https://example.com/cb',
+        });
+      expect(response.status).toBe(200);
+      expect(response.body.access_token).toBe('raw-idp-access-k');
+      expect(response.body.refresh_token).toBe('raw-idp-refresh-k');
+      await t.stop();
+    });
+  });
+
+  describe('refreshAccessToken envelope assignment', () => {
+    it('Test L: session.authToken becomes mcp4.v1.* envelope after refresh when tokenKey is set', async () => {
+      const config: any = {
+        host: '127.0.0.1',
+        port: 0,
+        sessionTimeoutMs: 1800000,
+        heartbeatEnabled: false,
+        heartbeatIntervalMs: 30000,
+        metricsEnabled: false,
+        metricsPath: '/metrics',
+        tokenKey: Buffer.from('a'.repeat(64), 'hex'),
+        oauthConfig: {
+          issuer: 'https://auth.example.com',
+          client_id: 'test-client',
+          client_secret: 'test-secret',
+          scopes: ['api'],
+        },
+      };
+      const t = new HttpTransport(config, logger);
+      const profileState = createProfileState(t as any);
+      const sessionId = (t as any).createSession(profileState, 'old-envelope-l', 'refresh-token-l');
+      const session = profileState.sessions.get(sessionId);
+      session.oauthClientId = 'test-client';
+      // Pre-populate map keyed by old envelope so we can assert it gets removed
+      profileState.oauthTokensByAccessToken.set('old-envelope-l', {
+        refreshToken: 'refresh-token-l',
+        clientId: 'test-client',
+        scopes: ['api'],
+      });
+
+      profileState.oauthProvider = {
+        ensureEndpointsInitialized: async () => {},
+        clientsStore: {
+          getClient: async () => ({ client_id: 'test-client', scope: 'api' }),
+        },
+        exchangeRefreshToken: async () => ({
+          access_token: 'new-raw-idp-access-l',
+          refresh_token: 'new-raw-idp-refresh-l',
+          expires_in: 3600,
+          token_type: 'Bearer',
+        }),
+      };
+
+      const result = await (t as any).refreshAccessToken('default', sessionId);
+      expect(result).toBe(true);
+      expect(typeof session.authToken).toBe('string');
+      expect(session.authToken.startsWith('mcp4.v1.')).toBe(true);
+      expect(profileState.oauthTokensByAccessToken.has('old-envelope-l')).toBe(false);
+      expect(profileState.oauthTokensByAccessToken.has(session.authToken)).toBe(true);
+      await t.stop();
+    });
+  });
+
   describe('getSessionToken', () => {
     it('should return token for existing session', () => {
       const profileState = createProfileState(transport as any);
