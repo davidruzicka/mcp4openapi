@@ -71,6 +71,19 @@ Plans:
 - [x] 03-02-PLAN.md - ApiKeyStore interface, InlineApiKeyStore, and factory (AUTH-02; SasankaApiKeyStore deferred to Phase 4)
 - [x] 03-03-PLAN.md - ClientAuthGate orchestrator (API key path only), http-transport wiring, session clientPrincipal attachment (AUTH-02, AUTH-03)
 
+### Phase 03.4: encrypted-token-envelope (INSERTED)
+
+**Goal:** Deliver AES-256-GCM encrypted token envelopes (`mcp4.v1.*`) so MCP OAuth clients survive gateway restarts in k8s without re-authenticating. After OAuth, gateway issues an encrypted token containing access_token + refresh_token + DCR client registration; on restart, client presents the same token, gateway decrypts and recovers session state. Backward-compatible: tokens without `mcp4.v1.` prefix continue to work as plain access tokens.
+**Requirements**: TBD (locked decisions in 03.4-CONTEXT.md serve as acceptance criteria)
+**Depends on:** Phase 03
+**Plans:** 1/4 plans executed
+
+Plans:
+- [x] 03.4-01-PLAN.md - Pure crypto module src/auth/token-envelope.ts (encrypt/decrypt/deriveKey/isEncryptedToken) + 17-case TDD test suite
+- [ ] 03.4-02-PLAN.md - Wire MCP4_TOKEN_KEY into HttpTransportConfig (tokenKey?: Buffer field + buildHttpTransportBaseConfig parser) + tests
+- [ ] 03.4-03-PLAN.md - http-transport.ts integration: imports, DEFAULT_MAX_TOKEN_LENGTH=4096, startup warn, storeOAuthTokens refactor (returns string + registeredClient param), 3 call sites updated, session-init envelope-decrypt fallback with creg-driven registerClient
+- [ ] 03.4-04-PLAN.md - Documentation (env.example, README.md, docs/HTTP-TRANSPORT.md "Encrypted Token Envelopes" section, IMPLEMENTATION.md, CHANGELOG.md)
+
 ### Phase 03.3: Graceful OAuth degradation for incomplete config (INSERTED)
 
 **Goal:** When an MCP profile has `auth.type = 'oauth'` but OAuth config is operationally incomplete (missing redirect_uri, or env vars not set), degrade gracefully instead of crashing with 500 or starting a broken OAuth flow. Reflect degradation on the HTML profile index page (hide OAuth auth tab/snippets when not operational).

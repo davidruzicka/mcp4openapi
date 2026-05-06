@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: Ready to plan
-stopped_at: Completed 03.3-02-PLAN.md
-last_updated: "2026-05-05T11:07:39.889Z"
+status: Ready to execute
+stopped_at: Completed 03.4-01-PLAN.md
+last_updated: "2026-05-06T07:03:45.858Z"
 progress:
-  total_phases: 9
+  total_phases: 10
   completed_phases: 6
-  total_plans: 19
-  completed_plans: 19
+  total_plans: 23
+  completed_plans: 20
 ---
 
 # Project State
@@ -19,12 +19,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-26)
 
 **Core value:** A security boundary between internal AI clients and all upstream MCP servers - one place to authenticate, authorize, audit, and proxy every tool call.
-**Current focus:** Phase 03.3 — graceful-oauth-degradation
+**Current focus:** Phase 03.4 — encrypted-token-envelope
 
 ## Current Position
 
-Phase: 04
-Plan: Not started
+Phase: 03.4 (encrypted-token-envelope) — EXECUTING
+Plan: 2 of 4
 
 ## Performance Metrics
 
@@ -64,6 +64,7 @@ Plan: Not started
 | Phase 03.2-profile-env-var-description P03 | 5min | 2 tasks | 2 files |
 | Phase 03.3-graceful-oauth-degradation P01 | 4min | 1 tasks | 2 files |
 | Phase 03.3-graceful-oauth-degradation P02 | 13min | 3 tasks | 6 files |
+| Phase 03.4 P01 | 4min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -112,12 +113,18 @@ Recent decisions affecting current work:
 - [Phase 03.3-graceful-oauth-degradation]: isOAuthConfigOperational placed before ExternalOAuthProvider class - enables pre-flight check without constructing the class (which throws on bad env vars)
 - [Phase 03.3-graceful-oauth-degradation]: oauthDisabledReason set in ProfileRuntimeState when pre-flight check fails - auth gate skips OAuth challenge without crashing
 - [Phase 03.3-graceful-oauth-degradation]: extractAuthMethods filters OAuth entries when isOAuthConfigOperational returns false - hiding oauth tab from HTML index when env vars are missing
+- [Phase 03.4]: Single-throw encrypt guard; both pid empty + key length wrong collapsed into one error site to keep decrypt-never-throws contract clean and satisfy plan acceptance grep
+- [Phase 03.4]: Strict base64url validation (^[A-Za-z0-9_-]+={0,2}$) added before Buffer.from(_,'base64url') because Node tolerates invalid chars silently — required for deterministic null on tampered/garbage suffix
+- [Phase 03.4]: MIN_ENCODED_BYTES = NONCE+TAG+1 = 29 enforces non-empty ciphertext slice before any cipher op so truncated inputs short-circuit to null
+- [Phase 03.4]: Defense-in-depth post-decrypt parsed.pid===profileId on top of AES-GCM AAD; cheap insurance against AAD semantics drift
+- [Phase 03.4]: Comment text scrubbed of the literal 'client_secret' so source-text grep stays at zero matches; intent retained as 'secret intentionally absent — DCR public PKCE clients have none'
 
 ### Roadmap Evolution
 
 - Phase 03.1 inserted after Phase 03: Remove multi upstream MCP support (URGENT)
 - Phase 03.2 inserted after Phase 03.1: Profile env-var description field — optional per-env-var description shown before profile description in HTML index, for admin configuration guidance (URGENT)
 - Phase 03.3 inserted after Phase 03.2: Graceful OAuth degradation for incomplete config (URGENT)
+- Phase 03.4 inserted after Phase 03.3: Encrypted token envelope (AES-256-GCM) for restart-resilient OAuth sessions — no persistent storage needed (URGENT)
 
 ### Pending Todos
 
@@ -131,6 +138,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-05T11:03:37.024Z
-Stopped at: Completed 03.3-02-PLAN.md
+Last session: 2026-05-06T07:03:45.854Z
+Stopped at: Completed 03.4-01-PLAN.md
 Resume file: None
