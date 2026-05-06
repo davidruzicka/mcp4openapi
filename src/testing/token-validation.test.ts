@@ -259,7 +259,7 @@ describeIfListen('Token Validation Integration', () => {
             clientInfo: { name: 'test', version: '1.0.0' },
           },
         })
-        .expect(401);
+        .expect(200);
 
       // Validation should have been called
       expect(validationCallCount).toBe(1);
@@ -267,8 +267,9 @@ describeIfListen('Token Validation Integration', () => {
 
       // Should not create session
       expect(response.headers['mcp-session-id']).toBeUndefined();
-      expect(response.body.error).toBe('Unauthorized');
-      expect(response.body.message).toContain('Invalid or expired');
+      // JSON-RPC error response (HTTP 200 to avoid triggering OAuth flow in clients)
+      expect(response.body.error).toBeDefined();
+      expect(response.body.error.message).toContain('invalid or expired');
     });
 
     it('should reject expired token', async () => {
@@ -289,10 +290,12 @@ describeIfListen('Token Validation Integration', () => {
             clientInfo: { name: 'test', version: '1.0.0' },
           },
         })
-        .expect(401);
+        .expect(200);
 
       expect(validationCallCount).toBe(1);
-      expect(response.body.error).toBe('Unauthorized');
+      // JSON-RPC error response (HTTP 200 to avoid triggering OAuth flow in clients)
+      expect(response.body.error).toBeDefined();
+      expect(response.body.error.message).toContain('invalid or expired');
     });
   });
 
@@ -355,9 +358,11 @@ describeIfListen('Token Validation Integration', () => {
             clientInfo: { name: 'test', version: '1.0.0' },
           },
         })
-        .expect(401);
+        .expect(200);
 
-      expect(response.body.error).toBe('Unauthorized');
+      // JSON-RPC error response (HTTP 200 to avoid triggering OAuth flow in clients)
+      expect(response.body.error).toBeDefined();
+      expect(response.body.error.message).toContain('invalid or expired');
     });
   });
 
