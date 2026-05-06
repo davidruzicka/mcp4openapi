@@ -3046,6 +3046,51 @@ export class HttpTransport {
                 hasToken: true,
               });
             }
+
+            // Restart-recovery path: if both Map lookups missed AND we hold a token-envelope key
+            // AND the token has the mcp4.v1.* prefix, attempt to decrypt and rehydrate session
+            // metadata (refresh token, expiry, scopes, client_id, optional client registration)
+            // directly from the envelope. This is the only path that lets a client survive a
+            // gateway restart without re-running the OAuth browser flow.
+            if (
+              !internalToken &&
+              !refreshToken &&
+              this.config.tokenKey &&
+              isEncryptedToken(authInfo.token)
+            ) {
+              const envelope = decryptTokenPayload(
+                authInfo.token,
+                this.config.tokenKey,
+                profileState.profileId,
+              );
+              if (envelope) {
+                refreshToken = envelope.rt;
+                accessTokenExpiresAt = envelope.exp;
+                scopes = envelope.sc;
+                oauthClientId = envelope.cid;
+                if (envelope.creg && profileState.oauthProvider) {
+                  await profileState.oauthProvider.clientsStore.registerClient({
+                    client_id: envelope.creg.id,
+                    redirect_uris: envelope.creg.ru ?? [],
+                    grant_types: envelope.creg.gt ?? ['authorization_code', 'refresh_token'],
+                    response_types: envelope.creg.rt_ ?? ['code'],
+                    scope: envelope.creg.sc ?? '',
+                  });
+                }
+                this.logger.info('Session restored from encrypted token envelope after restart', {
+                  profileId: profileState.profileId,
+                  hasRefreshToken: !!refreshToken,
+                  hasExpiry: !!accessTokenExpiresAt,
+                  oauthClientId,
+                  restoredClientReg: !!envelope.creg,
+                });
+              } else {
+                this.logger.debug(
+                  'Encrypted token failed to decrypt (wrong key, tampered, or wrong profile)',
+                  { profileId: profileState.profileId },
+                );
+              }
+            }
           }
           
           newSessionId = this.createSession(
