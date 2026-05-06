@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: Ready to execute
-stopped_at: Completed 03.4-03-PLAN.md
-last_updated: "2026-05-06T07:29:43.164Z"
+status: Phase complete — ready for verification
+stopped_at: Completed 03.4-04-PLAN.md
+last_updated: "2026-05-06T07:35:27.159Z"
 progress:
   total_phases: 10
-  completed_phases: 6
+  completed_phases: 7
   total_plans: 23
-  completed_plans: 22
+  completed_plans: 23
 ---
 
 # Project State
@@ -67,6 +67,7 @@ Plan: 4 of 4
 | Phase 03.4 P01 | 4min | 2 tasks | 3 files |
 | Phase 03.4-encrypted-token-envelope P02 | 3min | 1 tasks | 3 files |
 | Phase 03.4-encrypted-token-envelope P03 | 12min | 3 tasks | 3 files |
+| Phase 03.4-encrypted-token-envelope P04 | 2min | 1 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -128,6 +129,9 @@ Recent decisions affecting current work:
 - [Phase 03.4-encrypted-token-envelope]: [Phase 03.4-03]: Session-init envelope-decrypt fallback gated by !internalToken && !refreshToken && tokenKey && isEncryptedToken; warm-cache always wins, fallback only runs for restart recovery; cross-profile rejection via AAD - debug log + plain-bearer continuation, no crash, no 401
 - [Phase 03.4-encrypted-token-envelope]: [Phase 03.4-03]: registerClient guarded by 'profileState.oauthProvider' (Phase 03.3 graceful degradation can leave it null); session metadata still rehydrates from envelope in degraded-OAuth mode, only DCR re-registration is skipped
 - [Phase 03.4-encrypted-token-envelope]: [Phase 03.4-03]: Encryption-failure availability bias - try/catch around encryptTokenPayload falls back to plain access_token + warn so /oauth/token never crashes on tokenKey misconfiguration; client_secret NEVER embedded in envelope.creg (DCR public PKCE clients have none)
+- [Phase 03.4-encrypted-token-envelope]: [Phase 03.4-04]: CHANGELOG entry consolidation - two prior plan-internal Added bullets (crypto module / HTTP transport wiring) folded into one user-perspective line per AGENTS.md compress-lines rule and the plan's exactly-1-match acceptance criterion
+- [Phase 03.4-encrypted-token-envelope]: [Phase 03.4-04]: README.md MCP4_TOKEN_MAX_LENGTH default updated from 1000 to 4096 alongside the new MCP4_TOKEN_KEY entry - closes the documentation drift introduced when Plan 03 raised the runtime default
+- [Phase 03.4-encrypted-token-envelope]: [Phase 03.4-04]: Encrypted Token Envelopes section uses ## (top-level) depth in HTTP-TRANSPORT.md to match neighboring Session Management / SSE Resumability sections, not ### like the Session Storage subsection it follows
 
 ### Roadmap Evolution
 
@@ -148,6 +152,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-06T07:29:26.142Z
-Stopped at: Completed 03.4-03-PLAN.md
+Last session: 2026-05-06T07:35:27.156Z
+Stopped at: Completed 03.4-04-PLAN.md
 Resume file: None
