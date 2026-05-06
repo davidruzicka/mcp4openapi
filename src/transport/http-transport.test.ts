@@ -4169,6 +4169,320 @@ describeIfListen('HttpTransport', () => {
     });
   });
 
+  describe('encrypted token envelope session recovery', () => {
+    const KEY_HEX = 'a'.repeat(64);
+    const buildKey = () => Buffer.from(KEY_HEX, 'hex');
+
+    interface MockLogger extends Logger {
+      debug: ReturnType<typeof vi.fn>;
+      info: ReturnType<typeof vi.fn>;
+      warn: ReturnType<typeof vi.fn>;
+      error: ReturnType<typeof vi.fn>;
+    }
+    const mkLogger = (): MockLogger => ({
+      debug: vi.fn(),
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+    });
+
+    const buildTransport = (opts: { tokenKey?: Buffer; profileId?: string; testLogger?: Logger }): HttpTransport => {
+      const config: any = {
+        host: '127.0.0.1',
+        port: 0,
+        sessionTimeoutMs: 1800000,
+        heartbeatEnabled: false,
+        heartbeatIntervalMs: 30000,
+        metricsEnabled: false,
+        metricsPath: '/metrics',
+      };
+      if (opts.tokenKey !== undefined) config.tokenKey = opts.tokenKey;
+      const t = new HttpTransport(config, opts.testLogger ?? logger);
+      // Pre-create profile state with stub oauthProvider that captures registerClient calls.
+      const profileId = opts.profileId ?? 'default';
+      const registerClient = vi.fn(async (c: any) => c);
+      const profileState: any = {
+        profileId,
+        context: { profileId },
+        oauthProvider: {
+          clientsStore: { registerClient, getClient: async () => undefined },
+        },
+        oauthTokensByAccessToken: new Map(),
+        sessions: new Map(),
+      };
+      (t as any).profileStates.set(profileId, profileState);
+      (t as any).__test_registerClientSpy = registerClient;
+      (t as any).__test_profileState = profileState;
+      return t;
+    };
+
+    const findOnlySession = (t: HttpTransport, profileId: string = 'default'): any => {
+      const profileState = (t as any).profileStates.get(profileId);
+      const sessions: any[] = Array.from(profileState.sessions.values());
+      // Return last session created (initialize creates a fresh session)
+      return sessions[sessions.length - 1];
+    };
+
+    it('Test M: client presents valid envelope - session restored with metadata + info log', async () => {
+      const { encryptTokenPayload } = await import('../auth/token-envelope.js');
+      const mockLogger = mkLogger();
+      const key = buildKey();
+      const t = buildTransport({ tokenKey: key, testLogger: mockLogger });
+      const tApp = (t as any).app;
+      t.setMessageHandler(async () => ({
+        protocolVersion: '2025-03-26',
+        serverInfo: { name: 'test' },
+      }));
+
+      const envelope = encryptTokenPayload(
+        {
+          v: 1,
+          at: 'idp-access-m',
+          rt: 'idp-refresh-m',
+          exp: Date.now() + 60_000,
+          cid: 'client-m',
+          sc: ['read', 'write'],
+          pid: 'default',
+          iat: Date.now(),
+        },
+        key,
+      );
+
+      const response = await request(tApp)
+        .post('/mcp')
+        .set('Accept', 'application/json, text/event-stream')
+        .set('Authorization', `Bearer ${envelope}`)
+        .send({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} });
+
+      expect(response.status).toBe(200);
+      const session = findOnlySession(t);
+      expect(session).toBeDefined();
+      expect(session.refreshToken).toBe('idp-refresh-m');
+      expect(session.scopes).toEqual(['read', 'write']);
+      expect(session.oauthClientId).toBe('client-m');
+      // info log emitted
+      expect(mockLogger.info).toHaveBeenCalledWith(
+        'Session restored from encrypted token envelope after restart',
+        expect.objectContaining({
+          profileId: 'default',
+          hasRefreshToken: true,
+          oauthClientId: 'client-m',
+          restoredClientReg: false,
+        }),
+      );
+      await t.stop();
+    });
+
+    it('Test N: envelope with creg invokes registerClient with mapped fields and defaults', async () => {
+      const { encryptTokenPayload } = await import('../auth/token-envelope.js');
+      const key = buildKey();
+      const mockLogger = mkLogger();
+      const t = buildTransport({ tokenKey: key, testLogger: mockLogger });
+      const tApp = (t as any).app;
+      t.setMessageHandler(async () => ({ protocolVersion: '2025-03-26', serverInfo: { name: 'test' } }));
+      const registerClientSpy = (t as any).__test_registerClientSpy;
+
+      const envelopeFull = encryptTokenPayload(
+        {
+          v: 1,
+          at: 'at-n',
+          rt: 'rt-n',
+          pid: 'default',
+          iat: Date.now(),
+          creg: {
+            id: 'c1',
+            ru: ['https://x/cb'],
+            gt: ['authorization_code'],
+            rt_: ['code'],
+            sc: 'openid',
+          },
+        },
+        key,
+      );
+
+      await request(tApp)
+        .post('/mcp')
+        .set('Accept', 'application/json, text/event-stream')
+        .set('Authorization', `Bearer ${envelopeFull}`)
+        .send({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} });
+
+      expect(registerClientSpy).toHaveBeenCalledWith({
+        client_id: 'c1',
+        redirect_uris: ['https://x/cb'],
+        grant_types: ['authorization_code'],
+        response_types: ['code'],
+        scope: 'openid',
+      });
+
+      // Now test defaults with minimal creg
+      registerClientSpy.mockClear();
+      const envelopeMinimal = encryptTokenPayload(
+        {
+          v: 1,
+          at: 'at-n2',
+          rt: 'rt-n2',
+          pid: 'default',
+          iat: Date.now(),
+          creg: { id: 'c2' },
+        },
+        key,
+      );
+      await request(tApp)
+        .post('/mcp')
+        .set('Accept', 'application/json, text/event-stream')
+        .set('Authorization', `Bearer ${envelopeMinimal}`)
+        .send({ jsonrpc: '2.0', id: 2, method: 'initialize', params: {} });
+
+      expect(registerClientSpy).toHaveBeenCalledWith({
+        client_id: 'c2',
+        redirect_uris: [],
+        grant_types: ['authorization_code', 'refresh_token'],
+        response_types: ['code'],
+        scope: '',
+      });
+      await t.stop();
+    });
+
+    it('Test O: envelope without creg - registerClient NOT called, restoredClientReg=false', async () => {
+      const { encryptTokenPayload } = await import('../auth/token-envelope.js');
+      const key = buildKey();
+      const mockLogger = mkLogger();
+      const t = buildTransport({ tokenKey: key, testLogger: mockLogger });
+      const tApp = (t as any).app;
+      t.setMessageHandler(async () => ({ protocolVersion: '2025-03-26', serverInfo: { name: 'test' } }));
+      const registerClientSpy = (t as any).__test_registerClientSpy;
+
+      const envelope = encryptTokenPayload(
+        {
+          v: 1,
+          at: 'at-o',
+          rt: 'rt-o',
+          cid: 'client-o',
+          pid: 'default',
+          iat: Date.now(),
+        },
+        key,
+      );
+      await request(tApp)
+        .post('/mcp')
+        .set('Accept', 'application/json, text/event-stream')
+        .set('Authorization', `Bearer ${envelope}`)
+        .send({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} });
+
+      expect(registerClientSpy).not.toHaveBeenCalled();
+      const session = findOnlySession(t);
+      expect(session.refreshToken).toBe('rt-o');
+      expect(mockLogger.info).toHaveBeenCalledWith(
+        'Session restored from encrypted token envelope after restart',
+        expect.objectContaining({ restoredClientReg: false }),
+      );
+      await t.stop();
+    });
+
+    it('Test P: cross-profile envelope replay returns null - debug log + plain bearer continuation', async () => {
+      const { encryptTokenPayload } = await import('../auth/token-envelope.js');
+      const key = buildKey();
+      const mockLogger = mkLogger();
+      // Encrypt under profile-a but present to default (which is the transport's only profile).
+      // decryptTokenPayload is called with profileState.profileId='default' but envelope.pid='profile-a',
+      // so AAD verification fails and the fallback yields null (cross-profile rejection).
+      const t = buildTransport({ tokenKey: key, profileId: 'default', testLogger: mockLogger });
+      const tApp = (t as any).app;
+      t.setMessageHandler(async () => ({ protocolVersion: '2025-03-26', serverInfo: { name: 'test' } }));
+
+      const envelope = encryptTokenPayload(
+        { v: 1, at: 'at-p', rt: 'rt-p', pid: 'profile-a', iat: Date.now() },
+        key,
+      );
+      const response = await request(tApp)
+        .post('/mcp')
+        .set('Accept', 'application/json, text/event-stream')
+        .set('Authorization', `Bearer ${envelope}`)
+        .send({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} });
+
+      // No crash; session created without OAuth metadata
+      expect(response.status).toBe(200);
+      const session = findOnlySession(t, 'default');
+      expect(session).toBeDefined();
+      expect(session.refreshToken).toBeUndefined();
+      // debug log about decrypt failure
+      expect(mockLogger.debug).toHaveBeenCalledWith(
+        'Encrypted token failed to decrypt (wrong key, tampered, or wrong profile)',
+        expect.objectContaining({ profileId: 'default' }),
+      );
+      // info log NOT emitted for restoration
+      const infoCalls = mockLogger.info.mock.calls;
+      const restored = infoCalls.find(
+        (args: unknown[]) =>
+          typeof args[0] === 'string' && (args[0] as string).includes('Session restored from encrypted token envelope'),
+      );
+      expect(restored).toBeUndefined();
+      await t.stop();
+    });
+
+    it('Test Q: encrypted-looking token but tokenKey is undefined - fallback skipped', async () => {
+      const { encryptTokenPayload } = await import('../auth/token-envelope.js');
+      const key = buildKey();
+      const mockLogger = mkLogger();
+      // Build a transport WITHOUT tokenKey
+      const t = buildTransport({ tokenKey: undefined, testLogger: mockLogger });
+      const tApp = (t as any).app;
+      t.setMessageHandler(async () => ({ protocolVersion: '2025-03-26', serverInfo: { name: 'test' } }));
+
+      const envelope = encryptTokenPayload(
+        { v: 1, at: 'at-q', rt: 'rt-q', pid: 'default', iat: Date.now() },
+        key,
+      );
+      const response = await request(tApp)
+        .post('/mcp')
+        .set('Accept', 'application/json, text/event-stream')
+        .set('Authorization', `Bearer ${envelope}`)
+        .send({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} });
+
+      expect(response.status).toBe(200);
+      // info log NOT emitted
+      const infoCalls = mockLogger.info.mock.calls;
+      const restoredCall = infoCalls.find(
+        (args: unknown[]) =>
+          typeof args[0] === 'string' && (args[0] as string).includes('Session restored from encrypted token envelope'),
+      );
+      expect(restoredCall).toBeUndefined();
+      // The original 'No OAuth token data found in map' debug WAS called
+      expect(mockLogger.debug).toHaveBeenCalledWith(
+        'No OAuth token data found in map (may be non-OAuth bearer token)',
+        expect.objectContaining({ hasToken: true }),
+      );
+      await t.stop();
+    });
+
+    it('Test R: token without mcp4.v1. prefix - fallback NOT entered', async () => {
+      const mockLogger = mkLogger();
+      const key = buildKey();
+      const t = buildTransport({ tokenKey: key, testLogger: mockLogger });
+      const tApp = (t as any).app;
+      t.setMessageHandler(async () => ({ protocolVersion: '2025-03-26', serverInfo: { name: 'test' } }));
+
+      const response = await request(tApp)
+        .post('/mcp')
+        .set('Accept', 'application/json, text/event-stream')
+        .set('Authorization', 'Bearer plain-bearer-xyz')
+        .send({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} });
+
+      expect(response.status).toBe(200);
+      expect(mockLogger.debug).toHaveBeenCalledWith(
+        'No OAuth token data found in map (may be non-OAuth bearer token)',
+        expect.objectContaining({ hasToken: true }),
+      );
+      const infoCalls = mockLogger.info.mock.calls;
+      const restoredCall = infoCalls.find(
+        (args: unknown[]) =>
+          typeof args[0] === 'string' && (args[0] as string).includes('Session restored from encrypted token envelope'),
+      );
+      expect(restoredCall).toBeUndefined();
+      await t.stop();
+    });
+  });
+
   describe('getSessionToken', () => {
     it('should return token for existing session', () => {
       const profileState = createProfileState(transport as any);
