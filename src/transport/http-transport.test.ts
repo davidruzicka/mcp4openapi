@@ -2742,6 +2742,84 @@ describeIfListen('HttpTransport', () => {
     });
   });
 
+  describe('MCP4_TOKEN_KEY startup warn and DEFAULT_MAX_TOKEN_LENGTH = 4096', () => {
+    interface MockLogger extends Logger {
+      debug: ReturnType<typeof vi.fn>;
+      info: ReturnType<typeof vi.fn>;
+      warn: ReturnType<typeof vi.fn>;
+      error: ReturnType<typeof vi.fn>;
+    }
+    const buildMockLogger = (): MockLogger => ({
+      debug: vi.fn(),
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+    });
+    const baseConfig = {
+      host: '127.0.0.1',
+      port: 0,
+      sessionTimeoutMs: 1800000,
+      heartbeatEnabled: false,
+      heartbeatIntervalMs: 30000,
+      metricsEnabled: false,
+      metricsPath: '/metrics',
+    };
+
+    it('warns when MCP4_TOKEN_KEY is not set (config.tokenKey undefined)', async () => {
+      const mockLogger = buildMockLogger();
+      const t = new HttpTransport({ ...baseConfig }, mockLogger);
+      const warnCalls = mockLogger.warn.mock.calls;
+      const matchingCall = warnCalls.find((args: unknown[]) =>
+        typeof args[0] === 'string' && (args[0] as string).includes('MCP4_TOKEN_KEY not set'),
+      );
+      expect(matchingCall).toBeDefined();
+      await t.stop();
+    });
+
+    it('does not warn about MCP4_TOKEN_KEY when tokenKey is set', async () => {
+      const mockLogger = buildMockLogger();
+      const t = new HttpTransport({ ...baseConfig, tokenKey: Buffer.alloc(32) }, mockLogger);
+      const warnCalls = mockLogger.warn.mock.calls;
+      const matchingCall = warnCalls.find((args: unknown[]) =>
+        typeof args[0] === 'string' && (args[0] as string).includes('MCP4_TOKEN_KEY'),
+      );
+      expect(matchingCall).toBeUndefined();
+      await t.stop();
+    });
+
+    it('accepts a 4096-char token at the new DEFAULT_MAX_TOKEN_LENGTH boundary', async () => {
+      const t = new HttpTransport({ ...baseConfig }, logger);
+      const tApp = (t as any).app;
+      t.setMessageHandler(async () => ({ result: 'ok' }));
+      const validToken = 'Bearer ' + 'a'.repeat(4096);
+      const response = await request(tApp)
+        .post('/mcp')
+        .set('Accept', 'application/json, text/event-stream')
+        .set('Authorization', validToken)
+        .set('Host', 'localhost')
+        .send({ jsonrpc: '2.0', id: 1, method: 'initialize' });
+      expect(response.status).not.toBe(400);
+      await t.stop();
+    });
+
+    it('rejects a 4097-char token with too long (max 4096 characters)', async () => {
+      const t = new HttpTransport({ ...baseConfig }, logger);
+      const tApp = (t as any).app;
+      t.setMessageHandler(async () => ({ result: 'ok' }));
+      const tooLongToken = 'Bearer ' + 'a'.repeat(4097);
+      const response = await request(tApp)
+        .post('/mcp')
+        .set('Accept', 'application/json, text/event-stream')
+        .set('Authorization', tooLongToken)
+        .set('Host', 'localhost')
+        .send({ jsonrpc: '2.0', id: 1, method: 'initialize' });
+      expect(response.status).toBe(400);
+      const bodyText = JSON.stringify(response.body);
+      expect(bodyText).toContain('too long (max 4096 characters)');
+      await t.stop();
+    });
+  });
+
   describe('Initialization Token Validation (validation_endpoint)', () => {
     it('should reject initialization when validation endpoint returns non-2xx', async () => {
       const tokenTransport = new HttpTransport(
