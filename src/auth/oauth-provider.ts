@@ -16,6 +16,7 @@
 import { randomUUID, createHash, timingSafeEqual } from 'node:crypto';
 import { isIP } from 'node:net';
 import { Request, Response } from 'express';
+import { generateCorrelationId } from '../core/errors.js';
 import type {
   OAuthServerProvider,
   AuthorizationParams,
@@ -867,8 +868,9 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
         res.redirect(clientUrl.toString());
 
     } catch (err) {
-        this.logger.error('Callback handling failed', err as Error);
-        res.status(500).send('Internal Server Error during token exchange');
+        const correlationId = generateCorrelationId();
+        this.logger.error('Callback handling failed', err instanceof Error ? err : new Error(String(err)), { correlationId });
+        res.status(500).send(`Internal Server Error (correlation ID: ${correlationId})`);
     }
   }
 
