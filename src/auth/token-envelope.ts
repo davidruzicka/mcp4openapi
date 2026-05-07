@@ -156,7 +156,7 @@ export function decryptTokenPayload(
     const tag = decoded.subarray(decoded.length - TAG_BYTES);
     const ciphertext = decoded.subarray(NONCE_BYTES, decoded.length - TAG_BYTES);
 
-    const decipher = createDecipheriv(ALGORITHM, key, nonce);
+    const decipher = createDecipheriv(ALGORITHM, key, nonce, { authTagLength: TAG_BYTES });
     decipher.setAAD(Buffer.from(profileId, 'utf8'));
     decipher.setAuthTag(tag);
 

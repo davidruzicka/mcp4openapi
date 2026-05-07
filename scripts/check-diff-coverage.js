@@ -19,6 +19,7 @@ const __dirname = dirname(__filename);
 const projectRoot = resolve(__dirname, '..');
 
 function run(command) {
+  // nosemgrep: detect-child-process -- dev-only script, command is hardcoded by caller, not user input
   return execSync(command, {
     cwd: projectRoot,
     encoding: 'utf-8',
