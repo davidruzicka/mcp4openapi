@@ -168,7 +168,7 @@ tool-filter/
 - **Profile registry**: `ProfileRegistry` discovers and resolves profiles using `profile_id`, `profile_name`, and `profile_aliases`.
 - **Server manager**: `MCPServerManager` lazily initializes a server per profile and caches instances.
 - **HTTP profile routing**: `/profile/:profileId/mcp` routes requests to the correct server when enabled with `MCP4_HTTP_PROFILE_ROUTING=true`.
-- **Routing allowlist**: `MCP4_ALLOW_PROFILES` and `MCP4_ALLOW_PROFILES_REGEX` restrict which profiles are routable.
+- **Routing allowlist**: `MCP4_ALLOW_PROFILES` and `MCP4_ALLOW_PROFILES_REGEX` restrict which profiles are routable. `MCP4_HIDDEN_PROFILES` hides profiles from the index page while keeping them fully functional.
 - **Default profile behavior**: `/mcp` remains available only when a default profile is configured (via `MCP4_PROFILE_PATH` or `--profile-path`).
 - **OAuth metadata per profile**: `/.well-known/oauth-authorization-server` and `/.well-known/oauth-protected-resource/mcp` are available under `/profile/:profileId/` when routing is enabled.
 

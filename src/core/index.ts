@@ -23,7 +23,7 @@ import {
   resolveProfileAdminDescriptions,
   PROFILES_DESCRIPTION_ENV_VAR,
 } from '../profile/profile-description-env.js';
-import { isProfileAllowed, parseProfileAllowlistConfig } from '../profile/profile-allowlist.js';
+import { isProfileAllowed, parseProfileAllowlistConfig, parseHiddenProfilesConfig } from '../profile/profile-filters.js';
 import { SSRFValidator } from '../security/ssrf-validator.js';
 import { parseOAuthMetadataEndpoints } from '../auth/oauth-metadata.js';
 import { parseConfiguredFilteringValue } from './filtering.js';
@@ -306,6 +306,7 @@ export async function main() {
         defaultProfile: defaultProfileForRouting,
         specPathOverride: hasExplicitSpecPath ? specPathOverride : undefined,
         allowlist: profileAllowlistConfig,
+        hiddenProfiles: parseHiddenProfilesConfig(process.env.MCP4_HIDDEN_PROFILES),
       });
       const manager = new MCPServerManager(registry, logger, httpTransport, globalFiltering);
 

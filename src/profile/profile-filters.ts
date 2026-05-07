@@ -1,11 +1,11 @@
 /**
- * Profile allowlist helpers for HTTP profile routing.
+ * Profile allowlist and hidden-profiles helpers for HTTP profile routing.
  */
 
 import { ConfigurationError } from '../core/errors.js';
 
 export interface ProfileAllowlistConfig {
-  allowNames: string[];
+  allowNames: Set<string>;
   allowNameRegex?: RegExp;
 }
 
@@ -36,6 +36,7 @@ export function parseProfileAllowlistConfig(options: {
   if (rawRegex && rawRegex.length > 0) {
     try {
       // nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp - Finding 692560306: operator-controlled startup config (MCP4_ALLOW_PROFILES_REGEX), not user input.
+      // Constructed without flags (no g/y), so lastIndex is always 0 and .test() is stateless.
       allowNameRegex = new RegExp(rawRegex);
     } catch (error) {
       throw new ConfigurationError('Invalid profile allow regex', {
@@ -50,7 +51,7 @@ export function parseProfileAllowlistConfig(options: {
   }
 
   return {
-    allowNames,
+    allowNames: new Set(allowNames),
     allowNameRegex,
   };
 }
@@ -73,20 +74,28 @@ export function isProfileAllowed(profile: ProfileIdentity, config: ProfileAllowl
   }
 
   const candidates = collectProfileNames(profile);
-  if (config.allowNames.length > 0) {
-    if (candidates.some(name => config.allowNames.includes(name))) {
+  if (config.allowNames.size > 0) {
+    if (candidates.some(name => config.allowNames.has(name))) {
       return true;
     }
   }
 
   if (config.allowNameRegex) {
-    if (candidates.some(name => {
-      config.allowNameRegex!.lastIndex = 0;
-      return config.allowNameRegex!.test(name);
-    })) {
+    if (candidates.some(name => config.allowNameRegex!.test(name))) {
       return true;
     }
   }
 
   return false;
+}
+
+export function parseHiddenProfilesConfig(hideNames?: string): Set<string> {
+  return new Set(splitCsv(hideNames));
+}
+
+export function isProfileHidden(profile: ProfileIdentity, hiddenProfiles: ReadonlySet<string>): boolean {
+  if (hiddenProfiles.size === 0) {
+    return false;
+  }
+  return collectProfileNames(profile).some(name => hiddenProfiles.has(name));
 }

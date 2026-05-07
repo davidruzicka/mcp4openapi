@@ -10,13 +10,14 @@ import {
   type ListedProfileDetails,
 } from './profile-resolver.js';
 import { ConfigurationError } from '../core/errors.js';
-import { isProfileAllowed, type ProfileAllowlistConfig } from './profile-allowlist.js';
+import { isProfileAllowed, isProfileHidden, type ProfileAllowlistConfig, type ProfileIdentity } from './profile-filters.js';
 
 export interface ProfileRegistryOptions {
   profilesDir?: string;
   defaultProfile?: ResolvedProfile;
   specPathOverride?: string;
   allowlist?: ProfileAllowlistConfig | null;
+  hiddenProfiles?: ReadonlySet<string>;
 }
 
 export class ProfileRegistry {
@@ -24,18 +25,22 @@ export class ProfileRegistry {
   private defaultProfile?: ResolvedProfile;
   private specPathOverride?: string;
   private allowlist: ProfileAllowlistConfig | null;
+  private hiddenProfiles: ReadonlySet<string>;
 
   constructor(options: ProfileRegistryOptions) {
     this.profilesDir = options.profilesDir;
     this.defaultProfile = options.defaultProfile;
     this.specPathOverride = options.specPathOverride;
     this.allowlist = options.allowlist ?? null;
+    this.hiddenProfiles = options.hiddenProfiles ?? new Set();
   }
 
   getDefaultProfile(): ResolvedProfile | undefined {
     if (!this.defaultProfile) {
       return undefined;
     }
+    // Intentionally does not check hiddenProfiles: hidden profiles remain fully routable.
+    // Index filtering is the only effect of hiddenProfiles (applied in listProfilesForIndex).
     return this.isAllowed(this.defaultProfile) ? this.defaultProfile : undefined;
   }
 
@@ -70,7 +75,8 @@ export class ProfileRegistry {
     const existing = profiles.find(profile =>
       profile.profileId === defaultProfile.profileId ||
       profile.profileName === defaultProfile.profileName ||
-      profile.profileAliases.includes(defaultProfile.profileId)
+      profile.profileAliases.includes(defaultProfile.profileId) ||
+      profile.profileAliases.includes(defaultProfile.profileName)
     );
 
     if (existing) {
@@ -78,21 +84,29 @@ export class ProfileRegistry {
     }
 
     const defaultDetails = await resolveProfileDetailsFromPath(defaultProfile.profilePath);
-    if (defaultDetails && this.isAllowed(defaultDetails)) {
+    if (defaultDetails && this.isAllowed(defaultDetails) && !this.isHidden(defaultDetails)) {
       return [defaultDetails, ...profiles];
     }
 
     return profiles;
   }
 
-  private isAllowed(profile: { profileId: string; profileName: string; profileAliases?: string[] }): boolean {
+  private isAllowed(profile: ProfileIdentity): boolean {
     return isProfileAllowed(profile, this.allowlist);
   }
 
-  private filterProfiles<T extends { profileId: string; profileName: string; profileAliases?: string[] }>(profiles: T[]): T[] {
-    if (!this.allowlist) {
-      return profiles;
+  private isHidden(profile: ProfileIdentity): boolean {
+    return isProfileHidden(profile, this.hiddenProfiles);
+  }
+
+  private filterProfiles<T extends ProfileIdentity>(profiles: T[]): T[] {
+    let result = profiles;
+    if (this.allowlist) {
+      result = result.filter(profile => this.isAllowed(profile));
     }
-    return profiles.filter(profile => this.isAllowed(profile));
+    if (this.hiddenProfiles.size > 0) {
+      result = result.filter(profile => !this.isHidden(profile));
+    }
+    return result;
   }
 }

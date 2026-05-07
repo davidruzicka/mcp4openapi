@@ -1,0 +1,10 @@
+stages:
+  - test
+
+include:
+  - project: "security/tools-and-apps/ci-library"
+    ref: main
+    file: "ci/semgrep.yml"
+
+semgrep:
+  stage: test
