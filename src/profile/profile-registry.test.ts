@@ -4,7 +4,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { ProfileRegistry } from './profile-registry.js';
 import type { ResolvedProfile } from './profile-resolver.js';
-import { parseProfileAllowlistConfig, parseProfileHidelistConfig } from './profile-filters.js';
+import { parseProfileAllowlistConfig, parseHiddenProfilesConfig } from './profile-filters.js';
 
 async function writeJson(filePath: string, data: unknown): Promise<void> {
   await fs.mkdir(path.dirname(filePath), { recursive: true });
@@ -156,7 +156,7 @@ describe('ProfileRegistry', () => {
     await expect(registry.resolveProfile('blocked')).rejects.toThrow('Profile not found');
   });
 
-  it('applies allowlist and hidelist together: allowed+hidden profile excluded from index, blocked profile not resolvable', async () => {
+  it('applies allowlist and hiddenProfiles together: allowed+hidden profile excluded from index, blocked profile not resolvable', async () => {
     const root = await createTempDir();
     const profilesDir = path.join(root, 'profiles');
 
@@ -182,8 +182,8 @@ describe('ProfileRegistry', () => {
     });
 
     const allowlist = parseProfileAllowlistConfig({ allowNames: 'public,internal' });
-    const hidelist = parseProfileHidelistConfig('internal');
-    const registry = new ProfileRegistry({ profilesDir, allowlist, hidelist });
+    const hiddenProfiles = parseHiddenProfilesConfig('internal');
+    const registry = new ProfileRegistry({ profilesDir, allowlist, hiddenProfiles });
 
     const profiles = await registry.listProfilesForIndex();
     expect(profiles.map(p => p.profileId)).toEqual(['public']);
@@ -227,7 +227,7 @@ describe('ProfileRegistry', () => {
     expect(profiles.map(p => p.profileId)).toEqual(['listed']);
   });
 
-  it('hides profiles in hidelist from index but keeps them resolvable', async () => {
+  it('hides profiles in hiddenProfiles from index but keeps them resolvable', async () => {
     const root = await createTempDir();
     const profilesDir = path.join(root, 'profiles');
 
@@ -245,8 +245,8 @@ describe('ProfileRegistry', () => {
       tools: [],
     });
 
-    const hidelist = parseProfileHidelistConfig('hidden');
-    const registry = new ProfileRegistry({ profilesDir, hidelist });
+    const hiddenProfiles = parseHiddenProfilesConfig('hidden');
+    const registry = new ProfileRegistry({ profilesDir, hiddenProfiles });
 
     const profiles = await registry.listProfilesForIndex();
     expect(profiles.map(p => p.profileId)).toEqual(['visible']);
@@ -267,8 +267,8 @@ describe('ProfileRegistry', () => {
       tools: [],
     });
 
-    const hidelist = parseProfileHidelistConfig('old-api');
-    const registry = new ProfileRegistry({ profilesDir, hidelist });
+    const hiddenProfiles = parseHiddenProfilesConfig('old-api');
+    const registry = new ProfileRegistry({ profilesDir, hiddenProfiles });
 
     const profiles = await registry.listProfilesForIndex();
     expect(profiles).toHaveLength(0);
@@ -277,7 +277,7 @@ describe('ProfileRegistry', () => {
     expect(resolved.profileId).toBe('legacy');
   });
 
-  it('hides default profile from index when in hidelist but keeps it functional', async () => {
+  it('hides default profile from index when in hiddenProfiles but keeps it functional', async () => {
     const root = await createTempDir();
     const profilesDir = path.join(root, 'profiles');
     const defaultProfilePath = path.join(root, 'default.json');
@@ -304,8 +304,8 @@ describe('ProfileRegistry', () => {
       specPath: './openapi.yaml',
     };
 
-    const hidelist = parseProfileHidelistConfig('default');
-    const registry = new ProfileRegistry({ profilesDir, defaultProfile, hidelist });
+    const hiddenProfiles = parseHiddenProfilesConfig('default');
+    const registry = new ProfileRegistry({ profilesDir, defaultProfile, hiddenProfiles });
 
     const profiles = await registry.listProfilesForIndex();
     expect(profiles.map(p => p.profileId)).toEqual(['other']);

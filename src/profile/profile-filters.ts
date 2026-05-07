@@ -1,5 +1,5 @@
 /**
- * Profile allowlist and hidelist helpers for HTTP profile routing.
+ * Profile allowlist and hidden-profiles helpers for HTTP profile routing.
  */
 
 import { ConfigurationError } from '../core/errors.js';
@@ -89,13 +89,13 @@ export function isProfileAllowed(profile: ProfileIdentity, config: ProfileAllowl
   return false;
 }
 
-export function parseProfileHidelistConfig(hideNames?: string): string[] {
-  return splitCsv(hideNames);
+export function parseHiddenProfilesConfig(hideNames?: string): Set<string> {
+  return new Set(splitCsv(hideNames));
 }
 
-export function isProfileHidden(profile: ProfileIdentity, hidelist: ReadonlySet<string>): boolean {
-  if (hidelist.size === 0) {
+export function isProfileHidden(profile: ProfileIdentity, hiddenProfiles: ReadonlySet<string>): boolean {
+  if (hiddenProfiles.size === 0) {
     return false;
   }
-  return collectProfileNames(profile).some(name => hidelist.has(name));
+  return collectProfileNames(profile).some(name => hiddenProfiles.has(name));
 }

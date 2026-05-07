@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { ConfigurationError } from '../core/errors.js';
-import { isProfileAllowed, isProfileHidden, parseProfileAllowlistConfig, parseProfileHidelistConfig } from './profile-filters.js';
+import { isProfileAllowed, isProfileHidden, parseProfileAllowlistConfig, parseHiddenProfilesConfig } from './profile-filters.js';
 
 describe('profile allowlist', () => {
   it('returns null when no allowlist inputs are provided', () => {
@@ -55,24 +55,24 @@ describe('profile allowlist', () => {
   });
 });
 
-describe('profile hidelist', () => {
-  it('returns empty array for undefined input', () => {
-    expect(parseProfileHidelistConfig(undefined)).toEqual([]);
+describe('profile hiddenProfiles', () => {
+  it('returns empty set for undefined input', () => {
+    expect(parseHiddenProfilesConfig(undefined)).toEqual(new Set());
   });
 
-  it('returns empty array for empty string', () => {
-    expect(parseProfileHidelistConfig('')).toEqual([]);
+  it('returns empty set for empty string', () => {
+    expect(parseHiddenProfilesConfig('')).toEqual(new Set());
   });
 
   it('splits comma-separated values and trims whitespace', () => {
-    expect(parseProfileHidelistConfig('a, b , c')).toEqual(['a', 'b', 'c']);
+    expect(parseHiddenProfilesConfig('a, b , c')).toEqual(new Set(['a', 'b', 'c']));
   });
 
   it('filters empty segments', () => {
-    expect(parseProfileHidelistConfig('a,,b,')).toEqual(['a', 'b']);
+    expect(parseHiddenProfilesConfig('a,,b,')).toEqual(new Set(['a', 'b']));
   });
 
-  it('returns false for empty hidelist', () => {
+  it('returns false for empty hiddenProfiles', () => {
     const profile = { profileId: 'x', profileName: 'x' };
     expect(isProfileHidden(profile, new Set())).toBe(false);
   });

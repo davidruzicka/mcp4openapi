@@ -17,7 +17,7 @@ export interface ProfileRegistryOptions {
   defaultProfile?: ResolvedProfile;
   specPathOverride?: string;
   allowlist?: ProfileAllowlistConfig | null;
-  hidelist?: string[];
+  hiddenProfiles?: ReadonlySet<string>;
 }
 
 export class ProfileRegistry {
@@ -25,22 +25,22 @@ export class ProfileRegistry {
   private defaultProfile?: ResolvedProfile;
   private specPathOverride?: string;
   private allowlist: ProfileAllowlistConfig | null;
-  private hidelist: Set<string>;
+  private hiddenProfiles: ReadonlySet<string>;
 
   constructor(options: ProfileRegistryOptions) {
     this.profilesDir = options.profilesDir;
     this.defaultProfile = options.defaultProfile;
     this.specPathOverride = options.specPathOverride;
     this.allowlist = options.allowlist ?? null;
-    this.hidelist = new Set(options.hidelist ?? []);
+    this.hiddenProfiles = options.hiddenProfiles ?? new Set();
   }
 
   getDefaultProfile(): ResolvedProfile | undefined {
     if (!this.defaultProfile) {
       return undefined;
     }
-    // Intentionally does not check hidelist: hidden profiles remain fully routable.
-    // Index filtering is the only effect of hidelist (applied in listProfilesForIndex).
+    // Intentionally does not check hiddenProfiles: hidden profiles remain fully routable.
+    // Index filtering is the only effect of hiddenProfiles (applied in listProfilesForIndex).
     return this.isAllowed(this.defaultProfile) ? this.defaultProfile : undefined;
   }
 
@@ -96,7 +96,7 @@ export class ProfileRegistry {
   }
 
   private isHidden(profile: ProfileIdentity): boolean {
-    return isProfileHidden(profile, this.hidelist);
+    return isProfileHidden(profile, this.hiddenProfiles);
   }
 
   private filterProfiles<T extends ProfileIdentity>(profiles: T[]): T[] {
@@ -104,7 +104,7 @@ export class ProfileRegistry {
     if (this.allowlist) {
       result = result.filter(profile => this.isAllowed(profile));
     }
-    if (this.hidelist.size > 0) {
+    if (this.hiddenProfiles.size > 0) {
       result = result.filter(profile => !this.isHidden(profile));
     }
     return result;
