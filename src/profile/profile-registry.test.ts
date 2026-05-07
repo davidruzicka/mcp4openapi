@@ -313,4 +313,65 @@ describe('ProfileRegistry', () => {
     const resolved = await registry.resolveProfile('default');
     expect(resolved.profileId).toBe('default');
   });
+
+  it('resolves default profile via its alias', async () => {
+    const root = await createTempDir();
+    const defaultProfilePath = path.join(root, 'default.json');
+
+    await writeJson(defaultProfilePath, {
+      profile_name: 'my-api',
+      profile_id: 'my-api',
+      openapi_spec_path: './openapi.yaml',
+      tools: [],
+    });
+
+    const defaultProfile: ResolvedProfile = {
+      profileId: 'my-api',
+      profileName: 'my-api',
+      profileAliases: ['legacy', 'old-api'],
+      profilePath: defaultProfilePath,
+      specPath: './openapi.yaml',
+    };
+
+    const registry = new ProfileRegistry({ defaultProfile });
+
+    const byAlias = await registry.resolveProfile('legacy');
+    expect(byAlias.profileId).toBe('my-api');
+
+    const byAlias2 = await registry.resolveProfile('old-api');
+    expect(byAlias2.profileId).toBe('my-api');
+  });
+
+  it('deduplicates default profile when listed profile aliases default profileId', async () => {
+    const root = await createTempDir();
+    const profilesDir = path.join(root, 'profiles');
+    const defaultProfilePath = path.join(root, 'default.json');
+
+    await writeJson(path.join(profilesDir, 'wrapper.json'), {
+      profile_name: 'wrapper',
+      profile_id: 'wrapper',
+      profile_aliases: ['my-api'],
+      openapi_spec_path: './openapi.yaml',
+      tools: [],
+    });
+
+    await writeJson(defaultProfilePath, {
+      profile_name: 'my-api',
+      profile_id: 'my-api',
+      openapi_spec_path: './openapi.yaml',
+      tools: [],
+    });
+
+    const defaultProfile: ResolvedProfile = {
+      profileId: 'my-api',
+      profileName: 'my-api',
+      profileAliases: [],
+      profilePath: defaultProfilePath,
+      specPath: './openapi.yaml',
+    };
+
+    const registry = new ProfileRegistry({ profilesDir, defaultProfile });
+    const profiles = await registry.listProfilesForIndex();
+    expect(profiles.map(p => p.profileId)).toEqual(['wrapper']);
+  });
 });
