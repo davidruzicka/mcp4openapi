@@ -156,6 +156,77 @@ describe('ProfileRegistry', () => {
     await expect(registry.resolveProfile('blocked')).rejects.toThrow('Profile not found');
   });
 
+  it('applies allowlist and hidelist together: allowed+hidden profile excluded from index, blocked profile not resolvable', async () => {
+    const root = await createTempDir();
+    const profilesDir = path.join(root, 'profiles');
+
+    await writeJson(path.join(profilesDir, 'public.json'), {
+      profile_name: 'public',
+      profile_id: 'public',
+      openapi_spec_path: './openapi.yaml',
+      tools: [],
+    });
+
+    await writeJson(path.join(profilesDir, 'internal.json'), {
+      profile_name: 'internal',
+      profile_id: 'internal',
+      openapi_spec_path: './openapi.yaml',
+      tools: [],
+    });
+
+    await writeJson(path.join(profilesDir, 'blocked.json'), {
+      profile_name: 'blocked',
+      profile_id: 'blocked',
+      openapi_spec_path: './openapi.yaml',
+      tools: [],
+    });
+
+    const allowlist = parseProfileAllowlistConfig({ allowNames: 'public,internal' });
+    const hidelist = parseProfileHidelistConfig('internal');
+    const registry = new ProfileRegistry({ profilesDir, allowlist, hidelist });
+
+    const profiles = await registry.listProfilesForIndex();
+    expect(profiles.map(p => p.profileId)).toEqual(['public']);
+
+    const resolved = await registry.resolveProfile('internal');
+    expect(resolved.profileId).toBe('internal');
+
+    await expect(registry.resolveProfile('blocked')).rejects.toThrow('Profile not found');
+  });
+
+  it('does not duplicate default profile matched via listed profile alias including default name', async () => {
+    const root = await createTempDir();
+    const profilesDir = path.join(root, 'profiles');
+    const defaultProfilePath = path.join(root, 'default.json');
+
+    await writeJson(path.join(profilesDir, 'listed.json'), {
+      profile_name: 'listed',
+      profile_id: 'listed',
+      profile_aliases: ['gitlab'],
+      openapi_spec_path: './openapi.yaml',
+      tools: [],
+    });
+
+    await writeJson(defaultProfilePath, {
+      profile_name: 'gitlab',
+      profile_id: 'gl',
+      openapi_spec_path: './openapi.yaml',
+      tools: [],
+    });
+
+    const defaultProfile: ResolvedProfile = {
+      profileId: 'gl',
+      profileName: 'gitlab',
+      profileAliases: [],
+      profilePath: defaultProfilePath,
+      specPath: './openapi.yaml',
+    };
+
+    const registry = new ProfileRegistry({ profilesDir, defaultProfile });
+    const profiles = await registry.listProfilesForIndex();
+    expect(profiles.map(p => p.profileId)).toEqual(['listed']);
+  });
+
   it('hides profiles in hidelist from index but keeps them resolvable', async () => {
     const root = await createTempDir();
     const profilesDir = path.join(root, 'profiles');

@@ -261,7 +261,6 @@ export async function main() {
       allowNameRegex: process.env.MCP4_ALLOW_PROFILES_REGEX,
     })
     : null;
-  const profileHidelist = parseProfileHidelistConfig(process.env.MCP4_HIDDEN_PROFILES);
   const isDefaultAllowed = defaultProfile ? isProfileAllowed(defaultProfile, profileAllowlistConfig) : false;
   const defaultProfileForRouting = defaultProfile && isDefaultAllowed ? defaultProfile : undefined;
   if (defaultProfile && httpProfileRoutingEnabled && profileAllowlistConfig && !isDefaultAllowed) {
@@ -307,7 +306,7 @@ export async function main() {
         defaultProfile: defaultProfileForRouting,
         specPathOverride: hasExplicitSpecPath ? specPathOverride : undefined,
         allowlist: profileAllowlistConfig,
-        hidelist: profileHidelist,
+        hidelist: parseProfileHidelistConfig(process.env.MCP4_HIDDEN_PROFILES),
       });
       const manager = new MCPServerManager(registry, logger, httpTransport, globalFiltering);
 

@@ -1,11 +1,11 @@
 /**
- * Profile allowlist helpers for HTTP profile routing.
+ * Profile allowlist and hidelist helpers for HTTP profile routing.
  */
 
 import { ConfigurationError } from '../core/errors.js';
 
 export interface ProfileAllowlistConfig {
-  allowNames: string[];
+  allowNames: Set<string>;
   allowNameRegex?: RegExp;
 }
 
@@ -50,7 +50,7 @@ export function parseProfileAllowlistConfig(options: {
   }
 
   return {
-    allowNames,
+    allowNames: new Set(allowNames),
     allowNameRegex,
   };
 }
@@ -73,17 +73,14 @@ export function isProfileAllowed(profile: ProfileIdentity, config: ProfileAllowl
   }
 
   const candidates = collectProfileNames(profile);
-  if (config.allowNames.length > 0) {
-    if (candidates.some(name => config.allowNames.includes(name))) {
+  if (config.allowNames.size > 0) {
+    if (candidates.some(name => config.allowNames.has(name))) {
       return true;
     }
   }
 
   if (config.allowNameRegex) {
-    if (candidates.some(name => {
-      config.allowNameRegex!.lastIndex = 0;
-      return config.allowNameRegex!.test(name);
-    })) {
+    if (candidates.some(name => config.allowNameRegex!.test(name))) {
       return true;
     }
   }

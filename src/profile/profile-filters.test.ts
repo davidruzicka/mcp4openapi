@@ -11,6 +11,38 @@ describe('profile allowlist', () => {
     expect(() => parseProfileAllowlistConfig({ allowNameRegex: '[' })).toThrow(ConfigurationError);
   });
 
+  it('returns true when config is null (no allowlist)', () => {
+    const profile = { profileId: 'any', profileName: 'Any Profile' };
+    expect(isProfileAllowed(profile, null)).toBe(true);
+  });
+
+  it('matches by profile id', () => {
+    const config = parseProfileAllowlistConfig({ allowNames: 'id-1' });
+    expect(isProfileAllowed({ profileId: 'id-1', profileName: 'Something Else' }, config)).toBe(true);
+  });
+
+  it('matches by profile name', () => {
+    const config = parseProfileAllowlistConfig({ allowNames: 'my-api' });
+    expect(isProfileAllowed({ profileId: 'id-1', profileName: 'my-api' }, config)).toBe(true);
+  });
+
+  it('matches by alias', () => {
+    const config = parseProfileAllowlistConfig({ allowNames: 'alias-1' });
+    expect(isProfileAllowed({ profileId: 'id-1', profileName: 'name-1', profileAliases: ['alias-1'] }, config)).toBe(true);
+  });
+
+  it('matches by regex only when names miss', () => {
+    const config = parseProfileAllowlistConfig({ allowNames: 'other', allowNameRegex: '^name-' });
+    const profile = { profileId: 'id-1', profileName: 'name-1', profileAliases: [] };
+    expect(isProfileAllowed(profile, config)).toBe(true);
+  });
+
+  it('returns false when profile matches neither names nor regex', () => {
+    const config = parseProfileAllowlistConfig({ allowNames: 'allowed', allowNameRegex: '^team-' });
+    const profile = { profileId: 'blocked', profileName: 'blocked', profileAliases: [] };
+    expect(isProfileAllowed(profile, config)).toBe(false);
+  });
+
   it('matches allowlist against profile id, name, and aliases', () => {
     const config = parseProfileAllowlistConfig({ allowNames: 'alias-1', allowNameRegex: '^name-' });
     expect(config).not.toBeNull();

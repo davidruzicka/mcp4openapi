@@ -10,7 +10,7 @@ import {
   type ListedProfileDetails,
 } from './profile-resolver.js';
 import { ConfigurationError } from '../core/errors.js';
-import { isProfileAllowed, isProfileHidden, type ProfileAllowlistConfig } from './profile-filters.js';
+import { isProfileAllowed, isProfileHidden, type ProfileAllowlistConfig, type ProfileIdentity } from './profile-filters.js';
 
 export interface ProfileRegistryOptions {
   profilesDir?: string;
@@ -75,7 +75,8 @@ export class ProfileRegistry {
     const existing = profiles.find(profile =>
       profile.profileId === defaultProfile.profileId ||
       profile.profileName === defaultProfile.profileName ||
-      profile.profileAliases.includes(defaultProfile.profileId)
+      profile.profileAliases.includes(defaultProfile.profileId) ||
+      profile.profileAliases.includes(defaultProfile.profileName)
     );
 
     if (existing) {
@@ -90,15 +91,15 @@ export class ProfileRegistry {
     return profiles;
   }
 
-  private isAllowed(profile: { profileId: string; profileName: string; profileAliases?: string[] }): boolean {
+  private isAllowed(profile: ProfileIdentity): boolean {
     return isProfileAllowed(profile, this.allowlist);
   }
 
-  private isHidden(profile: { profileId: string; profileName: string; profileAliases?: string[] }): boolean {
+  private isHidden(profile: ProfileIdentity): boolean {
     return isProfileHidden(profile, this.hidelist);
   }
 
-  private filterProfiles<T extends { profileId: string; profileName: string; profileAliases?: string[] }>(profiles: T[]): T[] {
+  private filterProfiles<T extends ProfileIdentity>(profiles: T[]): T[] {
     let result = profiles;
     if (this.allowlist) {
       result = result.filter(profile => this.isAllowed(profile));
