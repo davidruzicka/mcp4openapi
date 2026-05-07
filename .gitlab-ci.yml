@@ -1,10 +1,37 @@
 stages:
+  - build
   - test
+  - security
 
 include:
+  - project: "cns/ci-templates"
+    ref: master
+    file: "/packages/nodejs/templates.yml"
   - project: "security/tools-and-apps/ci-library"
     ref: main
     file: "ci/semgrep.yml"
 
+variables:
+  NODEJS_VERSION: "22"
+  NODEJS_INSTALL_METHOD: ci
+
+npm-install:
+  extends: .npm-install
+  stage: build
+
 semgrep:
+  stage: security
+
+npm-run-test:
+  extends: .npm-run
+  needs: [{ job: "npm-install", optional: true }]
   stage: test
+  variables:
+    SCRIPT: test
+
+npm-run-test-e2e:
+  extends: .npm-run
+  needs: [{ job: "npm-install", optional: true }]
+  stage: test
+  variables:
+    SCRIPT: test:e2e
