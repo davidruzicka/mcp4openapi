@@ -572,6 +572,7 @@ export MCP4_TOOLNAME_MAX=30
 - `MCP4_PROFILES_DESCRIPTION`: Optional JSON object mapping profile id/name/alias to an admin-supplied HTML snippet shown in the HTML profile detail card before the profile description. Parsed once at startup, ignored for JSON index responses, and rejected on invalid JSON, non-string values, duplicate resolution conflicts, or values longer than `10000` characters.
 - `MCP4_ALLOW_PROFILES`: Comma-separated profile ids/names/aliases allowed for routed profiles.
 - `MCP4_ALLOW_PROFILES_REGEX`: Regex for allowed profile ids/names/aliases (applies only when routing is enabled).
+- `MCP4_HIDDEN_PROFILES`: Comma-separated profile ids/names/aliases to hide from the index page (profiles remain fully functional).
 - `MCP4_HTTP_TENANTS_FILE`: Path to tenant selector config JSON.
 - `MCP4_HTTP_TENANTS_JSON`: Inline tenant selector config JSON.
 - `MCP4_HTTP_TENANTS_ALLOW_HTTP`: Allow `http` tenant selectors (default is `https` only).

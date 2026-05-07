@@ -10,13 +10,14 @@ import {
   type ListedProfileDetails,
 } from './profile-resolver.js';
 import { ConfigurationError } from '../core/errors.js';
-import { isProfileAllowed, type ProfileAllowlistConfig } from './profile-allowlist.js';
+import { isProfileAllowed, isProfileHidden, type ProfileAllowlistConfig } from './profile-allowlist.js';
 
 export interface ProfileRegistryOptions {
   profilesDir?: string;
   defaultProfile?: ResolvedProfile;
   specPathOverride?: string;
   allowlist?: ProfileAllowlistConfig | null;
+  hidelist?: string[];
 }
 
 export class ProfileRegistry {
@@ -24,12 +25,14 @@ export class ProfileRegistry {
   private defaultProfile?: ResolvedProfile;
   private specPathOverride?: string;
   private allowlist: ProfileAllowlistConfig | null;
+  private hidelist: string[];
 
   constructor(options: ProfileRegistryOptions) {
     this.profilesDir = options.profilesDir;
     this.defaultProfile = options.defaultProfile;
     this.specPathOverride = options.specPathOverride;
     this.allowlist = options.allowlist ?? null;
+    this.hidelist = options.hidelist ?? [];
   }
 
   getDefaultProfile(): ResolvedProfile | undefined {
@@ -78,7 +81,7 @@ export class ProfileRegistry {
     }
 
     const defaultDetails = await resolveProfileDetailsFromPath(defaultProfile.profilePath);
-    if (defaultDetails && this.isAllowed(defaultDetails)) {
+    if (defaultDetails && this.isAllowed(defaultDetails) && !this.isHidden(defaultDetails)) {
       return [defaultDetails, ...profiles];
     }
 
@@ -89,10 +92,18 @@ export class ProfileRegistry {
     return isProfileAllowed(profile, this.allowlist);
   }
 
+  private isHidden(profile: { profileId: string; profileName: string; profileAliases?: string[] }): boolean {
+    return isProfileHidden(profile, this.hidelist);
+  }
+
   private filterProfiles<T extends { profileId: string; profileName: string; profileAliases?: string[] }>(profiles: T[]): T[] {
-    if (!this.allowlist) {
-      return profiles;
+    let result = profiles;
+    if (this.allowlist) {
+      result = result.filter(profile => this.isAllowed(profile));
     }
-    return profiles.filter(profile => this.isAllowed(profile));
+    if (this.hidelist.length > 0) {
+      result = result.filter(profile => !this.isHidden(profile));
+    }
+    return result;
   }
 }

@@ -145,6 +145,7 @@ Default profile behavior:
 Allowlist controls (only when routing is enabled):
 - `MCP4_ALLOW_PROFILES`: Comma-separated profile ids/names/aliases that can be routed.
 - `MCP4_ALLOW_PROFILES_REGEX`: Regex pattern that can match profile ids/names/aliases.
+- `MCP4_HIDDEN_PROFILES`: Comma-separated profile ids/names/aliases to hide from the index page (profiles remain fully functional).
 
 Profile index admin descriptions:
 - `MCP4_PROFILES_DESCRIPTION`: Optional JSON object mapping `profileId`, `profileName`, or alias to an HTML snippet rendered in the HTML detail card before the profile's own description.

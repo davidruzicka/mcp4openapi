@@ -90,3 +90,14 @@ export function isProfileAllowed(profile: ProfileIdentity, config: ProfileAllowl
 
   return false;
 }
+
+export function parseProfileHidelistConfig(hideNames?: string): string[] {
+  return splitCsv(hideNames);
+}
+
+export function isProfileHidden(profile: ProfileIdentity, hidelist: string[]): boolean {
+  if (hidelist.length === 0) {
+    return false;
+  }
+  return collectProfileNames(profile).some(name => hidelist.includes(name));
+}
