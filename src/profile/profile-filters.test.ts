@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { ConfigurationError } from '../core/errors.js';
-import { isProfileAllowed, isProfileHidden, parseProfileAllowlistConfig, parseProfileHidelistConfig } from './profile-allowlist.js';
+import { isProfileAllowed, isProfileHidden, parseProfileAllowlistConfig, parseProfileHidelistConfig } from './profile-filters.js';
 
 describe('profile allowlist', () => {
   it('returns null when no allowlist inputs are provided', () => {
@@ -42,31 +42,31 @@ describe('profile hidelist', () => {
 
   it('returns false for empty hidelist', () => {
     const profile = { profileId: 'x', profileName: 'x' };
-    expect(isProfileHidden(profile, [])).toBe(false);
+    expect(isProfileHidden(profile, new Set())).toBe(false);
   });
 
   it('matches by profileId', () => {
     const profile = { profileId: 'secret', profileName: 'Secret API' };
-    expect(isProfileHidden(profile, ['secret'])).toBe(true);
+    expect(isProfileHidden(profile, new Set(['secret']))).toBe(true);
   });
 
   it('matches by profileName', () => {
     const profile = { profileId: 'secret', profileName: 'Secret API' };
-    expect(isProfileHidden(profile, ['Secret API'])).toBe(true);
+    expect(isProfileHidden(profile, new Set(['Secret API']))).toBe(true);
   });
 
   it('matches by alias', () => {
     const profile = { profileId: 'secret', profileName: 'Secret API', profileAliases: ['old-secret'] };
-    expect(isProfileHidden(profile, ['old-secret'])).toBe(true);
+    expect(isProfileHidden(profile, new Set(['old-secret']))).toBe(true);
   });
 
   it('does not hide unrelated profile', () => {
     const profile = { profileId: 'public', profileName: 'Public API' };
-    expect(isProfileHidden(profile, ['secret'])).toBe(false);
+    expect(isProfileHidden(profile, new Set(['secret']))).toBe(false);
   });
 
   it('matching is case-sensitive', () => {
     const profile = { profileId: 'secret', profileName: 'secret' };
-    expect(isProfileHidden(profile, ['SECRET'])).toBe(false);
+    expect(isProfileHidden(profile, new Set(['SECRET']))).toBe(false);
   });
 });

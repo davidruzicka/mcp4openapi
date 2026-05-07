@@ -4,7 +4,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { ProfileRegistry } from './profile-registry.js';
 import type { ResolvedProfile } from './profile-resolver.js';
-import { parseProfileAllowlistConfig, parseProfileHidelistConfig } from './profile-allowlist.js';
+import { parseProfileAllowlistConfig, parseProfileHidelistConfig } from './profile-filters.js';
 
 async function writeJson(filePath: string, data: unknown): Promise<void> {
   await fs.mkdir(path.dirname(filePath), { recursive: true });

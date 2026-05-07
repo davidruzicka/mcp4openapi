@@ -95,9 +95,9 @@ export function parseProfileHidelistConfig(hideNames?: string): string[] {
   return splitCsv(hideNames);
 }
 
-export function isProfileHidden(profile: ProfileIdentity, hidelist: string[]): boolean {
-  if (hidelist.length === 0) {
+export function isProfileHidden(profile: ProfileIdentity, hidelist: ReadonlySet<string>): boolean {
+  if (hidelist.size === 0) {
     return false;
   }
-  return collectProfileNames(profile).some(name => hidelist.includes(name));
+  return collectProfileNames(profile).some(name => hidelist.has(name));
 }

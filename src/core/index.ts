@@ -23,7 +23,7 @@ import {
   resolveProfileAdminDescriptions,
   PROFILES_DESCRIPTION_ENV_VAR,
 } from '../profile/profile-description-env.js';
-import { isProfileAllowed, parseProfileAllowlistConfig, parseProfileHidelistConfig } from '../profile/profile-allowlist.js';
+import { isProfileAllowed, parseProfileAllowlistConfig, parseProfileHidelistConfig } from '../profile/profile-filters.js';
 import { SSRFValidator } from '../security/ssrf-validator.js';
 import { parseOAuthMetadataEndpoints } from '../auth/oauth-metadata.js';
 import { parseConfiguredFilteringValue } from './filtering.js';

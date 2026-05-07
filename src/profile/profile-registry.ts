@@ -10,7 +10,7 @@ import {
   type ListedProfileDetails,
 } from './profile-resolver.js';
 import { ConfigurationError } from '../core/errors.js';
-import { isProfileAllowed, isProfileHidden, type ProfileAllowlistConfig } from './profile-allowlist.js';
+import { isProfileAllowed, isProfileHidden, type ProfileAllowlistConfig } from './profile-filters.js';
 
 export interface ProfileRegistryOptions {
   profilesDir?: string;
@@ -25,14 +25,14 @@ export class ProfileRegistry {
   private defaultProfile?: ResolvedProfile;
   private specPathOverride?: string;
   private allowlist: ProfileAllowlistConfig | null;
-  private hidelist: string[];
+  private hidelist: Set<string>;
 
   constructor(options: ProfileRegistryOptions) {
     this.profilesDir = options.profilesDir;
     this.defaultProfile = options.defaultProfile;
     this.specPathOverride = options.specPathOverride;
     this.allowlist = options.allowlist ?? null;
-    this.hidelist = options.hidelist ?? [];
+    this.hidelist = new Set(options.hidelist ?? []);
   }
 
   getDefaultProfile(): ResolvedProfile | undefined {
@@ -103,7 +103,7 @@ export class ProfileRegistry {
     if (this.allowlist) {
       result = result.filter(profile => this.isAllowed(profile));
     }
-    if (this.hidelist.length > 0) {
+    if (this.hidelist.size > 0) {
       result = result.filter(profile => !this.isHidden(profile));
     }
     return result;
