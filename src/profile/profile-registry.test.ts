@@ -201,6 +201,9 @@ describe('ProfileRegistry', () => {
 
     const profiles = await registry.listProfilesForIndex();
     expect(profiles).toHaveLength(0);
+
+    const resolved = await registry.resolveProfile('legacy');
+    expect(resolved.profileId).toBe('legacy');
   });
 
   it('hides default profile from index when in hidelist but keeps it functional', async () => {
@@ -235,5 +238,8 @@ describe('ProfileRegistry', () => {
 
     const profiles = await registry.listProfilesForIndex();
     expect(profiles.map(p => p.profileId)).toEqual(['other']);
+
+    const resolved = await registry.resolveProfile('default');
+    expect(resolved.profileId).toBe('default');
   });
 });

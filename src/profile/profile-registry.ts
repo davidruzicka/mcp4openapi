@@ -39,6 +39,8 @@ export class ProfileRegistry {
     if (!this.defaultProfile) {
       return undefined;
     }
+    // Intentionally does not check hidelist: hidden profiles remain fully routable.
+    // Index filtering is the only effect of hidelist (applied in listProfilesForIndex).
     return this.isAllowed(this.defaultProfile) ? this.defaultProfile : undefined;
   }
 
