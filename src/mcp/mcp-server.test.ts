@@ -1802,6 +1802,19 @@ paths:
       }, 'test-session');
 
       expect(response.error.code).toBe(-32602);
+      expect(response.error.message).toContain('"uri"');
+    });
+
+    it('should return -32602 for resources/read when uri is whitespace-only', async () => {
+      const response = await (server as any).handleOtherRequest({
+        jsonrpc: '2.0',
+        id: 'rr2b',
+        method: 'resources/read',
+        params: { uri: '   ' },
+      }, 'test-session');
+
+      expect(response.error.code).toBe(-32602);
+      expect(response.error.message).toContain('"uri"');
     });
 
     it('should return -32601 for resources/read when resource not found', async () => {
@@ -1878,6 +1891,18 @@ paths:
       }, 'test-session');
 
       expect(response.result).toEqual(mockResult);
+    });
+
+    it('should return -32602 for completion/complete with valid ref but missing argument', async () => {
+      const response = await (server as any).handleOtherRequest({
+        jsonrpc: '2.0',
+        id: 'cc4',
+        method: 'completion/complete',
+        params: { ref: { type: 'ref/resource', uri: 'test://uri' }, argument: {} },
+      }, 'test-session');
+
+      expect(response.error.code).toBe(-32602);
+      expect(response.error.message).toContain('argument');
     });
   });
 

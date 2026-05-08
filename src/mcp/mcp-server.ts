@@ -2237,6 +2237,7 @@ export class MCPServer {
 
   private mapRpcErrorCode(error: unknown): number {
     if (error instanceof ValidationError) return -32602;
+    // -32601 is reused for application-level not-found (MCP convention; distinct from generic errors → -32603)
     if (error instanceof ResourceNotFoundError) return -32601;
     return -32603;
   }
@@ -2321,7 +2322,9 @@ export class MCPServer {
       }
     }
 
-    const handler = this.methodHandlers[req.method as string];
+    const handler = Object.prototype.hasOwnProperty.call(this.methodHandlers, req.method)
+      ? this.methodHandlers[req.method as string]
+      : undefined;
     if (!handler) {
       return {
         jsonrpc: '2.0',
@@ -2331,7 +2334,7 @@ export class MCPServer {
     }
 
     try {
-      const result = await handler.call(this, req, sessionId, profileId);
+      const result = await handler(req, sessionId, profileId);
       return { jsonrpc: '2.0', id: req.id, result };
     } catch (error) {
       const correlationId = generateCorrelationId();
