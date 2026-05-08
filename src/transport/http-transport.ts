@@ -2918,26 +2918,59 @@ export class HttpTransport {
             );
             
             if (authConfig && authConfig.validation_endpoint) {
+              // When the client presents an envelope token (mcp4.v1.*), decrypt it first and
+              // validate the inner access_token against the upstream endpoint. Sending the raw
+              // envelope string would fail because the IdP only knows its own token format.
+              // Plain tokens pass through unchanged. Decrypt failure falls through to the raw
+              // envelope string, which the IdP will reject — correct rejection behavior.
+              let tokenToValidate = authInfo.token;
+              const tokenShape = isEncryptedToken(authInfo.token) ? 'envelope' : 'plain';
+              if (this.config.tokenKey && isEncryptedToken(authInfo.token)) {
+                const envelope = decryptTokenPayload(
+                  authInfo.token,
+                  this.config.tokenKey,
+                  profileState.profileId,
+                );
+                if (envelope) {
+                  tokenToValidate = envelope.at;
+                }
+              }
+
               this.logger.info('Validating auth token during initialization', {
-                authType: authConfig.type, // Use config type for logging
+                authType: authConfig.type,
                 endpoint: authConfig.validation_endpoint,
+                tokenShape,
               });
-              
-              const isValid = await this.validateAuthToken(authConfig, authInfo.token, resolvedTenant?.tenantBaseUrl || profileState.context.baseUrl || '');
-              
+
+              const isValid = await this.validateAuthToken(authConfig, tokenToValidate, resolvedTenant?.tenantBaseUrl || profileState.context.baseUrl || '');
+
               if (!isValid) {
                 this.logger.warn('Auth token validation failed during initialization', {
                   authType: authInfo.type,
+                  tokenShape,
                 });
-                this.sendInitializeJsonRpcError(
-                  res,
-                  body,
-                  'Supplied authentication token is invalid or expired',
-                );
+                // When OAuth is active, return HTTP 401 with WWW-Authenticate so OAuth-aware
+                // clients (e.g. Cursor) trigger re-auth automatically instead of surfacing a
+                // generic error. Without OAuth, fall back to the JSON-RPC error form.
+                if (oauthActive) {
+                  const resourceMetadataUrl = this.getOAuthProtectedResourceUrl(requestProfileId);
+                  const scopeValue = effectiveAuthContext.oauthConfig?.scopes?.join(' ') || 'api';
+                  res.setHeader('WWW-Authenticate', `Bearer resource_metadata="${resourceMetadataUrl}", scope="${scopeValue}"`);
+                  res.status(HTTP_STATUS.UNAUTHORIZED).json({
+                    error: 'Unauthorized',
+                    message: 'Supplied authentication token is invalid or expired',
+                  });
+                } else {
+                  this.sendInitializeJsonRpcError(
+                    res,
+                    body,
+                    'Supplied authentication token is invalid or expired',
+                  );
+                }
                 return;
               }
-              
-              this.logger.info('Auth token validation successful');
+
+              this.logger.info('Auth token validation successful', { tokenShape });
             }
           }
 

@@ -4662,6 +4662,238 @@ describeIfListen('HttpTransport', () => {
     });
   });
 
+  describe('envelope token with validation_endpoint (bug confirmation)', () => {
+    const ENV_KEY_HEX = 'a'.repeat(64);
+    const buildEnvKey = () => Buffer.from(ENV_KEY_HEX, 'hex');
+    const RAW_ACCESS_TOKEN = 'real-gitlab-access-token';
+    const ENVELOPE_PROFILE_ID = 'default';
+
+    const buildTransportWithValidation = (opts: { tokenKey?: Buffer } = {}): HttpTransport => {
+      const config: any = {
+        host: '127.0.0.1',
+        port: 0,
+        sessionTimeoutMs: 1800000,
+        heartbeatEnabled: false,
+        heartbeatIntervalMs: 30000,
+        metricsEnabled: false,
+        metricsPath: '/metrics',
+        baseUrl: 'http://127.0.0.1',
+        authConfigs: [{ type: 'oauth', validation_endpoint: '/validate' }],
+        ...(opts.tokenKey !== undefined ? { tokenKey: opts.tokenKey } : {}),
+      };
+      const t = new HttpTransport(config, logger);
+      t.setMessageHandler(async () => ({ result: 'ok' }));
+      return t;
+    };
+
+    it('Test W: validation_endpoint receives raw mcp4.v1.* envelope string instead of inner access_token (documents bug)', async () => {
+      // Documents the bug: validateAuthToken is called with authInfo.token (the raw envelope
+      // string) before envelope decryption. After the fix this assertion should be updated:
+      // capturedAuth should equal `Bearer ${RAW_ACCESS_TOKEN}`.
+      const { encryptTokenPayload } = await import('../auth/token-envelope.js');
+      const savedEnv = process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK;
+      process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK = 'true';
+      const key = buildEnvKey();
+      const t = buildTransportWithValidation({ tokenKey: key });
+      const tApp = (t as any).app;
+
+      const envelope = encryptTokenPayload(
+        { v: 1, at: RAW_ACCESS_TOKEN, rt: 'refresh-token', pid: ENVELOPE_PROFILE_ID, iat: Date.now() },
+        key,
+      );
+
+      let capturedAuth: string | undefined;
+      const origFetch = global.fetch;
+      global.fetch = vi.fn(async (_url: any, init: any) => {
+        capturedAuth = (init?.headers as Record<string, string>)?.['Authorization'];
+        return { status: 200 } as any;
+      });
+
+      try {
+        await request(tApp)
+          .post('/mcp')
+          .set('Accept', 'application/json, text/event-stream')
+          .set('Authorization', `Bearer ${envelope}`)
+          .send({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} });
+
+        // After fix: validation_endpoint receives the inner access_token, not the raw envelope.
+        expect(capturedAuth).toBe(`Bearer ${RAW_ACCESS_TOKEN}`);
+      } finally {
+        global.fetch = origFetch;
+        if (savedEnv === undefined) delete process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK;
+        else process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK = savedEnv;
+        await t.stop();
+      }
+    });
+
+    it('Test X: FAILING — envelope token init fails when IdP rejects mcp4.v1.* but would accept inner access_token', async () => {
+      // This test FAILS currently (confirms the bug) and must PASS after the fix.
+      // The mock IdP only accepts the raw access_token. Before fix: server sends the raw
+      // envelope string → 401 → init returns -32600. After fix: server decrypts first,
+      // sends envelope.at → 200 → session created.
+      const { encryptTokenPayload } = await import('../auth/token-envelope.js');
+      const savedEnv = process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK;
+      process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK = 'true';
+      const key = buildEnvKey();
+      const t = buildTransportWithValidation({ tokenKey: key });
+      const tApp = (t as any).app;
+
+      const envelope = encryptTokenPayload(
+        { v: 1, at: RAW_ACCESS_TOKEN, rt: 'refresh-token', pid: ENVELOPE_PROFILE_ID, iat: Date.now() },
+        key,
+      );
+
+      const origFetch = global.fetch;
+      global.fetch = vi.fn(async (_url: any, init: any) => {
+        const auth = (init?.headers as Record<string, string>)?.['Authorization'];
+        return { status: auth === `Bearer ${RAW_ACCESS_TOKEN}` ? 200 : 401 } as any;
+      });
+
+      try {
+        const response = await request(tApp)
+          .post('/mcp')
+          .set('Accept', 'application/json, text/event-stream')
+          .set('Authorization', `Bearer ${envelope}`)
+          .send({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} });
+
+        // After fix: session created, no error in body
+        expect(response.headers['mcp-session-id']).toBeDefined();
+        expect(response.body.error).toBeUndefined();
+      } finally {
+        global.fetch = origFetch;
+        if (savedEnv === undefined) delete process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK;
+        else process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK = savedEnv;
+        await t.stop();
+      }
+    });
+
+    it('Test Y: plain bearer token with oauth validation_endpoint succeeds (backward compat baseline)', async () => {
+      // Plain tokens (no mcp4.v1. prefix) must continue to work unchanged.
+      // This test must PASS both before and after the envelope fix.
+      const savedEnv = process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK;
+      process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK = 'true';
+      const PLAIN_TOKEN = 'plain-gitlab-token';
+      const t = buildTransportWithValidation();
+      const tApp = (t as any).app;
+
+      const origFetch = global.fetch;
+      global.fetch = vi.fn(async (_url: any, init: any) => {
+        const auth = (init?.headers as Record<string, string>)?.['Authorization'];
+        return { status: auth === `Bearer ${PLAIN_TOKEN}` ? 200 : 401 } as any;
+      });
+
+      try {
+        const response = await request(tApp)
+          .post('/mcp')
+          .set('Accept', 'application/json, text/event-stream')
+          .set('Authorization', `Bearer ${PLAIN_TOKEN}`)
+          .send({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} });
+
+        expect(response.headers['mcp-session-id']).toBeDefined();
+        expect(response.body.error).toBeUndefined();
+      } finally {
+        global.fetch = origFetch;
+        if (savedEnv === undefined) delete process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK;
+        else process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK = savedEnv;
+        await t.stop();
+      }
+    });
+
+    it('Test AA: expired plain OAuth token returns HTTP 401 + WWW-Authenticate so OAuth clients trigger re-auth', async () => {
+      // When validation_endpoint rejects an expired plain token AND oauthConfig is active,
+      // the server must return HTTP 401 with WWW-Authenticate instead of JSON-RPC -32600.
+      // OAuth-aware clients (e.g. Cursor) interpret HTTP 401 + WWW-Authenticate as a signal
+      // to initiate the OAuth re-auth flow. JSON-RPC -32600 shows as a plain connection error.
+      const savedEnv = process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK;
+      process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK = 'true';
+      const EXPIRED_TOKEN = 'expired-gitlab-token';
+      const t = new HttpTransport(
+        {
+          host: '127.0.0.1',
+          port: 0,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: false,
+          metricsPath: '/metrics',
+          baseUrl: 'http://127.0.0.1',
+          authConfigs: [{ type: 'oauth', validation_endpoint: '/validate' }],
+          oauthConfig: {
+            authorization_endpoint: 'https://gitlab.example.com/oauth/authorize',
+            token_endpoint: 'https://gitlab.example.com/oauth/token',
+            redirect_uri: 'https://example.com/oauth/callback',
+            scopes: ['api'],
+          },
+        } as any,
+        logger,
+      );
+      t.setMessageHandler(async () => ({ result: 'ok' }));
+      const tApp = (t as any).app;
+
+      const origFetch = global.fetch;
+      global.fetch = vi.fn(async () => ({ status: 401 }) as any);
+
+      try {
+        const response = await request(tApp)
+          .post('/mcp')
+          .set('Accept', 'application/json, text/event-stream')
+          .set('Authorization', `Bearer ${EXPIRED_TOKEN}`)
+          .send({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} });
+
+        expect(response.status).toBe(401);
+        expect(response.headers['www-authenticate']).toBeDefined();
+        expect(response.headers['www-authenticate']).toContain('Bearer');
+        // Must NOT be a JSON-RPC error (which uses HTTP 200 + error body)
+        expect(response.body.error?.code).toBeUndefined();
+      } finally {
+        global.fetch = origFetch;
+        if (savedEnv === undefined) delete process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK;
+        else process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK = savedEnv;
+        await t.stop();
+      }
+    });
+
+    it('Test Z: envelope with wrong decryption key — init fails correctly (decrypt fail path)', async () => {
+      // When tokenKey cannot decrypt the envelope (wrong key), the raw envelope string
+      // is forwarded to the validation endpoint and rejected. Init must fail with auth error.
+      // This test must PASS both before and after the fix (failure mode is correct either way).
+      const { encryptTokenPayload } = await import('../auth/token-envelope.js');
+      const savedEnv = process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK;
+      process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK = 'true';
+      const encryptKey = buildEnvKey();
+      const wrongKey = Buffer.from('b'.repeat(64), 'hex');
+      const t = buildTransportWithValidation({ tokenKey: wrongKey });
+      const tApp = (t as any).app;
+
+      const envelope = encryptTokenPayload(
+        { v: 1, at: RAW_ACCESS_TOKEN, rt: 'refresh-token', pid: ENVELOPE_PROFILE_ID, iat: Date.now() },
+        encryptKey,
+      );
+
+      const origFetch = global.fetch;
+      global.fetch = vi.fn(async (_url: any, init: any) => {
+        const auth = (init?.headers as Record<string, string>)?.['Authorization'];
+        return { status: auth === `Bearer ${RAW_ACCESS_TOKEN}` ? 200 : 401 } as any;
+      });
+
+      try {
+        const response = await request(tApp)
+          .post('/mcp')
+          .set('Accept', 'application/json, text/event-stream')
+          .set('Authorization', `Bearer ${envelope}`)
+          .send({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} });
+
+        expect(response.body.error).toBeDefined();
+        expect(response.body.error.message).toContain('invalid or expired');
+      } finally {
+        global.fetch = origFetch;
+        if (savedEnv === undefined) delete process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK;
+        else process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK = savedEnv;
+        await t.stop();
+      }
+    });
+  });
+
   describe('getSessionToken', () => {
     it('should return token for existing session', () => {
       const profileState = createProfileState(transport as any);
