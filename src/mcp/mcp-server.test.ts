@@ -1715,6 +1715,170 @@ paths:
       expect(response.error.code).toBe(-32601);
       expect(response.error.message).toContain('Prompt not found');
     });
+
+    it('should respond to ping with empty result', async () => {
+      const response = await (server as any).handleOtherRequest({
+        jsonrpc: '2.0',
+        id: 'p1',
+        method: 'ping',
+      }, 'test-session');
+
+      expect(response.jsonrpc).toBe('2.0');
+      expect(response.id).toBe('p1');
+      expect(response.result).toEqual({});
+      expect(response.error).toBeUndefined();
+    });
+
+    it('should return -32600 when method is null', async () => {
+      const response = await (server as any).handleOtherRequest({
+        jsonrpc: '2.0',
+        id: 'inv1',
+        method: null,
+      }, 'test-session');
+
+      expect(response.error.code).toBe(-32600);
+      expect(response.error.message).toContain('missing method');
+    });
+
+    it('should return -32600 when method is undefined', async () => {
+      const response = await (server as any).handleOtherRequest({
+        jsonrpc: '2.0',
+        id: 'inv2',
+      }, 'test-session');
+
+      expect(response.error.code).toBe(-32600);
+      expect(response.error.message).toContain('missing method');
+    });
+
+    it('should return -32600 when method is empty string', async () => {
+      const response = await (server as any).handleOtherRequest({
+        jsonrpc: '2.0',
+        id: 'inv3',
+        method: '',
+      }, 'test-session');
+
+      expect(response.error.code).toBe(-32600);
+      expect(response.error.message).toContain('missing method');
+    });
+
+    it('should return empty resources/list when no appsModel', async () => {
+      const response = await (server as any).handleOtherRequest({
+        jsonrpc: '2.0',
+        id: 'rl1',
+        method: 'resources/list',
+      }, 'test-session');
+
+      expect(response.result.resources).toEqual([]);
+    });
+
+    it('should return empty resources/templates/list when no appsModel', async () => {
+      const response = await (server as any).handleOtherRequest({
+        jsonrpc: '2.0',
+        id: 'rtl1',
+        method: 'resources/templates/list',
+      }, 'test-session');
+
+      expect(response.result.resourceTemplates).toEqual([]);
+    });
+
+    it('should return -32602 for resources/read without uri param', async () => {
+      const response = await (server as any).handleOtherRequest({
+        jsonrpc: '2.0',
+        id: 'rr1',
+        method: 'resources/read',
+        params: {},
+      }, 'test-session');
+
+      expect(response.error.code).toBe(-32602);
+      expect(response.error.message).toContain('"uri"');
+    });
+
+    it('should return -32602 for resources/read when uri is not a string', async () => {
+      const response = await (server as any).handleOtherRequest({
+        jsonrpc: '2.0',
+        id: 'rr2',
+        method: 'resources/read',
+        params: { uri: 42 },
+      }, 'test-session');
+
+      expect(response.error.code).toBe(-32602);
+    });
+
+    it('should return -32601 for resources/read when resource not found', async () => {
+      const response = await (server as any).handleOtherRequest({
+        jsonrpc: '2.0',
+        id: 'rr3',
+        method: 'resources/read',
+        params: { uri: 'unknown://missing' },
+      }, 'test-session');
+
+      expect(response.error.code).toBe(-32601);
+      expect(response.error.message).toContain('not found');
+    });
+
+    it('should return -32603 for resources/read on unexpected error', async () => {
+      vi.spyOn(server as any, 'readResource').mockRejectedValueOnce(new Error('unexpected'));
+      const response = await (server as any).handleOtherRequest({
+        jsonrpc: '2.0',
+        id: 'rr4',
+        method: 'resources/read',
+        params: { uri: 'test://uri' },
+      }, 'test-session');
+
+      expect(response.error.code).toBe(-32603);
+      expect(response.error.message).toBe('unexpected');
+    });
+
+    it('should return result for resources/read when resource exists', async () => {
+      const mockContents = [{ uri: 'test://uri', mimeType: 'text/plain', text: 'hello' }];
+      vi.spyOn(server as any, 'readResource').mockResolvedValueOnce({ contents: mockContents });
+      const response = await (server as any).handleOtherRequest({
+        jsonrpc: '2.0',
+        id: 'rr5',
+        method: 'resources/read',
+        params: { uri: 'test://uri' },
+      }, 'test-session');
+
+      expect(response.result.contents).toEqual(mockContents);
+    });
+
+    it('should return -32602 for completion/complete with invalid ref', async () => {
+      const response = await (server as any).handleOtherRequest({
+        jsonrpc: '2.0',
+        id: 'cc1',
+        method: 'completion/complete',
+        params: { ref: { type: 'ref/prompt' }, argument: { name: 'x', value: '' } },
+      }, 'test-session');
+
+      expect(response.error.code).toBe(-32602);
+      expect(response.error.message).toContain('resource ref');
+    });
+
+    it('should return -32603 for completion/complete on unexpected error', async () => {
+      vi.spyOn(server as any, 'completeResourceArgument').mockRejectedValueOnce(new Error('db down'));
+      const response = await (server as any).handleOtherRequest({
+        jsonrpc: '2.0',
+        id: 'cc2',
+        method: 'completion/complete',
+        params: {},
+      }, 'test-session');
+
+      expect(response.error.code).toBe(-32603);
+      expect(response.error.message).toBe('db down');
+    });
+
+    it('should return result for completion/complete on success', async () => {
+      const mockResult = { completion: { values: ['foo', 'bar'], hasMore: false, total: 2 } };
+      vi.spyOn(server as any, 'completeResourceArgument').mockResolvedValueOnce(mockResult);
+      const response = await (server as any).handleOtherRequest({
+        jsonrpc: '2.0',
+        id: 'cc3',
+        method: 'completion/complete',
+        params: {},
+      }, 'test-session');
+
+      expect(response.result).toEqual(mockResult);
+    });
   });
 
   describe('session tool filtering', () => {

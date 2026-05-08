@@ -2235,6 +2235,53 @@ export class MCPServer {
     return this.parser.getOperation(operationId);
   }
 
+  private mapRpcErrorCode(error: unknown): number {
+    if (error instanceof ValidationError) return -32602;
+    if (error instanceof ResourceNotFoundError) return -32601;
+    return -32603;
+  }
+
+  private readonly methodHandlers: Record<
+    string,
+    (req: Record<string, unknown>, sessionId?: string, profileId?: string) => Promise<unknown>
+  > = {
+    'ping': async () => ({}),
+    'prompts/list': async () => ({ prompts: this.listPrompts() }),
+    'resources/list': async () => ({ resources: this.listResources() }),
+    'resources/templates/list': async () => ({ resourceTemplates: this.listResourceTemplates() }),
+    'tools/list': async (req, sessionId, profileId) => {
+      const sessionFilter = this.getToolFilterForSession(sessionId, profileId);
+      const allowedSet = sessionFilter?.allowedToolNames;
+      const tools = this.profile?.tools
+        .filter(toolDef => !allowedSet || allowedSet.has(toolDef.name))
+        .filter(toolDef => this.isToolAllowedByEnterprisePolicy(toolDef, sessionId, profileId))
+        .map(toolDef => this.buildToolDescriptor(toolDef)) || [];
+      return { tools };
+    },
+    'prompts/get': async (req) => {
+      const params = (req.params || {}) as Record<string, unknown>;
+      const name = params.name;
+      if (typeof name !== 'string' || !name.trim()) {
+        throw new ValidationError('prompts/get requires string parameter "name"');
+      }
+      const argumentsValue = params.arguments;
+      if (argumentsValue !== undefined && (typeof argumentsValue !== 'object' || Array.isArray(argumentsValue) || argumentsValue === null)) {
+        throw new ValidationError('prompts/get parameter "arguments" must be an object when provided');
+      }
+      return this.renderPromptByName(name, (argumentsValue as Record<string, unknown>) || {});
+    },
+    'resources/read': async (req, sessionId, profileId) => {
+      const params = (req.params || {}) as Record<string, unknown>;
+      if (typeof params.uri !== 'string' || !params.uri.trim()) {
+        throw new ValidationError('resources/read requires string parameter "uri"');
+      }
+      return this.readResource(params.uri, sessionId, profileId);
+    },
+    'completion/complete': async (req, sessionId, profileId) => {
+      return this.completeResourceArgument(req as CompleteRequest, sessionId, profileId);
+    },
+  };
+
   private async handleOtherRequest(message: unknown, sessionId?: string, profileId?: string): Promise<unknown> {
     const req = message as Record<string, unknown>;
 
@@ -2242,9 +2289,7 @@ export class MCPServer {
     if (this.httpTransport && this.httpTransport.hasOAuthProvider(profileId)) {
       const authToken = await this.getAuthTokenFromSession(sessionId || '', profileId);
       if (!authToken) {
-        // Return OAuth required error with WWW-Authenticate header
-        // This should trigger the OAuth flow in the client
-        const errorResponse = {
+        return {
           jsonrpc: '2.0',
           id: req.id,
           error: {
@@ -2257,157 +2302,44 @@ export class MCPServer {
             }
           }
         };
-        return errorResponse;
       }
     }
 
-    // Handle tools/list
+    if (typeof req.method !== 'string' || !req.method) {
+      return {
+        jsonrpc: '2.0',
+        id: req.id,
+        error: { code: -32600, message: 'Invalid Request: missing method' },
+      };
+    }
+
+    // D-01: upstream_mcp tools/list returns a full envelope (owns its own error mapping)
     if (req.method === 'tools/list') {
-      // D-01: When upstream_mcp is set, return upstream tools (not local profile tools)
-      const upstreamMcpForList = this.getUpstreamMcpConfig(profileId);
-      if (upstreamMcpForList && this.getUpstreamClientFn) {
-        return this.handleUpstreamToolsList(req, sessionId, profileId, upstreamMcpForList);
-      }
-
-      const sessionFilter = this.getToolFilterForSession(sessionId, profileId);
-      const allowedSet = sessionFilter?.allowedToolNames;
-      const tools = this.profile?.tools
-        .filter(toolDef => !allowedSet || allowedSet.has(toolDef.name))
-        .filter(toolDef => this.isToolAllowedByEnterprisePolicy(toolDef, sessionId, profileId))
-        .map(toolDef => this.buildToolDescriptor(toolDef)) || [];
-
-      return {
-        jsonrpc: '2.0',
-        id: req.id,
-        result: {
-          tools,
-        },
-      };
-    }
-
-    if (req.method === 'prompts/list') {
-      return {
-        jsonrpc: '2.0',
-        id: req.id,
-        result: {
-          prompts: this.listPrompts(),
-        },
-      };
-    }
-
-    if (req.method === 'prompts/get') {
-      try {
-        const params = (req.params || {}) as Record<string, unknown>;
-        const name = params.name;
-        if (typeof name !== 'string' || !name.trim()) {
-          throw new ValidationError('prompts/get requires string parameter "name"');
-        }
-
-        const argumentsValue = params.arguments;
-        if (argumentsValue !== undefined && (typeof argumentsValue !== 'object' || Array.isArray(argumentsValue) || argumentsValue === null)) {
-          throw new ValidationError('prompts/get parameter "arguments" must be an object when provided');
-        }
-
-        const promptResult = this.renderPromptByName(
-          name,
-          (argumentsValue as Record<string, unknown>) || {}
-        );
-
-        return {
-          jsonrpc: '2.0',
-          id: req.id,
-          result: promptResult,
-        };
-      } catch (error) {
-        let code = -32603;
-        if (error instanceof ValidationError) {
-          code = -32602;
-        } else if (error instanceof ResourceNotFoundError) {
-          code = -32601;
-        }
-
-        return {
-          jsonrpc: '2.0',
-          id: req.id,
-          error: {
-            code,
-            message: (error as Error).message,
-          },
-        };
+      const upstreamMcp = this.getUpstreamMcpConfig(profileId);
+      if (upstreamMcp && this.getUpstreamClientFn) {
+        return this.handleUpstreamToolsList(req, sessionId, profileId, upstreamMcp);
       }
     }
 
-    if (req.method === 'resources/list') {
+    const handler = this.methodHandlers[req.method as string];
+    if (!handler) {
       return {
         jsonrpc: '2.0',
         id: req.id,
-        result: {
-          resources: this.listResources(),
-        },
+        error: { code: -32601, message: `Method not found: ${req.method}` },
       };
     }
 
-    if (req.method === 'resources/templates/list') {
+    try {
+      const result = await handler.call(this, req, sessionId, profileId);
+      return { jsonrpc: '2.0', id: req.id, result };
+    } catch (error) {
       return {
         jsonrpc: '2.0',
         id: req.id,
-        result: {
-          resourceTemplates: this.listResourceTemplates(),
-        },
+        error: { code: this.mapRpcErrorCode(error), message: (error as Error).message },
       };
     }
-
-    if (req.method === 'resources/read') {
-      try {
-        const params = (req.params || {}) as Record<string, unknown>;
-        if (typeof params.uri !== 'string' || !params.uri.trim()) {
-          throw new ValidationError('resources/read requires string parameter "uri"');
-        }
-        return {
-          jsonrpc: '2.0',
-          id: req.id,
-          result: await this.readResource(params.uri, sessionId, profileId),
-        };
-      } catch (error) {
-        return {
-          jsonrpc: '2.0',
-          id: req.id,
-          error: {
-            code: error instanceof ValidationError ? -32602 : -32601,
-            message: (error as Error).message,
-          },
-        };
-      }
-    }
-
-    if (req.method === 'completion/complete') {
-      try {
-        return {
-          jsonrpc: '2.0',
-          id: req.id,
-          result: await this.completeResourceArgument(req as CompleteRequest, sessionId, profileId),
-        };
-      } catch (error) {
-        return {
-          jsonrpc: '2.0',
-          id: req.id,
-          error: {
-            code: error instanceof ValidationError ? -32602 : -32601,
-            message: (error as Error).message,
-          },
-        };
-      }
-    }
-
-    // Unknown method
-    return {
-      jsonrpc: '2.0',
-      id: req.id,
-      error: {
-        code: -32601,
-        message: `Method not found: ${req.method}`,
-      },
-    };
   }
 
   private buildToolDescriptor(toolDef: ToolDefinition) {
