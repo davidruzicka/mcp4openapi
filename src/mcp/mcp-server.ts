@@ -2307,7 +2307,7 @@ export class MCPServer {
       }
     }
 
-    if (typeof req.method !== 'string' || !req.method) {
+    if (typeof req.method !== 'string' || !req.method.trim()) {
       return {
         jsonrpc: '2.0',
         id: req.id,

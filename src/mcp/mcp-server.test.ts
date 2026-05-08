@@ -1704,6 +1704,18 @@ paths:
       expect(response.error.message).toContain('requires string parameter "name"');
     });
 
+    it('should return -32602 for prompts/get when name is empty string', async () => {
+      const response = await (server as any).handleOtherRequest({
+        jsonrpc: '2.0',
+        id: '5c',
+        method: 'prompts/get',
+        params: { name: '' },
+      }, 'test-session');
+
+      expect(response.error.code).toBe(-32602);
+      expect(response.error.message).toContain('requires string parameter "name"');
+    });
+
     it('should return -32602 for prompts/get when arguments is not an object', async () => {
       const response = await (server as any).handleOtherRequest({
         jsonrpc: '2.0',
@@ -1797,6 +1809,17 @@ paths:
       expect(response.error.message).toContain('missing method');
     });
 
+    it('should return -32600 when method is whitespace-only', async () => {
+      const response = await (server as any).handleOtherRequest({
+        jsonrpc: '2.0',
+        id: 'inv4',
+        method: '   ',
+      }, 'test-session');
+
+      expect(response.error.code).toBe(-32600);
+      expect(response.error.message).toContain('missing method');
+    });
+
     it('should return empty resources/list when no appsModel', async () => {
       const response = await (server as any).handleOtherRequest({
         jsonrpc: '2.0',
@@ -1854,6 +1877,7 @@ paths:
     });
 
     it('should return -32001 for resources/read when resource not found', async () => {
+      vi.spyOn(server as any, 'readResource').mockRejectedValueOnce(new ResourceNotFoundError('unknown://missing', 'Resource'));
       const response = await (server as any).handleOtherRequest({
         jsonrpc: '2.0',
         id: 'rr3',
@@ -1930,6 +1954,7 @@ paths:
     });
 
     it('should return -32602 for completion/complete with valid ref but missing argument', async () => {
+      vi.spyOn(server as any, 'completeResourceArgument').mockRejectedValueOnce(new ValidationError('argument name is required'));
       const response = await (server as any).handleOtherRequest({
         jsonrpc: '2.0',
         id: 'cc4',
