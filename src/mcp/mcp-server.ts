@@ -2251,6 +2251,7 @@ export class MCPServer {
     'prompts/list': async () => ({ prompts: this.listPrompts() }),
     'resources/list': async () => ({ resources: this.listResources() }),
     'resources/templates/list': async () => ({ resourceTemplates: this.listResourceTemplates() }),
+    // Non-upstream path only — upstream-configured profiles early-return above before reaching this handler.
     'tools/list': async (req, sessionId, profileId) => {
       const sessionFilter = this.getToolFilterForSession(sessionId, profileId);
       const allowedSet = sessionFilter?.allowedToolNames;
