@@ -1704,7 +1704,7 @@ paths:
       expect(response.error.message).toContain('parameter "arguments" must be an object');
     });
 
-    it('should return -32601 for prompts/get when prompt is missing', async () => {
+    it('should return -32001 for prompts/get when prompt is missing', async () => {
       const response = await (server as any).handleOtherRequest({
         jsonrpc: '2.0',
         id: '6',
@@ -1712,7 +1712,7 @@ paths:
         params: { name: 'missing_prompt' },
       }, 'test-session');
 
-      expect(response.error.code).toBe(-32601);
+      expect(response.error.code).toBe(-32001);
       expect(response.error.message).toContain('Prompt not found');
     });
 
@@ -1817,7 +1817,7 @@ paths:
       expect(response.error.message).toContain('"uri"');
     });
 
-    it('should return -32601 for resources/read when resource not found', async () => {
+    it('should return -32001 for resources/read when resource not found', async () => {
       const response = await (server as any).handleOtherRequest({
         jsonrpc: '2.0',
         id: 'rr3',
@@ -1825,7 +1825,7 @@ paths:
         params: { uri: 'unknown://missing' },
       }, 'test-session');
 
-      expect(response.error.code).toBe(-32601);
+      expect(response.error.code).toBe(-32001);
       expect(response.error.message).toContain('not found');
     });
 
@@ -1903,6 +1903,39 @@ paths:
 
       expect(response.error.code).toBe(-32602);
       expect(response.error.message).toContain('argument');
+    });
+
+    it('should return -32601 for prototype-inherited property __proto__', async () => {
+      const response = await (server as any).handleOtherRequest({
+        jsonrpc: '2.0',
+        id: 'proto1',
+        method: '__proto__',
+      }, 'test-session');
+
+      expect(response.error.code).toBe(-32601);
+      expect(response.error.message).toContain('Method not found');
+    });
+
+    it('should return -32601 for prototype-inherited property constructor', async () => {
+      const response = await (server as any).handleOtherRequest({
+        jsonrpc: '2.0',
+        id: 'proto2',
+        method: 'constructor',
+      }, 'test-session');
+
+      expect(response.error.code).toBe(-32601);
+      expect(response.error.message).toContain('Method not found');
+    });
+
+    it('should return -32601 for prototype-inherited property toString', async () => {
+      const response = await (server as any).handleOtherRequest({
+        jsonrpc: '2.0',
+        id: 'proto3',
+        method: 'toString',
+      }, 'test-session');
+
+      expect(response.error.code).toBe(-32601);
+      expect(response.error.message).toContain('Method not found');
     });
   });
 

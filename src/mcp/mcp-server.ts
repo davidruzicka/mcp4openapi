@@ -2237,8 +2237,9 @@ export class MCPServer {
 
   private mapRpcErrorCode(error: unknown): number {
     if (error instanceof ValidationError) return -32602;
-    // -32601 is reused for application-level not-found (MCP convention; distinct from generic errors → -32603)
-    if (error instanceof ResourceNotFoundError) return -32601;
+    // -32001 (not -32601): -32601 is JSON-RPC protocol "Method not found"; using it for application-level
+    // resource-not-found conflates protocol and app layers. -32001 is in the app-defined range (-32000..-32099).
+    if (error instanceof ResourceNotFoundError) return -32001;
     return -32603;
   }
 
@@ -2318,7 +2319,17 @@ export class MCPServer {
     if (req.method === 'tools/list') {
       const upstreamMcp = this.getUpstreamMcpConfig(profileId);
       if (upstreamMcp && this.getUpstreamClientFn) {
-        return this.handleUpstreamToolsList(req, sessionId, profileId, upstreamMcp);
+        try {
+          return await this.handleUpstreamToolsList(req, sessionId, profileId, upstreamMcp);
+        } catch (error) {
+          const correlationId = generateCorrelationId();
+          this.logger.error('Upstream tools/list error', error as Error, { correlationId });
+          return {
+            jsonrpc: '2.0',
+            id: req.id,
+            error: { code: this.mapRpcErrorCode(error), message: this.formatErrorForClient(error, correlationId) },
+          };
+        }
       }
     }
 

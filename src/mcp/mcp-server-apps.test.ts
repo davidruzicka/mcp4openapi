@@ -315,7 +315,7 @@ describe('MCPServer apps resources', () => {
       params: { uri: 'ui://missing' },
     });
 
-    expect(response.error.code).toBe(-32601);
+    expect(response.error.code).toBe(-32001);
     expect(response.error.message).toContain('Resource not found');
   });
 
