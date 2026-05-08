@@ -30,6 +30,7 @@ import {
   UpstreamMalformedResponseError,
 } from '../upstream/upstream-errors.js';
 import { McpError, ErrorCode } from '@modelcontextprotocol/sdk/types.js';
+import { INPUT_LIMITS } from '../core/constants.js';
 
 type ToolCallResponse = {
   result?: {
@@ -1964,6 +1965,56 @@ paths:
 
       expect(response.error.code).toBe(-32602);
       expect(response.error.message).toContain('argument');
+    });
+
+    it('should return -32001 for completion/complete when resource template is not found', async () => {
+      vi.spyOn(server as any, 'completeResourceArgument').mockRejectedValueOnce(new ResourceNotFoundError('test://missing', 'Resource template'));
+      const response = await (server as any).handleOtherRequest({
+        jsonrpc: '2.0',
+        id: 'cc5',
+        method: 'completion/complete',
+        params: { ref: { type: 'ref/resource', uri: 'test://missing' }, argument: { name: 'x', value: '' } },
+      }, 'test-session');
+
+      expect(response.error.code).toBe(-32001);
+      expect(response.error.message).toContain('not found');
+    });
+
+    it('should return -32602 for resources/read when uri exceeds 2048 characters', async () => {
+      const response = await (server as any).handleOtherRequest({
+        jsonrpc: '2.0',
+        id: 'rr6',
+        method: 'resources/read',
+        params: { uri: 'test://' + 'a'.repeat(INPUT_LIMITS.RESOURCE_URI + 1) },
+      }, 'test-session');
+
+      expect(response.error.code).toBe(-32602);
+      expect(response.error.message).toContain('2048');
+    });
+
+    it('should return -32602 for resources/read when readResource throws ValidationError (ambiguous template)', async () => {
+      vi.spyOn(server as any, 'readResource').mockRejectedValueOnce(new ValidationError('Ambiguous resource uri: matches multiple templates'));
+      const response = await (server as any).handleOtherRequest({
+        jsonrpc: '2.0',
+        id: 'rr7',
+        method: 'resources/read',
+        params: { uri: 'test://ambiguous' },
+      }, 'test-session');
+
+      expect(response.error.code).toBe(-32602);
+      expect(response.error.message).toContain('Ambiguous');
+    });
+
+    it('should return -32602 for prompts/get when name exceeds 256 characters', async () => {
+      const response = await (server as any).handleOtherRequest({
+        jsonrpc: '2.0',
+        id: 'pg6',
+        method: 'prompts/get',
+        params: { name: 'a'.repeat(INPUT_LIMITS.PROMPT_NAME + 1) },
+      }, 'test-session');
+
+      expect(response.error.code).toBe(-32602);
+      expect(response.error.message).toContain('256');
     });
 
     it('should return -32601 for prototype-inherited property __proto__', async () => {

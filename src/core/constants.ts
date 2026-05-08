@@ -122,3 +122,9 @@ export const PROXY_CREDENTIALS = {
   CLIENT_ID: process.env.MCP_PROXY_CLIENT_ID || 'mcp-proxy-client',
   CLIENT_SECRET: process.env.MCP_PROXY_CLIENT_SECRET || 'mcp-proxy-secret',
 } as const;
+
+export const INPUT_LIMITS = {
+  METHOD_NAME_LOG: 200,   // max chars of req.method reflected in server logs
+  PROMPT_NAME: 256,       // max chars for prompts/get "name" param
+  RESOURCE_URI: 2048,     // max chars for resources/read "uri" param
+} as const;

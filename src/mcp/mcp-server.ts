@@ -46,7 +46,7 @@ import {
   NetworkError,
   generateCorrelationId
 } from '../core/errors.js';
-import { OAUTH_RATE_LIMIT } from '../core/constants.js';
+import { OAUTH_RATE_LIMIT, INPUT_LIMITS } from '../core/constants.js';
 import { HttpClient } from '../transport/interceptors.js';
 import { HttpClientFactory } from '../transport/http-client-factory.js';
 import { SchemaValidator } from '../validation/schema-validator.js';
@@ -2267,6 +2267,9 @@ export class MCPServer {
       if (typeof name !== 'string' || !name.trim()) {
         throw new ValidationError('prompts/get requires string parameter "name"');
       }
+      if (name.length > INPUT_LIMITS.PROMPT_NAME) {
+        throw new ValidationError(`prompts/get parameter "name" must not exceed ${INPUT_LIMITS.PROMPT_NAME} characters`);
+      }
       const argumentsValue = params.arguments;
       if (argumentsValue !== undefined && (typeof argumentsValue !== 'object' || Array.isArray(argumentsValue) || argumentsValue === null)) {
         throw new ValidationError('prompts/get parameter "arguments" must be an object when provided');
@@ -2277,6 +2280,9 @@ export class MCPServer {
       const params = (req.params || {}) as Record<string, unknown>;
       if (typeof params.uri !== 'string' || !params.uri.trim()) {
         throw new ValidationError('resources/read requires string parameter "uri"');
+      }
+      if (params.uri.length > INPUT_LIMITS.RESOURCE_URI) {
+        throw new ValidationError(`resources/read parameter "uri" must not exceed ${INPUT_LIMITS.RESOURCE_URI} characters`);
       }
       return this.readResource(params.uri, sessionId, profileId);
     },
@@ -2324,12 +2330,11 @@ export class MCPServer {
         try {
           return await this.handleUpstreamToolsList(req, sessionId, profileId, upstreamMcp);
         } catch (error) {
-          const correlationId = generateCorrelationId();
-          this.logger.error('Upstream tools/list error', error as Error, { correlationId });
+          this.logger.error('Upstream tools/list error', error as Error);
           return {
             jsonrpc: '2.0',
             id: req.id,
-            error: { code: this.mapRpcErrorCode(error), message: this.formatErrorForClient(error, correlationId) },
+            error: mapUpstreamErrorToMcpError(error, upstreamMcp.name),
           };
         }
       }
@@ -2351,7 +2356,7 @@ export class MCPServer {
       return { jsonrpc: '2.0', id: req.id, result };
     } catch (error) {
       const correlationId = generateCorrelationId();
-      this.logger.error('Method handler error', error as Error, { correlationId, method: req.method });
+      this.logger.error('Method handler error', error as Error, { correlationId, method: (req.method as string).slice(0, INPUT_LIMITS.METHOD_NAME_LOG) });
       return {
         jsonrpc: '2.0',
         id: req.id,
