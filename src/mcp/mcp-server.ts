@@ -2280,6 +2280,7 @@ export class MCPServer {
       }
       return this.readResource(params.uri, sessionId, profileId);
     },
+    // Validation delegated to completeResourceArgument (throws ValidationError for bad params).
     'completion/complete': async (req, sessionId, profileId) => {
       return this.completeResourceArgument(req as CompleteRequest, sessionId, profileId);
     },
