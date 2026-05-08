@@ -2340,7 +2340,7 @@ export class MCPServer {
       return {
         jsonrpc: '2.0',
         id: req.id,
-        error: { code: -32601, message: `Method not found: ${req.method}` },
+        error: { code: -32601, message: `Method not found: ${(req.method as string).slice(0, 200)}` },
       };
     }
 

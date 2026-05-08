@@ -1692,12 +1692,48 @@ paths:
       expect(response.error.message).toContain('requires string parameter "name"');
     });
 
+    it('should return -32602 for prompts/get when name is whitespace-only', async () => {
+      const response = await (server as any).handleOtherRequest({
+        jsonrpc: '2.0',
+        id: '5b',
+        method: 'prompts/get',
+        params: { name: '   ' },
+      }, 'test-session');
+
+      expect(response.error.code).toBe(-32602);
+      expect(response.error.message).toContain('requires string parameter "name"');
+    });
+
     it('should return -32602 for prompts/get when arguments is not an object', async () => {
       const response = await (server as any).handleOtherRequest({
         jsonrpc: '2.0',
         id: '7',
         method: 'prompts/get',
         params: { name: 'summarize_issue', arguments: 'bad-args' },
+      }, 'test-session');
+
+      expect(response.error.code).toBe(-32602);
+      expect(response.error.message).toContain('parameter "arguments" must be an object');
+    });
+
+    it('should return -32602 for prompts/get when arguments is null', async () => {
+      const response = await (server as any).handleOtherRequest({
+        jsonrpc: '2.0',
+        id: '7b',
+        method: 'prompts/get',
+        params: { name: 'summarize_issue', arguments: null },
+      }, 'test-session');
+
+      expect(response.error.code).toBe(-32602);
+      expect(response.error.message).toContain('parameter "arguments" must be an object');
+    });
+
+    it('should return -32602 for prompts/get when arguments is an array', async () => {
+      const response = await (server as any).handleOtherRequest({
+        jsonrpc: '2.0',
+        id: '7c',
+        method: 'prompts/get',
+        params: { name: 'summarize_issue', arguments: [] },
       }, 'test-session');
 
       expect(response.error.code).toBe(-32602);
