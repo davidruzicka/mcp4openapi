@@ -2334,10 +2334,12 @@ export class MCPServer {
       const result = await handler.call(this, req, sessionId, profileId);
       return { jsonrpc: '2.0', id: req.id, result };
     } catch (error) {
+      const correlationId = generateCorrelationId();
+      this.logger.error('Method handler error', error as Error, { correlationId, method: req.method });
       return {
         jsonrpc: '2.0',
         id: req.id,
-        error: { code: this.mapRpcErrorCode(error), message: (error as Error).message },
+        error: { code: this.mapRpcErrorCode(error), message: this.formatErrorForClient(error, correlationId) },
       };
     }
   }

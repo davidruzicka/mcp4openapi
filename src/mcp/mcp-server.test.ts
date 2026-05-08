@@ -1826,7 +1826,7 @@ paths:
       }, 'test-session');
 
       expect(response.error.code).toBe(-32603);
-      expect(response.error.message).toBe('unexpected');
+      expect(response.error.message).toContain('Internal error');
     });
 
     it('should return result for resources/read when resource exists', async () => {
@@ -1864,7 +1864,7 @@ paths:
       }, 'test-session');
 
       expect(response.error.code).toBe(-32603);
-      expect(response.error.message).toBe('db down');
+      expect(response.error.message).toContain('Internal error');
     });
 
     it('should return result for completion/complete on success', async () => {
