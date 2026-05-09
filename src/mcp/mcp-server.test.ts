@@ -30,6 +30,7 @@ import {
   UpstreamMalformedResponseError,
 } from '../upstream/upstream-errors.js';
 import { McpError, ErrorCode } from '@modelcontextprotocol/sdk/types.js';
+import { INPUT_LIMITS } from '../core/constants.js';
 
 type ToolCallResponse = {
   result?: {
@@ -1692,6 +1693,30 @@ paths:
       expect(response.error.message).toContain('requires string parameter "name"');
     });
 
+    it('should return -32602 for prompts/get when name is whitespace-only', async () => {
+      const response = await (server as any).handleOtherRequest({
+        jsonrpc: '2.0',
+        id: '5b',
+        method: 'prompts/get',
+        params: { name: '   ' },
+      }, 'test-session');
+
+      expect(response.error.code).toBe(-32602);
+      expect(response.error.message).toContain('requires string parameter "name"');
+    });
+
+    it('should return -32602 for prompts/get when name is empty string', async () => {
+      const response = await (server as any).handleOtherRequest({
+        jsonrpc: '2.0',
+        id: '5c',
+        method: 'prompts/get',
+        params: { name: '' },
+      }, 'test-session');
+
+      expect(response.error.code).toBe(-32602);
+      expect(response.error.message).toContain('requires string parameter "name"');
+    });
+
     it('should return -32602 for prompts/get when arguments is not an object', async () => {
       const response = await (server as any).handleOtherRequest({
         jsonrpc: '2.0',
@@ -1704,7 +1729,31 @@ paths:
       expect(response.error.message).toContain('parameter "arguments" must be an object');
     });
 
-    it('should return -32601 for prompts/get when prompt is missing', async () => {
+    it('should return -32602 for prompts/get when arguments is null', async () => {
+      const response = await (server as any).handleOtherRequest({
+        jsonrpc: '2.0',
+        id: '7b',
+        method: 'prompts/get',
+        params: { name: 'summarize_issue', arguments: null },
+      }, 'test-session');
+
+      expect(response.error.code).toBe(-32602);
+      expect(response.error.message).toContain('parameter "arguments" must be an object');
+    });
+
+    it('should return -32602 for prompts/get when arguments is an array', async () => {
+      const response = await (server as any).handleOtherRequest({
+        jsonrpc: '2.0',
+        id: '7c',
+        method: 'prompts/get',
+        params: { name: 'summarize_issue', arguments: [] },
+      }, 'test-session');
+
+      expect(response.error.code).toBe(-32602);
+      expect(response.error.message).toContain('parameter "arguments" must be an object');
+    });
+
+    it('should return -32001 for prompts/get when prompt is missing', async () => {
       const response = await (server as any).handleOtherRequest({
         jsonrpc: '2.0',
         id: '6',
@@ -1712,8 +1761,293 @@ paths:
         params: { name: 'missing_prompt' },
       }, 'test-session');
 
-      expect(response.error.code).toBe(-32601);
+      expect(response.error.code).toBe(-32001);
       expect(response.error.message).toContain('Prompt not found');
+    });
+
+    it('should respond to ping with empty result', async () => {
+      const response = await (server as any).handleOtherRequest({
+        jsonrpc: '2.0',
+        id: 'p1',
+        method: 'ping',
+      }, 'test-session');
+
+      expect(response.jsonrpc).toBe('2.0');
+      expect(response.id).toBe('p1');
+      expect(response.result).toEqual({});
+      expect(response.error).toBeUndefined();
+    });
+
+    it('should return -32600 when method is null', async () => {
+      const response = await (server as any).handleOtherRequest({
+        jsonrpc: '2.0',
+        id: 'inv1',
+        method: null,
+      }, 'test-session');
+
+      expect(response.error.code).toBe(-32600);
+      expect(response.error.message).toContain('missing method');
+    });
+
+    it('should return -32600 when method is undefined', async () => {
+      const response = await (server as any).handleOtherRequest({
+        jsonrpc: '2.0',
+        id: 'inv2',
+      }, 'test-session');
+
+      expect(response.error.code).toBe(-32600);
+      expect(response.error.message).toContain('missing method');
+    });
+
+    it('should return -32600 when method is empty string', async () => {
+      const response = await (server as any).handleOtherRequest({
+        jsonrpc: '2.0',
+        id: 'inv3',
+        method: '',
+      }, 'test-session');
+
+      expect(response.error.code).toBe(-32600);
+      expect(response.error.message).toContain('missing method');
+    });
+
+    it('should return -32600 when method is whitespace-only', async () => {
+      const response = await (server as any).handleOtherRequest({
+        jsonrpc: '2.0',
+        id: 'inv4',
+        method: '   ',
+      }, 'test-session');
+
+      expect(response.error.code).toBe(-32600);
+      expect(response.error.message).toContain('missing method');
+    });
+
+    it('should return empty resources/list when no appsModel', async () => {
+      const response = await (server as any).handleOtherRequest({
+        jsonrpc: '2.0',
+        id: 'rl1',
+        method: 'resources/list',
+      }, 'test-session');
+
+      expect(response.result.resources).toEqual([]);
+    });
+
+    it('should return empty resources/templates/list when no appsModel', async () => {
+      const response = await (server as any).handleOtherRequest({
+        jsonrpc: '2.0',
+        id: 'rtl1',
+        method: 'resources/templates/list',
+      }, 'test-session');
+
+      expect(response.result.resourceTemplates).toEqual([]);
+    });
+
+    it('should return -32602 for resources/read without uri param', async () => {
+      const response = await (server as any).handleOtherRequest({
+        jsonrpc: '2.0',
+        id: 'rr1',
+        method: 'resources/read',
+        params: {},
+      }, 'test-session');
+
+      expect(response.error.code).toBe(-32602);
+      expect(response.error.message).toContain('"uri"');
+    });
+
+    it('should return -32602 for resources/read when uri is not a string', async () => {
+      const response = await (server as any).handleOtherRequest({
+        jsonrpc: '2.0',
+        id: 'rr2',
+        method: 'resources/read',
+        params: { uri: 42 },
+      }, 'test-session');
+
+      expect(response.error.code).toBe(-32602);
+      expect(response.error.message).toContain('"uri"');
+    });
+
+    it('should return -32602 for resources/read when uri is whitespace-only', async () => {
+      const response = await (server as any).handleOtherRequest({
+        jsonrpc: '2.0',
+        id: 'rr2b',
+        method: 'resources/read',
+        params: { uri: '   ' },
+      }, 'test-session');
+
+      expect(response.error.code).toBe(-32602);
+      expect(response.error.message).toContain('"uri"');
+    });
+
+    it('should return -32001 for resources/read when resource not found', async () => {
+      vi.spyOn(server as any, 'readResource').mockRejectedValueOnce(new ResourceNotFoundError('unknown://missing', 'Resource'));
+      const response = await (server as any).handleOtherRequest({
+        jsonrpc: '2.0',
+        id: 'rr3',
+        method: 'resources/read',
+        params: { uri: 'unknown://missing' },
+      }, 'test-session');
+
+      expect(response.error.code).toBe(-32001);
+      expect(response.error.message).toContain('not found');
+    });
+
+    it('should return -32603 for resources/read on unexpected error', async () => {
+      vi.spyOn(server as any, 'readResource').mockRejectedValueOnce(new Error('unexpected'));
+      const response = await (server as any).handleOtherRequest({
+        jsonrpc: '2.0',
+        id: 'rr4',
+        method: 'resources/read',
+        params: { uri: 'test://uri' },
+      }, 'test-session');
+
+      expect(response.error.code).toBe(-32603);
+      expect(response.error.message).toContain('Internal error');
+    });
+
+    it('should return result for resources/read when resource exists', async () => {
+      const mockContents = [{ uri: 'test://uri', mimeType: 'text/plain', text: 'hello' }];
+      vi.spyOn(server as any, 'readResource').mockResolvedValueOnce({ contents: mockContents });
+      const response = await (server as any).handleOtherRequest({
+        jsonrpc: '2.0',
+        id: 'rr5',
+        method: 'resources/read',
+        params: { uri: 'test://uri' },
+      }, 'test-session');
+
+      expect(response.result.contents).toEqual(mockContents);
+    });
+
+    it('should return -32602 for completion/complete with invalid ref', async () => {
+      const response = await (server as any).handleOtherRequest({
+        jsonrpc: '2.0',
+        id: 'cc1',
+        method: 'completion/complete',
+        params: { ref: { type: 'ref/prompt' }, argument: { name: 'x', value: '' } },
+      }, 'test-session');
+
+      expect(response.error.code).toBe(-32602);
+      expect(response.error.message).toContain('resource ref');
+    });
+
+    it('should return -32603 for completion/complete on unexpected error', async () => {
+      vi.spyOn(server as any, 'completeResourceArgument').mockRejectedValueOnce(new Error('db down'));
+      const response = await (server as any).handleOtherRequest({
+        jsonrpc: '2.0',
+        id: 'cc2',
+        method: 'completion/complete',
+        params: {},
+      }, 'test-session');
+
+      expect(response.error.code).toBe(-32603);
+      expect(response.error.message).toContain('Internal error');
+    });
+
+    it('should return result for completion/complete on success', async () => {
+      const mockResult = { completion: { values: ['foo', 'bar'], hasMore: false, total: 2 } };
+      vi.spyOn(server as any, 'completeResourceArgument').mockResolvedValueOnce(mockResult);
+      const response = await (server as any).handleOtherRequest({
+        jsonrpc: '2.0',
+        id: 'cc3',
+        method: 'completion/complete',
+        params: {},
+      }, 'test-session');
+
+      expect(response.result).toEqual(mockResult);
+    });
+
+    it('should return -32602 for completion/complete with valid ref but missing argument', async () => {
+      vi.spyOn(server as any, 'completeResourceArgument').mockRejectedValueOnce(new ValidationError('argument name is required'));
+      const response = await (server as any).handleOtherRequest({
+        jsonrpc: '2.0',
+        id: 'cc4',
+        method: 'completion/complete',
+        params: { ref: { type: 'ref/resource', uri: 'test://uri' }, argument: {} },
+      }, 'test-session');
+
+      expect(response.error.code).toBe(-32602);
+      expect(response.error.message).toContain('argument');
+    });
+
+    it('should return -32001 for completion/complete when resource template is not found', async () => {
+      vi.spyOn(server as any, 'completeResourceArgument').mockRejectedValueOnce(new ResourceNotFoundError('test://missing', 'Resource template'));
+      const response = await (server as any).handleOtherRequest({
+        jsonrpc: '2.0',
+        id: 'cc5',
+        method: 'completion/complete',
+        params: { ref: { type: 'ref/resource', uri: 'test://missing' }, argument: { name: 'x', value: '' } },
+      }, 'test-session');
+
+      expect(response.error.code).toBe(-32001);
+      expect(response.error.message).toContain('not found');
+    });
+
+    it('should return -32602 for resources/read when uri exceeds 2048 characters', async () => {
+      const response = await (server as any).handleOtherRequest({
+        jsonrpc: '2.0',
+        id: 'rr6',
+        method: 'resources/read',
+        params: { uri: 'test://' + 'a'.repeat(INPUT_LIMITS.RESOURCE_URI + 1) },
+      }, 'test-session');
+
+      expect(response.error.code).toBe(-32602);
+      expect(response.error.message).toContain('2048');
+    });
+
+    it('should return -32602 for resources/read when readResource throws ValidationError (ambiguous template)', async () => {
+      vi.spyOn(server as any, 'readResource').mockRejectedValueOnce(new ValidationError('Ambiguous resource uri: matches multiple templates'));
+      const response = await (server as any).handleOtherRequest({
+        jsonrpc: '2.0',
+        id: 'rr7',
+        method: 'resources/read',
+        params: { uri: 'test://ambiguous' },
+      }, 'test-session');
+
+      expect(response.error.code).toBe(-32602);
+      expect(response.error.message).toContain('Ambiguous');
+    });
+
+    it('should return -32602 for prompts/get when name exceeds 256 characters', async () => {
+      const response = await (server as any).handleOtherRequest({
+        jsonrpc: '2.0',
+        id: 'pg6',
+        method: 'prompts/get',
+        params: { name: 'a'.repeat(INPUT_LIMITS.PROMPT_NAME + 1) },
+      }, 'test-session');
+
+      expect(response.error.code).toBe(-32602);
+      expect(response.error.message).toContain('256');
+    });
+
+    it('should return -32601 for prototype-inherited property __proto__', async () => {
+      const response = await (server as any).handleOtherRequest({
+        jsonrpc: '2.0',
+        id: 'proto1',
+        method: '__proto__',
+      }, 'test-session');
+
+      expect(response.error.code).toBe(-32601);
+      expect(response.error.message).toContain('Method not found');
+    });
+
+    it('should return -32601 for prototype-inherited property constructor', async () => {
+      const response = await (server as any).handleOtherRequest({
+        jsonrpc: '2.0',
+        id: 'proto2',
+        method: 'constructor',
+      }, 'test-session');
+
+      expect(response.error.code).toBe(-32601);
+      expect(response.error.message).toContain('Method not found');
+    });
+
+    it('should return -32601 for prototype-inherited property toString', async () => {
+      const response = await (server as any).handleOtherRequest({
+        jsonrpc: '2.0',
+        id: 'proto3',
+        method: 'toString',
+      }, 'test-session');
+
+      expect(response.error.code).toBe(-32601);
+      expect(response.error.message).toContain('Method not found');
     });
   });
 
