@@ -127,11 +127,11 @@ Plans:
   1. Every tools/call request produces a structured audit log entry containing session ID, resolved client identity, tool name, upstream server URL (host only), invocation outcome, and wall-clock duration
   2. Prometheus metrics expose per-upstream and per-client-identity counters and latency histograms for tools/list and tools/call requests, extending the existing prom-client registry
   3. GET /health returns 200 when the server is running; GET /ready returns 200 when at least one profile is loaded and the server can accept sessions; both endpoints are unauthenticated
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 04-01: TBD
-- [ ] 04-02: TBD
+- [ ] 04-01-PLAN.md - Extend MetricsContextLabels with upstream_host/client_identity, add labels to counters/histograms, audit log for all tools/call paths (OBS-01, OBS-02)
+- [ ] 04-02-PLAN.md - Add /ready readiness probe endpoint, update normalizePath for /ready (OBS-03)
 
 ### Phase 5: Upstream OAuth Proxy
 **Goal**: Non-technical users can authorize gateway access to upstream MCP servers via a single OAuth browser confirmation; upstream tokens survive gateway restarts via encrypted payload in the gateway token
