@@ -5210,6 +5210,139 @@ paths:
     });
 
     // -------------------------------------------------------------------------
+    describe('Audit log (OBS-01)', () => {
+      function spyLogger() {
+        const info = vi.fn();
+        const debug = vi.fn();
+        const warn = vi.fn();
+        const error = vi.fn();
+        return { info, debug, warn, error };
+      }
+
+      function findAuditEntries(infoSpy: ReturnType<typeof vi.fn>) {
+        return infoSpy.mock.calls.filter((c: unknown[]) => c[0] === 'audit:tool_call');
+      }
+
+      it('emits audit:tool_call with structured fields on upstream success', async () => {
+        const fakeLogger = spyLogger();
+        (upstreamServer as any).logger = fakeLogger;
+
+        const response: any = await (upstreamServer as any).handleToolCall(
+          { jsonrpc: '2.0', id: '1', method: 'tools/call', params: { name: 'safe_tool', arguments: {} } },
+          'session-audit-ok',
+          'upstream-profile',
+        );
+
+        expect(response.result).toBeDefined();
+        const audits = findAuditEntries(fakeLogger.info);
+        expect(audits.length).toBeGreaterThanOrEqual(1);
+        const payload = audits[audits.length - 1][1] as Record<string, unknown>;
+        expect(payload).toMatchObject({
+          sessionId: 'session-audit-ok',
+          tool: 'safe_tool',
+          outcome: 'success',
+          upstreamHost: 'upstream.example.com',
+        });
+        expect(typeof payload.durationMs).toBe('number');
+        // clientPrincipal must always be present (string) - 'anonymous' when no principal
+        expect(typeof payload.clientPrincipal).toBe('string');
+      });
+
+      it('emits audit:tool_call with outcome=error when upstream call throws', async () => {
+        const fakeLogger = spyLogger();
+        (upstreamServer as any).logger = fakeLogger;
+        mockCallTool.mockRejectedValueOnce(new Error('upstream down'));
+
+        await (upstreamServer as any).handleToolCall(
+          { jsonrpc: '2.0', id: '1', method: 'tools/call', params: { name: 'safe_tool', arguments: {} } },
+          'session-audit-err',
+          'upstream-profile',
+        );
+
+        const audits = findAuditEntries(fakeLogger.info);
+        expect(audits.length).toBeGreaterThanOrEqual(1);
+        const payload = audits[audits.length - 1][1] as Record<string, unknown>;
+        expect(payload.outcome).toBe('error');
+        expect(payload.tool).toBe('safe_tool');
+        expect(payload.upstreamHost).toBe('upstream.example.com');
+      });
+
+      it('uses "anonymous" clientPrincipal when session has no AuthorizedPrincipal', async () => {
+        const fakeLogger = spyLogger();
+        (upstreamServer as any).logger = fakeLogger;
+        // httpTransport in beforeEach has no getSessionClientPrincipal -> resolveMetricsContext
+        // must still produce 'anonymous' for the audit emission
+
+        await (upstreamServer as any).handleToolCall(
+          { jsonrpc: '2.0', id: '1', method: 'tools/call', params: { name: 'safe_tool', arguments: {} } },
+          'session-anon',
+          'upstream-profile',
+        );
+
+        const audits = findAuditEntries(fakeLogger.info);
+        const payload = audits[audits.length - 1][1] as Record<string, unknown>;
+        expect(payload.clientPrincipal).toBe('anonymous');
+      });
+
+      it('uses resolved AuthorizedPrincipal.subject when session has one', async () => {
+        const fakeLogger = spyLogger();
+        (upstreamServer as any).logger = fakeLogger;
+        (upstreamServer as any).httpTransport.getSessionClientPrincipal = (_pid: string, sid: string) =>
+          sid === 'session-with-principal'
+            ? { authType: 'token', profileId: 'upstream-profile', subject: 'svc-bot', scopes: [] }
+            : undefined;
+
+        await (upstreamServer as any).handleToolCall(
+          { jsonrpc: '2.0', id: '1', method: 'tools/call', params: { name: 'safe_tool', arguments: {} } },
+          'session-with-principal',
+          'upstream-profile',
+        );
+
+        const audits = findAuditEntries(fakeLogger.info);
+        const payload = audits[audits.length - 1][1] as Record<string, unknown>;
+        expect(payload.clientPrincipal).toBe('svc-bot');
+      });
+
+      it('emits audit:tool_call on upstream early-reject (FilterRejection)', async () => {
+        const fakeLogger = spyLogger();
+        (upstreamServer as any).logger = fakeLogger;
+        (upstreamServer as any).httpTransport.getSessionToolFilterRequest = () =>
+          parseSessionToolFilterHeader('other_tool');
+
+        await (upstreamServer as any).handleToolCall(
+          { jsonrpc: '2.0', id: '1', method: 'tools/call', params: { name: 'safe_tool', arguments: {} } },
+          'session-reject',
+          'upstream-profile',
+        );
+
+        const audits = findAuditEntries(fakeLogger.info);
+        expect(audits.length).toBeGreaterThanOrEqual(1);
+        const payload = audits[audits.length - 1][1] as Record<string, unknown>;
+        expect(payload.outcome).toBe('error');
+        expect(payload.tool).toBe('safe_tool');
+        expect(payload.upstreamHost).toBe('upstream.example.com');
+      });
+
+      it('upstreamHost in audit log is host-only (no path, no scheme)', async () => {
+        const fakeLogger = spyLogger();
+        (upstreamServer as any).logger = fakeLogger;
+
+        await (upstreamServer as any).handleToolCall(
+          { jsonrpc: '2.0', id: '1', method: 'tools/call', params: { name: 'safe_tool', arguments: {} } },
+          'session-host-check',
+          'upstream-profile',
+        );
+
+        const audits = findAuditEntries(fakeLogger.info);
+        const payload = audits[audits.length - 1][1] as Record<string, unknown>;
+        expect(payload.upstreamHost).toBe('upstream.example.com');
+        // No scheme, no path, no credentials
+        expect(payload.upstreamHost).not.toMatch(/^https?:\/\//);
+        expect(payload.upstreamHost).not.toContain('/mcp');
+      });
+    });
+
+    // -------------------------------------------------------------------------
     describe('getUpstreamToken token precedence (client token first, env fallback)', () => {
       it('uses downstream client token even when value_from_env is configured', async () => {
         // Client sends a token → it wins regardless of value_from_env
@@ -5569,6 +5702,144 @@ paths:
         expect(response.result).toBeDefined();
         expect(response.result.tools).toBeDefined();
       });
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // extractHost helper (OBS-01)
+  // ---------------------------------------------------------------------------
+  describe('extractHost (OBS-01)', () => {
+    let extractHostFn: (url: string) => string;
+
+    beforeEach(async () => {
+      // Import the module under test once - extractHost is a module-level helper
+      const mod = await import('./mcp-server.js');
+      extractHostFn = (mod as unknown as { extractHost: (u: string) => string }).extractHost;
+      expect(extractHostFn).toBeTypeOf('function');
+    });
+
+    it('returns host for valid https URL with path', () => {
+      expect(extractHostFn('https://api.example.com/v1/path')).toBe('api.example.com');
+    });
+
+    it('returns host with port when present', () => {
+      expect(extractHostFn('http://localhost:8080/x')).toBe('localhost:8080');
+    });
+
+    it('returns input unchanged when URL parsing throws', () => {
+      expect(extractHostFn('not-a-url')).toBe('not-a-url');
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Stdio path audit log (OBS-01)
+  // ---------------------------------------------------------------------------
+  describe('stdio audit log (OBS-01)', () => {
+    it('emits audit:tool_call with sessionId=null and clientPrincipal=anonymous on stdio path', async () => {
+      const localServer = new MCPServer();
+      const specPath = path.join(process.cwd(), 'profiles/gitlab/openapi.yaml');
+      await localServer.initialize(specPath);
+
+      const auditInfo = vi.fn();
+      const fakeLogger = {
+        info: auditInfo,
+        debug: vi.fn(),
+        warn: vi.fn(),
+        error: vi.fn(),
+      };
+      (localServer as any).logger = fakeLogger;
+
+      const simpleTool = (localServer as any).profile.tools.find((t: any) => !t.composite);
+      if (!simpleTool) return;
+      (localServer as any).toolGenerator.validateArguments = () => {};
+      (localServer as any).executeSimpleTool = async () => ({ ok: true });
+
+      // Install handlers and invoke the stdio CallTool handler via the SDK registration spy
+      const handlers: Array<{ schema: unknown; handler: RequestHandler }> = [];
+      const originalSet = (localServer as any).server.setRequestHandler.bind((localServer as any).server);
+      (localServer as any).server.setRequestHandler = (schema: unknown, handler: RequestHandler) => {
+        handlers.push({ schema, handler });
+        return originalSet(schema, handler);
+      };
+      (localServer as any).setupHandlers();
+      const callToolHandler = handlers.find(entry => {
+        const schema: any = entry.schema;
+        return schema?.shape?.method?.value === 'tools/call';
+      })?.handler;
+      expect(callToolHandler).toBeDefined();
+
+      // Wire a no-op metrics collector so the recordToolCall path is exercised
+      (localServer as any).httpTransport = {
+        getMetricsCollector: () => ({
+          recordToolCall: () => {},
+          recordToolCallError: () => {},
+        }),
+      };
+
+      await callToolHandler!({ params: { name: simpleTool.name, arguments: {} } });
+
+      const audits = auditInfo.mock.calls.filter((c: unknown[]) => c[0] === 'audit:tool_call');
+      expect(audits.length).toBeGreaterThanOrEqual(1);
+      const payload = audits[audits.length - 1][1] as Record<string, unknown>;
+      expect(payload).toMatchObject({
+        sessionId: null,
+        clientPrincipal: 'anonymous',
+        tool: simpleTool.name,
+        outcome: 'success',
+      });
+      expect(typeof payload.upstreamHost).toBe('string');
+      expect(typeof payload.durationMs).toBe('number');
+    });
+
+    it('emits audit:tool_call with outcome=error on stdio path when tool throws', async () => {
+      const localServer = new MCPServer();
+      const specPath = path.join(process.cwd(), 'profiles/gitlab/openapi.yaml');
+      await localServer.initialize(specPath);
+
+      const auditInfo = vi.fn();
+      const fakeLogger = {
+        info: auditInfo,
+        debug: vi.fn(),
+        warn: vi.fn(),
+        error: vi.fn(),
+      };
+      (localServer as any).logger = fakeLogger;
+
+      const simpleTool = (localServer as any).profile.tools.find((t: any) => !t.composite);
+      if (!simpleTool) return;
+      (localServer as any).toolGenerator.validateArguments = () => {};
+      (localServer as any).executeSimpleTool = async () => {
+        throw new Error('stdio boom');
+      };
+
+      const handlers: Array<{ schema: unknown; handler: RequestHandler }> = [];
+      const originalSet = (localServer as any).server.setRequestHandler.bind((localServer as any).server);
+      (localServer as any).server.setRequestHandler = (schema: unknown, handler: RequestHandler) => {
+        handlers.push({ schema, handler });
+        return originalSet(schema, handler);
+      };
+      (localServer as any).setupHandlers();
+      const callToolHandler = handlers.find(entry => {
+        const schema: any = entry.schema;
+        return schema?.shape?.method?.value === 'tools/call';
+      })?.handler;
+
+      (localServer as any).httpTransport = {
+        getMetricsCollector: () => ({
+          recordToolCall: () => {},
+          recordToolCallError: () => {},
+        }),
+      };
+
+      await expect(
+        callToolHandler!({ params: { name: simpleTool.name, arguments: {} } }),
+      ).rejects.toThrow();
+
+      const audits = auditInfo.mock.calls.filter((c: unknown[]) => c[0] === 'audit:tool_call');
+      const payload = audits[audits.length - 1][1] as Record<string, unknown>;
+      expect(payload.outcome).toBe('error');
+      expect(payload.sessionId).toBe(null);
+      expect(payload.clientPrincipal).toBe('anonymous');
     });
   });
 });

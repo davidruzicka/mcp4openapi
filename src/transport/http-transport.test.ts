@@ -5624,4 +5624,84 @@ describeIfListen('HttpTransport', () => {
       expect(isAllowed).toBe(true); // localhost always allowed
     });
   });
+
+  describe('getSessionClientPrincipal (OBS-01)', () => {
+    it('returns the clientPrincipal stored on the session', () => {
+      const t = new HttpTransport(
+        {
+          host: '127.0.0.1',
+          port: 0,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: false,
+          metricsPath: '/metrics',
+        },
+        logger,
+      );
+      const principal = {
+        authType: 'token' as const,
+        profileId: 'default',
+        subject: 'svc-account',
+        scopes: ['read', 'write'],
+      };
+      (t as any).profileStates.set('default', {
+        profileId: 'default',
+        context: { profileId: 'default' },
+        oauthTokensByAccessToken: new Map(),
+        sessions: new Map([['session-1', { clientPrincipal: principal }]]),
+      });
+
+      const out = t.getSessionClientPrincipal('default', 'session-1');
+      expect(out).toBeDefined();
+      expect(out?.subject).toBe('svc-account');
+      expect(out?.authType).toBe('token');
+    });
+
+    it('returns undefined when session is anonymous (no clientPrincipal)', () => {
+      const t = new HttpTransport(
+        {
+          host: '127.0.0.1',
+          port: 0,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: false,
+          metricsPath: '/metrics',
+        },
+        logger,
+      );
+      (t as any).profileStates.set('default', {
+        profileId: 'default',
+        context: { profileId: 'default' },
+        oauthTokensByAccessToken: new Map(),
+        sessions: new Map([['session-anon', {}]]),
+      });
+
+      expect(t.getSessionClientPrincipal('default', 'session-anon')).toBeUndefined();
+    });
+
+    it('returns undefined when profileId or sessionId is unknown', () => {
+      const t = new HttpTransport(
+        {
+          host: '127.0.0.1',
+          port: 0,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: false,
+          metricsPath: '/metrics',
+        },
+        logger,
+      );
+      expect(t.getSessionClientPrincipal('does-not-exist', 'whatever')).toBeUndefined();
+      (t as any).profileStates.set('default', {
+        profileId: 'default',
+        context: { profileId: 'default' },
+        oauthTokensByAccessToken: new Map(),
+        sessions: new Map(),
+      });
+      expect(t.getSessionClientPrincipal('default', 'no-such-session')).toBeUndefined();
+    });
+  });
 });
