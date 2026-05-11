@@ -92,6 +92,26 @@ type EnterpriseToolCategory = 'list' | 'read' | 'modify' | 'admin';
 /** MCP SDK RequestTimeout code (-32001); used for upstream timeout responses */
 const UPSTREAM_TIMEOUT_ERROR_CODE = ErrorCode.RequestTimeout;
 
+/**
+ * Extract the host (hostname + optional port) from a URL string.
+ *
+ * Why: Audit logs and Prometheus labels must carry only the upstream host, never
+ * full URLs (which can include credentials, paths, or query strings). Wrapping
+ * `new URL().host` in try/catch makes the helper safe for arbitrary input - if
+ * parsing fails we return the input string unchanged so the caller still has
+ * something to label / log instead of crashing the tool-call path.
+ *
+ * Exported for direct unit testing; also used by handleToolCall and stdio handler.
+ */
+export function extractHost(url: string): string {
+  try {
+    return new URL(url).host;
+  } catch {
+    return url;
+  }
+}
+
+
 const UPSTREAM_ERROR_MAPPINGS: ReadonlyArray<[new (...args: never[]) => Error, number, string]> = [
   [UpstreamConnectionError, ErrorCode.InternalError, 'Upstream connection failed'],
   [UpstreamTimeoutError, UPSTREAM_TIMEOUT_ERROR_CODE, 'Upstream request timed out'],
@@ -955,7 +975,13 @@ export class MCPServer {
       const toolName = request.params.name;
       const startTime = Date.now();
       const metrics = this.getMetricsCollector();
-      const metricsContext = this.resolveMetricsContext(undefined, undefined);
+      // OBS-02: enrich with upstreamHost (derived from base URL on the stdio path -
+      // stdio has no upstream_mcp proxy, so the OpenAPI backend host is the target).
+      const stdioUpstreamHost = this.safeBaseUrlHost();
+      const metricsContext: MetricsContextLabels = {
+        ...this.resolveMetricsContext(undefined, undefined),
+        upstreamHost: stdioUpstreamHost,
+      };
       try {
         if (!this.profile || !this.compositeExecutor) {
           throw new ConfigurationError('Server not initialized. Call initialize() first.');
@@ -1000,6 +1026,15 @@ export class MCPServer {
           const durationSeconds = (Date.now() - startTime) / 1000;
           metrics.recordToolCall(toolName, 'success', durationSeconds, metricsContext);
         }
+        // OBS-01: stdio path always reports sessionId=null and clientPrincipal=anonymous
+        this.emitAuditToolCall({
+          sessionId: undefined,
+          metricsContext,
+          tool: toolName,
+          upstreamHost: stdioUpstreamHost,
+          outcome: 'success',
+          startTime,
+        });
 
         return {
           content: [
@@ -1015,6 +1050,14 @@ export class MCPServer {
           metrics.recordToolCall(toolName, 'error', durationSeconds, metricsContext);
           metrics.recordToolCallError(toolName, this.getMetricsErrorType(err), metricsContext);
         }
+        this.emitAuditToolCall({
+          sessionId: undefined,
+          metricsContext,
+          tool: toolName,
+          upstreamHost: stdioUpstreamHost,
+          outcome: 'error',
+          startTime,
+        });
         // Generate correlation ID only on error (lazy)
         const correlationId = generateCorrelationId();
         this.logger.error('CallTool handler error', err as Error, { 
@@ -1586,7 +1629,17 @@ export class MCPServer {
     const rawArgs = (params.arguments as Record<string, unknown>) || {};
     const startTime = Date.now();
     const metrics = this.getMetricsCollector();
-    const metricsContext = this.resolveMetricsContext(profileId, sessionId);
+    // D-01 / OBS-02: Resolve the upstream target up front so its host can flow into
+    // metricsContext for every recordToolCall site (including the OAuth-required
+    // early-reject). upstream_mcp resolution is a cheap profile lookup with no I/O.
+    const upstreamMcpForCall = this.getUpstreamMcpConfig(profileId);
+    const upstreamHost = upstreamMcpForCall
+      ? extractHost(upstreamMcpForCall.transport.url)
+      : this.safeBaseUrlHost();
+    const metricsContext: MetricsContextLabels = {
+      ...this.resolveMetricsContext(profileId, sessionId),
+      upstreamHost,
+    };
 
     // Check OAuth authentication for tool operations
     if (this.httpTransport && this.httpTransport.hasOAuthProvider(profileId)) {
@@ -1597,6 +1650,14 @@ export class MCPServer {
           metrics.recordToolCall(toolName, 'error', durationSeconds, metricsContext);
           metrics.recordToolCallError(toolName, 'AuthenticationRequired', metricsContext);
         }
+        this.emitAuditToolCall({
+          sessionId,
+          metricsContext,
+          tool: toolName,
+          upstreamHost,
+          outcome: 'error',
+          startTime,
+        });
         // Return OAuth required error with WWW-Authenticate header
         // This should trigger the OAuth flow in the client
         const errorResponse = {
@@ -1617,7 +1678,6 @@ export class MCPServer {
     }
 
     // D-01: When upstream_mcp is set, forward call to upstream (after OAuth check, before local dispatch)
-    const upstreamMcpForCall = this.getUpstreamMcpConfig(profileId);
     if (upstreamMcpForCall && this.getUpstreamClientFn) {
       // Runtime guard: params.name is cast to string above but a malformed request may send
       // a non-string (e.g. 123). Detect early so downstream .slice() calls never throw.
@@ -1638,14 +1698,14 @@ export class MCPServer {
         );
         if (upstreamFilterRequest?.hasRules && !matchesSessionFilterByName(upstreamFilterRequest, toolName)) {
           this.recordToolFilterRejection(toolName, 'session');
-          this.recordUpstreamReject(toolName, 'FilterRejection', metrics, startTime, metricsContext);
+          this.recordUpstreamReject(toolName, 'FilterRejection', metrics, startTime, metricsContext, sessionId);
           return { jsonrpc: '2.0', id: req.id, error: { code: -32002, message: `Tool '${toolName}' not allowed by X-Mcp4-Tools filter.` } };
         }
       }
       // Apply enterprise policy - upstream tools don't have OpenAPI operations so default to 'modify'
       if (!this.isToolCategoryAllowedByEnterprisePolicy('modify', sessionId, profileId)) {
         const allowedCategories = this.getEnterpriseAllowedToolCategoriesForSession(sessionId, profileId);
-        this.recordUpstreamReject(toolName, 'PolicyRejection', metrics, startTime, metricsContext);
+        this.recordUpstreamReject(toolName, 'PolicyRejection', metrics, startTime, metricsContext, sessionId);
         return {
           jsonrpc: '2.0', id: req.id, error: {
             code: -32002,
@@ -1657,7 +1717,7 @@ export class MCPServer {
       }
       // Validate tool name against the same sanitization policy as tools/list (D-05)
       if (!isValidUpstreamToolName(toolName)) {
-        this.recordUpstreamReject(toolName, 'InvalidToolName', metrics, startTime, metricsContext);
+        this.recordUpstreamReject(toolName, 'InvalidToolName', metrics, startTime, metricsContext, sessionId);
         return {
           jsonrpc: '2.0', id: req.id, error: {
             code: -32002,
@@ -1667,7 +1727,7 @@ export class MCPServer {
       }
       // Apply profile-level upstream tool allow/deny policy
       if (!isToolAllowedByProviderPolicy(toolName, upstreamMcpForCall.tools)) {
-        this.recordUpstreamReject(toolName, 'PolicyRejection', metrics, startTime, metricsContext);
+        this.recordUpstreamReject(toolName, 'PolicyRejection', metrics, startTime, metricsContext, sessionId);
         return {
           jsonrpc: '2.0', id: req.id, error: {
             code: -32002,
@@ -1686,7 +1746,7 @@ export class MCPServer {
         ? this.sanitizedAndPolicyFilteredToolNames.get(sessionId)?.get(upstreamMcpForCall.name)
         : undefined;
       if (sanitizedSet !== undefined && !sanitizedSet.has(toolName)) {
-        this.recordUpstreamReject(toolName, 'SanitizationRejection', metrics, startTime, metricsContext);
+        this.recordUpstreamReject(toolName, 'SanitizationRejection', metrics, startTime, metricsContext, sessionId);
         return {
           jsonrpc: '2.0', id: req.id, error: {
             code: -32002,
@@ -1766,10 +1826,30 @@ export class MCPServer {
         result = await this.executeSimpleTool(toolDef, args, sessionId, profileId);
       }
 
+      // OBS-02: for the local-tool path the actual upstream target is the tenant
+      // base URL (when a tenant override exists) or the profile base URL. Re-derive
+      // upstreamHost here so the metric label and audit log reflect the real target
+      // rather than the global default captured at handleToolCall entry.
+      const tenantCtx = profileId && sessionId
+        ? this.httpTransport?.getSessionTenantContext?.(profileId, sessionId)
+        : undefined;
+      const localUpstreamHost = tenantCtx?.tenantBaseUrl
+        ? extractHost(tenantCtx.tenantBaseUrl)
+        : this.safeBaseUrlHost();
+      const localMetricsContext: MetricsContextLabels = { ...metricsContext, upstreamHost: localUpstreamHost };
+
       if (metrics) {
         const durationSeconds = (Date.now() - startTime) / 1000;
-        metrics.recordToolCall(toolName, 'success', durationSeconds, metricsContext);
+        metrics.recordToolCall(toolName, 'success', durationSeconds, localMetricsContext);
       }
+      this.emitAuditToolCall({
+        sessionId,
+        metricsContext: localMetricsContext,
+        tool: toolName,
+        upstreamHost: localUpstreamHost,
+        outcome: 'success',
+        startTime,
+      });
 
       return {
         jsonrpc: '2.0',
@@ -1784,11 +1864,29 @@ export class MCPServer {
         },
       };
     } catch (error) {
+      // Reuse the same tenant-aware upstreamHost as the success path so success +
+      // error labels for the same tool call share the same dimensions.
+      const tenantCtxErr = profileId && sessionId
+        ? this.httpTransport?.getSessionTenantContext?.(profileId, sessionId)
+        : undefined;
+      const errorUpstreamHost = tenantCtxErr?.tenantBaseUrl
+        ? extractHost(tenantCtxErr.tenantBaseUrl)
+        : this.safeBaseUrlHost();
+      const errorMetricsContext: MetricsContextLabels = { ...metricsContext, upstreamHost: errorUpstreamHost };
+
       if (metrics) {
         const durationSeconds = (Date.now() - startTime) / 1000;
-        metrics.recordToolCall(toolName, 'error', durationSeconds, metricsContext);
-        metrics.recordToolCallError(toolName, this.getMetricsErrorType(error), metricsContext);
+        metrics.recordToolCall(toolName, 'error', durationSeconds, errorMetricsContext);
+        metrics.recordToolCallError(toolName, this.getMetricsErrorType(error), errorMetricsContext);
       }
+      this.emitAuditToolCall({
+        sessionId,
+        metricsContext: errorMetricsContext,
+        tool: toolName,
+        upstreamHost: errorUpstreamHost,
+        outcome: 'error',
+        startTime,
+      });
       // Generate correlation ID only on error (lazy)
       const correlationId = generateCorrelationId();
       
@@ -2041,6 +2139,16 @@ export class MCPServer {
       );
     }
 
+    // OBS-01: Audit emission must run on every outcome (success and error), even
+    // when no metrics collector is wired. metricsBundle is metrics-only, so we
+    // compute auditStartTime/auditContext/auditHost independently. When the bundle
+    // is present we prefer its context (already carries the upstreamHost label set
+    // by the caller) so metric and audit dimensions match exactly.
+    const auditStartTime = metricsBundle?.startTime ?? Date.now();
+    const upstreamHostForAudit = extractHost(provider.transport.url);
+    const auditContext: MetricsContextLabels =
+      metricsBundle?.context ?? this.resolveMetricsContext(profileId, sessionId);
+
     try {
       const effectiveAuth = this.getEffectiveUpstreamAuth(provider);
       const effectiveProvider = effectiveAuth !== provider.auth ? { ...provider, auth: effectiveAuth } : provider;
@@ -2053,6 +2161,14 @@ export class MCPServer {
         const durationSeconds = (Date.now() - metricsBundle.startTime) / 1000;
         metricsBundle.collector.recordToolCall(toolName, 'success', durationSeconds, metricsBundle.context);
       }
+      this.emitAuditToolCall({
+        sessionId,
+        metricsContext: auditContext,
+        tool: toolName,
+        upstreamHost: upstreamHostForAudit,
+        outcome: 'success',
+        startTime: auditStartTime,
+      });
       // Forward as-is including isError: true (tool-level errors are valid MCP responses)
       return {
         jsonrpc: '2.0',
@@ -2065,6 +2181,14 @@ export class MCPServer {
         metricsBundle.collector.recordToolCall(toolName, 'error', durationSeconds, metricsBundle.context);
         metricsBundle.collector.recordToolCallError(toolName, this.getMetricsErrorType(error), metricsBundle.context);
       }
+      this.emitAuditToolCall({
+        sessionId,
+        metricsContext: auditContext,
+        tool: toolName,
+        upstreamHost: upstreamHostForAudit,
+        outcome: 'error',
+        startTime: auditStartTime,
+      });
       return {
         jsonrpc: '2.0',
         id: (req as Record<string, unknown>).id,
@@ -2084,15 +2208,82 @@ export class MCPServer {
     }
 
     let resolvedTenantId: string | undefined;
+    let resolvedClientIdentity: string | undefined;
     if (this.httpTransport && resolvedProfileId && sessionId) {
       const tenantContext = this.httpTransport.getSessionTenantContext?.(resolvedProfileId, sessionId);
       resolvedTenantId = tenantContext?.tenantId;
+      // OBS-01: Pull AuthorizedPrincipal.subject from the session and use it as the
+      // client_identity metrics label / audit clientPrincipal. Sessions without a
+      // resolved principal (no client_auth_gate, or anonymous mode) fall through to
+      // 'anonymous'. The accessor is optional on the transport interface so older
+      // unit-test doubles without it degrade to anonymous gracefully.
+      const principal = this.httpTransport.getSessionClientPrincipal?.(resolvedProfileId, sessionId);
+      resolvedClientIdentity = principal?.subject;
     }
 
     return {
       profileId: resolvedProfileId || 'unknown',
       tenantId: resolvedTenantId || 'none',
+      clientIdentity: resolvedClientIdentity || 'anonymous',
     };
+  }
+
+  /**
+   * Defensive base-URL host extraction for observability paths.
+   *
+   * Why: `getBaseUrl()` delegates to `this.parser.getBaseUrl()` when the profile
+   * does not override it. In test setups that stub `parser` with a partial mock
+   * (no getBaseUrl) the call throws. The observability path (audit log + metric
+   * label) must never break the tool-call - if the host can't be determined we
+   * fall back to the 'none' label semantics the rest of the pipeline expects.
+   */
+  private safeBaseUrlHost(): string {
+    try {
+      const base = this.getBaseUrl();
+      if (typeof base !== 'string' || base.length === 0) return 'none';
+      return extractHost(base);
+    } catch {
+      return 'none';
+    }
+  }
+
+  /**
+   * Emit a structured audit:tool_call log entry (OBS-01).
+   *
+   * Why: Security and compliance teams need an auditable record of every tool call
+   * with identity, target upstream, outcome, and duration. Centralizing the field
+   * shape here (instead of duplicating object literals at every call site) ensures
+   * the contract is uniform across HTTP success, HTTP error, HTTP early-reject,
+   * and stdio paths - and makes the contract a single grep target for verification.
+   *
+   * Field shape (stable contract - downstream log consumers depend on it):
+   *   - sessionId: string | null - HTTP session id, null for stdio
+   *   - clientPrincipal: string - AuthorizedPrincipal.subject or 'anonymous'
+   *   - tool: string - the requested tool name (may be untrusted - never used as label key)
+   *   - upstreamHost: string - host-only (no scheme/path/credentials)
+   *   - outcome: 'success' | 'error'
+   *   - durationMs: number - rounded ms, derived from startTime
+   */
+  private emitAuditToolCall(args: {
+    sessionId: string | undefined;
+    metricsContext: MetricsContextLabels;
+    tool: string;
+    upstreamHost: string;
+    outcome: 'success' | 'error';
+    startTime: number;
+  }): void {
+    const clientIdentity =
+      typeof args.metricsContext.clientIdentity === 'string' && args.metricsContext.clientIdentity.length > 0
+        ? args.metricsContext.clientIdentity
+        : 'anonymous';
+    this.logger.info('audit:tool_call', {
+      sessionId: args.sessionId ?? null,
+      clientPrincipal: clientIdentity,
+      tool: args.tool,
+      upstreamHost: args.upstreamHost,
+      outcome: args.outcome,
+      durationMs: Math.round(Date.now() - args.startTime),
+    });
   }
 
   private getMetricsErrorType(error: unknown): string {
@@ -2979,13 +3170,34 @@ export class MCPServer {
     metrics: MetricsCollector | null,
     startTime: number,
     metricsContext: MetricsContextLabels,
+    sessionId?: string,
   ): void {
-    if (!metrics) return;
     // Truncate before use as Prometheus label to bound cardinality.
+    // The same truncated name is used as the audit log tool field for consistency
+    // with the metric, but the original (untruncated) name is logged at debug level
+    // by upstream callers when needed - audit logs are operator-facing and should
+    // never inject very long names into the log pipeline.
     const safeToolName = toolName.slice(0, 64);
-    const durationSeconds = (Date.now() - startTime) / 1000;
-    metrics.recordToolCall(safeToolName, 'error', durationSeconds, metricsContext);
-    metrics.recordToolCallError(safeToolName, errorType, metricsContext);
+    if (metrics) {
+      const durationSeconds = (Date.now() - startTime) / 1000;
+      metrics.recordToolCall(safeToolName, 'error', durationSeconds, metricsContext);
+      metrics.recordToolCallError(safeToolName, errorType, metricsContext);
+    }
+    // OBS-01: emit audit:tool_call for every upstream early-reject so the audit
+    // trail covers policy/filter/sanitization rejections, not just successful
+    // proxy calls. upstreamHost is carried on metricsContext (OBS-02).
+    const upstreamHost =
+      typeof metricsContext.upstreamHost === 'string' && metricsContext.upstreamHost.length > 0
+        ? metricsContext.upstreamHost
+        : 'none';
+    this.emitAuditToolCall({
+      sessionId,
+      metricsContext,
+      tool: safeToolName,
+      upstreamHost,
+      outcome: 'error',
+      startTime,
+    });
   }
 
   /**

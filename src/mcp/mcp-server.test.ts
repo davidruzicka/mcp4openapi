@@ -477,9 +477,13 @@ paths:
           baseUrl: 'https://team-a.example.com/api',
           authConfigs: [{ type: 'bearer', value_from_env: 'TEAM_A_TOKEN' }],
           sessionToken: 'session-token',
+          // OBS-01: clientIdentity is always populated on the metrics context now;
+          // anonymous sessions report 'anonymous' so audit + metric dimensions are
+          // never undefined at the label boundary.
           metricsContext: {
             profileId: 'default',
             tenantId: 'team-a',
+            clientIdentity: 'anonymous',
           },
         })
       );
@@ -508,9 +512,11 @@ paths:
         expect.objectContaining({
           baseUrl: (server as any).getBaseUrl(),
           authConfigs: undefined,
+          // OBS-01: anonymous fallback present on metricsContext
           metricsContext: {
             profileId: 'default',
             tenantId: 'none',
+            clientIdentity: 'anonymous',
           },
         })
       );

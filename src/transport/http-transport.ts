@@ -4259,6 +4259,18 @@ export class HttpTransport {
     };
   }
 
+  /**
+   * Accessor for the AuthorizedPrincipal resolved for an inbound session, used by
+   * observability (audit log + metrics) to label tool calls with the client identity.
+   *
+   * Returns undefined when the profile/session is unknown or the session is anonymous
+   * (no client_auth_gate configured or no principal resolved). Callers should treat
+   * undefined as 'anonymous' for audit/metrics labels.
+   */
+  public getSessionClientPrincipal(profileId: string, sessionId: string): AuthorizedPrincipal | undefined {
+    return this.profileStates.get(profileId)?.sessions.get(sessionId)?.clientPrincipal;
+  }
+
   public setSessionToolFilter(profileId: string, sessionId: string, toolFilter: SessionToolFilter): void {
     const session = this.profileStates.get(profileId)?.sessions.get(sessionId);
     if (!session) {
