@@ -111,14 +111,89 @@ describe('MetricsCollector', () => {
     it('should record tool call errors', async () => {
       metrics.recordToolCallError('manage_badges', 'ValidationError', { profileId: 'gitlab', tenantId: 'team-a' });
       metrics.recordToolCallError('manage_badges', 'APIError', { profileId: 'gitlab', tenantId: 'team-a' });
-      
+
       const output = await metrics.getMetrics();
-      
+
       expect(output).toContain('test_tool_call_errors_total');
       expect(output).toContain('error_type="ValidationError"');
       expect(output).toContain('error_type="APIError"');
       expect(output).toContain('profile_id="gitlab"');
       expect(output).toContain('tenant_id="team-a"');
+    });
+
+    it('records upstream_host and client_identity labels when provided (OBS-02)', async () => {
+      metrics.recordToolCall('manage_badges', 'success', 0.5, {
+        profileId: 'gitlab',
+        tenantId: 'team-a',
+        upstreamHost: 'api.example.com',
+        clientIdentity: 'svc-account',
+      });
+
+      const output = await metrics.getMetrics();
+
+      expect(output).toContain('test_tool_calls_total');
+      expect(output).toContain('upstream_host="api.example.com"');
+      expect(output).toContain('client_identity="svc-account"');
+      // Duration histogram should also carry the new dimensions
+      expect(output).toContain('test_tool_call_duration_seconds');
+    });
+
+    it('defaults upstream_host to "none" and client_identity to "anonymous" when omitted (OBS-02)', async () => {
+      metrics.recordToolCall('manage_badges', 'success', 0.5, {
+        profileId: 'gitlab',
+        tenantId: 'team-a',
+      });
+
+      const output = await metrics.getMetrics();
+
+      expect(output).toContain('upstream_host="none"');
+      expect(output).toContain('client_identity="anonymous"');
+    });
+
+    it('truncates client_identity to 64 chars (OBS-02)', async () => {
+      const longIdentity = 'c'.repeat(100);
+      metrics.recordToolCall('manage_badges', 'success', 0.1, {
+        profileId: 'gitlab',
+        tenantId: 'team-a',
+        clientIdentity: longIdentity,
+      });
+
+      const output = await metrics.getMetrics();
+
+      // Should contain exactly 64 'c' characters
+      expect(output).toContain(`client_identity="${'c'.repeat(64)}"`);
+      // Should NOT contain 100-character value (anchored on label value end)
+      expect(output).not.toContain(`client_identity="${'c'.repeat(65)}"`);
+    });
+
+    it('truncates upstream_host to 128 chars (OBS-02)', async () => {
+      const longHost = 'h'.repeat(200);
+      metrics.recordToolCall('manage_badges', 'success', 0.1, {
+        profileId: 'gitlab',
+        tenantId: 'team-a',
+        upstreamHost: longHost,
+      });
+
+      const output = await metrics.getMetrics();
+
+      expect(output).toContain(`upstream_host="${'h'.repeat(128)}"`);
+      expect(output).not.toContain(`upstream_host="${'h'.repeat(129)}"`);
+    });
+
+    it('records upstream_host and client_identity for recordToolCallError (OBS-02)', async () => {
+      metrics.recordToolCallError('manage_badges', 'ValidationError', {
+        profileId: 'gitlab',
+        tenantId: 'team-a',
+        upstreamHost: 'api.example.com',
+        clientIdentity: 'svc-account',
+      });
+
+      const output = await metrics.getMetrics();
+
+      expect(output).toContain('test_tool_call_errors_total');
+      expect(output).toContain('error_type="ValidationError"');
+      expect(output).toContain('upstream_host="api.example.com"');
+      expect(output).toContain('client_identity="svc-account"');
     });
   });
 
