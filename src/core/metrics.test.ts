@@ -384,12 +384,12 @@ describe('MetricsCollector', () => {
       expect(output).not.toContain('foo=bar');
     });
 
-    it('should normalize unknown paths', async () => {
+    it('should normalize unknown paths to other', async () => {
       metrics.recordHttpRequest('GET', '/unknown/path?param=value', 200, 0.1);
 
       const output = await metrics.getMetrics();
 
-      expect(output).toContain('path="/unknown/path"');
+      expect(output).toContain('path="other"');
       expect(output).not.toContain('param=value');
     });
 

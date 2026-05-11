@@ -433,7 +433,7 @@ export class MetricsCollector {
       return pathWithoutQuery;
     }
 
-    return pathWithoutQuery;
+    return 'other';
   }
 
   /**

@@ -105,9 +105,9 @@ const UPSTREAM_TIMEOUT_ERROR_CODE = ErrorCode.RequestTimeout;
  */
 export function extractHost(url: string): string {
   try {
-    return new URL(url).host;
+    return new URL(url).hostname.toLowerCase();
   } catch {
-    return url;
+    return 'unknown';
   }
 }
 
@@ -1026,9 +1026,9 @@ export class MCPServer {
           const durationSeconds = (Date.now() - startTime) / 1000;
           metrics.recordToolCall(toolName, 'success', durationSeconds, metricsContext);
         }
-        // OBS-01: stdio path always reports sessionId=null and clientPrincipal=anonymous
+        // OBS-01: stdio path uses named sentinel 'stdio' so consumers can distinguish it from HTTP sessions
         this.emitAuditToolCall({
-          sessionId: undefined,
+          sessionId: 'stdio',
           metricsContext,
           tool: toolName,
           upstreamHost: stdioUpstreamHost,
@@ -1050,16 +1050,17 @@ export class MCPServer {
           metrics.recordToolCall(toolName, 'error', durationSeconds, metricsContext);
           metrics.recordToolCallError(toolName, this.getMetricsErrorType(err), metricsContext);
         }
+        // Generate correlation ID before audit log so it appears in both audit trail and error log
+        const correlationId = generateCorrelationId();
         this.emitAuditToolCall({
-          sessionId: undefined,
+          sessionId: 'stdio',
           metricsContext,
           tool: toolName,
           upstreamHost: stdioUpstreamHost,
           outcome: 'error',
           startTime,
+          correlationId,
         });
-        // Generate correlation ID only on error (lazy)
-        const correlationId = generateCorrelationId();
         this.logger.error('CallTool handler error', err as Error, { 
           correlationId,
           toolName,
@@ -2271,6 +2272,7 @@ export class MCPServer {
     upstreamHost: string;
     outcome: 'success' | 'error';
     startTime: number;
+    correlationId?: string;
   }): void {
     const clientIdentity =
       typeof args.metricsContext.clientIdentity === 'string' && args.metricsContext.clientIdentity.length > 0
@@ -2283,6 +2285,7 @@ export class MCPServer {
       upstreamHost: args.upstreamHost,
       outcome: args.outcome,
       durationMs: Math.round(Date.now() - args.startTime),
+      correlationId: args.correlationId ?? generateCorrelationId(),
     });
   }
 

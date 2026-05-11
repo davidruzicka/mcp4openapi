@@ -5728,12 +5728,12 @@ paths:
       expect(extractHostFn('https://api.example.com/v1/path')).toBe('api.example.com');
     });
 
-    it('returns host with port when present', () => {
-      expect(extractHostFn('http://localhost:8080/x')).toBe('localhost:8080');
+    it('returns hostname without port', () => {
+      expect(extractHostFn('http://localhost:8080/x')).toBe('localhost');
     });
 
-    it('returns input unchanged when URL parsing throws', () => {
-      expect(extractHostFn('not-a-url')).toBe('not-a-url');
+    it('returns unknown when URL parsing throws', () => {
+      expect(extractHostFn('not-a-url')).toBe('unknown');
     });
   });
 
@@ -5741,7 +5741,7 @@ paths:
   // Stdio path audit log (OBS-01)
   // ---------------------------------------------------------------------------
   describe('stdio audit log (OBS-01)', () => {
-    it('emits audit:tool_call with sessionId=null and clientPrincipal=anonymous on stdio path', async () => {
+    it('emits audit:tool_call with sessionId=stdio and clientPrincipal=anonymous on stdio path', async () => {
       const localServer = new MCPServer();
       const specPath = path.join(process.cwd(), 'profiles/gitlab/openapi.yaml');
       await localServer.initialize(specPath);
@@ -5788,13 +5788,14 @@ paths:
       expect(audits.length).toBeGreaterThanOrEqual(1);
       const payload = audits[audits.length - 1][1] as Record<string, unknown>;
       expect(payload).toMatchObject({
-        sessionId: null,
+        sessionId: 'stdio',
         clientPrincipal: 'anonymous',
         tool: simpleTool.name,
         outcome: 'success',
       });
       expect(typeof payload.upstreamHost).toBe('string');
       expect(typeof payload.durationMs).toBe('number');
+      expect(typeof payload.correlationId).toBe('string');
     });
 
     it('emits audit:tool_call with outcome=error on stdio path when tool throws', async () => {
@@ -5844,7 +5845,7 @@ paths:
       const audits = auditInfo.mock.calls.filter((c: unknown[]) => c[0] === 'audit:tool_call');
       const payload = audits[audits.length - 1][1] as Record<string, unknown>;
       expect(payload.outcome).toBe('error');
-      expect(payload.sessionId).toBe(null);
+      expect(payload.sessionId).toBe('stdio');
       expect(payload.clientPrincipal).toBe('anonymous');
     });
   });
