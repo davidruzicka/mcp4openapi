@@ -130,7 +130,7 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 04-01-PLAN.md - Extend MetricsContextLabels with upstream_host/client_identity, add labels to counters/histograms, audit log for all tools/call paths (OBS-01, OBS-02)
+- [x] 04-01-PLAN.md - Extend MetricsContextLabels with upstream_host/client_identity, add labels to counters/histograms, audit log for all tools/call paths (OBS-01, OBS-02)
 - [x] 04-02-PLAN.md - Add /ready readiness probe endpoint, update normalizePath for /ready (OBS-03)
 
 ### Phase 5: Upstream OAuth Proxy
