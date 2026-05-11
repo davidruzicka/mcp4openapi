@@ -253,7 +253,8 @@ describe('MetricsCollector', () => {
       metrics.recordToolCall('manage_badges', 'success', 0.2);
       metrics.recordApiCall('get_project_badges', 200, 0.2);
       const output = await metrics.getMetrics();
-      expect(output).toContain('test_tool_calls_total{tool="manage_badges",status="success",profile_id="unknown",tenant_id="none"} 1');
+      // OBS-02: tool_calls_total carries upstream_host and client_identity dimensions
+      expect(output).toContain('test_tool_calls_total{tool="manage_badges",status="success",profile_id="unknown",tenant_id="none",upstream_host="none",client_identity="anonymous"} 1');
       expect(output).toContain('test_api_calls_total{operation="get_project_badges",status="2xx",profile_id="unknown",tenant_id="none"} 1');
     });
 
