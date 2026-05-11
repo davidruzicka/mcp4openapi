@@ -43,13 +43,13 @@ Milestone: v1 - Proxy foundation + security gate
 
 ### Observability
 
-- [ ] **OBS-01**: Every tools/call request produces a structured audit log entry containing: session
+- [x] **OBS-01**: Every tools/call request produces a structured audit log entry containing: session
   ID, resolved client identity, tool name, upstream server URL (host only, no credentials),
   invocation outcome (success/error code), and wall-clock duration
-- [ ] **OBS-02**: Prometheus metrics expose per-upstream and per-client-identity counters and
+- [x] **OBS-02**: Prometheus metrics expose per-upstream and per-client-identity counters and
   latency histograms for tools/list and tools/call requests; existing prom-client registry is
   extended (no second registry)
-- [ ] **OBS-03**: GET /health returns 200 when the server is running; GET /ready returns 200 when
+- [x] **OBS-03**: GET /health returns 200 when the server is running; GET /ready returns 200 when
   at least one profile is loaded and the server can accept sessions; both endpoints are unauthenticated
 
 ### Reliability
@@ -121,9 +121,9 @@ Milestone: v1 - Proxy foundation + security gate
 | AUTH-03 | Phase 3 (partial), Phase 4 (complete) | Complete |
 | SEC-01 | Phase 2 | Complete |
 | SEC-02 | Phase 1 | Complete |
-| OBS-01 | Phase 5 | Pending |
-| OBS-02 | Phase 5 | Pending |
-| OBS-03 | Phase 5 | Pending |
+| OBS-01 | Phase 5 | Complete |
+| OBS-02 | Phase 5 | Complete |
+| OBS-03 | Phase 5 | Complete |
 | REL-01 | Phase 1 | Complete |
 | REL-02 | Phase 1 | Complete |
 | REL-03 | Phase 1 | Complete |

@@ -131,7 +131,7 @@ Plans:
 
 Plans:
 - [ ] 04-01-PLAN.md - Extend MetricsContextLabels with upstream_host/client_identity, add labels to counters/histograms, audit log for all tools/call paths (OBS-01, OBS-02)
-- [ ] 04-02-PLAN.md - Add /ready readiness probe endpoint, update normalizePath for /ready (OBS-03)
+- [x] 04-02-PLAN.md - Add /ready readiness probe endpoint, update normalizePath for /ready (OBS-03)
 
 ### Phase 5: Upstream OAuth Proxy
 **Goal**: Non-technical users can authorize gateway access to upstream MCP servers via a single OAuth browser confirmation; upstream tokens survive gateway restarts via encrypted payload in the gateway token
@@ -175,6 +175,6 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6
 | 1. Upstream Session Foundation | 5/5 | Complete | 2026-03-30 |
 | 2. Tool Discovery and Call Proxy | 3/3 | Complete | 2026-03-30 |
 | 3. Client Auth Gate (API Keys) | 3/3 | Complete | 2026-04-30 |
-| 4. Observability | 0/2 | Not started | - |
+| 4. Observability | 1/2 | In Progress|  |
 | 5. Upstream OAuth Proxy | 0/3 | Not started | - |
 | 6. Client Auth Gate (OIDC JWT) | 0/3 | Not started | - |

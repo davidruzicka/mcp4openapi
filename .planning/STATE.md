@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: Ready to plan
-stopped_at: Completed 03.4-04-PLAN.md
-last_updated: "2026-05-06T07:42:19.749Z"
+status: Phase complete — ready for verification
+stopped_at: Completed 04-observability-01-PLAN.md
+last_updated: "2026-05-11T13:47:23.385Z"
 progress:
   total_phases: 10
   completed_phases: 7
-  total_plans: 23
-  completed_plans: 23
+  total_plans: 25
+  completed_plans: 24
 ---
 
 # Project State
@@ -19,12 +19,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-26)
 
 **Core value:** A security boundary between internal AI clients and all upstream MCP servers - one place to authenticate, authorize, audit, and proxy every tool call.
-**Current focus:** Phase 03.4 — encrypted-token-envelope
+**Current focus:** Phase 04 — observability
 
 ## Current Position
 
-Phase: 04
-Plan: Not started
+Phase: 04 (observability) — EXECUTING
+Plan: 2 of 2
 
 ## Performance Metrics
 
@@ -68,6 +68,8 @@ Plan: Not started
 | Phase 03.4-encrypted-token-envelope P02 | 3min | 1 tasks | 3 files |
 | Phase 03.4-encrypted-token-envelope P03 | 12min | 3 tasks | 3 files |
 | Phase 03.4-encrypted-token-envelope P04 | 2min | 1 tasks | 5 files |
+| Phase 04-observability P02 | 13min | 1 tasks | 4 files |
+| Phase 04-observability P01 | 24min | 2 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -132,6 +134,16 @@ Recent decisions affecting current work:
 - [Phase 03.4-encrypted-token-envelope]: [Phase 03.4-04]: CHANGELOG entry consolidation - two prior plan-internal Added bullets (crypto module / HTTP transport wiring) folded into one user-perspective line per AGENTS.md compress-lines rule and the plan's exactly-1-match acceptance criterion
 - [Phase 03.4-encrypted-token-envelope]: [Phase 03.4-04]: README.md MCP4_TOKEN_MAX_LENGTH default updated from 1000 to 4096 alongside the new MCP4_TOKEN_KEY entry - closes the documentation drift introduced when Plan 03 raised the runtime default
 - [Phase 03.4-encrypted-token-envelope]: [Phase 03.4-04]: Encrypted Token Envelopes section uses ## (top-level) depth in HTTP-TRANSPORT.md to match neighboring Session Management / SSE Resumability sections, not ### like the Session Storage subsection it follows
+- [Phase 04-observability]: [Phase 04-02]: /ready uses mcpRateLimiter only (no explicit auth bypass) - clientAuthGate lives inside handlePost, not at route level - mirrors /health exactly; passes local statusCode (not res.statusCode) to recordHttpRequest for deterministic capture
+- [Phase 04-observability]: [Phase 04-02]: Explicit '/ready' branch in normalizePath() despite functional no-op - documents gateway's stable surface and guards against future dynamic-prefix paths being introduced
+- [Phase 04-observability]: [Phase 04-02]: Default test fixture has empty profileStates - exercises 503 path naturally; 200 path uses existing createProfileState helper - no new test infrastructure introduced
+- [Phase 04-observability]: [Phase 04-01]: emitAuditToolCall helper centralizes audit-log shape (sessionId/clientPrincipal/tool/upstreamHost/outcome/durationMs) - one grep target across HTTP success/error, OAuth reject, all upstream early-rejects, upstream proxy, and stdio paths
+- [Phase 04-observability]: [Phase 04-01]: resolveMetricsContext always populates clientIdentity with 'anonymous' fallback (never undefined) so audit + metric label dimensions are well-defined at every emission site
+- [Phase 04-observability]: [Phase 04-01]: client_identity capped at 64 chars, upstream_host at 128 chars - bounds Prometheus cardinality without truncating typical identities/hostnames; caps live as named constants in metrics.ts close to the data structure they protect
+- [Phase 04-observability]: [Phase 04-01]: recordSessionCreated/Destroyed pass explicit {profile_id, tenant_id} subset to inc/dec - the wider 4-key resolveContextLabels return would trigger prom-client validateLabel rejects on session counters not registered with the new dimensions; tool-call metrics intentionally consume the full shape
+- [Phase 04-observability]: [Phase 04-01]: safeBaseUrlHost() private wrapper makes observability defensive against partial-parser test doubles - getBaseUrl() throws degrade to 'none' label rather than propagate through tool-call hot path
+- [Phase 04-observability]: [Phase 04-01]: recordUpstreamReject extended with sessionId and emits both metrics + audit log in one place so reject-outcome dimensions cannot drift between Prometheus counter and audit trail
+- [Phase 04-observability]: [Phase 04-01]: local-tool path re-derives upstreamHost from tenantBaseUrl when present so tenant-routed calls label the actual target, not the global default captured at handleToolCall entry
 
 ### Roadmap Evolution
 
@@ -152,6 +164,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-06T07:35:27.156Z
-Stopped at: Completed 03.4-04-PLAN.md
+Last session: 2026-05-11T13:47:23.380Z
+Stopped at: Completed 04-observability-01-PLAN.md
 Resume file: None
