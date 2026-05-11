@@ -411,25 +411,28 @@ export class MetricsCollector {
 
   /**
    * Normalize path for metrics (remove dynamic segments)
-   * 
+   *
    * Why: Avoid high cardinality in metrics labels
-   * 
+   *
    * Examples:
    * - /mcp?sessionId=abc123 -> /mcp
    * - /metrics -> /metrics
    * - /health -> /health
+   * - /ready -> /ready
    */
   private normalizePath(path: string): string {
     // Remove query string
     const pathWithoutQuery = path.split('?')[0];
-    
-    // Known paths
+
+    // Known paths - explicit allowlist documents the gateway's stable surface
+    // and guards against future code paths that might prepend dynamic segments.
     if (pathWithoutQuery === '/mcp' ||
         pathWithoutQuery === '/metrics' ||
-        pathWithoutQuery === '/health') {
+        pathWithoutQuery === '/health' ||
+        pathWithoutQuery === '/ready') {
       return pathWithoutQuery;
     }
-    
+
     return pathWithoutQuery;
   }
 

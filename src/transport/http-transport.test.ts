@@ -1828,6 +1828,49 @@ describeIfListen('HttpTransport', () => {
     });
   });
 
+  describe('Readiness Endpoint', () => {
+    it('returns 503 with not-ready status when no profiles are loaded', async () => {
+      // Default `transport` fixture has zero profiles loaded
+      const response = await request(app).get('/ready');
+
+      expect(response.status).toBe(503);
+      expect(response.body).toHaveProperty('status', 'not ready');
+      expect(response.body).toHaveProperty('reason', 'no profiles loaded');
+    });
+
+    it('returns 200 with ready status when at least one profile is loaded', async () => {
+      createProfileState(transport as any, 'default');
+
+      const response = await request(app).get('/ready');
+
+      expect(response.status).toBe(200);
+      expect(response.body).toHaveProperty('status', 'ready');
+      expect(response.body).toHaveProperty('profiles');
+      expect(typeof response.body.profiles).toBe('number');
+      expect(response.body.profiles).toBeGreaterThan(0);
+    });
+
+    it('reports the correct profile count', async () => {
+      createProfileState(transport as any, 'profile-a');
+      createProfileState(transport as any, 'profile-b');
+
+      const response = await request(app).get('/ready');
+
+      expect(response.status).toBe(200);
+      expect(response.body.profiles).toBe(2);
+    });
+
+    it('is unauthenticated - no Authorization header required', async () => {
+      // Deliberately no .set('Authorization', ...) header
+      const response = await request(app).get('/ready');
+
+      // Must never return 401 or 403 - readiness is always accessible
+      expect(response.status).not.toBe(401);
+      expect(response.status).not.toBe(403);
+      expect([200, 503]).toContain(response.status);
+    });
+  });
+
   describe('Message Type Detection', () => {
     it('should detect request message', async () => {
       transport.setMessageHandler(async (_msg) => ({ result: 'ok' }));

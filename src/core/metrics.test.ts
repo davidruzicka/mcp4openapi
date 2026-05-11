@@ -361,17 +361,34 @@ describe('MetricsCollector', () => {
 
     it('should normalize /metrics path', async () => {
       metrics.recordHttpRequest('GET', '/metrics', 200, 0.1);
-      
+
       const output = await metrics.getMetrics();
-      
+
       expect(output).toContain('path="/metrics"');
+    });
+
+    it('should normalize /ready path', async () => {
+      metrics.recordHttpRequest('GET', '/ready', 200, 0.1);
+
+      const output = await metrics.getMetrics();
+
+      expect(output).toContain('path="/ready"');
+    });
+
+    it('should normalize /ready path with query string', async () => {
+      metrics.recordHttpRequest('GET', '/ready?foo=bar', 503, 0.1);
+
+      const output = await metrics.getMetrics();
+
+      expect(output).toContain('path="/ready"');
+      expect(output).not.toContain('foo=bar');
     });
 
     it('should normalize unknown paths', async () => {
       metrics.recordHttpRequest('GET', '/unknown/path?param=value', 200, 0.1);
-      
+
       const output = await metrics.getMetrics();
-      
+
       expect(output).toContain('path="/unknown/path"');
       expect(output).not.toContain('param=value');
     });

@@ -1658,6 +1658,31 @@ export class HttpTransport {
       }
     });
 
+    // Readiness probe - returns 503 until at least one profile is loaded.
+    // Unauthenticated: clientAuthGate is only applied inside handlePost, not at route level.
+    // Kubernetes readinessProbe and load balancers require a dedicated /ready endpoint
+    // distinct from /health (liveness).
+    this.app.get('/ready', mcpRateLimiter, (req: Request, res: Response) => {
+      const startTime = Date.now();
+      const profilesLoaded = this.profileStates.size;
+      const ready = profilesLoaded > 0;
+      const statusCode = ready ? 200 : 503;
+      res.status(statusCode).json(
+        ready
+          ? { status: 'ready', profiles: profilesLoaded }
+          : { status: 'not ready', reason: 'no profiles loaded' }
+      );
+
+      if (this.metrics) {
+        const duration = (Date.now() - startTime) / 1000;
+        // Pass the local statusCode (not res.statusCode) to avoid any race with res state.
+        this.metrics.recordHttpRequest(req.method, req.path, statusCode, duration, {
+          profileId: 'unknown',
+          tenantId: 'none',
+        });
+      }
+    });
+
     if (this.config.profileIndexEnabled) {
       this.app.get('/', mcpRateLimiter, async (req: Request, res: Response) => {
         await this.handleProfileIndex(req, res);
