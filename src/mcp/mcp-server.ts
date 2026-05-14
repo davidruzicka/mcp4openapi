@@ -93,8 +93,6 @@ type EnterpriseToolCategory = 'list' | 'read' | 'modify' | 'admin';
 const UPSTREAM_TIMEOUT_ERROR_CODE = ErrorCode.RequestTimeout;
 
 const STDIO_SESSION_ID = 'stdio' as const;
-const AUDIT_TOOL_MAX_LEN = 255;
-const AUDIT_CLIENT_PRINCIPAL_MAX_LEN = 64;
 
 /**
  * Extract the hostname (no port, no scheme, no credentials) from a URL string.
@@ -1690,7 +1688,7 @@ export class MCPServer {
         return {
           jsonrpc: '2.0', id: req.id, error: {
             code: -32002,
-            message: `Tool name must be a string, got: '${String(params.name).slice(0, 100)}'`,
+            message: `Tool name must be a string, got: '${String(params.name).slice(0, INPUT_LIMITS.TOOL_NAME_ERROR_MSG)}'`,
           },
         };
       }
@@ -1725,7 +1723,7 @@ export class MCPServer {
         return {
           jsonrpc: '2.0', id: req.id, error: {
             code: -32002,
-            message: `Tool name '${toolName.slice(0, 100)}' is not allowed - upstream tool names must match [a-zA-Z0-9_-] and be at most 255 characters.`,
+            message: `Tool name '${toolName.slice(0, INPUT_LIMITS.TOOL_NAME_ERROR_MSG)}' is not allowed - upstream tool names must match [a-zA-Z0-9_-] and be at most 255 characters.`,
           },
         };
       }
@@ -1754,7 +1752,7 @@ export class MCPServer {
         return {
           jsonrpc: '2.0', id: req.id, error: {
             code: -32002,
-            message: `Tool '${toolName.slice(0, 100)}' is not in the upstream sanitized tool set - it may have been removed by sanitization policy.`,
+            message: `Tool '${toolName.slice(0, INPUT_LIMITS.TOOL_NAME_ERROR_MSG)}' is not in the upstream sanitized tool set - it may have been removed by sanitization policy.`,
           },
         };
       }
@@ -2129,7 +2127,7 @@ export class MCPServer {
     // Guards against future call paths that skip the outer isValidUpstreamToolName() check.
     if (!isValidUpstreamToolName(toolName)) {
       throw new UpstreamConnectionError(
-        `Invalid tool name rejected by upstream proxy: '${String(toolName).slice(0, 100)}'`,
+        `Invalid tool name rejected by upstream proxy: '${String(toolName).slice(0, INPUT_LIMITS.TOOL_NAME_ERROR_MSG)}'`,
         provider.name,
       );
     }
@@ -2153,18 +2151,7 @@ export class MCPServer {
       const result = await (provider.timeout_ms !== undefined
         ? client.callTool({ name: toolName, arguments: args }, undefined, { timeout: provider.timeout_ms })
         : client.callTool({ name: toolName, arguments: args }));
-      if (metricsBundle) {
-        const durationSeconds = (Date.now() - startTime) / 1000;
-        metricsBundle.collector.recordToolCall(toolName, 'success', durationSeconds, metricsBundle.context);
-      }
-      this.emitAuditToolCall({
-        sessionId,
-        metricsContext: auditContext,
-        tool: toolName,
-        upstreamHost: upstreamHostForAudit,
-        outcome: 'success',
-        startTime,
-      });
+      this.recordUpstreamOutcome('success', toolName, sessionId, startTime, auditContext, upstreamHostForAudit, metricsBundle);
       // Forward as-is including isError: true (tool-level errors are valid MCP responses)
       return {
         jsonrpc: '2.0',
@@ -2172,19 +2159,7 @@ export class MCPServer {
         result,
       };
     } catch (error) {
-      if (metricsBundle) {
-        const durationSeconds = (Date.now() - startTime) / 1000;
-        metricsBundle.collector.recordToolCall(toolName, 'error', durationSeconds, metricsBundle.context);
-        metricsBundle.collector.recordToolCallError(toolName, this.getMetricsErrorType(error), metricsBundle.context);
-      }
-      this.emitAuditToolCall({
-        sessionId,
-        metricsContext: auditContext,
-        tool: toolName,
-        upstreamHost: upstreamHostForAudit,
-        outcome: 'error',
-        startTime,
-      });
+      this.recordUpstreamOutcome('error', toolName, sessionId, startTime, auditContext, upstreamHostForAudit, metricsBundle, error);
       return {
         jsonrpc: '2.0',
         id: (req as Record<string, unknown>).id,
@@ -2269,18 +2244,51 @@ export class MCPServer {
     startTime: number;
     correlationId?: string;
   }): void {
-    const clientIdentity =
+    const rawClientIdentity =
       typeof args.metricsContext.clientIdentity === 'string' && args.metricsContext.clientIdentity.length > 0
-        ? args.metricsContext.clientIdentity.slice(0, AUDIT_CLIENT_PRINCIPAL_MAX_LEN)
+        ? args.metricsContext.clientIdentity
         : 'anonymous';
     this.logger.info('audit:tool_call', {
       sessionId: args.sessionId ?? null,
-      clientPrincipal: clientIdentity,
-      tool: args.tool.slice(0, AUDIT_TOOL_MAX_LEN),
+      clientPrincipal: this.truncateAuditField(rawClientIdentity, INPUT_LIMITS.CLIENT_PRINCIPAL_AUDIT, 'clientPrincipal'),
+      tool: this.truncateAuditField(args.tool, INPUT_LIMITS.TOOL_NAME_AUDIT, 'tool'),
       upstreamHost: args.upstreamHost,
       outcome: args.outcome,
       durationMs: Math.max(0, Math.round(Date.now() - args.startTime)),
       correlationId: args.correlationId ?? generateCorrelationId(),
+    });
+  }
+
+  private truncateAuditField(value: string, max: number, field: string): string {
+    if (value.length <= max) return value;
+    this.logger.warn('audit field truncated', { field, original_length: value.length, max });
+    return value.slice(0, max);
+  }
+
+  private recordUpstreamOutcome(
+    outcome: 'success' | 'error',
+    toolName: string,
+    sessionId: string | undefined,
+    startTime: number,
+    auditContext: MetricsContextLabels,
+    upstreamHostForAudit: string,
+    metricsBundle: { collector: MetricsCollector; context: MetricsContextLabels } | undefined,
+    error?: unknown,
+  ): void {
+    if (metricsBundle) {
+      const durationSeconds = (Date.now() - startTime) / 1000;
+      metricsBundle.collector.recordToolCall(toolName, outcome, durationSeconds, metricsBundle.context);
+      if (outcome === 'error' && error !== undefined) {
+        metricsBundle.collector.recordToolCallError(toolName, this.getMetricsErrorType(error), metricsBundle.context);
+      }
+    }
+    this.emitAuditToolCall({
+      sessionId,
+      metricsContext: auditContext,
+      tool: toolName,
+      upstreamHost: upstreamHostForAudit,
+      outcome,
+      startTime,
     });
   }
 
@@ -3175,7 +3183,7 @@ export class MCPServer {
     // with the metric, but the original (untruncated) name is logged at debug level
     // by upstream callers when needed - audit logs are operator-facing and should
     // never inject very long names into the log pipeline.
-    const safeToolName = toolName.slice(0, 64);
+    const safeToolName = toolName.slice(0, INPUT_LIMITS.TOOL_NAME_LABEL);
     if (metrics) {
       const durationSeconds = (Date.now() - startTime) / 1000;
       metrics.recordToolCall(safeToolName, 'error', durationSeconds, metricsContext);

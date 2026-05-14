@@ -124,7 +124,11 @@ export const PROXY_CREDENTIALS = {
 } as const;
 
 export const INPUT_LIMITS = {
-  METHOD_NAME_LOG: 200,   // max chars of req.method reflected in server logs
-  PROMPT_NAME: 256,       // max chars for prompts/get "name" param
-  RESOURCE_URI: 2048,     // max chars for resources/read "uri" param
+  METHOD_NAME_LOG: 200,        // max chars of req.method reflected in server logs
+  PROMPT_NAME: 256,            // max chars for prompts/get "name" param
+  RESOURCE_URI: 2048,          // max chars for resources/read "uri" param
+  TOOL_NAME_ERROR_MSG: 100,    // max chars of tool name reflected in error messages to clients
+  TOOL_NAME_AUDIT: 255,        // max chars of tool name in audit:tool_call log entries
+  TOOL_NAME_LABEL: 64,         // max chars of tool name used as a Prometheus label value
+  CLIENT_PRINCIPAL_AUDIT: 64,  // max chars of clientPrincipal in audit:tool_call log entries
 } as const;
