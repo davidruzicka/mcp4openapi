@@ -43,6 +43,7 @@ function mockProfileRegistry() {
   vi.doMock('../profile/profile-registry.js', () => ({
     ProfileRegistry: class {
       constructor() {}
+      listProfilesForIndex = async () => [{ profileId: 'default' }];
     },
   }));
 }

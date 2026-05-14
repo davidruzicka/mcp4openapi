@@ -143,7 +143,6 @@ export class HttpTransport {
   private messageHandler: ((message: unknown, sessionId?: string, profileId?: string) => Promise<unknown>) | null = null;
   private profileContextProvider: ((profileId: string) => Promise<HttpProfileContext | null>) | null = null;
   private profileStates: Map<string, ProfileRuntimeState> = new Map();
-  private serverStarted = false;
   private oauthRedirectHostCache: Map<string, string[]> = new Map();
   private warnedMissingOAuthRedirectEnvVars: Set<string> = new Set();
   private profileHintsByClient: Map<string, { profileId: string; lastSeen: number }> = new Map();
@@ -1660,14 +1659,12 @@ export class HttpTransport {
     });
 
     // Readiness probe - unauthenticated, distinct from /health (liveness).
-    // Shallow check: tests only in-memory profileStates and server-started flag, no I/O.
-    // profileStates is lazily populated on first MCP request; serverStarted is set when
-    // listen() succeeds. Together they avoid the k8s bootstrapping deadlock where the pod
-    // never receives traffic because profileStates starts empty.
+    // Startup validation in index.ts guarantees at least one profile exists before
+    // listen() is called, so profileStates.size > 0 is the correct readiness condition.
     this.app.get('/ready', mcpRateLimiter, (req: Request, res: Response) => {
       const startTime = Date.now();
       const profilesInitialized = this.profileStates.size;
-      const ready = profilesInitialized > 0 || this.serverStarted;
+      const ready = profilesInitialized > 0;
       const statusCode = ready ? 200 : 503;
       res.status(statusCode).json(
         ready
@@ -4636,7 +4633,6 @@ export class HttpTransport {
                 TIMEOUTS.CLEANUP_INTERVAL_MS
               );
 
-              this.serverStarted = true;
               resolve();
             });
           } catch (sslError) {
@@ -4660,7 +4656,6 @@ export class HttpTransport {
               TIMEOUTS.CLEANUP_INTERVAL_MS
             );
 
-            this.serverStarted = true;
             resolve();
           });
         }
