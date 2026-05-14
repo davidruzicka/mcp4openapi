@@ -2250,8 +2250,8 @@ export class MCPServer {
         : 'anonymous';
     this.logger.info('audit:tool_call', {
       sessionId: args.sessionId ?? null,
-      clientPrincipal: this.truncateAuditField(rawClientIdentity, INPUT_LIMITS.CLIENT_PRINCIPAL_AUDIT, 'clientPrincipal'),
-      tool: this.truncateAuditField(args.tool, INPUT_LIMITS.TOOL_NAME_AUDIT, 'tool'),
+      clientPrincipal: this.truncateWithWarn(rawClientIdentity, INPUT_LIMITS.CLIENT_PRINCIPAL_AUDIT, 'clientPrincipal'),
+      tool: this.truncateWithWarn(args.tool, INPUT_LIMITS.TOOL_NAME_AUDIT, 'tool'),
       upstreamHost: args.upstreamHost,
       outcome: args.outcome,
       durationMs: Math.max(0, Math.round(Date.now() - args.startTime)),
@@ -2259,7 +2259,7 @@ export class MCPServer {
     });
   }
 
-  private truncateAuditField(value: string, max: number, field: string): string {
+  private truncateWithWarn(value: string, max: number, field: string): string {
     if (value.length <= max) return value;
     this.logger.warn('audit field truncated', { field, original_length: value.length, max });
     return value.slice(0, max);
@@ -3178,7 +3178,9 @@ export class MCPServer {
     metricsContext: MetricsContextLabels,
     sessionId?: string,
   ): void {
-    const safeToolName = this.truncateAuditField(toolName, INPUT_LIMITS.TOOL_NAME_LABEL, 'tool (label)');
+    // Cap at TOOL_NAME_LABEL before use as Prometheus label to bound cardinality.
+    // Audit log reuses the same value for consistency — metric and audit cannot disagree on the name.
+    const safeToolName = this.truncateWithWarn(toolName, INPUT_LIMITS.TOOL_NAME_LABEL, 'tool (label)');
     if (metrics) {
       const durationSeconds = (Date.now() - startTime) / 1000;
       metrics.recordToolCall(safeToolName, 'error', durationSeconds, metricsContext);
