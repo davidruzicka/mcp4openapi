@@ -11,6 +11,7 @@
  */
 
 import { Registry, Counter, Gauge, Histogram } from 'prom-client';
+import { INPUT_LIMITS } from './constants.js';
 
 export interface MetricsCollectorConfig {
   enabled: boolean;
@@ -35,8 +36,6 @@ export interface MetricsContextLabels {
 
 /** Max chars for the upstream_host Prometheus label - bounds cardinality. */
 const UPSTREAM_HOST_LABEL_MAX = 128;
-/** Max chars for the tool Prometheus label - bounds cardinality on the reject path. */
-const TOOL_LABEL_MAX = 64;
 
 export class MetricsCollector {
   private registry: Registry;
@@ -272,7 +271,7 @@ export class MetricsCollector {
   ): void {
     if (!this.enabled) return;
     const labels = this.resolveContextLabels(context);
-    const safeToolName = tool.slice(0, TOOL_LABEL_MAX);
+    const safeToolName = tool.slice(0, INPUT_LIMITS.TOOL_NAME_LABEL);
 
     this.mcpToolCallsTotal.inc({
       tool: safeToolName,
@@ -300,7 +299,7 @@ export class MetricsCollector {
     if (!this.enabled) return;
     const labels = this.resolveContextLabels(context);
     this.mcpToolCallErrors.inc({
-      tool: tool.slice(0, TOOL_LABEL_MAX),
+      tool: tool.slice(0, INPUT_LIMITS.TOOL_NAME_LABEL),
       error_type: errorType,
       profile_id: labels.profile_id,
       tenant_id: labels.tenant_id,

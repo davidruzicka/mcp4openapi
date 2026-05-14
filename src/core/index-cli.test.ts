@@ -438,6 +438,46 @@ describe('CLI main flow', () => {
     expect(process.env.MCP4_OAUTH_TOKEN_URL).toBe('https://legacy.example.com/oauth/token');
   });
 
+  it('exits when no profiles found in HTTP profile routing mode', async () => {
+    process.env.MCP4_TRANSPORT = 'http';
+    process.env.MCP4_HTTP_PROFILE_ROUTING = 'true';
+    process.env.MCP4_OPENAPI_SPEC_PATH = 'spec.yaml';
+
+    const exitSpy = vi
+      .spyOn(process, 'exit')
+      .mockImplementation(((code?: number) => {
+        throw new Error(`exit ${code}`);
+      }) as never);
+
+    mockLogger();
+    mockCliConfig();
+    mockStartupValidation();
+    mockTransportConfig();
+    mockServerManager();
+    mockHttpTransport();
+    mockMcpServer();
+    mockStartupProfile({
+      specPath: 'spec.yaml',
+      profilePath: undefined,
+      profileId: undefined,
+      defaultProfile: undefined,
+      hasExplicitSpecPath: true,
+    });
+
+    // Override registry mock to return empty profile list
+    vi.doMock('../profile/profile-registry.js', () => ({
+      ProfileRegistry: class {
+        constructor() {}
+        listProfilesForIndex = async () => [];
+      },
+    }));
+
+    const { main } = await import('./index.js');
+
+    await expect(main()).rejects.toThrow('exit 1');
+    expect(exitSpy).toHaveBeenCalledWith(1);
+  });
+
   it('exits on routing error', async () => {
     process.env.MCP4_TRANSPORT = 'http';
     process.env.MCP4_HTTP_PROFILE_ROUTING = 'true';

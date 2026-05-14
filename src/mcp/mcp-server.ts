@@ -106,7 +106,7 @@ const STDIO_SESSION_ID = 'stdio' as const;
  */
 export function extractHost(url: string): string {
   try {
-    return new URL(url).hostname.toLowerCase();
+    return new URL(url).hostname.toLowerCase() || 'unknown';
   } catch {
     return 'unknown';
   }
@@ -3178,17 +3178,16 @@ export class MCPServer {
     metricsContext: MetricsContextLabels,
     sessionId?: string,
   ): void {
-    // Cap at TOOL_NAME_LABEL before use as Prometheus label to bound cardinality.
-    // Audit log reuses the same value for consistency — metric and audit cannot disagree on the name.
-    const safeToolName = this.truncateWithWarn(toolName, INPUT_LIMITS.TOOL_NAME_LABEL, 'tool (label)');
     if (metrics) {
       const durationSeconds = (Date.now() - startTime) / 1000;
-      metrics.recordToolCall(safeToolName, 'error', durationSeconds, metricsContext);
-      metrics.recordToolCallError(safeToolName, errorType, metricsContext);
+      // Pass raw toolName — MetricsCollector truncates at TOOL_NAME_LABEL internally.
+      metrics.recordToolCall(toolName, 'error', durationSeconds, metricsContext);
+      metrics.recordToolCallError(toolName, errorType, metricsContext);
     }
     // OBS-01: emit audit:tool_call for every upstream early-reject so the audit
     // trail covers policy/filter/sanitization rejections, not just successful
     // proxy calls. upstreamHost is carried on metricsContext (OBS-02).
+    // Pass raw toolName — emitAuditToolCall truncates at TOOL_NAME_AUDIT internally.
     const upstreamHost =
       typeof metricsContext.upstreamHost === 'string' && metricsContext.upstreamHost.length > 0
         ? metricsContext.upstreamHost
@@ -3196,7 +3195,7 @@ export class MCPServer {
     this.emitAuditToolCall({
       sessionId,
       metricsContext,
-      tool: safeToolName,
+      tool: toolName,
       upstreamHost,
       outcome: 'error',
       startTime,

@@ -5194,7 +5194,7 @@ paths:
         );
       });
 
-      it('truncates oversized tool name to 64 chars in reject metric labels', async () => {
+      it('passes raw tool name to MetricsCollector on reject (MetricsCollector truncates internally)', async () => {
         const metrics = makeMetrics();
         (upstreamServer as any).httpTransport.getMetricsCollector = () => metrics;
         const longName = 'a'.repeat(300);
@@ -5206,11 +5206,12 @@ paths:
         ) as any;
 
         expect(response.error).toBeDefined();
+        // recordUpstreamReject passes raw name; MetricsCollector.recordToolCall truncates at 64 internally
         expect(metrics.recordToolCall).toHaveBeenCalledWith(
-          'a'.repeat(64), 'error', expect.any(Number), expect.any(Object),
+          longName, 'error', expect.any(Number), expect.any(Object),
         );
         expect(metrics.recordToolCallError).toHaveBeenCalledWith(
-          'a'.repeat(64), 'InvalidToolName', expect.any(Object),
+          longName, 'InvalidToolName', expect.any(Object),
         );
       });
     });
@@ -5812,6 +5813,45 @@ paths:
 
     it('returns unknown when URL parsing throws', () => {
       expect(extractHostFn('not-a-url')).toBe('unknown');
+    });
+
+    it('returns unknown for URL with empty hostname (e.g. http://)', () => {
+      // new URL('http://') does not throw in Node.js — hostname is empty string
+      expect(extractHostFn('http://')).toBe('unknown');
+    });
+
+    it('returns unknown for empty string', () => {
+      expect(extractHostFn('')).toBe('unknown');
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // truncateWithWarn (OBS-01)
+  // ---------------------------------------------------------------------------
+  describe('truncateWithWarn (OBS-01)', () => {
+    it('emits logger.warn when value exceeds max', () => {
+      const server = new MCPServer();
+      const fakeLogger = { info: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn() };
+      (server as any).logger = fakeLogger;
+
+      const result = (server as any).truncateWithWarn('a'.repeat(100), 64, 'tool');
+
+      expect(result).toBe('a'.repeat(64));
+      expect(fakeLogger.warn).toHaveBeenCalledWith(
+        'audit field truncated',
+        expect.objectContaining({ field: 'tool', original_length: 100, max: 64 }),
+      );
+    });
+
+    it('does not warn when value is at or below max', () => {
+      const server = new MCPServer();
+      const fakeLogger = { info: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn() };
+      (server as any).logger = fakeLogger;
+
+      const result = (server as any).truncateWithWarn('a'.repeat(64), 64, 'tool');
+
+      expect(result).toBe('a'.repeat(64));
+      expect(fakeLogger.warn).not.toHaveBeenCalled();
     });
   });
 
