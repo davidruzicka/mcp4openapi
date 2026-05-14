@@ -1829,13 +1829,25 @@ describeIfListen('HttpTransport', () => {
   });
 
   describe('Readiness Endpoint', () => {
-    it('returns 503 with not-ready status when no profiles are loaded', async () => {
-      // Default `transport` fixture has zero profiles loaded
+    it('returns 503 with not-ready status when server not started and no profiles loaded', async () => {
+      // Default fixture: no start() called, no profileStates seeded
       const response = await request(app).get('/ready');
 
       expect(response.status).toBe(503);
       expect(response.body).toHaveProperty('status', 'not ready');
       expect(response.body).toHaveProperty('reason', 'no profiles loaded');
+    });
+
+    it('returns 200 once server has started (bootstrapping fix: k8s readiness before first client)', async () => {
+      // Simulate start() completing by setting the private flag directly
+      (transport as any).serverStarted = true;
+
+      const response = await request(app).get('/ready');
+
+      expect(response.status).toBe(200);
+      expect(response.body).toHaveProperty('status', 'ready');
+      // profiles count may be 0 before any session is lazily initialized
+      expect(response.body.profiles).toBe(0);
     });
 
     it('returns 200 with ready status when at least one profile is loaded', async () => {

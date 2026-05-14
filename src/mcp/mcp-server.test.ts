@@ -5346,6 +5346,84 @@ paths:
         expect(payload.upstreamHost).not.toMatch(/^https?:\/\//);
         expect(payload.upstreamHost).not.toContain('/mcp');
       });
+
+      it('emits audit:tool_call on PolicyRejection (enterprise policy blocks tool)', async () => {
+        const fakeLogger = spyLogger();
+        (upstreamServer as any).logger = fakeLogger;
+        (upstreamServer as any).httpTransport.getSessionEnterpriseTiers = () => ['read'];
+        (upstreamServer as any).httpTransport.getSessionEnterpriseAllowedToolCategories = () => new Set(['read']);
+
+        await (upstreamServer as any).handleToolCall(
+          { jsonrpc: '2.0', id: '1', method: 'tools/call', params: { name: 'safe_tool', arguments: {} } },
+          'session-policy-audit',
+          'upstream-profile',
+        );
+
+        const audits = findAuditEntries(fakeLogger.info);
+        expect(audits.length).toBeGreaterThanOrEqual(1);
+        const payload = audits[audits.length - 1][1] as Record<string, unknown>;
+        expect(payload.outcome).toBe('error');
+        expect(payload.tool).toBe('safe_tool');
+      });
+
+      it('emits audit:tool_call on InvalidToolName rejection', async () => {
+        const fakeLogger = spyLogger();
+        (upstreamServer as any).logger = fakeLogger;
+
+        await (upstreamServer as any).handleToolCall(
+          { jsonrpc: '2.0', id: '1', method: 'tools/call', params: { name: 'bad tool name!', arguments: {} } },
+          'session-invalid-name-audit',
+          'upstream-profile',
+        );
+
+        const audits = findAuditEntries(fakeLogger.info);
+        expect(audits.length).toBeGreaterThanOrEqual(1);
+        const payload = audits[audits.length - 1][1] as Record<string, unknown>;
+        expect(payload.outcome).toBe('error');
+      });
+
+      it('emits audit:tool_call on SanitizationRejection', async () => {
+        const fakeLogger = spyLogger();
+        (upstreamServer as any).logger = fakeLogger;
+        const sessionCache = new Map<string, Set<string>>();
+        sessionCache.set(upstreamProvider.name, new Set(['other_tool']));
+        (upstreamServer as any).sanitizedAndPolicyFilteredToolNames.set('session-sanitized-audit', sessionCache);
+
+        await (upstreamServer as any).handleToolCall(
+          { jsonrpc: '2.0', id: '1', method: 'tools/call', params: { name: 'safe_tool', arguments: {} } },
+          'session-sanitized-audit',
+          'upstream-profile',
+        );
+
+        const audits = findAuditEntries(fakeLogger.info);
+        expect(audits.length).toBeGreaterThanOrEqual(1);
+        const payload = audits[audits.length - 1][1] as Record<string, unknown>;
+        expect(payload.outcome).toBe('error');
+        expect(payload.tool).toBe('safe_tool');
+      });
+
+      it('emits audit:tool_call on OAuthRequired early-reject', async () => {
+        const fakeLogger = spyLogger();
+        (upstreamServer as any).logger = fakeLogger;
+        // Make the server believe OAuth is configured so it triggers the auth check
+        (upstreamServer as any).httpTransport.hasOAuthProvider = () => true;
+        // Return no token so the auth check fails (getAuthTokenFromSession returns undefined)
+        (upstreamServer as any).httpTransport.ensureValidSessionToken = async () => false;
+        (upstreamServer as any).httpTransport.getSessionToken = () => undefined;
+        (upstreamServer as any).httpTransport.getOAuthProtectedResourceUrl = () => 'https://example.com/.well-known/oauth';
+
+        await (upstreamServer as any).handleToolCall(
+          { jsonrpc: '2.0', id: '1', method: 'tools/call', params: { name: 'safe_tool', arguments: {} } },
+          'session-oauth-audit',
+          'upstream-profile',
+        );
+
+        const audits = findAuditEntries(fakeLogger.info);
+        expect(audits.length).toBeGreaterThanOrEqual(1);
+        const payload = audits[audits.length - 1][1] as Record<string, unknown>;
+        expect(payload.outcome).toBe('error');
+        expect(payload.tool).toBe('safe_tool');
+      });
     });
 
     // -------------------------------------------------------------------------

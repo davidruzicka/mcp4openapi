@@ -121,7 +121,7 @@ describe('MetricsCollector', () => {
       expect(output).toContain('tenant_id="team-a"');
     });
 
-    it('records upstream_host and client_identity labels when provided (OBS-02)', async () => {
+    it('records upstream_host label when provided (OBS-02)', async () => {
       metrics.recordToolCall('manage_badges', 'success', 0.5, {
         profileId: 'gitlab',
         tenantId: 'team-a',
@@ -133,12 +133,12 @@ describe('MetricsCollector', () => {
 
       expect(output).toContain('test_tool_calls_total');
       expect(output).toContain('upstream_host="api.example.com"');
-      expect(output).toContain('client_identity="svc-account"');
-      // Duration histogram should also carry the new dimensions
+      // client_identity is audit-only - must NOT appear in Prometheus output
+      expect(output).not.toContain('client_identity=');
       expect(output).toContain('test_tool_call_duration_seconds');
     });
 
-    it('defaults upstream_host to "none" and client_identity to "anonymous" when omitted (OBS-02)', async () => {
+    it('defaults upstream_host to "none" when omitted (OBS-02)', async () => {
       metrics.recordToolCall('manage_badges', 'success', 0.5, {
         profileId: 'gitlab',
         tenantId: 'team-a',
@@ -147,23 +147,7 @@ describe('MetricsCollector', () => {
       const output = await metrics.getMetrics();
 
       expect(output).toContain('upstream_host="none"');
-      expect(output).toContain('client_identity="anonymous"');
-    });
-
-    it('truncates client_identity to 64 chars (OBS-02)', async () => {
-      const longIdentity = 'c'.repeat(100);
-      metrics.recordToolCall('manage_badges', 'success', 0.1, {
-        profileId: 'gitlab',
-        tenantId: 'team-a',
-        clientIdentity: longIdentity,
-      });
-
-      const output = await metrics.getMetrics();
-
-      // Should contain exactly 64 'c' characters
-      expect(output).toContain(`client_identity="${'c'.repeat(64)}"`);
-      // Should NOT contain 100-character value (anchored on label value end)
-      expect(output).not.toContain(`client_identity="${'c'.repeat(65)}"`);
+      expect(output).not.toContain('client_identity=');
     });
 
     it('truncates upstream_host to 128 chars (OBS-02)', async () => {
@@ -180,7 +164,26 @@ describe('MetricsCollector', () => {
       expect(output).not.toContain(`upstream_host="${'h'.repeat(129)}"`);
     });
 
-    it('records upstream_host and client_identity for recordToolCallError (OBS-02)', async () => {
+    it('truncates tool name to 64 chars in Prometheus labels (OBS-02)', async () => {
+      const longTool = 't'.repeat(100);
+      metrics.recordToolCall(longTool, 'success', 0.1, { profileId: 'gitlab', tenantId: 'team-a' });
+
+      const output = await metrics.getMetrics();
+
+      expect(output).toContain(`tool="${'t'.repeat(64)}"`);
+      expect(output).not.toContain(`tool="${'t'.repeat(65)}"`);
+    });
+
+    it('truncates tool name to 64 chars in error labels (OBS-02)', async () => {
+      const longTool = 'e'.repeat(100);
+      metrics.recordToolCallError(longTool, 'ValidationError', { profileId: 'gitlab', tenantId: 'team-a' });
+
+      const output = await metrics.getMetrics();
+
+      expect(output).toContain(`tool="${'e'.repeat(64)}"`);
+    });
+
+    it('records upstream_host for recordToolCallError (OBS-02)', async () => {
       metrics.recordToolCallError('manage_badges', 'ValidationError', {
         profileId: 'gitlab',
         tenantId: 'team-a',
@@ -193,7 +196,7 @@ describe('MetricsCollector', () => {
       expect(output).toContain('test_tool_call_errors_total');
       expect(output).toContain('error_type="ValidationError"');
       expect(output).toContain('upstream_host="api.example.com"');
-      expect(output).toContain('client_identity="svc-account"');
+      expect(output).not.toContain('client_identity=');
     });
   });
 
@@ -253,8 +256,8 @@ describe('MetricsCollector', () => {
       metrics.recordToolCall('manage_badges', 'success', 0.2);
       metrics.recordApiCall('get_project_badges', 200, 0.2);
       const output = await metrics.getMetrics();
-      // OBS-02: tool_calls_total carries upstream_host and client_identity dimensions
-      expect(output).toContain('test_tool_calls_total{tool="manage_badges",status="success",profile_id="unknown",tenant_id="none",upstream_host="none",client_identity="anonymous"} 1');
+      // OBS-02: tool_calls_total carries upstream_host dimension (client_identity is audit-only)
+      expect(output).toContain('test_tool_calls_total{tool="manage_badges",status="success",profile_id="unknown",tenant_id="none",upstream_host="none"} 1');
       expect(output).toContain('test_api_calls_total{operation="get_project_badges",status="2xx",profile_id="unknown",tenant_id="none"} 1');
     });
 

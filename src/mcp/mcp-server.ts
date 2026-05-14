@@ -93,13 +93,12 @@ type EnterpriseToolCategory = 'list' | 'read' | 'modify' | 'admin';
 const UPSTREAM_TIMEOUT_ERROR_CODE = ErrorCode.RequestTimeout;
 
 /**
- * Extract the host (hostname + optional port) from a URL string.
+ * Extract the hostname (no port, no scheme, no credentials) from a URL string.
  *
- * Why: Audit logs and Prometheus labels must carry only the upstream host, never
- * full URLs (which can include credentials, paths, or query strings). Wrapping
- * `new URL().host` in try/catch makes the helper safe for arbitrary input - if
- * parsing fails we return the input string unchanged so the caller still has
- * something to label / log instead of crashing the tool-call path.
+ * Why: Audit logs and Prometheus labels must carry only the upstream hostname, never
+ * full URLs (which can include credentials, paths, or query strings). Uses `.hostname`
+ * (not `.host`) to exclude port numbers and keep cardinality bounded. Falls back to
+ * 'unknown' on parse failure so the audit path never throws.
  *
  * Exported for direct unit testing; also used by handleToolCall and stdio handler.
  */
@@ -1880,6 +1879,8 @@ export class MCPServer {
         metrics.recordToolCall(toolName, 'error', durationSeconds, errorMetricsContext);
         metrics.recordToolCallError(toolName, this.getMetricsErrorType(error), errorMetricsContext);
       }
+      // Generate correlationId before audit so audit entry and error log share the same ID
+      const correlationId = generateCorrelationId();
       this.emitAuditToolCall({
         sessionId,
         metricsContext: errorMetricsContext,
@@ -1887,9 +1888,8 @@ export class MCPServer {
         upstreamHost: errorUpstreamHost,
         outcome: 'error',
         startTime,
+        correlationId,
       });
-      // Generate correlation ID only on error (lazy)
-      const correlationId = generateCorrelationId();
       
       // Log internal error details with correlation ID
       this.logger.error('Tool call error', error as Error, {
@@ -2258,7 +2258,7 @@ export class MCPServer {
    * and stdio paths - and makes the contract a single grep target for verification.
    *
    * Field shape (stable contract - downstream log consumers depend on it):
-   *   - sessionId: string | null - HTTP session id, null for stdio
+   *   - sessionId: string | undefined - HTTP session id, or 'stdio' sentinel for the stdio path
    *   - clientPrincipal: string - AuthorizedPrincipal.subject or 'anonymous'
    *   - tool: string - the requested tool name (may be untrusted - never used as label key)
    *   - upstreamHost: string - host-only (no scheme/path/credentials)
@@ -2284,7 +2284,7 @@ export class MCPServer {
       tool: args.tool,
       upstreamHost: args.upstreamHost,
       outcome: args.outcome,
-      durationMs: Math.round(Date.now() - args.startTime),
+      durationMs: Math.max(0, Math.round(Date.now() - args.startTime)),
       correlationId: args.correlationId ?? generateCorrelationId(),
     });
   }

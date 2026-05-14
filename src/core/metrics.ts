@@ -28,16 +28,15 @@ export interface MetricsContextLabels {
   upstreamHost?: string | null;
   /**
    * Client identity resolved from the inbound session principal (e.g. AuthorizedPrincipal.subject).
-   * Capped at 64 chars in Prometheus labels to bound cardinality.
-   * Defaults to 'anonymous' when absent (no clientPrincipal on the session).
+   * Used in audit log only — NOT a Prometheus label (per-user cardinality is unbounded).
    */
   clientIdentity?: string | null;
 }
 
 /** Max chars for the upstream_host Prometheus label - bounds cardinality. */
 const UPSTREAM_HOST_LABEL_MAX = 128;
-/** Max chars for the client_identity Prometheus label - bounds cardinality. */
-const CLIENT_IDENTITY_LABEL_MAX = 64;
+/** Max chars for the tool Prometheus label - bounds cardinality on the reject path. */
+const TOOL_LABEL_MAX = 64;
 
 export class MetricsCollector {
   private registry: Registry;
@@ -118,14 +117,14 @@ export class MetricsCollector {
     this.mcpToolCallsTotal = new Counter({
       name: `${prefix}tool_calls_total`,
       help: 'Total number of MCP tool calls',
-      labelNames: ['tool', 'status', 'profile_id', 'tenant_id', 'upstream_host', 'client_identity'],
+      labelNames: ['tool', 'status', 'profile_id', 'tenant_id', 'upstream_host'],
       registers: [this.registry],
     });
 
     this.mcpToolCallDuration = new Histogram({
       name: `${prefix}tool_call_duration_seconds`,
       help: 'MCP tool call duration in seconds',
-      labelNames: ['tool', 'status', 'profile_id', 'tenant_id', 'upstream_host', 'client_identity'],
+      labelNames: ['tool', 'status', 'profile_id', 'tenant_id', 'upstream_host'],
       buckets: [0.01, 0.05, 0.1, 0.5, 1, 2, 5, 10, 30],
       registers: [this.registry],
     });
@@ -133,7 +132,7 @@ export class MetricsCollector {
     this.mcpToolCallErrors = new Counter({
       name: `${prefix}tool_call_errors_total`,
       help: 'Total number of MCP tool call errors',
-      labelNames: ['tool', 'error_type', 'profile_id', 'tenant_id', 'upstream_host', 'client_identity'],
+      labelNames: ['tool', 'error_type', 'profile_id', 'tenant_id', 'upstream_host'],
       registers: [this.registry],
     });
 
@@ -273,23 +272,22 @@ export class MetricsCollector {
   ): void {
     if (!this.enabled) return;
     const labels = this.resolveContextLabels(context);
+    const safeToolName = tool.slice(0, TOOL_LABEL_MAX);
 
     this.mcpToolCallsTotal.inc({
-      tool,
+      tool: safeToolName,
       status,
       profile_id: labels.profile_id,
       tenant_id: labels.tenant_id,
       upstream_host: labels.upstream_host,
-      client_identity: labels.client_identity,
     });
     this.mcpToolCallDuration.observe(
       {
-        tool,
+        tool: safeToolName,
         status,
         profile_id: labels.profile_id,
         tenant_id: labels.tenant_id,
         upstream_host: labels.upstream_host,
-        client_identity: labels.client_identity,
       },
       durationSeconds
     );
@@ -302,12 +300,11 @@ export class MetricsCollector {
     if (!this.enabled) return;
     const labels = this.resolveContextLabels(context);
     this.mcpToolCallErrors.inc({
-      tool,
+      tool: tool.slice(0, TOOL_LABEL_MAX),
       error_type: errorType,
       profile_id: labels.profile_id,
       tenant_id: labels.tenant_id,
       upstream_host: labels.upstream_host,
-      client_identity: labels.client_identity,
     });
   }
 
@@ -453,12 +450,10 @@ export class MetricsCollector {
     profile_id: string;
     tenant_id: string;
     upstream_host: string;
-    client_identity: string;
   } {
     const profileId = context?.profileId?.trim();
     const tenantId = context?.tenantId?.trim();
     const upstreamHost = context?.upstreamHost?.trim();
-    const clientIdentity = context?.clientIdentity?.trim();
     return {
       profile_id: profileId && profileId.length > 0 ? profileId : 'unknown',
       tenant_id: tenantId && tenantId.length > 0 ? tenantId : 'none',
@@ -466,10 +461,6 @@ export class MetricsCollector {
         upstreamHost && upstreamHost.length > 0
           ? upstreamHost.slice(0, UPSTREAM_HOST_LABEL_MAX)
           : 'none',
-      client_identity:
-        clientIdentity && clientIdentity.length > 0
-          ? clientIdentity.slice(0, CLIENT_IDENTITY_LABEL_MAX)
-          : 'anonymous',
     };
   }
 }

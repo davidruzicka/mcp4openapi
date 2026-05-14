@@ -143,6 +143,7 @@ export class HttpTransport {
   private messageHandler: ((message: unknown, sessionId?: string, profileId?: string) => Promise<unknown>) | null = null;
   private profileContextProvider: ((profileId: string) => Promise<HttpProfileContext | null>) | null = null;
   private profileStates: Map<string, ProfileRuntimeState> = new Map();
+  private serverStarted = false;
   private oauthRedirectHostCache: Map<string, string[]> = new Map();
   private warnedMissingOAuthRedirectEnvVars: Set<string> = new Set();
   private profileHintsByClient: Map<string, { profileId: string; lastSeen: number }> = new Map();
@@ -1658,18 +1659,19 @@ export class HttpTransport {
       }
     });
 
-    // Readiness probe - returns 503 until at least one profile is loaded.
-    // Unauthenticated: clientAuthGate is only applied inside handlePost, not at route level.
-    // Kubernetes readinessProbe and load balancers require a dedicated /ready endpoint
-    // distinct from /health (liveness).
+    // Readiness probe - unauthenticated, distinct from /health (liveness).
+    // Shallow check: tests only in-memory profileStates and server-started flag, no I/O.
+    // profileStates is lazily populated on first MCP request; serverStarted is set when
+    // listen() succeeds. Together they avoid the k8s bootstrapping deadlock where the pod
+    // never receives traffic because profileStates starts empty.
     this.app.get('/ready', mcpRateLimiter, (req: Request, res: Response) => {
       const startTime = Date.now();
-      const profilesLoaded = this.profileStates.size;
-      const ready = profilesLoaded > 0;
+      const profilesInitialized = this.profileStates.size;
+      const ready = profilesInitialized > 0 || this.serverStarted;
       const statusCode = ready ? 200 : 503;
       res.status(statusCode).json(
         ready
-          ? { status: 'ready', profiles: profilesLoaded }
+          ? { status: 'ready', profiles: profilesInitialized }
           : { status: 'not ready', reason: 'no profiles loaded' }
       );
 
@@ -4634,6 +4636,7 @@ export class HttpTransport {
                 TIMEOUTS.CLEANUP_INTERVAL_MS
               );
 
+              this.serverStarted = true;
               resolve();
             });
           } catch (sslError) {
@@ -4657,6 +4660,7 @@ export class HttpTransport {
               TIMEOUTS.CLEANUP_INTERVAL_MS
             );
 
+            this.serverStarted = true;
             resolve();
           });
         }
