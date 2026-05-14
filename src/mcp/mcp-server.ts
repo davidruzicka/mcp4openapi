@@ -3178,12 +3178,7 @@ export class MCPServer {
     metricsContext: MetricsContextLabels,
     sessionId?: string,
   ): void {
-    // Truncate before use as Prometheus label to bound cardinality.
-    // The same truncated name is used as the audit log tool field for consistency
-    // with the metric, but the original (untruncated) name is logged at debug level
-    // by upstream callers when needed - audit logs are operator-facing and should
-    // never inject very long names into the log pipeline.
-    const safeToolName = toolName.slice(0, INPUT_LIMITS.TOOL_NAME_LABEL);
+    const safeToolName = this.truncateAuditField(toolName, INPUT_LIMITS.TOOL_NAME_LABEL, 'tool (label)');
     if (metrics) {
       const durationSeconds = (Date.now() - startTime) / 1000;
       metrics.recordToolCall(safeToolName, 'error', durationSeconds, metricsContext);
