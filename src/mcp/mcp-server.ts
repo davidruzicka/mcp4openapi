@@ -2188,10 +2188,12 @@ export class MCPServer {
         result,
       };
     } catch (error) {
-      this.recordUpstreamOutcome('error', toolName, sessionId, startTime, auditContext, upstreamHostForAudit, metricsBundle, error);
+      // Generate correlationId before audit so audit entry and error log share the same ID.
+      const correlationId = extractCorrelationId(error) ?? generateCorrelationId();
+      this.recordUpstreamOutcome('error', toolName, sessionId, startTime, auditContext, upstreamHostForAudit, metricsBundle, error, correlationId);
       const callLogLevel = upstreamErrorLogLevel(error);
       if (callLogLevel !== null) {
-        const meta = { provider: provider.name, profileId, sessionId, toolName, upstreamErrorType: error instanceof Error ? error.constructor.name : typeof error, correlationId: extractCorrelationId(error) };
+        const meta = { provider: provider.name, profileId, sessionId, toolName, upstreamErrorType: error instanceof Error ? error.constructor.name : typeof error, correlationId };
         if (callLogLevel === 'error') {
           this.logger.error('Upstream tools/call failed', error instanceof Error ? error : new Error(String(error)), meta);
         } else {
@@ -2287,7 +2289,7 @@ export class MCPServer {
         ? args.metricsContext.clientIdentity
         : 'anonymous';
     this.logger.info('audit:tool_call', {
-      sessionId: args.sessionId ?? null,
+      sessionId: args.sessionId ?? 'unknown',
       clientPrincipal: this.truncateWithWarn(rawClientIdentity, INPUT_LIMITS.CLIENT_PRINCIPAL_AUDIT, 'clientPrincipal'),
       tool: this.truncateWithWarn(args.tool, INPUT_LIMITS.TOOL_NAME_AUDIT, 'tool'),
       upstreamHost: args.upstreamHost,
@@ -2312,6 +2314,7 @@ export class MCPServer {
     upstreamHostForAudit: string,
     metricsBundle: { collector: MetricsCollector; context: MetricsContextLabels } | undefined,
     error?: unknown,
+    correlationId?: string,
   ): void {
     if (metricsBundle) {
       const durationSeconds = (Date.now() - startTime) / 1000;
@@ -2327,6 +2330,7 @@ export class MCPServer {
       upstreamHost: upstreamHostForAudit,
       outcome,
       startTime,
+      correlationId,
     });
   }
 
@@ -3230,6 +3234,7 @@ export class MCPServer {
       typeof metricsContext.upstreamHost === 'string' && metricsContext.upstreamHost.length > 0
         ? metricsContext.upstreamHost
         : 'none';
+    const correlationId = generateCorrelationId();
     this.emitAuditToolCall({
       sessionId,
       metricsContext,
@@ -3237,6 +3242,7 @@ export class MCPServer {
       upstreamHost,
       outcome: 'error',
       startTime,
+      correlationId,
     });
   }
 

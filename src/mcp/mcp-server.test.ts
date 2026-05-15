@@ -5440,6 +5440,33 @@ paths:
         expect(payload.upstreamHost).toBe('upstream.example.com');
       });
 
+      it('audit correlationId matches error log correlationId on upstream proxy failure', async () => {
+        const fakeLogger = spyLogger();
+        (upstreamServer as any).logger = fakeLogger;
+        mockCallTool.mockRejectedValueOnce(new Error('upstream down'));
+
+        await (upstreamServer as any).handleToolCall(
+          { jsonrpc: '2.0', id: '1', method: 'tools/call', params: { name: 'safe_tool', arguments: {} } },
+          'session-audit-corr',
+          'upstream-profile',
+        );
+
+        const audits = findAuditEntries(fakeLogger.info);
+        const auditPayload = audits[audits.length - 1][1] as Record<string, unknown>;
+        expect(typeof auditPayload.correlationId).toBe('string');
+        expect((auditPayload.correlationId as string).length).toBeGreaterThan(0);
+
+        // Error logger must carry the same correlationId as the audit entry.
+        const errorCalls = fakeLogger.error.mock.calls as unknown[][];
+        const warnCalls = fakeLogger.warn.mock.calls as unknown[][];
+        const allCalls = [...errorCalls, ...warnCalls];
+        const logWithCorr = allCalls.find(
+          (c) => typeof c[c.length - 1] === 'object' && c[c.length - 1] !== null &&
+            (c[c.length - 1] as Record<string, unknown>).correlationId === auditPayload.correlationId,
+        );
+        expect(logWithCorr).toBeDefined();
+      });
+
       it('uses "anonymous" clientPrincipal when session has no AuthorizedPrincipal', async () => {
         const fakeLogger = spyLogger();
         (upstreamServer as any).logger = fakeLogger;
@@ -5494,6 +5521,24 @@ paths:
         expect(payload.outcome).toBe('error');
         expect(payload.tool).toBe('safe_tool');
         expect(payload.upstreamHost).toBe('upstream.example.com');
+      });
+
+      it('audit:tool_call on FilterRejection has a defined correlationId', async () => {
+        const fakeLogger = spyLogger();
+        (upstreamServer as any).logger = fakeLogger;
+        (upstreamServer as any).httpTransport.getSessionToolFilterRequest = () =>
+          parseSessionToolFilterHeader('other_tool');
+
+        await (upstreamServer as any).handleToolCall(
+          { jsonrpc: '2.0', id: '1', method: 'tools/call', params: { name: 'safe_tool', arguments: {} } },
+          'session-reject-corr',
+          'upstream-profile',
+        );
+
+        const audits = findAuditEntries(fakeLogger.info);
+        const payload = audits[audits.length - 1][1] as Record<string, unknown>;
+        expect(typeof payload.correlationId).toBe('string');
+        expect((payload.correlationId as string).length).toBeGreaterThan(0);
       });
 
       it('upstreamHost in audit log is host-only (no path, no scheme)', async () => {

@@ -130,5 +130,5 @@ export const INPUT_LIMITS = {
   TOOL_NAME_ERROR_MSG: 100,    // max chars of tool name reflected in error messages to clients
   TOOL_NAME_AUDIT: 255,        // max chars of tool name in audit:tool_call log entries
   TOOL_NAME_LABEL: 64,         // max chars of tool name used as a Prometheus label value
-  CLIENT_PRINCIPAL_AUDIT: 64,  // max chars of clientPrincipal in audit:tool_call log entries
+  CLIENT_PRINCIPAL_AUDIT: 256, // max chars of clientPrincipal in audit:tool_call log entries (256 matches OIDC sub max)
 } as const;

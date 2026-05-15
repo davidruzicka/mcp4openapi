@@ -1659,6 +1659,8 @@ export class HttpTransport {
     });
 
     // Readiness probe - unauthenticated, distinct from /health (liveness).
+    // Shallow readiness check: verifies at least one profile is loaded; does not probe
+    // upstream connectivity, spec parsing, or auth token presence.
     // Startup validation in index.ts guarantees at least one profile exists before
     // listen() is called, so profileStates.size > 0 is the correct readiness condition.
     this.app.get('/ready', mcpRateLimiter, (req: Request, res: Response) => {
