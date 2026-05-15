@@ -995,6 +995,7 @@ export class MCPServer {
     this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const toolName = request.params.name;
       const startTime = Date.now();
+      const correlationId = generateCorrelationId();
       const metrics = this.getMetricsCollector();
       // OBS-02: enrich with upstreamHost (derived from base URL on the stdio path -
       // stdio has no upstream_mcp proxy, so the OpenAPI backend host is the target).
@@ -1055,6 +1056,7 @@ export class MCPServer {
           upstreamHost: stdioUpstreamHost,
           outcome: 'success',
           startTime,
+          correlationId,
         });
 
         return {
@@ -1071,8 +1073,7 @@ export class MCPServer {
           metrics.recordToolCall(toolName, 'error', durationSeconds, metricsContext);
           metrics.recordToolCallError(toolName, this.getMetricsErrorType(err), metricsContext);
         }
-        // Generate correlation ID before audit log so it appears in both audit trail and error log
-        const correlationId = generateCorrelationId();
+        // correlationId already generated at call entry — reuse so audit and error log share it
         this.emitAuditToolCall({
           sessionId: STDIO_SESSION_ID,
           metricsContext,
@@ -1650,6 +1651,8 @@ export class MCPServer {
     const toolName = params.name as string;
     const rawArgs = (params.arguments as Record<string, unknown>) || {};
     const startTime = Date.now();
+    // Generate once so all audit entries (success, error, reject) for this call share the same ID.
+    const correlationId = generateCorrelationId();
     const metrics = this.getMetricsCollector();
     // D-01 / OBS-02: Resolve the upstream target up front so its host can flow into
     // metricsContext for every recordToolCall site (including the OAuth-required
@@ -1679,6 +1682,7 @@ export class MCPServer {
           upstreamHost,
           outcome: 'error',
           startTime,
+          correlationId,
         });
         // Return OAuth required error with WWW-Authenticate header
         // This should trigger the OAuth flow in the client
@@ -1720,14 +1724,14 @@ export class MCPServer {
         );
         if (upstreamFilterRequest?.hasRules && !matchesSessionFilterByName(upstreamFilterRequest, toolName)) {
           this.recordToolFilterRejection(toolName, 'session');
-          this.recordUpstreamReject(toolName, 'FilterRejection', metrics, startTime, metricsContext, sessionId);
+          this.recordUpstreamReject(toolName, 'FilterRejection', metrics, startTime, metricsContext, sessionId, correlationId);
           return { jsonrpc: '2.0', id: req.id, error: { code: -32002, message: `Tool '${toolName}' not allowed by X-Mcp4-Tools filter.` } };
         }
       }
       // Apply enterprise policy - upstream tools don't have OpenAPI operations so default to 'modify'
       if (!this.isToolCategoryAllowedByEnterprisePolicy('modify', sessionId, profileId)) {
         const allowedCategories = this.getEnterpriseAllowedToolCategoriesForSession(sessionId, profileId);
-        this.recordUpstreamReject(toolName, 'PolicyRejection', metrics, startTime, metricsContext, sessionId);
+        this.recordUpstreamReject(toolName, 'PolicyRejection', metrics, startTime, metricsContext, sessionId, correlationId);
         return {
           jsonrpc: '2.0', id: req.id, error: {
             code: -32002,
@@ -1739,7 +1743,7 @@ export class MCPServer {
       }
       // Validate tool name against the same sanitization policy as tools/list (D-05)
       if (!isValidUpstreamToolName(toolName)) {
-        this.recordUpstreamReject(toolName, 'InvalidToolName', metrics, startTime, metricsContext, sessionId);
+        this.recordUpstreamReject(toolName, 'InvalidToolName', metrics, startTime, metricsContext, sessionId, correlationId);
         return {
           jsonrpc: '2.0', id: req.id, error: {
             code: -32002,
@@ -1749,7 +1753,7 @@ export class MCPServer {
       }
       // Apply profile-level upstream tool allow/deny policy
       if (!isToolAllowedByProviderPolicy(toolName, upstreamMcpForCall.tools)) {
-        this.recordUpstreamReject(toolName, 'PolicyRejection', metrics, startTime, metricsContext, sessionId);
+        this.recordUpstreamReject(toolName, 'PolicyRejection', metrics, startTime, metricsContext, sessionId, correlationId);
         return {
           jsonrpc: '2.0', id: req.id, error: {
             code: -32002,
@@ -1768,7 +1772,7 @@ export class MCPServer {
         ? this.sanitizedAndPolicyFilteredToolNames.get(sessionId)?.get(upstreamMcpForCall.name)
         : undefined;
       if (sanitizedSet !== undefined && !sanitizedSet.has(toolName)) {
-        this.recordUpstreamReject(toolName, 'SanitizationRejection', metrics, startTime, metricsContext, sessionId);
+        this.recordUpstreamReject(toolName, 'SanitizationRejection', metrics, startTime, metricsContext, sessionId, correlationId);
         return {
           jsonrpc: '2.0', id: req.id, error: {
             code: -32002,
@@ -1783,6 +1787,7 @@ export class MCPServer {
         upstreamMcpForCall,
         startTime,
         metrics ? { collector: metrics, context: metricsContext } : undefined,
+        correlationId,
       );
     }
 
@@ -1870,6 +1875,7 @@ export class MCPServer {
         upstreamHost: localUpstreamHost,
         outcome: 'success',
         startTime,
+        correlationId,
       });
 
       return {
@@ -1890,8 +1896,7 @@ export class MCPServer {
         metrics.recordToolCall(toolName, 'error', durationSeconds, localMetricsContext);
         metrics.recordToolCallError(toolName, this.getMetricsErrorType(error), localMetricsContext);
       }
-      // Generate correlationId before audit so audit entry and error log share the same ID
-      const correlationId = generateCorrelationId();
+      // correlationId already generated at call entry — reuse so audit and error log share it
       this.emitAuditToolCall({
         sessionId,
         metricsContext: localMetricsContext,
@@ -2141,6 +2146,7 @@ export class MCPServer {
     provider: UpstreamMcpServerConfig,
     startTime: number,
     metricsBundle?: { collector: MetricsCollector; context: MetricsContextLabels },
+    callerCorrelationId?: string,
   ): Promise<unknown> {
     if (!sessionId) {
       throw new UpstreamConnectionError(
@@ -2180,7 +2186,7 @@ export class MCPServer {
       const result = await (provider.timeout_ms !== undefined
         ? client.callTool({ name: toolName, arguments: args }, undefined, { timeout: provider.timeout_ms })
         : client.callTool({ name: toolName, arguments: args }));
-      this.recordUpstreamOutcome('success', toolName, sessionId, startTime, auditContext, upstreamHostForAudit, metricsBundle);
+      this.recordUpstreamOutcome('success', toolName, sessionId, startTime, auditContext, upstreamHostForAudit, metricsBundle, undefined, callerCorrelationId);
       // Forward as-is including isError: true (tool-level errors are valid MCP responses)
       return {
         jsonrpc: '2.0',
@@ -2188,8 +2194,8 @@ export class MCPServer {
         result,
       };
     } catch (error) {
-      // Generate correlationId before audit so audit entry and error log share the same ID.
-      const correlationId = extractCorrelationId(error) ?? generateCorrelationId();
+      // Prefer correlationId embedded in the upstream error; fall back to caller's ID or generate one.
+      const correlationId = extractCorrelationId(error) ?? callerCorrelationId ?? generateCorrelationId();
       this.recordUpstreamOutcome('error', toolName, sessionId, startTime, auditContext, upstreamHostForAudit, metricsBundle, error, correlationId);
       const callLogLevel = upstreamErrorLogLevel(error);
       if (callLogLevel !== null) {
@@ -2246,15 +2252,15 @@ export class MCPServer {
    * does not override it. In test setups that stub `parser` with a partial mock
    * (no getBaseUrl) the call throws. The observability path (audit log + metric
    * label) must never break the tool-call - if the host can't be determined we
-   * fall back to the 'none' label semantics the rest of the pipeline expects.
+   * fall back to 'unknown' — the same sentinel extractHost() uses on parse failure.
    */
   private safeBaseUrlHost(): string {
     try {
       const base = this.getBaseUrl();
-      if (typeof base !== 'string' || base.length === 0) return 'none';
+      if (typeof base !== 'string' || base.length === 0) return 'unknown';
       return extractHost(base);
     } catch {
-      return 'none';
+      return 'unknown';
     }
   }
 
@@ -3219,6 +3225,7 @@ export class MCPServer {
     startTime: number,
     metricsContext: MetricsContextLabels,
     sessionId?: string,
+    correlationId?: string,
   ): void {
     if (metrics) {
       const durationSeconds = (Date.now() - startTime) / 1000;
@@ -3233,8 +3240,8 @@ export class MCPServer {
     const upstreamHost =
       typeof metricsContext.upstreamHost === 'string' && metricsContext.upstreamHost.length > 0
         ? metricsContext.upstreamHost
-        : 'none';
-    const correlationId = generateCorrelationId();
+        : 'unknown';
+    const auditCorrelationId = correlationId ?? generateCorrelationId();
     this.emitAuditToolCall({
       sessionId,
       metricsContext,
@@ -3242,7 +3249,7 @@ export class MCPServer {
       upstreamHost,
       outcome: 'error',
       startTime,
-      correlationId,
+      correlationId: auditCorrelationId,
     });
   }
 

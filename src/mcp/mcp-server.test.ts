@@ -14,6 +14,7 @@ import { JsonLogger } from '../core/logger.js';
 import { Server as MCPProtocolServer } from '@modelcontextprotocol/sdk/server/index.js';
 import { parseSessionToolFilterHeader } from '../tool-filter/index.js';
 import {
+  MCPError,
   AuthenticationError,
   AuthorizationError,
   RateLimitError,
@@ -5636,6 +5637,82 @@ paths:
         expect(payload.outcome).toBe('error');
         expect(payload.tool).toBe('safe_tool');
       });
+
+      it('upstream MCPError with embedded correlationId → audit entry reuses that ID (extractCorrelationId)', async () => {
+        const fakeLogger = spyLogger();
+        (upstreamServer as any).logger = fakeLogger;
+        const embeddedId = 'upstream-corr-abc123';
+        mockCallTool.mockRejectedValueOnce(new MCPError('upstream failed', 'UPSTREAM_ERR', { correlationId: embeddedId }));
+
+        await (upstreamServer as any).handleToolCall(
+          { jsonrpc: '2.0', id: '1', method: 'tools/call', params: { name: 'safe_tool', arguments: {} } },
+          'session-corr-extract',
+          'upstream-profile',
+        );
+
+        const audits = findAuditEntries(fakeLogger.info);
+        const payload = audits[audits.length - 1][1] as Record<string, unknown>;
+        expect(payload.correlationId).toBe(embeddedId);
+        // warn log (unexpected error type) must carry the same correlationId
+        const warnCalls = fakeLogger.warn.mock.calls as unknown[][];
+        const logWithCorr = warnCalls.find(
+          (c) => typeof c[c.length - 1] === 'object' && c[c.length - 1] !== null &&
+            (c[c.length - 1] as Record<string, unknown>).correlationId === embeddedId,
+        );
+        expect(logWithCorr).toBeDefined();
+      });
+
+      it('emits audit:tool_call on local HTTP tool success (non-upstream path)', async () => {
+        const specPath = path.join(process.cwd(), 'profiles/gitlab/openapi.yaml');
+        await server.initialize(specPath);
+        const fakeLogger = spyLogger();
+        (server as any).logger = fakeLogger;
+        const simpleTool = (server as any).profile.tools.find((t: any) => !t.composite);
+        if (!simpleTool) return;
+        (server as any).toolGenerator.validateArguments = () => {};
+        (server as any).executeSimpleTool = async () => ({ ok: true });
+
+        await server.callToolRpc(simpleTool.name, {}, 'session-local-ok', '1');
+
+        const audits = findAuditEntries(fakeLogger.info);
+        expect(audits.length).toBeGreaterThanOrEqual(1);
+        const payload = audits[audits.length - 1][1] as Record<string, unknown>;
+        expect(payload).toMatchObject({
+          sessionId: 'session-local-ok',
+          tool: simpleTool.name,
+          outcome: 'success',
+        });
+        expect(typeof payload.durationMs).toBe('number');
+        expect(typeof payload.clientPrincipal).toBe('string');
+        expect(typeof payload.correlationId).toBe('string');
+      });
+
+      it('emits audit:tool_call with outcome=error on local HTTP tool failure (non-upstream path)', async () => {
+        const specPath = path.join(process.cwd(), 'profiles/gitlab/openapi.yaml');
+        await server.initialize(specPath);
+        const fakeLogger = spyLogger();
+        (server as any).logger = fakeLogger;
+        const simpleTool = (server as any).profile.tools.find((t: any) => !t.composite);
+        if (!simpleTool) return;
+        (server as any).toolGenerator.validateArguments = () => {};
+        (server as any).executeSimpleTool = async () => { throw new Error('local tool boom'); };
+
+        await server.callToolRpc(simpleTool.name, {}, 'session-local-err', '1');
+
+        const audits = findAuditEntries(fakeLogger.info);
+        expect(audits.length).toBeGreaterThanOrEqual(1);
+        const payload = audits[audits.length - 1][1] as Record<string, unknown>;
+        expect(payload.outcome).toBe('error');
+        expect(payload.sessionId).toBe('session-local-err');
+        expect(typeof payload.correlationId).toBe('string');
+        // error log must carry the same correlationId as the audit entry
+        const errorCalls = fakeLogger.error.mock.calls as unknown[][];
+        const logWithCorr = errorCalls.find(
+          (c) => typeof c[c.length - 1] === 'object' && c[c.length - 1] !== null &&
+            (c[c.length - 1] as Record<string, unknown>).correlationId === payload.correlationId,
+        );
+        expect(logWithCorr).toBeDefined();
+      });
     });
 
     // -------------------------------------------------------------------------
@@ -6063,6 +6140,29 @@ paths:
 
       expect(result).toBe('a'.repeat(64));
       expect(fakeLogger.warn).not.toHaveBeenCalled();
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // safeBaseUrlHost (OBS-01)
+  // ---------------------------------------------------------------------------
+  describe('safeBaseUrlHost (OBS-01)', () => {
+    it('returns "unknown" when getBaseUrl() throws (partial parser mock)', () => {
+      const s = new MCPServer();
+      (s as any).parser = { getBaseUrl: () => { throw new Error('no base url'); } };
+      expect((s as any).safeBaseUrlHost()).toBe('unknown');
+    });
+
+    it('returns "unknown" when getBaseUrl() returns empty string', () => {
+      const s = new MCPServer();
+      (s as any).parser = { getBaseUrl: () => '' };
+      expect((s as any).safeBaseUrlHost()).toBe('unknown');
+    });
+
+    it('returns hostname when getBaseUrl() returns valid URL', () => {
+      const s = new MCPServer();
+      (s as any).parser = { getBaseUrl: () => 'https://api.example.com/v1' };
+      expect((s as any).safeBaseUrlHost()).toBe('api.example.com');
     });
   });
 
