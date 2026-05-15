@@ -36,6 +36,7 @@ import {
   type FilteringRules,
 } from '../core/filtering.js';
 import { 
+  MCPError,
   ConfigurationError, 
   OperationNotFoundError, 
   ResourceNotFoundError,
@@ -120,13 +121,23 @@ const UPSTREAM_ERROR_MAPPINGS: ReadonlyArray<[new (...args: never[]) => Error, n
   [UpstreamMalformedResponseError, ErrorCode.InternalError, 'Upstream returned malformed response'],
 ];
 
-/** True for infra-level failures the client cannot resolve: connection, timeout, malformed response. */
-function shouldLogUpstreamError(error: unknown): boolean {
-  return (
+/** Extracts correlationId from typed MCPError details. */
+function extractCorrelationId(error: unknown): string | undefined {
+  return error instanceof MCPError ? (error.details?.correlationId as string | undefined) : undefined;
+}
+
+/**
+ * Log level for upstream errors: 'error' for infra failures the client cannot resolve,
+ * null for expected client-caused failures (auth), 'warn' for unexpected types (proxy bug).
+ */
+function upstreamErrorLogLevel(error: unknown): 'error' | 'warn' | null {
+  if (
     error instanceof UpstreamConnectionError ||
     error instanceof UpstreamTimeoutError ||
     error instanceof UpstreamMalformedResponseError
-  );
+  ) return 'error';
+  if (error instanceof UpstreamAuthError) return null;
+  return 'warn';
 }
 
 /**
@@ -2100,17 +2111,14 @@ export class MCPServer {
         result: { tools: enterpriseFiltered },
       };
     } catch (error) {
-      if (shouldLogUpstreamError(error)) {
-        const correlationId =
-          error instanceof Error && 'details' in error
-            ? ((error as Record<string, unknown>).details as Record<string, unknown> | undefined)
-                ?.correlationId as string | undefined
-            : undefined;
-        this.logger.error(
-          'Upstream tools/list failed',
-          error instanceof Error ? error : new Error(String(error)),
-          { provider: provider.name, profileId, sessionId, upstreamErrorType: error?.constructor?.name, correlationId },
-        );
+      const listLogLevel = upstreamErrorLogLevel(error);
+      if (listLogLevel !== null) {
+        const meta = { provider: provider.name, profileId, sessionId, upstreamErrorType: error instanceof Error ? error.constructor.name : typeof error, correlationId: extractCorrelationId(error) };
+        if (listLogLevel === 'error') {
+          this.logger.error('Upstream tools/list failed', error instanceof Error ? error : new Error(String(error)), meta);
+        } else {
+          this.logger.warn('Upstream tools/list failed', meta);
+        }
       }
       return {
         jsonrpc: '2.0',
@@ -2181,17 +2189,14 @@ export class MCPServer {
       };
     } catch (error) {
       this.recordUpstreamOutcome('error', toolName, sessionId, startTime, auditContext, upstreamHostForAudit, metricsBundle, error);
-      if (shouldLogUpstreamError(error)) {
-        const correlationId =
-          error instanceof Error && 'details' in error
-            ? ((error as Record<string, unknown>).details as Record<string, unknown> | undefined)
-                ?.correlationId as string | undefined
-            : undefined;
-        this.logger.error(
-          'Upstream tools/call failed',
-          error instanceof Error ? error : new Error(String(error)),
-          { provider: provider.name, profileId, sessionId, toolName, upstreamErrorType: error?.constructor?.name, correlationId },
-        );
+      const callLogLevel = upstreamErrorLogLevel(error);
+      if (callLogLevel !== null) {
+        const meta = { provider: provider.name, profileId, sessionId, toolName, upstreamErrorType: error instanceof Error ? error.constructor.name : typeof error, correlationId: extractCorrelationId(error) };
+        if (callLogLevel === 'error') {
+          this.logger.error('Upstream tools/call failed', error instanceof Error ? error : new Error(String(error)), meta);
+        } else {
+          this.logger.warn('Upstream tools/call failed', meta);
+        }
       }
       return {
         jsonrpc: '2.0',
