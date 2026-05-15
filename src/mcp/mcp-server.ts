@@ -120,6 +120,15 @@ const UPSTREAM_ERROR_MAPPINGS: ReadonlyArray<[new (...args: never[]) => Error, n
   [UpstreamMalformedResponseError, ErrorCode.InternalError, 'Upstream returned malformed response'],
 ];
 
+/** True for infra-level failures the client cannot resolve: connection, timeout, malformed response. */
+function shouldLogUpstreamError(error: unknown): boolean {
+  return (
+    error instanceof UpstreamConnectionError ||
+    error instanceof UpstreamTimeoutError ||
+    error instanceof UpstreamMalformedResponseError
+  );
+}
+
 /**
  * Map an upstream error to a client-facing MCP error object.
  * Provider name is placed in data only - never leaked into the client-facing message string.
@@ -2091,6 +2100,18 @@ export class MCPServer {
         result: { tools: enterpriseFiltered },
       };
     } catch (error) {
+      if (shouldLogUpstreamError(error)) {
+        const correlationId =
+          error instanceof Error && 'details' in error
+            ? ((error as Record<string, unknown>).details as Record<string, unknown> | undefined)
+                ?.correlationId as string | undefined
+            : undefined;
+        this.logger.error(
+          'Upstream tools/list failed',
+          error instanceof Error ? error : new Error(String(error)),
+          { provider: provider.name, profileId, sessionId, upstreamErrorType: error?.constructor?.name, correlationId },
+        );
+      }
       return {
         jsonrpc: '2.0',
         id: (req as Record<string, unknown>).id,
@@ -2160,6 +2181,18 @@ export class MCPServer {
       };
     } catch (error) {
       this.recordUpstreamOutcome('error', toolName, sessionId, startTime, auditContext, upstreamHostForAudit, metricsBundle, error);
+      if (shouldLogUpstreamError(error)) {
+        const correlationId =
+          error instanceof Error && 'details' in error
+            ? ((error as Record<string, unknown>).details as Record<string, unknown> | undefined)
+                ?.correlationId as string | undefined
+            : undefined;
+        this.logger.error(
+          'Upstream tools/call failed',
+          error instanceof Error ? error : new Error(String(error)),
+          { provider: provider.name, profileId, sessionId, toolName, upstreamErrorType: error?.constructor?.name, correlationId },
+        );
+      }
       return {
         jsonrpc: '2.0',
         id: (req as Record<string, unknown>).id,

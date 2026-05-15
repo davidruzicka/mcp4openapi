@@ -4337,6 +4337,111 @@ paths:
     });
 
     // -------------------------------------------------------------------------
+    describe('upstream error logging', () => {
+      let fakeLogger: { debug: ReturnType<typeof vi.fn>; info: ReturnType<typeof vi.fn>; warn: ReturnType<typeof vi.fn>; error: ReturnType<typeof vi.fn> };
+
+      beforeEach(() => {
+        fakeLogger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+        (upstreamServer as any).logger = fakeLogger;
+      });
+
+      it('tools/list: UpstreamConnectionError triggers logger.error, response unchanged', async () => {
+        mockGetUpstreamClient.mockRejectedValueOnce(
+          new UpstreamConnectionError('ECONNREFUSED', 'test-upstream'),
+        );
+
+        const response = await (upstreamServer as any).handleUpstreamToolsList(
+          { jsonrpc: '2.0', id: '1', method: 'tools/list', params: {} },
+          'session-123',
+          'upstream-profile',
+          upstreamProvider,
+        ) as any;
+
+        expect(response.error.code).toBe(-32603);
+        expect(fakeLogger.error).toHaveBeenCalledWith(
+          'Upstream tools/list failed',
+          expect.any(Error),
+          expect.objectContaining({ provider: 'test-upstream', sessionId: 'session-123', upstreamErrorType: 'UpstreamConnectionError' }),
+        );
+      });
+
+      it('tools/call: UpstreamTimeoutError triggers logger.error, response unchanged', async () => {
+        mockCallTool.mockRejectedValueOnce(
+          new UpstreamTimeoutError('test-upstream', 5000),
+        );
+
+        const response = await (upstreamServer as any).handleUpstreamToolCall(
+          { jsonrpc: '2.0', id: '2', method: 'tools/call', params: { name: 'safe_tool', arguments: {} } },
+          'session-123',
+          'upstream-profile',
+          upstreamProvider,
+          Date.now(),
+        ) as any;
+
+        expect(response.error.code).toBe(-32001);
+        expect(fakeLogger.error).toHaveBeenCalledWith(
+          'Upstream tools/call failed',
+          expect.any(Error),
+          expect.objectContaining({ provider: 'test-upstream', toolName: 'safe_tool', upstreamErrorType: 'UpstreamTimeoutError' }),
+        );
+      });
+
+      it('tools/call: UpstreamMalformedResponseError triggers logger.error, response unchanged', async () => {
+        mockCallTool.mockRejectedValueOnce(
+          new UpstreamMalformedResponseError('test-upstream', 'bad json'),
+        );
+
+        const response = await (upstreamServer as any).handleUpstreamToolCall(
+          { jsonrpc: '2.0', id: '3', method: 'tools/call', params: { name: 'safe_tool', arguments: {} } },
+          'session-123',
+          'upstream-profile',
+          upstreamProvider,
+          Date.now(),
+        ) as any;
+
+        expect(response.error).toBeDefined();
+        expect(fakeLogger.error).toHaveBeenCalledWith(
+          'Upstream tools/call failed',
+          expect.any(Error),
+          expect.objectContaining({ upstreamErrorType: 'UpstreamMalformedResponseError' }),
+        );
+      });
+
+      it('tools/call: UpstreamAuthError does NOT trigger logger.error', async () => {
+        mockCallTool.mockRejectedValueOnce(
+          new UpstreamAuthError('test-upstream'),
+        );
+
+        const response = await (upstreamServer as any).handleUpstreamToolCall(
+          { jsonrpc: '2.0', id: '4', method: 'tools/call', params: { name: 'safe_tool', arguments: {} } },
+          'session-123',
+          'upstream-profile',
+          upstreamProvider,
+          Date.now(),
+        ) as any;
+
+        expect(response.error.code).toBe(-32600);
+        expect(fakeLogger.error).not.toHaveBeenCalled();
+      });
+
+      it('tools/list: UpstreamAuthError does NOT trigger logger.error', async () => {
+        mockGetUpstreamClient.mockRejectedValueOnce(
+          new UpstreamAuthError('test-upstream'),
+        );
+
+        const response = await (upstreamServer as any).handleUpstreamToolsList(
+          { jsonrpc: '2.0', id: '5', method: 'tools/list', params: {} },
+          'session-123',
+          'upstream-profile',
+          upstreamProvider,
+        ) as any;
+
+        expect(response.error).toBeDefined();
+        expect(fakeLogger.error).not.toHaveBeenCalled();
+      });
+    });
+
+    // -------------------------------------------------------------------------
     describe('sessionId guard', () => {
       it('handleUpstreamToolsList throws UpstreamConnectionError when sessionId is undefined', async () => {
         await expect(
