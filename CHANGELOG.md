@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Changed
+- `normalizePath` now returns `other` for unrecognized HTTP paths instead of the raw path, preventing unbounded Prometheus label cardinality from dynamic route segments.
 
 ### Fixed
 - Grafana profile now routes datasource metadata/resources, correlations, snapshot sharing settings, and other admin-like reads through `retrieve_admin_content`; `query_metrics` now requires Grafana-style `from`/`to` + `queries`, and user lookup now sends the required `loginOrEmail` query parameter.

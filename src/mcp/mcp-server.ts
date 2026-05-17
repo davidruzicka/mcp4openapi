@@ -1707,8 +1707,17 @@ export class MCPServer {
     if (upstreamMcpForCall && this.getUpstreamClientFn) {
       // Runtime guard: params.name is cast to string above but a malformed request may send
       // a non-string (e.g. 123). Detect early so downstream .slice() calls never throw.
-      // No metrics recorded here — no valid tool name to label the counter.
+      // No metrics — no valid tool name for Prometheus labels. Audit still fires for trail completeness.
       if (typeof toolName !== 'string') {
+        this.emitAuditToolCall({
+          sessionId,
+          metricsContext,
+          tool: String(params.name),
+          upstreamHost,
+          outcome: 'error',
+          startTime,
+          correlationId,
+        });
         return {
           jsonrpc: '2.0', id: req.id, error: {
             code: -32002,
@@ -1798,10 +1807,10 @@ export class MCPServer {
     const tenantCtx = profileId && sessionId
       ? this.httpTransport?.getSessionTenantContext?.(profileId, sessionId)
       : undefined;
-    const localUpstreamHost = tenantCtx?.tenantBaseUrl
+    const openApiHost = tenantCtx?.tenantBaseUrl
       ? extractHost(tenantCtx.tenantBaseUrl)
       : this.safeBaseUrlHost();
-    const localMetricsContext: MetricsContextLabels = { ...metricsContext, upstreamHost: localUpstreamHost };
+    const openApiMetricsContext: MetricsContextLabels = { ...metricsContext, upstreamHost: openApiHost };
 
     try {
       // Find tool definition
@@ -1866,13 +1875,13 @@ export class MCPServer {
 
       if (metrics) {
         const durationSeconds = (Date.now() - startTime) / 1000;
-        metrics.recordToolCall(toolName, 'success', durationSeconds, localMetricsContext);
+        metrics.recordToolCall(toolName, 'success', durationSeconds, openApiMetricsContext);
       }
       this.emitAuditToolCall({
         sessionId,
-        metricsContext: localMetricsContext,
+        metricsContext: openApiMetricsContext,
         tool: toolName,
-        upstreamHost: localUpstreamHost,
+        upstreamHost: openApiHost,
         outcome: 'success',
         startTime,
         correlationId,
@@ -1893,15 +1902,15 @@ export class MCPServer {
     } catch (error) {
       if (metrics) {
         const durationSeconds = (Date.now() - startTime) / 1000;
-        metrics.recordToolCall(toolName, 'error', durationSeconds, localMetricsContext);
-        metrics.recordToolCallError(toolName, this.getMetricsErrorType(error), localMetricsContext);
+        metrics.recordToolCall(toolName, 'error', durationSeconds, openApiMetricsContext);
+        metrics.recordToolCallError(toolName, this.getMetricsErrorType(error), openApiMetricsContext);
       }
       // correlationId already generated at call entry — reuse so audit and error log share it
       this.emitAuditToolCall({
         sessionId,
-        metricsContext: localMetricsContext,
+        metricsContext: openApiMetricsContext,
         tool: toolName,
-        upstreamHost: localUpstreamHost,
+        upstreamHost: openApiHost,
         outcome: 'error',
         startTime,
         correlationId,
@@ -2148,6 +2157,8 @@ export class MCPServer {
     metricsBundle?: { collector: MetricsCollector; context: MetricsContextLabels },
     callerCorrelationId?: string,
   ): Promise<unknown> {
+    // Ensure a stable correlationId exists for the full call scope (success + error audit + logs).
+    const callCorrelationId = callerCorrelationId ?? generateCorrelationId();
     if (!sessionId) {
       throw new UpstreamConnectionError(
         'upstream_mcp requires a session context (HTTP transport only)',
@@ -2186,7 +2197,7 @@ export class MCPServer {
       const result = await (provider.timeout_ms !== undefined
         ? client.callTool({ name: toolName, arguments: args }, undefined, { timeout: provider.timeout_ms })
         : client.callTool({ name: toolName, arguments: args }));
-      this.recordUpstreamOutcome('success', toolName, sessionId, startTime, auditContext, upstreamHostForAudit, metricsBundle, undefined, callerCorrelationId);
+      this.recordUpstreamOutcome('success', toolName, sessionId, startTime, auditContext, upstreamHostForAudit, metricsBundle, callCorrelationId);
       // Forward as-is including isError: true (tool-level errors are valid MCP responses)
       return {
         jsonrpc: '2.0',
@@ -2194,9 +2205,9 @@ export class MCPServer {
         result,
       };
     } catch (error) {
-      // Prefer correlationId embedded in the upstream error; fall back to caller's ID or generate one.
-      const correlationId = extractCorrelationId(error) ?? callerCorrelationId ?? generateCorrelationId();
-      this.recordUpstreamOutcome('error', toolName, sessionId, startTime, auditContext, upstreamHostForAudit, metricsBundle, error, correlationId);
+      // Prefer correlationId embedded in the upstream error; fall back to the call-scoped ID.
+      const correlationId = extractCorrelationId(error) ?? callCorrelationId;
+      this.recordUpstreamOutcome('error', toolName, sessionId, startTime, auditContext, upstreamHostForAudit, metricsBundle, correlationId, error);
       const callLogLevel = upstreamErrorLogLevel(error);
       if (callLogLevel !== null) {
         const meta = { provider: provider.name, profileId, sessionId, toolName, upstreamErrorType: error instanceof Error ? error.constructor.name : typeof error, correlationId };
@@ -2288,7 +2299,7 @@ export class MCPServer {
     upstreamHost: string;
     outcome: 'success' | 'error';
     startTime: number;
-    correlationId?: string;
+    correlationId: string;
   }): void {
     const rawClientIdentity =
       typeof args.metricsContext.clientIdentity === 'string' && args.metricsContext.clientIdentity.length > 0
@@ -2301,7 +2312,7 @@ export class MCPServer {
       upstreamHost: args.upstreamHost,
       outcome: args.outcome,
       durationMs: Math.max(0, Math.round(Date.now() - args.startTime)),
-      correlationId: args.correlationId ?? generateCorrelationId(),
+      correlationId: args.correlationId,
     });
   }
 
@@ -2319,8 +2330,8 @@ export class MCPServer {
     auditContext: MetricsContextLabels,
     upstreamHostForAudit: string,
     metricsBundle: { collector: MetricsCollector; context: MetricsContextLabels } | undefined,
+    correlationId: string,
     error?: unknown,
-    correlationId?: string,
   ): void {
     if (metricsBundle) {
       const durationSeconds = (Date.now() - startTime) / 1000;

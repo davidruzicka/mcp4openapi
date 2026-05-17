@@ -5668,7 +5668,7 @@ paths:
         const fakeLogger = spyLogger();
         (server as any).logger = fakeLogger;
         const simpleTool = (server as any).profile.tools.find((t: any) => !t.composite);
-        if (!simpleTool) return;
+        expect(simpleTool).toBeDefined();
         (server as any).toolGenerator.validateArguments = () => {};
         (server as any).executeSimpleTool = async () => ({ ok: true });
 
@@ -5683,7 +5683,7 @@ paths:
           outcome: 'success',
         });
         expect(typeof payload.durationMs).toBe('number');
-        expect(typeof payload.clientPrincipal).toBe('string');
+        expect(payload.clientPrincipal).toBe('anonymous');
         expect(typeof payload.correlationId).toBe('string');
       });
 
@@ -5693,7 +5693,7 @@ paths:
         const fakeLogger = spyLogger();
         (server as any).logger = fakeLogger;
         const simpleTool = (server as any).profile.tools.find((t: any) => !t.composite);
-        if (!simpleTool) return;
+        expect(simpleTool).toBeDefined();
         (server as any).toolGenerator.validateArguments = () => {};
         (server as any).executeSimpleTool = async () => { throw new Error('local tool boom'); };
 
@@ -6111,6 +6111,14 @@ paths:
     it('returns unknown for empty string', () => {
       expect(extractHostFn('')).toBe('unknown');
     });
+
+    it('strips credentials from URL (no user:pass in audit log)', () => {
+      expect(extractHostFn('https://admin:secret@api.example.com/v1')).toBe('api.example.com');
+    });
+
+    it('lowercases hostname', () => {
+      expect(extractHostFn('https://API.EXAMPLE.COM/v1')).toBe('api.example.com');
+    });
   });
 
   // ---------------------------------------------------------------------------
@@ -6185,7 +6193,7 @@ paths:
       (localServer as any).logger = fakeLogger;
 
       const simpleTool = (localServer as any).profile.tools.find((t: any) => !t.composite);
-      if (!simpleTool) return;
+      expect(simpleTool).toBeDefined();
       (localServer as any).toolGenerator.validateArguments = () => {};
       (localServer as any).executeSimpleTool = async () => ({ ok: true });
 
@@ -6242,7 +6250,7 @@ paths:
       (localServer as any).logger = fakeLogger;
 
       const simpleTool = (localServer as any).profile.tools.find((t: any) => !t.composite);
-      if (!simpleTool) return;
+      expect(simpleTool).toBeDefined();
       (localServer as any).toolGenerator.validateArguments = () => {};
       (localServer as any).executeSimpleTool = async () => {
         throw new Error('stdio boom');
