@@ -5266,6 +5266,11 @@ paths:
         const payload = audits[audits.length - 1][1] as Record<string, unknown>;
         expect(payload.outcome).toBe('success');
         expect(payload.sessionId).toBe('session-no-metrics');
+        // upstreamHost must be the actual upstream host, not 'unknown' — verifies that
+        // extractHost(provider.transport.url) is used, not metricsContext.upstreamHost
+        // (which would be undefined when metricsBundle is absent).
+        expect(typeof payload.upstreamHost).toBe('string');
+        expect(payload.upstreamHost).not.toBe('unknown');
       });
 
       it('records FilterRejection error metric when X-Mcp4-Tools filter blocks tool', async () => {

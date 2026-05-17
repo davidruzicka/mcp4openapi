@@ -127,17 +127,15 @@ function extractCorrelationId(error: unknown): string | undefined {
 
 /**
  * Log level for upstream errors: 'error' for infra failures the client cannot resolve,
- * null for expected client-caused failures (auth), 'warn' for unexpected types (proxy bug).
+ * 'warn' for auth failures (misconfigured/rotated credential) and unrecognized error types.
  */
-function upstreamErrorLogLevel(error: unknown): 'error' | 'warn' | null {
+function upstreamErrorLogLevel(error: unknown): 'error' | 'warn' {
   if (
     error instanceof UpstreamConnectionError ||
     error instanceof UpstreamTimeoutError ||
     error instanceof UpstreamMalformedResponseError
   ) return 'error';
-  // Auth failures indicate a misconfigured or rotated credential — log at warn so
-  // ops tooling can detect repeated failures without treating them as infra incidents.
-  if (error instanceof UpstreamAuthError) return 'warn';
+  // Auth failures and unknown types: warn — ops can alert on bursts without treating as infra incidents.
   return 'warn';
 }
 
@@ -1052,7 +1050,7 @@ export class MCPServer {
         // 'stdio' sentinel distinguishes this path from UUID HTTP session IDs in log consumers.
         this.emitAuditToolCall({
           sessionId: STDIO_SESSION_ID,
-          metricsContext,
+          clientIdentity: metricsContext.clientIdentity,
           tool: toolName,
           upstreamHost: stdioUpstreamHost,
           outcome: 'success',
@@ -1077,7 +1075,7 @@ export class MCPServer {
         // correlationId already generated at call entry — reuse so audit and error log share it
         this.emitAuditToolCall({
           sessionId: STDIO_SESSION_ID,
-          metricsContext,
+          clientIdentity: metricsContext.clientIdentity,
           tool: toolName,
           upstreamHost: stdioUpstreamHost,
           outcome: 'error',
@@ -1679,7 +1677,7 @@ export class MCPServer {
         }
         this.emitAuditToolCall({
           sessionId,
-          metricsContext,
+          clientIdentity: metricsContext.clientIdentity,
           tool: toolName,
           upstreamHost,
           outcome: 'error',
@@ -1713,7 +1711,7 @@ export class MCPServer {
       if (typeof toolName !== 'string') {
         this.emitAuditToolCall({
           sessionId,
-          metricsContext,
+          clientIdentity: metricsContext.clientIdentity,
           tool: String(params.name),
           upstreamHost,
           outcome: 'error',
@@ -1880,7 +1878,7 @@ export class MCPServer {
       }
       this.emitAuditToolCall({
         sessionId,
-        metricsContext: localToolMetricsContext,
+        clientIdentity: localToolMetricsContext.clientIdentity,
         tool: toolName,
         upstreamHost: localToolHost,
         outcome: 'success',
@@ -1909,7 +1907,7 @@ export class MCPServer {
       // correlationId already generated at call entry — reuse so audit and error log share it
       this.emitAuditToolCall({
         sessionId,
-        metricsContext: localToolMetricsContext,
+        clientIdentity: localToolMetricsContext.clientIdentity,
         tool: toolName,
         upstreamHost: localToolHost,
         outcome: 'error',
@@ -2127,13 +2125,11 @@ export class MCPServer {
       };
     } catch (error) {
       const listLogLevel = upstreamErrorLogLevel(error);
-      if (listLogLevel !== null) {
-        const meta = { provider: provider.name, profileId, sessionId, upstreamErrorType: error instanceof Error ? error.constructor.name : typeof error, correlationId: extractCorrelationId(error) };
-        if (listLogLevel === 'error') {
-          this.logger.error('Upstream tools/list failed', error instanceof Error ? error : new Error(String(error)), meta);
-        } else {
-          this.logger.warn('Upstream tools/list failed', meta);
-        }
+      const meta = { provider: provider.name, profileId, sessionId, upstreamErrorType: error instanceof Error ? error.constructor.name : typeof error, correlationId: extractCorrelationId(error) };
+      if (listLogLevel === 'error') {
+        this.logger.error('Upstream tools/list failed', error instanceof Error ? error : new Error(String(error)), meta);
+      } else {
+        this.logger.warn('Upstream tools/list failed', meta);
       }
       return {
         jsonrpc: '2.0',
@@ -2194,7 +2190,7 @@ export class MCPServer {
       const result = await (provider.timeout_ms !== undefined
         ? client.callTool({ name: toolName, arguments: args }, undefined, { timeout: provider.timeout_ms })
         : client.callTool({ name: toolName, arguments: args }));
-      this.recordUpstreamOutcome('success', toolName, sessionId, startTime, metricsContext, upstreamHostForAudit, metricsBundle, callCorrelationId);
+      this.recordUpstreamOutcome({ outcome: 'success', toolName, sessionId, startTime, metricsContext, upstreamHostForAudit, metricsBundle, correlationId: callCorrelationId });
       // Forward as-is including isError: true (tool-level errors are valid MCP responses)
       return {
         jsonrpc: '2.0',
@@ -2204,15 +2200,13 @@ export class MCPServer {
     } catch (error) {
       // Prefer correlationId embedded in the upstream error; fall back to the call-scoped ID.
       const correlationId = extractCorrelationId(error) ?? callCorrelationId;
-      this.recordUpstreamOutcome('error', toolName, sessionId, startTime, metricsContext, upstreamHostForAudit, metricsBundle, correlationId, error);
+      this.recordUpstreamOutcome({ outcome: 'error', toolName, sessionId, startTime, metricsContext, upstreamHostForAudit, metricsBundle, correlationId, error });
       const callLogLevel = upstreamErrorLogLevel(error);
-      if (callLogLevel !== null) {
-        const meta = { provider: provider.name, profileId, sessionId, toolName, upstreamErrorType: error instanceof Error ? error.constructor.name : typeof error, correlationId };
-        if (callLogLevel === 'error') {
-          this.logger.error('Upstream tools/call failed', error instanceof Error ? error : new Error(String(error)), meta);
-        } else {
-          this.logger.warn('Upstream tools/call failed', meta);
-        }
+      const meta = { provider: provider.name, profileId, sessionId, toolName, upstreamErrorType: error instanceof Error ? error.constructor.name : typeof error, correlationId };
+      if (callLogLevel === 'error') {
+        this.logger.error('Upstream tools/call failed', error instanceof Error ? error : new Error(String(error)), meta);
+      } else {
+        this.logger.warn('Upstream tools/call failed', meta);
       }
       return {
         jsonrpc: '2.0',
@@ -2289,7 +2283,7 @@ export class MCPServer {
    */
   private emitAuditToolCall(args: {
     sessionId: string | undefined;
-    metricsContext: MetricsContextLabels;
+    clientIdentity?: string | null;
     tool: string;
     upstreamHost: string;
     outcome: 'success' | 'error' | 'rejected';
@@ -2297,8 +2291,8 @@ export class MCPServer {
     correlationId: string;
   }): void {
     const rawClientIdentity =
-      typeof args.metricsContext.clientIdentity === 'string' && args.metricsContext.clientIdentity.length > 0
-        ? args.metricsContext.clientIdentity
+      typeof args.clientIdentity === 'string' && args.clientIdentity.length > 0
+        ? args.clientIdentity
         : 'anonymous';
     this.logger.info('audit:tool_call', {
       sessionId: args.sessionId ?? 'unknown',
@@ -2317,17 +2311,18 @@ export class MCPServer {
     return value.slice(0, max);
   }
 
-  private recordUpstreamOutcome(
-    outcome: 'success' | 'error',
-    toolName: string,
-    sessionId: string | undefined,
-    startTime: number,
-    metricsContext: MetricsContextLabels,
-    upstreamHostForAudit: string,
-    metricsBundle: { collector: MetricsCollector; context: MetricsContextLabels } | undefined,
-    correlationId: string,
-    error?: unknown,
-  ): void {
+  private recordUpstreamOutcome(args: {
+    outcome: 'success' | 'error';
+    toolName: string;
+    sessionId: string | undefined;
+    startTime: number;
+    metricsContext: MetricsContextLabels;
+    upstreamHostForAudit: string;
+    metricsBundle: { collector: MetricsCollector; context: MetricsContextLabels } | undefined;
+    correlationId: string;
+    error?: unknown;
+  }): void {
+    const { outcome, toolName, sessionId, startTime, metricsContext, upstreamHostForAudit, metricsBundle, correlationId, error } = args;
     if (metricsBundle) {
       const durationSeconds = (Date.now() - startTime) / 1000;
       metricsBundle.collector.recordToolCall(toolName, outcome, durationSeconds, metricsBundle.context);
@@ -2337,7 +2332,7 @@ export class MCPServer {
     }
     this.emitAuditToolCall({
       sessionId,
-      metricsContext: metricsContext,
+      clientIdentity: metricsContext.clientIdentity,
       tool: toolName,
       upstreamHost: upstreamHostForAudit,
       outcome,
@@ -3245,7 +3240,7 @@ export class MCPServer {
     // upstreamHost is guaranteed set in metricsContext by all call sites in handleToolCall.
     this.emitAuditToolCall({
       sessionId,
-      metricsContext,
+      clientIdentity: metricsContext.clientIdentity,
       tool: toolName,
       upstreamHost: metricsContext.upstreamHost || 'unknown',
       outcome: 'rejected',

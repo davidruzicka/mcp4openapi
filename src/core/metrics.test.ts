@@ -405,6 +405,17 @@ describe('MetricsCollector', () => {
       expect(output).not.toContain('foo=bar');
     });
 
+    it('should normalize /ready/ (trailing slash) to other', async () => {
+      metrics.recordHttpRequest('GET', '/ready/', 200, 0.1);
+
+      const output = await metrics.getMetrics();
+
+      // Trailing slash is NOT recognized — falls through to 'other'.
+      // K8s probes send /ready without trailing slash; this test documents the boundary.
+      expect(output).toContain('path="other"');
+      expect(output).not.toContain('path="/ready/"');
+    });
+
     it('should normalize unknown paths to other', async () => {
       metrics.recordHttpRequest('GET', '/unknown/path?param=value', 200, 0.1);
 
