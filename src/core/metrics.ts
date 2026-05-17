@@ -265,13 +265,13 @@ export class MetricsCollector {
    */
   recordToolCall(
     tool: string,
-    status: 'success' | 'error',
+    status: 'success' | 'error' | 'rejected',
     durationSeconds: number,
     context?: MetricsContextLabels
   ): void {
     if (!this.enabled) return;
     const labels = this.resolveContextLabels(context);
-    const safeToolName = tool.slice(0, INPUT_LIMITS.TOOL_NAME_LABEL);
+    const safeToolName = this.safeToolLabel(tool);
 
     this.mcpToolCallsTotal.inc({
       tool: safeToolName,
@@ -299,7 +299,7 @@ export class MetricsCollector {
     if (!this.enabled) return;
     const labels = this.resolveContextLabels(context);
     this.mcpToolCallErrors.inc({
-      tool: tool.slice(0, INPUT_LIMITS.TOOL_NAME_LABEL),
+      tool: this.safeToolLabel(tool),
       error_type: errorType,
       profile_id: labels.profile_id,
       tenant_id: labels.tenant_id,
@@ -329,7 +329,7 @@ export class MetricsCollector {
 
   recordToolFilterRejection(tool: string, source: string): void {
     if (!this.enabled) return;
-    this.toolFilterRejections.inc({ tool, source });
+    this.toolFilterRejections.inc({ tool: this.safeToolLabel(tool), source });
   }
 
   recordToolFilterPatternCount(type: string, count: number): void {
@@ -443,6 +443,10 @@ export class MetricsCollector {
     if (status >= 400 && status < 500) return '4xx';
     if (status >= 500 && status < 600) return '5xx';
     return 'unknown';
+  }
+
+  private safeToolLabel(tool: string): string {
+    return tool.slice(0, INPUT_LIMITS.TOOL_NAME_LABEL);
   }
 
   private resolveContextLabels(context?: MetricsContextLabels): {

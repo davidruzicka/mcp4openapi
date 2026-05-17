@@ -83,6 +83,14 @@ describe('MetricsCollector', () => {
       expect(output).toContain('profile_id="unknown"');
       expect(output).toContain('tenant_id="none"');
     });
+
+    it('does not include upstream_host label in session metrics', async () => {
+      metrics.recordSessionCreated({ profileId: 'g', tenantId: 't', upstreamHost: 'api.example.com' });
+      const output = await metrics.getMetrics();
+      // Session counters must have only profile_id + tenant_id; upstream_host is tool-call only.
+      expect(output).toContain('test_sessions_created_total{profile_id="g",tenant_id="t"} 1');
+      expect(output).not.toMatch(/sessions_created_total\{[^}]*upstream_host/);
+    });
   });
 
   describe('Tool Call Metrics', () => {
@@ -181,6 +189,16 @@ describe('MetricsCollector', () => {
       const output = await metrics.getMetrics();
 
       expect(output).toContain(`tool="${'e'.repeat(64)}"`);
+    });
+
+    it('truncates tool name to 64 chars in filter rejection labels', async () => {
+      const longTool = 'f'.repeat(100);
+      metrics.recordToolFilterRejection(longTool, 'session');
+
+      const output = await metrics.getMetrics();
+
+      expect(output).toContain(`tool="${'f'.repeat(64)}"`);
+      expect(output).not.toContain(`tool="${'f'.repeat(65)}"`);
     });
 
     it('records upstream_host for recordToolCallError (OBS-02)', async () => {

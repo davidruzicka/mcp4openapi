@@ -4434,7 +4434,7 @@ paths:
         );
       });
 
-      it('tools/call: UpstreamAuthError → no logger.error, response -32600', async () => {
+      it('tools/call: UpstreamAuthError → logger.warn (not error), response -32600', async () => {
         mockCallTool.mockRejectedValueOnce(new UpstreamAuthError('test-upstream'));
 
         const response = await (upstreamServer as any).handleUpstreamToolCall(
@@ -4447,10 +4447,13 @@ paths:
 
         expect(response.error.code).toBe(-32600);
         expect(fakeLogger.error).not.toHaveBeenCalled();
-        expect(fakeLogger.warn).not.toHaveBeenCalled();
+        expect(fakeLogger.warn).toHaveBeenCalledWith(
+          'Upstream tools/call failed',
+          expect.objectContaining({ upstreamErrorType: 'UpstreamAuthError' }),
+        );
       });
 
-      it('tools/list: UpstreamAuthError → no logger.error, response -32600', async () => {
+      it('tools/list: UpstreamAuthError → logger.warn (not error), response -32600', async () => {
         mockGetUpstreamClient.mockRejectedValueOnce(new UpstreamAuthError('test-upstream'));
 
         const response = await (upstreamServer as any).handleUpstreamToolsList(
@@ -4462,7 +4465,10 @@ paths:
 
         expect(response.error.code).toBe(-32600);
         expect(fakeLogger.error).not.toHaveBeenCalled();
-        expect(fakeLogger.warn).not.toHaveBeenCalled();
+        expect(fakeLogger.warn).toHaveBeenCalledWith(
+          'Upstream tools/list failed',
+          expect.objectContaining({ upstreamErrorType: 'UpstreamAuthError' }),
+        );
       });
 
       it('tools/call: unexpected error type → logger.warn (not error)', async () => {
@@ -5269,7 +5275,7 @@ paths:
 
         expect(response.error).toBeDefined();
         expect(metrics.recordToolCall).toHaveBeenCalledWith(
-          'safe_tool', 'error', expect.any(Number), expect.any(Object),
+          'safe_tool', 'rejected', expect.any(Number), expect.any(Object),
         );
         expect(metrics.recordToolCallError).toHaveBeenCalledWith(
           'safe_tool', 'FilterRejection', expect.any(Object),
@@ -5290,7 +5296,7 @@ paths:
 
         expect(response.error).toBeDefined();
         expect(metrics.recordToolCall).toHaveBeenCalledWith(
-          'safe_tool', 'error', expect.any(Number), expect.any(Object),
+          'safe_tool', 'rejected', expect.any(Number), expect.any(Object),
         );
         expect(metrics.recordToolCallError).toHaveBeenCalledWith(
           'safe_tool', 'PolicyRejection', expect.any(Object),
@@ -5309,7 +5315,7 @@ paths:
 
         expect(response.error).toBeDefined();
         expect(metrics.recordToolCall).toHaveBeenCalledWith(
-          'bad tool name!', 'error', expect.any(Number), expect.any(Object),
+          'bad tool name!', 'rejected', expect.any(Number), expect.any(Object),
         );
         expect(metrics.recordToolCallError).toHaveBeenCalledWith(
           'bad tool name!', 'InvalidToolName', expect.any(Object),
@@ -5331,7 +5337,7 @@ paths:
 
         expect(response.error).toBeDefined();
         expect(metrics.recordToolCall).toHaveBeenCalledWith(
-          'safe_tool', 'error', expect.any(Number), expect.any(Object),
+          'safe_tool', 'rejected', expect.any(Number), expect.any(Object),
         );
         expect(metrics.recordToolCallError).toHaveBeenCalledWith(
           'safe_tool', 'PolicyRejection', expect.any(Object),
@@ -5354,7 +5360,7 @@ paths:
 
         expect(response.error).toBeDefined();
         expect(metrics.recordToolCall).toHaveBeenCalledWith(
-          'safe_tool', 'error', expect.any(Number), expect.any(Object),
+          'safe_tool', 'rejected', expect.any(Number), expect.any(Object),
         );
         expect(metrics.recordToolCallError).toHaveBeenCalledWith(
           'safe_tool', 'SanitizationRejection', expect.any(Object),
@@ -5373,9 +5379,9 @@ paths:
         ) as any;
 
         expect(response.error).toBeDefined();
-        // recordUpstreamReject passes raw name; MetricsCollector.recordToolCall truncates at 64 internally
+        // recordUpstreamReject passes raw name with 'rejected' status; MetricsCollector truncates at 64 internally
         expect(metrics.recordToolCall).toHaveBeenCalledWith(
-          longName, 'error', expect.any(Number), expect.any(Object),
+          longName, 'rejected', expect.any(Number), expect.any(Object),
         );
         expect(metrics.recordToolCallError).toHaveBeenCalledWith(
           longName, 'InvalidToolName', expect.any(Object),
@@ -5519,7 +5525,7 @@ paths:
         const audits = findAuditEntries(fakeLogger.info);
         expect(audits.length).toBeGreaterThanOrEqual(1);
         const payload = audits[audits.length - 1][1] as Record<string, unknown>;
-        expect(payload.outcome).toBe('error');
+        expect(payload.outcome).toBe('rejected');
         expect(payload.tool).toBe('safe_tool');
         expect(payload.upstreamHost).toBe('upstream.example.com');
       });
@@ -5575,8 +5581,9 @@ paths:
         const audits = findAuditEntries(fakeLogger.info);
         expect(audits.length).toBeGreaterThanOrEqual(1);
         const payload = audits[audits.length - 1][1] as Record<string, unknown>;
-        expect(payload.outcome).toBe('error');
+        expect(payload.outcome).toBe('rejected');
         expect(payload.tool).toBe('safe_tool');
+        expect(typeof payload.correlationId).toBe('string');
       });
 
       it('emits audit:tool_call on InvalidToolName rejection', async () => {
@@ -5592,7 +5599,8 @@ paths:
         const audits = findAuditEntries(fakeLogger.info);
         expect(audits.length).toBeGreaterThanOrEqual(1);
         const payload = audits[audits.length - 1][1] as Record<string, unknown>;
-        expect(payload.outcome).toBe('error');
+        expect(payload.outcome).toBe('rejected');
+        expect(typeof payload.correlationId).toBe('string');
       });
 
       it('emits audit:tool_call on SanitizationRejection', async () => {
@@ -5611,8 +5619,9 @@ paths:
         const audits = findAuditEntries(fakeLogger.info);
         expect(audits.length).toBeGreaterThanOrEqual(1);
         const payload = audits[audits.length - 1][1] as Record<string, unknown>;
-        expect(payload.outcome).toBe('error');
+        expect(payload.outcome).toBe('rejected');
         expect(payload.tool).toBe('safe_tool');
+        expect(typeof payload.correlationId).toBe('string');
       });
 
       it('emits audit:tool_call on OAuthRequired early-reject', async () => {
@@ -5685,6 +5694,7 @@ paths:
         expect(typeof payload.durationMs).toBe('number');
         expect(payload.clientPrincipal).toBe('anonymous');
         expect(typeof payload.correlationId).toBe('string');
+        expect(typeof payload.upstreamHost).toBe('string');
       });
 
       it('emits audit:tool_call with outcome=error on local HTTP tool failure (non-upstream path)', async () => {
@@ -6119,6 +6129,12 @@ paths:
     it('lowercases hostname', () => {
       expect(extractHostFn('https://API.EXAMPLE.COM/v1')).toBe('api.example.com');
     });
+
+    it('returns IPv6 address (with brackets, no port) per URL spec', () => {
+      // Node.js URL.hostname for IPv6 includes brackets: '[::1]', not '::1'
+      expect(extractHostFn('http://[::1]:9000/path')).toBe('[::1]');
+      expect(extractHostFn('http://[2001:db8::1]/x')).toBe('[2001:db8::1]');
+    });
   });
 
   // ---------------------------------------------------------------------------
@@ -6148,6 +6164,21 @@ paths:
 
       expect(result).toBe('a'.repeat(64));
       expect(fakeLogger.warn).not.toHaveBeenCalled();
+    });
+
+    it('truncates clientPrincipal at CLIENT_PRINCIPAL_AUDIT (256) chars', () => {
+      const server = new MCPServer();
+      const fakeLogger = { info: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn() };
+      (server as any).logger = fakeLogger;
+
+      const longSubject = 'x'.repeat(300);
+      const result = (server as any).truncateWithWarn(longSubject, 256, 'clientPrincipal');
+
+      expect(result).toBe('x'.repeat(256));
+      expect(fakeLogger.warn).toHaveBeenCalledWith(
+        'audit field truncated',
+        expect.objectContaining({ field: 'clientPrincipal', original_length: 300, max: 256 }),
+      );
     });
   });
 

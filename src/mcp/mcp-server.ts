@@ -135,7 +135,9 @@ function upstreamErrorLogLevel(error: unknown): 'error' | 'warn' | null {
     error instanceof UpstreamTimeoutError ||
     error instanceof UpstreamMalformedResponseError
   ) return 'error';
-  if (error instanceof UpstreamAuthError) return null;
+  // Auth failures indicate a misconfigured or rotated credential — log at warn so
+  // ops tooling can detect repeated failures without treating them as infra incidents.
+  if (error instanceof UpstreamAuthError) return 'warn';
   return 'warn';
 }
 
@@ -2278,7 +2280,7 @@ export class MCPServer {
    *   - clientPrincipal: string - AuthorizedPrincipal.subject or 'anonymous'
    *   - tool: string - the requested tool name (may be untrusted - never used as label key)
    *   - upstreamHost: string - host-only (no scheme/path/credentials)
-   *   - outcome: 'success' | 'error'
+   *   - outcome: 'success' | 'error' | 'rejected'
    *   - durationMs: number - rounded ms, derived from startTime
    */
   private emitAuditToolCall(args: {
@@ -2286,7 +2288,7 @@ export class MCPServer {
     metricsContext: MetricsContextLabels;
     tool: string;
     upstreamHost: string;
-    outcome: 'success' | 'error';
+    outcome: 'success' | 'error' | 'rejected';
     startTime: number;
     correlationId: string;
   }): void {
@@ -3225,29 +3227,26 @@ export class MCPServer {
     startTime: number;
     metricsContext: MetricsContextLabels;
     sessionId?: string;
-    correlationId?: string;
+    correlationId: string;
   }): void {
     const { toolName, errorType, metrics, startTime, metricsContext, sessionId, correlationId } = args;
     if (metrics) {
       const durationSeconds = (Date.now() - startTime) / 1000;
       // Pass raw toolName — MetricsCollector truncates at TOOL_NAME_LABEL internally.
-      metrics.recordToolCall(toolName, 'error', durationSeconds, metricsContext);
+      metrics.recordToolCall(toolName, 'rejected', durationSeconds, metricsContext);
       metrics.recordToolCallError(toolName, errorType, metricsContext);
     }
     // Audit every early-reject so the trail covers policy/filter/sanitization rejections, not just proxy calls.
     // emitAuditToolCall truncates toolName internally; pass raw value.
-    const upstreamHost =
-      typeof metricsContext.upstreamHost === 'string' && metricsContext.upstreamHost.length > 0
-        ? metricsContext.upstreamHost
-        : 'unknown';
+    // upstreamHost is guaranteed set in metricsContext by all call sites in handleToolCall.
     this.emitAuditToolCall({
       sessionId,
       metricsContext,
       tool: toolName,
-      upstreamHost,
-      outcome: 'error',
+      upstreamHost: metricsContext.upstreamHost || 'unknown',
+      outcome: 'rejected',
       startTime,
-      correlationId: correlationId ?? generateCorrelationId(),
+      correlationId,
     });
   }
 
