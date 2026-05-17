@@ -39,7 +39,7 @@ export function buildHttpTransportBaseConfig(host: string, port: number): HttpTr
       ? parseInt(process.env.MCP4_TOKEN_MAX_LENGTH, 10)
       : undefined,
     tokenKey: (() => {
-      const raw = process.env.MCP4_TOKEN_KEY;
+      const raw = process.env.MCP4_OAUTH_KEY;
       if (!raw || !raw.trim()) return undefined;
       return deriveTokenKey(raw.trim());
     })(),

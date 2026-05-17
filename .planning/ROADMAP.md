@@ -80,7 +80,7 @@ Plans:
 
 Plans:
 - [x] 03.4-01-PLAN.md - Pure crypto module src/auth/token-envelope.ts (encrypt/decrypt/deriveKey/isEncryptedToken) + 17-case TDD test suite
-- [x] 03.4-02-PLAN.md - Wire MCP4_TOKEN_KEY into HttpTransportConfig (tokenKey?: Buffer field + buildHttpTransportBaseConfig parser) + tests
+- [x] 03.4-02-PLAN.md - Wire MCP4_OAUTH_KEY into HttpTransportConfig (tokenKey?: Buffer field + buildHttpTransportBaseConfig parser) + tests
 - [x] 03.4-03-PLAN.md - http-transport.ts integration: imports, DEFAULT_MAX_TOKEN_LENGTH=4096, startup warn, storeOAuthTokens refactor (returns string + registeredClient param), 3 call sites updated, session-init envelope-decrypt fallback with creg-driven registerClient
 - [x] 03.4-04-PLAN.md - Documentation (env.example, README.md, docs/HTTP-TRANSPORT.md "Encrypted Token Envelopes" section, IMPLEMENTATION.md, CHANGELOG.md)
 

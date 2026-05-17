@@ -165,15 +165,15 @@ export class HttpTransport {
     this.logger = logger;
     if (!this.config.tokenKey) {
       this.logger.warn(
-        'MCP4_TOKEN_KEY not set - encrypted token envelopes disabled. ' +
+        'MCP4_OAUTH_KEY not set - encrypted token envelopes disabled. ' +
         'OAuth clients will need to re-authenticate after every gateway restart. ' +
-        'Set MCP4_TOKEN_KEY (any passphrase, or a 64-char hex string) for restart-resilient OAuth.',
+        'Set MCP4_OAUTH_KEY (any passphrase, or a 64-char hex string) for restart-resilient OAuth.',
       );
     } else {
-      const rawKey = process.env.MCP4_TOKEN_KEY?.trim();
+      const rawKey = process.env.MCP4_OAUTH_KEY?.trim();
       if (rawKey && !(rawKey.length === 64 && /^[0-9a-fA-F]+$/.test(rawKey))) {
         this.logger.warn(
-          'MCP4_TOKEN_KEY is a passphrase (SHA-256 derived, no salt/work factor). ' +
+          'MCP4_OAUTH_KEY is a passphrase (SHA-256 derived, no salt/work factor). ' +
           'Weak passphrases offer little protection. For production use a random hex key: openssl rand -hex 32',
         );
       }
@@ -4057,7 +4057,7 @@ export class HttpTransport {
   /**
    * Store OAuth tokens in internal map for later session initialization.
    *
-   * When MCP4_TOKEN_KEY is configured AND tokens.refresh_token is present, builds an encrypted
+   * When MCP4_OAUTH_KEY is configured AND tokens.refresh_token is present, builds an encrypted
    * `mcp4.v1.*` envelope binding {access_token, refresh_token, expiry, client_id, scopes,
    * profile_id, optional client registration} under AES-256-GCM with profile_id as AAD.
    * Both the per-profile map and InboundAuthTokenStore are keyed by the RETURNED token (envelope
