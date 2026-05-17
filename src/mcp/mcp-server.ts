@@ -998,7 +998,8 @@ export class MCPServer {
       const startTime = Date.now();
       const correlationId = generateCorrelationId();
       const metrics = this.getMetricsCollector();
-      // stdio has no upstream_mcp proxy — the OpenAPI backend host is the target for metrics/audit.
+      // stdio has no upstream_mcp proxy — use the OpenAPI spec's base URL host as the audit/metric
+      // dimension so operators can correlate tool calls to the backend API they target.
       const stdioUpstreamHost = this.safeBaseUrlHost();
       const metricsContext: MetricsContextLabels = {
         ...this.resolveMetricsContext(undefined, undefined),
@@ -1656,6 +1657,8 @@ export class MCPServer {
     const metrics = this.getMetricsCollector();
     // Resolve upstream host up front so all audit/metric entries for this call share consistent
     // dimensions, including OAuth early-reject paths that fire before proxy dispatch.
+    // Assumption: profile config is immutable for the duration of a single handleToolCall invocation.
+    // Hot-reload of profiles must not mutate an in-flight call's config reference.
     const upstreamMcpForCall = this.getUpstreamMcpConfig(profileId);
     const upstreamHost = upstreamMcpForCall
       ? extractHost(upstreamMcpForCall.transport.url)
@@ -2180,7 +2183,7 @@ export class MCPServer {
     // When metricsBundle is present, reuse its context so metric and audit dimensions match exactly.
     // startTime is the handleToolCall entry time so durationMs covers policy checks before dispatch.
     const upstreamHostForAudit = extractHost(provider.transport.url);
-    const auditContext: MetricsContextLabels =
+    const metricsContext: MetricsContextLabels =
       metricsBundle?.context ?? this.resolveMetricsContext(profileId, sessionId);
 
     try {
@@ -2191,7 +2194,7 @@ export class MCPServer {
       const result = await (provider.timeout_ms !== undefined
         ? client.callTool({ name: toolName, arguments: args }, undefined, { timeout: provider.timeout_ms })
         : client.callTool({ name: toolName, arguments: args }));
-      this.recordUpstreamOutcome('success', toolName, sessionId, startTime, auditContext, upstreamHostForAudit, metricsBundle, callCorrelationId);
+      this.recordUpstreamOutcome('success', toolName, sessionId, startTime, metricsContext, upstreamHostForAudit, metricsBundle, callCorrelationId);
       // Forward as-is including isError: true (tool-level errors are valid MCP responses)
       return {
         jsonrpc: '2.0',
@@ -2201,7 +2204,7 @@ export class MCPServer {
     } catch (error) {
       // Prefer correlationId embedded in the upstream error; fall back to the call-scoped ID.
       const correlationId = extractCorrelationId(error) ?? callCorrelationId;
-      this.recordUpstreamOutcome('error', toolName, sessionId, startTime, auditContext, upstreamHostForAudit, metricsBundle, correlationId, error);
+      this.recordUpstreamOutcome('error', toolName, sessionId, startTime, metricsContext, upstreamHostForAudit, metricsBundle, correlationId, error);
       const callLogLevel = upstreamErrorLogLevel(error);
       if (callLogLevel !== null) {
         const meta = { provider: provider.name, profileId, sessionId, toolName, upstreamErrorType: error instanceof Error ? error.constructor.name : typeof error, correlationId };
@@ -2258,6 +2261,7 @@ export class MCPServer {
    */
   private safeBaseUrlHost(): string {
     try {
+      // try guards against getBaseUrl() throwing, not extractHost() — extractHost() never throws.
       const base = this.getBaseUrl();
       if (typeof base !== 'string' || base.length === 0) return 'unknown';
       return extractHost(base);
@@ -2318,7 +2322,7 @@ export class MCPServer {
     toolName: string,
     sessionId: string | undefined,
     startTime: number,
-    auditContext: MetricsContextLabels,
+    metricsContext: MetricsContextLabels,
     upstreamHostForAudit: string,
     metricsBundle: { collector: MetricsCollector; context: MetricsContextLabels } | undefined,
     correlationId: string,
@@ -2333,7 +2337,7 @@ export class MCPServer {
     }
     this.emitAuditToolCall({
       sessionId,
-      metricsContext: auditContext,
+      metricsContext: metricsContext,
       tool: toolName,
       upstreamHost: upstreamHostForAudit,
       outcome,

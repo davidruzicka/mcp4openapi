@@ -5224,7 +5224,7 @@ paths:
         );
 
         expect(metrics.recordToolCall).toHaveBeenCalledWith(
-          'safe_tool', 'success', expect.any(Number), expect.any(Object),
+          'safe_tool', 'success', expect.any(Number), expect.objectContaining({ upstreamHost: expect.any(String) }),
         );
         expect(metrics.recordToolCallError).not.toHaveBeenCalled();
       });
@@ -5241,17 +5241,18 @@ paths:
         );
 
         expect(metrics.recordToolCall).toHaveBeenCalledWith(
-          'safe_tool', 'error', expect.any(Number), expect.any(Object),
+          'safe_tool', 'error', expect.any(Number), expect.objectContaining({ upstreamHost: expect.any(String) }),
         );
         expect(metrics.recordToolCallError).toHaveBeenCalledWith(
-          'safe_tool', expect.any(String), expect.any(Object),
+          'safe_tool', expect.any(String), expect.objectContaining({ upstreamHost: expect.any(String) }),
         );
       });
 
-      it('skips metric recording when no collector is wired', async () => {
+      it('skips metric recording when no collector is wired but still emits audit log', async () => {
         (upstreamServer as any).httpTransport.getMetricsCollector = () => null;
+        const fakeLogger = { info: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn() };
+        (upstreamServer as any).logger = fakeLogger;
 
-        // Should not throw even without a metrics collector
         const response = await (upstreamServer as any).handleToolCall(
           { jsonrpc: '2.0', id: '1', method: 'tools/call', params: { name: 'safe_tool', arguments: {} } },
           'session-no-metrics',
@@ -5259,6 +5260,12 @@ paths:
         ) as any;
 
         expect(response.result).toBeDefined();
+        // Audit log fires regardless of metrics being disabled (OBS-01 independence guarantee).
+        const audits = fakeLogger.info.mock.calls.filter((c: unknown[]) => c[0] === 'audit:tool_call');
+        expect(audits.length).toBeGreaterThanOrEqual(1);
+        const payload = audits[audits.length - 1][1] as Record<string, unknown>;
+        expect(payload.outcome).toBe('success');
+        expect(payload.sessionId).toBe('session-no-metrics');
       });
 
       it('records FilterRejection error metric when X-Mcp4-Tools filter blocks tool', async () => {
@@ -5722,6 +5729,25 @@ paths:
             (c[c.length - 1] as Record<string, unknown>).correlationId === payload.correlationId,
         );
         expect(logWithCorr).toBeDefined();
+      });
+
+      it('uses sessionId="unknown" in audit log when sessionId is undefined (local tool path)', async () => {
+        const specPath = path.join(process.cwd(), 'profiles/gitlab/openapi.yaml');
+        await server.initialize(specPath);
+        const fakeLogger = spyLogger();
+        (server as any).logger = fakeLogger;
+        const simpleTool = (server as any).profile.tools.find((t: any) => !t.composite);
+        expect(simpleTool).toBeDefined();
+        (server as any).toolGenerator.validateArguments = () => {};
+        (server as any).executeSimpleTool = async () => ({ ok: true });
+
+        // Pass undefined sessionId — emitAuditToolCall must use 'unknown' sentinel.
+        await server.callToolRpc(simpleTool.name, {}, undefined, '1');
+
+        const audits = findAuditEntries(fakeLogger.info);
+        expect(audits.length).toBeGreaterThanOrEqual(1);
+        const payload = audits[audits.length - 1][1] as Record<string, unknown>;
+        expect(payload.sessionId).toBe('unknown');
       });
     });
 
