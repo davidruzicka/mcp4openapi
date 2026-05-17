@@ -1205,7 +1205,7 @@ export class MCPServer {
    */
   private encodePathSegment(value: unknown): string {
     const val = String(value);
-    return val.includes('/') ? encodeURIComponent(val) : val;
+    return val.includes('/') ? encodeURIComponent(val).replace(/\./g, '%2E') : val.replace(/\./g, '%2E');
   }
 
   /**
