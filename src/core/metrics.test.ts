@@ -23,7 +23,7 @@ describe('MetricsCollector', () => {
       expect(output).toContain('test_http_requests_total');
       expect(output).toContain('method="POST"');
       expect(output).toContain('path="/mcp"');
-      expect(output).toContain('status="200"');
+      expect(output).toContain('status="2xx"');
       expect(output).toContain('profile_id="grafana"');
       expect(output).toContain('tenant_id="team-a"');
     });
@@ -349,24 +349,26 @@ describe('MetricsCollector', () => {
   });
 
   describe('Status Labels', () => {
-    it('should group 3xx status codes', async () => {
+    it('should group 3xx status codes to "3xx"', async () => {
       metrics.recordHttpRequest('GET', '/mcp', 301, 0.1);
       metrics.recordHttpRequest('GET', '/mcp', 302, 0.1);
-      
+
       const output = await metrics.getMetrics();
-      
-      expect(output).toContain('status="301"');
-      expect(output).toContain('status="302"');
+
+      expect(output).toContain('status="3xx"');
+      expect(output).not.toContain('status="301"');
+      expect(output).not.toContain('status="302"');
     });
 
-    it('should group 5xx status codes', async () => {
+    it('should group 5xx status codes to "5xx"', async () => {
       metrics.recordHttpRequest('GET', '/mcp', 500, 0.1);
       metrics.recordHttpRequest('GET', '/mcp', 503, 0.1);
-      
+
       const output = await metrics.getMetrics();
-      
-      expect(output).toContain('status="500"');
-      expect(output).toContain('status="503"');
+
+      expect(output).toContain('status="5xx"');
+      expect(output).not.toContain('status="500"');
+      expect(output).not.toContain('status="503"');
     });
   });
 
@@ -425,14 +427,13 @@ describe('MetricsCollector', () => {
       expect(output).not.toContain('param=value');
     });
 
-    it('should use internal getStatusLabel for unusual status codes', async () => {
-      // Test status code outside normal ranges (triggers 'unknown' label)
-      metrics.recordHttpRequest('GET', '/mcp', 100, 0.1); // 1xx - informational
-      
+    it('should use "unknown" label for status codes outside 2xx-5xx range', async () => {
+      metrics.recordHttpRequest('GET', '/mcp', 100, 0.1); // 1xx - not in any recognized range
+
       const output = await metrics.getMetrics();
-      
-      // 100 is not in 2xx-5xx range, uses actual status as label
-      expect(output).toContain('status="100"');
+
+      expect(output).toContain('status="unknown"');
+      expect(output).not.toContain('status="100"');
     });
   });
 });

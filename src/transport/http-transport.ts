@@ -2708,6 +2708,7 @@ export class HttpTransport {
     const startTime = Date.now();
     let metricsProfileState: ProfileRuntimeState | null = null;
     let metricsTenantId: string | null = null;
+    let metricsRecorded = false;
     try {
       this.logger.debug('handlePost called', { method: req.method, path: req.path, sessionId: req.sessionId, accept: req.headers.accept });
       const profileState = await this.getProfileStateForRequest(req);
@@ -3334,10 +3335,10 @@ export class HttpTransport {
           duration,
           this.resolveMetricsContext(metricsProfileState, metricsTenantId)
         );
+        metricsRecorded = true;
       }
     } finally {
-      // Record success metrics (if not already recorded in catch)
-      if (this.metrics && res.statusCode !== 500) {
+      if (this.metrics && !metricsRecorded) {
         const duration = (Date.now() - startTime) / 1000;
         this.metrics.recordHttpRequest(
           req.method,

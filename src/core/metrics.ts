@@ -37,6 +37,8 @@ export interface MetricsContextLabels {
 /** Max chars for the upstream_host Prometheus label - bounds cardinality. */
 const UPSTREAM_HOST_LABEL_MAX = 128;
 
+const SAFE_HTTP_METHODS = new Set(['GET', 'POST', 'DELETE', 'PUT', 'PATCH', 'HEAD', 'OPTIONS']);
+
 export class MetricsCollector {
   private registry: Registry;
   private enabled: boolean;
@@ -214,20 +216,22 @@ export class MetricsCollector {
   ): void {
     if (!this.enabled) return;
     const labels = this.resolveContextLabels(context);
+    const safeMethod = this.safeMethodLabel(method);
+    const statusLabel = this.getStatusLabel(status);
 
     this.httpRequestsTotal.inc({
-      method,
+      method: safeMethod,
       path: this.normalizePath(path),
-      status: status.toString(),
+      status: statusLabel,
       profile_id: labels.profile_id,
       tenant_id: labels.tenant_id,
     });
 
     this.httpRequestDuration.observe(
       {
-        method,
+        method: safeMethod,
         path: this.normalizePath(path),
-        status: status.toString(),
+        status: statusLabel,
         profile_id: labels.profile_id,
         tenant_id: labels.tenant_id,
       },
@@ -348,17 +352,18 @@ export class MetricsCollector {
   ): void {
     if (!this.enabled) return;
 
+    const safeOp = this.safeOperationLabel(operation);
     const statusLabel = this.getStatusLabel(status);
     const labels = this.resolveContextLabels(context);
-    
+
     this.apiCallsTotal.inc({
-      operation,
+      operation: safeOp,
       status: statusLabel,
       profile_id: labels.profile_id,
       tenant_id: labels.tenant_id,
     });
     this.apiCallDuration.observe(
-      { operation, status: statusLabel, profile_id: labels.profile_id, tenant_id: labels.tenant_id },
+      { operation: safeOp, status: statusLabel, profile_id: labels.profile_id, tenant_id: labels.tenant_id },
       durationSeconds
     );
   }
@@ -368,9 +373,10 @@ export class MetricsCollector {
    */
   recordApiCallError(operation: string, errorType: string, context?: MetricsContextLabels): void {
     if (!this.enabled) return;
+    const safeOp = this.safeOperationLabel(operation);
     const labels = this.resolveContextLabels(context);
     this.apiCallErrors.inc({
-      operation,
+      operation: safeOp,
       error_type: errorType,
       profile_id: labels.profile_id,
       tenant_id: labels.tenant_id,
@@ -379,9 +385,10 @@ export class MetricsCollector {
 
   recordApiCacheEvent(operation: string, event: string, context?: MetricsContextLabels): void {
     if (!this.enabled) return;
+    const safeOp = this.safeOperationLabel(operation);
     const labels = this.resolveContextLabels(context);
     this.apiCacheEventsTotal.inc({
-      operation,
+      operation: safeOp,
       event,
       profile_id: labels.profile_id,
       tenant_id: labels.tenant_id,
@@ -446,8 +453,18 @@ export class MetricsCollector {
   }
 
   private safeToolLabel(tool: string): string {
-    if (!tool) return '';
+    if (!tool) return 'unknown';
     return tool.slice(0, INPUT_LIMITS.TOOL_NAME_LABEL);
+  }
+
+  private safeMethodLabel(method: string): string {
+    const upper = method.toUpperCase();
+    return SAFE_HTTP_METHODS.has(upper) ? upper : 'other';
+  }
+
+  private safeOperationLabel(operation: string): string {
+    if (!operation) return 'unknown';
+    return operation.slice(0, INPUT_LIMITS.OPERATION_LABEL);
   }
 
   private resolveContextLabels(context?: MetricsContextLabels): {

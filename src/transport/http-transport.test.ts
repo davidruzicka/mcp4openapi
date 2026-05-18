@@ -1872,6 +1872,49 @@ describeIfListen('HttpTransport', () => {
     });
   });
 
+  describe('Readiness Endpoint Metric Emission', () => {
+    let readyTransport: HttpTransport;
+    let readyApp: Express;
+    let mockRecordHttpRequest: ReturnType<typeof vi.fn>;
+
+    beforeEach(async () => {
+      readyTransport = new HttpTransport({
+        port: 0,
+        sessionTimeoutMs: 1800000,
+        heartbeatEnabled: false,
+        heartbeatIntervalMs: 30000,
+        metricsEnabled: true,
+        metricsPath: '/metrics',
+      }, logger);
+
+      mockRecordHttpRequest = vi.fn();
+      (readyTransport as any).metrics = {
+        getMetrics: vi.fn().mockResolvedValue(''),
+        recordHttpRequest: mockRecordHttpRequest,
+      };
+
+      readyApp = (readyTransport as any).app;
+    });
+
+    afterEach(async () => {
+      await readyTransport.stop();
+    });
+
+    it('records HTTP metric for GET /ready', async () => {
+      const response = await request(readyApp).get('/ready');
+
+      expect([200, 503]).toContain(response.status);
+      expect(mockRecordHttpRequest).toHaveBeenCalledOnce();
+      expect(mockRecordHttpRequest).toHaveBeenCalledWith(
+        'GET',
+        '/ready',
+        response.status,
+        expect.any(Number),
+        expect.anything()
+      );
+    });
+  });
+
   describe('Message Type Detection', () => {
     it('should detect request message', async () => {
       transport.setMessageHandler(async (_msg) => ({ result: 'ok' }));

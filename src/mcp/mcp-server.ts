@@ -3242,7 +3242,7 @@ export class MCPServer {
       sessionId,
       clientIdentity: metricsContext.clientIdentity,
       tool: toolName,
-      upstreamHost: metricsContext.upstreamHost?.trim() || 'unknown',
+      upstreamHost: metricsContext.upstreamHost || 'unknown',
       outcome: 'rejected',
       durationMs,
       correlationId,
