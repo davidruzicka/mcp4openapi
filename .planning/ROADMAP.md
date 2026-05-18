@@ -15,7 +15,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [ ] **Phase 1: Upstream Session Foundation** - Per-session upstream MCP connections with credential forwarding, heartbeats, cleanup, and typed error handling
 - [ ] **Phase 2: Tool Discovery and Call Proxy** - tools/list and tools/call forwarded to upstream MCP servers with sanitization and notification relay
 - [ ] **Phase 3: Client Authentication Gate (API Keys)** - API key identity verification before any upstream resource is consumed
-- [ ] **Phase 4: Observability** - Structured audit logging, Prometheus gateway metrics, and health/readiness endpoints
+- [x] **Phase 4: Observability** - Structured audit logging, Prometheus gateway metrics, and health/readiness endpoints
 - [ ] **Phase 5: Upstream OAuth Proxy** - Gateway-initiated OAuth authorization code flow against upstream MCP servers; encrypted refresh token payload in gateway token; zero-reauth on restart
 - [ ] **Phase 6: Client Authentication Gate (OIDC JWT)** - JWT/JWKS identity verification, OIDC discovery, session identity completion
 
@@ -175,6 +175,6 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6
 | 1. Upstream Session Foundation | 5/5 | Complete | 2026-03-30 |
 | 2. Tool Discovery and Call Proxy | 3/3 | Complete | 2026-03-30 |
 | 3. Client Auth Gate (API Keys) | 3/3 | Complete | 2026-04-30 |
-| 4. Observability | 1/2 | In Progress|  |
+| 4. Observability | 2/2 | Complete | 2026-05-18 |
 | 5. Upstream OAuth Proxy | 0/3 | Not started | - |
 | 6. Client Auth Gate (OIDC JWT) | 0/3 | Not started | - |
