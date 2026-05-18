@@ -5615,6 +5615,27 @@ paths:
         expect(typeof payload.correlationId).toBe('string');
       });
 
+      it('emits audit:tool_call when toolName is non-string (upstream path type guard)', async () => {
+        const fakeLogger = spyLogger();
+        (upstreamServer as any).logger = fakeLogger;
+
+        // Pass a numeric tool name — TypeScript casts it to string at compile time but
+        // at runtime typeof toolName !== 'string' fires and the audit path is exercised.
+        await (upstreamServer as any).handleToolCall(
+          { jsonrpc: '2.0', id: '1', method: 'tools/call', params: { name: 123, arguments: {} } },
+          'session-nonstring-name',
+          'upstream-profile',
+        );
+
+        const audits = findAuditEntries(fakeLogger.info);
+        expect(audits.length).toBeGreaterThanOrEqual(1);
+        const payload = audits[audits.length - 1][1] as Record<string, unknown>;
+        expect(payload.outcome).toBe('error');
+        expect(payload.tool).toBe('123');
+        expect(typeof payload.correlationId).toBe('string');
+        expect(typeof payload.durationMs).toBe('number');
+      });
+
       it('emits audit:tool_call on SanitizationRejection', async () => {
         const fakeLogger = spyLogger();
         (upstreamServer as any).logger = fakeLogger;
@@ -5655,7 +5676,7 @@ paths:
         const audits = findAuditEntries(fakeLogger.info);
         expect(audits.length).toBeGreaterThanOrEqual(1);
         const payload = audits[audits.length - 1][1] as Record<string, unknown>;
-        expect(payload.outcome).toBe('error');
+        expect(payload.outcome).toBe('rejected');
         expect(payload.tool).toBe('safe_tool');
       });
 
@@ -5707,6 +5728,10 @@ paths:
         expect(payload.clientPrincipal).toBe('anonymous');
         expect(typeof payload.correlationId).toBe('string');
         expect(typeof payload.upstreamHost).toBe('string');
+        // hostname only — no scheme, no path, no port
+        expect(payload.upstreamHost as string).not.toMatch(/^https?:\/\//);
+        expect(payload.upstreamHost as string).not.toContain('/');
+        expect(payload.upstreamHost as string).not.toBe('');
       });
 
       it('emits audit:tool_call with outcome=error on local HTTP tool failure (non-upstream path)', async () => {

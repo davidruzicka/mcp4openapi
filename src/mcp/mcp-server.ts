@@ -1043,9 +1043,9 @@ export class MCPServer {
           result = await this.executeSimpleTool(toolDef, args);
         }
 
+        const durationMs = Math.max(0, Math.round(Date.now() - startTime));
         if (metrics) {
-          const durationSeconds = (Date.now() - startTime) / 1000;
-          metrics.recordToolCall(toolName, 'success', durationSeconds, metricsContext);
+          metrics.recordToolCall(toolName, 'success', durationMs / 1000, metricsContext);
         }
         // 'stdio' sentinel distinguishes this path from UUID HTTP session IDs in log consumers.
         this.emitAuditToolCall({
@@ -1054,7 +1054,7 @@ export class MCPServer {
           tool: toolName,
           upstreamHost: stdioUpstreamHost,
           outcome: 'success',
-          startTime,
+          durationMs,
           correlationId,
         });
 
@@ -1067,9 +1067,9 @@ export class MCPServer {
           ],
         };
       } catch (err) {
+        const durationMs = Math.max(0, Math.round(Date.now() - startTime));
         if (metrics) {
-          const durationSeconds = (Date.now() - startTime) / 1000;
-          metrics.recordToolCall(toolName, 'error', durationSeconds, metricsContext);
+          metrics.recordToolCall(toolName, 'error', durationMs / 1000, metricsContext);
           metrics.recordToolCallError(toolName, this.getMetricsErrorType(err), metricsContext);
         }
         // correlationId already generated at call entry — reuse so audit and error log share it
@@ -1079,7 +1079,7 @@ export class MCPServer {
           tool: toolName,
           upstreamHost: stdioUpstreamHost,
           outcome: 'error',
-          startTime,
+          durationMs,
           correlationId,
         });
         this.logger.error('CallTool handler error', err as Error, { 
@@ -1670,9 +1670,9 @@ export class MCPServer {
     if (this.httpTransport && this.httpTransport.hasOAuthProvider(profileId)) {
       const authToken = await this.getAuthTokenFromSession(sessionId || '', profileId);
       if (!authToken) {
+        const durationMs = Math.max(0, Math.round(Date.now() - startTime));
         if (metrics) {
-          const durationSeconds = (Date.now() - startTime) / 1000;
-          metrics.recordToolCall(toolName, 'error', durationSeconds, metricsContext);
+          metrics.recordToolCall(toolName, 'rejected', durationMs / 1000, metricsContext);
           metrics.recordToolCallError(toolName, 'AuthenticationRequired', metricsContext);
         }
         this.emitAuditToolCall({
@@ -1680,8 +1680,8 @@ export class MCPServer {
           clientIdentity: metricsContext.clientIdentity,
           tool: toolName,
           upstreamHost,
-          outcome: 'error',
-          startTime,
+          outcome: 'rejected',
+          durationMs,
           correlationId,
         });
         // Return OAuth required error with WWW-Authenticate header
@@ -1715,7 +1715,7 @@ export class MCPServer {
           tool: String(params.name),
           upstreamHost,
           outcome: 'error',
-          startTime,
+          durationMs: Math.max(0, Math.round(Date.now() - startTime)),
           correlationId,
         });
         return {
@@ -1872,9 +1872,9 @@ export class MCPServer {
         result = await this.executeSimpleTool(toolDef, args, sessionId, profileId);
       }
 
+      const durationMs = Math.max(0, Math.round(Date.now() - startTime));
       if (metrics) {
-        const durationSeconds = (Date.now() - startTime) / 1000;
-        metrics.recordToolCall(toolName, 'success', durationSeconds, localToolMetricsContext);
+        metrics.recordToolCall(toolName, 'success', durationMs / 1000, localToolMetricsContext);
       }
       this.emitAuditToolCall({
         sessionId,
@@ -1882,7 +1882,7 @@ export class MCPServer {
         tool: toolName,
         upstreamHost: localToolHost,
         outcome: 'success',
-        startTime,
+        durationMs,
         correlationId,
       });
 
@@ -1899,9 +1899,9 @@ export class MCPServer {
         },
       };
     } catch (error) {
+      const durationMs = Math.max(0, Math.round(Date.now() - startTime));
       if (metrics) {
-        const durationSeconds = (Date.now() - startTime) / 1000;
-        metrics.recordToolCall(toolName, 'error', durationSeconds, localToolMetricsContext);
+        metrics.recordToolCall(toolName, 'error', durationMs / 1000, localToolMetricsContext);
         metrics.recordToolCallError(toolName, this.getMetricsErrorType(error), localToolMetricsContext);
       }
       // correlationId already generated at call entry — reuse so audit and error log share it
@@ -1911,7 +1911,7 @@ export class MCPServer {
         tool: toolName,
         upstreamHost: localToolHost,
         outcome: 'error',
-        startTime,
+        durationMs,
         correlationId,
       });
       
@@ -2287,7 +2287,7 @@ export class MCPServer {
     tool: string;
     upstreamHost: string;
     outcome: 'success' | 'error' | 'rejected';
-    startTime: number;
+    durationMs: number;
     correlationId: string;
   }): void {
     const rawClientIdentity =
@@ -2300,7 +2300,7 @@ export class MCPServer {
       tool: this.truncateWithWarn(args.tool, INPUT_LIMITS.TOOL_NAME_AUDIT, 'tool'),
       upstreamHost: args.upstreamHost,
       outcome: args.outcome,
-      durationMs: Math.max(0, Math.round(Date.now() - args.startTime)),
+      durationMs: args.durationMs,
       correlationId: args.correlationId,
     });
   }
@@ -2323,9 +2323,9 @@ export class MCPServer {
     error?: unknown;
   }): void {
     const { outcome, toolName, sessionId, startTime, metricsContext, upstreamHostForAudit, metricsBundle, correlationId, error } = args;
+    const durationMs = Math.max(0, Math.round(Date.now() - startTime));
     if (metricsBundle) {
-      const durationSeconds = (Date.now() - startTime) / 1000;
-      metricsBundle.collector.recordToolCall(toolName, outcome, durationSeconds, metricsBundle.context);
+      metricsBundle.collector.recordToolCall(toolName, outcome, durationMs / 1000, metricsBundle.context);
       if (outcome === 'error' && error !== undefined) {
         metricsBundle.collector.recordToolCallError(toolName, this.getMetricsErrorType(error), metricsBundle.context);
       }
@@ -2336,7 +2336,7 @@ export class MCPServer {
       tool: toolName,
       upstreamHost: upstreamHostForAudit,
       outcome,
-      startTime,
+      durationMs,
       correlationId,
     });
   }
@@ -3229,10 +3229,10 @@ export class MCPServer {
     correlationId: string;
   }): void {
     const { toolName, errorType, metrics, startTime, metricsContext, sessionId, correlationId } = args;
+    const durationMs = Math.max(0, Math.round(Date.now() - startTime));
     if (metrics) {
-      const durationSeconds = (Date.now() - startTime) / 1000;
       // Pass raw toolName — MetricsCollector truncates at TOOL_NAME_LABEL internally.
-      metrics.recordToolCall(toolName, 'rejected', durationSeconds, metricsContext);
+      metrics.recordToolCall(toolName, 'rejected', durationMs / 1000, metricsContext);
       metrics.recordToolCallError(toolName, errorType, metricsContext);
     }
     // Audit every early-reject so the trail covers policy/filter/sanitization rejections, not just proxy calls.
@@ -3242,9 +3242,9 @@ export class MCPServer {
       sessionId,
       clientIdentity: metricsContext.clientIdentity,
       tool: toolName,
-      upstreamHost: metricsContext.upstreamHost || 'unknown',
+      upstreamHost: metricsContext.upstreamHost?.trim() || 'unknown',
       outcome: 'rejected',
-      startTime,
+      durationMs,
       correlationId,
     });
   }

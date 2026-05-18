@@ -446,6 +446,7 @@ export class MetricsCollector {
   }
 
   private safeToolLabel(tool: string): string {
+    if (!tool) return '';
     return tool.slice(0, INPUT_LIMITS.TOOL_NAME_LABEL);
   }
 
