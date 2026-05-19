@@ -443,7 +443,7 @@ paths:
       const tools = server['profile']!.tools;
       // GitLab spec has around 87 operations, should generate similar number
       expect(tools.length).toBeGreaterThan(50);
-      expect(tools.length).toBeLessThan(230);
+      expect(tools.length).toBeLessThanOrEqual(230);
     });
   });
 

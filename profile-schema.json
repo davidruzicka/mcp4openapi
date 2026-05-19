@@ -229,6 +229,9 @@
                     "description": "OpenAPI operation ID"
                   },
                   {
+                    "$ref": "#/definitions/MultipartOperation"
+                  },
+                  {
                     "$ref": "#/definitions/ProxyDownloadOperation"
                   }
                 ]
@@ -264,10 +267,31 @@
           "type": "string"
         },
         {
+          "$ref": "#/definitions/MultipartOperation"
+        },
+        {
           "$ref": "#/definitions/ProxyDownloadOperation"
         }
       ],
-      "description": "Extended operation definition supporting proxy_download"
+      "description": "Extended operation definition supporting multipart uploads and proxy_download"
+    },
+    "MultipartOperation": {
+      "type": "object",
+      "properties": {
+        "operationId": {
+          "type": "string",
+          "description": "OpenAPI operation ID for the multipart endpoint"
+        },
+        "file_field_name": {
+          "type": "string",
+          "description": "Multipart field name for the uploaded file",
+          "default": "files[0]"
+        }
+      },
+      "required": [
+        "operationId"
+      ],
+      "description": "Multipart upload operation configuration"
     },
     "ProxyDownloadOperation": {
       "type": "object",

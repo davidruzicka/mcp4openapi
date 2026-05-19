@@ -1067,12 +1067,16 @@ export class MCPServer {
     }
 
     // Check if this is a proxy download operation
-    if (typeof operationDef === 'object' && operationDef.type === 'proxy_download') {
-        return this.executeProxyDownload(operationDef, normalizedArgs, sessionId, profileId);
+    if (typeof operationDef === 'object' && 'type' in operationDef && operationDef.type === 'proxy_download') {
+      return this.executeProxyDownload(operationDef, normalizedArgs, sessionId, profileId);
     }
 
-    // Regular string operation
-    const operationId = operationDef as string;
+    // Regular operation (string or multipart config with operationId)
+    const operationId = typeof operationDef === 'string'
+      ? operationDef
+      : 'operationId' in operationDef
+        ? operationDef.operationId
+        : operationDef.metadata_endpoint;
     const operation = this.parser.getOperation(operationId);
     if (!operation) {
       throw new OperationNotFoundError(operationId);
@@ -1295,6 +1299,15 @@ export class MCPServer {
     args: Record<string, unknown>,
     toolDef: ToolDefinition
   ): unknown | undefined {
+    const operationId = this.toolGenerator.mapActionToOperation(toolDef, args);
+    if (operationId && this.toolGenerator.isMultipartOperation(operationId)) {
+      const fileFieldName = this.toolGenerator.getMultipartFileFieldName(
+        toolDef,
+        typeof args['action'] === 'string' ? args['action'] : undefined,
+      );
+      return this.toolGenerator.buildFormDataBody(args, fileFieldName);
+    }
+
     // Metadata fields from tool definition (or defaults)
     const metadataList = toolDef.metadata_params || ['action', 'resource_type'];
     const metadata = new Set(metadataList);

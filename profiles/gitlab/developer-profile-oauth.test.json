@@ -18,6 +18,7 @@
     "fromRef": "main",
     "toRef": "feature-branch",
     "wikiSlug": "home",
+    "wikiPageMetaId": 99,
     "wikiTitle": "Home",
     "wikiContent": "# Welcome"
   },
@@ -287,6 +288,202 @@
         "request": {
           "method": "DELETE",
           "path": "/projects/{{projectId}}/wikis/{{wikiSlug}}"
+        }
+      }
+    },
+    {
+      "name": "Wikis - Upload Attachment",
+      "tool": "manage_wikis",
+      "arguments": {
+        "action": "upload_attachment",
+        "project_id": "{{projectId}}",
+        "base64Content": "ZGlhZ3JhbQ==",
+        "fileName": "diagram.png",
+        "mimeType": "image/png",
+        "branch": "docs"
+      },
+      "mocks": [
+        {
+          "operationId": "postApiV4ProjectsIdWikisAttachments",
+          "response": {
+            "status": 201,
+            "body": {
+              "file_name": "diagram.png",
+              "file_path": "uploads/diagram.png",
+              "branch": "docs",
+              "link": {"markdown": "![diagram](/uploads/diagram.png)"}
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": {
+          "file_name": "diagram.png"
+        },
+        "request": {
+          "method": "POST",
+          "path": "/projects/{{projectId}}/wikis/attachments"
+        }
+      }
+    },
+    {
+      "name": "Wikis - List Notes",
+      "tool": "manage_wikis",
+      "arguments": {
+        "action": "list_notes",
+        "project_id": "{{projectId}}",
+        "wiki_page_meta_id": "{{wikiPageMetaId}}",
+        "sort": "asc"
+      },
+      "mocks": [
+        {
+          "operationId": "getApiV4ProjectsIdWikiPagesWikiPageMetaIdNotes",
+          "response": {
+            "body": [
+              {
+                "id": 10,
+                "body": "First wiki note"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": [
+          {
+            "id": 10
+          }
+        ],
+        "request": {
+          "method": "GET",
+          "path": "/projects/{{projectId}}/wiki_pages/{{wikiPageMetaId}}/notes",
+          "query": {
+            "sort": "asc"
+          }
+        }
+      }
+    },
+    {
+      "name": "Wikis - Get Note",
+      "tool": "manage_wikis",
+      "arguments": {
+        "action": "get_note",
+        "project_id": "{{projectId}}",
+        "wiki_page_meta_id": "{{wikiPageMetaId}}",
+        "note_id": "{{noteId}}"
+      },
+      "mocks": [
+        {
+          "operationId": "getApiV4ProjectsIdWikiPagesWikiPageMetaIdNotesNoteId",
+          "response": {
+            "body": {
+              "id": 10,
+              "body": "First wiki note"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": {
+          "id": 10
+        }
+      }
+    },
+    {
+      "name": "Wikis - Create Note",
+      "tool": "manage_wikis",
+      "arguments": {
+        "action": "create_note",
+        "project_id": "{{projectId}}",
+        "wiki_page_meta_id": "{{wikiPageMetaId}}",
+        "body": "First wiki note"
+      },
+      "mocks": [
+        {
+          "operationId": "postApiV4ProjectsIdWikiPagesWikiPageMetaIdNotes",
+          "response": {
+            "status": 201,
+            "body": {
+              "id": 10,
+              "body": "First wiki note"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": {
+          "id": 10
+        },
+        "request": {
+          "method": "POST",
+          "path": "/projects/{{projectId}}/wiki_pages/{{wikiPageMetaId}}/notes",
+          "body": {
+            "body": "First wiki note"
+          }
+        }
+      }
+    },
+    {
+      "name": "Wikis - Update Note",
+      "tool": "manage_wikis",
+      "arguments": {
+        "action": "update_note",
+        "project_id": "{{projectId}}",
+        "wiki_page_meta_id": "{{wikiPageMetaId}}",
+        "note_id": "{{noteId}}",
+        "body": "Updated wiki note"
+      },
+      "mocks": [
+        {
+          "operationId": "putApiV4ProjectsIdWikiPagesWikiPageMetaIdNotesNoteId",
+          "response": {
+            "body": {
+              "id": 10,
+              "body": "Updated wiki note"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": {
+          "body": "Updated wiki note"
+        },
+        "request": {
+          "method": "PUT",
+          "path": "/projects/{{projectId}}/wiki_pages/{{wikiPageMetaId}}/notes/{{noteId}}",
+          "body": {
+            "body": "Updated wiki note"
+          }
+        }
+      }
+    },
+    {
+      "name": "Wikis - Delete Note",
+      "tool": "manage_wikis",
+      "arguments": {
+        "action": "delete_note",
+        "project_id": "{{projectId}}",
+        "wiki_page_meta_id": "{{wikiPageMetaId}}",
+        "note_id": "{{noteId}}"
+      },
+      "mocks": [
+        {
+          "operationId": "deleteApiV4ProjectsIdWikiPagesWikiPageMetaIdNotesNoteId",
+          "response": {
+            "status": 204
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "request": {
+          "method": "DELETE",
+          "path": "/projects/{{projectId}}/wiki_pages/{{wikiPageMetaId}}/notes/{{noteId}}"
         }
       }
     },

@@ -251,7 +251,7 @@ function shouldRequireRequestAssertions(
 
   if (operationKey && tool.operations) {
     const operation = tool.operations[operationKey];
-    if (typeof operation === 'object' && operation?.type === 'proxy_download') {
+    if (typeof operation === 'object') {
       return true;
     }
   }

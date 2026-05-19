@@ -305,7 +305,15 @@ export class ToolGenerator {
    */
   mapActionToOperation(toolDef: ToolDefinition, args: Record<string, unknown>): string | undefined {
     const op = this.getOperationDefinition(toolDef, args);
-    return typeof op === 'string' ? op : undefined;
+    if (typeof op === 'string') {
+      return op;
+    }
+
+    if (op && typeof op === 'object' && 'operationId' in op && typeof op.operationId === 'string') {
+      return op.operationId;
+    }
+
+    return undefined;
   }
 
   /**
@@ -320,6 +328,22 @@ export class ToolGenerator {
     return 'multipart/form-data' in operation.requestBody.content;
   }
 
+  getMultipartFileFieldName(toolDef: ToolDefinition, action?: string): string {
+    if (!action) {
+      return 'files[0]';
+    }
+
+    const operation = toolDef.operations?.[action];
+    if (operation && typeof operation === 'object' && 'file_field_name' in operation) {
+      const fileFieldName = operation.file_field_name;
+      if (typeof fileFieldName === 'string' && fileFieldName.length > 0) {
+        return fileFieldName;
+      }
+    }
+
+    return 'files[0]';
+  }
+
   /**
    * Build FormData body for file upload
    * 
@@ -332,6 +356,17 @@ export class ToolGenerator {
     const base64Content = args['base64Content'] as string | undefined;
     const fileName = (args['fileName'] as string) || 'upload';
     const mimeType = (args['mimeType'] as string) || 'application/octet-stream';
+    const reservedKeys = new Set(['action', 'base64Content', 'fileName', 'mimeType']);
+
+    for (const [key, value] of Object.entries(args)) {
+      if (reservedKeys.has(key) || value === undefined || value === null) {
+        continue;
+      }
+
+      if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+        formData.append(key, String(value));
+      }
+    }
     
     if (base64Content) {
       // Convert base64 to Blob

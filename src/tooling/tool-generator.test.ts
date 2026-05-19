@@ -510,6 +510,33 @@ describe('ToolGenerator', () => {
       expect(entries[0][0]).toBe('document');
     });
 
+    it('should include additional primitive fields in FormData', () => {
+      const textContent = 'file content';
+      const base64Content = btoa(textContent);
+      const args = {
+        action: 'upload_attachment',
+        base64Content,
+        fileName: 'diagram.png',
+        mimeType: 'image/png',
+        branch: 'docs',
+        overwrite: false,
+        retries: 2
+      };
+
+      const formData = generator.buildFormDataBody(args, 'file');
+      const entries = Array.from(formData.entries());
+
+      expect(entries).toEqual(
+        expect.arrayContaining([
+          ['branch', 'docs'],
+          ['overwrite', 'false'],
+          ['retries', '2']
+        ])
+      );
+      expect(entries.some(([key]) => key === 'action')).toBe(false);
+      expect(entries.some(([key]) => key === 'file')).toBe(true);
+    });
+
     it('should handle empty base64Content gracefully', () => {
       const args = { base64Content: '' };
       const formData = generator.buildFormDataBody(args);
@@ -604,6 +631,26 @@ describe('ToolGenerator', () => {
 
       const multipartGenerator = new ToolGenerator(stubParser);
       expect(multipartGenerator.isMultipartOperation('uploadOp')).toBe(true);
+    });
+
+    it('should return a custom multipart file field name from the action operation', () => {
+      const toolDef = {
+        name: 'upload_tool',
+        description: 'Upload tool',
+        operations: {
+          upload: {
+            operationId: 'uploadOp',
+            file_field_name: 'file'
+          }
+        },
+        parameters: {}
+      } as unknown as ToolDefinition;
+
+      const stubParser: any = { getOperation: () => undefined };
+      const multipartGenerator = new ToolGenerator(stubParser);
+
+      expect(multipartGenerator.getMultipartFileFieldName(toolDef, 'upload')).toBe('file');
+      expect(multipartGenerator.getMultipartFileFieldName(toolDef, 'missing')).toBe('files[0]');
     });
   });
 });

@@ -20,6 +20,7 @@
     "hookId": 9001,
     "variableKey": "DEPLOY_ENV",
     "wikiSlug": "home",
+    "wikiPageMetaId": 99,
     "wikiTitle": "Home",
     "wikiContent": "# Welcome"
   },
@@ -157,6 +158,61 @@
           "query": {
             "render_html": true
           }
+        }
+      }
+    },
+    {
+      "name": "Wiki - List Notes",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "list_wiki_page_notes",
+        "project_id": "{{projectId}}",
+        "wiki_page_meta_id": "{{wikiPageMetaId}}",
+        "sort": "asc"
+      },
+      "mocks": [
+        {
+          "operationId": "getApiV4ProjectsIdWikiPagesWikiPageMetaIdNotes",
+          "response": {
+            "body": [{"id": 10, "body": "First wiki note"}]
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": [{"id": 10}],
+        "request": {
+          "method": "GET",
+          "path": "/projects/{{projectId}}/wiki_pages/{{wikiPageMetaId}}/notes",
+          "query": {
+            "sort": "asc"
+          }
+        }
+      }
+    },
+    {
+      "name": "Wiki - Get Note",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "get_wiki_page_note",
+        "project_id": "{{projectId}}",
+        "wiki_page_meta_id": "{{wikiPageMetaId}}",
+        "note_id": "{{noteId}}"
+      },
+      "mocks": [
+        {
+          "operationId": "getApiV4ProjectsIdWikiPagesWikiPageMetaIdNotesNoteId",
+          "response": {
+            "body": {"id": 10, "body": "First wiki note"}
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": {"id": 10},
+        "request": {
+          "method": "GET",
+          "path": "/projects/{{projectId}}/wiki_pages/{{wikiPageMetaId}}/notes/{{noteId}}"
         }
       }
     },
@@ -1699,6 +1755,65 @@
       }
     },
     {
+      "name": "Wiki - Upload Attachment",
+      "tool": "create_content",
+      "arguments": {
+        "action": "upload_wiki_attachment",
+        "project_id": "{{projectId}}",
+        "base64Content": "ZGlhZ3JhbQ==",
+        "fileName": "diagram.png",
+        "mimeType": "image/png",
+        "branch": "docs"
+      },
+      "mocks": [
+        {
+          "operationId": "postApiV4ProjectsIdWikisAttachments",
+          "response": {
+            "status": 201,
+            "body": {"file_name": "diagram.png", "file_path": "uploads/diagram.png", "branch": "docs", "link": {"markdown": "![diagram](/uploads/diagram.png)"}}
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": {"file_name": "diagram.png"},
+        "request": {
+          "method": "POST",
+          "path": "/projects/{{projectId}}/wikis/attachments"
+        }
+      }
+    },
+    {
+      "name": "Wiki - Create Note",
+      "tool": "create_content",
+      "arguments": {
+        "action": "create_wiki_page_note",
+        "project_id": "{{projectId}}",
+        "wiki_page_meta_id": "{{wikiPageMetaId}}",
+        "body": "First wiki note"
+      },
+      "mocks": [
+        {
+          "operationId": "postApiV4ProjectsIdWikiPagesWikiPageMetaIdNotes",
+          "response": {
+            "status": 201,
+            "body": {"id": 10, "body": "First wiki note"}
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": {"id": 10},
+        "request": {
+          "method": "POST",
+          "path": "/projects/{{projectId}}/wiki_pages/{{wikiPageMetaId}}/notes",
+          "body": {
+            "body": "First wiki note"
+          }
+        }
+      }
+    },
+    {
       "name": "Issues - Resolve Discussion",
       "tool": "update_content",
       "arguments": {
@@ -1766,6 +1881,36 @@
       "expect": {
         "success": true,
         "result": {"title": "Updated Home"}
+      }
+    },
+    {
+      "name": "Wiki - Update Note",
+      "tool": "update_content",
+      "arguments": {
+        "action": "update_wiki_page_note",
+        "project_id": "{{projectId}}",
+        "wiki_page_meta_id": "{{wikiPageMetaId}}",
+        "note_id": "{{noteId}}",
+        "body": "Updated wiki note"
+      },
+      "mocks": [
+        {
+          "operationId": "putApiV4ProjectsIdWikiPagesWikiPageMetaIdNotesNoteId",
+          "response": {
+            "body": {"id": 10, "body": "Updated wiki note"}
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": {"body": "Updated wiki note"},
+        "request": {
+          "method": "PUT",
+          "path": "/projects/{{projectId}}/wiki_pages/{{wikiPageMetaId}}/notes/{{noteId}}",
+          "body": {
+            "body": "Updated wiki note"
+          }
+        }
       }
     },
     {
@@ -2042,6 +2187,28 @@
       "expect": {
         "success": true,
         "request": {"method": "DELETE", "path": "/projects/{{projectId}}/wikis/{{wikiSlug}}"}
+      }
+    },
+    {
+      "name": "Wiki - Delete Note",
+      "tool": "delete_content",
+      "arguments": {
+        "action": "delete_wiki_page_note",
+        "project_id": "{{projectId}}",
+        "wiki_page_meta_id": "{{wikiPageMetaId}}",
+        "note_id": "{{noteId}}"
+      },
+      "mocks": [
+        {
+          "operationId": "deleteApiV4ProjectsIdWikiPagesWikiPageMetaIdNotesNoteId",
+          "response": {
+            "status": 204
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "request": {"method": "DELETE", "path": "/projects/{{projectId}}/wiki_pages/{{wikiPageMetaId}}/notes/{{noteId}}"}
       }
     },
     {

@@ -436,6 +436,16 @@ export class ProfileLoader {
             continue;
           }
 
+          if ('operationId' in operationDefinition) {
+            if (!parser.getOperation(operationDefinition.operationId)) {
+              throw new ValidationError(
+                `Operation '${operationDefinition.operationId}' in tool '${tool.name}' not found in OpenAPI spec`,
+                { path: `tools.${tool.name}.operations`, operationId: operationDefinition.operationId, toolName: tool.name },
+              );
+            }
+            continue;
+          }
+
           if (!parser.getOperation(operationDefinition.metadata_endpoint)) {
             throw new ValidationError(
               `Operation '${operationDefinition.metadata_endpoint}' in tool '${tool.name}' not found in OpenAPI spec`,

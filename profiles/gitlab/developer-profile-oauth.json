@@ -553,25 +553,39 @@
 
     {
       "name": "manage_wikis",
-      "description": "Work with project wiki pages. Actions: 'list_pages', 'get_page', 'create_page', 'update_page', 'delete_page'. Use 'list_pages' to discover wiki pages; for page-specific actions pass 'slug'.",
-      "metadata_params": ["action", "project_id", "slug"],
+      "description": "Work with project wiki pages. Actions: 'list_pages', 'get_page', 'create_page', 'update_page', 'delete_page', 'upload_attachment', 'list_notes', 'get_note', 'create_note', 'update_note', 'delete_note'. Use 'list_pages' to discover wiki pages; for page-specific actions pass 'slug'. Wiki notes require 'wiki_page_meta_id'.",
+      "metadata_params": ["action", "project_id", "slug", "wiki_page_meta_id", "note_id"],
       "operations": {
         "list_pages": "getApiV4ProjectsIdWikis",
         "get_page": "getApiV4ProjectsIdWikisSlug",
         "create_page": "postApiV4ProjectsIdWikis",
         "update_page": "putApiV4ProjectsIdWikisSlug",
-        "delete_page": "deleteApiV4ProjectsIdWikisSlug"
+        "delete_page": "deleteApiV4ProjectsIdWikisSlug",
+        "upload_attachment": {
+          "operationId": "postApiV4ProjectsIdWikisAttachments",
+          "file_field_name": "file"
+        },
+        "list_notes": "getApiV4ProjectsIdWikiPagesWikiPageMetaIdNotes",
+        "get_note": "getApiV4ProjectsIdWikiPagesWikiPageMetaIdNotesNoteId",
+        "create_note": "postApiV4ProjectsIdWikiPagesWikiPageMetaIdNotes",
+        "update_note": "putApiV4ProjectsIdWikiPagesWikiPageMetaIdNotesNoteId",
+        "delete_note": "deleteApiV4ProjectsIdWikiPagesWikiPageMetaIdNotesNoteId"
       },
       "response_fields": {
         "list_pages": ["title", "slug", "format", "encoding", "content"],
         "get_page": ["title", "slug", "format", "encoding", "content", "html"],
         "create_page": ["title", "slug", "format", "encoding", "content"],
-        "update_page": ["title", "slug", "format", "encoding", "content"]
+        "update_page": ["title", "slug", "format", "encoding", "content"],
+        "upload_attachment": ["file_name", "file_path", "branch", "link"],
+        "list_notes": ["id", "body", "author", "created_at", "updated_at", "system", "confidential"],
+        "get_note": ["id", "body", "author", "created_at", "updated_at", "system", "confidential"],
+        "create_note": ["id", "body", "author", "created_at", "updated_at", "system", "confidential"],
+        "update_note": ["id", "body", "author", "created_at", "updated_at", "system", "confidential"]
       },
       "parameters": {
         "action": {
           "type": "string",
-          "enum": ["list_pages", "get_page", "create_page", "update_page", "delete_page"],
+          "enum": ["list_pages", "get_page", "create_page", "update_page", "delete_page", "upload_attachment", "list_notes", "get_note", "create_note", "update_note", "delete_note"],
           "description": "Action to perform",
           "required": true
         },
@@ -585,6 +599,16 @@
           "type": "string",
           "description": "URL-encoded slug of the wiki page, e.g. 'docs%2Fhome'. Use %2F instead of '/'.",
           "required_for": ["get_page", "update_page", "delete_page"]
+        },
+        "wiki_page_meta_id": {
+          "type": "integer",
+          "description": "Wiki page meta ID used by wiki notes endpoints",
+          "required_for": ["list_notes", "get_note", "create_note", "update_note", "delete_note"]
+        },
+        "note_id": {
+          "type": "integer",
+          "description": "The ID of the wiki note",
+          "required_for": ["get_note", "update_note", "delete_note"]
         },
         "with_content": {
           "type": "boolean",
@@ -609,6 +633,46 @@
           "description": "Wiki page content",
           "required_for": ["create_page"],
           "example": "# Welcome"
+        },
+        "body": {
+          "type": "string",
+          "description": "Wiki note body",
+          "required_for": ["create_note", "update_note"],
+          "example": "Looks good to me."
+        },
+        "base64Content": {
+          "type": "string",
+          "description": "Base64-encoded file content for wiki attachment uploads",
+          "required_for": ["upload_attachment"]
+        },
+        "fileName": {
+          "type": "string",
+          "description": "Original file name for wiki attachment uploads",
+          "required_for": ["upload_attachment"]
+        },
+        "mimeType": {
+          "type": "string",
+          "description": "MIME type for wiki attachment uploads",
+          "required_for": ["upload_attachment"]
+        },
+        "branch": {
+          "type": "string",
+          "description": "Branch name for wiki attachment uploads"
+        },
+        "sort": {
+          "type": "string",
+          "enum": ["asc", "desc"],
+          "description": "Sort wiki notes in asc or desc order"
+        },
+        "page": {
+          "type": "integer",
+          "description": "Page number for pagination",
+          "default": 1
+        },
+        "per_page": {
+          "type": "integer",
+          "description": "Items per page (recommended max 100)",
+          "default": 50
         },
         "format": {
           "type": "string",

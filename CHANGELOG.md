@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - GitLab profiles: added project wiki page CRUD support to both the optimized CRUD profile and the developer-oriented profile, including bundled OpenAPI entries and focused test coverage.
+- GitLab profiles: added project wiki attachment upload and wiki note CRUD support to both the optimized CRUD profile and the developer-oriented profile, including multipart runtime support, bundled OpenAPI entries, and focused test coverage.
 - `MCP4_HIDDEN_PROFILES`: comma-separated profile ids/names/aliases to hide from the HTML index page while keeping profiles fully functional (MCP connection, allowlist, direct URL).
 - Encrypted token envelopes (`mcp4.v1.*`, AES-256-GCM, profile_id as AAD) for restart-resilient OAuth: when `MCP4_TOKEN_KEY` is set, OAuth clients survive k8s pod restarts without re-authentication; backward-compatible (unset = plain-token mode + startup warn).
 - GitLab profiles: added `get_job_log` action (`GET /projects/:id/jobs/:job_id/trace`) to `retrieve_content` and `manage_pipelines_jobs` tools, including OpenAPI spec entry and test coverage.

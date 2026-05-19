@@ -371,9 +371,23 @@ export interface ProxyDownloadOperation {
 }
 
 /**
+ * Multipart upload operation configuration
+ *
+ * Why: Some endpoints use multipart/form-data and require a specific file field name
+ * instead of the default generic upload field.
+ */
+export interface MultipartOperation {
+  /** OpenAPI operation ID for the multipart endpoint */
+  operationId: string;
+
+  /** Multipart field name for the uploaded file (default: 'files[0]') */
+  file_field_name?: string;
+}
+
+/**
  * Extended operation definition supporting proxy_download
  */
-export type OperationDefinition = string | ProxyDownloadOperation;
+export type OperationDefinition = string | ProxyDownloadOperation | MultipartOperation;
 
 export interface InterceptorConfig {
   auth?: AuthInterceptor | AuthInterceptor[]; // Single or multiple auth methods

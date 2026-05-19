@@ -4678,6 +4678,280 @@ paths:
       responses:
         "204":
           description: Wiki page deleted
+  /projects/{id}/wikis/attachments:
+    post:
+      tags:
+        - wikis
+      summary: Upload project wiki attachment
+      description: Upload an attachment for use in project wiki pages
+      operationId: postApiV4ProjectsIdWikisAttachments
+      parameters:
+        - $ref: "#/components/parameters/ProjectIdOrPath"
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - file
+              properties:
+                file:
+                  type: string
+                  format: binary
+                branch:
+                  type: string
+      responses:
+        "201":
+          description: Wiki attachment uploaded
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  file_name:
+                    type: string
+                  file_path:
+                    type: string
+                  branch:
+                    type: string
+                  link:
+                    type: object
+                    properties:
+                      url:
+                        type: string
+                      markdown:
+                        type: string
+  /projects/{id}/wiki_pages/{wiki_page_meta_id}/notes:
+    get:
+      tags:
+        - wiki notes
+      summary: List project wiki page notes
+      description: List notes for a project wiki page
+      operationId: getApiV4ProjectsIdWikiPagesWikiPageMetaIdNotes
+      parameters:
+        - $ref: "#/components/parameters/ProjectIdOrPath"
+        - name: wiki_page_meta_id
+          in: path
+          required: true
+          description: Wiki page meta ID
+          schema:
+            type: integer
+        - name: sort
+          in: query
+          required: false
+          description: Return notes sorted in asc or desc order
+          schema:
+            type: string
+            enum:
+              - asc
+              - desc
+        - name: page
+          in: query
+          required: false
+          description: Page number
+          schema:
+            type: integer
+        - name: per_page
+          in: query
+          required: false
+          description: Number of items per page
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: integer
+                    body:
+                      type: string
+                    author:
+                      type: object
+                      additionalProperties: true
+                    created_at:
+                      type: string
+                    updated_at:
+                      type: string
+                    system:
+                      type: boolean
+                    confidential:
+                      type: boolean
+    post:
+      tags:
+        - wiki notes
+      summary: Create project wiki page note
+      description: Create a note for a project wiki page
+      operationId: postApiV4ProjectsIdWikiPagesWikiPageMetaIdNotes
+      parameters:
+        - $ref: "#/components/parameters/ProjectIdOrPath"
+        - name: wiki_page_meta_id
+          in: path
+          required: true
+          description: Wiki page meta ID
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - body
+              properties:
+                body:
+                  type: string
+      responses:
+        "201":
+          description: Wiki note created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                  body:
+                    type: string
+                  author:
+                    type: object
+                    additionalProperties: true
+                  created_at:
+                    type: string
+                  updated_at:
+                    type: string
+                  system:
+                    type: boolean
+                  confidential:
+                    type: boolean
+  /projects/{id}/wiki_pages/{wiki_page_meta_id}/notes/{note_id}:
+    get:
+      tags:
+        - wiki notes
+      summary: Get project wiki page note
+      description: Retrieve a single note for a project wiki page
+      operationId: getApiV4ProjectsIdWikiPagesWikiPageMetaIdNotesNoteId
+      parameters:
+        - $ref: "#/components/parameters/ProjectIdOrPath"
+        - name: wiki_page_meta_id
+          in: path
+          required: true
+          description: Wiki page meta ID
+          schema:
+            type: integer
+        - name: note_id
+          in: path
+          required: true
+          description: Note ID
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                  body:
+                    type: string
+                  author:
+                    type: object
+                    additionalProperties: true
+                  created_at:
+                    type: string
+                  updated_at:
+                    type: string
+                  system:
+                    type: boolean
+                  confidential:
+                    type: boolean
+    put:
+      tags:
+        - wiki notes
+      summary: Update project wiki page note
+      description: Update a note for a project wiki page
+      operationId: putApiV4ProjectsIdWikiPagesWikiPageMetaIdNotesNoteId
+      parameters:
+        - $ref: "#/components/parameters/ProjectIdOrPath"
+        - name: wiki_page_meta_id
+          in: path
+          required: true
+          description: Wiki page meta ID
+          schema:
+            type: integer
+        - name: note_id
+          in: path
+          required: true
+          description: Note ID
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - body
+              properties:
+                body:
+                  type: string
+      responses:
+        "200":
+          description: Wiki note updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                  body:
+                    type: string
+                  author:
+                    type: object
+                    additionalProperties: true
+                  created_at:
+                    type: string
+                  updated_at:
+                    type: string
+                  system:
+                    type: boolean
+                  confidential:
+                    type: boolean
+    delete:
+      tags:
+        - wiki notes
+      summary: Delete project wiki page note
+      description: Delete a note for a project wiki page
+      operationId: deleteApiV4ProjectsIdWikiPagesWikiPageMetaIdNotesNoteId
+      parameters:
+        - $ref: "#/components/parameters/ProjectIdOrPath"
+        - name: wiki_page_meta_id
+          in: path
+          required: true
+          description: Wiki page meta ID
+          schema:
+            type: integer
+        - name: note_id
+          in: path
+          required: true
+          description: Note ID
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Wiki note deleted
   /projects:
     get:
       tags:

@@ -147,7 +147,12 @@ export const proxyDownloadOperationSchema = z.object({
     allow_private_network: z.boolean().optional()
 });
 
-export const operationDefinitionSchema = z.union([z.string(), proxyDownloadOperationSchema]);
+export const multipartOperationSchema = z.object({
+    operationId: z.string(),
+    file_field_name: z.string().optional()
+});
+
+export const operationDefinitionSchema = z.union([z.string(), multipartOperationSchema, proxyDownloadOperationSchema]);
 
 export const baseUrlConfigSchema = z.object({
     value_from_env: z.string(),
