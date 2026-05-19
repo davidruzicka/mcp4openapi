@@ -41,25 +41,19 @@ authenticate, authorize, audit, and proxy every tool call in the company.
 - ✓ upstream_mcp singular constraint (Phase 03.1) - Profile.upstream_mcp narrowed from UpstreamMcpServerConfig[] to UpstreamMcpServerConfig; Zod schema rejects array shape at parse time with migration hint; all call sites (mcp-server.ts, http-transport.ts, profile-resolver.ts) narrowed; BREAKING CHANGE: profile JSON must use `upstream_mcp: {...}` not `upstream_mcp: [{...}]`
 - ✓ Admin-supplied HTML profile descriptions (Phase 03.2) - `MCP4_PROFILES_DESCRIPTION` env var (JSON object: profile key → HTML string) parsed once at startup; keys matched against profileId/profileName/aliases; resolved adminDescription stored per-profile and rendered raw (no escaping) in HTML index detail card before the profile's own description; duplicate-key resolution and invalid JSON cause process exit at startup (fail-fast); sidebar list view unchanged
 - ✓ Graceful OAuth degradation (Phase 03.3) - `isOAuthConfigOperational()` pre-flight check added to `oauth-provider.ts`; when OAuth config is incomplete (missing env vars, missing redirect_uri) the server sets `oauthDisabledReason` in `ProfileRuntimeState`, skips `ExternalOAuthProvider` construction, omits the OAuth tab from the HTML index, and never sends a 401 OAuth challenge; warning logged once per profile at load time; complete OAuth config behavior unchanged
+- ✓ Encrypted token envelopes (Phase 03.4) - AES-256-GCM encrypted `mcp4.v1.*` tokens embed access_token + refresh_token + DCR client registration; gateway decrypts on session init for restart-resilient OAuth in k8s; `MCP4_OAUTH_KEY` (32-byte hex); `isEncryptedToken()` prefix guard; encrypt-failure degrades to plain Bearer (availability bias); backward-compatible
+- ✓ Observability (Phase 04) - structured `audit:tool_call` INFO log at every tool-call outcome (sessionId, clientPrincipal, tool, upstreamHost, outcome, durationMs); Prometheus `upstream_host` + `client_identity` label dimensions on mcp_tool_calls_total/duration/errors; client_identity audit-log only (cardinality guard); GET /ready readiness probe returns 503 until at least one profile loaded
 
 ### Active
-- [ ] Upstream tool discovery and proxy - tools/list and tools/call forwarded to correct upstream
-  provider; upstream tools appear in tools/list alongside (or instead of) OpenAPI-backed tools
+
+- [ ] **AUTH-01** (v1.1 Phase 6) - OIDC JWT client validation against JWKS endpoint (Entra ID, Okta, Keycloak); session rejected before upstream connection; completes AUTH-03 for JWT path
+- [ ] **AUTH-04** (v1.1 Phase 5) - Upstream OAuth proxy: gateway-initiated OAuth authorization code flow against upstream MCP servers; encrypted refresh token in gateway token; zero-reauth on k8s restart
 - [ ] Tool namespacing - upstream tool names prefixed/namespaced to prevent collisions across
   providers (#215)
 - [ ] Team-level allow/deny policy - each client identity (team/API key/SSO principal) maps to a
   policy that allows or denies specific upstream servers and/or tool names (#216)
-- [ ] Client authentication gate - SSO/OIDC (Entra ID / Okta / Keycloak) for interactive clients;
-  API keys for M2M; identity resolved before any tool call is processed
-- [ ] Upstream notification forwarding - tools/list_changed and other server-initiated upstream
-  notifications forwarded to downstream SSE clients with replay on reconnect (#214)
-- [ ] Audit log - structured persistent log of every tool call: client identity, team, tool name,
-  upstream server, outcome, timestamp
-- [ ] Request tracing - OpenTelemetry trace context propagated through gateway and forwarded to
-  upstream where possible
 - [ ] Third-party SaaS MCP proxy - remote HTTP MCP endpoints for services like GitHub, Slack, etc.
   supported through the same upstream provider config model
-- [ ] End-to-end documentation and test coverage for proxy mode (#218)
 
 ### Out of Scope
 
@@ -74,21 +68,13 @@ authenticate, authorize, audit, and proxy every tool call in the company.
 
 ## Context
 
-- **Existing codebase:** mcp4openapi is a TypeScript/Node.js MCP server (Express, MCP SDK 1.26.0,
-  jose for JWT, Zod for schema validation). The HTTP transport already handles SSE sessions,
-  multi-tenancy, OAuth provider, and interceptor chains (auth -> rate-limit -> retry -> fetch).
-- **Tracking issue:** davidruzicka/mcp4openapi#211 groups the full MCP proxy roadmap. Issues
-  #213-#218 map directly to the active requirements above. #212 (upstream config schema) is done.
-- **Deployment target:** On-prem / private cloud. No public internet exposure. Docker/Kubernetes
-  packaging assumed.
-- **Client auth model:** SSO/OIDC tokens from the company IdP (Entra ID, Okta, Keycloak) for
-  interactive users; API keys for machine-to-machine. Both paths must resolve to a team identity
-  before policy is checked.
-- **Upstream auth model:** Pass-through. Clients supply their own upstream credentials at HTTP
-  session initialization. The gateway extracts and stores them in the session context, then forwards
-  them on each upstream call. No credential storage or rotation responsibility on the gateway.
-- **Security posture:** SSRF protection already in place. Token redaction in logs. Trust boundaries:
-  inbound client auth and upstream auth are fully separate layers.
+- **Shipped v1.0:** 8 phases, 25 plans, 58 tasks. TypeScript/Node.js 22, ESM, ~3333 passing tests. Core proxy pipeline (upstream session + tool forwarding + API key auth + observability) is production-ready.
+- **Current state:** The gateway proxies tools/list and tools/call to upstream HTTP MCP servers, authenticates M2M clients via API keys, emits per-tool audit logs and Prometheus metrics, and handles OAuth sessions with encrypted restart-resilient tokens. OIDC JWT auth (AUTH-01) is the main missing capability for interactive user flows.
+- **Tracking issue:** davidruzicka/mcp4openapi#211 groups the full MCP proxy roadmap. #212 (upstream config schema) done. #213-#218 map to requirements; most closed in v1.0.
+- **Deployment target:** On-prem / private cloud. Docker/Kubernetes. MCP4_OAUTH_KEY required for encrypted token envelopes in k8s restarts.
+- **Client auth model:** API keys (v1.0 complete); SSO/OIDC (AUTH-01, v1.1). Both paths resolve to clientPrincipal before upstream connection.
+- **Upstream auth model:** Pass-through. Client-supplied credentials forwarded per-session. No gateway-side credential storage.
+- **Security posture:** SSRF protection, token redaction, timing-safe key comparison, cardinality-guarded Prometheus labels. Trust boundaries: client auth and upstream auth are fully separate layers.
 
 ## Constraints
 
@@ -104,15 +90,18 @@ authenticate, authorize, audit, and proxy every tool call in the company.
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| Pass-through upstream credentials | Gateway stores no secrets - client owns their own upstream tokens; simpler security model, no vault dependency | Validated in Phase 01 - profile-per-upstream model, `token: string \| undefined` passed directly |
-| Profile-per-upstream (not session-level credential aggregation) | Simpler than per-session credential bag; one profile = one upstream = one token env var | Validated in Phase 01 - dead X-Upstream-Authorization extractor removed |
-| Remote HTTP upstream first, stdio deferred | Stdio adds process isolation complexity; HTTP upstream covers the primary enterprise use case first | - Pending |
-| Build on mcp4openapi transport stack | Existing SSE session management, OAuth provider, multi-tenant HTTP transport are production-grade; extend rather than rewrite | - Pending |
-| Team-level allow/deny (not RBAC/ABAC) | Explicit allow/deny per team is auditable and predictable; ABAC adds authoring overhead before adoption | - Pending |
-| Tool namespacing by upstream provider | Prevents tool name collisions across providers; makes audit logs and policy rules unambiguous | - Pending |
+| Pass-through upstream credentials | Gateway stores no secrets - client owns their own upstream tokens; simpler security model, no vault dependency | ✓ Validated v1.0 - profile-per-upstream model, `token: string \| undefined` passed directly |
+| Profile-per-upstream (not session-level credential aggregation) | Simpler than per-session credential bag; one profile = one upstream = one token env var | ✓ Validated v1.0 - dead X-Upstream-Authorization extractor removed |
+| API keys before OIDC JWT (Phase 3 before Phase 6) | M2M is the dominant first use case; deferring JWT avoids jose/JWKS dependency until needed | ✓ Validated v1.0 - API key gate ships clean without JWT entanglement; Phase 4 deferral guard test confirmed |
+| AES-256-GCM encrypted token envelopes (not persistent session storage) | No DB dependency for restart resilience; token is the session; client re-presents on reconnect | ✓ Validated v1.0 - MCP4_OAUTH_KEY + mcp4.v1.* prefix; encrypt-failure degrades gracefully |
+| client_identity audit-log only (not Prometheus label) | Unbounded identity set → unbounded cardinality in Prometheus; audit log handles identity-level queries | ✓ Validated v1.0 - caps at 64 chars in audit; upstream_host capped at 128 chars |
+| Remote HTTP upstream first, stdio deferred | Stdio adds process isolation complexity; HTTP upstream covers the primary enterprise use case first | - Pending (v2.0+) |
+| Build on mcp4openapi transport stack | Existing SSE session management, OAuth provider, multi-tenant HTTP transport are production-grade; extend rather than rewrite | ✓ Validated v1.0 - interceptor chain (auth→rate-limit→retry→fetch) unchanged |
+| Team-level allow/deny (not RBAC/ABAC) | Explicit allow/deny per team is auditable and predictable; ABAC adds authoring overhead before adoption | - Pending (v1.1+) |
+| Tool namespacing by upstream provider | Prevents tool name collisions across providers; makes audit logs and policy rules unambiguous | - Pending (v1.1+) |
 
 ---
-*Last updated: 2026-05-05 after Phase 03.3 completion — graceful OAuth degradation; isOAuthConfigOperational pre-flight check; oauthDisabledReason in ProfileRuntimeState; no OAuth tab / no 401 challenge when config incomplete*
+*Last updated: 2026-05-19 after v1.0 milestone completion — 8 phases shipped; AUTH-01 (OIDC JWT) deferred to v1.1; upstream OAuth proxy (Phase 5) deferred to v1.1*
 
 ## Evolution
 

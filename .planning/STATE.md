@@ -1,10 +1,10 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.0
-milestone_name: milestone
-status: Phase 04 complete - all gaps closed
-stopped_at: Completed 04-observability (all plans + verification gaps fixed)
-last_updated: "2026-05-11T14:02:00.000Z"
+milestone: v1.1
+milestone_name: Enterprise MCP Gateway v1.1
+status: v1.0 shipped - planning next milestone
+stopped_at: v1.0 milestone complete (8 phases, 25 plans, 58 tasks)
+last_updated: "2026-05-19T13:24:29.992Z"
 progress:
   total_phases: 10
   completed_phases: 8
@@ -16,15 +16,14 @@ progress:
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-03-26)
+See: .planning/PROJECT.md (updated 2026-05-19)
 
 **Core value:** A security boundary between internal AI clients and all upstream MCP servers - one place to authenticate, authorize, audit, and proxy every tool call.
-**Current focus:** Phase 04 — observability
+**Current focus:** Planning v1.1 — Phase 5 (Upstream OAuth Proxy) + Phase 6 (OIDC JWT auth gate)
 
 ## Current Position
 
-Phase: 04 (observability) - COMPLETE
-Plan: Completed 2 of 2
+Milestone v1.0 SHIPPED. Next: `/gsd:new-milestone` to plan v1.1.
 
 ## Performance Metrics
 
