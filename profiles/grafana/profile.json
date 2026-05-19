@@ -513,7 +513,7 @@
         },
         "queries": {
           "type": "array",
-          "description": "Datasource queries for query_metrics. Each item should contain the datasource reference and query payload expected by Grafana.",
+            "description": "Datasource queries for query_metrics. Each item should contain the datasource reference and query payload expected by Grafana. When known, include datasource.type as well; it is optional in the profile contract but recommended for compatibility with real Grafana datasource-specific query payloads.",
           "items": { "type": "object" },
           "required_for": ["query_metrics"]
         },
