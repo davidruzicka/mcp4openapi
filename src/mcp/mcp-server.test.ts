@@ -1064,6 +1064,26 @@ paths:
       expect(result).toBe('/projects/group%2Fmcp%252Fapp');
     });
 
+
+    it('throws ValidationError for raw dot segments in path parameters', () => {
+      const localServer = new MCPServer();
+      (localServer as any).profile = {
+        profile_name: 'test',
+        description: 'test profile',
+        tools: [],
+        interceptors: { auth: [] },
+        parameter_aliases: { id: ['project_id'] },
+      };
+
+      expect(() => {
+        (localServer as any).resolvePath('/projects/{id}', { project_id: '.' });
+      }).toThrow('Invalid path parameter value: .');
+
+      expect(() => {
+        (localServer as any).resolvePath('/projects/{id}', { id: '..' });
+      }).toThrow('Invalid path parameter value: ..');
+    });
+
     it('encodes raw slashes in path parameters', () => {
       const localServer = new MCPServer();
       (localServer as any).profile = {

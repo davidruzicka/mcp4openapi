@@ -71,4 +71,12 @@ describe('CompositeExecutor Security', () => {
 
     expect(capturedPaths[0]).toBe(expectedFixedPath);
   });
+
+  it('should throw an error for dot path parameters', async () => {
+    const steps: CompositeStep[] = [
+      { call: 'GET /users/{id}/profile', store_as: 'result' },
+    ];
+    await expect(executor.execute(steps, { id: '.' })).rejects.toThrow('Invalid path parameter value: .');
+    await expect(executor.execute(steps, { id: '..' })).rejects.toThrow('Invalid path parameter value: ..');
+  });
 });
