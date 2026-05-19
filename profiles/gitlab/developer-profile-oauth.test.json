@@ -16,7 +16,10 @@
     "filePath": "README.md",
     "ref": "main",
     "fromRef": "main",
-    "toRef": "feature-branch"
+    "toRef": "feature-branch",
+    "wikiSlug": "home",
+    "wikiTitle": "Home",
+    "wikiContent": "# Welcome"
   },
   "scenarios": [
     {
@@ -130,6 +133,160 @@
         "result": {
           "id": 12345,
           "description": "MCP Server"
+        }
+      }
+    },
+    {
+      "name": "Wikis - List Pages",
+      "tool": "manage_wikis",
+      "arguments": {
+        "action": "list_pages",
+        "project_id": "{{projectId}}",
+        "with_content": true
+      },
+      "mocks": [
+        {
+          "operationId": "getApiV4ProjectsIdWikis",
+          "response": {
+            "body": [
+              {
+                "title": "Home",
+                "slug": "home",
+                "format": "markdown",
+                "content": "# Welcome"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": [
+          {
+            "slug": "home"
+          }
+        ],
+        "request": {
+          "method": "GET",
+          "path": "/projects/{{projectId}}/wikis",
+          "query": {
+            "with_content": true
+          }
+        }
+      }
+    },
+    {
+      "name": "Wikis - Get Page",
+      "tool": "manage_wikis",
+      "arguments": {
+        "action": "get_page",
+        "project_id": "{{projectId}}",
+        "slug": "{{wikiSlug}}",
+        "render_html": true
+      },
+      "mocks": [
+        {
+          "operationId": "getApiV4ProjectsIdWikisSlug",
+          "response": {
+            "body": {
+              "title": "Home",
+              "slug": "home",
+              "format": "markdown",
+              "content": "# Welcome",
+              "html": "<h1>Welcome</h1>"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": {
+          "title": "Home"
+        }
+      }
+    },
+    {
+      "name": "Wikis - Create Page",
+      "tool": "manage_wikis",
+      "arguments": {
+        "action": "create_page",
+        "project_id": "{{projectId}}",
+        "title": "{{wikiTitle}}",
+        "content": "{{wikiContent}}",
+        "format": "markdown"
+      },
+      "mocks": [
+        {
+          "operationId": "postApiV4ProjectsIdWikis",
+          "response": {
+            "status": 201,
+            "body": {
+              "title": "Home",
+              "slug": "home",
+              "format": "markdown",
+              "content": "# Welcome"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": {
+          "slug": "home"
+        }
+      }
+    },
+    {
+      "name": "Wikis - Update Page",
+      "tool": "manage_wikis",
+      "arguments": {
+        "action": "update_page",
+        "project_id": "{{projectId}}",
+        "slug": "{{wikiSlug}}",
+        "title": "Updated Home",
+        "content": "## Updated"
+      },
+      "mocks": [
+        {
+          "operationId": "putApiV4ProjectsIdWikisSlug",
+          "response": {
+            "body": {
+              "title": "Updated Home",
+              "slug": "updated-home",
+              "format": "markdown",
+              "content": "## Updated"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": {
+          "title": "Updated Home"
+        }
+      }
+    },
+    {
+      "name": "Wikis - Delete Page",
+      "tool": "manage_wikis",
+      "arguments": {
+        "action": "delete_page",
+        "project_id": "{{projectId}}",
+        "slug": "{{wikiSlug}}"
+      },
+      "mocks": [
+        {
+          "operationId": "deleteApiV4ProjectsIdWikisSlug",
+          "response": {
+            "status": 204
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "request": {
+          "method": "DELETE",
+          "path": "/projects/{{projectId}}/wikis/{{wikiSlug}}"
         }
       }
     },

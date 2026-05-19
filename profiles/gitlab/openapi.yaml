@@ -4482,6 +4482,202 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/API_Entities_Snippet"
+  /projects/{id}/wikis:
+    get:
+      tags:
+        - wikis
+      summary: List project wiki pages
+      description: List wiki pages for a project
+      operationId: getApiV4ProjectsIdWikis
+      parameters:
+        - $ref: "#/components/parameters/ProjectIdOrPath"
+        - name: with_content
+          in: query
+          required: false
+          description: Include page content in the response
+          schema:
+            type: boolean
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    content:
+                      type: string
+                    format:
+                      type: string
+                    slug:
+                      type: string
+                    title:
+                      type: string
+                    encoding:
+                      type: string
+    post:
+      tags:
+        - wikis
+      summary: Create project wiki page
+      description: Create a wiki page for a project
+      operationId: postApiV4ProjectsIdWikis
+      parameters:
+        - $ref: "#/components/parameters/ProjectIdOrPath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - title
+                - content
+              properties:
+                title:
+                  type: string
+                content:
+                  type: string
+                format:
+                  type: string
+                  enum:
+                    - markdown
+                    - rdoc
+                    - asciidoc
+                    - org
+      responses:
+        "201":
+          description: Wiki page created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  content:
+                    type: string
+                  format:
+                    type: string
+                  slug:
+                    type: string
+                  title:
+                    type: string
+                  encoding:
+                    type: string
+  /projects/{id}/wikis/{slug}:
+    get:
+      tags:
+        - wikis
+      summary: Get project wiki page
+      description: Retrieve a wiki page for a project
+      operationId: getApiV4ProjectsIdWikisSlug
+      parameters:
+        - $ref: "#/components/parameters/ProjectIdOrPath"
+        - name: slug
+          in: path
+          required: true
+          description: URL-encoded slug of the wiki page
+          schema:
+            type: string
+        - name: render_html
+          in: query
+          required: false
+          description: Return the rendered HTML of the wiki page
+          schema:
+            type: boolean
+        - name: version
+          in: query
+          required: false
+          description: Wiki page version SHA
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  content:
+                    type: string
+                  format:
+                    type: string
+                  slug:
+                    type: string
+                  title:
+                    type: string
+                  encoding:
+                    type: string
+                  html:
+                    type: string
+    put:
+      tags:
+        - wikis
+      summary: Update project wiki page
+      description: Update a wiki page for a project
+      operationId: putApiV4ProjectsIdWikisSlug
+      parameters:
+        - $ref: "#/components/parameters/ProjectIdOrPath"
+        - name: slug
+          in: path
+          required: true
+          description: URL-encoded slug of the wiki page
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title:
+                  type: string
+                content:
+                  type: string
+                format:
+                  type: string
+                  enum:
+                    - markdown
+                    - rdoc
+                    - asciidoc
+                    - org
+      responses:
+        "200":
+          description: Wiki page updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  content:
+                    type: string
+                  format:
+                    type: string
+                  slug:
+                    type: string
+                  title:
+                    type: string
+                  encoding:
+                    type: string
+    delete:
+      tags:
+        - wikis
+      summary: Delete project wiki page
+      description: Delete a wiki page for a project
+      operationId: deleteApiV4ProjectsIdWikisSlug
+      parameters:
+        - $ref: "#/components/parameters/ProjectIdOrPath"
+        - name: slug
+          in: path
+          required: true
+          description: URL-encoded slug of the wiki page
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Wiki page deleted
   /projects:
     get:
       tags:

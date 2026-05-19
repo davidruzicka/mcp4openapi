@@ -18,7 +18,10 @@
     "jobId": 2002,
     "artifactPath": "reports/coverage.xml",
     "hookId": 9001,
-    "variableKey": "DEPLOY_ENV"
+    "variableKey": "DEPLOY_ENV",
+    "wikiSlug": "home",
+    "wikiTitle": "Home",
+    "wikiContent": "# Welcome"
   },
   "scenarios": [
     {
@@ -98,6 +101,63 @@
       "expect": {
         "success": true,
         "result": {"id": 123}
+      }
+    },
+    {
+      "name": "Wiki - List Pages",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "list_wiki_pages",
+        "project_id": "{{projectId}}",
+        "with_content": true
+      },
+      "mocks": [
+        {
+          "operationId": "getApiV4ProjectsIdWikis",
+          "response": {
+            "body": [{"title": "Home", "slug": "home", "format": "markdown", "content": "# Welcome"}]
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": [{"title": "Home"}],
+        "request": {
+          "method": "GET",
+          "path": "/projects/{{projectId}}/wikis",
+          "query": {
+            "with_content": true
+          }
+        }
+      }
+    },
+    {
+      "name": "Wiki - Get Page",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "get_wiki_page",
+        "project_id": "{{projectId}}",
+        "slug": "{{wikiSlug}}",
+        "render_html": true
+      },
+      "mocks": [
+        {
+          "operationId": "getApiV4ProjectsIdWikisSlug",
+          "response": {
+            "body": {"title": "Home", "slug": "home", "format": "markdown", "content": "# Welcome", "html": "<h1>Welcome</h1>"}
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": {"title": "Home"},
+        "request": {
+          "method": "GET",
+          "path": "/projects/{{projectId}}/wikis/{{wikiSlug}}",
+          "query": {
+            "render_html": true
+          }
+        }
       }
     },
     {
@@ -1615,6 +1675,30 @@
       }
     },
     {
+      "name": "Wiki - Create Page",
+      "tool": "create_content",
+      "arguments": {
+        "action": "create_wiki_page",
+        "project_id": "{{projectId}}",
+        "title": "{{wikiTitle}}",
+        "content": "{{wikiContent}}",
+        "format": "markdown"
+      },
+      "mocks": [
+        {
+          "operationId": "postApiV4ProjectsIdWikis",
+          "response": {
+            "status": 201,
+            "body": {"title": "Home", "slug": "home", "format": "markdown", "content": "# Welcome"}
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": {"slug": "home"}
+      }
+    },
+    {
       "name": "Issues - Resolve Discussion",
       "tool": "update_content",
       "arguments": {
@@ -1659,6 +1743,29 @@
       "expect": {
         "success": true,
         "result": {"file_name": "README.md"}
+      }
+    },
+    {
+      "name": "Wiki - Update Page",
+      "tool": "update_content",
+      "arguments": {
+        "action": "update_wiki_page",
+        "project_id": "{{projectId}}",
+        "slug": "{{wikiSlug}}",
+        "content": "## Updated",
+        "title": "Updated Home"
+      },
+      "mocks": [
+        {
+          "operationId": "putApiV4ProjectsIdWikisSlug",
+          "response": {
+            "body": {"title": "Updated Home", "slug": "updated-home", "format": "markdown", "content": "## Updated"}
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": {"title": "Updated Home"}
       }
     },
     {
@@ -1914,6 +2021,27 @@
       ],
       "expect": {
         "success": true
+      }
+    },
+    {
+      "name": "Wiki - Delete Page",
+      "tool": "delete_content",
+      "arguments": {
+        "action": "delete_wiki_page",
+        "project_id": "{{projectId}}",
+        "slug": "{{wikiSlug}}"
+      },
+      "mocks": [
+        {
+          "operationId": "deleteApiV4ProjectsIdWikisSlug",
+          "response": {
+            "status": 204
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "request": {"method": "DELETE", "path": "/projects/{{projectId}}/wikis/{{wikiSlug}}"}
       }
     },
     {

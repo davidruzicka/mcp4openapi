@@ -552,6 +552,73 @@
     },
 
     {
+      "name": "manage_wikis",
+      "description": "Work with project wiki pages. Actions: 'list_pages', 'get_page', 'create_page', 'update_page', 'delete_page'. Use 'list_pages' to discover wiki pages; for page-specific actions pass 'slug'.",
+      "metadata_params": ["action", "project_id", "slug"],
+      "operations": {
+        "list_pages": "getApiV4ProjectsIdWikis",
+        "get_page": "getApiV4ProjectsIdWikisSlug",
+        "create_page": "postApiV4ProjectsIdWikis",
+        "update_page": "putApiV4ProjectsIdWikisSlug",
+        "delete_page": "deleteApiV4ProjectsIdWikisSlug"
+      },
+      "response_fields": {
+        "list_pages": ["title", "slug", "format", "encoding", "content"],
+        "get_page": ["title", "slug", "format", "encoding", "content", "html"],
+        "create_page": ["title", "slug", "format", "encoding", "content"],
+        "update_page": ["title", "slug", "format", "encoding", "content"]
+      },
+      "parameters": {
+        "action": {
+          "type": "string",
+          "enum": ["list_pages", "get_page", "create_page", "update_page", "delete_page"],
+          "description": "Action to perform",
+          "required": true
+        },
+        "project_id": {
+          "type": "string",
+          "description": "Project ID. Use numeric ID (e.g. '123') or URL-encoded path (e.g. 'group%2Fproject').",
+          "required": true,
+          "example": "123"
+        },
+        "slug": {
+          "type": "string",
+          "description": "URL-encoded slug of the wiki page, e.g. 'docs%2Fhome'. Use %2F instead of '/'.",
+          "required_for": ["get_page", "update_page", "delete_page"]
+        },
+        "with_content": {
+          "type": "boolean",
+          "description": "Include wiki page content when listing pages"
+        },
+        "render_html": {
+          "type": "boolean",
+          "description": "Return rendered HTML when retrieving a wiki page"
+        },
+        "version": {
+          "type": "string",
+          "description": "Wiki page version SHA"
+        },
+        "title": {
+          "type": "string",
+          "description": "Wiki page title",
+          "required_for": ["create_page"],
+          "example": "Home"
+        },
+        "content": {
+          "type": "string",
+          "description": "Wiki page content",
+          "required_for": ["create_page"],
+          "example": "# Welcome"
+        },
+        "format": {
+          "type": "string",
+          "enum": ["markdown", "rdoc", "asciidoc", "org"],
+          "description": "Wiki page format"
+        }
+      }
+    },
+
+    {
       "name": "manage_merge_requests",
       "description": "Work with merge requests. Actions: 'list' (all MRs in project), 'get' (single MR details), 'create' (create new MR), 'update' (update MR), 'delete' (delete MR - admins only), 'merge' (accept MR), 'list_commits', 'list_diffs', 'list_raw_diffs', 'list_pipelines', 'create_pipeline', 'list_notes' (get all comments), 'get_note' (single comment), 'create_note' (add comment), 'update_note' (edit comment), 'delete_note' (remove comment), 'download_note_attachment' (download note attachment via proxy), 'list_discussions', 'get_discussion', 'create_discussion', 'reply_discussion', 'delete_discussion', 'set_discussion_resolved', 'get_approvals', 'approve', 'unapprove', 'list_versions' (list diff versions), 'get_version' (specific diff version), 'list_award_emoji', 'get_award_emoji', 'create_award_emoji', 'delete_award_emoji', 'list_note_award_emoji', 'get_note_award_emoji', 'create_note_award_emoji', 'delete_note_award_emoji'. Use 'list' to see all merge requests, filter by state (opened, closed, merged, all). For actions that target a specific MR, pass 'merge_request_iid'.",
       "metadata_params": ["action", "project_id", "merge_request_iid", "note_id", "award_id", "discussion_id", "version_id"],
