@@ -203,6 +203,59 @@
       }
     },
     {
+      "name": "Search Teams With Filters",
+      "tool": "retrieve_admin_content",
+      "arguments": {
+        "action": "search_teams",
+        "name": "platform",
+        "query": "platform",
+        "page": 2,
+        "perpage": 25,
+        "sort": "name-asc"
+      },
+      "mocks": [
+        {
+          "operationId": "searchTeams",
+          "response": {
+            "body": {
+              "teams": [
+                {
+                  "id": 9,
+                  "name": "platform-observability"
+                }
+              ],
+              "totalCount": 1,
+              "page": 2,
+              "perPage": 25
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": {
+          "teams": [
+            {
+              "id": 9,
+              "name": "platform-observability"
+            }
+          ],
+          "totalCount": 1
+        },
+        "request": {
+          "method": "GET",
+          "path": "/teams/search",
+          "query": {
+            "name": "platform",
+            "query": "platform",
+            "page": 2,
+            "perpage": 25,
+            "sort": "name-asc"
+          }
+        }
+      }
+    },
+    {
       "name": "Get Dashboard Permissions By UID",
       "tool": "retrieve_admin_content",
       "arguments": {
@@ -261,6 +314,33 @@
       "expect": {
         "success": false,
         "error_message_regex": "Parameter 'loginOrEmail' is required for action 'get_user_by_login_or_email'",
+        "requests": []
+      }
+    },
+    {
+      "name": "Validation - Reject Datasource Route On Dashboard Permissions",
+      "tool": "retrieve_admin_content",
+      "arguments": {
+        "action": "get_dashboard_permissions_by_uid",
+        "uid": "team-dashboards",
+        "datasource_proxy_route": "labels"
+      },
+      "expect": {
+        "success": false,
+        "error_message_regex": "Parameter 'datasource_proxy_route' is not allowed for action 'get_dashboard_permissions_by_uid'",
+        "requests": []
+      }
+    },
+    {
+      "name": "Validation - Reject Limit On Search Teams",
+      "tool": "retrieve_admin_content",
+      "arguments": {
+        "action": "search_teams",
+        "limit": 10
+      },
+      "expect": {
+        "success": false,
+        "error_message_regex": "Parameter 'limit' is not allowed for action 'search_teams'",
         "requests": []
       }
     },

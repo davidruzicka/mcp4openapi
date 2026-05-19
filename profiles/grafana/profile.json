@@ -620,107 +620,128 @@
         "uid": {
           "type": "string",
           "description": "Dashboard or datasource UID",
-          "required_for": ["get_datasource_by_uid", "check_datasource_health_by_uid", "get_datasource_resource_by_uid", "get_dashboard_permissions_by_uid"]
+          "required_for": ["get_datasource_by_uid", "check_datasource_health_by_uid", "get_datasource_resource_by_uid", "get_dashboard_permissions_by_uid"],
+          "allowed_for": ["get_datasource_by_uid", "check_datasource_health_by_uid", "get_datasource_resource_by_uid", "get_dashboard_permissions_by_uid"]
         },
         "id": {
           "type": "string",
           "description": "Datasource ID",
-          "required_for": ["get_datasource_by_id", "check_datasource_health_by_id", "get_datasource_resource_by_id"]
+          "required_for": ["get_datasource_by_id", "check_datasource_health_by_id", "get_datasource_resource_by_id"],
+          "allowed_for": ["get_datasource_by_id", "check_datasource_health_by_id", "get_datasource_resource_by_id"]
         },
         "name": {
           "type": "string",
           "description": "Datasource name",
-          "required_for": ["get_datasource_by_name", "get_datasource_id_by_name"]
+          "required_for": ["get_datasource_by_name", "get_datasource_id_by_name"],
+          "allowed_for": ["get_datasource_by_name", "get_datasource_id_by_name", "search_teams"]
         },
         "folder_uid": {
           "type": "string",
           "description": "Folder UID",
-          "required_for": ["get_folder_permissions"]
+          "required_for": ["get_folder_permissions"],
+          "allowed_for": ["get_folder_permissions"]
         },
         "DashboardID": {
           "type": "string",
           "description": "Dashboard ID",
-          "required_for": ["get_dashboard_permissions_by_id"]
+          "required_for": ["get_dashboard_permissions_by_id"],
+          "allowed_for": ["get_dashboard_permissions_by_id"]
         },
         "serviceAccountId": {
           "type": "string",
           "description": "Service account ID",
-          "required_for": ["get_service_account", "list_service_account_tokens"]
+          "required_for": ["get_service_account", "list_service_account_tokens"],
+          "allowed_for": ["get_service_account", "list_service_account_tokens"]
         },
         "user_id": {
           "type": "string",
           "description": "User ID",
-          "required_for": ["get_user_by_id", "get_user_orgs", "get_user_teams"]
+          "required_for": ["get_user_by_id", "get_user_orgs", "get_user_teams"],
+          "allowed_for": ["get_user_by_id", "get_user_orgs", "get_user_teams"]
         },
         "team_id": {
           "type": "string",
           "description": "Team ID",
-          "required_for": ["get_team_by_id", "list_team_members", "get_team_preferences"]
+          "required_for": ["get_team_by_id", "list_team_members", "get_team_preferences"],
+          "allowed_for": ["get_team_by_id", "list_team_members", "get_team_preferences"]
         },
         "loginOrEmail": {
           "type": "string",
           "description": "Login or email of the user",
-          "required_for": ["get_user_by_login_or_email"]
+          "required_for": ["get_user_by_login_or_email"],
+          "allowed_for": ["get_user_by_login_or_email"]
         },
         "datasource_proxy_route": {
           "type": "string",
           "description": "Datasource proxy route",
-          "required_for": ["get_datasource_resource_by_id", "get_datasource_resource_by_uid"]
+          "required_for": ["get_datasource_resource_by_id", "get_datasource_resource_by_uid"],
+          "allowed_for": ["get_datasource_resource_by_id", "get_datasource_resource_by_uid"]
         },
         "sourceUID": {
           "type": "string",
           "description": "Source datasource UID for correlations",
-          "required_for": ["get_correlations_by_source_uid", "get_correlation"]
+          "required_for": ["get_correlations_by_source_uid", "get_correlation"],
+          "allowed_for": ["get_correlations_by_source_uid", "get_correlation"]
         },
         "correlationUID": {
           "type": "string",
           "description": "Correlation UID",
-          "required_for": ["get_correlation"]
+          "required_for": ["get_correlation"],
+          "allowed_for": ["get_correlation"]
         },
         "query": {
           "type": "string",
           "description": "Search query",
-          "required_for": []
+          "required_for": [],
+          "allowed_for": ["list_service_accounts", "search_teams"]
         },
         "limit": {
           "type": "integer",
           "description": "Limit results",
-          "required_for": []
+          "required_for": [],
+          "forbidden_for": ["list_datasources", "get_datasource_by_id", "get_datasource_by_uid", "get_datasource_by_name", "get_datasource_id_by_name", "check_datasource_health_by_id", "check_datasource_health_by_uid", "get_datasource_resource_by_id", "get_datasource_resource_by_uid", "get_snapshot_sharing_options", "get_correlations", "get_correlations_by_source_uid", "get_correlation", "list_service_accounts", "get_service_account", "list_service_account_tokens", "search_users", "search_users_paged", "get_user_by_id", "get_user_by_login_or_email", "get_user_orgs", "get_user_teams", "search_teams", "get_team_by_id", "list_team_members", "get_team_preferences", "get_dashboard_permissions_by_uid", "get_dashboard_permissions_by_id", "get_folder_permissions"]
         },
         "page": {
           "type": "integer",
           "description": "Page number",
-          "required_for": []
+          "required_for": [],
+          "allowed_for": ["list_service_accounts", "search_users", "search_teams"]
         },
         "perpage": {
           "type": "integer",
           "description": "Items per page",
-          "required_for": []
+          "required_for": [],
+          "allowed_for": ["list_service_accounts", "search_users", "search_teams"]
         },
         "permission": {
           "type": "string",
           "description": "Permission filter",
-          "required_for": []
+          "required_for": [],
+          "forbidden_for": ["list_datasources", "get_datasource_by_id", "get_datasource_by_uid", "get_datasource_by_name", "get_datasource_id_by_name", "check_datasource_health_by_id", "check_datasource_health_by_uid", "get_datasource_resource_by_id", "get_datasource_resource_by_uid", "get_snapshot_sharing_options", "get_correlations", "get_correlations_by_source_uid", "get_correlation", "list_service_accounts", "get_service_account", "list_service_account_tokens", "search_users", "search_users_paged", "get_user_by_id", "get_user_by_login_or_email", "get_user_orgs", "get_user_teams", "search_teams", "get_team_by_id", "list_team_members", "get_team_preferences", "get_dashboard_permissions_by_uid", "get_dashboard_permissions_by_id", "get_folder_permissions"]
         },
         "sort": {
           "type": "string",
           "description": "Sort option",
-          "required_for": []
+          "required_for": [],
+          "allowed_for": ["search_teams"]
         },
         "Disabled": {
           "type": "boolean",
           "description": "Include disabled service accounts",
-          "required_for": []
+          "required_for": [],
+          "allowed_for": ["list_service_accounts"]
         },
         "expiredTokens": {
           "type": "boolean",
           "description": "Include expired tokens",
-          "required_for": []
+          "required_for": [],
+          "allowed_for": ["list_service_accounts"]
         },
         "start": {
           "type": "integer",
           "description": "Pagination start offset",
-          "required_for": []
+          "required_for": [],
+          "forbidden_for": ["list_datasources", "get_datasource_by_id", "get_datasource_by_uid", "get_datasource_by_name", "get_datasource_id_by_name", "check_datasource_health_by_id", "check_datasource_health_by_uid", "get_datasource_resource_by_id", "get_datasource_resource_by_uid", "get_snapshot_sharing_options", "get_correlations", "get_correlations_by_source_uid", "get_correlation", "list_service_accounts", "get_service_account", "list_service_account_tokens", "search_users", "search_users_paged", "get_user_by_id", "get_user_by_login_or_email", "get_user_orgs", "get_user_teams", "search_teams", "get_team_by_id", "list_team_members", "get_team_preferences", "get_dashboard_permissions_by_uid", "get_dashboard_permissions_by_id", "get_folder_permissions"]
         }
       }
     },
