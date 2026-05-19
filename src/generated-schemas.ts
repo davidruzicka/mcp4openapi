@@ -152,7 +152,7 @@ export const multipartOperationSchema = z.object({
     file_field_name: z.string().optional()
 });
 
-export const operationDefinitionSchema = z.union([z.string(), multipartOperationSchema, proxyDownloadOperationSchema]);
+export const operationDefinitionSchema = z.union([z.string(), proxyDownloadOperationSchema, multipartOperationSchema]);
 
 export const baseUrlConfigSchema = z.object({
     value_from_env: z.string(),
