@@ -64,9 +64,9 @@ describe('CompositeExecutor Security', () => {
     await executor.execute(steps, { id: maliciousId });
 
     // Vulnerable behavior: path contains raw ".."
-    // Fixed behavior: path contains encoded "%2E%2E"
+    // Fixed behavior: path contains encoded "..%2F" instead of raw "../"
+    // which prevents directory traversal as the slashes are encoded.
     // Note: encodeURIComponent('../admin/secrets') => ..%2Fadmin%2Fsecrets
-    // The slashes inside the injected value are encoded, preventing directory traversal
     const expectedFixedPath = '/users/..%2Fadmin%2Fsecrets/profile';
 
     expect(capturedPaths[0]).toBe(expectedFixedPath);

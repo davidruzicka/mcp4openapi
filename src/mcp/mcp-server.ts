@@ -1205,6 +1205,9 @@ export class MCPServer {
    */
   private encodePathSegment(value: unknown): string {
     const val = String(value);
+    if (val === '.' || val === '..') {
+      throw new ValidationError(`Invalid path parameter value: ${val}`);
+    }
     return val.includes('/') ? encodeURIComponent(val) : val;
   }
 

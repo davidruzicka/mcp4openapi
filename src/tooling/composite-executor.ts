@@ -169,23 +169,34 @@ export class CompositeExecutor {
    */
   private resolvePath(template: string, args: Record<string, unknown>): string {
     return template.replace(/\{(\w+)\}/g, (_, key) => {
+      let value: string | undefined;
+
       // Try direct match first
       if (args[key] !== undefined) {
-        return encodeURIComponent(String(args[key]));
-      }
+        value = String(args[key]);
+      } else {
+        // Try aliases from profile
+        const possibleAliases = this.parameterAliases[key] || [];
+        for (const alias of possibleAliases) {
+          if (args[alias] !== undefined) {
+            value = String(args[alias]);
+            break;
+          }
+        }
 
-      // Try aliases from profile
-      const possibleAliases = this.parameterAliases[key] || [];
-      for (const alias of possibleAliases) {
-        if (args[alias] !== undefined) {
-          return encodeURIComponent(String(args[alias]));
+        if (value === undefined) {
+          throw new Error(
+            `Missing path parameter: ${key}` +
+            (possibleAliases.length > 0 ? `. Tried aliases: ${possibleAliases.join(', ')}` : '')
+          );
         }
       }
 
-      throw new Error(
-        `Missing path parameter: ${key}` +
-        (possibleAliases.length > 0 ? `. Tried aliases: ${possibleAliases.join(', ')}` : '')
-      );
+      if (value === '.' || value === '..') {
+        throw new Error(`Invalid path parameter value: ${value}`);
+      }
+
+      return encodeURIComponent(value);
     });
   }
 
