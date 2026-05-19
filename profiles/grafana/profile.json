@@ -340,7 +340,7 @@
 
     {
       "name": "retrieve_content",
-      "description": "Retrieve Grafana content and query data. Actions: 'search', 'list_dashboards_tags', 'get_dashboard_home', 'get_dashboard_by_uid', 'get_dashboard_versions_by_uid', 'get_dashboard_version_by_uid', 'list_public_dashboards', 'get_public_dashboard', 'view_public_dashboard', 'get_public_annotations', 'list_folders', 'get_folder_by_uid', 'get_folder_by_id', 'get_folder_counts', 'list_datasources', 'get_datasource_by_id', 'get_datasource_by_uid', 'get_datasource_by_name', 'get_datasource_id_by_name', 'check_datasource_health_by_id', 'check_datasource_health_by_uid', 'get_datasource_resource_by_id', 'get_datasource_resource_by_uid', 'query_metrics', 'get_annotations', 'get_annotation_by_id', 'get_annotation_tags', 'get_snapshot', 'search_snapshots', 'get_snapshot_sharing_options', 'get_correlations', 'get_correlations_by_source_uid', 'get_correlation'.",
+      "description": "Retrieve Grafana content and query data. Actions: 'search', 'list_dashboards_tags', 'get_dashboard_home', 'get_dashboard_by_uid', 'get_dashboard_versions_by_uid', 'get_dashboard_version_by_uid', 'list_public_dashboards', 'get_public_dashboard', 'view_public_dashboard', 'get_public_annotations', 'list_folders', 'get_folder_by_uid', 'get_folder_by_id', 'get_folder_counts', 'query_metrics', 'get_annotations', 'get_annotation_by_id', 'get_annotation_tags', 'get_snapshot', 'search_snapshots'.",
       "metadata_params": ["action"],
       "operations": {
         "search": "search",
@@ -357,37 +357,24 @@
         "get_folder_by_uid": "getFolderByUID",
         "get_folder_by_id": "getFolderByID",
         "get_folder_counts": "getFolderDescendantCounts",
-        "list_datasources": "getDataSources",
-        "get_datasource_by_id": "getDataSourceByID",
-        "get_datasource_by_uid": "getDataSourceByUID",
-        "get_datasource_by_name": "getDataSourceByName",
-        "get_datasource_id_by_name": "getDataSourceIdByName",
-        "check_datasource_health_by_id": "checkDatasourceHealthByID",
-        "check_datasource_health_by_uid": "checkDatasourceHealthWithUID",
-        "get_datasource_resource_by_id": "callDatasourceResourceByID",
-        "get_datasource_resource_by_uid": "callDatasourceResourceWithUID",
         "query_metrics": "queryMetricsWithExpressions",
         "get_annotations": "getAnnotations",
         "get_annotation_by_id": "getAnnotationByID",
         "get_annotation_tags": "getAnnotationTags",
         "get_snapshot": "getDashboardSnapshot",
-        "search_snapshots": "searchDashboardSnapshots",
-        "get_snapshot_sharing_options": "getSharingOptions",
-        "get_correlations": "getCorrelations",
-        "get_correlations_by_source_uid": "getCorrelationsBySourceUID",
-        "get_correlation": "getCorrelation"
+        "search_snapshots": "searchDashboardSnapshots"
       },
       "parameters": {
         "action": {
           "type": "string",
-          "enum": ["search", "list_dashboards_tags", "get_dashboard_home", "get_dashboard_by_uid", "get_dashboard_versions_by_uid", "get_dashboard_version_by_uid", "list_public_dashboards", "get_public_dashboard", "view_public_dashboard", "get_public_annotations", "list_folders", "get_folder_by_uid", "get_folder_by_id", "get_folder_counts", "list_datasources", "get_datasource_by_id", "get_datasource_by_uid", "get_datasource_by_name", "get_datasource_id_by_name", "check_datasource_health_by_id", "check_datasource_health_by_uid", "get_datasource_resource_by_id", "get_datasource_resource_by_uid", "query_metrics", "get_annotations", "get_annotation_by_id", "get_annotation_tags", "get_snapshot", "search_snapshots", "get_snapshot_sharing_options", "get_correlations", "get_correlations_by_source_uid", "get_correlation"],
+          "enum": ["search", "list_dashboards_tags", "get_dashboard_home", "get_dashboard_by_uid", "get_dashboard_versions_by_uid", "get_dashboard_version_by_uid", "list_public_dashboards", "get_public_dashboard", "view_public_dashboard", "get_public_annotations", "list_folders", "get_folder_by_uid", "get_folder_by_id", "get_folder_counts", "query_metrics", "get_annotations", "get_annotation_by_id", "get_annotation_tags", "get_snapshot", "search_snapshots"],
           "description": "Action to perform",
           "required": true
         },
         "uid": {
           "type": "string",
           "description": "Resource UID",
-          "required_for": ["get_dashboard_by_uid", "get_dashboard_versions_by_uid", "get_dashboard_version_by_uid", "get_folder_by_uid", "get_folder_counts", "get_datasource_by_uid", "check_datasource_health_by_uid", "get_datasource_resource_by_uid"]
+          "required_for": ["get_dashboard_by_uid", "get_dashboard_versions_by_uid", "get_dashboard_version_by_uid", "get_folder_by_uid", "get_folder_counts"]
         },
         "dashboardUid": {
           "type": "string",
@@ -412,12 +399,12 @@
         "id": {
           "type": "string",
           "description": "Datasource ID",
-          "required_for": ["get_datasource_by_id", "check_datasource_health_by_id", "get_datasource_resource_by_id"]
+          "required_for": []
         },
         "name": {
           "type": "string",
           "description": "Datasource name",
-          "required_for": ["get_datasource_by_name", "get_datasource_id_by_name"]
+          "required_for": []
         },
         "key": {
           "type": "string",
@@ -432,17 +419,17 @@
         "datasource_proxy_route": {
           "type": "string",
           "description": "Datasource proxy route",
-          "required_for": ["get_datasource_resource_by_id", "get_datasource_resource_by_uid"]
+          "required_for": []
         },
         "sourceUID": {
           "type": "string",
           "description": "Source datasource UID for correlations",
-          "required_for": ["get_correlations_by_source_uid", "get_correlation"]
+          "required_for": []
         },
         "correlationUID": {
           "type": "string",
           "description": "Correlation UID",
-          "required_for": ["get_correlation"]
+          "required_for": []
         },
         "query": {
           "type": "string",
@@ -590,9 +577,22 @@
 
     {
       "name": "retrieve_admin_content",
-      "description": "Retrieve Grafana admin metadata and access-control information. Actions: 'list_service_accounts', 'get_service_account', 'list_service_account_tokens', 'search_users', 'search_users_paged', 'get_user_by_id', 'get_user_by_login_or_email', 'get_user_orgs', 'get_user_teams', 'search_teams', 'get_team_by_id', 'list_team_members', 'get_team_preferences', 'get_dashboard_permissions_by_uid', 'get_dashboard_permissions_by_id', 'get_folder_permissions'.",
+      "description": "Retrieve Grafana admin metadata, datasource configuration, and access-control information. Actions: 'list_datasources', 'get_datasource_by_id', 'get_datasource_by_uid', 'get_datasource_by_name', 'get_datasource_id_by_name', 'check_datasource_health_by_id', 'check_datasource_health_by_uid', 'get_datasource_resource_by_id', 'get_datasource_resource_by_uid', 'get_snapshot_sharing_options', 'get_correlations', 'get_correlations_by_source_uid', 'get_correlation', 'list_service_accounts', 'get_service_account', 'list_service_account_tokens', 'search_users', 'search_users_paged', 'get_user_by_id', 'get_user_by_login_or_email', 'get_user_orgs', 'get_user_teams', 'search_teams', 'get_team_by_id', 'list_team_members', 'get_team_preferences', 'get_dashboard_permissions_by_uid', 'get_dashboard_permissions_by_id', 'get_folder_permissions'.",
       "metadata_params": ["action"],
       "operations": {
+        "list_datasources": "getDataSources",
+        "get_datasource_by_id": "getDataSourceByID",
+        "get_datasource_by_uid": "getDataSourceByUID",
+        "get_datasource_by_name": "getDataSourceByName",
+        "get_datasource_id_by_name": "getDataSourceIdByName",
+        "check_datasource_health_by_id": "checkDatasourceHealthByID",
+        "check_datasource_health_by_uid": "checkDatasourceHealthWithUID",
+        "get_datasource_resource_by_id": "callDatasourceResourceByID",
+        "get_datasource_resource_by_uid": "callDatasourceResourceWithUID",
+        "get_snapshot_sharing_options": "getSharingOptions",
+        "get_correlations": "getCorrelations",
+        "get_correlations_by_source_uid": "getCorrelationsBySourceUID",
+        "get_correlation": "getCorrelation",
         "list_service_accounts": "searchOrgServiceAccountsWithPaging",
         "get_service_account": "retrieveServiceAccount",
         "list_service_account_tokens": "listTokens",
@@ -613,14 +613,24 @@
       "parameters": {
         "action": {
           "type": "string",
-          "enum": ["list_service_accounts", "get_service_account", "list_service_account_tokens", "search_users", "search_users_paged", "get_user_by_id", "get_user_by_login_or_email", "get_user_orgs", "get_user_teams", "search_teams", "get_team_by_id", "list_team_members", "get_team_preferences", "get_dashboard_permissions_by_uid", "get_dashboard_permissions_by_id", "get_folder_permissions"],
+          "enum": ["list_datasources", "get_datasource_by_id", "get_datasource_by_uid", "get_datasource_by_name", "get_datasource_id_by_name", "check_datasource_health_by_id", "check_datasource_health_by_uid", "get_datasource_resource_by_id", "get_datasource_resource_by_uid", "get_snapshot_sharing_options", "get_correlations", "get_correlations_by_source_uid", "get_correlation", "list_service_accounts", "get_service_account", "list_service_account_tokens", "search_users", "search_users_paged", "get_user_by_id", "get_user_by_login_or_email", "get_user_orgs", "get_user_teams", "search_teams", "get_team_by_id", "list_team_members", "get_team_preferences", "get_dashboard_permissions_by_uid", "get_dashboard_permissions_by_id", "get_folder_permissions"],
           "description": "Action to perform",
           "required": true
         },
         "uid": {
           "type": "string",
-          "description": "Dashboard UID",
-          "required_for": ["get_dashboard_permissions_by_uid"]
+          "description": "Dashboard or datasource UID",
+          "required_for": ["get_datasource_by_uid", "check_datasource_health_by_uid", "get_datasource_resource_by_uid", "get_dashboard_permissions_by_uid"]
+        },
+        "id": {
+          "type": "string",
+          "description": "Datasource ID",
+          "required_for": ["get_datasource_by_id", "check_datasource_health_by_id", "get_datasource_resource_by_id"]
+        },
+        "name": {
+          "type": "string",
+          "description": "Datasource name",
+          "required_for": ["get_datasource_by_name", "get_datasource_id_by_name"]
         },
         "folder_uid": {
           "type": "string",
@@ -652,9 +662,29 @@
           "description": "Login or email of the user",
           "required_for": ["get_user_by_login_or_email"]
         },
+        "datasource_proxy_route": {
+          "type": "string",
+          "description": "Datasource proxy route",
+          "required_for": ["get_datasource_resource_by_id", "get_datasource_resource_by_uid"]
+        },
+        "sourceUID": {
+          "type": "string",
+          "description": "Source datasource UID for correlations",
+          "required_for": ["get_correlations_by_source_uid", "get_correlation"]
+        },
+        "correlationUID": {
+          "type": "string",
+          "description": "Correlation UID",
+          "required_for": ["get_correlation"]
+        },
         "query": {
           "type": "string",
           "description": "Search query",
+          "required_for": []
+        },
+        "limit": {
+          "type": "integer",
+          "description": "Limit results",
           "required_for": []
         },
         "page": {

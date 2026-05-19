@@ -166,6 +166,43 @@
       }
     },
     {
+      "name": "List Datasources",
+      "tool": "retrieve_admin_content",
+      "arguments": {
+        "action": "list_datasources"
+      },
+      "mocks": [
+        {
+          "operationId": "getDataSources",
+          "response": {
+            "body": [
+              {
+                "id": 1,
+                "uid": "prom-main",
+                "name": "Prometheus",
+                "type": "prometheus"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": [
+          {
+            "id": 1,
+            "uid": "prom-main",
+            "name": "Prometheus",
+            "type": "prometheus"
+          }
+        ],
+        "request": {
+          "method": "GET",
+          "path": "/datasources"
+        }
+      }
+    },
+    {
       "name": "Get Dashboard Permissions By UID",
       "tool": "retrieve_admin_content",
       "arguments": {
@@ -315,25 +352,23 @@
       "retrieve_content.get_folder_by_uid": "Not covered in minimal smoke test.",
       "retrieve_content.get_folder_by_id": "Not covered in minimal smoke test.",
       "retrieve_content.get_folder_counts": "Not covered in minimal smoke test.",
-      "retrieve_content.list_datasources": "Not covered in minimal smoke test.",
-      "retrieve_content.get_datasource_by_id": "Not covered in minimal smoke test.",
-      "retrieve_content.get_datasource_by_uid": "Not covered in minimal smoke test.",
-      "retrieve_content.get_datasource_by_name": "Not covered in minimal smoke test.",
-      "retrieve_content.get_datasource_id_by_name": "Not covered in minimal smoke test.",
-      "retrieve_content.check_datasource_health_by_id": "Not covered in minimal smoke test.",
-      "retrieve_content.check_datasource_health_by_uid": "Not covered in minimal smoke test.",
-      "retrieve_content.get_datasource_resource_by_id": "Not covered in minimal smoke test.",
-      "retrieve_content.get_datasource_resource_by_uid": "Not covered in minimal smoke test.",
-      "retrieve_content.get_datasource_resource_by_uid": "Not covered in minimal smoke test.",
       "retrieve_content.get_annotations": "Not covered in minimal smoke test.",
       "retrieve_content.get_annotation_by_id": "Not covered in minimal smoke test.",
       "retrieve_content.get_annotation_tags": "Not covered in minimal smoke test.",
       "retrieve_content.get_snapshot": "Not covered in minimal smoke test.",
       "retrieve_content.search_snapshots": "Not covered in minimal smoke test.",
-      "retrieve_content.get_snapshot_sharing_options": "Not covered in minimal smoke test.",
-      "retrieve_content.get_correlations": "Not covered in minimal smoke test.",
-      "retrieve_content.get_correlations_by_source_uid": "Not covered in minimal smoke test.",
-      "retrieve_content.get_correlation": "Not covered in minimal smoke test.",
+      "retrieve_admin_content.get_datasource_by_id": "Not covered in minimal smoke test.",
+      "retrieve_admin_content.get_datasource_by_uid": "Not covered in minimal smoke test.",
+      "retrieve_admin_content.get_datasource_by_name": "Not covered in minimal smoke test.",
+      "retrieve_admin_content.get_datasource_id_by_name": "Not covered in minimal smoke test.",
+      "retrieve_admin_content.check_datasource_health_by_id": "Not covered in minimal smoke test.",
+      "retrieve_admin_content.check_datasource_health_by_uid": "Not covered in minimal smoke test.",
+      "retrieve_admin_content.get_datasource_resource_by_id": "Not covered in minimal smoke test.",
+      "retrieve_admin_content.get_datasource_resource_by_uid": "Not covered in minimal smoke test.",
+      "retrieve_admin_content.get_snapshot_sharing_options": "Not covered in minimal smoke test.",
+      "retrieve_admin_content.get_correlations": "Not covered in minimal smoke test.",
+      "retrieve_admin_content.get_correlations_by_source_uid": "Not covered in minimal smoke test.",
+      "retrieve_admin_content.get_correlation": "Not covered in minimal smoke test.",
       "retrieve_admin_content.list_service_accounts": "Not covered in minimal smoke test.",
       "retrieve_admin_content.get_service_account": "Not covered in minimal smoke test.",
       "retrieve_admin_content.list_service_account_tokens": "Not covered in minimal smoke test.",
