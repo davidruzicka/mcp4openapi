@@ -381,4 +381,78 @@ describe('validateTestAgainstProfile', () => {
 
     expect(() => validateTestAgainstProfile(skippedDestructive, profile)).not.toThrow();
   });
+
+  it('fails when a moved action is referenced through the wrong tool', () => {
+    const profile: Profile = {
+      profile_name: 'grafana-split',
+      tools: [
+        {
+          name: 'retrieve_content',
+          description: 'Content reads only',
+          operations: {
+            search: 'search'
+          },
+          parameters: {
+            action: {
+              type: 'string',
+              required: true,
+              enum: ['search'],
+              description: 'Action to perform'
+            },
+            query: {
+              type: 'string',
+              description: 'Search query'
+            }
+          }
+        },
+        {
+          name: 'retrieve_admin_content',
+          description: 'Admin reads only',
+          operations: {
+            get_user_by_login_or_email: 'getUserByLoginOrEmail'
+          },
+          parameters: {
+            action: {
+              type: 'string',
+              required: true,
+              enum: ['get_user_by_login_or_email'],
+              description: 'Action to perform'
+            },
+            loginOrEmail: {
+              type: 'string',
+              description: 'Login or email',
+              required_for: ['get_user_by_login_or_email']
+            }
+          }
+        }
+      ]
+    };
+
+    const testDef: ProfileTestDefinition = {
+      scenarios: [
+        {
+          name: 'wrong tool for moved admin action',
+          tool: 'retrieve_content',
+          arguments: {
+            action: 'get_user_by_login_or_email',
+            loginOrEmail: 'admin@example.com'
+          },
+          expect: { success: false }
+        }
+      ],
+      coverage: {
+        require_all_actions: false,
+        skip_actions: {
+          'retrieve_content.search': 'Not relevant for this boundary check',
+          'retrieve_admin_content.get_user_by_login_or_email': 'Boundary check only'
+        },
+        require_request_assertions: false,
+        skip_request_assertions: {}
+      }
+    };
+
+    expect(() => validateTestAgainstProfile(testDef, profile)).toThrowError(
+      /does not map to a known operation for tool 'retrieve_content'/
+    );
+  });
 });

@@ -75,6 +75,159 @@
       }
     },
     {
+      "name": "Query Metrics",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "query_metrics",
+        "from": "now-1h",
+        "to": "now",
+        "queries": [
+          {
+            "refId": "A",
+            "datasource": {
+              "uid": "prom-main"
+            },
+            "expr": "up"
+          }
+        ]
+      },
+      "mocks": [
+        {
+          "operationId": "queryMetricsWithExpressions",
+          "response": {
+            "body": {
+              "results": {
+                "A": {
+                  "frames": []
+                }
+              }
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": {
+          "results": {
+            "A": {}
+          }
+        },
+        "request": {
+          "method": "POST",
+          "path": "/ds/query",
+          "body": {
+            "from": "now-1h",
+            "to": "now",
+            "queries": [
+              {
+                "refId": "A",
+                "datasource": {
+                  "uid": "prom-main"
+                },
+                "expr": "up"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "Lookup User By Login Or Email",
+      "tool": "retrieve_admin_content",
+      "arguments": {
+        "action": "get_user_by_login_or_email",
+        "loginOrEmail": "admin@example.com"
+      },
+      "mocks": [
+        {
+          "operationId": "getUserByLoginOrEmail",
+          "response": {
+            "body": {
+              "id": 7,
+              "login": "admin",
+              "email": "admin@example.com"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": {
+          "id": 7,
+          "email": "admin@example.com"
+        },
+        "request": {
+          "method": "GET",
+          "path": "/users/lookup",
+          "query": {
+            "loginOrEmail": "admin@example.com"
+          }
+        }
+      }
+    },
+    {
+      "name": "Get Dashboard Permissions By UID",
+      "tool": "retrieve_admin_content",
+      "arguments": {
+        "action": "get_dashboard_permissions_by_uid",
+        "uid": "team-dashboards"
+      },
+      "mocks": [
+        {
+          "operationId": "getDashboardPermissionsListByUID",
+          "response": {
+            "body": [
+              {
+                "dashboardId": 11,
+                "userId": 7,
+                "permission": 4
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": [
+          {
+            "dashboardId": 11,
+            "userId": 7,
+            "permission": 4
+          }
+        ],
+        "request": {
+          "method": "GET",
+          "path": "/dashboards/uid/team-dashboards/permissions"
+        }
+      }
+    },
+    {
+      "name": "Validation - Query Metrics Missing Queries",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "query_metrics",
+        "from": "now-1h",
+        "to": "now"
+      },
+      "expect": {
+        "success": false,
+        "error_message_regex": "Parameter 'queries' is required for action 'query_metrics'",
+        "requests": []
+      }
+    },
+    {
+      "name": "Validation - Lookup User Missing Login Or Email",
+      "tool": "retrieve_admin_content",
+      "arguments": {
+        "action": "get_user_by_login_or_email"
+      },
+      "expect": {
+        "success": false,
+        "error_message_regex": "Parameter 'loginOrEmail' is required for action 'get_user_by_login_or_email'",
+        "requests": []
+      }
+    },
+    {
       "name": "Update Folder",
       "tool": "update_content",
       "arguments": {
@@ -171,32 +324,31 @@
       "retrieve_content.check_datasource_health_by_uid": "Not covered in minimal smoke test.",
       "retrieve_content.get_datasource_resource_by_id": "Not covered in minimal smoke test.",
       "retrieve_content.get_datasource_resource_by_uid": "Not covered in minimal smoke test.",
-      "retrieve_content.query_metrics": "Not covered in minimal smoke test.",
+      "retrieve_content.get_datasource_resource_by_uid": "Not covered in minimal smoke test.",
       "retrieve_content.get_annotations": "Not covered in minimal smoke test.",
       "retrieve_content.get_annotation_by_id": "Not covered in minimal smoke test.",
       "retrieve_content.get_annotation_tags": "Not covered in minimal smoke test.",
       "retrieve_content.get_snapshot": "Not covered in minimal smoke test.",
       "retrieve_content.search_snapshots": "Not covered in minimal smoke test.",
       "retrieve_content.get_snapshot_sharing_options": "Not covered in minimal smoke test.",
-      "retrieve_content.list_service_accounts": "Not covered in minimal smoke test.",
-      "retrieve_content.get_service_account": "Not covered in minimal smoke test.",
-      "retrieve_content.list_service_account_tokens": "Not covered in minimal smoke test.",
-      "retrieve_content.search_users": "Not covered in minimal smoke test.",
-      "retrieve_content.search_users_paged": "Not covered in minimal smoke test.",
-      "retrieve_content.get_user_by_id": "Not covered in minimal smoke test.",
-      "retrieve_content.get_user_by_login_or_email": "Not covered in minimal smoke test.",
-      "retrieve_content.get_user_orgs": "Not covered in minimal smoke test.",
-      "retrieve_content.get_user_teams": "Not covered in minimal smoke test.",
-      "retrieve_content.search_teams": "Not covered in minimal smoke test.",
-      "retrieve_content.get_team_by_id": "Not covered in minimal smoke test.",
-      "retrieve_content.list_team_members": "Not covered in minimal smoke test.",
-      "retrieve_content.get_team_preferences": "Not covered in minimal smoke test.",
-      "retrieve_content.get_dashboard_permissions_by_uid": "Not covered in minimal smoke test.",
-      "retrieve_content.get_dashboard_permissions_by_id": "Not covered in minimal smoke test.",
-      "retrieve_content.get_folder_permissions": "Not covered in minimal smoke test.",
       "retrieve_content.get_correlations": "Not covered in minimal smoke test.",
       "retrieve_content.get_correlations_by_source_uid": "Not covered in minimal smoke test.",
       "retrieve_content.get_correlation": "Not covered in minimal smoke test.",
+      "retrieve_admin_content.list_service_accounts": "Not covered in minimal smoke test.",
+      "retrieve_admin_content.get_service_account": "Not covered in minimal smoke test.",
+      "retrieve_admin_content.list_service_account_tokens": "Not covered in minimal smoke test.",
+      "retrieve_admin_content.search_users": "Not covered in minimal smoke test.",
+      "retrieve_admin_content.search_users_paged": "Not covered in minimal smoke test.",
+      "retrieve_admin_content.get_user_by_id": "Not covered in minimal smoke test.",
+      "retrieve_admin_content.get_user_orgs": "Not covered in minimal smoke test.",
+      "retrieve_admin_content.get_user_teams": "Not covered in minimal smoke test.",
+      "retrieve_admin_content.search_teams": "Not covered in minimal smoke test.",
+      "retrieve_admin_content.get_team_by_id": "Not covered in minimal smoke test.",
+      "retrieve_admin_content.list_team_members": "Not covered in minimal smoke test.",
+      "retrieve_admin_content.get_team_preferences": "Not covered in minimal smoke test.",
+      "retrieve_admin_content.get_dashboard_permissions_by_uid": "Not covered in minimal smoke test.",
+      "retrieve_admin_content.get_dashboard_permissions_by_id": "Not covered in minimal smoke test.",
+      "retrieve_admin_content.get_folder_permissions": "Not covered in minimal smoke test.",
       "update_content.update_dashboard": "Not covered in minimal smoke test.",
       "update_content.move_folder": "Not covered in minimal smoke test.",
       "update_content.update_folder_permissions": "Not covered in minimal smoke test.",

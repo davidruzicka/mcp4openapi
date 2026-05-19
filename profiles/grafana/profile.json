@@ -340,7 +340,7 @@
 
     {
       "name": "retrieve_content",
-      "description": "Retrieve Grafana resources. Actions: 'search', 'list_dashboards_tags', 'get_dashboard_home', 'get_dashboard_by_uid', 'get_dashboard_versions_by_uid', 'get_dashboard_version_by_uid', 'list_public_dashboards', 'get_public_dashboard', 'view_public_dashboard', 'get_public_annotations', 'list_folders', 'get_folder_by_uid', 'get_folder_by_id', 'get_folder_counts', 'list_datasources', 'get_datasource_by_id', 'get_datasource_by_uid', 'get_datasource_by_name', 'get_datasource_id_by_name', 'check_datasource_health_by_id', 'check_datasource_health_by_uid', 'get_datasource_resource_by_id', 'get_datasource_resource_by_uid', 'query_metrics', 'get_annotations', 'get_annotation_by_id', 'get_annotation_tags', 'get_snapshot', 'search_snapshots', 'get_snapshot_sharing_options', 'list_service_accounts', 'get_service_account', 'list_service_account_tokens', 'search_users', 'search_users_paged', 'get_user_by_id', 'get_user_by_login_or_email', 'get_user_orgs', 'get_user_teams', 'search_teams', 'get_team_by_id', 'list_team_members', 'get_team_preferences', 'get_dashboard_permissions_by_uid', 'get_dashboard_permissions_by_id', 'get_folder_permissions', 'get_correlations', 'get_correlations_by_source_uid', 'get_correlation'.",
+      "description": "Retrieve Grafana content and query data. Actions: 'search', 'list_dashboards_tags', 'get_dashboard_home', 'get_dashboard_by_uid', 'get_dashboard_versions_by_uid', 'get_dashboard_version_by_uid', 'list_public_dashboards', 'get_public_dashboard', 'view_public_dashboard', 'get_public_annotations', 'list_folders', 'get_folder_by_uid', 'get_folder_by_id', 'get_folder_counts', 'list_datasources', 'get_datasource_by_id', 'get_datasource_by_uid', 'get_datasource_by_name', 'get_datasource_id_by_name', 'check_datasource_health_by_id', 'check_datasource_health_by_uid', 'get_datasource_resource_by_id', 'get_datasource_resource_by_uid', 'query_metrics', 'get_annotations', 'get_annotation_by_id', 'get_annotation_tags', 'get_snapshot', 'search_snapshots', 'get_snapshot_sharing_options', 'get_correlations', 'get_correlations_by_source_uid', 'get_correlation'.",
       "metadata_params": ["action"],
       "operations": {
         "search": "search",
@@ -373,22 +373,6 @@
         "get_snapshot": "getDashboardSnapshot",
         "search_snapshots": "searchDashboardSnapshots",
         "get_snapshot_sharing_options": "getSharingOptions",
-        "list_service_accounts": "searchOrgServiceAccountsWithPaging",
-        "get_service_account": "retrieveServiceAccount",
-        "list_service_account_tokens": "listTokens",
-        "search_users": "searchUsers",
-        "search_users_paged": "searchUsersWithPaging",
-        "get_user_by_id": "getUserByID",
-        "get_user_by_login_or_email": "getUserByLoginOrEmail",
-        "get_user_orgs": "getUserOrgList",
-        "get_user_teams": "getUserTeams",
-        "search_teams": "searchTeams",
-        "get_team_by_id": "getTeamByID",
-        "list_team_members": "getTeamMembers",
-        "get_team_preferences": "getTeamPreferences",
-        "get_dashboard_permissions_by_uid": "getDashboardPermissionsListByUID",
-        "get_dashboard_permissions_by_id": "getDashboardPermissionsListByID",
-        "get_folder_permissions": "getFolderPermissionList",
         "get_correlations": "getCorrelations",
         "get_correlations_by_source_uid": "getCorrelationsBySourceUID",
         "get_correlation": "getCorrelation"
@@ -396,34 +380,24 @@
       "parameters": {
         "action": {
           "type": "string",
-          "enum": ["search", "list_dashboards_tags", "get_dashboard_home", "get_dashboard_by_uid", "get_dashboard_versions_by_uid", "get_dashboard_version_by_uid", "list_public_dashboards", "get_public_dashboard", "view_public_dashboard", "get_public_annotations", "list_folders", "get_folder_by_uid", "get_folder_by_id", "get_folder_counts", "list_datasources", "get_datasource_by_id", "get_datasource_by_uid", "get_datasource_by_name", "get_datasource_id_by_name", "check_datasource_health_by_id", "check_datasource_health_by_uid", "get_datasource_resource_by_id", "get_datasource_resource_by_uid", "query_metrics", "get_annotations", "get_annotation_by_id", "get_annotation_tags", "get_snapshot", "search_snapshots", "get_snapshot_sharing_options", "list_service_accounts", "get_service_account", "list_service_account_tokens", "search_users", "search_users_paged", "get_user_by_id", "get_user_by_login_or_email", "get_user_orgs", "get_user_teams", "search_teams", "get_team_by_id", "list_team_members", "get_team_preferences", "get_dashboard_permissions_by_uid", "get_dashboard_permissions_by_id", "get_folder_permissions", "get_correlations", "get_correlations_by_source_uid", "get_correlation"],
+          "enum": ["search", "list_dashboards_tags", "get_dashboard_home", "get_dashboard_by_uid", "get_dashboard_versions_by_uid", "get_dashboard_version_by_uid", "list_public_dashboards", "get_public_dashboard", "view_public_dashboard", "get_public_annotations", "list_folders", "get_folder_by_uid", "get_folder_by_id", "get_folder_counts", "list_datasources", "get_datasource_by_id", "get_datasource_by_uid", "get_datasource_by_name", "get_datasource_id_by_name", "check_datasource_health_by_id", "check_datasource_health_by_uid", "get_datasource_resource_by_id", "get_datasource_resource_by_uid", "query_metrics", "get_annotations", "get_annotation_by_id", "get_annotation_tags", "get_snapshot", "search_snapshots", "get_snapshot_sharing_options", "get_correlations", "get_correlations_by_source_uid", "get_correlation"],
           "description": "Action to perform",
           "required": true
         },
         "uid": {
           "type": "string",
           "description": "Resource UID",
-          "required_for": ["get_dashboard_by_uid", "get_dashboard_versions_by_uid", "get_dashboard_version_by_uid", "get_folder_by_uid", "get_folder_counts", "get_datasource_by_uid", "check_datasource_health_by_uid", "get_datasource_resource_by_uid", "get_dashboard_permissions_by_uid"]
+          "required_for": ["get_dashboard_by_uid", "get_dashboard_versions_by_uid", "get_dashboard_version_by_uid", "get_folder_by_uid", "get_folder_counts", "get_datasource_by_uid", "check_datasource_health_by_uid", "get_datasource_resource_by_uid"]
         },
         "dashboardUid": {
           "type": "string",
           "description": "Dashboard UID",
           "required_for": ["get_public_dashboard"]
         },
-        "folder_uid": {
-          "type": "string",
-          "description": "Folder UID",
-          "required_for": ["get_folder_permissions"]
-        },
         "folder_id": {
           "type": "string",
           "description": "Folder ID",
           "required_for": ["get_folder_by_id"]
-        },
-        "DashboardID": {
-          "type": "string",
-          "description": "Dashboard ID",
-          "required_for": ["get_dashboard_permissions_by_id"]
         },
         "DashboardVersionID": {
           "type": "string",
@@ -449,21 +423,6 @@
           "type": "string",
           "description": "Snapshot key",
           "required_for": ["get_snapshot"]
-        },
-        "serviceAccountId": {
-          "type": "string",
-          "description": "Service account ID",
-          "required_for": ["get_service_account", "list_service_account_tokens"]
-        },
-        "user_id": {
-          "type": "string",
-          "description": "User ID",
-          "required_for": ["get_user_by_id", "get_user_orgs", "get_user_teams"]
-        },
-        "team_id": {
-          "type": "string",
-          "description": "Team ID",
-          "required_for": ["get_team_by_id", "list_team_members", "get_team_preferences"]
         },
         "accessToken": {
           "type": "string",
@@ -556,14 +515,20 @@
           "required_for": []
         },
         "from": {
-          "type": "integer",
-          "description": "Annotations start time (ms)",
-          "required_for": []
+          "type": ["integer", "string"],
+          "description": "Annotations start time (ms) or query time range start (for example 'now-1h').",
+          "required_for": ["query_metrics"]
         },
         "to": {
-          "type": "integer",
-          "description": "Annotations end time (ms)",
-          "required_for": []
+          "type": ["integer", "string"],
+          "description": "Annotations end time (ms) or query time range end (for example 'now').",
+          "required_for": ["query_metrics"]
+        },
+        "queries": {
+          "type": "array",
+          "description": "Datasource queries for query_metrics. Each item should contain the datasource reference and query payload expected by Grafana.",
+          "items": { "type": "object" },
+          "required_for": ["query_metrics"]
         },
         "userId": {
           "type": "integer",
@@ -603,6 +568,113 @@
         "matchAny": {
           "type": "boolean",
           "description": "Match any tag",
+          "required_for": []
+        },
+        "Disabled": {
+          "type": "boolean",
+          "description": "Include disabled service accounts",
+          "required_for": []
+        },
+        "expiredTokens": {
+          "type": "boolean",
+          "description": "Include expired tokens",
+          "required_for": []
+        },
+        "start": {
+          "type": "integer",
+          "description": "Pagination start offset",
+          "required_for": []
+        }
+      }
+    },
+
+    {
+      "name": "retrieve_admin_content",
+      "description": "Retrieve Grafana admin metadata and access-control information. Actions: 'list_service_accounts', 'get_service_account', 'list_service_account_tokens', 'search_users', 'search_users_paged', 'get_user_by_id', 'get_user_by_login_or_email', 'get_user_orgs', 'get_user_teams', 'search_teams', 'get_team_by_id', 'list_team_members', 'get_team_preferences', 'get_dashboard_permissions_by_uid', 'get_dashboard_permissions_by_id', 'get_folder_permissions'.",
+      "metadata_params": ["action"],
+      "operations": {
+        "list_service_accounts": "searchOrgServiceAccountsWithPaging",
+        "get_service_account": "retrieveServiceAccount",
+        "list_service_account_tokens": "listTokens",
+        "search_users": "searchUsers",
+        "search_users_paged": "searchUsersWithPaging",
+        "get_user_by_id": "getUserByID",
+        "get_user_by_login_or_email": "getUserByLoginOrEmail",
+        "get_user_orgs": "getUserOrgList",
+        "get_user_teams": "getUserTeams",
+        "search_teams": "searchTeams",
+        "get_team_by_id": "getTeamByID",
+        "list_team_members": "getTeamMembers",
+        "get_team_preferences": "getTeamPreferences",
+        "get_dashboard_permissions_by_uid": "getDashboardPermissionsListByUID",
+        "get_dashboard_permissions_by_id": "getDashboardPermissionsListByID",
+        "get_folder_permissions": "getFolderPermissionList"
+      },
+      "parameters": {
+        "action": {
+          "type": "string",
+          "enum": ["list_service_accounts", "get_service_account", "list_service_account_tokens", "search_users", "search_users_paged", "get_user_by_id", "get_user_by_login_or_email", "get_user_orgs", "get_user_teams", "search_teams", "get_team_by_id", "list_team_members", "get_team_preferences", "get_dashboard_permissions_by_uid", "get_dashboard_permissions_by_id", "get_folder_permissions"],
+          "description": "Action to perform",
+          "required": true
+        },
+        "uid": {
+          "type": "string",
+          "description": "Dashboard UID",
+          "required_for": ["get_dashboard_permissions_by_uid"]
+        },
+        "folder_uid": {
+          "type": "string",
+          "description": "Folder UID",
+          "required_for": ["get_folder_permissions"]
+        },
+        "DashboardID": {
+          "type": "string",
+          "description": "Dashboard ID",
+          "required_for": ["get_dashboard_permissions_by_id"]
+        },
+        "serviceAccountId": {
+          "type": "string",
+          "description": "Service account ID",
+          "required_for": ["get_service_account", "list_service_account_tokens"]
+        },
+        "user_id": {
+          "type": "string",
+          "description": "User ID",
+          "required_for": ["get_user_by_id", "get_user_orgs", "get_user_teams"]
+        },
+        "team_id": {
+          "type": "string",
+          "description": "Team ID",
+          "required_for": ["get_team_by_id", "list_team_members", "get_team_preferences"]
+        },
+        "loginOrEmail": {
+          "type": "string",
+          "description": "Login or email of the user",
+          "required_for": ["get_user_by_login_or_email"]
+        },
+        "query": {
+          "type": "string",
+          "description": "Search query",
+          "required_for": []
+        },
+        "page": {
+          "type": "integer",
+          "description": "Page number",
+          "required_for": []
+        },
+        "perpage": {
+          "type": "integer",
+          "description": "Items per page",
+          "required_for": []
+        },
+        "permission": {
+          "type": "string",
+          "description": "Permission filter",
+          "required_for": []
+        },
+        "sort": {
+          "type": "string",
+          "description": "Sort option",
           "required_for": []
         },
         "Disabled": {
