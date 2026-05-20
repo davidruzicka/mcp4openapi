@@ -2937,12 +2937,21 @@ export class HttpTransport {
 
           // Validate token if auth is configured and token is provided
           if (!profileState.clientAuthGate && authInfo && authInfo.token && !internalToken && authConfigs.length > 0 && (resolvedTenant?.tenantBaseUrl || profileState.context.baseUrl)) {
-            // Find matching auth config based on priority (authConfigs is sorted)
-            // For 'bearer' token type, 'oauth' config is also a match
-            const authConfig = authConfigs.find(c =>
-                c.type === authInfo.type || 
-                (authInfo.type === 'bearer' && c.type === 'oauth')
-            );
+            // Find exact type match and oauth fallback in one pass.
+            // When oauth is active, bearer tokens may be OAuth access tokens (Cursor/VS Code
+            // send them via Authorization header on initialize) — oauth config takes priority.
+            // When oauth is not active, exact type match wins so PATs use the bearer config's
+            // endpoint (may require fewer scopes); oauth config is still the fallback when no
+            // bearer config exists.
+            const isAuthBearer = authInfo.type === 'bearer';
+            let exactMatch: AuthInterceptor | undefined;
+            let oauthFallback: AuthInterceptor | undefined;
+            for (const c of authConfigs) {
+              if (c.type === authInfo.type) exactMatch ??= c;
+              else if (isAuthBearer && c.type === 'oauth') oauthFallback ??= c;
+              if (exactMatch && oauthFallback) break;
+            }
+            const authConfig = oauthActive ? (oauthFallback ?? exactMatch) : (exactMatch ?? oauthFallback);
             
             if (authConfig && authConfig.validation_endpoint) {
               // When the client presents an envelope token (mcp4.v1.*), decrypt it first and
