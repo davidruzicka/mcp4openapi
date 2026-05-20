@@ -165,15 +165,15 @@ export class HttpTransport {
     this.logger = logger;
     if (!this.config.tokenKey) {
       this.logger.warn(
-        'MCP4_TOKEN_KEY not set - encrypted token envelopes disabled. ' +
+        'MCP4_OAUTH_KEY not set - encrypted token envelopes disabled. ' +
         'OAuth clients will need to re-authenticate after every gateway restart. ' +
-        'Set MCP4_TOKEN_KEY (any passphrase, or a 64-char hex string) for restart-resilient OAuth.',
+        'Set MCP4_OAUTH_KEY (any passphrase, or a 64-char hex string) for restart-resilient OAuth.',
       );
     } else {
-      const rawKey = process.env.MCP4_TOKEN_KEY?.trim();
+      const rawKey = process.env.MCP4_OAUTH_KEY?.trim();
       if (rawKey && !(rawKey.length === 64 && /^[0-9a-fA-F]+$/.test(rawKey))) {
         this.logger.warn(
-          'MCP4_TOKEN_KEY is a passphrase (SHA-256 derived, no salt/work factor). ' +
+          'MCP4_OAUTH_KEY is a passphrase (SHA-256 derived, no salt/work factor). ' +
           'Weak passphrases offer little protection. For production use a random hex key: openssl rand -hex 32',
         );
       }
@@ -1658,18 +1658,19 @@ export class HttpTransport {
       }
     });
 
-    // Readiness probe - returns 503 until at least one profile is loaded.
-    // Unauthenticated: clientAuthGate is only applied inside handlePost, not at route level.
-    // Kubernetes readinessProbe and load balancers require a dedicated /ready endpoint
-    // distinct from /health (liveness).
+    // Readiness probe - unauthenticated, distinct from /health (liveness).
+    // Shallow readiness check: verifies at least one profile is loaded; does not probe
+    // upstream connectivity, spec parsing, or auth token presence.
+    // Startup validation in index.ts guarantees at least one profile exists before
+    // listen() is called, so profileStates.size > 0 is the correct readiness condition.
     this.app.get('/ready', mcpRateLimiter, (req: Request, res: Response) => {
       const startTime = Date.now();
-      const profilesLoaded = this.profileStates.size;
-      const ready = profilesLoaded > 0;
+      const profilesInitialized = this.profileStates.size;
+      const ready = profilesInitialized > 0;
       const statusCode = ready ? 200 : 503;
       res.status(statusCode).json(
         ready
-          ? { status: 'ready', profiles: profilesLoaded }
+          ? { status: 'ready', profiles: profilesInitialized }
           : { status: 'not ready', reason: 'no profiles loaded' }
       );
 
@@ -2707,6 +2708,7 @@ export class HttpTransport {
     const startTime = Date.now();
     let metricsProfileState: ProfileRuntimeState | null = null;
     let metricsTenantId: string | null = null;
+    let metricsRecorded = false;
     try {
       this.logger.debug('handlePost called', { method: req.method, path: req.path, sessionId: req.sessionId, accept: req.headers.accept });
       const profileState = await this.getProfileStateForRequest(req);
@@ -2935,12 +2937,21 @@ export class HttpTransport {
 
           // Validate token if auth is configured and token is provided
           if (!profileState.clientAuthGate && authInfo && authInfo.token && !internalToken && authConfigs.length > 0 && (resolvedTenant?.tenantBaseUrl || profileState.context.baseUrl)) {
-            // Find matching auth config based on priority (authConfigs is sorted)
-            // For 'bearer' token type, 'oauth' config is also a match
-            const authConfig = authConfigs.find(c =>
-                c.type === authInfo.type || 
-                (authInfo.type === 'bearer' && c.type === 'oauth')
-            );
+            // Find exact type match and oauth fallback in one pass.
+            // When oauth is active, bearer tokens may be OAuth access tokens (Cursor/VS Code
+            // send them via Authorization header on initialize) — oauth config takes priority.
+            // When oauth is not active, exact type match wins so PATs use the bearer config's
+            // endpoint (may require fewer scopes); oauth config is still the fallback when no
+            // bearer config exists.
+            const isAuthBearer = authInfo.type === 'bearer';
+            let exactMatch: AuthInterceptor | undefined;
+            let oauthFallback: AuthInterceptor | undefined;
+            for (const c of authConfigs) {
+              if (c.type === authInfo.type) exactMatch ??= c;
+              else if (isAuthBearer && c.type === 'oauth') oauthFallback ??= c;
+              if (exactMatch && oauthFallback) break;
+            }
+            const authConfig = oauthActive ? (oauthFallback ?? exactMatch) : (exactMatch ?? oauthFallback);
             
             if (authConfig && authConfig.validation_endpoint) {
               // When the client presents an envelope token (mcp4.v1.*), decrypt it first and
@@ -3333,10 +3344,10 @@ export class HttpTransport {
           duration,
           this.resolveMetricsContext(metricsProfileState, metricsTenantId)
         );
+        metricsRecorded = true;
       }
     } finally {
-      // Record success metrics (if not already recorded in catch)
-      if (this.metrics && res.statusCode !== 500) {
+      if (this.metrics && !metricsRecorded) {
         const duration = (Date.now() - startTime) / 1000;
         this.metrics.recordHttpRequest(
           req.method,
@@ -4056,7 +4067,7 @@ export class HttpTransport {
   /**
    * Store OAuth tokens in internal map for later session initialization.
    *
-   * When MCP4_TOKEN_KEY is configured AND tokens.refresh_token is present, builds an encrypted
+   * When MCP4_OAUTH_KEY is configured AND tokens.refresh_token is present, builds an encrypted
    * `mcp4.v1.*` envelope binding {access_token, refresh_token, expiry, client_id, scopes,
    * profile_id, optional client registration} under AES-256-GCM with profile_id as AAD.
    * Both the per-profile map and InboundAuthTokenStore are keyed by the RETURNED token (envelope

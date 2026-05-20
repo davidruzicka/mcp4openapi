@@ -565,7 +565,7 @@ export MCP4_TOOLNAME_MAX=30
 - `MCP4_OAUTH_REFRESH_THRESHOLD_MS`: Refresh access tokens this many ms before expiry (default: `60000` = 60s)
 - `MCP4_HEARTBEAT_ENABLED`, `MCP4_HEARTBEAT_INTERVAL_MS`: SSE heartbeat settings
 - `MCP4_TOKEN_MAX_LENGTH`: Maximum token length in characters (default: `4096`, raised from `1000` in Phase 03.4 to accommodate encrypted token envelopes)
-- `MCP4_TOKEN_KEY`: Optional symmetric key for AES-256-GCM encrypted token envelopes. When set, the gateway issues `mcp4.v1.*` tokens to OAuth clients on `/oauth/token` and rehydrates sessions from them on restart, eliminating the re-authentication round-trip in k8s restart scenarios. Accepts any passphrase (SHA-256-derived) or a 64-char hex string (32 raw bytes). Default unset (plain-token mode, backward-compatible). See `docs/HTTP-TRANSPORT.md` -> Encrypted Token Envelopes for details.
+- `MCP4_OAUTH_KEY`: Optional symmetric key for AES-256-GCM encrypted token envelopes. When set, the gateway issues `mcp4.v1.*` tokens to OAuth clients on `/oauth/token` and rehydrates sessions from them on restart, eliminating the re-authentication round-trip in k8s restart scenarios. Accepts any passphrase (SHA-256-derived) or a 64-char hex string (32 raw bytes). Default unset (plain-token mode, backward-compatible). See `docs/HTTP-TRANSPORT.md` -> Encrypted Token Envelopes for details.
 - `MCP4_FILTER_MAX_VALUES`: Max values per filtering key (default: `10`)
 - `MCP4_HTTP_PROFILE_ROUTING`: Enable profile routing (`/profile/:id/mcp`). If enabled without a default profile, `/mcp` is not registered.
 - `MCP4_HTTP_PROFILE_INDEX`: Enable profile index on `GET /` for routed profiles.

@@ -16,7 +16,7 @@ const ENV_KEYS = [
   'MCP4_HTTP_RATE_LIMIT_MAX_REQUESTS',
   'MCP4_HTTP_RATE_LIMIT_METRICS_MAX',
   'MCP4_TOKEN_MAX_LENGTH',
-  'MCP4_TOKEN_KEY',
+  'MCP4_OAUTH_KEY',
   'MCP4_TRUST_PROXY',
   'MCP4_SSL_CERT_FILE',
   'MCP4_SSL_KEY_FILE',
@@ -168,26 +168,26 @@ describe('buildHttpTransportBaseConfig', () => {
     expect(buildHttpTransportBaseConfig('127.0.0.1', 3003).trustProxy).toBe(false);
   });
 
-  describe('MCP4_TOKEN_KEY', () => {
-    it('returns undefined tokenKey when MCP4_TOKEN_KEY is unset', () => {
+  describe('MCP4_OAUTH_KEY', () => {
+    it('returns undefined tokenKey when MCP4_OAUTH_KEY is unset', () => {
       const config = buildHttpTransportBaseConfig('127.0.0.1', 3003);
       expect(config.tokenKey).toBeUndefined();
     });
 
-    it('returns undefined tokenKey when MCP4_TOKEN_KEY is empty string', () => {
-      process.env.MCP4_TOKEN_KEY = '';
+    it('returns undefined tokenKey when MCP4_OAUTH_KEY is empty string', () => {
+      process.env.MCP4_OAUTH_KEY = '';
       const config = buildHttpTransportBaseConfig('127.0.0.1', 3003);
       expect(config.tokenKey).toBeUndefined();
     });
 
-    it('returns undefined tokenKey when MCP4_TOKEN_KEY is only whitespace', () => {
-      process.env.MCP4_TOKEN_KEY = '   ';
+    it('returns undefined tokenKey when MCP4_OAUTH_KEY is only whitespace', () => {
+      process.env.MCP4_OAUTH_KEY = '   ';
       const config = buildHttpTransportBaseConfig('127.0.0.1', 3003);
       expect(config.tokenKey).toBeUndefined();
     });
 
     it('derives tokenKey via hex decode for exactly-64-char hex string of all zeros', () => {
-      process.env.MCP4_TOKEN_KEY = '0'.repeat(64);
+      process.env.MCP4_OAUTH_KEY = '0'.repeat(64);
       const config = buildHttpTransportBaseConfig('127.0.0.1', 3003);
       expect(Buffer.isBuffer(config.tokenKey)).toBe(true);
       expect(config.tokenKey?.length).toBe(32);
@@ -195,7 +195,7 @@ describe('buildHttpTransportBaseConfig', () => {
     });
 
     it('derives tokenKey via SHA-256 for arbitrary passphrase', () => {
-      process.env.MCP4_TOKEN_KEY = 'my-passphrase';
+      process.env.MCP4_OAUTH_KEY = 'my-passphrase';
       const config = buildHttpTransportBaseConfig('127.0.0.1', 3003);
       const expected = crypto.createHash('sha256').update('my-passphrase').digest();
       expect(Buffer.isBuffer(config.tokenKey)).toBe(true);
@@ -203,15 +203,15 @@ describe('buildHttpTransportBaseConfig', () => {
       expect(config.tokenKey?.equals(expected)).toBe(true);
     });
 
-    it('trims whitespace from MCP4_TOKEN_KEY before deriving (k8s ConfigMap newline tolerance)', () => {
-      process.env.MCP4_TOKEN_KEY = '  my-passphrase  ';
+    it('trims whitespace from MCP4_OAUTH_KEY before deriving (k8s ConfigMap newline tolerance)', () => {
+      process.env.MCP4_OAUTH_KEY = '  my-passphrase  ';
       const config = buildHttpTransportBaseConfig('127.0.0.1', 3003);
       const expected = crypto.createHash('sha256').update('my-passphrase').digest();
       expect(config.tokenKey?.equals(expected)).toBe(true);
     });
 
     it('derives tokenKey via hex decode for 64-char hex string of all "a"s and yields 32-byte buffer', () => {
-      process.env.MCP4_TOKEN_KEY = 'a'.repeat(64);
+      process.env.MCP4_OAUTH_KEY = 'a'.repeat(64);
       const config = buildHttpTransportBaseConfig('127.0.0.1', 3003);
       expect(Buffer.isBuffer(config.tokenKey)).toBe(true);
       expect(config.tokenKey?.length).toBe(32);

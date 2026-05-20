@@ -11,6 +11,7 @@
  */
 
 import { Registry, Counter, Gauge, Histogram } from 'prom-client';
+import { INPUT_LIMITS } from './constants.js';
 
 export interface MetricsCollectorConfig {
   enabled: boolean;
@@ -28,16 +29,15 @@ export interface MetricsContextLabels {
   upstreamHost?: string | null;
   /**
    * Client identity resolved from the inbound session principal (e.g. AuthorizedPrincipal.subject).
-   * Capped at 64 chars in Prometheus labels to bound cardinality.
-   * Defaults to 'anonymous' when absent (no clientPrincipal on the session).
+   * Used in audit log only — NOT a Prometheus label (per-user cardinality is unbounded).
    */
   clientIdentity?: string | null;
 }
 
 /** Max chars for the upstream_host Prometheus label - bounds cardinality. */
 const UPSTREAM_HOST_LABEL_MAX = 128;
-/** Max chars for the client_identity Prometheus label - bounds cardinality. */
-const CLIENT_IDENTITY_LABEL_MAX = 64;
+
+const SAFE_HTTP_METHODS = new Set(['GET', 'POST', 'DELETE', 'PUT', 'PATCH', 'HEAD', 'OPTIONS']);
 
 export class MetricsCollector {
   private registry: Registry;
@@ -118,14 +118,14 @@ export class MetricsCollector {
     this.mcpToolCallsTotal = new Counter({
       name: `${prefix}tool_calls_total`,
       help: 'Total number of MCP tool calls',
-      labelNames: ['tool', 'status', 'profile_id', 'tenant_id', 'upstream_host', 'client_identity'],
+      labelNames: ['tool', 'status', 'profile_id', 'tenant_id', 'upstream_host'],
       registers: [this.registry],
     });
 
     this.mcpToolCallDuration = new Histogram({
       name: `${prefix}tool_call_duration_seconds`,
       help: 'MCP tool call duration in seconds',
-      labelNames: ['tool', 'status', 'profile_id', 'tenant_id', 'upstream_host', 'client_identity'],
+      labelNames: ['tool', 'status', 'profile_id', 'tenant_id', 'upstream_host'],
       buckets: [0.01, 0.05, 0.1, 0.5, 1, 2, 5, 10, 30],
       registers: [this.registry],
     });
@@ -133,7 +133,7 @@ export class MetricsCollector {
     this.mcpToolCallErrors = new Counter({
       name: `${prefix}tool_call_errors_total`,
       help: 'Total number of MCP tool call errors',
-      labelNames: ['tool', 'error_type', 'profile_id', 'tenant_id', 'upstream_host', 'client_identity'],
+      labelNames: ['tool', 'error_type', 'profile_id', 'tenant_id', 'upstream_host'],
       registers: [this.registry],
     });
 
@@ -216,20 +216,22 @@ export class MetricsCollector {
   ): void {
     if (!this.enabled) return;
     const labels = this.resolveContextLabels(context);
+    const safeMethod = this.safeMethodLabel(method);
+    const statusLabel = this.getStatusLabel(status);
 
     this.httpRequestsTotal.inc({
-      method,
+      method: safeMethod,
       path: this.normalizePath(path),
-      status: status.toString(),
+      status: statusLabel,
       profile_id: labels.profile_id,
       tenant_id: labels.tenant_id,
     });
 
     this.httpRequestDuration.observe(
       {
-        method,
+        method: safeMethod,
         path: this.normalizePath(path),
-        status: status.toString(),
+        status: statusLabel,
         profile_id: labels.profile_id,
         tenant_id: labels.tenant_id,
       },
@@ -267,29 +269,28 @@ export class MetricsCollector {
    */
   recordToolCall(
     tool: string,
-    status: 'success' | 'error',
+    status: 'success' | 'error' | 'rejected',
     durationSeconds: number,
     context?: MetricsContextLabels
   ): void {
     if (!this.enabled) return;
     const labels = this.resolveContextLabels(context);
+    const safeToolName = this.safeToolLabel(tool);
 
     this.mcpToolCallsTotal.inc({
-      tool,
+      tool: safeToolName,
       status,
       profile_id: labels.profile_id,
       tenant_id: labels.tenant_id,
       upstream_host: labels.upstream_host,
-      client_identity: labels.client_identity,
     });
     this.mcpToolCallDuration.observe(
       {
-        tool,
+        tool: safeToolName,
         status,
         profile_id: labels.profile_id,
         tenant_id: labels.tenant_id,
         upstream_host: labels.upstream_host,
-        client_identity: labels.client_identity,
       },
       durationSeconds
     );
@@ -302,12 +303,11 @@ export class MetricsCollector {
     if (!this.enabled) return;
     const labels = this.resolveContextLabels(context);
     this.mcpToolCallErrors.inc({
-      tool,
+      tool: this.safeToolLabel(tool),
       error_type: errorType,
       profile_id: labels.profile_id,
       tenant_id: labels.tenant_id,
       upstream_host: labels.upstream_host,
-      client_identity: labels.client_identity,
     });
   }
 
@@ -333,7 +333,7 @@ export class MetricsCollector {
 
   recordToolFilterRejection(tool: string, source: string): void {
     if (!this.enabled) return;
-    this.toolFilterRejections.inc({ tool, source });
+    this.toolFilterRejections.inc({ tool: this.safeToolLabel(tool), source });
   }
 
   recordToolFilterPatternCount(type: string, count: number): void {
@@ -352,17 +352,18 @@ export class MetricsCollector {
   ): void {
     if (!this.enabled) return;
 
+    const safeOp = this.safeOperationLabel(operation);
     const statusLabel = this.getStatusLabel(status);
     const labels = this.resolveContextLabels(context);
-    
+
     this.apiCallsTotal.inc({
-      operation,
+      operation: safeOp,
       status: statusLabel,
       profile_id: labels.profile_id,
       tenant_id: labels.tenant_id,
     });
     this.apiCallDuration.observe(
-      { operation, status: statusLabel, profile_id: labels.profile_id, tenant_id: labels.tenant_id },
+      { operation: safeOp, status: statusLabel, profile_id: labels.profile_id, tenant_id: labels.tenant_id },
       durationSeconds
     );
   }
@@ -372,9 +373,10 @@ export class MetricsCollector {
    */
   recordApiCallError(operation: string, errorType: string, context?: MetricsContextLabels): void {
     if (!this.enabled) return;
+    const safeOp = this.safeOperationLabel(operation);
     const labels = this.resolveContextLabels(context);
     this.apiCallErrors.inc({
-      operation,
+      operation: safeOp,
       error_type: errorType,
       profile_id: labels.profile_id,
       tenant_id: labels.tenant_id,
@@ -383,9 +385,10 @@ export class MetricsCollector {
 
   recordApiCacheEvent(operation: string, event: string, context?: MetricsContextLabels): void {
     if (!this.enabled) return;
+    const safeOp = this.safeOperationLabel(operation);
     const labels = this.resolveContextLabels(context);
     this.apiCacheEventsTotal.inc({
-      operation,
+      operation: safeOp,
       event,
       profile_id: labels.profile_id,
       tenant_id: labels.tenant_id,
@@ -449,16 +452,29 @@ export class MetricsCollector {
     return 'unknown';
   }
 
+  private safeToolLabel(tool: string): string {
+    if (!tool) return 'unknown';
+    return tool.slice(0, INPUT_LIMITS.TOOL_NAME_LABEL);
+  }
+
+  private safeMethodLabel(method: string): string {
+    const upper = method.toUpperCase();
+    return SAFE_HTTP_METHODS.has(upper) ? upper : 'other';
+  }
+
+  private safeOperationLabel(operation: string): string {
+    if (!operation) return 'unknown';
+    return operation.slice(0, INPUT_LIMITS.OPERATION_LABEL);
+  }
+
   private resolveContextLabels(context?: MetricsContextLabels): {
     profile_id: string;
     tenant_id: string;
     upstream_host: string;
-    client_identity: string;
   } {
     const profileId = context?.profileId?.trim();
     const tenantId = context?.tenantId?.trim();
     const upstreamHost = context?.upstreamHost?.trim();
-    const clientIdentity = context?.clientIdentity?.trim();
     return {
       profile_id: profileId && profileId.length > 0 ? profileId : 'unknown',
       tenant_id: tenantId && tenantId.length > 0 ? tenantId : 'none',
@@ -466,10 +482,6 @@ export class MetricsCollector {
         upstreamHost && upstreamHost.length > 0
           ? upstreamHost.slice(0, UPSTREAM_HOST_LABEL_MAX)
           : 'none',
-      client_identity:
-        clientIdentity && clientIdentity.length > 0
-          ? clientIdentity.slice(0, CLIENT_IDENTITY_LABEL_MAX)
-          : 'anonymous',
     };
   }
 }

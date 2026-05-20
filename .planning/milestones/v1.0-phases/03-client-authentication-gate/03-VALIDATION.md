@@ -1,7 +1,8 @@
 ---
 phase: 03-client-authentication-gate
 validated: 2026-04-29
-status: gaps-filled
+reaudited: 2026-05-18
+status: nyquist-compliant
 source: reconstructed-from-summaries
 ---
 
@@ -23,6 +24,8 @@ source: reconstructed-from-summaries
 | `src/transport/http-transport-client-auth.test.ts` | 8 | Integration: 8-scenario session-init matrix |
 
 **Total before gap-fill:** 52 tests across 4 files.
+
+> **2026-05-18 recount (actual):** validator=20, api-key-store=14, client-auth-gate=11, transport=12. Total=57. All pass.
 
 ---
 
@@ -90,3 +93,25 @@ source: reconstructed-from-summaries
 | `src/auth/api-key-store.test.ts` | 13 | 14 | Gap 3 |
 
 **Total after gap-fill:** 55 tests. All 3 gaps closed.
+
+---
+
+## Validation Audit 2026-05-18
+
+| Metric | Count |
+|--------|-------|
+| Gaps found | 0 |
+| Resolved | 0 |
+| Escalated | 0 |
+
+All previously reported gaps confirmed closed. Current test counts differ from original report due to tests added in subsequent phases:
+
+| File | Reported (gap-fill) | Actual (2026-05-18) | Delta |
+|------|---------------------|---------------------|-------|
+| `src/profile/client-auth-gate-validator.test.ts` | 19 | 20 | +1 |
+| `src/auth/api-key-store.test.ts` | 14 | 14 | 0 |
+| `src/auth/client-auth-gate.test.ts` | 12 | 11 | -1 |
+| `src/transport/http-transport-client-auth.test.ts` | 10 | 12 | +2 |
+| **Total** | **55** | **57** | **+2** |
+
+All 57 tests pass. No new gaps identified. Phase 03 is Nyquist-compliant.

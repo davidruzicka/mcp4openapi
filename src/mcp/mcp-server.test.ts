@@ -14,6 +14,7 @@ import { JsonLogger } from '../core/logger.js';
 import { Server as MCPProtocolServer } from '@modelcontextprotocol/sdk/server/index.js';
 import { parseSessionToolFilterHeader } from '../tool-filter/index.js';
 import {
+  MCPError,
   AuthenticationError,
   AuthorizationError,
   RateLimitError,
@@ -4337,6 +4338,178 @@ paths:
     });
 
     // -------------------------------------------------------------------------
+    describe('upstream error logging', () => {
+      let fakeLogger: { debug: ReturnType<typeof vi.fn>; info: ReturnType<typeof vi.fn>; warn: ReturnType<typeof vi.fn>; error: ReturnType<typeof vi.fn> };
+
+      beforeEach(() => {
+        fakeLogger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+        (upstreamServer as any).logger = fakeLogger;
+      });
+
+      it('tools/list: UpstreamConnectionError → logger.error with correlationId, response -32603', async () => {
+        const err = new UpstreamConnectionError('ECONNREFUSED', 'test-upstream');
+        mockGetUpstreamClient.mockRejectedValueOnce(err);
+
+        const response = await (upstreamServer as any).handleUpstreamToolsList(
+          { jsonrpc: '2.0', id: '1', method: 'tools/list', params: {} },
+          'session-123',
+          'upstream-profile',
+          upstreamProvider,
+        ) as any;
+
+        expect(response.error.code).toBe(-32603);
+        expect(fakeLogger.error).toHaveBeenCalledWith(
+          'Upstream tools/list failed',
+          expect.any(Error),
+          expect.objectContaining({
+            provider: 'test-upstream',
+            sessionId: 'session-123',
+            upstreamErrorType: 'UpstreamConnectionError',
+            correlationId: expect.any(String),
+          }),
+        );
+      });
+
+      it('tools/call: UpstreamTimeoutError → logger.error with correlationId, response -32001', async () => {
+        const err = new UpstreamTimeoutError('test-upstream', 5000);
+        mockCallTool.mockRejectedValueOnce(err);
+
+        const response = await (upstreamServer as any).handleUpstreamToolCall(
+          { jsonrpc: '2.0', id: '2', method: 'tools/call', params: { name: 'safe_tool', arguments: {} } },
+          'session-123',
+          'upstream-profile',
+          upstreamProvider,
+          Date.now(),
+        ) as any;
+
+        expect(response.error.code).toBe(-32001);
+        expect(fakeLogger.error).toHaveBeenCalledWith(
+          'Upstream tools/call failed',
+          expect.any(Error),
+          expect.objectContaining({
+            provider: 'test-upstream',
+            toolName: 'safe_tool',
+            upstreamErrorType: 'UpstreamTimeoutError',
+            correlationId: expect.any(String),
+          }),
+        );
+      });
+
+      it('tools/call: UpstreamMalformedResponseError → logger.error, response -32603', async () => {
+        mockCallTool.mockRejectedValueOnce(
+          new UpstreamMalformedResponseError('test-upstream', 'bad json'),
+        );
+
+        const response = await (upstreamServer as any).handleUpstreamToolCall(
+          { jsonrpc: '2.0', id: '3', method: 'tools/call', params: { name: 'safe_tool', arguments: {} } },
+          'session-123',
+          'upstream-profile',
+          upstreamProvider,
+          Date.now(),
+        ) as any;
+
+        expect(response.error.code).toBe(-32603);
+        expect(fakeLogger.error).toHaveBeenCalledWith(
+          'Upstream tools/call failed',
+          expect.any(Error),
+          expect.objectContaining({ upstreamErrorType: 'UpstreamMalformedResponseError' }),
+        );
+      });
+
+      it('tools/list: internal UpstreamMalformedResponseError (null listTools result) → logger.error', async () => {
+        mockListTools.mockResolvedValueOnce(null);
+
+        const response = await (upstreamServer as any).handleUpstreamToolsList(
+          { jsonrpc: '2.0', id: '4', method: 'tools/list', params: {} },
+          'session-123',
+          'upstream-profile',
+          upstreamProvider,
+        ) as any;
+
+        expect(response.error.code).toBe(-32603);
+        expect(fakeLogger.error).toHaveBeenCalledWith(
+          'Upstream tools/list failed',
+          expect.any(Error),
+          expect.objectContaining({ upstreamErrorType: 'UpstreamMalformedResponseError' }),
+        );
+      });
+
+      it('tools/call: UpstreamAuthError → logger.warn (not error), response -32600', async () => {
+        mockCallTool.mockRejectedValueOnce(new UpstreamAuthError('test-upstream'));
+
+        const response = await (upstreamServer as any).handleUpstreamToolCall(
+          { jsonrpc: '2.0', id: '5', method: 'tools/call', params: { name: 'safe_tool', arguments: {} } },
+          'session-123',
+          'upstream-profile',
+          upstreamProvider,
+          Date.now(),
+        ) as any;
+
+        expect(response.error.code).toBe(-32600);
+        expect(fakeLogger.error).not.toHaveBeenCalled();
+        expect(fakeLogger.warn).toHaveBeenCalledWith(
+          'Upstream tools/call failed',
+          expect.objectContaining({ upstreamErrorType: 'UpstreamAuthError' }),
+        );
+      });
+
+      it('tools/list: UpstreamAuthError → logger.warn (not error), response -32600', async () => {
+        mockGetUpstreamClient.mockRejectedValueOnce(new UpstreamAuthError('test-upstream'));
+
+        const response = await (upstreamServer as any).handleUpstreamToolsList(
+          { jsonrpc: '2.0', id: '6', method: 'tools/list', params: {} },
+          'session-123',
+          'upstream-profile',
+          upstreamProvider,
+        ) as any;
+
+        expect(response.error.code).toBe(-32600);
+        expect(fakeLogger.error).not.toHaveBeenCalled();
+        expect(fakeLogger.warn).toHaveBeenCalledWith(
+          'Upstream tools/list failed',
+          expect.objectContaining({ upstreamErrorType: 'UpstreamAuthError' }),
+        );
+      });
+
+      it('tools/call: unexpected error type → logger.warn (not error)', async () => {
+        mockCallTool.mockRejectedValueOnce(new Error('unexpected proxy failure'));
+
+        const response = await (upstreamServer as any).handleUpstreamToolCall(
+          { jsonrpc: '2.0', id: '7', method: 'tools/call', params: { name: 'safe_tool', arguments: {} } },
+          'session-123',
+          'upstream-profile',
+          upstreamProvider,
+          Date.now(),
+        ) as any;
+
+        expect(response.error.code).toBe(-32603);
+        expect(fakeLogger.error).not.toHaveBeenCalled();
+        expect(fakeLogger.warn).toHaveBeenCalledWith(
+          'Upstream tools/call failed',
+          expect.objectContaining({ upstreamErrorType: 'Error' }),
+        );
+      });
+
+      it('tools/list: unexpected error type → logger.warn (not error)', async () => {
+        mockGetUpstreamClient.mockRejectedValueOnce(new Error('unexpected'));
+
+        const response = await (upstreamServer as any).handleUpstreamToolsList(
+          { jsonrpc: '2.0', id: '8', method: 'tools/list', params: {} },
+          'session-123',
+          'upstream-profile',
+          upstreamProvider,
+        ) as any;
+
+        expect(response.error.code).toBe(-32603);
+        expect(fakeLogger.error).not.toHaveBeenCalled();
+        expect(fakeLogger.warn).toHaveBeenCalledWith(
+          'Upstream tools/list failed',
+          expect.objectContaining({ upstreamErrorType: 'Error' }),
+        );
+      });
+    });
+
+    // -------------------------------------------------------------------------
     describe('sessionId guard', () => {
       it('handleUpstreamToolsList throws UpstreamConnectionError when sessionId is undefined', async () => {
         await expect(
@@ -5051,7 +5224,7 @@ paths:
         );
 
         expect(metrics.recordToolCall).toHaveBeenCalledWith(
-          'safe_tool', 'success', expect.any(Number), expect.any(Object),
+          'safe_tool', 'success', expect.any(Number), expect.objectContaining({ upstreamHost: expect.any(String) }),
         );
         expect(metrics.recordToolCallError).not.toHaveBeenCalled();
       });
@@ -5068,17 +5241,18 @@ paths:
         );
 
         expect(metrics.recordToolCall).toHaveBeenCalledWith(
-          'safe_tool', 'error', expect.any(Number), expect.any(Object),
+          'safe_tool', 'error', expect.any(Number), expect.objectContaining({ upstreamHost: expect.any(String) }),
         );
         expect(metrics.recordToolCallError).toHaveBeenCalledWith(
-          'safe_tool', expect.any(String), expect.any(Object),
+          'safe_tool', expect.any(String), expect.objectContaining({ upstreamHost: expect.any(String) }),
         );
       });
 
-      it('skips metric recording when no collector is wired', async () => {
+      it('skips metric recording when no collector is wired but still emits audit log', async () => {
         (upstreamServer as any).httpTransport.getMetricsCollector = () => null;
+        const fakeLogger = { info: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn() };
+        (upstreamServer as any).logger = fakeLogger;
 
-        // Should not throw even without a metrics collector
         const response = await (upstreamServer as any).handleToolCall(
           { jsonrpc: '2.0', id: '1', method: 'tools/call', params: { name: 'safe_tool', arguments: {} } },
           'session-no-metrics',
@@ -5086,6 +5260,17 @@ paths:
         ) as any;
 
         expect(response.result).toBeDefined();
+        // Audit log fires regardless of metrics being disabled (OBS-01 independence guarantee).
+        const audits = fakeLogger.info.mock.calls.filter((c: unknown[]) => c[0] === 'audit:tool_call');
+        expect(audits.length).toBeGreaterThanOrEqual(1);
+        const payload = audits[audits.length - 1][1] as Record<string, unknown>;
+        expect(payload.outcome).toBe('success');
+        expect(payload.sessionId).toBe('session-no-metrics');
+        // upstreamHost must be the actual upstream host, not 'unknown' — verifies that
+        // extractHost(provider.transport.url) is used, not metricsContext.upstreamHost
+        // (which would be undefined when metricsBundle is absent).
+        expect(typeof payload.upstreamHost).toBe('string');
+        expect(payload.upstreamHost).not.toBe('unknown');
       });
 
       it('records FilterRejection error metric when X-Mcp4-Tools filter blocks tool', async () => {
@@ -5102,7 +5287,7 @@ paths:
 
         expect(response.error).toBeDefined();
         expect(metrics.recordToolCall).toHaveBeenCalledWith(
-          'safe_tool', 'error', expect.any(Number), expect.any(Object),
+          'safe_tool', 'rejected', expect.any(Number), expect.any(Object),
         );
         expect(metrics.recordToolCallError).toHaveBeenCalledWith(
           'safe_tool', 'FilterRejection', expect.any(Object),
@@ -5123,7 +5308,7 @@ paths:
 
         expect(response.error).toBeDefined();
         expect(metrics.recordToolCall).toHaveBeenCalledWith(
-          'safe_tool', 'error', expect.any(Number), expect.any(Object),
+          'safe_tool', 'rejected', expect.any(Number), expect.any(Object),
         );
         expect(metrics.recordToolCallError).toHaveBeenCalledWith(
           'safe_tool', 'PolicyRejection', expect.any(Object),
@@ -5142,7 +5327,7 @@ paths:
 
         expect(response.error).toBeDefined();
         expect(metrics.recordToolCall).toHaveBeenCalledWith(
-          'bad tool name!', 'error', expect.any(Number), expect.any(Object),
+          'bad tool name!', 'rejected', expect.any(Number), expect.any(Object),
         );
         expect(metrics.recordToolCallError).toHaveBeenCalledWith(
           'bad tool name!', 'InvalidToolName', expect.any(Object),
@@ -5164,7 +5349,7 @@ paths:
 
         expect(response.error).toBeDefined();
         expect(metrics.recordToolCall).toHaveBeenCalledWith(
-          'safe_tool', 'error', expect.any(Number), expect.any(Object),
+          'safe_tool', 'rejected', expect.any(Number), expect.any(Object),
         );
         expect(metrics.recordToolCallError).toHaveBeenCalledWith(
           'safe_tool', 'PolicyRejection', expect.any(Object),
@@ -5187,14 +5372,14 @@ paths:
 
         expect(response.error).toBeDefined();
         expect(metrics.recordToolCall).toHaveBeenCalledWith(
-          'safe_tool', 'error', expect.any(Number), expect.any(Object),
+          'safe_tool', 'rejected', expect.any(Number), expect.any(Object),
         );
         expect(metrics.recordToolCallError).toHaveBeenCalledWith(
           'safe_tool', 'SanitizationRejection', expect.any(Object),
         );
       });
 
-      it('truncates oversized tool name to 64 chars in reject metric labels', async () => {
+      it('passes raw tool name to MetricsCollector on reject (MetricsCollector truncates internally)', async () => {
         const metrics = makeMetrics();
         (upstreamServer as any).httpTransport.getMetricsCollector = () => metrics;
         const longName = 'a'.repeat(300);
@@ -5206,11 +5391,12 @@ paths:
         ) as any;
 
         expect(response.error).toBeDefined();
+        // recordUpstreamReject passes raw name with 'rejected' status; MetricsCollector truncates at 64 internally
         expect(metrics.recordToolCall).toHaveBeenCalledWith(
-          'a'.repeat(64), 'error', expect.any(Number), expect.any(Object),
+          longName, 'rejected', expect.any(Number), expect.any(Object),
         );
         expect(metrics.recordToolCallError).toHaveBeenCalledWith(
-          'a'.repeat(64), 'InvalidToolName', expect.any(Object),
+          longName, 'InvalidToolName', expect.any(Object),
         );
       });
     });
@@ -5273,6 +5459,33 @@ paths:
         expect(payload.upstreamHost).toBe('upstream.example.com');
       });
 
+      it('audit correlationId matches error log correlationId on upstream proxy failure', async () => {
+        const fakeLogger = spyLogger();
+        (upstreamServer as any).logger = fakeLogger;
+        mockCallTool.mockRejectedValueOnce(new Error('upstream down'));
+
+        await (upstreamServer as any).handleToolCall(
+          { jsonrpc: '2.0', id: '1', method: 'tools/call', params: { name: 'safe_tool', arguments: {} } },
+          'session-audit-corr',
+          'upstream-profile',
+        );
+
+        const audits = findAuditEntries(fakeLogger.info);
+        const auditPayload = audits[audits.length - 1][1] as Record<string, unknown>;
+        expect(typeof auditPayload.correlationId).toBe('string');
+        expect((auditPayload.correlationId as string).length).toBeGreaterThan(0);
+
+        // Error logger must carry the same correlationId as the audit entry.
+        const errorCalls = fakeLogger.error.mock.calls as unknown[][];
+        const warnCalls = fakeLogger.warn.mock.calls as unknown[][];
+        const allCalls = [...errorCalls, ...warnCalls];
+        const logWithCorr = allCalls.find(
+          (c) => typeof c[c.length - 1] === 'object' && c[c.length - 1] !== null &&
+            (c[c.length - 1] as Record<string, unknown>).correlationId === auditPayload.correlationId,
+        );
+        expect(logWithCorr).toBeDefined();
+      });
+
       it('uses "anonymous" clientPrincipal when session has no AuthorizedPrincipal', async () => {
         const fakeLogger = spyLogger();
         (upstreamServer as any).logger = fakeLogger;
@@ -5324,9 +5537,27 @@ paths:
         const audits = findAuditEntries(fakeLogger.info);
         expect(audits.length).toBeGreaterThanOrEqual(1);
         const payload = audits[audits.length - 1][1] as Record<string, unknown>;
-        expect(payload.outcome).toBe('error');
+        expect(payload.outcome).toBe('rejected');
         expect(payload.tool).toBe('safe_tool');
         expect(payload.upstreamHost).toBe('upstream.example.com');
+      });
+
+      it('audit:tool_call on FilterRejection has a defined correlationId', async () => {
+        const fakeLogger = spyLogger();
+        (upstreamServer as any).logger = fakeLogger;
+        (upstreamServer as any).httpTransport.getSessionToolFilterRequest = () =>
+          parseSessionToolFilterHeader('other_tool');
+
+        await (upstreamServer as any).handleToolCall(
+          { jsonrpc: '2.0', id: '1', method: 'tools/call', params: { name: 'safe_tool', arguments: {} } },
+          'session-reject-corr',
+          'upstream-profile',
+        );
+
+        const audits = findAuditEntries(fakeLogger.info);
+        const payload = audits[audits.length - 1][1] as Record<string, unknown>;
+        expect(typeof payload.correlationId).toBe('string');
+        expect((payload.correlationId as string).length).toBeGreaterThan(0);
       });
 
       it('upstreamHost in audit log is host-only (no path, no scheme)', async () => {
@@ -5345,6 +5576,208 @@ paths:
         // No scheme, no path, no credentials
         expect(payload.upstreamHost).not.toMatch(/^https?:\/\//);
         expect(payload.upstreamHost).not.toContain('/mcp');
+      });
+
+      it('emits audit:tool_call on PolicyRejection (enterprise policy blocks tool)', async () => {
+        const fakeLogger = spyLogger();
+        (upstreamServer as any).logger = fakeLogger;
+        (upstreamServer as any).httpTransport.getSessionEnterpriseTiers = () => ['read'];
+        (upstreamServer as any).httpTransport.getSessionEnterpriseAllowedToolCategories = () => new Set(['read']);
+
+        await (upstreamServer as any).handleToolCall(
+          { jsonrpc: '2.0', id: '1', method: 'tools/call', params: { name: 'safe_tool', arguments: {} } },
+          'session-policy-audit',
+          'upstream-profile',
+        );
+
+        const audits = findAuditEntries(fakeLogger.info);
+        expect(audits.length).toBeGreaterThanOrEqual(1);
+        const payload = audits[audits.length - 1][1] as Record<string, unknown>;
+        expect(payload.outcome).toBe('rejected');
+        expect(payload.tool).toBe('safe_tool');
+        expect(typeof payload.correlationId).toBe('string');
+      });
+
+      it('emits audit:tool_call on InvalidToolName rejection', async () => {
+        const fakeLogger = spyLogger();
+        (upstreamServer as any).logger = fakeLogger;
+
+        await (upstreamServer as any).handleToolCall(
+          { jsonrpc: '2.0', id: '1', method: 'tools/call', params: { name: 'bad tool name!', arguments: {} } },
+          'session-invalid-name-audit',
+          'upstream-profile',
+        );
+
+        const audits = findAuditEntries(fakeLogger.info);
+        expect(audits.length).toBeGreaterThanOrEqual(1);
+        const payload = audits[audits.length - 1][1] as Record<string, unknown>;
+        expect(payload.outcome).toBe('rejected');
+        expect(typeof payload.correlationId).toBe('string');
+      });
+
+      it('emits audit:tool_call when toolName is non-string (upstream path type guard)', async () => {
+        const fakeLogger = spyLogger();
+        (upstreamServer as any).logger = fakeLogger;
+
+        // Pass a numeric tool name — TypeScript casts it to string at compile time but
+        // at runtime typeof toolName !== 'string' fires and the audit path is exercised.
+        await (upstreamServer as any).handleToolCall(
+          { jsonrpc: '2.0', id: '1', method: 'tools/call', params: { name: 123, arguments: {} } },
+          'session-nonstring-name',
+          'upstream-profile',
+        );
+
+        const audits = findAuditEntries(fakeLogger.info);
+        expect(audits.length).toBeGreaterThanOrEqual(1);
+        const payload = audits[audits.length - 1][1] as Record<string, unknown>;
+        expect(payload.outcome).toBe('error');
+        expect(payload.tool).toBe('123');
+        expect(typeof payload.correlationId).toBe('string');
+        expect(typeof payload.durationMs).toBe('number');
+      });
+
+      it('emits audit:tool_call on SanitizationRejection', async () => {
+        const fakeLogger = spyLogger();
+        (upstreamServer as any).logger = fakeLogger;
+        const sessionCache = new Map<string, Set<string>>();
+        sessionCache.set(upstreamProvider.name, new Set(['other_tool']));
+        (upstreamServer as any).sanitizedAndPolicyFilteredToolNames.set('session-sanitized-audit', sessionCache);
+
+        await (upstreamServer as any).handleToolCall(
+          { jsonrpc: '2.0', id: '1', method: 'tools/call', params: { name: 'safe_tool', arguments: {} } },
+          'session-sanitized-audit',
+          'upstream-profile',
+        );
+
+        const audits = findAuditEntries(fakeLogger.info);
+        expect(audits.length).toBeGreaterThanOrEqual(1);
+        const payload = audits[audits.length - 1][1] as Record<string, unknown>;
+        expect(payload.outcome).toBe('rejected');
+        expect(payload.tool).toBe('safe_tool');
+        expect(typeof payload.correlationId).toBe('string');
+      });
+
+      it('emits audit:tool_call on OAuthRequired early-reject', async () => {
+        const fakeLogger = spyLogger();
+        (upstreamServer as any).logger = fakeLogger;
+        // Make the server believe OAuth is configured so it triggers the auth check
+        (upstreamServer as any).httpTransport.hasOAuthProvider = () => true;
+        // Return no token so the auth check fails (getAuthTokenFromSession returns undefined)
+        (upstreamServer as any).httpTransport.ensureValidSessionToken = async () => false;
+        (upstreamServer as any).httpTransport.getSessionToken = () => undefined;
+        (upstreamServer as any).httpTransport.getOAuthProtectedResourceUrl = () => 'https://example.com/.well-known/oauth';
+
+        await (upstreamServer as any).handleToolCall(
+          { jsonrpc: '2.0', id: '1', method: 'tools/call', params: { name: 'safe_tool', arguments: {} } },
+          'session-oauth-audit',
+          'upstream-profile',
+        );
+
+        const audits = findAuditEntries(fakeLogger.info);
+        expect(audits.length).toBeGreaterThanOrEqual(1);
+        const payload = audits[audits.length - 1][1] as Record<string, unknown>;
+        expect(payload.outcome).toBe('rejected');
+        expect(payload.tool).toBe('safe_tool');
+      });
+
+      it('upstream MCPError with embedded correlationId → audit entry reuses that ID (extractCorrelationId)', async () => {
+        const fakeLogger = spyLogger();
+        (upstreamServer as any).logger = fakeLogger;
+        const embeddedId = 'upstream-corr-abc123';
+        mockCallTool.mockRejectedValueOnce(new MCPError('upstream failed', 'UPSTREAM_ERR', { correlationId: embeddedId }));
+
+        await (upstreamServer as any).handleToolCall(
+          { jsonrpc: '2.0', id: '1', method: 'tools/call', params: { name: 'safe_tool', arguments: {} } },
+          'session-corr-extract',
+          'upstream-profile',
+        );
+
+        const audits = findAuditEntries(fakeLogger.info);
+        const payload = audits[audits.length - 1][1] as Record<string, unknown>;
+        expect(payload.correlationId).toBe(embeddedId);
+        // warn log (unexpected error type) must carry the same correlationId
+        const warnCalls = fakeLogger.warn.mock.calls as unknown[][];
+        const logWithCorr = warnCalls.find(
+          (c) => typeof c[c.length - 1] === 'object' && c[c.length - 1] !== null &&
+            (c[c.length - 1] as Record<string, unknown>).correlationId === embeddedId,
+        );
+        expect(logWithCorr).toBeDefined();
+      });
+
+      it('emits audit:tool_call on local HTTP tool success (non-upstream path)', async () => {
+        const specPath = path.join(process.cwd(), 'profiles/gitlab/openapi.yaml');
+        await server.initialize(specPath);
+        const fakeLogger = spyLogger();
+        (server as any).logger = fakeLogger;
+        const simpleTool = (server as any).profile.tools.find((t: any) => !t.composite);
+        expect(simpleTool).toBeDefined();
+        (server as any).toolGenerator.validateArguments = () => {};
+        (server as any).executeSimpleTool = async () => ({ ok: true });
+
+        await server.callToolRpc(simpleTool.name, {}, 'session-local-ok', '1');
+
+        const audits = findAuditEntries(fakeLogger.info);
+        expect(audits.length).toBeGreaterThanOrEqual(1);
+        const payload = audits[audits.length - 1][1] as Record<string, unknown>;
+        expect(payload).toMatchObject({
+          sessionId: 'session-local-ok',
+          tool: simpleTool.name,
+          outcome: 'success',
+        });
+        expect(typeof payload.durationMs).toBe('number');
+        expect(payload.clientPrincipal).toBe('anonymous');
+        expect(typeof payload.correlationId).toBe('string');
+        expect(typeof payload.upstreamHost).toBe('string');
+        // hostname only — no scheme, no path, no port
+        expect(payload.upstreamHost as string).not.toMatch(/^https?:\/\//);
+        expect(payload.upstreamHost as string).not.toContain('/');
+        expect(payload.upstreamHost as string).not.toBe('');
+      });
+
+      it('emits audit:tool_call with outcome=error on local HTTP tool failure (non-upstream path)', async () => {
+        const specPath = path.join(process.cwd(), 'profiles/gitlab/openapi.yaml');
+        await server.initialize(specPath);
+        const fakeLogger = spyLogger();
+        (server as any).logger = fakeLogger;
+        const simpleTool = (server as any).profile.tools.find((t: any) => !t.composite);
+        expect(simpleTool).toBeDefined();
+        (server as any).toolGenerator.validateArguments = () => {};
+        (server as any).executeSimpleTool = async () => { throw new Error('local tool boom'); };
+
+        await server.callToolRpc(simpleTool.name, {}, 'session-local-err', '1');
+
+        const audits = findAuditEntries(fakeLogger.info);
+        expect(audits.length).toBeGreaterThanOrEqual(1);
+        const payload = audits[audits.length - 1][1] as Record<string, unknown>;
+        expect(payload.outcome).toBe('error');
+        expect(payload.sessionId).toBe('session-local-err');
+        expect(typeof payload.correlationId).toBe('string');
+        // error log must carry the same correlationId as the audit entry
+        const errorCalls = fakeLogger.error.mock.calls as unknown[][];
+        const logWithCorr = errorCalls.find(
+          (c) => typeof c[c.length - 1] === 'object' && c[c.length - 1] !== null &&
+            (c[c.length - 1] as Record<string, unknown>).correlationId === payload.correlationId,
+        );
+        expect(logWithCorr).toBeDefined();
+      });
+
+      it('uses sessionId="unknown" in audit log when sessionId is undefined (local tool path)', async () => {
+        const specPath = path.join(process.cwd(), 'profiles/gitlab/openapi.yaml');
+        await server.initialize(specPath);
+        const fakeLogger = spyLogger();
+        (server as any).logger = fakeLogger;
+        const simpleTool = (server as any).profile.tools.find((t: any) => !t.composite);
+        expect(simpleTool).toBeDefined();
+        (server as any).toolGenerator.validateArguments = () => {};
+        (server as any).executeSimpleTool = async () => ({ ok: true });
+
+        // Pass undefined sessionId — emitAuditToolCall must use 'unknown' sentinel.
+        await server.callToolRpc(simpleTool.name, {}, undefined, '1');
+
+        const audits = findAuditEntries(fakeLogger.info);
+        expect(audits.length).toBeGreaterThanOrEqual(1);
+        const payload = audits[audits.length - 1][1] as Record<string, unknown>;
+        expect(payload.sessionId).toBe('unknown');
       });
     });
 
@@ -5735,6 +6168,97 @@ paths:
     it('returns unknown when URL parsing throws', () => {
       expect(extractHostFn('not-a-url')).toBe('unknown');
     });
+
+    it('returns unknown for URL with empty hostname (e.g. http://)', () => {
+      // new URL('http://') does not throw in Node.js — hostname is empty string
+      expect(extractHostFn('http://')).toBe('unknown');
+    });
+
+    it('returns unknown for empty string', () => {
+      expect(extractHostFn('')).toBe('unknown');
+    });
+
+    it('strips credentials from URL (no user:pass in audit log)', () => {
+      expect(extractHostFn('https://admin:secret@api.example.com/v1')).toBe('api.example.com');
+    });
+
+    it('lowercases hostname', () => {
+      expect(extractHostFn('https://API.EXAMPLE.COM/v1')).toBe('api.example.com');
+    });
+
+    it('returns IPv6 address (with brackets, no port) per URL spec', () => {
+      // Node.js URL.hostname for IPv6 includes brackets: '[::1]', not '::1'
+      expect(extractHostFn('http://[::1]:9000/path')).toBe('[::1]');
+      expect(extractHostFn('http://[2001:db8::1]/x')).toBe('[2001:db8::1]');
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // truncateWithWarn (OBS-01)
+  // ---------------------------------------------------------------------------
+  describe('truncateWithWarn (OBS-01)', () => {
+    it('emits logger.warn when value exceeds max', () => {
+      const server = new MCPServer();
+      const fakeLogger = { info: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn() };
+      (server as any).logger = fakeLogger;
+
+      const result = (server as any).truncateWithWarn('a'.repeat(100), 64, 'tool');
+
+      expect(result).toBe('a'.repeat(64));
+      expect(fakeLogger.warn).toHaveBeenCalledWith(
+        'audit field truncated',
+        expect.objectContaining({ field: 'tool', original_length: 100, max: 64 }),
+      );
+    });
+
+    it('does not warn when value is at or below max', () => {
+      const server = new MCPServer();
+      const fakeLogger = { info: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn() };
+      (server as any).logger = fakeLogger;
+
+      const result = (server as any).truncateWithWarn('a'.repeat(64), 64, 'tool');
+
+      expect(result).toBe('a'.repeat(64));
+      expect(fakeLogger.warn).not.toHaveBeenCalled();
+    });
+
+    it('truncates clientPrincipal at CLIENT_PRINCIPAL_AUDIT (256) chars', () => {
+      const server = new MCPServer();
+      const fakeLogger = { info: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn() };
+      (server as any).logger = fakeLogger;
+
+      const longSubject = 'x'.repeat(300);
+      const result = (server as any).truncateWithWarn(longSubject, 256, 'clientPrincipal');
+
+      expect(result).toBe('x'.repeat(256));
+      expect(fakeLogger.warn).toHaveBeenCalledWith(
+        'audit field truncated',
+        expect.objectContaining({ field: 'clientPrincipal', original_length: 300, max: 256 }),
+      );
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // safeBaseUrlHost (OBS-01)
+  // ---------------------------------------------------------------------------
+  describe('safeBaseUrlHost (OBS-01)', () => {
+    it('returns "unknown" when getBaseUrl() throws (partial parser mock)', () => {
+      const s = new MCPServer();
+      (s as any).parser = { getBaseUrl: () => { throw new Error('no base url'); } };
+      expect((s as any).safeBaseUrlHost()).toBe('unknown');
+    });
+
+    it('returns "unknown" when getBaseUrl() returns empty string', () => {
+      const s = new MCPServer();
+      (s as any).parser = { getBaseUrl: () => '' };
+      expect((s as any).safeBaseUrlHost()).toBe('unknown');
+    });
+
+    it('returns hostname when getBaseUrl() returns valid URL', () => {
+      const s = new MCPServer();
+      (s as any).parser = { getBaseUrl: () => 'https://api.example.com/v1' };
+      expect((s as any).safeBaseUrlHost()).toBe('api.example.com');
+    });
   });
 
   // ---------------------------------------------------------------------------
@@ -5756,7 +6280,7 @@ paths:
       (localServer as any).logger = fakeLogger;
 
       const simpleTool = (localServer as any).profile.tools.find((t: any) => !t.composite);
-      if (!simpleTool) return;
+      expect(simpleTool).toBeDefined();
       (localServer as any).toolGenerator.validateArguments = () => {};
       (localServer as any).executeSimpleTool = async () => ({ ok: true });
 
@@ -5813,7 +6337,7 @@ paths:
       (localServer as any).logger = fakeLogger;
 
       const simpleTool = (localServer as any).profile.tools.find((t: any) => !t.composite);
-      if (!simpleTool) return;
+      expect(simpleTool).toBeDefined();
       (localServer as any).toolGenerator.validateArguments = () => {};
       (localServer as any).executeSimpleTool = async () => {
         throw new Error('stdio boom');

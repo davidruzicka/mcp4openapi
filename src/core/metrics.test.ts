@@ -23,7 +23,7 @@ describe('MetricsCollector', () => {
       expect(output).toContain('test_http_requests_total');
       expect(output).toContain('method="POST"');
       expect(output).toContain('path="/mcp"');
-      expect(output).toContain('status="200"');
+      expect(output).toContain('status="2xx"');
       expect(output).toContain('profile_id="grafana"');
       expect(output).toContain('tenant_id="team-a"');
     });
@@ -83,6 +83,14 @@ describe('MetricsCollector', () => {
       expect(output).toContain('profile_id="unknown"');
       expect(output).toContain('tenant_id="none"');
     });
+
+    it('does not include upstream_host label in session metrics', async () => {
+      metrics.recordSessionCreated({ profileId: 'g', tenantId: 't', upstreamHost: 'api.example.com' });
+      const output = await metrics.getMetrics();
+      // Session counters must have only profile_id + tenant_id; upstream_host is tool-call only.
+      expect(output).toContain('test_sessions_created_total{profile_id="g",tenant_id="t"} 1');
+      expect(output).not.toMatch(/sessions_created_total\{[^}]*upstream_host/);
+    });
   });
 
   describe('Tool Call Metrics', () => {
@@ -121,7 +129,7 @@ describe('MetricsCollector', () => {
       expect(output).toContain('tenant_id="team-a"');
     });
 
-    it('records upstream_host and client_identity labels when provided (OBS-02)', async () => {
+    it('records upstream_host label when provided (OBS-02)', async () => {
       metrics.recordToolCall('manage_badges', 'success', 0.5, {
         profileId: 'gitlab',
         tenantId: 'team-a',
@@ -133,12 +141,12 @@ describe('MetricsCollector', () => {
 
       expect(output).toContain('test_tool_calls_total');
       expect(output).toContain('upstream_host="api.example.com"');
-      expect(output).toContain('client_identity="svc-account"');
-      // Duration histogram should also carry the new dimensions
+      // client_identity is audit-only - must NOT appear in Prometheus output
+      expect(output).not.toContain('client_identity=');
       expect(output).toContain('test_tool_call_duration_seconds');
     });
 
-    it('defaults upstream_host to "none" and client_identity to "anonymous" when omitted (OBS-02)', async () => {
+    it('defaults upstream_host to "none" when omitted (OBS-02)', async () => {
       metrics.recordToolCall('manage_badges', 'success', 0.5, {
         profileId: 'gitlab',
         tenantId: 'team-a',
@@ -147,23 +155,7 @@ describe('MetricsCollector', () => {
       const output = await metrics.getMetrics();
 
       expect(output).toContain('upstream_host="none"');
-      expect(output).toContain('client_identity="anonymous"');
-    });
-
-    it('truncates client_identity to 64 chars (OBS-02)', async () => {
-      const longIdentity = 'c'.repeat(100);
-      metrics.recordToolCall('manage_badges', 'success', 0.1, {
-        profileId: 'gitlab',
-        tenantId: 'team-a',
-        clientIdentity: longIdentity,
-      });
-
-      const output = await metrics.getMetrics();
-
-      // Should contain exactly 64 'c' characters
-      expect(output).toContain(`client_identity="${'c'.repeat(64)}"`);
-      // Should NOT contain 100-character value (anchored on label value end)
-      expect(output).not.toContain(`client_identity="${'c'.repeat(65)}"`);
+      expect(output).not.toContain('client_identity=');
     });
 
     it('truncates upstream_host to 128 chars (OBS-02)', async () => {
@@ -180,7 +172,36 @@ describe('MetricsCollector', () => {
       expect(output).not.toContain(`upstream_host="${'h'.repeat(129)}"`);
     });
 
-    it('records upstream_host and client_identity for recordToolCallError (OBS-02)', async () => {
+    it('truncates tool name to 64 chars in Prometheus labels (OBS-02)', async () => {
+      const longTool = 't'.repeat(100);
+      metrics.recordToolCall(longTool, 'success', 0.1, { profileId: 'gitlab', tenantId: 'team-a' });
+
+      const output = await metrics.getMetrics();
+
+      expect(output).toContain(`tool="${'t'.repeat(64)}"`);
+      expect(output).not.toContain(`tool="${'t'.repeat(65)}"`);
+    });
+
+    it('truncates tool name to 64 chars in error labels (OBS-02)', async () => {
+      const longTool = 'e'.repeat(100);
+      metrics.recordToolCallError(longTool, 'ValidationError', { profileId: 'gitlab', tenantId: 'team-a' });
+
+      const output = await metrics.getMetrics();
+
+      expect(output).toContain(`tool="${'e'.repeat(64)}"`);
+    });
+
+    it('truncates tool name to 64 chars in filter rejection labels', async () => {
+      const longTool = 'f'.repeat(100);
+      metrics.recordToolFilterRejection(longTool, 'session');
+
+      const output = await metrics.getMetrics();
+
+      expect(output).toContain(`tool="${'f'.repeat(64)}"`);
+      expect(output).not.toContain(`tool="${'f'.repeat(65)}"`);
+    });
+
+    it('records upstream_host for recordToolCallError (OBS-02)', async () => {
       metrics.recordToolCallError('manage_badges', 'ValidationError', {
         profileId: 'gitlab',
         tenantId: 'team-a',
@@ -193,7 +214,7 @@ describe('MetricsCollector', () => {
       expect(output).toContain('test_tool_call_errors_total');
       expect(output).toContain('error_type="ValidationError"');
       expect(output).toContain('upstream_host="api.example.com"');
-      expect(output).toContain('client_identity="svc-account"');
+      expect(output).not.toContain('client_identity=');
     });
   });
 
@@ -253,8 +274,8 @@ describe('MetricsCollector', () => {
       metrics.recordToolCall('manage_badges', 'success', 0.2);
       metrics.recordApiCall('get_project_badges', 200, 0.2);
       const output = await metrics.getMetrics();
-      // OBS-02: tool_calls_total carries upstream_host and client_identity dimensions
-      expect(output).toContain('test_tool_calls_total{tool="manage_badges",status="success",profile_id="unknown",tenant_id="none",upstream_host="none",client_identity="anonymous"} 1');
+      // OBS-02: tool_calls_total carries upstream_host dimension (client_identity is audit-only)
+      expect(output).toContain('test_tool_calls_total{tool="manage_badges",status="success",profile_id="unknown",tenant_id="none",upstream_host="none"} 1');
       expect(output).toContain('test_api_calls_total{operation="get_project_badges",status="2xx",profile_id="unknown",tenant_id="none"} 1');
     });
 
@@ -328,24 +349,26 @@ describe('MetricsCollector', () => {
   });
 
   describe('Status Labels', () => {
-    it('should group 3xx status codes', async () => {
+    it('should group 3xx status codes to "3xx"', async () => {
       metrics.recordHttpRequest('GET', '/mcp', 301, 0.1);
       metrics.recordHttpRequest('GET', '/mcp', 302, 0.1);
-      
+
       const output = await metrics.getMetrics();
-      
-      expect(output).toContain('status="301"');
-      expect(output).toContain('status="302"');
+
+      expect(output).toContain('status="3xx"');
+      expect(output).not.toContain('status="301"');
+      expect(output).not.toContain('status="302"');
     });
 
-    it('should group 5xx status codes', async () => {
+    it('should group 5xx status codes to "5xx"', async () => {
       metrics.recordHttpRequest('GET', '/mcp', 500, 0.1);
       metrics.recordHttpRequest('GET', '/mcp', 503, 0.1);
-      
+
       const output = await metrics.getMetrics();
-      
-      expect(output).toContain('status="500"');
-      expect(output).toContain('status="503"');
+
+      expect(output).toContain('status="5xx"');
+      expect(output).not.toContain('status="500"');
+      expect(output).not.toContain('status="503"');
     });
   });
 
@@ -384,6 +407,17 @@ describe('MetricsCollector', () => {
       expect(output).not.toContain('foo=bar');
     });
 
+    it('should normalize /ready/ (trailing slash) to other', async () => {
+      metrics.recordHttpRequest('GET', '/ready/', 200, 0.1);
+
+      const output = await metrics.getMetrics();
+
+      // Trailing slash is NOT recognized — falls through to 'other'.
+      // K8s probes send /ready without trailing slash; this test documents the boundary.
+      expect(output).toContain('path="other"');
+      expect(output).not.toContain('path="/ready/"');
+    });
+
     it('should normalize unknown paths to other', async () => {
       metrics.recordHttpRequest('GET', '/unknown/path?param=value', 200, 0.1);
 
@@ -393,14 +427,13 @@ describe('MetricsCollector', () => {
       expect(output).not.toContain('param=value');
     });
 
-    it('should use internal getStatusLabel for unusual status codes', async () => {
-      // Test status code outside normal ranges (triggers 'unknown' label)
-      metrics.recordHttpRequest('GET', '/mcp', 100, 0.1); // 1xx - informational
-      
+    it('should use "unknown" label for status codes outside 2xx-5xx range', async () => {
+      metrics.recordHttpRequest('GET', '/mcp', 100, 0.1); // 1xx - not in any recognized range
+
       const output = await metrics.getMetrics();
-      
-      // 100 is not in 2xx-5xx range, uses actual status as label
-      expect(output).toContain('status="100"');
+
+      expect(output).toContain('status="unknown"');
+      expect(output).not.toContain('status="100"');
     });
   });
 });

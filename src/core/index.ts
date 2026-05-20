@@ -349,6 +349,12 @@ export async function main() {
         return server.handleHttpMessage(message, sessionId, profileId);
       });
 
+      const startupProfiles = await registry.listProfilesForIndex();
+      if (startupProfiles.length === 0) {
+        logger.error('No profiles found. At least one valid profile is required in profile routing mode.');
+        process.exit(1);
+      }
+
       await httpTransport.start();
       logger.info('MCP server running on HTTP', { host, port });
 

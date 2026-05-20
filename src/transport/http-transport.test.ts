@@ -801,11 +801,11 @@ describeIfListen('HttpTransport', () => {
         'DNS rebinding protection: invalid Host header',
         expect.anything()
       );
-      // Note: a single warn is emitted at construction time when MCP4_TOKEN_KEY is unset;
+      // Note: a single warn is emitted at construction time when MCP4_OAUTH_KEY is unset;
       // the assertion below excludes that startup warn so DNS-rebinding-related warns are isolated.
       const dnsRelatedWarns = (testLogger.warn as any).mock.calls.filter(
         (args: unknown[]) =>
-          typeof args[0] !== 'string' || !(args[0] as string).includes('MCP4_TOKEN_KEY'),
+          typeof args[0] !== 'string' || !(args[0] as string).includes('MCP4_OAUTH_KEY'),
       );
       expect(dnsRelatedWarns).toHaveLength(0);
 
@@ -1829,8 +1829,9 @@ describeIfListen('HttpTransport', () => {
   });
 
   describe('Readiness Endpoint', () => {
-    it('returns 503 with not-ready status when no profiles are loaded', async () => {
-      // Default `transport` fixture has zero profiles loaded
+    it('returns 503 with not-ready status when no profiles loaded', async () => {
+      // Default fixture: no profileStates seeded — startup validation guarantees this
+      // cannot happen in production (index.ts exits on 0 profiles)
       const response = await request(app).get('/ready');
 
       expect(response.status).toBe(503);
@@ -1868,6 +1869,49 @@ describeIfListen('HttpTransport', () => {
       expect(response.status).not.toBe(401);
       expect(response.status).not.toBe(403);
       expect([200, 503]).toContain(response.status);
+    });
+  });
+
+  describe('Readiness Endpoint Metric Emission', () => {
+    let readyTransport: HttpTransport;
+    let readyApp: Express;
+    let mockRecordHttpRequest: ReturnType<typeof vi.fn>;
+
+    beforeEach(async () => {
+      readyTransport = new HttpTransport({
+        port: 0,
+        sessionTimeoutMs: 1800000,
+        heartbeatEnabled: false,
+        heartbeatIntervalMs: 30000,
+        metricsEnabled: true,
+        metricsPath: '/metrics',
+      }, logger);
+
+      mockRecordHttpRequest = vi.fn();
+      (readyTransport as any).metrics = {
+        getMetrics: vi.fn().mockResolvedValue(''),
+        recordHttpRequest: mockRecordHttpRequest,
+      };
+
+      readyApp = (readyTransport as any).app;
+    });
+
+    afterEach(async () => {
+      await readyTransport.stop();
+    });
+
+    it('records HTTP metric for GET /ready', async () => {
+      const response = await request(readyApp).get('/ready');
+
+      expect([200, 503]).toContain(response.status);
+      expect(mockRecordHttpRequest).toHaveBeenCalledOnce();
+      expect(mockRecordHttpRequest).toHaveBeenCalledWith(
+        'GET',
+        '/ready',
+        response.status,
+        expect.any(Number),
+        expect.anything()
+      );
     });
   });
 
@@ -2791,7 +2835,7 @@ describeIfListen('HttpTransport', () => {
     });
   });
 
-  describe('MCP4_TOKEN_KEY startup warn and DEFAULT_MAX_TOKEN_LENGTH = 4096', () => {
+  describe('MCP4_OAUTH_KEY startup warn and DEFAULT_MAX_TOKEN_LENGTH = 4096', () => {
     interface MockLogger extends Logger {
       debug: ReturnType<typeof vi.fn>;
       info: ReturnType<typeof vi.fn>;
@@ -2814,41 +2858,41 @@ describeIfListen('HttpTransport', () => {
       metricsPath: '/metrics',
     };
 
-    it('warns when MCP4_TOKEN_KEY is not set (config.tokenKey undefined)', async () => {
+    it('warns when MCP4_OAUTH_KEY is not set (config.tokenKey undefined)', async () => {
       const mockLogger = buildMockLogger();
       const t = new HttpTransport({ ...baseConfig }, mockLogger);
       const warnCalls = mockLogger.warn.mock.calls;
       const matchingCall = warnCalls.find((args: unknown[]) =>
-        typeof args[0] === 'string' && (args[0] as string).includes('MCP4_TOKEN_KEY not set'),
+        typeof args[0] === 'string' && (args[0] as string).includes('MCP4_OAUTH_KEY not set'),
       );
       expect(matchingCall).toBeDefined();
       await t.stop();
     });
 
-    it('does not warn about MCP4_TOKEN_KEY when tokenKey is set', async () => {
-      const savedKey = process.env.MCP4_TOKEN_KEY;
-      delete process.env.MCP4_TOKEN_KEY;
+    it('does not warn about MCP4_OAUTH_KEY when tokenKey is set', async () => {
+      const savedKey = process.env.MCP4_OAUTH_KEY;
+      delete process.env.MCP4_OAUTH_KEY;
       const mockLogger = buildMockLogger();
       const t = new HttpTransport({ ...baseConfig, tokenKey: Buffer.alloc(32) }, mockLogger);
-      if (savedKey !== undefined) process.env.MCP4_TOKEN_KEY = savedKey;
+      if (savedKey !== undefined) process.env.MCP4_OAUTH_KEY = savedKey;
       const warnCalls = mockLogger.warn.mock.calls;
       const matchingCall = warnCalls.find((args: unknown[]) =>
-        typeof args[0] === 'string' && (args[0] as string).includes('MCP4_TOKEN_KEY'),
+        typeof args[0] === 'string' && (args[0] as string).includes('MCP4_OAUTH_KEY'),
       );
       expect(matchingCall).toBeUndefined();
       await t.stop();
     });
 
-    it('warns when MCP4_TOKEN_KEY is a passphrase (non-hex key)', async () => {
-      const savedKey = process.env.MCP4_TOKEN_KEY;
-      process.env.MCP4_TOKEN_KEY = 'my-weak-passphrase';
+    it('warns when MCP4_OAUTH_KEY is a passphrase (non-hex key)', async () => {
+      const savedKey = process.env.MCP4_OAUTH_KEY;
+      process.env.MCP4_OAUTH_KEY = 'my-weak-passphrase';
       const mockLogger = buildMockLogger();
       const t = new HttpTransport({ ...baseConfig, tokenKey: Buffer.alloc(32) }, mockLogger);
-      if (savedKey !== undefined) process.env.MCP4_TOKEN_KEY = savedKey;
-      else delete process.env.MCP4_TOKEN_KEY;
+      if (savedKey !== undefined) process.env.MCP4_OAUTH_KEY = savedKey;
+      else delete process.env.MCP4_OAUTH_KEY;
       const warnCalls = mockLogger.warn.mock.calls;
       const matchingCall = warnCalls.find((args: unknown[]) =>
-        typeof args[0] === 'string' && (args[0] as string).includes('MCP4_TOKEN_KEY is a passphrase'),
+        typeof args[0] === 'string' && (args[0] as string).includes('MCP4_OAUTH_KEY is a passphrase'),
       );
       expect(matchingCall).toBeDefined();
       await t.stop();

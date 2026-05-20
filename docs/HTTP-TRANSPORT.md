@@ -611,7 +611,7 @@ Sessions store:
 
 ## Encrypted Token Envelopes
 
-When `MCP4_TOKEN_KEY` is configured, the gateway wraps OAuth tokens in encrypted envelopes so MCP
+When `MCP4_OAUTH_KEY` is configured, the gateway wraps OAuth tokens in encrypted envelopes so MCP
 clients can survive arbitrary gateway restarts (for example k8s pod evictions) without re-running
 the OAuth browser flow.
 
@@ -632,7 +632,7 @@ mcp4.v1.<base64url(12-byte-nonce + AES-256-GCM-ciphertext + 16-byte-tag)>
 ### When envelopes are issued
 
 The gateway returns an envelope as `access_token` in the `/oauth/token` response only when ALL of:
-1. `MCP4_TOKEN_KEY` is configured at startup.
+1. `MCP4_OAUTH_KEY` is configured at startup.
 2. The IdP returned a `refresh_token` (envelopes without a refresh path provide no recovery
    benefit, so plain access_token is returned instead).
 
@@ -644,13 +644,13 @@ access_token - the response shape is unchanged. Clients ALWAYS work, with or wit
 1. The MCP client stores the `mcp4.v1.*` token from the OAuth response.
 2. The gateway is restarted (k8s rolling deploy, OOM kill, etc.) and all in-memory state is lost.
 3. The client reconnects and re-presents the same envelope on the next MCP `initialize` request.
-4. The gateway detects the `mcp4.v1.` prefix, decrypts using `MCP4_TOKEN_KEY` and the
+4. The gateway detects the `mcp4.v1.` prefix, decrypts using `MCP4_OAUTH_KEY` and the
    request-profile_id (as AAD). On success, it rehydrates the session: refresh_token, expiry,
    client_id, scopes, and (if creg is present) the OAuth client registration in memory.
 5. If the access token is already expired, the existing refresh-token path silently exchanges
    it for a fresh access token in the next request - the client sees no auth challenge.
 
-### Key derivation (`MCP4_TOKEN_KEY`)
+### Key derivation (`MCP4_OAUTH_KEY`)
 
 - 64-char hex string: decoded directly as 32 raw bytes (AES-256 key).
 - Anything else: SHA-256(value) yields 32 bytes - any passphrase works.

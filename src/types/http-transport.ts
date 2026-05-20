@@ -96,7 +96,7 @@ export interface HttpTransportConfig {
   maxTokenLength?: number; // Maximum token length in characters (default: 1000)
   /**
    * 32-byte symmetric key used to encrypt/decrypt token envelopes (mcp4.v1.* tokens).
-   * Derived from `MCP4_TOKEN_KEY` env var by `deriveTokenKey()`:
+   * Derived from `MCP4_OAUTH_KEY` env var by `deriveTokenKey()`:
    *   - 64-char hex string -> Buffer.from(raw, 'hex')
    *   - anything else      -> SHA-256(raw)
    * When undefined, the gateway operates in plain-token mode (backward compat).

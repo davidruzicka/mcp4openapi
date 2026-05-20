@@ -275,24 +275,6 @@
       ],
       "description": "Extended operation definition supporting multipart uploads and proxy_download"
     },
-    "MultipartOperation": {
-      "type": "object",
-      "properties": {
-        "operationId": {
-          "type": "string",
-          "description": "OpenAPI operation ID for the multipart endpoint"
-        },
-        "file_field_name": {
-          "type": "string",
-          "description": "Multipart field name for the uploaded file",
-          "default": "files[0]"
-        }
-      },
-      "required": [
-        "operationId"
-      ],
-      "description": "Multipart upload operation configuration"
-    },
     "ProxyDownloadOperation": {
       "type": "object",
       "properties": {
@@ -358,6 +340,24 @@
         "metadata_endpoint"
       ],
       "description": "Proxy download operation configuration\n\nWhy: Some APIs return file URLs that require authentication. LLM cannot fetch these directly, so we proxy the download."
+    },
+    "MultipartOperation": {
+      "type": "object",
+      "properties": {
+        "operationId": {
+          "type": "string",
+          "description": "OpenAPI operation ID for the multipart endpoint"
+        },
+        "file_field_name": {
+          "type": "string",
+          "description": "Multipart field name for the uploaded file",
+          "default": "files[0]"
+        }
+      },
+      "required": [
+        "operationId"
+      ],
+      "description": "Multipart upload operation configuration"
     },
     "CompositeStep": {
       "type": "object",
@@ -1442,14 +1442,14 @@
           ]
         },
         "overrides": {
-          "$ref": "#/definitions/Record%3Cstring%2Cstructure-1535101595-23792-23828-1535101595-23777-23829-1535101595-23763-23830-1535101595-23692-23832-1535101595-0-23972%3E"
+          "$ref": "#/definitions/Record%3Cstring%2Cstructure-1535101595-24226-24262-1535101595-24211-24263-1535101595-24197-24264-1535101595-24126-24266-1535101595-0-24406%3E"
         }
       },
       "required": [
         "max_requests_per_minute"
       ]
     },
-    "Record<string,structure-1535101595-23792-23828-1535101595-23777-23829-1535101595-23763-23830-1535101595-23692-23832-1535101595-0-23972>": {
+    "Record<string,structure-1535101595-24226-24262-1535101595-24211-24263-1535101595-24197-24264-1535101595-24126-24266-1535101595-0-24406>": {
       "type": "object",
       "additionalProperties": {
         "type": "object",
@@ -1969,6 +1969,20 @@
             "type": "string"
           }
         }
+      }
+    },
+    "Record<string,structure-1535101595-23792-23828-1535101595-23777-23829-1535101595-23763-23830-1535101595-23692-23832-1535101595-0-23972>": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "max_requests_per_minute": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "max_requests_per_minute"
+        ]
       }
     },
     "Record<string,structure-1535101595-23568-23604-1535101595-23553-23605-1535101595-23539-23606-1535101595-23468-23608-1535101595-0-23748>": {

@@ -12,7 +12,7 @@ requires:
     provides: handleUpstreamToolCall, recordUpstreamReject early-reject pipeline
 provides:
   - Per-tool-call structured audit log (audit:tool_call at INFO) with stable shape
-  - Prometheus tool-call counters/histogram extended with upstream_host + client_identity dimensions
+  - Prometheus tool-call counters/histogram extended with upstream_host dimension (client_identity is audit-log only)
   - HttpTransport.getSessionClientPrincipal accessor for observability lookups
   - Reusable extractHost(url) helper for safe URL-to-host extraction
   - Reusable emitAuditToolCall private helper (single audit-shape source of truth)
@@ -72,8 +72,8 @@ completed: 2026-05-11
 
 ## Accomplishments
 
-- `MetricsContextLabels` extended with optional `upstreamHost` and `clientIdentity` fields; `resolveContextLabels` returns 4 keys with explicit per-label caps (upstream_host 128 chars, client_identity 64 chars).
-- All three tool-call Prometheus metrics (`mcp_tool_calls_total`, `mcp_tool_call_duration_seconds`, `mcp_tool_call_errors_total`) registered with the new label dimensions; backward-compatible defaults ('none' / 'anonymous') keep existing dashboards intact while enabling new per-upstream / per-identity slicing.
+- `MetricsContextLabels` extended with optional `upstreamHost` and `clientIdentity` fields; `resolveContextLabels` returns 3 Prometheus-registered keys (`profile_id`, `tenant_id`, `upstream_host`) with 128-char cap on `upstream_host`; `clientIdentity` is carried in the context struct for audit log only (excluded from Prometheus to avoid unbounded per-user cardinality).
+- All three tool-call Prometheus metrics (`mcp_tool_calls_total`, `mcp_tool_call_duration_seconds`, `mcp_tool_call_errors_total`) registered with `upstream_host` label dimension; backward-compatible default ('none') keeps existing dashboards intact while enabling new per-upstream slicing.
 - `HttpTransport.getSessionClientPrincipal(profileId, sessionId)` accessor exposes the inbound `AuthorizedPrincipal` for observability; returns `undefined` for anonymous sessions which the resolver maps to `'anonymous'` at the label boundary.
 - `resolveMetricsContext` in `mcp-server.ts` always populates `clientIdentity` (never `undefined`) so audit logs and metrics share a single shape contract.
 - Module-level `extractHost(url)` helper exported for tests; reusable across audit log and metric labels.

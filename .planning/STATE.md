@@ -1,10 +1,10 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.0
-milestone_name: milestone
-status: Phase 04 complete - all gaps closed
-stopped_at: Completed 04-observability (all plans + verification gaps fixed)
-last_updated: "2026-05-11T14:02:00.000Z"
+milestone: v1.1
+milestone_name: Enterprise MCP Gateway v1.1
+status: v1.0 shipped - planning next milestone
+stopped_at: v1.0 milestone complete (8 phases, 25 plans, 58 tasks)
+last_updated: "2026-05-19T13:24:29.992Z"
 progress:
   total_phases: 10
   completed_phases: 8
@@ -16,15 +16,14 @@ progress:
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-03-26)
+See: .planning/PROJECT.md (updated 2026-05-19)
 
 **Core value:** A security boundary between internal AI clients and all upstream MCP servers - one place to authenticate, authorize, audit, and proxy every tool call.
-**Current focus:** Phase 04 — observability
+**Current focus:** Planning v1.1 — Phase 5 (Upstream OAuth Proxy) + Phase 6 (OIDC JWT auth gate)
 
 ## Current Position
 
-Phase: 04 (observability) - COMPLETE
-Plan: Completed 2 of 2
+Milestone v1.0 SHIPPED. Next: `/gsd:new-milestone` to plan v1.1.
 
 ## Performance Metrics
 
@@ -125,14 +124,14 @@ Recent decisions affecting current work:
 - [Phase 03.4]: Comment text scrubbed of the literal 'client_secret' so source-text grep stays at zero matches; intent retained as 'secret intentionally absent — DCR public PKCE clients have none'
 - [Phase 03.4]: IIFE env-var parser pattern matches existing oauthSessionTimeoutMs/oauthRefreshThresholdMs blocks - keeps the config builder uniform
 - [Phase 03.4]: Whitespace trim happens BEFORE deriveTokenKey() not inside it - keeps the token-envelope module pure (no input normalization assumptions); env-var ergonomics belong to the config layer that owns the env-var read
-- [Phase 03.4]: MCP4_TOKEN_KEY added to ENV_KEYS sentinel list in test file so beforeEach() unsets it deterministically; prevents test cross-contamination from ambient env on developer machines
+- [Phase 03.4]: MCP4_OAUTH_KEY added to ENV_KEYS sentinel list in test file so beforeEach() unsets it deterministically; prevents test cross-contamination from ambient env on developer machines
 - [Phase 03.4-encrypted-token-envelope]: [Phase 03.4-03]: storeOAuthTokens returns the client-facing token (envelope or raw); both maps keyed by RETURNED token so the warm-cache lookup wins on the no-restart path and the decrypt fallback runs at most once per session
 - [Phase 03.4-encrypted-token-envelope]: [Phase 03.4-03]: refreshAccessToken removed the unconditional 'session.authToken = tokens.access_token' line and now assigns the storeOAuthTokens return value - prevents envelope/raw mismatch within a long-lived session immediately after a refresh
 - [Phase 03.4-encrypted-token-envelope]: [Phase 03.4-03]: Session-init envelope-decrypt fallback gated by !internalToken && !refreshToken && tokenKey && isEncryptedToken; warm-cache always wins, fallback only runs for restart recovery; cross-profile rejection via AAD - debug log + plain-bearer continuation, no crash, no 401
 - [Phase 03.4-encrypted-token-envelope]: [Phase 03.4-03]: registerClient guarded by 'profileState.oauthProvider' (Phase 03.3 graceful degradation can leave it null); session metadata still rehydrates from envelope in degraded-OAuth mode, only DCR re-registration is skipped
 - [Phase 03.4-encrypted-token-envelope]: [Phase 03.4-03]: Encryption-failure availability bias - try/catch around encryptTokenPayload falls back to plain access_token + warn so /oauth/token never crashes on tokenKey misconfiguration; client_secret NEVER embedded in envelope.creg (DCR public PKCE clients have none)
 - [Phase 03.4-encrypted-token-envelope]: [Phase 03.4-04]: CHANGELOG entry consolidation - two prior plan-internal Added bullets (crypto module / HTTP transport wiring) folded into one user-perspective line per AGENTS.md compress-lines rule and the plan's exactly-1-match acceptance criterion
-- [Phase 03.4-encrypted-token-envelope]: [Phase 03.4-04]: README.md MCP4_TOKEN_MAX_LENGTH default updated from 1000 to 4096 alongside the new MCP4_TOKEN_KEY entry - closes the documentation drift introduced when Plan 03 raised the runtime default
+- [Phase 03.4-encrypted-token-envelope]: [Phase 03.4-04]: README.md MCP4_TOKEN_MAX_LENGTH default updated from 1000 to 4096 alongside the new MCP4_OAUTH_KEY entry - closes the documentation drift introduced when Plan 03 raised the runtime default
 - [Phase 03.4-encrypted-token-envelope]: [Phase 03.4-04]: Encrypted Token Envelopes section uses ## (top-level) depth in HTTP-TRANSPORT.md to match neighboring Session Management / SSE Resumability sections, not ### like the Session Storage subsection it follows
 - [Phase 04-observability]: [Phase 04-02]: /ready uses mcpRateLimiter only (no explicit auth bypass) - clientAuthGate lives inside handlePost, not at route level - mirrors /health exactly; passes local statusCode (not res.statusCode) to recordHttpRequest for deterministic capture
 - [Phase 04-observability]: [Phase 04-02]: Explicit '/ready' branch in normalizePath() despite functional no-op - documents gateway's stable surface and guards against future dynamic-prefix paths being introduced

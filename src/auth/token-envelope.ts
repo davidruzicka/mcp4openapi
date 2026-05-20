@@ -14,7 +14,7 @@
  * Key derivation note: the 64-hex-char path produces a full-entropy 32-byte key directly.
  * The SHA-256 passphrase path is a convenience shim - it has no salt or work factor, so
  * weak passphrases offer little protection. Production deployments MUST use a 64-char random
- * hex string for MCP4_TOKEN_KEY. Document this in env.example (Plan 02).
+ * hex string for MCP4_OAUTH_KEY. Document this in env.example (Plan 02).
  *
  * Known limitation: if the IdP issues rotating refresh tokens AND the gateway restarts
  * after at least one in-session refresh, the client still holds the original envelope

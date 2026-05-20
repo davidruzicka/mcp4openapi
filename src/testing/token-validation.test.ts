@@ -466,3 +466,287 @@ describeIfListen('Token Validation Integration', () => {
     });
   });
 });
+
+// BUG REGRESSION: bearer PAT must use bearer config's validation_endpoint, not oauth config's
+// When a profile has both oauth (priority 0) and bearer (priority 1) auth configs, a PAT sent
+// via Authorization: Bearer must be validated against the bearer config's endpoint.
+// Bug: authConfigs.find() matches oauth config first via fallback condition, so a PAT that would
+// succeed at personal_access_tokens/self gets rejected at /user (requires read_user scope).
+describeIfListen('Token Validation - bearer PAT with oauth+bearer dual config', () => {
+  let transport: HttpTransport;
+  let app: Express;
+  let mockApiServer: http.Server;
+  let mockApiPort: number;
+  let userEndpointCalls: number;
+  let patSelfEndpointCalls: number;
+  let originalAllowPrivateNetwork: string | undefined;
+
+  beforeAll(async () => {
+    originalAllowPrivateNetwork = process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK;
+    process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK = 'true';
+
+    const mockApp = (await import('express')).default();
+    mockApp.use((await import('express')).default.json());
+
+    // /user returns 403 - simulates PAT without read_user scope
+    mockApp.get('/api/v4/user', (_req, res) => {
+      userEndpointCalls++;
+      res.status(403).json({ message: 'Forbidden - read_user scope required' });
+    });
+
+    // /personal_access_tokens/self accepts any valid PAT regardless of scope
+    mockApp.get('/api/v4/personal_access_tokens/self', (req, res) => {
+      patSelfEndpointCalls++;
+      const token = req.headers.authorization?.replace('Bearer ', '') || '';
+      if (token.startsWith('valid-')) {
+        return res.status(200).json({ id: 1, active: true, scopes: ['api'] });
+      }
+      return res.status(401).json({ message: 'Unauthorized' });
+    });
+
+    mockApiServer = mockApp.listen(0);
+    const address = mockApiServer.address();
+    mockApiPort = typeof address === 'object' && address ? address.port : 0;
+
+    const authConfigs: AuthInterceptor[] = [
+      {
+        type: 'oauth',
+        priority: 0,
+        // No oauth_config - env vars not set, oauth flow disabled
+        validation_endpoint: '/api/v4/user',
+      },
+      {
+        type: 'bearer',
+        priority: 1,
+        value_from_env: 'MCP4_API_TOKEN',
+        validation_endpoint: '/api/v4/personal_access_tokens/self',
+      },
+    ];
+
+    const config = {
+      host: '127.0.0.1',
+      port: 0,
+      sessionTimeoutMs: 1800000,
+      heartbeatEnabled: false,
+      heartbeatIntervalMs: 30000,
+      metricsEnabled: false,
+      metricsPath: '/metrics',
+      baseUrl: `http://127.0.0.1:${mockApiPort}`,
+      authConfigs,
+    };
+
+    transport = new HttpTransport(config, new ConsoleLogger());
+    app = (transport as any).app;
+
+    transport.setMessageHandler(async (message: unknown) => {
+      const msg = message as any;
+      if (msg.method === 'initialize') {
+        return {
+          jsonrpc: '2.0',
+          id: msg.id,
+          result: {
+            protocolVersion: '2025-03-26',
+            serverInfo: { name: 'test-server', version: '1.0.0' },
+            capabilities: { tools: {} },
+          },
+        };
+      }
+      return { jsonrpc: '2.0', id: msg.id, error: { code: -32601, message: 'Method not found' } };
+    });
+  });
+
+  afterAll(() => {
+    mockApiServer.close();
+    if (originalAllowPrivateNetwork === undefined) {
+      delete process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK;
+    } else {
+      process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK = originalAllowPrivateNetwork;
+    }
+  });
+
+  it('should validate PAT bearer token against bearer config endpoint, not oauth config endpoint', async () => {
+    userEndpointCalls = 0;
+    patSelfEndpointCalls = 0;
+
+    const response = await request(app)
+      .post('/mcp')
+      .set('Accept', 'application/json')
+      .set('Content-Type', 'application/json')
+      .set('Authorization', 'Bearer valid-pat-token')
+      .send({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'initialize',
+        params: {
+          protocolVersion: '2025-03-26',
+          capabilities: {},
+          clientInfo: { name: 'test', version: '1.0.0' },
+        },
+      })
+      .expect(200);
+
+    // Must use bearer config's endpoint, not oauth config's /user
+    expect(userEndpointCalls).toBe(0);
+    expect(patSelfEndpointCalls).toBe(1);
+    expect(response.headers['mcp-session-id']).toBeDefined();
+    expect(response.body.result).toBeDefined();
+  });
+});
+
+// OAUTH ACTIVE: when OAuth env vars are set and oauth IS operational, bearer tokens
+// (which may be OAuth access tokens from Cursor-style flow) must still use the oauth
+// config's validation_endpoint — not the bearer config's endpoint.
+describeIfListen('Token Validation - bearer token with oauth+bearer dual config, oauth active', () => {
+  let transport: HttpTransport;
+  let app: Express;
+  let mockApiServer: http.Server;
+  let mockApiPort: number;
+  let userEndpointCalls: number;
+  let patSelfEndpointCalls: number;
+  let originalAllowPrivateNetwork: string | undefined;
+
+  beforeAll(async () => {
+    originalAllowPrivateNetwork = process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK;
+    process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK = 'true';
+
+    const mockApp = (await import('express')).default();
+    mockApp.use((await import('express')).default.json());
+
+    // Both endpoints accept valid tokens in this suite
+    mockApp.get('/api/v4/user', (req, res) => {
+      userEndpointCalls++;
+      const token = req.headers.authorization?.replace('Bearer ', '') || '';
+      if (token.startsWith('valid-')) return res.status(200).json({ id: 1, username: 'test' });
+      return res.status(401).json({ message: 'Unauthorized' });
+    });
+
+    mockApp.get('/api/v4/personal_access_tokens/self', (req, res) => {
+      patSelfEndpointCalls++;
+      const token = req.headers.authorization?.replace('Bearer ', '') || '';
+      if (token.startsWith('valid-')) return res.status(200).json({ id: 1, active: true });
+      return res.status(401).json({ message: 'Unauthorized' });
+    });
+
+    mockApiServer = mockApp.listen(0);
+    const address = mockApiServer.address();
+    mockApiPort = typeof address === 'object' && address ? address.port : 0;
+
+    const authConfigs: AuthInterceptor[] = [
+      {
+        type: 'oauth',
+        priority: 0,
+        validation_endpoint: '/api/v4/user',
+      },
+      {
+        type: 'bearer',
+        priority: 1,
+        value_from_env: 'MCP4_API_TOKEN',
+        validation_endpoint: '/api/v4/personal_access_tokens/self',
+      },
+    ];
+
+    const config = {
+      host: '127.0.0.1',
+      port: 0,
+      sessionTimeoutMs: 1800000,
+      heartbeatEnabled: false,
+      heartbeatIntervalMs: 30000,
+      metricsEnabled: false,
+      metricsPath: '/metrics',
+      baseUrl: `http://127.0.0.1:${mockApiPort}`,
+      authConfigs,
+      // Minimal operational oauth config (no network calls in constructor)
+      oauthConfig: {
+        issuer: `http://127.0.0.1:${mockApiPort}`,
+        allow_unregistered_clients: true,
+        scopes: ['api'],
+      },
+    };
+
+    transport = new HttpTransport(config, new ConsoleLogger());
+    app = (transport as any).app;
+
+    transport.setMessageHandler(async (message: unknown) => {
+      const msg = message as any;
+      if (msg.method === 'initialize') {
+        return {
+          jsonrpc: '2.0',
+          id: msg.id,
+          result: {
+            protocolVersion: '2025-03-26',
+            serverInfo: { name: 'test-server', version: '1.0.0' },
+            capabilities: { tools: {} },
+          },
+        };
+      }
+      return { jsonrpc: '2.0', id: msg.id, error: { code: -32601, message: 'Method not found' } };
+    });
+  });
+
+  afterAll(() => {
+    mockApiServer.close();
+    if (originalAllowPrivateNetwork === undefined) {
+      delete process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK;
+    } else {
+      process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK = originalAllowPrivateNetwork;
+    }
+  });
+
+  // Table row 2: OAuth active, OAuth access token sent as Bearer → oauth config → /user
+  it('should use oauth config endpoint for bearer token when oauth is active (OAuth access token)', async () => {
+    userEndpointCalls = 0;
+    patSelfEndpointCalls = 0;
+
+    const response = await request(app)
+      .post('/mcp')
+      .set('Accept', 'application/json')
+      .set('Content-Type', 'application/json')
+      .set('Authorization', 'Bearer valid-oauth-access-token')
+      .send({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'initialize',
+        params: {
+          protocolVersion: '2025-03-26',
+          capabilities: {},
+          clientInfo: { name: 'test', version: '1.0.0' },
+        },
+      })
+      .expect(200);
+
+    // When oauth is active, bearer tokens go to oauth config's endpoint
+    expect(userEndpointCalls).toBe(1);
+    expect(patSelfEndpointCalls).toBe(0);
+    expect(response.headers['mcp-session-id']).toBeDefined();
+    expect(response.body.result).toBeDefined();
+  });
+
+  // Table row 3: OAuth active, PAT sent as Bearer → oauth config → /user (works with api scope)
+  it('should use oauth config endpoint for PAT bearer token when oauth is active', async () => {
+    userEndpointCalls = 0;
+    patSelfEndpointCalls = 0;
+
+    const response = await request(app)
+      .post('/mcp')
+      .set('Accept', 'application/json')
+      .set('Content-Type', 'application/json')
+      .set('Authorization', 'Bearer valid-pat-token')
+      .send({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'initialize',
+        params: {
+          protocolVersion: '2025-03-26',
+          capabilities: {},
+          clientInfo: { name: 'test', version: '1.0.0' },
+        },
+      })
+      .expect(200);
+
+    // When oauth is active, even PAT bearer tokens fall back to oauth config's endpoint
+    expect(userEndpointCalls).toBe(1);
+    expect(patSelfEndpointCalls).toBe(0);
+    expect(response.headers['mcp-session-id']).toBeDefined();
+    expect(response.body.result).toBeDefined();
+  });
+});
