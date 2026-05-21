@@ -7118,7 +7118,12 @@ paths:
       tags:
         - glql
       summary: Execute GLQL query
-      description: Execute a GLQL query
+      description: >-
+        Execute a GLQL query. Send `glql_yaml` as YAML, not GraphQL JSON. Prefer
+        simple built-in field names such as `iid`, `title`, `state`, and
+        `author`; avoid guessed fields like `web_url` unless confirmed by the
+        GLQL API. In filters, prefer bare enum values such as `state = opened`
+        unless the GLQL docs explicitly require quoting.
       operationId: postApiV4Glql
       requestBody:
         required: true
@@ -7129,6 +7134,13 @@ paths:
               properties:
                 glql_yaml:
                   type: string
+                  description: |-
+                    Example:
+                    fields: iid,title,state,author
+                    project: my-group/my-project
+                    limit: 10
+                    sort: updated desc
+                    query: state = opened
       responses:
         "200":
           description: Successful response
