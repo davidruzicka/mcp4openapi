@@ -108,31 +108,6 @@
           "data(id,key,value,type,project(id,name,type))",
           "nextCursor"
         ],
-        "list_workflows": [
-          "data(id,name,active,createdAt,updatedAt,tags(id,name),settings(timezone,executionTimeout))",
-          "nextCursor"
-        ],
-        "get_workflow": [
-          "id",
-          "name",
-          "active",
-          "createdAt",
-          "updatedAt",
-            "nodes",
-            "connections",
-          "tags(id,name)",
-          "settings(timezone,executionTimeout)"
-        ],
-        "get_workflow_version": [
-          "versionId",
-          "workflowId",
-          "name",
-            "nodes",
-            "connections",
-          "createdAt",
-          "updatedAt",
-          "authors"
-        ],
         "get_workflow_tags": [
           "id",
           "name",
@@ -420,15 +395,6 @@
         "create_users": [
           "user(id,email,inviteAcceptUrl,emailSent)",
           "error"
-        ],
-        "create_workflow": [
-          "id",
-          "name",
-          "active",
-          "createdAt",
-          "updatedAt",
-          "tags(id,name)",
-          "settings(timezone,executionTimeout)"
         ]
       },
       "parameters": {
@@ -714,15 +680,6 @@
           "name",
           "createdAt",
           "updatedAt"
-        ],
-        "update_workflow": [
-          "id",
-          "name",
-          "active",
-          "createdAt",
-          "updatedAt",
-          "tags(id,name)",
-          "settings(timezone,executionTimeout)"
         ],
         "update_workflow_tags": [
           "id",
@@ -1043,15 +1000,6 @@
           "name",
           "createdAt",
           "updatedAt"
-        ],
-        "delete_workflow": [
-          "id",
-          "name",
-          "active",
-          "createdAt",
-          "updatedAt",
-          "tags(id,name)",
-          "settings(timezone,executionTimeout)"
         ]
       },
       "parameters": {
@@ -1335,24 +1283,6 @@
           "credentials(id,name,type)",
           "workflows(id,name)",
           "tags(tags(id,name),mappings(workflowId,tagId))"
-        ],
-        "activate_workflow": [
-          "id",
-          "name",
-          "active",
-          "createdAt",
-          "updatedAt",
-          "tags(id,name)",
-          "settings(timezone,executionTimeout)"
-        ],
-        "deactivate_workflow": [
-          "id",
-          "name",
-          "active",
-          "createdAt",
-          "updatedAt",
-          "tags(id,name)",
-          "settings(timezone,executionTimeout)"
         ]
       },
       "parameters": {

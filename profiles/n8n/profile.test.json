@@ -764,44 +764,189 @@
         {
           "operationId": "get_/workflows/{id}",
           "response": {
-              "body": {
-                "id": "{{id}}",
-                "name": "{{name}}",
-                "active": true,
+            "body": {
+              "id": "{{id}}",
+              "name": "{{name}}",
+              "active": true,
+              "createdAt": "{{createdAt}}",
+              "updatedAt": "{{updatedAt}}",
+              "nodes": [
+                {
+                  "id": "node-1",
+                  "name": "Start",
+                  "type": "n8n-nodes-base.start",
+                  "typeVersion": 1,
+                  "position": [0, 0],
+                  "notes": "Reference entry point",
+                  "notesInFlow": true,
+                  "parameters": {}
+                },
+                {
+                  "id": "node-2",
+                  "name": "Sticky Note",
+                  "type": "n8n-nodes-base.stickyNote",
+                  "typeVersion": 1,
+                  "position": [140, -80],
+                  "parameters": {
+                    "width": 320,
+                    "height": 180,
+                    "content": "Document API contract"
+                  }
+                }
+              ],
+              "connections": {
+                "Start": {
+                  "main": [
+                    [
+                      {
+                        "node": "Sticky Note",
+                        "type": "main",
+                        "index": 0
+                      }
+                    ]
+                  ]
+                }
+              },
+              "settings": {
+                "timezone": "UTC",
+                "executionTimeout": 3600,
+                "saveManualExecutions": true,
+                "callerPolicy": "workflowsFromSameOwner"
+              },
+              "staticData": {
+                "lastId": 1
+              },
+              "tags": [
+                {
+                  "id": "{{tagId}}",
+                  "name": "{{tagName}}"
+                }
+              ],
+              "shared": [
+                {
+                  "projectId": "{{projectId}}",
+                  "role": "workflow:owner"
+                }
+              ],
+              "activeVersion": {
+                "versionId": "{{versionId}}",
+                "workflowId": "{{id}}",
                 "nodes": [
                   {
                     "id": "node-1",
                     "name": "Start",
                     "type": "n8n-nodes-base.start",
                     "typeVersion": 1,
-                    "position": [0, 0]
+                    "position": [0, 0],
+                    "notes": "Reference entry point",
+                    "notesInFlow": true,
+                    "parameters": {}
                   }
                 ],
                 "connections": {
                   "Start": {
                     "main": []
                   }
-                }
+                },
+                "authors": "1,2",
+                "createdAt": "{{createdAt}}",
+                "updatedAt": "{{updatedAt}}"
               }
+            }
           }
         }
       ],
       "expect": {
-          "success": true,
-          "result": {
-            "id": "{{id}}",
+        "success": true,
+        "result_exact": {
+          "id": "{{id}}",
+          "name": "{{name}}",
+          "active": true,
+          "createdAt": "{{createdAt}}",
+          "updatedAt": "{{updatedAt}}",
+          "nodes": [
+            {
+              "id": "node-1",
+              "name": "Start",
+              "type": "n8n-nodes-base.start",
+              "typeVersion": 1,
+              "position": [0, 0],
+              "notes": "Reference entry point",
+              "notesInFlow": true,
+              "parameters": {}
+            },
+            {
+              "id": "node-2",
+              "name": "Sticky Note",
+              "type": "n8n-nodes-base.stickyNote",
+              "typeVersion": 1,
+              "position": [140, -80],
+              "parameters": {
+                "width": 320,
+                "height": 180,
+                "content": "Document API contract"
+              }
+            }
+          ],
+          "connections": {
+            "Start": {
+              "main": [
+                [
+                  {
+                    "node": "Sticky Note",
+                    "type": "main",
+                    "index": 0
+                  }
+                ]
+              ]
+            }
+          },
+          "settings": {
+            "timezone": "UTC",
+            "executionTimeout": 3600,
+            "saveManualExecutions": true,
+            "callerPolicy": "workflowsFromSameOwner"
+          },
+          "staticData": {
+            "lastId": 1
+          },
+          "tags": [
+            {
+              "id": "{{tagId}}",
+              "name": "{{tagName}}"
+            }
+          ],
+          "shared": [
+            {
+              "projectId": "{{projectId}}",
+              "role": "workflow:owner"
+            }
+          ],
+          "activeVersion": {
+            "versionId": "{{versionId}}",
+            "workflowId": "{{id}}",
             "nodes": [
               {
                 "id": "node-1",
-                "name": "Start"
+                "name": "Start",
+                "type": "n8n-nodes-base.start",
+                "typeVersion": 1,
+                "position": [0, 0],
+                "notes": "Reference entry point",
+                "notesInFlow": true,
+                "parameters": {}
               }
             ],
             "connections": {
               "Start": {
                 "main": []
               }
-            }
+            },
+            "authors": "1,2",
+            "createdAt": "{{createdAt}}",
+            "updatedAt": "{{updatedAt}}"
           }
+        }
       }
     },
     {
@@ -906,34 +1051,54 @@
                   "name": "HTTP Request",
                   "type": "n8n-nodes-base.httpRequest",
                   "typeVersion": 1,
-                  "position": [200, 0]
+                  "position": [200, 0],
+                  "notes": "Calls upstream API",
+                  "notesInFlow": true,
+                  "parameters": {
+                    "url": "https://api.example.test"
+                  }
                 }
               ],
               "connections": {
                 "HTTP Request": {
                   "main": []
                 }
-              }
+              },
+              "authors": "1,2",
+              "createdAt": "{{createdAt}}",
+              "updatedAt": "{{updatedAt}}"
             }
           }
         }
       ],
       "expect": {
         "success": true,
-        "result": {
+        "result_exact": {
           "versionId": "{{versionId}}",
           "workflowId": "{{id}}",
+          "name": "{{name}}",
           "nodes": [
             {
               "id": "node-2",
-              "name": "HTTP Request"
+              "name": "HTTP Request",
+              "type": "n8n-nodes-base.httpRequest",
+              "typeVersion": 1,
+              "position": [200, 0],
+              "notes": "Calls upstream API",
+              "notesInFlow": true,
+              "parameters": {
+                "url": "https://api.example.test"
+              }
             }
           ],
           "connections": {
             "HTTP Request": {
               "main": []
             }
-          }
+          },
+          "authors": "1,2",
+          "createdAt": "{{createdAt}}",
+          "updatedAt": "{{updatedAt}}"
         }
       }
     },
