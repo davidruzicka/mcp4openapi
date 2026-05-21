@@ -764,12 +764,44 @@
         {
           "operationId": "get_/workflows/{id}",
           "response": {
-            "body": {}
+              "body": {
+                "id": "{{id}}",
+                "name": "{{name}}",
+                "active": true,
+                "nodes": [
+                  {
+                    "id": "node-1",
+                    "name": "Start",
+                    "type": "n8n-nodes-base.start",
+                    "typeVersion": 1,
+                    "position": [0, 0]
+                  }
+                ],
+                "connections": {
+                  "Start": {
+                    "main": []
+                  }
+                }
+              }
           }
         }
       ],
       "expect": {
-        "success": true
+          "success": true,
+          "result": {
+            "id": "{{id}}",
+            "nodes": [
+              {
+                "id": "node-1",
+                "name": "Start"
+              }
+            ],
+            "connections": {
+              "Start": {
+                "main": []
+              }
+            }
+          }
       }
     },
     {
@@ -864,12 +896,45 @@
         {
           "operationId": "get_/workflows/{id}/{versionId}",
           "response": {
-            "body": {}
+            "body": {
+              "versionId": "{{versionId}}",
+              "workflowId": "{{id}}",
+              "name": "{{name}}",
+              "nodes": [
+                {
+                  "id": "node-2",
+                  "name": "HTTP Request",
+                  "type": "n8n-nodes-base.httpRequest",
+                  "typeVersion": 1,
+                  "position": [200, 0]
+                }
+              ],
+              "connections": {
+                "HTTP Request": {
+                  "main": []
+                }
+              }
+            }
           }
         }
       ],
       "expect": {
-        "success": true
+        "success": true,
+        "result": {
+          "versionId": "{{versionId}}",
+          "workflowId": "{{id}}",
+          "nodes": [
+            {
+              "id": "node-2",
+              "name": "HTTP Request"
+            }
+          ],
+          "connections": {
+            "HTTP Request": {
+              "main": []
+            }
+          }
+        }
       }
     },
     {

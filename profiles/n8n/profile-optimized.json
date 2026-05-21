@@ -118,6 +118,8 @@
           "active",
           "createdAt",
           "updatedAt",
+            "nodes",
+            "connections",
           "tags(id,name)",
           "settings(timezone,executionTimeout)"
         ],
@@ -125,6 +127,8 @@
           "versionId",
           "workflowId",
           "name",
+            "nodes",
+            "connections",
           "createdAt",
           "updatedAt",
           "authors"
