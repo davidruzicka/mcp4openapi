@@ -1404,9 +1404,9 @@
         },
         "glql_yaml": {
           "type": "string",
-          "description": "GLQL YAML payload. Example:\nfields: id,title,author\ngroup: my-group\nlimit: 10\nsort: created desc\nquery: state = opened\nDocs: https://docs.gitlab.com/api/glql/",
+          "description": "GLQL YAML payload. Use YAML, not GraphQL JSON. Prefer simple built-in field names such as `iid`, `title`, `state`, and `author`; avoid guessed fields like `web_url` unless confirmed by the API. In filters, prefer bare enum values such as `state = opened` unless the GLQL docs explicitly require quoting. Example:\nfields: iid,title,state,author\nproject: my-group/my-project\nlimit: 10\nsort: updated desc\nquery: state = opened\nDocs: https://docs.gitlab.com/api/glql/",
           "required_for": ["query"],
-          "example": "fields: id,title,author\ngroup: my-group\nlimit: 10\nsort: created desc\nquery: state = opened"
+          "example": "fields: iid,title,state,author\nproject: my-group/my-project\nlimit: 10\nsort: updated desc\nquery: state = opened"
         }
       }
     },

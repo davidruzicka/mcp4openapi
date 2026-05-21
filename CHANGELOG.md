@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `normalizePath` now returns `other` for unrecognized HTTP paths instead of the raw path, preventing unbounded Prometheus label cardinality from dynamic route segments.
 
 ### Fixed
+- GitLab GLQL guidance now steers callers toward YAML payloads, verified field names, and unquoted enum filters in both profiles and the bundled OpenAPI spec.
 - Grafana profile now routes datasource metadata/resources, correlations, snapshot sharing settings, and other admin-like reads through `retrieve_admin_content`; `query_metrics` now requires Grafana-style `from`/`to` + `queries`, and user lookup now sends the required `loginOrEmail` query parameter.
 - `handleOtherRequest` upstream `tools/list` pre-flight error now uses `mapUpstreamErrorToMcpError` (provider-safe message) instead of generic "Internal error"; `req.method` truncated to 200 chars in error logs; `uri` and prompt `name` params capped at 2048/256 chars with `-32602` validation errors.
 
