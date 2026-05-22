@@ -585,6 +585,45 @@ describe('InterceptorChain - getAuthCredentials', () => {
 
     expect(credentials.headers).toEqual({ Authorization: 'Bearer test-token' });
   });
+
+  it('should return DRF Token header for token auth type', () => {
+    process.env.DEFECTDOJO_TOKEN = 'abc123apikey';
+
+    const config: InterceptorConfig = {
+      auth: {
+        type: 'token',
+        value_from_env: 'DEFECTDOJO_TOKEN',
+      },
+    };
+
+    const chain = new InterceptorChain(config);
+    const credentials = chain.getAuthCredentials();
+
+    expect(credentials.headers).toEqual({ Authorization: 'Token abc123apikey' });
+    expect(credentials.queryParams).toBeUndefined();
+  });
+
+  it('should include authorization in cache sensitive headers for token auth type', () => {
+    process.env.DEFECTDOJO_TOKEN = 'abc123apikey';
+
+    const config: InterceptorConfig = {
+      auth: {
+        type: 'token',
+        value_from_env: 'DEFECTDOJO_TOKEN',
+      },
+      cache: {
+        backend: 'memory',
+        ttl_seconds: 60,
+        max_entries: 100,
+      },
+    };
+
+    // Instantiating with cache triggers createCacheInterceptor -> getSensitiveCacheHeaders
+    const chain = new InterceptorChain(config);
+    const sensitiveHeaders = (chain as any).getSensitiveCacheHeaders() as Set<string>;
+
+    expect(sensitiveHeaders.has('authorization')).toBe(true);
+  });
 });
 
 describe('HttpClient - Rate Limiting', () => {
