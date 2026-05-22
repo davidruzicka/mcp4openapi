@@ -158,15 +158,15 @@ HTTP Transport checks for tokens in this order:
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `type` | `string` | ✅ | Auth method: `oauth`, `bearer`, `query`, `custom-header`, `session-cookie` |
+| `type` | `string` | ✅ | Auth method: `oauth`, `bearer`, `token`, `query`, `custom-header`, `session-cookie` |
 | `priority` | `integer` | ❌ | Priority (lower = higher). Default: `0` |
-| `value_from_env` | `string` | ✅* | Environment variable name (for `bearer`, `query`, `custom-header`) |
+| `value_from_env` | `string` | ✅* | Environment variable name (for `bearer`, `token`, `query`, `custom-header`) |
 | `header_name` | `string` | ✅** | Custom header name (for `custom-header`) |
 | `query_param` | `string` | ✅*** | Query parameter name (for `query`) |
 | `oauth_config` | `object` | ✅**** | OAuth configuration (for `oauth`) |
 | `session_cookie_config` | `object` | ✅***** | Session cookie login configuration (for `session-cookie`) |
 
-*Required for: `bearer`, `query`, `custom-header`  
+*Required for: `bearer`, `token`, `query`, `custom-header`  
 **Required for: `custom-header`  
 ***Required for: `query`  
 ****Required for: `oauth`  

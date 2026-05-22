@@ -105,14 +105,14 @@ When `enterprise_authorization.mode` is `required`, HTTP initialization accepts 
 - `transport.type` must be `"http-streamable"`
 - `transport.url` must be an absolute `http` or `https` URL without inline credentials
 - `auth` is **optional**. When omitted, the auth format is inherited from `interceptors.auth` (see below).
-- `auth.type` may be `bearer`, `query`, or `custom-header`. Set explicitly only when the upstream expects a different format than inbound clients use.
+- `auth.type` may be `bearer`, `token`, `query`, or `custom-header`. Set explicitly only when the upstream expects a different format than inbound clients use.
 - `auth.value_from_env` names the env variable holding the credential — **stdio transport only**. On HTTP transport the downstream client's session token is always forwarded directly; `value_from_env` is never read.
 - `upstream_mcp_from_env` must point to a single JSON object and takes precedence over static `upstream_mcp`
 - `stdio` upstream definitions are intentionally rejected in this iteration so the later feature-gated implementation can add process lifecycle hardening separately
 
 #### Auth inheritance from `interceptors.auth`
 
-When `upstream_mcp.auth` is omitted, the gateway inherits the auth format from `interceptors.auth` using the same priority-based selection as outbound OpenAPI calls. Only `bearer`, `query`, and `custom-header` types are inherited — `oauth` and `session-cookie` are not forwarded.
+When `upstream_mcp.auth` is omitted, the gateway inherits the auth format from `interceptors.auth` using the same priority-based selection as outbound OpenAPI calls. Only `bearer`, `token`, `query`, and `custom-header` types are inherited — `oauth` and `session-cookie` are not forwarded.
 
 **Common case — client Bearer token forwarded as Bearer to upstream (zero config):**
 
@@ -580,6 +580,20 @@ Adds: `Authorization: Bearer <token>`
 - Validates token during initialization to fail fast with invalid tokens
 - Improves UX by rejecting bad tokens immediately, not after first tool call
 - **Note**: Relative endpoints use `base_url`; absolute endpoints must match `base_url` origin unless host is in `validation_allowed_hosts`
+
+#### DRF Token Auth
+
+```json
+{
+  "auth": {
+    "type": "token",
+    "value_from_env": "DEFECTDOJO_TOKEN",
+    "validation_endpoint": "/api/v2/user_profile/"
+  }
+}
+```
+
+Adds: `Authorization: Token <key>` (Django REST Framework Token auth). Set `DEFECTDOJO_TOKEN` to the raw API key — the `Token ` prefix is added automatically. Inbound MCP clients likewise send `Authorization: Token <key>`.
 
 #### Custom Header
 
