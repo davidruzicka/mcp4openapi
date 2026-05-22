@@ -1436,14 +1436,27 @@ export class MCPServer {
     let hasBody = false;
 
     for (const [key, value] of Object.entries(args)) {
+      if (value === undefined) continue;
+
+      // Special case: 'body' as a plain-object parameter merges its contents inline
+      // (catch-all for operations with parameters not explicitly defined in the profile)
+      if (key === 'body' && typeof value === 'object' && !Array.isArray(value)) {
+        for (const [bk, bv] of Object.entries(value as Record<string, unknown>)) {
+          if (bv !== undefined) {
+            body[bk] = bv;
+            hasBody = true;
+          }
+        }
+        continue;
+      }
+
       // Include field if:
       // - Not metadata
       // - Not in path/query OR is in path/query but also required in body schema
-      // - Value is defined
       const isPathOrQuery = pathOrQuery.has(key);
       const isInBodySchema = bodySchemaProps.has(key);
-      
-      if (!metadata.has(key) && (!isPathOrQuery || isInBodySchema) && value !== undefined) {
+
+      if (!metadata.has(key) && (!isPathOrQuery || isInBodySchema)) {
         body[key] = value;
         hasBody = true;
       }

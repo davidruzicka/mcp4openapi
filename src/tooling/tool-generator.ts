@@ -318,14 +318,23 @@ export class ToolGenerator {
 
   /**
    * Check if operation requires multipart/form-data
-   * 
+   *
    * Why: Some operations (file uploads) need FormData instead of JSON body.
-   * Detected from OpenAPI requestBody.content['multipart/form-data'].
+   * Detected from OpenAPI requestBody.content['multipart/form-data'] with at least one
+   * binary-format field. Many frameworks (e.g., DRF) advertise multipart on all endpoints
+   * as an alternative encoding; we only treat it as file upload when a binary field exists.
    */
   isMultipartOperation(operationId: string): boolean {
     const operation = this.parser.getOperation(operationId);
     if (!operation?.requestBody?.content) return false;
-    return 'multipart/form-data' in operation.requestBody.content;
+    const multipartSchema = operation.requestBody.content['multipart/form-data']?.schema;
+    if (!multipartSchema) return false;
+    // Only treat as multipart when at least one field has format:'binary' (real file upload)
+    const props = multipartSchema.properties;
+    if (!props) return false;
+    return Object.values(props).some(
+      (prop) => (prop as { format?: string }).format === 'binary'
+    );
   }
 
   getMultipartFileFieldName(toolDef: ToolDefinition, action?: string): string {
