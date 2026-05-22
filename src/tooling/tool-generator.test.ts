@@ -616,13 +616,19 @@ describe('ToolGenerator', () => {
       expect(isMultipart).toBe(false);
     });
 
-    it('should return true for multipart operations', () => {
+    it('should return true for multipart operations with binary fields', () => {
       const stubParser: any = {
         getOperation: () => ({
           requestBody: {
             content: {
               'multipart/form-data': {
-                schema: { type: 'object' }
+                schema: {
+                  type: 'object',
+                  properties: {
+                    file: { type: 'string', format: 'binary' },
+                    name: { type: 'string' },
+                  }
+                }
               }
             }
           }
@@ -631,6 +637,23 @@ describe('ToolGenerator', () => {
 
       const multipartGenerator = new ToolGenerator(stubParser);
       expect(multipartGenerator.isMultipartOperation('uploadOp')).toBe(true);
+    });
+
+    it('should return false for multipart operations without binary fields (e.g. DRF alternative encoding)', () => {
+      const stubParser: any = {
+        getOperation: () => ({
+          requestBody: {
+            content: {
+              'multipart/form-data': {
+                schema: { type: 'object', properties: { name: { type: 'string' } } }
+              }
+            }
+          }
+        })
+      };
+
+      const multipartGenerator = new ToolGenerator(stubParser);
+      expect(multipartGenerator.isMultipartOperation('uploadOp')).toBe(false);
     });
 
     it('should return a custom multipart file field name from the action operation', () => {

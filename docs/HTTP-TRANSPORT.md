@@ -287,6 +287,7 @@ Source: https://modelcontextprotocol.io/specification/2025-03-26/basic/transport
 - `Accept: application/json` or `text/event-stream` (required)
 - `Mcp-Session-Id: <session-id>` (required except for initialization)
 - `Authorization: Bearer <token>` or `X-API-Token: <token>` (required for initialization if not using env var)
+  - If the active profile uses `auth.type: "token"` (DRF Token auth), clients send `Authorization: Token <key>` instead of `Authorization: Bearer <key>`.
   - If the active profile uses `auth.type: "custom-header"`, clients can send the configured header name (for example `X-N8N-API-KEY`) with the token instead of `Authorization` or `X-API-Token`.
   - The header name comes from the profile auth configuration, so it can vary per profile.
   - Supports various token formats: GitLab (`glpat-...`), YouTrack (`perm:...`), generic tokens

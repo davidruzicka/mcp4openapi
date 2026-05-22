@@ -1436,14 +1436,15 @@ export class MCPServer {
     let hasBody = false;
 
     for (const [key, value] of Object.entries(args)) {
+      if (value === undefined) continue;
+
       // Include field if:
       // - Not metadata
       // - Not in path/query OR is in path/query but also required in body schema
-      // - Value is defined
       const isPathOrQuery = pathOrQuery.has(key);
       const isInBodySchema = bodySchemaProps.has(key);
-      
-      if (!metadata.has(key) && (!isPathOrQuery || isInBodySchema) && value !== undefined) {
+
+      if (!metadata.has(key) && (!isPathOrQuery || isInBodySchema)) {
         body[key] = value;
         hasBody = true;
       }

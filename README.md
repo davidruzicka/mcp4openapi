@@ -245,6 +245,7 @@ Predefined profiles in the `profiles/` directory contains names for easy referen
 - Grafana profile: `grafana`
 - n8n profile: `n8n`
 - n8n simple node listing profile: `n8n-nodes`
+- DefectDojo profile: `defectdojo`
 
 Profiles are resolved from `./profiles` path by default. If that directory is missing, the bundled npm package profiles are used. Override with `--profiles-dir` or `MCP4_PROFILES_DIR`.
 
@@ -484,7 +485,7 @@ _⚠️ Warning: Running without a profile may generate many tools with many par
 For APIs with incomplete OpenAPI specs (missing `security` definition but requiring authentication):
 
 - `MCP4_AUTH_FORCE`: Enable force auth override (`true|false`, default: `false`)
-- `MCP4_AUTH_TYPE`: Authentication type: `bearer|query|custom-header` (default: `bearer`)
+- `MCP4_AUTH_TYPE`: Authentication type: `bearer|token|query|custom-header` (default: `bearer`)
 - `MCP4_AUTH_HEADER_NAME`: Custom header name (required when `MCP4_AUTH_TYPE=custom-header`)
 - `MCP4_AUTH_QUERY_PARAM`: Query parameter name (required when `MCP4_AUTH_TYPE=query`)
 
@@ -838,6 +839,7 @@ npm run test:e2e
 - **`profiles/`** - Example profiles for OpenAPI specs
 - **`profiles/youtrack/`** - YouTrack profile + bundled OpenAPI spec (ready-to-use MCP tools)
 - **`profiles/codecov/`** - Codecov CRUD-style profile + bundled OpenAPI spec
+- **`profiles/defectdojo/`** - DefectDojo profile + bundled OpenAPI spec (CRUD tools for findings, products, engagements; uses `token` auth type — set `DEFECTDOJO_TOKEN=<api-key>` (raw key, no prefix))
 - **`profile-schema.json`** - JSON Schema for IDE autocomplete
 
 ## Project Status

@@ -27,7 +27,7 @@ function configureProfileEnv(profile: Profile, baseUrl: string): void {
   const authList = Array.isArray(authConfigs) ? authConfigs : authConfigs ? [authConfigs] : [];
   for (const authConfig of authList) {
     if (
-      (authConfig.type === 'bearer' || authConfig.type === 'query' || authConfig.type === 'custom-header') &&
+      (authConfig.type === 'bearer' || authConfig.type === 'token' || authConfig.type === 'query' || authConfig.type === 'custom-header') &&
       authConfig.value_from_env
     ) {
       process.env[authConfig.value_from_env] = 'test-token';

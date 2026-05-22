@@ -1,0 +1,1573 @@
+{
+  "$schema": "../../profile-schema.json",
+  "profile_name": "defectdojo",
+  "profile_id": "defectdojo",
+  "profile_aliases": [
+    "defectdojo-crud"
+  ],
+  "openapi_spec_path": "./openapi.json",
+  "description": "Full CRUD access to DefectDojo API v2: findings, products, engagements, tests, endpoints, scan import, and admin resources.",
+  "resource_name": "DefectDojo API v2",
+  "resource_documentation": "https://defectdojo.github.io/django-DefectDojo/integrations/api-v2-docs/",
+  "parameter_aliases": {
+    "id": [
+      "finding_id",
+      "product_id",
+      "engagement_id",
+      "test_id",
+      "endpoint_id",
+      "user_id",
+      "group_id",
+      "template_id",
+      "configuration_id"
+    ],
+    "new_fid": [
+      "new_finding_id"
+    ]
+  },
+  "interceptors": {
+    "base_url": {
+      "value_from_env": "DEFECTDOJO_API_BASE_URL"
+    },
+    "auth": {
+      "type": "token",
+      "value_from_env": "DEFECTDOJO_TOKEN",
+      "validation_endpoint": "/api/v2/user_profile/"
+    },
+    "retry": {
+      "max_attempts": 3,
+      "backoff_ms": [
+        1000,
+        2000,
+        4000
+      ],
+      "retry_on_status": [
+        429,
+        502,
+        503,
+        504
+      ]
+    }
+  },
+  "tools": [
+    {
+      "name": "retrieve_content",
+      "description": "Read-only access to DefectDojo entities. Actions: 'list_findings', 'get_finding', 'list_finding_notes', 'list_finding_files', 'list_finding_metadata', 'list_finding_tags', 'list_finding_duplicates', 'get_finding_request_response', 'list_products', 'get_product', 'list_product_types', 'get_product_type', 'list_product_members', 'get_product_member', 'list_product_groups', 'get_product_group', 'list_product_type_members', 'get_product_type_member', 'list_product_type_groups', 'get_product_type_group', 'list_product_api_scan_configurations', 'get_product_api_scan_configuration', 'list_engagements', 'get_engagement', 'list_engagement_notes', 'list_engagement_files', 'list_engagement_presets', 'get_engagement_preset', 'list_tests', 'get_test', 'list_test_notes', 'list_test_files', 'list_test_imports', 'get_test_import', 'list_test_types', 'get_test_type', 'list_endpoints', 'get_endpoint', 'list_endpoint_status', 'get_endpoint_status', 'list_users', 'get_user', 'get_user_profile', 'list_dojo_groups', 'get_dojo_group', 'list_dojo_group_members', 'get_dojo_group_member', 'list_global_roles', 'get_global_role', 'list_roles', 'get_role', 'list_user_contact_infos', 'get_user_contact_info', 'list_notes', 'get_note', 'list_metadata', 'get_metadata', 'list_note_types', 'get_note_type', 'list_finding_templates', 'get_finding_template', 'list_stub_findings', 'get_stub_finding', 'list_jira_configurations', 'get_jira_configuration', 'list_jira_instances', 'get_jira_instance', 'list_jira_projects', 'get_jira_project', 'list_jira_finding_mappings', 'get_jira_finding_mapping', 'list_jira_product_configurations', 'get_jira_product_configuration', 'list_tool_configurations', 'get_tool_configuration', 'list_tool_types', 'get_tool_type', 'list_tool_product_settings', 'get_tool_product_setting', 'list_sonarqube_issues', 'get_sonarqube_issue', 'list_sonarqube_transitions', 'get_sonarqube_transition', 'list_regulations', 'get_regulation', 'list_languages', 'get_language', 'list_language_types', 'get_language_type', 'list_technologies', 'get_technology', 'list_network_locations', 'get_network_location', 'list_development_environments', 'get_development_environment', 'list_notifications', 'get_notification', 'list_sla_configurations', 'list_system_settings', 'list_configuration_permissions', 'get_configuration_permission'.",
+      "metadata_params": [
+        "action",
+        "id"
+      ],
+      "operations": {
+        "list_findings": "findings_list",
+        "get_finding": "findings_retrieve",
+        "list_finding_notes": "findings_notes_retrieve",
+        "list_finding_files": "findings_files_retrieve",
+        "list_finding_metadata": "findings_metadata_list",
+        "list_finding_tags": "findings_tags_retrieve",
+        "list_finding_duplicates": "findings_duplicate_list",
+        "get_finding_request_response": "findings_request_response_retrieve",
+        "list_products": "products_list",
+        "get_product": "products_retrieve",
+        "list_product_types": "product_types_list",
+        "get_product_type": "product_types_retrieve",
+        "list_product_members": "product_members_list",
+        "get_product_member": "product_members_retrieve",
+        "list_product_groups": "product_groups_list",
+        "get_product_group": "product_groups_retrieve",
+        "list_product_type_members": "product_type_members_list",
+        "get_product_type_member": "product_type_members_retrieve",
+        "list_product_type_groups": "product_type_groups_list",
+        "get_product_type_group": "product_type_groups_retrieve",
+        "list_product_api_scan_configurations": "product_api_scan_configurations_list",
+        "get_product_api_scan_configuration": "product_api_scan_configurations_retrieve",
+        "list_engagements": "engagements_list",
+        "get_engagement": "engagements_retrieve",
+        "list_engagement_notes": "engagements_notes_retrieve",
+        "list_engagement_files": "engagements_files_retrieve",
+        "list_engagement_presets": "engagement_presets_list",
+        "get_engagement_preset": "engagement_presets_retrieve",
+        "list_tests": "tests_list",
+        "get_test": "tests_retrieve",
+        "list_test_notes": "tests_notes_retrieve",
+        "list_test_files": "tests_files_retrieve",
+        "list_test_imports": "test_imports_list",
+        "get_test_import": "test_imports_retrieve",
+        "list_test_types": "test_types_list",
+        "get_test_type": "test_types_retrieve",
+        "list_endpoints": "endpoints_list",
+        "get_endpoint": "endpoints_retrieve",
+        "list_endpoint_status": "endpoint_status_list",
+        "get_endpoint_status": "endpoint_status_retrieve",
+        "list_users": "users_list",
+        "get_user": "users_retrieve",
+        "get_user_profile": "user_profile_retrieve",
+        "list_dojo_groups": "dojo_groups_list",
+        "get_dojo_group": "dojo_groups_retrieve",
+        "list_dojo_group_members": "dojo_group_members_list",
+        "get_dojo_group_member": "dojo_group_members_retrieve",
+        "list_global_roles": "global_roles_list",
+        "get_global_role": "global_roles_retrieve",
+        "list_roles": "roles_list",
+        "get_role": "roles_retrieve",
+        "list_user_contact_infos": "user_contact_infos_list",
+        "get_user_contact_info": "user_contact_infos_retrieve",
+        "list_notes": "notes_list",
+        "get_note": "notes_retrieve",
+        "list_metadata": "metadata_list",
+        "get_metadata": "metadata_retrieve",
+        "list_note_types": "note_type_list",
+        "get_note_type": "note_type_retrieve",
+        "list_finding_templates": "finding_templates_list",
+        "get_finding_template": "finding_templates_retrieve",
+        "list_stub_findings": "stub_findings_list",
+        "get_stub_finding": "stub_findings_retrieve",
+        "list_jira_configurations": "jira_configurations_list",
+        "get_jira_configuration": "jira_configurations_retrieve",
+        "list_jira_instances": "jira_instances_list",
+        "get_jira_instance": "jira_instances_retrieve",
+        "list_jira_projects": "jira_projects_list",
+        "get_jira_project": "jira_projects_retrieve",
+        "list_jira_finding_mappings": "jira_finding_mappings_list",
+        "get_jira_finding_mapping": "jira_finding_mappings_retrieve",
+        "list_jira_product_configurations": "jira_product_configurations_list",
+        "get_jira_product_configuration": "jira_product_configurations_retrieve",
+        "list_tool_configurations": "tool_configurations_list",
+        "get_tool_configuration": "tool_configurations_retrieve",
+        "list_tool_types": "tool_types_list",
+        "get_tool_type": "tool_types_retrieve",
+        "list_tool_product_settings": "tool_product_settings_list",
+        "get_tool_product_setting": "tool_product_settings_retrieve",
+        "list_sonarqube_issues": "sonarqube_issues_list",
+        "get_sonarqube_issue": "sonarqube_issues_retrieve",
+        "list_sonarqube_transitions": "sonarqube_transitions_list",
+        "get_sonarqube_transition": "sonarqube_transitions_retrieve",
+        "list_regulations": "regulations_list",
+        "get_regulation": "regulations_retrieve",
+        "list_languages": "languages_list",
+        "get_language": "languages_retrieve",
+        "list_language_types": "language_types_list",
+        "get_language_type": "language_types_retrieve",
+        "list_technologies": "technologies_list",
+        "get_technology": "technologies_retrieve",
+        "list_network_locations": "network_locations_list",
+        "get_network_location": "network_locations_retrieve",
+        "list_development_environments": "development_environments_list",
+        "get_development_environment": "development_environments_retrieve",
+        "list_notifications": "notifications_list",
+        "get_notification": "notifications_retrieve",
+        "list_sla_configurations": "sla_configurations_list",
+        "list_system_settings": "system_settings_list",
+        "list_configuration_permissions": "configuration_permissions_list",
+        "get_configuration_permission": "configuration_permissions_retrieve"
+      },
+      "parameters": {
+        "action": {
+          "type": "string",
+          "enum": [
+            "list_findings",
+            "get_finding",
+            "list_finding_notes",
+            "list_finding_files",
+            "list_finding_metadata",
+            "list_finding_tags",
+            "list_finding_duplicates",
+            "get_finding_request_response",
+            "list_products",
+            "get_product",
+            "list_product_types",
+            "get_product_type",
+            "list_product_members",
+            "get_product_member",
+            "list_product_groups",
+            "get_product_group",
+            "list_product_type_members",
+            "get_product_type_member",
+            "list_product_type_groups",
+            "get_product_type_group",
+            "list_product_api_scan_configurations",
+            "get_product_api_scan_configuration",
+            "list_engagements",
+            "get_engagement",
+            "list_engagement_notes",
+            "list_engagement_files",
+            "list_engagement_presets",
+            "get_engagement_preset",
+            "list_tests",
+            "get_test",
+            "list_test_notes",
+            "list_test_files",
+            "list_test_imports",
+            "get_test_import",
+            "list_test_types",
+            "get_test_type",
+            "list_endpoints",
+            "get_endpoint",
+            "list_endpoint_status",
+            "get_endpoint_status",
+            "list_users",
+            "get_user",
+            "get_user_profile",
+            "list_dojo_groups",
+            "get_dojo_group",
+            "list_dojo_group_members",
+            "get_dojo_group_member",
+            "list_global_roles",
+            "get_global_role",
+            "list_roles",
+            "get_role",
+            "list_user_contact_infos",
+            "get_user_contact_info",
+            "list_notes",
+            "get_note",
+            "list_metadata",
+            "get_metadata",
+            "list_note_types",
+            "get_note_type",
+            "list_finding_templates",
+            "get_finding_template",
+            "list_stub_findings",
+            "get_stub_finding",
+            "list_jira_configurations",
+            "get_jira_configuration",
+            "list_jira_instances",
+            "get_jira_instance",
+            "list_jira_projects",
+            "get_jira_project",
+            "list_jira_finding_mappings",
+            "get_jira_finding_mapping",
+            "list_jira_product_configurations",
+            "get_jira_product_configuration",
+            "list_tool_configurations",
+            "get_tool_configuration",
+            "list_tool_types",
+            "get_tool_type",
+            "list_tool_product_settings",
+            "get_tool_product_setting",
+            "list_sonarqube_issues",
+            "get_sonarqube_issue",
+            "list_sonarqube_transitions",
+            "get_sonarqube_transition",
+            "list_regulations",
+            "get_regulation",
+            "list_languages",
+            "get_language",
+            "list_language_types",
+            "get_language_type",
+            "list_technologies",
+            "get_technology",
+            "list_network_locations",
+            "get_network_location",
+            "list_development_environments",
+            "get_development_environment",
+            "list_notifications",
+            "get_notification",
+            "list_sla_configurations",
+            "list_system_settings",
+            "list_configuration_permissions",
+            "get_configuration_permission"
+          ],
+          "description": "Action to perform",
+          "required": true
+        },
+        "id": {
+          "type": "integer",
+          "description": "Entity ID (finding, product, engagement, test, endpoint, user, group, etc.)",
+          "required_for": [
+            "get_finding",
+            "list_finding_notes",
+            "list_finding_files",
+            "list_finding_metadata",
+            "list_finding_tags",
+            "list_finding_duplicates",
+            "get_finding_request_response",
+            "get_product",
+            "get_product_type",
+            "get_product_member",
+            "get_product_group",
+            "get_product_type_member",
+            "get_product_type_group",
+            "get_product_api_scan_configuration",
+            "get_engagement",
+            "list_engagement_notes",
+            "list_engagement_files",
+            "get_engagement_preset",
+            "get_test",
+            "list_test_notes",
+            "list_test_files",
+            "get_test_import",
+            "get_test_type",
+            "get_endpoint",
+            "get_endpoint_status",
+            "get_user",
+            "get_dojo_group",
+            "get_dojo_group_member",
+            "get_global_role",
+            "get_role",
+            "get_user_contact_info",
+            "get_note",
+            "get_metadata",
+            "get_note_type",
+            "get_finding_template",
+            "get_stub_finding",
+            "get_jira_configuration",
+            "get_jira_instance",
+            "get_jira_project",
+            "get_jira_finding_mapping",
+            "get_jira_product_configuration",
+            "get_tool_configuration",
+            "get_tool_type",
+            "get_tool_product_setting",
+            "get_sonarqube_issue",
+            "get_sonarqube_transition",
+            "get_regulation",
+            "get_language",
+            "get_language_type",
+            "get_technology",
+            "get_network_location",
+            "get_development_environment",
+            "get_notification",
+            "get_configuration_permission"
+          ]
+        },
+        "limit": {
+          "type": "integer",
+          "description": "Number of results per page (pagination)"
+        },
+        "offset": {
+          "type": "integer",
+          "description": "Starting index for pagination"
+        },
+        "active": {
+          "type": "boolean",
+          "description": "Filter findings by active status"
+        },
+        "verified": {
+          "type": "boolean",
+          "description": "Filter findings by verified status"
+        },
+        "severity": {
+          "type": "string",
+          "description": "Filter findings by severity: Critical, High, Medium, Low, Info"
+        },
+        "false_p": {
+          "type": "boolean",
+          "description": "Filter findings by false positive flag"
+        },
+        "duplicate": {
+          "type": "boolean",
+          "description": "Filter findings by duplicate flag"
+        },
+        "out_of_scope": {
+          "type": "boolean",
+          "description": "Filter findings by out-of-scope flag"
+        },
+        "risk_accepted": {
+          "type": "boolean",
+          "description": "Filter findings by risk-accepted status"
+        },
+        "is_mitigated": {
+          "type": "boolean",
+          "description": "Filter findings by mitigated status"
+        },
+        "test": {
+          "type": "integer",
+          "description": "Filter findings by test ID"
+        },
+        "tags": {
+          "type": "string",
+          "description": "Filter by tags (comma-separated)"
+        },
+        "title": {
+          "type": "string",
+          "description": "Filter by title (findings/templates)"
+        },
+        "prefetch": {
+          "type": "string",
+          "description": "Prefetch related fields (comma-separated, e.g. 'test,test__engagement')"
+        },
+        "related_fields": {
+          "type": "boolean",
+          "description": "Expand external relations for findings"
+        },
+        "o": {
+          "type": "string",
+          "description": "Ordering field(s), prefix with '-' for descending (e.g. '-date,severity')"
+        }
+      }
+    },
+    {
+      "name": "create_content",
+      "description": "Create new entities in DefectDojo. Actions: 'create_finding', 'create_finding_note', 'create_finding_file', 'create_finding_metadata', 'create_finding_tags', 'create_finding_request_response', 'create_finding_original', 'create_product', 'create_product_type', 'create_product_member', 'create_product_group', 'create_product_type_member', 'create_product_type_group', 'create_product_api_scan_configuration', 'create_engagement', 'create_engagement_note', 'create_engagement_file', 'create_engagement_preset', 'create_test', 'create_test_note', 'create_test_file', 'create_test_import', 'create_test_type', 'create_endpoint', 'create_endpoint_status', 'create_user', 'create_dojo_group', 'create_dojo_group_member', 'create_global_role', 'create_user_contact_info', 'create_metadata', 'create_finding_template', 'create_stub_finding', 'create_jira_configuration', 'create_jira_instance', 'create_jira_project', 'create_jira_finding_mapping', 'create_jira_product_configuration', 'create_tool_configuration', 'create_tool_type', 'create_tool_product_setting', 'create_sonarqube_issue', 'create_sonarqube_transition', 'create_regulation', 'create_language', 'create_language_type', 'create_technology', 'create_network_location', 'create_development_environment', 'create_note_type', 'create_notification', 'create_sla_configuration'.",
+      "metadata_params": [
+        "action",
+        "id"
+      ],
+      "operations": {
+        "create_finding": "findings_create",
+        "create_finding_note": "findings_notes_create",
+        "create_finding_file": "findings_files_create",
+        "create_finding_metadata": "findings_metadata_create",
+        "create_finding_tags": "findings_tags_create",
+        "create_finding_request_response": "findings_request_response_create",
+        "create_finding_original": "findings_original_create",
+        "create_product": "products_create",
+        "create_product_type": "product_types_create",
+        "create_product_member": "product_members_create",
+        "create_product_group": "product_groups_create",
+        "create_product_type_member": "product_type_members_create",
+        "create_product_type_group": "product_type_groups_create",
+        "create_product_api_scan_configuration": "product_api_scan_configurations_create",
+        "create_engagement": "engagements_create",
+        "create_engagement_note": "engagements_notes_create",
+        "create_engagement_file": "engagements_files_create",
+        "create_engagement_preset": "engagement_presets_create",
+        "create_test": "tests_create",
+        "create_test_note": "tests_notes_create",
+        "create_test_file": "tests_files_create",
+        "create_test_import": "test_imports_create",
+        "create_test_type": "test_types_create",
+        "create_endpoint": "endpoints_create",
+        "create_endpoint_status": "endpoint_status_create",
+        "create_user": "users_create",
+        "create_dojo_group": "dojo_groups_create",
+        "create_dojo_group_member": "dojo_group_members_create",
+        "create_global_role": "global_roles_create",
+        "create_user_contact_info": "user_contact_infos_create",
+        "create_metadata": "metadata_create",
+        "create_finding_template": "finding_templates_create",
+        "create_stub_finding": "stub_findings_create",
+        "create_jira_configuration": "jira_configurations_create",
+        "create_jira_instance": "jira_instances_create",
+        "create_jira_project": "jira_projects_create",
+        "create_jira_finding_mapping": "jira_finding_mappings_create",
+        "create_jira_product_configuration": "jira_product_configurations_create",
+        "create_tool_configuration": "tool_configurations_create",
+        "create_tool_type": "tool_types_create",
+        "create_tool_product_setting": "tool_product_settings_create",
+        "create_sonarqube_issue": "sonarqube_issues_create",
+        "create_sonarqube_transition": "sonarqube_transitions_create",
+        "create_regulation": "regulations_create",
+        "create_language": "languages_create",
+        "create_language_type": "language_types_create",
+        "create_technology": "technologies_create",
+        "create_network_location": "network_locations_create",
+        "create_development_environment": "development_environments_create",
+        "create_note_type": "note_type_create",
+        "create_notification": "notifications_create",
+        "create_sla_configuration": "sla_configurations_create"
+      },
+      "parameters": {
+        "action": {
+          "type": "string",
+          "enum": [
+            "create_finding",
+            "create_finding_note",
+            "create_finding_file",
+            "create_finding_metadata",
+            "create_finding_tags",
+            "create_finding_request_response",
+            "create_finding_original",
+            "create_product",
+            "create_product_type",
+            "create_product_member",
+            "create_product_group",
+            "create_product_type_member",
+            "create_product_type_group",
+            "create_product_api_scan_configuration",
+            "create_engagement",
+            "create_engagement_note",
+            "create_engagement_file",
+            "create_engagement_preset",
+            "create_test",
+            "create_test_note",
+            "create_test_file",
+            "create_test_import",
+            "create_test_type",
+            "create_endpoint",
+            "create_endpoint_status",
+            "create_user",
+            "create_dojo_group",
+            "create_dojo_group_member",
+            "create_global_role",
+            "create_user_contact_info",
+            "create_metadata",
+            "create_finding_template",
+            "create_stub_finding",
+            "create_jira_configuration",
+            "create_jira_instance",
+            "create_jira_project",
+            "create_jira_finding_mapping",
+            "create_jira_product_configuration",
+            "create_tool_configuration",
+            "create_tool_type",
+            "create_tool_product_setting",
+            "create_sonarqube_issue",
+            "create_sonarqube_transition",
+            "create_regulation",
+            "create_language",
+            "create_language_type",
+            "create_technology",
+            "create_network_location",
+            "create_development_environment",
+            "create_note_type",
+            "create_notification",
+            "create_sla_configuration"
+          ],
+          "description": "Action to perform",
+          "required": true
+        },
+        "id": {
+          "type": "integer",
+          "description": "Parent entity ID (required when creating sub-resource: notes, files, metadata, tags on a finding/engagement/test)",
+          "required_for": [
+            "create_finding_note",
+            "create_finding_file",
+            "create_finding_metadata",
+            "create_finding_tags",
+            "create_finding_request_response",
+            "create_finding_original",
+            "create_engagement_note",
+            "create_engagement_file",
+            "create_test_note",
+            "create_test_file"
+          ]
+        },
+        "new_fid": {
+          "type": "integer",
+          "description": "New finding ID (for create_finding_original)",
+          "required_for": [
+            "create_finding_original"
+          ]
+        },
+        "title": {
+          "type": "string",
+          "description": "Finding/template title or resource name",
+          "required_for": [
+            "create_finding",
+            "create_finding_template"
+          ]
+        },
+        "description": {
+          "type": "string",
+          "description": "Detailed description",
+          "required_for": [
+            "create_finding",
+            "create_finding_template"
+          ]
+        },
+        "severity": {
+          "type": "string",
+          "description": "Severity: Critical, High, Medium, Low, Info",
+          "required_for": [
+            "create_finding",
+            "create_finding_template"
+          ]
+        },
+        "numerical_severity": {
+          "type": "string",
+          "description": "Numerical severity: S0 (Critical) through S4 (Info)",
+          "required_for": [
+            "create_finding"
+          ]
+        },
+        "active": {
+          "type": "boolean",
+          "description": "Mark as active"
+        },
+        "verified": {
+          "type": "boolean",
+          "description": "Mark as verified"
+        },
+        "test": {
+          "type": "integer",
+          "description": "Test ID for the finding (required for create_finding)",
+          "required_for": [
+            "create_finding"
+          ]
+        },
+        "found_by": {
+          "type": "array",
+          "description": "Scanner/tool IDs (required for create_finding)",
+          "required_for": [
+            "create_finding"
+          ],
+          "items": {
+            "type": "integer"
+          }
+        },
+        "cwe": {
+          "type": "integer",
+          "description": "CWE identifier"
+        },
+        "cvssv3": {
+          "type": "string",
+          "description": "CVSSv3 vector string"
+        },
+        "cvssv3_score": {
+          "type": "number",
+          "description": "CVSSv3 numeric score"
+        },
+        "mitigation": {
+          "type": "string",
+          "description": "Mitigation steps"
+        },
+        "impact": {
+          "type": "string",
+          "description": "Impact description"
+        },
+        "references": {
+          "type": "string",
+          "description": "References (CVE IDs, URLs)"
+        },
+        "product": {
+          "type": "integer",
+          "description": "Product ID (required for create_engagement)",
+          "required_for": [
+            "create_engagement"
+          ]
+        },
+        "prod_type": {
+          "type": "integer",
+          "description": "Product type ID (required for create_product)",
+          "required_for": [
+            "create_product"
+          ]
+        },
+        "name": {
+          "type": "string",
+          "description": "Resource name (product, engagement, test type, etc.)"
+        },
+        "target_start": {
+          "type": "string",
+          "description": "Start date YYYY-MM-DD (required for create_engagement, create_test)",
+          "required_for": [
+            "create_engagement",
+            "create_test"
+          ]
+        },
+        "target_end": {
+          "type": "string",
+          "description": "End date YYYY-MM-DD (required for create_engagement, create_test)",
+          "required_for": [
+            "create_engagement",
+            "create_test"
+          ]
+        },
+        "engagement_type": {
+          "type": "string",
+          "description": "Engagement type: Interactive or CI/CD"
+        },
+        "status": {
+          "type": "string",
+          "description": "Status (e.g. In Progress, On Hold, Completed)"
+        },
+        "engagement": {
+          "type": "integer",
+          "description": "Engagement ID (required for create_test)",
+          "required_for": [
+            "create_test"
+          ]
+        },
+        "test_type": {
+          "type": "integer",
+          "description": "Test type ID (required for create_test)",
+          "required_for": [
+            "create_test"
+          ]
+        },
+        "tags": {
+          "type": "array",
+          "description": "Tags to apply",
+          "items": {
+            "type": "string"
+          }
+        },
+        "entry": {
+          "type": "string",
+          "description": "Note text (for create_finding_note, create_engagement_note, create_test_note)"
+        },
+        "note_type": {
+          "type": "integer",
+          "description": "Note type ID"
+        },
+        "acronym": {
+          "type": "string",
+          "description": "Acronym for the regulation",
+          "required_for": [
+            "create_regulation"
+          ]
+        },
+        "category": {
+          "type": "string",
+          "description": "Category of the regulation",
+          "required_for": [
+            "create_regulation"
+          ]
+        },
+        "close_status_key": {
+          "type": "integer",
+          "description": "JIRA status key for closing issues",
+          "required_for": [
+            "create_jira_configuration",
+            "create_jira_instance"
+          ]
+        },
+        "critical_mapping_severity": {
+          "type": "string",
+          "description": "JIRA severity mapping for Critical findings",
+          "required_for": [
+            "create_jira_configuration",
+            "create_jira_instance"
+          ]
+        },
+        "endpoint": {
+          "type": "integer",
+          "description": "Endpoint ID",
+          "required_for": [
+            "create_endpoint_status"
+          ]
+        },
+        "epic_name_id": {
+          "type": "integer",
+          "description": "JIRA epic name field ID",
+          "required_for": [
+            "create_jira_configuration",
+            "create_jira_instance"
+          ]
+        },
+        "finding": {
+          "type": "integer",
+          "description": "Finding ID",
+          "required_for": [
+            "create_endpoint_status"
+          ]
+        },
+        "finding_status": {
+          "type": "string",
+          "description": "DefectDojo finding status for Sonarqube transition",
+          "required_for": [
+            "create_sonarqube_transition"
+          ]
+        },
+        "group": {
+          "type": "integer",
+          "description": "Group ID",
+          "required_for": [
+            "create_product_group",
+            "create_product_type_group",
+            "create_dojo_group_member"
+          ]
+        },
+        "high_mapping_severity": {
+          "type": "string",
+          "description": "JIRA severity mapping for High findings",
+          "required_for": [
+            "create_jira_configuration",
+            "create_jira_instance"
+          ]
+        },
+        "info_mapping_severity": {
+          "type": "string",
+          "description": "JIRA severity mapping for Informational findings",
+          "required_for": [
+            "create_jira_configuration",
+            "create_jira_instance"
+          ]
+        },
+        "jira_id": {
+          "type": "string",
+          "description": "JIRA issue numeric ID",
+          "required_for": [
+            "create_jira_finding_mapping"
+          ]
+        },
+        "jira_key": {
+          "type": "string",
+          "description": "JIRA issue key (e.g. PROJ-123)",
+          "required_for": [
+            "create_jira_finding_mapping"
+          ]
+        },
+        "jurisdiction": {
+          "type": "string",
+          "description": "Jurisdiction of the regulation",
+          "required_for": [
+            "create_regulation"
+          ]
+        },
+        "key": {
+          "type": "string",
+          "description": "Sonarqube issue key",
+          "required_for": [
+            "create_sonarqube_issue"
+          ]
+        },
+        "language": {
+          "type": "integer",
+          "description": "Language type ID",
+          "required_for": [
+            "create_language",
+            "create_language_type"
+          ]
+        },
+        "location": {
+          "type": "string",
+          "description": "Network location identifier",
+          "required_for": [
+            "create_network_location"
+          ]
+        },
+        "low_mapping_severity": {
+          "type": "string",
+          "description": "JIRA severity mapping for Low findings",
+          "required_for": [
+            "create_jira_configuration",
+            "create_jira_instance"
+          ]
+        },
+        "medium_mapping_severity": {
+          "type": "string",
+          "description": "JIRA severity mapping for Medium findings",
+          "required_for": [
+            "create_jira_configuration",
+            "create_jira_instance"
+          ]
+        },
+        "open_status_key": {
+          "type": "integer",
+          "description": "JIRA status key for open issues",
+          "required_for": [
+            "create_jira_configuration",
+            "create_jira_instance"
+          ]
+        },
+        "password": {
+          "type": "string",
+          "description": "Password for JIRA or tool configuration",
+          "required_for": [
+            "create_jira_configuration",
+            "create_jira_instance"
+          ]
+        },
+        "product_type": {
+          "type": "integer",
+          "description": "Product type ID",
+          "required_for": [
+            "create_product_type_member",
+            "create_product_type_group"
+          ]
+        },
+        "req_resp": {
+          "type": "array",
+          "description": "List of request/response objects for finding",
+          "items": {
+            "type": "object"
+          },
+          "required_for": [
+            "create_finding_request_response"
+          ]
+        },
+        "role": {
+          "type": "integer",
+          "description": "Role ID for group/product membership",
+          "required_for": [
+            "create_product_member",
+            "create_product_group",
+            "create_product_type_member",
+            "create_product_type_group",
+            "create_dojo_group_member"
+          ]
+        },
+        "setting_url": {
+          "type": "string",
+          "description": "Tool product setting URL",
+          "required_for": [
+            "create_tool_product_setting"
+          ]
+        },
+        "sonarqube_issue": {
+          "type": "integer",
+          "description": "Sonarqube issue ID",
+          "required_for": [
+            "create_sonarqube_transition"
+          ]
+        },
+        "sonarqube_status": {
+          "type": "string",
+          "description": "Sonarqube issue status",
+          "required_for": [
+            "create_sonarqube_transition"
+          ]
+        },
+        "tool_configuration": {
+          "type": "integer",
+          "description": "Tool configuration ID",
+          "required_for": [
+            "create_product_api_scan_configuration",
+            "create_tool_product_setting"
+          ]
+        },
+        "tool_type": {
+          "type": "integer",
+          "description": "Tool type ID",
+          "required_for": [
+            "create_tool_configuration"
+          ]
+        },
+        "transitions": {
+          "type": "string",
+          "description": "Sonarqube transition name",
+          "required_for": [
+            "create_sonarqube_transition"
+          ]
+        },
+        "type": {
+          "type": "string",
+          "description": "Sonarqube issue type",
+          "required_for": [
+            "create_sonarqube_issue"
+          ]
+        },
+        "url": {
+          "type": "string",
+          "description": "URL for JIRA instance or tool configuration",
+          "required_for": [
+            "create_jira_configuration",
+            "create_jira_instance"
+          ]
+        },
+        "user": {
+          "type": "integer",
+          "description": "User ID for membership or contact info",
+          "required_for": [
+            "create_product_member",
+            "create_product_type_member",
+            "create_dojo_group_member",
+            "create_user_contact_info",
+            "create_technology"
+          ]
+        },
+        "username": {
+          "type": "string",
+          "description": "Username for user or JIRA credentials",
+          "required_for": [
+            "create_user",
+            "create_jira_configuration",
+            "create_jira_instance"
+          ]
+        },
+        "value": {
+          "type": "string",
+          "description": "Metadata value",
+          "required_for": [
+            "create_finding_metadata",
+            "create_metadata"
+          ]
+        }
+      }
+    },
+    {
+      "name": "update_content",
+      "description": "Partially update existing entities in DefectDojo (PATCH). Actions: 'update_finding', 'update_finding_metadata', 'update_finding_remove_note', 'update_finding_remove_tags', 'update_product', 'update_product_type', 'update_product_member', 'update_product_group', 'update_product_type_member', 'update_product_type_group', 'update_product_api_scan_configuration', 'update_engagement', 'update_engagement_preset', 'update_test', 'update_test_import', 'update_test_type', 'update_endpoint', 'update_endpoint_status', 'update_user', 'update_dojo_group', 'update_dojo_group_member', 'update_global_role', 'update_user_contact_info', 'update_note', 'update_metadata', 'update_finding_template', 'update_stub_finding', 'update_jira_configuration', 'update_jira_instance', 'update_jira_project', 'update_jira_finding_mapping', 'update_jira_product_configuration', 'update_tool_configuration', 'update_tool_type', 'update_tool_product_setting', 'update_sonarqube_issue', 'update_sonarqube_transition', 'update_regulation', 'update_language', 'update_language_type', 'update_technology', 'update_network_location', 'update_development_environment', 'update_note_type', 'update_notification', 'update_sla_configuration', 'update_system_settings'.",
+      "metadata_params": [
+        "action",
+        "id"
+      ],
+      "operations": {
+        "update_finding": "findings_partial_update",
+        "update_finding_metadata": "findings_metadata_update",
+        "update_finding_remove_note": "findings_remove_note_partial_update",
+        "update_finding_remove_tags": "findings_remove_tags_partial_update",
+        "update_product": "products_partial_update",
+        "update_product_type": "product_types_partial_update",
+        "update_product_member": "product_members_partial_update",
+        "update_product_group": "product_groups_partial_update",
+        "update_product_type_member": "product_type_members_partial_update",
+        "update_product_type_group": "product_type_groups_partial_update",
+        "update_product_api_scan_configuration": "product_api_scan_configurations_partial_update",
+        "update_engagement": "engagements_partial_update",
+        "update_engagement_preset": "engagement_presets_partial_update",
+        "update_test": "tests_partial_update",
+        "update_test_import": "test_imports_partial_update",
+        "update_test_type": "test_types_partial_update",
+        "update_endpoint": "endpoints_partial_update",
+        "update_endpoint_status": "endpoint_status_partial_update",
+        "update_user": "users_partial_update",
+        "update_dojo_group": "dojo_groups_partial_update",
+        "update_dojo_group_member": "dojo_group_members_partial_update",
+        "update_global_role": "global_roles_partial_update",
+        "update_user_contact_info": "user_contact_infos_partial_update",
+        "update_note": "notes_partial_update",
+        "update_metadata": "metadata_partial_update",
+        "update_finding_template": "finding_templates_partial_update",
+        "update_stub_finding": "stub_findings_partial_update",
+        "update_jira_configuration": "jira_configurations_partial_update",
+        "update_jira_instance": "jira_instances_partial_update",
+        "update_jira_project": "jira_projects_partial_update",
+        "update_jira_finding_mapping": "jira_finding_mappings_partial_update",
+        "update_jira_product_configuration": "jira_product_configurations_partial_update",
+        "update_tool_configuration": "tool_configurations_partial_update",
+        "update_tool_type": "tool_types_partial_update",
+        "update_tool_product_setting": "tool_product_settings_partial_update",
+        "update_sonarqube_issue": "sonarqube_issues_partial_update",
+        "update_sonarqube_transition": "sonarqube_transitions_partial_update",
+        "update_regulation": "regulations_partial_update",
+        "update_language": "languages_partial_update",
+        "update_language_type": "language_types_partial_update",
+        "update_technology": "technologies_partial_update",
+        "update_network_location": "network_locations_partial_update",
+        "update_development_environment": "development_environments_partial_update",
+        "update_note_type": "note_type_partial_update",
+        "update_notification": "notifications_partial_update",
+        "update_sla_configuration": "sla_configurations_partial_update",
+        "update_system_settings": "system_settings_partial_update"
+      },
+      "parameters": {
+        "action": {
+          "type": "string",
+          "enum": [
+            "update_finding",
+            "update_finding_metadata",
+            "update_finding_remove_note",
+            "update_finding_remove_tags",
+            "update_product",
+            "update_product_type",
+            "update_product_member",
+            "update_product_group",
+            "update_product_type_member",
+            "update_product_type_group",
+            "update_product_api_scan_configuration",
+            "update_engagement",
+            "update_engagement_preset",
+            "update_test",
+            "update_test_import",
+            "update_test_type",
+            "update_endpoint",
+            "update_endpoint_status",
+            "update_user",
+            "update_dojo_group",
+            "update_dojo_group_member",
+            "update_global_role",
+            "update_user_contact_info",
+            "update_note",
+            "update_metadata",
+            "update_finding_template",
+            "update_stub_finding",
+            "update_jira_configuration",
+            "update_jira_instance",
+            "update_jira_project",
+            "update_jira_finding_mapping",
+            "update_jira_product_configuration",
+            "update_tool_configuration",
+            "update_tool_type",
+            "update_tool_product_setting",
+            "update_sonarqube_issue",
+            "update_sonarqube_transition",
+            "update_regulation",
+            "update_language",
+            "update_language_type",
+            "update_technology",
+            "update_network_location",
+            "update_development_environment",
+            "update_note_type",
+            "update_notification",
+            "update_sla_configuration",
+            "update_system_settings"
+          ],
+          "description": "Action to perform",
+          "required": true
+        },
+        "id": {
+          "type": "integer",
+          "description": "Entity ID to update",
+          "required_for": [
+            "update_finding",
+            "update_finding_metadata",
+            "update_finding_remove_note",
+            "update_finding_remove_tags",
+            "update_product",
+            "update_product_type",
+            "update_product_member",
+            "update_product_group",
+            "update_product_type_member",
+            "update_product_type_group",
+            "update_product_api_scan_configuration",
+            "update_engagement",
+            "update_engagement_preset",
+            "update_test",
+            "update_test_import",
+            "update_test_type",
+            "update_endpoint",
+            "update_endpoint_status",
+            "update_user",
+            "update_dojo_group",
+            "update_dojo_group_member",
+            "update_global_role",
+            "update_user_contact_info",
+            "update_note",
+            "update_metadata",
+            "update_finding_template",
+            "update_stub_finding",
+            "update_jira_configuration",
+            "update_jira_instance",
+            "update_jira_project",
+            "update_jira_finding_mapping",
+            "update_jira_product_configuration",
+            "update_tool_configuration",
+            "update_tool_type",
+            "update_tool_product_setting",
+            "update_sonarqube_issue",
+            "update_sonarqube_transition",
+            "update_regulation",
+            "update_language",
+            "update_language_type",
+            "update_technology",
+            "update_network_location",
+            "update_development_environment",
+            "update_note_type",
+            "update_notification",
+            "update_sla_configuration",
+            "update_system_settings"
+          ]
+        },
+        "title": {
+          "type": "string",
+          "description": "New title/name"
+        },
+        "description": {
+          "type": "string",
+          "description": "New description"
+        },
+        "severity": {
+          "type": "string",
+          "description": "New severity: Critical, High, Medium, Low, Info"
+        },
+        "active": {
+          "type": "boolean",
+          "description": "Active flag"
+        },
+        "verified": {
+          "type": "boolean",
+          "description": "Verified flag"
+        },
+        "false_p": {
+          "type": "boolean",
+          "description": "False positive flag"
+        },
+        "risk_accepted": {
+          "type": "boolean",
+          "description": "Risk accepted flag"
+        },
+        "out_of_scope": {
+          "type": "boolean",
+          "description": "Out-of-scope flag"
+        },
+        "is_mitigated": {
+          "type": "boolean",
+          "description": "Mitigated flag"
+        },
+        "status": {
+          "type": "string",
+          "description": "New status"
+        },
+        "tags": {
+          "type": "array",
+          "description": "Tags (replaces all existing tags)",
+          "items": {
+            "type": "string"
+          }
+        },
+        "note": {
+          "type": "integer",
+          "description": "Note ID to remove (for update_finding_remove_note)"
+        },
+        "name": {
+          "type": "string",
+          "description": "Name field for resource update",
+          "required_for": [
+            "update_finding_metadata"
+          ]
+        },
+        "value": {
+          "type": "string",
+          "description": "Metadata value",
+          "required_for": [
+            "update_finding_metadata"
+          ]
+        }
+      }
+    },
+    {
+      "name": "delete_content",
+      "description": "Delete entities from DefectDojo. Deletions are irreversible. Actions: 'delete_finding', 'delete_finding_metadata', 'delete_product', 'delete_product_type', 'delete_product_member', 'delete_product_group', 'delete_product_type_member', 'delete_product_type_group', 'delete_product_api_scan_configuration', 'delete_engagement', 'delete_engagement_preset', 'delete_test', 'delete_test_import', 'delete_finding_template', 'delete_stub_finding', 'delete_endpoint', 'delete_endpoint_status', 'delete_user', 'delete_dojo_group', 'delete_dojo_group_member', 'delete_global_role', 'delete_user_contact_info', 'delete_metadata', 'delete_jira_configuration', 'delete_jira_instance', 'delete_jira_project', 'delete_jira_finding_mapping', 'delete_jira_product_configuration', 'delete_tool_configuration', 'delete_tool_type', 'delete_tool_product_setting', 'delete_sonarqube_issue', 'delete_sonarqube_transition', 'delete_regulation', 'delete_language', 'delete_language_type', 'delete_technology', 'delete_network_location', 'delete_development_environment', 'delete_note_type', 'delete_notification', 'delete_sla_configuration'.",
+      "metadata_params": [
+        "action",
+        "id"
+      ],
+      "operations": {
+        "delete_finding": "findings_destroy",
+        "delete_finding_metadata": "findings_metadata_destroy",
+        "delete_product": "products_destroy",
+        "delete_product_type": "product_types_destroy",
+        "delete_product_member": "product_members_destroy",
+        "delete_product_group": "product_groups_destroy",
+        "delete_product_type_member": "product_type_members_destroy",
+        "delete_product_type_group": "product_type_groups_destroy",
+        "delete_product_api_scan_configuration": "product_api_scan_configurations_destroy",
+        "delete_engagement": "engagements_destroy",
+        "delete_engagement_preset": "engagement_presets_destroy",
+        "delete_test": "tests_destroy",
+        "delete_test_import": "test_imports_destroy",
+        "delete_finding_template": "finding_templates_destroy",
+        "delete_stub_finding": "stub_findings_destroy",
+        "delete_endpoint": "endpoints_destroy",
+        "delete_endpoint_status": "endpoint_status_destroy",
+        "delete_user": "users_destroy",
+        "delete_dojo_group": "dojo_groups_destroy",
+        "delete_dojo_group_member": "dojo_group_members_destroy",
+        "delete_global_role": "global_roles_destroy",
+        "delete_user_contact_info": "user_contact_infos_destroy",
+        "delete_metadata": "metadata_destroy",
+        "delete_jira_configuration": "jira_configurations_destroy",
+        "delete_jira_instance": "jira_instances_destroy",
+        "delete_jira_project": "jira_projects_destroy",
+        "delete_jira_finding_mapping": "jira_finding_mappings_destroy",
+        "delete_jira_product_configuration": "jira_product_configurations_destroy",
+        "delete_tool_configuration": "tool_configurations_destroy",
+        "delete_tool_type": "tool_types_destroy",
+        "delete_tool_product_setting": "tool_product_settings_destroy",
+        "delete_sonarqube_issue": "sonarqube_issues_destroy",
+        "delete_sonarqube_transition": "sonarqube_transitions_destroy",
+        "delete_regulation": "regulations_destroy",
+        "delete_language": "languages_destroy",
+        "delete_language_type": "language_types_destroy",
+        "delete_technology": "technologies_destroy",
+        "delete_network_location": "network_locations_destroy",
+        "delete_development_environment": "development_environments_destroy",
+        "delete_note_type": "note_type_destroy",
+        "delete_notification": "notifications_destroy",
+        "delete_sla_configuration": "sla_configurations_destroy"
+      },
+      "parameters": {
+        "action": {
+          "type": "string",
+          "enum": [
+            "delete_finding",
+            "delete_finding_metadata",
+            "delete_product",
+            "delete_product_type",
+            "delete_product_member",
+            "delete_product_group",
+            "delete_product_type_member",
+            "delete_product_type_group",
+            "delete_product_api_scan_configuration",
+            "delete_engagement",
+            "delete_engagement_preset",
+            "delete_test",
+            "delete_test_import",
+            "delete_finding_template",
+            "delete_stub_finding",
+            "delete_endpoint",
+            "delete_endpoint_status",
+            "delete_user",
+            "delete_dojo_group",
+            "delete_dojo_group_member",
+            "delete_global_role",
+            "delete_user_contact_info",
+            "delete_metadata",
+            "delete_jira_configuration",
+            "delete_jira_instance",
+            "delete_jira_project",
+            "delete_jira_finding_mapping",
+            "delete_jira_product_configuration",
+            "delete_tool_configuration",
+            "delete_tool_type",
+            "delete_tool_product_setting",
+            "delete_sonarqube_issue",
+            "delete_sonarqube_transition",
+            "delete_regulation",
+            "delete_language",
+            "delete_language_type",
+            "delete_technology",
+            "delete_network_location",
+            "delete_development_environment",
+            "delete_note_type",
+            "delete_notification",
+            "delete_sla_configuration"
+          ],
+          "description": "Action to perform",
+          "required": true
+        },
+        "id": {
+          "type": "integer",
+          "description": "Entity ID to delete",
+          "required_for": [
+            "delete_finding",
+            "delete_finding_metadata",
+            "delete_product",
+            "delete_product_type",
+            "delete_product_member",
+            "delete_product_group",
+            "delete_product_type_member",
+            "delete_product_type_group",
+            "delete_product_api_scan_configuration",
+            "delete_engagement",
+            "delete_engagement_preset",
+            "delete_test",
+            "delete_test_import",
+            "delete_finding_template",
+            "delete_stub_finding",
+            "delete_endpoint",
+            "delete_endpoint_status",
+            "delete_user",
+            "delete_dojo_group",
+            "delete_dojo_group_member",
+            "delete_global_role",
+            "delete_user_contact_info",
+            "delete_metadata",
+            "delete_jira_configuration",
+            "delete_jira_instance",
+            "delete_jira_project",
+            "delete_jira_finding_mapping",
+            "delete_jira_product_configuration",
+            "delete_tool_configuration",
+            "delete_tool_type",
+            "delete_tool_product_setting",
+            "delete_sonarqube_issue",
+            "delete_sonarqube_transition",
+            "delete_regulation",
+            "delete_language",
+            "delete_language_type",
+            "delete_technology",
+            "delete_network_location",
+            "delete_development_environment",
+            "delete_note_type",
+            "delete_notification",
+            "delete_sla_configuration"
+          ]
+        }
+      }
+    },
+    {
+      "name": "import_scans",
+      "description": "Import security scan results into DefectDojo. Actions: 'import_scan' (upload new scan to engagement), 'reimport_scan' (update existing test with new scan results), 'import_endpoint_meta' (bulk endpoint metadata import), 'import_languages' (import language statistics).",
+      "metadata_params": [
+        "action"
+      ],
+      "operations": {
+        "import_scan": "import_scan_create",
+        "reimport_scan": "reimport_scan_create",
+        "import_endpoint_meta": "endpoint_meta_import_create",
+        "import_languages": "import_languages_create"
+      },
+      "parameters": {
+        "action": {
+          "type": "string",
+          "enum": [
+            "import_scan",
+            "reimport_scan",
+            "import_endpoint_meta",
+            "import_languages"
+          ],
+          "description": "Action to perform",
+          "required": true
+        },
+        "scan_type": {
+          "type": "string",
+          "description": "Scanner name (e.g. 'ZAP Scan', 'Burp Scan', 'Nessus Scan', 'Trivy Operator Scan')",
+          "required_for": [
+            "import_scan",
+            "reimport_scan"
+          ]
+        },
+        "file": {
+          "type": "string",
+          "description": "Base64-encoded scan report file content",
+          "required_for": [
+            "import_scan",
+            "reimport_scan"
+          ]
+        },
+        "active": {
+          "type": "boolean",
+          "description": "Mark imported findings as active",
+          "required_for": [
+            "import_scan",
+            "reimport_scan"
+          ]
+        },
+        "verified": {
+          "type": "boolean",
+          "description": "Mark imported findings as verified",
+          "required_for": [
+            "import_scan",
+            "reimport_scan"
+          ]
+        },
+        "engagement": {
+          "type": "integer",
+          "description": "Engagement ID to import into (required when not using auto_create_context)",
+          "required_for": [
+            "import_scan"
+          ]
+        },
+        "test": {
+          "type": "integer",
+          "description": "Test ID to reimport into (required when not using auto_create_context)",
+          "required_for": [
+            "reimport_scan"
+          ]
+        },
+        "product_name": {
+          "type": "string",
+          "description": "Product name (for auto_create_context)"
+        },
+        "engagement_name": {
+          "type": "string",
+          "description": "Engagement name (for auto_create_context)"
+        },
+        "test_title": {
+          "type": "string",
+          "description": "Test title override"
+        },
+        "auto_create_context": {
+          "type": "boolean",
+          "description": "Auto-create product/engagement/test if they don't exist"
+        },
+        "close_old_findings": {
+          "type": "boolean",
+          "description": "Mark findings absent from new scan as mitigated (reimport)"
+        },
+        "deduplication_on_engagement": {
+          "type": "boolean",
+          "description": "Deduplicate findings within engagement scope only"
+        },
+        "minimum_severity": {
+          "type": "string",
+          "description": "Minimum severity to import: Critical, High, Medium, Low, Info"
+        },
+        "scan_date": {
+          "type": "string",
+          "description": "Scan date YYYY-MM-DD"
+        },
+        "tags": {
+          "type": "array",
+          "description": "Tags for the test",
+          "items": {
+            "type": "string"
+          }
+        },
+        "version": {
+          "type": "string",
+          "description": "Version/branch of scanned code"
+        },
+        "branch_tag": {
+          "type": "string",
+          "description": "Branch or tag name"
+        },
+        "commit_hash": {
+          "type": "string",
+          "description": "Commit hash"
+        },
+        "build_id": {
+          "type": "string",
+          "description": "CI/CD build ID"
+        },
+        "do_not_reactivate": {
+          "type": "boolean",
+          "description": "Do not reactivate mitigated findings found again (reimport)"
+        }
+      }
+    },
+    {
+      "name": "run_workflows",
+      "description": "Execute DefectDojo state transitions, risk acceptance, report generation, and auth utilities. Actions: 'close_finding', 'reset_finding_duplicate', 'accept_findings_risks', 'generate_findings_report', 'close_engagement', 'reopen_engagement', 'accept_engagement_risks', 'generate_engagement_report', 'accept_test_risks', 'generate_test_report', 'generate_product_report', 'generate_product_type_report', 'generate_endpoint_report', 'obtain_api_token'.",
+      "metadata_params": [
+        "action",
+        "id"
+      ],
+      "operations": {
+        "close_finding": "findings_close_create",
+        "reset_finding_duplicate": "findings_duplicate_reset_create",
+        "accept_findings_risks": "findings_accept_risks_create",
+        "generate_findings_report": "findings_generate_report_create",
+        "close_engagement": "engagements_close_create",
+        "reopen_engagement": "engagements_reopen_create",
+        "accept_engagement_risks": "engagements_accept_risks_create",
+        "generate_engagement_report": "engagements_generate_report_create",
+        "accept_test_risks": "tests_accept_risks_create",
+        "generate_test_report": "tests_generate_report_create",
+        "generate_product_report": "products_generate_report_create",
+        "generate_product_type_report": "product_types_generate_report_create",
+        "generate_endpoint_report": "endpoints_generate_report_create",
+        "obtain_api_token": "api_token_auth_create"
+      },
+      "parameters": {
+        "action": {
+          "type": "string",
+          "enum": [
+            "close_finding",
+            "reset_finding_duplicate",
+            "accept_findings_risks",
+            "generate_findings_report",
+            "close_engagement",
+            "reopen_engagement",
+            "accept_engagement_risks",
+            "generate_engagement_report",
+            "accept_test_risks",
+            "generate_test_report",
+            "generate_product_report",
+            "generate_product_type_report",
+            "generate_endpoint_report",
+            "obtain_api_token"
+          ],
+          "description": "Action to perform",
+          "required": true
+        },
+        "id": {
+          "type": "integer",
+          "description": "Entity ID (required for close/reopen/accept/generate actions on a specific entity)",
+          "required_for": [
+            "close_finding",
+            "reset_finding_duplicate",
+            "close_engagement",
+            "reopen_engagement",
+            "accept_engagement_risks",
+            "generate_engagement_report",
+            "accept_test_risks",
+            "generate_test_report",
+            "generate_product_report",
+            "generate_product_type_report",
+            "generate_endpoint_report"
+          ]
+        },
+        "username": {
+          "type": "string",
+          "description": "Username (for obtain_api_token)",
+          "required_for": [
+            "obtain_api_token"
+          ]
+        },
+        "password": {
+          "type": "string",
+          "description": "Password (for obtain_api_token)",
+          "required_for": [
+            "obtain_api_token"
+          ]
+        },
+        "risk_acceptance": {
+          "type": "object",
+          "description": "Risk acceptance details for accept_*_risks actions (expiration_date, owner, name, etc.)",
+          "properties": {}
+        },
+        "findings": {
+          "type": "array",
+          "description": "Finding IDs for accept_findings_risks",
+          "items": {
+            "type": "integer"
+          }
+        }
+      }
+    }
+  ]
+}

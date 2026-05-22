@@ -29,7 +29,7 @@ export const upstreamMcpHttpStreamableTransportConfigSchema = z.object({
 });
 
 export const authTokenConfigSchema = z.object({
-    type: z.union([z.literal("bearer"), z.literal("query"), z.literal("custom-header")]),
+    type: z.union([z.literal("bearer"), z.literal("token"), z.literal("query"), z.literal("custom-header")]),
     header_name: z.string().optional(),
     query_param: z.string().optional()
 });
@@ -307,7 +307,7 @@ export const promptMessageTemplateSchema = z.object({
 });
 
 export const authInterceptorSchema = z.object({
-    type: z.union([z.literal("bearer"), z.literal("query"), z.literal("custom-header"), z.literal("session-cookie"), z.literal("oauth")]),
+    type: z.union([z.literal("bearer"), z.literal("token"), z.literal("query"), z.literal("custom-header"), z.literal("session-cookie"), z.literal("oauth")]),
     priority: z.number().optional(),
     header_name: z.string().optional(),
     query_param: z.string().optional(),

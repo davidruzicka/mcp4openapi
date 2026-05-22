@@ -2361,7 +2361,7 @@ export class HttpTransport {
   /**
    * Validate authentication token by making a probe request to the API
    * 
-   * Supports all auth types: bearer, query, custom-header
+   * Supports all auth types: bearer, token, query, custom-header
    * Returns true if token is valid, false otherwise
    */
   /**
@@ -2413,12 +2413,16 @@ export class HttpTransport {
         headers['Authorization'] = `Bearer ${token}`;
         break;
       
+      case 'token':
+        headers['Authorization'] = `Token ${token}`;
+        break;
+
       case 'custom-header':
         if (authConfig.header_name) {
           headers[authConfig.header_name] = token;
         }
         break;
-      
+
       case 'query':
         if (authConfig.query_param) {
           url.searchParams.set(authConfig.query_param, token);
@@ -2497,9 +2501,9 @@ export class HttpTransport {
 
   /**
    * Validate token format and length
-   * 
+   *
    * Why centralized: Single source of truth for token validation rules
-   * 
+   *
    * Relaxed validation: Allow common API token characters including colons,
    * to support various token formats (GitLab glpat-, YouTrack perm:, etc.)
    */
@@ -2515,6 +2519,28 @@ export class HttpTransport {
     // Allow: alphanumeric, dash, underscore, dot, tilde, plus, slash, equals, colon
     // Note: dash at end of character class to avoid being interpreted as range
     if (!/^[A-Za-z0-9._~+/:=-]+$/.test(token)) {
+      throw new ValidationError(`Invalid ${source} format`);
+    }
+  }
+
+  /**
+   * Validate a raw header value used as a credential (custom-header auth).
+   *
+   * Why separate from validateToken: custom-header values may include a scheme prefix
+   * with a space (e.g. DRF "Token <api-key>", AWS "AWS4-HMAC-SHA256 ..."). Stripping the
+   * prefix before storage would break upstream forwarding, so we allow a single internal
+   * space while still blocking header-injection characters (CR, LF, NUL).
+   */
+  private validateRawHeaderCredential(value: string, source: string): void {
+    const maxLength = this.config.maxTokenLength ?? DEFAULT_MAX_TOKEN_LENGTH;
+    if (value.length > maxLength) {
+      throw new ValidationError(`${source} too long (max ${maxLength} characters)`);
+    }
+    if (value.trim().length === 0) {
+      throw new ValidationError(`${source} is empty`);
+    }
+    // Block characters that could enable header injection: CR, LF, NUL
+    if (/[\r\n\0]/.test(value)) {
       throw new ValidationError(`Invalid ${source} format`);
     }
   }
@@ -2603,7 +2629,7 @@ export class HttpTransport {
     req: McpRequest,
     profileState: ProfileRuntimeState,
     authConfigOverride?: AuthInterceptor[],
-  ): { type: 'bearer' | 'oauth' | 'api-token' | 'none', token?: string, sessionId?: string } {
+  ): { type: 'bearer' | 'token' | 'oauth' | 'api-token' | 'none', token?: string, sessionId?: string } {
     const sessionId = req.sessionId || req.headers['mcp-session-id'] as string | undefined;
     const session = sessionId ? profileState.sessions.get(sessionId) : undefined;
     const authConfigs = authConfigOverride ?? profileState.context.authConfigs;
@@ -2611,32 +2637,52 @@ export class HttpTransport {
     const hasOAuth = authConfigOverride
       ? configs.some((config) => config.type === 'oauth')
       : (!!profileState.oauthProvider || configs.some((config) => config.type === 'oauth'));
-    
-    // 1. Check Authorization: Bearer header
+
+    // 1. Check Authorization header — Bearer first, then Token (DRF-style), then custom-header fallback
     const authHeader = req.headers.authorization;
     if (authHeader) {
-      // Defense against ReDoS: Check length before regex
-      const maxHeaderLength = (this.config.maxTokenLength ?? DEFAULT_MAX_TOKEN_LENGTH) + 10; // Bearer + spaces + margin
+      const maxHeaderLength = (this.config.maxTokenLength ?? DEFAULT_MAX_TOKEN_LENGTH) + 10;
       if (authHeader.length > maxHeaderLength) {
         throw new ValidationError(`Authorization header too long (max ${maxHeaderLength} characters)`);
       }
-      
-      // Relaxed Bearer token format validation - allow flexible whitespace
-      // Trim whitespace to handle client variations (IntelliJ, VSCode, etc.)
       const trimmed = authHeader.trim();
-      const match = trimmed.match(/^Bearer\s+(.+)$/);
-      if (!match) {
-        throw new ValidationError('Invalid Authorization header format. Expected: Bearer <token>');
+
+      const bearerMatch = trimmed.match(/^Bearer\s+(.+)$/);
+      if (bearerMatch) {
+        const token = bearerMatch[1].trim();
+        this.validateToken(token, 'Authorization token');
+        return { type: 'bearer', token };
       }
-      const token = match[1].trim();
-      this.validateToken(token, 'Authorization token');
-      return { type: 'bearer', token };
+
+      // DRF Token auth: Authorization: Token <key>
+      const hasTokenAuth = configs.some(c => c.type === 'token');
+      if (hasTokenAuth) {
+        const tokenMatch = trimmed.match(/^Token\s+(.+)$/i);
+        if (tokenMatch) {
+          const token = tokenMatch[1].trim();
+          this.validateToken(token, 'Authorization token');
+          return { type: 'token', token };
+        }
+      }
+
+      // Custom-header on Authorization: accept raw value verbatim
+      const hasAuthCustomHeader = configs.some(
+        c => c.type === 'custom-header' && c.header_name?.toLowerCase() === 'authorization',
+      );
+      if (hasAuthCustomHeader) {
+        this.validateRawHeaderCredential(trimmed, 'Authorization');
+        return { type: 'api-token', token: trimmed };
+      }
+
+      throw new ValidationError('Invalid Authorization header format. Expected: Bearer <token>');
     }
-    
-    // 2. Check configured custom header (if any)
+
+    // 2. Check configured non-Authorization custom headers
     if (configs.length > 0) {
       const sortedConfigs = [...configs].sort((a, b) => (a.priority || 0) - (b.priority || 0));
-      const customHeaderConfig = sortedConfigs.find(c => c.type === 'custom-header' && c.header_name);
+      const customHeaderConfig = sortedConfigs.find(
+        c => c.type === 'custom-header' && c.header_name && c.header_name.toLowerCase() !== 'authorization',
+      );
       if (customHeaderConfig && customHeaderConfig.header_name) {
         if (!isSafePropertyName(customHeaderConfig.header_name)) {
           throw new ValidationError(`Invalid custom auth header name: ${customHeaderConfig.header_name}`);
@@ -2647,7 +2693,7 @@ export class HttpTransport {
           if (typeof headerValue !== 'string') {
             throw new ValidationError(`${customHeaderConfig.header_name} must be a string`);
           }
-          this.validateToken(headerValue, customHeaderConfig.header_name);
+          this.validateRawHeaderCredential(headerValue, customHeaderConfig.header_name);
           return { type: 'api-token', token: headerValue };
         }
       }
@@ -3793,9 +3839,10 @@ export class HttpTransport {
     tenantHeaderValue?: string,
     clientPrincipal?: AuthorizedPrincipal,
   ): string {
-    // Validate token if provided (defense in depth)
+    // Validate token if provided (defense in depth); use raw-credential validator since
+    // custom-header auth stores the full header value which may include a scheme prefix with a space.
     if (authToken) {
-      this.validateToken(authToken, 'Session auth token');
+      this.validateRawHeaderCredential(authToken, 'Session auth token');
     }
 
     const effectiveFiltering = mergeFilteringRules(this.config.globalFiltering, filtering);
