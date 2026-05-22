@@ -127,9 +127,9 @@ export interface UpstreamMcpHttpStreamableTransportConfig {
   url: string;
 }
 
-/** Minimal shape shared by auth configs that use bearer/query/custom-header token types. */
+/** Minimal shape shared by auth configs that use bearer/token/query/custom-header token types. */
 export interface AuthTokenConfig {
-  type: 'bearer' | 'query' | 'custom-header';
+  type: 'bearer' | 'token' | 'query' | 'custom-header';
   header_name?: string;
   query_param?: string;
 }
@@ -415,8 +415,9 @@ export interface CacheConfig {
 
 /**
  * Auth interceptor configuration
- * 
+ *
  * - bearer: Standard HTTP Bearer token (Authorization: Bearer <token>)
+ * - token: HTTP Token auth (Authorization: Token <token>) - used by DRF and similar APIs
  * - query: API key in query string (?api_key=<token>)
  * - custom-header: Custom header name (e.g., X-API-Key: <token>)
  * - session-cookie: Form login that exchanges credentials for a maintained session cookie
@@ -434,7 +435,7 @@ export interface CacheConfig {
  * - Improves UX by rejecting bad tokens immediately, not after first tool call
  */
 export interface AuthInterceptor {
-  type: 'bearer' | 'query' | 'custom-header' | 'session-cookie' | 'oauth';
+  type: 'bearer' | 'token' | 'query' | 'custom-header' | 'session-cookie' | 'oauth';
   
   // Priority for multi-auth (lower = higher priority, default: 0)
   priority?: number;

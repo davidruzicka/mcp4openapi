@@ -680,6 +680,77 @@ describeIfListen('HttpTransport', () => {
 
       await tenantTransport.stop();
     });
+
+    it('accepts DRF Token Authorization header when profile uses token auth type', async () => {
+      // Profiles like DefectDojo use "Authorization: Token <key>" (DRF Token auth).
+      // The token auth type strips the "Token " prefix — only the raw key is stored in session.
+      const tokenAuthTransport = new HttpTransport(
+        {
+          host: '127.0.0.1',
+          port: 0,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: false,
+          metricsPath: '/metrics',
+          authConfigs: [{ type: 'token', value_from_env: 'DEFECTDOJO_TOKEN' }],
+          baseUrl: 'https://defectdojo.example.com',
+        },
+        logger,
+      );
+      tokenAuthTransport.setMessageHandler(async () => ({ result: { ok: true } }));
+      const tokenAuthApp = (tokenAuthTransport as any).app;
+
+      const response = await request(tokenAuthApp)
+        .post('/mcp')
+        .set('Accept', 'application/json')
+        .set('Content-Type', 'application/json')
+        .set('Authorization', 'Token my-drf-api-key')
+        .send({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} });
+
+      expect(response.status).toBe(200);
+      const sessionId = response.headers['mcp-session-id'];
+      expect(sessionId).toBeDefined();
+      // Prefix is stripped; only raw key stored in session
+      expect(tokenAuthTransport.getSessionToken('default', sessionId)).toBe('my-drf-api-key');
+
+      await tokenAuthTransport.stop();
+    });
+
+    it('accepts Authorization header verbatim when profile custom-header uses Authorization', async () => {
+      // custom-header on Authorization is a fallback for non-standard schemes (e.g. "AWS4-HMAC-SHA256 ...").
+      // The full header value is stored verbatim in session.
+      const customAuthTransport = new HttpTransport(
+        {
+          host: '127.0.0.1',
+          port: 0,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: false,
+          metricsPath: '/metrics',
+          authConfigs: [{ type: 'custom-header', header_name: 'Authorization' }],
+          baseUrl: 'https://example.com',
+        },
+        logger,
+      );
+      customAuthTransport.setMessageHandler(async () => ({ result: { ok: true } }));
+      const customAuthApp = (customAuthTransport as any).app;
+
+      const response = await request(customAuthApp)
+        .post('/mcp')
+        .set('Accept', 'application/json')
+        .set('Content-Type', 'application/json')
+        .set('Authorization', 'AWS4-HMAC-SHA256 Credential=AKID/20250522')
+        .send({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} });
+
+      expect(response.status).toBe(200);
+      const sessionId = response.headers['mcp-session-id'];
+      expect(sessionId).toBeDefined();
+      expect(customAuthTransport.getSessionToken('default', sessionId)).toBe('AWS4-HMAC-SHA256 Credential=AKID/20250522');
+
+      await customAuthTransport.stop();
+    });
   });
 
   describe('DNS rebinding protection with localhost host config', () => {

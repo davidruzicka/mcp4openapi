@@ -128,7 +128,9 @@ export class InterceptorChain {
 
     const authConfigs = Array.isArray(authConfigRaw) ? authConfigRaw : [authConfigRaw];
     for (const authConfig of authConfigs) {
-      if (authConfig.type === 'custom-header' && authConfig.header_name) {
+      if (authConfig.type === 'token') {
+        sensitiveHeaders.add('authorization');
+      } else if (authConfig.type === 'custom-header' && authConfig.header_name) {
         sensitiveHeaders.add(authConfig.header_name.toLowerCase());
       }
     }
@@ -210,6 +212,8 @@ export class InterceptorChain {
     const credentials: AuthCredentials = { headers: {} };
     if (authConfig.type === 'bearer') {
       credentials.headers.Authorization = `Bearer ${token}`;
+    } else if (authConfig.type === 'token') {
+      credentials.headers.Authorization = `Token ${token}`;
     } else if (authConfig.type === 'custom-header' && authConfig.header_name) {
       if (!isSafePropertyName(authConfig.header_name)) {
         return { headers: {} };
@@ -252,6 +256,7 @@ export class InterceptorChain {
    *
    * Supports:
    * - bearer: Standard HTTP Authorization: Bearer <token>
+   * - token: DRF-style HTTP Authorization: Token <token>
    * - query: API key in URL (?api_key=<token>)
    * - custom-header: Custom header (e.g., X-API-Key: <token>)
    * 
@@ -780,7 +785,9 @@ export class HttpClient {
 
     const authConfigs = Array.isArray(authConfigRaw) ? authConfigRaw : [authConfigRaw];
     for (const authConfig of authConfigs) {
-      if (authConfig.type === 'custom-header' && authConfig.header_name) {
+      if (authConfig.type === 'token') {
+        sensitiveHeaders.add('authorization');
+      } else if (authConfig.type === 'custom-header' && authConfig.header_name) {
         sensitiveHeaders.add(authConfig.header_name.toLowerCase());
       }
     }
