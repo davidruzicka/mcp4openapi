@@ -2339,7 +2339,8 @@
         "body": {
           "name": "ticket",
           "value": "JIRA-123"
-        }
+        },
+        "value": "test-value"
       },
       "mocks": [
         {
@@ -2389,7 +2390,13 @@
       "arguments": {
         "action": "create_finding_request_response",
         "id": 42,
-        "body": {}
+        "body": {},
+        "req_resp": [
+          {
+            "req": "GET / HTTP/1.1\r\nHost: example.com",
+            "resp": "HTTP/1.1 200 OK"
+          }
+        ]
       },
       "mocks": [
         {
@@ -2478,7 +2485,9 @@
           "product": 1,
           "user": 1,
           "role": 1
-        }
+        },
+        "role": 1,
+        "user": 1
       },
       "mocks": [
         {
@@ -2503,7 +2512,9 @@
           "product": 1,
           "group": 1,
           "role": 1
-        }
+        },
+        "group": 1,
+        "role": 1
       },
       "mocks": [
         {
@@ -2528,7 +2539,10 @@
           "product_type": 1,
           "user": 1,
           "role": 1
-        }
+        },
+        "product_type": 1,
+        "role": 1,
+        "user": 1
       },
       "mocks": [
         {
@@ -2553,7 +2567,10 @@
           "product_type": 1,
           "group": 1,
           "role": 1
-        }
+        },
+        "group": 1,
+        "product_type": 1,
+        "role": 1
       },
       "mocks": [
         {
@@ -2577,7 +2594,8 @@
         "body": {
           "product": 1,
           "tool_configuration": 1
-        }
+        },
+        "tool_configuration": 1
       },
       "mocks": [
         {
@@ -2857,7 +2875,9 @@
         "body": {
           "endpoint": 1,
           "finding": 1
-        }
+        },
+        "endpoint": 1,
+        "finding": 1
       },
       "mocks": [
         {
@@ -2881,7 +2901,8 @@
         "body": {
           "username": "jdoe",
           "email": "jdoe@example.com"
-        }
+        },
+        "username": "admin"
       },
       "mocks": [
         {
@@ -2929,7 +2950,10 @@
           "group": 1,
           "user": 1,
           "role": 1
-        }
+        },
+        "group": 1,
+        "role": 1,
+        "user": 1
       },
       "mocks": [
         {
@@ -2977,7 +3001,8 @@
         "body": {
           "user": 1,
           "phone": "+1234567890"
-        }
+        },
+        "user": 1
       },
       "mocks": [
         {
@@ -3002,7 +3027,8 @@
           "product": 1,
           "name": "team",
           "value": "appsec"
-        }
+        },
+        "value": "test-value"
       },
       "mocks": [
         {
@@ -3087,7 +3113,18 @@
           "medium_mapping_severity": "Medium",
           "high_mapping_severity": "High",
           "critical_mapping_severity": "Highest"
-        }
+        },
+        "close_status_key": 6,
+        "critical_mapping_severity": "Critical",
+        "epic_name_id": 10014,
+        "high_mapping_severity": "High",
+        "info_mapping_severity": "Info",
+        "low_mapping_severity": "Low",
+        "medium_mapping_severity": "Medium",
+        "open_status_key": 1,
+        "password": "secret",
+        "url": "https://jira.example.com",
+        "username": "admin"
       },
       "mocks": [
         {
@@ -3120,7 +3157,18 @@
           "medium_mapping_severity": "Medium",
           "high_mapping_severity": "High",
           "critical_mapping_severity": "Highest"
-        }
+        },
+        "close_status_key": 6,
+        "critical_mapping_severity": "Critical",
+        "epic_name_id": 10014,
+        "high_mapping_severity": "High",
+        "info_mapping_severity": "Info",
+        "low_mapping_severity": "Low",
+        "medium_mapping_severity": "Medium",
+        "open_status_key": 1,
+        "password": "secret",
+        "url": "https://jira.example.com",
+        "username": "admin"
       },
       "mocks": [
         {
@@ -3170,7 +3218,9 @@
           "finding": 1,
           "jira_id": "PROJ-123",
           "jira_key": "PROJ-123"
-        }
+        },
+        "jira_id": "10001",
+        "jira_key": "PROJ-1"
       },
       "mocks": [
         {
@@ -3219,7 +3269,8 @@
           "name": "SonarQube",
           "tool_type": 1,
           "url": "https://sonar.example.com"
-        }
+        },
+        "tool_type": 1
       },
       "mocks": [
         {
@@ -3267,7 +3318,9 @@
           "tool_configuration": 1,
           "name": "scan config",
           "setting_url": "https://scanner.example.com/api"
-        }
+        },
+        "setting_url": "https://sonarqube.example.com",
+        "tool_configuration": 1
       },
       "mocks": [
         {
@@ -3294,7 +3347,9 @@
           "key": "S1234",
           "status": "OPEN",
           "type": "BUG"
-        }
+        },
+        "key": "java:S1234",
+        "type": "BUG"
       },
       "mocks": [
         {
@@ -3320,7 +3375,11 @@
           "finding_status": "Active",
           "sonarqube_status": "OPEN",
           "transitions": "confirm"
-        }
+        },
+        "finding_status": "Active",
+        "sonarqube_issue": 1,
+        "sonarqube_status": "OPEN",
+        "transitions": "confirm"
       },
       "mocks": [
         {
@@ -3346,7 +3405,10 @@
           "acronym": "PCI-DSS",
           "category": "finance",
           "jurisdiction": "US"
-        }
+        },
+        "acronym": "GDPR",
+        "category": "privacy",
+        "jurisdiction": "EU"
       },
       "mocks": [
         {
@@ -3371,7 +3433,8 @@
         "body": {
           "product": 1,
           "language": 1
-        }
+        },
+        "language": 1
       },
       "mocks": [
         {
@@ -3418,7 +3481,8 @@
           "product": 1,
           "name": "Django",
           "user": 1
-        }
+        },
+        "user": 1
       },
       "mocks": [
         {
@@ -3441,7 +3505,8 @@
         "action": "create_network_location",
         "body": {
           "location": "10.0.0.0/24"
-        }
+        },
+        "location": "10.0.0.0/8"
       },
       "mocks": [
         {
@@ -3613,7 +3678,9 @@
         "body": {
           "name": "ticket",
           "value": "JIRA-456"
-        }
+        },
+        "name": "test-metadata",
+        "value": "test-value"
       },
       "mocks": [
         {

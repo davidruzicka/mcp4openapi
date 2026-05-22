@@ -694,6 +694,280 @@
           "type": "object",
           "description": "Full request body as JSON object for resource types not covered by explicit params",
           "properties": {}
+        },
+        "acronym": {
+          "type": "string",
+          "description": "Acronym for the regulation",
+          "required_for": [
+            "create_regulation"
+          ]
+        },
+        "category": {
+          "type": "string",
+          "description": "Category of the regulation",
+          "required_for": [
+            "create_regulation"
+          ]
+        },
+        "close_status_key": {
+          "type": "integer",
+          "description": "JIRA status key for closing issues",
+          "required_for": [
+            "create_jira_configuration",
+            "create_jira_instance"
+          ]
+        },
+        "critical_mapping_severity": {
+          "type": "string",
+          "description": "JIRA severity mapping for Critical findings",
+          "required_for": [
+            "create_jira_configuration",
+            "create_jira_instance"
+          ]
+        },
+        "endpoint": {
+          "type": "integer",
+          "description": "Endpoint ID",
+          "required_for": [
+            "create_endpoint_status"
+          ]
+        },
+        "epic_name_id": {
+          "type": "integer",
+          "description": "JIRA epic name field ID",
+          "required_for": [
+            "create_jira_configuration",
+            "create_jira_instance"
+          ]
+        },
+        "finding": {
+          "type": "integer",
+          "description": "Finding ID",
+          "required_for": [
+            "create_endpoint_status"
+          ]
+        },
+        "finding_status": {
+          "type": "string",
+          "description": "DefectDojo finding status for Sonarqube transition",
+          "required_for": [
+            "create_sonarqube_transition"
+          ]
+        },
+        "group": {
+          "type": "integer",
+          "description": "Group ID",
+          "required_for": [
+            "create_product_group",
+            "create_product_type_group",
+            "create_dojo_group_member"
+          ]
+        },
+        "high_mapping_severity": {
+          "type": "string",
+          "description": "JIRA severity mapping for High findings",
+          "required_for": [
+            "create_jira_configuration",
+            "create_jira_instance"
+          ]
+        },
+        "info_mapping_severity": {
+          "type": "string",
+          "description": "JIRA severity mapping for Informational findings",
+          "required_for": [
+            "create_jira_configuration",
+            "create_jira_instance"
+          ]
+        },
+        "jira_id": {
+          "type": "string",
+          "description": "JIRA issue numeric ID",
+          "required_for": [
+            "create_jira_finding_mapping"
+          ]
+        },
+        "jira_key": {
+          "type": "string",
+          "description": "JIRA issue key (e.g. PROJ-123)",
+          "required_for": [
+            "create_jira_finding_mapping"
+          ]
+        },
+        "jurisdiction": {
+          "type": "string",
+          "description": "Jurisdiction of the regulation",
+          "required_for": [
+            "create_regulation"
+          ]
+        },
+        "key": {
+          "type": "string",
+          "description": "Sonarqube issue key",
+          "required_for": [
+            "create_sonarqube_issue"
+          ]
+        },
+        "language": {
+          "type": "integer",
+          "description": "Language type ID",
+          "required_for": [
+            "create_language",
+            "create_language_type"
+          ]
+        },
+        "location": {
+          "type": "string",
+          "description": "Network location identifier",
+          "required_for": [
+            "create_network_location"
+          ]
+        },
+        "low_mapping_severity": {
+          "type": "string",
+          "description": "JIRA severity mapping for Low findings",
+          "required_for": [
+            "create_jira_configuration",
+            "create_jira_instance"
+          ]
+        },
+        "medium_mapping_severity": {
+          "type": "string",
+          "description": "JIRA severity mapping for Medium findings",
+          "required_for": [
+            "create_jira_configuration",
+            "create_jira_instance"
+          ]
+        },
+        "open_status_key": {
+          "type": "integer",
+          "description": "JIRA status key for open issues",
+          "required_for": [
+            "create_jira_configuration",
+            "create_jira_instance"
+          ]
+        },
+        "password": {
+          "type": "string",
+          "description": "Password for JIRA or tool configuration",
+          "required_for": [
+            "create_jira_configuration",
+            "create_jira_instance"
+          ]
+        },
+        "product_type": {
+          "type": "integer",
+          "description": "Product type ID",
+          "required_for": [
+            "create_product_type_member",
+            "create_product_type_group"
+          ]
+        },
+        "req_resp": {
+          "type": "array",
+          "description": "List of request/response objects for finding",
+          "items": {
+            "type": "object"
+          },
+          "required_for": [
+            "create_finding_request_response"
+          ]
+        },
+        "role": {
+          "type": "integer",
+          "description": "Role ID for group/product membership",
+          "required_for": [
+            "create_product_member",
+            "create_product_group",
+            "create_product_type_member",
+            "create_product_type_group",
+            "create_dojo_group_member"
+          ]
+        },
+        "setting_url": {
+          "type": "string",
+          "description": "Tool product setting URL",
+          "required_for": [
+            "create_tool_product_setting"
+          ]
+        },
+        "sonarqube_issue": {
+          "type": "integer",
+          "description": "Sonarqube issue ID",
+          "required_for": [
+            "create_sonarqube_transition"
+          ]
+        },
+        "sonarqube_status": {
+          "type": "string",
+          "description": "Sonarqube issue status",
+          "required_for": [
+            "create_sonarqube_transition"
+          ]
+        },
+        "tool_configuration": {
+          "type": "integer",
+          "description": "Tool configuration ID",
+          "required_for": [
+            "create_product_api_scan_configuration",
+            "create_tool_product_setting"
+          ]
+        },
+        "tool_type": {
+          "type": "integer",
+          "description": "Tool type ID",
+          "required_for": [
+            "create_tool_configuration"
+          ]
+        },
+        "transitions": {
+          "type": "string",
+          "description": "Sonarqube transition name",
+          "required_for": [
+            "create_sonarqube_transition"
+          ]
+        },
+        "type": {
+          "type": "string",
+          "description": "Sonarqube issue type",
+          "required_for": [
+            "create_sonarqube_issue"
+          ]
+        },
+        "url": {
+          "type": "string",
+          "description": "URL for JIRA instance or tool configuration",
+          "required_for": [
+            "create_jira_configuration",
+            "create_jira_instance"
+          ]
+        },
+        "user": {
+          "type": "integer",
+          "description": "User ID for membership or contact info",
+          "required_for": [
+            "create_product_member",
+            "create_product_type_member",
+            "create_dojo_group_member",
+            "create_user_contact_info",
+            "create_technology"
+          ]
+        },
+        "username": {
+          "type": "string",
+          "description": "Username for user or JIRA credentials",
+          "required_for": [
+            "create_user",
+            "create_jira_configuration",
+            "create_jira_instance"
+          ]
+        },
+        "value": {
+          "type": "string",
+          "description": "Metadata value",
+          "required_for": [
+            "create_finding_metadata",
+            "create_metadata"
+          ]
         }
       }
     },
@@ -916,6 +1190,20 @@
           "type": "object",
           "description": "Partial update body for fields not covered by explicit params",
           "properties": {}
+        },
+        "name": {
+          "type": "string",
+          "description": "Name field for resource update",
+          "required_for": [
+            "update_finding_metadata"
+          ]
+        },
+        "value": {
+          "type": "string",
+          "description": "Metadata value",
+          "required_for": [
+            "update_finding_metadata"
+          ]
         }
       }
     },
