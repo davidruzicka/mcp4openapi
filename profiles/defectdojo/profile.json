@@ -690,11 +690,6 @@
           "type": "integer",
           "description": "Note type ID"
         },
-        "body": {
-          "type": "object",
-          "description": "Full request body as JSON object for resource types not covered by explicit params",
-          "properties": {}
-        },
         "acronym": {
           "type": "string",
           "description": "Acronym for the regulation",
@@ -1185,11 +1180,6 @@
         "note": {
           "type": "integer",
           "description": "Note ID to remove (for update_finding_remove_note)"
-        },
-        "body": {
-          "type": "object",
-          "description": "Partial update body for fields not covered by explicit params",
-          "properties": {}
         },
         "name": {
           "type": "string",

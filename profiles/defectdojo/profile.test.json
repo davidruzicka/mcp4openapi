@@ -2336,11 +2336,8 @@
       "arguments": {
         "action": "create_finding_metadata",
         "id": 42,
-        "body": {
-          "name": "ticket",
-          "value": "JIRA-123"
-        },
-        "value": "test-value"
+        "value": "test-value",
+        "name": "ticket"
       },
       "mocks": [
         {
@@ -2390,7 +2387,6 @@
       "arguments": {
         "action": "create_finding_request_response",
         "id": 42,
-        "body": {},
         "req_resp": [
           {
             "req": "GET / HTTP/1.1\r\nHost: example.com",
@@ -2481,13 +2477,9 @@
       "tool": "create_content",
       "arguments": {
         "action": "create_product_member",
-        "body": {
-          "product": 1,
-          "user": 1,
-          "role": 1
-        },
         "role": 1,
-        "user": 1
+        "user": 1,
+        "product": 1
       },
       "mocks": [
         {
@@ -2508,13 +2500,9 @@
       "tool": "create_content",
       "arguments": {
         "action": "create_product_group",
-        "body": {
-          "product": 1,
-          "group": 1,
-          "role": 1
-        },
         "group": 1,
-        "role": 1
+        "role": 1,
+        "product": 1
       },
       "mocks": [
         {
@@ -2535,11 +2523,6 @@
       "tool": "create_content",
       "arguments": {
         "action": "create_product_type_member",
-        "body": {
-          "product_type": 1,
-          "user": 1,
-          "role": 1
-        },
         "product_type": 1,
         "role": 1,
         "user": 1
@@ -2563,11 +2546,6 @@
       "tool": "create_content",
       "arguments": {
         "action": "create_product_type_group",
-        "body": {
-          "product_type": 1,
-          "group": 1,
-          "role": 1
-        },
         "group": 1,
         "product_type": 1,
         "role": 1
@@ -2591,11 +2569,8 @@
       "tool": "create_content",
       "arguments": {
         "action": "create_product_api_scan_configuration",
-        "body": {
-          "product": 1,
-          "tool_configuration": 1
-        },
-        "tool_configuration": 1
+        "tool_configuration": 1,
+        "product": 1
       },
       "mocks": [
         {
@@ -2703,10 +2678,8 @@
       "tool": "create_content",
       "arguments": {
         "action": "create_engagement_preset",
-        "body": {
-          "product": 1,
-          "title": "Default Preset"
-        }
+        "product": 1,
+        "title": "Default Preset"
       },
       "mocks": [
         {
@@ -2798,13 +2771,11 @@
       "tool": "create_content",
       "arguments": {
         "action": "create_test_import",
-        "body": {
-          "test": 1,
-          "findings_affected": [
-            1,
-            2
-          ]
-        }
+        "test": 1,
+        "findings_affected": [
+          1,
+          2
+        ]
       },
       "mocks": [
         {
@@ -2847,10 +2818,8 @@
       "tool": "create_content",
       "arguments": {
         "action": "create_endpoint",
-        "body": {
-          "host": "api.example.com",
-          "product": 1
-        }
+        "host": "api.example.com",
+        "product": 1
       },
       "mocks": [
         {
@@ -2872,10 +2841,6 @@
       "tool": "create_content",
       "arguments": {
         "action": "create_endpoint_status",
-        "body": {
-          "endpoint": 1,
-          "finding": 1
-        },
         "endpoint": 1,
         "finding": 1
       },
@@ -2898,11 +2863,8 @@
       "tool": "create_content",
       "arguments": {
         "action": "create_user",
-        "body": {
-          "username": "jdoe",
-          "email": "jdoe@example.com"
-        },
-        "username": "admin"
+        "username": "admin",
+        "email": "jdoe@example.com"
       },
       "mocks": [
         {
@@ -2946,11 +2908,6 @@
       "tool": "create_content",
       "arguments": {
         "action": "create_dojo_group_member",
-        "body": {
-          "group": 1,
-          "user": 1,
-          "role": 1
-        },
         "group": 1,
         "role": 1,
         "user": 1
@@ -2974,10 +2931,8 @@
       "tool": "create_content",
       "arguments": {
         "action": "create_global_role",
-        "body": {
-          "user": 1,
-          "role": 1
-        }
+        "user": 1,
+        "role": 1
       },
       "mocks": [
         {
@@ -2998,11 +2953,8 @@
       "tool": "create_content",
       "arguments": {
         "action": "create_user_contact_info",
-        "body": {
-          "user": 1,
-          "phone": "+1234567890"
-        },
-        "user": 1
+        "user": 1,
+        "phone": "+1234567890"
       },
       "mocks": [
         {
@@ -3023,12 +2975,9 @@
       "tool": "create_content",
       "arguments": {
         "action": "create_metadata",
-        "body": {
-          "product": 1,
-          "name": "team",
-          "value": "appsec"
-        },
-        "value": "test-value"
+        "value": "test-value",
+        "product": 1,
+        "name": "team"
       },
       "mocks": [
         {
@@ -3075,12 +3024,10 @@
       "tool": "create_content",
       "arguments": {
         "action": "create_stub_finding",
-        "body": {
-          "test": 1,
-          "title": "Stub",
-          "severity": "Info",
-          "date": "2025-01-01"
-        }
+        "test": 1,
+        "title": "Stub",
+        "severity": "Info",
+        "date": "2025-01-01"
       },
       "mocks": [
         {
@@ -3101,19 +3048,6 @@
       "tool": "create_content",
       "arguments": {
         "action": "create_jira_configuration",
-        "body": {
-          "url": "https://jira.example.com",
-          "username": "user",
-          "password": "pass",
-          "epic_name_id": 10014,
-          "open_status_key": 1,
-          "close_status_key": 6,
-          "info_mapping_severity": "Lowest",
-          "low_mapping_severity": "Low",
-          "medium_mapping_severity": "Medium",
-          "high_mapping_severity": "High",
-          "critical_mapping_severity": "Highest"
-        },
         "close_status_key": 6,
         "critical_mapping_severity": "Critical",
         "epic_name_id": 10014,
@@ -3145,19 +3079,6 @@
       "tool": "create_content",
       "arguments": {
         "action": "create_jira_instance",
-        "body": {
-          "url": "https://jira.example.com",
-          "username": "user",
-          "password": "pass",
-          "epic_name_id": 10014,
-          "open_status_key": 1,
-          "close_status_key": 6,
-          "info_mapping_severity": "Lowest",
-          "low_mapping_severity": "Low",
-          "medium_mapping_severity": "Medium",
-          "high_mapping_severity": "High",
-          "critical_mapping_severity": "Highest"
-        },
         "close_status_key": 6,
         "critical_mapping_severity": "Critical",
         "epic_name_id": 10014,
@@ -3189,11 +3110,9 @@
       "tool": "create_content",
       "arguments": {
         "action": "create_jira_project",
-        "body": {
-          "jira_instance": 1,
-          "product": 1,
-          "issue_template_dir": "dojo/templates/issue-trackers"
-        }
+        "jira_instance": 1,
+        "product": 1,
+        "issue_template_dir": "dojo/templates/issue-trackers"
       },
       "mocks": [
         {
@@ -3214,13 +3133,9 @@
       "tool": "create_content",
       "arguments": {
         "action": "create_jira_finding_mapping",
-        "body": {
-          "finding": 1,
-          "jira_id": "PROJ-123",
-          "jira_key": "PROJ-123"
-        },
         "jira_id": "10001",
-        "jira_key": "PROJ-1"
+        "jira_key": "PROJ-1",
+        "finding": 1
       },
       "mocks": [
         {
@@ -3241,10 +3156,8 @@
       "tool": "create_content",
       "arguments": {
         "action": "create_jira_product_configuration",
-        "body": {
-          "product": 1,
-          "conf": 1
-        }
+        "product": 1,
+        "conf": 1
       },
       "mocks": [
         {
@@ -3265,12 +3178,9 @@
       "tool": "create_content",
       "arguments": {
         "action": "create_tool_configuration",
-        "body": {
-          "name": "SonarQube",
-          "tool_type": 1,
-          "url": "https://sonar.example.com"
-        },
-        "tool_type": 1
+        "tool_type": 1,
+        "name": "SonarQube",
+        "url": "https://sonar.example.com"
       },
       "mocks": [
         {
@@ -3313,14 +3223,10 @@
       "tool": "create_content",
       "arguments": {
         "action": "create_tool_product_setting",
-        "body": {
-          "product": 1,
-          "tool_configuration": 1,
-          "name": "scan config",
-          "setting_url": "https://scanner.example.com/api"
-        },
         "setting_url": "https://sonarqube.example.com",
-        "tool_configuration": 1
+        "tool_configuration": 1,
+        "product": 1,
+        "name": "scan config"
       },
       "mocks": [
         {
@@ -3341,15 +3247,11 @@
       "tool": "create_content",
       "arguments": {
         "action": "create_sonarqube_issue",
-        "body": {
-          "finding": 1,
-          "sonarqube_server_url": "https://sonar.example.com",
-          "key": "S1234",
-          "status": "OPEN",
-          "type": "BUG"
-        },
         "key": "java:S1234",
-        "type": "BUG"
+        "type": "BUG",
+        "finding": 1,
+        "sonarqube_server_url": "https://sonar.example.com",
+        "status": "OPEN"
       },
       "mocks": [
         {
@@ -3370,12 +3272,6 @@
       "tool": "create_content",
       "arguments": {
         "action": "create_sonarqube_transition",
-        "body": {
-          "sonarqube_issue": 1,
-          "finding_status": "Active",
-          "sonarqube_status": "OPEN",
-          "transitions": "confirm"
-        },
         "finding_status": "Active",
         "sonarqube_issue": 1,
         "sonarqube_status": "OPEN",
@@ -3400,15 +3296,10 @@
       "tool": "create_content",
       "arguments": {
         "action": "create_regulation",
-        "body": {
-          "name": "PCI-DSS",
-          "acronym": "PCI-DSS",
-          "category": "finance",
-          "jurisdiction": "US"
-        },
         "acronym": "GDPR",
         "category": "privacy",
-        "jurisdiction": "EU"
+        "jurisdiction": "EU",
+        "name": "PCI-DSS"
       },
       "mocks": [
         {
@@ -3430,11 +3321,8 @@
       "tool": "create_content",
       "arguments": {
         "action": "create_language",
-        "body": {
-          "product": 1,
-          "language": 1
-        },
-        "language": 1
+        "language": 1,
+        "product": 1
       },
       "mocks": [
         {
@@ -3477,12 +3365,9 @@
       "tool": "create_content",
       "arguments": {
         "action": "create_technology",
-        "body": {
-          "product": 1,
-          "name": "Django",
-          "user": 1
-        },
-        "user": 1
+        "user": 1,
+        "product": 1,
+        "name": "Django"
       },
       "mocks": [
         {
@@ -3503,9 +3388,6 @@
       "tool": "create_content",
       "arguments": {
         "action": "create_network_location",
-        "body": {
-          "location": "10.0.0.0/24"
-        },
         "location": "10.0.0.0/8"
       },
       "mocks": [
@@ -3550,13 +3432,10 @@
       "arguments": {
         "action": "create_note_type",
         "name": "Comment",
-        "body": {
-          "name": "Comment",
-          "description": "General comment",
-          "is_single": false,
-          "is_active": true,
-          "is_mandatory": false
-        }
+        "description": "General comment",
+        "is_single": false,
+        "is_active": true,
+        "is_mandatory": false
       },
       "mocks": [
         {
@@ -3577,8 +3456,7 @@
       "name": "Create Notification",
       "tool": "create_content",
       "arguments": {
-        "action": "create_notification",
-        "body": {}
+        "action": "create_notification"
       },
       "mocks": [
         {
@@ -3599,11 +3477,9 @@
       "tool": "create_content",
       "arguments": {
         "action": "create_sla_configuration",
-        "body": {
-          "name": "Default SLA",
-          "critical": 7,
-          "high": 30
-        }
+        "name": "Default SLA",
+        "critical": 7,
+        "high": 30
       },
       "mocks": [
         {
@@ -3675,10 +3551,6 @@
       "arguments": {
         "action": "update_finding_metadata",
         "id": 1,
-        "body": {
-          "name": "ticket",
-          "value": "JIRA-456"
-        },
         "name": "test-metadata",
         "value": "test-value"
       },
@@ -3792,9 +3664,7 @@
       "arguments": {
         "action": "update_product_member",
         "id": 1,
-        "body": {
-          "role": 2
-        }
+        "role": 2
       },
       "mocks": [
         {
@@ -3816,9 +3686,7 @@
       "arguments": {
         "action": "update_product_group",
         "id": 1,
-        "body": {
-          "role": 2
-        }
+        "role": 2
       },
       "mocks": [
         {
@@ -3840,9 +3708,7 @@
       "arguments": {
         "action": "update_product_type_member",
         "id": 1,
-        "body": {
-          "role": 2
-        }
+        "role": 2
       },
       "mocks": [
         {
@@ -3864,9 +3730,7 @@
       "arguments": {
         "action": "update_product_type_group",
         "id": 1,
-        "body": {
-          "role": 2
-        }
+        "role": 2
       },
       "mocks": [
         {
@@ -3887,8 +3751,7 @@
       "tool": "update_content",
       "arguments": {
         "action": "update_product_api_scan_configuration",
-        "id": 1,
-        "body": {}
+        "id": 1
       },
       "mocks": [
         {
@@ -3932,8 +3795,7 @@
       "tool": "update_content",
       "arguments": {
         "action": "update_engagement_preset",
-        "id": 1,
-        "body": {}
+        "id": 1
       },
       "mocks": [
         {
@@ -3955,9 +3817,7 @@
       "arguments": {
         "action": "update_test",
         "id": 1,
-        "body": {
-          "percent_complete": 100
-        }
+        "percent_complete": 100
       },
       "mocks": [
         {
@@ -3979,8 +3839,7 @@
       "tool": "update_content",
       "arguments": {
         "action": "update_test_import",
-        "id": 1,
-        "body": {}
+        "id": 1
       },
       "mocks": [
         {
@@ -4025,9 +3884,7 @@
       "arguments": {
         "action": "update_endpoint",
         "id": 1,
-        "body": {
-          "host": "api2.example.com"
-        }
+        "host": "api2.example.com"
       },
       "mocks": [
         {
@@ -4050,9 +3907,7 @@
       "arguments": {
         "action": "update_endpoint_status",
         "id": 1,
-        "body": {
-          "mitigated": true
-        }
+        "mitigated": true
       },
       "mocks": [
         {
@@ -4074,9 +3929,7 @@
       "arguments": {
         "action": "update_user",
         "id": 1,
-        "body": {
-          "first_name": "John"
-        }
+        "first_name": "John"
       },
       "mocks": [
         {
@@ -4121,9 +3974,7 @@
       "arguments": {
         "action": "update_dojo_group_member",
         "id": 1,
-        "body": {
-          "role": 2
-        }
+        "role": 2
       },
       "mocks": [
         {
@@ -4145,9 +3996,7 @@
       "arguments": {
         "action": "update_global_role",
         "id": 1,
-        "body": {
-          "role": 2
-        }
+        "role": 2
       },
       "mocks": [
         {
@@ -4169,9 +4018,7 @@
       "arguments": {
         "action": "update_user_contact_info",
         "id": 1,
-        "body": {
-          "phone": "+9876543210"
-        }
+        "phone": "+9876543210"
       },
       "mocks": [
         {
@@ -4193,9 +4040,7 @@
       "arguments": {
         "action": "update_note",
         "id": 1,
-        "body": {
-          "entry": "Updated note"
-        }
+        "entry": "Updated note"
       },
       "mocks": [
         {
@@ -4218,9 +4063,7 @@
       "arguments": {
         "action": "update_metadata",
         "id": 1,
-        "body": {
-          "value": "new-value"
-        }
+        "value": "new-value"
       },
       "mocks": [
         {
@@ -4264,8 +4107,7 @@
       "tool": "update_content",
       "arguments": {
         "action": "update_stub_finding",
-        "id": 1,
-        "body": {}
+        "id": 1
       },
       "mocks": [
         {
@@ -4286,8 +4128,7 @@
       "tool": "update_content",
       "arguments": {
         "action": "update_jira_configuration",
-        "id": 1,
-        "body": {}
+        "id": 1
       },
       "mocks": [
         {
@@ -4308,8 +4149,7 @@
       "tool": "update_content",
       "arguments": {
         "action": "update_jira_instance",
-        "id": 1,
-        "body": {}
+        "id": 1
       },
       "mocks": [
         {
@@ -4330,8 +4170,7 @@
       "tool": "update_content",
       "arguments": {
         "action": "update_jira_project",
-        "id": 1,
-        "body": {}
+        "id": 1
       },
       "mocks": [
         {
@@ -4352,8 +4191,7 @@
       "tool": "update_content",
       "arguments": {
         "action": "update_jira_finding_mapping",
-        "id": 1,
-        "body": {}
+        "id": 1
       },
       "mocks": [
         {
@@ -4374,8 +4212,7 @@
       "tool": "update_content",
       "arguments": {
         "action": "update_jira_product_configuration",
-        "id": 1,
-        "body": {}
+        "id": 1
       },
       "mocks": [
         {
@@ -4396,8 +4233,7 @@
       "tool": "update_content",
       "arguments": {
         "action": "update_tool_configuration",
-        "id": 1,
-        "body": {}
+        "id": 1
       },
       "mocks": [
         {
@@ -4441,8 +4277,7 @@
       "tool": "update_content",
       "arguments": {
         "action": "update_tool_product_setting",
-        "id": 1,
-        "body": {}
+        "id": 1
       },
       "mocks": [
         {
@@ -4463,8 +4298,7 @@
       "tool": "update_content",
       "arguments": {
         "action": "update_sonarqube_issue",
-        "id": 1,
-        "body": {}
+        "id": 1
       },
       "mocks": [
         {
@@ -4485,8 +4319,7 @@
       "tool": "update_content",
       "arguments": {
         "action": "update_sonarqube_transition",
-        "id": 1,
-        "body": {}
+        "id": 1
       },
       "mocks": [
         {
@@ -4507,8 +4340,7 @@
       "tool": "update_content",
       "arguments": {
         "action": "update_regulation",
-        "id": 1,
-        "body": {}
+        "id": 1
       },
       "mocks": [
         {
@@ -4529,8 +4361,7 @@
       "tool": "update_content",
       "arguments": {
         "action": "update_language",
-        "id": 1,
-        "body": {}
+        "id": 1
       },
       "mocks": [
         {
@@ -4551,8 +4382,7 @@
       "tool": "update_content",
       "arguments": {
         "action": "update_language_type",
-        "id": 1,
-        "body": {}
+        "id": 1
       },
       "mocks": [
         {
@@ -4573,8 +4403,7 @@
       "tool": "update_content",
       "arguments": {
         "action": "update_technology",
-        "id": 1,
-        "body": {}
+        "id": 1
       },
       "mocks": [
         {
@@ -4595,8 +4424,7 @@
       "tool": "update_content",
       "arguments": {
         "action": "update_network_location",
-        "id": 1,
-        "body": {}
+        "id": 1
       },
       "mocks": [
         {
@@ -4640,8 +4468,7 @@
       "tool": "update_content",
       "arguments": {
         "action": "update_note_type",
-        "id": 1,
-        "body": {}
+        "id": 1
       },
       "mocks": [
         {
@@ -4662,8 +4489,7 @@
       "tool": "update_content",
       "arguments": {
         "action": "update_notification",
-        "id": 1,
-        "body": {}
+        "id": 1
       },
       "mocks": [
         {
@@ -4685,9 +4511,7 @@
       "arguments": {
         "action": "update_sla_configuration",
         "id": 1,
-        "body": {
-          "high": 14
-        }
+        "high": 14
       },
       "mocks": [
         {
@@ -4709,9 +4533,7 @@
       "arguments": {
         "action": "update_system_settings",
         "id": 1,
-        "body": {
-          "enable_jira": true
-        }
+        "enable_jira": true
       },
       "mocks": [
         {
@@ -5619,9 +5441,7 @@
       "tool": "import_scans",
       "arguments": {
         "action": "import_endpoint_meta",
-        "body": {
-          "product": 1
-        }
+        "product": 1
       },
       "mocks": [
         {
@@ -5738,8 +5558,7 @@
       "name": "Generate Findings Report",
       "tool": "run_workflows",
       "arguments": {
-        "action": "generate_findings_report",
-        "body": {}
+        "action": "generate_findings_report"
       },
       "mocks": [
         {
