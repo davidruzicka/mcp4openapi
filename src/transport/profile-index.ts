@@ -44,6 +44,7 @@ interface ProfileIndexI18n {
   authLabels: {
     oauth: string;
     bearer: string;
+    token: string;
     query: string;
     customHeader: string;
     sessionCookie: string;
@@ -205,6 +206,7 @@ export function buildProfileIndexI18n(locale: ProfileIndexLocale): ProfileIndexI
       authLabels: {
         oauth: 'OAuth',
         bearer: 'Bearer',
+        token: 'Token (DRF)',
         query: 'Token (query)',
         customHeader: 'Vlastní hlavička',
         sessionCookie: 'Session cookie',
@@ -263,6 +265,7 @@ export function buildProfileIndexI18n(locale: ProfileIndexLocale): ProfileIndexI
     authLabels: {
       oauth: 'OAuth',
       bearer: 'Bearer',
+      token: 'Token (DRF)',
       query: 'Token (query)',
       customHeader: 'Custom header',
       sessionCookie: 'Session cookie',
@@ -441,6 +444,7 @@ function appendComma(lines: string[]): void {
 function buildAuthLabel(auth: RenderAuthMethod, labels: ProfileIndexI18n): string {
   if (auth.type === 'oauth') return labels.authLabels.oauth;
   if (auth.type === 'bearer') return labels.authLabels.bearer;
+  if (auth.type === 'token') return labels.authLabels.token;
   if (auth.type === 'query') {
     const suffix = auth.queryParam ? `: ${auth.queryParam}` : '';
     return `${labels.authLabels.query}${suffix}`.trim();
@@ -542,7 +546,7 @@ function buildProfileSnippets(
       });
     }
 
-    if (auth.type === 'oauth' || auth.type === 'bearer') {
+    if (auth.type === 'oauth' || auth.type === 'bearer' || auth.type === 'token') {
       const remoteSnippetContext = buildConnectionSnippets(auth);
       snippets.push({
         key: `codex-cli-${auth.type}`,
@@ -687,10 +691,10 @@ function buildConnectionSnippets(
     ? buildEnvValue(tokenEnv, inputMap, false, 'cli')
     : '<token>';
 
-  const vscodeHeaderValue = auth.type === 'bearer' ? `Bearer ${vscodeToken}` : vscodeToken;
-  const cursorHeaderValue = auth.type === 'bearer' ? `Bearer ${cursorToken}` : cursorToken;
-  const jetbrainsHeaderValue = auth.type === 'bearer' ? `Bearer ${jetbrainsToken}` : jetbrainsToken;
-  const cliHeaderValue = auth.type === 'bearer' ? `Bearer ${cliToken}` : cliToken;
+  const vscodeHeaderValue = auth.type === 'bearer' ? `Bearer ${vscodeToken}` : auth.type === 'token' ? `Token ${vscodeToken}` : vscodeToken;
+  const cursorHeaderValue = auth.type === 'bearer' ? `Bearer ${cursorToken}` : auth.type === 'token' ? `Token ${cursorToken}` : cursorToken;
+  const jetbrainsHeaderValue = auth.type === 'bearer' ? `Bearer ${jetbrainsToken}` : auth.type === 'token' ? `Token ${jetbrainsToken}` : jetbrainsToken;
+  const cliHeaderValue = auth.type === 'bearer' ? `Bearer ${cliToken}` : auth.type === 'token' ? `Token ${cliToken}` : cliToken;
 
   const headersBlock = auth.type === 'oauth' || auth.type === 'none' || auth.type === 'query'
     ? []
@@ -1059,7 +1063,7 @@ function resolveLocalEnvVarNames(profile: ListedProfileDetails, auth: RenderAuth
   const baseUrlEnv = profile.apiBaseUrl?.valueFromEnv;
   const authEnvVars = new Set<string>();
 
-  if (auth.type === 'bearer' || auth.type === 'query' || auth.type === 'custom-header') {
+  if (auth.type === 'bearer' || auth.type === 'token' || auth.type === 'query' || auth.type === 'custom-header') {
     if (auth.valueFromEnv) {
       authEnvVars.add(auth.valueFromEnv);
     }

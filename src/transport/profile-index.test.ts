@@ -144,6 +144,53 @@ describe('profile index helpers', () => {
     expect(profile.snippets.find(s => s.key === 'codex-local-cli-bearer')).toBeUndefined();
   });
 
+  it('builds token (DRF) snippets with Token prefix in Authorization header', () => {
+    const profiles: ListedProfileDetails[] = [
+      {
+        profileId: 'defectdojo',
+        profileName: 'defectdojo',
+        profileAliases: [],
+        description: 'DefectDojo',
+        envVars: ['DEFECTDOJO_API_BASE_URL', 'DEFECTDOJO_TOKEN'],
+        authMethods: [
+          {
+            type: 'token',
+            valueFromEnv: 'DEFECTDOJO_TOKEN',
+          },
+        ],
+        apiBaseUrl: {
+          valueFromEnv: 'DEFECTDOJO_API_BASE_URL',
+        },
+      },
+    ];
+
+    const { payload } = buildProfileIndexPayload(profiles, 'http://localhost:3003', 'en');
+    const [profile] = payload.profiles;
+
+    const vscode = profile.snippets.find(s => s.key === 'vscode-token');
+    const cursor = profile.snippets.find(s => s.key === 'cursor-token');
+    const jetbrains = profile.snippets.find(s => s.key === 'jetbrains-token');
+    const claudeJson = profile.snippets.find(s => s.key === 'claude-json-token');
+    const claudeCli = profile.snippets.find(s => s.key === 'claude-cli-token');
+    const geminiJson = profile.snippets.find(s => s.key === 'gemini-json-token');
+    const codexToml = profile.snippets.find(s => s.key === 'codex-toml-token');
+    const codexCli = profile.snippets.find(s => s.key === 'codex-cli-token');
+    const authTab = profile.authTabs.find(t => t.key === 'token');
+
+    expect(authTab?.label).toBe('Token (DRF)');
+    expect(vscode?.content).toContain('"Authorization": "Token ${input:defectdojo-token}"');
+    expect(cursor?.content).toContain('"Authorization": "Token ${env:DEFECTDOJO_TOKEN}"');
+    expect(jetbrains?.content).toContain('"Authorization": "Token ${input:defectdojo-token}"');
+    expect(claudeJson?.content).toContain('"Authorization": "Token ${DEFECTDOJO_TOKEN}"');
+    expect(claudeCli?.content).toContain('Authorization: Token \\${DEFECTDOJO_TOKEN}');
+    expect(geminiJson?.content).toContain('"Authorization": "Token ${DEFECTDOJO_TOKEN}"');
+    expect(codexToml?.content).toContain('http_headers = { "Authorization" = "Token ${DEFECTDOJO_TOKEN}" }');
+    expect(codexToml?.content).not.toContain('bearer_token_env_var');
+    expect(codexCli?.content).toContain('--header "Authorization: Token ${DEFECTDOJO_TOKEN}"');
+    expect(codexCli?.content).not.toContain('--bearer-token-env-var');
+    expect(profile.snippets.find(s => s.key === 'codex-cli-token')).toBeDefined();
+  });
+
   it('resolves API endpoint from env var over default', () => {
     process.env.GITLAB_API_BASE_URL = 'https://env.gitlab.example.com';
     const endpoint = __test__.resolveApiEndpoint({

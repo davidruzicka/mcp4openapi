@@ -155,6 +155,26 @@ Three pre-allowed scripts for working with PR review threads (no per-call confir
 
 ## Workflow
 
+### Adding New Auth Type
+
+When adding a new auth type (e.g. `token`, `custom-header` variant):
+
+1. Add type to `AuthTokenConfig.type` union in `src/types/profile.ts`
+2. Run `npm run generate-schemas` (sync Zod + JSON schema)
+3. Add inbound extraction in `extractAuthToken` in `src/transport/http-transport.ts`
+4. Add outbound credential building in `getAuthCredentials` in `src/transport/interceptors.ts`
+5. Add sensitive header tracking in `getSensitiveCacheHeaders` + `getSensitiveRedirectHeaderNames`
+6. **Update profile index UI** - all three locations in `src/transport/profile-index.ts`:
+   - Add label to `authLabels` interface and both i18n objects (cs + en)
+   - Add branch in `buildAuthLabel()`
+   - Add header value prefix in `buildConnectionSnippets()` (vscode/cursor/jetbrains/cli header values)
+   - Add to `resolveLocalEnvVarNames()` condition if it needs `valueFromEnv`
+   - Add to `codex-cli` generation condition if Codex CLI snippet applies
+7. **Update profile resolver** - `ProfileAuthMethod.type` union + guard in `extractAuthMethods()` in `src/profile/profile-resolver.ts`
+8. **Update generic test helper** - `configureProfileEnv()` condition in `src/testing/generic-profile.test.ts`
+9. Add tests: `src/transport/interceptors.test.ts`, `http-transport.test.ts`, `profile-resolver.test.ts`, `profile-index.test.ts`
+10. Update docs: `docs/PROFILE-GUIDE.md`, `docs/MULTI-AUTH.md`, `docs/HTTP-TRANSPORT.md`, `README.md`
+
 ### Adding New Profile Field
 
 1. Update `src/types/profile.ts` (TypeScript interface)
