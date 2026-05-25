@@ -69,7 +69,7 @@ export interface ProfileApiBaseUrl {
 }
 
 export interface ProfileAuthMethod {
-  type: 'bearer' | 'query' | 'custom-header' | 'oauth' | 'session-cookie';
+  type: 'bearer' | 'token' | 'query' | 'custom-header' | 'oauth' | 'session-cookie';
   headerName?: string;
   queryParam?: string;
   valueFromEnv?: string;
@@ -280,7 +280,7 @@ function extractAuthMethods(profile: Record<string, unknown>): ProfileAuthMethod
     if (!entry || typeof entry !== 'object') continue;
     const record = entry as Record<string, unknown>;
     const type = record.type;
-    if (type !== 'bearer' && type !== 'query' && type !== 'custom-header' && type !== 'oauth' && type !== 'session-cookie') {
+    if (type !== 'bearer' && type !== 'token' && type !== 'query' && type !== 'custom-header' && type !== 'oauth' && type !== 'session-cookie') {
       continue;
     }
     // For OAuth entries, skip if config is operationally incomplete (missing env vars or required fields).

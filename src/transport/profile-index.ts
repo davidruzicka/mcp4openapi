@@ -44,6 +44,7 @@ interface ProfileIndexI18n {
   authLabels: {
     oauth: string;
     bearer: string;
+    token: string;
     query: string;
     customHeader: string;
     sessionCookie: string;
@@ -205,6 +206,7 @@ export function buildProfileIndexI18n(locale: ProfileIndexLocale): ProfileIndexI
       authLabels: {
         oauth: 'OAuth',
         bearer: 'Bearer',
+        token: 'Token (DRF)',
         query: 'Token (query)',
         customHeader: 'Vlastní hlavička',
         sessionCookie: 'Session cookie',
@@ -263,6 +265,7 @@ export function buildProfileIndexI18n(locale: ProfileIndexLocale): ProfileIndexI
     authLabels: {
       oauth: 'OAuth',
       bearer: 'Bearer',
+      token: 'Token (DRF)',
       query: 'Token (query)',
       customHeader: 'Custom header',
       sessionCookie: 'Session cookie',
@@ -441,6 +444,7 @@ function appendComma(lines: string[]): void {
 function buildAuthLabel(auth: RenderAuthMethod, labels: ProfileIndexI18n): string {
   if (auth.type === 'oauth') return labels.authLabels.oauth;
   if (auth.type === 'bearer') return labels.authLabels.bearer;
+  if (auth.type === 'token') return labels.authLabels.token;
   if (auth.type === 'query') {
     const suffix = auth.queryParam ? `: ${auth.queryParam}` : '';
     return `${labels.authLabels.query}${suffix}`.trim();
@@ -540,18 +544,16 @@ function buildProfileSnippets(
         mode: 'remote',
         format: 'toml',
       });
-    }
-
-    if (auth.type === 'oauth' || auth.type === 'bearer') {
-      const remoteSnippetContext = buildConnectionSnippets(auth);
-      snippets.push({
-        key: `codex-cli-${auth.type}`,
-        label: `${labels.snippetLabels.codex}${suffix}`,
-        content: remoteSnippetContext.codexCli,
-        authKey,
-        mode: 'remote',
-        format: 'cli',
-      });
+      if (auth.type === 'oauth' || auth.type === 'bearer' || auth.type === 'token') {
+        snippets.push({
+          key: `codex-cli-${auth.type}`,
+          label: `${labels.snippetLabels.codex}${suffix}`,
+          content: remoteSnippetContext.codexCli,
+          authKey,
+          mode: 'remote',
+          format: 'cli',
+        });
+      }
     }
     snippets.push({
       key: `vscode-local-${auth.type}`,
@@ -687,10 +689,12 @@ function buildConnectionSnippets(
     ? buildEnvValue(tokenEnv, inputMap, false, 'cli')
     : '<token>';
 
-  const vscodeHeaderValue = auth.type === 'bearer' ? `Bearer ${vscodeToken}` : vscodeToken;
-  const cursorHeaderValue = auth.type === 'bearer' ? `Bearer ${cursorToken}` : cursorToken;
-  const jetbrainsHeaderValue = auth.type === 'bearer' ? `Bearer ${jetbrainsToken}` : jetbrainsToken;
-  const cliHeaderValue = auth.type === 'bearer' ? `Bearer ${cliToken}` : cliToken;
+  const SCHEME_PREFIX: Partial<Record<string, string>> = { bearer: 'Bearer', token: 'Token' };
+  const scheme = SCHEME_PREFIX[auth.type];
+  const vscodeHeaderValue    = scheme ? `${scheme} ${vscodeToken}`    : vscodeToken;
+  const cursorHeaderValue    = scheme ? `${scheme} ${cursorToken}`    : cursorToken;
+  const jetbrainsHeaderValue = scheme ? `${scheme} ${jetbrainsToken}` : jetbrainsToken;
+  const cliHeaderValue       = scheme ? `${scheme} ${cliToken}`       : cliToken;
 
   const headersBlock = auth.type === 'oauth' || auth.type === 'none' || auth.type === 'query'
     ? []
@@ -1059,7 +1063,7 @@ function resolveLocalEnvVarNames(profile: ListedProfileDetails, auth: RenderAuth
   const baseUrlEnv = profile.apiBaseUrl?.valueFromEnv;
   const authEnvVars = new Set<string>();
 
-  if (auth.type === 'bearer' || auth.type === 'query' || auth.type === 'custom-header') {
+  if (auth.type === 'bearer' || auth.type === 'token' || auth.type === 'query' || auth.type === 'custom-header') {
     if (auth.valueFromEnv) {
       authEnvVars.add(auth.valueFromEnv);
     }

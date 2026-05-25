@@ -595,6 +595,32 @@ describe('profile-resolver', () => {
     expect(invalid?.authMethods).toEqual([]);
   });
 
+  it('extracts token auth type into authMethods with DRF Token semantics', async () => {
+    const root = await createTempDir();
+    const profilesDir = path.join(root, 'profiles');
+    const profilePath = path.join(profilesDir, 'token-auth.json');
+
+    await writeJson(profilePath, {
+      profile_name: 'token-auth',
+      openapi_spec_path: './openapi.yaml',
+      interceptors: {
+        auth: {
+          type: 'token',
+          value_from_env: 'DEFECTDOJO_TOKEN',
+        },
+      },
+      tools: [],
+    });
+
+    const profiles = await listProfilesDetailed(profilesDir);
+    const profile = profiles.find(p => p.profileName === 'token-auth');
+
+    expect(profile?.envVars).toEqual(['DEFECTDOJO_TOKEN']);
+    expect(profile?.authMethods).toEqual([
+      { type: 'token', headerName: undefined, queryParam: undefined, valueFromEnv: 'DEFECTDOJO_TOKEN' },
+    ]);
+  });
+
   it('throws when listing profiles in missing directory', async () => {
     await expect(listProfilesDetailed(path.join(os.tmpdir(), 'missing-profiles'))).rejects.toThrow('Profiles directory not found');
   });
