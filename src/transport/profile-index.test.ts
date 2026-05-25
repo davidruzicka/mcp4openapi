@@ -173,8 +173,10 @@ describe('profile index helpers', () => {
     const claudeJson = profile.snippets.find(s => s.key === 'claude-json-token');
     const claudeCli = profile.snippets.find(s => s.key === 'claude-cli-token');
     const geminiJson = profile.snippets.find(s => s.key === 'gemini-json-token');
+    const geminiCli = profile.snippets.find(s => s.key === 'gemini-cli-token');
     const codexToml = profile.snippets.find(s => s.key === 'codex-toml-token');
     const codexCli = profile.snippets.find(s => s.key === 'codex-cli-token');
+    const vscodeLocal = profile.snippets.find(s => s.key === 'vscode-local-token');
     const authTab = profile.authTabs.find(t => t.key === 'token');
 
     expect(authTab?.label).toBe('Token (DRF)');
@@ -184,11 +186,31 @@ describe('profile index helpers', () => {
     expect(claudeJson?.content).toContain('"Authorization": "Token ${DEFECTDOJO_TOKEN}"');
     expect(claudeCli?.content).toContain('Authorization: Token \\${DEFECTDOJO_TOKEN}');
     expect(geminiJson?.content).toContain('"Authorization": "Token ${DEFECTDOJO_TOKEN}"');
+    expect(geminiCli?.content).toContain('Authorization: Token \\${DEFECTDOJO_TOKEN}');
     expect(codexToml?.content).toContain('http_headers = { "Authorization" = "Token ${DEFECTDOJO_TOKEN}" }');
     expect(codexToml?.content).not.toContain('bearer_token_env_var');
     expect(codexCli?.content).toContain('--header "Authorization: Token ${DEFECTDOJO_TOKEN}"');
     expect(codexCli?.content).not.toContain('--bearer-token-env-var');
     expect(profile.snippets.find(s => s.key === 'codex-cli-token')).toBeDefined();
+    expect(vscodeLocal?.mode).toBe('local');
+    expect(vscodeLocal?.content).toContain('"DEFECTDOJO_TOKEN"');
+  });
+
+  it('uses Czech i18n label for token auth type', () => {
+    const profiles: ListedProfileDetails[] = [
+      {
+        profileId: 'defectdojo',
+        profileName: 'defectdojo',
+        profileAliases: [],
+        envVars: ['DEFECTDOJO_API_BASE_URL', 'DEFECTDOJO_TOKEN'],
+        authMethods: [{ type: 'token', valueFromEnv: 'DEFECTDOJO_TOKEN' }],
+        apiBaseUrl: { valueFromEnv: 'DEFECTDOJO_API_BASE_URL' },
+      },
+    ];
+
+    const { payload } = buildProfileIndexPayload(profiles, 'http://localhost:3003', 'cs');
+    const authTab = payload.profiles[0].authTabs.find(t => t.key === 'token');
+    expect(authTab?.label).toBe('Token (DRF)');
   });
 
   it('resolves API endpoint from env var over default', () => {
