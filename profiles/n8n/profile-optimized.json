@@ -36,6 +36,9 @@
     ],
     "includeRole": [
       "include_role"
+    ],
+    "dataTableId": [
+      "table_id"
     ]
   },
   "tools": [
@@ -47,6 +50,8 @@
       ],
       "operations": {
         "get_credential_schema": "get_/credentials/schema/{credentialTypeName}",
+        "list_credentials": "getCredentials",
+        "get_credential": "getCredential",
         "list_executions": "get_/executions",
         "get_execution": "get_/executions/{id}",
         "list_projects": "get_/projects",
@@ -58,7 +63,12 @@
         "list_workflows": "get_/workflows",
         "get_workflow": "get_/workflows/{id}",
         "get_workflow_version": "get_/workflows/{id}/{versionId}",
-        "get_workflow_tags": "get_/workflows/{id}/tags"
+        "get_workflow_tags": "get_/workflows/{id}/tags",
+        "list_data_tables": "list-data-tables",
+        "get_data_table": "get-data-table",
+        "list_data_table_rows": "get-data-table-rows",
+        "list_folders": "get_/projects/{projectId}/folders",
+        "get_insights_summary": "get_/insights/summary"
       },
       "response_fields": {
         "list_executions": [
@@ -123,12 +133,22 @@
           ],
           "description": "Property id",
           "required_for": [
+            "get_credential",
             "get_execution",
             "get_tag",
             "get_user",
             "get_workflow",
             "get_workflow_version",
             "get_workflow_tags"
+          ],
+          "required": false
+        },
+        "dataTableId": {
+          "type": "string",
+          "description": "Data table ID (alias: table_id)",
+          "required_for": [
+            "get_data_table",
+            "list_data_table_rows"
           ],
           "required": false
         },
@@ -191,7 +211,10 @@
         },
         "projectId": {
           "type": "string",
-          "description": "Parameter projectId"
+          "description": "Parameter projectId",
+          "required_for": [
+            "list_folders"
+          ]
         },
         "limit": {
           "type": "number",
@@ -330,14 +353,21 @@
         "action": {
           "type": "string",
           "enum": [
+            "get_credential",
             "get_credential_schema",
+            "get_data_table",
             "get_execution",
+            "get_insights_summary",
             "get_tag",
             "get_user",
             "get_workflow",
             "get_workflow_tags",
             "get_workflow_version",
+            "list_credentials",
+            "list_data_table_rows",
+            "list_data_tables",
             "list_executions",
+            "list_folders",
             "list_projects",
             "list_tags",
             "list_users",
@@ -370,7 +400,7 @@
         "action"
       ],
       "operations": {
-        "create_credential": "post_/credentials",
+        "create_credential": "createCredential",
         "create_project": "post_/projects",
         "add_project_users": "post_/projects/{projectId}/users",
         "create_tag": "post_/tags",
@@ -1246,7 +1276,7 @@
     },
     {
       "name": "run_n8n_operations",
-      "description": "Execute non-CRUD n8n operations (audit, retries, transfers, activation, source control).",
+      "description": "Execute non-CRUD n8n operations (audit, retries, transfers, activation, stop, archive, source control).",
       "metadata_params": [
         "action"
       ],
@@ -1257,7 +1287,10 @@
         "pull_source_control": "post_/source-control/pull",
         "activate_workflow": "post_/workflows/{id}/activate",
         "deactivate_workflow": "post_/workflows/{id}/deactivate",
-        "transfer_workflow": "put_/workflows/{id}/transfer"
+        "transfer_workflow": "put_/workflows/{id}/transfer",
+        "stop_execution": "post_/executions/{id}/stop",
+        "archive_workflow": "post_/workflows/{id}/archive",
+        "unarchive_workflow": "post_/workflows/{id}/unarchive"
       },
       "response_fields": {
         "generate_audit": [
@@ -1473,12 +1506,15 @@
           "type": "string",
           "enum": [
             "activate_workflow",
+            "archive_workflow",
             "deactivate_workflow",
             "generate_audit",
             "pull_source_control",
             "retry_execution",
+            "stop_execution",
             "transfer_credential",
-            "transfer_workflow"
+            "transfer_workflow",
+            "unarchive_workflow"
           ],
           "description": "Action to perform",
           "required": true
@@ -1497,9 +1533,12 @@
           "required_for": [
             "transfer_credential",
             "retry_execution",
+            "stop_execution",
             "activate_workflow",
             "deactivate_workflow",
-            "transfer_workflow"
+            "transfer_workflow",
+            "archive_workflow",
+            "unarchive_workflow"
           ],
           "required": false
         },

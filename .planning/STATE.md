@@ -161,8 +161,14 @@ None yet.
 - Phase 1: MCP protocol version negotiation - upstream compatibility matrix needed early
 - Phase 3: Credential pass-through transport design (custom header vs init params) needs MCP spec validation
 
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 260526-ehd | Expand n8n OpenAPI spec and profiles to full Public API coverage | 2026-05-26 | c6058f9 | [260526-ehd-expand-n8n-openapi-spec-and-profiles-to-](./quick/260526-ehd-expand-n8n-openapi-spec-and-profiles-to-/) |
+
 ## Session Continuity
 
-Last session: 2026-05-11T13:47:23.380Z
-Stopped at: Completed 04-observability-01-PLAN.md
+Last session: 2026-05-26T08:25:38.862Z
+Stopped at: Completed quick task 260526-ehd — n8n OpenAPI + profile expansion
 Resume file: None

@@ -36,23 +36,34 @@
     ],
     "includeRole": [
       "include_role"
+    ],
+    "dataTableId": [
+      "table_id"
+    ],
+    "folderId": [
+      "folder_id"
+    ],
+    "columnId": [
+      "column_id"
     ]
   },
   "tools": [
     {
       "name": "audit",
-      "description": "Generate a security audit for the n8n instance. Note: audit responses use keys with spaces, so response_fields filtering is not applied.",
+      "description": "Generate security audits and retrieve instance insights.",
       "metadata_params": [
         "action"
       ],
       "operations": {
-        "generate": "post_/audit"
+        "generate": "post_/audit",
+        "insights_summary": "get_/insights/summary"
       },
       "parameters": {
         "action": {
           "type": "string",
           "enum": [
-            "generate"
+            "generate",
+            "insights_summary"
           ],
           "description": "Action to perform",
           "required": true
@@ -76,14 +87,17 @@
     },
     {
       "name": "manage_credentials",
-      "description": "Create, update, delete, transfer, and inspect credentials.",
+      "description": "List, create, get, update, delete, transfer, test, and inspect credentials.",
       "metadata_params": [
         "action"
       ],
       "operations": {
-        "create": "post_/credentials",
+        "list": "getCredentials",
+        "create": "createCredential",
+        "get": "getCredential",
         "update": "updateCredential",
         "delete": "deleteCredential",
+        "test": "testCredential",
         "transfer": "put_/credentials/{id}/transfer",
         "get_schema": "get_/credentials/schema/{credentialTypeName}"
       },
@@ -91,22 +105,37 @@
         "action": {
           "type": "string",
           "enum": [
+            "list",
             "create",
+            "get",
             "update",
             "delete",
+            "test",
             "transfer",
             "get_schema"
           ],
           "description": "Action to perform",
           "required": true
         },
+        "limit": {
+          "type": "number",
+          "description": "The maximum number of items to return.",
+          "required": false
+        },
+        "cursor": {
+          "type": "string",
+          "description": "Pagination cursor from previous response's nextCursor.",
+          "required": false
+        },
         "id": {
           "type": "string",
           "description": "Property id",
           "required": false,
           "required_for": [
+            "get",
             "update",
             "delete",
+            "test",
             "transfer"
           ]
         },
@@ -204,7 +233,7 @@
     },
     {
       "name": "manage_executions",
-      "description": "List, inspect, delete, and retry workflow executions.",
+      "description": "List, inspect, delete, retry, and stop workflow executions.",
       "metadata_params": [
         "action"
       ],
@@ -212,7 +241,11 @@
         "list": "get_/executions",
         "get": "get_/executions/{id}",
         "delete": "delete_/executions/{id}",
-        "retry": "post_/executions/{id}/retry"
+        "retry": "post_/executions/{id}/retry",
+        "stop": "post_/executions/{id}/stop",
+        "stop_all": "post_/executions/stop",
+        "get_tags": "get_/executions/{id}/tags",
+        "update_tags": "put_/executions/{id}/tags"
       },
       "parameters": {
         "action": {
@@ -221,7 +254,11 @@
             "list",
             "get",
             "delete",
-            "retry"
+            "retry",
+            "stop",
+            "stop_all",
+            "get_tags",
+            "update_tags"
           ],
           "description": "Action to perform",
           "required": true
@@ -233,7 +270,7 @@
         },
         "status": {
           "type": "string",
-          "description": "Status to filter the executions by.",
+          "description": "Execution status filter for list, or array of statuses to stop for stop_all (e.g. [\"running\",\"waiting\"]).",
           "required": false
         },
         "workflowId": {
@@ -263,13 +300,28 @@
           "required_for": [
             "get",
             "delete",
-            "retry"
+            "retry",
+            "stop",
+            "get_tags",
+            "update_tags"
           ]
         },
         "loadWorkflow": {
           "type": "boolean",
           "description": "Property loadWorkflow",
           "required": false
+        },
+        "tags": {
+          "type": "array",
+          "description": "Array of tag IDs to set on the execution: [{ id }].",
+          "required": false,
+          "items": {
+            "type": "object",
+            "properties": {}
+          },
+          "required_for": [
+            "update_tags"
+          ]
         }
       },
       "response_fields": {
@@ -761,7 +813,9 @@
         "deactivate": "post_/workflows/{id}/deactivate",
         "get_tags": "get_/workflows/{id}/tags",
         "update_tags": "put_/workflows/{id}/tags",
-        "transfer": "put_/workflows/{id}/transfer"
+        "transfer": "put_/workflows/{id}/transfer",
+        "archive": "post_/workflows/{id}/archive",
+        "unarchive": "post_/workflows/{id}/unarchive"
       },
       "parameters": {
         "action": {
@@ -777,7 +831,9 @@
             "deactivate",
             "get_tags",
             "update_tags",
-            "transfer"
+            "transfer",
+            "archive",
+            "unarchive"
           ],
           "description": "Action to perform",
           "required": true
@@ -838,7 +894,9 @@
             "deactivate",
             "get_tags",
             "update_tags",
-            "transfer"
+            "transfer",
+            "archive",
+            "unarchive"
           ]
         },
         "createdAt": {
@@ -936,6 +994,299 @@
             "update_tags"
           ]
         }
+      }
+    },
+    {
+      "name": "manage_data_tables",
+      "description": "Manage n8n data tables and their column schemas.",
+      "metadata_params": [
+        "action"
+      ],
+      "operations": {
+        "list": "list-data-tables",
+        "create": "create-data-table",
+        "get": "get-data-table",
+        "update": "update-data-table",
+        "delete": "delete-data-table",
+        "list_columns": "list-data-table-columns",
+        "create_column": "create-data-table-column",
+        "update_column": "update-data-table-column",
+        "delete_column": "delete-data-table-column"
+      },
+      "parameters": {
+        "action": {
+          "type": "string",
+          "enum": [
+            "list",
+            "create",
+            "get",
+            "update",
+            "delete",
+            "list_columns",
+            "create_column",
+            "update_column",
+            "delete_column"
+          ],
+          "description": "Action to perform",
+          "required": true
+        },
+        "dataTableId": {
+          "type": "string",
+          "description": "Data table ID (alias: table_id)",
+          "required": false,
+          "required_for": [
+            "get",
+            "update",
+            "delete",
+            "list_columns",
+            "create_column",
+            "update_column",
+            "delete_column"
+          ]
+        },
+        "columnId": {
+          "type": "string",
+          "description": "Column ID (alias: column_id)",
+          "required": false,
+          "required_for": [
+            "update_column",
+            "delete_column"
+          ]
+        },
+        "name": {
+          "type": "string",
+          "description": "Table or column name",
+          "required": false,
+          "required_for": [
+            "create",
+            "create_column"
+          ]
+        },
+        "limit": {
+          "type": "number",
+          "description": "The maximum number of items to return.",
+          "required": false
+        },
+        "cursor": {
+          "type": "string",
+          "description": "Pagination cursor from previous response's nextCursor.",
+          "required": false
+        }
+      },
+      "response_fields": {
+        "list": [
+          "data(id,name,createdAt,updatedAt)",
+          "nextCursor"
+        ],
+        "get": [
+          "id",
+          "name",
+          "createdAt",
+          "updatedAt"
+        ],
+        "create": [
+          "id",
+          "name"
+        ],
+        "list_columns": [
+          "data(id,name,type)"
+        ]
+      }
+    },
+    {
+      "name": "manage_data_table_rows",
+      "description": "Read and write rows in n8n data tables.",
+      "metadata_params": [
+        "action"
+      ],
+      "operations": {
+        "list": "get-data-table-rows",
+        "create": "insert-data-table-rows",
+        "update": "update-data-table-rows",
+        "upsert": "upsert-data-table-row",
+        "delete": "delete-data-table-rows"
+      },
+      "parameters": {
+        "action": {
+          "type": "string",
+          "enum": [
+            "list",
+            "create",
+            "update",
+            "upsert",
+            "delete"
+          ],
+          "description": "Action to perform",
+          "required": true
+        },
+        "dataTableId": {
+          "type": "string",
+          "description": "Data table ID (alias: table_id)",
+          "required": true
+        },
+        "limit": {
+          "type": "number",
+          "description": "The maximum number of items to return.",
+          "required": false
+        },
+        "cursor": {
+          "type": "string",
+          "description": "Pagination cursor from previous response's nextCursor.",
+          "required": false
+        },
+        "data": {
+          "type": "array",
+          "description": "Rows to insert/update. Each element is a row object {col: val}. For update/upsert: combined with filter to select target rows. Keep batches under 100 rows.",
+          "required": false,
+          "items": {
+            "type": "object",
+            "properties": {}
+          }
+        },
+        "filter": {
+          "type": "object",
+          "description": "Filter criteria for update/upsert/delete operations.",
+          "required": false,
+          "properties": {}
+        }
+      },
+      "response_fields": {
+        "list": [
+          "data",
+          "nextCursor"
+        ]
+      }
+    },
+    {
+      "name": "manage_folders",
+      "description": "Manage workflow folders within a project. All operations require projectId - use manage_projects:list to discover available project IDs first.",
+      "metadata_params": [
+        "action"
+      ],
+      "operations": {
+        "list": "get_/projects/{projectId}/folders",
+        "create": "post_/projects/{projectId}/folders",
+        "get": "get_/projects/{projectId}/folders/{folderId}",
+        "update": "patch_/projects/{projectId}/folders/{folderId}",
+        "delete": "delete_/projects/{projectId}/folders/{folderId}"
+      },
+      "parameters": {
+        "action": {
+          "type": "string",
+          "enum": [
+            "list",
+            "create",
+            "get",
+            "update",
+            "delete"
+          ],
+          "description": "Action to perform",
+          "required": true
+        },
+        "projectId": {
+          "type": "string",
+          "description": "Project ID (required for all folder operations)",
+          "required": true
+        },
+        "folderId": {
+          "type": "string",
+          "description": "Folder ID (alias: folder_id) - required for get, update, delete",
+          "required": false,
+          "required_for": [
+            "get",
+            "update",
+            "delete"
+          ]
+        },
+        "name": {
+          "type": "string",
+          "description": "Folder name",
+          "required": false,
+          "required_for": [
+            "create"
+          ]
+        },
+        "limit": {
+          "type": "number",
+          "description": "The maximum number of items to return.",
+          "required": false
+        },
+        "cursor": {
+          "type": "string",
+          "description": "Pagination cursor from previous response's nextCursor.",
+          "required": false
+        },
+        "transferToFolderId": {
+          "type": "string",
+          "description": "Folder ID to transfer workflows to when deleting. If omitted, workflows in the folder are archived.",
+          "required": false
+        }
+      },
+      "response_fields": {
+        "list": [
+          "data(id,name,parentFolderId)",
+          "nextCursor"
+        ],
+        "get": [
+          "id",
+          "name",
+          "parentFolderId"
+        ],
+        "create": [
+          "id",
+          "name"
+        ]
+      }
+    },
+    {
+      "name": "manage_community_packages",
+      "description": "List and manage installed n8n community packages.",
+      "metadata_params": [
+        "action"
+      ],
+      "operations": {
+        "list": "get_/community-packages",
+        "install": "post_/community-packages",
+        "update": "patch_/community-packages/{name}",
+        "delete": "delete_/community-packages/{name}"
+      },
+      "parameters": {
+        "action": {
+          "type": "string",
+          "enum": [
+            "list",
+            "install",
+            "update",
+            "delete"
+          ],
+          "description": "Action to perform",
+          "required": true
+        },
+        "name": {
+          "type": "string",
+          "description": "Community package name",
+          "required": false,
+          "required_for": [
+            "delete",
+            "update",
+            "install"
+          ]
+        },
+        "version": {
+          "type": "string",
+          "description": "Specific package version to install or update to (e.g. \"1.2.3\"). Omit to use latest.",
+          "required": false
+        },
+        "verify": {
+          "type": "boolean",
+          "description": "Verify package against vetted list before installing.",
+          "required": false
+        }
+      },
+      "response_fields": {
+        "list": [
+          "data(packageName,version,installedVersion,updateAvailable)"
+        ]
       }
     }
   ],

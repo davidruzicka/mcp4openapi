@@ -15,7 +15,8 @@
     "createdAt": "2024-01-01T00:00:00Z",
     "updatedAt": "2024-01-02T00:00:00Z",
     "tagId": "tag-123",
-    "tagName": "Production"
+    "tagName": "Production",
+    "dataTableId": "table-123"
   },
   "scenarios": [
     {
@@ -265,7 +266,10 @@
                   "name": "Start",
                   "type": "n8n-nodes-base.start",
                   "typeVersion": 1,
-                  "position": [0, 0],
+                  "position": [
+                    0,
+                    0
+                  ],
                   "notes": "Reference entry point",
                   "notesInFlow": true,
                   "parameters": {}
@@ -275,7 +279,10 @@
                   "name": "Sticky Note",
                   "type": "n8n-nodes-base.stickyNote",
                   "typeVersion": 1,
-                  "position": [140, -80],
+                  "position": [
+                    140,
+                    -80
+                  ],
                   "parameters": {
                     "width": 320,
                     "height": 180,
@@ -326,7 +333,10 @@
                     "name": "Start",
                     "type": "n8n-nodes-base.start",
                     "typeVersion": 1,
-                    "position": [0, 0],
+                    "position": [
+                      0,
+                      0
+                    ],
                     "notes": "Reference entry point",
                     "notesInFlow": true,
                     "parameters": {}
@@ -359,7 +369,10 @@
               "name": "Start",
               "type": "n8n-nodes-base.start",
               "typeVersion": 1,
-              "position": [0, 0],
+              "position": [
+                0,
+                0
+              ],
               "notes": "Reference entry point",
               "notesInFlow": true,
               "parameters": {}
@@ -369,7 +382,10 @@
               "name": "Sticky Note",
               "type": "n8n-nodes-base.stickyNote",
               "typeVersion": 1,
-              "position": [140, -80],
+              "position": [
+                140,
+                -80
+              ],
               "parameters": {
                 "width": 320,
                 "height": 180,
@@ -420,7 +436,10 @@
                 "name": "Start",
                 "type": "n8n-nodes-base.start",
                 "typeVersion": 1,
-                "position": [0, 0],
+                "position": [
+                  0,
+                  0
+                ],
                 "notes": "Reference entry point",
                 "notesInFlow": true,
                 "parameters": {}
@@ -464,7 +483,10 @@
                   "name": "HTTP Request",
                   "type": "n8n-nodes-base.httpRequest",
                   "typeVersion": 1,
-                  "position": [200, 0],
+                  "position": [
+                    200,
+                    0
+                  ],
                   "notes": "Calls upstream API",
                   "notesInFlow": true,
                   "parameters": {
@@ -495,7 +517,10 @@
               "name": "HTTP Request",
               "type": "n8n-nodes-base.httpRequest",
               "typeVersion": 1,
-              "position": [200, 0],
+              "position": [
+                200,
+                0
+              ],
               "notes": "Calls upstream API",
               "notesInFlow": true,
               "parameters": {
@@ -577,7 +602,7 @@
       },
       "mocks": [
         {
-          "operationId": "post_/credentials",
+          "operationId": "createCredential",
           "response": {
             "body": {}
           }
@@ -1296,6 +1321,308 @@
           "method": "PUT",
           "path": "/workflows/{{id}}/transfer"
         }
+      }
+    },
+    {
+      "name": "retrieve_n8n - list_credentials",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "list_credentials"
+      },
+      "mocks": [
+        {
+          "operationId": "getCredentials",
+          "response": {
+            "body": {
+              "data": [],
+              "nextCursor": null
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "request": {
+          "method": "GET",
+          "path": "/credentials"
+        }
+      }
+    },
+    {
+      "name": "retrieve_n8n - list_data_tables",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "list_data_tables"
+      },
+      "mocks": [
+        {
+          "operationId": "list-data-tables",
+          "response": {
+            "body": {
+              "data": [],
+              "nextCursor": null
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "request": {
+          "method": "GET",
+          "path": "/data-tables"
+        }
+      }
+    },
+    {
+      "name": "retrieve_n8n - list_data_table_rows",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "list_data_table_rows",
+        "dataTableId": "{{dataTableId}}"
+      },
+      "mocks": [
+        {
+          "operationId": "get-data-table-rows",
+          "response": {
+            "body": {
+              "data": [],
+              "nextCursor": null
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "request": {
+          "method": "GET",
+          "path": "/data-tables/{{dataTableId}}/rows"
+        }
+      }
+    },
+    {
+      "name": "retrieve_n8n - list_folders",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "list_folders",
+        "projectId": "{{projectId}}"
+      },
+      "mocks": [
+        {
+          "operationId": "get_/projects/{projectId}/folders",
+          "response": {
+            "body": {
+              "data": [],
+              "nextCursor": null
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "request": {
+          "method": "GET",
+          "path": "/projects/{{projectId}}/folders"
+        }
+      }
+    },
+    {
+      "name": "retrieve_n8n - get_insights_summary",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "get_insights_summary"
+      },
+      "mocks": [
+        {
+          "operationId": "get_/insights/summary",
+          "response": {
+            "body": {
+              "summary": {}
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "request": {
+          "method": "GET",
+          "path": "/insights/summary"
+        }
+      }
+    },
+    {
+      "name": "modify_n8n - stop_execution",
+      "tool": "run_n8n_operations",
+      "arguments": {
+        "action": "stop_execution",
+        "id": "{{id}}"
+      },
+      "mocks": [
+        {
+          "operationId": "post_/executions/{id}/stop",
+          "response": {
+            "body": {}
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "request": {
+          "method": "POST",
+          "path": "/executions/{{id}}/stop"
+        }
+      }
+    },
+    {
+      "name": "modify_n8n - archive_workflow",
+      "tool": "run_n8n_operations",
+      "arguments": {
+        "action": "archive_workflow",
+        "id": "{{id}}"
+      },
+      "mocks": [
+        {
+          "operationId": "post_/workflows/{id}/archive",
+          "response": {
+            "body": {}
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "request": {
+          "method": "POST",
+          "path": "/workflows/{{id}}/archive"
+        }
+      }
+    },
+    {
+      "name": "modify_n8n - unarchive_workflow",
+      "tool": "run_n8n_operations",
+      "arguments": {
+        "action": "unarchive_workflow",
+        "id": "{{id}}"
+      },
+      "mocks": [
+        {
+          "operationId": "post_/workflows/{id}/unarchive",
+          "response": {
+            "body": {}
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "request": {
+          "method": "POST",
+          "path": "/workflows/{{id}}/unarchive"
+        }
+      }
+    },
+    {
+      "name": "retrieve_n8n - get_credential",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "get_credential",
+        "id": "{{id}}"
+      },
+      "mocks": [
+        {
+          "operationId": "getCredential",
+          "response": {
+            "body": {
+              "id": "{{id}}",
+              "name": "{{name}}"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "request": {
+          "method": "GET",
+          "path": "/credentials/{{id}}"
+        }
+      }
+    },
+    {
+      "name": "retrieve_n8n - get_data_table",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "get_data_table",
+        "dataTableId": "{{dataTableId}}"
+      },
+      "mocks": [
+        {
+          "operationId": "get-data-table",
+          "response": {
+            "body": {
+              "id": "{{dataTableId}}",
+              "name": "orders"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "request": {
+          "method": "GET",
+          "path": "/data-tables/{{dataTableId}}"
+        }
+      }
+    },
+    {
+      "name": "retrieve_n8n - get_credential missing id",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "get_credential"
+      },
+      "mocks": [],
+      "expect": {
+        "success": false
+      }
+    },
+    {
+      "name": "retrieve_n8n - get_data_table missing dataTableId",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "get_data_table"
+      },
+      "mocks": [],
+      "expect": {
+        "success": false
+      }
+    },
+    {
+      "name": "retrieve_n8n - list_folders missing projectId",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "list_folders"
+      },
+      "mocks": [],
+      "expect": {
+        "success": false
+      }
+    },
+    {
+      "name": "modify_n8n - stop_execution missing id",
+      "tool": "run_n8n_operations",
+      "arguments": {
+        "action": "stop_execution"
+      },
+      "mocks": [],
+      "expect": {
+        "success": false
+      }
+    },
+    {
+      "name": "modify_n8n - archive_workflow missing id",
+      "tool": "run_n8n_operations",
+      "arguments": {
+        "action": "archive_workflow"
+      },
+      "mocks": [],
+      "expect": {
+        "success": false
       }
     }
   ],
