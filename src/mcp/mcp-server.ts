@@ -1210,7 +1210,7 @@ export class MCPServer {
     }
     // Why: GitLab and other APIs require path parameters (like project paths)
     // to be URL-encoded when used in URL path.
-    return encodeURIComponent(val).replace(/\./g, '%2E');
+    return val.includes('/') ? encodeURIComponent(val) : val;
   }
 
   /**

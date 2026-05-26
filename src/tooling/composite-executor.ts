@@ -172,8 +172,7 @@ export class CompositeExecutor {
     if (val === '.' || val === '..') {
       throw new Error(`Invalid path parameter: path traversal is not allowed`);
     }
-    // Encode completely including dots
-    return encodeURIComponent(val).replace(/\./g, '%2E');
+    return encodeURIComponent(val);
   }
 
   private resolvePath(template: string, args: Record<string, unknown>): string {

@@ -3873,6 +3873,34 @@ paths:
   // ---------------------------------------------------------------------------
   // Upstream proxy behavior tests
   // ---------------------------------------------------------------------------
+
+  describe('path traversal prevention', () => {
+    it('should block exact dot segments in path aliases', async () => {
+      // Mock parser to throw an error intentionally when a bad path is supplied
+      // Just mock what MCPServer constructor needs
+      const mockParser = { getPath: () => null } as any;
+      // Ensure we hit the logic in MCPServer for path parameters traversal
+      const mcpServerWithTraversal = new MCPServer(
+        mockParser,
+        {
+          parameter_aliases: {
+            "id": ["project_id"]
+          }
+        } as any
+      );
+
+      // We know encodePathSegment is a private method, but it is called during
+      // handleToolCall execution or alias resolution. The easiest is calling it directly via any
+      expect(() => {
+        (mcpServerWithTraversal as any).encodePathSegment('..');
+      }).toThrow('Invalid path parameter: path traversal is not allowed');
+
+      expect(() => {
+        (mcpServerWithTraversal as any).encodePathSegment('.');
+      }).toThrow('Invalid path parameter: path traversal is not allowed');
+    });
+  });
+
   describe('upstream proxy', () => {
     const upstreamProvider = {
       name: 'test-upstream',
