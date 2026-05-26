@@ -55,8 +55,8 @@
         "action"
       ],
       "operations": {
-        "generate": "generateAudit",
-        "insights_summary": "getInsightsSummary"
+        "generate": "post_/audit",
+        "insights_summary": "get_/insights/summary"
       },
       "parameters": {
         "action": {
@@ -98,8 +98,8 @@
         "update": "updateCredential",
         "delete": "deleteCredential",
         "test": "testCredential",
-        "transfer": "transferCredential",
-        "get_schema": "getCredentialType"
+        "transfer": "put_/credentials/{id}/transfer",
+        "get_schema": "get_/credentials/schema/{credentialTypeName}"
       },
       "parameters": {
         "action": {
@@ -238,14 +238,14 @@
         "action"
       ],
       "operations": {
-        "list": "getExecutions",
-        "get": "getExecution",
-        "delete": "deleteExecution",
-        "retry": "retryExecution",
-        "stop": "stopExecution",
-        "stop_all": "stopManyExecutions",
-        "get_tags": "getExecutionTags",
-        "update_tags": "updateExecutionTags"
+        "list": "get_/executions",
+        "get": "get_/executions/{id}",
+        "delete": "delete_/executions/{id}",
+        "retry": "post_/executions/{id}/retry",
+        "stop": "post_/executions/{id}/stop",
+        "stop_all": "post_/executions/stop",
+        "get_tags": "get_/executions/{id}/tags",
+        "update_tags": "put_/executions/{id}/tags"
       },
       "parameters": {
         "action": {
@@ -371,13 +371,13 @@
         "action"
       ],
       "operations": {
-        "list": "getProjects",
-        "create": "createProject",
-        "update": "updateProject",
-        "delete": "deleteProject",
-        "add_users": "addUsersToProject",
-        "remove_user": "deleteUserFromProject",
-        "update_user_role": "changeUserRoleInProject"
+        "list": "get_/projects",
+        "create": "post_/projects",
+        "update": "put_/projects/{projectId}",
+        "delete": "delete_/projects/{projectId}",
+        "add_users": "post_/projects/{projectId}/users",
+        "remove_user": "delete_/projects/{projectId}/users/{userId}",
+        "update_user_role": "patch_/projects/{projectId}/users/{userId}"
       },
       "parameters": {
         "action": {
@@ -486,7 +486,7 @@
         "action"
       ],
       "operations": {
-        "pull": "pull"
+        "pull": "post_/source-control/pull"
       },
       "parameters": {
         "action": {
@@ -525,11 +525,11 @@
         "action"
       ],
       "operations": {
-        "list": "getTags",
-        "create": "createTag",
-        "get": "getTag",
-        "update": "updateTag",
-        "delete": "deleteTag"
+        "list": "get_/tags",
+        "create": "post_/tags",
+        "get": "get_/tags/{id}",
+        "update": "put_/tags/{id}",
+        "delete": "delete_/tags/{id}"
       },
       "parameters": {
         "action": {
@@ -622,11 +622,11 @@
         "action"
       ],
       "operations": {
-        "list": "getUsers",
-        "create": "createUser",
-        "get": "getUser",
-        "delete": "deleteUser",
-        "update_role": "changeRole"
+        "list": "get_/users",
+        "create": "post_/users",
+        "get": "get_/users/{id}",
+        "delete": "delete_/users/{id}",
+        "update_role": "patch_/users/{id}/role"
       },
       "parameters": {
         "action": {
@@ -719,10 +719,10 @@
         "action"
       ],
       "operations": {
-        "list": "getVariables",
-        "create": "createVariable",
-        "update": "updateVariable",
-        "delete": "deleteVariable"
+        "list": "get_/variables",
+        "create": "post_/variables",
+        "update": "put_/variables/{id}",
+        "delete": "delete_/variables/{id}"
       },
       "parameters": {
         "action": {
@@ -803,19 +803,19 @@
         "action"
       ],
       "operations": {
-        "list": "getWorkflows",
-        "create": "createWorkflow",
-        "get": "getWorkflow",
-        "update": "updateWorkflow",
-        "delete": "deleteWorkflow",
-        "get_version": "getWorkflowVersion",
-        "activate": "activateWorkflow",
-        "deactivate": "deactivateWorkflow",
-        "get_tags": "getWorkflowTags",
-        "update_tags": "updateWorkflowTags",
-        "transfer": "transferWorkflow",
-        "archive": "archiveWorkflow",
-        "unarchive": "unarchiveWorkflow"
+        "list": "get_/workflows",
+        "create": "post_/workflows",
+        "get": "get_/workflows/{id}",
+        "update": "put_/workflows/{id}",
+        "delete": "delete_/workflows/{id}",
+        "get_version": "get_/workflows/{id}/{versionId}",
+        "activate": "post_/workflows/{id}/activate",
+        "deactivate": "post_/workflows/{id}/deactivate",
+        "get_tags": "get_/workflows/{id}/tags",
+        "update_tags": "put_/workflows/{id}/tags",
+        "transfer": "put_/workflows/{id}/transfer",
+        "archive": "post_/workflows/{id}/archive",
+        "unarchive": "post_/workflows/{id}/unarchive"
       },
       "parameters": {
         "action": {
@@ -1003,15 +1003,15 @@
         "action"
       ],
       "operations": {
-        "list": "listDataTables",
-        "create": "createDataTable",
-        "get": "getDataTable",
-        "update": "updateDataTable",
-        "delete": "deleteDataTable",
-        "list_columns": "listDataTableColumns",
-        "create_column": "createDataTableColumn",
-        "update_column": "updateDataTableColumn",
-        "delete_column": "deleteDataTableColumn"
+        "list": "list-data-tables",
+        "create": "create-data-table",
+        "get": "get-data-table",
+        "update": "update-data-table",
+        "delete": "delete-data-table",
+        "list_columns": "list-data-table-columns",
+        "create_column": "create-data-table-column",
+        "update_column": "update-data-table-column",
+        "delete_column": "delete-data-table-column"
       },
       "parameters": {
         "action": {
@@ -1081,11 +1081,11 @@
         "action"
       ],
       "operations": {
-        "list": "getDataTableRows",
-        "create": "insertDataTableRows",
-        "update": "updateDataTableRows",
-        "upsert": "upsertDataTableRow",
-        "delete": "deleteDataTableRows"
+        "list": "get-data-table-rows",
+        "create": "insert-data-table-rows",
+        "update": "update-data-table-rows",
+        "upsert": "upsert-data-table-row",
+        "delete": "delete-data-table-rows"
       },
       "parameters": {
         "action": {
@@ -1105,15 +1105,6 @@
           "description": "Data table ID (alias: table_id)",
           "required": true
         },
-        "rows": {
-          "type": "array",
-          "description": "Array of rows to process. n8n enforces no documented limit; keep batches under 100 rows for reliability.",
-          "required": false,
-          "items": {
-            "type": "object",
-            "properties": {}
-          }
-        },
         "limit": {
           "type": "number",
           "description": "The maximum number of items to return.",
@@ -1123,6 +1114,18 @@
           "type": "string",
           "description": "Pagination cursor from previous response's nextCursor.",
           "required": false
+        },
+        "data": {
+          "type": "object",
+          "description": "Row data to insert/update. For create: wrap rows in 'data' array per API spec. For update/upsert: object with column values. Keep batches under 100 rows.",
+          "required": false,
+          "properties": {}
+        },
+        "filter": {
+          "type": "object",
+          "description": "Filter criteria for update/upsert/delete operations.",
+          "required": false,
+          "properties": {}
         }
       }
     },
@@ -1133,11 +1136,11 @@
         "action"
       ],
       "operations": {
-        "list": "getFolders",
-        "create": "createFolder",
-        "get": "getFolder",
-        "update": "updateFolder",
-        "delete": "deleteFolder"
+        "list": "get_/projects/{projectId}/folders",
+        "create": "post_/projects/{projectId}/folders",
+        "get": "get_/projects/{projectId}/folders/{folderId}",
+        "update": "patch_/projects/{projectId}/folders/{folderId}",
+        "delete": "delete_/projects/{projectId}/folders/{folderId}"
       },
       "parameters": {
         "action": {
@@ -1194,10 +1197,10 @@
         "action"
       ],
       "operations": {
-        "list": "getInstalledPackages",
-        "install": "installPackage",
-        "update": "updatePackage",
-        "delete": "uninstallPackage"
+        "list": "get_/community-packages",
+        "install": "post_/community-packages",
+        "update": "patch_/community-packages/{name}",
+        "delete": "delete_/community-packages/{name}"
       },
       "parameters": {
         "action": {
@@ -1217,14 +1220,7 @@
           "required": false,
           "required_for": [
             "delete",
-            "update"
-          ]
-        },
-        "packageName": {
-          "type": "string",
-          "description": "npm package name to install",
-          "required": false,
-          "required_for": [
+            "update",
             "install"
           ]
         }

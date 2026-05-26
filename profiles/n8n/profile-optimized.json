@@ -49,26 +49,26 @@
         "action"
       ],
       "operations": {
-        "get_credential_schema": "getCredentialType",
+        "get_credential_schema": "get_/credentials/schema/{credentialTypeName}",
         "list_credentials": "getCredentials",
         "get_credential": "getCredential",
-        "list_executions": "getExecutions",
-        "get_execution": "getExecution",
-        "list_projects": "getProjects",
-        "list_tags": "getTags",
-        "get_tag": "getTag",
-        "list_users": "getUsers",
-        "get_user": "getUser",
-        "list_variables": "getVariables",
-        "list_workflows": "getWorkflows",
-        "get_workflow": "getWorkflow",
-        "get_workflow_version": "getWorkflowVersion",
-        "get_workflow_tags": "getWorkflowTags",
-        "list_data_tables": "listDataTables",
-        "get_data_table": "getDataTable",
-        "list_data_table_rows": "getDataTableRows",
-        "list_folders": "getFolders",
-        "get_insights_summary": "getInsightsSummary"
+        "list_executions": "get_/executions",
+        "get_execution": "get_/executions/{id}",
+        "list_projects": "get_/projects",
+        "list_tags": "get_/tags",
+        "get_tag": "get_/tags/{id}",
+        "list_users": "get_/users",
+        "get_user": "get_/users/{id}",
+        "list_variables": "get_/variables",
+        "list_workflows": "get_/workflows",
+        "get_workflow": "get_/workflows/{id}",
+        "get_workflow_version": "get_/workflows/{id}/{versionId}",
+        "get_workflow_tags": "get_/workflows/{id}/tags",
+        "list_data_tables": "list-data-tables",
+        "get_data_table": "get-data-table",
+        "list_data_table_rows": "get-data-table-rows",
+        "list_folders": "get_/projects/{projectId}/folders",
+        "get_insights_summary": "get_/insights/summary"
       },
       "response_fields": {
         "list_executions": [
@@ -139,8 +139,7 @@
             "get_user",
             "get_workflow",
             "get_workflow_version",
-            "get_workflow_tags",
-            "get_data_table"
+            "get_workflow_tags"
           ],
           "required": false
         },
@@ -402,12 +401,12 @@
       ],
       "operations": {
         "create_credential": "createCredential",
-        "create_project": "createProject",
-        "add_project_users": "addUsersToProject",
-        "create_tag": "createTag",
-        "create_users": "createUser",
-        "create_variable": "createVariable",
-        "create_workflow": "createWorkflow"
+        "create_project": "post_/projects",
+        "add_project_users": "post_/projects/{projectId}/users",
+        "create_tag": "post_/tags",
+        "create_users": "post_/users",
+        "create_variable": "post_/variables",
+        "create_workflow": "post_/workflows"
       },
       "response_fields": {
         "create_credential": [
@@ -690,13 +689,13 @@
       ],
       "operations": {
         "update_credential": "updateCredential",
-        "update_project": "updateProject",
-        "update_project_user_role": "changeUserRoleInProject",
-        "update_tag": "updateTag",
-        "update_user_role": "changeRole",
-        "update_variable": "updateVariable",
-        "update_workflow": "updateWorkflow",
-        "update_workflow_tags": "updateWorkflowTags"
+        "update_project": "put_/projects/{projectId}",
+        "update_project_user_role": "patch_/projects/{projectId}/users/{userId}",
+        "update_tag": "put_/tags/{id}",
+        "update_user_role": "patch_/users/{id}/role",
+        "update_variable": "put_/variables/{id}",
+        "update_workflow": "put_/workflows/{id}",
+        "update_workflow_tags": "put_/workflows/{id}/tags"
       },
       "response_fields": {
         "update_credential": [
@@ -998,13 +997,13 @@
       ],
       "operations": {
         "delete_credential": "deleteCredential",
-        "delete_execution": "deleteExecution",
-        "delete_project": "deleteProject",
-        "remove_project_user": "deleteUserFromProject",
-        "delete_tag": "deleteTag",
-        "delete_user": "deleteUser",
-        "delete_variable": "deleteVariable",
-        "delete_workflow": "deleteWorkflow"
+        "delete_execution": "delete_/executions/{id}",
+        "delete_project": "delete_/projects/{projectId}",
+        "remove_project_user": "delete_/projects/{projectId}/users/{userId}",
+        "delete_tag": "delete_/tags/{id}",
+        "delete_user": "delete_/users/{id}",
+        "delete_variable": "delete_/variables/{id}",
+        "delete_workflow": "delete_/workflows/{id}"
       },
       "response_fields": {
         "delete_credential": [
@@ -1282,16 +1281,16 @@
         "action"
       ],
       "operations": {
-        "generate_audit": "generateAudit",
-        "transfer_credential": "transferCredential",
-        "retry_execution": "retryExecution",
-        "pull_source_control": "pull",
-        "activate_workflow": "activateWorkflow",
-        "deactivate_workflow": "deactivateWorkflow",
-        "transfer_workflow": "transferWorkflow",
-        "stop_execution": "stopExecution",
-        "archive_workflow": "archiveWorkflow",
-        "unarchive_workflow": "unarchiveWorkflow"
+        "generate_audit": "post_/audit",
+        "transfer_credential": "put_/credentials/{id}/transfer",
+        "retry_execution": "post_/executions/{id}/retry",
+        "pull_source_control": "post_/source-control/pull",
+        "activate_workflow": "post_/workflows/{id}/activate",
+        "deactivate_workflow": "post_/workflows/{id}/deactivate",
+        "transfer_workflow": "put_/workflows/{id}/transfer",
+        "stop_execution": "post_/executions/{id}/stop",
+        "archive_workflow": "post_/workflows/{id}/archive",
+        "unarchive_workflow": "post_/workflows/{id}/unarchive"
       },
       "response_fields": {
         "generate_audit": [
