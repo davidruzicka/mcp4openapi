@@ -71,4 +71,14 @@ describe('CompositeExecutor Security', () => {
 
     expect(capturedPaths[0]).toBe(expectedFixedPath);
   });
+
+  it('vulnerability: exact dot segments throw an error', async () => {
+    const steps: CompositeStep[] = [
+      { call: 'GET /users/{id}/profile', store_as: 'result' },
+    ];
+
+    // Malicious input trying to traverse up using exact dot segments
+    await expect(executor.execute(steps, { id: '..' }, false)).rejects.toThrow('Invalid path parameter: path traversal is not allowed');
+    await expect(executor.execute(steps, { id: '.' }, false)).rejects.toThrow('Invalid path parameter: path traversal is not allowed');
+  });
 });

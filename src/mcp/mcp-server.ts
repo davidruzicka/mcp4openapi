@@ -1208,6 +1208,8 @@ export class MCPServer {
     if (val === '.' || val === '..') {
       throw new ValidationError(`Invalid path parameter: path traversal is not allowed`);
     }
+    // Why: GitLab and other APIs require path parameters (like project paths)
+    // to be URL-encoded when used in URL path.
     return encodeURIComponent(val).replace(/\./g, '%2E');
   }
 
