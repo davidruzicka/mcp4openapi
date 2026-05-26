@@ -1205,7 +1205,10 @@ export class MCPServer {
    */
   private encodePathSegment(value: unknown): string {
     const val = String(value);
-    return val.includes('/') ? encodeURIComponent(val) : val;
+    if (val === '.' || val === '..') {
+      throw new ValidationError(`Invalid path parameter: path traversal is not allowed`);
+    }
+    return encodeURIComponent(val).replace(/\./g, '%2E');
   }
 
   /**

@@ -167,18 +167,27 @@ export class CompositeExecutor {
    * Example: "/projects/{id}" + {id: "123"} => "/projects/123"
    * Supports parameter_aliases: {project_id: "123"} can map to {id} if configured
    */
+  private encodePathSegment(value: unknown): string {
+    const val = String(value);
+    if (val === '.' || val === '..') {
+      throw new Error(`Invalid path parameter: path traversal is not allowed`);
+    }
+    // use encodeURIComponent but also encode '.' to prevent directory traversal
+    return encodeURIComponent(val).replace(/\./g, '%2E');
+  }
+
   private resolvePath(template: string, args: Record<string, unknown>): string {
     return template.replace(/\{(\w+)\}/g, (_, key) => {
       // Try direct match first
       if (args[key] !== undefined) {
-        return encodeURIComponent(String(args[key]));
+        return this.encodePathSegment(args[key]);
       }
 
       // Try aliases from profile
       const possibleAliases = this.parameterAliases[key] || [];
       for (const alias of possibleAliases) {
         if (args[alias] !== undefined) {
-          return encodeURIComponent(String(args[alias]));
+          return this.encodePathSegment(args[alias]);
         }
       }
 
