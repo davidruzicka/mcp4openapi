@@ -15,7 +15,10 @@
     "createdAt": "2024-01-01T00:00:00Z",
     "updatedAt": "2024-01-02T00:00:00Z",
     "tagId": "tag-123",
-    "tagName": "Production"
+    "tagName": "Production",
+    "dataTableId": "table-123",
+    "folderId": "folder-123",
+    "columnId": "col-123"
   },
   "scenarios": [
     {
@@ -53,7 +56,7 @@
       },
       "mocks": [
         {
-          "operationId": "post_/credentials",
+          "operationId": "createCredential",
           "response": {
             "body": {}
           }
@@ -776,7 +779,10 @@
                   "name": "Start",
                   "type": "n8n-nodes-base.start",
                   "typeVersion": 1,
-                  "position": [0, 0],
+                  "position": [
+                    0,
+                    0
+                  ],
                   "notes": "Reference entry point",
                   "notesInFlow": true,
                   "parameters": {}
@@ -786,7 +792,10 @@
                   "name": "Sticky Note",
                   "type": "n8n-nodes-base.stickyNote",
                   "typeVersion": 1,
-                  "position": [140, -80],
+                  "position": [
+                    140,
+                    -80
+                  ],
                   "parameters": {
                     "width": 320,
                     "height": 180,
@@ -837,7 +846,10 @@
                     "name": "Start",
                     "type": "n8n-nodes-base.start",
                     "typeVersion": 1,
-                    "position": [0, 0],
+                    "position": [
+                      0,
+                      0
+                    ],
                     "notes": "Reference entry point",
                     "notesInFlow": true,
                     "parameters": {}
@@ -870,7 +882,10 @@
               "name": "Start",
               "type": "n8n-nodes-base.start",
               "typeVersion": 1,
-              "position": [0, 0],
+              "position": [
+                0,
+                0
+              ],
               "notes": "Reference entry point",
               "notesInFlow": true,
               "parameters": {}
@@ -880,7 +895,10 @@
               "name": "Sticky Note",
               "type": "n8n-nodes-base.stickyNote",
               "typeVersion": 1,
-              "position": [140, -80],
+              "position": [
+                140,
+                -80
+              ],
               "parameters": {
                 "width": 320,
                 "height": 180,
@@ -931,7 +949,10 @@
                 "name": "Start",
                 "type": "n8n-nodes-base.start",
                 "typeVersion": 1,
-                "position": [0, 0],
+                "position": [
+                  0,
+                  0
+                ],
                 "notes": "Reference entry point",
                 "notesInFlow": true,
                 "parameters": {}
@@ -1051,7 +1072,10 @@
                   "name": "HTTP Request",
                   "type": "n8n-nodes-base.httpRequest",
                   "typeVersion": 1,
-                  "position": [200, 0],
+                  "position": [
+                    200,
+                    0
+                  ],
                   "notes": "Calls upstream API",
                   "notesInFlow": true,
                   "parameters": {
@@ -1083,7 +1107,10 @@
               "name": "HTTP Request",
               "type": "n8n-nodes-base.httpRequest",
               "typeVersion": 1,
-              "position": [200, 0],
+              "position": [
+                200,
+                0
+              ],
               "notes": "Calls upstream API",
               "notesInFlow": true,
               "parameters": {
@@ -1194,6 +1221,780 @@
       "mocks": [
         {
           "operationId": "put_/workflows/{id}/transfer",
+          "response": {
+            "body": {}
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "audit - insights_summary",
+      "tool": "audit",
+      "arguments": {
+        "action": "insights_summary"
+      },
+      "mocks": [
+        {
+          "operationId": "get_/insights/summary",
+          "response": {
+            "body": {
+              "summary": {}
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "manage_credentials - list",
+      "tool": "manage_credentials",
+      "arguments": {
+        "action": "list"
+      },
+      "mocks": [
+        {
+          "operationId": "getCredentials",
+          "response": {
+            "body": {
+              "data": [],
+              "nextCursor": null
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "manage_credentials - get",
+      "tool": "manage_credentials",
+      "arguments": {
+        "action": "get",
+        "id": "{{id}}"
+      },
+      "mocks": [
+        {
+          "operationId": "getCredential",
+          "response": {
+            "body": {
+              "id": "{{id}}",
+              "name": "{{name}}"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "manage_credentials - test",
+      "tool": "manage_credentials",
+      "arguments": {
+        "action": "test",
+        "id": "{{id}}"
+      },
+      "mocks": [
+        {
+          "operationId": "testCredential",
+          "response": {
+            "body": {
+              "status": "OK"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "manage_credentials - missing id for get",
+      "tool": "manage_credentials",
+      "arguments": {
+        "action": "get"
+      },
+      "mocks": [],
+      "expect": {
+        "success": false
+      }
+    },
+    {
+      "name": "manage_executions - stop",
+      "tool": "manage_executions",
+      "arguments": {
+        "action": "stop",
+        "id": "{{id}}"
+      },
+      "mocks": [
+        {
+          "operationId": "post_/executions/{id}/stop",
+          "response": {
+            "body": {}
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "manage_executions - stop_all",
+      "tool": "manage_executions",
+      "arguments": {
+        "action": "stop_all"
+      },
+      "mocks": [
+        {
+          "operationId": "post_/executions/stop",
+          "response": {
+            "body": {}
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "manage_executions - get_tags",
+      "tool": "manage_executions",
+      "arguments": {
+        "action": "get_tags",
+        "id": "{{id}}"
+      },
+      "mocks": [
+        {
+          "operationId": "get_/executions/{id}/tags",
+          "response": {
+            "body": []
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "manage_executions - missing id for stop",
+      "tool": "manage_executions",
+      "arguments": {
+        "action": "stop"
+      },
+      "mocks": [],
+      "expect": {
+        "success": false
+      }
+    },
+    {
+      "name": "manage_workflows - archive",
+      "tool": "manage_workflows",
+      "arguments": {
+        "action": "archive",
+        "id": "{{id}}"
+      },
+      "mocks": [
+        {
+          "operationId": "post_/workflows/{id}/archive",
+          "response": {
+            "body": {}
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "manage_workflows - unarchive",
+      "tool": "manage_workflows",
+      "arguments": {
+        "action": "unarchive",
+        "id": "{{id}}"
+      },
+      "mocks": [
+        {
+          "operationId": "post_/workflows/{id}/unarchive",
+          "response": {
+            "body": {}
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "manage_data_tables - list",
+      "tool": "manage_data_tables",
+      "arguments": {
+        "action": "list"
+      },
+      "mocks": [
+        {
+          "operationId": "list-data-tables",
+          "response": {
+            "body": {
+              "data": [],
+              "nextCursor": null
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "manage_data_tables - get",
+      "tool": "manage_data_tables",
+      "arguments": {
+        "action": "get",
+        "dataTableId": "{{dataTableId}}"
+      },
+      "mocks": [
+        {
+          "operationId": "get-data-table",
+          "response": {
+            "body": {
+              "id": "{{dataTableId}}",
+              "name": "orders"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "manage_data_tables - list_columns",
+      "tool": "manage_data_tables",
+      "arguments": {
+        "action": "list_columns",
+        "dataTableId": "{{dataTableId}}"
+      },
+      "mocks": [
+        {
+          "operationId": "list-data-table-columns",
+          "response": {
+            "body": {
+              "data": []
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "manage_data_tables - missing dataTableId for get",
+      "tool": "manage_data_tables",
+      "arguments": {
+        "action": "get"
+      },
+      "mocks": [],
+      "expect": {
+        "success": false
+      }
+    },
+    {
+      "name": "manage_data_table_rows - list",
+      "tool": "manage_data_table_rows",
+      "arguments": {
+        "action": "list",
+        "dataTableId": "{{dataTableId}}"
+      },
+      "mocks": [
+        {
+          "operationId": "get-data-table-rows",
+          "response": {
+            "body": {
+              "data": [],
+              "nextCursor": null
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "manage_data_table_rows - create",
+      "tool": "manage_data_table_rows",
+      "arguments": {
+        "action": "create",
+        "dataTableId": "{{dataTableId}}",
+        "data": [
+          {
+            "name": "Alice"
+          }
+        ]
+      },
+      "mocks": [
+        {
+          "operationId": "insert-data-table-rows",
+          "response": {
+            "body": {
+              "data": []
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "manage_data_table_rows - missing dataTableId",
+      "tool": "manage_data_table_rows",
+      "arguments": {
+        "action": "list"
+      },
+      "mocks": [],
+      "expect": {
+        "success": false
+      }
+    },
+    {
+      "name": "manage_folders - list",
+      "tool": "manage_folders",
+      "arguments": {
+        "action": "list",
+        "projectId": "{{projectId}}"
+      },
+      "mocks": [
+        {
+          "operationId": "get_/projects/{projectId}/folders",
+          "response": {
+            "body": {
+              "data": [],
+              "nextCursor": null
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "manage_folders - missing projectId",
+      "tool": "manage_folders",
+      "arguments": {
+        "action": "list"
+      },
+      "mocks": [],
+      "expect": {
+        "success": false
+      }
+    },
+    {
+      "name": "manage_community_packages - list",
+      "tool": "manage_community_packages",
+      "arguments": {
+        "action": "list"
+      },
+      "mocks": [
+        {
+          "operationId": "get_/community-packages",
+          "response": {
+            "body": {
+              "data": []
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "manage_executions - update_tags",
+      "tool": "manage_executions",
+      "arguments": {
+        "action": "update_tags",
+        "id": "{{id}}",
+        "tags": [
+          {
+            "id": "{{tagId}}"
+          }
+        ]
+      },
+      "mocks": [
+        {
+          "operationId": "put_/executions/{id}/tags",
+          "response": {
+            "body": []
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "manage_data_tables - create",
+      "tool": "manage_data_tables",
+      "arguments": {
+        "action": "create",
+        "name": "orders",
+        "columns": [
+          {
+            "name": "id",
+            "type": "string"
+          }
+        ]
+      },
+      "mocks": [
+        {
+          "operationId": "create-data-table",
+          "response": {
+            "body": {
+              "id": "{{dataTableId}}",
+              "name": "orders"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "manage_data_tables - update",
+      "tool": "manage_data_tables",
+      "arguments": {
+        "action": "update",
+        "dataTableId": "{{dataTableId}}",
+        "name": "orders-updated"
+      },
+      "mocks": [
+        {
+          "operationId": "update-data-table",
+          "response": {
+            "body": {}
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "manage_data_tables - delete",
+      "tool": "manage_data_tables",
+      "arguments": {
+        "action": "delete",
+        "dataTableId": "{{dataTableId}}"
+      },
+      "mocks": [
+        {
+          "operationId": "delete-data-table",
+          "response": {
+            "body": {}
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "manage_data_tables - create_column",
+      "tool": "manage_data_tables",
+      "arguments": {
+        "action": "create_column",
+        "dataTableId": "{{dataTableId}}",
+        "name": "price",
+        "type": "string"
+      },
+      "mocks": [
+        {
+          "operationId": "create-data-table-column",
+          "response": {
+            "body": {
+              "id": "{{columnId}}",
+              "name": "price"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "manage_data_tables - update_column",
+      "tool": "manage_data_tables",
+      "arguments": {
+        "action": "update_column",
+        "dataTableId": "{{dataTableId}}",
+        "columnId": "{{columnId}}",
+        "name": "price-updated"
+      },
+      "mocks": [
+        {
+          "operationId": "update-data-table-column",
+          "response": {
+            "body": {}
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "manage_data_tables - delete_column",
+      "tool": "manage_data_tables",
+      "arguments": {
+        "action": "delete_column",
+        "dataTableId": "{{dataTableId}}",
+        "columnId": "{{columnId}}"
+      },
+      "mocks": [
+        {
+          "operationId": "delete-data-table-column",
+          "response": {
+            "body": {}
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "manage_data_table_rows - update",
+      "tool": "manage_data_table_rows",
+      "arguments": {
+        "action": "update",
+        "dataTableId": "{{dataTableId}}",
+        "filter": {
+          "filters": [
+            {
+              "columnName": "name",
+              "condition": "eq",
+              "value": "Bob"
+            }
+          ]
+        },
+        "data": {
+          "name": "Bob Updated"
+        }
+      },
+      "mocks": [
+        {
+          "operationId": "update-data-table-rows",
+          "response": {
+            "body": {
+              "data": []
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "manage_data_table_rows - upsert",
+      "tool": "manage_data_table_rows",
+      "arguments": {
+        "action": "upsert",
+        "dataTableId": "{{dataTableId}}",
+        "filter": {
+          "filters": [
+            {
+              "columnName": "name",
+              "condition": "eq",
+              "value": "Carol"
+            }
+          ]
+        },
+        "data": {
+          "name": "Carol Updated"
+        }
+      },
+      "mocks": [
+        {
+          "operationId": "upsert-data-table-row",
+          "response": {
+            "body": {
+              "data": []
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "manage_data_table_rows - delete",
+      "tool": "manage_data_table_rows",
+      "arguments": {
+        "action": "delete",
+        "dataTableId": "{{dataTableId}}"
+      },
+      "mocks": [
+        {
+          "operationId": "delete-data-table-rows",
+          "response": {
+            "body": {}
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "manage_folders - create",
+      "tool": "manage_folders",
+      "arguments": {
+        "action": "create",
+        "projectId": "{{projectId}}",
+        "name": "My Folder"
+      },
+      "mocks": [
+        {
+          "operationId": "post_/projects/{projectId}/folders",
+          "response": {
+            "body": {
+              "id": "{{folderId}}",
+              "name": "My Folder"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "manage_folders - get",
+      "tool": "manage_folders",
+      "arguments": {
+        "action": "get",
+        "projectId": "{{projectId}}",
+        "folderId": "{{folderId}}"
+      },
+      "mocks": [
+        {
+          "operationId": "get_/projects/{projectId}/folders/{folderId}",
+          "response": {
+            "body": {
+              "id": "{{folderId}}",
+              "name": "My Folder"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "manage_folders - update",
+      "tool": "manage_folders",
+      "arguments": {
+        "action": "update",
+        "projectId": "{{projectId}}",
+        "folderId": "{{folderId}}",
+        "name": "Updated Folder"
+      },
+      "mocks": [
+        {
+          "operationId": "patch_/projects/{projectId}/folders/{folderId}",
+          "response": {
+            "body": {}
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "manage_folders - delete",
+      "tool": "manage_folders",
+      "arguments": {
+        "action": "delete",
+        "projectId": "{{projectId}}",
+        "folderId": "{{folderId}}"
+      },
+      "mocks": [
+        {
+          "operationId": "delete_/projects/{projectId}/folders/{folderId}",
+          "response": {
+            "body": {}
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "manage_community_packages - install",
+      "tool": "manage_community_packages",
+      "arguments": {
+        "action": "install",
+        "name": "n8n-nodes-example"
+      },
+      "mocks": [
+        {
+          "operationId": "post_/community-packages",
+          "response": {
+            "body": {
+              "packageName": "n8n-nodes-example"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "manage_community_packages - update",
+      "tool": "manage_community_packages",
+      "arguments": {
+        "action": "update",
+        "name": "n8n-nodes-example"
+      },
+      "mocks": [
+        {
+          "operationId": "patch_/community-packages/{name}",
+          "response": {
+            "body": {}
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "manage_community_packages - delete",
+      "tool": "manage_community_packages",
+      "arguments": {
+        "action": "delete",
+        "name": "n8n-nodes-example"
+      },
+      "mocks": [
+        {
+          "operationId": "delete_/community-packages/{name}",
           "response": {
             "body": {}
           }
