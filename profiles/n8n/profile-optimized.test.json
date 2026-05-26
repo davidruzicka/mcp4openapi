@@ -1569,6 +1569,61 @@
           "path": "/data-tables/{{dataTableId}}"
         }
       }
+    },
+    {
+      "name": "retrieve_n8n - get_credential missing id",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "get_credential"
+      },
+      "mocks": [],
+      "expect": {
+        "success": false
+      }
+    },
+    {
+      "name": "retrieve_n8n - get_data_table missing dataTableId",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "get_data_table"
+      },
+      "mocks": [],
+      "expect": {
+        "success": false
+      }
+    },
+    {
+      "name": "retrieve_n8n - list_folders missing projectId",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "list_folders"
+      },
+      "mocks": [],
+      "expect": {
+        "success": false
+      }
+    },
+    {
+      "name": "modify_n8n - stop_execution missing id",
+      "tool": "run_n8n_operations",
+      "arguments": {
+        "action": "stop_execution"
+      },
+      "mocks": [],
+      "expect": {
+        "success": false
+      }
+    },
+    {
+      "name": "modify_n8n - archive_workflow missing id",
+      "tool": "run_n8n_operations",
+      "arguments": {
+        "action": "archive_workflow"
+      },
+      "mocks": [],
+      "expect": {
+        "success": false
+      }
     }
   ],
   "coverage": {

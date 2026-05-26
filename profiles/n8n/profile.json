@@ -270,7 +270,7 @@
         },
         "status": {
           "type": "string",
-          "description": "Status to filter the executions by.",
+          "description": "Execution status filter for list, or array of statuses to stop for stop_all (e.g. [\"running\",\"waiting\"]).",
           "required": false
         },
         "workflowId": {
@@ -1072,6 +1072,25 @@
           "description": "Pagination cursor from previous response's nextCursor.",
           "required": false
         }
+      },
+      "response_fields": {
+        "list": [
+          "data(id,name,createdAt,updatedAt)",
+          "nextCursor"
+        ],
+        "get": [
+          "id",
+          "name",
+          "createdAt",
+          "updatedAt"
+        ],
+        "create": [
+          "id",
+          "name"
+        ],
+        "list_columns": [
+          "data(id,name,type)"
+        ]
       }
     },
     {
@@ -1116,10 +1135,13 @@
           "required": false
         },
         "data": {
-          "type": "object",
-          "description": "Row data to insert/update. For create: wrap rows in 'data' array per API spec. For update/upsert: object with column values. Keep batches under 100 rows.",
+          "type": "array",
+          "description": "Rows to insert/update. Each element is a row object {col: val}. For update/upsert: combined with filter to select target rows. Keep batches under 100 rows.",
           "required": false,
-          "properties": {}
+          "items": {
+            "type": "object",
+            "properties": {}
+          }
         },
         "filter": {
           "type": "object",
@@ -1127,6 +1149,12 @@
           "required": false,
           "properties": {}
         }
+      },
+      "response_fields": {
+        "list": [
+          "data",
+          "nextCursor"
+        ]
       }
     },
     {
@@ -1187,7 +1215,27 @@
           "type": "string",
           "description": "Pagination cursor from previous response's nextCursor.",
           "required": false
+        },
+        "transferToFolderId": {
+          "type": "string",
+          "description": "Folder ID to transfer workflows to when deleting. If omitted, workflows in the folder are archived.",
+          "required": false
         }
+      },
+      "response_fields": {
+        "list": [
+          "data(id,name,parentFolderId)",
+          "nextCursor"
+        ],
+        "get": [
+          "id",
+          "name",
+          "parentFolderId"
+        ],
+        "create": [
+          "id",
+          "name"
+        ]
       }
     },
     {
@@ -1223,7 +1271,22 @@
             "update",
             "install"
           ]
+        },
+        "version": {
+          "type": "string",
+          "description": "Specific package version to install or update to (e.g. \"1.2.3\"). Omit to use latest.",
+          "required": false
+        },
+        "verify": {
+          "type": "boolean",
+          "description": "Verify package against vetted list before installing.",
+          "required": false
         }
+      },
+      "response_fields": {
+        "list": [
+          "data(packageName,version,installedVersion,updateAvailable)"
+        ]
       }
     }
   ],

@@ -1276,7 +1276,7 @@
     },
     {
       "name": "run_n8n_operations",
-      "description": "Execute non-CRUD n8n operations (audit, retries, transfers, activation, source control).",
+      "description": "Execute non-CRUD n8n operations (audit, retries, transfers, activation, stop, archive, source control).",
       "metadata_params": [
         "action"
       ],
