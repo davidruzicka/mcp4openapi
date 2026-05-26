@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `handleOtherRequest` upstream `tools/list` pre-flight error now uses `mapUpstreamErrorToMcpError` (provider-safe message) instead of generic "Internal error"; `req.method` truncated to 200 chars in error logs; `uri` and prompt `name` params capped at 2048/256 chars with `-32602` validation errors.
 
 ### Added
+- Expanded n8n profiles and OpenAPI spec to full Public API coverage (n8n@2.21.7): credentials list/get/test, execution stop/stop_all/tags, workflow archive/unarchive, data tables (CRUD + rows + columns), project folders, community packages, and instance insights; 76 operations across 13 tools (profile.json) and 53 operations across 5 tools (profile-optimized.json).
 - DefectDojo profile (`profiles/defectdojo/`) with 6 CRUD-style tools covering findings, products, engagements, tests, endpoints, scan import/reimport, and admin resources; uses new `token` auth type - set `DEFECTDOJO_TOKEN=<api-key>` (raw key, server adds `Token ` prefix); fixed `isMultipartOperation` to require binary fields so DRF alternative-encoding multipart does not trigger file-upload path.
 - New `token` auth type (profile `interceptors.auth.type: "token"`) for DRF/Django REST Framework Token auth - sends `Authorization: Token <key>`; inbound MCP clients likewise send `Authorization: Token <key>`.
 - GitLab profiles: added project wiki page CRUD support to both the optimized CRUD profile and the developer-oriented profile, including bundled OpenAPI entries and focused test coverage.
