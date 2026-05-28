@@ -14,7 +14,7 @@ export interface CapturedRequest {
 
 export class DynamicMockEngine {
   private parser: OpenAPIParser;
-  private server: SetupServerApi;
+  private server: ReturnType<typeof setupServer>;
   private baseUrl: string;
   private capturedRequests: CapturedRequest[] = [];
 
