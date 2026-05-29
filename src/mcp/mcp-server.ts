@@ -44,7 +44,8 @@ import {
   AuthorizationError,
   RateLimitError,
   NetworkError,
-  generateCorrelationId
+  generateCorrelationId,
+  EnterprisePolicyViolationError
 } from '../core/errors.js';
 import { OAUTH_RATE_LIMIT, INPUT_LIMITS } from '../core/constants.js';
 import { HttpClient } from '../transport/interceptors.js';
@@ -464,6 +465,11 @@ export class MCPServer {
 
     if (error instanceof ResourceNotFoundError) {
       return `${error.message} (correlation ID: ${correlationId})`;
+    }
+
+    // Enterprise Policy errors - safe to show
+    if (error instanceof EnterprisePolicyViolationError) {
+      return `Enterprise policy violation: ${error.message} (correlation ID: ${correlationId})`;
     }
 
     // Configuration errors - safe to show (helps admin fix setup)

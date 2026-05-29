@@ -21,7 +21,8 @@ import {
   ValidationError,
   OperationNotFoundError,
   ConfigurationError,
-  ResourceNotFoundError
+  ResourceNotFoundError,
+  EnterprisePolicyViolationError
 } from '../core/errors.js';
 import {
   UpstreamConnectionError,
@@ -3224,6 +3225,20 @@ paths:
       const formatted = (server as any).formatErrorForClient(error, correlationId);
       
       expect(formatted).toContain('Operation not found');
+      expect(formatted).toContain(correlationId);
+    });
+  });
+
+  describe('EnterprisePolicyViolationError formatting', () => {
+    it('should format EnterprisePolicyViolationError with correlation ID', () => {
+      const server = new MCPServer();
+      const error = new EnterprisePolicyViolationError('Disallowed access');
+      const correlationId = 'test-correlation-id';
+
+      const formatted = (server as any).formatErrorForClient(error, correlationId);
+
+      expect(formatted).toContain('Enterprise policy violation');
+      expect(formatted).toContain('Disallowed access');
       expect(formatted).toContain(correlationId);
     });
   });
