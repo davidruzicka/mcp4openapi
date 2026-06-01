@@ -272,6 +272,7 @@ export class OpenAPIParser {
       minLength: schema.minLength,
       maxLength: schema.maxLength,
       pattern: schema.pattern,
+      readOnly: schema.readOnly || undefined,
     };
 
     if (schema.allOf && schema.allOf.length > 0) {
@@ -410,6 +411,7 @@ export class OpenAPIParser {
       minLength: schema.minLength,
       maxLength: schema.maxLength,
       pattern: schema.pattern,
+      readOnly: schema.readOnly,
       ref: schema.ref,
       circular: schema.circular,
     };

@@ -1403,8 +1403,10 @@ export class MCPServer {
       }
 
       if (bodySchema?.type === 'object' && bodySchema.properties) {
-        for (const propName of Object.keys(bodySchema.properties)) {
-          bodySchemaProps.add(propName);
+        for (const [propName, propSchema] of Object.entries(bodySchema.properties)) {
+          if (!propSchema.readOnly) {
+            bodySchemaProps.add(propName);
+          }
         }
       }
     }

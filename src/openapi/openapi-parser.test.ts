@@ -227,6 +227,20 @@ describe('OpenAPIParser - additional coverage', () => {
     expect(isYaml).toBe(true);
   });
 
+  it('extractSchema captures readOnly flag on properties', () => {
+    const parser = new OpenAPIParser();
+    const schema = {
+      type: 'object',
+      properties: {
+        id: { type: 'string', readOnly: true },
+        name: { type: 'string' },
+      },
+    };
+    const info = (parser as any).extractSchema(schema, new Set());
+    expect(info.properties?.id.readOnly).toBe(true);
+    expect(info.properties?.name.readOnly).toBeUndefined();
+  });
+
   it('extractSchema processes oneOf schemas', () => {
     const parser = new OpenAPIParser();
     const schema = {
