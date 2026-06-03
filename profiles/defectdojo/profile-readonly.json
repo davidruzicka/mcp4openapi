@@ -1,0 +1,257 @@
+{
+  "$schema": "../../profile-schema.json",
+  "profile_name": "defectdojo",
+  "profile_id": "defectdojo",
+  "profile_aliases": [
+    "defectdojo-readonly"
+  ],
+  "openapi_spec_path": "./openapi.json",
+  "description": "Read-only access to DefectDojo API v2 with note creation: findings, products, engagements, tests, and related entities.",
+  "resource_name": "DefectDojo API v2",
+  "resource_documentation": "https://defectdojo.github.io/django-DefectDojo/integrations/api-v2-docs/",
+  "parameter_aliases": {
+    "id": [
+      "finding_id",
+      "product_id",
+      "engagement_id",
+      "test_id",
+      "endpoint_id",
+      "user_id",
+      "group_id",
+      "template_id",
+      "configuration_id"
+    ],
+    "new_fid": [
+      "new_finding_id"
+    ]
+  },
+  "interceptors": {
+    "base_url": {
+      "value_from_env": "DEFECTDOJO_API_BASE_URL"
+    },
+    "auth": {
+      "type": "token",
+      "value_from_env": "DEFECTDOJO_TOKEN",
+      "validation_endpoint": "/api/v2/user_profile/"
+    },
+    "retry": {
+      "max_attempts": 3,
+      "backoff_ms": [
+        1000,
+        2000,
+        4000
+      ],
+      "retry_on_status": [
+        429,
+        502,
+        503,
+        504
+      ]
+    }
+  },
+  "tools": [
+    {
+      "name": "retrieve_content",
+      "description": "Read-only access to DefectDojo entities. Actions: 'get_engagement', 'get_finding', 'get_metadata', 'get_product', 'get_product_group', 'get_product_member', 'get_product_type', 'get_product_type_group', 'get_product_type_member', 'get_test', 'get_user', 'get_user_contact_info', 'list_engagements', 'list_finding_duplicates', 'list_finding_files', 'list_finding_metadata', 'list_finding_notes', 'list_finding_tags', 'list_findings', 'list_metadata', 'list_product_groups', 'list_product_members', 'list_product_type_groups', 'list_product_type_members', 'list_product_types', 'list_products', 'list_tests', 'list_user_contact_infos', 'list_users'.",
+      "metadata_params": [
+        "action",
+        "id"
+      ],
+      "operations": {
+        "list_engagements": "engagements_list",
+        "get_engagement": "engagements_retrieve",
+        "list_findings": "findings_list",
+        "get_finding": "findings_retrieve",
+        "list_finding_duplicates": "findings_duplicate_list",
+        "list_finding_files": "findings_files_retrieve",
+        "list_finding_metadata": "findings_metadata_list",
+        "list_finding_notes": "findings_notes_retrieve",
+        "list_finding_tags": "findings_tags_retrieve",
+        "list_metadata": "metadata_list",
+        "get_metadata": "metadata_retrieve",
+        "list_product_groups": "product_groups_list",
+        "get_product_group": "product_groups_retrieve",
+        "list_product_members": "product_members_list",
+        "get_product_member": "product_members_retrieve",
+        "list_product_type_groups": "product_type_groups_list",
+        "get_product_type_group": "product_type_groups_retrieve",
+        "list_product_type_members": "product_type_members_list",
+        "get_product_type_member": "product_type_members_retrieve",
+        "list_product_types": "product_types_list",
+        "get_product_type": "product_types_retrieve",
+        "list_products": "products_list",
+        "get_product": "products_retrieve",
+        "list_tests": "tests_list",
+        "get_test": "tests_retrieve",
+        "list_user_contact_infos": "user_contact_infos_list",
+        "get_user_contact_info": "user_contact_infos_retrieve",
+        "list_users": "users_list",
+        "get_user": "users_retrieve"
+      },
+      "parameters": {
+        "action": {
+          "type": "string",
+          "enum": [
+            "get_engagement",
+            "get_finding",
+            "get_metadata",
+            "get_product",
+            "get_product_group",
+            "get_product_member",
+            "get_product_type",
+            "get_product_type_group",
+            "get_product_type_member",
+            "get_test",
+            "get_user",
+            "get_user_contact_info",
+            "list_engagements",
+            "list_finding_duplicates",
+            "list_finding_files",
+            "list_finding_metadata",
+            "list_finding_notes",
+            "list_finding_tags",
+            "list_findings",
+            "list_metadata",
+            "list_product_groups",
+            "list_product_members",
+            "list_product_type_groups",
+            "list_product_type_members",
+            "list_product_types",
+            "list_products",
+            "list_tests",
+            "list_user_contact_infos",
+            "list_users"
+          ],
+          "description": "Action to perform",
+          "required": true
+        },
+        "id": {
+          "type": "integer",
+          "description": "Entity ID (finding, product, engagement, test, etc.)",
+          "required_for": [
+            "get_engagement",
+            "get_finding",
+            "get_metadata",
+            "get_product",
+            "get_product_group",
+            "get_product_member",
+            "get_product_type",
+            "get_product_type_group",
+            "get_product_type_member",
+            "get_test",
+            "get_user",
+            "get_user_contact_info",
+            "list_finding_duplicates",
+            "list_finding_files",
+            "list_finding_metadata",
+            "list_finding_notes",
+            "list_finding_tags"
+          ]
+        },
+        "limit": {
+          "type": "integer",
+          "description": "Number of results per page (pagination)"
+        },
+        "offset": {
+          "type": "integer",
+          "description": "Starting index for pagination"
+        },
+        "active": {
+          "type": "boolean",
+          "description": "Filter findings by active status"
+        },
+        "verified": {
+          "type": "boolean",
+          "description": "Filter findings by verified status"
+        },
+        "severity": {
+          "type": "string",
+          "description": "Filter findings by severity: Critical, High, Medium, Low, Info"
+        },
+        "false_p": {
+          "type": "boolean",
+          "description": "Filter findings by false positive flag"
+        },
+        "duplicate": {
+          "type": "boolean",
+          "description": "Filter findings by duplicate flag"
+        },
+        "out_of_scope": {
+          "type": "boolean",
+          "description": "Filter findings by out-of-scope flag"
+        },
+        "risk_accepted": {
+          "type": "boolean",
+          "description": "Filter findings by risk-accepted status"
+        },
+        "is_mitigated": {
+          "type": "boolean",
+          "description": "Filter findings by mitigated status"
+        },
+        "test": {
+          "type": "integer",
+          "description": "Filter findings by test ID"
+        },
+        "tags": {
+          "type": "string",
+          "description": "Filter by tags (comma-separated)"
+        },
+        "title": {
+          "type": "string",
+          "description": "Filter by title (findings)"
+        },
+        "prefetch": {
+          "type": "string",
+          "description": "Prefetch related fields (comma-separated)"
+        },
+        "related_fields": {
+          "type": "boolean",
+          "description": "Expand external relations for findings"
+        },
+        "o": {
+          "type": "string",
+          "description": "Ordering field(s), prefix with \"-\" for descending"
+        }
+      }
+    },
+    {
+      "name": "create_notes",
+      "description": "Add notes to findings in DefectDojo. Actions: 'create_finding_note'.",
+      "metadata_params": [
+        "action",
+        "id"
+      ],
+      "operations": {
+        "create_finding_note": "findings_notes_create"
+      },
+      "parameters": {
+        "action": {
+          "type": "string",
+          "enum": [
+            "create_finding_note"
+          ],
+          "description": "Action to perform",
+          "required": true
+        },
+        "id": {
+          "type": "integer",
+          "description": "Parent entity ID (finding, engagement, or test)",
+          "required_for": [
+            "create_finding_note"
+          ]
+        },
+        "entry": {
+          "type": "string",
+          "description": "Note text content",
+          "required_for": [
+            "create_finding_note"
+          ]
+        },
+        "note_type": {
+          "type": "integer",
+          "description": "Note type ID (optional)"
+        }
+      }
+    }
+  ]
+}

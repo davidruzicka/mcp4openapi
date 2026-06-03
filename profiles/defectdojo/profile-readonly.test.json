@@ -1,0 +1,724 @@
+{
+  "$schema": "../../src/testing/test-schema.ts",
+  "profile_name": "defectdojo",
+  "scenarios": [
+    {
+      "name": "List Findings",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "list_findings",
+        "active": true,
+        "severity": "High"
+      },
+      "mocks": [
+        {
+          "operationId": "findings_list",
+          "response": {
+            "body": {
+              "count": 1,
+              "results": [
+                {
+                  "id": 1,
+                  "title": "SQL Injection",
+                  "severity": "High"
+                }
+              ]
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": {
+          "results": [
+            {
+              "id": 1
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Get Finding",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "get_finding",
+        "id": 1
+      },
+      "mocks": [
+        {
+          "operationId": "findings_retrieve",
+          "response": {
+            "body": {
+              "id": 1,
+              "title": "SQL Injection",
+              "severity": "High",
+              "active": true
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "result": {
+          "id": 1,
+          "title": "SQL Injection"
+        }
+      }
+    },
+    {
+      "name": "Get Finding - Missing ID",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "get_finding"
+      },
+      "mocks": [],
+      "expect": {
+        "success": false,
+        "error_message_regex": "id"
+      }
+    },
+    {
+      "name": "List Finding Notes",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "list_finding_notes",
+        "id": 1
+      },
+      "mocks": [
+        {
+          "operationId": "findings_notes_retrieve",
+          "response": {
+            "body": [
+              {
+                "id": 1,
+                "entry": "Note text"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "List Finding Files",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "list_finding_files",
+        "id": 1
+      },
+      "mocks": [
+        {
+          "operationId": "findings_files_retrieve",
+          "response": {
+            "body": {
+              "id": 1,
+              "files": []
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "List Finding Metadata",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "list_finding_metadata",
+        "id": 1
+      },
+      "mocks": [
+        {
+          "operationId": "findings_metadata_list",
+          "response": {
+            "body": [
+              {
+                "id": 1,
+                "name": "key",
+                "value": "val"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "List Finding Tags",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "list_finding_tags",
+        "id": 1
+      },
+      "mocks": [
+        {
+          "operationId": "findings_tags_retrieve",
+          "response": {
+            "body": [
+              "web",
+              "api"
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "List Finding Duplicates",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "list_finding_duplicates",
+        "id": 1
+      },
+      "mocks": [
+        {
+          "operationId": "findings_duplicate_list",
+          "response": {
+            "body": {
+              "count": 0,
+              "results": []
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "List Products",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "list_products"
+      },
+      "mocks": [
+        {
+          "operationId": "products_list",
+          "response": {
+            "body": {
+              "count": 1,
+              "results": [
+                {
+                  "id": 1,
+                  "name": "MyApp"
+                }
+              ]
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Get Product",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "get_product",
+        "id": 1
+      },
+      "mocks": [
+        {
+          "operationId": "products_retrieve",
+          "response": {
+            "body": {
+              "id": 1,
+              "name": "MyApp"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "List Product Types",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "list_product_types"
+      },
+      "mocks": [
+        {
+          "operationId": "product_types_list",
+          "response": {
+            "body": {
+              "count": 1,
+              "results": [
+                {
+                  "id": 1,
+                  "name": "Web"
+                }
+              ]
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Get Product Type",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "get_product_type",
+        "id": 1
+      },
+      "mocks": [
+        {
+          "operationId": "product_types_retrieve",
+          "response": {
+            "body": {
+              "id": 1,
+              "name": "Web"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "List Product Members",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "list_product_members"
+      },
+      "mocks": [
+        {
+          "operationId": "product_members_list",
+          "response": {
+            "body": {
+              "count": 0,
+              "results": []
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Get Product Member",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "get_product_member",
+        "id": 1
+      },
+      "mocks": [
+        {
+          "operationId": "product_members_retrieve",
+          "response": {
+            "body": {
+              "id": 1
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "List Product Groups",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "list_product_groups"
+      },
+      "mocks": [
+        {
+          "operationId": "product_groups_list",
+          "response": {
+            "body": {
+              "count": 0,
+              "results": []
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Get Product Group",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "get_product_group",
+        "id": 1
+      },
+      "mocks": [
+        {
+          "operationId": "product_groups_retrieve",
+          "response": {
+            "body": {
+              "id": 1
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "List Product Type Members",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "list_product_type_members"
+      },
+      "mocks": [
+        {
+          "operationId": "product_type_members_list",
+          "response": {
+            "body": {
+              "count": 0,
+              "results": []
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Get Product Type Member",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "get_product_type_member",
+        "id": 1
+      },
+      "mocks": [
+        {
+          "operationId": "product_type_members_retrieve",
+          "response": {
+            "body": {
+              "id": 1
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "List Product Type Groups",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "list_product_type_groups"
+      },
+      "mocks": [
+        {
+          "operationId": "product_type_groups_list",
+          "response": {
+            "body": {
+              "count": 0,
+              "results": []
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Get Product Type Group",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "get_product_type_group",
+        "id": 1
+      },
+      "mocks": [
+        {
+          "operationId": "product_type_groups_retrieve",
+          "response": {
+            "body": {
+              "id": 1
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "List Engagements",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "list_engagements"
+      },
+      "mocks": [
+        {
+          "operationId": "engagements_list",
+          "response": {
+            "body": {
+              "count": 1,
+              "results": [
+                {
+                  "id": 1,
+                  "name": "Pentest Q1"
+                }
+              ]
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Get Engagement",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "get_engagement",
+        "id": 1
+      },
+      "mocks": [
+        {
+          "operationId": "engagements_retrieve",
+          "response": {
+            "body": {
+              "id": 1,
+              "name": "Pentest Q1"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "List Tests",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "list_tests"
+      },
+      "mocks": [
+        {
+          "operationId": "tests_list",
+          "response": {
+            "body": {
+              "count": 1,
+              "results": [
+                {
+                  "id": 1,
+                  "title": "API Test"
+                }
+              ]
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Get Test",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "get_test",
+        "id": 1
+      },
+      "mocks": [
+        {
+          "operationId": "tests_retrieve",
+          "response": {
+            "body": {
+              "id": 1,
+              "title": "API Test"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "List Users",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "list_users"
+      },
+      "mocks": [
+        {
+          "operationId": "users_list",
+          "response": {
+            "body": {
+              "count": 1,
+              "results": [
+                {
+                  "id": 1,
+                  "username": "admin"
+                }
+              ]
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Get User",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "get_user",
+        "id": 1
+      },
+      "mocks": [
+        {
+          "operationId": "users_retrieve",
+          "response": {
+            "body": {
+              "id": 1,
+              "username": "admin"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "List User Contact Infos",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "list_user_contact_infos"
+      },
+      "mocks": [
+        {
+          "operationId": "user_contact_infos_list",
+          "response": {
+            "body": {
+              "count": 0,
+              "results": []
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Get User Contact Info",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "get_user_contact_info",
+        "id": 1
+      },
+      "mocks": [
+        {
+          "operationId": "user_contact_infos_retrieve",
+          "response": {
+            "body": {
+              "id": 1
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "List Metadata",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "list_metadata"
+      },
+      "mocks": [
+        {
+          "operationId": "metadata_list",
+          "response": {
+            "body": {
+              "count": 0,
+              "results": []
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Get Metadata",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "get_metadata",
+        "id": 1
+      },
+      "mocks": [
+        {
+          "operationId": "metadata_retrieve",
+          "response": {
+            "body": {
+              "id": 1,
+              "name": "key",
+              "value": "val"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true
+      }
+    },
+    {
+      "name": "Create Finding Note",
+      "tool": "create_notes",
+      "arguments": {
+        "action": "create_finding_note",
+        "id": 42,
+        "entry": "Test note from MCP"
+      },
+      "mocks": [
+        {
+          "operationId": "findings_notes_create",
+          "response": {
+            "status": 201,
+            "body": {
+              "id": 1,
+              "entry": "Test note from MCP",
+              "author": {
+                "id": 1,
+                "username": "admin"
+              }
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "status_code": 201
+      }
+    }
+  ],
+  "coverage": {
+    "require_all_actions": true,
+    "skip_actions": {}
+  }
+}

@@ -1,9 +1,9 @@
 {
   "$schema": "../../profile-schema.json",
-  "profile_name": "defectdojo",
-  "profile_id": "defectdojo",
+  "profile_name": "defectdojo-crud",
+  "profile_id": "defectdojo-crud",
   "profile_aliases": [
-    "defectdojo-crud"
+    "defectdojo-full"
   ],
   "openapi_spec_path": "./openapi.json",
   "description": "Full CRUD access to DefectDojo API v2: findings, products, engagements, tests, endpoints, scan import, and admin resources.",
