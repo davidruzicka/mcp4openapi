@@ -1402,10 +1402,20 @@ export class MCPServer {
         }
       }
 
-      if (bodySchema?.type === 'object' && bodySchema.properties) {
-        for (const propName of Object.keys(bodySchema.properties)) {
-          bodySchemaProps.add(propName);
+      const collectBodyProps = (schema: SchemaInfo) => {
+        if (schema.properties) {
+          for (const [propName, propSchema] of Object.entries(schema.properties)) {
+            if (!propSchema.readOnly) {
+              bodySchemaProps.add(propName);
+            }
+          }
         }
+        for (const sub of schema.allOf ?? []) {
+          collectBodyProps(sub);
+        }
+      };
+      if (bodySchema) {
+        collectBodyProps(bodySchema);
       }
     }
 
@@ -1440,7 +1450,7 @@ export class MCPServer {
 
       // Include field if:
       // - Not metadata
-      // - Not in path/query OR is in path/query but also required in body schema
+      // - Not in path/query OR is in path/query but also listed as writable in body schema
       const isPathOrQuery = pathOrQuery.has(key);
       const isInBodySchema = bodySchemaProps.has(key);
 

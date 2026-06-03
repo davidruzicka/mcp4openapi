@@ -210,6 +210,81 @@ paths:
       expect(fromSingleArray).toEqual([{ c: 3 }]);
     });
 
+    it('excludes readOnly body schema properties from request body', () => {
+      const operation: any = {
+        operationId: 'updateWorkflow',
+        method: 'PUT',
+        path: '/workflows/{id}',
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  id: { type: 'string', readOnly: true },
+                  name: { type: 'string' },
+                  nodes: { type: 'array' },
+                },
+              },
+            },
+          },
+        },
+      };
+
+      const toolDef: any = { metadata_params: ['action'] };
+      const result = (server as any).extractBody(
+        operation,
+        { action: 'update_workflow', id: 'abc123', name: 'My workflow', nodes: [] },
+        toolDef
+      );
+
+      expect(result).toEqual({ name: 'My workflow', nodes: [] });
+      expect(result).not.toHaveProperty('id');
+    });
+
+    it('does not re-include path params that are readOnly in allOf body sub-schema', () => {
+      const operation: any = {
+        operationId: 'updateWorkflow',
+        method: 'PUT',
+        path: '/workflows/{id}',
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                allOf: [
+                  {
+                    properties: {
+                      id: { type: 'string', readOnly: true },
+                    },
+                  },
+                  {
+                    type: 'object',
+                    properties: {
+                      name: { type: 'string' },
+                    },
+                  },
+                ],
+              },
+            },
+          },
+        },
+      };
+
+      const toolDef: any = { metadata_params: [] };
+      const result = (server as any).extractBody(
+        operation,
+        { id: 'abc', name: 'My workflow' },
+        toolDef
+      );
+
+      expect(result).toEqual({ name: 'My workflow' });
+      expect(result).not.toHaveProperty('id');
+    });
+
     it('returns undefined when root array body has multiple array candidates', () => {
       const operation: any = {
         operationId: 'test',
