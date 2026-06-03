@@ -1117,7 +1117,10 @@
         },
         "description": {
           "type": "string",
-          "description": "Property description"
+          "description": "Property description",
+          "forbidden_for": [
+            "update_workflow"
+          ]
         },
         "tag_ids": {
           "type": "array",
