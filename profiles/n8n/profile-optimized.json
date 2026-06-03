@@ -446,7 +446,8 @@
           ],
           "forbidden_for": [
             "create_project",
-            "create_variable"
+            "create_variable",
+            "create_workflow"
           ]
         },
         "data": {
@@ -455,11 +456,17 @@
           "properties": {},
           "required_for": [
             "create_credential"
+          ],
+          "forbidden_for": [
+            "create_workflow"
           ]
         },
         "isResolvable": {
           "type": "boolean",
-          "description": "Property isResolvable"
+          "description": "Property isResolvable",
+          "forbidden_for": [
+            "create_workflow"
+          ]
         },
         "createdAt": {
           "type": "string",
@@ -481,27 +488,45 @@
         },
         "isGlobal": {
           "type": "boolean",
-          "description": "Property isGlobal"
+          "description": "Property isGlobal",
+          "forbidden_for": [
+            "create_workflow"
+          ]
         },
         "isPartialData": {
           "type": "boolean",
-          "description": "Property isPartialData"
+          "description": "Property isPartialData",
+          "forbidden_for": [
+            "create_workflow"
+          ]
         },
         "destinationProjectId": {
           "type": "string",
-          "description": "Property destinationProjectId"
+          "description": "Property destinationProjectId",
+          "forbidden_for": [
+            "create_workflow"
+          ]
         },
         "includeData": {
           "type": "boolean",
-          "description": "Whether or not to include the execution's detailed data."
+          "description": "Whether or not to include the execution's detailed data.",
+          "forbidden_for": [
+            "create_workflow"
+          ]
         },
         "status": {
           "type": "string",
-          "description": "Status to filter the executions by."
+          "description": "Status to filter the executions by.",
+          "forbidden_for": [
+            "create_workflow"
+          ]
         },
         "workflowId": {
           "type": "string",
-          "description": "Workflow to filter the executions by."
+          "description": "Workflow to filter the executions by.",
+          "forbidden_for": [
+            "create_workflow"
+          ]
         },
         "projectId": {
           "type": "string",
@@ -512,15 +537,24 @@
         },
         "limit": {
           "type": "number",
-          "description": "The maximum number of items to return."
+          "description": "The maximum number of items to return.",
+          "forbidden_for": [
+            "create_workflow"
+          ]
         },
         "cursor": {
           "type": "string",
-          "description": "Paginate by setting the cursor parameter to the nextCursor attribute returned by the previous request's response. Default value fetches the first \"page\" of the collection. See pagination for more detail."
+          "description": "Paginate by setting the cursor parameter to the nextCursor attribute returned by the previous request's response. Default value fetches the first \"page\" of the collection. See pagination for more detail.",
+          "forbidden_for": [
+            "create_workflow"
+          ]
         },
         "loadWorkflow": {
           "type": "boolean",
-          "description": "Property loadWorkflow"
+          "description": "Property loadWorkflow",
+          "forbidden_for": [
+            "create_workflow"
+          ]
         },
         "relations": {
           "type": "array",
@@ -538,23 +572,38 @@
           },
           "required_for": [
             "add_project_users"
+          ],
+          "forbidden_for": [
+            "create_workflow"
           ]
         },
         "userId": {
           "type": "string",
-          "description": "The ID of the user."
+          "description": "The ID of the user.",
+          "forbidden_for": [
+            "create_workflow"
+          ]
         },
         "role": {
           "type": "string",
-          "description": "Property role"
+          "description": "Property role",
+          "forbidden_for": [
+            "create_workflow"
+          ]
         },
         "includeRole": {
           "type": "boolean",
-          "description": "Whether to include the user's role or not."
+          "description": "Whether to include the user's role or not.",
+          "forbidden_for": [
+            "create_workflow"
+          ]
         },
         "newRoleName": {
           "type": "string",
-          "description": "Property newRoleName"
+          "description": "Property newRoleName",
+          "forbidden_for": [
+            "create_workflow"
+          ]
         },
         "users": {
           "type": "array",
@@ -565,17 +614,26 @@
           },
           "required_for": [
             "create_users"
+          ],
+          "forbidden_for": [
+            "create_workflow"
           ]
         },
         "state": {
           "type": "string",
-          "description": "Parameter state"
+          "description": "Parameter state",
+          "forbidden_for": [
+            "create_workflow"
+          ]
         },
         "key": {
           "type": "string",
           "description": "Property key",
           "required_for": [
             "create_variable"
+          ],
+          "forbidden_for": [
+            "create_workflow"
           ]
         },
         "value": {
@@ -583,6 +641,9 @@
           "description": "Property value",
           "required_for": [
             "create_variable"
+          ],
+          "forbidden_for": [
+            "create_workflow"
           ]
         },
         "active": {
@@ -605,7 +666,10 @@
         },
         "excludePinnedData": {
           "type": "boolean",
-          "description": "Set this to avoid retrieving pinned data"
+          "description": "Set this to avoid retrieving pinned data",
+          "forbidden_for": [
+            "create_workflow"
+          ]
         },
         "nodes": {
           "type": "array",
@@ -656,7 +720,10 @@
         },
         "description": {
           "type": "string",
-          "description": "Property description"
+          "description": "Property description",
+          "forbidden_for": [
+            "create_workflow"
+          ]
         },
         "tag_ids": {
           "type": "array",
@@ -664,7 +731,10 @@
           "items": {
             "type": "object",
             "properties": {}
-          }
+          },
+          "forbidden_for": [
+            "create_workflow"
+          ]
         },
         "action": {
           "type": "string",
@@ -683,20 +753,32 @@
         "additionalOptions": {
           "type": "object",
           "description": "Property additionalOptions",
-          "properties": {}
+          "properties": {},
+          "forbidden_for": [
+            "create_workflow"
+          ]
         },
         "credentialTypeName": {
           "type": "string",
-          "description": "The credential type name that you want to get the schema for"
+          "description": "The credential type name that you want to get the schema for",
+          "forbidden_for": [
+            "create_workflow"
+          ]
         },
         "force": {
           "type": "boolean",
-          "description": "Property force"
+          "description": "Property force",
+          "forbidden_for": [
+            "create_workflow"
+          ]
         },
         "variables": {
           "type": "object",
           "description": "Property variables",
-          "properties": {}
+          "properties": {},
+          "forbidden_for": [
+            "create_workflow"
+          ]
         },
         "versionId": {
           "type": "string",
@@ -759,17 +841,24 @@
           "description": "Property type",
           "forbidden_for": [
             "update_project",
-            "update_variable"
+            "update_variable",
+            "update_workflow"
           ]
         },
         "data": {
           "type": "object",
           "description": "Credential data (object). Required when creating or changing credential type.",
-          "properties": {}
+          "properties": {},
+          "forbidden_for": [
+            "update_workflow"
+          ]
         },
         "isResolvable": {
           "type": "boolean",
-          "description": "Property isResolvable"
+          "description": "Property isResolvable",
+          "forbidden_for": [
+            "update_workflow"
+          ]
         },
         "createdAt": {
           "type": "string",
@@ -789,27 +878,45 @@
         },
         "isGlobal": {
           "type": "boolean",
-          "description": "Property isGlobal"
+          "description": "Property isGlobal",
+          "forbidden_for": [
+            "update_workflow"
+          ]
         },
         "isPartialData": {
           "type": "boolean",
-          "description": "Property isPartialData"
+          "description": "Property isPartialData",
+          "forbidden_for": [
+            "update_workflow"
+          ]
         },
         "destinationProjectId": {
           "type": "string",
-          "description": "Property destinationProjectId"
+          "description": "Property destinationProjectId",
+          "forbidden_for": [
+            "update_workflow"
+          ]
         },
         "includeData": {
           "type": "boolean",
-          "description": "Whether or not to include the execution's detailed data."
+          "description": "Whether or not to include the execution's detailed data.",
+          "forbidden_for": [
+            "update_workflow"
+          ]
         },
         "status": {
           "type": "string",
-          "description": "Status to filter the executions by."
+          "description": "Status to filter the executions by.",
+          "forbidden_for": [
+            "update_workflow"
+          ]
         },
         "workflowId": {
           "type": "string",
-          "description": "Workflow to filter the executions by."
+          "description": "Workflow to filter the executions by.",
+          "forbidden_for": [
+            "update_workflow"
+          ]
         },
         "projectId": {
           "type": "string",
@@ -817,19 +924,31 @@
           "required_for": [
             "update_project",
             "update_project_user_role"
+          ],
+          "forbidden_for": [
+            "update_workflow"
           ]
         },
         "limit": {
           "type": "number",
-          "description": "The maximum number of items to return."
+          "description": "The maximum number of items to return.",
+          "forbidden_for": [
+            "update_workflow"
+          ]
         },
         "cursor": {
           "type": "string",
-          "description": "Paginate by setting the cursor parameter to the nextCursor attribute returned by the previous request's response. Default value fetches the first \"page\" of the collection. See pagination for more detail."
+          "description": "Paginate by setting the cursor parameter to the nextCursor attribute returned by the previous request's response. Default value fetches the first \"page\" of the collection. See pagination for more detail.",
+          "forbidden_for": [
+            "update_workflow"
+          ]
         },
         "loadWorkflow": {
           "type": "boolean",
-          "description": "Property loadWorkflow"
+          "description": "Property loadWorkflow",
+          "forbidden_for": [
+            "update_workflow"
+          ]
         },
         "relations": {
           "type": "array",
@@ -844,13 +963,19 @@
                 "type": "string"
               }
             }
-          }
+          },
+          "forbidden_for": [
+            "update_workflow"
+          ]
         },
         "userId": {
           "type": "string",
           "description": "The ID of the user.",
           "required_for": [
             "update_project_user_role"
+          ],
+          "forbidden_for": [
+            "update_workflow"
           ]
         },
         "role": {
@@ -858,17 +983,26 @@
           "description": "Property role",
           "required_for": [
             "update_project_user_role"
+          ],
+          "forbidden_for": [
+            "update_workflow"
           ]
         },
         "includeRole": {
           "type": "boolean",
-          "description": "Whether to include the user's role or not."
+          "description": "Whether to include the user's role or not.",
+          "forbidden_for": [
+            "update_workflow"
+          ]
         },
         "newRoleName": {
           "type": "string",
           "description": "Property newRoleName",
           "required_for": [
             "update_user_role"
+          ],
+          "forbidden_for": [
+            "update_workflow"
           ]
         },
         "users": {
@@ -877,17 +1011,26 @@
           "items": {
             "type": "object",
             "properties": {}
-          }
+          },
+          "forbidden_for": [
+            "update_workflow"
+          ]
         },
         "state": {
           "type": "string",
-          "description": "Parameter state"
+          "description": "Parameter state",
+          "forbidden_for": [
+            "update_workflow"
+          ]
         },
         "key": {
           "type": "string",
           "description": "Property key",
           "required_for": [
             "update_variable"
+          ],
+          "forbidden_for": [
+            "update_workflow"
           ]
         },
         "value": {
@@ -895,6 +1038,9 @@
           "description": "Property value",
           "required_for": [
             "update_variable"
+          ],
+          "forbidden_for": [
+            "update_workflow"
           ]
         },
         "active": {
@@ -917,7 +1063,10 @@
         },
         "excludePinnedData": {
           "type": "boolean",
-          "description": "Set this to avoid retrieving pinned data"
+          "description": "Set this to avoid retrieving pinned data",
+          "forbidden_for": [
+            "update_workflow"
+          ]
         },
         "nodes": {
           "type": "array",
@@ -979,6 +1128,9 @@
           },
           "required_for": [
             "update_workflow_tags"
+          ],
+          "forbidden_for": [
+            "update_workflow"
           ]
         },
         "action": {
@@ -999,7 +1151,10 @@
         "additionalOptions": {
           "type": "object",
           "description": "Property additionalOptions",
-          "properties": {}
+          "properties": {},
+          "forbidden_for": [
+            "update_workflow"
+          ]
         },
         "id": {
           "type": [
@@ -1019,16 +1174,25 @@
         },
         "credentialTypeName": {
           "type": "string",
-          "description": "The credential type name that you want to get the schema for"
+          "description": "The credential type name that you want to get the schema for",
+          "forbidden_for": [
+            "update_workflow"
+          ]
         },
         "force": {
           "type": "boolean",
-          "description": "Property force"
+          "description": "Property force",
+          "forbidden_for": [
+            "update_workflow"
+          ]
         },
         "variables": {
           "type": "object",
           "description": "Property variables",
-          "properties": {}
+          "properties": {},
+          "forbidden_for": [
+            "update_workflow"
+          ]
         },
         "versionId": {
           "type": "string",
