@@ -459,11 +459,17 @@
         },
         "createdAt": {
           "type": "string",
-          "description": "Property createdAt"
+          "description": "Server-generated creation timestamp. Read-only; do not send in create/update.",
+          "forbidden_for": [
+            "create_workflow"
+          ]
         },
         "updatedAt": {
           "type": "string",
-          "description": "Property updatedAt"
+          "description": "Server-generated update timestamp. Read-only; do not send in create/update.",
+          "forbidden_for": [
+            "create_workflow"
+          ]
         },
         "isGlobal": {
           "type": "boolean",
@@ -573,7 +579,10 @@
         },
         "active": {
           "type": "boolean",
-          "description": "Parameter active"
+          "description": "Workflow active state. Read-only; use activate_workflow / deactivate_workflow actions.",
+          "forbidden_for": [
+            "create_workflow"
+          ]
         },
         "tags": {
           "type": "array",
@@ -581,7 +590,10 @@
           "items": {
             "type": "object",
             "properties": {}
-          }
+          },
+          "forbidden_for": [
+            "create_workflow"
+          ]
         },
         "excludePinnedData": {
           "type": "boolean",
@@ -677,7 +689,10 @@
         },
         "versionId": {
           "type": "string",
-          "description": "The version ID to retrieve"
+          "description": "Server-generated version ID. Read-only; do not send in create/update.",
+          "forbidden_for": [
+            "create_workflow"
+          ]
         }
       }
     },
@@ -743,11 +758,17 @@
         },
         "createdAt": {
           "type": "string",
-          "description": "Property createdAt"
+          "description": "Server-generated creation timestamp. Read-only; do not send in create/update.",
+          "forbidden_for": [
+            "update_workflow"
+          ]
         },
         "updatedAt": {
           "type": "string",
-          "description": "Property updatedAt"
+          "description": "Server-generated update timestamp. Read-only; do not send in create/update.",
+          "forbidden_for": [
+            "update_workflow"
+          ]
         },
         "isGlobal": {
           "type": "boolean",
@@ -861,7 +882,10 @@
         },
         "active": {
           "type": "boolean",
-          "description": "Parameter active"
+          "description": "Workflow active state. Read-only; use activate_workflow / deactivate_workflow actions.",
+          "forbidden_for": [
+            "update_workflow"
+          ]
         },
         "tags": {
           "type": "array",
@@ -869,7 +893,10 @@
           "items": {
             "type": "object",
             "properties": {}
-          }
+          },
+          "forbidden_for": [
+            "update_workflow"
+          ]
         },
         "excludePinnedData": {
           "type": "boolean",
@@ -985,7 +1012,10 @@
         },
         "versionId": {
           "type": "string",
-          "description": "The version ID to retrieve"
+          "description": "Server-generated version ID. Read-only; do not send in create/update.",
+          "forbidden_for": [
+            "update_workflow"
+          ]
         }
       }
     },

@@ -411,7 +411,7 @@ export class OpenAPIParser {
       minLength: schema.minLength,
       maxLength: schema.maxLength,
       pattern: schema.pattern,
-      readOnly: schema.readOnly,
+      readOnly: schema.readOnly || undefined,
       ref: schema.ref,
       circular: schema.circular,
     };
