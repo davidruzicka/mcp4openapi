@@ -327,7 +327,7 @@
         },
         "activeVersion": {
           "type": "object",
-          "description": "Property activeVersion",
+          "description": "Server-generated active version snapshot. Read-only; do not send in create/update.",
           "properties": {}
         },
         "versionId": {
@@ -443,6 +443,10 @@
           "description": "Property type",
           "required_for": [
             "create_credential"
+          ],
+          "forbidden_for": [
+            "create_project",
+            "create_variable"
           ]
         },
         "data": {
@@ -461,6 +465,8 @@
           "type": "string",
           "description": "Server-generated creation timestamp. Read-only; do not send in create/update.",
           "forbidden_for": [
+            "create_credential",
+            "create_tag",
             "create_workflow"
           ]
         },
@@ -468,6 +474,8 @@
           "type": "string",
           "description": "Server-generated update timestamp. Read-only; do not send in create/update.",
           "forbidden_for": [
+            "create_credential",
+            "create_tag",
             "create_workflow"
           ]
         },
@@ -640,8 +648,11 @@
         },
         "activeVersion": {
           "type": "object",
-          "description": "Property activeVersion",
-          "properties": {}
+          "description": "Server-generated active version snapshot. Read-only; do not send in create/update.",
+          "properties": {},
+          "forbidden_for": [
+            "create_workflow"
+          ]
         },
         "description": {
           "type": "string",
@@ -745,7 +756,11 @@
         },
         "type": {
           "type": "string",
-          "description": "Property type"
+          "description": "Property type",
+          "forbidden_for": [
+            "update_project",
+            "update_variable"
+          ]
         },
         "data": {
           "type": "object",
@@ -760,6 +775,7 @@
           "type": "string",
           "description": "Server-generated creation timestamp. Read-only; do not send in create/update.",
           "forbidden_for": [
+            "update_tag",
             "update_workflow"
           ]
         },
@@ -767,6 +783,7 @@
           "type": "string",
           "description": "Server-generated update timestamp. Read-only; do not send in create/update.",
           "forbidden_for": [
+            "update_tag",
             "update_workflow"
           ]
         },
@@ -943,8 +960,11 @@
         },
         "activeVersion": {
           "type": "object",
-          "description": "Property activeVersion",
-          "properties": {}
+          "description": "Server-generated active version snapshot. Read-only; do not send in create/update.",
+          "properties": {},
+          "forbidden_for": [
+            "update_workflow"
+          ]
         },
         "description": {
           "type": "string",
@@ -1234,7 +1254,7 @@
         },
         "activeVersion": {
           "type": "object",
-          "description": "Property activeVersion",
+          "description": "Server-generated active version snapshot. Read-only; do not send in create/update.",
           "properties": {}
         },
         "description": {
@@ -1517,7 +1537,7 @@
         },
         "activeVersion": {
           "type": "object",
-          "description": "Property activeVersion",
+          "description": "Server-generated active version snapshot. Read-only; do not send in create/update.",
           "properties": {}
         },
         "description": {
