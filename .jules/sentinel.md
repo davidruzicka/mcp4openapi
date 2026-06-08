@@ -126,3 +126,14 @@ Error messages should never include raw values from sensitive sources like envir
 **Prevention:**
 1.  Avoid including raw values in error messages when the source is potentially sensitive (env vars, auth headers).
 2.  Use generic error messages for validation failures of sensitive data.
+
+## 2026-06-08 - [HIGH] Path Traversal in CompositeExecutor due to unencoded dots
+
+**Vulnerability:**
+The `CompositeExecutor` substitutes user-provided arguments directly into API path templates using `encodeURIComponent`. However, `encodeURIComponent` does not encode `.` characters. This allowed a malicious input like `../admin/secrets` to be encoded as `..%2Fadmin%2Fsecrets`. If a backend server decodes the URL before resolving path segments, it could be vulnerable to path traversal.
+
+**Learning:**
+`encodeURIComponent` is insufficient for completely preventing path traversal in all backend configurations because it leaves `.` unencoded.
+
+**Prevention:**
+1.  Always use `encodeURIComponent(value).replace(/\./g, '%2E')` when substituting values into path templates to ensure that `.` characters are explicitly encoded.
