@@ -126,3 +126,15 @@ Error messages should never include raw values from sensitive sources like envir
 **Prevention:**
 1.  Avoid including raw values in error messages when the source is potentially sensitive (env vars, auth headers).
 2.  Use generic error messages for validation failures of sensitive data.
+
+## 2026-06-09 - [HIGH] Path Traversal in URL Path Interpolation
+
+**Vulnerability:**
+Both `CompositeExecutor` (when substituting tool step arguments) and `MCPServer` (when encoding path segments) were vulnerable to path traversal. They failed to encode literal dot characters (`.`), allowing a payload like `..` to be passed verbatim into HTTP paths and traverse directory structures (e.g., `/users/../admin` -> `/admin`).
+
+**Learning:**
+`encodeURIComponent` explicitly does not encode certain characters according to RFC 2396, including the period (`.`). Relying solely on `encodeURIComponent` for path segment substitution leaves the application vulnerable to standard directory traversal attacks.
+
+**Prevention:**
+1. Always append `.replace(/\./g, '%2E')` after `encodeURIComponent()` when substituting user inputs into URL path segments.
+2. In custom path encoding logic, ensure encoding is always applied, regardless of the presence of slashes or other specific characters.

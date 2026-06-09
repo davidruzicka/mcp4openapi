@@ -1205,7 +1205,8 @@ export class MCPServer {
    */
   private encodePathSegment(value: unknown): string {
     const val = String(value);
-    return val.includes('/') ? encodeURIComponent(val) : val;
+    // Always encode and replace dots to prevent path traversal (e.g. `..`)
+    return encodeURIComponent(val).replace(/\./g, '%2E');
   }
 
   /**
