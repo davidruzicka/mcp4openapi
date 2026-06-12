@@ -776,13 +776,19 @@ export class MCPServer {
   }
 
   private buildInitializeServerInfo(): InitializeServerInfo {
-    const profileName = this.getProfileNameValue();
-
-    return {
+    const serverInfo: InitializeServerInfo = {
       name: MCP_SERVER_NAME,
       version: MCP_SERVER_VERSION,
-      title: this.serverInfoSuffix ? `${profileName} ${this.serverInfoSuffix}` : profileName,
     };
+
+    if (!this.profile) {
+      return serverInfo;
+    }
+
+    const profileName = this.getProfileNameValue();
+    serverInfo.title = this.serverInfoSuffix ? `${profileName}${this.serverInfoSuffix}` : profileName;
+
+    return serverInfo;
   }
 
   private getOAuthRateLimitConfig(): { max: number; windowMs: number } {

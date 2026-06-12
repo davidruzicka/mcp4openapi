@@ -3174,8 +3174,8 @@ paths:
         const secondResponse = (server as any).handleInitialize(message, 'test-session');
 
         expect(firstResponse.result.serverInfo.name).toBe('mcp4openapi');
-        expect(firstResponse.result.serverInfo.title).toBe('Test Profile [prod]');
-        expect(secondResponse.result.serverInfo.title).toBe('Test Profile [prod]');
+        expect(firstResponse.result.serverInfo.title).toBe('Test Profile[prod]');
+        expect(secondResponse.result.serverInfo.title).toBe('Test Profile[prod]');
       } finally {
         if (previousSuffix === undefined) {
           delete process.env.MCP4_SERVERINFO_SUFFIX;
@@ -3197,6 +3197,19 @@ paths:
       const response = (server as any).handleInitialize(message, undefined);
       
       expect(response.result.sessionId).toBeUndefined();
+    });
+
+    it('omits serverInfo.title when no profile is loaded', () => {
+      const server = new MCPServer();
+      const response = (server as any).handleInitialize({
+        jsonrpc: '2.0',
+        id: '1',
+        method: 'initialize',
+        params: {}
+      }, 'test-session');
+
+      expect(response.result.serverInfo.name).toBe('mcp4openapi');
+      expect(response.result.serverInfo.title).toBeUndefined();
     });
 
     it('should store stdio filtering when provided', () => {
