@@ -68,7 +68,7 @@ This guide explains how to create custom MCP tool profiles for any OpenAPI-compl
 ### Fields
 
 - **`$schema`** (optional): Path to `profile-schema.json` for IDE validation
-- **`profile_name`** (required): Unique identifier (lowercase, underscores)
+- **`profile_name`** (required): Stable profile name used both for profile resolution fallback and as the default MCP `serverInfo.title` shown by clients. Keep it user-readable and stable across deployments.
 - **`profile_id`** (optional): Short ID used with `--profile` or `MCP4_PROFILE`
 - **`profile_aliases`** (optional): Alternate IDs that can select this profile
 - **`openapi_spec_path`** (optional): OpenAPI spec path used when launching by profile without `--openapi-spec-path` or `MCP4_OPENAPI_SPEC_PATH` (resolved relative to the profile file unless absolute or URL)
