@@ -4,7 +4,7 @@ milestone: v1.1
 milestone_name: Enterprise MCP Gateway v1.1
 status: v1.0 shipped - planning next milestone
 stopped_at: v1.0 milestone complete (8 phases, 25 plans, 58 tasks)
-last_updated: "2026-05-19T13:24:29.992Z"
+last_updated: "2026-06-12T12:35:00.000Z"
 progress:
   total_phases: 10
   completed_phases: 8
@@ -166,9 +166,10 @@ None yet.
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
 | 260526-ehd | Expand n8n OpenAPI spec and profiles to full Public API coverage | 2026-05-26 | c6058f9 | [260526-ehd-expand-n8n-openapi-spec-and-profiles-to-](./quick/260526-ehd-expand-n8n-openapi-spec-and-profiles-to-/) |
+| 260612-jql | ServerInfo title from profile_name | 2026-06-12 | working-tree | [260612-jql-serverinfo-title-from-profile-name](./quick/260612-jql-serverinfo-title-from-profile-name/) |
 
 ## Session Continuity
 
-Last session: 2026-05-26T08:25:38.862Z
-Stopped at: Completed quick task 260526-ehd — n8n OpenAPI + profile expansion
+Last session: 2026-06-12T12:35:00.000Z
+Stopped at: Completed quick task 260612-jql - ServerInfo title from profile_name
 Resume file: None

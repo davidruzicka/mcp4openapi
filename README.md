@@ -565,6 +565,7 @@ export MCP4_TOOLNAME_MAX=30
 - `MCP4_OAUTH_SESSION_TIMEOUT_MS`: OAuth session timeout for sessions with refresh tokens (default: `86400000` = 24h, `0` = unlimited)
 - `MCP4_OAUTH_REFRESH_THRESHOLD_MS`: Refresh access tokens this many ms before expiry (default: `60000` = 60s)
 - `MCP4_HEARTBEAT_ENABLED`, `MCP4_HEARTBEAT_INTERVAL_MS`: SSE heartbeat settings
+- `MCP4_SERVERINFO_SUFFIX`: Optional suffix appended to MCP `serverInfo.title` at server startup. The title is derived from the loaded profile's `profile_name`, so routed HTTP profiles advertise per-profile names in clients like VS Code while `serverInfo.name` stays `mcp4openapi`.
 - `MCP4_TOKEN_MAX_LENGTH`: Maximum token length in characters (default: `4096`, raised from `1000` in Phase 03.4 to accommodate encrypted token envelopes)
 - `MCP4_OAUTH_KEY`: Optional symmetric key for AES-256-GCM encrypted token envelopes. When set, the gateway issues `mcp4.v1.*` tokens to OAuth clients on `/oauth/token` and rehydrates sessions from them on restart, eliminating the re-authentication round-trip in k8s restart scenarios. Accepts any passphrase (SHA-256-derived) or a 64-char hex string (32 raw bytes). Default unset (plain-token mode, backward-compatible). See `docs/HTTP-TRANSPORT.md` -> Encrypted Token Envelopes for details.
 - `MCP4_FILTER_MAX_VALUES`: Max values per filtering key (default: `10`)
@@ -601,6 +602,11 @@ npx mcp4openapi --transport http \
 ```bash
 curl -X POST http://localhost:3003/profile/mcp-profile-name/mcp -H "Content-Type: application/json" -d '{"jsonrpc":"2.0","id":1,"method":"initialize"}'
 ```
+
+Initialize metadata notes:
+- `serverInfo.name` remains `mcp4openapi`.
+- `serverInfo.title` is the active profile's `profile_name`, optionally extended with `MCP4_SERVERINFO_SUFFIX`.
+- Invalid or unusable `profile_name` still fails fast during initialization; this change does not add a fallback title.
 
 **Profile index admin descriptions**:
 ```bash

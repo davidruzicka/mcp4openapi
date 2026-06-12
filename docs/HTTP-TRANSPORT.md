@@ -146,6 +146,7 @@ Allowlist controls (only when routing is enabled):
 - `MCP4_ALLOW_PROFILES`: Comma-separated profile ids/names/aliases that can be routed.
 - `MCP4_ALLOW_PROFILES_REGEX`: Regex pattern that can match profile ids/names/aliases.
 - `MCP4_HIDDEN_PROFILES`: Comma-separated profile ids/names/aliases to hide from the index page (profiles remain fully functional).
+- `MCP4_SERVERINFO_SUFFIX`: Optional suffix appended to MCP `serverInfo.title` at startup. The title comes from the active profile's `profile_name`; `serverInfo.name` remains `mcp4openapi`.
 
 Profile index admin descriptions:
 - `MCP4_PROFILES_DESCRIPTION`: Optional JSON object mapping `profileId`, `profileName`, or alias to an HTML snippet rendered in the HTML detail card before the profile's own description.
@@ -384,7 +385,8 @@ curl -X POST http://localhost:3003/mcp \
     "protocolVersion": "2025-03-26",
     "serverInfo": {
       "name": "mcp4openapi",
-      "version": "0.2.9"
+      "version": "0.1.0",
+      "title": "gitlab-optimized"
     },
     "capabilities": {
       "tools": {}
@@ -392,6 +394,8 @@ curl -X POST http://localhost:3003/mcp \
   }
 }
 ```
+
+`serverInfo.title` is built from the loaded profile's `profile_name` and optionally appends `MCP4_SERVERINFO_SUFFIX`. If the profile has no usable `profile_name`, initialization still fails fast instead of falling back to another identifier.
 
 **Response Headers**:
 ```

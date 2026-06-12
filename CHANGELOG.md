@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 ### Changed
 - `normalizePath` now returns `other` for unrecognized HTTP paths instead of the raw path, preventing unbounded Prometheus label cardinality from dynamic route segments.
+- MCP `initialize` responses now expose `serverInfo.title` from the active profile `profile_name` (optionally suffixed via `MCP4_SERVERINFO_SUFFIX`) so VS Code and similar clients show per-profile names without changing `serverInfo.name`.
 
 ### Fixed
 - GitLab GLQL guidance now steers callers toward YAML payloads, verified field names, and unquoted enum filters in both profiles and the bundled OpenAPI spec.
