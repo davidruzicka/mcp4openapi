@@ -3123,8 +3123,19 @@ paths:
   });
 
   describe('handleInitialize', () => {
-    it('should return server info and capabilities', () => {
+    const createInitializedServer = () => {
       const server = new MCPServer();
+      (server as any).profile = {
+        profile_name: 'Test Profile',
+        description: 'test',
+        tools: [],
+        interceptors: {},
+      };
+      return server;
+    };
+
+    it('should return server info and capabilities', () => {
+      const server = createInitializedServer();
       const message = {
         jsonrpc: '2.0',
         id: '1',
@@ -3138,14 +3149,44 @@ paths:
       expect(response.id).toBe('1');
       expect(response.result.protocolVersion).toBe('2025-03-26');
       expect(response.result.serverInfo.name).toBe('mcp4openapi');
+      expect(response.result.serverInfo.title).toBe('Test Profile');
       expect(response.result.capabilities.tools).toBeDefined();
       expect(response.result.capabilities.prompts).toBeDefined();
       expect(response.result.capabilities.prompts.listChanged).toBe(false);
       expect(response.result.sessionId).toBe('test-session');
     });
 
+    it('caches the server info suffix at construction time', () => {
+      const previousSuffix = process.env.MCP4_SERVERINFO_SUFFIX;
+      process.env.MCP4_SERVERINFO_SUFFIX = '[prod]';
+
+      try {
+        const server = createInitializedServer();
+        const message = {
+          jsonrpc: '2.0',
+          id: '1',
+          method: 'initialize',
+          params: {}
+        };
+
+        const firstResponse = (server as any).handleInitialize(message, 'test-session');
+        process.env.MCP4_SERVERINFO_SUFFIX = '[changed]';
+        const secondResponse = (server as any).handleInitialize(message, 'test-session');
+
+        expect(firstResponse.result.serverInfo.name).toBe('mcp4openapi');
+        expect(firstResponse.result.serverInfo.title).toBe('Test Profile [prod]');
+        expect(secondResponse.result.serverInfo.title).toBe('Test Profile [prod]');
+      } finally {
+        if (previousSuffix === undefined) {
+          delete process.env.MCP4_SERVERINFO_SUFFIX;
+        } else {
+          process.env.MCP4_SERVERINFO_SUFFIX = previousSuffix;
+        }
+      }
+    });
+
     it('should not include sessionId when not provided', () => {
-      const server = new MCPServer();
+      const server = createInitializedServer();
       const message = {
         jsonrpc: '2.0',
         id: '1',
@@ -3159,7 +3200,7 @@ paths:
     });
 
     it('should store stdio filtering when provided', () => {
-      const server = new MCPServer();
+      const server = createInitializedServer();
       const message = {
         jsonrpc: '2.0',
         id: '1',
@@ -3172,7 +3213,7 @@ paths:
     });
 
     it('merges stdio filtering with global filtering', () => {
-      const server = new MCPServer();
+      const server = createInitializedServer();
       server.setGlobalFiltering({ project_id: ['1', '2'], _allow_read: [] });
       const message = {
         jsonrpc: '2.0',
@@ -3190,7 +3231,7 @@ paths:
     });
 
     it('rejects conflicting stdio filtering against global filtering', () => {
-      const server = new MCPServer();
+      const server = createInitializedServer();
       server.setGlobalFiltering({ project_id: ['1'] });
       const message = {
         jsonrpc: '2.0',
@@ -3203,7 +3244,7 @@ paths:
     });
 
     it('uses global filtering when no stdio filtering is provided', () => {
-      const server = new MCPServer();
+      const server = createInitializedServer();
       server.setGlobalFiltering({ project_id: ['1'] });
 
       (server as any).handleInitialize({
@@ -3217,7 +3258,7 @@ paths:
     });
 
     it('should reject non-string stdio filtering', () => {
-      const server = new MCPServer();
+      const server = createInitializedServer();
       const message = {
         jsonrpc: '2.0',
         id: '1',
@@ -3226,6 +3267,23 @@ paths:
       };
 
       expect(() => (server as any).handleInitialize(message, undefined)).toThrow(ValidationError);
+    });
+
+    it('preserves the fail-fast error when profile_name is empty', () => {
+      const server = new MCPServer();
+      (server as any).profile = {
+        profile_name: '   ',
+        description: 'test',
+        tools: [],
+        interceptors: {},
+      };
+
+      expect(() => (server as any).handleInitialize({
+        jsonrpc: '2.0',
+        id: '1',
+        method: 'initialize',
+        params: {}
+      }, undefined)).toThrow('Profile is missing profile_name.');
     });
   });
 

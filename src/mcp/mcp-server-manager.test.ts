@@ -87,47 +87,58 @@ describe('MCPServerManager', () => {
   });
 
   it('routes HTTP requests through manager for profile routing', async () => {
-    const previousYouTrackToken = process.env.YOUTRACK_TOKEN;
-    process.env.YOUTRACK_TOKEN = previousYouTrackToken ?? 'test-youtrack-token';
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'mcp4-routing-profiles-'));
+    const specPath = path.join(process.cwd(), 'profiles/gitlab/openapi.yaml');
 
-    try {
-      const logger = new ConsoleLogger();
-      const registry = new ProfileRegistry({
-        profilesDir: path.join(process.cwd(), 'profiles'),
-      });
-      const httpTransport = new HttpTransport(
-        {
-          host: '127.0.0.1',
-          port: 0,
-          sessionTimeoutMs: 1800000,
-          heartbeatEnabled: false,
-          heartbeatIntervalMs: 30000,
-          metricsEnabled: false,
-          metricsPath: '/metrics',
-          profileRoutingEnabled: true,
-        },
-        logger
-      );
-      const manager = new MCPServerManager(registry, logger, httpTransport);
+    await fs.writeFile(path.join(root, 'alpha.json'), JSON.stringify({
+      profile_name: 'Alpha Profile',
+      profile_id: 'alpha',
+      openapi_spec_path: specPath,
+      tools: [],
+    }), 'utf-8');
+    await fs.writeFile(path.join(root, 'beta.json'), JSON.stringify({
+      profile_name: 'Beta Profile',
+      profile_id: 'beta',
+      openapi_spec_path: specPath,
+      tools: [],
+    }), 'utf-8');
 
-      httpTransport.setProfileContextProvider(async (id) => manager.getProfileContext(id));
-      httpTransport.setMessageHandler(async (message, sessionId, profileId) => {
-        if (!profileId) {
-          throw new Error('Profile ID missing');
-        }
-        const server = await manager.getServer(profileId);
-        return server.handleHttpMessage(message, sessionId, profileId);
-      });
+    const logger = new ConsoleLogger();
+    const registry = new ProfileRegistry({ profilesDir: root });
+    const httpTransport = new HttpTransport(
+      {
+        host: '127.0.0.1',
+        port: 0,
+        sessionTimeoutMs: 1800000,
+        heartbeatEnabled: false,
+        heartbeatIntervalMs: 30000,
+        metricsEnabled: false,
+        metricsPath: '/metrics',
+        profileRoutingEnabled: true,
+      },
+      logger
+    );
+    const manager = new MCPServerManager(registry, logger, httpTransport);
 
+    httpTransport.setProfileContextProvider(async (id) => manager.getProfileContext(id));
+    httpTransport.setMessageHandler(async (message, sessionId, profileId) => {
+      if (!profileId) {
+        throw new Error('Profile ID missing');
+      }
+      const server = await manager.getServer(profileId);
+      return server.handleHttpMessage(message, sessionId, profileId);
+    });
+
+    const sendInitialize = async (profileId: string) => {
       const req: any = {
         method: 'POST',
-        path: '/profile/youtrack/mcp',
-        url: '/profile/youtrack/mcp',
+        path: `/profile/${profileId}/mcp`,
+        url: `/profile/${profileId}/mcp`,
         headers: {
           accept: 'application/json',
           host: 'localhost',
         },
-        profileId: 'youtrack',
+        profileId,
         body: {
           jsonrpc: '2.0',
           id: 1,
@@ -166,18 +177,21 @@ describe('MCPServerManager', () => {
       };
 
       await (httpTransport as any).handlePost(req, res);
+      return res;
+    };
 
-      expect(res.statusCode).toBe(200);
-      expect(res.body?.result?.serverInfo?.name).toBe('mcp4openapi');
+    const alphaResponse = await sendInitialize('alpha');
+    const betaResponse = await sendInitialize('beta');
 
-      await httpTransport.stop();
-    } finally {
-      if (previousYouTrackToken === undefined) {
-        delete process.env.YOUTRACK_TOKEN;
-      } else {
-        process.env.YOUTRACK_TOKEN = previousYouTrackToken;
-      }
-    }
+    expect(alphaResponse.statusCode).toBe(200);
+    expect(alphaResponse.body?.result?.serverInfo?.name).toBe('mcp4openapi');
+    expect(alphaResponse.body?.result?.serverInfo?.title).toBe('Alpha Profile');
+    expect(betaResponse.statusCode).toBe(200);
+    expect(betaResponse.body?.result?.serverInfo?.name).toBe('mcp4openapi');
+    expect(betaResponse.body?.result?.serverInfo?.title).toBe('Beta Profile');
+    expect(betaResponse.body?.result?.serverInfo?.title).not.toBe(alphaResponse.body?.result?.serverInfo?.title);
+
+    await httpTransport.stop();
   });
 
   it('routes HTTP requests through manager when profile id is an alias of default profile', async () => {
@@ -270,6 +284,7 @@ describe('MCPServerManager', () => {
 
     expect(res.statusCode).toBe(200);
     expect(res.body?.result?.serverInfo?.name).toBe('mcp4openapi');
+    expect(res.body?.result?.serverInfo?.title).toBe('alias-profile');
 
     await httpTransport.stop();
   });

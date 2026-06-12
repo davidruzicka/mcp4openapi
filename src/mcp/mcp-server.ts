@@ -94,6 +94,15 @@ type EnterpriseToolCategory = 'list' | 'read' | 'modify' | 'admin';
 const UPSTREAM_TIMEOUT_ERROR_CODE = ErrorCode.RequestTimeout;
 
 const STDIO_SESSION_ID = 'stdio' as const;
+const MCP_SERVER_NAME = 'mcp4openapi';
+const MCP_SERVER_VERSION = '0.1.0';
+const MCP_PROTOCOL_VERSION = '2025-03-26';
+
+type InitializeServerInfo = {
+  name: string;
+  version: string;
+  title?: string;
+};
 
 /**
  * Extract the hostname (no port, no scheme, no credentials) from a URL string.
@@ -192,6 +201,7 @@ export class MCPServer {
   private schemaValidator: SchemaValidator;
   private logger: Logger;
   private httpTransport: HttpTransport | null = null;
+  private readonly serverInfoSuffix?: string;
   private stdioFiltering?: FilteringRules;
   private globalFiltering?: FilteringRules;
   private toolFilterService?: ToolFilterService;
@@ -518,10 +528,11 @@ export class MCPServer {
   constructor(logger?: Logger) {
     this.logger = logger || new ConsoleLogger();
     this.schemaValidator = new SchemaValidator();
+    this.serverInfoSuffix = this.resolveServerInfoSuffix();
     this.server = new Server(
       {
-        name: 'mcp4openapi',
-        version: '0.1.0',
+        name: MCP_SERVER_NAME,
+        version: MCP_SERVER_VERSION,
       },
       {
         capabilities: {
@@ -744,6 +755,34 @@ export class MCPServer {
       throw new ConfigurationError('Profile is missing profile_id and profile_name.');
     }
     return profileId;
+  }
+
+  private getProfileNameValue(): string {
+    if (!this.profile) {
+      throw new ConfigurationError('Profile not initialized. Call initialize() first.');
+    }
+
+    const profileName = this.profile.profile_name.trim();
+    if (!profileName) {
+      throw new ConfigurationError('Profile is missing profile_name.');
+    }
+
+    return profileName;
+  }
+
+  private resolveServerInfoSuffix(): string | undefined {
+    const suffix = process.env.MCP4_SERVERINFO_SUFFIX?.trim();
+    return suffix ? suffix : undefined;
+  }
+
+  private buildInitializeServerInfo(): InitializeServerInfo {
+    const profileName = this.getProfileNameValue();
+
+    return {
+      name: MCP_SERVER_NAME,
+      version: MCP_SERVER_VERSION,
+      title: this.serverInfoSuffix ? `${profileName} ${this.serverInfoSuffix}` : profileName,
+    };
   }
 
   private getOAuthRateLimitConfig(): { max: number; windowMs: number } {
@@ -1613,7 +1652,7 @@ export class MCPServer {
 
     const result: {
       protocolVersion: string;
-      serverInfo: { name: string; version: string };
+      serverInfo: InitializeServerInfo;
       capabilities: {
         tools: Record<string, unknown>;
         prompts: { listChanged: boolean };
@@ -1622,11 +1661,8 @@ export class MCPServer {
       };
       sessionId?: string;
     } = {
-      protocolVersion: '2025-03-26',
-      serverInfo: {
-        name: 'mcp4openapi',
-        version: '0.1.0',
-      },
+      protocolVersion: MCP_PROTOCOL_VERSION,
+      serverInfo: this.buildInitializeServerInfo(),
       capabilities: {
         tools: hasUpstream ? { listChanged: true } : {},
         prompts: {
