@@ -4,11 +4,20 @@ import { EnterpriseAuthProvider } from './enterprise-auth-provider.js';
 import { EnterpriseReplayStore } from './enterprise-replay-store.js';
 import { JwksCache } from './jwks-cache.js';
 import { ConsoleLogger } from '../core/logger.js';
+import { SSRFValidator } from '../security/ssrf-validator.js';
 import {
   EnterpriseIssuerDiscoveryError,
   EnterprisePolicyViolationError,
   EnterpriseTokenValidationError,
 } from '../core/errors.js';
+
+vi.mock('../security/ssrf-validator.js', () => {
+  return {
+    SSRFValidator: class SSRFValidator {
+      validate = vi.fn().mockResolvedValue(undefined);
+    },
+  };
+});
 
 const logger = new ConsoleLogger();
 
