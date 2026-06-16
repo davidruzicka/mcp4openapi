@@ -2385,7 +2385,9 @@ describeIfListen('HttpTransport', () => {
         .query({ code: 'test-code' });
 
       expect(response.status).toBe(500);
-      expect(response.text).toBe('OAuth callback failed');
+      const json = JSON.parse(response.text);
+      expect(json.error).toBe('Internal Server Error');
+      expect(json.message).toMatch(/^Internal error \(correlation ID: [a-f0-9-]+\)$/);
     });
   });
 

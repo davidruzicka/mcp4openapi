@@ -1986,7 +1986,10 @@ describe('ExternalOAuthProvider', () => {
       await provider.handleCallback(mockReq, mockRes);
 
       expect(mockRes.status).toHaveBeenCalledWith(500);
-      expect(mockRes.send).toHaveBeenCalledWith('Internal Server Error during token exchange');
+      expect(mockRes.json).toHaveBeenCalledWith(expect.objectContaining({
+        error: 'Internal Server Error'
+      }));
+      expect(mockRes.json.mock.calls[0][0].message).toMatch(/^Internal error \(correlation ID: [a-f0-9-]+\)$/);
     });
   });
 

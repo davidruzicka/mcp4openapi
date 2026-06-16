@@ -696,7 +696,10 @@ describe('HttpTransport security behavior (no listen)', () => {
     await handler(req, res);
 
     expect(res.statusCode).toBe(500);
-    expect(String(res.body)).toContain('OAuth authorization failed');
+    expect(res.body).toMatchObject({
+      error: 'Internal Server Error',
+    });
+    expect((res.body as any).message).toMatch(/^Internal error \(correlation ID: [a-f0-9-]+\)$/);
 
     await transport.stop();
   });
@@ -1387,7 +1390,10 @@ describe('HttpTransport security behavior (no listen)', () => {
     await handler(req, res);
 
     expect(res.statusCode).toBe(500);
-    expect(String(res.body)).toContain('OAuth callback failed');
+    expect(res.body).toMatchObject({
+      error: 'Internal Server Error',
+    });
+    expect((res.body as any).message).toMatch(/^Internal error \(correlation ID: [a-f0-9-]+\)$/);
 
     await transport.stop();
   });
@@ -1601,7 +1607,8 @@ describe('HttpTransport security behavior (no listen)', () => {
     await handler(req, res);
 
     expect(res.statusCode).toBe(500);
-    expect(res.body).toMatchObject({ error: 'server_error', error_description: 'Registration failed' });
+    expect(res.body).toMatchObject({ error: 'server_error' });
+    expect((res.body as any).error_description).toMatch(/^Internal error \(correlation ID: [a-f0-9-]+\)$/);
 
     await transport.stop();
   });
@@ -1734,7 +1741,8 @@ describe('HttpTransport security behavior (no listen)', () => {
     await handler(req, res);
 
     expect(res.statusCode).toBe(500);
-    expect(res.body).toMatchObject({ error: 'server_error', error_description: 'Registration failed' });
+    expect(res.body).toMatchObject({ error: 'server_error' });
+    expect((res.body as any).error_description).toMatch(/^Internal error \(correlation ID: [a-f0-9-]+\)$/);
 
     await transport.stop();
   });
