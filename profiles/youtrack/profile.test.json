@@ -547,6 +547,32 @@
       }
     },
     {
+      "name": "Retrieve Content - List Issue Link Types",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "list_issue_link_types"
+      },
+      "mocks": [
+        {
+          "operationId": "get_/issueLinkTypes",
+          "response": {
+            "status": 200,
+            "body": [
+              {"id": "89-1", "name": "Subtask", "directed": true, "sourceToTarget": "subtask of", "targetToSource": "parent for"},
+              {"id": "89-2", "name": "Relates", "directed": false, "sourceToTarget": "relates to", "targetToSource": "relates to"}
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "request": {
+          "method": "GET",
+          "path": "/issueLinkTypes"
+        }
+      }
+    },
+    {
       "name": "Retrieve Content - Get Issue Link",
       "tool": "retrieve_content",
       "arguments": {
@@ -1439,6 +1465,37 @@
               "ISSUE-789"
             ]
           }
+        }
+      }
+    },
+    {
+      "name": "Create Content - Create Issue Link",
+      "tool": "create_content",
+      "arguments": {
+        "action": "create_issue_link",
+        "id": "ISSUE-387",
+        "linkType": {"id": "89-1"},
+        "direction": "INWARD",
+        "issues": [{"id": "ISSUE-26"}]
+      },
+      "mocks": [
+        {
+          "operationId": "post_/issues/{id}/links",
+          "response": {
+            "status": 200,
+            "body": {
+              "id": "link-42",
+              "direction": "INWARD",
+              "linkType": {"id": "89-1", "name": "Subtask"}
+            }
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "request": {
+          "method": "POST",
+          "path": "/issues/ISSUE-387/links"
         }
       }
     },

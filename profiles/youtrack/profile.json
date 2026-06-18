@@ -35,7 +35,7 @@
   "tools": [
     {
       "name": "retrieve_content",
-      "description": "Read-only access to YouTrack entities (issues, projects, users, tags, articles, agiles, sprints, etc.). Actions: 'list_issues', 'list_issues_detailed', 'get_issue', 'list_issue_comments', 'get_issue_comment', 'list_issue_attachments', 'get_issue_attachment', 'download_issue_attachment', 'list_issue_tags', 'list_issue_links', 'get_issue_link', 'list_linked_issues', 'list_projects', 'get_project', 'list_project_custom_fields', 'get_project_custom_field', 'list_workitems', 'list_articles', 'get_article', 'list_article_comments', 'list_article_attachments', 'get_article_attachment', 'download_article_attachment', 'list_tags', 'get_tag', 'list_saved_queries', 'list_agiles', 'get_agile', 'list_sprints', 'list_users', 'get_user', 'list_groups'.",
+      "description": "Read-only access to YouTrack entities (issues, projects, users, tags, articles, agiles, sprints, etc.). Actions: 'list_issues', 'list_issues_detailed', 'get_issue', 'list_issue_comments', 'get_issue_comment', 'list_issue_attachments', 'get_issue_attachment', 'download_issue_attachment', 'list_issue_tags', 'list_issue_links', 'get_issue_link', 'list_linked_issues', 'list_issue_link_types', 'list_projects', 'get_project', 'list_project_custom_fields', 'get_project_custom_field', 'list_workitems', 'list_articles', 'get_article', 'list_article_comments', 'list_article_attachments', 'get_article_attachment', 'download_article_attachment', 'list_tags', 'get_tag', 'list_saved_queries', 'list_agiles', 'get_agile', 'list_sprints', 'list_users', 'get_user', 'list_groups'.",
       "metadata_params": ["action", "id", "projectCustomFieldId", "issueCommentId", "issueAttachmentId", "agile_id", "sprintId", "articleCommentId", "articleAttachmentId", "tagId", "fields"],
       "send_response_fields_as_param": true,
       "operations": {
@@ -56,6 +56,7 @@
         "list_issue_links": "get_/issues/{id}/links",
         "get_issue_link": "get_/issues/{id}/links/{issueLinkId}",
         "list_linked_issues": "get_/issues/{id}/links/{issueLinkId}/issues",
+        "list_issue_link_types": "get_/issueLinkTypes",
         "list_projects": "get_/admin/projects",
         "get_project": "get_/admin/projects/{id}",
         "list_project_custom_fields": "get_/admin/projects/{id}/customFields",
@@ -100,9 +101,10 @@
         "list_article_attachments": ["id", "name", "mimeType", "size"],
         "get_article_attachment": ["id", "name", "mimeType", "size", "url", "base64Content"],
         "list_issue_tags": ["id", "name", "owner"],
-        "list_issue_links": ["id", "direction", "linkType"],
-        "get_issue_link": ["id", "direction", "linkType"],
+        "list_issue_links": ["id", "direction", "linkType(id,name,sourceToTarget,targetToSource)"],
+        "get_issue_link": ["id", "direction", "linkType(id,name,sourceToTarget,targetToSource)", "issues(id,idReadable,summary)"],
         "list_linked_issues": ["id", "idReadable", "summary"],
+        "list_issue_link_types": ["id", "name", "directed", "sourceToTarget", "targetToSource"],
         "list_workitems": ["id", "duration", "date", "author", "text"],
         "list_saved_queries": ["id", "name", "query", "owner"],
         "list_tags": ["id", "name", "color"],
@@ -117,7 +119,7 @@
       "parameters": {
         "action": {
           "type": "string",
-          "enum": ["list_issues", "list_issues_detailed", "get_issue", "list_issue_comments", "get_issue_comment", "list_issue_attachments", "get_issue_attachment", "download_issue_attachment", "list_issue_tags", "list_issue_links", "get_issue_link", "list_linked_issues", "list_projects", "get_project", "list_project_custom_fields", "get_project_custom_field", "list_workitems", "list_articles", "get_article", "list_article_comments", "list_article_attachments", "get_article_attachment", "download_article_attachment", "list_tags", "get_tag", "list_saved_queries", "list_agiles", "get_agile", "list_sprints", "list_users", "get_user", "list_groups"],
+          "enum": ["list_issues", "list_issues_detailed", "get_issue", "list_issue_comments", "get_issue_comment", "list_issue_attachments", "get_issue_attachment", "download_issue_attachment", "list_issue_tags", "list_issue_links", "get_issue_link", "list_linked_issues", "list_issue_link_types", "list_projects", "get_project", "list_project_custom_fields", "get_project_custom_field", "list_workitems", "list_articles", "get_article", "list_article_comments", "list_article_attachments", "get_article_attachment", "download_article_attachment", "list_tags", "get_tag", "list_saved_queries", "list_agiles", "get_agile", "list_sprints", "list_users", "get_user", "list_groups"],
           "description": "Action to perform",
           "required": true
         },
@@ -254,7 +256,7 @@
 
     {
       "name": "create_content",
-      "description": "Create new entities in YouTrack. Actions: 'create_issue', 'create_issue_comment', 'create_article_comment', 'log_time', 'add_issue_tag', 'add_article_tag', 'create_tag', 'add_issue_link', 'upload_issue_attachment', 'upload_article_attachment'. Use for creating issues, adding comments, logging time, tagging, and uploading files.",
+      "description": "Create new entities in YouTrack. Actions: 'create_issue', 'create_issue_comment', 'create_article_comment', 'log_time', 'add_issue_tag', 'add_article_tag', 'create_tag', 'create_issue_link', 'add_issue_link', 'upload_issue_attachment', 'upload_article_attachment'. Use for creating issues, adding comments, logging time, tagging, and uploading files. To link issues: first call retrieve_content:list_issue_link_types to get the link type ID, then call create_issue_link.",
       "metadata_params": ["action", "id", "issueCommentId", "issueAttachmentId", "articleCommentId", "articleAttachmentId"],
       "operations": {
         "create_issue": "post_/issues",
@@ -264,6 +266,7 @@
         "add_issue_tag": "post_/issues/{id}/tags",
         "add_article_tag": "post_/articles/{id}/tags",
         "create_tag": "post_/tags",
+        "create_issue_link": "post_/issues/{id}/links",
         "add_issue_link": "post_/issues/{id}/links/{issueLinkId}/issues",
         "upload_issue_attachment": "post_/issues/{id}/attachments",
         "upload_article_attachment": "post_/articles/{id}/attachments"
@@ -276,6 +279,7 @@
         "add_issue_tag": ["id", "name"],
         "add_article_tag": ["id", "name"],
         "create_tag": ["id", "name", "color"],
+        "create_issue_link": ["id", "direction", "linkType(id,name)"],
         "add_issue_link": ["id"],
         "upload_issue_attachment": ["id", "name"],
         "upload_article_attachment": ["id", "name"]
@@ -283,18 +287,30 @@
       "parameters": {
         "action": {
           "type": "string",
-          "enum": ["create_issue", "create_issue_comment", "create_article_comment", "log_time", "add_issue_tag", "add_article_tag", "create_tag", "add_issue_link", "upload_issue_attachment", "upload_article_attachment"],
+          "enum": ["create_issue", "create_issue_comment", "create_article_comment", "log_time", "add_issue_tag", "add_article_tag", "create_tag", "create_issue_link", "add_issue_link", "upload_issue_attachment", "upload_article_attachment"],
           "description": "Action to perform",
           "required": true
         },
         "id": {
           "type": "string",
           "description": "Issue or article ID",
-          "required_for": ["create_issue_comment", "create_article_comment", "log_time", "add_issue_tag", "add_article_tag", "add_issue_link", "upload_issue_attachment", "upload_article_attachment"]
+          "required_for": ["create_issue_comment", "create_article_comment", "log_time", "add_issue_tag", "add_article_tag", "create_issue_link", "add_issue_link", "upload_issue_attachment", "upload_article_attachment"]
+        },
+        "linkType": {
+          "type": "object",
+          "description": "Link type reference for create_issue_link. Example: {\"id\": \"89-5\"}. Get available IDs via retrieve_content:list_issue_link_types.",
+          "required_for": ["create_issue_link"],
+          "properties": {}
+        },
+        "direction": {
+          "type": "string",
+          "description": "Link direction for create_issue_link: 'INWARD' (issue is the child/target) or 'OUTWARD' (issue is the source). Example: for 'Subtask of', use direction='INWARD' and issues=[{\"id\":\"PARENT-ID\"}].",
+          "enum": ["INWARD", "OUTWARD", "BOTH"],
+          "required_for": []
         },
         "issueLinkId": {
           "type": "string",
-          "description": "Link type ID (for add_issue_link)",
+          "description": "Existing link record ID (for add_issue_link). Get via retrieve_content:list_issue_links. Use create_issue_link instead to create a brand new link.",
           "required_for": ["add_issue_link"]
         },
         "summary": {
@@ -346,8 +362,8 @@
         },
         "issues": {
           "type": "array",
-          "description": "Array of issue IDs to link (for add_issue_link)",
-          "required_for": ["add_issue_link"],
+          "description": "For create_issue_link: array of target issue objects [{\"id\": \"PROJ-123\"}]. For add_issue_link: array of issue ID strings.",
+          "required_for": ["create_issue_link", "add_issue_link"],
           "items": {
             "type": "string"
           }
@@ -586,7 +602,7 @@
         },
         "issues": {
           "type": "array",
-          "description": "Issue IDs to apply the command to (for execute_command).",
+          "description": "Internal YouTrack DB IDs of issues to apply command to (format: '89-123456', NOT readable IDs like 'PROJ-123'). To target issues by readable ID, use the 'query' param instead (e.g. query: \"#PROJ-123\" or \"issue id: PROJ-123\").",
           "items": {
             "type": "string"
           },
