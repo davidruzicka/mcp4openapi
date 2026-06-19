@@ -36,6 +36,7 @@ describe('enterprise-auth-provider', () => {
       jwksCache: new JwksCache({ maxCachedIssuers: 4, maxCachedKeys: 8, refreshTimeoutMs: 5000, refreshBackoffMs: 0 }, logger),
       replayStore: new EnterpriseReplayStore({ maxEntries: 10 }),
       logger,
+      ssrfValidator: new (class SSRFValidator { validate = vi.fn().mockResolvedValue(undefined); })() as any,
     });
   }
 
@@ -89,6 +90,7 @@ describe('enterprise-auth-provider', () => {
       jwksCache: new JwksCache({ maxCachedIssuers: 4, maxCachedKeys: 8, refreshTimeoutMs: 5000, refreshBackoffMs: 0 }, logger),
       replayStore: new EnterpriseReplayStore({ maxEntries: 10 }),
       logger,
+      ssrfValidator: new (class SSRFValidator { validate = vi.fn().mockResolvedValue(undefined); })() as any,
     });
 
     const principal = await provider.validateAssertion(assertion, 'client-1');
@@ -121,6 +123,7 @@ describe('enterprise-auth-provider', () => {
       jwksCache: new JwksCache({ maxCachedIssuers: 4, maxCachedKeys: 8, refreshTimeoutMs: 5000, refreshBackoffMs: 0 }, logger),
       replayStore: new EnterpriseReplayStore({ maxEntries: 10 }),
       logger,
+      ssrfValidator: new (class SSRFValidator { validate = vi.fn().mockResolvedValue(undefined); })() as any,
     });
 
     await provider.validateAssertion(assertion, 'client-1');
@@ -154,6 +157,7 @@ describe('enterprise-auth-provider', () => {
       jwksCache: new JwksCache({ maxCachedIssuers: 4, maxCachedKeys: 8, refreshTimeoutMs: 5000, refreshBackoffMs: 0 }, logger),
       replayStore: new EnterpriseReplayStore({ maxEntries: 10 }),
       logger,
+      ssrfValidator: new (class SSRFValidator { validate = vi.fn().mockResolvedValue(undefined); })() as any,
     });
 
     const principal = await provider.validateAssertion(assertion, 'client-1');
@@ -311,6 +315,7 @@ describe('enterprise-auth-provider', () => {
       jwksCache: { getResolver: vi.fn(async () => async () => { throw new Error('boom'); }) } as unknown as JwksCache,
       replayStore: new EnterpriseReplayStore({ maxEntries: 10 }),
       logger,
+      ssrfValidator: new (class SSRFValidator { validate = vi.fn().mockResolvedValue(undefined); })() as any,
     });
 
     await expect(provider.validateAssertion(assertion, 'client-1')).rejects.toThrow('Enterprise assertion validation failed');

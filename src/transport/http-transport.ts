@@ -557,6 +557,7 @@ export class HttpTransport {
           jwksCache: this.enterpriseJwksCache,
           replayStore: this.enterpriseReplayStore,
           logger: this.logger,
+          ssrfValidator: this.ssrfValidator,
         })
       : null;
 
