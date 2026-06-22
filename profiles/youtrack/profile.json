@@ -256,8 +256,8 @@
 
     {
       "name": "create_content",
-      "description": "Create new entities in YouTrack. Actions: 'create_issue', 'create_issue_comment', 'create_article_comment', 'log_time', 'add_issue_tag', 'add_article_tag', 'create_tag', 'create_issue_link', 'add_issue_link', 'upload_issue_attachment', 'upload_article_attachment'. Use for creating issues, adding comments, logging time, tagging, and uploading files. To link issues: first call retrieve_content:list_issue_link_types to get the link type ID, then call create_issue_link.",
-      "metadata_params": ["action", "id", "issueCommentId", "issueAttachmentId", "articleCommentId", "articleAttachmentId"],
+      "description": "Create new entities in YouTrack. Actions: 'create_issue', 'create_issue_comment', 'create_article_comment', 'log_time', 'add_issue_tag', 'add_article_tag', 'create_tag', 'add_issue_link', 'upload_issue_attachment', 'upload_article_attachment'. Use for creating issues, adding comments, logging time, tagging, and uploading files. To link issues: first call retrieve_content:list_issue_link_types to get the link type ID and direction suffix, then call add_issue_link with issueLinkId='<typeId>s' (outward) or '<typeId>t' (inward) or '<typeId>' (undirected).",
+      "metadata_params": ["action", "id", "issueCommentId", "issueAttachmentId", "articleCommentId", "articleAttachmentId", "body"],
       "operations": {
         "create_issue": "post_/issues",
         "create_issue_comment": "post_/issues/{id}/comments",
@@ -266,7 +266,6 @@
         "add_issue_tag": "post_/issues/{id}/tags",
         "add_article_tag": "post_/articles/{id}/tags",
         "create_tag": "post_/tags",
-        "create_issue_link": "post_/issues/{id}/links",
         "add_issue_link": "post_/issues/{id}/links/{issueLinkId}/issues",
         "upload_issue_attachment": "post_/issues/{id}/attachments",
         "upload_article_attachment": "post_/articles/{id}/attachments"
@@ -279,39 +278,34 @@
         "add_issue_tag": ["id", "name"],
         "add_article_tag": ["id", "name"],
         "create_tag": ["id", "name", "color"],
-        "create_issue_link": ["id", "direction", "linkType(id,name)"],
-        "add_issue_link": ["id"],
+        "add_issue_link": ["id", "idReadable", "summary"],
         "upload_issue_attachment": ["id", "name"],
         "upload_article_attachment": ["id", "name"]
       },
       "parameters": {
         "action": {
           "type": "string",
-          "enum": ["create_issue", "create_issue_comment", "create_article_comment", "log_time", "add_issue_tag", "add_article_tag", "create_tag", "create_issue_link", "add_issue_link", "upload_issue_attachment", "upload_article_attachment"],
+          "enum": ["create_issue", "create_issue_comment", "create_article_comment", "log_time", "add_issue_tag", "add_article_tag", "create_tag", "add_issue_link", "upload_issue_attachment", "upload_article_attachment"],
           "description": "Action to perform",
           "required": true
         },
         "id": {
           "type": "string",
           "description": "Issue or article ID",
-          "required_for": ["create_issue_comment", "create_article_comment", "log_time", "add_issue_tag", "add_article_tag", "create_issue_link", "add_issue_link", "upload_issue_attachment", "upload_article_attachment"]
-        },
-        "linkType": {
-          "type": "object",
-          "description": "Link type reference for create_issue_link. Example: {\"id\": \"89-5\"}. Get available IDs via retrieve_content:list_issue_link_types.",
-          "required_for": ["create_issue_link"],
-          "properties": {}
-        },
-        "direction": {
-          "type": "string",
-          "description": "Link direction for create_issue_link: 'INWARD' (issue is the child/target) or 'OUTWARD' (issue is the source). Example: for 'Subtask of', use direction='INWARD' and issues=[{\"id\":\"PARENT-ID\"}].",
-          "enum": ["INWARD", "OUTWARD", "BOTH"],
-          "required_for": []
+          "required_for": ["create_issue_comment", "create_article_comment", "log_time", "add_issue_tag", "add_article_tag", "add_issue_link", "upload_issue_attachment", "upload_article_attachment"]
         },
         "issueLinkId": {
           "type": "string",
-          "description": "Existing link record ID (for add_issue_link). Get via retrieve_content:list_issue_links. Use create_issue_link instead to create a brand new link.",
+          "description": "Link type ID with direction suffix (for add_issue_link). Format: '<typeId>s' (outward/source), '<typeId>t' (inward/target), or '<typeId>' (undirected). Get type IDs via retrieve_content:list_issue_link_types. Example: '42-0' (Relates, undirected), '42-1s' (Duplicates outward).",
           "required_for": ["add_issue_link"]
+        },
+        "body": {
+          "type": "object",
+          "description": "Target issue reference for add_issue_link. Must use the internal DB id (format: '89-123456'), not the readable id ('PROJ-123'). Example: {\"id\": \"89-123456\"}. Get internal IDs via retrieve_content:list_issues with fields='id,idReadable'.",
+          "required_for": ["add_issue_link"],
+          "properties": {
+            "id": {"type": "string"}
+          }
         },
         "summary": {
           "type": "string",
@@ -359,14 +353,6 @@
           "type": "string",
           "description": "Tag color in hex format (e.g., '#FF0000')",
           "required_for": []
-        },
-        "issues": {
-          "type": "array",
-          "description": "For create_issue_link: array of target issue objects [{\"id\": \"PROJ-123\"}]. For add_issue_link: array of issue ID strings.",
-          "required_for": ["create_issue_link", "add_issue_link"],
-          "items": {
-            "type": "string"
-          }
         },
         "fileName": {
           "type": "string",

@@ -8141,46 +8141,6 @@
             }
           }
         }
-      },
-      "post" : {
-        "summary" : "Create a new issue link (link group with type and target issues).",
-        "parameters" : [ {
-          "name" : "fields",
-          "in" : "query",
-          "schema" : {
-            "type" : "string",
-            "example" : "$type,direction,id,linkType($type,id,name)",
-            "default" : "$type,direction,id,linkType($type,id,name)"
-          }
-        }, {
-          "name" : "id",
-          "in" : "path",
-          "required" : true,
-          "schema" : {
-            "type" : "string"
-          }
-        } ],
-        "requestBody" : {
-          "content" : {
-            "application/json" : {
-              "schema" : {
-                "$ref" : "#/components/schemas/IssueLink"
-              }
-            }
-          }
-        },
-        "responses" : {
-          "200" : {
-            "description" : "single IssueLink",
-            "content" : {
-              "application/json" : {
-                "schema" : {
-                  "$ref" : "#/components/schemas/IssueLink"
-                }
-              }
-            }
-          }
-        }
       }
     },
     "/issues/{id}/links/{issueLinkId}" : {

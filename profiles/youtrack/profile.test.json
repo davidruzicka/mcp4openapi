@@ -1437,11 +1437,8 @@
       "arguments": {
         "action": "add_issue_link",
         "id": "ISSUE-123",
-        "issueLinkId": "link-1",
-        "issues": [
-          "ISSUE-456",
-          "ISSUE-789"
-        ]
+        "issueLinkId": "42-0",
+        "body": {"id": "89-456789"}
       },
       "mocks": [
         {
@@ -1449,7 +1446,9 @@
           "response": {
             "status": 200,
             "body": {
-              "id": "id-1"
+              "id": "89-456789",
+              "idReadable": "ISSUE-456",
+              "summary": "Target issue"
             }
           }
         }
@@ -1458,44 +1457,10 @@
         "success": true,
         "request": {
           "method": "POST",
-          "path": "/issues/ISSUE-123/links/link-1/issues",
+          "path": "/issues/ISSUE-123/links/42-0/issues",
           "body_exact": {
-            "issues": [
-              "ISSUE-456",
-              "ISSUE-789"
-            ]
+            "id": "89-456789"
           }
-        }
-      }
-    },
-    {
-      "name": "Create Content - Create Issue Link",
-      "tool": "create_content",
-      "arguments": {
-        "action": "create_issue_link",
-        "id": "ISSUE-387",
-        "linkType": {"id": "89-1"},
-        "direction": "INWARD",
-        "issues": [{"id": "ISSUE-26"}]
-      },
-      "mocks": [
-        {
-          "operationId": "post_/issues/{id}/links",
-          "response": {
-            "status": 200,
-            "body": {
-              "id": "link-42",
-              "direction": "INWARD",
-              "linkType": {"id": "89-1", "name": "Subtask"}
-            }
-          }
-        }
-      ],
-      "expect": {
-        "success": true,
-        "request": {
-          "method": "POST",
-          "path": "/issues/ISSUE-387/links"
         }
       }
     },
