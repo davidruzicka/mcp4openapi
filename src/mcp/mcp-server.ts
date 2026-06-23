@@ -1464,6 +1464,17 @@ export class MCPServer {
       }
     }
 
+    // Explicit full-body override: when `body` is in the tool's metadata_params,
+    // the caller provides the complete request body directly. This lets profiles
+    // handle endpoints where the body field name is readOnly in the schema
+    // (e.g. Issue reference objects) and would otherwise be stripped.
+    if (metadata.has('body')) {
+      const explicitBody = args['body'];
+      if (explicitBody !== undefined) {
+        return explicitBody;
+      }
+    }
+
     // Root array body support
     if (bodySchema?.type === 'array') {
       const explicit = args['body'] ?? args['items'];

@@ -547,6 +547,32 @@
       }
     },
     {
+      "name": "Retrieve Content - List Issue Link Types",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "list_issue_link_types"
+      },
+      "mocks": [
+        {
+          "operationId": "get_/issueLinkTypes",
+          "response": {
+            "status": 200,
+            "body": [
+              {"id": "89-1", "name": "Subtask", "directed": true, "sourceToTarget": "subtask of", "targetToSource": "parent for"},
+              {"id": "89-2", "name": "Relates", "directed": false, "sourceToTarget": "relates to", "targetToSource": "relates to"}
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "request": {
+          "method": "GET",
+          "path": "/issueLinkTypes"
+        }
+      }
+    },
+    {
       "name": "Retrieve Content - Get Issue Link",
       "tool": "retrieve_content",
       "arguments": {
@@ -1411,11 +1437,8 @@
       "arguments": {
         "action": "add_issue_link",
         "id": "ISSUE-123",
-        "issueLinkId": "link-1",
-        "issues": [
-          "ISSUE-456",
-          "ISSUE-789"
-        ]
+        "issueLinkId": "42-0",
+        "body": {"id": "89-456789"}
       },
       "mocks": [
         {
@@ -1423,7 +1446,9 @@
           "response": {
             "status": 200,
             "body": {
-              "id": "id-1"
+              "id": "89-456789",
+              "idReadable": "ISSUE-456",
+              "summary": "Target issue"
             }
           }
         }
@@ -1432,12 +1457,9 @@
         "success": true,
         "request": {
           "method": "POST",
-          "path": "/issues/ISSUE-123/links/link-1/issues",
+          "path": "/issues/ISSUE-123/links/42-0/issues",
           "body_exact": {
-            "issues": [
-              "ISSUE-456",
-              "ISSUE-789"
-            ]
+            "id": "89-456789"
           }
         }
       }

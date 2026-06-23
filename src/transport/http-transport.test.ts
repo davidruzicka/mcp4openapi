@@ -1154,6 +1154,39 @@ describeIfListen('HttpTransport', () => {
       expect(response.text).toContain('Tool Filter');
       expect(response.text).toContain('Parameter Filter');
     });
+
+    it('renders URL hash navigation JavaScript in HTML payload', async () => {
+      indexTransport.setProfileIndexProvider(async () => ([
+        {
+          profileId: 'alpha',
+          profileName: 'Alpha',
+          profileAliases: [],
+          description: 'First profile',
+          envVars: [],
+        },
+        {
+          profileId: 'beta',
+          profileName: 'Beta',
+          profileAliases: [],
+          description: 'Second profile',
+          envVars: [],
+        },
+      ]));
+
+      const response = await request(indexApp).get('/');
+
+      expect(response.status).toBe(200);
+      expect(response.headers['content-type']).toContain('text/html');
+      // hash sync on profile select
+      expect(response.text).toContain('history.replaceState');
+      expect(response.text).toContain("'#' + profileId");
+      // hash-based initial selection
+      expect(response.text).toContain('location.hash.slice(1)');
+      // scroll selected profile into view
+      expect(response.text).toContain('scrollIntoView');
+      // hashchange listener for address-bar navigation without full reload
+      expect(response.text).toContain('hashchange');
+    });
   });
 
   describe('Security - Origin Validation', () => {

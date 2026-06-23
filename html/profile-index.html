@@ -2503,12 +2503,28 @@
       function selectProfile(profileId, options) {
         const profile = profileData.find(item => item.profileId === profileId);
         if (!profile) return;
+        const newHash = '#' + profileId;
+        if (location.hash !== newHash) {
+          history.replaceState(null, '', newHash);
+        }
         renderList(profileId, { focusSelected: !!(options && options.focusListItem) });
         renderDetail(profile);
       }
 
       if (profileData.length > 0) {
-        selectProfile(profileData[0].profileId);
+        const hashId = location.hash ? location.hash.slice(1) : '';
+        const initial = profileData.find(p => p.profileId === hashId) || profileData[0];
+        selectProfile(initial.profileId);
+        document.getElementById(`profile-option-${initial.profileId}`)?.scrollIntoView({ block: 'nearest' });
+
+        window.addEventListener('hashchange', () => {
+          const id = location.hash ? location.hash.slice(1) : '';
+          const profile = profileData.find(p => p.profileId === id);
+          if (profile) {
+            selectProfile(profile.profileId);
+            document.getElementById(`profile-option-${profile.profileId}`)?.scrollIntoView({ block: 'nearest' });
+          }
+        });
       } else {
         detailEl.innerHTML = `<div class="notice">${escapeHtml(i18n.noProfiles || '')}</div>`;
       }
