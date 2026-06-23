@@ -2516,6 +2516,15 @@
         const initial = profileData.find(p => p.profileId === hashId) || profileData[0];
         selectProfile(initial.profileId);
         document.getElementById(`profile-option-${initial.profileId}`)?.scrollIntoView({ block: 'nearest' });
+
+        window.addEventListener('hashchange', () => {
+          const id = location.hash ? location.hash.slice(1) : '';
+          const profile = profileData.find(p => p.profileId === id);
+          if (profile) {
+            selectProfile(profile.profileId);
+            document.getElementById(`profile-option-${profile.profileId}`)?.scrollIntoView({ block: 'nearest' });
+          }
+        });
       } else {
         detailEl.innerHTML = `<div class="notice">${escapeHtml(i18n.noProfiles || '')}</div>`;
       }

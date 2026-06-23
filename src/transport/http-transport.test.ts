@@ -1184,6 +1184,8 @@ describeIfListen('HttpTransport', () => {
       expect(response.text).toContain('location.hash.slice(1)');
       // scroll selected profile into view
       expect(response.text).toContain('scrollIntoView');
+      // hashchange listener for address-bar navigation without full reload
+      expect(response.text).toContain('hashchange');
     });
   });
 

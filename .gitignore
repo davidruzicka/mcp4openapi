@@ -10,3 +10,4 @@ tmp/
 .claude/settings.local.json
 .claude/worktrees/
 .lean-ctx/
+.playwright-mcp/
