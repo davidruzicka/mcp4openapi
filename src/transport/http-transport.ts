@@ -147,6 +147,7 @@ export class HttpTransport {
   private warnedMissingOAuthRedirectEnvVars: Set<string> = new Set();
   private profileHintsByClient: Map<string, { profileId: string; lastSeen: number }> = new Map();
   private static readonly PROFILE_HINT_TTL_MS = 10 * 60 * 1000;
+  private static readonly MAX_PROFILE_HINTS = 10000;
   private profileIndexProvider: (() => Promise<ListedProfileDetails[]>) | null = null;
   private profileAdminDescriptions: Map<string, string> | null = null;
   private ssrfValidator: SSRFValidator;
@@ -794,6 +795,17 @@ export class HttpTransport {
 
   private storeProfileHint(req: Request, profileId: string): void {
     const key = this.getClientHintKey(req);
+
+    // Evict oldest entry (FIFO) if cache is full, before inserting new one
+    if (this.profileHintsByClient.size >= HttpTransport.MAX_PROFILE_HINTS && !this.profileHintsByClient.has(key)) {
+      const oldestKey = this.profileHintsByClient.keys().next().value;
+      if (oldestKey !== undefined) {
+        this.profileHintsByClient.delete(oldestKey);
+      }
+    }
+
+    // Deleting then setting ensures it's moved to the end of insertion order (acts as LRU/FIFO)
+    this.profileHintsByClient.delete(key);
     this.profileHintsByClient.set(key, { profileId, lastSeen: Date.now() });
   }
 
@@ -4171,6 +4183,19 @@ export class HttpTransport {
 
     if (expiredSessions.length > 0) {
       this.logger.info('Cleaned up expired sessions', { count: expiredSessions.length });
+    }
+
+    // Cleanup expired profile hints
+    let cleanedHintsCount = 0;
+    for (const [key, hint] of this.profileHintsByClient.entries()) {
+      if (now - hint.lastSeen > HttpTransport.PROFILE_HINT_TTL_MS) {
+        this.profileHintsByClient.delete(key);
+        cleanedHintsCount++;
+      }
+    }
+
+    if (cleanedHintsCount > 0) {
+      this.logger.debug('Cleaned up expired profile hints', { count: cleanedHintsCount });
     }
   }
 
