@@ -3424,6 +3424,9 @@ export class HttpTransport {
       metricsProfileState = profileState;
       const sessionId = req.sessionId;
       const lastEventId = req.headers['last-event-id'] as string | undefined;
+      const toolFilterHeader = normalizeToolFilterHeaderValue(this.getToolFilterHeaderValue(req));
+      const parsedToolFilter =
+        toolFilterHeader !== undefined ? parseSessionToolFilterHeader(toolFilterHeader) : undefined;
 
       // Validate Accept header
       const accept = req.headers.accept || '';
@@ -3431,6 +3434,8 @@ export class HttpTransport {
         res.status(HTTP_STATUS.METHOD_NOT_ALLOWED).json({ error: 'Method Not Allowed', message: `Must accept ${MIME_TYPES.EVENT_STREAM}` });
         return;
       }
+
+      this.rejectUnsupportedUpstreamToolCategoryFilter(profileState, parsedToolFilter);
 
       // Validate session
       if (!sessionId) {
@@ -3464,12 +3469,37 @@ export class HttpTransport {
     } catch (error) {
       const correlationId = generateCorrelationId();
       this.logger.error('GET request error', error as Error, { correlationId });
-      const status = 500;
+      let status = 500;
+      let errorLabel = 'Internal Server Error';
+      let message = `Internal error (correlation ID: ${correlationId})`;
+
+      if (error instanceof ValidationError) {
+        status = HTTP_STATUS.BAD_REQUEST;
+        errorLabel = 'Bad Request';
+        message = `Validation error: ${error.message} (correlation ID: ${correlationId})`;
+      } else if (error instanceof AuthenticationError) {
+        status = HTTP_STATUS.UNAUTHORIZED;
+        errorLabel = 'Unauthorized';
+        message = `Authentication failed: ${error.message} (correlation ID: ${correlationId})`;
+      } else if (error instanceof AuthorizationError) {
+        status = HTTP_STATUS.FORBIDDEN;
+        errorLabel = 'Forbidden';
+        message = `Authorization failed: ${error.message} (correlation ID: ${correlationId})`;
+      } else if (error instanceof RateLimitError) {
+        status = HTTP_STATUS.TOO_MANY_REQUESTS;
+        errorLabel = 'Too Many Requests';
+        message = `Rate limit exceeded: ${error.message} (correlation ID: ${correlationId})`;
+      } else if (error instanceof ClientAuthGateError) {
+        status = 500;
+        errorLabel = 'Gateway Configuration Error';
+        message = `Client auth gate misconfigured: ${error.message} (correlation ID: ${correlationId})`;
+      }
+
       if (!res.headersSent) {
         res.setHeader('Cache-Control', 'no-store');
         res.status(status).json({
-          error: 'Internal Server Error',
-          message: `Internal error (correlation ID: ${correlationId})`,
+          error: errorLabel,
+          message,
           correlationId
         });
       }
@@ -3771,6 +3801,23 @@ export class HttpTransport {
       return headerValue[0];
     }
     return headerValue;
+  }
+
+  private rejectUnsupportedUpstreamToolCategoryFilter(
+    profileState: ProfileRuntimeState,
+    toolFilterRequest?: SessionToolFilterRequest,
+  ): void {
+    if (!toolFilterRequest || toolFilterRequest.allowCategories.size === 0) {
+      return;
+    }
+
+    if (!profileState.context.upstreamMcp) {
+      return;
+    }
+
+    throw new ValidationError(
+      '_allow_list/_allow_read not supported for upstream proxy profiles. Use exact names or regex patterns instead.'
+    );
   }
 
 
