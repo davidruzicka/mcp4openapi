@@ -11,6 +11,7 @@ import fs from 'fs';
 import https from 'https';
 import { HttpTransport } from './http-transport.js';
 import { ConsoleLogger, type Logger } from '../core/logger.js';
+import { ValidationError } from '../core/errors.js';
 import { describeIfListen } from '../testing/listen-support.js';
 import { parseSessionToolFilterHeader } from '../tool-filter/index.js';
 
@@ -1934,6 +1935,38 @@ describeIfListen('HttpTransport', () => {
       expect(response.status).toBe(400);
       expect(response.body).toHaveProperty('message');
       expect(response.body.message).toContain('Mcp-Session-Id');
+    });
+
+    it('returns mapped error response when session destruction throws', async () => {
+      transport.setMessageHandler(async (_msg) => ({ result: 'ok' }));
+
+      const initResponse = await request(app)
+        .post('/mcp')
+        .set('Accept', 'application/json, text/event-stream')
+        .send({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'initialize',
+        });
+
+      const sessionId = initResponse.headers['mcp-session-id'];
+      const originalDestroySession = (transport as any).destroySession;
+      (transport as any).destroySession = vi.fn(() => {
+        throw new ValidationError('delete failed');
+      });
+
+      try {
+        const deleteResponse = await request(app)
+          .delete('/mcp')
+          .set('Mcp-Session-Id', sessionId);
+
+        expect(deleteResponse.status).toBe(400);
+        expect(deleteResponse.body.error).toBe('Bad Request');
+        expect(deleteResponse.body.message).toContain('Validation error: delete failed');
+        expect(deleteResponse.body).toHaveProperty('correlationId');
+      } finally {
+        (transport as any).destroySession = originalDestroySession;
+      }
     });
   });
 
