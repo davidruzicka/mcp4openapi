@@ -134,6 +134,44 @@ interface OAuthRequiredErrorResponse {
 }
 
 export class HttpTransport {
+  private static readonly HTTP_ERROR_RESPONSE_RULES: ReadonlyArray<{
+    ctor: new (...args: any[]) => Error;
+    status: number;
+    errorLabel: string;
+    messagePrefix: string;
+  }> = [
+    {
+      ctor: ValidationError,
+      status: HTTP_STATUS.BAD_REQUEST,
+      errorLabel: 'Bad Request',
+      messagePrefix: 'Validation error',
+    },
+    {
+      ctor: AuthenticationError,
+      status: HTTP_STATUS.UNAUTHORIZED,
+      errorLabel: 'Unauthorized',
+      messagePrefix: 'Authentication failed',
+    },
+    {
+      ctor: AuthorizationError,
+      status: HTTP_STATUS.FORBIDDEN,
+      errorLabel: 'Forbidden',
+      messagePrefix: 'Authorization failed',
+    },
+    {
+      ctor: RateLimitError,
+      status: HTTP_STATUS.TOO_MANY_REQUESTS,
+      errorLabel: 'Too Many Requests',
+      messagePrefix: 'Rate limit exceeded',
+    },
+    {
+      ctor: ClientAuthGateError,
+      status: HTTP_STATUS.INTERNAL_SERVER_ERROR,
+      errorLabel: 'Gateway Configuration Error',
+      messagePrefix: 'Client auth gate misconfigured',
+    },
+  ];
+
   private app: express.Application;
   private server: Server | https.Server | null = null;
   private config: HttpTransportConfig;
@@ -2349,10 +2387,11 @@ export class HttpTransport {
     } catch (error) {
       const correlationId = generateCorrelationId();
       this.logger.error('Metrics endpoint error', error as Error, { correlationId });
+      const { status, errorLabel, message } = this.buildHttpErrorResponse(error, correlationId);
       res.setHeader('Cache-Control', 'no-store');
-      res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
-        error: 'Internal Server Error',
-        message: `Internal error (correlation ID: ${correlationId})`,
+      res.status(status).json({
+        error: errorLabel,
+        message,
         correlationId
       });
     }
@@ -3351,32 +3390,7 @@ export class HttpTransport {
       const correlationId = generateCorrelationId();
       this.logger.error('POST request error', error as Error, { correlationId });
       res.setHeader('Cache-Control', 'no-store');
-
-      let status = 500;
-      let errorLabel = 'Internal Server Error';
-      let message = `Internal error (correlation ID: ${correlationId})`;
-
-      if (error instanceof ValidationError) {
-        status = HTTP_STATUS.BAD_REQUEST;
-        errorLabel = 'Bad Request';
-        message = `Validation error: ${error.message} (correlation ID: ${correlationId})`;
-      } else if (error instanceof AuthenticationError) {
-        status = HTTP_STATUS.UNAUTHORIZED;
-        errorLabel = 'Unauthorized';
-        message = `Authentication failed: ${error.message} (correlation ID: ${correlationId})`;
-      } else if (error instanceof AuthorizationError) {
-        status = HTTP_STATUS.FORBIDDEN;
-        errorLabel = 'Forbidden';
-        message = `Authorization failed: ${error.message} (correlation ID: ${correlationId})`;
-      } else if (error instanceof RateLimitError) {
-        status = HTTP_STATUS.TOO_MANY_REQUESTS;
-        errorLabel = 'Too Many Requests';
-        message = `Rate limit exceeded: ${error.message} (correlation ID: ${correlationId})`;
-      } else if (error instanceof ClientAuthGateError) {
-        status = 500;
-        errorLabel = 'Gateway Configuration Error';
-        message = `Client auth gate misconfigured: ${error.message} (correlation ID: ${correlationId})`;
-      }
+      const { status, errorLabel, message } = this.buildHttpErrorResponse(error, correlationId);
 
       res.status(status).json({ error: errorLabel, message, correlationId });
       
@@ -3469,31 +3483,7 @@ export class HttpTransport {
     } catch (error) {
       const correlationId = generateCorrelationId();
       this.logger.error('GET request error', error as Error, { correlationId });
-      let status = 500;
-      let errorLabel = 'Internal Server Error';
-      let message = `Internal error (correlation ID: ${correlationId})`;
-
-      if (error instanceof ValidationError) {
-        status = HTTP_STATUS.BAD_REQUEST;
-        errorLabel = 'Bad Request';
-        message = `Validation error: ${error.message} (correlation ID: ${correlationId})`;
-      } else if (error instanceof AuthenticationError) {
-        status = HTTP_STATUS.UNAUTHORIZED;
-        errorLabel = 'Unauthorized';
-        message = `Authentication failed: ${error.message} (correlation ID: ${correlationId})`;
-      } else if (error instanceof AuthorizationError) {
-        status = HTTP_STATUS.FORBIDDEN;
-        errorLabel = 'Forbidden';
-        message = `Authorization failed: ${error.message} (correlation ID: ${correlationId})`;
-      } else if (error instanceof RateLimitError) {
-        status = HTTP_STATUS.TOO_MANY_REQUESTS;
-        errorLabel = 'Too Many Requests';
-        message = `Rate limit exceeded: ${error.message} (correlation ID: ${correlationId})`;
-      } else if (error instanceof ClientAuthGateError) {
-        status = 500;
-        errorLabel = 'Gateway Configuration Error';
-        message = `Client auth gate misconfigured: ${error.message} (correlation ID: ${correlationId})`;
-      }
+      const { status, errorLabel, message } = this.buildHttpErrorResponse(error, correlationId);
 
       if (!res.headersSent) {
         res.setHeader('Cache-Control', 'no-store');
@@ -3525,17 +3515,64 @@ export class HttpTransport {
    */
   private handleDelete(req: McpRequest, res: Response): void {
     const startTime = Date.now();
-    const sessionId = req.sessionId;
-    const profileId = this.getProfileIdForRequest(req);
+    let metricsProfileState: ProfileRuntimeState | null = null;
+    let metricsTenantId: string | null = null;
+    let profileId: string | undefined;
 
-    if (!profileId) {
-      this.respondProfileNotFound(res, req.profileId);
-      return;
-    }
+    try {
+      const sessionId = req.sessionId;
+      profileId = this.getProfileIdForRequest(req);
 
-    if (!sessionId) {
-      const status = 400;
-      res.status(status).json({ error: 'Bad Request', message: 'Mcp-Session-Id header required' });
+      if (!profileId) {
+        this.respondProfileNotFound(res, req.profileId);
+        return;
+      }
+
+      if (!sessionId) {
+        const status = 400;
+        res.status(status).json({ error: 'Bad Request', message: 'Mcp-Session-Id header required' });
+        if (this.metrics) {
+          const duration = (Date.now() - startTime) / 1000;
+          this.metrics.recordHttpRequest(
+            req.method,
+            req.path,
+            status,
+            duration,
+            this.resolveMetricsContext(undefined, null, profileId)
+          );
+        }
+        return;
+      }
+
+      const profileState = this.profileStates.get(profileId);
+      if (!profileState) {
+        this.respondProfileNotFound(res, profileId);
+        return;
+      }
+      metricsProfileState = profileState;
+
+      const session = profileState.sessions.get(sessionId);
+      if (!session) {
+        const status = 404;
+        res.status(status).json({ error: 'Not Found', message: 'Session not found' });
+        if (this.metrics) {
+          const duration = (Date.now() - startTime) / 1000;
+          this.metrics.recordHttpRequest(
+            req.method,
+            req.path,
+            status,
+            duration,
+            this.resolveMetricsContext(profileState, null)
+          );
+        }
+        return;
+      }
+      metricsTenantId = session.tenantId || null;
+
+      this.destroySession(profileState, sessionId);
+      const status = 204;
+      res.status(status).send();
+
       if (this.metrics) {
         const duration = (Date.now() - startTime) / 1000;
         this.metrics.recordHttpRequest(
@@ -3543,22 +3580,19 @@ export class HttpTransport {
           req.path,
           status,
           duration,
-          this.resolveMetricsContext(undefined, null, profileId)
+          this.resolveMetricsContext(profileState, metricsTenantId)
         );
       }
-      return;
-    }
+    } catch (error) {
+      const correlationId = generateCorrelationId();
+      this.logger.error('DELETE request error', error as Error, { correlationId });
+      const { status, errorLabel, message } = this.buildHttpErrorResponse(error, correlationId);
 
-    const profileState = this.profileStates.get(profileId);
-    if (!profileState) {
-      this.respondProfileNotFound(res, profileId);
-      return;
-    }
+      if (!res.headersSent) {
+        res.setHeader('Cache-Control', 'no-store');
+        res.status(status).json({ error: errorLabel, message, correlationId });
+      }
 
-    const session = profileState.sessions.get(sessionId);
-    if (!session) {
-      const status = 404;
-      res.status(status).json({ error: 'Not Found', message: 'Session not found' });
       if (this.metrics) {
         const duration = (Date.now() - startTime) / 1000;
         this.metrics.recordHttpRequest(
@@ -3566,25 +3600,9 @@ export class HttpTransport {
           req.path,
           status,
           duration,
-          this.resolveMetricsContext(profileState, null)
+          this.resolveMetricsContext(metricsProfileState, metricsTenantId, profileId)
         );
       }
-      return;
-    }
-
-    this.destroySession(profileState, sessionId);
-    const status = 204;
-    res.status(status).send();
-    
-    if (this.metrics) {
-      const duration = (Date.now() - startTime) / 1000;
-      this.metrics.recordHttpRequest(
-        req.method,
-        req.path,
-        status,
-        duration,
-        this.resolveMetricsContext(profileState, session.tenantId || null)
-      );
     }
   }
 
@@ -3818,6 +3836,27 @@ export class HttpTransport {
     throw new ValidationError(
       '_allow_list/_allow_read not supported for upstream proxy profiles. Use exact names or regex patterns instead.'
     );
+  }
+
+  private buildHttpErrorResponse(
+    error: unknown,
+    correlationId: string,
+  ): { status: number; errorLabel: string; message: string } {
+    for (const rule of HttpTransport.HTTP_ERROR_RESPONSE_RULES) {
+      if (error instanceof rule.ctor) {
+        return {
+          status: rule.status,
+          errorLabel: rule.errorLabel,
+          message: `${rule.messagePrefix}: ${error.message} (correlation ID: ${correlationId})`,
+        };
+      }
+    }
+
+    return {
+      status: HTTP_STATUS.INTERNAL_SERVER_ERROR,
+      errorLabel: 'Internal Server Error',
+      message: `Internal error (correlation ID: ${correlationId})`,
+    };
   }
 
 
