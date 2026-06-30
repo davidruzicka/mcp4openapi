@@ -1844,6 +1844,22 @@ describeIfListen('HttpTransport', () => {
       expect(response.body.message).toContain('Mcp-Session-Id');
     });
 
+    it('returns actionable upstream tool-filter error before missing session on GET fallback', async () => {
+      createProfileState(transport as any).context.upstreamMcp = {
+        name: 'youtrack',
+        transport: { type: 'http-streamable', url: 'https://example.com/mcp' },
+      };
+
+      const response = await request(app)
+        .get('/mcp')
+        .set('Accept', 'text/event-stream')
+        .set('X-Mcp4-Tools', '_allow_list, _allow_read');
+
+      expect(response.status).toBe(400);
+      expect(response.body).toHaveProperty('message');
+      expect(response.body.message).toContain('_allow_list/_allow_read not supported for upstream proxy profiles');
+    });
+
     it('should delete session via DELETE /sse', async () => {
       transport.setMessageHandler(async (_msg) => ({ result: 'ok' }));
 
