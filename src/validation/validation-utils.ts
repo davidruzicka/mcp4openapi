@@ -36,7 +36,7 @@ export function isSafePropertyName(name: string): boolean {
  * RFC7230 token characters (tchar) — valid characters for HTTP header field names.
  * Excludes spaces, colons, CR/LF, control characters, and non-ASCII to prevent header injection.
  */
-// eslint-disable-next-line no-useless-escape
+
 const HTTP_HEADER_NAME_PATTERN = /^[a-zA-Z0-9!#$%&'*+\-.^_`|~]+$/;
 
 /**
