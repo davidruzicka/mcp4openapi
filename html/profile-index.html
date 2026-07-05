@@ -527,9 +527,36 @@
           flex-wrap: wrap;
         }
       }
+      .system-notice {
+        padding: 14px 40px;
+        font-size: 14px;
+        font-weight: 500;
+        border-bottom: 1px solid transparent;
+      }
+      .system-notice--info {
+        background: #eef3ff;
+        border-bottom-color: #93b4f5;
+        color: #1e3a7a;
+      }
+      .system-notice--warning {
+        background: #fff8f1;
+        border-bottom-color: #f6d5bd;
+        color: #7a3f1e;
+      }
+      .system-notice--error {
+        background: #fdf2f2;
+        border-bottom-color: #f5c0c0;
+        color: #7a1e1e;
+      }
+      @media (max-width: 700px) {
+        .system-notice {
+          padding: 12px 20px;
+        }
+      }
     </style>
   </head>
   <body>
+    {{system_notice}}
     <header>
       <h1>{{title}}</h1>
       <p>{{subtitle}}</p>

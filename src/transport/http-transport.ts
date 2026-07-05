@@ -90,7 +90,7 @@ import {
   parseAcceptLanguage,
   renderProfileIndexHtml,
 } from './profile-index.js';
-import type { ProfileIndexSourceProfile, ProfileIndexTenantSummary } from './profile-index.js';
+import type { ProfileIndexSourceProfile, ProfileIndexTenantSummary, SystemNotice } from './profile-index.js';
 const DEFAULT_MAX_TOKEN_LENGTH = 4096;
 // Envelopes older than 30 days are rejected during restart-recovery to bound token lifetime at rest.
 const MAX_ENVELOPE_AGE_MS = 30 * 24 * 60 * 60 * 1000;
@@ -187,6 +187,7 @@ export class HttpTransport {
   private static readonly PROFILE_HINT_TTL_MS = 10 * 60 * 1000;
   private profileIndexProvider: (() => Promise<ListedProfileDetails[]>) | null = null;
   private profileAdminDescriptions: Map<string, string> | null = null;
+  private systemNotice: SystemNotice | null = null;
   private ssrfValidator: SSRFValidator;
   private rawTenantConfig: HttpTenantsConfig | null;
   private readonly enterpriseRuntimeConfig: Required<EnterpriseAuthorizationRuntimeConfig>;
@@ -301,6 +302,10 @@ export class HttpTransport {
 
   setProfileAdminDescriptions(map: Map<string, string> | null): void {
     this.profileAdminDescriptions = map;
+  }
+
+  setSystemNotice(notice: SystemNotice | null): void {
+    this.systemNotice = notice;
   }
 
   /**
@@ -1801,7 +1806,8 @@ export class HttpTransport {
       profilesWithTenantSummary,
       origin,
       locale,
-      this.profileAdminDescriptions ?? undefined
+      this.profileAdminDescriptions ?? undefined,
+      this.systemNotice
     );
 
     if (prefersJson) {

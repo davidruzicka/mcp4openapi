@@ -2,10 +2,75 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { escapeHtmlSafe } from '../validation/validation-utils.js';
+import { ConfigurationError } from '../core/errors.js';
 import type { ListedProfileDetails, ProfileAuthMethod } from '../profile/profile-resolver.js';
 import type { TenantSelectorType } from '../types/http-tenants.js';
 
+export const SYSTEM_NOTICE_ENV_VAR = 'MCP4_SYSTEM_NOTICE';
+
 export type ProfileIndexLocale = 'cs' | 'en';
+
+export type SystemNoticeSeverity = 'info' | 'warning' | 'error';
+
+export interface SystemNotice {
+  message: string;
+  severity: SystemNoticeSeverity;
+}
+
+const SYSTEM_NOTICE_MAX_LENGTH = 2_000;
+const VALID_SEVERITIES: SystemNoticeSeverity[] = ['info', 'warning', 'error'];
+
+export function parseSystemNotice(raw?: string): SystemNotice | null {
+  if (!raw?.trim()) return null;
+  const trimmed = raw.trim();
+  if (trimmed.startsWith('{')) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(trimmed);
+    } catch {
+      // fall through to plain-string path
+      return buildPlainNotice(trimmed);
+    }
+    if (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      const obj = parsed as Record<string, unknown>;
+      if (typeof obj.message !== 'string') {
+        throw new ConfigurationError('MCP4_SYSTEM_NOTICE JSON must have a string "message" field', {
+          envVar: SYSTEM_NOTICE_ENV_VAR,
+        });
+      }
+      const message = obj.message.trim();
+      if (!message) return null;
+      if (message.length > SYSTEM_NOTICE_MAX_LENGTH) {
+        throw new ConfigurationError(
+          `MCP4_SYSTEM_NOTICE message must not exceed ${SYSTEM_NOTICE_MAX_LENGTH} characters`,
+          { envVar: SYSTEM_NOTICE_ENV_VAR, receivedLength: message.length }
+        );
+      }
+      const severity: SystemNoticeSeverity =
+        VALID_SEVERITIES.includes(obj.severity as SystemNoticeSeverity)
+          ? (obj.severity as SystemNoticeSeverity)
+          : 'info';
+      return { message, severity };
+    }
+  }
+  return buildPlainNotice(trimmed);
+}
+
+function buildPlainNotice(message: string): SystemNotice | null {
+  if (!message) return null;
+  if (message.length > SYSTEM_NOTICE_MAX_LENGTH) {
+    throw new ConfigurationError(
+      `MCP4_SYSTEM_NOTICE message must not exceed ${SYSTEM_NOTICE_MAX_LENGTH} characters`,
+      { envVar: SYSTEM_NOTICE_ENV_VAR, receivedLength: message.length }
+    );
+  }
+  return { message, severity: 'info' };
+}
+
+function buildSystemNoticeHtml(notice: SystemNotice | null | undefined): string {
+  if (!notice) return '';
+  return `<div class="system-notice system-notice--${notice.severity}" role="alert">${escapeHtmlSafe(notice.message)}</div>`;
+}
 
 interface ProfileIndexI18n {
   title: string;
@@ -291,7 +356,8 @@ export function buildProfileIndexPayload(
   profiles: ProfileIndexSourceProfile[],
   origin: string,
   locale: ProfileIndexLocale,
-  adminDescriptions?: Map<string, string>
+  adminDescriptions?: Map<string, string>,
+  systemNotice?: SystemNotice | null
 ): { payload: ProfileIndexPayload; templateData: Record<string, string> } {
   const i18n = buildProfileIndexI18n(locale);
   const enriched = profiles.map(profile => {
@@ -326,6 +392,7 @@ export function buildProfileIndexPayload(
     noscript: escapeHtmlSafe(i18n.noscript),
     profile_data: safeJsonForHtml(enriched),
     i18n_data: safeJsonForHtml(i18n),
+    system_notice: buildSystemNoticeHtml(systemNotice),
   };
 
   return { payload, templateData };

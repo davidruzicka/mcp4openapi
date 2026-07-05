@@ -5,6 +5,7 @@ import { describe, it, expect } from 'vitest';
 import {
   buildProfileIndexPayload,
   parseAcceptLanguage,
+  parseSystemNotice,
   renderProfileIndexHtml,
   loadProfileIndexTemplate,
   __test__,
@@ -1190,5 +1191,128 @@ describe('Phase 03.2 HTML rendering', () => {
     const template = await loadProfileIndexTemplate();
     const rendered = renderProfileIndexHtml(template, templateData, 'test-nonce');
     expect(rendered).not.toContain('"adminDescription"');
+  });
+});
+
+describe('parseSystemNotice', () => {
+  it('returns null for undefined', () => {
+    expect(parseSystemNotice(undefined)).toBeNull();
+  });
+
+  it('returns null for empty string', () => {
+    expect(parseSystemNotice('')).toBeNull();
+    expect(parseSystemNotice('   ')).toBeNull();
+  });
+
+  it('parses plain string as info', () => {
+    expect(parseSystemNotice('Maintenance Monday')).toEqual({ message: 'Maintenance Monday', severity: 'info' });
+  });
+
+  it('parses JSON with warning severity', () => {
+    expect(parseSystemNotice('{"message":"Výpadek v 18:00","severity":"warning"}')).toEqual({
+      message: 'Výpadek v 18:00',
+      severity: 'warning',
+    });
+  });
+
+  it('parses JSON with error severity', () => {
+    expect(parseSystemNotice('{"message":"Critical outage","severity":"error"}')).toEqual({
+      message: 'Critical outage',
+      severity: 'error',
+    });
+  });
+
+  it('falls back to info for unknown severity', () => {
+    expect(parseSystemNotice('{"message":"Test","severity":"critical"}')).toEqual({
+      message: 'Test',
+      severity: 'info',
+    });
+  });
+
+  it('falls back to info when severity missing from JSON', () => {
+    expect(parseSystemNotice('{"message":"Test"}')).toEqual({ message: 'Test', severity: 'info' });
+  });
+
+  it('throws ConfigurationError when JSON message is not a string', () => {
+    expect(() => parseSystemNotice('{"message":42}')).toThrow('MCP4_SYSTEM_NOTICE JSON must have a string "message" field');
+  });
+
+  it('throws ConfigurationError when message exceeds 2000 chars', () => {
+    const long = 'x'.repeat(2001);
+    expect(() => parseSystemNotice(long)).toThrow('MCP4_SYSTEM_NOTICE message must not exceed 2000 characters');
+  });
+
+  it('throws ConfigurationError when JSON message exceeds 2000 chars', () => {
+    const long = 'x'.repeat(2001);
+    expect(() => parseSystemNotice(JSON.stringify({ message: long, severity: 'info' }))).toThrow(
+      'MCP4_SYSTEM_NOTICE message must not exceed 2000 characters'
+    );
+  });
+});
+
+describe('system_notice in template', () => {
+  const minimalProfile: ListedProfileDetails = {
+    profileId: 'test',
+    profileName: 'test',
+    profileAliases: [],
+    description: 'Test',
+    envVars: [],
+    authMethods: [{ type: 'bearer', valueFromEnv: 'TOKEN' }],
+  };
+
+  it('system_notice empty when no notice passed', () => {
+    const { templateData } = buildProfileIndexPayload([minimalProfile], 'http://localhost', 'en');
+    expect(templateData.system_notice).toBe('');
+  });
+
+  it('system_notice empty when null passed', () => {
+    const { templateData } = buildProfileIndexPayload([minimalProfile], 'http://localhost', 'en', undefined, null);
+    expect(templateData.system_notice).toBe('');
+  });
+
+  it('system_notice renders info banner', () => {
+    const { templateData } = buildProfileIndexPayload(
+      [minimalProfile], 'http://localhost', 'en', undefined,
+      { message: 'Hello world', severity: 'info' }
+    );
+    expect(templateData.system_notice).toBe(
+      '<div class="system-notice system-notice--info" role="alert">Hello world</div>'
+    );
+  });
+
+  it('system_notice renders warning banner', () => {
+    const { templateData } = buildProfileIndexPayload(
+      [minimalProfile], 'http://localhost', 'en', undefined,
+      { message: 'Maintenance at 22:00', severity: 'warning' }
+    );
+    expect(templateData.system_notice).toContain('system-notice--warning');
+    expect(templateData.system_notice).toContain('Maintenance at 22:00');
+  });
+
+  it('system_notice HTML-escapes message', () => {
+    const { templateData } = buildProfileIndexPayload(
+      [minimalProfile], 'http://localhost', 'en', undefined,
+      { message: '<script>alert("xss")</script>', severity: 'error' }
+    );
+    expect(templateData.system_notice).not.toContain('<script>');
+    expect(templateData.system_notice).toContain('&lt;script&gt;');
+  });
+
+  it('rendered HTML contains notice div', async () => {
+    const { templateData } = buildProfileIndexPayload(
+      [minimalProfile], 'http://localhost', 'en', undefined,
+      { message: 'System maintenance', severity: 'warning' }
+    );
+    const template = await loadProfileIndexTemplate();
+    const rendered = renderProfileIndexHtml(template, templateData, 'test-nonce');
+    expect(rendered).toContain('system-notice--warning');
+    expect(rendered).toContain('System maintenance');
+  });
+
+  it('rendered HTML has no notice div when not configured', async () => {
+    const { templateData } = buildProfileIndexPayload([minimalProfile], 'http://localhost', 'en');
+    const template = await loadProfileIndexTemplate();
+    const rendered = renderProfileIndexHtml(template, templateData, 'test-nonce');
+    expect(rendered).not.toContain('class="system-notice');
   });
 });

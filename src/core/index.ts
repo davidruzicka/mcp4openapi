@@ -23,6 +23,7 @@ import {
   resolveProfileAdminDescriptions,
   PROFILES_DESCRIPTION_ENV_VAR,
 } from '../profile/profile-description-env.js';
+import { parseSystemNotice, SYSTEM_NOTICE_ENV_VAR } from '../transport/profile-index.js';
 import { isProfileAllowed, parseProfileAllowlistConfig, parseHiddenProfilesConfig } from '../profile/profile-filters.js';
 import { SSRFValidator } from '../security/ssrf-validator.js';
 import { parseOAuthMetadataEndpoints } from '../auth/oauth-metadata.js';
@@ -338,6 +339,15 @@ export async function main() {
             keysProvided: parsedProfileDescriptions.size,
             profilesEnriched: resolvedAdminDescriptions.size,
           });
+        }
+      }
+
+      const systemNoticeRaw = process.env[SYSTEM_NOTICE_ENV_VAR];
+      if (systemNoticeRaw) {
+        const notice = parseSystemNotice(systemNoticeRaw);
+        httpTransport.setSystemNotice(notice);
+        if (notice) {
+          logger.info('MCP4_SYSTEM_NOTICE loaded', { severity: notice.severity });
         }
       }
 
