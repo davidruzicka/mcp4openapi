@@ -1289,13 +1289,12 @@ describe('system_notice in template', () => {
     expect(templateData.system_notice).toContain('Maintenance at 22:00');
   });
 
-  it('system_notice HTML-escapes message', () => {
+  it('system_notice passes HTML raw (admin-trusted, same as adminDescription)', () => {
     const { templateData } = buildProfileIndexPayload(
       [minimalProfile], 'http://localhost', 'en', undefined,
-      { message: '<script>alert("xss")</script>', severity: 'error' }
+      { message: 'See <a href="https://status.example.com">status page</a>.', severity: 'info' }
     );
-    expect(templateData.system_notice).not.toContain('<script>');
-    expect(templateData.system_notice).toContain('&lt;script&gt;');
+    expect(templateData.system_notice).toContain('<a href="https://status.example.com">status page</a>');
   });
 
   it('rendered HTML contains notice div', async () => {

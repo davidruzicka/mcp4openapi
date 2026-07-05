@@ -69,7 +69,7 @@ function buildPlainNotice(message: string): SystemNotice | null {
 
 function buildSystemNoticeHtml(notice: SystemNotice | null | undefined): string {
   if (!notice) return '';
-  return `<div class="system-notice system-notice--${notice.severity}" role="alert">${escapeHtmlSafe(notice.message)}</div>`;
+  return `<div class="system-notice system-notice--${notice.severity}" role="alert">${notice.message}</div>`;
 }
 
 interface ProfileIndexI18n {
