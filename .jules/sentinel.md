@@ -126,3 +126,14 @@ Error messages should never include raw values from sensitive sources like envir
 **Prevention:**
 1.  Avoid including raw values in error messages when the source is potentially sensitive (env vars, auth headers).
 2.  Use generic error messages for validation failures of sensitive data.
+
+## 2026-07-06 - [HIGH] Path Traversal due to Unencoded Dots
+
+**Vulnerability:**
+`encodeURIComponent` does not encode the dot (`.`) character. When substituting user input into path parameters, passing `../` resulted in `..%2F`. Depending on the downstream server's path normalization logic, this could still lead to directory traversal attacks.
+
+**Learning:**
+Standard URL encoding functions like `encodeURIComponent` are not fully sufficient for preventing path traversal in all contexts because they intentionally leave `.` unencoded.
+
+**Prevention:**
+1. Manually replace all `.` characters with `%2E` after applying `encodeURIComponent` when interpolating user input into URL path segments.
