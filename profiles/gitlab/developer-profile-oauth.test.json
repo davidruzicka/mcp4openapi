@@ -5145,6 +5145,57 @@
       "expect": {
         "success": true
       }
+    },
+    {
+      "name": "Search Code - Blobs",
+      "tool": "search_code",
+      "arguments": {
+        "action": "search",
+        "search": "TODO",
+        "ref": "main",
+        "per_page": 20
+      },
+      "mocks": [
+        {
+          "operationId": "getApiV4Search",
+          "response": {
+            "status": 200,
+            "body": [
+              {
+                "basename": "index",
+                "project_id": 42,
+                "path": "src/index.js",
+                "filename": "src/index.js",
+                "ref": "main",
+                "startline": 10,
+                "data": "// TODO: refactor this module\n"
+              }
+            ]
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "request": {
+          "method": "GET",
+          "path": "/search",
+          "query": {
+            "scope": "blobs",
+            "search": "TODO",
+            "ref": "main"
+          }
+        },
+        "result": [
+          {
+            "project_id": 42,
+            "path": "src/index.js",
+            "filename": "src/index.js",
+            "ref": "main",
+            "startline": 10,
+            "data": "// TODO: refactor this module\n"
+          }
+        ]
+      }
     }
   ],
   "coverage": {

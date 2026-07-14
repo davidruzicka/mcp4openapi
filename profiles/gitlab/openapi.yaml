@@ -7148,6 +7148,52 @@ paths:
             application/json:
               schema:
                 type: object
+  /search:
+    get:
+      tags:
+        - search
+      summary: Global search
+      description: Search globally across all projects and groups the user can access, backed by Advanced Search (Elasticsearch). Supports scopes such as blobs (code), projects, issues, merge_requests, commits, and wiki_blobs.
+      operationId: getApiV4Search
+      parameters:
+        - name: scope
+          in: query
+          required: true
+          description: The scope to search in (for example 'blobs' for code content, 'projects', 'issues', 'merge_requests', 'commits', 'wiki_blobs')
+          schema:
+            type: string
+        - name: search
+          in: query
+          required: true
+          description: The search query
+          schema:
+            type: string
+        - name: ref
+          in: query
+          description: Repository branch, tag, or commit to scope the search to (applies to blobs and commits scopes)
+          schema:
+            type: string
+        - name: page
+          in: query
+          description: Page number
+          schema:
+            type: integer
+            default: 1
+        - name: per_page
+          in: query
+          description: Number of items per page
+          schema:
+            type: integer
+            default: 20
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
   /issues:
     get:
       tags:
