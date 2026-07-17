@@ -2007,6 +2007,21 @@ export class HttpTransport {
       return;
     }
 
+    // RFC 6749 §2.3.1: confidential/public clients may authenticate via HTTP Basic
+    // auth on the token endpoint instead of putting client_id/client_secret in the
+    // body. Some clients (e.g. GitHub Copilot CLI) only send Basic auth, which
+    // previously made the body-only required-field check reject the request with
+    // "Missing client_id". Backfill from the header when the body omits them.
+    if (req.body && typeof req.body === 'object' && typeof req.body.client_id !== 'string') {
+      const basicAuth = this.extractBasicAuthClientCredentials(req);
+      if (basicAuth) {
+        req.body.client_id = basicAuth.clientId;
+        if (typeof req.body.client_secret !== 'string' && basicAuth.clientSecret) {
+          req.body.client_secret = basicAuth.clientSecret;
+        }
+      }
+    }
+
     const grantType = typeof req.body?.grant_type === 'string' ? req.body.grant_type : undefined;
     if (grantType === 'urn:ietf:params:oauth:grant-type:jwt-bearer' && !this.isFormUrlEncodedRequest(req)) {
       res.status(HTTP_STATUS.BAD_REQUEST).json({
@@ -2135,6 +2150,42 @@ export class HttpTransport {
     }
 
     return contentType.toLowerCase().includes('application/x-www-form-urlencoded');
+  }
+
+  private extractBasicAuthClientCredentials(req: Request): { clientId: string; clientSecret?: string } | undefined {
+    const header = req.headers['authorization'];
+    const authHeader = Array.isArray(header) ? header[0] : header;
+    if (!authHeader || !authHeader.toLowerCase().startsWith('basic ')) {
+      return undefined;
+    }
+
+    let decoded: string;
+    try {
+      decoded = Buffer.from(authHeader.slice('basic '.length).trim(), 'base64').toString('utf8');
+    } catch {
+      return undefined;
+    }
+
+    const separatorIndex = decoded.indexOf(':');
+    if (separatorIndex === -1) {
+      return undefined;
+    }
+
+    const safeDecodeComponent = (value: string): string => {
+      try {
+        return decodeURIComponent(value);
+      } catch {
+        return value;
+      }
+    };
+
+    const clientId = safeDecodeComponent(decoded.slice(0, separatorIndex));
+    if (!clientId) {
+      return undefined;
+    }
+
+    const clientSecret = safeDecodeComponent(decoded.slice(separatorIndex + 1));
+    return clientSecret.length > 0 ? { clientId, clientSecret } : { clientId };
   }
 
   private compareSecretsConstantTime(expectedSecret: string, providedSecret: string): boolean {
