@@ -1051,6 +1051,58 @@ describe('HttpTransport security behavior (no listen)', () => {
     await transport.stop();
   });
 
+  it('exchanges /oauth/token authorization_code using Basic auth client credentials (no network)', async () => {
+    const transport = new HttpTransport(
+      {
+        host: '127.0.0.1',
+        port: 0,
+        sessionTimeoutMs: 1800000,
+        heartbeatEnabled: false,
+        heartbeatIntervalMs: 30000,
+        metricsEnabled: false,
+        metricsPath: '/metrics',
+        oauthConfig: {
+          issuer: 'https://auth.example.com',
+          client_id: 'test-client',
+          client_secret: 'test-secret',
+          scopes: ['read'],
+        },
+      } as any,
+      new ConsoleLogger()
+    );
+
+    const tokens = { access_token: 'access', token_type: 'Bearer', expires_in: 3600 };
+    createProfileState(transport as any).oauthProvider = {
+      ensureEndpointsInitialized: async () => {},
+      clientsStore: {
+        getClient: async () => ({
+          client_id: 'test-client',
+          client_secret: 'server-secret',
+          scope: 'read',
+        }),
+      },
+      exchangeAuthorizationCode: async () => tokens,
+    };
+
+    const app = (transport as any).app;
+    const handler = getExpressRouteHandler(app, 'post', '/oauth/token');
+    const basicAuth = Buffer.from('test-client:server-secret', 'utf8').toString('base64');
+    const req: any = {
+      body: {
+        grant_type: 'authorization_code',
+        code: 'abc',
+      },
+      headers: { authorization: `Basic ${basicAuth}` },
+    };
+    const res = createMockResponse();
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toMatchObject(tokens);
+
+    await transport.stop();
+  });
+
   it('handles /oauth/token authorization_code when provider is missing (no network)', async () => {
     const transport = new HttpTransport(
       {
