@@ -188,7 +188,9 @@ describe('buildHttpTransportBaseConfig', () => {
     process.env.MCP4_HTTP_PROFILE_INDEX_REDIRECT_URL = 'https://example.com/mcp';
     process.env.MCP4_HTTP_PROFILE_INDEX_REDIRECT_STATUS = '307';
 
-    expect(() => buildHttpTransportBaseConfig('127.0.0.1', 3003)).toThrow(ConfigurationError);
+    expect(() => buildHttpTransportBaseConfig('127.0.0.1', 3003)).toThrow(
+      'expected 301 or 302',
+    );
   });
 
   describe('MCP4_OAUTH_KEY', () => {

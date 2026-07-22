@@ -15,6 +15,9 @@ import type { AuthorizedPrincipal } from '../auth/inbound-auth-principal.js';
 
 export type { SessionToolFilter, SessionToolFilterRequest };
 
+export const PROFILE_INDEX_REDIRECT_STATUSES = [301, 302] as const;
+export type ProfileIndexRedirectStatus = (typeof PROFILE_INDEX_REDIRECT_STATUSES)[number];
+
 export interface SessionData {
   id: string;
   createdAt: number;
@@ -86,7 +89,7 @@ export interface HttpTransportConfig {
   profileRoutingEnabled?: boolean;
   profileIndexEnabled?: boolean;
   profileIndexRedirectUrl?: string;
-  profileIndexRedirectStatus?: 301 | 302;
+  profileIndexRedirectStatus?: ProfileIndexRedirectStatus;
   defaultProfileId?: string;
   allowedOrigins?: string[]; // Allowed origins/CIDR ranges
   rateLimitEnabled?: boolean; // Enable rate limiting (default: true)

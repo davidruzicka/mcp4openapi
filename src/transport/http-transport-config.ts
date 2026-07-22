@@ -5,7 +5,11 @@
 import { TIMEOUTS } from '../core/constants.js';
 import { ConfigurationError } from '../core/errors.js';
 import { deriveTokenKey } from '../auth/token-envelope.js';
-import type { HttpTransportConfig } from '../types/http-transport.js';
+import {
+  PROFILE_INDEX_REDIRECT_STATUSES,
+  type HttpTransportConfig,
+  type ProfileIndexRedirectStatus,
+} from '../types/http-transport.js';
 
 function parseTrustProxy(value: string): boolean | number | string {
   const normalized = value.trim().toLowerCase();
@@ -18,14 +22,20 @@ function parseTrustProxy(value: string): boolean | number | string {
   return value;
 }
 
-function parseProfileIndexRedirectStatus(redirectUrl?: string): 301 | 302 | undefined {
+function parseProfileIndexRedirectStatus(redirectUrl?: string): ProfileIndexRedirectStatus | undefined {
   if (!redirectUrl) return undefined;
   const configuredStatus = process.env.MCP4_HTTP_PROFILE_INDEX_REDIRECT_STATUS?.trim();
   if (!configuredStatus) return 302;
-  if (configuredStatus === '301') return 301;
-  if (configuredStatus === '302') return 302;
+  const status = Number(configuredStatus);
+  if (
+    Number.isInteger(status)
+    && configuredStatus === String(status)
+    && PROFILE_INDEX_REDIRECT_STATUSES.includes(status as ProfileIndexRedirectStatus)
+  ) {
+    return status as ProfileIndexRedirectStatus;
+  }
   throw new ConfigurationError(
-    'Invalid MCP4_HTTP_PROFILE_INDEX_REDIRECT_STATUS: expected 301 or 302'
+    `Invalid MCP4_HTTP_PROFILE_INDEX_REDIRECT_STATUS: expected ${PROFILE_INDEX_REDIRECT_STATUSES.join(' or ')}`
   );
 }
 
