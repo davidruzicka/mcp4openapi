@@ -10,6 +10,7 @@ import type { Express } from 'express';
 import fs from 'fs';
 import https from 'https';
 import { HttpTransport } from './http-transport.js';
+import type { HttpTransportConfig } from '../types/http-transport.js';
 import { ConsoleLogger, type Logger } from '../core/logger.js';
 import { ValidationError } from '../core/errors.js';
 import { describeIfListen } from '../testing/listen-support.js';
@@ -912,7 +913,7 @@ describeIfListen('HttpTransport', () => {
   describe('profile index', () => {
     let indexTransport: HttpTransport;
     let indexApp: Express;
-    const createIndexTransport = (): HttpTransport => new HttpTransport(
+    const createIndexTransport = (overrides: Partial<HttpTransportConfig> = {}): HttpTransport => new HttpTransport(
       {
         host: '127.0.0.1',
         port: 0,
@@ -923,6 +924,7 @@ describeIfListen('HttpTransport', () => {
         metricsPath: '/metrics',
         profileRoutingEnabled: true,
         profileIndexEnabled: true,
+        ...overrides,
       },
       logger,
     );
@@ -958,6 +960,75 @@ describeIfListen('HttpTransport', () => {
       expect(response.headers['content-type']).toContain('text/html');
       expect(response.text).toContain('alpha');
       expect(response.text).toContain('First profile');
+    });
+
+    it('redirects HTML profile index requests with the configured default status', async () => {
+      indexTransport = createIndexTransport({
+        profileIndexRedirectUrl: 'https://example.com/mcp',
+        profileIndexRedirectStatus: 302,
+      });
+      indexApp = (indexTransport as any).app;
+      indexTransport.setProfileIndexProvider(async () => ([
+        {
+          profileId: 'alpha',
+          profileName: 'Alpha',
+          profileAliases: [],
+          description: 'First profile',
+          envVars: [],
+        },
+      ]));
+
+      const response = await request(indexApp).get('/');
+
+      expect(response.status).toBe(302);
+      expect(response.headers.location).toBe('https://example.com/mcp');
+    });
+
+    it('redirects HTML profile index requests with the configured permanent status', async () => {
+      indexTransport = createIndexTransport({
+        profileIndexRedirectUrl: 'https://example.com/mcp',
+        profileIndexRedirectStatus: 301,
+      });
+      indexApp = (indexTransport as any).app;
+      indexTransport.setProfileIndexProvider(async () => ([
+        {
+          profileId: 'alpha',
+          profileName: 'Alpha',
+          profileAliases: [],
+          description: 'First profile',
+          envVars: [],
+        },
+      ]));
+
+      const response = await request(indexApp).get('/');
+
+      expect(response.status).toBe(301);
+      expect(response.headers.location).toBe('https://example.com/mcp');
+    });
+
+    it('keeps JSON profile index requests available when HTML redirects are configured', async () => {
+      indexTransport = createIndexTransport({
+        profileIndexRedirectUrl: 'https://example.com/mcp',
+        profileIndexRedirectStatus: 302,
+      });
+      indexApp = (indexTransport as any).app;
+      indexTransport.setProfileIndexProvider(async () => ([
+        {
+          profileId: 'beta',
+          profileName: 'Beta',
+          profileAliases: [],
+          description: 'Second profile',
+          envVars: [],
+        },
+      ]));
+
+      const response = await request(indexApp)
+        .get('/')
+        .set('Accept', 'application/json');
+
+      expect(response.status).toBe(200);
+      expect(response.headers.location).toBeUndefined();
+      expect(response.body.profiles[0].profileId).toBe('beta');
     });
 
     it('renders filter UI markers in the HTML profile index response', async () => {

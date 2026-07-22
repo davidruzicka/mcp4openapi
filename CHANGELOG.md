@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `handleOtherRequest` upstream `tools/list` pre-flight error now uses `mapUpstreamErrorToMcpError` (provider-safe message) instead of generic "Internal error"; `req.method` truncated to 200 chars in error logs; `uri` and prompt `name` params capped at 2048/256 chars with `-32602` validation errors.
 
 ### Added
+- Profile index redirects: `MCP4_HTTP_PROFILE_INDEX_REDIRECT_URL` redirects browser-facing `GET /` requests with configurable `301` or `302` status while JSON profile discovery remains available through `Accept: application/json`.
 - `MCP4_SYSTEM_NOTICE` env var adds a full-width banner at the top of the HTML profile index with configurable severity (`info` / `warning` / `error`) and matching color scheme; plain string defaults to `info`, JSON `{"message":"...","severity":"warning"}` sets severity explicitly.
 - Profile index page (`/`) syncs selected profile to URL hash (e.g. `/#scif`), enabling direct shareable links; hash is read on load so navigating to `/#<profileId>` pre-selects that profile.
 - YouTrack profile: `retrieve_content:list_issue_link_types` to look up available link type IDs; `create_content:add_issue_link` now accepts `body:{id}` (internal DB id) and `issueLinkId` with direction suffix (`<typeId>s`/`<typeId>t`), matching the actual YouTrack REST API contract; executor supports explicit `body` param override for single-object reference endpoints.

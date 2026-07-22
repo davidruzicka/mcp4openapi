@@ -5,7 +5,11 @@
 import { TIMEOUTS } from '../core/constants.js';
 import { ConfigurationError } from '../core/errors.js';
 import { deriveTokenKey } from '../auth/token-envelope.js';
-import type { HttpTransportConfig } from '../types/http-transport.js';
+import {
+  PROFILE_INDEX_REDIRECT_STATUSES,
+  type HttpTransportConfig,
+  type ProfileIndexRedirectStatus,
+} from '../types/http-transport.js';
 
 function parseTrustProxy(value: string): boolean | number | string {
   const normalized = value.trim().toLowerCase();
@@ -18,7 +22,25 @@ function parseTrustProxy(value: string): boolean | number | string {
   return value;
 }
 
+function parseProfileIndexRedirectStatus(redirectUrl?: string): ProfileIndexRedirectStatus | undefined {
+  if (!redirectUrl) return undefined;
+  const configuredStatus = process.env.MCP4_HTTP_PROFILE_INDEX_REDIRECT_STATUS?.trim();
+  if (!configuredStatus) return 302;
+  const status = Number(configuredStatus);
+  if (
+    Number.isInteger(status)
+    && configuredStatus === String(status)
+    && PROFILE_INDEX_REDIRECT_STATUSES.includes(status as ProfileIndexRedirectStatus)
+  ) {
+    return status as ProfileIndexRedirectStatus;
+  }
+  throw new ConfigurationError(
+    `Invalid MCP4_HTTP_PROFILE_INDEX_REDIRECT_STATUS: expected ${PROFILE_INDEX_REDIRECT_STATUSES.join(' or ')}`
+  );
+}
+
 export function buildHttpTransportBaseConfig(host: string, port: number): HttpTransportConfig {
+  const profileIndexRedirectUrl = process.env.MCP4_HTTP_PROFILE_INDEX_REDIRECT_URL?.trim() || undefined;
   return {
     host,
     port,
@@ -28,6 +50,8 @@ export function buildHttpTransportBaseConfig(host: string, port: number): HttpTr
     metricsEnabled: process.env.MCP4_METRICS_ENABLED === 'true',
     metricsPath: process.env.MCP4_METRICS_PATH || '/metrics',
     profileIndexEnabled: process.env.MCP4_HTTP_PROFILE_INDEX === 'true',
+    profileIndexRedirectUrl,
+    profileIndexRedirectStatus: parseProfileIndexRedirectStatus(profileIndexRedirectUrl),
     allowedOrigins: process.env.MCP4_ALLOWED_ORIGINS
       ? process.env.MCP4_ALLOWED_ORIGINS.split(',').map(o => o.trim())
       : undefined,

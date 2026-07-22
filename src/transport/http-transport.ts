@@ -1819,6 +1819,14 @@ export class HttpTransport {
       return;
     }
 
+    if (this.config.profileIndexRedirectUrl) {
+      res.redirect(
+        this.config.profileIndexRedirectStatus ?? 302,
+        this.config.profileIndexRedirectUrl,
+      );
+      return;
+    }
+
     const template = await loadProfileIndexTemplate();
     const nonce = crypto.randomBytes(16).toString('base64');
     const html = renderProfileIndexHtml(template, templateData, nonce);
