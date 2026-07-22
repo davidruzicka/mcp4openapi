@@ -18,7 +18,19 @@ function parseTrustProxy(value: string): boolean | number | string {
   return value;
 }
 
+function parseProfileIndexRedirectStatus(redirectUrl?: string): 301 | 302 | undefined {
+  if (!redirectUrl) return undefined;
+  const configuredStatus = process.env.MCP4_HTTP_PROFILE_INDEX_REDIRECT_STATUS?.trim();
+  if (!configuredStatus) return 302;
+  if (configuredStatus === '301') return 301;
+  if (configuredStatus === '302') return 302;
+  throw new ConfigurationError(
+    'Invalid MCP4_HTTP_PROFILE_INDEX_REDIRECT_STATUS: expected 301 or 302'
+  );
+}
+
 export function buildHttpTransportBaseConfig(host: string, port: number): HttpTransportConfig {
+  const profileIndexRedirectUrl = process.env.MCP4_HTTP_PROFILE_INDEX_REDIRECT_URL?.trim() || undefined;
   return {
     host,
     port,
@@ -28,6 +40,8 @@ export function buildHttpTransportBaseConfig(host: string, port: number): HttpTr
     metricsEnabled: process.env.MCP4_METRICS_ENABLED === 'true',
     metricsPath: process.env.MCP4_METRICS_PATH || '/metrics',
     profileIndexEnabled: process.env.MCP4_HTTP_PROFILE_INDEX === 'true',
+    profileIndexRedirectUrl,
+    profileIndexRedirectStatus: parseProfileIndexRedirectStatus(profileIndexRedirectUrl),
     allowedOrigins: process.env.MCP4_ALLOWED_ORIGINS
       ? process.env.MCP4_ALLOWED_ORIGINS.split(',').map(o => o.trim())
       : undefined,

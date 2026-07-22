@@ -23,6 +23,8 @@ const ENV_KEYS = [
   'MCP4_OAUTH_SESSION_TIMEOUT_MS',
   'MCP4_OAUTH_REFRESH_THRESHOLD_MS',
   'MCP4_HTTP_PROFILE_INDEX',
+  'MCP4_HTTP_PROFILE_INDEX_REDIRECT_URL',
+  'MCP4_HTTP_PROFILE_INDEX_REDIRECT_STATUS',
   'MCP4_ENTERPRISE_AUTHORIZATION_ENABLED',
   'MCP4_ENTERPRISE_MAX_CACHED_ISSUERS',
   'MCP4_ENTERPRISE_MAX_REPLAY_ENTRIES',
@@ -69,6 +71,8 @@ describe('buildHttpTransportBaseConfig', () => {
     expect(config.oauthSessionTimeoutMs).toBeUndefined();
     expect(config.oauthRefreshThresholdMs).toBeUndefined();
     expect(config.profileIndexEnabled).toBe(false);
+    expect(config.profileIndexRedirectUrl).toBeUndefined();
+    expect(config.profileIndexRedirectStatus).toBeUndefined();
   });
 
   it('reads env overrides when provided', () => {
@@ -89,6 +93,7 @@ describe('buildHttpTransportBaseConfig', () => {
     process.env.MCP4_OAUTH_SESSION_TIMEOUT_MS = '86400000';
     process.env.MCP4_OAUTH_REFRESH_THRESHOLD_MS = '120000';
     process.env.MCP4_HTTP_PROFILE_INDEX = 'true';
+    process.env.MCP4_HTTP_PROFILE_INDEX_REDIRECT_URL = 'https://example.com/mcp';
     process.env.MCP4_ENTERPRISE_AUTHORIZATION_ENABLED = 'false';
     process.env.MCP4_ENTERPRISE_MAX_CACHED_ISSUERS = '12';
     process.env.MCP4_ENTERPRISE_MAX_REPLAY_ENTRIES = '34';
@@ -120,6 +125,8 @@ describe('buildHttpTransportBaseConfig', () => {
     expect(config.oauthSessionTimeoutMs).toBe(86400000);
     expect(config.oauthRefreshThresholdMs).toBe(120000);
     expect(config.profileIndexEnabled).toBe(true);
+    expect(config.profileIndexRedirectUrl).toBe('https://example.com/mcp');
+    expect(config.profileIndexRedirectStatus).toBe(302);
     expect(config.enterpriseAuthorizationRuntimeConfig).toEqual({
       enabled: false,
       global_max_cached_issuers: 12,
@@ -166,6 +173,22 @@ describe('buildHttpTransportBaseConfig', () => {
 
     process.env.MCP4_TRUST_PROXY = 'false';
     expect(buildHttpTransportBaseConfig('127.0.0.1', 3003).trustProxy).toBe(false);
+  });
+
+  it('uses an explicit 301 profile index redirect status', () => {
+    process.env.MCP4_HTTP_PROFILE_INDEX_REDIRECT_URL = 'https://example.com/mcp';
+    process.env.MCP4_HTTP_PROFILE_INDEX_REDIRECT_STATUS = '301';
+
+    const config = buildHttpTransportBaseConfig('127.0.0.1', 3003);
+
+    expect(config.profileIndexRedirectStatus).toBe(301);
+  });
+
+  it('throws on an invalid profile index redirect status', () => {
+    process.env.MCP4_HTTP_PROFILE_INDEX_REDIRECT_URL = 'https://example.com/mcp';
+    process.env.MCP4_HTTP_PROFILE_INDEX_REDIRECT_STATUS = '307';
+
+    expect(() => buildHttpTransportBaseConfig('127.0.0.1', 3003)).toThrow(ConfigurationError);
   });
 
   describe('MCP4_OAUTH_KEY', () => {

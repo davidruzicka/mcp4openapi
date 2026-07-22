@@ -126,6 +126,9 @@ Routes:
 - `DELETE /profile/:profileId/mcp`
 - Legacy alias: `POST|GET|DELETE /profile/:profileId/sse`
 - Optional HTML profile index: `GET /` (when `MCP4_HTTP_PROFILE_INDEX=true`)
+  - Set `MCP4_HTTP_PROFILE_INDEX_REDIRECT_URL` to redirect HTML/default requests to another page.
+  - Set `MCP4_HTTP_PROFILE_INDEX_REDIRECT_STATUS` to `301` or `302` (default: `302`).
+  - Explicit JSON-only requests (`Accept: application/json`) always return the profile index payload and are never redirected.
   - Keeps current API endpoint display semantics (env/default source)
   - Can show admin-supplied raw HTML descriptions from `MCP4_PROFILES_DESCRIPTION` in the detail card before the profile description
   - When tenant config is available for a profile, shows tenant availability and tenant list per profile

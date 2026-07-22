@@ -571,6 +571,8 @@ export MCP4_TOOLNAME_MAX=30
 - `MCP4_FILTER_MAX_VALUES`: Max values per filtering key (default: `10`)
 - `MCP4_HTTP_PROFILE_ROUTING`: Enable profile routing (`/profile/:id/mcp`). If enabled without a default profile, `/mcp` is not registered.
 - `MCP4_HTTP_PROFILE_INDEX`: Enable profile index on `GET /` for routed profiles.
+- `MCP4_HTTP_PROFILE_INDEX_REDIRECT_URL`: Optional redirect target for HTML/default `GET /` profile-index requests. Explicit JSON-only requests (`Accept: application/json`) continue to receive the profile index payload.
+- `MCP4_HTTP_PROFILE_INDEX_REDIRECT_STATUS`: Optional redirect status when `MCP4_HTTP_PROFILE_INDEX_REDIRECT_URL` is set. Allowed values: `301` and `302`; default: `302`.
 - `MCP4_PROFILES_DESCRIPTION`: Optional JSON object mapping profile id/name/alias to an admin-supplied HTML snippet shown in the HTML profile detail card before the profile description. Parsed once at startup, ignored for JSON index responses, and rejected on invalid JSON, non-string values, duplicate resolution conflicts, or values longer than `10000` characters.
 - `MCP4_SYSTEM_NOTICE`: Optional system banner shown at the top of the HTML profile index page. Plain string defaults to `info` severity; JSON `{"message":"...","severity":"warning"}` sets severity (`info` / `warning` / `error`, default `info`). Message is rendered as raw HTML (same trust model as `MCP4_PROFILES_DESCRIPTION` — admin-controlled), max 2000 characters. Not shown in JSON index responses.
 - `MCP4_ALLOW_PROFILES`: Comma-separated profile ids/names/aliases allowed for routed profiles.
