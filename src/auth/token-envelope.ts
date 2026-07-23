@@ -12,9 +12,12 @@
  *                         tamper, replay, parse error) - safe to call without try/catch
  *
  * Key derivation note: the 64-hex-char path produces a full-entropy 32-byte key directly.
- * The SHA-256 passphrase path is a convenience shim - it has no salt or work factor, so
- * weak passphrases offer little protection. Production deployments MUST use a 64-char random
- * hex string for MCP4_OAUTH_KEY. Document this in env.example (Plan 02).
+ * The passphrase path uses scrypt with a fixed application salt as a work-factor KDF
+ * (CWE-916 remediation). A fixed salt cannot prevent cross-deployment rainbow tables,
+ * so production deployments SHOULD use a 64-char random hex string for MCP4_OAUTH_KEY.
+ * Backward compatibility: envelopes encrypted with the former SHA-256 passphrase KDF
+ * still decrypt via the optional fallbackKey parameter (see decryptTokenPayload);
+ * new envelopes are always scrypt-derived. SHA-256 fallback removal tracked in TODO.md.
  *
  * Known limitation: if the IdP issues rotating refresh tokens AND the gateway restarts
  * after at least one in-session refresh, the client still holds the original envelope
@@ -27,7 +30,7 @@
  * to extra fields).
  */
 
-import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto';
+import { createCipheriv, createDecipheriv, createHash, randomBytes, scryptSync } from 'node:crypto';
 import { ValidationError } from '../core/errors.js';
 
 const TOKEN_PREFIX = 'mcp4.v1.';
@@ -37,6 +40,8 @@ const HEX_KEY_LENGTH = 64; // 32 bytes encoded as hex
 const HEX_REGEX = /^[0-9a-fA-F]+$/;
 const ALGORITHM = 'aes-256-gcm';
 const KEY_BYTES = 32;
+// Fixed application salt for the scrypt passphrase path (see deriveTokenKey docs).
+const SCRYPT_SALT = 'mcp4openapi:token-envelope:v1';
 // Minimum valid encoded payload: 12-byte nonce + 16-byte tag + at least 1 byte of ciphertext.
 const MIN_ENCODED_BYTES = NONCE_BYTES + TAG_BYTES + 1;
 
@@ -63,12 +68,24 @@ export interface TokenEnvelopePayload {
  * Derive a 32-byte AES-256 key from a raw secret string.
  *
  * - Exactly 64 hex characters → `Buffer.from(raw, 'hex')` (full-entropy direct).
- * - Otherwise → `SHA-256(raw)` (convenience for passphrases; no salt/work factor).
+ * - Otherwise → `scrypt(raw, SCRYPT_SALT, 32)` (work-factor KDF for passphrases).
+ *
+ * The scrypt salt is a fixed application constant: the key must be deterministic
+ * across restarts because envelopes are stored client-side with no server state.
+ * This trades per-secret salting for offline-crack resistance via scrypt's work factor.
  */
 export function deriveTokenKey(raw: string): Buffer {
   if (raw.length === HEX_KEY_LENGTH && HEX_REGEX.test(raw)) {
     return Buffer.from(raw, 'hex');
   }
+  return scryptSync(raw, SCRYPT_SALT, KEY_BYTES);
+}
+
+/**
+ * Legacy SHA-256 KDF kept ONLY for decrypting envelopes issued before the
+ * scrypt migration. Never use for new keys. Removal tracked in TODO.md.
+ */
+export function deriveLegacySha256TokenKey(raw: string): Buffer {
   return createHash('sha256').update(raw).digest();
 }
 
@@ -122,8 +139,30 @@ export function encryptTokenPayload(payload: TokenEnvelopePayload, key: Buffer):
  *  - missing/wrong-typed required fields (`at`, `pid`)
  *
  * NEVER throws. Safe to call without try/catch.
+ *
+ * When `fallbackKey` is provided and decryption with `key` fails, decryption is
+ * retried once with `fallbackKey` (legacy SHA-256 KDF backward compatibility).
  */
 export function decryptTokenPayload(
+  token: string,
+  key: Buffer,
+  profileId: string,
+  fallbackKey?: Buffer,
+): TokenEnvelopePayload | null {
+  const primary = attemptDecrypt(token, key, profileId);
+  if (primary !== null) {
+    return primary;
+  }
+  // Backward compatibility: envelopes encrypted with the legacy SHA-256
+  // passphrase KDF still decrypt via fallbackKey. Encryption always uses the
+  // scrypt key, so legacy envelopes age out naturally on token refresh.
+  if (fallbackKey !== undefined) {
+    return attemptDecrypt(token, fallbackKey, profileId);
+  }
+  return null;
+}
+
+function attemptDecrypt(
   token: string,
   key: Buffer,
   profileId: string,

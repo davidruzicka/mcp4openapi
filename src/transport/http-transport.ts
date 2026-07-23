@@ -212,8 +212,8 @@ export class HttpTransport {
       const rawKey = process.env.MCP4_OAUTH_KEY?.trim();
       if (rawKey && !(rawKey.length === 64 && /^[0-9a-fA-F]+$/.test(rawKey))) {
         this.logger.warn(
-          'MCP4_OAUTH_KEY is a passphrase (SHA-256 derived, no salt/work factor). ' +
-          'Weak passphrases offer little protection. For production use a random hex key: openssl rand -hex 32',
+          'MCP4_OAUTH_KEY is a passphrase (scrypt-derived, fixed application salt). ' +
+          'Weak passphrases offer limited protection. For production use a random hex key: openssl rand -hex 32',
         );
       }
     }
@@ -3116,6 +3116,7 @@ export class HttpTransport {
                   authInfo.token,
                   this.config.tokenKey,
                   profileState.profileId,
+                  this.config.legacyTokenKey,
                 );
                 if (envelope) {
                   tokenToValidate = envelope.at;
@@ -3292,6 +3293,7 @@ export class HttpTransport {
                 authInfo.token,
                 this.config.tokenKey,
                 profileState.profileId,
+                this.config.legacyTokenKey,
               );
               if (envelope) {
                 // Issue #3: reject stale envelopes to bound token lifetime at rest.

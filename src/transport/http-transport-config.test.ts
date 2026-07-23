@@ -219,10 +219,10 @@ describe('buildHttpTransportBaseConfig', () => {
       expect(config.tokenKey?.equals(Buffer.alloc(32))).toBe(true);
     });
 
-    it('derives tokenKey via SHA-256 for arbitrary passphrase', () => {
+    it('derives tokenKey via scrypt for arbitrary passphrase', () => {
       process.env.MCP4_OAUTH_KEY = 'my-passphrase';
       const config = buildHttpTransportBaseConfig('127.0.0.1', 3003);
-      const expected = crypto.createHash('sha256').update('my-passphrase').digest();
+      const expected = crypto.scryptSync('my-passphrase', 'mcp4openapi:token-envelope:v1', 32);
       expect(Buffer.isBuffer(config.tokenKey)).toBe(true);
       expect(config.tokenKey?.length).toBe(32);
       expect(config.tokenKey?.equals(expected)).toBe(true);
@@ -231,7 +231,7 @@ describe('buildHttpTransportBaseConfig', () => {
     it('trims whitespace from MCP4_OAUTH_KEY before deriving (k8s ConfigMap newline tolerance)', () => {
       process.env.MCP4_OAUTH_KEY = '  my-passphrase  ';
       const config = buildHttpTransportBaseConfig('127.0.0.1', 3003);
-      const expected = crypto.createHash('sha256').update('my-passphrase').digest();
+      const expected = crypto.scryptSync('my-passphrase', 'mcp4openapi:token-envelope:v1', 32);
       expect(config.tokenKey?.equals(expected)).toBe(true);
     });
 
@@ -241,6 +241,19 @@ describe('buildHttpTransportBaseConfig', () => {
       expect(Buffer.isBuffer(config.tokenKey)).toBe(true);
       expect(config.tokenKey?.length).toBe(32);
       expect(config.tokenKey?.equals(Buffer.from('a'.repeat(64), 'hex'))).toBe(true);
+    });
+
+    it('derives legacyTokenKey via SHA-256 for passphrase (pre-scrypt envelope fallback)', () => {
+      process.env.MCP4_OAUTH_KEY = 'my-passphrase';
+      const config = buildHttpTransportBaseConfig('127.0.0.1', 3003);
+      const expected = crypto.createHash('sha256').update('my-passphrase').digest();
+      expect(config.legacyTokenKey?.equals(expected)).toBe(true);
+    });
+
+    it('leaves legacyTokenKey undefined for 64-char hex keys (both KDFs identical)', () => {
+      process.env.MCP4_OAUTH_KEY = 'a'.repeat(64);
+      const config = buildHttpTransportBaseConfig('127.0.0.1', 3003);
+      expect(config.legacyTokenKey).toBeUndefined();
     });
   });
 });
