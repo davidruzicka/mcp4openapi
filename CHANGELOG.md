@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 - Token envelope passphrase KDF switched from unsalted SHA-256 to scrypt (CWE-916); existing SHA-256-derived envelopes still decrypt via a legacy fallback key and age out naturally on token refresh (fallback removal tracked in TODO.md, item 18). 64-char hex keys unaffected.
 - Upstream tool sanitizer `strip` HTML policy now repeats tag removal until stable so nested payloads cannot reassemble a tag (CWE-116).
-- Dependency upgrades resolving all `npm audit` findings: hono 4.12.31, @hono/node-server 2.0.11, vitest 4.1.x, vite 6.4.3+, body-parser, brace-expansion, form-data, fast-uri, qs.
+- Dependency upgrades resolving all `npm audit` findings: hono 4.12.31, @hono/node-server 2.0.11 (requires Node >=20), vitest 4.1.x, vite 6.4.3+, body-parser, brace-expansion, form-data, fast-uri, qs.
 
 ### Changed
 - `normalizePath` now returns `other` for unrecognized HTTP paths instead of the raw path, preventing unbounded Prometheus label cardinality from dynamic route segments.
