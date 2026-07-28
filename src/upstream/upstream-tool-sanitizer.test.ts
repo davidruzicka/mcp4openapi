@@ -475,6 +475,14 @@ describe('sanitizeToolList — html_description_policy', () => {
       expect(result.tools).toHaveLength(0);
       expect(result.dropped[0].reason).toBe('invalid characters in tool name');
     });
+
+    it('strips tags repeatedly so a nested payload cannot reassemble a tag', () => {
+      const tool = makeTool('t', '<scr<script>ipt>alert(1)</script>');
+      const result = sanitizeToolList([tool], logger, 'strip');
+      expect(result.tools).toHaveLength(1);
+      expect(result.tools[0].description).toBe('ipt>alert(1)');
+      expect(result.tools[0].description).not.toMatch(/<[^>]*>/);
+    });
   });
 
   describe('allow', () => {

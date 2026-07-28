@@ -4,7 +4,7 @@
 
 import { TIMEOUTS } from '../core/constants.js';
 import { ConfigurationError } from '../core/errors.js';
-import { deriveTokenKey } from '../auth/token-envelope.js';
+import { deriveLegacySha256TokenKey, deriveTokenKey } from '../auth/token-envelope.js';
 import {
   PROFILE_INDEX_REDIRECT_STATUSES,
   type HttpTransportConfig,
@@ -66,6 +66,16 @@ export function buildHttpTransportBaseConfig(host: string, port: number): HttpTr
       const raw = process.env.MCP4_OAUTH_KEY;
       if (!raw || !raw.trim()) return undefined;
       return deriveTokenKey(raw.trim());
+    })(),
+    // Legacy SHA-256 fallback key for decrypting pre-scrypt envelopes.
+    // Only relevant for the passphrase path: 64-hex keys derive identically
+    // under both KDFs, so no fallback is needed there.
+    legacyTokenKey: (() => {
+      const raw = process.env.MCP4_OAUTH_KEY;
+      if (!raw || !raw.trim()) return undefined;
+      const trimmed = raw.trim();
+      if (trimmed.length === 64 && /^[0-9a-fA-F]+$/.test(trimmed)) return undefined;
+      return deriveLegacySha256TokenKey(trimmed);
     })(),
     trustProxy: process.env.MCP4_TRUST_PROXY
       ? parseTrustProxy(process.env.MCP4_TRUST_PROXY)

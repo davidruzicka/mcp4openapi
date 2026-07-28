@@ -8,6 +8,7 @@
 
 - [P3: Optional](#p3-optional)
   - [17. Eager SSRF validation for SasankaApiKeyStore at profile load](#17-eager-ssrf-validation-for-sasankaapikeystore-at-profile-load)
+  - [18. Remove legacy SHA-256 token envelope KDF fallback](#18-remove-legacy-sha-256-token-envelope-kdf-fallback)
 - [P2: Nice-to-Have](#p2-nice-to-have)
   - [2. Export Profile Command](#2-export-profile-command)
   - [3. OpenAPI Operation Filter for Default Profile](#3-openapi-operation-filter-for-default-profile)
@@ -374,3 +375,20 @@ export DEFAULT_PROFILE_EXCLUDE_TAGS="admin,system"
 - `src/transport/http-transport.ts::getProfileState()` - await `clientAuthGate.init()`
 
 **Estimated effort**: 1-2 hours
+
+### 18. Remove legacy SHA-256 token envelope KDF fallback
+
+**Background**: The passphrase path of `deriveTokenKey()` was migrated from unsalted SHA-256 to scrypt (CWE-916, CodeQL js/insufficient-password-hash). To avoid breaking existing production sessions, `decryptTokenPayload()` accepts a `fallbackKey` derived via `deriveLegacySha256TokenKey()` (wired as `legacyTokenKey` from `MCP4_OAUTH_KEY` passphrases) so pre-migration `mcp4.v1.*` envelopes still decrypt. New envelopes are always scrypt-derived, so legacy envelopes age out naturally on token refresh/expiry (max envelope age 30 days).
+
+**Goal**: Remove the SHA-256 fallback once all pre-migration envelopes have expired.
+
+**When safe to remove**: at least 30 days (MAX_ENVELOPE_AGE_MS) after the scrypt migration ships in a release - any remaining legacy envelope is stale and rejected anyway.
+
+**Files to modify**:
+- `src/auth/token-envelope.ts` - remove `deriveLegacySha256TokenKey()` and the `fallbackKey` parameter from `decryptTokenPayload()`
+- `src/transport/http-transport-config.ts` - remove `legacyTokenKey` derivation
+- `src/types/http-transport.ts` - remove `legacyTokenKey` field
+- `src/transport/http-transport.ts` - drop `legacyTokenKey` argument at both `decryptTokenPayload` call sites
+- Tests: `src/auth/token-envelope.test.ts`, `src/transport/http-transport-config.test.ts`
+
+**Estimated effort**: 30 minutes

@@ -44,7 +44,16 @@ function firstForbiddenExcerpt(text: string): string {
 }
 
 function stripHtmlTags(text: string): string {
-  return text.replace(HTML_TAG_PATTERN, '');
+  // Repeat until fixpoint: removing a multi-char match can join the surrounding
+  // text into a new tag (incomplete multi-character sanitization, CWE-116).
+  // The loop also caps pathological cases the single-pass replace would miss.
+  let previous: string;
+  let result = text;
+  do {
+    previous = result;
+    result = result.replace(HTML_TAG_PATTERN, '');
+  } while (result !== previous);
+  return result;
 }
 
 function stripHtmlFromSchema(value: unknown, depth = 0): unknown {

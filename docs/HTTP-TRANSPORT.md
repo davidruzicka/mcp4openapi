@@ -661,7 +661,9 @@ access_token - the response shape is unchanged. Clients ALWAYS work, with or wit
 ### Key derivation (`MCP4_OAUTH_KEY`)
 
 - 64-char hex string: decoded directly as 32 raw bytes (AES-256 key).
-- Anything else: SHA-256(value) yields 32 bytes - any passphrase works.
+- Anything else: scrypt(value, fixed application salt, 32 bytes) - any passphrase works.
+  Envelopes issued before the scrypt migration (SHA-256-derived keys) still decrypt via a
+  legacy fallback key; new envelopes are always scrypt-derived (fallback removal: TODO.md #18).
 - Whitespace around the value is trimmed before derivation (k8s ConfigMap newline tolerance).
 - Unset: plain-token mode is active and a startup warn is logged. Behavior matches earlier
   releases byte-for-byte.

@@ -103,11 +103,17 @@ export interface HttpTransportConfig {
    * 32-byte symmetric key used to encrypt/decrypt token envelopes (mcp4.v1.* tokens).
    * Derived from `MCP4_OAUTH_KEY` env var by `deriveTokenKey()`:
    *   - 64-char hex string -> Buffer.from(raw, 'hex')
-   *   - anything else      -> SHA-256(raw)
+   *   - anything else      -> scrypt(raw, fixed application salt, 32)
    * When undefined, the gateway operates in plain-token mode (backward compat).
    * See src/auth/token-envelope.ts for the envelope format and security boundary.
    */
   tokenKey?: Buffer;
+  /**
+   * Legacy SHA-256-derived key used only as a decrypt fallback for envelopes
+   * issued before the scrypt KDF migration. Undefined for 64-hex keys (both
+   * KDFs derive identically there) and when tokenKey is unset.
+   */
+  legacyTokenKey?: Buffer;
   trustProxy?: boolean | number | string; // Express trust proxy setting
   oauthConfig?: OAuthConfig; // OAuth 2.0 configuration (optional)
   baseUrl?: string; // Base URL for API (for token validation)

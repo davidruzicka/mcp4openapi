@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { createCipheriv as nodeCipheriv, createHash, randomBytes } from 'node:crypto';
+import { createCipheriv as nodeCipheriv, createHash, randomBytes, scryptSync } from 'node:crypto';
 import { ValidationError } from '../core/errors.js';
 import {
   decryptTokenPayload,
+  deriveLegacySha256TokenKey,
   deriveTokenKey,
   encryptTokenPayload,
   isEncryptedToken,
@@ -14,8 +15,8 @@ const PREFIX = 'mcp4.v1.';
 const NONCE_BYTES = 12;
 const TAG_BYTES = 16;
 
-const KEY = createHash('sha256').update('test-passphrase').digest();
-const OTHER_KEY = createHash('sha256').update('different-passphrase').digest();
+const KEY = deriveTokenKey('test-passphrase');
+const OTHER_KEY = deriveTokenKey('different-passphrase');
 const PROFILE_ID = 'test-profile';
 
 const FULL_PAYLOAD: TokenEnvelopePayload = Object.freeze({
@@ -59,18 +60,18 @@ describe('token-envelope', () => {
     expect(key.equals(Buffer.from(rawHex, 'hex'))).toBe(true);
   });
 
-  it('deriveTokenKey returns SHA-256(raw) 32-byte Buffer for non-hex strings and 63-char hex strings', () => {
+  it('deriveTokenKey returns scrypt(raw) 32-byte Buffer for non-hex strings and 63-char hex strings', () => {
     const passphrase = 'any-passphrase-not-hex';
     const k1 = deriveTokenKey(passphrase);
     expect(k1.length).toBe(32);
-    expect(k1.equals(createHash('sha256').update(passphrase).digest())).toBe(true);
+    expect(k1.equals(scryptSync(passphrase, 'mcp4openapi:token-envelope:v1', 32))).toBe(true);
 
-    // 63-char hex → falls into SHA-256 branch (length must be EXACTLY 64)
+    // 63-char hex → falls into scrypt branch (length must be EXACTLY 64)
     const sixtyThreeHex = '0123456789abcdef'.repeat(3) + '0123456789abcde';
     expect(sixtyThreeHex.length).toBe(63);
     const k2 = deriveTokenKey(sixtyThreeHex);
     expect(k2.length).toBe(32);
-    expect(k2.equals(createHash('sha256').update(sixtyThreeHex).digest())).toBe(true);
+    expect(k2.equals(scryptSync(sixtyThreeHex, 'mcp4openapi:token-envelope:v1', 32))).toBe(true);
   });
 
   it('isEncryptedToken matches mcp4.v1. prefix only', () => {
@@ -78,6 +79,35 @@ describe('token-envelope', () => {
     expect(isEncryptedToken('mcp4.v2.abc')).toBe(false);
     expect(isEncryptedToken('plain-token')).toBe(false);
     expect(isEncryptedToken('')).toBe(false);
+  });
+
+  it('decrypts a legacy SHA-256 envelope via fallbackKey (backward compatibility)', () => {
+    const legacyKey = deriveLegacySha256TokenKey('test-passphrase');
+    const legacyToken = encryptTokenPayload(FULL_PAYLOAD, legacyKey);
+    // Primary scrypt key alone cannot open the legacy envelope
+    expect(decryptTokenPayload(legacyToken, KEY, PROFILE_ID)).toBeNull();
+    // With the legacy fallback key it decrypts
+    const out = decryptTokenPayload(legacyToken, KEY, PROFILE_ID, legacyKey);
+    expect(out).not.toBeNull();
+    expect(out).toEqual(FULL_PAYLOAD);
+  });
+
+  it('does not use fallbackKey when the primary key already succeeds', () => {
+    const token = encryptTokenPayload(FULL_PAYLOAD, KEY);
+    const wrongFallback = deriveLegacySha256TokenKey('unrelated');
+    const out = decryptTokenPayload(token, KEY, PROFILE_ID, wrongFallback);
+    expect(out).toEqual(FULL_PAYLOAD);
+  });
+
+  it('returns null when both primary and fallback keys fail', () => {
+    const legacyToken = encryptTokenPayload(FULL_PAYLOAD, deriveLegacySha256TokenKey('other'));
+    expect(decryptTokenPayload(legacyToken, KEY, PROFILE_ID, OTHER_KEY)).toBeNull();
+  });
+
+  it('deriveLegacySha256TokenKey matches SHA-256(raw)', () => {
+    const key = deriveLegacySha256TokenKey('test-passphrase');
+    expect(key.length).toBe(32);
+    expect(key.equals(createHash('sha256').update('test-passphrase').digest())).toBe(true);
   });
 
   it('round-trips a full payload preserving every field', () => {
