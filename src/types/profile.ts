@@ -49,6 +49,55 @@ export interface ClientAuthGateConfig {
   api_keys?: ApiKeyStoreConfig;
 }
 
+/**
+ * OAuth configuration for the consent gate's human-approval flow.
+ *
+ * This is intentionally separate from inbound session auth and from the
+ * upstream MCP auth: it drives a browser-based authorization-code login whose
+ * sole purpose is to bind a provable human identity to a recorded consent.
+ * Secrets are never stored inline — the client secret (when the provider
+ * requires one) is referenced via an environment variable.
+ */
+export interface ConsentOAuthConfig {
+  /** OAuth authorization endpoint (browser-facing). */
+  authorization_endpoint: string;
+  /** OAuth token endpoint (code exchange). */
+  token_endpoint: string;
+  /** OAuth client id used for the consent login. */
+  client_id: string;
+  /** Env var holding the OAuth client secret, when the provider requires one. */
+  client_secret_from_env?: string;
+  /** Redirect URI registered for the consent login callback. */
+  redirect_uri: string;
+  /** Optional scopes requested for the consent login (identity only). */
+  scopes?: string[];
+}
+
+/**
+ * Consent gate configuration.
+ *
+ * Gates sensitive profiles (e.g. an upstream MS365 MCP) behind a provable,
+ * human consent: the user must complete an interactive OAuth login and accept
+ * the current rules before any tool call is dispatched. Consent is bound to the
+ * authenticated subject and the `rules_version`; bumping `rules_version`
+ * invalidates prior consent and forces re-acceptance.
+ *
+ * The gate is deliberately NOT an MCP tool, so an autonomous agent cannot grant
+ * consent on the user's behalf.
+ */
+export interface ConsentGateConfig {
+  /** When true, tool calls are blocked until consent is recorded for the subject + rules_version. */
+  required: boolean;
+  /** Opaque version of the rules/education content; changing it invalidates prior consent. */
+  rules_version: string;
+  /** Optional URL to educational content shown during the consent flow. */
+  education_resource?: string;
+  /** Optional short human-readable summary of the rules shown at consent time. */
+  rules_summary?: string;
+  /** OAuth configuration for the interactive human consent login. */
+  oauth?: ConsentOAuthConfig;
+}
+
 export interface Profile {
   profile_name: string;
   profile_id?: string;
@@ -62,6 +111,7 @@ export interface Profile {
   parameter_aliases?: Record<string, string[]>; // e.g., {"id": ["resource_id", "project_id"]}
   enterprise_authorization?: EnterpriseAuthorizationConfig;
   client_auth_gate?: ClientAuthGateConfig;
+  consent_gate?: ConsentGateConfig;
   upstream_mcp?: UpstreamMcpServerConfig;
   upstream_mcp_from_env?: string;
 

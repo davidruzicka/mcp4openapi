@@ -33,6 +33,7 @@ import { normalizeToolName } from '../tool-filter/utils.js';
 import { isSafePropertyName, isUri } from '../validation/validation-utils.js';
 import { validateEnterpriseAuthorizationProfile } from './enterprise-profile-validator.js';
 import { validateClientAuthGateProfile } from './client-auth-gate-validator.js';
+import { validateConsentGateProfile } from './consent-gate-validator.js';
 import { resolveUpstreamMcpConfig, UPSTREAM_MCP_ARRAY_REJECTION_MESSAGE } from './upstream-mcp-config.js';
 
 // Schemas are now auto-generated from TypeScript types!
@@ -107,6 +108,11 @@ export class ProfileLoader {
     const resolvedClientAuthGate = validateClientAuthGateProfile(profile);
     if (resolvedClientAuthGate) {
       profile.client_auth_gate = resolvedClientAuthGate;
+    }
+
+    const resolvedConsentGate = validateConsentGateProfile(profile);
+    if (resolvedConsentGate) {
+      profile.consent_gate = resolvedConsentGate;
     }
 
     const resolvedUpstreamMcp = resolveUpstreamMcpConfig(profile);

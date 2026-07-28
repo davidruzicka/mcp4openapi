@@ -18,6 +18,23 @@ export const clientAuthGateConfigSchema = z.object({
     api_keys: apiKeyStoreConfigSchema.optional()
 });
 
+export const consentOAuthConfigSchema = z.object({
+    authorization_endpoint: z.string(),
+    token_endpoint: z.string(),
+    client_id: z.string(),
+    client_secret_from_env: z.string().optional(),
+    redirect_uri: z.string(),
+    scopes: z.array(z.string()).optional()
+});
+
+export const consentGateConfigSchema = z.object({
+    required: z.boolean(),
+    rules_version: z.string(),
+    education_resource: z.string().optional(),
+    rules_summary: z.string().optional(),
+    oauth: consentOAuthConfigSchema.optional()
+});
+
 export const upstreamMcpToolPolicySchema = z.object({
     allow: z.array(z.string()).optional(),
     deny: z.array(z.string()).optional()
@@ -384,6 +401,7 @@ export const profileSchema = z.object({
     parameter_aliases: z.record(z.string(), z.array(z.string())).optional(),
     enterprise_authorization: enterpriseAuthorizationConfigSchema.optional(),
     client_auth_gate: clientAuthGateConfigSchema.optional(),
+    consent_gate: consentGateConfigSchema.optional(),
     upstream_mcp: upstreamMcpServerConfigSchema.optional(),
     upstream_mcp_from_env: z.string().optional(),
     resource_name: z.string().optional(),

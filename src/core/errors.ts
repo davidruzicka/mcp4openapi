@@ -152,6 +152,42 @@ export class ClientAuthGateError extends MCPError {
   }
 }
 
+/**
+ * Raised when a profile gated by `consent_gate` is used before the authenticated
+ * subject has recorded consent for the current `rules_version`.
+ *
+ * The `details` payload is machine-readable so the client can drive the human
+ * to the consent flow: `profileId`, `rules_version`, `consent_url`, and the
+ * optional `education_resource`. It never carries tokens or PII.
+ */
+export class ConsentRequiredError extends MCPError {
+  constructor(
+    message: string,
+    details: {
+      profileId: string;
+      rules_version: string;
+      consent_url: string;
+      education_resource?: string;
+    },
+  ) {
+    super(message, 'CONSENT_REQUIRED', details);
+    this.name = 'ConsentRequiredError';
+  }
+}
+
+/**
+ * Raised at profile load time when a `consent_gate` block is misconfigured
+ * (e.g. required consent without an OAuth login, or a referenced env var that
+ * is not set). Surfacing this as a fast startup error prevents a profile that
+ * can never grant consent from reaching runtime.
+ */
+export class ConsentGateConfigurationError extends MCPError {
+  constructor(message: string, details?: Record<string, unknown>) {
+    super(message, 'CONSENT_GATE_CONFIGURATION_ERROR', details);
+    this.name = 'ConsentGateConfigurationError';
+  }
+}
+
 export class EnterprisePolicyViolationError extends MCPError {
   constructor(message: string, details?: Record<string, unknown>) {
     super(message, 'ENTERPRISE_POLICY_VIOLATION_ERROR', details);
