@@ -1,0 +1,9 @@
+{
+  "$schema": "../../../src/testing/test-schema.ts",
+  "profile_name": "consent-gate",
+  "scenarios": [],
+  "coverage": {
+    "require_all_actions": false,
+    "skip_actions": {}
+  }
+}
