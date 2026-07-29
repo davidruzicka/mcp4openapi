@@ -3145,9 +3145,8 @@ export class MCPServer {
     }
 
     if (originalCount > 0 && allowedCount === 0) {
-      const sources = request.rawEntries.length > 0 ? request.rawEntries.join(', ') : 'none';
       throw new ValidationError(
-        `X-Mcp4-Tools filtered out all tools (original: ${originalCount}). Removed by: ${sources}. Check session filter configuration.`
+        `X-Mcp4-Tools filtered out all tools (original: ${originalCount}). Check session filter configuration.`
       );
     }
 
