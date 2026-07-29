@@ -1316,10 +1316,11 @@ export class MCPServer {
    *
    * Why: GitLab and other APIs require path parameters (like project paths)
    * to be URL-encoded when used in URL path.
+   * Also encodes dot characters to prevent Path Traversal vulnerabilities.
    */
   private encodePathSegment(value: unknown): string {
     const val = String(value);
-    return val.includes('/') ? encodeURIComponent(val) : val;
+    return encodeURIComponent(val).replace(/\./g, '%2E');
   }
 
   /**
