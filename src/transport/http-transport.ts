@@ -70,13 +70,7 @@ import {
 import { mergeFilteringRules, parseFilteringHeader, normalizeFilteringHeaderValue } from '../core/filtering.js';
 import {
   ToolFilterService,
-  EnvConfigParser,
-  HeaderConfigParser,
-  RegexCompiler,
-  RegexValidator,
-  OperationClassifier,
-  OpenAPIOperationResolver,
-  OperationDetector,
+  createToolFilterService,
   normalizeToolFilterHeaderValue,
   parseSessionToolFilterHeader,
 } from '../tool-filter/index.js';
@@ -2826,25 +2820,10 @@ export class HttpTransport {
    */
   private getToolFilterService(profileState: ProfileRuntimeState): ToolFilterService {
     if (!profileState.toolFilterService) {
-      const validator = new RegexValidator();
-      const compiler = new RegexCompiler(validator);
-      const envParser = new EnvConfigParser(compiler);
-      const headerParser = new HeaderConfigParser(compiler);
-      
-      // Create OperationDetector for category filtering (if parser available)
-      let detector: OperationDetector | undefined;
-      if (profileState.context.parser) {
-        const classifier = new OperationClassifier();
-        const resolver = new OpenAPIOperationResolver(profileState.context.parser);
-        detector = new OperationDetector(classifier, resolver);
-      }
-      
-      profileState.toolFilterService = new ToolFilterService(
-        envParser,
-        headerParser,
-        this.logger,
-        detector
-      );
+      profileState.toolFilterService = createToolFilterService({
+        logger: this.logger,
+        parser: profileState.context.parser,
+      });
     }
     return profileState.toolFilterService;
   }
