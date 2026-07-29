@@ -275,13 +275,13 @@ function validateParameterValue(
     for (const item of argValue) {
       if (!isPrimitiveValue(item)) {
         throw new AuthorizationError(
-          `Filter conflict for '${canonical}': expected one of [${allowedValues.join(', ')}], got '${formatValue(item)}'.`
+          `Filter conflict for '${canonical}': expected one of [${allowedValues.join(', ')}], got invalid value.`
         );
       }
       const stringValue = String(item);
       if (!allowedSet.has(stringValue)) {
         throw new AuthorizationError(
-          `Filter conflict for '${canonical}': expected one of [${allowedValues.join(', ')}], got '${stringValue}'.`
+          `Filter conflict for '${canonical}': expected one of [${allowedValues.join(', ')}], got invalid value.`
         );
       }
     }
@@ -290,14 +290,14 @@ function validateParameterValue(
   
   if (typeof argValue === 'object' && argValue !== null) {
     throw new AuthorizationError(
-      `Filter conflict for '${canonical}': expected one of [${allowedValues.join(', ')}], got '${formatValue(argValue)}'.`
+      `Filter conflict for '${canonical}': expected one of [${allowedValues.join(', ')}], got invalid value.`
     );
   }
   
   const stringValue = String(argValue);
   if (!allowedSet.has(stringValue)) {
     throw new AuthorizationError(
-      `Filter conflict for '${canonical}': expected one of [${allowedValues.join(', ')}], got '${stringValue}'.`
+      `Filter conflict for '${canonical}': expected one of [${allowedValues.join(', ')}], got invalid value.`
     );
   }
 }
@@ -441,7 +441,7 @@ function validateFilterKeys(
   }
   const allowedList = Array.from(allowedKeys).sort().join(', ');
   throw new ValidationError(
-    `Unknown filter key '${unknownKeys[0]}'. Allowed keys: ${allowedList}`
+    `Unknown filter key provided. Allowed keys: ${allowedList}`
   );
 }
 
@@ -497,18 +497,3 @@ function isPrimitiveValue(value: unknown): value is string | number | boolean {
   return ['string', 'number', 'boolean'].includes(typeof value);
 }
 
-function formatValue(value: unknown): string {
-  if (value === undefined) {
-    return 'undefined';
-  }
-  if (value === null) {
-    return 'null';
-  }
-  if (Array.isArray(value)) {
-    return 'array';
-  }
-  if (typeof value === 'object') {
-    return 'object';
-  }
-  return String(value);
-}

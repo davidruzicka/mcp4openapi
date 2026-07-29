@@ -126,3 +126,15 @@ Error messages should never include raw values from sensitive sources like envir
 **Prevention:**
 1.  Avoid including raw values in error messages when the source is potentially sensitive (env vars, auth headers).
 2.  Use generic error messages for validation failures of sensitive data.
+
+## 2026-02-24 - [MEDIUM] Environment Variable and Parameter Leakage in Error Messages
+
+**Vulnerability:**
+Various configuration parsers (`src/tool-filter/config/env-config-parser.ts`, `src/tool-filter/config/header-config-parser.ts`, `src/automation/artifact-signing-config.ts`, `src/mcp/mcp-server.ts`) and validation logic (`src/core/filtering.ts`) included the raw user-supplied or environment-variable values in error messages (e.g., `ConfigurationError`, `ValidationError`, `AuthorizationError`). This could lead to information leakage or log injection if the raw values contained sensitive information (like API keys incorrectly set in environment variables) or newline characters.
+
+**Learning:**
+Error messages must be carefully reviewed to ensure they do not echo unvalidated or potentially sensitive input back to the user or into the logs. Even seemingly benign validation errors can become vectors for log spoofing or secret exposure.
+
+**Prevention:**
+1.  Avoid echoing raw configuration or parameter values in error messages.
+2.  Use generic error messages that describe the *nature* of the error (e.g., "expected positive number", "got invalid value") without including the specific invalid payload.
