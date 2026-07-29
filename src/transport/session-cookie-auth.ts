@@ -7,6 +7,7 @@ import {
 } from '../core/errors.js';
 import { TIMEOUTS } from '../core/constants.js';
 import type { Logger } from '../core/logger.js';
+import { SSRFValidator } from '../security/ssrf-validator.js';
 import type { SessionCookieConfig } from '../types/profile.js';
 import { isHostnameAllowed, isSafePropertyName } from '../validation/validation-utils.js';
 import type { AuthRuntimeProvider } from './auth-runtime.js';
@@ -233,6 +234,7 @@ export class SessionCookieAuthManager implements AuthRuntimeProvider {
   private readonly cookieJar = new SessionCookieJar(new Set(this.config.cookie_names));
   private readonly reauthOnStatuses = new Set(this.config.reauth_on_statuses || [401]);
   private readonly coordinator: SessionCookieCoordinator;
+  private readonly ssrfValidator: SSRFValidator;
 
   constructor(
     private readonly config: SessionCookieConfig,
@@ -241,6 +243,15 @@ export class SessionCookieAuthManager implements AuthRuntimeProvider {
     private readonly requestTimeoutMs: number = TIMEOUTS.HTTP_REQUEST_TIMEOUT_MS,
   ) {
     this.coordinator = new SessionCookieCoordinator(this.config.failure_backoff_ms ?? 5000);
+    // Use the provided logger or create a fallback one (SSRFValidator needs one).
+    // To avoid circular dependency with console logger we just mock it if missing,
+    // though in practice HTTP transport always passes one.
+    this.ssrfValidator = new SSRFValidator(this.logger || {
+      /* istanbul ignore next */ debug: () => {},
+      /* istanbul ignore next */ info: () => {},
+      /* istanbul ignore next */ warn: () => {},
+      /* istanbul ignore next */ error: () => {}
+    });
   }
 
   async prepareRequest(_ctx: RequestContext): Promise<AuthCredentials> {
@@ -283,6 +294,11 @@ export class SessionCookieAuthManager implements AuthRuntimeProvider {
   private async ensureLoggedIn(): Promise<void> {
     await this.coordinator.run(async () => {
       const loginUrl = this.resolveLoginUrl();
+
+      await this.ssrfValidator.validate(loginUrl, {
+        allowPrivateNetwork: process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK === 'true',
+      });
+
       const request = this.buildLoginRequest();
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), this.requestTimeoutMs);
