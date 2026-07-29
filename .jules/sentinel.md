@@ -126,3 +126,15 @@ Error messages should never include raw values from sensitive sources like envir
 **Prevention:**
 1.  Avoid including raw values in error messages when the source is potentially sensitive (env vars, auth headers).
 2.  Use generic error messages for validation failures of sensitive data.
+
+## 2026-06-19 - [HIGH] SSRF in Enterprise Auth Provider
+
+**Vulnerability:**
+The `EnterpriseAuthProvider` fetched OIDC discovery metadata (`/.well-known/openid-configuration`) using user-provided `issuer` configuration without validating the target URL. If an attacker created a malicious profile pointing the issuer to an internal network address (e.g., `http://169.254.169.254`), the server would send a request to that address, leading to a Server-Side Request Forgery (SSRF) vulnerability.
+
+**Learning:**
+Even built-in discovery mechanisms like OIDC metadata resolution are vulnerable to SSRF if the base URL originates from untrusted or user-configurable sources (like a profile definition).
+
+**Prevention:**
+1. Passed the `SSRFValidator` from `HttpTransport` into the `EnterpriseAuthProvider` constructor.
+2. Validated the `discoveryUrl` with the `SSRFValidator` prior to initiating the `fetch` request, allowing private networks only if explicitly permitted by the `MCP4_SSRF_ALLOW_PRIVATE_NETWORK` environment variable.
