@@ -147,6 +147,8 @@ describe('HttpTransport security behavior (no listen)', () => {
     expect(response.headers['cross-origin-resource-policy']).toBe('same-origin');
     expect(response.headers['x-permitted-cross-domain-policies']).toBe('none');
     expect(response.headers['x-dns-prefetch-control']).toBe('off');
+    expect(response.headers['x-xss-protection']).toBe('0');
+    expect(response.headers['strict-transport-security']).toBe('max-age=31536000; includeSubDomains');
     await transport.stop();
   });
 
