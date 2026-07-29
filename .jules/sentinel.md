@@ -126,3 +126,15 @@ Error messages should never include raw values from sensitive sources like envir
 **Prevention:**
 1.  Avoid including raw values in error messages when the source is potentially sensitive (env vars, auth headers).
 2.  Use generic error messages for validation failures of sensitive data.
+
+## 2026-05-29 - [MEDIUM] Information Leakage via Enterprise Policy Violation Error Messages
+
+**Vulnerability:**
+The HTTP transport layer (handleGet and handleMetrics) was catching exceptions and returning the raw error message to the client in the JSON response body. EnterprisePolicyViolationError was not handled explicitly in formatErrorForClient, resulting in it being treated as an unknown internal error in some cases or leaking information in others.
+
+**Learning:**
+Any specific error types that are intended to be exposed to clients (e.g., policy violations where the client needs to know what they did wrong) must be explicitly formatted in formatErrorForClient.
+
+**Prevention:**
+1. Ensure explicit formatting logic exists for all custom error types intended for client consumption.
+2. Tests should assert correct formatting and absence of sensitive details.
