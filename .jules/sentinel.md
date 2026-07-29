@@ -126,3 +126,16 @@ Error messages should never include raw values from sensitive sources like envir
 **Prevention:**
 1.  Avoid including raw values in error messages when the source is potentially sensitive (env vars, auth headers).
 2.  Use generic error messages for validation failures of sensitive data.
+
+## 2026-06-29 - [HIGH] Unbounded Profile Hint Cache (DoS)
+
+**Vulnerability:**
+The `HttpTransport` stored profile hints in an in-memory Map (`profileHintsByClient`) keyed by client IP and User-Agent. This map only evicted entries when they were accessed after expiration, allowing an attacker to cause memory exhaustion (Denial of Service) by continually sending requests with varying IP addresses (e.g., spoofing X-Forwarded-For if not strict) or User-Agents, filling up memory indefinitely.
+
+**Learning:**
+In-memory caches driven by unauthenticated or loosely authenticated client inputs (like IP or User-Agent) must always have a hard upper bound (size limit) in addition to TTL-based expiration. Without a hard limit, a determined attacker can bypass TTLs by creating new entries faster than they expire.
+
+**Prevention:**
+1. Implemented a `MAX_PROFILE_HINTS` constant to bound the cache size.
+2. Modified `storeProfileHint` to evict the oldest entry (FIFO) when the cache is full before adding a new one.
+3. Added proactive cleanup of expired profile hints to the existing `cleanupExpiredSessions` interval.
