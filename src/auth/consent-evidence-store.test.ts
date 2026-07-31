@@ -1,11 +1,12 @@
-import { describe, expect, it } from 'vitest';
-import { mkdtemp, readFile } from 'node:fs/promises';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
+import type { Logger } from '../core/logger.js';
 import {
-  FileConsentEvidenceStore,
   consentEvidenceKey,
+  FileConsentEvidenceStore,
   InMemoryConsentEvidenceStore,
 } from './consent-evidence-store.js';
 
@@ -81,24 +82,88 @@ describe('InMemoryConsentEvidenceStore', () => {
 });
 
 describe('FileConsentEvidenceStore', () => {
-  it('persists evidence across store instances and keeps the first grant', async () => {
-    const directory = await mkdtemp(path.join(os.tmpdir(), 'mcp4-consent-'));
-    const filePath = path.join(directory, 'evidence.jsonl');
-    const first = new FileConsentEvidenceStore(filePath);
-    await first.record({ sub: 'user-1', profileId: 'ms365', rules_version: 'v1', granted_at: 100 });
-    await first.record({ sub: 'user-1', profileId: 'ms365', rules_version: 'v1', granted_at: 200 });
+  const logger = {
+    info: () => {},
+    warn: () => {},
+    error: () => {},
+    debug: () => {},
+  } as unknown as Logger;
 
-    const restarted = new FileConsentEvidenceStore(filePath);
-    await expect(restarted.has('user-1', 'ms365', 'v1')).resolves.toBe(true);
-    expect((await readFile(filePath, 'utf8')).trim().split('\n')).toHaveLength(1);
-    expect(JSON.parse(await readFile(filePath, 'utf8'))).toMatchObject({ granted_at: 100 });
+  let dir: string;
+  let filePath: string;
+
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'consent-evidence-'));
+    filePath = path.join(dir, 'evidence.jsonl');
   });
 
-  it('rejects malformed persisted evidence instead of silently accepting it', async () => {
-    const directory = await mkdtemp(path.join(os.tmpdir(), 'mcp4-consent-'));
-    const filePath = path.join(directory, 'evidence.jsonl');
-    await import('node:fs/promises').then(({ writeFile }) => writeFile(filePath, '{"sub":"user"}\n'));
-    await expect(new FileConsentEvidenceStore(filePath).has('user', 'ms365', 'v1'))
-      .rejects.toThrow('invalid record');
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  const evidence = (over: Partial<{ sub: string; profileId: string; rules_version: string; granted_at: number }> = {}) => ({
+    sub: 'user-1',
+    profileId: 'ms365',
+    rules_version: 'v1',
+    granted_at: 1000,
+    ...over,
+  });
+
+  it('returns false before any consent is recorded (no file yet)', async () => {
+    const store = new FileConsentEvidenceStore(filePath, logger);
+    expect(await store.has('user-1', 'ms365', 'v1')).toBe(false);
+  });
+
+  it('persists a grant across store instances (durable)', async () => {
+    await new FileConsentEvidenceStore(filePath, logger).record(evidence());
+    const reopened = new FileConsentEvidenceStore(filePath, logger);
+    expect(await reopened.has('user-1', 'ms365', 'v1')).toBe(true);
+    expect(fs.existsSync(filePath)).toBe(true);
+  });
+
+  it('reloads external writes from another writer sharing the file', async () => {
+    const a = new FileConsentEvidenceStore(filePath, logger);
+    const b = new FileConsentEvidenceStore(filePath, logger);
+    expect(await a.has('user-1', 'ms365', 'v1')).toBe(false);
+    await b.record(evidence());
+    // A must observe B's grant after the file changes on disk.
+    expect(await a.has('user-1', 'ms365', 'v1')).toBe(true);
+  });
+
+  it('is idempotent and preserves the original granted_at on replay', async () => {
+    const store = new FileConsentEvidenceStore(filePath, logger);
+    await store.record(evidence({ granted_at: 1000 }));
+    await store.record(evidence({ granted_at: 5000 }));
+    const lines = fs.readFileSync(filePath, 'utf8').trim().split('\n').filter(Boolean);
+    expect(lines).toHaveLength(1);
+    expect(JSON.parse(lines[0]).granted_at).toBe(1000);
+  });
+
+  it('does not match a different rules_version (re-consent required)', async () => {
+    const store = new FileConsentEvidenceStore(filePath, logger);
+    await store.record(evidence({ rules_version: 'v1' }));
+    expect(await store.has('user-1', 'ms365', 'v2')).toBe(false);
+  });
+
+  it('skips malformed lines and still reads valid grants', async () => {
+    fs.writeFileSync(
+      filePath,
+      `not-json\n${JSON.stringify(evidence())}\n{"sub":"x"}\n`,
+      'utf8',
+    );
+    const store = new FileConsentEvidenceStore(filePath, logger);
+    expect(await store.has('user-1', 'ms365', 'v1')).toBe(true);
+    expect(await store.has('x', 'ms365', 'v1')).toBe(false);
+  });
+
+  it('fails closed with ConsentEvidenceStoreError when the path is not writable', async () => {
+    // Point the store at a path whose parent is a file, so mkdir/append fails.
+    const notADir = path.join(dir, 'blocker');
+    fs.writeFileSync(notADir, 'x', 'utf8');
+    const store = new FileConsentEvidenceStore(path.join(notADir, 'evidence.jsonl'), logger);
+    await expect(store.record(evidence())).rejects.toMatchObject({
+      name: 'ConsentEvidenceStoreError',
+      code: 'CONSENT_EVIDENCE_STORE_ERROR',
+    });
   });
 });

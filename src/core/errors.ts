@@ -188,6 +188,19 @@ export class ConsentGateConfigurationError extends MCPError {
   }
 }
 
+/**
+ * Raised when the consent evidence store cannot durably read or persist a
+ * record (e.g. an unwritable path or a corrupt evidence file). Consent checks
+ * treat this as fail-closed: a storage failure must block tool dispatch rather
+ * than silently allow it.
+ */
+export class ConsentEvidenceStoreError extends MCPError {
+  constructor(message: string, details?: Record<string, unknown>) {
+    super(message, 'CONSENT_EVIDENCE_STORE_ERROR', details);
+    this.name = 'ConsentEvidenceStoreError';
+  }
+}
+
 export class EnterprisePolicyViolationError extends MCPError {
   constructor(message: string, details?: Record<string, unknown>) {
     super(message, 'ENTERPRISE_POLICY_VIOLATION_ERROR', details);

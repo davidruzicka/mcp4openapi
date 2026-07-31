@@ -22,7 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `handleOtherRequest` upstream `tools/list` pre-flight error now uses `mapUpstreamErrorToMcpError` (provider-safe message) instead of generic "Internal error"; `req.method` truncated to 200 chars in error logs; `uri` and prompt `name` params capped at 2048/256 chars with `-32602` validation errors.
 
 ### Added
-- Consent gate types (`ConsentGateConfig`, `ConsentOAuthConfig`, `Profile.consent_gate`), `ConsentRequiredError`/`ConsentGateConfigurationError`, pluggable consent evidence store (in-memory), `ConsentGate.assertConsent`, and a profile-load-time validator wiring for gating sensitive profiles behind provable human consent bound to `rules_version` (AIPP-432; HTTP consent flow + dispatch enforcement land next).
+- Consent gate (`consent_gate` profile block) gates sensitive profiles behind provable human consent: interactive OAuth login with a mandatory approval step, OIDC identity verification, dispatch-time enforcement (JSON-RPC `-32004` when missing), and consent bound to the verified subject + `rules_version`. Evidence is pluggable — in-memory for dev, or durable append-only JSONL via `MCP4_CONSENT_EVIDENCE_PATH` (`FileConsentEvidenceStore`) for single-node/staging; a transactional multi-replica backend is tracked in `TODO.md` (AIPP-432).
 - Profile index redirects: `MCP4_HTTP_PROFILE_INDEX_REDIRECT_URL` redirects browser-facing `GET /` requests with configurable `301` or `302` status while JSON profile discovery remains available through `Accept: application/json`.
 - `MCP4_SYSTEM_NOTICE` env var adds a full-width banner at the top of the HTML profile index with configurable severity (`info` / `warning` / `error`) and matching color scheme; plain string defaults to `info`, JSON `{"message":"...","severity":"warning"}` sets severity explicitly.
 - Profile index page (`/`) syncs selected profile to URL hash (e.g. `/#scif`), enabling direct shareable links; hash is read on load so navigating to `/#<profileId>` pre-selects that profile.
@@ -39,6 +39,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Client auth gate types (`ClientAuthGateConfig`, `ApiKeyStoreConfig`, `InlineApiKeyEntry`), `ClientAuthGateError`, `SessionData.clientPrincipal` field, and profile-load-time validator (`validateClientAuthGateProfile`) for AUTH-02/AUTH-03. Phase 3 ships inline API keys only; JWT/OIDC types and the `sasanka` API key backend are added in Phase 4.
 - `ApiKeyStore` interface with `InlineApiKeyStore` (constant-time HMAC-SHA256 comparison via `timingSafeEqual` on equal-length 32-byte digests, erasing length as a timing side-channel) and extensible `createApiKeyStore` factory for AUTH-02 M2M API key validation. `SasankaApiKeyStore` is added in Phase 4.
 - `ClientAuthGate` orchestrator wired into HTTP transport session init: validates inbound client API key before session establishment; resolves `AuthorizedPrincipal` (authType=`token`) and attaches it as `session.clientPrincipal`; mode-aware (`required` rejects with HTTP 401 when no identity is resolved, `optional` allows anonymous sessions); when configured, the gate becomes the inbound auth authority and bypasses the legacy `authConfigs` token-required guard so `mode='optional'` can permit anonymous initialization (AUTH-02; partial AUTH-03). JWT/OIDC gate added in Phase 4.
+
+## [0.5.9]
 
 ### Fixed
 - `MCP4_ALLOW_UNREGISTERED_CLIENTS`, `MCP4_ALLOWED_UNREGISTERED_REDIRECT_URIS`, and `MCP4_ALLOWED_ORIGINS` env vars now act as operator overrides: when set, they take full precedence over profile JSON values (previously `??` meant `allow_unregistered_clients: false` in profile silently blocked the env var).
@@ -107,6 +109,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Refined the autonomous-agent workflow to the final issue/PR label taxonomy, added shared state-machine helpers for issuer/planner/implementor/reviewer transitions, made reviewer/merger automation tolerate legacy review labels during on-touch migration and reconciliation, taught issuer/planner stronger semantic duplicate triage with a pluggable bounded backend contract, and preserved exact open-title duplicate detection as the minimum fallback guard.
 - Bumped transitive security-sensitive dependencies via overrides (`@hono/node-server` to `1.19.10`, `hono` to `4.12.4`) and aligned Semgrep SBOM negative test inputs/expectations with current `deploymentSlug`/`deployment_id` validation behavior.
 - Updated `express-rate-limit` to `^8.3.1` to remediate the open GitHub Security / Dependabot alert for IPv4-mapped IPv6 rate-limit keying.
+
+## [0.5.8]
 
 ### Fixed
 - Hardened implementor Codex result handling with a shared JSON-schema validator, stricter prompt contract, regression coverage for malformed or over-permissive machine output (including embedded JSON after brace-like log text), and linked/corrected schema documentation from the README/agent docs.
