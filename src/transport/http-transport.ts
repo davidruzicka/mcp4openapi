@@ -4497,16 +4497,30 @@ export class HttpTransport {
       scopes,
       rawAccessToken: clientToken !== tokens.access_token ? tokens.access_token : undefined,
     });
-    this.inboundAuthTokenStore.store(clientToken, {
-      authType: 'oauth',
-      profileId: profileState.profileId,
-      subject: identity?.subject ?? clientId,
-      issuer: identity?.issuer,
-      tenantId: identity?.tenantId,
-      clientId,
-      scopes,
-      expiresAt,
-    });
+    // Consent-gated profiles (AIPP-432) require the session principal to be bound to a verified
+    // human OIDC subject. Falling back to the OAuth clientId (a shared, non-human identity) would
+    // silently violate the "provable human consent" invariant. When no verified identity is present
+    // we omit the principal entirely so the consent gate sees a null principal and fails closed
+    // (blocks), rather than binding consent to clientId. Non-consent profiles keep the prior
+    // behaviour (identity subject, else clientId) unchanged.
+    const consentGated = profileState.context.consent_gate?.required === true;
+    if (consentGated && !identity?.subject) {
+      this.logger.warn('Consent-gated profile OAuth token stored without verified identity - principal omitted (consent gate will block)', {
+        profileId: profileState.profileId,
+        clientId,
+      });
+    } else {
+      this.inboundAuthTokenStore.store(clientToken, {
+        authType: 'oauth',
+        profileId: profileState.profileId,
+        subject: identity?.subject ?? clientId,
+        issuer: identity?.issuer,
+        tenantId: identity?.tenantId,
+        clientId,
+        scopes,
+        expiresAt,
+      });
+    }
 
     this.logger.debug('Stored OAuth tokens', {
       profileId: profileState.profileId,

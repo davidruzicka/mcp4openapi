@@ -12,7 +12,9 @@ import https from 'https';
 import { HttpTransport } from './http-transport.js';
 import type { HttpTransportConfig } from '../types/http-transport.js';
 import { ConsoleLogger, type Logger } from '../core/logger.js';
-import { ValidationError } from '../core/errors.js';
+import { ValidationError, ConsentRequiredError, AuthenticationError } from '../core/errors.js';
+import { ConsentGate } from '../auth/consent-gate.js';
+import { InMemoryConsentEvidenceStore } from '../auth/consent-evidence-store.js';
 import { describeIfListen } from '../testing/listen-support.js';
 import { parseSessionToolFilterHeader } from '../tool-filter/index.js';
 
@@ -4242,6 +4244,54 @@ describeIfListen('HttpTransport', () => {
       expect(stored.refreshToken).toBeUndefined();
       expect(stored.expiresAt).toBeUndefined();
     });
+
+    it('non-consent profile without identity falls back to clientId subject (unchanged behaviour)', () => {
+      const profileState = {
+        profileId: 'default',
+        context: { profileId: 'default' },
+        oauthProvider: null,
+        oauthTokensByAccessToken: new Map(),
+        sessions: new Map(),
+      };
+      (transport as any).profileStates.set('default', profileState);
+
+      (transport as any).storeOAuthTokens(
+        profileState,
+        { access_token: 'plain-access-nc' },
+        'client-nc',
+        ['read'],
+      );
+
+      const record = (transport as any).inboundAuthTokenStore.get('plain-access-nc');
+      expect(record).toBeDefined();
+      expect(record.principal.subject).toBe('client-nc');
+    });
+
+    it('consent-gated profile without verified identity omits principal so gate fails closed', () => {
+      const profileState = {
+        profileId: 'default',
+        context: {
+          profileId: 'default',
+          consent_gate: { required: true, rules_version: 'v1', identity_source: 'profile_oauth' },
+        },
+        oauthProvider: null,
+        oauthTokensByAccessToken: new Map(),
+        sessions: new Map(),
+      };
+      (transport as any).profileStates.set('default', profileState);
+
+      (transport as any).storeOAuthTokens(
+        profileState,
+        { access_token: 'plain-access-cg' },
+        'client-cg',
+        ['read'],
+      );
+
+      // OAuth token map is still populated (needed for refresh), but no principal is
+      // stored: a consent-gated session must never bind consent to clientId.
+      expect(profileState.oauthTokensByAccessToken.get('plain-access-cg')).toBeDefined();
+      expect((transport as any).inboundAuthTokenStore.get('plain-access-cg')).toBeUndefined();
+    });
   });
 
   describe('storeOAuthTokens encrypted envelope path', () => {
@@ -6077,6 +6127,134 @@ describeIfListen('HttpTransport', () => {
         sessions: new Map(),
       });
       expect(t.getSessionClientPrincipal('default', 'no-such-session')).toBeUndefined();
+    });
+  });
+
+  describe('assertSessionConsent (store <-> principal binding, real store)', () => {
+    const PROFILE_ID = 'default';
+    const ISSUER = 'https://issuer.example';
+
+    // Wire an HttpTransport profile state with a required ConsentGate backed by a REAL
+    // InMemoryConsentEvidenceStore, an oauthProvider with a known issuer, and one session.
+    const buildTransportWithGate = (options: {
+      rulesVersion: string;
+      session: Record<string, unknown>;
+    }): { transport: HttpTransport; store: InMemoryConsentEvidenceStore } => {
+      const t = new HttpTransport(
+        {
+          host: '127.0.0.1',
+          port: 0,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: false,
+          metricsPath: '/metrics',
+        },
+        logger,
+      );
+      const store = new InMemoryConsentEvidenceStore();
+      const gate = new ConsentGate(
+        PROFILE_ID,
+        { required: true, rules_version: options.rulesVersion },
+        store,
+        (id) => `https://gateway.example/mcp/${id}/consent`,
+        logger,
+      );
+      (t as any).profileStates.set(PROFILE_ID, {
+        profileId: PROFILE_ID,
+        context: { profileId: PROFILE_ID },
+        oauthProvider: { issuer: ISSUER },
+        oauthTokensByAccessToken: new Map(),
+        consentGate: gate,
+        consentEvidenceStore: store,
+        sessions: new Map([['session-1', options.session]]),
+      });
+      return { transport: t, store };
+    };
+
+    it('resolves when recorded consent subject matches the session principal subject and issuer', async () => {
+      const { transport: t, store } = buildTransportWithGate({
+        rulesVersion: 'v1',
+        session: {
+          clientPrincipal: {
+            authType: 'oauth' as const,
+            profileId: PROFILE_ID,
+            subject: 'X',
+            issuer: ISSUER,
+            scopes: ['read'],
+          },
+        },
+      });
+      await store.record({ sub: 'X', profileId: PROFILE_ID, rules_version: 'v1', granted_at: Date.now() });
+
+      await expect(t.assertSessionConsent(PROFILE_ID, 'session-1')).resolves.toBeUndefined();
+    });
+
+    it('throws ConsentRequiredError when the principal has no recorded consent', async () => {
+      const { transport: t } = buildTransportWithGate({
+        rulesVersion: 'v1',
+        session: {
+          clientPrincipal: {
+            authType: 'oauth' as const,
+            profileId: PROFILE_ID,
+            subject: 'Y',
+            issuer: ISSUER,
+            scopes: ['read'],
+          },
+        },
+      });
+      // No consent recorded for subject 'Y'.
+      await expect(t.assertSessionConsent(PROFILE_ID, 'session-1')).rejects.toBeInstanceOf(ConsentRequiredError);
+      await expect(t.assertSessionConsent(PROFILE_ID, 'session-1')).rejects.toMatchObject({
+        code: 'CONSENT_REQUIRED',
+      });
+    });
+
+    it('throws ConsentRequiredError for an anonymous session (no clientPrincipal)', async () => {
+      const { transport: t } = buildTransportWithGate({
+        rulesVersion: 'v1',
+        session: {},
+      });
+
+      await expect(t.assertSessionConsent(PROFILE_ID, 'session-1')).rejects.toBeInstanceOf(ConsentRequiredError);
+    });
+
+    it('throws AuthenticationError when the principal issuer does not match the profile OAuth issuer', async () => {
+      const { transport: t, store } = buildTransportWithGate({
+        rulesVersion: 'v1',
+        session: {
+          clientPrincipal: {
+            authType: 'oauth' as const,
+            profileId: PROFILE_ID,
+            subject: 'X',
+            issuer: 'https://evil.example',
+            scopes: ['read'],
+          },
+        },
+      });
+      // Consent for 'X' exists, but the issuer guard must reject before any consent check.
+      await store.record({ sub: 'X', profileId: PROFILE_ID, rules_version: 'v1', granted_at: Date.now() });
+
+      await expect(t.assertSessionConsent(PROFILE_ID, 'session-1')).rejects.toBeInstanceOf(AuthenticationError);
+    });
+
+    it('throws ConsentRequiredError after a rules_version bump forces re-consent', async () => {
+      const { transport: t, store } = buildTransportWithGate({
+        rulesVersion: 'v2',
+        session: {
+          clientPrincipal: {
+            authType: 'oauth' as const,
+            profileId: PROFILE_ID,
+            subject: 'X',
+            issuer: ISSUER,
+            scopes: ['read'],
+          },
+        },
+      });
+      // Consent recorded for the OLD rules_version only.
+      await store.record({ sub: 'X', profileId: PROFILE_ID, rules_version: 'v1', granted_at: Date.now() });
+
+      await expect(t.assertSessionConsent(PROFILE_ID, 'session-1')).rejects.toBeInstanceOf(ConsentRequiredError);
     });
   });
 });

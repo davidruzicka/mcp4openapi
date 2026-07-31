@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Security
+- Consent-gated profiles no longer fall back to the OAuth `client_id` as the session principal subject when no verified OIDC identity is present; the principal is omitted so the consent gate fails closed instead of binding consent to a shared, non-human identity. Non-consent OAuth profiles are unchanged.
 - Token envelope passphrase KDF switched from unsalted SHA-256 to scrypt (CWE-916); existing SHA-256-derived envelopes still decrypt via a legacy fallback key and age out naturally on token refresh (fallback removal tracked in TODO.md, item 18). 64-char hex keys unaffected.
 - Upstream tool sanitizer `strip` HTML policy now repeats tag removal until stable so nested payloads cannot reassemble a tag (CWE-116).
 - Dependency upgrades resolving all `npm audit` findings: hono 4.12.31, @hono/node-server 2.0.11 (requires Node >=20), vitest 4.1.x, vite 6.4.3+, body-parser, brace-expansion, form-data, fast-uri, qs.
@@ -21,7 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `handleOtherRequest` upstream `tools/list` pre-flight error now uses `mapUpstreamErrorToMcpError` (provider-safe message) instead of generic "Internal error"; `req.method` truncated to 200 chars in error logs; `uri` and prompt `name` params capped at 2048/256 chars with `-32602` validation errors.
 
 ### Added
-- Consent-gated upstream MCP profiles: an explicit one-time browser approval is bound to the existing profile OAuth flow, OIDC identity is verified using issuer/JWKS/audience/nonce checks, evidence is persisted in memory or append-only storage (`MCP4_CONSENT_EVIDENCE_PATH`), missing consent blocks upstream dispatch with an actionable `consent_url`, and verified identity survives refresh-token rotation and encrypted-envelope restart recovery (AIPP-432).
+- Consent gate types (`ConsentGateConfig`, `ConsentOAuthConfig`, `Profile.consent_gate`), `ConsentRequiredError`/`ConsentGateConfigurationError`, pluggable consent evidence store (in-memory), `ConsentGate.assertConsent`, and a profile-load-time validator wiring for gating sensitive profiles behind provable human consent bound to `rules_version` (AIPP-432; HTTP consent flow + dispatch enforcement land next).
 - Profile index redirects: `MCP4_HTTP_PROFILE_INDEX_REDIRECT_URL` redirects browser-facing `GET /` requests with configurable `301` or `302` status while JSON profile discovery remains available through `Accept: application/json`.
 - `MCP4_SYSTEM_NOTICE` env var adds a full-width banner at the top of the HTML profile index with configurable severity (`info` / `warning` / `error`) and matching color scheme; plain string defaults to `info`, JSON `{"message":"...","severity":"warning"}` sets severity explicitly.
 - Profile index page (`/`) syncs selected profile to URL hash (e.g. `/#scif`), enabling direct shareable links; hash is read on load so navigating to `/#<profileId>` pre-selects that profile.
