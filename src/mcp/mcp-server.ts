@@ -45,6 +45,7 @@ import {
   AuthorizationError,
   RateLimitError,
   NetworkError,
+  ConsentRequiredError,
   generateCorrelationId
 } from '../core/errors.js';
 import { OAUTH_RATE_LIMIT, INPUT_LIMITS } from '../core/constants.js';
@@ -828,6 +829,7 @@ export class MCPServer {
       parser: this.parser,
       upstreamMcp: this.profile.upstream_mcp,
       client_auth_gate: this.profile.client_auth_gate,
+      consent_gate: this.profile.consent_gate,
     };
   }
 
@@ -1799,6 +1801,28 @@ export class MCPServer {
           this.recordToolFilterRejection(toolName, 'session');
           this.recordUpstreamReject({ toolName, errorType: 'FilterRejection', metrics, startTime, metricsContext, sessionId, correlationId });
           return { jsonrpc: '2.0', id: req.id, error: { code: -32002, message: `Tool '${toolName}' not allowed by X-Mcp4-Tools filter.` } };
+        }
+      }
+      if (sessionId && this.httpTransport?.assertSessionConsent) {
+        try {
+          await this.httpTransport.assertSessionConsent(
+            profileId || this.getProfileIdValue(),
+            sessionId,
+          );
+        } catch (error) {
+          if (error instanceof ConsentRequiredError) {
+            this.recordUpstreamReject({ toolName, errorType: 'ConsentRequired', metrics, startTime, metricsContext, sessionId, correlationId });
+            return {
+              jsonrpc: '2.0',
+              id: req.id,
+              error: {
+                code: -32004,
+                message: 'Consent required',
+                data: { ...error.details, correlationId },
+              },
+            };
+          }
+          throw error;
         }
       }
       // Apply enterprise policy - upstream tools don't have OpenAPI operations so default to 'modify'
@@ -3285,7 +3309,7 @@ export class MCPServer {
 
   private recordUpstreamReject(args: {
     toolName: string;
-    errorType: 'FilterRejection' | 'PolicyRejection' | 'InvalidToolName' | 'SanitizationRejection';
+    errorType: 'FilterRejection' | 'PolicyRejection' | 'InvalidToolName' | 'SanitizationRejection' | 'ConsentRequired';
     metrics: MetricsCollector | null;
     startTime: number;
     metricsContext: MetricsContextLabels;

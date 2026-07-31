@@ -6,7 +6,7 @@
  */
 
 import type { Request as ExpressRequest, Response } from 'express';
-import type { OAuthConfig, AuthInterceptor, EnterpriseAuthorizationConfig, UpstreamMcpServerConfig, ClientAuthGateConfig } from './profile.js';
+import type { OAuthConfig, AuthInterceptor, EnterpriseAuthorizationConfig, UpstreamMcpServerConfig, ClientAuthGateConfig, ConsentGateConfig } from './profile.js';
 import type { HttpTenantIndex } from './http-tenants.js';
 import type { SessionToolFilterRequest, SessionToolFilterCompat as SessionToolFilter } from '../tool-filter/index.js';
 import type { OpenAPIParser } from '../openapi/openapi-parser.js';
@@ -146,6 +146,7 @@ export interface HttpProfileContext {
   parser?: OpenAPIParser;
   upstreamMcp?: UpstreamMcpServerConfig;
   client_auth_gate?: ClientAuthGateConfig;
+  consent_gate?: ConsentGateConfig;
 }
 
 export interface McpRequest extends ExpressRequest {

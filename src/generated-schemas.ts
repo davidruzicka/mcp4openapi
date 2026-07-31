@@ -18,21 +18,12 @@ export const clientAuthGateConfigSchema = z.object({
     api_keys: apiKeyStoreConfigSchema.optional()
 });
 
-export const consentOAuthConfigSchema = z.object({
-    authorization_endpoint: z.string(),
-    token_endpoint: z.string(),
-    client_id: z.string(),
-    client_secret_from_env: z.string().optional(),
-    redirect_uri: z.string(),
-    scopes: z.array(z.string()).optional()
-});
-
 export const consentGateConfigSchema = z.object({
     required: z.boolean(),
     rules_version: z.string(),
     education_resource: z.string().optional(),
     rules_summary: z.string().optional(),
-    oauth: consentOAuthConfigSchema.optional()
+    identity_source: z.literal("profile_oauth")
 });
 
 export const upstreamMcpToolPolicySchema = z.object({

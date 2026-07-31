@@ -2739,6 +2739,70 @@ describeIfListen('HttpTransport', () => {
       expect(response.status).toBe(400);
     });
 
+    it('requires one-time explicit consent before redirecting to the OAuth provider', async () => {
+      const context = (oauthTransport as any).buildDefaultProfileContext();
+      oauthTransport.setProfileContextProvider(async () => ({
+        ...context,
+        consent_gate: {
+          required: true,
+          rules_version: 'v1',
+          rules_summary: 'Accept SharePoint usage rules.',
+          identity_source: 'profile_oauth',
+        },
+      }));
+      const query = {
+        response_type: 'code',
+        client_id: 'test-client',
+        redirect_uri: 'http://localhost:3003/oauth/callback',
+        scope: 'openid read',
+        state: 'client-state',
+        code_challenge: 'challenge',
+        code_challenge_method: 'S256',
+      };
+
+      const consentPage = await request(oauthApp).get('/oauth/authorize').query(query);
+      expect(consentPage.status).toBe(200);
+      expect(consentPage.headers['cache-control']).toBe('no-store');
+      expect(consentPage.headers['content-security-policy']).toContain("form-action 'self'");
+      expect(consentPage.text).toContain('Accept SharePoint usage rules.');
+      const approvalToken = consentPage.text.match(/name="consent_token" value="([^"]+)"/)?.[1];
+      expect(approvalToken).toBeTruthy();
+
+      const approved = await request(oauthApp)
+        .post('/oauth/authorize')
+        .type('form')
+        .send({ ...query, consent_token: approvalToken, consent_accept: 'yes' });
+      expect(approved.status).toBe(302);
+      expect(approved.headers.location).toContain('https://auth.example.com/oauth/authorize');
+
+      const replay = await request(oauthApp)
+        .post('/oauth/authorize')
+        .type('form')
+        .send({ ...query, consent_token: approvalToken, consent_accept: 'yes' });
+      expect(replay.status).toBe(400);
+      expect(replay.text).toContain('Invalid or expired consent approval');
+    });
+
+    it('serves an actionable no-store consent page without granting consent', async () => {
+      const context = (oauthTransport as any).buildDefaultProfileContext();
+      oauthTransport.setProfileContextProvider(async () => ({
+        ...context,
+        consent_gate: {
+          required: true,
+          rules_version: 'v2',
+          rules_summary: 'Updated SharePoint rules.',
+          identity_source: 'profile_oauth',
+        },
+      }));
+
+      const response = await request(oauthApp).get('/consent');
+      expect(response.status).toBe(200);
+      expect(response.headers['cache-control']).toBe('no-store');
+      expect(response.text).toContain('Updated SharePoint rules.');
+      expect(response.text).toContain('Reconnect this MCP server');
+      expect(response.text).not.toContain('<form');
+    });
+
 	    it('should reject authorize request without response_type', async () => {
 	      const response = await request(oauthApp)
 	        .get('/oauth/authorize')

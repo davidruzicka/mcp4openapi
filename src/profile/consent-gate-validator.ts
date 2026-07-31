@@ -13,76 +13,12 @@
  */
 
 import { ConsentGateConfigurationError } from '../core/errors.js';
-import type { ConsentGateConfig, ConsentOAuthConfig, Profile } from '../types/profile.js';
-import { isUri } from '../validation/validation-utils.js';
+import type { AuthInterceptor, ConsentGateConfig, Profile } from '../types/profile.js';
 
-// OAuth endpoints carry the authorization-code exchange, so they must always be
-// TLS-protected. `redirect_uri` may legitimately use a non-https scheme (custom
-// scheme or http://localhost during development), so it is only checked for a
-// valid, non-dangerous URL shape.
-const HTTPS_URL_FIELDS: Array<keyof ConsentOAuthConfig> = [
-  'authorization_endpoint',
-  'token_endpoint',
-];
-
-function assertHttpsUrl(field: keyof ConsentOAuthConfig, value: string): void {
-  if (!isUri(value) || new URL(value).protocol !== 'https:') {
-    throw new ConsentGateConfigurationError(
-      `consent_gate.oauth.${field} must be a valid https:// URL`,
-      { path: `consent_gate.oauth.${field}` },
-    );
-  }
-}
-
-function validateConsentOAuth(oauth: ConsentOAuthConfig): ConsentOAuthConfig {
-  const requiredFields: Array<keyof ConsentOAuthConfig> = [
-    'authorization_endpoint',
-    'token_endpoint',
-    'client_id',
-    'redirect_uri',
-  ];
-  for (const field of requiredFields) {
-    const value = oauth[field];
-    if (typeof value !== 'string' || !value.trim()) {
-      throw new ConsentGateConfigurationError(
-        `consent_gate.oauth.${field} is required and must be a non-empty string`,
-        { path: `consent_gate.oauth.${field}` },
-      );
-    }
-  }
-
-  for (const field of HTTPS_URL_FIELDS) {
-    assertHttpsUrl(field, oauth[field] as string);
-  }
-
-  if (!isUri(oauth.redirect_uri)) {
-    throw new ConsentGateConfigurationError(
-      'consent_gate.oauth.redirect_uri must be a valid URL',
-      { path: 'consent_gate.oauth.redirect_uri' },
-    );
-  }
-
-  // Fail-fast: if a client secret env var is referenced, it must be set at load
-  // time so operators get an actionable error instead of a runtime OAuth failure.
-  if (oauth.client_secret_from_env !== undefined) {
-    if (!oauth.client_secret_from_env.trim()) {
-      throw new ConsentGateConfigurationError(
-        'consent_gate.oauth.client_secret_from_env must be a non-empty env var name when present',
-        { path: 'consent_gate.oauth.client_secret_from_env' },
-      );
-    }
-    if (!process.env[oauth.client_secret_from_env]?.trim()) {
-      throw new ConsentGateConfigurationError(
-        `consent_gate.oauth.client_secret_from_env: env var '${oauth.client_secret_from_env}' is not set`,
-        {
-          path: 'consent_gate.oauth.client_secret_from_env',
-          envVar: oauth.client_secret_from_env,
-        },
-      );
-    }
-  }
-
-  return oauth;
+function getProfileOAuth(profile: Profile): AuthInterceptor | undefined {
+  const auth = profile.interceptors?.auth;
+  const configs = auth ? (Array.isArray(auth) ? auth : [auth]) : [];
+  return configs.find((config) => config.type === 'oauth');
 }
 
 /**
@@ -107,28 +43,49 @@ export function resolveConsentGateConfig(config: ConsentGateConfig): ConsentGate
     );
   }
 
-  // A required gate with no OAuth login can never be satisfied — the human has
-  // no way to prove consent. Reject at load time.
-  if (config.required && !config.oauth) {
+  if (config.identity_source !== 'profile_oauth') {
     throw new ConsentGateConfigurationError(
-      'consent_gate.oauth is required when consent_gate.required is true',
-      { path: 'consent_gate.oauth' },
+      "consent_gate.identity_source must be 'profile_oauth'",
+      { path: 'consent_gate.identity_source' },
     );
   }
-
-  const oauth = config.oauth ? validateConsentOAuth(config.oauth) : undefined;
 
   return {
     required: config.required,
     rules_version: config.rules_version,
     education_resource: config.education_resource,
     rules_summary: config.rules_summary,
-    oauth,
+    identity_source: config.identity_source,
   };
 }
 
 export function validateConsentGateProfile(profile: Profile): ConsentGateConfig | undefined {
   const config = profile.consent_gate;
   if (!config) return undefined;
-  return resolveConsentGateConfig(config);
+  const resolved = resolveConsentGateConfig(config);
+  if (!resolved.required) return resolved;
+
+  const oauth = getProfileOAuth(profile);
+  if (!oauth?.oauth_config) {
+    throw new ConsentGateConfigurationError(
+      'consent_gate with identity_source=profile_oauth requires a profile OAuth interceptor',
+      { path: 'interceptors.auth' },
+    );
+  }
+  if (!oauth.oauth_config.scopes?.includes('openid')) {
+    throw new ConsentGateConfigurationError(
+      "profile OAuth must request the 'openid' scope when consent_gate is required",
+      { path: 'interceptors.auth.oauth_config.scopes' },
+    );
+  }
+  for (const field of ['issuer', 'client_id', 'redirect_uri'] as const) {
+    const value = oauth.oauth_config[field];
+    if (typeof value !== 'string' || !value.trim()) {
+      throw new ConsentGateConfigurationError(
+        `profile OAuth ${field} is required when consent_gate is enabled`,
+        { path: `interceptors.auth.oauth_config.${field}` },
+      );
+    }
+  }
+  return resolved;
 }

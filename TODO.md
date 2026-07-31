@@ -7,7 +7,7 @@
 ## Contents
 
 - [P1: Important](#p1-important)
-  - [1. Wire consent gate enforcement + consent OAuth grant flow](#1-wire-consent-gate-enforcement--consent-oauth-grant-flow)
+  - [1. Add a transactional multi-replica consent evidence backend](#1-add-a-transactional-multi-replica-consent-evidence-backend)
 - [P3: Optional](#p3-optional)
   - [17. Eager SSRF validation for SasankaApiKeyStore at profile load](#17-eager-ssrf-validation-for-sasankaapikeystore-at-profile-load)
   - [18. Remove legacy SHA-256 token envelope KDF fallback](#18-remove-legacy-sha-256-token-envelope-kdf-fallback)
@@ -28,15 +28,13 @@
 
 ## P1: Important
 
-### 1. Wire consent gate enforcement + consent OAuth grant flow
-**Goal**: Make `consent_gate` actually enforce at runtime. Today the config is validated at load time (`consent-gate-validator.ts`) and the `ConsentGate` / `ConsentEvidenceStore` primitives exist, but nothing calls `ConsentGate.assertConsent` in the tool-dispatch path and no HTTP route calls `ConsentEvidenceStore.record`. A `consent_gate.required` profile is therefore inert.
+### 1. Add a transactional multi-replica consent evidence backend
+**Goal**: Replace the single-node append-only file backend with a transactional store shared by all HTTP replicas. The current `FileConsentEvidenceStore` is durable and reloads external writes, but concurrent grants across multiple writers are not transactionally deduplicated.
 
-**Must ship together (partial wiring is harmful)**:
-- Instantiate `ConsentGate` + evidence store (via `createConsentEvidenceStore`) per profile, with a transport-owned `consentUrlFor(profileId)` resolver.
-- Call `assertConsent(principal)` before upstream tool dispatch; map `ConsentRequiredError` to a client response carrying `consent_url`.
-- Add the consent OAuth grant flow: a browser login (using `ConsentOAuthConfig`) whose callback calls `store.record(...)` for the authenticated subject + `rules_version`. Without this, enabling enforcement blocks every tool call with no way to grant consent.
-- Replace `InMemoryConsentEvidenceStore` with a persistent, auditable backend before production (durable who/when/rules_version trail, shared across replicas).
-- Tests: enforcement blocks without consent, allows after recorded consent, anonymous session always blocked, `rules_version` bump forces re-acceptance.
+**Implementation**:
+- Add a database/managed-store implementation behind `ConsentEvidenceStore` with a unique key on subject + profile + rules version.
+- Preserve the original `granted_at` on idempotent replays and expose storage failures as fail-closed typed errors.
+- Add concurrency, restart, partial-outage, and multi-replica tests.
 
 ## P2: Nice-to-Have
 

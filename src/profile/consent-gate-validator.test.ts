@@ -5,17 +5,7 @@ import {
   validateConsentGateProfile,
 } from './consent-gate-validator.js';
 import { ConsentGateConfigurationError } from '../core/errors.js';
-import type { ConsentOAuthConfig, Profile } from '../types/profile.js';
-
-const SECRET_ENV = 'CONSENT_GATE_TEST_CLIENT_SECRET';
-
-const validOAuth = (): ConsentOAuthConfig => ({
-  authorization_endpoint: 'https://login.example.test/authorize',
-  token_endpoint: 'https://login.example.test/token',
-  client_id: 'consent-client',
-  redirect_uri: 'https://mcp.example.test/consent/ms365/callback',
-  scopes: ['openid'],
-});
+import type { Profile } from '../types/profile.js';
 
 function createProfile(overrides?: Partial<Profile>): Profile {
   return {
@@ -26,91 +16,32 @@ function createProfile(overrides?: Partial<Profile>): Profile {
 }
 
 describe('resolveConsentGateConfig', () => {
-  afterEach(() => {
-    delete process.env[SECRET_ENV];
-  });
-
-  it('accepts a valid required config with OAuth', () => {
+  it('accepts a valid required config bound to profile OAuth', () => {
     const result = resolveConsentGateConfig({
       required: true,
       rules_version: 'v1',
-      oauth: validOAuth(),
+      identity_source: 'profile_oauth',
     });
     expect(result.required).toBe(true);
     expect(result.rules_version).toBe('v1');
-    expect(result.oauth?.client_id).toBe('consent-client');
+    expect(result.identity_source).toBe('profile_oauth');
   });
 
-  it('accepts required=false without OAuth', () => {
-    const result = resolveConsentGateConfig({ required: false, rules_version: 'v1' });
+  it('accepts required=false with profile OAuth identity source', () => {
+    const result = resolveConsentGateConfig({ required: false, rules_version: 'v1', identity_source: 'profile_oauth' });
     expect(result.required).toBe(false);
-    expect(result.oauth).toBeUndefined();
   });
 
   it('rejects an empty rules_version', () => {
     expect(() =>
-      resolveConsentGateConfig({ required: false, rules_version: '   ' }),
+      resolveConsentGateConfig({ required: false, rules_version: '   ', identity_source: 'profile_oauth' }),
     ).toThrow(ConsentGateConfigurationError);
   });
 
-  it('rejects required=true without an OAuth login', () => {
+  it('rejects an unsupported identity source', () => {
     expect(() =>
-      resolveConsentGateConfig({ required: true, rules_version: 'v1' }),
+      resolveConsentGateConfig({ required: true, rules_version: 'v1', identity_source: 'other' as 'profile_oauth' }),
     ).toThrow(ConsentGateConfigurationError);
-  });
-
-  it('rejects an OAuth block missing a required field', () => {
-    const oauth = validOAuth();
-    oauth.token_endpoint = '';
-    expect(() =>
-      resolveConsentGateConfig({ required: true, rules_version: 'v1', oauth }),
-    ).toThrow(ConsentGateConfigurationError);
-  });
-
-  it('rejects a non-https authorization_endpoint', () => {
-    const oauth = { ...validOAuth(), authorization_endpoint: 'http://login.example.test/authorize' };
-    expect(() =>
-      resolveConsentGateConfig({ required: true, rules_version: 'v1', oauth }),
-    ).toThrow(ConsentGateConfigurationError);
-  });
-
-  it('rejects a malformed token_endpoint', () => {
-    const oauth = { ...validOAuth(), token_endpoint: 'not-a-url' };
-    expect(() =>
-      resolveConsentGateConfig({ required: true, rules_version: 'v1', oauth }),
-    ).toThrow(ConsentGateConfigurationError);
-  });
-
-  it('rejects a redirect_uri with a dangerous scheme', () => {
-    const oauth = { ...validOAuth(), redirect_uri: 'javascript:alert(1)' };
-    expect(() =>
-      resolveConsentGateConfig({ required: true, rules_version: 'v1', oauth }),
-    ).toThrow(ConsentGateConfigurationError);
-  });
-
-  it('accepts an http://localhost redirect_uri for local development', () => {
-    const oauth = { ...validOAuth(), redirect_uri: 'http://localhost:3000/consent/callback' };
-    const result = resolveConsentGateConfig({ required: true, rules_version: 'v1', oauth });
-    expect(result.oauth?.redirect_uri).toBe('http://localhost:3000/consent/callback');
-  });
-
-  it('rejects when client_secret_from_env references an unset env var', () => {
-    delete process.env[SECRET_ENV];
-    const oauth = { ...validOAuth(), client_secret_from_env: SECRET_ENV };
-    expect(() =>
-      resolveConsentGateConfig({ required: true, rules_version: 'v1', oauth }),
-    ).toThrow(ConsentGateConfigurationError);
-  });
-
-  it('accepts when client_secret_from_env references a set env var', () => {
-    process.env[SECRET_ENV] = 'shhh';
-    const oauth = { ...validOAuth(), client_secret_from_env: SECRET_ENV };
-    const result = resolveConsentGateConfig({
-      required: true,
-      rules_version: 'v1',
-      oauth,
-    });
-    expect(result.oauth?.client_secret_from_env).toBe(SECRET_ENV);
   });
 });
 
@@ -123,7 +54,6 @@ describe('validateConsentGateProfile', () => {
 
   afterEach(() => {
     process.env.NODE_ENV = previousNodeEnv;
-    delete process.env[SECRET_ENV];
   });
 
   it('returns undefined when consent_gate is not configured', () => {
@@ -133,18 +63,36 @@ describe('validateConsentGateProfile', () => {
   it('returns the resolved config when consent_gate is valid', () => {
     const config = validateConsentGateProfile(
       createProfile({
-        consent_gate: { required: true, rules_version: 'v1', oauth: validOAuth() },
+        consent_gate: { required: true, rules_version: 'v1', identity_source: 'profile_oauth' },
+        interceptors: {
+          auth: {
+            type: 'oauth',
+            oauth_config: {
+              issuer: 'https://login.example.test',
+              client_id: 'client',
+              redirect_uri: 'https://gateway.example.test/oauth/callback',
+              scopes: ['openid'],
+            },
+          },
+        },
       }),
     );
     expect(config?.required).toBe(true);
     expect(config?.rules_version).toBe('v1');
   });
 
-  it('propagates configuration errors from an invalid consent_gate', () => {
+  it('rejects a required gate without profile OAuth', () => {
     expect(() =>
       validateConsentGateProfile(
-        createProfile({ consent_gate: { required: true, rules_version: 'v1' } }),
+        createProfile({ consent_gate: { required: true, rules_version: 'v1', identity_source: 'profile_oauth' } }),
       ),
     ).toThrow(ConsentGateConfigurationError);
+  });
+
+  it('rejects profile OAuth without openid scope', () => {
+    expect(() => validateConsentGateProfile(createProfile({
+      consent_gate: { required: true, rules_version: 'v1', identity_source: 'profile_oauth' },
+      interceptors: { auth: { type: 'oauth', oauth_config: { issuer: 'https://login.example.test', scopes: ['Files.Read'] } } },
+    }))).toThrow(ConsentGateConfigurationError);
   });
 });

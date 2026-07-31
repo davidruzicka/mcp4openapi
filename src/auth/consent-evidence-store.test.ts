@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
+import { mkdtemp, readFile } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 
 import {
+  FileConsentEvidenceStore,
   consentEvidenceKey,
   InMemoryConsentEvidenceStore,
 } from './consent-evidence-store.js';
@@ -73,5 +77,28 @@ describe('InMemoryConsentEvidenceStore', () => {
     // Idempotent: still recorded, first grant wins (no assertion on internals
     // beyond presence, which is the store's public contract).
     expect(await store.has('user-1', 'ms365', 'v1')).toBe(true);
+  });
+});
+
+describe('FileConsentEvidenceStore', () => {
+  it('persists evidence across store instances and keeps the first grant', async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), 'mcp4-consent-'));
+    const filePath = path.join(directory, 'evidence.jsonl');
+    const first = new FileConsentEvidenceStore(filePath);
+    await first.record({ sub: 'user-1', profileId: 'ms365', rules_version: 'v1', granted_at: 100 });
+    await first.record({ sub: 'user-1', profileId: 'ms365', rules_version: 'v1', granted_at: 200 });
+
+    const restarted = new FileConsentEvidenceStore(filePath);
+    await expect(restarted.has('user-1', 'ms365', 'v1')).resolves.toBe(true);
+    expect((await readFile(filePath, 'utf8')).trim().split('\n')).toHaveLength(1);
+    expect(JSON.parse(await readFile(filePath, 'utf8'))).toMatchObject({ granted_at: 100 });
+  });
+
+  it('rejects malformed persisted evidence instead of silently accepting it', async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), 'mcp4-consent-'));
+    const filePath = path.join(directory, 'evidence.jsonl');
+    await import('node:fs/promises').then(({ writeFile }) => writeFile(filePath, '{"sub":"user"}\n'));
+    await expect(new FileConsentEvidenceStore(filePath).has('user', 'ms365', 'v1'))
+      .rejects.toThrow('invalid record');
   });
 });

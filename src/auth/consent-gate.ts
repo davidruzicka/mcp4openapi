@@ -17,12 +17,10 @@ import { ConsentRequiredError } from '../core/errors.js';
  * provable human identity (`principal.subject`) established by the interactive
  * OAuth login that drives `ConsentEvidenceStore.record`.
  *
- * TODO(consent-gate): NOT YET WIRED INTO RUNTIME. `assertConsent` is not called
- * from the tool-dispatch path and no HTTP route calls `ConsentEvidenceStore.record`
- * yet, so a `consent_gate.required` profile is currently inert (config is only
- * validated at load time). Enforcement must NOT be enabled before the consent
- * OAuth grant flow exists, otherwise a required gate would block every tool call
- * with no way to ever record consent. See TODO.md "Wire consent gate enforcement".
+ * HTTP transport invokes this gate before upstream tool dispatch. Consent is
+ * recorded only after explicit browser approval and cryptographically verified
+ * profile-OAuth identity. Stdio cannot complete that browser flow and therefore
+ * remains unavailable for required consent-gated upstream profiles.
  */
 export class ConsentGate {
   constructor(

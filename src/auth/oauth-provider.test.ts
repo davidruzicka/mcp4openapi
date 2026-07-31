@@ -1266,6 +1266,56 @@ describe('ExternalOAuthProvider', () => {
       expect(mockRes.send).toHaveBeenCalledWith('Invalid or expired state');
     });
 
+    it('binds a cryptographically verified OIDC identity to the exchanged access token', async () => {
+      const identityVerifier = {
+        verify: vi.fn().mockResolvedValue({
+          subject: 'user-object-id',
+          issuer: 'https://issuer.example.test',
+          tenantId: 'tenant-id',
+        }),
+      };
+      provider = new ExternalOAuthProvider(config, mockLogger, identityVerifier as never);
+      const client: OAuthClientInformationFull = {
+        client_id: 'client-123',
+        redirect_uris: ['http://localhost:3003/callback'],
+        grant_types: ['authorization_code'],
+        response_types: ['code'],
+      };
+      (provider as any)._clientsStore.registerClient(client);
+      (provider as any).stateStore.set('state123', {
+        clientRedirectUri: 'http://localhost:3003/callback',
+        codeChallenge: '',
+        originalState: 'orig',
+        clientId: client.client_id,
+        scopes: ['openid'],
+        nonce: 'nonce-1',
+        createdAt: Date.now(),
+      });
+      (provider as any).exchangeCodeWithProvider = vi.fn().mockResolvedValue({
+        access_token: 'external-access-token',
+        id_token: 'signed-id-token',
+        expires_in: 3600,
+        token_type: 'Bearer',
+      });
+      const response = {
+        status: vi.fn().mockReturnThis(),
+        send: vi.fn(),
+        redirect: vi.fn(),
+      } as any;
+
+      await provider.handleCallback({ query: { code: 'code', state: 'state123' } } as any, response);
+      const redirect = new URL(response.redirect.mock.calls[0][0]);
+      const internalCode = redirect.searchParams.get('code')!;
+      const tokens = await provider.exchangeAuthorizationCode(client, internalCode);
+
+      expect(identityVerifier.verify).toHaveBeenCalledWith('signed-id-token', 'nonce-1');
+      expect(provider.getIdentityForAccessToken(tokens.access_token)).toEqual({
+        subject: 'user-object-id',
+        issuer: 'https://issuer.example.test',
+        tenantId: 'tenant-id',
+      });
+    });
+
     it('should return 400 when stored redirect host is disallowed during callback', async () => {
       const configWithAllowedHosts = {
         ...config,
@@ -1462,6 +1512,30 @@ describe('ExternalOAuthProvider', () => {
           method: 'POST',
         })
       );
+    });
+
+    it('preserves verified identity across refresh token rotation', async () => {
+      const identity = { subject: 'user-1', issuer: 'https://issuer.example.test' };
+      (provider as any).refreshTokenIdentities.set('old-refresh', {
+        identity,
+        expiresAt: Date.now() + 60_000,
+      });
+      vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response(JSON.stringify({
+        access_token: 'new-access',
+        refresh_token: 'new-refresh',
+        token_type: 'Bearer',
+        expires_in: 3600,
+      }), { status: 200, headers: { 'content-type': 'application/json' } }));
+      (provider as any).ssrfValidator.validate = vi.fn(async () => undefined);
+
+      await provider.exchangeRefreshToken(
+        { client_id: 'client', redirect_uris: [], grant_types: ['refresh_token'], response_types: [] },
+        'old-refresh',
+      );
+
+      expect(provider.getIdentityForAccessToken('new-access')).toEqual(identity);
+      expect((provider as any).refreshTokenIdentities.has('old-refresh')).toBe(false);
+      expect((provider as any).refreshTokenIdentities.get('new-refresh').identity).toEqual(identity);
     });
 
     it('should throw on failed refresh', async () => {

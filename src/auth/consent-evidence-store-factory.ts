@@ -1,6 +1,7 @@
 import type { Logger } from '../core/logger.js';
 import type { ConsentEvidenceStore } from './consent-evidence-store.js';
-import { InMemoryConsentEvidenceStore } from './consent-evidence-store.js';
+import { FileConsentEvidenceStore, InMemoryConsentEvidenceStore } from './consent-evidence-store.js';
+
 
 /**
  * Construct a `ConsentEvidenceStore`.
@@ -11,5 +12,9 @@ import { InMemoryConsentEvidenceStore } from './consent-evidence-store.js';
  * replicas) can be added here without changing the call site signature.
  */
 export function createConsentEvidenceStore(_logger: Logger): ConsentEvidenceStore {
+  const filePath = process.env.MCP4_CONSENT_EVIDENCE_PATH?.trim();
+  if (filePath) {
+    return new FileConsentEvidenceStore(filePath);
+  }
   return new InMemoryConsentEvidenceStore();
 }

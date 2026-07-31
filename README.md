@@ -246,8 +246,11 @@ Predefined profiles in the `profiles/` directory contains names for easy referen
 - n8n profile: `n8n`
 - n8n simple node listing profile: `n8n-nodes`
 - DefectDojo profile: `defectdojo`
+- Softeria SharePoint read-only profile: `softeria-sharepoint` (alias `ms365-sharepoint`)
 
 Profiles are resolved from `./profiles` path by default. If that directory is missing, the bundled npm package profiles are used. Override with `--profiles-dir` or `MCP4_PROFILES_DIR`.
+
+The Softeria profile requires HTTP transport and profile OAuth. Set a single-tenant Entra issuer, app credentials, callback URI, durable consent evidence path, and deployment-specific upstream object. Run Softeria with `--org-mode --read-only --enabled-tools 'sharepoint|site|drive' --allowed-scopes 'User.Read Files.Read Sites.Selected'`; verify every deployed version with `--list-permissions` before rollout.
 
 ##### ⚠️ Prerequisites
 

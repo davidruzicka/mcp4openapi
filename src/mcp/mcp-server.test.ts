@@ -22,7 +22,8 @@ import {
   ValidationError,
   OperationNotFoundError,
   ConfigurationError,
-  ResourceNotFoundError
+  ResourceNotFoundError,
+  ConsentRequiredError,
 } from '../core/errors.js';
 import {
   UpstreamConnectionError,
@@ -4077,6 +4078,7 @@ paths:
         getSessionEnterpriseTiers: () => undefined,
         getSessionEnterpriseAllowedToolCategories: () => undefined,
         recordToolFilterRejection: () => {},
+        assertSessionConsent: vi.fn(async () => undefined),
       };
       // Wire the upstream client callback
       upstreamServer.setGetUpstreamClient(mockGetUpstreamClient);
@@ -4289,6 +4291,55 @@ paths:
 
     // -------------------------------------------------------------------------
     describe('tools/call upstream forwarding', () => {
+      it('asserts session consent before forwarding a call upstream', async () => {
+        await (upstreamServer as any).handleToolCall(
+          {
+            jsonrpc: '2.0',
+            id: 'consent-ok',
+            method: 'tools/call',
+            params: { name: 'safe_tool', arguments: {} },
+          },
+          'session-123',
+          'upstream-profile',
+        );
+
+        expect((upstreamServer as any).httpTransport.assertSessionConsent)
+          .toHaveBeenCalledWith('upstream-profile', 'session-123');
+        expect(mockCallTool).toHaveBeenCalledOnce();
+      });
+
+      it('returns actionable consent details and does not call upstream when consent is missing', async () => {
+        (upstreamServer as any).httpTransport.assertSessionConsent.mockRejectedValueOnce(
+          new ConsentRequiredError('Consent required', {
+            profileId: 'upstream-profile',
+            rules_version: 'v1',
+            consent_url: 'https://gateway.example/profile/upstream-profile/oauth/authorize',
+          }),
+        );
+
+        const response = await (upstreamServer as any).handleToolCall(
+          {
+            jsonrpc: '2.0',
+            id: 'consent-missing',
+            method: 'tools/call',
+            params: { name: 'safe_tool', arguments: {} },
+          },
+          'session-123',
+          'upstream-profile',
+        );
+        expect(response.error).toMatchObject({
+          code: -32004,
+          message: 'Consent required',
+          data: {
+            profileId: 'upstream-profile',
+            rules_version: 'v1',
+            consent_url: 'https://gateway.example/profile/upstream-profile/oauth/authorize',
+          },
+        });
+        expect(response.error.data.correlationId).toEqual(expect.any(String));
+        expect(mockCallTool).not.toHaveBeenCalled();
+      });
+
       it('forwards call to upstream client with correct name and arguments', async () => {
         const response = await (upstreamServer as any).handleToolCall(
           {

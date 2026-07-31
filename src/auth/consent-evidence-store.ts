@@ -1,3 +1,6 @@
+import { appendFile, mkdir, readFile, stat } from 'node:fs/promises';
+import path from 'node:path';
+
 /**
  * Pluggable store for consent evidence.
  *
@@ -66,5 +69,72 @@ export class InMemoryConsentEvidenceStore implements ConsentEvidenceStore {
 
   async has(sub: string, profileId: string, rulesVersion: string): Promise<boolean> {
     return this.records.has(consentEvidenceKey(sub, profileId, rulesVersion));
+  }
+}
+
+/**
+ * Durable append-only consent evidence store for single-node deployments.
+ *
+ * The file is reloaded when its mtime changes so independent gateway processes
+ * on a shared filesystem can observe newly granted consent. Deployments that
+ * require stronger cross-node transaction guarantees should replace this store
+ * behind the same interface.
+ */
+export class FileConsentEvidenceStore implements ConsentEvidenceStore {
+  private readonly records = new Map<string, ConsentEvidence>();
+  private loadedMtimeMs = -1;
+  private writeQueue: Promise<void> = Promise.resolve();
+
+  constructor(private readonly filePath: string) {}
+
+  async record(evidence: ConsentEvidence): Promise<void> {
+    this.writeQueue = this.writeQueue.then(async () => {
+      await this.reloadIfChanged();
+      const key = consentEvidenceKey(evidence.sub, evidence.profileId, evidence.rules_version);
+      if (this.records.has(key)) return;
+      await mkdir(path.dirname(this.filePath), { recursive: true, mode: 0o700 });
+      await appendFile(this.filePath, `${JSON.stringify(evidence)}\n`, { encoding: 'utf8', mode: 0o600 });
+      this.records.set(key, { ...evidence });
+      this.loadedMtimeMs = (await stat(this.filePath)).mtimeMs;
+    });
+    return this.writeQueue;
+  }
+
+  async has(sub: string, profileId: string, rulesVersion: string): Promise<boolean> {
+    await this.writeQueue;
+    await this.reloadIfChanged();
+    return this.records.has(consentEvidenceKey(sub, profileId, rulesVersion));
+  }
+
+  private async reloadIfChanged(): Promise<void> {
+    let mtimeMs: number;
+    try {
+      mtimeMs = (await stat(this.filePath)).mtimeMs;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return;
+      throw error;
+    }
+    if (mtimeMs === this.loadedMtimeMs) return;
+
+    const content = await readFile(this.filePath, 'utf8');
+    const reloaded = new Map<string, ConsentEvidence>();
+    for (const line of content.split('\n')) {
+      if (!line.trim()) continue;
+      const parsed = JSON.parse(line) as Partial<ConsentEvidence>;
+      if (
+        typeof parsed.sub !== 'string' ||
+        typeof parsed.profileId !== 'string' ||
+        typeof parsed.rules_version !== 'string' ||
+        typeof parsed.granted_at !== 'number'
+      ) {
+        throw new Error('Consent evidence file contains an invalid record');
+      }
+      const evidence = parsed as ConsentEvidence;
+      const key = consentEvidenceKey(evidence.sub, evidence.profileId, evidence.rules_version);
+      if (!reloaded.has(key)) reloaded.set(key, evidence);
+    }
+    this.records.clear();
+    for (const [key, evidence] of reloaded) this.records.set(key, evidence);
+    this.loadedMtimeMs = mtimeMs;
   }
 }

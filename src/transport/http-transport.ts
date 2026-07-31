@@ -37,6 +37,10 @@ import { InboundAuthTokenStore } from '../auth/inbound-auth-token-store.js';
 import { EnterpriseReplayStore } from '../auth/enterprise-replay-store.js';
 import { JwksCache } from '../auth/jwks-cache.js';
 import { ClientAuthGate } from '../auth/client-auth-gate.js';
+import { ConsentGate } from '../auth/consent-gate.js';
+import type { ConsentEvidenceStore } from '../auth/consent-evidence-store.js';
+import { createConsentEvidenceStore } from '../auth/consent-evidence-store-factory.js';
+import { OidcIdentityVerifier } from '../auth/oidc-identity-verifier.js';
 import type { AuthorizedPrincipal } from '../auth/inbound-auth-principal.js';
 import { ClientAuthGateError } from '../core/errors.js';
 import { buildAuthorizationServerMetadata, buildProtectedResourceMetadata } from '../auth/enterprise-metadata.js';
@@ -114,6 +118,8 @@ interface ProfileRuntimeState {
    * widen this gate to cover JWT validation; the field stays the same.
    */
   clientAuthGate?: ClientAuthGate;
+  consentGate?: ConsentGate;
+  consentEvidenceStore?: ConsentEvidenceStore;
   toolFilterService?: ToolFilterService;
   oauthTokensByAccessToken: Map<string, { refreshToken?: string; expiresAt?: number; clientId: string; scopes: string[]; rawAccessToken?: string }>;
   sessions: Map<string, SessionData>;
@@ -133,9 +139,14 @@ interface OAuthRequiredErrorResponse {
   };
 }
 
+interface PendingConsentApproval {
+  fingerprint: string;
+  expiresAt: number;
+}
+
 export class HttpTransport {
   private static readonly HTTP_ERROR_RESPONSE_RULES: ReadonlyArray<{
-    ctor: new (...args: any[]) => Error;
+    ctor: new (...args: never[]) => Error;
     status: number;
     errorLabel: string;
     messagePrefix: string;
@@ -193,6 +204,7 @@ export class HttpTransport {
   private readonly enterpriseRuntimeConfig: Required<EnterpriseAuthorizationRuntimeConfig>;
   private readonly inboundAuthTokenStore: InboundAuthTokenStore;
   private readonly enterpriseJwksCache: JwksCache;
+  private readonly pendingConsentApprovals = new Map<string, PendingConsentApproval>();
   private readonly enterpriseReplayStore: EnterpriseReplayStore;
   private readonly enterpriseGrantAttemptsByProfile = new Map<string, number[]>();
   private readonly enterpriseGrantConcurrencyByProfile = new Map<string, number>();
@@ -525,6 +537,7 @@ export class HttpTransport {
       parser: this.config.parser,
       upstreamMcp: this.config.upstreamMcp,
       client_auth_gate: this.config.client_auth_gate,
+      consent_gate: undefined,
     };
   }
 
@@ -576,7 +589,7 @@ export class HttpTransport {
             endpoint: oauthProvider.authorizationEndpoint || '(to be derived from issuer)',
             hasIssuer: !!context.oauthConfig.issuer,
           });
-        } catch (err) {
+        } catch {
           // Catches edge cases: env var changed between check and construction, etc.
           // Use a generic message — err.message from resolveEnvVars contains raw env var names.
           oauthDisabledReason = 'OAuth provider construction failed after pre-flight check (env var removed at runtime)';
@@ -616,6 +629,41 @@ export class HttpTransport {
       tenantIndex,
       tenantOAuthProvidersBySessionId: new Map(),
     };
+
+    if (context.consent_gate?.required) {
+      if (!oauthProvider?.issuer || !oauthProvider.configuredClientId) {
+        throw new ConfigurationError('Required consent gate needs profile OAuth issuer and client_id');
+      }
+      const store = createConsentEvidenceStore(this.logger);
+      const gate = new ConsentGate(
+        profileId,
+        context.consent_gate,
+        store,
+        (id) => this.buildProfileUrl(id, '/consent'),
+        this.logger,
+      );
+      const verifier = new OidcIdentityVerifier({
+        issuer: oauthProvider.issuer,
+        audience: oauthProvider.configuredClientId,
+        jwksCache: this.enterpriseJwksCache,
+        logger: this.logger,
+      });
+      oauthProvider.configureIdentityVerification(verifier, async (identity) => {
+        await store.record({
+          sub: identity.subject,
+          profileId,
+          rules_version: context!.consent_gate!.rules_version,
+          granted_at: Date.now(),
+        });
+        this.logger.info('Consent evidence recorded', {
+          profileId,
+          rulesVersion: context!.consent_gate!.rules_version,
+          subjectHash: crypto.createHash('sha256').update(identity.subject).digest('hex').slice(0, 16),
+        });
+      });
+      state.consentEvidenceStore = store;
+      state.consentGate = gate;
+    }
 
     if (tenantIndex.enabled) {
       this.logger.info('HTTP tenant configuration enabled', { profileId, tenantCount: tenantIndex.byTenantId.size });
@@ -1396,6 +1444,19 @@ export class HttpTransport {
         ...withProfile((req, res, profileState) => this.handleOAuthAuthorize(req, res, profileState))
       );
 
+      this.app.get(
+        `${basePath}/consent`,
+        ...withProfile((req, res, profileState) => this.handleConsentInfo(res, profileState))
+      );
+
+      this.app.post(
+        `${basePath}${OAUTH_PATHS.AUTHORIZE}`,
+        ...middlewares,
+        oauthRateLimiter,
+        express.urlencoded({ extended: false, limit: '50kb' }),
+        withProfileState((req, res, profileState) => this.handleOAuthAuthorize(req, res, profileState))
+      );
+
       this.app.post(
         `${basePath}${OAUTH_PATHS.TOKEN}`,
         ...middlewares,
@@ -1545,6 +1606,14 @@ export class HttpTransport {
           attachProfileFromHint,
           oauthRateLimiter,
           // codeql[js/missing-rate-limiting] OAuth limiter is explicitly applied above.
+          withProfileState((req, res, profileState) => this.handleOAuthAuthorize(req, res, profileState))
+        );
+
+        this.app.post(
+          OAUTH_PATHS.AUTHORIZE,
+          attachProfileFromHint,
+          oauthRateLimiter,
+          express.urlencoded({ extended: false, limit: '50kb' }),
           withProfileState((req, res, profileState) => this.handleOAuthAuthorize(req, res, profileState))
         );
 
@@ -1952,7 +2021,8 @@ export class HttpTransport {
     try {
       res.setHeader('Cache-Control', 'no-store');
 
-      const { response_type, client_id, redirect_uri, scope, state, code_challenge, code_challenge_method } = req.query;
+      const input = req.method === 'POST' ? req.body as Record<string, unknown> : req.query;
+      const { response_type, client_id, redirect_uri, scope, state, code_challenge, code_challenge_method } = input;
 
       if (!client_id || typeof client_id !== 'string') {
         res.status(HTTP_STATUS.BAD_REQUEST).send('Missing client_id');
@@ -1997,11 +2067,83 @@ export class HttpTransport {
         scopes: scopeStr ? scopeStr.split(' ') : [],
       };
 
+      if (profileState.context.consent_gate?.required) {
+        const fingerprint = this.consentRequestFingerprint(profileState.profileId, input);
+        if (req.method !== 'POST') {
+          this.renderConsentApproval(res, profileState, input, fingerprint);
+          return;
+        }
+        const approvalToken = typeof input.consent_token === 'string' ? input.consent_token : '';
+        if (input.consent_accept !== 'yes' || !this.consumeConsentApproval(approvalToken, fingerprint)) {
+          res.status(HTTP_STATUS.BAD_REQUEST).send('Invalid or expired consent approval');
+          return;
+        }
+      }
+
       await profileState.oauthProvider.authorize(client, params, res);
     } catch (error) {
       this.logger.error('OAuth authorize error', error instanceof Error ? error : new Error(String(error)));
       res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).send('OAuth authorization failed');
     }
+  }
+
+  private consentRequestFingerprint(profileId: string, input: Record<string, unknown>): string {
+    const fields = ['response_type', 'client_id', 'redirect_uri', 'scope', 'state', 'code_challenge', 'code_challenge_method'];
+    const canonical = fields.map((field) => `${field}=${typeof input[field] === 'string' ? input[field] : ''}`).join('&');
+    return crypto.createHash('sha256').update(`${profileId}\n${canonical}`).digest('base64url');
+  }
+
+  private handleConsentInfo(res: Response, profileState: ProfileRuntimeState): void {
+    const gate = profileState.context.consent_gate;
+    if (!gate?.required) {
+      res.status(HTTP_STATUS.NOT_FOUND).send('Consent is not configured for this profile');
+      return;
+    }
+    const education = gate.education_resource
+      ? `<p><a href="${escapeHtmlSafe(gate.education_resource)}" rel="noopener noreferrer" target="_blank">Read the usage rules</a></p>`
+      : '';
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'");
+    res.status(HTTP_STATUS.OK).type('html').send(`<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Consent required</title></head><body><main><h1>Consent required</h1><p>${escapeHtmlSafe(gate.rules_summary ?? 'Access requires accepting the current usage rules.')}</p>${education}<p>Reconnect this MCP server in your client to start the secure sign-in and consent flow for rules version ${escapeHtmlSafe(gate.rules_version)}.</p></main></body></html>`);
+  }
+
+  private renderConsentApproval(
+    res: Response,
+    profileState: ProfileRuntimeState,
+    input: Record<string, unknown>,
+    fingerprint: string,
+  ): void {
+    const now = Date.now();
+    for (const [token, pending] of this.pendingConsentApprovals) {
+      if (pending.expiresAt <= now) this.pendingConsentApprovals.delete(token);
+    }
+    while (this.pendingConsentApprovals.size >= 1000) {
+      const oldest = this.pendingConsentApprovals.keys().next().value;
+      if (!oldest) break;
+      this.pendingConsentApprovals.delete(oldest);
+    }
+    const token = crypto.randomBytes(32).toString('base64url');
+    this.pendingConsentApprovals.set(token, { fingerprint, expiresAt: now + 5 * 60 * 1000 });
+
+    const hiddenFields = ['response_type', 'client_id', 'redirect_uri', 'scope', 'state', 'code_challenge', 'code_challenge_method']
+      .filter((field) => typeof input[field] === 'string')
+      .map((field) => `<input type="hidden" name="${field}" value="${escapeHtmlSafe(input[field] as string)}">`)
+      .join('');
+    const gate = profileState.context.consent_gate!;
+    const summary = escapeHtmlSafe(gate.rules_summary ?? 'Access requires accepting the current usage rules.');
+    const education = gate.education_resource
+      ? `<p><a href="${escapeHtmlSafe(gate.education_resource)}" rel="noopener noreferrer" target="_blank">Read the usage rules</a></p>`
+      : '';
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'");
+    res.status(HTTP_STATUS.OK).type('html').send(`<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Consent required</title></head><body><main><h1>Consent required</h1><p>${summary}</p>${education}<form method="post">${hiddenFields}<input type="hidden" name="consent_token" value="${token}"><label><input type="checkbox" name="consent_accept" value="yes" required> I accept rules version ${escapeHtmlSafe(gate.rules_version)}</label><p><button type="submit">Continue to sign in</button></p></form></main></body></html>`);
+  }
+
+  private consumeConsentApproval(token: string, fingerprint: string): boolean {
+    const pending = this.pendingConsentApprovals.get(token);
+    if (!pending) return false;
+    this.pendingConsentApprovals.delete(token);
+    return pending.expiresAt > Date.now() && pending.fingerprint === fingerprint;
   }
 
   private async handleOAuthToken(
@@ -3046,7 +3188,7 @@ export class HttpTransport {
           // able to allow anonymous sessions even if authConfigs are present
           // (the gate is the inbound auth authority once configured), so we
           // also bypass that downstream guard when the gate is present.
-          let resolvedClientPrincipal: AuthorizedPrincipal | undefined;
+          let resolvedClientPrincipal: AuthorizedPrincipal | undefined = internalToken?.principal;
           if (profileState.clientAuthGate) {
             try {
               const gatePrincipal = await profileState.clientAuthGate.validate(authInfo.token);
@@ -3313,6 +3455,21 @@ export class HttpTransport {
                   accessTokenExpiresAt = envelope.exp;
                   scopes = envelope.sc;
                   oauthClientId = envelope.cid;
+                  if (envelope.sub) {
+                    if (!envelope.iss || envelope.iss !== profileState.oauthProvider?.issuer) {
+                      throw new AuthenticationError('Session token identity issuer does not match profile OAuth issuer');
+                    }
+                    resolvedClientPrincipal = {
+                      authType: 'oauth',
+                      profileId: profileState.profileId,
+                      subject: envelope.sub,
+                      issuer: envelope.iss,
+                      tenantId: envelope.tid,
+                      clientId: envelope.cid,
+                      scopes: envelope.sc ?? [],
+                      expiresAt: envelope.exp,
+                    };
+                  }
 
                   // Save envelope for post-createSession map population (both stores must be
                   // populated atomically after the session is confirmed created, to avoid leaking
@@ -4292,6 +4449,10 @@ export class HttpTransport {
       ? Date.now() + tokens.expires_in * 1000
       : undefined;
 
+    const getIdentity = profileState.oauthProvider?.getIdentityForAccessToken;
+    const identity = typeof getIdentity === 'function'
+      ? getIdentity.call(profileState.oauthProvider, tokens.access_token)
+      : undefined;
     let clientToken = tokens.access_token;
     if (this.config.tokenKey && tokens.refresh_token) {
       try {
@@ -4303,6 +4464,9 @@ export class HttpTransport {
             exp: expiresAt,
             cid: clientId,
             sc: scopes,
+            sub: identity?.subject,
+            iss: identity?.issuer,
+            tid: identity?.tenantId,
             pid: profileState.profileId,
             iat: Date.now(),
             creg: registeredClient
@@ -4336,7 +4500,9 @@ export class HttpTransport {
     this.inboundAuthTokenStore.store(clientToken, {
       authType: 'oauth',
       profileId: profileState.profileId,
-      subject: clientId,
+      subject: identity?.subject ?? clientId,
+      issuer: identity?.issuer,
+      tenantId: identity?.tenantId,
       clientId,
       scopes,
       expiresAt,
@@ -4507,6 +4673,16 @@ export class HttpTransport {
     return this.profileStates.get(profileId)?.sessions.get(sessionId)?.clientPrincipal;
   }
 
+  public async assertSessionConsent(profileId: string, sessionId: string): Promise<void> {
+    const profileState = this.profileStates.get(profileId);
+    if (!profileState?.consentGate) return;
+    const principal = profileState.sessions.get(sessionId)?.clientPrincipal ?? null;
+    if (principal && principal.issuer !== profileState.oauthProvider?.issuer) {
+      throw new AuthenticationError('Session identity issuer does not match profile OAuth issuer');
+    }
+    await profileState.consentGate.assertConsent(principal);
+  }
+
   public setSessionToolFilter(profileId: string, sessionId: string, toolFilter: SessionToolFilter): void {
     const session = this.profileStates.get(profileId)?.sessions.get(sessionId);
     if (!session) {
@@ -4624,7 +4800,7 @@ export class HttpTransport {
         const newProvider = new ExternalOAuthProvider(session.tenantOAuthConfig, this.logger);
         providerCache.set(session.id, newProvider);
         return newProvider;
-      } catch (err) {
+      } catch {
         // Catches edge cases: env var changed between check and construction, etc.
         // Generic message — err.message from resolveEnvVars contains raw env var names.
         this.logger.warn('Tenant OAuth provider construction failed - tenant OAuth disabled for session', {

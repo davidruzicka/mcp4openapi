@@ -706,6 +706,52 @@ Browser-based authentication with PKCE flow (HTTP transport only):
 - **Scopes**: Optional, API-specific permissions
 - See [OAuth Guide](./OAUTH.md) for complete setup
 
+#### Consent-Gated Upstream MCP
+
+`consent_gate` adds explicit human approval before an authenticated user may call an upstream MCP tool. It reuses the profile OAuth flow; do not configure a second OAuth client for consent. Required gates need a profile OAuth interceptor with the `openid` scope so the gateway can verify and bind evidence to the OIDC `oid`/`sub` claim.
+
+```json
+{
+  "consent_gate": {
+    "required": true,
+    "rules_version": "v1",
+    "rules_summary": "Access to SharePoint requires accepting the usage rules.",
+    "education_resource": "https://intranet.example/ms365-ai-rules",
+    "identity_source": "profile_oauth"
+  },
+  "interceptors": {
+    "auth": {
+      "type": "oauth",
+      "oauth_config": {
+        "issuer": "https://login.microsoftonline.com/<tenant-id>/v2.0",
+        "client_id": "${env:MS365_MCP_CLIENT_ID}",
+        "client_secret": "${env:MS365_MCP_CLIENT_SECRET}",
+        "redirect_uri": "https://gateway.example/profile/softeria-sharepoint/oauth/callback",
+        "scopes": ["openid", "Files.Read", "Sites.Selected"]
+      }
+    }
+  }
+}
+```
+
+The browser first displays the rules and requires an explicit checkbox submission. The approval token is one-time, expires after five minutes, and is bound to the complete OAuth request. The subsequent ID token is verified against OIDC discovery/JWKS, issuer, audience, signature, expiry, and nonce before evidence is recorded. A `rules_version` change forces re-acceptance.
+
+Set `MCP4_CONSENT_EVIDENCE_PATH` to an absolute writable path for durable single-node JSONL evidence. Without it, evidence is in-memory and intended only for tests. Multi-replica production deployments require the transactional backend tracked in `TODO.md`.
+
+For Softeria SharePoint read-only deployment, verify the effective permission boundary with the pinned server version:
+
+```bash
+npx -y @softeria/ms-365-mcp-server@0.136.0 \
+  --http 3000 \
+  --org-mode \
+  --read-only \
+  --enabled-tools 'sharepoint|site|drive' \
+  --allowed-scopes 'User.Read Files.Read Sites.Selected' \
+  --list-permissions
+```
+
+For this configuration Softeria reports effective permissions `Files.Read` and `Sites.Selected`; tools requiring `Notes.Read` or `Sites.Read.All` are disabled. Mirror the remaining tool surface with `upstream_mcp.tools.allow` as defense in depth. The runnable test profile is `tests/profiles/consent-gate/profile.json`.
+
 ### Base URL
 
 ```json

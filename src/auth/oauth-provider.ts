@@ -28,6 +28,7 @@ import type {
 import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
 import type { OAuthConfig } from '../types/profile.js';
 import type { Logger } from '../core/logger.js';
+import type { OidcIdentity, OidcIdentityVerifier } from './oidc-identity-verifier.js';
 import {
   DEFAULT_ALLOWED_REDIRECT_HOSTS,
   DEFAULT_OAUTH_LOOPBACK_CALLBACK_URIS,
@@ -112,6 +113,7 @@ interface AuthorizationState {
   originalState?: string;
   clientId: string;
   scopes?: string[];
+  nonce?: string;
   createdAt: number;
 }
 
@@ -123,6 +125,7 @@ interface AuthorizationCodeData {
   params: AuthorizationParams;
   createdAt: number;
   tokens?: OAuthTokens; // Stored external tokens
+  identity?: OidcIdentity;
 }
 
 /**
@@ -134,6 +137,7 @@ interface AccessTokenData {
   scopes: string[];
   expiresAt?: number;
   resource?: URL;
+  identity?: OidcIdentity;
 }
 
 /**
@@ -144,20 +148,24 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
   private logger: Logger;
   private _clientsStore: InMemoryClientsStore;
   private ssrfValidator: SSRFValidator;
+  private identityVerifier?: OidcIdentityVerifier;
+  private onIdentityVerified?: (identity: OidcIdentity) => Promise<void>;
   
   // In-memory storage
   private authorizationCodes = new Map<string, AuthorizationCodeData>();
   private accessTokens = new Map<string, AccessTokenData>();
+  private refreshTokenIdentities = new Map<string, { identity: OidcIdentity; expiresAt: number }>();
   private stateStore = new Map<string, AuthorizationState>();
   private materializedUnregisteredClientIds = new Set<string>();
 
   private endpointsInitialized: boolean = false;
   private initializationPromise: Promise<void> | null = null;
 
-  constructor(config: OAuthConfig, logger: Logger) {
+  constructor(config: OAuthConfig, logger: Logger, identityVerifier?: OidcIdentityVerifier) {
     this.config = config;
     this.logger = logger;
     this.ssrfValidator = new SSRFValidator(logger);
+    this.identityVerifier = identityVerifier;
     this._clientsStore = new InMemoryClientsStore();
     
     // Resolve environment variables in OAuth config
@@ -179,6 +187,22 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
     };
     this._clientsStore.registerClient(proxyClient);
     this.logger.info('Pre-registered mcp-proxy-client for VS Code compatibility');
+  }
+
+  configureIdentityVerification(
+    verifier: OidcIdentityVerifier,
+    onIdentityVerified?: (identity: OidcIdentity) => Promise<void>,
+  ): void {
+    this.identityVerifier = verifier;
+    this.onIdentityVerified = onIdentityVerified;
+  }
+
+  get issuer(): string | undefined {
+    return this.config.issuer;
+  }
+
+  get configuredClientId(): string | undefined {
+    return this.config.client_id;
   }
 
   /**
@@ -769,12 +793,14 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
 
     const stateToken = randomUUID();
     
+    const nonce = this.identityVerifier ? randomUUID() : undefined;
     this.stateStore.set(stateToken, {
       clientRedirectUri: params.redirectUri,
       codeChallenge: params.codeChallenge,
       originalState: params.state,
       clientId: client.client_id,
       scopes: params.scopes,
+      nonce,
       createdAt: Date.now(),
     });
     this._clientsStore.markAuthStateOpened(client.client_id);
@@ -791,6 +817,7 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
     authUrl.searchParams.set('redirect_uri', callbackUri);
     authUrl.searchParams.set('response_type', 'code');
     authUrl.searchParams.set('state', stateToken);
+    if (nonce) authUrl.searchParams.set('nonce', nonce);
 
     if (params.scopes && params.scopes.length > 0) {
       authUrl.searchParams.set('scope', params.scopes.join(' '));
@@ -863,25 +890,11 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
             this.config.redirect_uri!
         );
 
-        // Generate Internal Code
-        const internalCode = randomUUID();
-
-        // Store Internal Code -> Tokens mapping
+        const identity = this.identityVerifier
+          ? await this.verifyCallbackIdentity(tokens, storedState.nonce)
+          : undefined;
         const client = await this._clientsStore.getClient(storedState.clientId);
         if (!client) throw new Error('Client not found');
-
-        this.authorizationCodes.set(internalCode, {
-            client,
-            params: {
-                redirectUri: storedState.clientRedirectUri,
-                codeChallenge: storedState.codeChallenge,
-                scopes: storedState.scopes || [],
-                state: storedState.originalState
-            },
-            createdAt: Date.now(),
-            tokens
-        });
-        this._clientsStore.markAuthCodeOpened(client.client_id);
 
         // Re-validate redirect URI policy + registration before redirect (defense-in-depth)
         if (!this.isAllowedClientRedirectUri(client, storedState.clientRedirectUri)) {
@@ -911,6 +924,26 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
             res.status(400).send('Invalid redirect URI');
             return;
         }
+
+        if (identity && this.onIdentityVerified) {
+          await this.onIdentityVerified(identity);
+        }
+
+        const internalCode = randomUUID();
+        this.authorizationCodes.set(internalCode, {
+          client,
+          params: {
+            redirectUri: storedState.clientRedirectUri,
+            codeChallenge: storedState.codeChallenge,
+            scopes: storedState.scopes || [],
+            state: storedState.originalState
+          },
+          createdAt: Date.now(),
+          tokens,
+          identity,
+        });
+        this._clientsStore.markAuthCodeOpened(client.client_id);
+
         clientUrl.searchParams.set('code', internalCode);
         if (storedState.originalState) {
             clientUrl.searchParams.set('state', storedState.originalState);
@@ -1020,11 +1053,27 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
         ? Date.now() + codeData.tokens.expires_in * 1000 
         : undefined,
       resource,
+      identity: codeData.identity,
     };
     
     this.accessTokens.set(codeData.tokens.access_token, tokenData);
+    if (codeData.tokens.refresh_token && codeData.identity) {
+      this.storeRefreshTokenIdentity(codeData.tokens.refresh_token, codeData.identity);
+    }
 
     return codeData.tokens;
+  }
+
+  getIdentityForAccessToken(token: string): OidcIdentity | undefined {
+    return this.accessTokens.get(token)?.identity;
+  }
+
+  private async verifyCallbackIdentity(tokens: OAuthTokens, nonce?: string): Promise<OidcIdentity> {
+    const idToken = (tokens as OAuthTokens & { id_token?: string }).id_token;
+    if (!idToken || !nonce || !this.identityVerifier) {
+      throw new Error('OIDC identity token missing from authorization response');
+    }
+    return this.identityVerifier.verify(idToken, nonce);
   }
 
   /**
@@ -1095,6 +1144,11 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
     this.logger.info('Exchanging refresh token', { clientId: client.client_id });
 
     const tokenUrl = this.config.token_endpoint!;
+    const identityEntry = this.refreshTokenIdentities.get(refreshToken);
+    const identity = identityEntry && identityEntry.expiresAt > Date.now()
+      ? identityEntry.identity
+      : undefined;
+    if (identityEntry && !identity) this.refreshTokenIdentities.delete(refreshToken);
 
     await this.ssrfValidator.validate(tokenUrl, {
       allowPrivateNetwork: process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK === 'true'
@@ -1145,11 +1199,32 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
         ? Date.now() + tokenResponse.expires_in * 1000 
         : undefined,
       resource,
+      identity,
     };
     
     this.accessTokens.set(tokenResponse.access_token, tokenData);
+    if (identity && tokenResponse.refresh_token) {
+      this.refreshTokenIdentities.delete(refreshToken);
+      this.storeRefreshTokenIdentity(tokenResponse.refresh_token, identity);
+    }
 
     return tokenResponse;
+  }
+
+  private storeRefreshTokenIdentity(refreshToken: string, identity: OidcIdentity): void {
+    const now = Date.now();
+    for (const [token, entry] of this.refreshTokenIdentities) {
+      if (entry.expiresAt <= now) this.refreshTokenIdentities.delete(token);
+    }
+    while (this.refreshTokenIdentities.size >= 10000) {
+      const oldest = this.refreshTokenIdentities.keys().next().value;
+      if (!oldest) break;
+      this.refreshTokenIdentities.delete(oldest);
+    }
+    this.refreshTokenIdentities.set(refreshToken, {
+      identity,
+      expiresAt: now + 30 * 24 * 60 * 60 * 1000,
+    });
   }
 
   async verifyAccessToken(token: string): Promise<AuthInfo> {

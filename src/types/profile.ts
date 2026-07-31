@@ -50,30 +50,6 @@ export interface ClientAuthGateConfig {
 }
 
 /**
- * OAuth configuration for the consent gate's human-approval flow.
- *
- * This is intentionally separate from inbound session auth and from the
- * upstream MCP auth: it drives a browser-based authorization-code login whose
- * sole purpose is to bind a provable human identity to a recorded consent.
- * Secrets are never stored inline — the client secret (when the provider
- * requires one) is referenced via an environment variable.
- */
-export interface ConsentOAuthConfig {
-  /** OAuth authorization endpoint (browser-facing). */
-  authorization_endpoint: string;
-  /** OAuth token endpoint (code exchange). */
-  token_endpoint: string;
-  /** OAuth client id used for the consent login. */
-  client_id: string;
-  /** Env var holding the OAuth client secret, when the provider requires one. */
-  client_secret_from_env?: string;
-  /** Redirect URI registered for the consent login callback. */
-  redirect_uri: string;
-  /** Optional scopes requested for the consent login (identity only). */
-  scopes?: string[];
-}
-
-/**
  * Consent gate configuration.
  *
  * Gates sensitive profiles (e.g. an upstream MS365 MCP) behind a provable,
@@ -94,8 +70,8 @@ export interface ConsentGateConfig {
   education_resource?: string;
   /** Optional short human-readable summary of the rules shown at consent time. */
   rules_summary?: string;
-  /** OAuth configuration for the interactive human consent login. */
-  oauth?: ConsentOAuthConfig;
+  /** Identity source used to bind consent evidence to an authenticated human. */
+  identity_source: 'profile_oauth';
 }
 
 export interface Profile {

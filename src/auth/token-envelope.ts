@@ -52,6 +52,9 @@ export interface TokenEnvelopePayload {
   exp?: number; // access token expiry, ms since epoch
   cid?: string; // OAuth client_id
   sc?: string[]; // scopes
+  sub?: string; // verified OIDC subject (Entra oid when available)
+  iss?: string; // verified OIDC issuer
+  tid?: string; // verified OIDC tenant id
   pid: string; // profile_id (REQUIRED - also bound as AAD)
   iat: number; // issued-at, ms since epoch
   creg?: {

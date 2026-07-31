@@ -2,19 +2,24 @@
   "$schema": "../../profile-schema.json",
   "profile_name": "consent-gate",
   "profile_id": "consent-gate",
-  "description": "Example profile gating an upstream MS365 MCP behind provable human consent. Demonstrates consent_gate load-time validation. NOTE: runtime enforcement + the consent OAuth grant flow are not yet wired (see TODO.md P1), so the gate does not block tool calls yet.",
+  "description": "Example profile gating an upstream MS365 MCP behind provable human consent bound to profile OAuth.",
   "tools": [],
   "consent_gate": {
     "required": true,
     "rules_version": "v1",
     "rules_summary": "Access to MS365 data requires accepting the usage rules.",
     "education_resource": "https://intranet.example/ms365-ai-rules",
-    "oauth": {
-      "authorization_endpoint": "https://login.microsoftonline.com/common/oauth2/v2.0/authorize",
-      "token_endpoint": "https://login.microsoftonline.com/common/oauth2/v2.0/token",
-      "client_id": "00000000-0000-0000-0000-000000000000",
-      "redirect_uri": "https://mcp.example/consent/ms365/callback",
-      "scopes": ["openid"]
+    "identity_source": "profile_oauth"
+  },
+  "interceptors": {
+    "auth": {
+      "type": "oauth",
+      "oauth_config": {
+        "issuer": "https://login.microsoftonline.com/11111111-1111-1111-1111-111111111111/v2.0",
+        "client_id": "00000000-0000-0000-0000-000000000000",
+        "redirect_uri": "https://mcp.example/oauth/callback",
+        "scopes": ["openid", "User.Read", "Files.Read", "Sites.Selected"]
+      }
     }
   },
   "upstream_mcp": {
@@ -22,6 +27,12 @@
     "transport": {
       "type": "http-streamable",
       "url": "https://upstream.example.com/mcp"
+    },
+    "auth": {
+      "type": "bearer"
+    },
+    "tools": {
+      "allow": ["*sharepoint*", "*site*", "*drive*", "download-bytes", "get-download-url"]
     }
   }
 }
