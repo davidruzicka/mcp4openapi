@@ -2926,12 +2926,17 @@ export class MCPServer {
     const task = strategy.source === 'operation'
       ? this.executeAppsOperation(strategy.operation!, args, sessionId, profileId)
       : this.executeAppsComposite(strategy.compositeTool!, args, sessionId, profileId);
-    return await Promise.race([
-      task,
-      new Promise<never>((_, reject) => {
-        setTimeout(() => reject(new ValidationError('Apps fetch timed out')), strategy.timeoutMs);
-      }),
-    ]);
+    let timer: NodeJS.Timeout;
+    try {
+      return await Promise.race([
+        task,
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new ValidationError('Apps fetch timed out')), strategy.timeoutMs);
+        }),
+      ]);
+    } finally {
+      clearTimeout(timer!);
+    }
   }
 
   private async executeAppsOperation(
