@@ -42,6 +42,8 @@ import type { ConsentEvidenceStore } from '../auth/consent-evidence-store.js';
 import { createConsentEvidenceStore } from '../auth/consent-evidence-store-factory.js';
 import { OidcIdentityVerifier } from '../auth/oidc-identity-verifier.js';
 import type { AuthorizedPrincipal } from '../auth/inbound-auth-principal.js';
+import { normalizeIssuer } from '../auth/issuer.js';
+import { pseudonymizeSubject } from '../auth/observability-pseudonym.js';
 import { ClientAuthGateError } from '../core/errors.js';
 import { buildAuthorizationServerMetadata, buildProtectedResourceMetadata } from '../auth/enterprise-metadata.js';
 import { mapAuthError } from '../auth/auth-error-mapper.js';
@@ -651,6 +653,8 @@ export class HttpTransport {
       oauthProvider.configureIdentityVerification(verifier, async (identity) => {
         await store.record({
           sub: identity.subject,
+          issuer: identity.issuer,
+          tenantId: identity.tenantId ?? null,
           profileId,
           rules_version: context!.consent_gate!.rules_version,
           granted_at: Date.now(),
@@ -3552,14 +3556,18 @@ export class HttpTransport {
               scopes: recoveredEnvelope.sc ?? [],
               rawAccessToken: recoveredEnvelope.at,
             });
-            this.inboundAuthTokenStore.store(envelopeToken, {
-              authType: 'oauth',
-              profileId: profileState.profileId,
-              subject: recoveredEnvelope.cid ?? '',
-              clientId: recoveredEnvelope.cid ?? '',
-              scopes: recoveredEnvelope.sc ?? [],
-              expiresAt: recoveredEnvelope.exp,
-            });
+            if (resolvedClientPrincipal) {
+              this.inboundAuthTokenStore.store(envelopeToken, resolvedClientPrincipal);
+            } else if (profileState.context.consent_gate?.required !== true) {
+              this.inboundAuthTokenStore.store(envelopeToken, {
+                authType: 'oauth',
+                profileId: profileState.profileId,
+                subject: recoveredEnvelope.cid ?? '',
+                clientId: recoveredEnvelope.cid ?? '',
+                scopes: recoveredEnvelope.sc ?? [],
+                expiresAt: recoveredEnvelope.exp,
+              });
+            }
           }
         }
 
@@ -4192,10 +4200,10 @@ export class HttpTransport {
       hasAuthToken: !!authToken,
       hasRefreshToken: !!refreshToken,
       hasExpiration: !!accessTokenExpiresAt,
-      // Phase 3 partial AUTH-03: include resolved client identity in
-      // session-creation log entries. Phase 5 (audit log) reads
-      // session.clientPrincipal directly for per-tool-call attribution.
-      clientSubject: clientPrincipal?.subject,
+      // Keep the in-memory principal raw for authorization, but never emit its subject.
+      clientSubject: clientPrincipal?.subject
+        ? pseudonymizeSubject(clientPrincipal.subject)
+        : undefined,
       clientAuthType: clientPrincipal?.authType,
     });
 
@@ -4691,7 +4699,11 @@ export class HttpTransport {
     const profileState = this.profileStates.get(profileId);
     if (!profileState?.consentGate) return;
     const principal = profileState.sessions.get(sessionId)?.clientPrincipal ?? null;
-    if (principal && principal.issuer !== profileState.oauthProvider?.issuer) {
+    const providerIssuer = profileState.oauthProvider?.issuer;
+    if (
+      principal?.issuer &&
+      (!providerIssuer || normalizeIssuer(principal.issuer) !== normalizeIssuer(providerIssuer))
+    ) {
       throw new AuthenticationError('Session identity issuer does not match profile OAuth issuer');
     }
     await profileState.consentGate.assertConsent(principal);
@@ -4888,10 +4900,20 @@ export class HttpTransport {
       }
 
       // Exchange refresh token for new tokens
+      const sessionPrincipal = session.clientPrincipal;
+      const rehydratedIdentity = sessionPrincipal?.subject && sessionPrincipal.issuer
+        ? {
+            subject: sessionPrincipal.subject,
+            issuer: normalizeIssuer(sessionPrincipal.issuer),
+            tenantId: sessionPrincipal.tenantId,
+          }
+        : undefined;
       const tokens = await oauthProvider.exchangeRefreshToken(
         client,
         session.refreshToken,
-        session.scopes
+        session.scopes,
+        undefined,
+        rehydratedIdentity,
       );
 
       // Update session with new tokens

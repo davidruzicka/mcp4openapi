@@ -47,6 +47,7 @@ Start with an existing profile in [`profiles/`](./profiles), then adapt only wha
 - **Prompt definitions**: add reusable MCP prompts directly in profiles
 - **MCP Apps resources**: expose static or fetch-backed `resources/list`, `resources/templates/list`, `resources/read`, and template-variable completion from profiles
 - **Upstream MCP provider config**: profiles can declare remote HTTP streamable MCP upstreams (schema and validation first; transport execution follows in later roadmap issues)
+- **Consent-gated upstreams**: required consent is bound to the verified OIDC subject, issuer, tenant, profile, and rules version; local-only profiles cannot enable it
 - **OAuth 2.0**: browser-based auth flow for HTTP transport (see [docs/OAUTH.md](./docs/OAUTH.md))
 - **Enterprise managed authorization**: inbound JWT bearer grant for HTTP transport with profile-driven issuer/JWKS policy and opaque MCP access tokens (see [docs/OAUTH.md](./docs/OAUTH.md))
 - **Multi-auth**: combine multiple auth methods with priority fallback (see [docs/MULTI-AUTH.md](./docs/MULTI-AUTH.md))
@@ -67,7 +68,8 @@ Profiles declare a single `upstream_mcp` object for a remote MCP provider, or re
 - Supported transport in the first iteration: `transport.type: "http-streamable"`
 - Supported upstream auth subset: `bearer`, `query`, `custom-header`
 - Secrets must be referenced with `value_from_env`; inline credentials are rejected
-- If `upstream_mcp_from_env` is set and resolves to non-empty JSON, it overrides the static `upstream_mcp` object
+- If `upstream_mcp_from_env` is set and resolves to non-empty JSON, it overrides the static `upstream_mcp` connection details; a static `tools.allow` or `tools.deny` policy must be preserved and cannot be broadened or removed
+- An unset `upstream_mcp_from_env` variable does not count as an effective upstream for a required consent gate
 - `stdio` upstream providers are intentionally deferred to a later, explicitly gated iteration
 
 Example:
@@ -96,6 +98,8 @@ Example:
 ```
 
 Use the env-backed path when deployment-specific upstreams differ between environments and you do not want to edit the checked-in profile file.
+
+For a required `consent_gate`, the resolved profile must contain an effective upstream MCP provider and must not contain local `tools[]`. Consent evidence is recorded only after OIDC verification and is matched against the verified subject, canonical issuer, tenant context, profile ID, and current `rules_version`.
 
 ## MCP Apps Profiles
 
@@ -250,7 +254,7 @@ Predefined profiles in the `profiles/` directory contains names for easy referen
 
 Profiles are resolved from `./profiles` path by default. If that directory is missing, the bundled npm package profiles are used. Override with `--profiles-dir` or `MCP4_PROFILES_DIR`.
 
-The Softeria profile requires HTTP transport and profile OAuth. Set a single-tenant Entra issuer, app credentials, callback URI, durable consent evidence path, and deployment-specific upstream object. Run Softeria with `--org-mode --read-only --enabled-tools 'sharepoint|site|drive' --allowed-scopes 'User.Read Files.Read Sites.Selected'`; verify every deployed version with `--list-permissions` before rollout.
+The Softeria profile requires HTTP transport and profile OAuth. Set a single-tenant Entra issuer, app credentials, callback URI, durable consent evidence path, and deployment-specific upstream object. Run the pinned Softeria version with `--org-mode --read-only` and an anchored exact `--enabled-tools` catalog matching the gateway allow-list; verify every deployed version with `--list-permissions` before rollout.
 
 ##### ⚠️ Prerequisites
 

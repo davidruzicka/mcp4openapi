@@ -20,6 +20,10 @@ import { ConsentEvidenceStoreError } from '../core/errors.js';
 export interface ConsentEvidence {
   /** Authenticated subject identifier (OAuth `sub`) that granted consent. */
   sub: string;
+  /** Canonical OIDC issuer that verified the subject. */
+  issuer: string;
+  /** Tenant context that granted consent, or null when the issuer provided none. */
+  tenantId: string | null;
   /** Profile the consent applies to. */
   profileId: string;
   /** Rules version the subject accepted. */
@@ -31,21 +35,29 @@ export interface ConsentEvidence {
 export interface ConsentEvidenceStore {
   /** Persist a consent evidence record. Idempotent for the same key. */
   record(evidence: ConsentEvidence): Promise<void>;
-  /** Return true when consent exists for this subject + profile + rules_version. */
-  has(sub: string, profileId: string, rulesVersion: string): Promise<boolean>;
+  /** Return true when consent exists for the complete identity context and rules version. */
+  has(identity: ConsentIdentityContext, profileId: string, rulesVersion: string): Promise<boolean>;
 }
 
+export type ConsentIdentityContext = Pick<ConsentEvidence, 'sub' | 'issuer' | 'tenantId'>;
+
 /**
- * Build the composite key that binds consent to a subject, profile, and rules
- * version. Changing `rules_version` yields a new key, so prior consent no
- * longer matches and re-acceptance is forced.
+ * Build a structured tuple key that binds consent to the complete identity
+ * context, profile, and rules version. JSON encoding avoids collisions when
+ * attacker-controlled fields contain delimiter characters.
  */
 export function consentEvidenceKey(
-  sub: string,
+  identity: ConsentIdentityContext,
   profileId: string,
   rulesVersion: string,
 ): string {
-  return `${sub}|${profileId}|${rulesVersion}`;
+  return JSON.stringify([
+    identity.sub,
+    identity.issuer,
+    identity.tenantId,
+    profileId,
+    rulesVersion,
+  ]);
 }
 
 /**
@@ -59,7 +71,7 @@ export class InMemoryConsentEvidenceStore implements ConsentEvidenceStore {
 
   async record(evidence: ConsentEvidence): Promise<void> {
     const key = consentEvidenceKey(
-      evidence.sub,
+      evidence,
       evidence.profileId,
       evidence.rules_version,
     );
@@ -69,8 +81,8 @@ export class InMemoryConsentEvidenceStore implements ConsentEvidenceStore {
     }
   }
 
-  async has(sub: string, profileId: string, rulesVersion: string): Promise<boolean> {
-    return this.records.has(consentEvidenceKey(sub, profileId, rulesVersion));
+  async has(identity: ConsentIdentityContext, profileId: string, rulesVersion: string): Promise<boolean> {
+    return this.records.has(consentEvidenceKey(identity, profileId, rulesVersion));
   }
 }
 
@@ -80,7 +92,8 @@ export class InMemoryConsentEvidenceStore implements ConsentEvidenceStore {
  * Each granted consent is one JSON line (`ConsentEvidence`). Reads rebuild an
  * in-memory index and reload external writes when the file changes on disk, so
  * multiple replicas sharing one file (e.g. an RWX volume) observe each other's
- * grants. It is durable across restarts, but grants are NOT transactionally
+ * grants. Records from the pre-issuer schema are ignored and cannot satisfy a
+ * new lookup. It is durable across restarts, but grants are NOT transactionally
  * deduplicated across concurrent writers — that guarantee requires the
  * transactional multi-replica backend tracked in TODO.md. Use this for
  * single-node/staging; do not rely on it for multi-writer production.
@@ -90,6 +103,7 @@ export class InMemoryConsentEvidenceStore implements ConsentEvidenceStore {
  */
 export class FileConsentEvidenceStore implements ConsentEvidenceStore {
   private readonly index = new Map<string, ConsentEvidence>();
+  private writeQueue: Promise<void> = Promise.resolve();
   private lastLoadedMtimeMs = -1;
   private loadedOnce = false;
 
@@ -99,9 +113,15 @@ export class FileConsentEvidenceStore implements ConsentEvidenceStore {
   ) {}
 
   async record(evidence: ConsentEvidence): Promise<void> {
+    const operation = this.writeQueue.then(() => this.persistRecord(evidence));
+    this.writeQueue = operation.catch(() => undefined);
+    return operation;
+  }
+
+  private persistRecord(evidence: ConsentEvidence): void {
     this.reloadIfChanged();
     const key = consentEvidenceKey(
-      evidence.sub,
+      evidence,
       evidence.profileId,
       evidence.rules_version,
     );
@@ -110,6 +130,8 @@ export class FileConsentEvidenceStore implements ConsentEvidenceStore {
 
     const line = `${JSON.stringify({
       sub: evidence.sub,
+      issuer: evidence.issuer,
+      tenantId: evidence.tenantId,
       profileId: evidence.profileId,
       rules_version: evidence.rules_version,
       granted_at: evidence.granted_at,
@@ -131,9 +153,10 @@ export class FileConsentEvidenceStore implements ConsentEvidenceStore {
     this.refreshMtime();
   }
 
-  async has(sub: string, profileId: string, rulesVersion: string): Promise<boolean> {
+  async has(identity: ConsentIdentityContext, profileId: string, rulesVersion: string): Promise<boolean> {
+    await this.writeQueue;
     this.reloadIfChanged();
-    return this.index.has(consentEvidenceKey(sub, profileId, rulesVersion));
+    return this.index.has(consentEvidenceKey(identity, profileId, rulesVersion));
   }
 
   /** Re-read the file into the index when it is newer than the last load. */
@@ -144,6 +167,8 @@ export class FileConsentEvidenceStore implements ConsentEvidenceStore {
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
         // No file yet: an empty index is the correct, durable state.
+        this.index.clear();
+        this.lastLoadedMtimeMs = -1;
         this.loadedOnce = true;
         return;
       }
@@ -178,7 +203,7 @@ export class FileConsentEvidenceStore implements ConsentEvidenceStore {
         skipped += 1;
         continue;
       }
-      const key = consentEvidenceKey(parsed.sub, parsed.profileId, parsed.rules_version);
+      const key = consentEvidenceKey(parsed, parsed.profileId, parsed.rules_version);
       const existing = this.index.get(key);
       // Keep the earliest grant so the original granted_at survives replays.
       if (!existing || parsed.granted_at < existing.granted_at) {
@@ -200,12 +225,16 @@ export class FileConsentEvidenceStore implements ConsentEvidenceStore {
       const obj = JSON.parse(line) as Partial<ConsentEvidence>;
       if (
         typeof obj.sub === 'string' &&
+        typeof obj.issuer === 'string' &&
+        (typeof obj.tenantId === 'string' || obj.tenantId === null) &&
         typeof obj.profileId === 'string' &&
         typeof obj.rules_version === 'string' &&
         typeof obj.granted_at === 'number'
       ) {
         return {
           sub: obj.sub,
+          issuer: obj.issuer,
+          tenantId: obj.tenantId,
           profileId: obj.profileId,
           rules_version: obj.rules_version,
           granted_at: obj.granted_at,

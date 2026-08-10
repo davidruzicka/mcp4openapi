@@ -54,7 +54,7 @@ export interface ClientAuthGateConfig {
  *
  * Gates sensitive profiles (e.g. an upstream MS365 MCP) behind a provable,
  * human consent: the user must complete an interactive OAuth login and accept
- * the current rules before any tool call is dispatched. Consent is bound to the
+ * the current rules before any upstream MCP tool call is dispatched. Consent is bound to the
  * authenticated subject and the `rules_version`; bumping `rules_version`
  * invalidates prior consent and forces re-acceptance.
  *
@@ -62,7 +62,7 @@ export interface ClientAuthGateConfig {
  * consent on the user's behalf.
  */
 export interface ConsentGateConfig {
-  /** When true, tool calls are blocked until consent is recorded for the subject + rules_version. */
+  /** When true, upstream MCP tool calls are blocked until consent is recorded for the subject + rules_version. */
   required: boolean;
   /** Opaque version of the rules/education content; changing it invalidates prior consent. */
   rules_version: string;

@@ -96,6 +96,15 @@ describe('ExternalOAuthProvider', () => {
       );
     });
 
+    it('normalizes a trailing slash while preserving the issuer path', () => {
+      provider = new ExternalOAuthProvider({
+        ...config,
+        issuer: 'https://issuer.example.test/tenant/v2.0/',
+      }, mockLogger);
+
+      expect(provider.issuer).toBe('https://issuer.example.test/tenant/v2.0');
+    });
+
     describe('host allowlist matching', () => {
       beforeEach(() => {
         provider = new ExternalOAuthProvider(config, mockLogger);
@@ -574,6 +583,55 @@ describe('ExternalOAuthProvider', () => {
       expect(mockRes.redirect).toHaveBeenCalledWith(
         expect.stringContaining('state=')
       );
+    });
+
+    it('uses configured scopes instead of caller scopes in the external request and authorization state', async () => {
+      const client: OAuthClientInformationFull = {
+        client_id: 'mcp-client',
+        redirect_uris: ['http://localhost:3003/oauth/callback'],
+        grant_types: ['authorization_code'],
+        response_types: ['code'],
+      };
+      const callerScopes = ['api', 'admin', 'write_repository'];
+
+      await provider.authorize(client, {
+        redirectUri: 'http://localhost:3003/oauth/callback',
+        codeChallenge: 'test-challenge',
+        scopes: callerScopes,
+      }, mockRes as Response);
+
+      const redirectUrl = new URL((mockRes.redirect as any).mock.calls[0][0]);
+      const stateToken = redirectUrl.searchParams.get('state');
+
+      expect(redirectUrl.searchParams.get('scope')).toBe('api read_user');
+      expect((provider as any).stateStore.get(stateToken)?.scopes).toEqual(['api', 'read_user']);
+    });
+
+    it('retains caller scopes when configured scopes are absent or empty', async () => {
+      const client: OAuthClientInformationFull = {
+        client_id: 'mcp-client',
+        redirect_uris: ['http://localhost:3003/oauth/callback'],
+        grant_types: ['authorization_code'],
+        response_types: ['code'],
+      };
+      const callerScopes = ['read_user', 'write_repository'];
+
+      for (const configuredScopes of [undefined, []] as Array<string[] | undefined>) {
+        provider = new ExternalOAuthProvider({ ...config, scopes: configuredScopes }, mockLogger);
+        mockRes = { redirect: vi.fn() };
+
+        await provider.authorize(client, {
+          redirectUri: 'http://localhost:3003/oauth/callback',
+          codeChallenge: 'test-challenge',
+          scopes: callerScopes,
+        }, mockRes as Response);
+
+        const redirectUrl = new URL((mockRes.redirect as any).mock.calls[0][0]);
+        const stateToken = redirectUrl.searchParams.get('state');
+
+        expect(redirectUrl.searchParams.get('scope')).toBe(callerScopes.join(' '));
+        expect((provider as any).stateStore.get(stateToken)?.scopes).toEqual(callerScopes);
+      }
     });
 
     it('should throw error for unregistered redirect URI', async () => {
@@ -1536,6 +1594,32 @@ describe('ExternalOAuthProvider', () => {
       expect(provider.getIdentityForAccessToken('new-access')).toEqual(identity);
       expect((provider as any).refreshTokenIdentities.has('old-refresh')).toBe(false);
       expect((provider as any).refreshTokenIdentities.get('new-refresh').identity).toEqual(identity);
+    });
+
+    it('rehydrates verified identity when the process-local refresh map is empty', async () => {
+      const identity = {
+        subject: 'user-recovered',
+        issuer: 'https://issuer.example.test/tenant/v2.0',
+        tenantId: 'tenant-1',
+      };
+      vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response(JSON.stringify({
+        access_token: 'recovered-access',
+        refresh_token: 'recovered-refresh',
+        token_type: 'Bearer',
+        expires_in: 3600,
+      }), { status: 200, headers: { 'content-type': 'application/json' } }));
+      (provider as any).ssrfValidator.validate = vi.fn(async () => undefined);
+
+      await provider.exchangeRefreshToken(
+        { client_id: 'client', redirect_uris: [], grant_types: ['refresh_token'], response_types: [] },
+        'recovered-old-refresh',
+        undefined,
+        undefined,
+        identity,
+      );
+
+      expect(provider.getIdentityForAccessToken('recovered-access')).toEqual(identity);
+      expect((provider as any).refreshTokenIdentities.get('recovered-refresh').identity).toEqual(identity);
     });
 
     it('should throw on failed refresh', async () => {

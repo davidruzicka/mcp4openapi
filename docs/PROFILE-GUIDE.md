@@ -82,7 +82,7 @@ This guide explains how to create custom MCP tool profiles for any OpenAPI-compl
 - **`interceptors`** (optional): Auth, rate limiting, retry configuration
 - **`enterprise_authorization`** (optional): HTTP-only inbound authorization policy for enterprise-managed JWT bearer grant exchange
 - **`upstream_mcp`** (optional): Remote upstream MCP provider object for proxy/federation roadmap support (singular — exactly one upstream per profile)
-- **`upstream_mcp_from_env`** (optional): Env var name containing a single JSON object describing the upstream MCP provider; overrides `upstream_mcp` when set to non-empty JSON
+- **`upstream_mcp_from_env`** (optional): Env var name containing a single JSON object describing the upstream MCP provider; overrides `upstream_mcp` when set to non-empty JSON. When the static provider has a tool policy, the resolved env provider must preserve that policy and cannot broaden or remove it.
 
 `enterprise_authorization` supports selective env-backed fields so deployments can override issuer and policy settings without editing the profile file. Supported `*_from_env` fields in the first iteration:
 
@@ -107,7 +107,7 @@ When `enterprise_authorization.mode` is `required`, HTTP initialization accepts 
 - `auth` is **optional**. When omitted, the auth format is inherited from `interceptors.auth` (see below).
 - `auth.type` may be `bearer`, `token`, `query`, or `custom-header`. Set explicitly only when the upstream expects a different format than inbound clients use.
 - `auth.value_from_env` names the env variable holding the credential — **stdio transport only**. On HTTP transport the downstream client's session token is always forwarded directly; `value_from_env` is never read.
-- `upstream_mcp_from_env` must point to a single JSON object and takes precedence over static `upstream_mcp`
+- `upstream_mcp_from_env` must point to a single JSON object and takes precedence over static `upstream_mcp` when it resolves to a non-empty value. An unset value resolves to no provider unless a static `upstream_mcp` is also configured.
 - `stdio` upstream definitions are intentionally rejected in this iteration so the later feature-gated implementation can add process lifecycle hardening separately
 
 #### Auth inheritance from `interceptors.auth`
@@ -703,12 +703,12 @@ Browser-based authentication with PKCE flow (HTTP transport only):
 
 - **Autodiscovery**: `issuer` auto-derives authorization/token endpoints (RFC 8414)
 - **Rate limiting**: Custom rate limits for OAuth endpoints (default: 10 requests per 1 minute)
-- **Scopes**: Optional, API-specific permissions
+- **Scopes**: Optional, API-specific permissions. A non-empty `oauth_config.scopes` list is authoritative for the external authorization request; use a client-requested scope only when the profile list is omitted or empty.
 - See [OAuth Guide](./OAUTH.md) for complete setup
 
 #### Consent-Gated Upstream MCP
 
-`consent_gate` adds explicit human approval before an authenticated user may call an upstream MCP tool. It reuses the profile OAuth flow; do not configure a second OAuth client for consent. Required gates need a profile OAuth interceptor with the `openid` scope so the gateway can verify and bind evidence to the OIDC `oid`/`sub` claim.
+`consent_gate` adds explicit human approval before an authenticated user may call an upstream MCP tool. It reuses the profile OAuth flow; do not configure a second OAuth client for consent. Set `consent_gate.required` to `true` only when the loader resolves an effective `upstream_mcp` provider. A required gate cannot protect a local-only `tools[]` profile or a profile that mixes local tools with an upstream. Required gates need a profile OAuth interceptor with the `openid` scope so the gateway can verify and bind evidence to the OIDC `oid`/`sub` claim.
 
 ```json
 {
@@ -734,7 +734,11 @@ Browser-based authentication with PKCE flow (HTTP transport only):
 }
 ```
 
-The browser first displays the rules and requires an explicit checkbox submission. The approval token is one-time, expires after five minutes, and is bound to the complete OAuth request. The subsequent ID token is verified against OIDC discovery/JWKS, issuer, audience, signature, expiry, and nonce before evidence is recorded. A `rules_version` change forces re-acceptance.
+Pair this fragment with an `upstream_mcp` or an env-backed configuration that resolves to a valid provider in the same profile. The environment variable name alone is not sufficient.
+
+The browser first displays the rules and requires an explicit checkbox submission. The approval token is one-time, expires after five minutes, and is bound to the complete OAuth request. The subsequent ID token is verified against OIDC discovery/JWKS, issuer, audience, signature, expiry, and nonce before evidence is recorded. A `rules_version` change forces re-acceptance. Consent evidence is bound to the verified subject, canonical issuer, tenant context, profile ID, and rules version. Authorization, consent evidence, and in-memory principals retain the raw verified subject. Logs and audit identity fields instead use a stable, one-way SHA-256-derived pseudonym for each nonempty subject.
+
+When an encrypted OAuth envelope is recovered after restart, its verified OIDC identity is retained through subsequent initialization so consent-gated reconnects remain valid.
 
 Set `MCP4_CONSENT_EVIDENCE_PATH` to an absolute writable path for durable single-node JSONL evidence. Without it, evidence is in-memory and intended only for tests. Multi-replica production deployments require the transactional backend tracked in `TODO.md`.
 
@@ -745,12 +749,12 @@ npx -y @softeria/ms-365-mcp-server@0.136.0 \
   --http 3000 \
   --org-mode \
   --read-only \
-  --enabled-tools 'sharepoint|site|drive' \
+  --enabled-tools '^(list-drives|get-drive-delta|get-drive-root-item|list-folder-files|get-drive-item|list-drive-item-thumbnails|list-drive-item-permissions|list-drive-item-versions|search-onedrive-files|get-sharepoint-site|list-sharepoint-site-drives|get-sharepoint-site-drive-by-id|list-sharepoint-site-items|get-sharepoint-site-item|list-sharepoint-site-lists|get-sharepoint-site-list|list-sharepoint-site-list-items|get-sharepoint-site-list-item|list-sharepoint-list-columns|get-sharepoint-list-column|get-sharepoint-site-by-path|download-bytes|get-download-url)$' \
   --allowed-scopes 'User.Read Files.Read Sites.Selected' \
   --list-permissions
 ```
 
-For this configuration Softeria reports effective permissions `Files.Read` and `Sites.Selected`; tools requiring `Notes.Read` or `Sites.Read.All` are disabled. Mirror the remaining tool surface with `upstream_mcp.tools.allow` as defense in depth. The runnable test profile is `tests/profiles/consent-gate/profile.json`.
+For this configuration Softeria reports effective permissions `Files.Read` and `Sites.Selected`; tools requiring `Notes.Read` or `Sites.Read.All` are disabled. The bundled `profiles/softeria-sharepoint/profile.json` pins the remaining verified v0.136.0 read-only catalog by exact tool name. Do not replace it with substring globs such as `*site*` or `*drive*`: similarly named mutation tools would match. The gateway list is defense in depth; pin the upstream server version and keep its own read-only configuration enabled. Deployment env overrides may change the endpoint and auth details, but the static tool policy must remain compatible. The runnable test profile is `tests/profiles/consent-gate/profile.json`.
 
 ### Base URL
 

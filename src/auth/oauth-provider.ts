@@ -29,6 +29,8 @@ import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
 import type { OAuthConfig } from '../types/profile.js';
 import type { Logger } from '../core/logger.js';
 import type { OidcIdentity, OidcIdentityVerifier } from './oidc-identity-verifier.js';
+import { normalizeIssuer } from './issuer.js';
+import { AuthenticationError } from '../core/errors.js';
 import {
   DEFAULT_ALLOWED_REDIRECT_HOSTS,
   DEFAULT_OAUTH_LOOPBACK_CALLBACK_URIS,
@@ -169,7 +171,11 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
     this._clientsStore = new InMemoryClientsStore();
     
     // Resolve environment variables in OAuth config
-    this.config = this.resolveEnvVars(config);
+    const resolvedConfig = this.resolveEnvVars(config);
+    this.config = {
+      ...resolvedConfig,
+      issuer: resolvedConfig.issuer ? normalizeIssuer(resolvedConfig.issuer) : undefined,
+    };
     
     // Pre-register mcp-proxy-client for VS Code compatibility.
     // VS Code does not call /oauth/register before /oauth/authorize and uses one
@@ -791,6 +797,9 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
       throw new Error('Redirect URI not allowed');
     }
 
+    const effectiveScopes = this.config.scopes?.length
+      ? this.config.scopes
+      : params.scopes;
     const stateToken = randomUUID();
     
     const nonce = this.identityVerifier ? randomUUID() : undefined;
@@ -799,7 +808,7 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
       codeChallenge: params.codeChallenge,
       originalState: params.state,
       clientId: client.client_id,
-      scopes: params.scopes,
+      scopes: effectiveScopes,
       nonce,
       createdAt: Date.now(),
     });
@@ -819,10 +828,8 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
     authUrl.searchParams.set('state', stateToken);
     if (nonce) authUrl.searchParams.set('nonce', nonce);
 
-    if (params.scopes && params.scopes.length > 0) {
-      authUrl.searchParams.set('scope', params.scopes.join(' '));
-    } else if (this.config.scopes && this.config.scopes.length > 0) {
-      authUrl.searchParams.set('scope', this.config.scopes.join(' '));
+    if (effectiveScopes && effectiveScopes.length > 0) {
+      authUrl.searchParams.set('scope', effectiveScopes.join(' '));
     }
 
     // NOTE: Do NOT forward PKCE parameters to external provider
@@ -1137,7 +1144,8 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
     client: OAuthClientInformationFull,
     refreshToken: string,
     scopes?: string[],
-    resource?: URL
+    resource?: URL,
+    rehydratedIdentity?: OidcIdentity,
   ): Promise<OAuthTokens> {
     await this.ensureEndpointsInitialized();
     
@@ -1145,10 +1153,16 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
 
     const tokenUrl = this.config.token_endpoint!;
     const identityEntry = this.refreshTokenIdentities.get(refreshToken);
-    const identity = identityEntry && identityEntry.expiresAt > Date.now()
+    const cachedIdentity = identityEntry && identityEntry.expiresAt > Date.now()
       ? identityEntry.identity
       : undefined;
-    if (identityEntry && !identity) this.refreshTokenIdentities.delete(refreshToken);
+    if (identityEntry && !cachedIdentity) this.refreshTokenIdentities.delete(refreshToken);
+    const identity = rehydratedIdentity
+      ? { ...rehydratedIdentity, issuer: normalizeIssuer(rehydratedIdentity.issuer) }
+      : cachedIdentity;
+    if (identity && this.config.issuer && identity.issuer !== this.config.issuer) {
+      throw new AuthenticationError('Refresh token identity issuer does not match OAuth provider issuer');
+    }
 
     await this.ssrfValidator.validate(tokenUrl, {
       allowPrivateNetwork: process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK === 'true'

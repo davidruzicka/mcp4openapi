@@ -32,6 +32,7 @@
 
 import { createCipheriv, createDecipheriv, createHash, randomBytes, scryptSync } from 'node:crypto';
 import { ValidationError } from '../core/errors.js';
+import { normalizeIssuer } from './issuer.js';
 
 const TOKEN_PREFIX = 'mcp4.v1.';
 const NONCE_BYTES = 12;
@@ -219,6 +220,31 @@ function attemptDecrypt(
       return null;
     }
     if (typeof candidate.iat !== 'number') {
+      return null;
+    }
+
+    const hasSubject = Object.prototype.hasOwnProperty.call(candidate, 'sub');
+    const hasIssuer = Object.prototype.hasOwnProperty.call(candidate, 'iss');
+    const hasTenant = Object.prototype.hasOwnProperty.call(candidate, 'tid');
+    if (hasSubject !== hasIssuer || (hasTenant && !hasSubject)) {
+      return null;
+    }
+    if (hasSubject) {
+      if (
+        typeof candidate.sub !== 'string' ||
+        candidate.sub.length === 0 ||
+        typeof candidate.iss !== 'string' ||
+        candidate.iss.length === 0
+      ) {
+        return null;
+      }
+      const issuer = normalizeIssuer(candidate.iss);
+      if (issuer.length === 0) {
+        return null;
+      }
+      candidate.iss = issuer;
+    }
+    if (hasTenant && (typeof candidate.tid !== 'string' || candidate.tid.length === 0)) {
       return null;
     }
 

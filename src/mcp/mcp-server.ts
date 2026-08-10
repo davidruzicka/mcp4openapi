@@ -88,6 +88,7 @@ import type { HttpTransport } from '../transport/http-transport.js';
 import { buildHttpTransportBaseConfig } from '../transport/http-transport-config.js';
 import { renderPrompt } from '../prompt/prompt-renderer.js';
 import type { MetricsCollector, MetricsContextLabels } from '../core/metrics.js';
+import { pseudonymizeSubject } from '../auth/observability-pseudonym.js';
 
 type EnterpriseToolCategory = 'list' | 'read' | 'modify' | 'admin';
 
@@ -2322,7 +2323,9 @@ export class MCPServer {
       // Sessions without a resolved principal (no client_auth_gate or anonymous mode) fall through to 'anonymous'.
       // Accessor is optional so test doubles without it degrade gracefully.
       const principal = this.httpTransport.getSessionClientPrincipal?.(resolvedProfileId, sessionId);
-      resolvedClientIdentity = principal?.subject;
+      resolvedClientIdentity = principal?.subject
+        ? pseudonymizeSubject(principal.subject)
+        : undefined;
     }
 
     return {
@@ -2362,8 +2365,8 @@ export class MCPServer {
    * and stdio paths - and makes the contract a single grep target for verification.
    *
    * Field shape (stable contract - downstream log consumers depend on it):
-   *   - sessionId: string | undefined - HTTP session id, or 'stdio' sentinel for the stdio path
-   *   - clientPrincipal: string - AuthorizedPrincipal.subject or 'anonymous'
+  *   - sessionId: string | undefined - HTTP session id, or 'stdio' sentinel for the stdio path
+  *   - clientPrincipal: string - pseudonymized AuthorizedPrincipal.subject or 'anonymous'
    *   - tool: string - the requested tool name (may be untrusted - never used as label key)
    *   - upstreamHost: string - host-only (no scheme/path/credentials)
    *   - outcome: 'success' | 'error' | 'rejected'
@@ -2378,13 +2381,13 @@ export class MCPServer {
     durationMs: number;
     correlationId: string;
   }): void {
-    const rawClientIdentity =
+    const clientIdentity =
       typeof args.clientIdentity === 'string' && args.clientIdentity.length > 0
         ? args.clientIdentity
         : 'anonymous';
     this.logger.info('audit:tool_call', {
       sessionId: args.sessionId ?? 'unknown',
-      clientPrincipal: this.truncateWithWarn(rawClientIdentity, INPUT_LIMITS.CLIENT_PRINCIPAL_AUDIT, 'clientPrincipal'),
+      clientPrincipal: this.truncateWithWarn(clientIdentity, INPUT_LIMITS.CLIENT_PRINCIPAL_AUDIT, 'clientPrincipal'),
       tool: this.truncateWithWarn(args.tool, INPUT_LIMITS.TOOL_NAME_AUDIT, 'tool'),
       upstreamHost: args.upstreamHost,
       outcome: args.outcome,

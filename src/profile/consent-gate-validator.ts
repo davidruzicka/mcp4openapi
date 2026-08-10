@@ -87,5 +87,18 @@ export function validateConsentGateProfile(profile: Profile): ConsentGateConfig 
       );
     }
   }
+
+  if (!profile.upstream_mcp) {
+    throw new ConsentGateConfigurationError(
+      'consent_gate.required=true requires an effective upstream_mcp configuration',
+      { path: 'consent_gate.required' },
+    );
+  }
+  if (profile.tools?.length) {
+    throw new ConsentGateConfigurationError(
+      'consent_gate with required=true supports upstream MCP tools only and cannot define local tools',
+      { path: 'tools' },
+    );
+  }
   return resolved;
 }

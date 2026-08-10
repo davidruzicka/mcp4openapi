@@ -133,6 +133,37 @@ describe('token-envelope', () => {
     expect(out.creg).toBeUndefined();
   });
 
+  it.each([
+    { sub: 'subject-1', iss: undefined },
+    { sub: undefined, iss: 'https://issuer.example.test/tenant/v2.0' },
+    { sub: '', iss: 'https://issuer.example.test/tenant/v2.0' },
+    { sub: 'subject-1', iss: '' },
+    { sub: 'subject-1', iss: 'https://issuer.example.test/tenant/v2.0', tid: 42 },
+  ])('returns null for incoherent identity fields: $sub/$iss/$tid', (identity) => {
+    const payload = {
+      ...MINIMAL_PAYLOAD,
+      ...identity,
+    } as unknown as TokenEnvelopePayload;
+    const token = encryptTokenPayload(payload, KEY);
+
+    expect(decryptTokenPayload(token, KEY, PROFILE_ID)).toBeNull();
+  });
+
+  it('canonicalizes a trailing slash on a complete recovered issuer', () => {
+    const token = encryptTokenPayload({
+      ...MINIMAL_PAYLOAD,
+      sub: 'subject-1',
+      iss: 'https://issuer.example.test/tenant/v2.0/',
+      tid: 'tenant-1',
+    }, KEY);
+
+    expect(decryptTokenPayload(token, KEY, PROFILE_ID)).toMatchObject({
+      sub: 'subject-1',
+      iss: 'https://issuer.example.test/tenant/v2.0',
+      tid: 'tenant-1',
+    });
+  });
+
   it('returns null when decrypting with the wrong key (no throw)', () => {
     const token = encryptTokenPayload(FULL_PAYLOAD, KEY);
     let result: TokenEnvelopePayload | null = FULL_PAYLOAD;

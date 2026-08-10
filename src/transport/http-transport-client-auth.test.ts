@@ -22,6 +22,7 @@ import { HttpTransport } from './http-transport.js';
 import { ConsoleLogger } from '../core/logger.js';
 import type { AuthInterceptor, ClientAuthGateConfig } from '../types/profile.js';
 import type { HttpProfileContext } from '../types/http-transport.js';
+import { pseudonymizeSubject } from '../auth/observability-pseudonym.js';
 
 const VALID_KEY_ENV = 'CLIENT_AUTH_GATE_INTEGRATION_KEY';
 const VALID_KEY = 'integration-test-secret-key-1234';
@@ -188,6 +189,9 @@ describe('Client auth gate (Phase 3) — session init integration', () => {
     };
     transport.setProfileContextProvider(async () => profileContext);
 
+    const logger = (transport as unknown as { logger: { info: ReturnType<typeof vi.fn> } }).logger;
+    const infoSpy = vi.spyOn(logger, 'info');
+
     const req = makeReq();
     const res = makeRes();
     await (transport as unknown as { handlePost: (r: unknown, s: unknown) => Promise<void> }).handlePost(req, res);
@@ -200,6 +204,11 @@ describe('Client auth gate (Phase 3) — session init integration', () => {
       | undefined;
     expect(session).toBeDefined();
     expect(session!.clientPrincipal).toBeUndefined();
+    const sessionCreatedCall = infoSpy.mock.calls.find(
+      (c) => typeof c[0] === 'string' && c[0].includes('Session created'),
+    );
+    expect(sessionCreatedCall).toBeDefined();
+    expect((sessionCreatedCall![1] as Record<string, unknown>)['clientSubject']).toBeUndefined();
   });
 
   // Scenario 4
@@ -467,8 +476,8 @@ describe('Client auth gate (Phase 3) — session init integration', () => {
     expect(logFields['profileId']).toBe('default');
   });
 
-  // Scenario 10 — session-creation log includes clientSubject + clientAuthType
-  it('valid API key -> session-creation log includes clientSubject and clientAuthType', async () => {
+  // Scenario 10 - session-creation log includes a pseudonymous clientSubject + clientAuthType
+  it('valid API key -> session-creation log includes a pseudonymous clientSubject and clientAuthType', async () => {
     // Pins AUTH-03 (partial): structured identity fields must appear in logger.info
     // at session creation so Phase 5 audit log can read them from session context.
     const profileContext: HttpProfileContext = {
@@ -496,7 +505,8 @@ describe('Client auth gate (Phase 3) — session init integration', () => {
     );
     expect(sessionCreatedCall).toBeDefined();
     const logFields = sessionCreatedCall![1] as Record<string, unknown>;
-    expect(logFields['clientSubject']).toBe(SUBJECT);
+    expect(logFields['clientSubject']).toBe(pseudonymizeSubject(SUBJECT));
+    expect(JSON.stringify(logFields)).not.toContain(SUBJECT);
     expect(logFields['clientAuthType']).toBe('token');
   });
 });

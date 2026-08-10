@@ -4718,6 +4718,227 @@ describeIfListen('HttpTransport', () => {
       await t.stop();
     });
 
+    it('preserves the verified OAuth principal when cached envelope recovery is initialized again with consent required', async () => {
+      const { encryptTokenPayload } = await import('../auth/token-envelope.js');
+      const key = buildKey();
+      const mockLogger = mkLogger();
+      const t = buildTransport({ tokenKey: key, testLogger: mockLogger });
+      const tApp = (t as any).app;
+      const profileState = (t as any).__test_profileState;
+      const issuer = 'https://issuer.example';
+      const evidenceStore = new InMemoryConsentEvidenceStore();
+      profileState.context.consent_gate = {
+        required: true,
+        rules_version: 'v1',
+        identity_source: 'profile_oauth',
+      };
+      profileState.oauthProvider.issuer = issuer;
+      profileState.consentGate = new ConsentGate(
+        'default',
+        { required: true, rules_version: 'v1' },
+        evidenceStore,
+        (profileId) => `https://gateway.example/mcp/${profileId}/consent`,
+        mockLogger,
+      );
+      await evidenceStore.record({
+        sub: 'person-m',
+        issuer,
+        tenantId: 'tenant-m',
+        profileId: 'default',
+        rules_version: 'v1',
+        granted_at: Date.now(),
+      });
+      t.setMessageHandler(async () => ({ protocolVersion: '2025-03-26', serverInfo: { name: 'test' } }));
+
+      const expiresAt = Date.now() + 60_000;
+      const envelope = encryptTokenPayload(
+        {
+          v: 1,
+          at: 'idp-access-m',
+          rt: 'idp-refresh-m',
+          exp: expiresAt,
+          cid: 'client-m',
+          sc: ['read', 'write'],
+          sub: 'person-m',
+          iss: issuer,
+          tid: 'tenant-m',
+          pid: 'default',
+          iat: Date.now(),
+        },
+        key,
+      );
+
+      for (const id of [1, 2]) {
+        const response = await request(tApp)
+          .post('/mcp')
+          .set('Accept', 'application/json, text/event-stream')
+          .set('Authorization', `Bearer ${envelope}`)
+          .send({ jsonrpc: '2.0', id, method: 'initialize', params: {} });
+        expect(response.status).toBe(200);
+      }
+
+      const [secondSessionId, secondSession] = Array.from(profileState.sessions.entries()).at(-1)!;
+      expect(secondSession.clientPrincipal).toEqual({
+        authType: 'oauth',
+        profileId: 'default',
+        subject: 'person-m',
+        issuer,
+        tenantId: 'tenant-m',
+        clientId: 'client-m',
+        scopes: ['read', 'write'],
+        expiresAt,
+      });
+      await expect(t.assertSessionConsent('default', secondSessionId)).resolves.toBeUndefined();
+      await t.stop();
+    });
+
+    it('preserves identity through restart recovery, refresh, and a second recovery', async () => {
+      const { decryptTokenPayload, encryptTokenPayload } = await import('../auth/token-envelope.js');
+      const key = buildKey();
+      const issuer = 'https://issuer.example';
+      const principal = {
+        subject: 'person-refresh',
+        issuer,
+        tenantId: 'tenant-refresh',
+      };
+      const evidenceStore = new InMemoryConsentEvidenceStore();
+      const firstTransport = buildTransport({ tokenKey: key, testLogger: mkLogger() });
+      const firstState = (firstTransport as any).__test_profileState;
+      firstState.context.consent_gate = {
+        required: true,
+        rules_version: 'v1',
+        identity_source: 'profile_oauth',
+      };
+      firstState.oauthProvider = {
+        issuer,
+        ensureEndpointsInitialized: async () => {},
+        clientsStore: {
+          getClient: async () => ({
+            client_id: 'client-refresh',
+            scope: 'read write',
+          }),
+          registerClient: async (client: any) => client,
+        },
+        getIdentityForAccessToken: (accessToken: string) =>
+          accessToken === 'access-refreshed' ? principal : undefined,
+        exchangeRefreshToken: vi.fn(async (...args: any[]) => {
+          expect(args[1]).toBe('refresh-initial');
+          expect(args[4]).toEqual(principal);
+          return {
+            access_token: 'access-refreshed',
+            refresh_token: 'refresh-refreshed',
+            expires_in: 3600,
+            token_type: 'Bearer',
+          };
+        }),
+      };
+      firstState.consentGate = new ConsentGate(
+        'default',
+        { required: true, rules_version: 'v1' },
+        evidenceStore,
+        (profileId) => `https://gateway.example/mcp/${profileId}/consent`,
+        mkLogger(),
+      );
+      await evidenceStore.record({
+        sub: principal.subject,
+        issuer,
+        tenantId: principal.tenantId,
+        profileId: 'default',
+        rules_version: 'v1',
+        granted_at: Date.now(),
+      });
+      firstTransport.setMessageHandler(async () => ({
+        protocolVersion: '2025-03-26',
+        serverInfo: { name: 'test' },
+      }));
+
+      const initialEnvelope = encryptTokenPayload(
+        {
+          v: 1,
+          at: 'access-initial',
+          rt: 'refresh-initial',
+          exp: Date.now() + 1_000,
+          cid: 'client-refresh',
+          sc: ['read', 'write'],
+          sub: principal.subject,
+          iss: principal.issuer,
+          tid: principal.tenantId,
+          pid: 'default',
+          iat: Date.now(),
+        },
+        key,
+      );
+
+      const firstResponse = await request((firstTransport as any).app)
+        .post('/mcp')
+        .set('Accept', 'application/json, text/event-stream')
+        .set('Authorization', `Bearer ${initialEnvelope}`)
+        .send({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} });
+      expect(firstResponse.status).toBe(200);
+
+      const [firstSessionId, firstSession] = Array.from(firstState.sessions.entries()).at(-1)! as [string, any];
+      expect(firstSession.clientPrincipal).toMatchObject({
+        subject: principal.subject,
+        issuer,
+        tenantId: principal.tenantId,
+      });
+      await expect(firstTransport.assertSessionConsent('default', firstSessionId)).resolves.toBeUndefined();
+
+      firstSession.accessTokenExpiresAt = Date.now() - 1;
+      await expect(firstTransport.ensureValidSessionToken('default', firstSessionId)).resolves.toBe(true);
+      const refreshedEnvelope = firstSession.authToken;
+      expect(refreshedEnvelope).toMatch(/^mcp4\.v1\./);
+      expect(refreshedEnvelope).not.toBe(initialEnvelope);
+      expect(decryptTokenPayload(refreshedEnvelope, key, 'default')).toMatchObject({
+        at: 'access-refreshed',
+        rt: 'refresh-refreshed',
+        sub: principal.subject,
+        iss: issuer,
+        tid: principal.tenantId,
+      });
+      await expect(firstTransport.assertSessionConsent('default', firstSessionId)).resolves.toBeUndefined();
+
+      const secondTransport = buildTransport({ tokenKey: key, testLogger: mkLogger() });
+      const secondState = (secondTransport as any).__test_profileState;
+      secondState.context.consent_gate = firstState.context.consent_gate;
+      secondState.oauthProvider = {
+        issuer,
+        clientsStore: {
+          getClient: async () => ({ client_id: 'client-refresh', scope: 'read write' }),
+          registerClient: async (client: any) => client,
+        },
+      };
+      secondState.consentGate = new ConsentGate(
+        'default',
+        { required: true, rules_version: 'v1' },
+        evidenceStore,
+        (profileId) => `https://gateway.example/mcp/${profileId}/consent`,
+        mkLogger(),
+      );
+      secondTransport.setMessageHandler(async () => ({
+        protocolVersion: '2025-03-26',
+        serverInfo: { name: 'test' },
+      }));
+
+      const secondResponse = await request((secondTransport as any).app)
+        .post('/mcp')
+        .set('Accept', 'application/json, text/event-stream')
+        .set('Authorization', `Bearer ${refreshedEnvelope}`)
+        .send({ jsonrpc: '2.0', id: 2, method: 'initialize', params: {} });
+      expect(secondResponse.status).toBe(200);
+
+      const [secondSessionId, secondSession] = Array.from(secondState.sessions.entries()).at(-1)! as [string, any];
+      expect(secondSession.clientPrincipal).toMatchObject({
+        subject: principal.subject,
+        issuer,
+        tenantId: principal.tenantId,
+      });
+      await expect(secondTransport.assertSessionConsent('default', secondSessionId)).resolves.toBeUndefined();
+
+      await firstTransport.stop();
+      await secondTransport.stop();
+    });
+
     it('Test N: envelope with creg invokes registerClient with mapped fields and defaults', async () => {
       const { encryptTokenPayload } = await import('../auth/token-envelope.js');
       const key = buildKey();
@@ -6185,7 +6406,14 @@ describeIfListen('HttpTransport', () => {
           },
         },
       });
-      await store.record({ sub: 'X', profileId: PROFILE_ID, rules_version: 'v1', granted_at: Date.now() });
+      await store.record({
+        sub: 'X',
+        issuer: ISSUER,
+        tenantId: null,
+        profileId: PROFILE_ID,
+        rules_version: 'v1',
+        granted_at: Date.now(),
+      });
 
       await expect(t.assertSessionConsent(PROFILE_ID, 'session-1')).resolves.toBeUndefined();
     });
@@ -6233,7 +6461,14 @@ describeIfListen('HttpTransport', () => {
         },
       });
       // Consent for 'X' exists, but the issuer guard must reject before any consent check.
-      await store.record({ sub: 'X', profileId: PROFILE_ID, rules_version: 'v1', granted_at: Date.now() });
+      await store.record({
+        sub: 'X',
+        issuer: ISSUER,
+        tenantId: null,
+        profileId: PROFILE_ID,
+        rules_version: 'v1',
+        granted_at: Date.now(),
+      });
 
       await expect(t.assertSessionConsent(PROFILE_ID, 'session-1')).rejects.toBeInstanceOf(AuthenticationError);
     });
@@ -6252,7 +6487,14 @@ describeIfListen('HttpTransport', () => {
         },
       });
       // Consent recorded for the OLD rules_version only.
-      await store.record({ sub: 'X', profileId: PROFILE_ID, rules_version: 'v1', granted_at: Date.now() });
+      await store.record({
+        sub: 'X',
+        issuer: ISSUER,
+        tenantId: null,
+        profileId: PROFILE_ID,
+        rules_version: 'v1',
+        granted_at: Date.now(),
+      });
 
       await expect(t.assertSessionConsent(PROFILE_ID, 'session-1')).rejects.toBeInstanceOf(ConsentRequiredError);
     });

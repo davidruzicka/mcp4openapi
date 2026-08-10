@@ -18,11 +18,17 @@ const makeLogger = (): Logger =>
 const consentUrlFor = (profileId: string): string =>
   `https://mcp.example.test/consent/${profileId}`;
 
-const makePrincipal = (subject: string): AuthorizedPrincipal => ({
+const makePrincipal = (
+  subject: string,
+  overrides: Partial<AuthorizedPrincipal> = {},
+): AuthorizedPrincipal => ({
   authType: 'oauth',
   profileId: 'ms365',
   subject,
+  issuer: 'https://issuer.example.test/tenant/v2.0',
+  tenantId: 'tenant-1',
   scopes: [],
+  ...overrides,
 });
 
 const requiredConfig: ConsentGateConfig = {
@@ -47,6 +53,8 @@ describe('ConsentGate.assertConsent', () => {
     const store = new InMemoryConsentEvidenceStore();
     await store.record({
       sub: 'user-1',
+      issuer: 'https://issuer.example.test/tenant/v2.0',
+      tenantId: 'tenant-1',
       profileId: 'ms365',
       rules_version: 'v1',
       granted_at: Date.now(),
@@ -87,10 +95,48 @@ describe('ConsentGate.assertConsent', () => {
     await expect(gate.assertConsent(null)).rejects.toBeInstanceOf(ConsentRequiredError);
   });
 
+  it('rejects a principal without a verified issuer even when subject consent exists', async () => {
+    const store = new InMemoryConsentEvidenceStore();
+    await store.record({
+      sub: 'user-1',
+      issuer: 'https://issuer.example.test/tenant/v2.0',
+      tenantId: 'tenant-1',
+      profileId: 'ms365',
+      rules_version: 'v1',
+      granted_at: Date.now(),
+    });
+    const gate = new ConsentGate('ms365', requiredConfig, store, consentUrlFor, makeLogger());
+    await expect(
+      gate.assertConsent(makePrincipal('user-1', { issuer: undefined })),
+    ).rejects.toBeInstanceOf(ConsentRequiredError);
+  });
+
+  it('does not reuse consent from another issuer or tenant', async () => {
+    const store = new InMemoryConsentEvidenceStore();
+    await store.record({
+      sub: 'user-1',
+      issuer: 'https://issuer.example.test/tenant/v2.0',
+      tenantId: 'tenant-1',
+      profileId: 'ms365',
+      rules_version: 'v1',
+      granted_at: Date.now(),
+    });
+    const gate = new ConsentGate('ms365', requiredConfig, store, consentUrlFor, makeLogger());
+
+    await expect(
+      gate.assertConsent(makePrincipal('user-1', { issuer: 'https://other-issuer.example.test' })),
+    ).rejects.toBeInstanceOf(ConsentRequiredError);
+    await expect(
+      gate.assertConsent(makePrincipal('user-1', { tenantId: 'tenant-2' })),
+    ).rejects.toBeInstanceOf(ConsentRequiredError);
+  });
+
   it('blocks after a rules_version bump even if the old version was consented', async () => {
     const store = new InMemoryConsentEvidenceStore();
     await store.record({
       sub: 'user-1',
+      issuer: 'https://issuer.example.test/tenant/v2.0',
+      tenantId: 'tenant-1',
       profileId: 'ms365',
       rules_version: 'v1',
       granted_at: Date.now(),

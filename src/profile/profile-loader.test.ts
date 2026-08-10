@@ -2833,6 +2833,104 @@ describe('ProfileLoader', () => {
       }
     });
 
+    it('rejects required consent when the effective upstream MCP environment value is unset', async () => {
+      const loader = new ProfileLoader();
+      const fs = await import('fs/promises');
+      const tmpPath = `/tmp/consent-gate-unset-upstream-${Date.now()}-${Math.random()}.json`;
+      const envVarName = `MCP4_UNSET_CONSENT_UPSTREAM_${Date.now()}`;
+      const previous = process.env[envVarName];
+      delete process.env[envVarName];
+
+      await fs.writeFile(
+        tmpPath,
+        JSON.stringify({
+          profile_name: 'consent-gate-unset-upstream',
+          tools: [],
+          consent_gate: {
+            required: true,
+            rules_version: 'v1',
+            identity_source: 'profile_oauth',
+          },
+          interceptors: {
+            auth: {
+              type: 'oauth',
+              oauth_config: {
+                issuer: 'https://login.example.test',
+                client_id: 'client',
+                redirect_uri: 'https://gateway.example.test/oauth/callback',
+                scopes: ['openid'],
+              },
+            },
+          },
+          upstream_mcp_from_env: envVarName,
+        }),
+        'utf-8',
+      );
+
+      try {
+        await expect(loader.load(tmpPath)).rejects.toThrow(
+          'consent_gate.required=true requires an effective upstream_mcp configuration',
+        );
+      } finally {
+        if (previous === undefined) {
+          delete process.env[envVarName];
+        } else {
+          process.env[envVarName] = previous;
+        }
+        await fs.unlink(tmpPath).catch(() => undefined);
+      }
+    });
+
+    it('rejects required consent when local tools coexist with an upstream MCP source', async () => {
+      const loader = new ProfileLoader();
+      const fs = await import('fs/promises');
+      const tmpPath = `/tmp/consent-gate-local-tools-${Date.now()}-${Math.random()}.json`;
+
+      await fs.writeFile(
+        tmpPath,
+        JSON.stringify({
+          profile_name: 'consent-gate-local-tools',
+          tools: [
+            {
+              name: 'local_tool',
+              description: 'A local tool',
+              parameters: {},
+              operations: { execute: 'localOperation' },
+            },
+          ],
+          consent_gate: {
+            required: true,
+            rules_version: 'v1',
+            identity_source: 'profile_oauth',
+          },
+          interceptors: {
+            auth: {
+              type: 'oauth',
+              oauth_config: {
+                issuer: 'https://login.example.test',
+                client_id: 'client',
+                redirect_uri: 'https://gateway.example.test/oauth/callback',
+                scopes: ['openid'],
+              },
+            },
+          },
+          upstream_mcp: {
+            name: 'upstream',
+            transport: { type: 'http-streamable', url: 'https://upstream.example.test/mcp' },
+          },
+        }),
+        'utf-8',
+      );
+
+      try {
+        await expect(loader.load(tmpPath)).rejects.toThrow(
+          'consent_gate with required=true supports upstream MCP tools only and cannot define local tools',
+        );
+      } finally {
+        await fs.unlink(tmpPath).catch(() => undefined);
+      }
+    });
+
     it('rejects stdio upstream transport in the first iteration', async () => {
       const loader = new ProfileLoader();
       const fs = await import('fs/promises');

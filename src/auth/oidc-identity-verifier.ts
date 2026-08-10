@@ -3,6 +3,7 @@ import type { Logger } from '../core/logger.js';
 import { AuthenticationError } from '../core/errors.js';
 import { JwksCache } from './jwks-cache.js';
 import { SSRFValidator } from '../security/ssrf-validator.js';
+import { normalizeIssuer } from './issuer.js';
 
 interface OidcDiscoveryMetadata {
   issuer?: string;
@@ -33,7 +34,7 @@ export class OidcIdentityVerifier {
   private discoveryPromise?: Promise<Required<OidcDiscoveryMetadata>>;
 
   constructor(options: OidcIdentityVerifierOptions) {
-    this.issuer = options.issuer.replace(/\/$/, '');
+    this.issuer = normalizeIssuer(options.issuer);
     this.audience = options.audience;
     this.jwksCache = options.jwksCache;
     this.fetchFn = options.fetchFn ?? fetch;
@@ -93,7 +94,10 @@ export class OidcIdentityVerifier {
       throw new AuthenticationError('OIDC discovery failed');
     }
     const metadata = await response.json() as OidcDiscoveryMetadata;
-    if (metadata.issuer !== this.issuer || !metadata.jwks_uri) {
+    const metadataIssuer = typeof metadata.issuer === 'string'
+      ? normalizeIssuer(metadata.issuer)
+      : undefined;
+    if (metadataIssuer !== this.issuer || !metadata.jwks_uri) {
       throw new AuthenticationError('OIDC discovery metadata is invalid');
     }
     const jwksUrl = new URL(metadata.jwks_uri);
@@ -103,6 +107,6 @@ export class OidcIdentityVerifier {
     await this.ssrfValidator.validate(jwksUrl.toString(), {
       allowPrivateNetwork: process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK === 'true',
     });
-    return { issuer: metadata.issuer, jwks_uri: metadata.jwks_uri };
+    return { issuer: metadataIssuer, jwks_uri: metadata.jwks_uri };
   }
 }

@@ -7,16 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Security
+- Non-empty profile OAuth scopes now take precedence over client-requested scopes in external authorization requests.
+- Required consent gates now require an effective upstream MCP source and reject profiles that also define local tools, preventing accidental use outside the upstream authorization boundary.
+- Environment-backed upstream overrides cannot broaden or remove a static tool allow/deny policy; Softeria SharePoint is pinned to an exact v0.136.0 read-only tool catalog instead of substring globs.
+- Logs and audit records now use stable SHA-256-derived pseudonyms for OIDC subjects while authorization and consent state retain the verified subject.
 - Consent-gated profiles no longer fall back to the OAuth `client_id` as the session principal subject when no verified OIDC identity is present; the principal is omitted so the consent gate fails closed instead of binding consent to a shared, non-human identity. Non-consent OAuth profiles are unchanged.
 - Token envelope passphrase KDF switched from unsalted SHA-256 to scrypt (CWE-916); existing SHA-256-derived envelopes still decrypt via a legacy fallback key and age out naturally on token refresh (fallback removal tracked in TODO.md, item 18). 64-char hex keys unaffected.
 - Upstream tool sanitizer `strip` HTML policy now repeats tag removal until stable so nested payloads cannot reassemble a tag (CWE-116).
-- Dependency upgrades resolving all `npm audit` findings: hono 4.12.31, @hono/node-server 2.0.11 (requires Node >=20), vitest 4.1.x, vite 6.4.3+, body-parser, brace-expansion, form-data, fast-uri, qs.
+- Dependency upgrades resolving all `npm audit` findings: hono 4.12.34, @hono/node-server 2.0.11 (requires Node >=20), express-rate-limit 8.6.2 with ip-address 10.5.0, fast-uri 3.1.5, brace-expansion 5.0.9, nanoid 3.3.18, and postcss 8.5.26.
 
 ### Changed
 - `normalizePath` now returns `other` for unrecognized HTTP paths instead of the raw path, preventing unbounded Prometheus label cardinality from dynamic route segments.
 - MCP `initialize` responses now expose `serverInfo.title` from the active profile `profile_name` (optionally suffixed via `MCP4_SERVERINFO_SUFFIX`) so VS Code and similar clients show per-profile names without changing `serverInfo.name`.
 
 ### Fixed
+- Restart-recovered encrypted OAuth envelopes now retain verified OIDC identity so consent-gated reconnects remain valid.
+- File-backed consent evidence writes recover after an individual write failure and clear stale index state when the evidence file disappears.
 - GitLab GLQL guidance now steers callers toward YAML payloads, verified field names, and unquoted enum filters in both profiles and the bundled OpenAPI spec.
 - Grafana profile now routes datasource metadata/resources, correlations, snapshot sharing settings, and other admin-like reads through `retrieve_admin_content`; `query_metrics` now requires Grafana-style `from`/`to` + `queries`, and user lookup now sends the required `loginOrEmail` query parameter.
 - `handleOtherRequest` upstream `tools/list` pre-flight error now uses `mapUpstreamErrorToMcpError` (provider-safe message) instead of generic "Internal error"; `req.method` truncated to 200 chars in error logs; `uri` and prompt `name` params capped at 2048/256 chars with `-32602` validation errors.

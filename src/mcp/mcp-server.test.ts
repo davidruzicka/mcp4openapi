@@ -33,6 +33,7 @@ import {
 } from '../upstream/upstream-errors.js';
 import { McpError, ErrorCode } from '@modelcontextprotocol/sdk/types.js';
 import { INPUT_LIMITS } from '../core/constants.js';
+import { pseudonymizeSubject } from '../auth/observability-pseudonym.js';
 
 type ToolCallResponse = {
   result?: {
@@ -5700,12 +5701,15 @@ paths:
         expect(payload.clientPrincipal).toBe('anonymous');
       });
 
-      it('uses resolved AuthorizedPrincipal.subject when session has one', async () => {
+      it('uses a pseudonymous AuthorizedPrincipal.subject for audit logs and metrics', async () => {
         const fakeLogger = spyLogger();
         (upstreamServer as any).logger = fakeLogger;
+        const metrics = { recordToolCall: vi.fn(), recordToolCallError: vi.fn() };
+        (upstreamServer as any).httpTransport.getMetricsCollector = () => metrics;
+        const rawSubject = 'oidc-subject:https://issuer.example.test/00u123456789abcdefghijklmnop';
         (upstreamServer as any).httpTransport.getSessionClientPrincipal = (_pid: string, sid: string) =>
           sid === 'session-with-principal'
-            ? { authType: 'token', profileId: 'upstream-profile', subject: 'svc-bot', scopes: [] }
+            ? { authType: 'token', profileId: 'upstream-profile', subject: rawSubject, scopes: [] }
             : undefined;
 
         await (upstreamServer as any).handleToolCall(
@@ -5716,7 +5720,15 @@ paths:
 
         const audits = findAuditEntries(fakeLogger.info);
         const payload = audits[audits.length - 1][1] as Record<string, unknown>;
-        expect(payload.clientPrincipal).toBe('svc-bot');
+        const pseudonym = pseudonymizeSubject(rawSubject);
+        expect(payload.clientPrincipal).toBe(pseudonym);
+        expect(JSON.stringify(payload)).not.toContain(rawSubject);
+        expect(metrics.recordToolCall).toHaveBeenCalledWith(
+          'safe_tool',
+          'success',
+          expect.any(Number),
+          expect.objectContaining({ clientIdentity: pseudonym }),
+        );
       });
 
       it('emits audit:tool_call on upstream early-reject (FilterRejection)', async () => {

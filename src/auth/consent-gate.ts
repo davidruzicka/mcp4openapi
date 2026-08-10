@@ -14,8 +14,9 @@ import { ConsentRequiredError } from '../core/errors.js';
  *
  * The gate is intentionally NOT exposed as an MCP tool: an autonomous agent
  * must not be able to grant consent on the user's behalf. Consent is bound to a
- * provable human identity (`principal.subject`) established by the interactive
- * OAuth login that drives `ConsentEvidenceStore.record`.
+ * provable human identity (`principal.subject`) and its verified issuer/tenant
+ * context, established by the interactive OAuth login that drives
+ * `ConsentEvidenceStore.record`.
  *
  * HTTP transport invokes this gate before upstream tool dispatch. Consent is
  * recorded only after explicit browser approval and cryptographically verified
@@ -43,9 +44,14 @@ export class ConsentGate {
     if (!this.config.required) return;
 
     const subject = principal?.subject;
-    if (subject) {
+    const issuer = principal?.issuer;
+    if (subject && issuer) {
       const hasConsent = await this.store.has(
-        subject,
+        {
+          sub: subject,
+          issuer,
+          tenantId: principal?.tenantId ?? null,
+        },
         this.profileId,
         this.config.rules_version,
       );
@@ -56,6 +62,8 @@ export class ConsentGate {
       profileId: this.profileId,
       rulesVersion: this.config.rules_version,
       hasSubject: Boolean(subject),
+      hasIssuer: Boolean(issuer),
+      hasTenant: principal?.tenantId !== undefined,
     });
 
     throw new ConsentRequiredError(

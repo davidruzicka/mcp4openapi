@@ -96,6 +96,42 @@ function validateToolPolicy(policy: UpstreamMcpToolPolicy | undefined, path: str
   validateToolPolicyList(policy.deny, `${path}.deny`);
 }
 
+function validateEnvironmentToolPolicy(
+  staticPolicy: UpstreamMcpToolPolicy | undefined,
+  environmentPolicy: UpstreamMcpToolPolicy | undefined,
+): void {
+  if (!staticPolicy?.allow?.length && !staticPolicy?.deny?.length) {
+    return;
+  }
+
+  if (!environmentPolicy) {
+    throw new ValidationError(
+      'upstream_mcp_from_env cannot broaden the static upstream_mcp.tools policy: tools policy is required',
+      { path: 'upstream_mcp_from_env' },
+    );
+  }
+
+  const staticAllow = new Set(staticPolicy.allow?.map((value) => value.trim()));
+  if (staticAllow.size > 0) {
+    const environmentAllow = environmentPolicy.allow?.map((value) => value.trim());
+    if (!environmentAllow?.length || environmentAllow.some((pattern) => !staticAllow.has(pattern))) {
+      throw new ValidationError(
+        'upstream_mcp_from_env cannot broaden the static upstream_mcp.tools policy: allow patterns must remain within the static allow-list',
+        { path: 'upstream_mcp_from_env' },
+      );
+    }
+  }
+
+  const staticDeny = staticPolicy.deny?.map((value) => value.trim()) ?? [];
+  const environmentDeny = new Set(environmentPolicy.deny?.map((value) => value.trim()));
+  if (staticDeny.some((pattern) => !environmentDeny.has(pattern))) {
+    throw new ValidationError(
+      'upstream_mcp_from_env cannot broaden the static upstream_mcp.tools policy: deny patterns must be retained',
+      { path: 'upstream_mcp_from_env' },
+    );
+  }
+}
+
 function validateUpstreamAuth(auth: UpstreamMcpAuthConfig | undefined, path: string): void {
   if (!auth) {
     return;
@@ -252,6 +288,10 @@ export function resolveUpstreamMcpConfig(
   env: EnvSource = process.env,
 ): UpstreamMcpServerConfig | undefined {
   const envResolved = resolveUpstreamMcpFromEnv(profile, env);
+  if (envResolved && profile.upstream_mcp?.tools) {
+    validateToolPolicy(profile.upstream_mcp.tools, 'upstream_mcp.tools');
+    validateEnvironmentToolPolicy(profile.upstream_mcp.tools, envResolved.tools);
+  }
   const provider = envResolved ?? profile.upstream_mcp;
   if (!provider) return undefined;
 

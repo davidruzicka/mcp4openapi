@@ -47,6 +47,18 @@ describe('resolveConsentGateConfig', () => {
 
 describe('validateConsentGateProfile', () => {
   const previousNodeEnv = process.env.NODE_ENV;
+  const requiredConsentGate = { required: true, rules_version: 'v1', identity_source: 'profile_oauth' } as const;
+  const profileOAuth = {
+    auth: {
+      type: 'oauth' as const,
+      oauth_config: {
+        issuer: 'https://login.example.test',
+        client_id: 'client',
+        redirect_uri: 'https://gateway.example.test/oauth/callback',
+        scopes: ['openid'],
+      },
+    },
+  };
 
   beforeEach(() => {
     process.env.NODE_ENV = 'test';
@@ -60,19 +72,16 @@ describe('validateConsentGateProfile', () => {
     expect(validateConsentGateProfile(createProfile())).toBeUndefined();
   });
 
-  it('returns the resolved config when consent_gate is valid', () => {
+  it('accepts a required gate with a static upstream MCP source', () => {
     const config = validateConsentGateProfile(
       createProfile({
-        consent_gate: { required: true, rules_version: 'v1', identity_source: 'profile_oauth' },
-        interceptors: {
-          auth: {
-            type: 'oauth',
-            oauth_config: {
-              issuer: 'https://login.example.test',
-              client_id: 'client',
-              redirect_uri: 'https://gateway.example.test/oauth/callback',
-              scopes: ['openid'],
-            },
+        consent_gate: requiredConsentGate,
+        interceptors: profileOAuth,
+        upstream_mcp: {
+          name: 'upstream',
+          transport: {
+            type: 'http-streamable',
+            url: 'https://upstream.example.test/mcp',
           },
         },
       }),
@@ -81,10 +90,36 @@ describe('validateConsentGateProfile', () => {
     expect(config?.rules_version).toBe('v1');
   });
 
+  it('rejects a required gate with only an unresolved upstream MCP environment reference', () => {
+    expect(() => validateConsentGateProfile(createProfile({
+      consent_gate: requiredConsentGate,
+      interceptors: profileOAuth,
+      upstream_mcp_from_env: 'MCP4_UNRESOLVED_UPSTREAM_MCP_FOR_CONSENT_GATE_TEST',
+    }))).toThrow('requires an effective upstream_mcp configuration');
+  });
+
+  it('rejects a required gate when local tools are configured', () => {
+    expect(() => validateConsentGateProfile(createProfile({
+      consent_gate: requiredConsentGate,
+      interceptors: profileOAuth,
+      upstream_mcp: {
+        name: 'upstream',
+        transport: { type: 'http-streamable', url: 'https://upstream.example.test/mcp' },
+      },
+      tools: [{ name: 'local_tool' }] as Profile['tools'],
+    }))).toThrow('supports upstream MCP tools only and cannot define local tools');
+  });
+
   it('rejects a required gate without profile OAuth', () => {
     expect(() =>
       validateConsentGateProfile(
-        createProfile({ consent_gate: { required: true, rules_version: 'v1', identity_source: 'profile_oauth' } }),
+        createProfile({
+          consent_gate: { required: true, rules_version: 'v1', identity_source: 'profile_oauth' },
+          upstream_mcp: {
+            name: 'upstream',
+            transport: { type: 'http-streamable', url: 'https://upstream.example.test/mcp' },
+          },
+        }),
       ),
     ).toThrow(ConsentGateConfigurationError);
   });
@@ -93,6 +128,10 @@ describe('validateConsentGateProfile', () => {
     expect(() => validateConsentGateProfile(createProfile({
       consent_gate: { required: true, rules_version: 'v1', identity_source: 'profile_oauth' },
       interceptors: { auth: { type: 'oauth', oauth_config: { issuer: 'https://login.example.test', scopes: ['Files.Read'] } } },
+      upstream_mcp: {
+        name: 'upstream',
+        transport: { type: 'http-streamable', url: 'https://upstream.example.test/mcp' },
+      },
     }))).toThrow(ConsentGateConfigurationError);
   });
 });

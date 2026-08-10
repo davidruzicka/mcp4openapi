@@ -110,14 +110,14 @@ export class ProfileLoader {
       profile.client_auth_gate = resolvedClientAuthGate;
     }
 
-    const resolvedConsentGate = validateConsentGateProfile(profile);
-    if (resolvedConsentGate) {
-      profile.consent_gate = resolvedConsentGate;
-    }
-
     const resolvedUpstreamMcp = resolveUpstreamMcpConfig(profile);
     if (resolvedUpstreamMcp) {
       profile.upstream_mcp = resolvedUpstreamMcp;
+    }
+
+    const resolvedConsentGate = validateConsentGateProfile(profile);
+    if (resolvedConsentGate) {
+      profile.consent_gate = resolvedConsentGate;
     }
 
     // D-02: upstream_mcp and tools[] are mutually exclusive
