@@ -306,3 +306,56 @@ describe('FileConsentEvidenceStore', () => {
     });
   });
 });
+
+describe('FileConsentEvidenceStore malformed input and read failures', () => {
+  let dir: string;
+  let filePath: string;
+
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'consent-malformed-'));
+    filePath = path.join(dir, 'evidence.jsonl');
+  });
+
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('ignores a grant line that is missing rules_hash', async () => {
+    const { rules_hash: _dropped, ...withoutHash } = makeEvidence();
+    fs.writeFileSync(filePath, `${JSON.stringify({ type: 'grant', ...withoutHash })}\n`, 'utf8');
+
+    const store = new FileConsentEvidenceStore(filePath, logger);
+    await expect(store.lookup(defaultIdentity, 'ms365', 'v1')).resolves.toMatchObject({ grant: null });
+  });
+
+  it('ignores a revocation line that is missing revoked_at', async () => {
+    fs.writeFileSync(
+      filePath,
+      `${JSON.stringify({ type: 'revocation', ...defaultIdentity, profileId: 'ms365' })}\n`,
+      'utf8',
+    );
+
+    const store = new FileConsentEvidenceStore(filePath, logger);
+    await expect(store.lookup(defaultIdentity, 'ms365', 'v1')).resolves.toMatchObject({ revokedAt: null });
+  });
+
+  it('ignores a line whose type is unknown', async () => {
+    fs.writeFileSync(filePath, `${JSON.stringify({ type: 'audit', ...makeEvidence() })}\n`, 'utf8');
+
+    const store = new FileConsentEvidenceStore(filePath, logger);
+    await expect(store.lookup(defaultIdentity, 'ms365', 'v1')).resolves.toMatchObject({ grant: null });
+  });
+
+  it('fails closed with a typed error when the evidence path cannot be read', async () => {
+    // A directory where a file is expected: stat succeeds, the read does not, so
+    // the gate must block rather than treat it as "no consent recorded".
+    fs.mkdirSync(filePath);
+    fs.writeFileSync(path.join(filePath, 'placeholder'), 'x', 'utf8');
+
+    const store = new FileConsentEvidenceStore(filePath, logger);
+    await expect(store.lookup(defaultIdentity, 'ms365', 'v1')).rejects.toMatchObject({
+      name: 'ConsentEvidenceStoreError',
+      code: 'CONSENT_EVIDENCE_STORE_ERROR',
+    });
+  });
+});

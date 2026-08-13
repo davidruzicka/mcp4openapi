@@ -422,3 +422,103 @@ describe('refresh envelope', () => {
     expect(() => encryptRefreshEnvelope({ ...payload, pid: '' }, KEY)).toThrow(ValidationError);
   });
 });
+
+describe('refresh envelope decoder guards', () => {
+  const REFRESH_PAYLOAD = {
+    v: 1,
+    rt: 'idp-refresh',
+    cid: 'client-1',
+    sub: 'person-1',
+    iss: 'https://issuer.example.test/v2.0',
+    tid: 'tenant-1',
+    pid: PROFILE_ID,
+    iat: Date.now(),
+  };
+
+  /** Craft a refresh envelope directly, bypassing encryptRefreshEnvelope validation. */
+  const craftRefresh = (payload: unknown, key: Buffer = KEY, aadProfile = PROFILE_ID): string => {
+    const nonce = randomBytes(NONCE_BYTES);
+    const cipher = nodeCipheriv('aes-256-gcm', key, nonce);
+    cipher.setAAD(Buffer.from(`${aadProfile}:refresh`, 'utf8'));
+    const plain = Buffer.from(JSON.stringify(payload), 'utf8');
+    const ct = Buffer.concat([cipher.update(plain), cipher.final()]);
+    const tag = cipher.getAuthTag();
+    return 'mcp4.r1.' + Buffer.concat([nonce, ct, tag]).toString('base64url');
+  };
+
+  it('retries with the legacy fallback key', () => {
+    // Passphrase deployments predating the scrypt KDF must keep working.
+    const legacyKey = deriveLegacySha256TokenKey('test-passphrase');
+    const envelope = craftRefresh(REFRESH_PAYLOAD, legacyKey);
+
+    expect(decryptRefreshEnvelope(envelope, KEY, PROFILE_ID)).toBeNull();
+    expect(decryptRefreshEnvelope(envelope, KEY, PROFILE_ID, legacyKey)).toMatchObject({
+      rt: 'idp-refresh',
+      sub: 'person-1',
+    });
+  });
+
+  it('returns null for a key of the wrong length', () => {
+    const envelope = encryptRefreshEnvelope(REFRESH_PAYLOAD, KEY);
+    expect(decryptRefreshEnvelope(envelope, Buffer.alloc(16, 1), PROFILE_ID)).toBeNull();
+  });
+
+  it('returns null for a blank profile id', () => {
+    const envelope = encryptRefreshEnvelope(REFRESH_PAYLOAD, KEY);
+    expect(decryptRefreshEnvelope(envelope, KEY, '')).toBeNull();
+  });
+
+  it('returns null for a non-string token', () => {
+    expect(decryptRefreshEnvelope(undefined as unknown as string, KEY, PROFILE_ID)).toBeNull();
+  });
+
+  it('returns null when the plaintext is not a JSON object', () => {
+    expect(decryptRefreshEnvelope(craftRefresh(['not', 'an', 'object']), KEY, PROFILE_ID)).toBeNull();
+    expect(decryptRefreshEnvelope(craftRefresh('a string'), KEY, PROFILE_ID)).toBeNull();
+  });
+
+  it('returns null for an unexpected version', () => {
+    expect(decryptRefreshEnvelope(craftRefresh({ ...REFRESH_PAYLOAD, v: 2 }), KEY, PROFILE_ID)).toBeNull();
+  });
+
+  it('returns null when required fields are missing or malformed', () => {
+    const cases: Record<string, unknown>[] = [
+      { ...REFRESH_PAYLOAD, rt: '' },
+      { ...REFRESH_PAYLOAD, cid: '' },
+      { ...REFRESH_PAYLOAD, iat: 'not-a-number' },
+      // Identity must be all-or-nothing: a subject with no issuer cannot be bound.
+      { ...REFRESH_PAYLOAD, iss: undefined },
+      { ...REFRESH_PAYLOAD, sub: '' },
+      { ...REFRESH_PAYLOAD, iss: '' },
+      { ...REFRESH_PAYLOAD, tid: 42 },
+      { ...REFRESH_PAYLOAD, tid: '' },
+    ];
+
+    for (const payload of cases) {
+      expect(decryptRefreshEnvelope(craftRefresh(payload), KEY, PROFILE_ID)).toBeNull();
+    }
+  });
+
+  it('returns null when the profile in the payload does not match the AAD profile', () => {
+    // AAD binds the envelope to a profile; a mismatching pid is rejected too.
+    const envelope = craftRefresh({ ...REFRESH_PAYLOAD, pid: 'other-profile' });
+    expect(decryptRefreshEnvelope(envelope, KEY, PROFILE_ID)).toBeNull();
+  });
+});
+
+describe('refresh envelope truncation guards', () => {
+  it('returns null for a truncated refresh envelope', () => {
+    // Shorter than nonce + tag + one byte of ciphertext: reject instead of
+    // attempting to slice past the buffer.
+    const truncated = 'mcp4.r1.' + randomBytes(NONCE_BYTES + TAG_BYTES - 1).toString('base64url');
+    expect(decryptRefreshEnvelope(truncated, KEY, PROFILE_ID)).toBeNull();
+  });
+
+  it('returns null for a refresh envelope whose body is not valid base64url', () => {
+    expect(decryptRefreshEnvelope('mcp4.r1.not*base64url', KEY, PROFILE_ID)).toBeNull();
+  });
+
+  it('returns null for a refresh envelope with an empty body', () => {
+    expect(decryptRefreshEnvelope('mcp4.r1.', KEY, PROFILE_ID)).toBeNull();
+  });
+});
