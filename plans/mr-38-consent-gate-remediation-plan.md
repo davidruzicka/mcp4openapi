@@ -10,7 +10,7 @@ MR 38 adds an OIDC-backed human consent gate for sensitive upstream MCP profiles
 
 > A tool call on a required-consent profile is allowed only when the request is bound to a verified OIDC human identity and that identity has accepted the current rules version for the same profile and issuer/tenant context.
 
-**Implementation status: complete except two deferred items.** Sections 0 to 10 are implemented and verified; see Appendix B for evidence and deviations. Still open: only the two section 8 items deferred by design.
+**Implementation status: complete except one deferred item.** Sections 0 to 10 are implemented and verified; see Appendix B for evidence and deviations. Still open: only the transactional multi-replica evidence backend, tracked as `TODO.md` item 1.
 
 ### Residual findings at `7e11551`
 
@@ -250,7 +250,7 @@ Already covered, verify only: double initialization with the same envelope (`htt
 
 ## 8. Deferred, with Recorded Reasons
 
-- [ ] `oid`-absent fallback to `sub` only. Multi-audience and `azp` moved to section 1 by D8; they are an identity-boundary control, not deferrable hardening.
+- [x] `oid`-absent fallback to `sub` only. Multi-audience and `azp` moved to section 1 by D8; they are an identity-boundary control, not deferrable hardening. Done in `oidc-identity-verifier.test.ts`, together with the verifier's previously untested error paths (unsigned token, discovery failures, untrusted JWKS origin, transport failure mapped to a generic message) and the `consent-gate-validator.ts` failure branches.
 - [ ] Transactional multi-replica evidence backend. Stays in `TODO.md`.
 - [x] Browser-presence proof. No browser automation dependency exists in `package.json`. Cookie flags, CSRF token, and origin validation are testable at HTTP level with the existing harness; actual human presence is not. Record the residual risk in the threat model.
 - [x] The misleading `TODO(phase-3/auth-gate)` comment at `mcp-server.ts:1584-1588`, which says the upstream proxy is wired unconditionally and must be guarded once the client-auth gate lands. Section 1 supersedes it; delete or rewrite it there rather than leaving it as separate work.
