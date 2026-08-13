@@ -31,7 +31,15 @@ import type { UpstreamConnectionManager } from '../upstream/upstream-connection-
 import { UpstreamAuthError } from '../upstream/upstream-errors.js';
 import type { MetricsContextLabels } from '../core/metrics.js';
 import { ExternalOAuthProvider, isOAuthConfigOperational } from '../auth/oauth-provider.js';
-import { encryptTokenPayload, decryptTokenPayload, isEncryptedToken, type TokenEnvelopePayload } from '../auth/token-envelope.js';
+import {
+  encryptTokenPayload,
+  decryptTokenPayload,
+  encryptRefreshEnvelope,
+  decryptRefreshEnvelope,
+  isEncryptedToken,
+  isRefreshEnvelope,
+  type TokenEnvelopePayload,
+} from '../auth/token-envelope.js';
 import { EnterpriseAuthProvider } from '../auth/enterprise-auth-provider.js';
 import { InboundAuthTokenStore } from '../auth/inbound-auth-token-store.js';
 import { EnterpriseReplayStore } from '../auth/enterprise-replay-store.js';
@@ -40,7 +48,7 @@ import { ClientAuthGate } from '../auth/client-auth-gate.js';
 import { ConsentGate } from '../auth/consent-gate.js';
 import type { ConsentEvidenceStore } from '../auth/consent-evidence-store.js';
 import { createConsentEvidenceStore } from '../auth/consent-evidence-store-factory.js';
-import { OidcIdentityVerifier } from '../auth/oidc-identity-verifier.js';
+import { OidcIdentityVerifier, type OidcIdentity } from '../auth/oidc-identity-verifier.js';
 import type { AuthorizedPrincipal } from '../auth/inbound-auth-principal.js';
 import { normalizeIssuer } from '../auth/issuer.js';
 import { pseudonymizeSubject } from '../auth/observability-pseudonym.js';
@@ -68,6 +76,8 @@ import {
   AuthenticationError,
   AuthorizationError,
   ConfigurationError,
+  ConsentGateConfigurationError,
+  ConsentRequiredError,
   OAuthClientStoreCapacityError,
   RateLimitError,
   ValidationError,
@@ -100,6 +110,32 @@ import type { ProfileIndexSourceProfile, ProfileIndexTenantSummary, SystemNotice
 const DEFAULT_MAX_TOKEN_LENGTH = 4096;
 // Envelopes older than 30 days are rejected during restart-recovery to bound token lifetime at rest.
 const MAX_ENVELOPE_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+// Upper bound on remembered re-consent invalidations (one entry per subject and rules version).
+const RECONSENT_INVALIDATION_MAX = 10000;
+// Lifetime of a rendered consent approval and of its browser-binding cookie.
+const CONSENT_APPROVAL_TTL_MS = 5 * 60 * 1000;
+// `__Host-` prefix: browsers only accept it over HTTPS, with Path=/ and no Domain.
+const CONSENT_COOKIE_NAME = '__Host-mcp4_consent';
+
+/** Extract one cookie value from a raw Cookie header. Returns undefined when absent. */
+function parseCookieValue(header: string | undefined, name: string): string | undefined {
+  if (!header) return undefined;
+  for (const part of header.split(';')) {
+    const separator = part.indexOf('=');
+    if (separator === -1) continue;
+    if (part.slice(0, separator).trim() !== name) continue;
+    return part.slice(separator + 1).trim();
+  }
+  return undefined;
+}
+
+/** Constant-time string comparison that does not leak length through early exit. */
+function timingSafeEqualString(a: string, b: string): boolean {
+  const left = Buffer.from(a, 'utf8');
+  const right = Buffer.from(b, 'utf8');
+  if (left.length !== right.length) return false;
+  return crypto.timingSafeEqual(left, right);
+}
 
 interface ProfileRuntimeState {
   profileId: string;
@@ -141,8 +177,16 @@ interface OAuthRequiredErrorResponse {
   };
 }
 
+/**
+ * Pending browser approval, keyed by the OAuth request fingerprint.
+ *
+ * Fingerprint keying is self-limiting: repeated GETs for the same OAuth request
+ * overwrite one entry instead of each adding a new one, so unauthenticated
+ * traffic cannot evict legitimate pending approvals from a global FIFO.
+ */
 interface PendingConsentApproval {
-  fingerprint: string;
+  /** Random id echoed in the __Host- cookie; ties the GET and the POST to one user agent. */
+  browserId: string;
   expiresAt: number;
 }
 
@@ -208,6 +252,12 @@ export class HttpTransport {
   private readonly enterpriseJwksCache: JwksCache;
   private readonly pendingConsentApprovals = new Map<string, PendingConsentApproval>();
   private readonly enterpriseReplayStore: EnterpriseReplayStore;
+  /**
+   * Subjects already invalidated once for the current rules version. Bounds the
+   * re-consent 401 to a single OAuth restart per subject, so a client that
+   * cannot complete the browser acknowledgement cannot loop.
+   */
+  private readonly reconsentInvalidations = new Set<string>();
   private readonly enterpriseGrantAttemptsByProfile = new Map<string, number[]>();
   private readonly enterpriseGrantConcurrencyByProfile = new Map<string, number>();
   private upstreamConnectionManager: UpstreamConnectionManager | null = null;
@@ -636,13 +686,26 @@ export class HttpTransport {
       if (!oauthProvider?.issuer || !oauthProvider.configuredClientId) {
         throw new ConfigurationError('Required consent gate needs profile OAuth issuer and client_id');
       }
-      const store = createConsentEvidenceStore(this.logger);
+      // Without a token key there are no encrypted envelopes, so a verified
+      // identity cannot survive a restart and every refresh would silently
+      // produce a principal-less session on a gated profile.
+      if (!this.config.tokenKey) {
+        throw new ConfigurationError(
+          'Required consent gate needs MCP4_OAUTH_KEY so verified identity survives a gateway restart',
+        );
+      }
+      const store = createConsentEvidenceStore({
+        evidencePath: this.config.consentEvidencePath,
+        consentRequired: true,
+        logger: this.logger,
+      });
       const gate = new ConsentGate(
         profileId,
         context.consent_gate,
         store,
         (id) => this.buildProfileUrl(id, '/consent'),
         this.logger,
+        oauthProvider.issuer,
       );
       const verifier = new OidcIdentityVerifier({
         issuer: oauthProvider.issuer,
@@ -653,16 +716,17 @@ export class HttpTransport {
       oauthProvider.configureIdentityVerification(verifier, async (identity) => {
         await store.record({
           sub: identity.subject,
-          issuer: identity.issuer,
+          issuer: normalizeIssuer(identity.issuer),
           tenantId: identity.tenantId ?? null,
           profileId,
           rules_version: context!.consent_gate!.rules_version,
+          rules_hash: gate.rulesHash,
           granted_at: Date.now(),
         });
         this.logger.info('Consent evidence recorded', {
           profileId,
           rulesVersion: context!.consent_gate!.rules_version,
-          subjectHash: crypto.createHash('sha256').update(identity.subject).digest('hex').slice(0, 16),
+          subjectHash: pseudonymizeSubject(identity.subject),
         });
       });
       state.consentEvidenceStore = store;
@@ -2077,9 +2141,19 @@ export class HttpTransport {
           this.renderConsentApproval(res, profileState, input, fingerprint);
           return;
         }
-        const approvalToken = typeof input.consent_token === 'string' ? input.consent_token : '';
-        if (input.consent_accept !== 'yes' || !this.consumeConsentApproval(approvalToken, fingerprint)) {
-          res.status(HTTP_STATUS.BAD_REQUEST).send('Invalid or expired consent approval');
+        if (
+          input.consent_accept !== 'yes' ||
+          !this.consumeConsentApproval(fingerprint, req.headers.cookie)
+        ) {
+          // Send the user back to a usable starting point instead of a dead end:
+          // behind a non-sticky load balancer the GET and POST can land on
+          // different replicas, which is otherwise unrecoverable for the user.
+          res
+            .status(HTTP_STATUS.BAD_REQUEST)
+            .type('html')
+            .send(
+              `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Consent approval expired</title></head><body><main><h1>Consent approval expired</h1><p>The approval was already used, expired, or was started in a different browser session.</p><p><a href="${escapeHtmlSafe(req.originalUrl)}">Start the consent flow again</a></p></main></body></html>`,
+            );
           return;
         }
       }
@@ -2111,6 +2185,15 @@ export class HttpTransport {
     res.status(HTTP_STATUS.OK).type('html').send(`<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Consent required</title></head><body><main><h1>Consent required</h1><p>${escapeHtmlSafe(gate.rules_summary ?? 'Access requires accepting the current usage rules.')}</p>${education}<p>Reconnect this MCP server in your client to start the secure sign-in and consent flow for rules version ${escapeHtmlSafe(gate.rules_version)}.</p></main></body></html>`);
   }
 
+  /**
+   * Render the rules acknowledgement form.
+   *
+   * The pending entry is keyed by the request fingerprint, so a flood of
+   * unauthenticated GETs for distinct OAuth requests is bounded by expiry rather
+   * than by evicting other users' pending approvals. A random browser id is set
+   * as a `__Host-` cookie and must come back with the POST, so the
+   * acknowledgement and the submission demonstrably come from one user agent.
+   */
   private renderConsentApproval(
     res: Response,
     profileState: ProfileRuntimeState,
@@ -2118,16 +2201,19 @@ export class HttpTransport {
     fingerprint: string,
   ): void {
     const now = Date.now();
-    for (const [token, pending] of this.pendingConsentApprovals) {
-      if (pending.expiresAt <= now) this.pendingConsentApprovals.delete(token);
+    for (const [key, pending] of this.pendingConsentApprovals) {
+      if (pending.expiresAt <= now) this.pendingConsentApprovals.delete(key);
     }
-    while (this.pendingConsentApprovals.size >= 1000) {
-      const oldest = this.pendingConsentApprovals.keys().next().value;
-      if (!oldest) break;
-      this.pendingConsentApprovals.delete(oldest);
-    }
+    const browserId = crypto.randomBytes(32).toString('base64url');
     const token = crypto.randomBytes(32).toString('base64url');
-    this.pendingConsentApprovals.set(token, { fingerprint, expiresAt: now + 5 * 60 * 1000 });
+    this.pendingConsentApprovals.set(fingerprint, {
+      browserId,
+      expiresAt: now + CONSENT_APPROVAL_TTL_MS,
+    });
+    res.setHeader(
+      'Set-Cookie',
+      `${CONSENT_COOKIE_NAME}=${browserId}; Path=/; Max-Age=${CONSENT_APPROVAL_TTL_MS / 1000}; HttpOnly; Secure; SameSite=Lax`,
+    );
 
     const hiddenFields = ['response_type', 'client_id', 'redirect_uri', 'scope', 'state', 'code_challenge', 'code_challenge_method']
       .filter((field) => typeof input[field] === 'string')
@@ -2143,11 +2229,22 @@ export class HttpTransport {
     res.status(HTTP_STATUS.OK).type('html').send(`<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Consent required</title></head><body><main><h1>Consent required</h1><p>${summary}</p>${education}<form method="post">${hiddenFields}<input type="hidden" name="consent_token" value="${token}"><label><input type="checkbox" name="consent_accept" value="yes" required> I accept rules version ${escapeHtmlSafe(gate.rules_version)}</label><p><button type="submit">Continue to sign in</button></p></form></main></body></html>`);
   }
 
-  private consumeConsentApproval(token: string, fingerprint: string): boolean {
-    const pending = this.pendingConsentApprovals.get(token);
+  /**
+   * Consume a pending approval.
+   *
+   * One-time, expiry-bound, and bound to BOTH the complete OAuth request
+   * (fingerprint) and the browser that was shown the rules (cookie). The
+   * acknowledgement proves neither human presence nor who the user is: identity
+   * comes from the OIDC login that follows.
+   */
+  private consumeConsentApproval(fingerprint: string, cookieHeader: string | undefined): boolean {
+    const pending = this.pendingConsentApprovals.get(fingerprint);
     if (!pending) return false;
-    this.pendingConsentApprovals.delete(token);
-    return pending.expiresAt > Date.now() && pending.fingerprint === fingerprint;
+    this.pendingConsentApprovals.delete(fingerprint);
+    if (pending.expiresAt <= Date.now()) return false;
+    const presented = parseCookieValue(cookieHeader, CONSENT_COOKIE_NAME);
+    if (!presented) return false;
+    return timingSafeEqualString(presented, pending.browserId);
   }
 
   private async handleOAuthToken(
@@ -2205,11 +2302,14 @@ export class HttpTransport {
           // Fetch the registered client so creg can be embedded for restart-resilient session recovery.
           const registeredClient = await profileState.oauthProvider.clientsStore.getClient(client.client_id);
           const clientToken = this.storeOAuthTokens(profileState, tokens, client.client_id, client.scope?.split(' ') || [], registeredClient ?? undefined);
-          response.json(
-            clientToken !== tokens.access_token
-              ? { ...tokens, access_token: clientToken }
-              : tokens,
-          );
+          // Issue the refresh token as an identity-bearing envelope so a later
+          // direct refresh grant still knows which human it belongs to.
+          const clientRefreshToken = this.buildClientRefreshToken(profileState, tokens, client.client_id);
+          response.json({
+            ...tokens,
+            access_token: clientToken,
+            ...(clientRefreshToken ? { refresh_token: clientRefreshToken } : {}),
+          });
         } catch {
           response.status(HTTP_STATUS.BAD_REQUEST).json({ error: 'invalid_grant', error_description: 'Token exchange failed' });
         }
@@ -2230,14 +2330,25 @@ export class HttpTransport {
           if (!client) {
             return;
           }
-          const tokens = await profileState.oauthProvider.exchangeRefreshToken(client, request.body.refresh_token);
+          // Recover the verified identity from the refresh envelope: after a
+          // restart the provider's in-process identity map is empty, so without
+          // this the refreshed token would carry no human principal at all.
+          const grant = this.resolveRefreshGrant(profileState, request.body.refresh_token);
+          const tokens = await profileState.oauthProvider.exchangeRefreshToken(
+            client,
+            grant.refreshToken,
+            undefined,
+            undefined,
+            grant.identity,
+          );
           const registeredClient = await profileState.oauthProvider.clientsStore.getClient(client.client_id);
           const clientToken = this.storeOAuthTokens(profileState, tokens, client.client_id, client.scope?.split(' ') || [], registeredClient ?? undefined);
-          response.json(
-            clientToken !== tokens.access_token
-              ? { ...tokens, access_token: clientToken }
-              : tokens,
-          );
+          const clientRefreshToken = this.buildClientRefreshToken(profileState, tokens, client.client_id);
+          response.json({
+            ...tokens,
+            access_token: clientToken,
+            ...(clientRefreshToken ? { refresh_token: clientRefreshToken } : {}),
+          });
         } catch {
           response.status(HTTP_STATUS.BAD_REQUEST).json({ error: 'invalid_grant', error_description: 'Token exchange failed' });
         }
@@ -4544,6 +4655,96 @@ export class HttpTransport {
   }
 
   /**
+   * Wrap the IdP refresh token in an encrypted envelope carrying the verified
+   * identity.
+   *
+   * Without this, a direct token-endpoint `refresh_token` grant after a restart
+   * has no way to recover who the human was: the provider's in-process identity
+   * map is empty, so the refreshed token would carry no principal at all. The
+   * envelope is keyed and AAD-bound to the profile, so it cannot be replayed
+   * across profiles or presented as an access token.
+   *
+   * Returns the original refresh token unchanged when no key is configured;
+   * consent-gated profiles require the key at startup, so that path applies to
+   * non-consent profiles only.
+   */
+  private buildClientRefreshToken(
+    profileState: ProfileRuntimeState,
+    tokens: OAuthTokens,
+    clientId: string,
+  ): string | undefined {
+    if (!tokens.refresh_token) return undefined;
+    if (!this.config.tokenKey) return tokens.refresh_token;
+
+    const getIdentity = profileState.oauthProvider?.getIdentityForAccessToken;
+    const identity = typeof getIdentity === 'function' && tokens.access_token
+      ? getIdentity.call(profileState.oauthProvider, tokens.access_token)
+      : undefined;
+
+    try {
+      return encryptRefreshEnvelope(
+        {
+          v: 1,
+          rt: tokens.refresh_token,
+          cid: clientId,
+          sub: identity?.subject,
+          iss: identity?.issuer,
+          tid: identity?.tenantId,
+          pid: profileState.profileId,
+          iat: Date.now(),
+        },
+        this.config.tokenKey,
+      );
+    } catch (err) {
+      this.logger.warn('Refresh envelope encryption failed - returning plain refresh token', {
+        profileId: profileState.profileId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return tokens.refresh_token;
+    }
+  }
+
+  /**
+   * Resolve a client-presented refresh token into the IdP refresh token plus the
+   * verified identity it was issued to.
+   *
+   * A consent-gated profile refuses a refresh token that carries no identity:
+   * accepting it would mint a session whose principal is unknown, which the gate
+   * would then have to block on every call with no way for the user to recover.
+   * Failing the grant makes the client re-run OAuth instead.
+   */
+  private resolveRefreshGrant(
+    profileState: ProfileRuntimeState,
+    presentedToken: string,
+  ): { refreshToken: string; identity?: OidcIdentity } {
+    const consentRequired = profileState.context.consent_gate?.required === true;
+
+    if (this.config.tokenKey && isRefreshEnvelope(presentedToken)) {
+      const payload = decryptRefreshEnvelope(
+        presentedToken,
+        this.config.tokenKey,
+        profileState.profileId,
+        this.config.legacyTokenKey,
+      );
+      if (!payload) {
+        throw new AuthenticationError('Refresh token envelope could not be verified');
+      }
+      const identity = payload.sub && payload.iss
+        ? { subject: payload.sub, issuer: payload.iss, tenantId: payload.tid }
+        : undefined;
+      if (consentRequired && !identity) {
+        throw new AuthenticationError('Refresh token carries no verified identity for a consent-gated profile');
+      }
+      return { refreshToken: payload.rt, identity };
+    }
+
+    if (consentRequired) {
+      throw new AuthenticationError('Consent-gated profile requires an identity-bearing refresh token');
+    }
+    return { refreshToken: presentedToken };
+  }
+
+  /**
    * Cleanup expired sessions
    * 
    * Why: Prevent memory leaks, enforce session timeout
@@ -4695,18 +4896,82 @@ export class HttpTransport {
     return this.profileStates.get(profileId)?.sessions.get(sessionId)?.clientPrincipal;
   }
 
+  /**
+   * Enforce consent for a session before upstream dispatch.
+   *
+   * Fails closed: a profile declaring `consent_gate.required` with no gate
+   * constructed is a wiring defect, not a reason to allow the call. Issuer
+   * canonicalization and the identity-source check live in `ConsentGate`, so a
+   * single implementation governs every backend and call path.
+   *
+   * On denial the session is invalidated once per subject and rules version, so
+   * the client receives 401 and restarts OAuth, which is the only re-consent
+   * mechanism MCP clients implement. Repeat denials return the consent error
+   * without invalidating, so a client that cannot complete the browser
+   * acknowledgement does not loop through OAuth indefinitely.
+   */
   public async assertSessionConsent(profileId: string, sessionId: string): Promise<void> {
     const profileState = this.profileStates.get(profileId);
-    if (!profileState?.consentGate) return;
-    const principal = profileState.sessions.get(sessionId)?.clientPrincipal ?? null;
-    const providerIssuer = profileState.oauthProvider?.issuer;
-    if (
-      principal?.issuer &&
-      (!providerIssuer || normalizeIssuer(principal.issuer) !== normalizeIssuer(providerIssuer))
-    ) {
-      throw new AuthenticationError('Session identity issuer does not match profile OAuth issuer');
+    if (!profileState) return;
+    if (!profileState.consentGate) {
+      if (profileState.context.consent_gate?.required) {
+        throw new ConsentGateConfigurationError(
+          'Consent gate is required for this profile but was not initialized',
+          { profileId },
+        );
+      }
+      return;
     }
-    await profileState.consentGate.assertConsent(principal);
+    const principal = profileState.sessions.get(sessionId)?.clientPrincipal ?? null;
+    try {
+      await profileState.consentGate.assertConsent(principal);
+    } catch (error) {
+      if (error instanceof ConsentRequiredError) {
+        this.invalidateSessionForReconsent(profileState, sessionId, principal, error);
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Drop the session and its token once per subject and rules version so the
+   * next request is unauthenticated and the client re-runs OAuth.
+   */
+  private invalidateSessionForReconsent(
+    profileState: ProfileRuntimeState,
+    sessionId: string,
+    principal: AuthorizedPrincipal | null,
+    error: ConsentRequiredError,
+  ): void {
+    const rulesVersion = profileState.context.consent_gate?.rules_version ?? '';
+    const budgetKey = `${profileState.profileId}\n${principal?.subject ?? sessionId}\n${rulesVersion}`;
+    if (this.reconsentInvalidations.has(budgetKey)) return;
+    // Bounded: overflow only costs one extra invalidation for the evicted
+    // subject, never a missed denial.
+    if (this.reconsentInvalidations.size >= RECONSENT_INVALIDATION_MAX) {
+      const oldest = this.reconsentInvalidations.values().next().value;
+      if (oldest !== undefined) this.reconsentInvalidations.delete(oldest);
+    }
+    this.reconsentInvalidations.add(budgetKey);
+    try {
+      this.destroySession(profileState, sessionId);
+    } catch (teardownError) {
+      // Teardown must never mask the denial: the call is blocked either way.
+      this.logger.warn('Session teardown after consent denial failed', {
+        profileId: profileState.profileId,
+        error: teardownError instanceof Error ? teardownError.message : String(teardownError),
+      });
+    } finally {
+      // The session must be gone even if stream/token cleanup failed, otherwise
+      // the client keeps a usable session and never re-runs OAuth.
+      profileState.sessions.delete(sessionId);
+    }
+    this.logger.info('Session invalidated to trigger re-consent', {
+      profileId: profileState.profileId,
+      rulesVersion,
+      reason: error.reason,
+      clientIdentity: principal?.subject ? pseudonymizeSubject(principal.subject) : 'anonymous',
+    });
   }
 
   public setSessionToolFilter(profileId: string, sessionId: string, toolFilter: SessionToolFilter): void {

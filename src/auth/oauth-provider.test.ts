@@ -1374,6 +1374,62 @@ describe('ExternalOAuthProvider', () => {
       });
     });
 
+    it('binds an identity verified via configureIdentityVerification to the exchanged access token', async () => {
+      // Production wiring configures the verifier after construction
+      // (http-transport), not through the constructor.
+      const identity = {
+        subject: 'configured-subject',
+        issuer: 'https://issuer.example.test',
+        tenantId: 'configured-tenant',
+      };
+      provider = new ExternalOAuthProvider(config, mockLogger);
+      const identityVerifier = { verify: vi.fn().mockResolvedValue(identity) };
+      const onIdentityVerified = vi.fn().mockResolvedValue(undefined);
+      provider.configureIdentityVerification(identityVerifier as never, onIdentityVerified);
+
+      const client: OAuthClientInformationFull = {
+        client_id: 'client-123',
+        redirect_uris: ['http://localhost:3003/callback'],
+        grant_types: ['authorization_code'],
+        response_types: ['code'],
+      };
+      (provider as any)._clientsStore.registerClient(client);
+      (provider as any).stateStore.set('state123', {
+        clientRedirectUri: 'http://localhost:3003/callback',
+        codeChallenge: '',
+        originalState: 'orig',
+        clientId: client.client_id,
+        scopes: ['openid'],
+        nonce: 'nonce-2',
+        createdAt: Date.now(),
+      });
+      (provider as any).exchangeCodeWithProvider = vi.fn().mockResolvedValue({
+        access_token: 'configured-access-token',
+        id_token: 'signed-id-token',
+        expires_in: 3600,
+        token_type: 'Bearer',
+      });
+      const response = {
+        status: vi.fn().mockReturnThis(),
+        send: vi.fn(),
+        redirect: vi.fn(),
+      } as any;
+
+      await provider.handleCallback({ query: { code: 'code', state: 'state123' } } as any, response);
+      const redirect = new URL(response.redirect.mock.calls[0][0]);
+      const internalCode = redirect.searchParams.get('code')!;
+      const tokens = await provider.exchangeAuthorizationCode(client, internalCode);
+
+      expect(identityVerifier.verify).toHaveBeenCalledWith('signed-id-token', 'nonce-2');
+      expect(onIdentityVerified).toHaveBeenCalledWith(identity);
+      expect(tokens.access_token).toBe('configured-access-token');
+      expect(provider.getIdentityForAccessToken(tokens.access_token)).toEqual({
+        subject: 'configured-subject',
+        issuer: 'https://issuer.example.test',
+        tenantId: 'configured-tenant',
+      });
+    });
+
     it('should return 400 when stored redirect host is disallowed during callback', async () => {
       const configWithAllowedHosts = {
         ...config,
@@ -1620,6 +1676,50 @@ describe('ExternalOAuthProvider', () => {
 
       expect(provider.getIdentityForAccessToken('recovered-access')).toEqual(identity);
       expect((provider as any).refreshTokenIdentities.get('recovered-refresh').identity).toEqual(identity);
+    });
+
+    it('sweeps expired identity bindings when storing a new one', () => {
+      const map = (provider as any).refreshTokenIdentities as Map<
+        string,
+        { identity: unknown; expiresAt: number }
+      >;
+      const now = Date.now();
+      map.set('expired', { identity: { subject: 'gone' }, expiresAt: now - 1 });
+      map.set('live', { identity: { subject: 'kept' }, expiresAt: now + 3600_000 });
+
+      (provider as any).storeRefreshTokenIdentity('new-refresh', {
+        subject: 'newcomer',
+        issuer: 'https://issuer.example.test/tenant/v2.0',
+      });
+
+      expect(map.has('expired')).toBe(false);
+      expect(map.has('live')).toBe(true);
+      expect(map.has('new-refresh')).toBe(true);
+    });
+
+    it('evicts the nearest-expiry identity binding at capacity, not the oldest inserted one', () => {
+      const map = (provider as any).refreshTokenIdentities as Map<
+        string,
+        { identity: unknown; expiresAt: number }
+      >;
+      const now = Date.now();
+      // Oldest inserted but longest-lived: FIFO eviction would drop this one and
+      // silently force that user to re-consent.
+      map.set('long-lived', { identity: { subject: 'keep' }, expiresAt: now + 30 * 24 * 3600_000 });
+      for (let i = 0; i < 9998; i += 1) {
+        map.set(`filler-${i}`, { identity: { subject: `u${i}` }, expiresAt: now + 20 * 24 * 3600_000 });
+      }
+      map.set('expires-soonest', { identity: { subject: 'drop' }, expiresAt: now + 60_000 });
+      expect(map.size).toBe(10000);
+
+      (provider as any).storeRefreshTokenIdentity('fresh-refresh', {
+        subject: 'newcomer',
+        issuer: 'https://issuer.example.test/tenant/v2.0',
+      });
+
+      expect(map.has('expires-soonest')).toBe(false);
+      expect(map.has('long-lived')).toBe(true);
+      expect(map.get('fresh-refresh')?.identity).toMatchObject({ subject: 'newcomer' });
     });
 
     it('should throw on failed refresh', async () => {

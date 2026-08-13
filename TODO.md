@@ -12,6 +12,7 @@
   - [17. Eager SSRF validation for SasankaApiKeyStore at profile load](#17-eager-ssrf-validation-for-sasankaapikeystore-at-profile-load)
   - [18. Remove legacy SHA-256 token envelope KDF fallback](#18-remove-legacy-sha-256-token-envelope-kdf-fallback)
 - [P2: Nice-to-Have](#p2-nice-to-have)
+  - [19. Gateway-mediated download proxy for upstream binary content](#19-gateway-mediated-download-proxy-for-upstream-binary-content)
   - [2. Export Profile Command](#2-export-profile-command)
   - [3. OpenAPI Operation Filter for Default Profile](#3-openapi-operation-filter-for-default-profile)
   - [4. Harden query parameter redaction canonicalization](#4-harden-query-parameter-redaction-canonicalization)
@@ -32,11 +33,29 @@
 **Goal**: Replace the single-node append-only file backend with a transactional store shared by all HTTP replicas. The current `FileConsentEvidenceStore` is durable and reloads external writes, but concurrent grants across multiple writers are not transactionally deduplicated.
 
 **Implementation**:
-- Add a database/managed-store implementation behind `ConsentEvidenceStore` with a unique key on subject + profile + rules version.
+- Add a database/managed-store implementation behind `ConsentEvidenceStore` with a unique key on subject + canonical issuer + tenant + profile + rules version, and persist revocation records alongside grants.
 - Preserve the original `granted_at` on idempotent replays and expose storage failures as fail-closed typed errors.
+- Keep policy out of the backend: TTL, revocation, rules pinning and rules-version rollback are evaluated in `ConsentGate`, so a backend only implements `record`, `revoke` and `lookup`. Reuse `src/testing/consent-store-contract.ts` as the conformance suite.
 - Add concurrency, restart, partial-outage, and multi-replica tests.
 
 ## P2: Nice-to-Have
+
+### 19. Gateway-mediated download proxy for upstream binary content
+
+**Candidate, build only if large-file downloads become a real need.**
+
+**Background**: `get-download-url` was removed from the Softeria SharePoint allow-list because it resolves a pre-authenticated Microsoft Graph URL that streams bytes with no `Authorization` header, outside the consent gate, the tool policy and the audit trail. `download-bytes` is the mediated replacement, but it returns base64 through the agent context, and upstream itself recommends the URL for anything above a few kB.
+
+**Goal**: Keep downloads mediated without paying the base64 cost, by having the gateway stream the bytes.
+
+**Implementation sketch**:
+- Intercept the upstream tool result and rewrite `downloadUrl` to a gateway endpoint. The rewrite must be mandatory: if the raw URL can ever reach the client, the mediation is decorative.
+- Serve that endpoint from an authenticated, session-bound route that re-checks consent per request, enforces a short TTL and a single use, and streams rather than buffers.
+- Fetch the Graph URL through the existing SSRF validator, with a size cap and a per-session concurrency or byte quota.
+- Emit an audit record per download with the pseudonymized subject, matching the per-call audit logging used by the consent gate.
+- Tests: raw URL never leaves the gateway, expired or reused handle rejected, consent revoked between resolve and fetch blocks the fetch, quota and size cap enforced.
+
+**Decision needed first**: whether large-file downloads through this gateway are in scope at all, or whether `download-bytes` is sufficient (tracked in YouTrack under the AIPP-432 consent-gate work).
 
 ### 2. Export Profile Command
 

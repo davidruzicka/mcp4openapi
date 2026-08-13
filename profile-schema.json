@@ -1445,14 +1445,14 @@
           ]
         },
         "overrides": {
-          "$ref": "#/definitions/Record%3Cstring%2Cstructure-1535101595-25544-25580-1535101595-25529-25581-1535101595-25515-25582-1535101595-25444-25584-1535101595-0-25724%3E"
+          "$ref": "#/definitions/Record%3Cstring%2Cstructure-1535101595-25656-25692-1535101595-25641-25693-1535101595-25627-25694-1535101595-25556-25696-1535101595-0-25836%3E"
         }
       },
       "required": [
         "max_requests_per_minute"
       ]
     },
-    "Record<string,structure-1535101595-25544-25580-1535101595-25529-25581-1535101595-25515-25582-1535101595-25444-25584-1535101595-0-25724>": {
+    "Record<string,structure-1535101595-25656-25692-1535101595-25641-25693-1535101595-25627-25694-1535101595-25556-25696-1535101595-0-25836>": {
       "type": "object",
       "additionalProperties": {
         "type": "object",
@@ -1849,7 +1849,7 @@
       "properties": {
         "required": {
           "type": "boolean",
-          "description": "When true, tool calls are blocked until consent is recorded for the subject + rules_version."
+          "description": "When true, upstream MCP tool calls are blocked until consent is recorded for the subject + rules_version."
         },
         "rules_version": {
           "type": "string",
@@ -1863,6 +1863,10 @@
           "type": "string",
           "description": "Optional short human-readable summary of the rules shown at consent time."
         },
+        "max_age_days": {
+          "type": "number",
+          "description": "Optional maximum age of a grant in days; an older grant forces re-acceptance."
+        },
         "identity_source": {
           "type": "string",
           "const": "profile_oauth",
@@ -1874,7 +1878,7 @@
         "rules_version",
         "identity_source"
       ],
-      "description": "Consent gate configuration.\n\nGates sensitive profiles (e.g. an upstream MS365 MCP) behind a provable, human consent: the user must complete an interactive OAuth login and accept the current rules before any tool call is dispatched. Consent is bound to the authenticated subject and the `rules_version`; bumping `rules_version` invalidates prior consent and forces re-acceptance.\n\nThe gate is deliberately NOT an MCP tool, so an autonomous agent cannot grant consent on the user's behalf."
+      "description": "Consent gate configuration.\n\nGates sensitive profiles (e.g. an upstream MS365 MCP) behind a provable, human consent: the user must complete an interactive OAuth login and accept the current rules before any upstream MCP tool call is dispatched. Consent is bound to the authenticated subject and the `rules_version`; bumping `rules_version` invalidates prior consent and forces re-acceptance.\n\nThe gate is deliberately NOT an MCP tool, so an autonomous agent cannot grant consent on the user's behalf."
     },
     "UpstreamMcpServerConfig": {
       "type": "object",
@@ -2004,6 +2008,20 @@
             "type": "string"
           }
         }
+      }
+    },
+    "Record<string,structure-1535101595-25544-25580-1535101595-25529-25581-1535101595-25515-25582-1535101595-25444-25584-1535101595-0-25724>": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "max_requests_per_minute": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "max_requests_per_minute"
+        ]
       }
     },
     "Record<string,structure-1535101595-25518-25554-1535101595-25503-25555-1535101595-25489-25556-1535101595-25418-25558-1535101595-0-25698>": {

@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Security
+- Consent is now enforced at a single upstream dispatch chokepoint, so `tools/list` is gated exactly like `tools/call` and no upstream connection is made before a verified human grant; a consent-gated profile refuses to dispatch when no consent enforcer is reachable.
+- Only a verified profile-OAuth principal can satisfy a consent gate: enterprise and static-token principals carrying the same subject and issuer are rejected, and issuer comparison is canonicalized at lookup so a trailing slash no longer misses the evidence record.
+- Consent grants now record a `rules_hash`, support operator revocation and an optional `consent_gate.max_age_days`, and a `rules_version` rollback no longer reactivates an older grant. Editing `rules_summary` or `education_resource` invalidates existing grants and forces re-acceptance; the linked education page itself is not pinned.
+- Consent-gated profiles fail at startup without `MCP4_CONSENT_EVIDENCE_PATH` or `MCP4_OAUTH_KEY` instead of silently using volatile evidence storage or losing verified identity on restart.
+- OAuth refresh tokens are issued as encrypted `mcp4.r1.*` envelopes carrying the verified identity, so a direct refresh grant after a gateway restart rebinds the human; a consent-gated profile rejects a refresh token that carries no identity.
+- OIDC ID tokens are validated per OIDC Core 3.1.3.7: a multi-audience token requires `azp`, and any present `azp` must identify this client.
+- Consent approval is bound to the browser that was shown the rules via a `__Host-` cookie in addition to the one-time token and the complete OAuth request, and pending approvals are keyed by request fingerprint so unauthenticated traffic can no longer evict other users' pending approvals.
+- Consent evidence files are created 0700/0600 (existing files are tightened), size-capped at 32 MiB with a typed error, and read incrementally so a peer append is never permanently missed.
+- Environment upstream overrides are now validated even when the static profile declares no tool policy, and cannot downgrade `html_description_policy` or `tool_description_length_policy` to `allow`. The effective upstream endpoint is logged at profile load, with a warning when an override points at a different origin than the profile, so a copied or stale override is visible instead of silently redirecting traffic.
+- Softeria SharePoint downloads stay mediated by the gateway: `get-download-url` is removed from the read-only allow-list (its pre-authenticated Microsoft Graph URL streams bytes with no `Authorization` header, outside the consent gate, tool policy and audit trail) and an environment override cannot re-add it. Use `download-bytes`.
 - Non-empty profile OAuth scopes now take precedence over client-requested scopes in external authorization requests.
 - Required consent gates now require an effective upstream MCP source and reject profiles that also define local tools, preventing accidental use outside the upstream authorization boundary.
 - Environment-backed upstream overrides cannot broaden or remove a static tool allow/deny policy; Softeria SharePoint is pinned to an exact v0.136.0 read-only tool catalog instead of substring globs.
@@ -17,6 +27,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dependency upgrades resolving all `npm audit` findings: hono 4.12.34, @hono/node-server 2.0.11 (requires Node >=20), express-rate-limit 8.6.2 with ip-address 10.5.0, fast-uri 3.1.5, brace-expansion 5.0.9, nanoid 3.3.18, and postcss 8.5.26.
 
 ### Changed
+- Consent evidence format changed again (JSONL records now carry a `type` discriminator and `rules_hash`): existing evidence files are ignored and every subject must re-grant consent once. This also covers the earlier issuer/tenant binding change, which was not previously in the changelog.
+- A consent denial now invalidates the session once per subject and rules version so the MCP client re-runs OAuth; repeat denials return the consent error without invalidating, and the approval failure page links back into the flow.
+- Softeria SharePoint catalog validation uses `tools/list` against the running upstream server instead of `--list-permissions` (which emits no tool names); the captured v0.136.0 catalog is committed as a fixture and the allow-list is checked against it in CI.
 - `normalizePath` now returns `other` for unrecognized HTTP paths instead of the raw path, preventing unbounded Prometheus label cardinality from dynamic route segments.
 - MCP `initialize` responses now expose `serverInfo.title` from the active profile `profile_name` (optionally suffixed via `MCP4_SERVERINFO_SUFFIX`) so VS Code and similar clients show per-profile names without changing `serverInfo.name`.
 
@@ -28,7 +41,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `handleOtherRequest` upstream `tools/list` pre-flight error now uses `mapUpstreamErrorToMcpError` (provider-safe message) instead of generic "Internal error"; `req.method` truncated to 200 chars in error logs; `uri` and prompt `name` params capped at 2048/256 chars with `-32602` validation errors.
 
 ### Added
-- Consent gate (`consent_gate` profile block) gates sensitive profiles behind provable human consent: interactive OAuth login with a mandatory approval step, OIDC identity verification, dispatch-time enforcement (JSON-RPC `-32004` when missing), and consent bound to the verified subject + `rules_version`. Evidence is pluggable — in-memory for dev, or durable append-only JSONL via `MCP4_CONSENT_EVIDENCE_PATH` (`FileConsentEvidenceStore`) for single-node/staging; a transactional multi-replica backend is tracked in `TODO.md` (AIPP-432).
+- Consent gate (`consent_gate` profile block) gates sensitive profiles behind provable human consent: interactive OAuth login with a mandatory approval step, OIDC identity verification, dispatch-time enforcement (JSON-RPC `-32004` when missing), and consent bound to the verified subject + `rules_version`. Evidence is pluggable - in-memory for dev, or durable append-only JSONL via `MCP4_CONSENT_EVIDENCE_PATH` (`FileConsentEvidenceStore`) for single-node/staging; a transactional multi-replica backend is tracked in `TODO.md` (AIPP-432).
 - Profile index redirects: `MCP4_HTTP_PROFILE_INDEX_REDIRECT_URL` redirects browser-facing `GET /` requests with configurable `301` or `302` status while JSON profile discovery remains available through `Accept: application/json`.
 - `MCP4_SYSTEM_NOTICE` env var adds a full-width banner at the top of the HTML profile index with configurable severity (`info` / `warning` / `error`) and matching color scheme; plain string defaults to `info`, JSON `{"message":"...","severity":"warning"}` sets severity explicitly.
 - Profile index page (`/`) syncs selected profile to URL hash (e.g. `/#scif`), enabling direct shareable links; hash is read on load so navigating to `/#<profileId>` pre-selects that profile.

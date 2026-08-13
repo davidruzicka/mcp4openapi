@@ -738,23 +738,56 @@ Pair this fragment with an `upstream_mcp` or an env-backed configuration that re
 
 The browser first displays the rules and requires an explicit checkbox submission. The approval token is one-time, expires after five minutes, and is bound to the complete OAuth request. The subsequent ID token is verified against OIDC discovery/JWKS, issuer, audience, signature, expiry, and nonce before evidence is recorded. A `rules_version` change forces re-acceptance. Consent evidence is bound to the verified subject, canonical issuer, tenant context, profile ID, and rules version. Authorization, consent evidence, and in-memory principals retain the raw verified subject. Logs and audit identity fields instead use a stable, one-way SHA-256-derived pseudonym for each nonempty subject.
 
-When an encrypted OAuth envelope is recovered after restart, its verified OIDC identity is retained through subsequent initialization so consent-gated reconnects remain valid.
+When an encrypted OAuth envelope is recovered after restart, its verified OIDC identity is retained through subsequent initialization so consent-gated reconnects remain valid. A direct `refresh_token` grant on a consent-gated profile is rejected unless it presents an identity-bearing `mcp4.r1.*` envelope, so a refresh can never mint a session with an unknown principal.
 
-Set `MCP4_CONSENT_EVIDENCE_PATH` to an absolute writable path for durable single-node JSONL evidence. Without it, evidence is in-memory and intended only for tests. Multi-replica production deployments require the transactional backend tracked in `TODO.md`.
+Both `MCP4_CONSENT_EVIDENCE_PATH` (absolute writable path for durable single-node JSONL evidence) and `MCP4_OAUTH_KEY` are required when `consent_gate.required` is `true`; the gateway refuses to start without either. The in-memory store applies only to profiles that do not require consent and is intended for tests. Operational constraints - single-node evidence store, sticky sessions for the approval flow, evidence file growth with a 32 MiB cap and manual compaction, and the multi-replica backend tracked in `TODO.md` - are collected in [HTTP Transport -> Consent Gate Operations](./HTTP-TRANSPORT.md#consent-gate-operations).
 
-For Softeria SharePoint read-only deployment, verify the effective permission boundary with the pinned server version:
+Optional policy fields:
+
+- `max_age_days`: a grant older than this many days no longer satisfies the gate and the user must accept again. Omitted means grants do not expire on age.
+- `rules_summary` and `education_resource` are both folded into `rules_hash` (sha256 over `rules_version` + `rules_summary` + `education_resource`), which every grant stores. Editing either one invalidates all existing grants even without a `rules_version` bump, because a stored grant no longer matches the rules the gateway now renders. The content of the page behind `education_resource` is not pinned: the gateway pins only the link it displayed and cannot verify remote content.
+
+Enforcement happens at the single upstream-dispatch chokepoint, so `tools/list` and `tools/call` behave identically. A denied call returns JSON-RPC `-32004` with `consent_url`; the denial reason is logged, not returned. See [HTTP Transport -> Consent Gate](./HTTP-TRANSPORT.md#consent-gate).
+
+##### Validating the Softeria SharePoint tool catalog
+
+Validate the gateway allow-list against the tool catalog the pinned upstream version actually exposes. Do not use `--list-permissions` for this: it emits only Graph permission strings (`permissions`, `toolPermissions`, `effectivePermissions`, `disabledTools`, `missingAllowedScopesForTools`) and no tool names, and combined with `--http` it prints its report and exits without serving. Capture the catalog over MCP instead. No tenant, credentials, or browser are required.
 
 ```bash
+# 1. Start the pinned server in read-only discovery mode.
+#    Do not pass --enabled-tools here: it would filter the catalog you are trying to observe.
 npx -y @softeria/ms-365-mcp-server@0.136.0 \
-  --http 3000 \
-  --org-mode \
   --read-only \
-  --enabled-tools '^(list-drives|get-drive-delta|get-drive-root-item|list-folder-files|get-drive-item|list-drive-item-thumbnails|list-drive-item-permissions|list-drive-item-versions|search-onedrive-files|get-sharepoint-site|list-sharepoint-site-drives|get-sharepoint-site-drive-by-id|list-sharepoint-site-items|get-sharepoint-site-item|list-sharepoint-site-lists|get-sharepoint-site-list|list-sharepoint-site-list-items|get-sharepoint-site-list-item|list-sharepoint-list-columns|get-sharepoint-list-column|get-sharepoint-site-by-path|download-bytes|get-download-url)$' \
-  --allowed-scopes 'User.Read Files.Read Sites.Selected' \
-  --list-permissions
+  --org-mode \
+  --allow-unauthenticated-discovery \
+  --http 127.0.0.1:39117 &
+
+# 2. Initialize an MCP session.
+curl -s -X POST http://127.0.0.1:39117/mcp \
+  -H 'Content-Type: application/json' \
+  -H 'Accept: application/json, text/event-stream' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"catalog-capture","version":"1.0.0"}}}'
+
+# 3. List tools and extract the names.
+curl -s -X POST http://127.0.0.1:39117/mcp \
+  -H 'Content-Type: application/json' \
+  -H 'Accept: application/json, text/event-stream' \
+  -H 'mcp-protocol-version: 2025-03-26' \
+  -d '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}' \
+  | sed -n 's/^data: //p' | jq -r '.result.tools[].name' | sort
 ```
 
-For this configuration Softeria reports effective permissions `Files.Read` and `Sites.Selected`; tools requiring `Notes.Read` or `Sites.Read.All` are disabled. The bundled `profiles/softeria-sharepoint/profile.json` pins the remaining verified v0.136.0 read-only catalog by exact tool name. Do not replace it with substring globs such as `*site*` or `*drive*`: similarly named mutation tools would match. The gateway list is defense in depth; pin the upstream server version and keep its own read-only configuration enabled. Deployment env overrides may change the endpoint and auth details, but the static tool policy must remain compatible. The runnable test profile is `tests/profiles/consent-gate/profile.json`.
+The captured v0.136.0 read-only catalog (163 tools, captured 2026-08-12) is committed as `profiles/softeria-sharepoint/upstream-catalog-0.136.0.fixture.json`. `src/profile/softeria-profile.test.ts` asserts that every `upstream_mcp.tools.allow` entry exists in that fixture, so an allow-list entry that upstream does not expose fails CI. When you move to a different upstream version, recapture the fixture with the steps above and update its `upstream_version` and `captured_at` metadata in the same commit.
+
+`--list-permissions` remains useful for the separate question of which Graph scopes the enabled tool set requires, but it cannot confirm which tools exist.
+
+The bundled `profiles/softeria-sharepoint/profile.json` pins the read-only catalog by exact tool name. Do not replace it with substring globs such as `*site*` or `*drive*`: similarly named mutation tools would match. The gateway list is defense in depth; pin the upstream server version and keep its own read-only configuration enabled. Deployment env overrides may change the endpoint and auth details, but the static tool policy must remain compatible. An override that points at a different origin than the profile is allowed on purpose (staging, an egress proxy) and is not rejected; it is logged instead. At profile load the gateway logs the effective upstream endpoint, and logs a warning (`Upstream MCP endpoint overridden to a different origin by the environment`) when the override leaves the profile's origin, so a copied or stale value is visible in startup logs rather than silently redirecting traffic. The runnable test profile is `tests/profiles/consent-gate/profile.json`.
+
+**Downloads stay mediated: `get-download-url` is deliberately excluded.** Upstream describes it as resolving "a short-lived, pre-authenticated download URL" whose bytes stream "with NO Authorization header". That URL points at Microsoft Graph, not at the upstream MCP server, so blocking client access to the upstream server does not contain it: anyone holding the string can fetch the content, and those bytes never traverse the gateway, the consent gate, the `tools.allow` policy, or the audit trail until the URL expires.
+
+`download-bytes` is allowed instead. It returns content as base64 through the gateway, so every byte stays inside the gate and the audit trail. The trade-off is real: upstream recommends the URL for anything above a few kB because base64 passes through the agent context. A gateway-mediated streaming proxy that would restore large-file efficiency without the out-of-band URL is tracked as a candidate in `TODO.md`.
+
+`src/profile/softeria-profile.test.ts` asserts that `get-download-url` is absent from the allow-list and that an environment override cannot re-add it.
 
 ### Base URL
 

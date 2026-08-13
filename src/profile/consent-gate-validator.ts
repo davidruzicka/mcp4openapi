@@ -5,10 +5,10 @@
  * of a silent runtime failure. Mirrors the two-level shape of
  * `client-auth-gate-validator`:
  *
- * - `resolveConsentGateConfig` — config-level: validates `rules_version`, the
+ * - `resolveConsentGateConfig` - config-level: validates `rules_version`, the
  *   OAuth login block, and referenced env vars. Safe to call from any
  *   construction site (no Profile required).
- * - `validateConsentGateProfile` — profile-level: reads `profile.consent_gate`
+ * - `validateConsentGateProfile` - profile-level: reads `profile.consent_gate`
  *   and delegates. Called by the profile loader.
  */
 
@@ -50,7 +50,11 @@ export function resolveConsentGateConfig(config: ConsentGateConfig): ConsentGate
     );
   }
 
+  // Spread first so a newly added ConsentGateConfig field cannot be silently
+  // dropped here: ProfileLoader writes this result back onto the profile, so a
+  // missing field disables the policy it configures with no error.
   return {
+    ...config,
     required: config.required,
     rules_version: config.rules_version,
     education_resource: config.education_resource,

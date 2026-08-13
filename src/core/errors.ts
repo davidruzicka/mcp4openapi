@@ -160,7 +160,25 @@ export class ClientAuthGateError extends MCPError {
  * to the consent flow: `profileId`, `rules_version`, `consent_url`, and the
  * optional `education_resource`. It never carries tokens or PII.
  */
+/**
+ * Why a consent check failed. Logged and asserted in tests, never returned to
+ * the client: telling an unauthenticated caller that its issuer did not match
+ * leaks configuration.
+ */
+export type ConsentDenialReason =
+  | 'no_principal'
+  | 'auth_type_mismatch'
+  | 'issuer_mismatch'
+  | 'no_evidence'
+  | 'rules_changed'
+  | 'rules_rollback'
+  | 'expired'
+  | 'revoked';
+
 export class ConsentRequiredError extends MCPError {
+  /** Specific denial cause. Deliberately outside `details`, which is client-visible. */
+  readonly reason: ConsentDenialReason;
+
   constructor(
     message: string,
     details: {
@@ -169,9 +187,11 @@ export class ConsentRequiredError extends MCPError {
       consent_url: string;
       education_resource?: string;
     },
+    reason: ConsentDenialReason = 'no_evidence',
   ) {
     super(message, 'CONSENT_REQUIRED', details);
     this.name = 'ConsentRequiredError';
+    this.reason = reason;
   }
 }
 

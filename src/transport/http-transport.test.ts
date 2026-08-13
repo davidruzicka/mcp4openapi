@@ -8,13 +8,16 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import request from 'supertest';
 import type { Express } from 'express';
 import fs from 'fs';
+import os from 'node:os';
+import path from 'node:path';
 import https from 'https';
 import { HttpTransport } from './http-transport.js';
 import type { HttpTransportConfig } from '../types/http-transport.js';
 import { ConsoleLogger, type Logger } from '../core/logger.js';
-import { ValidationError, ConsentRequiredError, AuthenticationError } from '../core/errors.js';
+import { ValidationError, ConsentRequiredError } from '../core/errors.js';
 import { ConsentGate } from '../auth/consent-gate.js';
 import { InMemoryConsentEvidenceStore } from '../auth/consent-evidence-store.js';
+import { computeRulesHash } from '../auth/consent-rules-hash.js';
 import { describeIfListen } from '../testing/listen-support.js';
 import { parseSessionToolFilterHeader } from '../tool-filter/index.js';
 
@@ -1673,7 +1676,8 @@ describeIfListen('HttpTransport', () => {
 
   describe('POST - Request with Session', () => {
     it('should require session ID for non-initialization requests', async () => {
-      transport.setMessageHandler(async (_msg) => ({ result: 'ok' }));
+      const messageHandler = vi.fn(async (_msg: unknown) => ({ result: 'ok' }));
+      transport.setMessageHandler(messageHandler);
 
       const response = await request(app)
         .post('/mcp')
@@ -1687,6 +1691,9 @@ describeIfListen('HttpTransport', () => {
       expect(response.status).toBe(400);
       expect(response.body).toHaveProperty('message');
       expect(response.body.message).toContain('Mcp-Session-Id');
+      // The rejection must happen before dispatch, not merely return a 400: this is
+      // what keeps a sessionless request from reaching tool handling at all.
+      expect(messageHandler).not.toHaveBeenCalled();
     });
 
     it('should reject invalid session ID', async () => {
@@ -2705,8 +2712,10 @@ describeIfListen('HttpTransport', () => {
 	  describe('OAuth Authorize Endpoint', () => {
 	    let oauthTransport: HttpTransport;
 	    let oauthApp: any;
+	    let consentEvidenceDir: string;
 
     beforeEach(async () => {
+      consentEvidenceDir = fs.mkdtempSync(path.join(os.tmpdir(), 'consent-authorize-'));
       const oauthConfig = {
         host: '127.0.0.1',
         port: 0,
@@ -2722,6 +2731,10 @@ describeIfListen('HttpTransport', () => {
           redirect_uri: 'https://example.com/oauth/callback',
           scopes: ['read', 'write'],
         },
+        // A consent-gated profile refuses to start without durable evidence
+        // storage and a token key, so both are supplied for these flows.
+        tokenKey: Buffer.alloc(32, 7),
+        consentEvidencePath: path.join(consentEvidenceDir, 'evidence.jsonl'),
       };
 
       oauthTransport = new HttpTransport(oauthConfig, logger);
@@ -2767,22 +2780,179 @@ describeIfListen('HttpTransport', () => {
       expect(consentPage.headers['cache-control']).toBe('no-store');
       expect(consentPage.headers['content-security-policy']).toContain("form-action 'self'");
       expect(consentPage.text).toContain('Accept SharePoint usage rules.');
-      const approvalToken = consentPage.text.match(/name="consent_token" value="([^"]+)"/)?.[1];
-      expect(approvalToken).toBeTruthy();
+      const setCookie: string = ([] as string[]).concat(consentPage.headers['set-cookie'] ?? [])[0];
+      expect(setCookie).toMatch(/^__Host-mcp4_consent=/);
+      expect(setCookie).toContain('HttpOnly');
+      expect(setCookie).toContain('Secure');
+      expect(setCookie).toContain('SameSite=Lax');
+      expect(setCookie).toContain('Path=/');
+      const cookie = setCookie.split(';')[0];
 
       const approved = await request(oauthApp)
         .post('/oauth/authorize')
         .type('form')
-        .send({ ...query, consent_token: approvalToken, consent_accept: 'yes' });
+        .set('Cookie', cookie)
+        .send({ ...query, consent_accept: 'yes' });
       expect(approved.status).toBe(302);
       expect(approved.headers.location).toContain('https://auth.example.com/oauth/authorize');
 
       const replay = await request(oauthApp)
         .post('/oauth/authorize')
         .type('form')
-        .send({ ...query, consent_token: approvalToken, consent_accept: 'yes' });
+        .set('Cookie', cookie)
+        .send({ ...query, consent_accept: 'yes' });
       expect(replay.status).toBe(400);
-      expect(replay.text).toContain('Invalid or expired consent approval');
+      expect(replay.text).toContain('Consent approval expired');
+      // The dead end is recoverable: the failure page links back into the flow.
+      expect(replay.text).toContain('Start the consent flow again');
+    });
+
+    it('rejects an acknowledgement submitted without the browser cookie', async () => {
+      const context = (oauthTransport as any).buildDefaultProfileContext();
+      oauthTransport.setProfileContextProvider(async () => ({
+        ...context,
+        consent_gate: {
+          required: true,
+          rules_version: 'v1',
+          rules_summary: 'Accept SharePoint usage rules.',
+          identity_source: 'profile_oauth',
+        },
+      }));
+      const query = {
+        response_type: 'code',
+        client_id: 'test-client',
+        redirect_uri: 'http://localhost:3003/oauth/callback',
+        scope: 'openid read',
+        state: 'client-state',
+        code_challenge: 'challenge',
+        code_challenge_method: 'S256',
+      };
+
+      await request(oauthApp).get('/oauth/authorize').query(query);
+
+      const noCookie = await request(oauthApp)
+        .post('/oauth/authorize')
+        .type('form')
+        .send({ ...query, consent_accept: 'yes' });
+      expect(noCookie.status).toBe(400);
+
+      const wrongCookie = await request(oauthApp)
+        .post('/oauth/authorize')
+        .type('form')
+        .set('Cookie', '__Host-mcp4_consent=some-other-browser')
+        .send({ ...query, consent_accept: 'yes' });
+      expect(wrongCookie.status).toBe(400);
+    });
+
+    it('rejects an acknowledgement whose OAuth parameters changed after the rules were shown', async () => {
+      const context = (oauthTransport as any).buildDefaultProfileContext();
+      oauthTransport.setProfileContextProvider(async () => ({
+        ...context,
+        consent_gate: {
+          required: true,
+          rules_version: 'v1',
+          rules_summary: 'Accept SharePoint usage rules.',
+          identity_source: 'profile_oauth',
+        },
+      }));
+      const query = {
+        response_type: 'code',
+        client_id: 'test-client',
+        redirect_uri: 'http://localhost:3003/oauth/callback',
+        scope: 'openid read',
+        state: 'client-state',
+        code_challenge: 'challenge',
+        code_challenge_method: 'S256',
+      };
+
+      const consentPage = await request(oauthApp).get('/oauth/authorize').query(query);
+      const cookie = ([] as string[])
+        .concat(consentPage.headers['set-cookie'] ?? [])[0]
+        .split(';')[0];
+
+      // Same browser, same acknowledgement, different redirect_uri: the approval
+      // is bound to the complete OAuth request, so this must not authorize.
+      const tampered = await request(oauthApp)
+        .post('/oauth/authorize')
+        .type('form')
+        .set('Cookie', cookie)
+        .send({
+          ...query,
+          redirect_uri: 'http://localhost:3003/attacker/callback',
+          consent_accept: 'yes',
+        });
+      expect(tampered.status).toBe(400);
+    });
+
+    it('rejects an acknowledgement after the approval expired', async () => {
+      vi.useFakeTimers();
+      try {
+        const context = (oauthTransport as any).buildDefaultProfileContext();
+        oauthTransport.setProfileContextProvider(async () => ({
+          ...context,
+          consent_gate: {
+            required: true,
+            rules_version: 'v1',
+            rules_summary: 'Accept SharePoint usage rules.',
+            identity_source: 'profile_oauth',
+          },
+        }));
+        const query = {
+          response_type: 'code',
+          client_id: 'test-client',
+          redirect_uri: 'http://localhost:3003/oauth/callback',
+          scope: 'openid read',
+          state: 'client-state',
+          code_challenge: 'challenge',
+          code_challenge_method: 'S256',
+        };
+
+        const consentPage = await request(oauthApp).get('/oauth/authorize').query(query);
+        const cookie = ([] as string[])
+          .concat(consentPage.headers['set-cookie'] ?? [])[0]
+          .split(';')[0];
+
+        vi.setSystemTime(Date.now() + 5 * 60 * 1000 + 1000);
+
+        const expired = await request(oauthApp)
+          .post('/oauth/authorize')
+          .type('form')
+          .set('Cookie', cookie)
+          .send({ ...query, consent_accept: 'yes' });
+        expect(expired.status).toBe(400);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('keys pending approvals by request fingerprint so repeated renders cannot starve the store', async () => {
+      const context = (oauthTransport as any).buildDefaultProfileContext();
+      oauthTransport.setProfileContextProvider(async () => ({
+        ...context,
+        consent_gate: {
+          required: true,
+          rules_version: 'v1',
+          rules_summary: 'Accept SharePoint usage rules.',
+          identity_source: 'profile_oauth',
+        },
+      }));
+      const query = {
+        response_type: 'code',
+        client_id: 'test-client',
+        redirect_uri: 'http://localhost:3003/oauth/callback',
+        scope: 'openid read',
+        state: 'client-state',
+        code_challenge: 'challenge',
+        code_challenge_method: 'S256',
+      };
+
+      for (let i = 0; i < 50; i += 1) {
+        await request(oauthApp).get('/oauth/authorize').query(query);
+      }
+
+      // 50 renders of the same OAuth request occupy exactly one slot, so
+      // unauthenticated traffic cannot evict another user's pending approval.
+      expect((oauthTransport as any).pendingConsentApprovals.size).toBe(1);
     });
 
     it('serves an actionable no-store consent page without granting consent', async () => {
@@ -4465,7 +4635,8 @@ describeIfListen('HttpTransport', () => {
     };
 
     it('Test J: authorization_code response wraps access_token with mcp4.v1.* envelope when tokenKey set', async () => {
-      const t = await buildOauthTransport(Buffer.from('a'.repeat(64), 'hex'));
+      const key = Buffer.from('a'.repeat(64), 'hex');
+      const t = await buildOauthTransport(key);
       const tApp = (t as any).app;
       // Access profileState and stub OAuth provider methods
       const profileState = (t as any).profileStates.get('default') ?? createProfileState(t as any);
@@ -4510,7 +4681,13 @@ describeIfListen('HttpTransport', () => {
       expect(response.status).toBe(200);
       expect(typeof response.body.access_token).toBe('string');
       expect(response.body.access_token.startsWith('mcp4.v1.')).toBe(true);
-      expect(response.body.refresh_token).toBe('raw-idp-refresh-j');
+      // The refresh token is issued as an identity-bearing mcp4.r1.* envelope so a
+      // direct refresh grant after a restart can rebind the verified human.
+      const { decryptRefreshEnvelope } = await import('../auth/token-envelope.js');
+      expect(response.body.refresh_token.startsWith('mcp4.r1.')).toBe(true);
+      expect(decryptRefreshEnvelope(response.body.refresh_token, key, 'default')).toMatchObject({
+        rt: 'raw-idp-refresh-j',
+      });
       await t.stop();
     });
 
@@ -4735,10 +4912,11 @@ describeIfListen('HttpTransport', () => {
       profileState.oauthProvider.issuer = issuer;
       profileState.consentGate = new ConsentGate(
         'default',
-        { required: true, rules_version: 'v1' },
+        profileState.context.consent_gate,
         evidenceStore,
         (profileId) => `https://gateway.example/mcp/${profileId}/consent`,
         mockLogger,
+        issuer,
       );
       await evidenceStore.record({
         sub: 'person-m',
@@ -4746,6 +4924,7 @@ describeIfListen('HttpTransport', () => {
         tenantId: 'tenant-m',
         profileId: 'default',
         rules_version: 'v1',
+        rules_hash: computeRulesHash(profileState.context.consent_gate),
         granted_at: Date.now(),
       });
       t.setMessageHandler(async () => ({ protocolVersion: '2025-03-26', serverInfo: { name: 'test' } }));
@@ -4792,6 +4971,126 @@ describeIfListen('HttpTransport', () => {
       await t.stop();
     });
 
+    it('recovers the verified identity from a refresh envelope after a restart (direct grant)', async () => {
+      const { encryptRefreshEnvelope } = await import('../auth/token-envelope.js');
+      const key = buildKey();
+      const issuer = 'https://issuer.example';
+      // A fresh transport models a restarted gateway: the provider's in-process
+      // refresh-identity map is empty, so the envelope is the only identity source.
+      const t = buildTransport({ tokenKey: key, testLogger: mkLogger() });
+      const state = (t as any).__test_profileState;
+      state.context.consent_gate = {
+        required: true,
+        rules_version: 'v1',
+        identity_source: 'profile_oauth',
+      };
+      const exchangeRefreshToken = vi.fn(async () => ({
+        access_token: 'access-after-restart',
+        refresh_token: 'idp-refresh-rotated',
+        expires_in: 3600,
+        token_type: 'Bearer',
+      }));
+      state.oauthProvider = {
+        issuer,
+        ensureEndpointsInitialized: async () => {},
+        clientsStore: { getClient: async () => undefined, registerClient: async (c: any) => c },
+        getIdentityForAccessToken: () => undefined,
+        exchangeRefreshToken,
+      };
+
+      const envelope = encryptRefreshEnvelope(
+        {
+          v: 1,
+          rt: 'idp-refresh-original',
+          cid: 'client-restart',
+          sub: 'person-restart',
+          iss: issuer,
+          tid: 'tenant-restart',
+          pid: 'default',
+          iat: Date.now(),
+        },
+        key,
+      );
+
+      const grant = (t as any).resolveRefreshGrant(state, envelope);
+      expect(grant.refreshToken).toBe('idp-refresh-original');
+      expect(grant.identity).toEqual({
+        subject: 'person-restart',
+        issuer,
+        tenantId: 'tenant-restart',
+      });
+      await t.stop();
+    });
+
+    it('refuses a raw refresh token on a consent-gated profile so the client re-runs OAuth', async () => {
+      const t = buildTransport({ tokenKey: buildKey(), testLogger: mkLogger() });
+      const state = (t as any).__test_profileState;
+      state.context.consent_gate = {
+        required: true,
+        rules_version: 'v1',
+        identity_source: 'profile_oauth',
+      };
+
+      expect(() => (t as any).resolveRefreshGrant(state, 'plain-refresh-token')).toThrow(
+        /identity-bearing refresh token/,
+      );
+      await t.stop();
+    });
+
+    it('refuses a refresh envelope that carries no identity on a consent-gated profile', async () => {
+      const { encryptRefreshEnvelope } = await import('../auth/token-envelope.js');
+      const key = buildKey();
+      const t = buildTransport({ tokenKey: key, testLogger: mkLogger() });
+      const state = (t as any).__test_profileState;
+      state.context.consent_gate = {
+        required: true,
+        rules_version: 'v1',
+        identity_source: 'profile_oauth',
+      };
+      const envelope = encryptRefreshEnvelope(
+        { v: 1, rt: 'idp-refresh', cid: 'client-x', pid: 'default', iat: Date.now() },
+        key,
+      );
+
+      expect(() => (t as any).resolveRefreshGrant(state, envelope)).toThrow(
+        /no verified identity/,
+      );
+      await t.stop();
+    });
+
+    it('accepts a plain refresh token on a profile without a consent gate', async () => {
+      const t = buildTransport({ tokenKey: buildKey(), testLogger: mkLogger() });
+      const state = (t as any).__test_profileState;
+
+      expect((t as any).resolveRefreshGrant(state, 'plain-refresh-token')).toEqual({
+        refreshToken: 'plain-refresh-token',
+      });
+      await t.stop();
+    });
+
+    it('issues the refresh token as an identity-bearing envelope', async () => {
+      const { decryptRefreshEnvelope } = await import('../auth/token-envelope.js');
+      const key = buildKey();
+      const issuer = 'https://issuer.example';
+      const t = buildTransport({ tokenKey: key, testLogger: mkLogger() });
+      const state = (t as any).__test_profileState;
+      state.oauthProvider.getIdentityForAccessToken = (token: string) =>
+        token === 'idp-access' ? { subject: 'person-1', issuer, tenantId: 'tenant-1' } : undefined;
+
+      const clientRefreshToken = (t as any).buildClientRefreshToken(
+        state,
+        { access_token: 'idp-access', refresh_token: 'idp-refresh', expires_in: 3600 },
+        'client-1',
+      );
+
+      expect(decryptRefreshEnvelope(clientRefreshToken, key, 'default')).toMatchObject({
+        rt: 'idp-refresh',
+        sub: 'person-1',
+        tid: 'tenant-1',
+      });
+      await t.stop();
+    });
+
     it('preserves identity through restart recovery, refresh, and a second recovery', async () => {
       const { decryptTokenPayload, encryptTokenPayload } = await import('../auth/token-envelope.js');
       const key = buildKey();
@@ -4834,16 +5133,18 @@ describeIfListen('HttpTransport', () => {
       };
       firstState.consentGate = new ConsentGate(
         'default',
-        { required: true, rules_version: 'v1' },
+        firstState.context.consent_gate,
         evidenceStore,
         (profileId) => `https://gateway.example/mcp/${profileId}/consent`,
         mkLogger(),
+        issuer,
       );
       await evidenceStore.record({
         sub: principal.subject,
         issuer,
         tenantId: principal.tenantId,
         profileId: 'default',
+        rules_hash: computeRulesHash(firstState.context.consent_gate),
         rules_version: 'v1',
         granted_at: Date.now(),
       });
@@ -6360,7 +6661,7 @@ describeIfListen('HttpTransport', () => {
     const buildTransportWithGate = (options: {
       rulesVersion: string;
       session: Record<string, unknown>;
-    }): { transport: HttpTransport; store: InMemoryConsentEvidenceStore } => {
+    }): { transport: HttpTransport; store: InMemoryConsentEvidenceStore; rulesHash: string } => {
       const t = new HttpTransport(
         {
           host: '127.0.0.1',
@@ -6374,27 +6675,33 @@ describeIfListen('HttpTransport', () => {
         logger,
       );
       const store = new InMemoryConsentEvidenceStore();
+      const gateConfig = {
+        required: true,
+        rules_version: options.rulesVersion,
+        identity_source: 'profile_oauth' as const,
+      };
       const gate = new ConsentGate(
         PROFILE_ID,
-        { required: true, rules_version: options.rulesVersion },
+        gateConfig,
         store,
         (id) => `https://gateway.example/mcp/${id}/consent`,
         logger,
+        ISSUER,
       );
       (t as any).profileStates.set(PROFILE_ID, {
         profileId: PROFILE_ID,
-        context: { profileId: PROFILE_ID },
+        context: { profileId: PROFILE_ID, consent_gate: gateConfig },
         oauthProvider: { issuer: ISSUER },
         oauthTokensByAccessToken: new Map(),
         consentGate: gate,
         consentEvidenceStore: store,
         sessions: new Map([['session-1', options.session]]),
       });
-      return { transport: t, store };
+      return { transport: t, store, rulesHash: computeRulesHash(gateConfig) };
     };
 
     it('resolves when recorded consent subject matches the session principal subject and issuer', async () => {
-      const { transport: t, store } = buildTransportWithGate({
+      const { transport: t, store, rulesHash } = buildTransportWithGate({
         rulesVersion: 'v1',
         session: {
           clientPrincipal: {
@@ -6412,6 +6719,7 @@ describeIfListen('HttpTransport', () => {
         tenantId: null,
         profileId: PROFILE_ID,
         rules_version: 'v1',
+        rules_hash: rulesHash,
         granted_at: Date.now(),
       });
 
@@ -6447,8 +6755,8 @@ describeIfListen('HttpTransport', () => {
       await expect(t.assertSessionConsent(PROFILE_ID, 'session-1')).rejects.toBeInstanceOf(ConsentRequiredError);
     });
 
-    it('throws AuthenticationError when the principal issuer does not match the profile OAuth issuer', async () => {
-      const { transport: t, store } = buildTransportWithGate({
+    it('rejects with issuer_mismatch when the principal issuer does not match the profile OAuth issuer', async () => {
+      const { transport: t, store, rulesHash } = buildTransportWithGate({
         rulesVersion: 'v1',
         session: {
           clientPrincipal: {
@@ -6467,14 +6775,93 @@ describeIfListen('HttpTransport', () => {
         tenantId: null,
         profileId: PROFILE_ID,
         rules_version: 'v1',
+        rules_hash: rulesHash,
         granted_at: Date.now(),
       });
 
-      await expect(t.assertSessionConsent(PROFILE_ID, 'session-1')).rejects.toBeInstanceOf(AuthenticationError);
+      await expect(t.assertSessionConsent(PROFILE_ID, 'session-1')).rejects.toMatchObject({
+        name: 'ConsentRequiredError',
+        reason: 'issuer_mismatch',
+      });
+    });
+
+    it('rejects a non-OAuth principal that carries a matching subject and issuer', async () => {
+      const { transport: t, store, rulesHash } = buildTransportWithGate({
+        rulesVersion: 'v1',
+        session: {
+          clientPrincipal: {
+            authType: 'enterprise' as const,
+            profileId: PROFILE_ID,
+            subject: 'X',
+            issuer: ISSUER,
+            scopes: ['read'],
+          },
+        },
+      });
+      await store.record({
+        sub: 'X',
+        issuer: ISSUER,
+        tenantId: null,
+        profileId: PROFILE_ID,
+        rules_version: 'v1',
+        rules_hash: rulesHash,
+        granted_at: Date.now(),
+      });
+
+      await expect(t.assertSessionConsent(PROFILE_ID, 'session-1')).rejects.toMatchObject({
+        name: 'ConsentRequiredError',
+        reason: 'auth_type_mismatch',
+      });
+    });
+
+    it('fails closed when the profile requires consent but no gate was constructed', async () => {
+      const { transport: t } = buildTransportWithGate({
+        rulesVersion: 'v1',
+        session: {},
+      });
+      const state = (t as any).profileStates.get(PROFILE_ID);
+      state.consentGate = undefined;
+
+      await expect(t.assertSessionConsent(PROFILE_ID, 'session-1')).rejects.toMatchObject({
+        name: 'ConsentGateConfigurationError',
+      });
+    });
+
+    it('invalidates the session once per subject and rules version so the client re-runs OAuth', async () => {
+      const { transport: t } = buildTransportWithGate({
+        rulesVersion: 'v1',
+        session: {
+          clientPrincipal: {
+            authType: 'oauth' as const,
+            profileId: PROFILE_ID,
+            subject: 'Y',
+            issuer: ISSUER,
+            scopes: ['read'],
+          },
+        },
+      });
+      const state = (t as any).profileStates.get(PROFILE_ID);
+
+      await expect(t.assertSessionConsent(PROFILE_ID, 'session-1')).rejects.toBeInstanceOf(ConsentRequiredError);
+      expect(state.sessions.has('session-1')).toBe(false);
+
+      // Second denial for the same subject must not invalidate again, otherwise a
+      // client that cannot complete the browser acknowledgement loops through OAuth.
+      state.sessions.set('session-1', {
+        clientPrincipal: {
+          authType: 'oauth' as const,
+          profileId: PROFILE_ID,
+          subject: 'Y',
+          issuer: ISSUER,
+          scopes: ['read'],
+        },
+      });
+      await expect(t.assertSessionConsent(PROFILE_ID, 'session-1')).rejects.toBeInstanceOf(ConsentRequiredError);
+      expect(state.sessions.has('session-1')).toBe(true);
     });
 
     it('throws ConsentRequiredError after a rules_version bump forces re-consent', async () => {
-      const { transport: t, store } = buildTransportWithGate({
+      const { transport: t, store, rulesHash } = buildTransportWithGate({
         rulesVersion: 'v2',
         session: {
           clientPrincipal: {
@@ -6493,6 +6880,7 @@ describeIfListen('HttpTransport', () => {
         tenantId: null,
         profileId: PROFILE_ID,
         rules_version: 'v1',
+        rules_hash: rulesHash,
         granted_at: Date.now(),
       });
 

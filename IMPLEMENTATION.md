@@ -283,6 +283,42 @@ tool-filter/
 
 **Configured via**: `MCP4_TRANSPORT=stdio|http`
 
+### 14. Consent Gate for Upstream MCP Dispatch
+
+**Why**: A profile that proxies a sensitive upstream MCP (for example MS365 SharePoint) must not
+dispatch until a provable human accepted the current rules. The gate is deliberately not an MCP tool, so
+an autonomous agent cannot grant consent on the user's behalf.
+
+**Three layers, one responsibility each:**
+
+- **Policy - `src/auth/consent-gate.ts`.** One `ConsentGate` instance per profile, built at profile
+  registration in `HttpTransport`. It owns every decision: identity source (only `authType === 'oauth'`,
+  so an enterprise or static-token principal with the same subject cannot satisfy the gate), issuer
+  canonicalization via `normalizeIssuer`, rules pinning through `rules_hash`, `rules_version` rollback
+  (a rollback from v2 to v1 does not reactivate the older v1 grant), revocation, and `max_age_days`. A
+  missing principal is treated as "no consent" and blocked. There is no positive-result cache, so a
+  revocation applies on the next dispatch.
+- **Persistence - `src/auth/consent-evidence-store.ts`.** `ConsentEvidenceStore` is dumb storage:
+  `record`, `revoke`, `lookup`. It returns grants, the newest grant for any rules version, and the newest
+  revocation timestamp; it never interprets them. Adding a backend means implementing persistence only.
+  Two implementations ship: `InMemoryConsentEvidenceStore` (dev/tests) and `FileConsentEvidenceStore`
+  (append-only JSONL, `type`-discriminated lines, incremental tail reads, 0700/0600, 32 MiB write ceiling,
+  fail-closed `ConsentEvidenceStoreError` on any I/O failure). `consent-evidence-store-factory.ts` makes
+  required consent without `MCP4_CONSENT_EVIDENCE_PATH` a hard startup failure, so a "consent recorded"
+  claim can never silently mean volatile state.
+- **Enforcement - `src/mcp/mcp-server-manager.ts` `buildUpstreamDispatch()`.** The gate is applied at the
+  `setGetUpstreamClient()` seam, the single point where an upstream client is acquired. `tools/list` and
+  `tools/call` therefore cannot diverge, and a future dispatch path inherits the check. A consent-gated
+  profile with no reachable enforcer throws `ConsentGateConfigurationError` instead of connecting.
+
+**Rules pinning**: `consent-rules-hash.ts` computes sha256 over canonical JSON of
+`[rules_version, rules_summary ?? null, education_resource ?? null]`. Editing the summary or the link
+invalidates existing grants without a version bump. The remote page behind `education_resource` is not
+pinned - the gateway can only pin the link it rendered.
+
+**Client contract**: denial surfaces as JSON-RPC `-32004` with `consent_url`; the denial reason stays
+server-side. See `docs/HTTP-TRANSPORT.md` -> Consent Gate and `docs/OAUTH.md` -> Consent-gated profiles.
+
 ## File Structure
 
 ```

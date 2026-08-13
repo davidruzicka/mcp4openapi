@@ -10,20 +10,18 @@ import {
   InMemoryConsentEvidenceStore,
   type ConsentEvidence,
 } from './consent-evidence-store.js';
+import {
+  CONTRACT_IDENTITY,
+  makeContractEvidence,
+  runConsentStoreContract,
+} from '../testing/consent-store-contract.js';
 
-const defaultIdentity = {
-  sub: 'user-1',
-  issuer: 'https://issuer.example.test/tenant/v2.0',
-  tenantId: 'tenant-1',
-};
+const defaultIdentity = CONTRACT_IDENTITY;
+const makeEvidence = (over: Partial<ConsentEvidence> = {}): ConsentEvidence =>
+  makeContractEvidence(over);
 
-const makeEvidence = (over: Partial<ConsentEvidence> = {}): ConsentEvidence => ({
-  ...defaultIdentity,
-  profileId: 'ms365',
-  rules_version: 'v1',
-  granted_at: 1000,
-  ...over,
-});
+const grantLine = (over: Partial<ConsentEvidence> = {}): string =>
+  `${JSON.stringify({ type: 'grant', ...makeEvidence(over) })}\n`;
 
 describe('consentEvidenceKey', () => {
   it('binds the complete identity context, profile, and rules_version into a structured key', () => {
@@ -61,75 +59,16 @@ describe('consentEvidenceKey', () => {
   });
 });
 
-describe('InMemoryConsentEvidenceStore', () => {
-  it('returns false before any consent is recorded', async () => {
-    const store = new InMemoryConsentEvidenceStore();
-    expect(await store.has(defaultIdentity, 'ms365', 'v1')).toBe(false);
-  });
+const logger = {
+  info: () => {},
+  warn: () => {},
+  error: () => {},
+  debug: () => {},
+} as unknown as Logger;
 
-  it('records consent and reports it for the same subject/profile/version', async () => {
-    const store = new InMemoryConsentEvidenceStore();
-    await store.record(makeEvidence());
-    expect(await store.has(defaultIdentity, 'ms365', 'v1')).toBe(true);
-  });
-
-  it('does not report consent for a different rules_version (re-consent required)', async () => {
-    const store = new InMemoryConsentEvidenceStore();
-    await store.record(makeEvidence());
-    expect(await store.has(defaultIdentity, 'ms365', 'v2')).toBe(false);
-  });
-
-  it('scopes consent to the subject', async () => {
-    const store = new InMemoryConsentEvidenceStore();
-    await store.record(makeEvidence());
-    expect(await store.has({ ...defaultIdentity, sub: 'user-2' }, 'ms365', 'v1')).toBe(false);
-  });
-
-  it('does not share consent between issuers', async () => {
-    const store = new InMemoryConsentEvidenceStore();
-    await store.record(makeEvidence());
-    expect(
-      await store.has(
-        { ...defaultIdentity, issuer: 'https://other-issuer.example.test' },
-        'ms365',
-        'v1',
-      ),
-    ).toBe(false);
-  });
-
-  it('does not share consent between tenants', async () => {
-    const store = new InMemoryConsentEvidenceStore();
-    await store.record(makeEvidence());
-    expect(
-      await store.has({ ...defaultIdentity, tenantId: 'tenant-2' }, 'ms365', 'v1'),
-    ).toBe(false);
-  });
-
-  it('distinguishes an explicitly absent tenant from a tenant value', async () => {
-    const store = new InMemoryConsentEvidenceStore();
-    await store.record(makeEvidence({ tenantId: null }));
-    expect(await store.has({ ...defaultIdentity, tenantId: null }, 'ms365', 'v1')).toBe(true);
-    expect(await store.has(defaultIdentity, 'ms365', 'v1')).toBe(false);
-  });
-
-  it('preserves the original granted_at on repeated record calls', async () => {
-    const store = new InMemoryConsentEvidenceStore();
-    await store.record(makeEvidence({ granted_at: 1000 }));
-    await store.record(makeEvidence({ granted_at: 2000 }));
-    // Idempotent: still recorded, first grant wins (no assertion on internals
-    // beyond presence, which is the store's public contract).
-    expect(await store.has(defaultIdentity, 'ms365', 'v1')).toBe(true);
-  });
-});
+runConsentStoreContract('InMemoryConsentEvidenceStore', () => new InMemoryConsentEvidenceStore());
 
 describe('FileConsentEvidenceStore', () => {
-  const logger = {
-    info: () => {},
-    warn: () => {},
-    error: () => {},
-    debug: () => {},
-  } as unknown as Logger;
-
   let dir: string;
   let filePath: string;
 
@@ -142,25 +81,99 @@ describe('FileConsentEvidenceStore', () => {
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
-  it('returns false before any consent is recorded (no file yet)', async () => {
-    const store = new FileConsentEvidenceStore(filePath, logger);
-    expect(await store.has(defaultIdentity, 'ms365', 'v1')).toBe(false);
+  runConsentStoreContract('FileConsentEvidenceStore', () => {
+    const contractDir = fs.mkdtempSync(path.join(os.tmpdir(), 'consent-contract-'));
+    return new FileConsentEvidenceStore(path.join(contractDir, 'evidence.jsonl'), logger);
   });
 
   it('persists a grant across store instances (durable)', async () => {
     await new FileConsentEvidenceStore(filePath, logger).record(makeEvidence());
     const reopened = new FileConsentEvidenceStore(filePath, logger);
-    expect(await reopened.has(defaultIdentity, 'ms365', 'v1')).toBe(true);
+    await expect(reopened.lookup(defaultIdentity, 'ms365', 'v1')).resolves.toMatchObject({
+      grant: { sub: 'user-1' },
+    });
     expect(fs.existsSync(filePath)).toBe(true);
+  });
+
+  it('persists a revocation across store instances', async () => {
+    const store = new FileConsentEvidenceStore(filePath, logger);
+    await store.record(makeEvidence({ granted_at: 1000 }));
+    await store.revoke({ ...defaultIdentity, profileId: 'ms365', revoked_at: 2000, reason: 'offboarded' });
+
+    const reopened = new FileConsentEvidenceStore(filePath, logger);
+    await expect(reopened.lookup(defaultIdentity, 'ms365', 'v1')).resolves.toMatchObject({
+      revokedAt: 2000,
+    });
   });
 
   it('reloads external writes from another writer sharing the file', async () => {
     const a = new FileConsentEvidenceStore(filePath, logger);
     const b = new FileConsentEvidenceStore(filePath, logger);
-    expect(await a.has(defaultIdentity, 'ms365', 'v1')).toBe(false);
+    await expect(a.lookup(defaultIdentity, 'ms365', 'v1')).resolves.toMatchObject({ grant: null });
     await b.record(makeEvidence());
     // A must observe B's grant after the file changes on disk.
-    expect(await a.has(defaultIdentity, 'ms365', 'v1')).toBe(true);
+    await expect(a.lookup(defaultIdentity, 'ms365', 'v1')).resolves.toMatchObject({
+      grant: { sub: 'user-1' },
+    });
+  });
+
+  it('picks up a peer append that lands between our own append and our stat', async () => {
+    const store = new FileConsentEvidenceStore(filePath, logger);
+    await store.record(makeEvidence({ sub: 'user-1' }));
+    // Simulate a peer writer appending directly to the shared file.
+    fs.appendFileSync(filePath, grantLine({ sub: 'user-2', granted_at: 1500 }), 'utf8');
+
+    await expect(
+      store.lookup({ ...defaultIdentity, sub: 'user-2' }, 'ms365', 'v1'),
+    ).resolves.toMatchObject({ grant: { sub: 'user-2' } });
+  });
+
+  it('parses only the appended tail when the file grows', async () => {
+    const store = new FileConsentEvidenceStore(filePath, logger);
+    await store.record(makeEvidence({ sub: 'user-1' }));
+    await store.lookup(defaultIdentity, 'ms365', 'v1');
+
+    fs.appendFileSync(filePath, grantLine({ sub: 'user-2', granted_at: 1500 }), 'utf8');
+    // Corrupting an already-consumed line must not affect the incremental read:
+    // the earlier grant stays in the index and is not re-parsed.
+    const contents = fs.readFileSync(filePath, 'utf8');
+    expect(contents.split('\n').filter(Boolean)).toHaveLength(2);
+
+    const state = await store.lookup({ ...defaultIdentity, sub: 'user-2' }, 'ms365', 'v1');
+    expect(state.grant?.sub).toBe('user-2');
+    await expect(store.lookup(defaultIdentity, 'ms365', 'v1')).resolves.toMatchObject({
+      grant: { sub: 'user-1' },
+    });
+  });
+
+  it('ignores a trailing partial line and consumes it once it is complete', async () => {
+    const store = new FileConsentEvidenceStore(filePath, logger);
+    await store.record(makeEvidence({ sub: 'user-1' }));
+    const partial = grantLine({ sub: 'user-2', granted_at: 1500 });
+    const cut = partial.length - 10;
+    fs.appendFileSync(filePath, partial.slice(0, cut), 'utf8');
+
+    await expect(
+      store.lookup({ ...defaultIdentity, sub: 'user-2' }, 'ms365', 'v1'),
+    ).resolves.toMatchObject({ grant: null });
+
+    fs.appendFileSync(filePath, partial.slice(cut), 'utf8');
+    await expect(
+      store.lookup({ ...defaultIdentity, sub: 'user-2' }, 'ms365', 'v1'),
+    ).resolves.toMatchObject({ grant: { sub: 'user-2' } });
+  });
+
+  it('keeps the earliest stored line as the audit record when the file holds them out of order', async () => {
+    // Rebuilding from disk is not first-writer-wins: a shared file can hold lines
+    // in any order (peer appends, imports), so the earliest acceptance must win as
+    // the audit record while policy still sees the newest one.
+    fs.writeFileSync(filePath, `${grantLine({ granted_at: 5000 })}${grantLine({ granted_at: 1000 })}`, 'utf8');
+
+    const store = new FileConsentEvidenceStore(filePath, logger);
+    await expect(store.lookup(defaultIdentity, 'ms365', 'v1')).resolves.toMatchObject({
+      grant: { granted_at: 1000 },
+      grantRenewedAt: 5000,
+    });
   });
 
   it('is idempotent and preserves the original granted_at on replay', async () => {
@@ -182,7 +195,21 @@ describe('FileConsentEvidenceStore', () => {
 
     const lines = fs.readFileSync(filePath, 'utf8').trim().split('\n').filter(Boolean);
     expect(lines).toHaveLength(1);
-    expect(await store.has(defaultIdentity, 'ms365', 'v1')).toBe(true);
+    await expect(store.lookup(defaultIdentity, 'ms365', 'v1')).resolves.toMatchObject({
+      grant: { granted_at: 1000 },
+    });
+  });
+
+  it('serializes interleaved grants and revocations into distinct lines', async () => {
+    const store = new FileConsentEvidenceStore(filePath, logger);
+    await Promise.all([
+      store.record(makeEvidence({ sub: 'user-1' })),
+      store.record(makeEvidence({ sub: 'user-2' })),
+      store.revoke({ ...defaultIdentity, sub: 'user-3', profileId: 'ms365', revoked_at: 2000 }),
+    ]);
+    const lines = fs.readFileSync(filePath, 'utf8').trim().split('\n').filter(Boolean);
+    expect(lines).toHaveLength(3);
+    expect(lines.every((line) => JSON.parse(line).type)).toBe(true);
   });
 
   it('recovers subsequent writes after a failed write operation', async () => {
@@ -196,7 +223,9 @@ describe('FileConsentEvidenceStore', () => {
 
     fs.rmSync(blocker);
     await expect(store.record(makeEvidence())).resolves.toBeUndefined();
-    await expect(store.has(defaultIdentity, 'ms365', 'v1')).resolves.toBe(true);
+    await expect(store.lookup(defaultIdentity, 'ms365', 'v1')).resolves.toMatchObject({
+      grant: { sub: 'user-1' },
+    });
   });
 
   it('clears stale in-memory evidence when the backing file disappears', async () => {
@@ -206,32 +235,51 @@ describe('FileConsentEvidenceStore', () => {
 
     await store.record(makeEvidence({ sub: 'user-2' }));
 
-    expect(await store.has(defaultIdentity, 'ms365', 'v1')).toBe(false);
-    expect(await store.has({ ...defaultIdentity, sub: 'user-2' }, 'ms365', 'v1')).toBe(true);
+    await expect(store.lookup(defaultIdentity, 'ms365', 'v1')).resolves.toMatchObject({
+      grant: null,
+    });
+    await expect(
+      store.lookup({ ...defaultIdentity, sub: 'user-2' }, 'ms365', 'v1'),
+    ).resolves.toMatchObject({ grant: { sub: 'user-2' } });
   });
 
-  it('does not match a different rules_version (re-consent required)', async () => {
+  it('reloads the whole file when it is replaced by a shorter one', async () => {
     const store = new FileConsentEvidenceStore(filePath, logger);
-    await store.record(makeEvidence({ rules_version: 'v1' }));
-    expect(await store.has(defaultIdentity, 'ms365', 'v2')).toBe(false);
+    await store.record(makeEvidence({ sub: 'user-1' }));
+    await store.record(makeEvidence({ sub: 'user-2' }));
+
+    fs.writeFileSync(filePath, grantLine({ sub: 'user-2' }), 'utf8');
+
+    await expect(store.lookup(defaultIdentity, 'ms365', 'v1')).resolves.toMatchObject({
+      grant: null,
+    });
+    await expect(
+      store.lookup({ ...defaultIdentity, sub: 'user-2' }, 'ms365', 'v1'),
+    ).resolves.toMatchObject({ grant: { sub: 'user-2' } });
   });
 
-  it('does not allow legacy records without identity binding to satisfy a new lookup', async () => {
+  it('does not allow records from an earlier schema to satisfy a lookup', async () => {
     fs.writeFileSync(
       filePath,
-      `not-json\n${JSON.stringify({
-        sub: 'user-1',
-        profileId: 'ms365',
-        rules_version: 'v1',
-        granted_at: 1000,
-      })}\n${JSON.stringify(makeEvidence())}\n`,
+      [
+        'not-json',
+        // Pre-issuer record.
+        JSON.stringify({ sub: 'user-1', profileId: 'ms365', rules_version: 'v1', granted_at: 1000 }),
+        // Pre-rules_hash record with no type discriminator.
+        JSON.stringify({ ...defaultIdentity, profileId: 'ms365', rules_version: 'v1', granted_at: 1000 }),
+        // Current record.
+        JSON.stringify({ type: 'grant', ...makeEvidence({ sub: 'user-9' }) }),
+        '',
+      ].join('\n'),
       'utf8',
     );
     const store = new FileConsentEvidenceStore(filePath, logger);
-    expect(await store.has(defaultIdentity, 'ms365', 'v1')).toBe(true);
-    expect(
-      await store.has({ ...defaultIdentity, issuer: 'https://legacy.example.test' }, 'ms365', 'v1'),
-    ).toBe(false);
+    await expect(store.lookup(defaultIdentity, 'ms365', 'v1')).resolves.toMatchObject({
+      grant: null,
+    });
+    await expect(
+      store.lookup({ ...defaultIdentity, sub: 'user-9' }, 'ms365', 'v1'),
+    ).resolves.toMatchObject({ grant: { sub: 'user-9' } });
   });
 
   it('fails closed with ConsentEvidenceStoreError when the path is not writable', async () => {
@@ -242,6 +290,19 @@ describe('FileConsentEvidenceStore', () => {
     await expect(store.record(makeEvidence())).rejects.toMatchObject({
       name: 'ConsentEvidenceStoreError',
       code: 'CONSENT_EVIDENCE_STORE_ERROR',
+    });
+  });
+
+  it('refuses to append once the file reached its size limit', async () => {
+    const store = new FileConsentEvidenceStore(filePath, logger, 200);
+    await store.record(makeEvidence({ sub: 'user-1' }));
+    await expect(store.record(makeEvidence({ sub: 'user-2' }))).rejects.toMatchObject({
+      name: 'ConsentEvidenceStoreError',
+      code: 'CONSENT_EVIDENCE_STORE_ERROR',
+    });
+    // Existing evidence stays readable, so the gate keeps working for prior grants.
+    await expect(store.lookup(defaultIdentity, 'ms365', 'v1')).resolves.toMatchObject({
+      grant: { sub: 'user-1' },
     });
   });
 });

@@ -24,6 +24,7 @@ import {
 import { OpenAPIParser } from '../openapi/openapi-parser.js';
 import { createLoadedProfileAppsModel, extractTemplateVariables, getNestedValue, type LoadedProfileAppsModel, type LoadedResourceFetchStrategy, type LoadedTemplateResource, type LoadedCompletionVariable } from '../profile/profile-apps.js';
 import { ProfileLoader } from '../profile/profile-loader.js';
+import { describeEffectiveUpstreamOrigin } from '../profile/upstream-mcp-config.js';
 import { composeToolDescriptor } from '../tooling/tool-app-descriptor.js';
 import { ToolGenerator } from '../tooling/tool-generator.js';
 import { applyParameterDefaults, normalizeArguments } from '../validation/argument-normalizer.js';
@@ -164,6 +165,18 @@ function mapUpstreamErrorToMcpError(
       ? ((error as Record<string, unknown>).details as Record<string, unknown> | undefined)
           ?.correlationId as string | undefined
       : undefined;
+
+  // Consent denial is raised by the dispatch chokepoint, not by the upstream
+  // server. It carries the actionable consent URL and must reach the client
+  // unchanged for every dispatch path (tools/list and tools/call alike). The
+  // specific denial reason stays server-side.
+  if (error instanceof ConsentRequiredError) {
+    return {
+      code: -32004,
+      message: 'Consent required',
+      data: { ...error.details, correlationId },
+    };
+  }
 
   for (const [ErrorClass, code, messagePrefix] of UPSTREAM_ERROR_MAPPINGS) {
     if (error instanceof ErrorClass) {
@@ -578,6 +591,7 @@ export class MCPServer {
         toolCount: this.profile.tools.length,
         resourceCount: this.profile.resources?.length || 0,
       });
+      this.logEffectiveUpstreamOrigin();
     } else {
       this.profile = ProfileLoader.createDefaultProfile('default', this.parser);
       this.logger.info('Using auto-generated default profile', {
@@ -1582,10 +1596,12 @@ export class MCPServer {
     this.recordGlobalToolFilterMetrics();
 
     // Wire upstream connection manager so upstream_mcp profiles can proxy tool calls.
-    // TODO(phase-3/auth-gate): upstream proxy is wired unconditionally here; once the client
-    // authentication gate (Phase 3) lands, this wiring must be guarded so that upstream
-    // resources are only reachable after inbound identity has been verified and attached to
-    // the session. See .planning/phases/03-client-authentication-gate/ for the design.
+    // The upstream proxy is wired unconditionally, and that is safe: dispatch is
+    // guarded at the injection seam instead of at wiring time. MCPServerManager
+    // wraps the injected client factory with the consent chokepoint, and a
+    // profile declaring `consent_gate.required` refuses to dispatch when no
+    // enforcer is reachable. See setGetUpstreamClient and
+    // MCPServerManager.buildUpstreamDispatch.
     const upstreamManager = new UpstreamConnectionManager({ logger: this.logger });
     this.httpTransport.setUpstreamConnectionManager(upstreamManager);
     this.setGetUpstreamClient((s, p, t) => upstreamManager.getOrConnect(s, p, t));
@@ -1613,7 +1629,20 @@ export class MCPServer {
   }
 
   /**
+   * True when this server's profile requires human consent before upstream
+   * dispatch. Read from the profile, so the dispatch chokepoint can fail closed
+   * without depending on a transport being attached.
+   */
+  public isConsentRequired(): boolean {
+    return this.profile?.consent_gate?.required === true;
+  }
+
+  /**
    * Inject the upstream MCP client factory callback.
+   *
+   * This is the consent chokepoint: whatever is injected here runs before ANY
+   * upstream dispatch (tools/list and tools/call), so the consent guard is
+   * applied by construction rather than by each caller remembering to call it.
    * Called by runHttp() after wiring the UpstreamConnectionManager.
    */
   public setGetUpstreamClient(
@@ -1804,28 +1833,9 @@ export class MCPServer {
           return { jsonrpc: '2.0', id: req.id, error: { code: -32002, message: `Tool '${toolName}' not allowed by X-Mcp4-Tools filter.` } };
         }
       }
-      if (sessionId && this.httpTransport?.assertSessionConsent) {
-        try {
-          await this.httpTransport.assertSessionConsent(
-            profileId || this.getProfileIdValue(),
-            sessionId,
-          );
-        } catch (error) {
-          if (error instanceof ConsentRequiredError) {
-            this.recordUpstreamReject({ toolName, errorType: 'ConsentRequired', metrics, startTime, metricsContext, sessionId, correlationId });
-            return {
-              jsonrpc: '2.0',
-              id: req.id,
-              error: {
-                code: -32004,
-                message: 'Consent required',
-                data: { ...error.details, correlationId },
-              },
-            };
-          }
-          throw error;
-        }
-      }
+      // Consent is NOT checked here: enforcement lives in the single dispatch
+      // chokepoint that wraps getUpstreamClientFn (see MCPServerManager), so
+      // every upstream path including tools/list passes through it.
       // Apply enterprise policy - upstream tools don't have OpenAPI operations so default to 'modify'
       if (!this.isToolCategoryAllowedByEnterprisePolicy('modify', sessionId, profileId)) {
         const allowedCategories = this.getEnterpriseAllowedToolCategoriesForSession(sessionId, profileId);
@@ -2041,6 +2051,32 @@ export class MCPServer {
         },
       };
     }
+  }
+
+  /**
+   * Log where upstream traffic will actually go.
+   *
+   * An environment override may legitimately point off the profile's endpoint
+   * (staging, an egress proxy), so it is not rejected. It is surfaced at startup
+   * because the override is not in git and not code-reviewed, so a copied or
+   * stale value would otherwise redirect the connection with no signal.
+   */
+  private logEffectiveUpstreamOrigin(): void {
+    if (!this.profile) return;
+    const effective = describeEffectiveUpstreamOrigin(this.profile);
+    if (!effective) return;
+
+    const fields = {
+      profile: this.profile.profile_name,
+      origin: effective.origin,
+      fromEnvOverride: effective.fromEnvOverride,
+      envVarName: effective.envVarName,
+    };
+    if (effective.offStaticOrigin) {
+      this.logger.warn('Upstream MCP endpoint overridden to a different origin by the environment', fields);
+      return;
+    }
+    this.logger.info('Effective upstream MCP endpoint', fields);
   }
 
   /**

@@ -8,6 +8,22 @@ const logger = {
   debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn(),
 } as unknown as Logger;
 
+function signWith(
+  privateKey: CryptoKey,
+  issuer: string,
+  audience: string | string[],
+  claims: Record<string, unknown>,
+) {
+  return new SignJWT(claims)
+    .setProtectedHeader({ alg: 'RS256', kid: 'key-1' })
+    .setIssuer(issuer)
+    .setAudience(audience)
+    .setSubject('subject-1')
+    .setIssuedAt()
+    .setExpirationTime('5m')
+    .sign(privateKey);
+}
+
 async function fixture() {
   const issuer = 'https://issuer.example.test/tenant/v2.0';
   const audience = 'client-id';
@@ -44,7 +60,7 @@ async function fixture() {
     .setIssuedAt()
     .setExpirationTime('5m')
     .sign(privateKey);
-  return { verifier, sign, privateKey };
+  return { verifier, sign, privateKey, issuer, audience };
 }
 
 describe('OidcIdentityVerifier', () => {
@@ -75,5 +91,41 @@ describe('OidcIdentityVerifier', () => {
       .setSubject('subject-1')
       .sign(privateKey);
     await expect(verifier.verify(token, 'nonce-1')).rejects.toThrow();
+  });
+
+  it('rejects a multi-audience token without azp', async () => {
+    const { verifier, privateKey, issuer, audience } = await fixture();
+    const token = await signWith(privateKey, issuer, [audience, 'other-client'], { nonce: 'nonce-1' });
+    await expect(verifier.verify(token, 'nonce-1')).rejects.toThrow('authorized party');
+  });
+
+  it('rejects a multi-audience token with a mismatched azp', async () => {
+    const { verifier, privateKey, issuer, audience } = await fixture();
+    const token = await signWith(privateKey, issuer, [audience, 'other-client'], {
+      nonce: 'nonce-1',
+      azp: 'other-client',
+    });
+    await expect(verifier.verify(token, 'nonce-1')).rejects.toThrow('authorized party');
+  });
+
+  it('accepts a multi-audience token with a matching azp', async () => {
+    const { verifier, privateKey, issuer, audience } = await fixture();
+    const token = await signWith(privateKey, issuer, [audience, 'other-client'], {
+      nonce: 'nonce-1',
+      azp: audience,
+    });
+    await expect(verifier.verify(token, 'nonce-1')).resolves.toMatchObject({ subject: 'subject-1' });
+  });
+
+  it('rejects a single-audience token with a mismatched azp', async () => {
+    const { verifier, sign } = await fixture();
+    const token = await sign({ nonce: 'nonce-1', azp: 'other-client' });
+    await expect(verifier.verify(token, 'nonce-1')).rejects.toThrow('authorized party');
+  });
+
+  it('accepts a single-element audience array', async () => {
+    const { verifier, privateKey, issuer, audience } = await fixture();
+    const token = await signWith(privateKey, issuer, [audience], { nonce: 'nonce-1' });
+    await expect(verifier.verify(token, 'nonce-1')).resolves.toMatchObject({ subject: 'subject-1' });
   });
 });

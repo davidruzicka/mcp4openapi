@@ -32,6 +32,27 @@ describe('resolveConsentGateConfig', () => {
     expect(result.required).toBe(false);
   });
 
+  it('preserves the whole policy, including max_age_days, through resolution', () => {
+    // The resolver rebuilds the config field by field and ProfileLoader writes the
+    // result back onto the profile, so a dropped field silently disables policy.
+    const result = resolveConsentGateConfig({
+      required: true,
+      rules_version: 'v1',
+      rules_summary: 'Accept the rules.',
+      education_resource: 'https://kb.example.test/rules',
+      max_age_days: 30,
+      identity_source: 'profile_oauth',
+    });
+    expect(result).toEqual({
+      required: true,
+      rules_version: 'v1',
+      rules_summary: 'Accept the rules.',
+      education_resource: 'https://kb.example.test/rules',
+      max_age_days: 30,
+      identity_source: 'profile_oauth',
+    });
+  });
+
   it('rejects an empty rules_version', () => {
     expect(() =>
       resolveConsentGateConfig({ required: false, rules_version: '   ', identity_source: 'profile_oauth' }),
@@ -96,6 +117,21 @@ describe('validateConsentGateProfile', () => {
       interceptors: profileOAuth,
       upstream_mcp_from_env: 'MCP4_UNRESOLVED_UPSTREAM_MCP_FOR_CONSENT_GATE_TEST',
     }))).toThrow('requires an effective upstream_mcp configuration');
+  });
+
+  it('rejects a required gate when upstream_mcp is absent entirely', () => {
+    // Same guard as the unresolved-env-reference case, reached without any
+    // upstream_mcp source configured at all.
+    expect(() => validateConsentGateProfile(createProfile({
+      consent_gate: requiredConsentGate,
+      interceptors: profileOAuth,
+      upstream_mcp: undefined,
+    }))).toThrow(ConsentGateConfigurationError);
+    expect(() => validateConsentGateProfile(createProfile({
+      consent_gate: requiredConsentGate,
+      interceptors: profileOAuth,
+      upstream_mcp: undefined,
+    }))).toThrow('consent_gate.required=true requires an effective upstream_mcp configuration');
   });
 
   it('rejects a required gate when local tools are configured', () => {

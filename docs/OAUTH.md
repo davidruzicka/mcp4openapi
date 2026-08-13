@@ -447,6 +447,88 @@ Request specific permissions:
 
 See [GitLab OAuth documentation](https://docs.gitlab.com/ee/api/oauth2.html) for full scope list.
 
+## Consent-gated profiles
+
+A profile with `consent_gate.required: true` reuses this same OAuth flow. Do not register a second
+OAuth client for consent. Enforcement at dispatch time, the `-32004` denial payload, and the re-consent
+401 are described in [docs/HTTP-TRANSPORT.md](./HTTP-TRANSPORT.md#consent-gate); profile fields are in
+the [Profile Guide](./PROFILE-GUIDE.md#consent-gated-upstream-mcp).
+
+### The acknowledgement step inside `/oauth/authorize`
+
+For a consent-gated profile the authorize endpoint gains one hop before the IdP redirect:
+
+1. `GET /profile/<id>/oauth/authorize?...` - after `client_id`, `response_type`, `redirect_uri` and the
+   registered-client lookup are validated, the gateway does not redirect. It renders an HTML page with
+   `rules_summary`, the `education_resource` link (`target=_blank`, `rel="noopener noreferrer"`), the
+   original OAuth parameters as hidden fields, and a required "I accept rules version X" checkbox. The
+   page is served with `Cache-Control: no-store` and a restrictive CSP (`default-src 'none'`,
+   `form-action 'self'`, `frame-ancestors 'none'`).
+2. `POST /profile/<id>/oauth/authorize` with `consent_accept=yes` and the same parameters. The gateway
+   consumes the pending approval and only then calls `oauthProvider.authorize(...)`, which redirects to
+   the IdP.
+
+Every other authorize precondition is unchanged; the acknowledgement is inserted, not substituted.
+
+### `__Host-mcp4_consent` cookie binding
+
+Rendering the form stores a pending approval keyed by a SHA-256 fingerprint of the profile id plus the
+seven OAuth request fields, and returns a fresh 32-byte random browser id as
+`__Host-mcp4_consent=<id>; Path=/; Max-Age=300; HttpOnly; Secure; SameSite=Lax`. The `__Host-` prefix
+means browsers accept the cookie only over HTTPS, only with `Path=/`, and only without a `Domain`
+attribute, so it cannot be planted by a sibling subdomain.
+
+The POST is accepted only when the fingerprint matches a pending entry that has not expired (5 minutes),
+the entry has not been used before (it is deleted on first lookup), and the presented cookie matches the
+stored browser id under a constant-time comparison. This binds the acknowledgement and the submission to
+one user agent and one exact OAuth request.
+
+**What the acknowledgement does not prove.** It is not proof of human presence: a scripted client that
+follows the form and returns the cookie can satisfy it. It is also not proof of identity: the cookie is
+an anonymous random value and carries no subject. Identity comes exclusively from the OIDC login that
+follows. `OidcIdentityVerifier` validates the ID token against discovery/JWKS, the configured issuer and
+audience (including the OIDC Core `azp` rule for multi-audience tokens), the signature, expiry, and the
+flow nonce, and takes the subject from `oid` when present, otherwise `sub`. Consent evidence is recorded
+only after that verification succeeds, bound to the verified subject, canonical issuer, tenant context,
+profile id, `rules_version`, and the `rules_hash` of what was displayed.
+
+### `mcp4.r1.*` refresh envelope
+
+A consent-gated profile must be able to name the human behind a refresh, including after a gateway
+restart when the provider's in-process identity map is empty. So when `MCP4_OAUTH_KEY` is set the
+`refresh_token` returned to the client is not the IdP token but an encrypted envelope:
+
+```
+mcp4.r1.<base64url(12-byte-nonce + AES-256-GCM-ciphertext + 16-byte-tag)>
+```
+
+The payload carries the IdP refresh token, the OAuth `client_id`, the verified `sub`/`iss`/tenant, the
+profile id and an issued-at timestamp. AAD is the profile id plus a `:refresh` suffix, so an envelope
+cannot be replayed against another profile and the access-token path cannot decrypt it at all. This is a
+separate prefix and a separate AAD from the `mcp4.v1.*` access-token envelope described in
+[docs/HTTP-TRANSPORT.md](./HTTP-TRANSPORT.md#encrypted-token-envelopes); both are derived from the same
+`MCP4_OAUTH_KEY`.
+
+On a `refresh_token` grant the gateway resolves the presented token as follows:
+
+| Presented token | Consent-gated profile | Other profiles |
+| --- | --- | --- |
+| `mcp4.r1.*` that decrypts and carries `sub` + `iss` | Accepted; identity is rehydrated into the new session | Accepted |
+| `mcp4.r1.*` that decrypts but carries no identity | Rejected: "Refresh token carries no verified identity for a consent-gated profile" | Accepted, no identity |
+| `mcp4.r1.*` that fails to decrypt or verify | Rejected: "Refresh token envelope could not be verified" | Rejected |
+| Plain IdP refresh token | Rejected: "Consent-gated profile requires an identity-bearing refresh token" | Accepted |
+
+The "Other profiles" column assumes `MCP4_OAUTH_KEY` is configured. With no key the envelope branch is
+skipped entirely and any presented string is forwarded as a plain refresh token; consent-gated profiles
+cannot reach that state because the key is a startup requirement for them.
+
+Rejection is deliberate. Accepting an identity-less refresh would mint a session whose principal is
+unknown, and the consent gate would then block every call on it with no way for the user to recover;
+failing the grant sends the client back through the full OAuth and acknowledgement flow instead.
+
+This is also why `MCP4_OAUTH_KEY` is a hard startup requirement for consent-gated profiles: without a
+key there are no envelopes, and every refresh would silently produce a principal-less session.
+
 ## Troubleshooting
 
 ### "Redirect URI mismatch"

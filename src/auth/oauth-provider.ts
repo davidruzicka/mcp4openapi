@@ -49,6 +49,8 @@ export type { InMemoryClientsStoreOptions } from './client-store/types.js';
 // --- OAuth operational-check helpers (module-private + exported) ---
 
 const ENV_REF_PATTERN = /^\$\{env:([^}]+)\}$/;
+// Upper bound on remembered refresh-token identity bindings.
+const REFRESH_IDENTITY_MAX = 10000;
 
 /**
  * Safely resolves a single `${env:VAR}` reference. Returns the env var value
@@ -1230,10 +1232,24 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
     for (const [token, entry] of this.refreshTokenIdentities) {
       if (entry.expiresAt <= now) this.refreshTokenIdentities.delete(token);
     }
-    while (this.refreshTokenIdentities.size >= 10000) {
-      const oldest = this.refreshTokenIdentities.keys().next().value;
-      if (!oldest) break;
-      this.refreshTokenIdentities.delete(oldest);
+    // Evict the entry that expires soonest rather than the oldest inserted one:
+    // insertion-order eviction silently drops a live identity binding and forces
+    // that user to re-consent, while the evicted entry may have been the
+    // longest-lived. Overflow is logged so the cap is observable.
+    while (this.refreshTokenIdentities.size >= REFRESH_IDENTITY_MAX) {
+      let nearestToken: string | undefined;
+      let nearestExpiry = Number.POSITIVE_INFINITY;
+      for (const [token, entry] of this.refreshTokenIdentities) {
+        if (entry.expiresAt < nearestExpiry) {
+          nearestExpiry = entry.expiresAt;
+          nearestToken = token;
+        }
+      }
+      if (!nearestToken) break;
+      this.refreshTokenIdentities.delete(nearestToken);
+      this.logger.warn('Refresh identity map at capacity - evicted the nearest-expiry binding', {
+        capacity: REFRESH_IDENTITY_MAX,
+      });
     }
     this.refreshTokenIdentities.set(refreshToken, {
       identity,

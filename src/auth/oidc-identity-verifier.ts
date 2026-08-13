@@ -55,6 +55,14 @@ export class OidcIdentityVerifier {
         algorithms: ['RS256', 'RS384', 'RS512', 'ES256', 'ES384', 'ES512'],
         clockTolerance: 30,
       });
+      // OIDC Core 3.1.3.7 rules 4-5: multi-audience tokens require azp, and any
+      // present azp must identify this client.
+      if (Array.isArray(payload.aud) && payload.aud.length > 1 && payload.azp === undefined) {
+        throw new AuthenticationError('OIDC ID token is missing an authorized party claim');
+      }
+      if (payload.azp !== undefined && payload.azp !== this.audience) {
+        throw new AuthenticationError('OIDC ID token authorized party validation failed');
+      }
       if (payload.nonce !== expectedNonce) {
         throw new AuthenticationError('OIDC ID token nonce validation failed');
       }

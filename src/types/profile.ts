@@ -25,7 +25,7 @@ export interface InlineApiKeyEntry {
 /**
  * Backing store for client API keys.
  *
- * Phase 3 supports only `'inline'` — keys defined directly on the profile and
+ * Phase 3 supports only `'inline'` - keys defined directly on the profile and
  * resolved from env vars. Phase 4 will extend the union to include
  * `{ type: 'sasanka'; ... }` for the centralized key service.
  */
@@ -70,6 +70,8 @@ export interface ConsentGateConfig {
   education_resource?: string;
   /** Optional short human-readable summary of the rules shown at consent time. */
   rules_summary?: string;
+  /** Optional maximum age of a grant in days; an older grant forces re-acceptance. */
+  max_age_days?: number;
   /** Identity source used to bind consent evidence to an authenticated human. */
   identity_source: 'profile_oauth';
 }

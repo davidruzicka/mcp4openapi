@@ -684,6 +684,172 @@ arbitrary restarts is supported.
 - All decrypt failures are silent (debug log only) - the session falls back to plain-bearer
   treatment without a 500 or 401.
 
+## Consent Gate
+
+A profile with `consent_gate.required: true` blocks every upstream MCP dispatch until the
+authenticated human has accepted the current rules. Profile shape and validation rules live in the
+[Profile Guide](./PROFILE-GUIDE.md#consent-gated-upstream-mcp); the browser side of the flow is in
+[docs/OAUTH.md](./OAUTH.md#consent-gated-profiles).
+
+### Enforcement point
+
+`MCPServerManager.buildUpstreamDispatch()` wraps the function passed to `MCPServer.setGetUpstreamClient()`.
+That function is the only place where an upstream client is acquired, so `tools/list` and `tools/call`
+run the same check and cannot diverge; a new dispatch path inherits the gate automatically.
+
+Order per dispatch (`src/mcp/mcp-server-manager.ts`):
+
+1. `server.isConsentRequired()` - false means no check and no store read.
+2. `HttpTransport.assertSessionConsent(profileId, sessionId)` - resolves the session principal and
+   delegates to `ConsentGate`.
+3. `UpstreamConnectionManager.getOrConnect(...)` - reached only after the gate passes.
+
+Fail-closed cases, all of which block the call:
+
+- No enforcer reachable (for example an `MCPServerManager` constructed without an HTTP transport):
+  `ConsentGateConfigurationError`.
+- The profile declares `consent_gate.required` but no gate was constructed: `ConsentGateConfigurationError`.
+- The session has no verified principal (anonymous, or an OAuth token stored without a verified OIDC
+  identity): denial reason `no_principal`.
+- The evidence store cannot be read or written: `ConsentEvidenceStoreError` propagates instead of
+  being swallowed.
+
+There is no positive-result cache. Every dispatch reads the evidence store, so a revocation takes
+effect on the next tool call.
+
+### What the client sees on denial
+
+A denied dispatch returns a JSON-RPC error:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 2,
+  "error": {
+    "code": -32004,
+    "message": "Consent required",
+    "data": {
+      "profileId": "softeria-sharepoint",
+      "rules_version": "v1",
+      "consent_url": "https://gateway.example/profile/softeria-sharepoint/consent",
+      "education_resource": "https://intranet.example/ms365-ai-rules",
+      "correlationId": "..."
+    }
+  }
+}
+```
+
+`education_resource` appears only when the profile defines it. `consent_url` serves a static HTML page
+explaining that the user must reconnect the MCP server in the client to start the sign-in and consent
+flow; the page never grants consent by itself.
+
+The specific denial reason (`no_principal`, `auth_type_mismatch`, `issuer_mismatch`, `no_evidence`,
+`rules_changed`, `rules_rollback`, `expired`, `revoked`) is deliberately not in `data`. It is written to
+the server log only, because telling an unauthenticated caller that its issuer did not match leaks
+configuration. Read it from the `Consent required: blocking tool dispatch` debug entry and from the
+`Session invalidated to trigger re-consent` info entry; both log a pseudonymized subject, never the raw
+`sub`.
+
+### One re-consent 401 per subject and rules version
+
+MCP clients have no "re-consent" verb. The only mechanism they implement is restarting OAuth after a
+401. So on the first denial for a given subject and rules version the gateway destroys the session and
+deletes its inbound token, which makes the next request unauthenticated and produces
+`401` with a `WWW-Authenticate: Bearer resource_metadata=..., scope=...` header. The client then re-runs
+the OAuth flow and passes through the rules acknowledgement again.
+
+This is bounded on purpose:
+
+- The invalidation budget key is `profileId + subject (or sessionId when anonymous) + rules_version`.
+  Once used, later denials for the same key return `-32004` without destroying the session again, so a
+  client that cannot complete the browser acknowledgement does not loop through OAuth forever.
+- The budget set is capped at 10000 entries; on overflow the oldest entry is evicted. Overflow costs at
+  most one extra invalidation for the evicted subject and never a missed denial.
+- A `rules_version` bump produces a new key, so a genuine rules change gets exactly one fresh 401 per
+  subject.
+- Session teardown failures are logged and swallowed, but the session entry is removed regardless, so a
+  client can never keep a usable session after a denial.
+
+### Approval flow needs sticky sessions
+
+The rules acknowledgement is a two-request handshake on the profile authorize endpoint:
+
+1. `GET /profile/<id>/oauth/authorize` renders an HTML form with the rules summary, the education link,
+   and a required checkbox. The gateway stores a pending approval keyed by a SHA-256 fingerprint of
+   `profile_id` plus the OAuth request fields (`response_type`, `client_id`, `redirect_uri`, `scope`,
+   `state`, `code_challenge`, `code_challenge_method`) and sets a random 32-byte browser id in a
+   `__Host-mcp4_consent` cookie (`Path=/; Max-Age=300; HttpOnly; Secure; SameSite=Lax`).
+2. `POST /profile/<id>/oauth/authorize` must carry `consent_accept=yes`, the identical OAuth fields, and
+   the same cookie. The pending entry is consumed on first use (deleted before the expiry and cookie
+   checks) and lives 5 minutes. Only then does the request continue to the IdP authorize redirect.
+
+Pending approvals live in the memory of the process that rendered the form. Behind a load balancer, the
+GET and the POST must reach the same replica: configure sticky sessions (for example
+`nginx ip_hash`, or cookie-based affinity on the ingress). A POST that lands elsewhere, arrives after
+5 minutes, is replayed, or comes from a different browser gets `400` with an HTML page linking back to
+the same authorize URL so the user can restart instead of hitting a dead end.
+
+Because the pending entry is keyed by request fingerprint rather than by a shared slot, a flood of
+unauthenticated GETs for distinct OAuth requests is bounded by expiry and cannot evict another user's
+pending approval.
+
+### Consent Gate Operations
+
+Operational constraints for a deployment with `consent_gate.required: true`. Other documents link here
+instead of repeating them.
+
+- **Single node only.** `FileConsentEvidenceStore` (`MCP4_CONSENT_EVIDENCE_PATH`) is an append-only
+  JSONL file on local disk. It reloads external writes and appends with `O_APPEND` so concurrent writers
+  do not interleave partial lines, but cross-writer deduplication is best effort: two replicas can append
+  the same grant, and the index keeps the earliest. Run one gateway instance against one evidence file.
+- **Sticky sessions.** The approval handshake above is in-memory per replica. Without affinity, every POST
+  that lands on a replica other than the one that rendered the form gets the `400` "Consent approval
+  expired" page.
+- **Evidence file growth.** Every grant and every revocation is one JSON line, appended forever;
+  duplicate grants are suppressed at write time, but revocations and re-grants after a `rules_version`
+  bump keep accumulating. Above 32 MiB (`EVIDENCE_MAX_BYTES`) further writes fail closed with
+  `ConsentEvidenceStoreError` ("Consent evidence file exceeded its size limit"), which means new grants
+  can no longer be recorded. There is no automatic rotation or compaction: monitor the file size and
+  compact manually (stop the gateway, keep the newest revocation and the earliest surviving grant per
+  subject + issuer + tenant + profile + rules version, write the file back with mode `0600`, restart).
+  Treat the file as an audit trail: archive what you drop.
+- **File permissions.** The directory is created `0700` and the file `0600`; an existing file with wider
+  permissions is tightened on first write. Back it up like a credential store, not like a log.
+- **Multi-replica is a follow-up.** A transactional backend with a unique key on subject + canonical
+  issuer + tenant + profile + rules version is tracked as `TODO.md` item 1 and slots in behind the same
+  `ConsentEvidenceStore` interface, without a call-site change.
+
+### Revoking one subject's consent
+
+The store supports revocation, but nothing exposes it yet: there is no CLI command and no admin
+endpoint. Until one exists, an operator revokes by appending a revocation record to the evidence file.
+A revocation applies to every `rules_version` for that identity and profile, and takes effect on the
+next dispatch because consent results are never cached.
+
+```bash
+# Values must match the grant exactly: sub, issuer (canonical form) and tenantId.
+# tenantId is null when the issuer provided none. revoked_at is epoch milliseconds.
+printf '%s\n' '{"type":"revocation","sub":"<oid>","issuer":"https://login.microsoftonline.com/<tid>/v2.0","tenantId":"<tid>","profileId":"softeria-sharepoint","revoked_at":'"$(date +%s000)"',"reason":"offboarded"}' \
+  >> "$MCP4_CONSENT_EVIDENCE_PATH"
+```
+
+A grant recorded after the revocation timestamp wins, so the subject can consent again through the
+normal browser flow without editing the file. To find the stored identity values, grep the file for the
+subject's pseudonym source: logs carry only `pseudonymizeSubject(sub)`, so map from your directory
+rather than from the gateway logs.
+
+### Evidence record format and compatibility
+
+Each line is one JSON object with a `type` discriminator: `grant`
+(`sub`, `issuer`, `tenantId`, `profileId`, `rules_version`, `rules_hash`, `granted_at`) or `revocation`
+(`sub`, `issuer`, `tenantId`, `profileId`, `revoked_at`, optional `reason`). Lines that fail this shape
+are skipped with a `Skipped malformed consent evidence lines` warning and can never satisfy a lookup.
+
+That is deliberate and it is the upgrade policy: records written before the current shape (no `type`,
+no `rules_hash`, or no issuer binding) are ignored rather than trusted, so a format change forces every
+subject to grant consent once more instead of silently accepting an unpinned or unbound grant. Plan a
+format change as a re-consent event.
+
 ## SSE Resumability
 
 Resume SSE streams after network disconnection.

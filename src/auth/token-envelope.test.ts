@@ -2,11 +2,14 @@ import { describe, expect, it } from 'vitest';
 import { createCipheriv as nodeCipheriv, createHash, randomBytes, scryptSync } from 'node:crypto';
 import { ValidationError } from '../core/errors.js';
 import {
+  decryptRefreshEnvelope,
   decryptTokenPayload,
   deriveLegacySha256TokenKey,
   deriveTokenKey,
+  encryptRefreshEnvelope,
   encryptTokenPayload,
   isEncryptedToken,
+  isRefreshEnvelope,
   type TokenEnvelopePayload,
 } from './token-envelope.js';
 
@@ -351,3 +354,71 @@ describe('token-envelope', () => {
 
 // Touch unused imports so eslint never trips on tree-shaken helpers in test contexts.
 void TAG_BYTES;
+
+describe('refresh envelope', () => {
+  const payload = {
+    v: 1 as const,
+    rt: 'idp-refresh-token',
+    cid: 'client-1',
+    sub: 'person-1',
+    iss: 'https://issuer.example.test/v2.0',
+    tid: 'tenant-1',
+    pid: PROFILE_ID,
+    iat: Date.now(),
+  };
+
+  it('round-trips the identity bound to the refresh token', () => {
+    const envelope = encryptRefreshEnvelope(payload, KEY);
+    expect(isRefreshEnvelope(envelope)).toBe(true);
+    expect(decryptRefreshEnvelope(envelope, KEY, PROFILE_ID)).toMatchObject({
+      rt: 'idp-refresh-token',
+      sub: 'person-1',
+      tid: 'tenant-1',
+    });
+  });
+
+  it('rejects a refresh envelope presented for another profile', () => {
+    const envelope = encryptRefreshEnvelope(payload, KEY);
+    expect(decryptRefreshEnvelope(envelope, KEY, 'other-profile')).toBeNull();
+  });
+
+  it('rejects a refresh envelope decrypted with the wrong key', () => {
+    const envelope = encryptRefreshEnvelope(payload, KEY);
+    expect(decryptRefreshEnvelope(envelope, OTHER_KEY, PROFILE_ID)).toBeNull();
+  });
+
+  it('cannot be presented as an access token envelope', () => {
+    const envelope = encryptRefreshEnvelope(payload, KEY);
+    expect(isEncryptedToken(envelope)).toBe(false);
+    expect(decryptTokenPayload(envelope, KEY, PROFILE_ID)).toBeNull();
+  });
+
+  it('does not accept an access token envelope as a refresh envelope', () => {
+    const accessEnvelope = encryptTokenPayload(
+      { v: 1, at: 'access', rt: 'refresh', pid: PROFILE_ID, iat: Date.now() },
+      KEY,
+    );
+    expect(isRefreshEnvelope(accessEnvelope)).toBe(false);
+    expect(decryptRefreshEnvelope(accessEnvelope, KEY, PROFILE_ID)).toBeNull();
+  });
+
+  it('rejects an envelope carrying a subject without an issuer', () => {
+    const envelope = encryptRefreshEnvelope({ ...payload, iss: undefined }, KEY);
+    expect(decryptRefreshEnvelope(envelope, KEY, PROFILE_ID)).toBeNull();
+  });
+
+  it('omits identity when the grant had none', () => {
+    const envelope = encryptRefreshEnvelope(
+      { v: 1, rt: 'r', cid: 'c', pid: PROFILE_ID, iat: Date.now() },
+      KEY,
+    );
+    const decrypted = decryptRefreshEnvelope(envelope, KEY, PROFILE_ID);
+    expect(decrypted?.sub).toBeUndefined();
+    expect(decrypted?.rt).toBe('r');
+  });
+
+  it('throws when the refresh token or profile is missing', () => {
+    expect(() => encryptRefreshEnvelope({ ...payload, rt: '' }, KEY)).toThrow(ValidationError);
+    expect(() => encryptRefreshEnvelope({ ...payload, pid: '' }, KEY)).toThrow(ValidationError);
+  });
+});

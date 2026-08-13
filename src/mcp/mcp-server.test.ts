@@ -4292,31 +4292,19 @@ paths:
 
     // -------------------------------------------------------------------------
     describe('tools/call upstream forwarding', () => {
-      it('asserts session consent before forwarding a call upstream', async () => {
-        await (upstreamServer as any).handleToolCall(
-          {
-            jsonrpc: '2.0',
-            id: 'consent-ok',
-            method: 'tools/call',
-            params: { name: 'safe_tool', arguments: {} },
-          },
-          'session-123',
-          'upstream-profile',
-        );
+      // Consent is enforced by the dispatch chokepoint that wraps
+      // getUpstreamClientFn (see MCPServerManager), so these tests assert the
+      // observable contract: a denied dispatch never reaches the upstream
+      // client and returns actionable consent details.
+      const consentDenied = (): ConsentRequiredError =>
+        new ConsentRequiredError('Consent required', {
+          profileId: 'upstream-profile',
+          rules_version: 'v1',
+          consent_url: 'https://gateway.example/profile/upstream-profile/oauth/authorize',
+        }, 'no_evidence');
 
-        expect((upstreamServer as any).httpTransport.assertSessionConsent)
-          .toHaveBeenCalledWith('upstream-profile', 'session-123');
-        expect(mockCallTool).toHaveBeenCalledOnce();
-      });
-
-      it('returns actionable consent details and does not call upstream when consent is missing', async () => {
-        (upstreamServer as any).httpTransport.assertSessionConsent.mockRejectedValueOnce(
-          new ConsentRequiredError('Consent required', {
-            profileId: 'upstream-profile',
-            rules_version: 'v1',
-            consent_url: 'https://gateway.example/profile/upstream-profile/oauth/authorize',
-          }),
-        );
+      it('returns actionable consent details and never obtains an upstream client for tools/call', async () => {
+        mockGetUpstreamClient.mockRejectedValueOnce(consentDenied());
 
         const response = await (upstreamServer as any).handleToolCall(
           {
@@ -4337,8 +4325,46 @@ paths:
             consent_url: 'https://gateway.example/profile/upstream-profile/oauth/authorize',
           },
         });
-        expect(response.error.data.correlationId).toEqual(expect.any(String));
         expect(mockCallTool).not.toHaveBeenCalled();
+      });
+
+      it('returns actionable consent details and never lists tools upstream for tools/list', async () => {
+        mockGetUpstreamClient.mockRejectedValueOnce(consentDenied());
+
+        const response = await (upstreamServer as any).handleOtherRequest(
+          { jsonrpc: '2.0', id: 'consent-list', method: 'tools/list', params: {} },
+          'session-123',
+          'upstream-profile',
+        ) as any;
+
+        expect(response.error).toMatchObject({
+          code: -32004,
+          message: 'Consent required',
+          data: { consent_url: 'https://gateway.example/profile/upstream-profile/oauth/authorize' },
+        });
+        expect(mockListTools).not.toHaveBeenCalled();
+      });
+
+      it('does not leak the denial reason to the client', async () => {
+        mockGetUpstreamClient.mockRejectedValueOnce(
+          new ConsentRequiredError('Consent required', {
+            profileId: 'upstream-profile',
+            rules_version: 'v1',
+            consent_url: 'https://gateway.example/consent',
+          }, 'issuer_mismatch'),
+        );
+
+        const response = await (upstreamServer as any).handleToolCall(
+          {
+            jsonrpc: '2.0',
+            id: 'consent-reason',
+            method: 'tools/call',
+            params: { name: 'safe_tool', arguments: {} },
+          },
+          'session-123',
+          'upstream-profile',
+        );
+        expect(JSON.stringify(response)).not.toContain('issuer_mismatch');
       });
 
       it('forwards call to upstream client with correct name and arguments', async () => {
@@ -6584,3 +6610,66 @@ paths:
   });
 });
 
+
+describe('MCPServer effective upstream origin logging', () => {
+  const upstreamProfile = (url: string) => ({
+    profile_name: 'softeria-sharepoint',
+    tools: [],
+    upstream_mcp_from_env: 'SOFTERIA_UPSTREAM_MCP',
+    upstream_mcp: {
+      name: 'softeria',
+      transport: { type: 'http-streamable', url },
+    },
+  });
+
+  const buildServer = (profile: unknown) => {
+    const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
+    const server = new MCPServer(logger as never);
+    (server as any).profile = profile;
+    return { server, logger };
+  };
+
+  afterEach(() => {
+    delete process.env.SOFTERIA_UPSTREAM_MCP;
+  });
+
+  it('logs the effective upstream endpoint at info when no override is set', () => {
+    const { server, logger } = buildServer(upstreamProfile('https://softeria.internal.example/mcp'));
+
+    (server as any).logEffectiveUpstreamOrigin();
+
+    expect(logger.info).toHaveBeenCalledWith('Effective upstream MCP endpoint', {
+      profile: 'softeria-sharepoint',
+      origin: 'https://softeria.internal.example',
+      fromEnvOverride: false,
+      envVarName: 'SOFTERIA_UPSTREAM_MCP',
+    });
+    expect(logger.warn).not.toHaveBeenCalled();
+  });
+
+  it('warns when an environment override redirects upstream traffic off the profile origin', () => {
+    // Deliberately allowed (staging, egress proxy), so it must be visible rather
+    // than rejected: the override is not in git and not code-reviewed.
+    process.env.SOFTERIA_UPSTREAM_MCP = JSON.stringify({
+      name: 'softeria',
+      transport: { type: 'http-streamable', url: 'https://wrong-tenant.example/mcp' },
+    });
+    const { server, logger } = buildServer(upstreamProfile('https://softeria.internal.example/mcp'));
+
+    (server as any).logEffectiveUpstreamOrigin();
+
+    expect(logger.warn).toHaveBeenCalledWith(
+      'Upstream MCP endpoint overridden to a different origin by the environment',
+      expect.objectContaining({ origin: 'https://wrong-tenant.example', fromEnvOverride: true }),
+    );
+  });
+
+  it('logs nothing for a profile without an upstream', () => {
+    const { server, logger } = buildServer({ profile_name: 'local', tools: [] });
+
+    (server as any).logEffectiveUpstreamOrigin();
+
+    expect(logger.info).not.toHaveBeenCalled();
+    expect(logger.warn).not.toHaveBeenCalled();
+  });
+});

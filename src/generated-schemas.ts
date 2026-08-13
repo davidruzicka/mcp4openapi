@@ -23,6 +23,7 @@ export const consentGateConfigSchema = z.object({
     rules_version: z.string(),
     education_resource: z.string().optional(),
     rules_summary: z.string().optional(),
+    max_age_days: z.number().optional(),
     identity_source: z.literal("profile_oauth")
 });
 

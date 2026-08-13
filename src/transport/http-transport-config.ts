@@ -77,6 +77,7 @@ export function buildHttpTransportBaseConfig(host: string, port: number): HttpTr
       if (trimmed.length === 64 && /^[0-9a-fA-F]+$/.test(trimmed)) return undefined;
       return deriveLegacySha256TokenKey(trimmed);
     })(),
+    consentEvidencePath: process.env.MCP4_CONSENT_EVIDENCE_PATH?.trim() || undefined,
     trustProxy: process.env.MCP4_TRUST_PROXY
       ? parseTrustProxy(process.env.MCP4_TRUST_PROXY)
       : undefined,

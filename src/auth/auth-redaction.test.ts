@@ -1,5 +1,11 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { redactAuthPayload, sanitizeAuthErrorMessage, redactString } from './auth-redaction.js';
+import { ConsentGate } from './consent-gate.js';
+import { InMemoryConsentEvidenceStore } from './consent-evidence-store.js';
+import { ConsentRequiredError } from '../core/errors.js';
+import type { AuthorizedPrincipal } from './inbound-auth-principal.js';
+import type { Logger } from '../core/logger.js';
+import type { ConsentGateConfig } from '../types/profile.js';
 
 describe('auth-redaction', () => {
   it('redacts nested auth payload fields', () => {
@@ -107,6 +113,66 @@ describe('auth-redaction', () => {
     it('case-insensitive Bearer matching', () => {
       const result = sanitizeAuthErrorMessage('auth: bearer abcdefghij1234567890xx');
       expect(result).toBe('auth: bearer [REDACTED]...90xx');
+    });
+  });
+
+  describe('consent gate logging never emits raw identity values', () => {
+    const IDENTITY_SENTINELS = {
+      subject: 'SUBJECT-SENTINEL-9f3a2c',
+      issuer: 'https://ISSUER-SENTINEL-9f3a2c.example.test/tenant/v2.0',
+      tenantId: 'TENANT-SENTINEL-9f3a2c',
+      nonce: 'NONCE-SENTINEL-9f3a2c',
+      audience: 'AUDIENCE-SENTINEL-9f3a2c',
+    };
+
+    it('logs only booleans plus a reason when a real ConsentGate denies dispatch', async () => {
+      const calls: unknown[][] = [];
+      const capture = (...args: unknown[]): void => {
+        calls.push(args);
+      };
+      const logger = {
+        debug: vi.fn(capture),
+        info: vi.fn(capture),
+        warn: vi.fn(capture),
+        error: vi.fn(capture),
+      } as unknown as Logger;
+
+      const config: ConsentGateConfig = {
+        required: true,
+        rules_version: 'v1',
+        identity_source: 'profile_oauth',
+      };
+      const gate = new ConsentGate(
+        'ms365',
+        config,
+        new InMemoryConsentEvidenceStore(),
+        (profileId) => `https://mcp.example.test/consent/${profileId}`,
+        logger,
+        IDENTITY_SENTINELS.issuer,
+      );
+
+      // nonce/audience are not part of AuthorizedPrincipal; they are attached
+      // here to prove the gate never spreads an incoming principal into a log.
+      const principal = {
+        authType: 'oauth',
+        profileId: 'ms365',
+        subject: IDENTITY_SENTINELS.subject,
+        issuer: IDENTITY_SENTINELS.issuer,
+        tenantId: IDENTITY_SENTINELS.tenantId,
+        scopes: [],
+        nonce: IDENTITY_SENTINELS.nonce,
+        audience: IDENTITY_SENTINELS.audience,
+      } as AuthorizedPrincipal & { nonce: string; audience: string };
+
+      await expect(gate.assertConsent(principal)).rejects.toBeInstanceOf(ConsentRequiredError);
+
+      const serialized = JSON.stringify(calls);
+      expect(serialized).toContain('no_evidence');
+      for (const [field, value] of Object.entries(IDENTITY_SENTINELS)) {
+        expect(serialized, `raw ${field} leaked into consent logging`).not.toContain(value);
+      }
+      // The sentinel host alone must not leak either, even without the full URL.
+      expect(serialized).not.toContain('ISSUER-SENTINEL-9f3a2c');
     });
   });
 

@@ -35,6 +35,13 @@ import { ValidationError } from '../core/errors.js';
 import { normalizeIssuer } from './issuer.js';
 
 const TOKEN_PREFIX = 'mcp4.v1.';
+/**
+ * Refresh envelopes use their own prefix and AAD suffix so an access-token path
+ * can never accept one: the AAD differs, so decryption fails outright rather
+ * than relying on a field check.
+ */
+const REFRESH_TOKEN_PREFIX = 'mcp4.r1.';
+const REFRESH_AAD_SUFFIX = ':refresh';
 const NONCE_BYTES = 12;
 const TAG_BYTES = 16;
 const HEX_KEY_LENGTH = 64; // 32 bytes encoded as hex
@@ -66,6 +73,125 @@ export interface TokenEnvelopePayload {
     sc?: string; // scope (single string, matches OAuth registration shape)
     // NB: secret intentionally absent - DCR public PKCE clients have none.
   };
+}
+
+/**
+ * Refresh envelope payload.
+ *
+ * Carries the verified human identity alongside the IdP refresh token, so a
+ * direct `refresh_token` grant after a gateway restart can rebind the identity
+ * instead of falling back to the process-local map, which is empty then.
+ */
+export interface RefreshEnvelopePayload {
+  v: 1;
+  rt: string; // IdP refresh_token (REQUIRED)
+  cid: string; // OAuth client_id the refresh token was issued to
+  sub?: string; // verified OIDC subject
+  iss?: string; // verified OIDC issuer
+  tid?: string; // verified OIDC tenant id
+  pid: string; // profile_id (REQUIRED - also bound as AAD)
+  iat: number; // issued-at, ms since epoch
+}
+
+/** O(1) format check for `mcp4.r1.` refresh envelopes. Does NOT decrypt. */
+export function isRefreshEnvelope(token: string): boolean {
+  return typeof token === 'string' && token.startsWith(REFRESH_TOKEN_PREFIX);
+}
+
+/** Encrypt a refresh envelope as `mcp4.r1.<base64url(nonce|ciphertext|tag)>`. */
+export function encryptRefreshEnvelope(payload: RefreshEnvelopePayload, key: Buffer): string {
+  if (!payload.pid || !payload.rt || !Buffer.isBuffer(key) || key.length !== KEY_BYTES) {
+    throw new ValidationError(
+      `encryptRefreshEnvelope: payload.pid and payload.rt must be non-empty and key must be a ${KEY_BYTES}-byte Buffer`,
+    );
+  }
+
+  const nonce = randomBytes(NONCE_BYTES);
+  const cipher = createCipheriv(ALGORITHM, key, nonce);
+  cipher.setAAD(Buffer.from(payload.pid + REFRESH_AAD_SUFFIX, 'utf8'));
+
+  const plaintext = Buffer.from(JSON.stringify(payload), 'utf8');
+  const ciphertext = Buffer.concat([cipher.update(plaintext), cipher.final()]);
+  const tag = cipher.getAuthTag();
+
+  return REFRESH_TOKEN_PREFIX + Buffer.concat([nonce, ciphertext, tag]).toString('base64url');
+}
+
+/**
+ * Decrypt a `mcp4.r1.` refresh envelope. Returns null on every failure mode,
+ * never throws. Retries once with `fallbackKey` for legacy-KDF deployments.
+ */
+export function decryptRefreshEnvelope(
+  token: string,
+  key: Buffer,
+  profileId: string,
+  fallbackKey?: Buffer,
+): RefreshEnvelopePayload | null {
+  const primary = attemptRefreshDecrypt(token, key, profileId);
+  if (primary !== null) return primary;
+  if (fallbackKey !== undefined) return attemptRefreshDecrypt(token, fallbackKey, profileId);
+  return null;
+}
+
+function attemptRefreshDecrypt(
+  token: string,
+  key: Buffer,
+  profileId: string,
+): RefreshEnvelopePayload | null {
+  try {
+    if (typeof token !== 'string' || !token.startsWith(REFRESH_TOKEN_PREFIX)) return null;
+    if (!Buffer.isBuffer(key) || key.length !== KEY_BYTES) return null;
+    if (typeof profileId !== 'string' || profileId.length === 0) return null;
+
+    const decoded = decodeBase64UrlStrict(token.slice(REFRESH_TOKEN_PREFIX.length));
+    if (decoded === null || decoded.length < MIN_ENCODED_BYTES) return null;
+
+    const nonce = decoded.subarray(0, NONCE_BYTES);
+    const tag = decoded.subarray(decoded.length - TAG_BYTES);
+    const ciphertext = decoded.subarray(NONCE_BYTES, decoded.length - TAG_BYTES);
+
+    const decipher = createDecipheriv(ALGORITHM, key, nonce, { authTagLength: TAG_BYTES });
+    decipher.setAAD(Buffer.from(profileId + REFRESH_AAD_SUFFIX, 'utf8'));
+    decipher.setAuthTag(tag);
+
+    const plaintext = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
+    const parsed: unknown = JSON.parse(plaintext.toString('utf8'));
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+
+    const candidate = parsed as Record<string, unknown>;
+    if (candidate.v !== 1) return null;
+    if (typeof candidate.rt !== 'string' || candidate.rt.length === 0) return null;
+    if (typeof candidate.cid !== 'string' || candidate.cid.length === 0) return null;
+    if (candidate.pid !== profileId) return null;
+    if (typeof candidate.iat !== 'number') return null;
+
+    const hasSubject = Object.prototype.hasOwnProperty.call(candidate, 'sub');
+    const hasIssuer = Object.prototype.hasOwnProperty.call(candidate, 'iss');
+    if (hasSubject !== hasIssuer) return null;
+    if (hasSubject) {
+      if (
+        typeof candidate.sub !== 'string' ||
+        candidate.sub.length === 0 ||
+        typeof candidate.iss !== 'string' ||
+        candidate.iss.length === 0
+      ) {
+        return null;
+      }
+      const issuer = normalizeIssuer(candidate.iss);
+      if (issuer.length === 0) return null;
+      candidate.iss = issuer;
+    }
+    if (
+      Object.prototype.hasOwnProperty.call(candidate, 'tid') &&
+      (typeof candidate.tid !== 'string' || candidate.tid.length === 0)
+    ) {
+      return null;
+    }
+
+    return candidate as unknown as RefreshEnvelopePayload;
+  } catch {
+    return null;
+  }
 }
 
 /**

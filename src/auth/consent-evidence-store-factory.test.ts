@@ -18,7 +18,6 @@ const logger = {
 } as unknown as Logger;
 
 describe('createConsentEvidenceStore', () => {
-  const prev = process.env.MCP4_CONSENT_EVIDENCE_PATH;
   let dir: string;
 
   beforeEach(() => {
@@ -26,23 +25,47 @@ describe('createConsentEvidenceStore', () => {
   });
 
   afterEach(() => {
-    if (prev === undefined) delete process.env.MCP4_CONSENT_EVIDENCE_PATH;
-    else process.env.MCP4_CONSENT_EVIDENCE_PATH = prev;
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
-  it('returns an in-memory store when MCP4_CONSENT_EVIDENCE_PATH is unset', () => {
-    delete process.env.MCP4_CONSENT_EVIDENCE_PATH;
-    expect(createConsentEvidenceStore(logger)).toBeInstanceOf(InMemoryConsentEvidenceStore);
+  it('returns an in-memory store when consent is not required and no path is configured', () => {
+    expect(createConsentEvidenceStore({ consentRequired: false, logger })).toBeInstanceOf(
+      InMemoryConsentEvidenceStore,
+    );
   });
 
-  it('returns a file-backed store when MCP4_CONSENT_EVIDENCE_PATH is set', () => {
-    process.env.MCP4_CONSENT_EVIDENCE_PATH = path.join(dir, 'evidence.jsonl');
-    expect(createConsentEvidenceStore(logger)).toBeInstanceOf(FileConsentEvidenceStore);
+  it('returns a file-backed store when a path is configured', () => {
+    expect(
+      createConsentEvidenceStore({
+        evidencePath: path.join(dir, 'evidence.jsonl'),
+        consentRequired: false,
+        logger,
+      }),
+    ).toBeInstanceOf(FileConsentEvidenceStore);
   });
 
-  it('ignores a blank MCP4_CONSENT_EVIDENCE_PATH and falls back to in-memory', () => {
-    process.env.MCP4_CONSENT_EVIDENCE_PATH = '   ';
-    expect(createConsentEvidenceStore(logger)).toBeInstanceOf(InMemoryConsentEvidenceStore);
+  it('returns a file-backed store when consent is required and a path is configured', () => {
+    expect(
+      createConsentEvidenceStore({
+        evidencePath: path.join(dir, 'evidence.jsonl'),
+        consentRequired: true,
+        logger,
+      }),
+    ).toBeInstanceOf(FileConsentEvidenceStore);
+  });
+
+  it('fails closed when consent is required and no evidence path is configured', () => {
+    expect(() => createConsentEvidenceStore({ consentRequired: true, logger })).toThrow(
+      /Required consent gate needs a durable evidence store/,
+    );
+  });
+
+  it('treats a blank path as unset', () => {
+    expect(() =>
+      createConsentEvidenceStore({ evidencePath: '   ', consentRequired: true, logger }),
+    ).toThrow(/Required consent gate needs a durable evidence store/);
+    expect(
+      createConsentEvidenceStore({ evidencePath: '   ', consentRequired: false, logger }),
+    ).toBeInstanceOf(InMemoryConsentEvidenceStore);
   });
 });
