@@ -4,10 +4,10 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ProfileLoader } from './profile-loader.js';
 import { isToolAllowedByProviderPolicy } from '../upstream/upstream-tool-sanitizer.js';
 
-const PROFILE_PATH = path.join(process.cwd(), 'profiles/softeria-sharepoint/profile.json');
+const PROFILE_PATH = path.join(process.cwd(), 'tests/profiles/softeria-sharepoint/profile.json');
 const CATALOG_PATH = path.join(
   process.cwd(),
-  'profiles/softeria-sharepoint/upstream-catalog-0.136.0.fixture.json',
+  'tests/profiles/softeria-sharepoint/upstream-catalog-0.136.0.fixture.json',
 );
 
 const SOFTERIA_READ_ONLY_TOOLS = [
@@ -55,7 +55,7 @@ describe('Softeria SharePoint profile', () => {
 
   it('loads with strict OIDC consent and read-only SharePoint tool boundaries', async () => {
     const profile = await new ProfileLoader().load(
-      path.join(process.cwd(), 'profiles/softeria-sharepoint/profile.json'),
+      path.join(process.cwd(), 'tests/profiles/softeria-sharepoint/profile.json'),
     );
     const auth = Array.isArray(profile.interceptors?.auth)
       ? profile.interceptors.auth[0]
@@ -86,7 +86,7 @@ describe('Softeria SharePoint profile', () => {
     });
 
     const profile = await new ProfileLoader().load(
-      path.join(process.cwd(), 'profiles/softeria-sharepoint/profile.json'),
+      path.join(process.cwd(), 'tests/profiles/softeria-sharepoint/profile.json'),
     );
     expect(profile.upstream_mcp?.transport.url).toBe('https://softeria.prod.example/mcp');
     expect(profile.upstream_mcp?.tools?.allow).toEqual(SOFTERIA_READ_ONLY_TOOLS);
@@ -101,7 +101,7 @@ describe('Softeria SharePoint profile', () => {
     });
 
     await expect(new ProfileLoader().load(
-      path.join(process.cwd(), 'profiles/softeria-sharepoint/profile.json'),
+      path.join(process.cwd(), 'tests/profiles/softeria-sharepoint/profile.json'),
     )).rejects.toThrow('upstream_mcp_from_env cannot broaden the static upstream_mcp.tools policy');
   });
 
@@ -113,13 +113,13 @@ describe('Softeria SharePoint profile', () => {
     });
 
     await expect(new ProfileLoader().load(
-      path.join(process.cwd(), 'profiles/softeria-sharepoint/profile.json'),
+      path.join(process.cwd(), 'tests/profiles/softeria-sharepoint/profile.json'),
     )).rejects.toThrow('upstream_mcp_from_env cannot broaden the static upstream_mcp.tools policy');
   });
 
   it('does not allow mutating-looking names that merely contain SharePoint keywords', async () => {
     const profile = await new ProfileLoader().load(
-      path.join(process.cwd(), 'profiles/softeria-sharepoint/profile.json'),
+      path.join(process.cwd(), 'tests/profiles/softeria-sharepoint/profile.json'),
     );
     const policy = profile.upstream_mcp?.tools;
 

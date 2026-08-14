@@ -27,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dependency upgrades resolving all `npm audit` findings: hono 4.12.34, @hono/node-server 2.0.11 (requires Node >=20), express-rate-limit 8.6.2 with ip-address 10.5.0, fast-uri 3.1.5, brace-expansion 5.0.9, nanoid 3.3.18, and postcss 8.5.26.
 
 ### Changed
+- The Softeria SharePoint profile moved to the internal deployment repository; this repo keeps it only as a test fixture (`tests/profiles/softeria-sharepoint/`) exercising consent-gated upstream loading and the catalog pinning check.
 - Consent evidence format changed again (JSONL records now carry a `type` discriminator and `rules_hash`): existing evidence files are ignored and every subject must re-grant consent once. This also covers the earlier issuer/tenant binding change, which was not previously in the changelog.
 - A consent denial now invalidates the session once per subject and rules version so the MCP client re-runs OAuth; repeat denials return the consent error without invalidating, and the approval failure page links back into the flow.
 - Softeria SharePoint catalog validation uses `tools/list` against the running upstream server instead of `--list-permissions` (which emits no tool names); the captured v0.136.0 catalog is committed as a fixture and the allow-list is checked against it in CI.

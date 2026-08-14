@@ -1,5 +1,5 @@
 {
-  "$schema": "../../profile-schema.json",
+  "$schema": "../../../profile-schema.json",
   "profile_name": "Softeria SharePoint Read-Only",
   "profile_id": "softeria-sharepoint",
   "profile_aliases": ["ms365-sharepoint"],

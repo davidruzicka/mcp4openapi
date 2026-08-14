@@ -1,9 +1,0 @@
-{
-  "$schema": "../../src/testing/test-schema.ts",
-  "profile_name": "Softeria SharePoint Read-Only",
-  "scenarios": [],
-  "coverage": {
-    "require_all_actions": true,
-    "skip_actions": {}
-  }
-}
