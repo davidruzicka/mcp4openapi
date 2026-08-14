@@ -298,11 +298,11 @@ Two gates in the previous revision of this plan were false-green and are correct
 ## Appendix B: Implementation Results (2026-08-12)
 
 Baseline before the work: `npm test` 168 files / 4149 tests, all passing.
-After the work: `npm test` 169 files / 4242 tests, all passing; `npm run typecheck` clean.
+After the work: `npm test` 170 files / 4300 tests, all passing; `npm run typecheck` clean.
 
 | Section | Status | Evidence |
 | --- | --- | --- |
-| 1 Enforcement boundary | Done | Chokepoint is `MCPServerManager.buildUpstreamDispatch` wrapping `setGetUpstreamClient` (`mcp-server-manager.ts`); caller-side check removed from `mcp-server.ts`; `assertSessionConsent` throws `ConsentGateConfigurationError` when required-but-unwired; `authType`, canonical issuer and reason codes in `consent-gate.ts`. Tests: `mcp-server-manager.test.ts` (5, incl. no-enforcer refusal and ordering), `mcp-server.test.ts` (tools/list and tools/call denial with upstream never contacted), `consent-gate.test.ts` (parametrized over both stores). |
+| 1 Enforcement boundary | Done | Chokepoint is `MCPServerManager.buildUpstreamDispatch` wrapping `setGetUpstreamClient` (`mcp-server-manager.ts`); caller-side check removed from `mcp-server.ts`; `assertSessionConsent` throws `ConsentGateConfigurationError` when required-but-unwired; `authType`, canonical issuer and reason codes in `consent-gate.ts`. Tests: `mcp-server-manager.test.ts` (8: guard ordering and no-enforcer refusal against `buildUpstreamDispatch`, plus three that go through the real `createServer` path with a `ProfileRegistry` and a profile on disk, so the chokepoint is proven attached and not merely correct in isolation), `mcp-server.test.ts` (tools/list and tools/call denial with upstream never contacted), `consent-gate.test.ts` (parametrized over both stores). |
 | 1 D8 `azp` | Done | `oidc-identity-verifier.ts` implements OIDC Core 3.1.3.7 rules 4-5; 5 tests. |
 | 2 Refresh continuity | Done | `mcp4.r1.*` refresh envelope (`token-envelope.ts`), issued in both grants and consumed by `resolveRefreshGrant`; consent-gated profiles reject identity-less refresh tokens. Tests: 8 envelope tests + 5 transport tests. |
 | 3 Lifecycle | Done | `rules_hash`, revocation records, rollback guard, optional `max_age_days`; policy evaluated in `ConsentGate`, store is persistence only. `TODO.md` item 1 updated to the new key shape and contract. |
@@ -313,7 +313,13 @@ After the work: `npm test` 169 files / 4242 tests, all passing; `npm run typeche
 | 6 Approval and availability | Done | `__Host-mcp4_consent` cookie binding, fingerprint-keyed pending approvals, recoverable failure page, nearest-expiry eviction for `refreshTokenIdentities`. Tests include cookie-missing, cookie-mismatch, tampered `redirect_uri`, fake-timer expiry and a 50-render starvation check. |
 | 7 Test backfill | Done | Added: plain `upstream_mcp: undefined` validator case, identity-survives-code-exchange test, consent logging lock-in test. |
 | 9 Docs and changelog | Done | `CHANGELOG.md` updated (including the previously unrecorded evidence-format break). New consent sections in `docs/HTTP-TRANSPORT.md` (enforcement, denial payload, bounded re-consent 401, sticky-session requirement, one consolidated operational note), `docs/OAUTH.md` (acknowledgement hop, cookie binding, refresh envelope matrix), `IMPLEMENTATION.md`, `README.md`, `env.example`, `docs/PROFILE-GUIDE.md`. Em dashes checked: none in added lines. |
-| 10 Gates | Done | `npm test` green; `npm run typecheck` clean; `npm run lint` produces the same pre-existing failures with and without this change (verified by stashing); `npm run validate` passes for both profiles with arguments; `npm run generate-schemas` is idempotent and `check-schema-sync` passes; patch coverage 91.8% statements. |
+| 10 Gates | Done | `npm test` green; `npm run typecheck` clean; `npm run lint` produces the same pre-existing failures with and without this change (verified by stashing); `npm run validate` passes for both profiles with arguments; `npm run generate-schemas` is idempotent and `check-schema-sync` passes; patch coverage 95.7% of changed statements and 84.8% of changed branch points, with the remaining misses being defensive rethrow branches in the evidence store, error paths in `oauth-provider.ts` that predate this work, and two null-return guards in `token-envelope.ts`. |
+
+Falsifiability check on the highest-severity invariant: replacing
+`buildUpstreamDispatch` in `createServer` with a direct
+`upstreamManager.getOrConnect` call fails the two `createServer` wiring tests,
+and restoring it makes them pass. Before those tests existed, that same change
+kept the whole suite green while the chokepoint disappeared.
 
 Deliberate deviations from the plan text:
 
