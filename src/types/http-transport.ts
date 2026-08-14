@@ -12,6 +12,7 @@ import type { SessionToolFilterRequest, SessionToolFilterCompat as SessionToolFi
 import type { OpenAPIParser } from '../openapi/openapi-parser.js';
 import type { FilteringRules } from '../core/filtering.js';
 import type { AuthorizedPrincipal } from '../auth/inbound-auth-principal.js';
+import type { PostgresConsentDbConfig } from '../auth/postgres-consent-evidence-store.js';
 
 export type { SessionToolFilter, SessionToolFilterRequest };
 
@@ -120,6 +121,12 @@ export interface HttpTransportConfig {
    * profile fails to start rather than falling back to volatile storage.
    */
   consentEvidencePath?: string;
+  /**
+   * Postgres consent evidence store settings (`MCP_CONSENTS_DB_*`).
+   * Takes precedence over `consentEvidencePath`; the transactional
+   * multi-replica backend for consent-gated profiles.
+   */
+  consentDb?: PostgresConsentDbConfig;
   trustProxy?: boolean | number | string; // Express trust proxy setting
   oauthConfig?: OAuthConfig; // OAuth 2.0 configuration (optional)
   baseUrl?: string; // Base URL for API (for token validation)

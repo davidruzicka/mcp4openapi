@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import crypto from 'node:crypto';
-import { buildHttpTransportBaseConfig } from './http-transport-config.js';
+import { buildHttpTransportBaseConfig, parseConsentDbEnv } from './http-transport-config.js';
 import { TIMEOUTS } from '../core/constants.js';
 import { ConfigurationError } from '../core/errors.js';
 
@@ -255,5 +255,56 @@ describe('buildHttpTransportBaseConfig', () => {
       const config = buildHttpTransportBaseConfig('127.0.0.1', 3003);
       expect(config.legacyTokenKey).toBeUndefined();
     });
+  });
+});
+
+describe('parseConsentDbEnv', () => {
+  const FULL_ENV = {
+    MCP_CONSENTS_DB_HOST: 'db.example',
+    MCP_CONSENTS_DB_PORT: '7432',
+    MCP_CONSENTS_DB_NAME: 'mcp_consents_db',
+    MCP_CONSENTS_DB_USER: 'consents',
+    MCP_CONSENTS_DB_PASSWORD: 'secret',
+  };
+
+  it('returns undefined when no MCP_CONSENTS_DB_* variable is set', () => {
+    expect(parseConsentDbEnv({})).toBeUndefined();
+  });
+
+  it('parses a complete variable set', () => {
+    expect(parseConsentDbEnv({ ...FULL_ENV })).toEqual({
+      host: 'db.example',
+      port: 7432,
+      database: 'mcp_consents_db',
+      user: 'consents',
+      password: 'secret',
+    });
+  });
+
+  it('defaults the port to 5432 when only MCP_CONSENTS_DB_PORT is missing', () => {
+    const { MCP_CONSENTS_DB_PORT: _omitted, ...rest } = FULL_ENV;
+    expect(parseConsentDbEnv(rest)?.port).toBe(5432);
+  });
+
+  it('fails loudly on a partial variable set instead of silently falling back', () => {
+    const { MCP_CONSENTS_DB_PASSWORD: _omitted, ...rest } = FULL_ENV;
+    expect(() => parseConsentDbEnv(rest)).toThrow(ConfigurationError);
+    expect(() => parseConsentDbEnv(rest)).toThrow('MCP_CONSENTS_DB_PASSWORD');
+  });
+
+  it('fails loudly when only the port is set', () => {
+    expect(() => parseConsentDbEnv({ MCP_CONSENTS_DB_PORT: '5432' })).toThrow(ConfigurationError);
+  });
+
+  it('rejects a non-numeric port', () => {
+    expect(() => parseConsentDbEnv({ ...FULL_ENV, MCP_CONSENTS_DB_PORT: 'not-a-port' })).toThrow(
+      ConfigurationError,
+    );
+  });
+
+  it('treats blank values as unset', () => {
+    expect(() => parseConsentDbEnv({ ...FULL_ENV, MCP_CONSENTS_DB_HOST: '   ' })).toThrow(
+      ConfigurationError,
+    );
   });
 });

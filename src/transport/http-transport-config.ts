@@ -5,6 +5,7 @@
 import { TIMEOUTS } from '../core/constants.js';
 import { ConfigurationError } from '../core/errors.js';
 import { deriveLegacySha256TokenKey, deriveTokenKey } from '../auth/token-envelope.js';
+import type { PostgresConsentDbConfig } from '../auth/postgres-consent-evidence-store.js';
 import {
   PROFILE_INDEX_REDIRECT_STATUSES,
   type HttpTransportConfig,
@@ -37,6 +38,47 @@ function parseProfileIndexRedirectStatus(redirectUrl?: string): ProfileIndexRedi
   throw new ConfigurationError(
     `Invalid MCP4_HTTP_PROFILE_INDEX_REDIRECT_STATUS: expected ${PROFILE_INDEX_REDIRECT_STATUSES.join(' or ')}`
   );
+}
+
+/**
+ * Resolve `MCP_CONSENTS_DB_*` into a Postgres consent-store config.
+ *
+ * All-or-nothing: with none of the variables set the backend is not selected;
+ * a partial set is a hard configuration error rather than a silent fallback to
+ * a weaker store. `MCP_CONSENTS_DB_PORT` alone is optional (default 5432).
+ */
+export function parseConsentDbEnv(
+  env: NodeJS.ProcessEnv = process.env,
+): PostgresConsentDbConfig | undefined {
+  const values = {
+    host: env.MCP_CONSENTS_DB_HOST?.trim(),
+    database: env.MCP_CONSENTS_DB_NAME?.trim(),
+    user: env.MCP_CONSENTS_DB_USER?.trim(),
+    password: env.MCP_CONSENTS_DB_PASSWORD?.trim(),
+  };
+  const port = env.MCP_CONSENTS_DB_PORT?.trim();
+  const missing = Object.entries(values)
+    .filter(([, value]) => !value)
+    .map(([key]) => key);
+  if (missing.length === 4 && !port) return undefined;
+  if (missing.length > 0) {
+    throw new ConfigurationError(
+      `Incomplete MCP_CONSENTS_DB_* configuration: missing ${missing
+        .map(key => `MCP_CONSENTS_DB_${key === 'database' ? 'NAME' : key.toUpperCase()}`)
+        .join(', ')}`,
+    );
+  }
+  const parsedPort = port ? Number.parseInt(port, 10) : 5432;
+  if (!Number.isInteger(parsedPort) || parsedPort <= 0 || parsedPort > 65535 || (port && String(parsedPort) !== port)) {
+    throw new ConfigurationError('Invalid MCP_CONSENTS_DB_PORT: expected a TCP port number');
+  }
+  return {
+    host: values.host!,
+    port: parsedPort,
+    database: values.database!,
+    user: values.user!,
+    password: values.password!,
+  };
 }
 
 export function buildHttpTransportBaseConfig(host: string, port: number): HttpTransportConfig {
@@ -78,6 +120,7 @@ export function buildHttpTransportBaseConfig(host: string, port: number): HttpTr
       return deriveLegacySha256TokenKey(trimmed);
     })(),
     consentEvidencePath: process.env.MCP4_CONSENT_EVIDENCE_PATH?.trim() || undefined,
+    consentDb: parseConsentDbEnv(),
     trustProxy: process.env.MCP4_TRUST_PROXY
       ? parseTrustProxy(process.env.MCP4_TRUST_PROXY)
       : undefined,

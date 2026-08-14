@@ -410,11 +410,18 @@ echo 'export NODE_EXTRA_CA_CERTS="$HOME/ca-bundle.pem"' >> $HOME/.bash_profile
 
 ### Required for profiles with `consent_gate.required`
 
-Both variables are mandatory for a profile that declares `consent_gate.required: true`. Startup fails
-with a `ConfigurationError` if either is missing; there is no degraded mode.
+A durable evidence backend and `MCP4_OAUTH_KEY` are mandatory for a profile that declares
+`consent_gate.required: true`. Startup fails with a `ConfigurationError` if either is missing;
+there is no degraded mode.
 
-- `MCP4_CONSENT_EVIDENCE_PATH`: Absolute writable path of the append-only JSONL consent evidence file.
-  Missing value -> `Required consent gate needs a durable evidence store: set MCP4_CONSENT_EVIDENCE_PATH to an absolute writable path`.
+- Evidence backend (one of, Postgres wins when both are set):
+  - `MCP_CONSENTS_DB_HOST`, `MCP_CONSENTS_DB_PORT` (default `5432`), `MCP_CONSENTS_DB_NAME`,
+    `MCP_CONSENTS_DB_USER`, `MCP_CONSENTS_DB_PASSWORD`: PostgreSQL-backed transactional store for
+    multi-replica deployments. Append-only audit table (`consent_evidence`), created on first use.
+    A partial variable set is a hard `ConfigurationError`, never a silent fallback.
+  - `MCP4_CONSENT_EVIDENCE_PATH`: Absolute writable path of the append-only JSONL consent evidence
+    file (durable single-node/staging store).
+  Missing both -> `Required consent gate needs a durable evidence store: set the MCP_CONSENTS_DB_* variables or MCP4_CONSENT_EVIDENCE_PATH`.
   The in-memory store is used only when no profile requires consent (dev and tests): volatile storage
   would drop every grant on restart while still reporting "consent recorded".
 - `MCP4_OAUTH_KEY`: Symmetric key for the encrypted token envelopes. Missing value ->

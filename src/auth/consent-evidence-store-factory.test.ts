@@ -10,6 +10,7 @@ import {
   InMemoryConsentEvidenceStore,
 } from './consent-evidence-store.js';
 import { ConsentGateConfigurationError } from '../core/errors.js';
+import { PostgresConsentEvidenceStore } from './postgres-consent-evidence-store.js';
 
 const logger = {
   info: () => {},
@@ -55,13 +56,32 @@ describe('createConsentEvidenceStore', () => {
     ).toBeInstanceOf(FileConsentEvidenceStore);
   });
 
-  it('fails closed with ConsentGateConfigurationError when consent is required and no evidence path is configured', () => {
+  it('fails closed with ConsentGateConfigurationError when consent is required and no backend is configured', () => {
     const build = () => createConsentEvidenceStore({ consentRequired: true, logger });
     expect(build).toThrow(ConsentGateConfigurationError);
     // Docs quote this message byte for byte; keep it stable.
     expect(build).toThrow(
-      'Required consent gate needs a durable evidence store: set MCP4_CONSENT_EVIDENCE_PATH to an absolute writable path',
+      'Required consent gate needs a durable evidence store: set the MCP_CONSENTS_DB_* variables or MCP4_CONSENT_EVIDENCE_PATH',
     );
+  });
+
+  it('returns a Postgres store when database settings are configured', () => {
+    const store = createConsentEvidenceStore({
+      db: { host: 'db.example', port: 5432, database: 'consents', user: 'u', password: 'p' },
+      consentRequired: true,
+      logger,
+    });
+    expect(store).toBeInstanceOf(PostgresConsentEvidenceStore);
+  });
+
+  it('prefers the Postgres store over a configured evidence path', () => {
+    const store = createConsentEvidenceStore({
+      db: { host: 'db.example', port: 5432, database: 'consents', user: 'u', password: 'p' },
+      evidencePath: path.join(dir, 'evidence.jsonl'),
+      consentRequired: true,
+      logger,
+    });
+    expect(store).toBeInstanceOf(PostgresConsentEvidenceStore);
   });
 
   it('treats a blank path as unset', () => {

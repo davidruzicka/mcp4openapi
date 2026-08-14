@@ -673,6 +673,7 @@ export class HttpTransport {
         );
       }
       const store = createConsentEvidenceStore({
+        db: this.config.consentDb,
         evidencePath: this.config.consentEvidencePath,
         consentRequired: true,
         logger: this.logger,
