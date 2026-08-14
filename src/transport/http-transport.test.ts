@@ -14,10 +14,11 @@ import https from 'https';
 import { HttpTransport } from './http-transport.js';
 import type { HttpTransportConfig } from '../types/http-transport.js';
 import { ConsoleLogger, type Logger } from '../core/logger.js';
-import { ValidationError, ConsentRequiredError } from '../core/errors.js';
+import { AuthenticationError, ValidationError, ConsentRequiredError } from '../core/errors.js';
 import { ConsentGate } from '../auth/consent-gate.js';
 import { InMemoryConsentEvidenceStore } from '../auth/consent-evidence-store.js';
 import { computeRulesHash } from '../auth/consent-rules-hash.js';
+import { configureObservabilityPseudonym, pseudonymizeSubject } from '../auth/observability-pseudonym.js';
 import { describeIfListen } from '../testing/listen-support.js';
 import { parseSessionToolFilterHeader } from '../tool-filter/index.js';
 
@@ -2780,6 +2781,8 @@ describeIfListen('HttpTransport', () => {
       expect(consentPage.headers['cache-control']).toBe('no-store');
       expect(consentPage.headers['content-security-policy']).toContain("form-action 'self'");
       expect(consentPage.text).toContain('Accept SharePoint usage rules.');
+      // No decorative CSRF token: protection is the request fingerprint + __Host- cookie.
+      expect(consentPage.text).not.toContain('consent_token');
       const setCookie: string = ([] as string[]).concat(consentPage.headers['set-cookie'] ?? [])[0];
       expect(setCookie).toMatch(/^__Host-mcp4_consent=/);
       expect(setCookie).toContain('HttpOnly');
@@ -2803,6 +2806,8 @@ describeIfListen('HttpTransport', () => {
         .send({ ...query, consent_accept: 'yes' });
       expect(replay.status).toBe(400);
       expect(replay.text).toContain('Consent approval expired');
+      // The expired page carries the same CSP as the other consent pages.
+      expect(replay.headers['content-security-policy']).toContain("default-src 'none'");
       // The dead end is recoverable: the failure page links back into the flow.
       expect(replay.text).toContain('Start the consent flow again');
     });
@@ -2952,7 +2957,7 @@ describeIfListen('HttpTransport', () => {
 
       // 50 renders of the same OAuth request occupy exactly one slot, so
       // unauthenticated traffic cannot evict another user's pending approval.
-      expect((oauthTransport as any).pendingConsentApprovals.size).toBe(1);
+      expect((oauthTransport as any).consentController.pendingApprovalCount).toBe(1);
     });
 
     it('serves an actionable no-store consent page without granting consent', async () => {
@@ -5012,7 +5017,7 @@ describeIfListen('HttpTransport', () => {
         key,
       );
 
-      const grant = (t as any).resolveRefreshGrant(state, envelope);
+      const grant = (t as any).resolveRefreshGrant(state, envelope, 'client-restart');
       expect(grant.refreshToken).toBe('idp-refresh-original');
       expect(grant.identity).toEqual({
         subject: 'person-restart',
@@ -5031,7 +5036,7 @@ describeIfListen('HttpTransport', () => {
         identity_source: 'profile_oauth',
       };
 
-      expect(() => (t as any).resolveRefreshGrant(state, 'plain-refresh-token')).toThrow(
+      expect(() => (t as any).resolveRefreshGrant(state, 'plain-refresh-token', 'client-x')).toThrow(
         /identity-bearing refresh token/,
       );
       await t.stop();
@@ -5052,7 +5057,7 @@ describeIfListen('HttpTransport', () => {
         key,
       );
 
-      expect(() => (t as any).resolveRefreshGrant(state, envelope)).toThrow(
+      expect(() => (t as any).resolveRefreshGrant(state, envelope, 'client-x')).toThrow(
         /no verified identity/,
       );
       await t.stop();
@@ -5062,7 +5067,7 @@ describeIfListen('HttpTransport', () => {
       const t = buildTransport({ tokenKey: buildKey(), testLogger: mkLogger() });
       const state = (t as any).__test_profileState;
 
-      expect((t as any).resolveRefreshGrant(state, 'plain-refresh-token')).toEqual({
+      expect((t as any).resolveRefreshGrant(state, 'plain-refresh-token', 'client-x')).toEqual({
         refreshToken: 'plain-refresh-token',
       });
       await t.stop();
@@ -6885,6 +6890,402 @@ describeIfListen('HttpTransport', () => {
       });
 
       await expect(t.assertSessionConsent(PROFILE_ID, 'session-1')).rejects.toBeInstanceOf(ConsentRequiredError);
+    });
+
+    it('fails closed when the profile state is unknown (I1)', async () => {
+      const t = new HttpTransport(
+        {
+          host: '127.0.0.1',
+          port: 0,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: false,
+          metricsPath: '/metrics',
+        },
+        logger,
+      );
+
+      await expect(t.assertSessionConsent('ghost-profile', 'session-x')).rejects.toMatchObject({
+        name: 'ConsentGateConfigurationError',
+        details: expect.objectContaining({ profileId: 'ghost-profile' }),
+      });
+      await t.stop();
+    });
+  });
+
+  describe('consent gate transport hardening (audit fixes)', () => {
+    const PROFILE_ID = 'default';
+    const ISSUER = 'https://issuer.example';
+    const KEY = Buffer.from('b'.repeat(64), 'hex');
+    const gateConfig = {
+      required: true,
+      rules_version: 'v1',
+      identity_source: 'profile_oauth' as const,
+    };
+
+    const baseConfig = () => ({
+      host: '127.0.0.1',
+      port: 0,
+      sessionTimeoutMs: 1800000,
+      heartbeatEnabled: false,
+      heartbeatIntervalMs: 30000,
+      metricsEnabled: false,
+      metricsPath: '/metrics',
+    });
+
+    // Transport whose default profile carries a REAL consent gate + evidence
+    // store and an envelope-capable token key, exercising the full HTTP init path.
+    const buildGatedTransport = () => {
+      const t = new HttpTransport({ ...baseConfig(), tokenKey: KEY } as any, logger);
+      const store = new InMemoryConsentEvidenceStore();
+      const gate = new ConsentGate(
+        PROFILE_ID,
+        gateConfig,
+        store,
+        (id) => `https://gw.example/mcp/${id}/consent`,
+        logger,
+        ISSUER,
+      );
+      const state: any = {
+        profileId: PROFILE_ID,
+        context: { profileId: PROFILE_ID, consent_gate: gateConfig },
+        oauthProvider: {
+          issuer: ISSUER,
+          clientsStore: { getClient: async () => undefined, registerClient: async (c: any) => c },
+        },
+        oauthTokensByAccessToken: new Map(),
+        sessions: new Map(),
+        consentGate: gate,
+        consentEvidenceStore: store,
+      };
+      (t as any).profileStates.set(PROFILE_ID, state);
+      t.setMessageHandler(async () => ({ protocolVersion: '2025-03-26', serverInfo: { name: 'test' } }));
+      return { t, state, store };
+    };
+
+    const buildEnvelope = async (subject: string) => {
+      const { encryptTokenPayload } = await import('../auth/token-envelope.js');
+      return encryptTokenPayload(
+        {
+          v: 1,
+          at: `idp-access-${subject}`,
+          rt: `idp-refresh-${subject}`,
+          exp: Date.now() + 60_000,
+          cid: 'client-r',
+          sc: ['read'],
+          sub: subject,
+          iss: ISSUER,
+          pid: PROFILE_ID,
+          iat: Date.now(),
+        },
+        KEY,
+      );
+    };
+
+    const initialize = (t: HttpTransport, envelope: string, id: number) =>
+      request((t as any).app)
+        .post('/mcp')
+        .set('Accept', 'application/json, text/event-stream')
+        .set('Authorization', `Bearer ${envelope}`)
+        .send({ jsonrpc: '2.0', id, method: 'initialize', params: {} });
+
+    const lastSessionId = (state: any): string => Array.from(state.sessions.keys()).at(-1) as string;
+
+    it('I2: rejects envelope recovery once with 401 after a consent denial so the client restarts OAuth', async () => {
+      const { t, state } = buildGatedTransport();
+      const envelope = await buildEnvelope('person-i2');
+
+      const first = await initialize(t, envelope, 1);
+      expect(first.status).toBe(200);
+      const sessionId = lastSessionId(state);
+
+      await expect(t.assertSessionConsent(PROFILE_ID, sessionId)).rejects.toBeInstanceOf(ConsentRequiredError);
+      expect(state.sessions.has(sessionId)).toBe(false);
+
+      // The same envelope must NOT silently rebuild a session: the client has to
+      // discard it and restart OAuth, which is the only re-consent mechanism.
+      const second = await initialize(t, envelope, 2);
+      expect(second.status).toBe(401);
+      expect(second.headers['www-authenticate']).toContain('Bearer');
+      expect(state.sessions.size).toBe(0);
+
+      // The flag is one-shot: a later initialize proceeds to the normal
+      // consent-denied behavior instead of an endless 401 wall.
+      const third = await initialize(t, envelope, 3);
+      expect(third.status).toBe(200);
+      await t.stop();
+    });
+
+    it('resets the re-consent invalidation budget after consent succeeds, so a later revocation invalidates again', async () => {
+      const { t, state, store } = buildGatedTransport();
+      const envelope = await buildEnvelope('person-budget');
+
+      // First denial consumes the one-shot invalidation budget for the subject.
+      await initialize(t, envelope, 1);
+      const firstSessionId = lastSessionId(state);
+      await expect(t.assertSessionConsent(PROFILE_ID, firstSessionId)).rejects.toBeInstanceOf(ConsentRequiredError);
+      expect(state.sessions.has(firstSessionId)).toBe(false);
+
+      // Consume the one-time envelope rejection, then rebuild a session.
+      await initialize(t, envelope, 2);
+      await initialize(t, envelope, 3);
+      const secondSessionId = lastSessionId(state);
+
+      // The human grants consent; the next assert succeeds and must reset the budget.
+      await store.record({
+        sub: 'person-budget',
+        issuer: ISSUER,
+        tenantId: null,
+        profileId: PROFILE_ID,
+        rules_version: 'v1',
+        rules_hash: computeRulesHash(gateConfig),
+        granted_at: Date.now(),
+      });
+      await expect(t.assertSessionConsent(PROFILE_ID, secondSessionId)).resolves.toBeUndefined();
+
+      // The grant is revoked later: the denial must invalidate the session again
+      // (a permanent budget entry would leave the client stuck on -32004 forever).
+      await store.revoke({
+        sub: 'person-budget',
+        issuer: ISSUER,
+        tenantId: null,
+        profileId: PROFILE_ID,
+        revoked_at: Date.now() + 1,
+      });
+      await expect(t.assertSessionConsent(PROFILE_ID, secondSessionId)).rejects.toBeInstanceOf(ConsentRequiredError);
+      expect(state.sessions.has(secondSessionId)).toBe(false);
+      await t.stop();
+    });
+
+    it('B1: single-profile mode fails fast when config declares required consent without a token key', async () => {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'consent-b1-'));
+      const t = new HttpTransport(
+        {
+          ...baseConfig(),
+          oauthConfig: {
+            issuer: 'https://auth.example.com',
+            client_id: 'test-client',
+            client_secret: 'test-secret',
+            redirect_uri: 'https://example.com/oauth/callback',
+            scopes: ['read'],
+          },
+          consentEvidencePath: path.join(dir, 'evidence.jsonl'),
+          consent_gate: gateConfig,
+        } as any,
+        logger,
+      );
+
+      await expect((t as any).getProfileState('default')).rejects.toMatchObject({ name: 'ConfigurationError' });
+      await t.stop();
+    });
+
+    it('B1: single-profile mode constructs the consent gate from transport config and enforces it', async () => {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'consent-b1-full-'));
+      const t = new HttpTransport(
+        {
+          ...baseConfig(),
+          tokenKey: KEY,
+          oauthConfig: {
+            issuer: 'https://auth.example.com',
+            client_id: 'test-client',
+            client_secret: 'test-secret',
+            redirect_uri: 'https://example.com/oauth/callback',
+            scopes: ['read'],
+          },
+          consentEvidencePath: path.join(dir, 'evidence.jsonl'),
+          consent_gate: gateConfig,
+        } as any,
+        logger,
+      );
+
+      const state = await (t as any).getProfileState('default');
+      expect(state.consentGate).toBeDefined();
+
+      // Anonymous session on a gated profile must be blocked, not silently allowed.
+      state.sessions.set('session-anon', {});
+      await expect(t.assertSessionConsent('default', 'session-anon')).rejects.toBeInstanceOf(ConsentRequiredError);
+      await t.stop();
+    });
+
+    it('F8: fails the token exchange instead of degrading to a raw refresh token on a consent-gated profile', async () => {
+      // A 16-byte key makes encryptRefreshEnvelope throw (AES-256 needs 32 bytes).
+      const t = new HttpTransport({ ...baseConfig(), tokenKey: Buffer.alloc(16, 1) } as any, logger);
+      const state: any = {
+        profileId: PROFILE_ID,
+        context: { profileId: PROFILE_ID, consent_gate: gateConfig },
+        oauthProvider: { issuer: ISSUER },
+        oauthTokensByAccessToken: new Map(),
+        sessions: new Map(),
+      };
+      (t as any).profileStates.set(PROFILE_ID, state);
+
+      expect(() =>
+        (t as any).buildClientRefreshToken(state, { access_token: 'at', refresh_token: 'rt' }, 'client-1'),
+      ).toThrow(AuthenticationError);
+      await t.stop();
+    });
+
+    it('F8: keeps the raw-refresh-token degrade on profiles without a consent gate', async () => {
+      const t = new HttpTransport({ ...baseConfig(), tokenKey: Buffer.alloc(16, 1) } as any, logger);
+      const state: any = {
+        profileId: PROFILE_ID,
+        context: { profileId: PROFILE_ID },
+        oauthProvider: { issuer: ISSUER },
+        oauthTokensByAccessToken: new Map(),
+        sessions: new Map(),
+      };
+      (t as any).profileStates.set(PROFILE_ID, state);
+
+      expect(
+        (t as any).buildClientRefreshToken(state, { access_token: 'at', refresh_token: 'rt' }, 'client-1'),
+      ).toBe('rt');
+      await t.stop();
+    });
+
+    it('I7: rejects a refresh envelope redeemed by a different client and accepts the issuing client', async () => {
+      const { encryptRefreshEnvelope } = await import('../auth/token-envelope.js');
+      const t = new HttpTransport({ ...baseConfig(), tokenKey: KEY } as any, logger);
+      const state: any = {
+        profileId: PROFILE_ID,
+        context: { profileId: PROFILE_ID },
+        oauthProvider: { issuer: ISSUER },
+        oauthTokensByAccessToken: new Map(),
+        sessions: new Map(),
+      };
+      (t as any).profileStates.set(PROFILE_ID, state);
+      const envelope = encryptRefreshEnvelope(
+        { v: 1, rt: 'idp-rt', cid: 'client-a', sub: 'person-a', iss: ISSUER, pid: PROFILE_ID, iat: Date.now() },
+        KEY,
+      );
+
+      expect(() => (t as any).resolveRefreshGrant(state, envelope, 'client-b')).toThrow(AuthenticationError);
+      expect((t as any).resolveRefreshGrant(state, envelope, 'client-a')).toMatchObject({
+        refreshToken: 'idp-rt',
+      });
+      await t.stop();
+    });
+
+    it('keys observability pseudonyms from the token key at construction', async () => {
+      configureObservabilityPseudonym(undefined);
+      const unkeyed = pseudonymizeSubject('subject-p');
+
+      const keyedTransport = new HttpTransport({ ...baseConfig(), tokenKey: KEY } as any, logger);
+      expect(pseudonymizeSubject('subject-p')).not.toBe(unkeyed);
+      await keyedTransport.stop();
+
+      // A key-less transport restores the unkeyed fallback.
+      const plainTransport = new HttpTransport(baseConfig() as any, logger);
+      expect(pseudonymizeSubject('subject-p')).toBe(unkeyed);
+      await plainTransport.stop();
+    });
+
+    it('rejects an envelope whose identity issuer does not match the profile OAuth issuer with 401', async () => {
+      const { encryptTokenPayload } = await import('../auth/token-envelope.js');
+      const { t, state } = buildGatedTransport();
+      const envelope = encryptTokenPayload(
+        {
+          v: 1,
+          at: 'idp-access-x',
+          rt: 'idp-refresh-x',
+          cid: 'client-x',
+          sub: 'person-x',
+          iss: 'https://other-issuer.example',
+          pid: PROFILE_ID,
+          iat: Date.now(),
+        },
+        KEY,
+      );
+
+      const response = await initialize(t, envelope, 1);
+      expect(response.status).toBe(401);
+      expect(state.sessions.size).toBe(0);
+      await t.stop();
+    });
+
+    it('returns 404 from the consent info page when the profile has no consent gate', async () => {
+      const response = await request(app).get('/consent');
+      expect(response.status).toBe(404);
+    });
+
+    it('recovers no principal from an envelope with sub but missing iss, so the consent gate blocks', async () => {
+      const { encryptTokenPayload } = await import('../auth/token-envelope.js');
+      const { t, state } = buildGatedTransport();
+      // encrypt does not enforce identity coherence; decrypt rejects sub-without-iss,
+      // so this envelope behaves as undecryptable: no metadata, no principal.
+      const envelope = encryptTokenPayload(
+        { v: 1, at: 'idp-access-noiss', sub: 'person-noiss', pid: PROFILE_ID, iat: Date.now() } as any,
+        KEY,
+      );
+
+      const response = await initialize(t, envelope, 1);
+      expect(response.status).toBe(200);
+      const sessionId = lastSessionId(state);
+      expect(state.sessions.get(sessionId).clientPrincipal).toBeUndefined();
+      await expect(t.assertSessionConsent(PROFILE_ID, sessionId)).rejects.toBeInstanceOf(ConsentRequiredError);
+      await t.stop();
+    });
+
+    it('evicts the oldest reconsent invalidation entry at capacity (FIFO)', async () => {
+      const t = new HttpTransport(baseConfig() as any, logger);
+      const invalidations = (t as any).reconsentInvalidations as Set<string>;
+      for (let i = 0; i < 10000; i += 1) invalidations.add(`filler-${i}`);
+      const state: any = {
+        profileId: PROFILE_ID,
+        context: { profileId: PROFILE_ID, consent_gate: gateConfig },
+        oauthTokensByAccessToken: new Map(),
+        sessions: new Map([['s1', {}]]),
+      };
+      (t as any).profileStates.set(PROFILE_ID, state);
+
+      (t as any).invalidateSessionForReconsent(
+        state,
+        's1',
+        { authType: 'oauth', profileId: PROFILE_ID, subject: 'evictee-test', issuer: ISSUER, scopes: [] },
+        new ConsentRequiredError('denied', {
+          profileId: PROFILE_ID,
+          rules_version: 'v1',
+          consent_url: 'https://gw.example/consent',
+        }),
+      );
+
+      expect(invalidations.size).toBe(10000);
+      expect(invalidations.has('filler-0')).toBe(false);
+      expect(Array.from(invalidations).at(-1)).toContain('evictee-test');
+      await t.stop();
+    });
+
+    it('root-level POST /oauth/authorize redirects to the provider on a non-consent profile', async () => {
+      const t = new HttpTransport(
+        {
+          ...baseConfig(),
+          oauthConfig: {
+            issuer: 'https://auth.example.com',
+            client_id: 'test-client',
+            client_secret: 'test-secret',
+            redirect_uri: 'https://example.com/oauth/callback',
+            scopes: ['read', 'write'],
+          },
+        } as any,
+        logger,
+      );
+
+      const response = await request((t as any).app)
+        .post('/oauth/authorize')
+        .type('form')
+        .send({
+          response_type: 'code',
+          client_id: 'test-client',
+          redirect_uri: 'http://localhost:3003/oauth/callback',
+          scope: 'openid read',
+          state: 'client-state',
+          code_challenge: 'challenge',
+          code_challenge_method: 'S256',
+        });
+
+      expect(response.status).toBe(302);
+      expect(response.headers.location).toContain('https://auth.example.com/oauth/authorize');
+      await t.stop();
     });
   });
 });

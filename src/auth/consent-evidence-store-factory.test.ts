@@ -9,6 +9,7 @@ import {
   FileConsentEvidenceStore,
   InMemoryConsentEvidenceStore,
 } from './consent-evidence-store.js';
+import { ConsentGateConfigurationError } from '../core/errors.js';
 
 const logger = {
   info: () => {},
@@ -54,16 +55,19 @@ describe('createConsentEvidenceStore', () => {
     ).toBeInstanceOf(FileConsentEvidenceStore);
   });
 
-  it('fails closed when consent is required and no evidence path is configured', () => {
-    expect(() => createConsentEvidenceStore({ consentRequired: true, logger })).toThrow(
-      /Required consent gate needs a durable evidence store/,
+  it('fails closed with ConsentGateConfigurationError when consent is required and no evidence path is configured', () => {
+    const build = () => createConsentEvidenceStore({ consentRequired: true, logger });
+    expect(build).toThrow(ConsentGateConfigurationError);
+    // Docs quote this message byte for byte; keep it stable.
+    expect(build).toThrow(
+      'Required consent gate needs a durable evidence store: set MCP4_CONSENT_EVIDENCE_PATH to an absolute writable path',
     );
   });
 
   it('treats a blank path as unset', () => {
     expect(() =>
       createConsentEvidenceStore({ evidencePath: '   ', consentRequired: true, logger }),
-    ).toThrow(/Required consent gate needs a durable evidence store/);
+    ).toThrow(ConsentGateConfigurationError);
     expect(
       createConsentEvidenceStore({ evidencePath: '   ', consentRequired: false, logger }),
     ).toBeInstanceOf(InMemoryConsentEvidenceStore);

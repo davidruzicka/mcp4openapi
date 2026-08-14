@@ -269,6 +269,8 @@ When profile routing is enabled, you can select a profile with a `resource` quer
 - **`/oauth/revoke`** - Token revocation endpoint
 - **`/oauth/register`** - Dynamic client registration (RFC 7591)
 
+When a profile configures `scopes` in its OAuth config, they take precedence over client-requested scopes in the outgoing authorization request; clients cannot downscope. On consent-gated profiles this guarantees the `openid` scope needed for OIDC identity verification.
+
 ### MCP Endpoints
 
 - **`POST /mcp`** - MCP requests (requires OAuth token)

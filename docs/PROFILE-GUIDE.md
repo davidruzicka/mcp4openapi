@@ -724,8 +724,8 @@ Browser-based authentication with PKCE flow (HTTP transport only):
       "type": "oauth",
       "oauth_config": {
         "issuer": "https://login.microsoftonline.com/<tenant-id>/v2.0",
-        "client_id": "${env:MS365_MCP_CLIENT_ID}",
-        "client_secret": "${env:MS365_MCP_CLIENT_SECRET}",
+        "client_id": "${env:SOFTERIA_ENTRA_CLIENT_ID}",
+        "client_secret": "${env:SOFTERIA_ENTRA_CLIENT_SECRET}",
         "redirect_uri": "https://gateway.example/profile/softeria-sharepoint/oauth/callback",
         "scopes": ["openid", "Files.Read", "Sites.Selected"]
       }
@@ -736,7 +736,7 @@ Browser-based authentication with PKCE flow (HTTP transport only):
 
 Pair this fragment with an `upstream_mcp` or an env-backed configuration that resolves to a valid provider in the same profile. The environment variable name alone is not sufficient.
 
-The browser first displays the rules and requires an explicit checkbox submission. The approval token is one-time, expires after five minutes, and is bound to the complete OAuth request. The subsequent ID token is verified against OIDC discovery/JWKS, issuer, audience, signature, expiry, and nonce before evidence is recorded. A `rules_version` change forces re-acceptance. Consent evidence is bound to the verified subject, canonical issuer, tenant context, profile ID, and rules version. Authorization, consent evidence, and in-memory principals retain the raw verified subject. Logs and audit identity fields instead use a stable, one-way SHA-256-derived pseudonym for each nonempty subject.
+The browser first displays the rules and requires an explicit checkbox submission. The approval token is one-time, expires after five minutes, and is bound to the complete OAuth request. The subsequent ID token is verified against OIDC discovery/JWKS, issuer, audience, signature, expiry, and nonce before evidence is recorded. The identity verifier requires the discovered `jwks_uri` to share the issuer's origin (Entra-style); split-host IdPs whose JWKS lives on a different host (e.g. Google) are intentionally rejected. A `rules_version` change forces re-acceptance. Consent evidence is bound to the verified subject, canonical issuer, tenant context, profile ID, and rules version. Authorization, consent evidence, and in-memory principals retain the raw verified subject. Logs and audit identity fields instead use a stable, one-way SHA-256-derived pseudonym for each nonempty subject.
 
 When an encrypted OAuth envelope is recovered after restart, its verified OIDC identity is retained through subsequent initialization so consent-gated reconnects remain valid. A direct `refresh_token` grant on a consent-gated profile is rejected unless it presents an identity-bearing `mcp4.r1.*` envelope, so a refresh can never mint a session with an unknown principal.
 

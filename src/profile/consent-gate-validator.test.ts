@@ -64,10 +64,32 @@ describe('resolveConsentGateConfig', () => {
       resolveConsentGateConfig({ required: true, rules_version: 'v1', identity_source: 'other' as 'profile_oauth' }),
     ).toThrow(ConsentGateConfigurationError);
   });
+
+  it('accepts max_age_days=1 as the smallest valid expiry window', () => {
+    const result = resolveConsentGateConfig({
+      required: true,
+      rules_version: 'v1',
+      identity_source: 'profile_oauth',
+      max_age_days: 1,
+    });
+    expect(result.max_age_days).toBe(1);
+  });
+
+  it.each([0, -5, 1.5])('rejects max_age_days=%s', (maxAgeDays) => {
+    // 0 would silently disable expiry under the old truthiness check and a
+    // negative value would mark every grant expired; both invert admin intent.
+    expect(() =>
+      resolveConsentGateConfig({
+        required: true,
+        rules_version: 'v1',
+        identity_source: 'profile_oauth',
+        max_age_days: maxAgeDays,
+      }),
+    ).toThrow('consent_gate.max_age_days must be a positive integer number of days');
+  });
 });
 
 describe('validateConsentGateProfile', () => {
-  const previousNodeEnv = process.env.NODE_ENV;
   const requiredConsentGate = { required: true, rules_version: 'v1', identity_source: 'profile_oauth' } as const;
   const profileOAuth = {
     auth: {
@@ -80,14 +102,6 @@ describe('validateConsentGateProfile', () => {
       },
     },
   };
-
-  beforeEach(() => {
-    process.env.NODE_ENV = 'test';
-  });
-
-  afterEach(() => {
-    process.env.NODE_ENV = previousNodeEnv;
-  });
 
   it('returns undefined when consent_gate is not configured', () => {
     expect(validateConsentGateProfile(createProfile())).toBeUndefined();
@@ -254,5 +268,154 @@ describe('consent gate validation failure paths', () => {
     expect(() => validateConsentGateProfile(profile)).toThrow(
       'profile OAuth client_id is required when consent_gate is enabled',
     );
+  });
+});
+
+describe('consent gate OAuth env references', () => {
+  const ENV_KEYS = [
+    'CONSENT_TEST_ISSUER',
+    'CONSENT_TEST_CLIENT_ID',
+    'CONSENT_TEST_REDIRECT_URI',
+    'CONSENT_TEST_CLIENT_SECRET',
+  ] as const;
+
+  const envRefProfile = (): Profile =>
+    createProfile({
+      consent_gate: { required: true, rules_version: 'v1', identity_source: 'profile_oauth' },
+      interceptors: {
+        auth: {
+          type: 'oauth',
+          oauth_config: {
+            issuer: '${env:CONSENT_TEST_ISSUER}',
+            client_id: '${env:CONSENT_TEST_CLIENT_ID}',
+            client_secret: '${env:CONSENT_TEST_CLIENT_SECRET}',
+            redirect_uri: '${env:CONSENT_TEST_REDIRECT_URI}',
+            scopes: ['openid'],
+          },
+        },
+      },
+      upstream_mcp: {
+        name: 'upstream',
+        transport: { type: 'http-streamable', url: 'https://upstream.example.test/mcp' },
+      },
+    });
+
+  beforeEach(() => {
+    process.env.CONSENT_TEST_ISSUER = 'https://login.example.test';
+    process.env.CONSENT_TEST_CLIENT_ID = 'client';
+    process.env.CONSENT_TEST_REDIRECT_URI = 'https://gateway.example.test/oauth/callback';
+    process.env.CONSENT_TEST_CLIENT_SECRET = 'secret';
+  });
+
+  afterEach(() => {
+    for (const key of ENV_KEYS) delete process.env[key];
+  });
+
+  it('accepts a required gate whose OAuth fields resolve from set env vars', () => {
+    expect(validateConsentGateProfile(envRefProfile())?.required).toBe(true);
+  });
+
+  it.each([
+    ['issuer', 'CONSENT_TEST_ISSUER'],
+    ['client_id', 'CONSENT_TEST_CLIENT_ID'],
+    ['redirect_uri', 'CONSENT_TEST_REDIRECT_URI'],
+    ['client_secret', 'CONSENT_TEST_CLIENT_SECRET'],
+  ] as const)('rejects a required gate when the %s env reference is unset', (field, envVar) => {
+    delete process.env[envVar];
+    expect(() => validateConsentGateProfile(envRefProfile())).toThrow(ConsentGateConfigurationError);
+    expect(() => validateConsentGateProfile(envRefProfile())).toThrow(
+      `profile OAuth ${field} references env var '${envVar}' which is not set`,
+    );
+  });
+});
+
+describe('consent gate vs tenant OAuth overrides', () => {
+  const profileOAuth = {
+    auth: {
+      type: 'oauth' as const,
+      oauth_config: {
+        issuer: 'https://login.example.test',
+        client_id: 'client',
+        redirect_uri: 'https://gateway.example.test/oauth/callback',
+        scopes: ['openid'],
+      },
+    },
+  };
+
+  const consentProfile = (): Profile =>
+    createProfile({
+      profile_id: 'consent-profile',
+      consent_gate: { required: true, rules_version: 'v1', identity_source: 'profile_oauth' },
+      interceptors: profileOAuth,
+      upstream_mcp: {
+        name: 'upstream',
+        transport: { type: 'http-streamable', url: 'https://upstream.example.test/mcp' },
+      },
+    });
+
+  const tenantsJson = (tenant: Record<string, unknown>): string =>
+    JSON.stringify({ version: 1, tenants: [tenant] });
+
+  afterEach(() => {
+    delete process.env.MCP4_HTTP_TENANTS_JSON;
+    delete process.env.MCP4_HTTP_TENANTS_FILE;
+  });
+
+  it('rejects a required gate when a matching tenant overrides OAuth', () => {
+    process.env.MCP4_HTTP_TENANTS_JSON = tenantsJson({
+      tenant_id: 'tenant-a',
+      profile_ids: ['consent-profile'],
+      api_base_url: 'https://tenant-a.example.test',
+      auth_mode: 'oauth',
+      auth: {
+        type: 'oauth',
+        oauth_config: { issuer: 'https://other-idp.example.test', client_id: 'tenant-client' },
+      },
+    });
+
+    expect(() => validateConsentGateProfile(consentProfile())).toThrow(ConsentGateConfigurationError);
+    expect(() => validateConsentGateProfile(consentProfile())).toThrow(
+      "incompatible with a tenant OAuth override (tenant 'tenant-a')",
+    );
+  });
+
+  it('accepts a required gate when the matching tenant uses token auth', () => {
+    process.env.MCP4_HTTP_TENANTS_JSON = tenantsJson({
+      tenant_id: 'tenant-a',
+      profile_ids: ['consent-profile'],
+      api_base_url: 'https://tenant-a.example.test',
+      auth_mode: 'token',
+      auth: { type: 'bearer', value_from_env: 'TENANT_TOKEN' },
+    });
+
+    expect(validateConsentGateProfile(consentProfile())?.required).toBe(true);
+  });
+
+  it('accepts a required gate when the OAuth-overriding tenant targets another profile', () => {
+    process.env.MCP4_HTTP_TENANTS_JSON = tenantsJson({
+      tenant_id: 'tenant-b',
+      profile_ids: ['some-other-profile'],
+      api_base_url: 'https://tenant-b.example.test',
+      auth_mode: 'oauth',
+      auth: {
+        type: 'oauth',
+        oauth_config: { issuer: 'https://other-idp.example.test', client_id: 'tenant-client' },
+      },
+    });
+
+    expect(validateConsentGateProfile(consentProfile())?.required).toBe(true);
+  });
+
+  it('accepts a required gate when the matching oauth-mode tenant inherits profile OAuth', () => {
+    // No tenant-level auth override: the tenant reuses the profile OAuth
+    // provider, so the consent identity verifier still applies.
+    process.env.MCP4_HTTP_TENANTS_JSON = tenantsJson({
+      tenant_id: 'tenant-c',
+      profile_ids: ['consent-profile'],
+      api_base_url: 'https://tenant-c.example.test',
+      auth_mode: 'oauth',
+    });
+
+    expect(validateConsentGateProfile(consentProfile())?.required).toBe(true);
   });
 });

@@ -12,42 +12,44 @@ MR 38 adds an OIDC-backed human consent gate for sensitive upstream MCP profiles
 
 **Implementation status: complete except one deferred item.** Sections 0 to 10 are implemented and verified; see Appendix B for evidence and deviations. Still open: only the transactional multi-replica evidence backend, tracked as `TODO.md` item 1.
 
-### Residual findings at `7e11551`
+### Residual findings at `7e11551` (historical - all fixed since)
+
+This section is a historical record of what was still open at `7e11551`. Every finding below has since been fixed by this plan's implementation (evidence in Appendix B); none is an open vulnerability.
 
 Identity and enforcement:
 
-1. `tools/list` reaches upstream dispatch with no consent check. `handleUpstreamToolsList` obtains the raw Entra delegated access token and connects upstream before any consent lookup runs.
-2. Consent enforcement is opt-in at the call site and fails open when the enforcer is absent, rather than being driven by the profile's own `required` flag.
-3. `ConsentGate.assertConsent()` checks `subject` and `issuer` only, never `authType`. An `enterprise` or `token` principal carrying a matching subject and issuer satisfies a `profile_oauth` gate.
-4. `consentEvidenceKey` does not normalize the issuer, while the transport guard does. A trailing-slash difference passes the guard and then silently misses the evidence record.
-5. The direct OAuth token-endpoint `refresh_token` grant still relies on process-local refresh identity after restart.
+1. `tools/list` reached upstream dispatch with no consent check; `handleUpstreamToolsList` obtained the raw Entra delegated access token and connected upstream before any consent lookup ran. Fixed in the single dispatch chokepoint (`MCPServerManager.buildUpstreamDispatch`), which gates `tools/list` exactly like `tools/call`.
+2. Consent enforcement was opt-in at the call site and failed open when the enforcer was absent. Fixed: `assertSessionConsent` throws when required-but-unwired, and a `required: true` profile refuses dispatch with no reachable enforcer.
+3. `ConsentGate.assertConsent()` checked `subject` and `issuer` only, never `authType`, so an `enterprise` or `token` principal carrying a matching subject and issuer satisfied a `profile_oauth` gate. Fixed in `consent-gate.ts` with an `authType === 'oauth'` requirement.
+4. `consentEvidenceKey` did not normalize the issuer while the transport guard did, so a trailing-slash difference passed the guard and silently missed the evidence record. Fixed: `normalizeIssuer` is applied inside `ConsentGate.assertConsent()` before the store lookup.
+5. The direct OAuth token-endpoint `refresh_token` grant relied on process-local refresh identity after restart. Fixed by the encrypted `mcp4.r1.*` identity-bearing refresh envelope; consent-gated profiles reject identity-less refresh tokens.
 
 Configuration and storage:
 
-6. The environment upstream override replaces the complete upstream object including `transport.url`, and validates neither `html_description_policy` nor `tool_description_length_policy`. This is **not** a security boundary: the environment is set by the administrator, who already controls `profile.json` and the deployment. It is a config-safety gap. A copied or stale override silently weakens the policy or points the connection elsewhere with no error, and unlike `profile.json` it is not in git and not code-reviewed. Treat it the same way the existing `tools.allow`/`tools.deny` broadening guard is already treated.
-7. Evidence directories and files rely on process umask instead of enforced restrictive permissions.
-8. A missing evidence path silently selects volatile in-memory storage, with no production signal in the codebase to key a hard failure on.
+6. The environment upstream override replaced the complete upstream object including `transport.url`, and validated neither `html_description_policy` nor `tool_description_length_policy`. This was **not** a security boundary (the environment is administrator-set) but a config-safety gap. Fixed by the unconditional `validateEnvironmentOverride` rule table in `upstream-mcp-config.ts` (no policy downgrade, no tool-policy broadening) plus effective-endpoint logging with an off-origin warning.
+7. Evidence directories and files relied on process umask instead of enforced restrictive permissions. Fixed: the store creates the directory `0700` and the file `0600`, tightening existing files.
+8. A missing evidence path silently selected volatile in-memory storage. Fixed: `createConsentEvidenceStore` takes resolved config and `consentRequired && !evidencePath` is a hard startup failure.
 
-Lifecycle, absent from both the code and the original audit:
+Lifecycle, absent from both the code and the original audit at the time:
 
-9. Consent has no TTL, no revocation path, and no tombstone record. A `rules_version` rollback reactivates every prior grant.
-10. `rules_version` is a free string with no binding to the rules text. `rules_summary` and `education_resource` can change with no version bump, so "subject X accepted v1" does not identify what v1 said.
-11. There is no per-use audit record. Evidence records grants only, so "what did the agent do under this consent" has no answer.
-12. Re-consent after a gateway restart is a dead end. Envelope recovery restores a valid principal, so the client receives no 401 and never re-runs OAuth; every tool call returns a consent error whose page tells the user to reconnect the server manually.
+9. Consent had no TTL, no revocation path, and no tombstone record, and a `rules_version` rollback reactivated every prior grant. Fixed in the evidence store and `ConsentGate`: revocation records, optional `max_age_days`, and a monotonic `rules_version` rollback guard.
+10. `rules_version` was a free string with no binding to the rules text. Fixed by `rules_hash` (sha256 over rules version, summary, and education resource), stored per grant and compared at the gate.
+11. There was no per-use audit record. Fixed: per-call structured audit logging with a pseudonymized subject (D5/R16).
+12. Re-consent after a gateway restart was a dead end because envelope recovery restored a valid principal and the client never re-ran OAuth. Fixed by D6/R3: a consent miss returns 401 with the consent URL and invalidates the session once per subject per `rules_version`.
 
 Availability:
 
-13. `pendingConsentApprovals` is a process-local FIFO capped at 1000, populated by unauthenticated `GET /authorize`, and evicts oldest-first. It is both a DoS target and broken behind more than one replica.
+13. `pendingConsentApprovals` was a process-local FIFO capped at 1000, populated by unauthenticated `GET /authorize`, evicting oldest-first - a DoS target. Fixed in the approval flow rework: pending approvals are keyed by request fingerprint (self-limiting, idempotent) with `__Host-` cookie binding.
 
-Two claims from the original audit were checked and do **not** hold, and must not be acted on:
+Two claims from the original audit were checked and do **not** hold, and were not acted on:
 
 - "Issuer normalization is performed in the OIDC verifier but not consistently at the OAuth provider boundary." `normalizeIssuer` is already applied at the provider boundary (`src/auth/oauth-provider.ts:32,177`), on rehydrated refresh identity (`:1161`), and in envelopes (`src/auth/token-envelope.ts:241`). The real gap is the evidence-key lookup, finding 4 above.
 - "Evidence keys rely on raw delimiter concatenation of attacker-controlled fields." `consentEvidenceKey` uses `JSON.stringify` over a five-tuple, which escapes delimiters. No collision could be constructed. Keep the regression test at `src/auth/consent-evidence-store.test.ts:47`; do not re-engineer the encoding.
 
-Two structural safety properties hold today but only by accident of wiring, not by a control, and must be converted into enforced invariants plus regression tests:
+Two structural safety properties held at `7e11551` only by accident of wiring, not by a control; both were converted into enforced invariants with regression tests (see sections 1 and 7):
 
-- Stdio has no wired upstream client (`src/core/index.ts:388-397` builds a bare `MCPServer` and never calls `setGetUpstreamClient`).
-- Non-initialize HTTP requests without `Mcp-Session-Id` are rejected at `src/transport/http-transport.ts:3112-3116`, before `messageHandler` runs at `:3575`.
+- Stdio had no wired upstream client (`src/core/index.ts:388-397` built a bare `MCPServer` and never called `setGetUpstreamClient`); now a consent-gated profile with no reachable enforcer refuses dispatch, covered by `mcp-server-manager.test.ts`.
+- Non-initialize HTTP requests without `Mcp-Session-Id` were rejected before `messageHandler` ran; the sessionless-HTTP test now asserts the handler is never called.
 
 ## Current Status at `7e11551`
 

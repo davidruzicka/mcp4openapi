@@ -13,6 +13,7 @@
   - [18. Remove legacy SHA-256 token envelope KDF fallback](#18-remove-legacy-sha-256-token-envelope-kdf-fallback)
 - [P2: Nice-to-Have](#p2-nice-to-have)
   - [19. Gateway-mediated download proxy for upstream binary content](#19-gateway-mediated-download-proxy-for-upstream-binary-content)
+  - [20. Remaining ConsentHttpController hardening (AIPP-522)](#20-remaining-consenthttpcontroller-hardening-aipp-522)
   - [2. Export Profile Command](#2-export-profile-command)
   - [3. OpenAPI Operation Filter for Default Profile](#3-openapi-operation-filter-for-default-profile)
   - [4. Harden query parameter redaction canonicalization](#4-harden-query-parameter-redaction-canonicalization)
@@ -30,7 +31,7 @@
 ## P1: Important
 
 ### 1. Add a transactional multi-replica consent evidence backend
-**Goal**: Replace the single-node append-only file backend with a transactional store shared by all HTTP replicas. The current `FileConsentEvidenceStore` is durable and reloads external writes, but concurrent grants across multiple writers are not transactionally deduplicated.
+**Goal** (AIPP-432): Replace the single-node append-only file backend with a transactional store shared by all HTTP replicas. The current `FileConsentEvidenceStore` is durable and reloads external writes, but concurrent grants across multiple writers are not transactionally deduplicated.
 
 **Implementation**:
 - Add a database/managed-store implementation behind `ConsentEvidenceStore` with a unique key on subject + canonical issuer + tenant + profile + rules version, and persist revocation records alongside grants.
@@ -56,6 +57,17 @@
 - Tests: raw URL never leaves the gateway, expired or reused handle rejected, consent revoked between resolve and fetch blocks the fetch, quota and size cap enforced.
 
 **Decision needed first**: whether large-file downloads through this gateway are in scope at all, or whether `download-bytes` is sufficient (tracked in YouTrack under the AIPP-432 consent-gate work).
+
+### 20. Remaining ConsentHttpController hardening (AIPP-522)
+
+**Background**: The consent approval HTTP handling is being extracted into a dedicated `ConsentHttpController`. The extraction itself is in progress and not tracked here; this item covers only the hardening scope from AIPP-522 that remains after the extraction lands.
+
+**Remaining scope**:
+- Metrics: Prometheus counters for consent approvals, denials, expired/rejected approval tokens, and cookie-binding failures.
+- i18n: localize the consent approval and failure pages (currently English-only HTML).
+- CSP polish: tighten the approval-page Content-Security-Policy beyond the current restrictive baseline (`default-src 'none'`, `form-action 'self'`, `frame-ancestors 'none'`).
+
+**Estimated effort**: 2-4 hours after the controller extraction is merged
 
 ### 2. Export Profile Command
 

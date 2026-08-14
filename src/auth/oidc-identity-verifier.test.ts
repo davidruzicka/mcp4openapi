@@ -60,7 +60,7 @@ async function fixture() {
     .setIssuedAt()
     .setExpirationTime('5m')
     .sign(privateKey);
-  return { verifier, sign, privateKey, issuer, audience };
+  return { verifier, sign, privateKey, issuer, audience, fetchFn, jwk };
 }
 
 describe('OidcIdentityVerifier', () => {
@@ -206,7 +206,9 @@ describe('OidcIdentityVerifier subject claim source', () => {
       .setExpirationTime('5m')
       .sign(privateKey);
 
-    await expect(verifier.verify(token, 'nonce-1')).rejects.toThrow('missing a subject claim');
+    // `sub` is in jwtVerify requiredClaims, so the rejection surfaces as the
+    // generic jose-mapped validation error rather than the in-code subject check.
+    await expect(verifier.verify(token, 'nonce-1')).rejects.toThrow('OIDC ID token validation failed');
   });
 });
 
@@ -270,5 +272,172 @@ describe('OidcIdentityVerifier failure paths', () => {
     const error = await verifier.verify(token, 'nonce-1').catch((err: unknown) => err as Error);
     expect(error.message).toBe('OIDC identity validation failed');
     expect(error.message).not.toContain('ENOTFOUND');
+  });
+});
+
+describe('OidcIdentityVerifier discovery caching', () => {
+  it('retries discovery after a failed attempt instead of caching the rejection', async () => {
+    const issuer = 'https://issuer.example.test/tenant/v2.0';
+    const audience = 'client-id';
+    const { privateKey, publicKey } = await generateKeyPair('RS256');
+    const jwk = await exportJWK(publicKey);
+    let discoveryCalls = 0;
+    const fetchFn = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.endsWith('/.well-known/openid-configuration')) {
+        discoveryCalls += 1;
+        // First IdP response is a transient outage; later ones succeed.
+        if (discoveryCalls === 1) return new Response(null, { status: 503 });
+        return new Response(JSON.stringify({ issuer, jwks_uri: `${issuer}/jwks` }), { status: 200 });
+      }
+      return new Response(null, { status: 404 });
+    }) as typeof fetch;
+    const resolver = createLocalJWKSet({ keys: [{ ...jwk, kid: 'key-1', alg: 'RS256', use: 'sig' }] });
+    const verifier = new OidcIdentityVerifier({
+      issuer,
+      audience,
+      jwksCache: { getResolver: vi.fn(async () => resolver) } as unknown as JwksCache,
+      logger,
+      fetchFn,
+      ssrfValidator: { validate: vi.fn(async () => undefined) } as never,
+    });
+    const token = await signWith(privateKey, issuer, audience, { nonce: 'nonce-1' });
+
+    await expect(verifier.verify(token, 'nonce-1')).rejects.toThrow('OIDC discovery failed');
+    await expect(verifier.verify(token, 'nonce-1')).resolves.toMatchObject({ subject: 'subject-1' });
+    expect(discoveryCalls).toBe(2);
+  });
+
+  it('re-fetches discovery metadata after the cache TTL expires', async () => {
+    vi.useFakeTimers();
+    try {
+      const { verifier, sign, fetchFn } = await fixture();
+      const discoveryCalls = () => (fetchFn as unknown as ReturnType<typeof vi.fn>).mock.calls
+        .filter(([input]) => String(input).endsWith('/.well-known/openid-configuration')).length;
+
+      await verifier.verify(await sign({ nonce: 'nonce-1' }), 'nonce-1');
+      await verifier.verify(await sign({ nonce: 'nonce-1' }), 'nonce-1');
+      expect(discoveryCalls()).toBe(1);
+
+      // Just past the 1-hour TTL: jwks_uri rotation must be picked up.
+      vi.advanceTimersByTime(60 * 60 * 1000 + 1);
+      await verifier.verify(await sign({ nonce: 'nonce-1' }), 'nonce-1');
+      expect(discoveryCalls()).toBe(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe('OidcIdentityVerifier required claims', () => {
+  it('rejects an ID token without an exp claim', async () => {
+    const { verifier, privateKey, issuer, audience } = await fixture();
+    const token = await new SignJWT({ nonce: 'nonce-1' })
+      .setProtectedHeader({ alg: 'RS256', kid: 'key-1' })
+      .setIssuer(issuer)
+      .setAudience(audience)
+      .setSubject('subject-1')
+      .setIssuedAt()
+      .sign(privateKey);
+
+    await expect(verifier.verify(token, 'nonce-1')).rejects.toThrow('OIDC ID token validation failed');
+  });
+
+  it('rejects an ID token without an iat claim', async () => {
+    const { verifier, privateKey, issuer, audience } = await fixture();
+    const token = await new SignJWT({ nonce: 'nonce-1' })
+      .setProtectedHeader({ alg: 'RS256', kid: 'key-1' })
+      .setIssuer(issuer)
+      .setAudience(audience)
+      .setSubject('subject-1')
+      .setExpirationTime('5m')
+      .sign(privateKey);
+
+    await expect(verifier.verify(token, 'nonce-1')).rejects.toThrow('OIDC ID token validation failed');
+  });
+});
+
+describe('OidcIdentityVerifier algorithm allow-list', () => {
+  it('accepts an ES256-signed token', async () => {
+    const issuer = 'https://issuer.example.test/tenant/v2.0';
+    const audience = 'client-id';
+    const { privateKey, publicKey } = await generateKeyPair('ES256');
+    const jwk = await exportJWK(publicKey);
+    const resolver = createLocalJWKSet({ keys: [{ ...jwk, kid: 'key-1', alg: 'ES256', use: 'sig' }] });
+    const fetchFn = vi.fn(async () =>
+      new Response(JSON.stringify({ issuer, jwks_uri: `${issuer}/jwks` }), { status: 200 }),
+    ) as typeof fetch;
+    const verifier = new OidcIdentityVerifier({
+      issuer,
+      audience,
+      jwksCache: { getResolver: vi.fn(async () => resolver) } as unknown as JwksCache,
+      logger,
+      fetchFn,
+      ssrfValidator: { validate: vi.fn(async () => undefined) } as never,
+    });
+    const token = await new SignJWT({ nonce: 'nonce-1' })
+      .setProtectedHeader({ alg: 'ES256', kid: 'key-1' })
+      .setIssuer(issuer)
+      .setAudience(audience)
+      .setSubject('subject-1')
+      .setIssuedAt()
+      .setExpirationTime('5m')
+      .sign(privateKey);
+
+    await expect(verifier.verify(token, 'nonce-1')).resolves.toMatchObject({ subject: 'subject-1' });
+  });
+
+  it('rejects an HS256-signed token (symmetric algorithms are not allowed)', async () => {
+    const { verifier, issuer, audience } = await fixture();
+    const secret = new TextEncoder().encode('a-32-byte-minimum-symmetric-key!');
+    const token = await new SignJWT({ nonce: 'nonce-1' })
+      .setProtectedHeader({ alg: 'HS256' })
+      .setIssuer(issuer)
+      .setAudience(audience)
+      .setSubject('subject-1')
+      .setIssuedAt()
+      .setExpirationTime('5m')
+      .sign(secret);
+
+    await expect(verifier.verify(token, 'nonce-1')).rejects.toThrow('OIDC ID token validation failed');
+  });
+});
+
+describe('OidcIdentityVerifier failure observability', () => {
+  it('warns with only the error name on failure - never token material', async () => {
+    const warnCalls: unknown[][] = [];
+    const localLogger = {
+      debug: vi.fn(),
+      info: vi.fn(),
+      warn: vi.fn((...args: unknown[]) => warnCalls.push(args)),
+      error: vi.fn(),
+    } as unknown as Logger;
+    const issuer = 'https://issuer.example.test/tenant/v2.0';
+    const audience = 'client-id';
+    const { privateKey, publicKey } = await generateKeyPair('RS256');
+    const jwk = await exportJWK(publicKey);
+    const resolver = createLocalJWKSet({ keys: [{ ...jwk, kid: 'key-1', alg: 'RS256', use: 'sig' }] });
+    const fetchFn = vi.fn(async () =>
+      new Response(JSON.stringify({ issuer, jwks_uri: `${issuer}/jwks` }), { status: 200 }),
+    ) as typeof fetch;
+    const verifier = new OidcIdentityVerifier({
+      issuer,
+      audience,
+      jwksCache: { getResolver: vi.fn(async () => resolver) } as unknown as JwksCache,
+      logger: localLogger,
+      fetchFn,
+      ssrfValidator: { validate: vi.fn(async () => undefined) } as never,
+    });
+    const token = await signWith(privateKey, issuer, audience, { nonce: 'nonce-1' });
+
+    await expect(verifier.verify(token, 'other-nonce')).rejects.toThrow('nonce validation failed');
+
+    expect(localLogger.warn).toHaveBeenCalledWith('OIDC verification failed', {
+      reason: 'AuthenticationError',
+    });
+    const serialized = JSON.stringify(warnCalls);
+    expect(serialized).not.toContain(token);
+    expect(serialized).not.toContain('nonce-1');
+    expect(serialized).not.toContain('subject-1');
   });
 });

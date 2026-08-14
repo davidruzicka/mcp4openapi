@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { redactAuthPayload, sanitizeAuthErrorMessage, redactString } from './auth-redaction.js';
+import { ExternalOAuthProvider } from './oauth-provider.js';
 import { ConsentGate } from './consent-gate.js';
 import { InMemoryConsentEvidenceStore } from './consent-evidence-store.js';
 import { ConsentRequiredError } from '../core/errors.js';
@@ -173,6 +174,53 @@ describe('auth-redaction', () => {
       }
       // The sentinel host alone must not leak either, even without the full URL.
       expect(serialized).not.toContain('ISSUER-SENTINEL-9f3a2c');
+    });
+  });
+
+  describe('OAuth authorize logging never emits state or nonce values', () => {
+    it('keeps the generated state token and OIDC nonce out of every serialized log call', async () => {
+      const calls: unknown[][] = [];
+      const capture = (...args: unknown[]): void => {
+        calls.push(args);
+      };
+      const logger = {
+        debug: vi.fn(capture),
+        info: vi.fn(capture),
+        warn: vi.fn(capture),
+        error: vi.fn(capture),
+      } as unknown as Logger;
+      // An identity verifier makes authorize() attach a nonce to the provider URL.
+      const identityVerifier = { verify: vi.fn() };
+      const provider = new ExternalOAuthProvider({
+        authorization_endpoint: 'https://oauth.example.test/authorize',
+        token_endpoint: 'https://oauth.example.test/token',
+        client_id: 'client-id',
+        client_secret: 'client-secret',
+        scopes: ['openid'],
+        redirect_uri: 'http://localhost:3003/oauth/callback',
+      }, logger, identityVerifier as never);
+      const redirect = vi.fn();
+
+      await provider.authorize({
+        client_id: 'mcp-client',
+        redirect_uris: ['http://localhost:3003/oauth/callback'],
+        grant_types: ['authorization_code'],
+        response_types: ['code'],
+      }, {
+        redirectUri: 'http://localhost:3003/oauth/callback',
+        codeChallenge: 'challenge',
+        scopes: ['openid'],
+      }, { redirect } as never);
+
+      const providerUrl = new URL(redirect.mock.calls[0][0] as string);
+      const stateToken = providerUrl.searchParams.get('state');
+      const nonce = providerUrl.searchParams.get('nonce');
+      expect(stateToken).toBeTruthy();
+      expect(nonce).toBeTruthy();
+
+      const serialized = JSON.stringify(calls);
+      expect(serialized, 'state token leaked into OAuth logging').not.toContain(stateToken as string);
+      expect(serialized, 'OIDC nonce leaked into OAuth logging').not.toContain(nonce as string);
     });
   });
 

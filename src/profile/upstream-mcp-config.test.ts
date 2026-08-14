@@ -4,7 +4,7 @@
  * (which applies Zod validation before calling resolveUpstreamMcpConfig).
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { ValidationError } from '../core/errors.js';
 import { resolveUpstreamMcpConfig, hasUpstreamMcpFlag, looksLikeUpstreamMcpProxy, describeEffectiveUpstreamOrigin } from './upstream-mcp-config.js';
 import type { Profile } from '../types/profile.js';
@@ -466,6 +466,95 @@ describe('validateEnvironmentOverride - env override may only harden the static 
     );
     expect(resolved?.html_description_policy).toBe('allow');
   });
+
+  it('rejects an env override that downgrades html_description_policy from drop to strip', () => {
+    expect(() => resolveUpstreamMcpConfig(
+      makeEnvProfile(staticWithoutToolPolicy),
+      envWith({ html_description_policy: 'strip' }),
+    )).toThrow(/cannot weaken the static upstream_mcp\.html_description_policy: strip is less strict than drop/);
+  });
+
+  it('rejects an env override that downgrades tool_description_length_policy from drop to truncate', () => {
+    expect(() => resolveUpstreamMcpConfig(
+      makeEnvProfile(staticWithoutToolPolicy),
+      envWith({ tool_description_length_policy: 'truncate' }),
+    )).toThrow(/cannot weaken the static upstream_mcp\.tool_description_length_policy: truncate is less strict than drop/);
+  });
+
+  it('accepts an env override that hardens strip to drop', () => {
+    const resolved = resolveUpstreamMcpConfig(
+      makeEnvProfile({ ...staticWithoutToolPolicy, html_description_policy: 'strip' }),
+      envWith({ html_description_policy: 'drop' }),
+    );
+    expect(resolved?.html_description_policy).toBe('drop');
+  });
+
+  it('accepts an env override with an equal intermediate policy value', () => {
+    const resolved = resolveUpstreamMcpConfig(
+      makeEnvProfile({
+        ...staticWithoutToolPolicy,
+        html_description_policy: 'strip',
+        tool_description_length_policy: 'truncate',
+      }),
+      envWith({ html_description_policy: 'strip', tool_description_length_policy: 'truncate' }),
+    );
+    expect(resolved?.html_description_policy).toBe('strip');
+    expect(resolved?.tool_description_length_policy).toBe('truncate');
+  });
+});
+
+describe('resolveUpstreamMcpConfig off-origin override warning', () => {
+  const ENV_VAR = 'MCP4_UPSTREAM_MCP_JSON';
+
+  const profileWithStatic = (): Profile => ({
+    profile_name: 'test',
+    tools: minimalTools,
+    upstream_mcp_from_env: ENV_VAR,
+    upstream_mcp: {
+      name: 'static',
+      transport: { type: 'http-streamable', url: 'https://static.example.com/mcp' },
+    },
+  });
+
+  const envWithUrl = (url: string): NodeJS.ProcessEnv =>
+    ({
+      [ENV_VAR]: JSON.stringify({
+        name: 'env',
+        transport: { type: 'http-streamable', url },
+      }),
+    }) as NodeJS.ProcessEnv;
+
+  it('warns when the env override points at a different origin', () => {
+    const warn = vi.fn();
+    resolveUpstreamMcpConfig(profileWithStatic(), envWithUrl('https://proxy.example.net/mcp'), { warn });
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalledWith(
+      'Upstream MCP endpoint overridden to a different origin by the environment',
+      {
+        profile: 'test',
+        staticOrigin: 'https://static.example.com',
+        overrideOrigin: 'https://proxy.example.net',
+        envVarName: ENV_VAR,
+      },
+    );
+  });
+
+  it('does not warn when the override keeps the static origin', () => {
+    const warn = vi.fn();
+    resolveUpstreamMcpConfig(profileWithStatic(), envWithUrl('https://static.example.com/mcp/v2'), { warn });
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('does not warn for an env-only upstream without a static endpoint', () => {
+    const warn = vi.fn();
+    const profile: Profile = {
+      profile_name: 'test',
+      tools: minimalTools,
+      upstream_mcp_from_env: ENV_VAR,
+    };
+    resolveUpstreamMcpConfig(profile, envWithUrl('https://env-only.example.com/mcp'), { warn });
+    expect(warn).not.toHaveBeenCalled();
+  });
 });
 
 describe('looksLikeUpstreamMcpProxy', () => {
@@ -542,11 +631,10 @@ describe('describeEffectiveUpstreamOrigin', () => {
       origin: 'https://softeria.internal.example',
       fromEnvOverride: false,
       envVarName: 'SOFTERIA_UPSTREAM_MCP',
-      offStaticOrigin: false,
     });
   });
 
-  it('flags an override that points at a different origin', () => {
+  it('reports the override origin as env-sourced when an override is set', () => {
     const env = {
       SOFTERIA_UPSTREAM_MCP: JSON.stringify({
         name: 'softeria',
@@ -558,11 +646,10 @@ describe('describeEffectiveUpstreamOrigin', () => {
       origin: 'https://staging-proxy.example',
       fromEnvOverride: true,
       envVarName: 'SOFTERIA_UPSTREAM_MCP',
-      offStaticOrigin: true,
     });
   });
 
-  it('does not flag an override that keeps the same origin with a different path', () => {
+  it('reports the shared origin when the override only changes the path', () => {
     const env = {
       SOFTERIA_UPSTREAM_MCP: JSON.stringify({
         name: 'softeria',
@@ -572,7 +659,7 @@ describe('describeEffectiveUpstreamOrigin', () => {
 
     const described = describeEffectiveUpstreamOrigin(profileWithEnvRef(), env);
     expect(described?.fromEnvOverride).toBe(true);
-    expect(described?.offStaticOrigin).toBe(false);
+    expect(described?.origin).toBe('https://softeria.internal.example');
   });
 
   it('returns undefined for an unparseable effective URL instead of throwing', () => {
@@ -582,9 +669,8 @@ describe('describeEffectiveUpstreamOrigin', () => {
 });
 
 describe('describeEffectiveUpstreamOrigin - absent URL handling', () => {
-  it('reports an env-only upstream without flagging an off-origin override', () => {
-    // No static upstream_mcp at all, so there is no static origin to compare
-    // against: the override is the only endpoint and must not be flagged.
+  it('reports an env-only upstream as env-sourced', () => {
+    // No static upstream_mcp at all: the override is the only endpoint.
     const profile: Profile = {
       profile_name: 'test',
       tools: minimalTools,
@@ -601,7 +687,6 @@ describe('describeEffectiveUpstreamOrigin - absent URL handling', () => {
       origin: 'https://env-only.example',
       fromEnvOverride: true,
       envVarName: 'UPSTREAM_JSON',
-      offStaticOrigin: false,
     });
   });
 

@@ -250,11 +250,10 @@ Predefined profiles in the `profiles/` directory contains names for easy referen
 - n8n profile: `n8n`
 - n8n simple node listing profile: `n8n-nodes`
 - DefectDojo profile: `defectdojo`
-- Softeria SharePoint read-only profile: `softeria-sharepoint` (alias `ms365-sharepoint`)
 
 Profiles are resolved from `./profiles` path by default. If that directory is missing, the bundled npm package profiles are used. Override with `--profiles-dir` or `MCP4_PROFILES_DIR`.
 
-The Softeria profile requires HTTP transport and profile OAuth. Set a single-tenant Entra issuer, app credentials, callback URI, durable consent evidence path, and deployment-specific upstream object. Run the pinned Softeria version with `--org-mode --read-only` and an anchored exact `--enabled-tools` catalog matching the gateway allow-list. Before rolling out a new upstream version, capture its tool catalog with `--read-only --org-mode --allow-unauthenticated-discovery --http 127.0.0.1:<port>` followed by an MCP `initialize` and `tools/list`, and confirm every allow-list entry is present; `--list-permissions` reports Graph scopes only and lists no tool names. See [Profile Guide](docs/PROFILE-GUIDE.md#validating-the-softeria-sharepoint-tool-catalog) for the full procedure and the committed catalog fixture.
+The Softeria SharePoint profile (`softeria-sharepoint`, alias `ms365-sharepoint`) lives in the internal deployment repository; this repo keeps only a reference test fixture at `tests/profiles/softeria-sharepoint/` that exercises consent-gated upstream loading. The Softeria profile requires HTTP transport and profile OAuth. Set a single-tenant Entra issuer, app credentials, callback URI, durable consent evidence path, and deployment-specific upstream object. Run the pinned Softeria version with `--org-mode --read-only` and an anchored exact `--enabled-tools` catalog matching the gateway allow-list. Before rolling out a new upstream version, capture its tool catalog with `--read-only --org-mode --allow-unauthenticated-discovery --http 127.0.0.1:<port>` followed by an MCP `initialize` and `tools/list`, and confirm every allow-list entry is present; `--list-permissions` reports Graph scopes only and lists no tool names. See [Profile Guide](docs/PROFILE-GUIDE.md#validating-the-softeria-sharepoint-tool-catalog) for the full procedure and the committed catalog fixture.
 
 ##### ⚠️ Prerequisites
 

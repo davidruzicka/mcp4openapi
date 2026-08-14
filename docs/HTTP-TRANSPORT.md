@@ -693,11 +693,15 @@ authenticated human has accepted the current rules. Profile shape and validation
 
 ### Enforcement point
 
-`MCPServerManager.buildUpstreamDispatch()` wraps the function passed to `MCPServer.setGetUpstreamClient()`.
-That function is the only place where an upstream client is acquired, so `tools/list` and `tools/call`
-run the same check and cannot diverge; a new dispatch path inherits the gate automatically.
+`MCPServer.setGetUpstreamClient()` wraps the injected connection factory with the consent guard.
+The wrapped function is the only place where an upstream client is acquired, so `tools/list` and
+`tools/call` run the same check and cannot diverge; a new dispatch path inherits the gate
+automatically, and single-profile HTTP mode (`runHttp`) and multi-profile routing mode
+(`MCPServerManager`) share the same chokepoint. Consent-gated profiles refuse to start on the
+stdio transport (`runStdio` throws `ConsentGateConfigurationError`) because consent can only be
+granted via the HTTP OAuth flow.
 
-Order per dispatch (`src/mcp/mcp-server-manager.ts`):
+Order per dispatch (`src/mcp/mcp-server.ts`):
 
 1. `server.isConsentRequired()` - false means no check and no store read.
 2. `HttpTransport.assertSessionConsent(profileId, sessionId)` - resolves the session principal and

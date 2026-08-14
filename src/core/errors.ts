@@ -153,14 +153,6 @@ export class ClientAuthGateError extends MCPError {
 }
 
 /**
- * Raised when a profile gated by `consent_gate` is used before the authenticated
- * subject has recorded consent for the current `rules_version`.
- *
- * The `details` payload is machine-readable so the client can drive the human
- * to the consent flow: `profileId`, `rules_version`, `consent_url`, and the
- * optional `education_resource`. It never carries tokens or PII.
- */
-/**
  * Why a consent check failed. Logged and asserted in tests, never returned to
  * the client: telling an unauthenticated caller that its issuer did not match
  * leaks configuration.
@@ -175,6 +167,14 @@ export type ConsentDenialReason =
   | 'expired'
   | 'revoked';
 
+/**
+ * Raised when a profile gated by `consent_gate` is used before the authenticated
+ * subject has recorded consent for the current `rules_version`.
+ *
+ * The `details` payload is machine-readable so the client can drive the human
+ * to the consent flow: `profileId`, `rules_version`, `consent_url`, and the
+ * optional `education_resource`. It never carries tokens or PII.
+ */
 export class ConsentRequiredError extends MCPError {
   /** Specific denial cause. Deliberately outside `details`, which is client-visible. */
   readonly reason: ConsentDenialReason;

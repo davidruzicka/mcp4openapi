@@ -2,7 +2,7 @@
  * Tests for profile loader
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { ValidationError } from '../core/errors.js';
 import { ProfileLoader } from './profile-loader.js';
 import path from 'path';
@@ -3491,6 +3491,80 @@ paths:
       const profile = await loader.load(tmpPath);
       expect(profile.upstream_mcp).toBeDefined();
       expect(profile.upstream_mcp?.name).toBe('provider-a');
+    });
+  });
+
+  describe('off-origin upstream override warning', () => {
+    const ENV_VAR = 'MCP4_UPSTREAM_MCP_JSON_OFF_ORIGIN_TEST';
+
+    async function writeProfileWithStaticUpstream(): Promise<string> {
+      const fs = await import('fs/promises');
+      const tmpPath = `/tmp/upstream-off-origin-${Date.now()}-${Math.random()}.json`;
+      await fs.writeFile(
+        tmpPath,
+        JSON.stringify({
+          profile_name: 'off-origin-test',
+          tools: [],
+          upstream_mcp_from_env: ENV_VAR,
+          upstream_mcp: {
+            name: 'static',
+            transport: { type: 'http-streamable', url: 'https://static.example.com/mcp' },
+          },
+        }),
+        'utf-8',
+      );
+      return tmpPath;
+    }
+
+    it('warns during load when the env override points at a different origin', async () => {
+      const warn = vi.fn();
+      const loader = new ProfileLoader({ warn });
+      process.env[ENV_VAR] = JSON.stringify({
+        name: 'env',
+        transport: { type: 'http-streamable', url: 'https://proxy.example.net/mcp' },
+      });
+
+      try {
+        const profile = await loader.load(await writeProfileWithStaticUpstream());
+        expect(profile.upstream_mcp?.transport.url).toBe('https://proxy.example.net/mcp');
+        expect(warn).toHaveBeenCalledWith(
+          'Upstream MCP endpoint overridden to a different origin by the environment',
+          {
+            profile: 'off-origin-test',
+            staticOrigin: 'https://static.example.com',
+            overrideOrigin: 'https://proxy.example.net',
+            envVarName: ENV_VAR,
+          },
+        );
+      } finally {
+        delete process.env[ENV_VAR];
+      }
+    });
+
+    it('does not warn during load when the override keeps the static origin', async () => {
+      const warn = vi.fn();
+      const loader = new ProfileLoader({ warn });
+      process.env[ENV_VAR] = JSON.stringify({
+        name: 'env',
+        transport: { type: 'http-streamable', url: 'https://static.example.com/mcp/v2' },
+      });
+
+      try {
+        await loader.load(await writeProfileWithStaticUpstream());
+        expect(warn).not.toHaveBeenCalled();
+      } finally {
+        delete process.env[ENV_VAR];
+      }
+    });
+  });
+
+  describe('consent-gate fixture profile', () => {
+    it('loads tests/profiles/consent-gate/profile.json', async () => {
+      const profile = await new ProfileLoader().load(
+        path.join(process.cwd(), 'tests/profiles/consent-gate/profile.json'),
+      );
+      expect(profile.consent_gate?.required).toBe(true);
+      expect(profile.upstream_mcp?.name).toBe('ms365-upstream');
     });
   });
 });

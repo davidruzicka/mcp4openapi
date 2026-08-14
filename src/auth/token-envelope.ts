@@ -31,14 +31,15 @@
  */
 
 import { createCipheriv, createDecipheriv, createHash, randomBytes, scryptSync } from 'node:crypto';
-import { ValidationError } from '../core/errors.js';
+import { AuthenticationError, ValidationError } from '../core/errors.js';
 import { normalizeIssuer } from './issuer.js';
 
 const TOKEN_PREFIX = 'mcp4.v1.';
 /**
- * Refresh envelopes use their own prefix and AAD suffix so an access-token path
- * can never accept one: the AAD differs, so decryption fails outright rather
- * than relying on a field check.
+ * Refresh envelopes use their own prefix and AAD suffix. The prefix check is
+ * the first gate - an access-token path rejects `mcp4.r1.` before any crypto
+ * runs. The distinct AAD suffix is defense-in-depth: a relabeled envelope
+ * still fails authenticated decryption instead of relying on a field check.
  */
 const REFRESH_TOKEN_PREFIX = 'mcp4.r1.';
 const REFRESH_AAD_SUFFIX = ':refresh';
@@ -138,59 +139,36 @@ function attemptRefreshDecrypt(
   key: Buffer,
   profileId: string,
 ): RefreshEnvelopePayload | null {
-  try {
-    if (typeof token !== 'string' || !token.startsWith(REFRESH_TOKEN_PREFIX)) return null;
-    if (!Buffer.isBuffer(key) || key.length !== KEY_BYTES) return null;
-    if (typeof profileId !== 'string' || profileId.length === 0) return null;
+  if (typeof profileId !== 'string' || profileId.length === 0) return null;
 
-    const decoded = decodeBase64UrlStrict(token.slice(REFRESH_TOKEN_PREFIX.length));
-    if (decoded === null || decoded.length < MIN_ENCODED_BYTES) return null;
+  const candidate = decryptAeadJson(token, REFRESH_TOKEN_PREFIX, key, profileId + REFRESH_AAD_SUFFIX);
+  if (candidate === null) return null;
 
-    const nonce = decoded.subarray(0, NONCE_BYTES);
-    const tag = decoded.subarray(decoded.length - TAG_BYTES);
-    const ciphertext = decoded.subarray(NONCE_BYTES, decoded.length - TAG_BYTES);
+  if (candidate.v !== 1) return null;
+  if (typeof candidate.rt !== 'string' || candidate.rt.length === 0) return null;
+  if (typeof candidate.cid !== 'string' || candidate.cid.length === 0) return null;
+  if (candidate.pid !== profileId) return null;
+  if (typeof candidate.iat !== 'number') return null;
+  if (!validateIdentityCoherence(candidate)) return null;
 
-    const decipher = createDecipheriv(ALGORITHM, key, nonce, { authTagLength: TAG_BYTES });
-    decipher.setAAD(Buffer.from(profileId + REFRESH_AAD_SUFFIX, 'utf8'));
-    decipher.setAuthTag(tag);
+  return candidate as unknown as RefreshEnvelopePayload;
+}
 
-    const plaintext = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
-    const parsed: unknown = JSON.parse(plaintext.toString('utf8'));
-    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
-
-    const candidate = parsed as Record<string, unknown>;
-    if (candidate.v !== 1) return null;
-    if (typeof candidate.rt !== 'string' || candidate.rt.length === 0) return null;
-    if (typeof candidate.cid !== 'string' || candidate.cid.length === 0) return null;
-    if (candidate.pid !== profileId) return null;
-    if (typeof candidate.iat !== 'number') return null;
-
-    const hasSubject = Object.prototype.hasOwnProperty.call(candidate, 'sub');
-    const hasIssuer = Object.prototype.hasOwnProperty.call(candidate, 'iss');
-    if (hasSubject !== hasIssuer) return null;
-    if (hasSubject) {
-      if (
-        typeof candidate.sub !== 'string' ||
-        candidate.sub.length === 0 ||
-        typeof candidate.iss !== 'string' ||
-        candidate.iss.length === 0
-      ) {
-        return null;
-      }
-      const issuer = normalizeIssuer(candidate.iss);
-      if (issuer.length === 0) return null;
-      candidate.iss = issuer;
-    }
-    if (
-      Object.prototype.hasOwnProperty.call(candidate, 'tid') &&
-      (typeof candidate.tid !== 'string' || candidate.tid.length === 0)
-    ) {
-      return null;
-    }
-
-    return candidate as unknown as RefreshEnvelopePayload;
-  } catch {
-    return null;
+/**
+ * Enforce the envelope-to-client binding: a refresh envelope minted for client
+ * A must never be redeemable by client B, otherwise B would inherit A's
+ * verified identity. Throws AuthenticationError on any mismatch.
+ */
+export function assertRefreshEnvelopeClientBinding(
+  payload: RefreshEnvelopePayload,
+  presentingClientId: string,
+): void {
+  if (
+    typeof presentingClientId !== 'string' ||
+    presentingClientId.length === 0 ||
+    payload.cid !== presentingClientId
+  ) {
+    throw new AuthenticationError('Refresh token envelope was issued to a different client');
   }
 }
 
@@ -297,27 +275,54 @@ function attemptDecrypt(
   key: Buffer,
   profileId: string,
 ): TokenEnvelopePayload | null {
+  if (typeof profileId !== 'string' || profileId.length === 0) {
+    return null;
+  }
+
+  const candidate = decryptAeadJson(token, TOKEN_PREFIX, key, profileId);
+  if (candidate === null) {
+    return null;
+  }
+
+  if (candidate.v !== 1) {
+    return null;
+  }
+  if (typeof candidate.at !== 'string' || candidate.at.length === 0) {
+    return null;
+  }
+  if (candidate.pid !== profileId) {
+    return null;
+  }
+  if (typeof candidate.iat !== 'number') {
+    return null;
+  }
+  if (!validateIdentityCoherence(candidate)) {
+    return null;
+  }
+
+  return candidate as unknown as TokenEnvelopePayload;
+}
+
+/**
+ * Shared decode -> decipher -> parse pipeline for both envelope flavors.
+ * Returns the parsed JSON object, or null on every failure mode. Never throws.
+ */
+function decryptAeadJson(
+  token: string,
+  prefix: string,
+  key: Buffer,
+  aad: string,
+): Record<string, unknown> | null {
   try {
-    if (typeof token !== 'string' || !token.startsWith(TOKEN_PREFIX)) {
+    if (typeof token !== 'string' || !token.startsWith(prefix)) {
       return null;
     }
     if (!Buffer.isBuffer(key) || key.length !== KEY_BYTES) {
       return null;
     }
-    if (typeof profileId !== 'string' || profileId.length === 0) {
-      return null;
-    }
 
-    const suffix = token.slice(TOKEN_PREFIX.length);
-    if (suffix.length === 0) {
-      return null;
-    }
-
-    const decoded = decodeBase64UrlStrict(suffix);
-    if (decoded === null) {
-      return null;
-    }
-    if (decoded.length < MIN_ENCODED_BYTES) {
+    const decoded = decodeBase64UrlStrict(token.slice(prefix.length));
+    if (decoded === null || decoded.length < MIN_ENCODED_BYTES) {
       return null;
     }
 
@@ -326,7 +331,7 @@ function attemptDecrypt(
     const ciphertext = decoded.subarray(NONCE_BYTES, decoded.length - TAG_BYTES);
 
     const decipher = createDecipheriv(ALGORITHM, key, nonce, { authTagLength: TAG_BYTES });
-    decipher.setAAD(Buffer.from(profileId, 'utf8'));
+    decipher.setAAD(Buffer.from(aad, 'utf8'));
     decipher.setAuthTag(tag);
 
     const plaintext = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
@@ -335,49 +340,46 @@ function attemptDecrypt(
     if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
       return null;
     }
-    const candidate = parsed as Record<string, unknown>;
-    if (candidate.v !== 1) {
-      return null;
-    }
-    if (typeof candidate.at !== 'string' || candidate.at.length === 0) {
-      return null;
-    }
-    if (candidate.pid !== profileId) {
-      return null;
-    }
-    if (typeof candidate.iat !== 'number') {
-      return null;
-    }
-
-    const hasSubject = Object.prototype.hasOwnProperty.call(candidate, 'sub');
-    const hasIssuer = Object.prototype.hasOwnProperty.call(candidate, 'iss');
-    const hasTenant = Object.prototype.hasOwnProperty.call(candidate, 'tid');
-    if (hasSubject !== hasIssuer || (hasTenant && !hasSubject)) {
-      return null;
-    }
-    if (hasSubject) {
-      if (
-        typeof candidate.sub !== 'string' ||
-        candidate.sub.length === 0 ||
-        typeof candidate.iss !== 'string' ||
-        candidate.iss.length === 0
-      ) {
-        return null;
-      }
-      const issuer = normalizeIssuer(candidate.iss);
-      if (issuer.length === 0) {
-        return null;
-      }
-      candidate.iss = issuer;
-    }
-    if (hasTenant && (typeof candidate.tid !== 'string' || candidate.tid.length === 0)) {
-      return null;
-    }
-
-    return candidate as unknown as TokenEnvelopePayload;
+    return parsed as Record<string, unknown>;
   } catch {
     return null;
   }
+}
+
+/**
+ * Shared identity-coherence rule for both envelope flavors:
+ * - `sub` and `iss` are all-or-nothing (a subject without an issuer, or vice
+ *   versa, cannot be bound to an identity),
+ * - `tid` requires `sub` (a tenant without a subject is meaningless),
+ * - present fields must be non-empty strings,
+ * - `iss` is canonicalized via normalizeIssuer in place.
+ */
+function validateIdentityCoherence(candidate: Record<string, unknown>): boolean {
+  const hasSubject = Object.prototype.hasOwnProperty.call(candidate, 'sub');
+  const hasIssuer = Object.prototype.hasOwnProperty.call(candidate, 'iss');
+  const hasTenant = Object.prototype.hasOwnProperty.call(candidate, 'tid');
+  if (hasSubject !== hasIssuer || (hasTenant && !hasSubject)) {
+    return false;
+  }
+  if (hasSubject) {
+    if (
+      typeof candidate.sub !== 'string' ||
+      candidate.sub.length === 0 ||
+      typeof candidate.iss !== 'string' ||
+      candidate.iss.length === 0
+    ) {
+      return false;
+    }
+    const issuer = normalizeIssuer(candidate.iss);
+    if (issuer.length === 0) {
+      return false;
+    }
+    candidate.iss = issuer;
+  }
+  if (hasTenant && (typeof candidate.tid !== 'string' || candidate.tid.length === 0)) {
+    return false;
+  }
+  return true;
 }
 
 /**

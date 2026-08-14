@@ -2,8 +2,10 @@
  * Evidence file confidentiality.
  *
  * Vitest workers forbid `process.umask()`, so a permissive creation mask is
- * simulated by pre-creating the directory and file with wide modes; the store
- * must tighten them. POSIX only: Windows does not model these mode bits.
+ * simulated by pre-creating the file with a wide mode; the store must tighten
+ * the file. A pre-existing directory is operator-owned and its mode stays
+ * untouched; only a directory the store created itself is set to 0700.
+ * POSIX only: Windows does not model these mode bits.
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import fs from 'node:fs';
@@ -49,22 +51,37 @@ describe.sequential('FileConsentEvidenceStore permissions', () => {
   );
 
   it.skipIf(process.platform === 'win32')(
-    'tightens an existing world-readable evidence file and directory before appending',
+    'tightens an existing world-readable evidence file before appending',
     async () => {
       const dir = path.join(root, 'existing');
       fs.mkdirSync(dir, { recursive: true });
-      fs.chmodSync(dir, 0o755);
       const filePath = path.join(dir, 'evidence.jsonl');
       fs.writeFileSync(filePath, '', 'utf8');
       fs.chmodSync(filePath, 0o644);
       expect(modeOf(filePath)).toBe(0o644);
-      expect(modeOf(dir)).toBe(0o755);
 
       const store = new FileConsentEvidenceStore(filePath, logger);
       await store.record(makeContractEvidence());
 
       expect(modeOf(filePath)).toBe(0o600);
-      expect(modeOf(dir)).toBe(0o700);
+    },
+  );
+
+  it.skipIf(process.platform === 'win32')(
+    'leaves the mode of a pre-existing directory untouched',
+    async () => {
+      // The directory belongs to the operator (it may hold unrelated files);
+      // only a directory the store created itself is tightened to 0700.
+      const dir = path.join(root, 'shared');
+      fs.mkdirSync(dir, { recursive: true });
+      fs.chmodSync(dir, 0o755);
+      const filePath = path.join(dir, 'evidence.jsonl');
+
+      const store = new FileConsentEvidenceStore(filePath, logger);
+      await store.record(makeContractEvidence());
+
+      expect(modeOf(dir)).toBe(0o755);
+      expect(modeOf(filePath)).toBe(0o600);
     },
   );
 });

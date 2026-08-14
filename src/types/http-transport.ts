@@ -137,6 +137,7 @@ export interface HttpTransportConfig {
   globalFiltering?: FilteringRules; // Process-wide baseline parameter filtering
   upstreamMcp?: UpstreamMcpServerConfig; // Upstream MCP provider for this profile
   client_auth_gate?: ClientAuthGateConfig; // Inbound client auth gate (single-profile mode)
+  consent_gate?: ConsentGateConfig; // Human consent gate (single-profile mode)
 }
 
 export interface HttpProfileContext {

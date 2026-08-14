@@ -24,6 +24,7 @@ import {
   ConfigurationError,
   ResourceNotFoundError,
   ConsentRequiredError,
+  ConsentGateConfigurationError,
 } from '../core/errors.js';
 import {
   UpstreamConnectionError,
@@ -34,6 +35,8 @@ import {
 import { McpError, ErrorCode } from '@modelcontextprotocol/sdk/types.js';
 import { INPUT_LIMITS } from '../core/constants.js';
 import { pseudonymizeSubject } from '../auth/observability-pseudonym.js';
+import { ConsentGate } from '../auth/consent-gate.js';
+import { InMemoryConsentEvidenceStore } from '../auth/consent-evidence-store.js';
 
 type ToolCallResponse = {
   result?: {
@@ -4079,6 +4082,10 @@ paths:
         getSessionEnterpriseTiers: () => undefined,
         getSessionEnterpriseAllowedToolCategories: () => undefined,
         recordToolFilterRejection: () => {},
+        // Consent enforcer seat: the profile above is NOT consent-gated, so the
+        // setGetUpstreamClient wrapper must never call this (asserted in the
+        // 'consent chokepoint' suite); gated tests flip consent_gate.required
+        // and assert it runs before dispatch.
         assertSessionConsent: vi.fn(async () => undefined),
       };
       // Wire the upstream client callback
@@ -4292,10 +4299,10 @@ paths:
 
     // -------------------------------------------------------------------------
     describe('tools/call upstream forwarding', () => {
-      // Consent is enforced by the dispatch chokepoint that wraps
-      // getUpstreamClientFn (see MCPServerManager), so these tests assert the
-      // observable contract: a denied dispatch never reaches the upstream
-      // client and returns actionable consent details.
+      // Consent is enforced by the dispatch chokepoint built inside
+      // MCPServer.setGetUpstreamClient, so these tests assert the observable
+      // contract: a denied dispatch never reaches the upstream client and
+      // returns actionable consent details.
       const consentDenied = (): ConsentRequiredError =>
         new ConsentRequiredError('Consent required', {
           profileId: 'upstream-profile',
@@ -4558,6 +4565,139 @@ paths:
         expect(response.error.data.correlationId).toBeDefined();
         // Provider name must NOT appear in the client-facing message string
         expect(response.error.message).not.toContain('test-upstream');
+      });
+    });
+
+    // -------------------------------------------------------------------------
+    describe('consent chokepoint (setGetUpstreamClient wrapper)', () => {
+      const toolsCallMessage = (id: string) => ({
+        jsonrpc: '2.0',
+        id,
+        method: 'tools/call',
+        params: { name: 'safe_tool', arguments: {} },
+      });
+
+      const gateProfile = () => {
+        (upstreamServer as any).profile = {
+          ...(upstreamServer as any).profile,
+          profile_id: 'upstream-profile',
+          consent_gate: { required: true, rules_version: 'v1', identity_source: 'profile_oauth' },
+        };
+      };
+
+      const denyConsent = () =>
+        vi.fn(async () => {
+          throw new ConsentRequiredError('Consent required', {
+            profileId: 'upstream-profile',
+            rules_version: 'v1',
+            consent_url: 'https://gateway.example/profile/upstream-profile/consent',
+          });
+        });
+
+      it('asserts session consent through the transport before acquiring an upstream client', async () => {
+        gateProfile();
+        const assertSpy = (upstreamServer as any).httpTransport.assertSessionConsent;
+
+        const response = await (upstreamServer as any).handleToolCall(
+          toolsCallMessage('gate-ok'), 'session-123', 'upstream-profile',
+        ) as any;
+
+        expect(assertSpy).toHaveBeenCalledWith('upstream-profile', 'session-123');
+        expect(assertSpy.mock.invocationCallOrder[0]).toBeLessThan(
+          mockGetUpstreamClient.mock.invocationCallOrder[0],
+        );
+        expect(response.result).toBeDefined();
+      });
+
+      it('returns -32004 and never acquires an upstream client when the enforcer denies tools/call', async () => {
+        gateProfile();
+        (upstreamServer as any).httpTransport.assertSessionConsent = denyConsent();
+
+        const response = await (upstreamServer as any).handleToolCall(
+          toolsCallMessage('gate-deny'), 'session-123', 'upstream-profile',
+        ) as any;
+
+        expect(response.error.code).toBe(-32004);
+        expect(mockGetUpstreamClient).not.toHaveBeenCalled();
+        expect(mockCallTool).not.toHaveBeenCalled();
+      });
+
+      it('returns -32004 and never lists tools when the enforcer denies tools/list', async () => {
+        gateProfile();
+        (upstreamServer as any).httpTransport.assertSessionConsent = denyConsent();
+
+        const response = await (upstreamServer as any).handleOtherRequest(
+          { jsonrpc: '2.0', id: 'gate-list', method: 'tools/list', params: {} },
+          'session-123',
+          'upstream-profile',
+        ) as any;
+
+        expect(response.error.code).toBe(-32004);
+        expect(mockListTools).not.toHaveBeenCalled();
+      });
+
+      it('fails closed with ConsentGateConfigurationError when no transport is attached', async () => {
+        gateProfile();
+        (upstreamServer as any).httpTransport = null;
+
+        await expect(
+          (upstreamServer as any).getUpstreamClientFn('session-123', upstreamProvider, 'token'),
+        ).rejects.toBeInstanceOf(ConsentGateConfigurationError);
+        expect(mockGetUpstreamClient).not.toHaveBeenCalled();
+      });
+
+      it('fails closed when the attached transport cannot enforce consent', async () => {
+        gateProfile();
+        delete (upstreamServer as any).httpTransport.assertSessionConsent;
+
+        await expect(
+          (upstreamServer as any).getUpstreamClientFn('session-123', upstreamProvider, 'token'),
+        ).rejects.toBeInstanceOf(ConsentGateConfigurationError);
+        expect(mockGetUpstreamClient).not.toHaveBeenCalled();
+      });
+
+      it('does not consult the enforcer for a profile without a consent gate', async () => {
+        const assertSpy = (upstreamServer as any).httpTransport.assertSessionConsent;
+
+        const response = await (upstreamServer as any).handleToolCall(
+          toolsCallMessage('no-gate'), 'session-123', 'upstream-profile',
+        ) as any;
+
+        expect(assertSpy).not.toHaveBeenCalled();
+        expect(response.result).toBeDefined();
+      });
+
+      it('records ConsentRequired metrics for a denied tools/call instead of a generic upstream error', async () => {
+        gateProfile();
+        (upstreamServer as any).httpTransport.assertSessionConsent = denyConsent();
+        const recordToolCall = vi.fn();
+        const recordToolCallError = vi.fn();
+        (upstreamServer as any).httpTransport.getMetricsCollector = () => ({ recordToolCall, recordToolCallError });
+
+        await (upstreamServer as any).handleToolCall(
+          toolsCallMessage('gate-metrics'), 'session-123', 'upstream-profile',
+        );
+
+        expect(recordToolCallError).toHaveBeenCalledWith('safe_tool', 'ConsentRequired', expect.anything());
+        expect(recordToolCallError).not.toHaveBeenCalledWith('safe_tool', 'ConsentRequiredError', expect.anything());
+        expect(recordToolCall).toHaveBeenCalledWith('safe_tool', 'rejected', expect.any(Number), expect.anything());
+        expect(recordToolCall).not.toHaveBeenCalledWith('safe_tool', 'error', expect.any(Number), expect.anything());
+      });
+
+      it('records ConsentRequired metrics for a denied tools/list', async () => {
+        gateProfile();
+        (upstreamServer as any).httpTransport.assertSessionConsent = denyConsent();
+        const recordToolCall = vi.fn();
+        const recordToolCallError = vi.fn();
+        (upstreamServer as any).httpTransport.getMetricsCollector = () => ({ recordToolCall, recordToolCallError });
+
+        await (upstreamServer as any).handleOtherRequest(
+          { jsonrpc: '2.0', id: 'gate-list-metrics', method: 'tools/list', params: {} },
+          'session-123',
+          'upstream-profile',
+        );
+
+        expect(recordToolCallError).toHaveBeenCalledWith('tools/list', 'ConsentRequired', expect.anything());
       });
     });
 
@@ -6647,21 +6787,25 @@ describe('MCPServer effective upstream origin logging', () => {
     expect(logger.warn).not.toHaveBeenCalled();
   });
 
-  it('warns when an environment override redirects upstream traffic off the profile origin', () => {
-    // Deliberately allowed (staging, egress proxy), so it must be visible rather
-    // than rejected: the override is not in git and not code-reviewed.
+  // The off-origin override warning is emitted by ProfileLoader.load() at
+  // resolution time (covered in profile-loader.test.ts), not by
+  // logEffectiveUpstreamOrigin: the loader overwrites profile.upstream_mcp with
+  // the resolved config, so only the loader can compare static vs effective.
+
+  it('logs the env-sourced effective endpoint at info when an override is set', () => {
     process.env.SOFTERIA_UPSTREAM_MCP = JSON.stringify({
       name: 'softeria',
-      transport: { type: 'http-streamable', url: 'https://wrong-tenant.example/mcp' },
+      transport: { type: 'http-streamable', url: 'https://staging-proxy.example/mcp' },
     });
     const { server, logger } = buildServer(upstreamProfile('https://softeria.internal.example/mcp'));
 
     (server as any).logEffectiveUpstreamOrigin();
 
-    expect(logger.warn).toHaveBeenCalledWith(
-      'Upstream MCP endpoint overridden to a different origin by the environment',
-      expect.objectContaining({ origin: 'https://wrong-tenant.example', fromEnvOverride: true }),
+    expect(logger.info).toHaveBeenCalledWith(
+      'Effective upstream MCP endpoint',
+      expect.objectContaining({ origin: 'https://staging-proxy.example', fromEnvOverride: true }),
     );
+    expect(logger.warn).not.toHaveBeenCalled();
   });
 
   it('logs nothing for a profile without an upstream', () => {
@@ -6671,5 +6815,178 @@ describe('MCPServer effective upstream origin logging', () => {
 
     expect(logger.info).not.toHaveBeenCalled();
     expect(logger.warn).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Single-profile HTTP mode: consent enforced through a REAL HttpTransport.
+ *
+ * Mirrors the runHttp() wiring (attachHttpTransport + setGetUpstreamClient with
+ * the plain connection factory) against a real HttpTransport whose profile
+ * state carries a real ConsentGate. Enforcement is asserted by spying on the
+ * real `assertSessionConsent` method, not by replacing it.
+ */
+describe('MCPServer single-profile HTTP consent enforcement (real HttpTransport)', () => {
+  const quietLogger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+  const gateConfig = { required: true, rules_version: 'v1', identity_source: 'profile_oauth' as const };
+  const gatedProvider = {
+    name: 'gated-upstream',
+    transport: { type: 'http-streamable', url: 'https://upstream.example.com/mcp' },
+  };
+
+  const buildGatedServer = () => {
+    const transport = new HttpTransport(
+      {
+        host: '127.0.0.1',
+        port: 0,
+        sessionTimeoutMs: 1800000,
+        heartbeatEnabled: false,
+        heartbeatIntervalMs: 30000,
+        metricsEnabled: false,
+        metricsPath: '/metrics',
+      },
+      quietLogger as never,
+    );
+    const store = new InMemoryConsentEvidenceStore();
+    const gate = new ConsentGate(
+      'gated',
+      gateConfig,
+      store,
+      (id) => `https://gateway.example/mcp/${id}/consent`,
+      quietLogger as never,
+      'https://issuer.example',
+    );
+    (transport as any).profileStates.set('gated', {
+      profileId: 'gated',
+      context: { profileId: 'gated', consent_gate: gateConfig, upstreamMcp: gatedProvider },
+      // Explicit null: hasOAuthProvider treats a missing provider as "present".
+      oauthProvider: null,
+      oauthTokensByAccessToken: new Map(),
+      consentGate: gate,
+      consentEvidenceStore: store,
+      sessions: new Map([['session-1', {}]]),
+    });
+
+    const server = new MCPServer(quietLogger as never);
+    (server as any).profile = {
+      profile_name: 'gated',
+      profile_id: 'gated',
+      tools: [],
+      upstream_mcp: gatedProvider,
+      consent_gate: gateConfig,
+    };
+    // Same wiring as runHttp(): attach the transport, then inject the plain
+    // connection factory - setGetUpstreamClient wraps it with the consent guard.
+    server.attachHttpTransport(transport);
+    const getOrConnect = vi.fn(async () => ({
+      listTools: vi.fn().mockResolvedValue({ tools: [] }),
+      callTool: vi.fn().mockResolvedValue({ content: [] }),
+    }));
+    server.setGetUpstreamClient((s, p, t) => getOrConnect(s, p, t));
+    return { server, transport, getOrConnect };
+  };
+
+  it('tools/call without consent yields -32004 through the real assertSessionConsent', async () => {
+    const { server, transport, getOrConnect } = buildGatedServer();
+    const consentSpy = vi.spyOn(transport, 'assertSessionConsent');
+
+    const response = await server.handleHttpMessage(
+      { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'some_tool', arguments: {} } },
+      'session-1',
+      'gated',
+    ) as any;
+
+    expect(consentSpy).toHaveBeenCalledWith('gated', 'session-1');
+    expect(response.error.code).toBe(-32004);
+    expect(response.error.data.consent_url).toBe('https://gateway.example/mcp/gated/consent');
+    expect(getOrConnect).not.toHaveBeenCalled();
+  });
+
+  it('tools/list without consent yields -32004 through the real assertSessionConsent', async () => {
+    const { server, transport, getOrConnect } = buildGatedServer();
+    const consentSpy = vi.spyOn(transport, 'assertSessionConsent');
+
+    const response = await server.handleHttpMessage(
+      { jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} },
+      'session-1',
+      'gated',
+    ) as any;
+
+    expect(consentSpy).toHaveBeenCalledWith('gated', 'session-1');
+    expect(response.error.code).toBe(-32004);
+    expect(getOrConnect).not.toHaveBeenCalled();
+  });
+
+  it('runHttp forwards the profile consent_gate into the transport config', async () => {
+    // runHttp imports HttpTransport dynamically, so capture its constructor
+    // config through a module mock (same pattern as 'runHttp configuration').
+    const capturedConfigs: any[] = [];
+    vi.doMock('../transport/http-transport.js', () => ({
+      HttpTransport: class {
+        constructor(config: any) {
+          capturedConfigs.push(config);
+        }
+        setMessageHandler() {}
+        onSessionDestroyed() {}
+        async start() {}
+        async stop() {}
+        setUpstreamConnectionManager(_manager: any) {}
+        getMetricsCollector() { return null; }
+      },
+    }));
+    try {
+      vi.resetModules();
+      const { MCPServer: FreshMCPServer } = await import('./mcp-server.js');
+      const server = new FreshMCPServer(quietLogger as never);
+      (server as any).parser = {
+        getBaseUrl: () => 'https://api.test',
+        getResourceMetadata: () => ({ name: 'Test', documentation: 'Docs' }),
+      };
+      (server as any).profile = {
+        profile_name: 'gated',
+        profile_id: 'gated',
+        tools: [],
+        upstream_mcp: gatedProvider,
+        consent_gate: gateConfig,
+      };
+
+      await server.runHttp('127.0.0.1', 0);
+      await server.stop();
+
+      expect(capturedConfigs).toHaveLength(1);
+      expect(capturedConfigs[0].consent_gate).toEqual(gateConfig);
+    } finally {
+      vi.doUnmock('../transport/http-transport.js');
+      vi.resetModules();
+    }
+  });
+});
+
+describe('MCPServer runStdio consent gate refusal', () => {
+  const quietLogger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+
+  it('refuses to start on stdio for a consent-gated profile', async () => {
+    const server = new MCPServer(quietLogger as never);
+    (server as any).profile = {
+      profile_name: 'gated',
+      profile_id: 'gated',
+      tools: [],
+      consent_gate: { required: true, rules_version: 'v1', identity_source: 'profile_oauth' },
+    };
+    // Guard must fire before any transport is created or connected.
+    const connectSpy = vi.fn();
+    (server as any).server.connect = connectSpy;
+
+    await expect(server.runStdio()).rejects.toBeInstanceOf(ConsentGateConfigurationError);
+    expect(connectSpy).not.toHaveBeenCalled();
+  });
+
+  it('starts on stdio for a profile without a consent gate', async () => {
+    const server = new MCPServer(quietLogger as never);
+    (server as any).profile = { profile_name: 'plain', profile_id: 'plain', tools: [] };
+    (server as any).server.connect = vi.fn(async () => undefined);
+
+    await expect(server.runStdio()).resolves.toBeUndefined();
+    expect((server as any).server.connect).toHaveBeenCalledTimes(1);
   });
 });

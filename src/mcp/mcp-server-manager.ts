@@ -2,14 +2,11 @@
  * MCP server manager for multi-profile HTTP routing.
  */
 
-import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import type { Logger } from '../core/logger.js';
 import type { FilteringRules } from '../core/filtering.js';
 import { MCPServer } from './mcp-server.js';
 import type { HttpProfileContext } from '../types/http-transport.js';
 import type { HttpTransport } from '../transport/http-transport.js';
-import type { UpstreamMcpServerConfig } from '../types/profile.js';
-import { ConsentGateConfigurationError } from '../core/errors.js';
 import { ProfileRegistry } from '../profile/profile-registry.js';
 import { UpstreamConnectionManager } from '../upstream/upstream-connection-manager.js';
 
@@ -80,36 +77,13 @@ export class MCPServerManager {
     if (this.httpTransport) {
       server.attachHttpTransport(this.httpTransport);
     }
-    server.setGetUpstreamClient(this.buildUpstreamDispatch(profileId, server));
+    // Inject the plain connection factory: consent enforcement lives in the
+    // single chokepoint inside MCPServer.setGetUpstreamClient, which wraps this
+    // factory for both manager mode and single-profile runHttp mode.
+    server.setGetUpstreamClient((sessionId, provider, token) =>
+      this.upstreamManager.getOrConnect(sessionId, provider, token),
+    );
     this.upstreamManager.addToolsListChangedHook((s, p) => server.invalidateUpstreamToolCache(s, p));
     return server;
-  }
-
-  /**
-   * Wrap upstream connection acquisition with the consent chokepoint.
-   *
-   * Every upstream dispatch path - tools/list and tools/call - obtains its
-   * client here, so consent cannot be bypassed by adding a new caller. A
-   * profile that requires consent refuses to dispatch when no enforcer is
-   * reachable (for example a manager constructed without an HTTP transport),
-   * rather than connecting without a verified human grant.
-   */
-  private buildUpstreamDispatch(
-    profileId: string,
-    server: MCPServer,
-  ): (sessionId: string, provider: UpstreamMcpServerConfig, token: string | undefined) => Promise<Client> {
-    return async (sessionId, provider, token) => {
-      if (server.isConsentRequired()) {
-        const enforcer = this.httpTransport?.assertSessionConsent?.bind(this.httpTransport);
-        if (!enforcer) {
-          throw new ConsentGateConfigurationError(
-            'Consent-gated profile cannot dispatch upstream: no consent enforcer is reachable',
-            { profileId },
-          );
-        }
-        await enforcer(profileId, sessionId);
-      }
-      return this.upstreamManager.getOrConnect(sessionId, provider, token);
-    };
   }
 }

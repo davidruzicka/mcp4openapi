@@ -1,5 +1,5 @@
 {
-  "$schema": "../../profile-schema.json",
+  "$schema": "../../../profile-schema.json",
   "profile_name": "consent-gate",
   "profile_id": "consent-gate",
   "description": "Example profile gating an upstream MS365 MCP behind provable human consent bound to profile OAuth.",

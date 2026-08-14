@@ -51,6 +51,10 @@ export type { InMemoryClientsStoreOptions } from './client-store/types.js';
 const ENV_REF_PATTERN = /^\$\{env:([^}]+)\}$/;
 // Upper bound on remembered refresh-token identity bindings.
 const REFRESH_IDENTITY_MAX = 10000;
+// How long a refresh-token identity binding stays valid before re-auth.
+const REFRESH_IDENTITY_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+// Capacity-eviction warnings are aggregated to at most one per interval.
+const REFRESH_EVICTION_WARN_INTERVAL_MS = 60 * 1000;
 
 /**
  * Safely resolves a single `${env:VAR}` reference. Returns the env var value
@@ -164,6 +168,10 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
 
   private endpointsInitialized: boolean = false;
   private initializationPromise: Promise<void> | null = null;
+
+  // Aggregation state for the capacity-eviction warn (see storeRefreshTokenIdentity).
+  private refreshEvictionsSinceLastWarn = 0;
+  private lastRefreshEvictionWarnAt = 0;
 
   constructor(config: OAuthConfig, logger: Logger, identityVerifier?: OidcIdentityVerifier) {
     this.config = config;
@@ -799,9 +807,22 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
       throw new Error('Redirect URI not allowed');
     }
 
+    // Intentional precedence: non-empty configured scopes fully replace
+    // caller-requested scopes so profile-level guarantees (for example the
+    // openid scope required for identity verification) always hold.
     const effectiveScopes = this.config.scopes?.length
       ? this.config.scopes
       : params.scopes;
+    if (
+      this.config.scopes?.length
+      && params.scopes?.length
+      && params.scopes.join(' ') !== this.config.scopes.join(' ')
+    ) {
+      this.logger.debug('Caller-requested OAuth scopes discarded in favor of configured scopes', {
+        requestedScopes: params.scopes,
+        configuredScopes: this.config.scopes,
+      });
+    }
     const stateToken = randomUUID();
     
     const nonce = this.identityVerifier ? randomUUID() : undefined;
@@ -839,10 +860,11 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
     // PKCE is used only between Cursor <-> MCP, not between MCP <-> External Provider
     // If we forwarded code_challenge, we would need code_verifier which only Cursor has
 
+    // Log only origin + pathname: the full URL carries the state token and the
+    // OIDC nonce as query parameters, and neither may ever reach the logs.
     this.logger.info('Redirecting to external OAuth provider', {
-      authUrl: authUrl.toString(),
+      authUrl: authUrl.origin + authUrl.pathname,
       callbackUri,
-      stateToken,
       hasClientSecret: !!this.config.client_secret,
     });
 
@@ -968,6 +990,12 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
 
     } catch (err) {
         this.logger.error('Callback handling failed', err as Error);
+        // Identity/verification failures are client-flow errors, not server
+        // faults: surface them as 401 instead of a misleading 500.
+        if (err instanceof AuthenticationError) {
+            res.status(401).send('Authentication failed');
+            return;
+        }
         res.status(500).send('Internal Server Error during token exchange');
     }
   }
@@ -1078,9 +1106,15 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
   }
 
   private async verifyCallbackIdentity(tokens: OAuthTokens, nonce?: string): Promise<OidcIdentity> {
+    if (!this.identityVerifier) {
+      throw new AuthenticationError('OIDC identity verifier is not configured');
+    }
+    if (!nonce) {
+      throw new AuthenticationError('Authorization state carries no OIDC nonce (state predates identity verification)');
+    }
     const idToken = (tokens as OAuthTokens & { id_token?: string }).id_token;
-    if (!idToken || !nonce || !this.identityVerifier) {
-      throw new Error('OIDC identity token missing from authorization response');
+    if (!idToken) {
+      throw new AuthenticationError('OIDC identity token missing from authorization response');
     }
     return this.identityVerifier.verify(idToken, nonce);
   }
@@ -1236,6 +1270,7 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
     // insertion-order eviction silently drops a live identity binding and forces
     // that user to re-consent, while the evicted entry may have been the
     // longest-lived. Overflow is logged so the cap is observable.
+    let evicted = 0;
     while (this.refreshTokenIdentities.size >= REFRESH_IDENTITY_MAX) {
       let nearestToken: string | undefined;
       let nearestExpiry = Number.POSITIVE_INFINITY;
@@ -1247,13 +1282,24 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
       }
       if (!nearestToken) break;
       this.refreshTokenIdentities.delete(nearestToken);
-      this.logger.warn('Refresh identity map at capacity - evicted the nearest-expiry binding', {
-        capacity: REFRESH_IDENTITY_MAX,
-      });
+      evicted += 1;
+    }
+    if (evicted > 0) {
+      // Aggregate + rate-limit: at capacity every insert evicts, so warning
+      // per insert would flood the logs.
+      this.refreshEvictionsSinceLastWarn += evicted;
+      if (now - this.lastRefreshEvictionWarnAt >= REFRESH_EVICTION_WARN_INTERVAL_MS) {
+        this.logger.warn('Refresh identity map at capacity - evicted nearest-expiry bindings', {
+          capacity: REFRESH_IDENTITY_MAX,
+          evictedSinceLastWarn: this.refreshEvictionsSinceLastWarn,
+        });
+        this.lastRefreshEvictionWarnAt = now;
+        this.refreshEvictionsSinceLastWarn = 0;
+      }
     }
     this.refreshTokenIdentities.set(refreshToken, {
       identity,
-      expiresAt: now + 30 * 24 * 60 * 60 * 1000,
+      expiresAt: now + REFRESH_IDENTITY_TTL_MS,
     });
   }
 
@@ -1407,6 +1453,13 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
     for (const [token, data] of this.accessTokens.entries()) {
       if (data.expiresAt && data.expiresAt < now) {
         this.accessTokens.delete(token);
+      }
+    }
+
+    // 4. Cleanup expired refresh-token identity bindings
+    for (const [token, entry] of this.refreshTokenIdentities.entries()) {
+      if (entry.expiresAt <= now) {
+        this.refreshTokenIdentities.delete(token);
       }
     }
   }

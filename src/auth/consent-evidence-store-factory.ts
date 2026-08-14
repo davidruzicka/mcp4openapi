@@ -1,7 +1,7 @@
 import type { Logger } from '../core/logger.js';
 import type { ConsentEvidenceStore } from './consent-evidence-store.js';
 import { FileConsentEvidenceStore, InMemoryConsentEvidenceStore } from './consent-evidence-store.js';
-import { ConfigurationError } from '../core/errors.js';
+import { ConsentGateConfigurationError } from '../core/errors.js';
 
 export interface ConsentEvidenceStoreConfig {
   /** Absolute path of the durable JSONL evidence file, when configured. */
@@ -30,7 +30,7 @@ export function createConsentEvidenceStore(config: ConsentEvidenceStoreConfig): 
   const path = config.evidencePath?.trim();
   if (!path) {
     if (config.consentRequired) {
-      throw new ConfigurationError(
+      throw new ConsentGateConfigurationError(
         'Required consent gate needs a durable evidence store: set MCP4_CONSENT_EVIDENCE_PATH to an absolute writable path',
       );
     }

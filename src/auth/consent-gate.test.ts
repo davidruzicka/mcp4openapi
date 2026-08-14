@@ -287,6 +287,50 @@ describe.each(storeFactories)('ConsentGate.assertConsent over %s', (_name, creat
   });
 });
 
+describe('ConsentGate max_age_days boundary semantics', () => {
+  const DAY_MS = 24 * 60 * 60 * 1000;
+  const NOW = new Date('2026-08-14T12:00:00Z').getTime();
+
+  const makeGateWithGrant = async (
+    maxAgeDays: number,
+    grantedAt: number,
+  ): Promise<ConsentGate> => {
+    const config = { ...requiredConfig, max_age_days: maxAgeDays };
+    const store = new InMemoryConsentEvidenceStore();
+    await store.record(
+      makeEvidence({ rules_hash: computeRulesHash(config), granted_at: grantedAt }),
+    );
+    return new ConsentGate('ms365', config, store, consentUrlFor, makeLogger(), ISSUER);
+  };
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('treats a grant of exactly max_age_days as still valid (expiry is strictly greater-than)', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
+    const gate = await makeGateWithGrant(30, NOW - 30 * DAY_MS);
+    await expect(gate.assertConsent(makePrincipal('user-1'))).resolves.toBeUndefined();
+  });
+
+  it('expires a grant one millisecond past max_age_days', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
+    const gate = await makeGateWithGrant(30, NOW - 30 * DAY_MS - 1);
+    await expectDenied(gate.assertConsent(makePrincipal('user-1')), 'expired');
+  });
+
+  it('does not treat max_age_days=0 as "never expires"', async () => {
+    // The validator rejects 0, but the gate itself must not invert the intent
+    // if such a config ever reaches it: 0 means immediate expiry, not disabled.
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
+    const gate = await makeGateWithGrant(0, NOW - 1);
+    await expectDenied(gate.assertConsent(makePrincipal('user-1')), 'expired');
+  });
+});
+
 describe('ConsentGate rules hash', () => {
   it('exposes the hash a grant must carry, and it changes with the rules text', () => {
     const store = new InMemoryConsentEvidenceStore();

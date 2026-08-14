@@ -26,6 +26,11 @@ const EVIDENCE_DIR_MODE = 0o700;
 const EVIDENCE_FILE_MODE = 0o600;
 /** Hard ceiling for the evidence file. Beyond it, writes fail closed. */
 export const EVIDENCE_MAX_BYTES = 32 * 1024 * 1024;
+/**
+ * How many bytes at the incremental-read boundary are remembered and verified
+ * before a grown file is trusted as append-only (see `reloadIfChanged`).
+ */
+const TAIL_PROBE_BYTES = 256;
 
 export interface ConsentEvidence {
   /** Authenticated subject identifier (OAuth `sub`) that granted consent. */
@@ -68,14 +73,16 @@ export interface ConsentRevocation {
  */
 export interface ConsentLookupResult {
   /**
-   * Grant matching the requested rules version, or null. Carries the EARLIEST
-   * `granted_at` for that key so the audit trail keeps the original acceptance.
+   * Grant matching the requested rules version, or null. Carries the LATEST
+   * acceptance for that key: policy always evaluates the newest acceptance,
+   * and the durable JSONL file keeps every earlier acceptance as the full
+   * audit history.
    */
   grant: ConsentEvidence | null;
   /**
-   * Timestamp of the most recent acceptance for the same key, which may be newer
-   * than `grant.granted_at` when a subject accepted again (for example after an
-   * operator revocation). Policy checks use this; audit reporting uses `grant`.
+   * Timestamp of the most recent acceptance for the same key. Equals
+   * `grant.granted_at` when a grant exists; kept as an explicit field so
+   * policy code does not need to know how the grant record is selected.
    */
   grantRenewedAt: number | null;
   /** Newest grant for this identity and profile regardless of rules version. */
@@ -85,7 +92,12 @@ export interface ConsentLookupResult {
 }
 
 export interface ConsentEvidenceStore {
-  /** Persist a consent evidence record. Idempotent for the same key. */
+  /**
+   * Persist a consent evidence record. Idempotent for an identical record;
+   * any acceptance that changes policy-relevant state (renewal recency,
+   * latest-version acceptance, superseding a revocation) is persisted again
+   * as a new audit line.
+   */
   record(evidence: ConsentEvidence): Promise<void>;
   /** Persist a revocation for an identity and profile. */
   revoke(revocation: ConsentRevocation): Promise<void>;
@@ -130,41 +142,65 @@ function consentIdentityKey(identity: ConsentIdentityContext, profileId: string)
 /**
  * Accumulates grants and revocations into the values a lookup returns.
  *
- * Shared by both store implementations so precedence cannot drift between
- * in-memory and durable storage: the earliest grant per key is the audit record,
- * the most recent acceptance for that key drives policy (so a subject can accept
- * again after a revocation), and the newest grant per identity defines the active
- * rules version.
+ * Shared by both store implementations AND by the file rebuild path, so live
+ * writes and a rebuild from disk fold records identically: the latest
+ * acceptance per key drives policy, the newest grant per identity defines the
+ * active rules version, and the newest revocation per identity applies. The
+ * durable JSONL file, not this index, is the full audit history.
  */
 class ConsentIndex {
   private readonly grants = new Map<string, ConsentEvidence>();
-  private readonly renewals = new Map<string, number>();
   private readonly latestGrants = new Map<string, ConsentEvidence>();
   private readonly revocations = new Map<string, number>();
 
   clear(): void {
     this.grants.clear();
-    this.renewals.clear();
     this.latestGrants.clear();
     this.revocations.clear();
   }
 
-  addGrant(evidence: ConsentEvidence): void {
+  /**
+   * Fold a grant into the index. Returns true when durable policy-relevant
+   * state changed (renewal recency, latest-version acceptance, or the rules
+   * hash at an equal timestamp), meaning the record must be persisted. An
+   * exact replay or an out-of-order older acceptance returns false. A grant
+   * that supersedes a revocation always carries a newer `granted_at` than the
+   * previous renewal, so it changes renewal recency and is persisted.
+   */
+  apply(evidence: ConsentEvidence): boolean {
     const key = consentEvidenceKey(evidence, evidence.profileId, evidence.rules_version);
+    let changed = false;
+
     const known = this.grants.get(key);
-    // Keep the first grant to preserve the original granted_at for audit.
-    if (!known || evidence.granted_at < known.granted_at) {
+    // Latest acceptance per key wins and never moves backwards: otherwise a
+    // revocation between two timestamps would silently stop applying. On an
+    // equal timestamp a differing rules hash wins, so a re-acceptance of
+    // changed rules content under the same version is never lost.
+    if (
+      !known ||
+      evidence.granted_at > known.granted_at ||
+      (evidence.granted_at === known.granted_at && evidence.rules_hash !== known.rules_hash)
+    ) {
       this.grants.set(key, { ...evidence });
+      changed = true;
     }
-    const renewedAt = this.renewals.get(key);
-    if (renewedAt === undefined || evidence.granted_at > renewedAt) {
-      this.renewals.set(key, evidence.granted_at);
-    }
+
     const identityKey = consentIdentityKey(evidence, evidence.profileId);
     const latest = this.latestGrants.get(identityKey);
-    if (!latest || evidence.granted_at >= latest.granted_at) {
+    // Deterministic tie-break: on an equal granted_at the later applied record
+    // wins, in both the live path and a rebuild (file order), and only when it
+    // actually differs, so an exact replay stays a no-op.
+    if (
+      !latest ||
+      evidence.granted_at > latest.granted_at ||
+      (evidence.granted_at === latest.granted_at &&
+        (evidence.rules_version !== latest.rules_version ||
+          evidence.rules_hash !== latest.rules_hash))
+    ) {
       this.latestGrants.set(identityKey, { ...evidence });
+      changed = true;
     }
+    return changed;
   }
 
   addRevocation(revocation: ConsentRevocation): void {
@@ -175,32 +211,6 @@ class ConsentIndex {
     }
   }
 
-  /**
-   * True when recording this grant would add nothing durable.
-   *
-   * `record` is first-writer-wins for the audit record: a repeat acceptance only
-   * moves the renewal timestamp forward and is not persisted again. Rebuilding
-   * the index from stored lines is different and keeps the earliest line, since
-   * a file can hold lines in any order.
-   */
-  isRedundantGrant(evidence: ConsentEvidence): boolean {
-    const key = consentEvidenceKey(evidence, evidence.profileId, evidence.rules_version);
-    const renewedAt = this.renewals.get(key);
-    if (renewedAt === undefined) return false;
-    const identityKey = consentIdentityKey(evidence, evidence.profileId);
-    const revokedAt = this.revocations.get(identityKey);
-    // A grant that supersedes the newest revocation must still be written, so a
-    // subject who accepts again after an operator revoke is not blocked forever.
-    if (revokedAt !== undefined && evidence.granted_at > revokedAt && renewedAt <= revokedAt) {
-      return false;
-    }
-    // Still track recency so policy sees the newest acceptance.
-    if (evidence.granted_at > renewedAt) {
-      this.renewals.set(key, evidence.granted_at);
-    }
-    return true;
-  }
-
   lookup(
     identity: ConsentIdentityContext,
     profileId: string,
@@ -208,9 +218,10 @@ class ConsentIndex {
   ): ConsentLookupResult {
     const identityKey = consentIdentityKey(identity, profileId);
     const key = consentEvidenceKey(identity, profileId, rulesVersion);
+    const grant = this.grants.get(key) ?? null;
     return {
-      grant: this.grants.get(key) ?? null,
-      grantRenewedAt: this.renewals.get(key) ?? null,
+      grant,
+      grantRenewedAt: grant ? grant.granted_at : null,
       latestGrant: this.latestGrants.get(identityKey) ?? null,
       revokedAt: this.revocations.get(identityKey) ?? null,
     };
@@ -220,17 +231,17 @@ class ConsentIndex {
 /**
  * In-memory consent evidence store.
  *
- * Suitable for local development and tests only: state is lost on restart and
- * is not shared across replicas.
+ * Pilot/dev/test use only: state is lost on restart, is not shared across
+ * replicas, and the index is unbounded (nothing is ever evicted). Production
+ * wiring always uses the file-backed store via the factory.
  */
 export class InMemoryConsentEvidenceStore implements ConsentEvidenceStore {
   private readonly index = new ConsentIndex();
 
   async record(evidence: ConsentEvidence): Promise<void> {
-    // Same first-writer-wins rule as the durable store, so the two never disagree
-    // about which acceptance is the audit record.
-    if (this.index.isRedundantGrant(evidence)) return;
-    this.index.addGrant(evidence);
+    // Same fold rule as the durable store, so the two never disagree about
+    // which acceptance drives policy; there is no durable line to persist.
+    this.index.apply(evidence);
   }
 
   async revoke(revocation: ConsentRevocation): Promise<void> {
@@ -254,17 +265,20 @@ export class InMemoryConsentEvidenceStore implements ConsentEvidenceStore {
  * are ignored and cannot satisfy a lookup, so a format change forces
  * re-consent rather than silently accepting an unpinned grant.
  *
- * Reads are incremental: the index tracks the last read (size, mtime) and, when
- * the file has only grown, parses just the new tail. The watermark is never
- * advanced from a stat that did not accompany a read, so an append by another
- * writer landing between our append and our stat is picked up on the next
- * lookup instead of being skipped forever. Cross-writer deduplication is still
- * best-effort: two writers can append the same grant concurrently, and the
- * index keeps the earliest. Use this for single-node/staging; multi-writer
- * production needs the transactional backend tracked in TODO.md.
+ * Reads are incremental: the index tracks the last read (size, mtime, dev,
+ * ino) and, when the same file object has only grown AND the bytes at the
+ * previous boundary are unchanged, parses just the new tail; anything else
+ * (replacement, shrink, in-place rewrite) forces a full reload. The watermark
+ * is never advanced from a stat that did not accompany a read, so an append by
+ * another writer landing between our append and our stat is picked up on the
+ * next lookup instead of being skipped forever. Cross-writer deduplication is
+ * still best-effort: two writers can append the same grant concurrently. Use
+ * this for single-node/staging; multi-writer production needs the
+ * transactional backend tracked in TODO.md.
  *
- * The directory is created 0700 and the file 0600; an existing file with wider
- * permissions is tightened before use.
+ * A directory the store creates itself is created 0700; a pre-existing
+ * directory's mode is left to the operator. The evidence file is created 0600
+ * and an existing file with wider permissions is tightened before use.
  *
  * Failure policy: any read/write failure throws `ConsentEvidenceStoreError` so
  * the consent gate fails closed (blocks) rather than silently allowing access.
@@ -274,6 +288,10 @@ export class FileConsentEvidenceStore implements ConsentEvidenceStore {
   private writeQueue: Promise<void> = Promise.resolve();
   private lastLoadedMtimeMs = -1;
   private lastLoadedSize = 0;
+  private lastLoadedDev = -1;
+  private lastLoadedIno = -1;
+  /** Last consumed bytes ending at `lastLoadedSize`, for the append-only proof. */
+  private lastLoadedTail: Buffer | null = null;
   private loadedOnce = false;
   private permissionsChecked = false;
 
@@ -313,13 +331,21 @@ export class FileConsentEvidenceStore implements ConsentEvidenceStore {
 
   private async persistGrant(evidence: ConsentEvidence): Promise<void> {
     await this.reloadIfChanged();
-    // Idempotent: preserve the first grant (original granted_at) for audit, but
-    // never suppress an acceptance that supersedes a revocation.
-    if (this.index.isRedundantGrant(evidence)) {
+    // Fold first: only a grant that changes durable policy state (renewal
+    // recency, latest-version acceptance, superseding a revocation) is
+    // appended; an exact replay is a no-op.
+    if (!this.index.apply(evidence)) {
       return;
     }
-    await this.appendLine({ type: 'grant', ...evidence });
-    this.index.addGrant(evidence);
+    try {
+      await this.appendLine({ type: 'grant', ...evidence });
+    } catch (err) {
+      // The in-memory index is now ahead of the durable file. Drop it so the
+      // next operation rebuilds from disk and a non-durable grant is never
+      // served (fail closed).
+      this.resetWatermark();
+      throw err;
+    }
   }
 
   private async persistRevocation(revocation: ConsentRevocation): Promise<void> {
@@ -331,9 +357,19 @@ export class FileConsentEvidenceStore implements ConsentEvidenceStore {
   private async appendLine(record: StoredRecord): Promise<void> {
     const line = `${JSON.stringify(record)}\n`;
     try {
-      await mkdir(dirname(this.filePath), { recursive: true, mode: EVIDENCE_DIR_MODE });
+      const createdDir = await mkdir(dirname(this.filePath), {
+        recursive: true,
+        mode: EVIDENCE_DIR_MODE,
+      });
+      // Tighten only a directory this store created itself: the `mode` option
+      // is masked by the umask, and a pre-existing directory's mode is owned
+      // by the operator, not by this store.
+      if (createdDir !== undefined) {
+        await chmod(dirname(this.filePath), EVIDENCE_DIR_MODE);
+      }
       await this.enforceFilePermissions();
-      await this.assertSizeAllows(line.length);
+      // Size accounting is in bytes, not UTF-16 code units.
+      await this.assertSizeAllows(Buffer.byteLength(line, 'utf8'));
       // O_APPEND makes each small write atomic on POSIX, so concurrent single-node
       // writers do not interleave partial lines (cross-writer dedup is best-effort).
       await appendFile(this.filePath, line, { encoding: 'utf8', mode: EVIDENCE_FILE_MODE });
@@ -371,14 +407,14 @@ export class FileConsentEvidenceStore implements ConsentEvidenceStore {
   }
 
   /**
-   * `mkdir`/`appendFile` modes apply on creation only, so an evidence file that
-   * predates this policy (or a permissive umask) keeps its old mode until it is
-   * tightened explicitly.
+   * `appendFile` mode applies on creation only, so an evidence file that
+   * predates this policy (or a permissive umask) keeps its old mode until it
+   * is tightened explicitly. Scoped to the evidence file: a pre-existing
+   * directory's mode is deliberately left untouched (see `appendLine`).
    */
   private async enforceFilePermissions(): Promise<void> {
     if (this.permissionsChecked) return;
     try {
-      await chmod(dirname(this.filePath), EVIDENCE_DIR_MODE);
       const stats = await stat(this.filePath);
       if ((stats.mode & 0o777) !== EVIDENCE_FILE_MODE) {
         await chmod(this.filePath, EVIDENCE_FILE_MODE);
@@ -389,24 +425,41 @@ export class FileConsentEvidenceStore implements ConsentEvidenceStore {
     this.permissionsChecked = true;
   }
 
+  /** Forget everything read so far; the next operation rebuilds from disk. */
+  private resetWatermark(): void {
+    this.index.clear();
+    this.lastLoadedMtimeMs = -1;
+    this.lastLoadedSize = 0;
+    this.lastLoadedDev = -1;
+    this.lastLoadedIno = -1;
+    this.lastLoadedTail = null;
+    this.loadedOnce = false;
+  }
+
   /**
-   * Re-read the file when it changed on disk. Growth is parsed incrementally
-   * from the previous offset; a shrink, a replacement, or an mtime change
-   * without growth forces a full reload.
+   * Re-read the file when it changed on disk. Growth of the SAME file object
+   * (matching dev/ino) is parsed incrementally from the previous offset, but
+   * only after proving the bytes at the previous boundary are unchanged:
+   * growth alone does not imply append-only, since an in-place rewrite (for
+   * example an operator hand-edit) can produce a larger file with different
+   * earlier bytes on the same inode. Anything else (shrink, replacement,
+   * dev/ino change, failed boundary proof) forces a full reload.
    */
   private async reloadIfChanged(): Promise<void> {
     let size: number;
     let mtimeMs: number;
+    let dev: number;
+    let ino: number;
     try {
       const stats = await stat(this.filePath);
       size = stats.size;
       mtimeMs = stats.mtimeMs;
+      dev = stats.dev;
+      ino = stats.ino;
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
         // No file yet: an empty index is the correct, durable state.
-        this.index.clear();
-        this.lastLoadedMtimeMs = -1;
-        this.lastLoadedSize = 0;
+        this.resetWatermark();
         this.loadedOnce = true;
         return;
       }
@@ -416,14 +469,56 @@ export class FileConsentEvidenceStore implements ConsentEvidenceStore {
       );
     }
 
-    if (this.loadedOnce && size === this.lastLoadedSize && mtimeMs === this.lastLoadedMtimeMs) {
+    const sameFile = dev === this.lastLoadedDev && ino === this.lastLoadedIno;
+    if (
+      this.loadedOnce &&
+      sameFile &&
+      size === this.lastLoadedSize &&
+      mtimeMs === this.lastLoadedMtimeMs
+    ) {
       return;
     }
-    if (this.loadedOnce && size > this.lastLoadedSize) {
+    if (
+      this.loadedOnce &&
+      sameFile &&
+      size > this.lastLoadedSize &&
+      (await this.consumedBoundaryUnchanged())
+    ) {
       await this.loadTail(size, mtimeMs);
-      return;
+    } else {
+      await this.loadAll(size, mtimeMs);
     }
-    await this.loadAll(size, mtimeMs);
+    this.lastLoadedDev = dev;
+    this.lastLoadedIno = ino;
+  }
+
+  /**
+   * Append-only proof for the incremental read: re-read the last consumed
+   * bytes at the watermark boundary and require them to match what was
+   * consumed before. A mismatch (or any read problem) falls back to a full
+   * reload, which surfaces real errors with full context.
+   */
+  private async consumedBoundaryUnchanged(): Promise<boolean> {
+    if (this.lastLoadedSize === 0) return true;
+    const expected = this.lastLoadedTail;
+    if (!expected || expected.length === 0) return false;
+    try {
+      const handle = await open(this.filePath, fsConstants.O_RDONLY);
+      try {
+        const buffer = Buffer.alloc(expected.length);
+        const { bytesRead } = await handle.read(
+          buffer,
+          0,
+          buffer.length,
+          this.lastLoadedSize - expected.length,
+        );
+        return bytesRead === expected.length && buffer.equals(expected);
+      } finally {
+        await handle.close();
+      }
+    } catch {
+      return false;
+    }
   }
 
   private async loadAll(size: number, mtimeMs: number): Promise<void> {
@@ -444,19 +539,22 @@ export class FileConsentEvidenceStore implements ConsentEvidenceStore {
    */
   private async consumeFrom(from: number, size: number, mtimeMs: number): Promise<void> {
     if (size === from) {
+      if (from === 0) this.lastLoadedTail = Buffer.alloc(0);
       this.lastLoadedSize = size;
       this.lastLoadedMtimeMs = mtimeMs;
       this.loadedOnce = true;
       return;
     }
 
+    let raw: Buffer;
     let content: string;
     try {
       const handle = await open(this.filePath, fsConstants.O_RDONLY);
       try {
         const buffer = Buffer.alloc(size - from);
         const { bytesRead } = await handle.read(buffer, 0, buffer.length, from);
-        content = buffer.subarray(0, bytesRead).toString('utf8');
+        raw = buffer.subarray(0, bytesRead);
+        content = raw.toString('utf8');
       } finally {
         await handle.close();
       }
@@ -479,7 +577,7 @@ export class FileConsentEvidenceStore implements ConsentEvidenceStore {
         continue;
       }
       if (parsed.type === 'grant') {
-        this.index.addGrant(parsed);
+        this.index.apply(parsed);
       } else {
         this.index.addRevocation(parsed);
       }
@@ -491,11 +589,22 @@ export class FileConsentEvidenceStore implements ConsentEvidenceStore {
       });
     }
 
-    this.lastLoadedSize = from + Buffer.byteLength(complete, 'utf8');
+    const consumedBytes = Buffer.byteLength(complete, 'utf8');
+    this.updateConsumedTail(from === 0, raw.subarray(0, consumedBytes));
+    this.lastLoadedSize = from + consumedBytes;
     // Only claim the observed mtime when the whole observed file was consumed;
     // otherwise the next lookup must stat and read again.
     this.lastLoadedMtimeMs = this.lastLoadedSize === size ? mtimeMs : -1;
     this.loadedOnce = true;
+  }
+
+  /** Remember the last consumed bytes ending at the watermark boundary. */
+  private updateConsumedTail(fromStart: boolean, consumed: Buffer): void {
+    const previous = fromStart ? Buffer.alloc(0) : this.lastLoadedTail ?? Buffer.alloc(0);
+    const joined = Buffer.concat([previous, consumed]);
+    this.lastLoadedTail = Buffer.from(
+      joined.subarray(Math.max(0, joined.length - TAIL_PROBE_BYTES)),
+    );
   }
 
   private parseLine(line: string): StoredRecord | null {

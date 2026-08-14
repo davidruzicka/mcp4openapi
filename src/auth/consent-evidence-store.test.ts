@@ -163,34 +163,67 @@ describe('FileConsentEvidenceStore', () => {
     ).resolves.toMatchObject({ grant: { sub: 'user-2' } });
   });
 
-  it('keeps the earliest stored line as the audit record when the file holds them out of order', async () => {
-    // Rebuilding from disk is not first-writer-wins: a shared file can hold lines
-    // in any order (peer appends, imports), so the earliest acceptance must win as
-    // the audit record while policy still sees the newest one.
-    fs.writeFileSync(filePath, `${grantLine({ granted_at: 5000 })}${grantLine({ granted_at: 1000 })}`, 'utf8');
-
+  it('persists a renewal so re-consent after expiry survives a restart', async () => {
+    // B2: a subject whose grant aged out re-consents. The renewal must reach
+    // the durable file, otherwise a restart rebuilds the pre-renewal state and
+    // the subject stays expired forever.
     const store = new FileConsentEvidenceStore(filePath, logger);
-    await expect(store.lookup(defaultIdentity, 'ms365', 'v1')).resolves.toMatchObject({
-      grant: { granted_at: 1000 },
+    await store.record(makeEvidence({ granted_at: 1000 }));
+    await store.record(makeEvidence({ granted_at: 5000 }));
+
+    const reopened = new FileConsentEvidenceStore(filePath, logger);
+    await expect(reopened.lookup(defaultIdentity, 'ms365', 'v1')).resolves.toMatchObject({
+      grant: { granted_at: 5000 },
       grantRenewedAt: 5000,
     });
   });
 
-  it('is idempotent and preserves the original granted_at on replay', async () => {
+  it('persists a re-acceptance of a rolled-back rules version so the gate passes after restart', async () => {
+    // B2: profile rolled back from v2 to v1 and the subject re-accepted v1.
+    // The re-acceptance must advance latestGrants durably, otherwise the gate
+    // reports rules_rollback in a permanent loop after every restart.
+    const store = new FileConsentEvidenceStore(filePath, logger);
+    await store.record(makeEvidence({ rules_version: 'v1', granted_at: 1000 }));
+    await store.record(
+      makeEvidence({ rules_version: 'v2', rules_hash: 'hash-v2', granted_at: 2000 }),
+    );
+    await store.record(makeEvidence({ rules_version: 'v1', granted_at: 3000 }));
+
+    const reopened = new FileConsentEvidenceStore(filePath, logger);
+    const state = await reopened.lookup(defaultIdentity, 'ms365', 'v1');
+    expect(state.grant?.granted_at).toBe(3000);
+    expect(state.latestGrant?.rules_version).toBe('v1');
+  });
+
+  it('rebuilds the latest acceptance when the file holds lines out of order', async () => {
+    // A shared file can hold lines in any order (peer appends, imports): the
+    // latest acceptance drives policy regardless of line order, and the file
+    // itself remains the full audit history.
+    fs.writeFileSync(filePath, `${grantLine({ granted_at: 5000 })}${grantLine({ granted_at: 1000 })}`, 'utf8');
+
+    const store = new FileConsentEvidenceStore(filePath, logger);
+    await expect(store.lookup(defaultIdentity, 'ms365', 'v1')).resolves.toMatchObject({
+      grant: { granted_at: 5000 },
+      grantRenewedAt: 5000,
+    });
+  });
+
+  it('is idempotent for an exact replay and appends a renewal as a new audit line', async () => {
     const store = new FileConsentEvidenceStore(filePath, logger);
     await store.record(makeEvidence({ granted_at: 1000 }));
+    await store.record(makeEvidence({ granted_at: 1000 }));
+    expect(fs.readFileSync(filePath, 'utf8').trim().split('\n').filter(Boolean)).toHaveLength(1);
+
     await store.record(makeEvidence({ granted_at: 5000 }));
     const lines = fs.readFileSync(filePath, 'utf8').trim().split('\n').filter(Boolean);
-    expect(lines).toHaveLength(1);
-    expect(JSON.parse(lines[0]).granted_at).toBe(1000);
+    expect(lines).toHaveLength(2);
+    expect(lines.map((line) => JSON.parse(line).granted_at)).toEqual([1000, 5000]);
   });
 
   it('serializes concurrent records and keeps duplicate evidence idempotent', async () => {
     const store = new FileConsentEvidenceStore(filePath, logger);
     await Promise.all(
-      Array.from({ length: 10 }, (_, index) =>
-        store.record(makeEvidence({ granted_at: 1000 + index })),
-      ),
+      Array.from({ length: 10 }, () => store.record(makeEvidence({ granted_at: 1000 }))),
     );
 
     const lines = fs.readFileSync(filePath, 'utf8').trim().split('\n').filter(Boolean);
@@ -198,6 +231,50 @@ describe('FileConsentEvidenceStore', () => {
     await expect(store.lookup(defaultIdentity, 'ms365', 'v1')).resolves.toMatchObject({
       grant: { granted_at: 1000 },
     });
+  });
+
+  it('breaks a latest-grant timestamp tie the same way after a rebuild from file', async () => {
+    const store = new FileConsentEvidenceStore(filePath, logger);
+    await store.record(makeEvidence({ granted_at: 1000, rules_version: 'v1' }));
+    await store.record(
+      makeEvidence({ granted_at: 1000, rules_version: 'v2', rules_hash: 'hash-v2' }),
+    );
+    await expect(store.lookup(defaultIdentity, 'ms365', 'v1')).resolves.toMatchObject({
+      latestGrant: { rules_version: 'v2' },
+    });
+
+    // Rebuild applies the file lines in order, so the later line wins the tie
+    // exactly as the later record call did in the live path.
+    const reopened = new FileConsentEvidenceStore(filePath, logger);
+    await expect(reopened.lookup(defaultIdentity, 'ms365', 'v1')).resolves.toMatchObject({
+      latestGrant: { rules_version: 'v2' },
+    });
+  });
+
+  it('reloads fully when the file is rewritten in place with different earlier bytes and a larger size', async () => {
+    // Simulates an operator hand-edit: same inode, larger file, but the bytes
+    // before the old watermark changed, so a tail read would be garbage.
+    const store = new FileConsentEvidenceStore(filePath, logger);
+    await store.record(makeEvidence({ sub: 'user-1' }));
+    await expect(store.lookup(defaultIdentity, 'ms365', 'v1')).resolves.toMatchObject({
+      grant: { sub: 'user-1' },
+    });
+
+    fs.writeFileSync(
+      filePath,
+      `${grantLine({ sub: 'user-2', granted_at: 1500 })}${grantLine({ sub: 'user-3', granted_at: 1600 })}`,
+      'utf8',
+    );
+
+    await expect(store.lookup(defaultIdentity, 'ms365', 'v1')).resolves.toMatchObject({
+      grant: null,
+    });
+    await expect(
+      store.lookup({ ...defaultIdentity, sub: 'user-2' }, 'ms365', 'v1'),
+    ).resolves.toMatchObject({ grant: { sub: 'user-2' } });
+    await expect(
+      store.lookup({ ...defaultIdentity, sub: 'user-3' }, 'ms365', 'v1'),
+    ).resolves.toMatchObject({ grant: { sub: 'user-3' } });
   });
 
   it('serializes interleaved grants and revocations into distinct lines', async () => {
@@ -291,6 +368,29 @@ describe('FileConsentEvidenceStore', () => {
       name: 'ConsentEvidenceStoreError',
       code: 'CONSENT_EVIDENCE_STORE_ERROR',
     });
+  });
+
+  it('accounts the size limit in bytes, not UTF-16 code units', async () => {
+    // Multi-byte content: each 'ž' is one code unit but two UTF-8 bytes, so a
+    // code-unit count would let this line slip past the byte cap.
+    const evidence = makeEvidence({ sub: `uzivatel-${'ž'.repeat(40)}` });
+    const line = `${JSON.stringify({ type: 'grant', ...evidence })}\n`;
+    const codeUnits = line.length;
+    const bytes = Buffer.byteLength(line, 'utf8');
+    expect(bytes).toBeGreaterThan(codeUnits);
+
+    // Cap between the code-unit count and the byte count: must fail closed.
+    const tight = new FileConsentEvidenceStore(filePath, logger, codeUnits);
+    await expect(tight.record(evidence)).rejects.toMatchObject({
+      name: 'ConsentEvidenceStoreError',
+      code: 'CONSENT_EVIDENCE_STORE_ERROR',
+    });
+    expect(fs.existsSync(filePath)).toBe(false);
+
+    // Cap at the exact byte count: must succeed.
+    const exact = new FileConsentEvidenceStore(filePath, logger, bytes);
+    await expect(exact.record(evidence)).resolves.toBeUndefined();
+    expect(fs.statSync(filePath).size).toBe(bytes);
   });
 
   it('refuses to append once the file reached its size limit', async () => {

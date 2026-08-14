@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { createCipheriv as nodeCipheriv, createHash, randomBytes, scryptSync } from 'node:crypto';
-import { ValidationError } from '../core/errors.js';
+import { AuthenticationError, ValidationError } from '../core/errors.js';
 import {
+  assertRefreshEnvelopeClientBinding,
   decryptRefreshEnvelope,
   decryptTokenPayload,
   deriveLegacySha256TokenKey,
@@ -503,6 +504,44 @@ describe('refresh envelope decoder guards', () => {
     // AAD binds the envelope to a profile; a mismatching pid is rejected too.
     const envelope = craftRefresh({ ...REFRESH_PAYLOAD, pid: 'other-profile' });
     expect(decryptRefreshEnvelope(envelope, KEY, PROFILE_ID)).toBeNull();
+  });
+
+  it('returns null for a tenant id without a subject (parity with the access-token path)', () => {
+    // The access-token decoder rejects tid-without-sub; the refresh decoder
+    // must apply the same identity-coherence rule.
+    const payload = {
+      v: 1,
+      rt: 'idp-refresh',
+      cid: 'client-1',
+      tid: 'tenant-1',
+      pid: PROFILE_ID,
+      iat: Date.now(),
+    };
+    expect(decryptRefreshEnvelope(craftRefresh(payload), KEY, PROFILE_ID)).toBeNull();
+  });
+});
+
+describe('assertRefreshEnvelopeClientBinding', () => {
+  const payload = {
+    v: 1 as const,
+    rt: 'idp-refresh-token',
+    cid: 'client-a',
+    pid: PROFILE_ID,
+    iat: Date.now(),
+  };
+
+  it('passes when the presenting client matches the envelope cid', () => {
+    expect(() => assertRefreshEnvelopeClientBinding(payload, 'client-a')).not.toThrow();
+  });
+
+  it('throws AuthenticationError when another client presents the envelope', () => {
+    expect(() => assertRefreshEnvelopeClientBinding(payload, 'client-b'))
+      .toThrow(AuthenticationError);
+  });
+
+  it('throws AuthenticationError when the presenting client id is empty', () => {
+    expect(() => assertRefreshEnvelopeClientBinding(payload, ''))
+      .toThrow(AuthenticationError);
   });
 });
 

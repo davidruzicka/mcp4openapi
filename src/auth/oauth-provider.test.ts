@@ -29,6 +29,7 @@ vi.mock('../security/ssrf-validator.js', () => {
 
 import { ExternalOAuthProvider, InMemoryClientsStore, isOAuthConfigOperational } from './oauth-provider.js';
 import type { OAuthOperationalCheck } from './oauth-provider.js';
+import { AuthenticationError } from '../core/errors.js';
 import type { OAuthConfig } from '../types/profile.js';
 import type { Logger } from '../core/logger.js';
 import type { Response } from 'express';
@@ -2566,6 +2567,303 @@ describe('ExternalOAuthProvider', () => {
           process.env.MCP4_OAUTH_CLIENT_STORE_MAX_CLIENTS = previousMaxClients;
         }
       }
+    });
+  });
+
+  describe('exchangeRefreshToken issuer comparison uses the normalized issuer', () => {
+    const refreshClient: OAuthClientInformationFull = {
+      client_id: 'test-client',
+      redirect_uris: ['http://localhost:3003/callback'],
+      grant_types: ['refresh_token'],
+      response_types: ['code'],
+    };
+
+    beforeEach(() => {
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          access_token: 'issuer-check-access',
+          token_type: 'Bearer',
+          expires_in: 3600,
+        }),
+      });
+    });
+
+    it('accepts a rehydrated identity when the configured issuer has a trailing slash', async () => {
+      provider = new ExternalOAuthProvider({
+        ...config,
+        issuer: 'https://issuer.example.test/tenant/v2.0/',
+      }, mockLogger);
+      const identity = {
+        subject: 'user-1',
+        issuer: 'https://issuer.example.test/tenant/v2.0',
+        tenantId: 'tenant-1',
+      };
+
+      const tokens = await provider.exchangeRefreshToken(
+        refreshClient,
+        'refresh-token',
+        undefined,
+        undefined,
+        identity,
+      );
+
+      expect(tokens.access_token).toBe('issuer-check-access');
+      expect(provider.getIdentityForAccessToken('issuer-check-access')).toEqual(identity);
+    });
+
+    it('accepts a rehydrated identity whose issuer carries a trailing slash', async () => {
+      provider = new ExternalOAuthProvider({
+        ...config,
+        issuer: 'https://issuer.example.test/tenant/v2.0',
+      }, mockLogger);
+
+      const tokens = await provider.exchangeRefreshToken(
+        refreshClient,
+        'refresh-token',
+        undefined,
+        undefined,
+        { subject: 'user-1', issuer: 'https://issuer.example.test/tenant/v2.0/' },
+      );
+
+      expect(tokens.access_token).toBe('issuer-check-access');
+      expect(provider.getIdentityForAccessToken('issuer-check-access')).toEqual({
+        subject: 'user-1',
+        issuer: 'https://issuer.example.test/tenant/v2.0',
+      });
+    });
+
+    it('rejects a rehydrated identity whose issuer does not match the configured issuer', async () => {
+      provider = new ExternalOAuthProvider({
+        ...config,
+        issuer: 'https://issuer.example.test/tenant/v2.0',
+      }, mockLogger);
+
+      await expect(provider.exchangeRefreshToken(
+        refreshClient,
+        'refresh-token',
+        undefined,
+        undefined,
+        { subject: 'user-1', issuer: 'https://evil.example.test/tenant/v2.0' },
+      )).rejects.toThrow(AuthenticationError);
+    });
+  });
+
+  describe('authorize logging never leaks state or nonce', () => {
+    it('logs only origin and pathname of the provider URL and no state token', async () => {
+      const identityVerifier = { verify: vi.fn() };
+      provider = new ExternalOAuthProvider(config, mockLogger, identityVerifier as never);
+      const client: OAuthClientInformationFull = {
+        client_id: 'mcp-client',
+        redirect_uris: ['http://localhost:3003/oauth/callback'],
+        grant_types: ['authorization_code'],
+        response_types: ['code'],
+      };
+      const mockRes = { redirect: vi.fn() };
+
+      await provider.authorize(client, {
+        redirectUri: 'http://localhost:3003/oauth/callback',
+        codeChallenge: 'test-challenge',
+        scopes: ['api'],
+      }, mockRes as any);
+
+      const redirectUrl = new URL((mockRes.redirect as any).mock.calls[0][0]);
+      const stateToken = redirectUrl.searchParams.get('state')!;
+      const nonce = redirectUrl.searchParams.get('nonce')!;
+      expect(stateToken).toBeTruthy();
+      expect(nonce).toBeTruthy();
+
+      const serializedLogs = JSON.stringify([
+        (mockLogger.info as any).mock.calls,
+        (mockLogger.debug as any).mock.calls,
+        (mockLogger.warn as any).mock.calls,
+        (mockLogger.error as any).mock.calls,
+      ]);
+      expect(serializedLogs).not.toContain(stateToken);
+      expect(serializedLogs).not.toContain(nonce);
+      expect(mockLogger.info).toHaveBeenCalledWith(
+        'Redirecting to external OAuth provider',
+        expect.objectContaining({
+          authUrl: 'https://oauth.example.com/authorize',
+        }),
+      );
+    });
+  });
+
+  describe('scope precedence logging', () => {
+    it('emits a debug log when caller-requested scopes are discarded', async () => {
+      provider = new ExternalOAuthProvider(config, mockLogger);
+      const client: OAuthClientInformationFull = {
+        client_id: 'mcp-client',
+        redirect_uris: ['http://localhost:3003/oauth/callback'],
+        grant_types: ['authorization_code'],
+        response_types: ['code'],
+      };
+
+      await provider.authorize(client, {
+        redirectUri: 'http://localhost:3003/oauth/callback',
+        codeChallenge: 'test-challenge',
+        scopes: ['admin', 'write_repository'],
+      }, { redirect: vi.fn() } as any);
+
+      expect(mockLogger.debug).toHaveBeenCalledWith(
+        'Caller-requested OAuth scopes discarded in favor of configured scopes',
+        expect.objectContaining({
+          requestedScopes: ['admin', 'write_repository'],
+          configuredScopes: ['api', 'read_user'],
+        }),
+      );
+    });
+
+    it('does not emit the discard debug log when caller scopes are retained', async () => {
+      provider = new ExternalOAuthProvider({ ...config, scopes: [] }, mockLogger);
+      const client: OAuthClientInformationFull = {
+        client_id: 'mcp-client',
+        redirect_uris: ['http://localhost:3003/oauth/callback'],
+        grant_types: ['authorization_code'],
+        response_types: ['code'],
+      };
+
+      await provider.authorize(client, {
+        redirectUri: 'http://localhost:3003/oauth/callback',
+        codeChallenge: 'test-challenge',
+        scopes: ['api'],
+      }, { redirect: vi.fn() } as any);
+
+      expect(mockLogger.debug).not.toHaveBeenCalledWith(
+        'Caller-requested OAuth scopes discarded in favor of configured scopes',
+        expect.anything(),
+      );
+    });
+  });
+
+  describe('verifyCallbackIdentity typed errors', () => {
+    const buildCallbackFixture = (tokens: Record<string, unknown>, nonce?: string) => {
+      const identityVerifier = {
+        verify: vi.fn().mockResolvedValue({
+          subject: 'user-object-id',
+          issuer: 'https://issuer.example.test',
+        }),
+      };
+      provider = new ExternalOAuthProvider(config, mockLogger, identityVerifier as never);
+      const client: OAuthClientInformationFull = {
+        client_id: 'client-123',
+        redirect_uris: ['http://localhost:3003/callback'],
+        grant_types: ['authorization_code'],
+        response_types: ['code'],
+      };
+      (provider as any)._clientsStore.registerClient(client);
+      (provider as any).stateStore.set('state123', {
+        clientRedirectUri: 'http://localhost:3003/callback',
+        codeChallenge: '',
+        originalState: 'orig',
+        clientId: client.client_id,
+        scopes: ['openid'],
+        nonce,
+        createdAt: Date.now(),
+      });
+      (provider as any).exchangeCodeWithProvider = vi.fn().mockResolvedValue(tokens);
+      const response = {
+        status: vi.fn().mockReturnThis(),
+        send: vi.fn(),
+        redirect: vi.fn(),
+      } as any;
+      return { response };
+    };
+
+    it('fails closed with 401 when the token response lacks an id_token', async () => {
+      const { response } = buildCallbackFixture({
+        access_token: 'at',
+        token_type: 'Bearer',
+        expires_in: 3600,
+      }, 'nonce-1');
+
+      await provider.handleCallback({ query: { code: 'code', state: 'state123' } } as any, response);
+
+      expect(response.status).toHaveBeenCalledWith(401);
+      expect(response.redirect).not.toHaveBeenCalled();
+      expect(mockLogger.error).toHaveBeenCalledWith(
+        'Callback handling failed',
+        expect.objectContaining({
+          name: 'AuthenticationError',
+          message: 'OIDC identity token missing from authorization response',
+        }),
+      );
+    });
+
+    it('fails closed with 401 and a distinct message when the state carries no nonce', async () => {
+      const { response } = buildCallbackFixture({
+        access_token: 'at',
+        id_token: 'signed-id-token',
+        token_type: 'Bearer',
+      }, undefined);
+
+      await provider.handleCallback({ query: { code: 'code', state: 'state123' } } as any, response);
+
+      expect(response.status).toHaveBeenCalledWith(401);
+      expect(mockLogger.error).toHaveBeenCalledWith(
+        'Callback handling failed',
+        expect.objectContaining({
+          name: 'AuthenticationError',
+          message: expect.stringContaining('nonce'),
+        }),
+      );
+    });
+
+    it('throws a distinct AuthenticationError when the verifier is not configured', async () => {
+      provider = new ExternalOAuthProvider(config, mockLogger);
+
+      await expect(
+        (provider as any).verifyCallbackIdentity({ access_token: 'at', id_token: 'idt' }, 'nonce-1'),
+      ).rejects.toThrow('OIDC identity verifier is not configured');
+      await expect(
+        (provider as any).verifyCallbackIdentity({ access_token: 'at', id_token: 'idt' }, 'nonce-1'),
+      ).rejects.toThrow(AuthenticationError);
+    });
+  });
+
+  describe('refreshTokenIdentities hygiene', () => {
+    beforeEach(() => {
+      provider = new ExternalOAuthProvider(config, mockLogger);
+    });
+
+    it('cleanup() sweeps expired identity bindings', () => {
+      const map = (provider as any).refreshTokenIdentities as Map<
+        string,
+        { identity: unknown; expiresAt: number }
+      >;
+      const now = Date.now();
+      map.set('expired-binding', { identity: { subject: 'gone' }, expiresAt: now - 1 });
+      map.set('live-binding', { identity: { subject: 'kept' }, expiresAt: now + 3600_000 });
+
+      provider.cleanup();
+
+      expect(map.has('expired-binding')).toBe(false);
+      expect(map.has('live-binding')).toBe(true);
+    });
+
+    it('rate-limits the capacity-eviction warn instead of warning per insert', () => {
+      const map = (provider as any).refreshTokenIdentities as Map<
+        string,
+        { identity: unknown; expiresAt: number }
+      >;
+      const now = Date.now();
+      for (let i = 0; i < 10000; i += 1) {
+        map.set(`filler-${i}`, { identity: { subject: `u${i}` }, expiresAt: now + 20 * 24 * 3600_000 });
+      }
+
+      (provider as any).storeRefreshTokenIdentity('first-insert', {
+        subject: 'a',
+        issuer: 'https://issuer.example.test/tenant/v2.0',
+      });
+      (provider as any).storeRefreshTokenIdentity('second-insert', {
+        subject: 'b',
+        issuer: 'https://issuer.example.test/tenant/v2.0',
+      });
+
+      const capacityWarns = (mockLogger.warn as any).mock.calls
+        .filter(([message]: [string]) => String(message).includes('Refresh identity map at capacity'));
+      expect(capacityWarns.length).toBe(1);
     });
   });
 

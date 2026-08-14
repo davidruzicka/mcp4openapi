@@ -45,7 +45,9 @@ export class ConsentGate {
     expectedIssuer?: string,
   ) {
     this.expectedRulesHash = computeRulesHash(config);
-    this.maxAgeMs = config.max_age_days ? config.max_age_days * 24 * 60 * 60 * 1000 : null;
+    // Null check, not truthiness: max_age_days=0 must not silently mean
+    // "never expires". Values <= 0 are rejected by the consent gate validator.
+    this.maxAgeMs = config.max_age_days != null ? config.max_age_days * 24 * 60 * 60 * 1000 : null;
     this.expectedIssuer = expectedIssuer ? normalizeIssuer(expectedIssuer) : null;
   }
 

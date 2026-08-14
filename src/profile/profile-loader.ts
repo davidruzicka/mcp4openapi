@@ -24,6 +24,7 @@ import type {
 } from '../types/profile.js';
 import { ZodError } from 'zod';
 import { ValidationError, ConfigurationError } from '../core/errors.js';
+import { ConsoleLogger, type Logger } from '../core/logger.js';
 import { profileSchema, authInterceptorSchema } from '../generated-schemas.js';
 import type { OpenAPIParser } from '../openapi/openapi-parser.js';
 import { createLoadedProfileAppsModel } from './profile-apps.js';
@@ -62,6 +63,13 @@ const enhancedAuthInterceptorSchema = authInterceptorSchema.refine(
 const enhancedProfileSchema = profileSchema;
 
 export class ProfileLoader {
+  /**
+   * Logger used for load-time diagnostics (e.g. the off-origin upstream
+   * override warning). Defaults to the console logger so warnings surface even
+   * for construction sites that do not inject one.
+   */
+  constructor(private readonly logger: Pick<Logger, 'warn'> = new ConsoleLogger()) {}
+
   async load(profilePath: string, parser?: OpenAPIParser): Promise<Profile> {
     const content = await fs.readFile(profilePath, 'utf-8');
     const json = JSON.parse(content);
@@ -110,7 +118,7 @@ export class ProfileLoader {
       profile.client_auth_gate = resolvedClientAuthGate;
     }
 
-    const resolvedUpstreamMcp = resolveUpstreamMcpConfig(profile);
+    const resolvedUpstreamMcp = resolveUpstreamMcpConfig(profile, process.env, this.logger);
     if (resolvedUpstreamMcp) {
       profile.upstream_mcp = resolvedUpstreamMcp;
     }

@@ -1,0 +1,223 @@
+/**
+ * Browser-facing consent flow for consent-gated profiles.
+ *
+ * Owns the consent HTML pages (info, acknowledgement form, expired approval),
+ * the pending-approval store, and the request-fingerprint/cookie binding that
+ * ties a rendered form to the exact OAuth request and the browser that saw it.
+ * HttpTransport delegates here so page rendering and approval bookkeeping stay
+ * testable without a listening server.
+ *
+ * The acknowledgement proves neither human presence nor who the user is:
+ * identity comes from the OIDC login that follows the redirect.
+ */
+
+import crypto from 'crypto';
+import type { Response } from 'express';
+import type { ConsentGateConfig } from '../types/profile.js';
+import { HTTP_STATUS } from '../core/constants.js';
+import { escapeHtmlSafe } from '../validation/validation-utils.js';
+
+// Lifetime of a rendered consent approval and of its browser-binding cookie.
+export const CONSENT_APPROVAL_TTL_MS = 5 * 60 * 1000;
+// Upper bound on concurrently pending consent approvals (distinct OAuth request fingerprints).
+export const PENDING_CONSENT_MAX = 10000;
+// `__Host-` prefix: browsers only accept it over HTTPS, with Path=/ and no Domain.
+export const CONSENT_COOKIE_NAME = '__Host-mcp4_consent';
+
+// Every consent page carries an explicit CSP; the shared renderer makes a
+// missing header structurally impossible. The form page additionally pins
+// form submission to this origin.
+const CONSENT_PAGE_CSP = "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'";
+const CONSENT_FORM_CSP = "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'";
+
+// OAuth request fields the fingerprint and the re-submitted form are bound to.
+const OAUTH_REQUEST_FIELDS = [
+  'response_type',
+  'client_id',
+  'redirect_uri',
+  'scope',
+  'state',
+  'code_challenge',
+  'code_challenge_method',
+] as const;
+
+/**
+ * Pending browser approval, keyed by the OAuth request fingerprint.
+ *
+ * Fingerprint keying is self-limiting: repeated GETs for the same OAuth request
+ * overwrite one entry instead of each adding a new one, so unauthenticated
+ * traffic cannot evict legitimate pending approvals from a global FIFO.
+ */
+interface PendingConsentApproval {
+  /** Random id echoed in the __Host- cookie; ties the GET and the POST to one user agent. */
+  browserId: string;
+  expiresAt: number;
+}
+
+/** Extract one cookie value from a raw Cookie header. Returns undefined when absent. */
+function parseCookieValue(header: string | undefined, name: string): string | undefined {
+  if (!header) return undefined;
+  for (const part of header.split(';')) {
+    const separator = part.indexOf('=');
+    if (separator === -1) continue;
+    if (part.slice(0, separator).trim() !== name) continue;
+    return part.slice(separator + 1).trim();
+  }
+  return undefined;
+}
+
+/**
+ * Timing-safe comparison for equal-length strings. A length mismatch returns
+ * early: length is not secret here (both values are fixed-size random ids).
+ */
+function timingSafeEqualString(a: string, b: string): boolean {
+  const left = Buffer.from(a, 'utf8');
+  const right = Buffer.from(b, 'utf8');
+  if (left.length !== right.length) return false;
+  return crypto.timingSafeEqual(left, right);
+}
+
+/**
+ * Single HTML skeleton for all consent pages. `title` must be a trusted
+ * literal; `body` must already be escaped by the caller.
+ */
+function renderConsentPage(
+  res: Response,
+  options: { status: number; title: string; body: string; csp: string },
+): void {
+  res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('Content-Security-Policy', options.csp);
+  res
+    .status(options.status)
+    .type('html')
+    .send(
+      `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>${options.title}</title></head><body><main>${options.body}</main></body></html>`,
+    );
+}
+
+function educationLink(gate: ConsentGateConfig): string {
+  return gate.education_resource
+    ? `<p><a href="${escapeHtmlSafe(gate.education_resource)}" rel="noopener noreferrer" target="_blank">Read the usage rules</a></p>`
+    : '';
+}
+
+function rulesSummary(gate: ConsentGateConfig): string {
+  return escapeHtmlSafe(gate.rules_summary ?? 'Access requires accepting the current usage rules.');
+}
+
+export class ConsentHttpController {
+  private readonly pendingApprovals = new Map<string, PendingConsentApproval>();
+
+  /** Number of pending approvals; exposed for tests and observability. */
+  get pendingApprovalCount(): number {
+    return this.pendingApprovals.size;
+  }
+
+  /** Digest binding an approval to the complete OAuth request and profile. */
+  requestFingerprint(profileId: string, input: Record<string, unknown>): string {
+    // JSON array encoding is canonical and unambiguous (fields are length-delimited),
+    // so no crafted field value can shift another field's boundary.
+    const canonical = JSON.stringify([
+      profileId,
+      ...OAUTH_REQUEST_FIELDS.map((field) => (typeof input[field] === 'string' ? input[field] : '')),
+    ]);
+    return crypto.createHash('sha256').update(canonical).digest('base64url');
+  }
+
+  /** Human-facing info page served at `/consent`; 404 when the profile is not gated. */
+  renderConsentInfo(res: Response, gate: ConsentGateConfig | undefined): void {
+    if (!gate?.required) {
+      res.status(HTTP_STATUS.NOT_FOUND).send('Consent is not configured for this profile');
+      return;
+    }
+    renderConsentPage(res, {
+      status: HTTP_STATUS.OK,
+      title: 'Consent required',
+      body: `<h1>Consent required</h1><p>${rulesSummary(gate)}</p>${educationLink(gate)}<p>Reconnect this MCP server in your client to start the secure sign-in and consent flow for rules version ${escapeHtmlSafe(gate.rules_version)}.</p>`,
+      csp: CONSENT_PAGE_CSP,
+    });
+  }
+
+  /**
+   * Render the rules acknowledgement form.
+   *
+   * The pending entry is keyed by the request fingerprint, so a flood of
+   * unauthenticated GETs for distinct OAuth requests is bounded by expiry (and
+   * the global cap) rather than by evicting other users' pending approvals. A
+   * random browser id is set as a `__Host-` cookie and must come back with the
+   * POST, so the acknowledgement and the submission demonstrably come from one
+   * user agent.
+   */
+  renderApprovalForm(
+    res: Response,
+    gate: ConsentGateConfig,
+    input: Record<string, unknown>,
+    fingerprint: string,
+  ): void {
+    const now = Date.now();
+    for (const [key, pending] of this.pendingApprovals) {
+      if (pending.expiresAt <= now) this.pendingApprovals.delete(key);
+    }
+    // Bounded: overflow evicts the oldest pending approval, whose user simply
+    // restarts the consent flow. Mirrors RECONSENT_INVALIDATION_MAX.
+    if (this.pendingApprovals.size >= PENDING_CONSENT_MAX && !this.pendingApprovals.has(fingerprint)) {
+      const oldest = this.pendingApprovals.keys().next().value;
+      if (oldest !== undefined) this.pendingApprovals.delete(oldest);
+    }
+    const browserId = crypto.randomBytes(32).toString('base64url');
+    this.pendingApprovals.set(fingerprint, {
+      browserId,
+      expiresAt: now + CONSENT_APPROVAL_TTL_MS,
+    });
+    res.setHeader(
+      'Set-Cookie',
+      `${CONSENT_COOKIE_NAME}=${browserId}; Path=/; Max-Age=${CONSENT_APPROVAL_TTL_MS / 1000}; HttpOnly; Secure; SameSite=Lax`,
+    );
+
+    const hiddenFields = OAUTH_REQUEST_FIELDS
+      .filter((field) => typeof input[field] === 'string')
+      .map((field) => `<input type="hidden" name="${field}" value="${escapeHtmlSafe(input[field] as string)}">`)
+      .join('');
+    // CSRF protection: the POST must reproduce the exact request fingerprint the
+    // form was rendered for AND present the __Host- cookie set above
+    // (consumeApproval checks both). No separate form token is needed.
+    renderConsentPage(res, {
+      status: HTTP_STATUS.OK,
+      title: 'Consent required',
+      body: `<h1>Consent required</h1><p>${rulesSummary(gate)}</p>${educationLink(gate)}<form method="post">${hiddenFields}<label><input type="checkbox" name="consent_accept" value="yes" required> I accept rules version ${escapeHtmlSafe(gate.rules_version)}</label><p><button type="submit">Continue to sign in</button></p></form>`,
+      csp: CONSENT_FORM_CSP,
+    });
+  }
+
+  /**
+   * Recoverable dead end for a used, expired, or foreign-browser approval:
+   * behind a non-sticky load balancer the GET and POST can land on different
+   * replicas, so the page links back into the flow instead of stranding the user.
+   */
+  renderApprovalExpired(res: Response, retryUrl: string): void {
+    renderConsentPage(res, {
+      status: HTTP_STATUS.BAD_REQUEST,
+      title: 'Consent approval expired',
+      body: `<h1>Consent approval expired</h1><p>The approval was already used, expired, or was started in a different browser session.</p><p><a href="${escapeHtmlSafe(retryUrl)}">Start the consent flow again</a></p>`,
+      csp: CONSENT_PAGE_CSP,
+    });
+  }
+
+  /**
+   * Consume a pending approval.
+   *
+   * One-time, expiry-bound, and bound to BOTH the complete OAuth request
+   * (fingerprint) and the browser that was shown the rules (cookie). The
+   * acknowledgement proves neither human presence nor who the user is: identity
+   * comes from the OIDC login that follows.
+   */
+  consumeApproval(fingerprint: string, cookieHeader: string | undefined): boolean {
+    const pending = this.pendingApprovals.get(fingerprint);
+    if (!pending) return false;
+    this.pendingApprovals.delete(fingerprint);
+    if (pending.expiresAt <= Date.now()) return false;
+    const presented = parseCookieValue(cookieHeader, CONSENT_COOKIE_NAME);
+    if (!presented) return false;
+    return timingSafeEqualString(presented, pending.browserId);
+  }
+}

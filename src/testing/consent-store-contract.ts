@@ -111,12 +111,15 @@ export function runConsentStoreContract(
       });
     });
 
-    it('preserves the original granted_at on repeated record calls', async () => {
+    it('returns the latest acceptance on repeated record calls', async () => {
       const store = createStore();
       await store.record(makeContractEvidence({ granted_at: 1000 }));
       await store.record(makeContractEvidence({ granted_at: 5000 }));
       const state = await store.lookup(CONTRACT_IDENTITY, 'ms365', 'v1');
-      expect(state.grant?.granted_at).toBe(1000);
+      // Policy always evaluates the newest acceptance; the durable backend, not
+      // the lookup result, keeps earlier acceptances as the audit history.
+      expect(state.grant?.granted_at).toBe(5000);
+      expect(state.grantRenewedAt).toBe(5000);
     });
 
     it('does not move the renewal backwards when a replay arrives out of order', async () => {
@@ -125,9 +128,8 @@ export function runConsentStoreContract(
       await store.record(makeContractEvidence({ granted_at: 1000 }));
 
       const state = await store.lookup(CONTRACT_IDENTITY, 'ms365', 'v1');
-      // `record` is first-writer-wins for the audit record, and the renewal never
-      // moves backwards: otherwise a revocation between the two timestamps would
-      // silently stop applying.
+      // The latest acceptance never moves backwards: otherwise a revocation
+      // between the two timestamps would silently stop applying.
       expect(state.grant?.granted_at).toBe(5000);
       expect(state.grantRenewedAt).toBe(5000);
     });
@@ -139,10 +141,23 @@ export function runConsentStoreContract(
       await store.record(makeContractEvidence({ granted_at: 3000 }));
 
       const state = await store.lookup(CONTRACT_IDENTITY, 'ms365', 'v1');
-      // The audit record keeps the first acceptance; policy sees the newest one.
-      expect(state.grant?.granted_at).toBe(1000);
+      // The re-acceptance supersedes the revocation and becomes the grant.
+      expect(state.grant?.granted_at).toBe(3000);
       expect(state.grantRenewedAt).toBe(3000);
       expect(state.revokedAt).toBe(2000);
+    });
+
+    it('breaks a latest-grant tie between rules versions deterministically (later record wins)', async () => {
+      const store = createStore();
+      await store.record(makeContractEvidence({ granted_at: 1000, rules_version: 'v1' }));
+      await store.record(
+        makeContractEvidence({ granted_at: 1000, rules_version: 'v2', rules_hash: 'hash-v2' }),
+      );
+      const state = await store.lookup(CONTRACT_IDENTITY, 'ms365', 'v1');
+      // Equal granted_at across versions: the later recorded acceptance defines
+      // the active rules version, in every backend.
+      expect(state.grant?.rules_version).toBe('v1');
+      expect(state.latestGrant?.rules_version).toBe('v2');
     });
 
     it('records a revocation for the identity and profile without deleting the grant', async () => {
