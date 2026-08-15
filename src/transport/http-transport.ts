@@ -2560,14 +2560,17 @@ export class HttpTransport {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), timeout);
 
-      const response = await fetch(url.toString(), {
-        method,
-        headers,
-        signal: controller.signal,
-        redirect: 'error', // Prevent redirects to avoid SSRF bypass
-      });
-
-      clearTimeout(timeoutId);
+      let response: globalThis.Response;
+      try {
+        response = await fetch(url.toString(), {
+          method,
+          headers,
+          signal: controller.signal,
+          redirect: 'error', // Prevent redirects to avoid SSRF bypass
+        });
+      } finally {
+        clearTimeout(timeoutId);
+      }
 
       const isValid = response.status >= 200 && response.status < 300;
       
