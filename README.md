@@ -419,6 +419,8 @@ there is no degraded mode.
     `MCP_CONSENTS_DB_USER`, `MCP_CONSENTS_DB_PASSWORD`: PostgreSQL-backed transactional store for
     multi-replica deployments. Append-only audit table (`consent_evidence`), created on first use.
     A partial variable set is a hard `ConfigurationError`, never a silent fallback.
+    TLS is on by default (`require` semantics — managed Postgres endpoints expect encrypted
+    connections); set `MCP_CONSENTS_DB_SSL=false` only for local development.
   - `MCP4_CONSENT_EVIDENCE_PATH`: Absolute writable path of the append-only JSONL consent evidence
     file (durable single-node/staging store).
   Missing both -> `Required consent gate needs a durable evidence store: set the MCP_CONSENTS_DB_* variables or MCP4_CONSENT_EVIDENCE_PATH`.

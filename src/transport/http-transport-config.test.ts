@@ -271,14 +271,25 @@ describe('parseConsentDbEnv', () => {
     expect(parseConsentDbEnv({})).toBeUndefined();
   });
 
-  it('parses a complete variable set', () => {
+  it('parses a complete variable set with TLS on by default (pgaas expects it)', () => {
     expect(parseConsentDbEnv({ ...FULL_ENV })).toEqual({
       host: 'db.example',
       port: 7432,
       database: 'mcp_consents_db',
       user: 'consents',
       password: 'secret',
+      ssl: true,
     });
+  });
+
+  it('allows opting out of TLS for local development', () => {
+    expect(parseConsentDbEnv({ ...FULL_ENV, MCP_CONSENTS_DB_SSL: 'false' })?.ssl).toBe(false);
+  });
+
+  it('rejects an invalid MCP_CONSENTS_DB_SSL value', () => {
+    expect(() => parseConsentDbEnv({ ...FULL_ENV, MCP_CONSENTS_DB_SSL: 'yes' })).toThrow(
+      ConfigurationError,
+    );
   });
 
   it('defaults the port to 5432 when only MCP_CONSENTS_DB_PORT is missing', () => {

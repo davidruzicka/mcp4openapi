@@ -67,7 +67,7 @@ describe('createConsentEvidenceStore', () => {
 
   it('returns a Postgres store when database settings are configured', () => {
     const store = createConsentEvidenceStore({
-      db: { host: 'db.example', port: 5432, database: 'consents', user: 'u', password: 'p' },
+      db: { host: 'db.example', port: 5432, database: 'consents', user: 'u', password: 'p', ssl: true },
       consentRequired: true,
       logger,
     });
@@ -76,7 +76,7 @@ describe('createConsentEvidenceStore', () => {
 
   it('prefers the Postgres store over a configured evidence path', () => {
     const store = createConsentEvidenceStore({
-      db: { host: 'db.example', port: 5432, database: 'consents', user: 'u', password: 'p' },
+      db: { host: 'db.example', port: 5432, database: 'consents', user: 'u', password: 'p', ssl: true },
       evidencePath: path.join(dir, 'evidence.jsonl'),
       consentRequired: true,
       logger,

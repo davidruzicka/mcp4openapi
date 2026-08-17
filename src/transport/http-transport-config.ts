@@ -45,7 +45,8 @@ function parseProfileIndexRedirectStatus(redirectUrl?: string): ProfileIndexRedi
  *
  * All-or-nothing: with none of the variables set the backend is not selected;
  * a partial set is a hard configuration error rather than a silent fallback to
- * a weaker store. `MCP_CONSENTS_DB_PORT` alone is optional (default 5432).
+ * a weaker store. `MCP_CONSENTS_DB_PORT` (default 5432) and
+ * `MCP_CONSENTS_DB_SSL` (default true — pgaas expects TLS) are optional.
  */
 export function parseConsentDbEnv(
   env: NodeJS.ProcessEnv = process.env,
@@ -72,12 +73,17 @@ export function parseConsentDbEnv(
   if (!Number.isInteger(parsedPort) || parsedPort <= 0 || parsedPort > 65535 || (port && String(parsedPort) !== port)) {
     throw new ConfigurationError('Invalid MCP_CONSENTS_DB_PORT: expected a TCP port number');
   }
+  const sslRaw = env.MCP_CONSENTS_DB_SSL?.trim();
+  if (sslRaw !== undefined && sslRaw !== 'true' && sslRaw !== 'false') {
+    throw new ConfigurationError("Invalid MCP_CONSENTS_DB_SSL: expected 'true' or 'false'");
+  }
   return {
     host: values.host!,
     port: parsedPort,
     database: values.database!,
     user: values.user!,
     password: values.password!,
+    ssl: sslRaw !== 'false',
   };
 }
 

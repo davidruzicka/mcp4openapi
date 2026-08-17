@@ -22,6 +22,7 @@ const DB_CONFIG: PostgresConsentDbConfig = {
   database: 'unused',
   user: 'unused',
   password: 'unused',
+  ssl: false,
 };
 
 function fakeClient(
@@ -125,6 +126,7 @@ const liveConfig: PostgresConsentDbConfig | null = (() => {
     database: MCP_CONSENTS_DB_NAME,
     user: MCP_CONSENTS_DB_USER,
     password: MCP_CONSENTS_DB_PASSWORD,
+    ssl: process.env.MCP_CONSENTS_DB_SSL !== 'false',
   };
 })();
 

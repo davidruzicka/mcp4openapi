@@ -31,6 +31,13 @@ export interface PostgresConsentDbConfig {
   database: string;
   user: string;
   password: string;
+  /**
+   * TLS to the database. Defaults to true (`MCP_CONSENTS_DB_SSL=false` to opt
+   * out for local development): the internal pgaas endpoints expect encrypted
+   * connections. `require` semantics — encrypted, without CA verification —
+   * matching the convention of other pgaas consumers in the organization.
+   */
+  ssl: boolean;
 }
 
 /** Minimal query surface of `pg.Pool`, injectable for unit tests. */
@@ -76,6 +83,7 @@ export class PostgresConsentEvidenceStore implements ConsentEvidenceStore {
         database: config.database,
         user: config.user,
         password: config.password,
+        ssl: config.ssl ? { rejectUnauthorized: false } : undefined,
         // Consent checks sit on the tool dispatch path: fail fast instead of
         // queueing requests behind an unreachable database.
         connectionTimeoutMillis: 5000,
