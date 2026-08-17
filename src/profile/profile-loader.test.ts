@@ -6,6 +6,8 @@ import { describe, it, expect, vi } from 'vitest';
 import { ValidationError } from '../core/errors.js';
 import { ProfileLoader } from './profile-loader.js';
 import path from 'path';
+import fs from 'fs/promises';
+import os from 'node:os';
 
 describe('ProfileLoader', () => {
   it('should load valid GitLab profile', async () => {
@@ -3565,6 +3567,47 @@ paths:
       );
       expect(profile.consent_gate?.required).toBe(true);
       expect(profile.upstream_mcp?.name).toBe('ms365-upstream');
+    });
+  });
+
+  describe('consent-gate template loading', () => {
+    const fixturePath = path.join(process.cwd(), 'tests/profiles/consent-gate/profile.json');
+
+    const writeTemplatedProfile = async (
+      template: string | null,
+      templatePath = './consent.html',
+    ): Promise<string> => {
+      const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'consent-template-'));
+      const fixture = JSON.parse(await fs.readFile(fixturePath, 'utf8'));
+      fixture.consent_gate.template_path = templatePath;
+      if (template !== null) {
+        await fs.writeFile(path.join(dir, 'consent.html'), template, 'utf8');
+      }
+      const profilePath = path.join(dir, 'profile.json');
+      await fs.writeFile(profilePath, JSON.stringify(fixture), 'utf8');
+      return profilePath;
+    };
+
+    it('loads the template relative to the profile file', async () => {
+      const profilePath = await writeTemplatedProfile(
+        '<html><body><style>b{}</style>{{consent_body}}</body></html>',
+      );
+      const profile = await new ProfileLoader().load(profilePath);
+      expect(profile.consent_gate?.template).toContain('{{consent_body}}');
+    });
+
+    it('fails at load when the template file is missing', async () => {
+      const profilePath = await writeTemplatedProfile(null);
+      await expect(new ProfileLoader().load(profilePath)).rejects.toThrow(
+        "Failed to read consent_gate.template_path './consent.html'",
+      );
+    });
+
+    it('fails at load when the template lacks the consent body placeholder', async () => {
+      const profilePath = await writeTemplatedProfile('<html><body>no placeholder</body></html>');
+      await expect(new ProfileLoader().load(profilePath)).rejects.toThrow(
+        'consent_gate.template must contain the {{consent_body}} placeholder',
+      );
     });
   });
 });

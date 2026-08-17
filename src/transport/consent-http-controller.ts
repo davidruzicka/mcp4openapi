@@ -15,12 +15,26 @@ import crypto from 'crypto';
 import type { Response } from 'express';
 import type { ConsentGateConfig } from '../types/profile.js';
 import { HTTP_STATUS } from '../core/constants.js';
+import { ConfigurationError } from '../core/errors.js';
 import { escapeHtmlSafe } from '../validation/validation-utils.js';
+import { CONSENT_BODY_PLACEHOLDER } from '../profile/consent-gate-validator.js';
+
+/** Positive-integer env override with a default; an invalid value fails startup. */
+function envInt(name: string, fallback: number): number {
+  const raw = process.env[name]?.trim();
+  if (!raw) return fallback;
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isInteger(parsed) || parsed <= 0 || String(parsed) !== raw) {
+    throw new ConfigurationError(`Invalid ${name}: expected a positive integer`);
+  }
+  return parsed;
+}
 
 // Lifetime of a rendered consent approval and of its browser-binding cookie.
-export const CONSENT_APPROVAL_TTL_MS = 5 * 60 * 1000;
+// Tunable via MCP4_CONSENT_APPROVAL_TTL_MS for load shaping; defaults preserved.
+export const CONSENT_APPROVAL_TTL_MS = envInt('MCP4_CONSENT_APPROVAL_TTL_MS', 5 * 60 * 1000);
 // Upper bound on concurrently pending consent approvals (distinct OAuth request fingerprints).
-export const PENDING_CONSENT_MAX = 10000;
+export const PENDING_CONSENT_MAX = envInt('MCP4_CONSENT_PENDING_MAX', 10000);
 // `__Host-` prefix: browsers only accept it over HTTPS, with Path=/ and no Domain.
 export const CONSENT_COOKIE_NAME = '__Host-mcp4_consent';
 
@@ -80,19 +94,39 @@ function timingSafeEqualString(a: string, b: string): boolean {
 /**
  * Single HTML skeleton for all consent pages. `title` must be a trusted
  * literal; `body` must already be escaped by the caller.
+ *
+ * When the profile configures `consent_gate.template` (full-page HTML authored
+ * per deployment), the skeleton is replaced by that template: the server-owned
+ * `body` block lands in `{{consent_body}}`, and the cosmetic placeholders below
+ * are substituted with escaped values. Security headers (CSP, no-store) are
+ * ALWAYS set by this function, template or not, and the template cannot change
+ * them - custom markup decorates the page, never the security envelope.
  */
 function renderConsentPage(
   res: Response,
-  options: { status: number; title: string; body: string; csp: string },
+  options: { status: number; title: string; body: string; csp: string; gate?: ConsentGateConfig },
 ): void {
   res.setHeader('Cache-Control', 'no-store');
   res.setHeader('Content-Security-Policy', options.csp);
-  res
-    .status(options.status)
-    .type('html')
-    .send(
-      `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>${options.title}</title></head><body><main>${options.body}</main></body></html>`,
-    );
+  const template = options.gate?.template;
+  // Cosmetic placeholders are substituted over the trusted template FIRST; the
+  // consent body (which embeds escaped, user-influenced OAuth values) is
+  // inserted LAST, so substitution never runs over request-derived content.
+  // split/join instead of replaceAll: replacement strings must be literal
+  // (no `$&`-style pattern expansion over values or the body).
+  const substitute = (input: string, token: string, value: string): string =>
+    input.split(token).join(value);
+  let html: string;
+  if (template) {
+    html = substitute(template, '{{rules_version}}', escapeHtmlSafe(options.gate?.rules_version ?? ''));
+    html = substitute(html, '{{rules_summary}}', rulesSummary(options.gate as ConsentGateConfig));
+    html = substitute(html, '{{education_resource}}', escapeHtmlSafe(options.gate?.education_resource ?? ''));
+    html = substitute(html, '{{title}}', options.title);
+    html = substitute(html, CONSENT_BODY_PLACEHOLDER, `<!-- server-owned consent block -->${options.body}`);
+  } else {
+    html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>${options.title}</title></head><body><main>${options.body}</main></body></html>`;
+  }
+  res.status(options.status).type('html').send(html);
 }
 
 function educationLink(gate: ConsentGateConfig): string {
@@ -135,6 +169,7 @@ export class ConsentHttpController {
       title: 'Consent required',
       body: `<h1>Consent required</h1><p>${rulesSummary(gate)}</p>${educationLink(gate)}<p>Reconnect this MCP server in your client to start the secure sign-in and consent flow for rules version ${escapeHtmlSafe(gate.rules_version)}.</p>`,
       csp: CONSENT_PAGE_CSP,
+      gate,
     });
   }
 
@@ -178,14 +213,22 @@ export class ConsentHttpController {
       .filter((field) => typeof input[field] === 'string')
       .map((field) => `<input type="hidden" name="${field}" value="${escapeHtmlSafe(input[field] as string)}">`)
       .join('');
+    // Consent-meaningful texts: part of the rules hash (consent-rules-hash.ts),
+    // so editing them invalidates existing grants. `{{rules_version}}` inside
+    // the accept label is substituted after escaping.
+    const acceptLabel = (gate.labels?.accept
+      ? escapeHtmlSafe(gate.labels.accept).split('{{rules_version}}').join(escapeHtmlSafe(gate.rules_version))
+      : `I accept rules version ${escapeHtmlSafe(gate.rules_version)}`);
+    const submitLabel = escapeHtmlSafe(gate.labels?.submit ?? 'Continue to sign in');
     // CSRF protection: the POST must reproduce the exact request fingerprint the
     // form was rendered for AND present the __Host- cookie set above
     // (consumeApproval checks both). No separate form token is needed.
     renderConsentPage(res, {
       status: HTTP_STATUS.OK,
       title: 'Consent required',
-      body: `<h1>Consent required</h1><p>${rulesSummary(gate)}</p>${educationLink(gate)}<form method="post">${hiddenFields}<label><input type="checkbox" name="consent_accept" value="yes" required> I accept rules version ${escapeHtmlSafe(gate.rules_version)}</label><p><button type="submit">Continue to sign in</button></p></form>`,
+      body: `<h1>Consent required</h1><p>${rulesSummary(gate)}</p>${educationLink(gate)}<form method="post">${hiddenFields}<label><input type="checkbox" name="consent_accept" value="yes" required> ${acceptLabel}</label><p><button type="submit">${submitLabel}</button></p></form>`,
       csp: CONSENT_FORM_CSP,
+      gate,
     });
   }
 
@@ -194,12 +237,13 @@ export class ConsentHttpController {
    * behind a non-sticky load balancer the GET and POST can land on different
    * replicas, so the page links back into the flow instead of stranding the user.
    */
-  renderApprovalExpired(res: Response, retryUrl: string): void {
+  renderApprovalExpired(res: Response, retryUrl: string, gate?: ConsentGateConfig): void {
     renderConsentPage(res, {
       status: HTTP_STATUS.BAD_REQUEST,
       title: 'Consent approval expired',
       body: `<h1>Consent approval expired</h1><p>The approval was already used, expired, or was started in a different browser session.</p><p><a href="${escapeHtmlSafe(retryUrl)}">Start the consent flow again</a></p>`,
       csp: CONSENT_PAGE_CSP,
+      gate,
     });
   }
 

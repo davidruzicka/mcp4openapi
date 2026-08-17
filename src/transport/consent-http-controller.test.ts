@@ -233,4 +233,79 @@ describe('ConsentHttpController', () => {
       expect(notRequired.statusCode).toBe(404);
     });
   });
+
+  describe('custom template and labels', () => {
+    const template =
+      '<!doctype html><html lang="cs"><head><style>body{color:red}</style><title>{{title}}</title></head>' +
+      '<body><h1>Pravidla {{rules_version}}</h1><p>{{rules_summary}}</p><a href="{{education_resource}}">pravidla</a>' +
+      '{{consent_body}}</body></html>';
+    const templatedGate: ConsentGateConfig = { ...gate, template };
+
+    it('renders all consent pages inside the custom template', () => {
+      const controller = new ConsentHttpController();
+
+      const info = makeRes();
+      controller.renderConsentInfo(asResponse(info), templatedGate);
+      expect(info.body).toContain('<style>body{color:red}</style>');
+      expect(info.body).toContain('Pravidla v1');
+      expect(info.body).toContain('Accept the usage rules.');
+      expect(info.body).toContain('href="https://rules.example/usage"');
+      expect(info.body).toContain('server-owned consent block');
+
+      const form = makeRes();
+      controller.renderApprovalForm(asResponse(form), templatedGate, oauthInput(), 'fp-1');
+      expect(form.body).toContain('<style>body{color:red}</style>');
+      expect(form.body).toContain('name="consent_accept"');
+      expect(form.body).toContain('<form method="post">');
+
+      const expired = makeRes();
+      controller.renderApprovalExpired(asResponse(expired), '/retry', templatedGate);
+      expect(expired.body).toContain('<style>body{color:red}</style>');
+      expect(expired.body).toContain('Start the consent flow again');
+    });
+
+    it('keeps the security headers on templated pages (template cannot change the envelope)', () => {
+      const controller = new ConsentHttpController();
+      const form = makeRes();
+      controller.renderApprovalForm(asResponse(form), templatedGate, oauthInput(), 'fp-1');
+      expect(form.headers['Cache-Control']).toBe('no-store');
+      expect(form.headers['Content-Security-Policy']).toContain("form-action 'self'");
+      expect(form.headers['Set-Cookie']).toContain(CONSENT_COOKIE_NAME);
+    });
+
+    it('does not substitute placeholders inside request-derived values', () => {
+      const controller = new ConsentHttpController();
+      const form = makeRes();
+      controller.renderApprovalForm(
+        asResponse(form),
+        templatedGate,
+        oauthInput({ state: '{{rules_summary}}$&' }),
+        'fp-1',
+      );
+      // The attacker-supplied placeholder survives verbatim (escaped), instead
+      // of being expanded into profile content or regex replacement patterns.
+      expect(form.body).toContain('{{rules_summary}}$&');
+    });
+
+    it('renders configured labels and substitutes the rules version inside the accept label', () => {
+      const controller = new ConsentHttpController();
+      const labeled: ConsentGateConfig = {
+        ...gate,
+        labels: { accept: 'Souhlasím s pravidly (verze {{rules_version}}) <&>', submit: 'Potvrdit souhlas' },
+      };
+      const form = makeRes();
+      controller.renderApprovalForm(asResponse(form), labeled, oauthInput(), 'fp-1');
+      expect(form.body).toContain('Souhlasím s pravidly (verze v1) &lt;&amp;&gt;');
+      expect(form.body).toContain('<button type="submit">Potvrdit souhlas</button>');
+      expect(form.body).not.toContain('I accept rules version');
+    });
+
+    it('falls back to the default labels when none are configured', () => {
+      const controller = new ConsentHttpController();
+      const form = makeRes();
+      controller.renderApprovalForm(asResponse(form), gate, oauthInput(), 'fp-1');
+      expect(form.body).toContain('I accept rules version v1');
+      expect(form.body).toContain('Continue to sign in');
+    });
+  });
 });

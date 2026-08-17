@@ -21,6 +21,9 @@ import type { AuthInterceptor, ConsentGateConfig, Profile } from '../types/profi
 /** Exact-match `${env:VAR}` reference, same pattern as `oauth-provider.ts`. */
 const ENV_REF_PATTERN = /^\$\{env:([^}]+)\}$/;
 
+/** Mandatory template placeholder replaced with the server-owned consent block. */
+export const CONSENT_BODY_PLACEHOLDER = '{{consent_body}}';
+
 /** OAuth fields required for the consent login flow (must be present and resolvable). */
 const REQUIRED_OAUTH_FIELDS = ['issuer', 'client_id', 'redirect_uri'] as const;
 /** Optional OAuth fields whose `${env:...}` reference must still resolve when declared. */
@@ -69,6 +72,33 @@ export function resolveConsentGateConfig(config: ConsentGateConfig): ConsentGate
     throw new ConsentGateConfigurationError(
       'consent_gate.max_age_days must be a positive integer number of days',
       { path: 'consent_gate.max_age_days', value: config.max_age_days },
+    );
+  }
+
+  for (const key of ['accept', 'submit'] as const) {
+    const label = config.labels?.[key];
+    if (label !== undefined && (typeof label !== 'string' || !label.trim())) {
+      throw new ConsentGateConfigurationError(
+        `consent_gate.labels.${key} must be a non-empty string when set`,
+        { path: `consent_gate.labels.${key}` },
+      );
+    }
+  }
+
+  if (config.template_path !== undefined && (typeof config.template_path !== 'string' || !config.template_path.trim())) {
+    throw new ConsentGateConfigurationError(
+      'consent_gate.template_path must be a non-empty string when set',
+      { path: 'consent_gate.template_path' },
+    );
+  }
+
+  // The placeholder is where the server injects the security-owned block
+  // (approval form / info / expired). A template without it would render a
+  // consent page with no way to consent.
+  if (config.template !== undefined && !config.template.includes(CONSENT_BODY_PLACEHOLDER)) {
+    throw new ConsentGateConfigurationError(
+      `consent_gate.template must contain the ${CONSENT_BODY_PLACEHOLDER} placeholder`,
+      { path: 'consent_gate.template' },
     );
   }
 

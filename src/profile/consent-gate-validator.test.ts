@@ -87,6 +87,53 @@ describe('resolveConsentGateConfig', () => {
       }),
     ).toThrow('consent_gate.max_age_days must be a positive integer number of days');
   });
+
+  it('accepts labels and a template carrying the consent body placeholder', () => {
+    const result = resolveConsentGateConfig({
+      required: true,
+      rules_version: 'v1',
+      identity_source: 'profile_oauth',
+      labels: { accept: 'Souhlasím ({{rules_version}})', submit: 'Potvrdit' },
+      template: '<html><body>{{consent_body}}</body></html>',
+    });
+    expect(result.labels?.accept).toBe('Souhlasím ({{rules_version}})');
+    expect(result.template).toContain('{{consent_body}}');
+  });
+
+  it.each(['accept', 'submit'] as const)('rejects a blank labels.%s', (key) => {
+    expect(() =>
+      resolveConsentGateConfig({
+        required: true,
+        rules_version: 'v1',
+        identity_source: 'profile_oauth',
+        labels: { [key]: '   ' },
+      }),
+    ).toThrow(`consent_gate.labels.${key} must be a non-empty string when set`);
+  });
+
+  it('rejects a blank template_path', () => {
+    expect(() =>
+      resolveConsentGateConfig({
+        required: true,
+        rules_version: 'v1',
+        identity_source: 'profile_oauth',
+        template_path: '   ',
+      }),
+    ).toThrow('consent_gate.template_path must be a non-empty string when set');
+  });
+
+  it('rejects a template without the consent body placeholder', () => {
+    // A template with no placeholder would render a consent page that offers
+    // no way to consent.
+    expect(() =>
+      resolveConsentGateConfig({
+        required: true,
+        rules_version: 'v1',
+        identity_source: 'profile_oauth',
+        template: '<html><body>pretty but useless</body></html>',
+      }),
+    ).toThrow('consent_gate.template must contain the {{consent_body}} placeholder');
+  });
 });
 
 describe('validateConsentGateProfile', () => {

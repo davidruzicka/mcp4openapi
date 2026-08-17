@@ -1445,14 +1445,14 @@
           ]
         },
         "overrides": {
-          "$ref": "#/definitions/Record%3Cstring%2Cstructure-1535101595-25656-25692-1535101595-25641-25693-1535101595-25627-25694-1535101595-25556-25696-1535101595-0-25836%3E"
+          "$ref": "#/definitions/Record%3Cstring%2Cstructure-1535101595-26943-26979-1535101595-26928-26980-1535101595-26914-26981-1535101595-26843-26983-1535101595-0-27123%3E"
         }
       },
       "required": [
         "max_requests_per_minute"
       ]
     },
-    "Record<string,structure-1535101595-25656-25692-1535101595-25641-25693-1535101595-25627-25694-1535101595-25556-25696-1535101595-0-25836>": {
+    "Record<string,structure-1535101595-26943-26979-1535101595-26928-26980-1535101595-26914-26981-1535101595-26843-26983-1535101595-0-27123>": {
       "type": "object",
       "additionalProperties": {
         "type": "object",
@@ -1871,6 +1871,28 @@
           "type": "string",
           "const": "profile_oauth",
           "description": "Identity source used to bind consent evidence to an authenticated human."
+        },
+        "template_path": {
+          "type": "string",
+          "description": "Optional path (relative to the profile file, or absolute) of a full-page HTML template for the consent screens. Must contain the `{{consent_body}}` placeholder, which the server replaces with the security-owned block (the approval form, the info block, or the expired block). Cosmetic only: the template is deliberately NOT part of the rules hash, so a layout/CSS change does not force re-consent; the consent-meaningful record stays in `rules_version`, `rules_summary`, `education_resource` and `labels`."
+        },
+        "template": {
+          "type": "string",
+          "description": "Resolved template markup. Filled by the profile loader from `template_path`; may also be authored inline. Same `{{consent_body}}` requirement and hashing semantics as `template_path`."
+        },
+        "labels": {
+          "type": "object",
+          "properties": {
+            "accept": {
+              "type": "string",
+              "description": "Checkbox label. Default: `I accept rules version <rules_version>`."
+            },
+            "submit": {
+              "type": "string",
+              "description": "Submit button label. Default: `Continue to sign in`."
+            }
+          },
+          "description": "Consent-meaningful texts rendered inside the approval form. Part of the rules hash: changing them invalidates existing grants, because they define what the subject agreed to. `{{rules_version}}` inside `accept` is substituted at render time."
         }
       },
       "required": [

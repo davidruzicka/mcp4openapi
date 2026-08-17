@@ -24,7 +24,13 @@ export const consentGateConfigSchema = z.object({
     education_resource: z.string().optional(),
     rules_summary: z.string().optional(),
     max_age_days: z.number().optional(),
-    identity_source: z.literal("profile_oauth")
+    identity_source: z.literal("profile_oauth"),
+    template_path: z.string().optional(),
+    template: z.string().optional(),
+    labels: z.object({
+        accept: z.string().optional(),
+        submit: z.string().optional()
+    }).optional()
 });
 
 export const upstreamMcpToolPolicySchema = z.object({

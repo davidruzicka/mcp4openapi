@@ -15,15 +15,28 @@ import type { ConsentGateConfig } from '../types/profile.js';
 
 export type ConsentRulesMaterial = Pick<
   ConsentGateConfig,
-  'rules_version' | 'rules_summary' | 'education_resource'
+  'rules_version' | 'rules_summary' | 'education_resource' | 'labels'
 >;
 
-/** Stable digest over the rules material presented to the human. */
+/**
+ * Stable digest over the rules material presented to the human.
+ *
+ * The page template (`consent_gate.template`/`template_path`) is deliberately
+ * NOT hashed: it is cosmetic (layout, CSS, surrounding copy) and may change
+ * without forcing org-wide re-consent. The canonical record of what a subject
+ * agreed to is this hashed material - version, summary, education link, and
+ * the approval-form labels.
+ */
 export function computeRulesHash(material: ConsentRulesMaterial): string {
-  const canonical = JSON.stringify([
+  const parts: (string | null)[] = [
     material.rules_version,
     material.rules_summary ?? null,
     material.education_resource ?? null,
-  ]);
-  return createHash('sha256').update(canonical).digest('base64url');
+  ];
+  // Appended only when labels are configured, so profiles without labels keep
+  // their pre-labels hash and existing grants stay valid across the upgrade.
+  if (material.labels && (material.labels.accept !== undefined || material.labels.submit !== undefined)) {
+    parts.push(material.labels.accept ?? null, material.labels.submit ?? null);
+  }
+  return createHash('sha256').update(JSON.stringify(parts)).digest('base64url');
 }

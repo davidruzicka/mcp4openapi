@@ -736,6 +736,30 @@ Browser-based authentication with PKCE flow (HTTP transport only):
 
 Pair this fragment with an `upstream_mcp` or an env-backed configuration that resolves to a valid provider in the same profile. The environment variable name alone is not sufficient.
 
+### Consent page customization
+
+The consent screens (info page, approval form, expired page) can be fully restyled per deployment without touching code:
+
+```json
+{
+  "consent_gate": {
+    "...": "...",
+    "template_path": "./softeria-sharepoint.consent.html",
+    "labels": {
+      "accept": "I accept the usage rules, version {{rules_version}}",
+      "submit": "Confirm consent"
+    }
+  }
+}
+```
+
+- `template_path` (relative to the profile file) points at a full-page HTML template. It MUST contain `{{consent_body}}` - the server replaces it with the security-owned block (the approval form, the info block, or the expired block); a template without it fails profile load. Optional cosmetic placeholders: `{{rules_version}}`, `{{rules_summary}}`, `{{education_resource}}`, `{{title}}` (values are HTML-escaped). Inline CSS is allowed by the page CSP; scripts are not (`script-src` stays `'none'`) - JavaScript on the consent page could submit the form programmatically, which would break the provable-human-consent guarantee.
+- `labels.accept` / `labels.submit` override the checkbox and button texts; `{{rules_version}}` inside `accept` is substituted at render time.
+- **Hashing split**: `labels` are consent-meaningful and part of the rules hash - changing them invalidates existing grants, exactly like `rules_summary`/`education_resource`. The template is deliberately NOT hashed, so layout/CSS/surrounding-copy changes never force org-wide re-consent. Consequence for compliance: the canonical record of what a subject accepted is the hashed material (`rules_version`, `rules_summary`, `education_resource`, `labels`), not the rendered page.
+- The form mechanics (hidden OAuth fields, one-time token, `__Host-` cookie binding, required checkbox, POST target) and the security headers (CSP, `Cache-Control: no-store`) are always server-owned; a template cannot alter them.
+- Tunables: `MCP4_CONSENT_APPROVAL_TTL_MS` (default 5 minutes) and `MCP4_CONSENT_PENDING_MAX` (default 10000) bound the pending-approval store.
+- Preview locally with `scripts/demo-consent-screen.sh`.
+
 The browser first displays the rules and requires an explicit checkbox submission. The approval token is one-time, expires after five minutes, and is bound to the complete OAuth request. The subsequent ID token is verified against OIDC discovery/JWKS, issuer, audience, signature, expiry, and nonce before evidence is recorded. The identity verifier requires the discovered `jwks_uri` to share the issuer's origin (Entra-style); split-host IdPs whose JWKS lives on a different host (e.g. Google) are intentionally rejected. A `rules_version` change forces re-acceptance. Consent evidence is bound to the verified subject, canonical issuer, tenant context, profile ID, and rules version. Authorization, consent evidence, and in-memory principals retain the raw verified subject. Logs and audit identity fields instead use a stable, one-way SHA-256-derived pseudonym for each nonempty subject.
 
 When an encrypted OAuth envelope is recovered after restart, its verified OIDC identity is retained through subsequent initialization so consent-gated reconnects remain valid. A direct `refresh_token` grant on a consent-gated profile is rejected unless it presents an identity-bearing `mcp4.r1.*` envelope, so a refresh can never mint a session with an unknown principal.

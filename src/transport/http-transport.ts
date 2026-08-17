@@ -2128,7 +2128,7 @@ export class HttpTransport {
           // Send the user back to a usable starting point instead of a dead end:
           // behind a non-sticky load balancer the GET and POST can land on
           // different replicas, which is otherwise unrecoverable for the user.
-          this.consentController.renderApprovalExpired(res, req.originalUrl);
+          this.consentController.renderApprovalExpired(res, req.originalUrl, gate);
           return;
         }
       }

@@ -74,6 +74,34 @@ export interface ConsentGateConfig {
   max_age_days?: number;
   /** Identity source used to bind consent evidence to an authenticated human. */
   identity_source: 'profile_oauth';
+  /**
+   * Optional path (relative to the profile file, or absolute) of a full-page
+   * HTML template for the consent screens. Must contain the `{{consent_body}}`
+   * placeholder, which the server replaces with the security-owned block (the
+   * approval form, the info block, or the expired block). Cosmetic only: the
+   * template is deliberately NOT part of the rules hash, so a layout/CSS change
+   * does not force re-consent; the consent-meaningful record stays in
+   * `rules_version`, `rules_summary`, `education_resource` and `labels`.
+   */
+  template_path?: string;
+  /**
+   * Resolved template markup. Filled by the profile loader from
+   * `template_path`; may also be authored inline. Same `{{consent_body}}`
+   * requirement and hashing semantics as `template_path`.
+   */
+  template?: string;
+  /**
+   * Consent-meaningful texts rendered inside the approval form. Part of the
+   * rules hash: changing them invalidates existing grants, because they define
+   * what the subject agreed to. `{{rules_version}}` inside `accept` is
+   * substituted at render time.
+   */
+  labels?: {
+    /** Checkbox label. Default: `I accept rules version <rules_version>`. */
+    accept?: string;
+    /** Submit button label. Default: `Continue to sign in`. */
+    submit?: string;
+  };
 }
 
 export interface Profile {

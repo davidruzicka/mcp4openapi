@@ -14,6 +14,7 @@
  */
 
 import fs from 'fs/promises';
+import path from 'node:path';
 import type {
   AuthInterceptor,
   Profile,
@@ -23,7 +24,7 @@ import type {
   SessionCookieConfig,
 } from '../types/profile.js';
 import { ZodError } from 'zod';
-import { ValidationError, ConfigurationError } from '../core/errors.js';
+import { ValidationError, ConfigurationError, ConsentGateConfigurationError } from '../core/errors.js';
 import { ConsoleLogger, type Logger } from '../core/logger.js';
 import { profileSchema, authInterceptorSchema } from '../generated-schemas.js';
 import type { OpenAPIParser } from '../openapi/openapi-parser.js';
@@ -123,6 +124,7 @@ export class ProfileLoader {
       profile.upstream_mcp = resolvedUpstreamMcp;
     }
 
+    await ProfileLoader.loadConsentTemplate(profile, profilePath);
     const resolvedConsentGate = validateConsentGateProfile(profile);
     if (resolvedConsentGate) {
       profile.consent_gate = resolvedConsentGate;
@@ -1117,6 +1119,28 @@ export class ProfileLoader {
           pattern: info.pattern,
         };
       }
+    }
+  }
+
+  /**
+   * Resolve `consent_gate.template_path` (relative to the profile file) into
+   * `consent_gate.template` at load time, so a broken template is a startup
+   * error and rendering never touches the filesystem. An inline `template`
+   * wins over `template_path`.
+   */
+  private static async loadConsentTemplate(profile: Profile, profilePath: string): Promise<void> {
+    const gate = profile.consent_gate;
+    if (!gate?.template_path || gate.template !== undefined) return;
+    const resolved = path.isAbsolute(gate.template_path)
+      ? gate.template_path
+      : path.resolve(path.dirname(profilePath), gate.template_path);
+    try {
+      gate.template = await fs.readFile(resolved, 'utf8');
+    } catch (err) {
+      throw new ConsentGateConfigurationError(
+        `Failed to read consent_gate.template_path '${gate.template_path}'`,
+        { path: 'consent_gate.template_path', resolved, cause: err instanceof Error ? err.message : String(err) },
+      );
     }
   }
 
