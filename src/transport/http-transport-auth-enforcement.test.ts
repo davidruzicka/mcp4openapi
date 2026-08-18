@@ -88,7 +88,9 @@ describe('Auth Bypass Reproduction', () => {
     await (transport as any).handlePost(req, res);
 
     expect(res.statusCode).toBe(401);
-    expect(res.body).toEqual(expect.objectContaining({ error: 'invalid_request' }));
+    // Non-OAuth profile: plain 401, no OAuth discovery challenge.
+    expect(res.body).toEqual(expect.objectContaining({ error: 'Unauthorized' }));
+    expect(res.headers['www-authenticate']).toBeUndefined();
   });
 
   it('should allow initialization without client token when env fallback token exists', async () => {
@@ -356,7 +358,8 @@ describe('Auth Bypass Reproduction', () => {
       await (transport as any).handlePost(req, res);
 
       expect(res.statusCode).toBe(401);
-      expect(res.body).toEqual(expect.objectContaining({ error: 'invalid_request' }));
+      // Non-OAuth (session-cookie) profile: plain 401, no OAuth discovery challenge.
+      expect(res.body).toEqual(expect.objectContaining({ error: 'Unauthorized' }));
     } finally {
       if (previousUsername === undefined) {
         delete process.env[usernameEnvVarName];

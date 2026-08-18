@@ -2916,7 +2916,7 @@ describe('HttpTransport RFC 6750 resource-server hardening (AIPP-572)', () => {
     } as any;
   }
 
-  it('item 1: generic Authentication required 401 carries a Bearer challenge with invalid_request', async () => {
+  it('item 1: non-OAuth Authentication required 401 does not advertise an OAuth challenge', async () => {
     const transport = createTransport({
       baseUrl: 'https://api.example.com',
       authConfigs: [{ type: 'custom-header', header_name: 'X-API-Key' }],
@@ -2926,11 +2926,12 @@ describe('HttpTransport RFC 6750 resource-server hardening (AIPP-572)', () => {
     const res = createMockResponse();
     await (transport as any).handlePost(req, res);
 
+    // Non-OAuth token-auth profile: the RFC 6750 Bearer/resource_metadata
+    // challenge must NOT be emitted (would lure clients into an uncompletable
+    // OAuth/DCR loop). Prior client-compatible plain 401 shape is preserved.
     expect(res.statusCode).toBe(401);
-    expect(res.body).toMatchObject({ error: 'invalid_request' });
-    expect(String(res.headers['www-authenticate'])).toContain('Bearer');
-    expect(String(res.headers['www-authenticate'])).toContain('error="invalid_request"');
-    expect(String(res.headers['www-authenticate'])).toContain('resource_metadata=');
+    expect(res.body).toMatchObject({ error: 'Unauthorized', message: 'Authentication required' });
+    expect(res.headers['www-authenticate']).toBeUndefined();
     await transport.stop();
   });
 

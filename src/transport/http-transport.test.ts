@@ -589,11 +589,11 @@ describeIfListen('HttpTransport', () => {
         .send({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} });
 
       expect(response.status).toBe(401);
-      // AIPP-572 item 1: every /mcp 401 now carries a Bearer challenge.
-      expect(String(response.headers['www-authenticate'])).toContain('Bearer');
-      expect(String(response.headers['www-authenticate'])).toContain('resource_metadata=');
+      // Non-OAuth (token auth_mode) tenant: no OAuth discovery challenge is
+      // advertised, otherwise clients are lured into an uncompletable OAuth loop.
+      expect(response.headers['www-authenticate']).toBeUndefined();
       expect(response.body.message).toBe('Authentication required');
-      expect(response.body.error).toBe('invalid_request');
+      expect(response.body.error).toBe('Unauthorized');
 
       await tenantTransport.stop();
     });
@@ -4331,11 +4331,12 @@ describeIfListen('HttpTransport', () => {
         });
 
       // The degraded tenant must not surface the OAuth-specific "no token" flow:
-      // oauthActive is false so the challenge (AIPP-572 item 1 now always present
-      // on a 401) is the generic guard's invalid_request, not the OAuth trigger.
+      // oauthActive is false, so no OAuth Bearer/resource_metadata challenge is
+      // advertised (dbda5d3 intent). A generic 401 from the authConfigs guard may
+      // still fire, but it must not be the OAuth trigger.
+      expect(response.headers['www-authenticate']).toBeUndefined();
       if (response.status === 401) {
         expect(response.body.message).not.toBe('Authentication required for OAuth');
-        expect(response.body.error).toBe('invalid_request');
       }
 
       degradedTenantTransport.stop();

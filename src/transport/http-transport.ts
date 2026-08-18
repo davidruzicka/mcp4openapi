@@ -3455,7 +3455,18 @@ export class HttpTransport {
               profileId: requestProfileId,
               authConfigsCount: authConfigs.length
             });
-            this.sendMcpAuthChallenge(res, requestProfileId, 'invalid_request', 'Authentication required');
+            // The RFC 6750 Bearer/resource_metadata challenge is scoped to
+            // OAuth-active requests: the oauthActive && no-token case already
+            // returned above with the challenge, so reaching here means OAuth is
+            // not active/operational for this request (non-OAuth token-auth
+            // profile or degraded/inoperational tenant OAuth config). Emitting an
+            // OAuth discovery challenge on those paths lures VS Code/Cursor into
+            // an uncompletable OAuth/DCR loop (AIPP-572 / dbda5d3), so return a
+            // plain 401 without a WWW-Authenticate challenge.
+            res.status(HTTP_STATUS.UNAUTHORIZED).json({
+              error: 'Unauthorized',
+              message: 'Authentication required',
+            });
             return;
           }
 
