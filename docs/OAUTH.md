@@ -103,7 +103,7 @@ OAuth 2.0 support enables browser-based authentication flow instead of manually 
 
 ## Supported Flow
 
-- **Authorization Code Flow with PKCE** (RFC 7636)
+- **Authorization Code Flow with mandatory PKCE** (RFC 7636, S256 only) - see [OAuth 2.1 / RFC conformance](#oauth-21--rfc-conformance)
 - Works with GitLab, GitHub, and any OAuth 2.0-compliant provider
 - Secure: tokens handled by OAuth provider, not exposed in config files
 
@@ -276,6 +276,52 @@ When a profile configures `scopes` in its OAuth config, they take precedence ove
 - **`POST /mcp`** - MCP requests (requires OAuth token)
 - **`GET /mcp`** - SSE streaming (requires OAuth token)
 - **`DELETE /mcp`** - Session termination
+
+## OAuth 2.1 / RFC conformance
+
+The HTTP transport enforces the following hardening on every profile OAuth flow.
+
+### PKCE is mandatory (RFC 7636)
+
+- `/oauth/authorize` requires `code_challenge` and `code_challenge_method=S256`. A missing challenge, `code_challenge_method=plain`, or any other method is rejected.
+- `code_verifier` must be 43-128 characters from the unreserved set (`A-Z a-z 0-9 - . _ ~`).
+- Every authorization code carries an S256 challenge and is verified at token exchange with a constant-time comparison.
+- A failed verification consumes the single-use code, so a wrong `code_verifier` cannot be retried against the same code.
+
+### Refresh-token rotation (OAuth 2.1 section 4.3.1)
+
+Rotation applies when `MCP4_OAUTH_KEY` is set (encrypted-envelope mode, `mcp4.r1.*` refresh tokens; mandatory for consent-gated profiles). With no key configured, plain IdP refresh tokens are forwarded and no rotation tracking runs.
+
+- Each successful `refresh_token` grant returns a NEW refresh token and supersedes the one presented.
+- Replaying a superseded refresh token fails `invalid_grant` and revokes the whole rotation family, so the currently-active token in that chain is rejected on its next use too.
+- Rotation state is in-memory and bounded (TTL, max families, LRU eviction). A gateway restart resets it: a client's latest refresh token is accepted on first use (trust-on-first-use) and re-establishes its family.
+- **Client requirement**: persist the newest `refresh_token` from every `/oauth/token` response and discard the one you sent. Presenting an older refresh token is treated as reuse and revokes the chain.
+
+### Dynamic client registration (RFC 7591)
+
+`POST /oauth/register`:
+
+- `redirect_uris` is required and must be a non-empty array for authorization_code clients.
+- Invalid client metadata, a bad `redirect_uri`, or a non-JSON body return `400` with `invalid_client_metadata` or `invalid_redirect_uri` (never `500`).
+- When the client store is at capacity and no idle client can be evicted, registration returns `429` `temporarily_unavailable`.
+- `token_endpoint_auth_method: none` registers a public client with no `client_secret`. Any other value registers a confidential client whose response includes a `client_secret` and `client_secret_expires_at` (`0` = never expires). Every registration response includes `client_id_issued_at`.
+- `redirect_uri` schemes are validated at registration: `https` is allowed, `http` only for loopback hosts (`localhost`, `127.0.0.1`, `::1`), and custom native-app schemes (for example `cursor://`) are allowed. Remote `http`, dangerous schemes (`javascript:`, `data:`, `file:`, ...), URLs with credentials or fragments, and `*` wildcards are rejected.
+
+### Discovery metadata (RFC 8414)
+
+- `/.well-known/oauth-authorization-server` advertises `token_endpoint_auth_methods_supported: ["client_secret_basic", "client_secret_post", "none"]`, `code_challenge_methods_supported: ["S256"]`, `response_types_supported: ["code"]`, and `grant_types_supported: ["authorization_code", "refresh_token"]`.
+- `issuer` and the RFC 9728 protected-resource `resource` origin derive from the client-facing URL. Behind a trusted proxy (`MCP4_TRUST_PROXY`) the forwarded scheme/host take precedence. A non-loopback host is never advertised with an `http://` scheme.
+- `/.well-known/openid-configuration` is NOT served. This gateway is an OAuth 2.1 authorization server issuing opaque tokens, not an OpenID Provider (no `id_token`, no `jwks_uri`). Clients use `/.well-known/oauth-authorization-server`.
+
+### Resource-server 401 challenge (RFC 6750)
+
+On an OAuth-active `/mcp` request, a 401 carries `WWW-Authenticate: Bearer error="invalid_token", resource_metadata="<protected-resource-metadata-url>"`. The error code is `invalid_request` when no token was presented and `invalid_token` when a token was presented but rejected.
+
+- The `Bearer` scheme is matched case-insensitively.
+- A non-OAuth credential (`X-API-Token`, DRF `Authorization: Token`, or a custom header) cannot establish a session on an OAuth-required profile; it is rejected with the Bearer challenge.
+- An expired access token that cannot be refreshed returns 401 `invalid_token`.
+- The challenge does not advertise a `scope` attribute: per-request scope enforcement is not implemented (future work), so advertising a required scope would be misleading.
+- The OAuth `resource_metadata` challenge is emitted ONLY for OAuth-active requests. A non-OAuth token-auth profile, or a degraded/inoperational tenant OAuth config, returns a plain 401 with no `WWW-Authenticate` header. This is deliberate: an OAuth discovery challenge on those paths would lure clients into an OAuth/DCR loop they cannot complete.
 
 ## Advanced Configuration
 

@@ -1105,6 +1105,10 @@ mcp_tool_call_errors_total{tool,error_type,profile_id,tenant_id}
 mcp_api_calls_total{operation,status,profile_id,tenant_id}
 mcp_api_call_duration_seconds{operation,status,profile_id,tenant_id}
 mcp_api_call_errors_total{operation,error_type,profile_id,tenant_id}
+
+# OAuth metrics
+# event="rotated" on a successful refresh-token rotation, "reuse_detected" when a superseded token was replayed
+mcp_oauth_refresh_rotations_total{event,profile_id}
 ```
 
 **Prometheus scrape config**:
