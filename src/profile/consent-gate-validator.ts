@@ -15,12 +15,10 @@
  *   compatibility. Called by the profile loader.
  */
 
+import { matchEnvRefName, resolveEnvRef, type EnvSource } from '../core/env-ref.js';
 import { ConsentGateConfigurationError } from '../core/errors.js';
 import { loadRawTenantsConfigFromEnv } from '../transport/http-tenant-config.js';
 import type { AuthInterceptor, ConsentGateConfig, Profile } from '../types/profile.js';
-
-/** Exact-match `${env:VAR}` reference, same pattern as `oauth-provider.ts`. */
-const ENV_REF_PATTERN = /^\$\{env:([^}]+)\}$/;
 
 /** Mandatory template placeholder replaced with the server-owned consent block. */
 export const CONSENT_BODY_PLACEHOLDER = '{{consent_body}}';
@@ -108,12 +106,13 @@ export function resolveConsentGateConfig(config: ConsentGateConfig): ConsentGate
 function assertOAuthEnvRefsResolvable(
   oauthConfig: Record<string, unknown>,
   fields: readonly string[],
+  env: EnvSource = process.env,
 ): void {
   for (const field of fields) {
     const value = oauthConfig[field];
     if (typeof value !== 'string') continue;
-    const envVarName = value.match(ENV_REF_PATTERN)?.[1];
-    if (envVarName !== undefined && !process.env[envVarName]?.trim()) {
+    const envVarName = matchEnvRefName(value);
+    if (envVarName !== undefined && !env[envVarName]?.trim()) {
       throw new ConsentGateConfigurationError(
         `profile OAuth ${field} references env var '${envVarName}' which is not set`,
         { path: `interceptors.auth.oauth_config.${field}`, envVar: envVarName },
@@ -123,9 +122,8 @@ function assertOAuthEnvRefsResolvable(
 }
 
 /** Resolve an exact-match `${env:VAR}` reference to its env value; literals pass through. */
-function resolveOAuthFieldValue(value: string): string {
-  const envVarName = value.match(ENV_REF_PATTERN)?.[1];
-  return envVarName !== undefined ? (process.env[envVarName] ?? '') : value;
+function resolveOAuthFieldValue(value: string, env: EnvSource = process.env): string {
+  return resolveEnvRef(value, env) ?? '';
 }
 
 /**
@@ -163,12 +161,13 @@ function assertHttpsUrl(value: string, field: string, path: string): void {
 function assertConsentEndpointsHttps(
   oauthConfig: Record<string, unknown>,
   resolved: ConsentGateConfig,
+  env: EnvSource = process.env,
 ): void {
   for (const field of HTTPS_OAUTH_FIELDS) {
     const value = oauthConfig[field];
     if (typeof value !== 'string') continue;
     assertHttpsUrl(
-      resolveOAuthFieldValue(value),
+      resolveOAuthFieldValue(value, env),
       `profile OAuth ${field}`,
       `interceptors.auth.oauth_config.${field}`,
     );
@@ -213,7 +212,10 @@ function assertNoTenantOAuthOverrides(profile: Profile): void {
   }
 }
 
-export function validateConsentGateProfile(profile: Profile): ConsentGateConfig | undefined {
+export function validateConsentGateProfile(
+  profile: Profile,
+  env: EnvSource = process.env,
+): ConsentGateConfig | undefined {
   const config = profile.consent_gate;
   if (!config) return undefined;
   const resolved = resolveConsentGateConfig(config);
@@ -244,8 +246,13 @@ export function validateConsentGateProfile(profile: Profile): ConsentGateConfig 
   assertOAuthEnvRefsResolvable(
     oauth.oauth_config as unknown as Record<string, unknown>,
     [...REQUIRED_OAUTH_FIELDS, ...OPTIONAL_OAUTH_FIELDS],
+    env,
   );
-  assertConsentEndpointsHttps(oauth.oauth_config as unknown as Record<string, unknown>, resolved);
+  assertConsentEndpointsHttps(
+    oauth.oauth_config as unknown as Record<string, unknown>,
+    resolved,
+    env,
+  );
 
   assertNoTenantOAuthOverrides(profile);
 

@@ -85,6 +85,7 @@ import {
   generateCorrelationId,
 } from '../core/errors.js';
 import { mergeFilteringRules, parseFilteringHeader, normalizeFilteringHeaderValue } from '../core/filtering.js';
+import { matchEnvRefName, resolveEnvRef } from '../core/env-ref.js';
 import {
   ToolFilterService,
   EnvConfigParser,
@@ -882,13 +883,12 @@ export class HttpTransport {
   }
 
   private resolveRedirectUriFromEnv(value: string, profileId: string): string | undefined {
-    const match = value.match(/^\$\{env:([^}]+)\}$/);
-    if (!match) {
+    const envVar = matchEnvRefName(value);
+    if (envVar === undefined) {
       return value;
     }
 
-    const envVar = match[1];
-    const envValue = process.env[envVar];
+    const envValue = resolveEnvRef(value);
     if (!envValue || envValue.trim().length === 0) {
       const warningKey = `${profileId}:${envVar}`;
       if (!this.warnedMissingOAuthRedirectEnvVars.has(warningKey)) {

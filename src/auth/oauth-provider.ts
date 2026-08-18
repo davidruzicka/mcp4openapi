@@ -32,6 +32,7 @@ import type { OidcIdentity, OidcIdentityVerifier } from './oidc-identity-verifie
 import { normalizeIssuer } from './issuer.js';
 import { REFRESH_IDENTITY_TTL_MS } from './token-envelope.js';
 import { AuthenticationError } from '../core/errors.js';
+import { matchEnvRefName, resolveEnvRef } from '../core/env-ref.js';
 import {
   DEFAULT_ALLOWED_REDIRECT_HOSTS,
   DEFAULT_OAUTH_LOOPBACK_CALLBACK_URIS,
@@ -49,7 +50,6 @@ export type { InMemoryClientsStoreOptions } from './client-store/types.js';
 
 // --- OAuth operational-check helpers (module-private + exported) ---
 
-const ENV_REF_PATTERN = /^\$\{env:([^}]+)\}$/;
 // Upper bound on remembered refresh-token identity bindings.
 // Binding TTL: REFRESH_IDENTITY_TTL_MS, shared with the refresh envelope
 // age check (see token-envelope.ts).
@@ -65,9 +65,7 @@ const REFRESH_EVICTION_WARN_INTERVAL_MS = 60 * 1000;
  */
 function tryResolveEnvRef(value: string | undefined): string | undefined {
   if (!value) return value;
-  const envVarName = value.match(ENV_REF_PATTERN)?.[1];
-  if (envVarName !== undefined) return process.env[envVarName]; // undefined when var not set
-  return value;
+  return resolveEnvRef(value); // undefined when a referenced var is not set
 }
 
 /** Result returned by isOAuthConfigOperational(). */
@@ -440,9 +438,9 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
   private resolveEnvVars(config: OAuthConfig): OAuthConfig {
     const resolve = (value: string | undefined): string | undefined => {
       if (!value) return value;
-      const envVarName = value.match(ENV_REF_PATTERN)?.[1];
+      const envVarName = matchEnvRefName(value);
       if (envVarName !== undefined) {
-        const envValue = process.env[envVarName];
+        const envValue = resolveEnvRef(value);
         if (!envValue) {
           throw new Error(`Environment variable ${envVarName} not found (referenced in OAuth config)`);
         }
