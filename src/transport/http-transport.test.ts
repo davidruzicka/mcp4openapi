@@ -3197,6 +3197,99 @@ describeIfListen('HttpTransport', () => {
       expect(response.body.code_challenge_methods_supported).toContain('S256');
     });
 
+    it('advertises token_endpoint_auth_methods_supported with basic, post and none (RFC 8414 §2)', async () => {
+      const response = await request(oauthApp)
+        .get('/.well-known/oauth-authorization-server');
+
+      expect(response.status).toBe(200);
+      expect(response.body.token_endpoint_auth_methods_supported).toEqual(
+        expect.arrayContaining(['client_secret_basic', 'client_secret_post', 'none'])
+      );
+    });
+
+    it('does not serve the openid-configuration alias (OIDC discovery unsupported, RFC 8414)', async () => {
+      const response = await request(oauthApp)
+        .get('/.well-known/openid-configuration');
+
+      expect(response.status).toBe(404);
+    });
+
+    it('derives the issuer from forwarded headers behind a trusted proxy (RFC 8414 §3.3)', async () => {
+      const proxiedTransport = new HttpTransport(
+        {
+          host: '127.0.0.1',
+          port: 0,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: false,
+          metricsPath: '/metrics',
+          trustProxy: true,
+          oauthConfig: {
+            issuer: 'https://auth.example.com',
+            client_id: 'test-client',
+            client_secret: 'test-secret',
+            redirect_uri: 'https://example.com/oauth/callback',
+            scopes: ['api'],
+          },
+        },
+        logger
+      );
+      const proxiedApp = (proxiedTransport as any).app;
+
+      try {
+        const response = await request(proxiedApp)
+          .get('/.well-known/oauth-authorization-server')
+          .set('X-Forwarded-Proto', 'https')
+          .set('X-Forwarded-Host', 'gateway.example.com');
+
+        expect(response.status).toBe(200);
+        expect(response.body.issuer).toBe('https://gateway.example.com');
+        expect(response.body.authorization_endpoint).toBe('https://gateway.example.com/oauth/authorize');
+        expect(response.body.token_endpoint).toBe('https://gateway.example.com/oauth/token');
+      } finally {
+        await proxiedTransport.stop();
+      }
+    });
+
+    it('advertises an https issuer for a non-loopback configured host without leaking http:// (RFC 8414 §3.3)', async () => {
+      const publicHostTransport = new HttpTransport(
+        {
+          host: 'mcp.example.com',
+          port: 443,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: false,
+          metricsPath: '/metrics',
+          oauthConfig: {
+            issuer: 'https://auth.example.com',
+            client_id: 'test-client',
+            client_secret: 'test-secret',
+            scopes: ['api'],
+          },
+        },
+        logger
+      );
+      // Force the host:port fallback by giving the provider an unusable redirect URI.
+      createProfileState(publicHostTransport as any).oauthProvider = {
+        redirectUri: 'not-a-valid-url',
+        scopes: ['api'],
+      };
+      const publicHostApp = (publicHostTransport as any).app;
+
+      try {
+        const response = await request(publicHostApp)
+          .get('/.well-known/oauth-authorization-server');
+
+        expect(response.status).toBe(200);
+        expect(response.body.issuer).toBe('https://mcp.example.com:443');
+        expect(response.body.issuer.startsWith('http://')).toBe(false);
+      } finally {
+        await publicHostTransport.stop();
+      }
+    });
+
     it('should handle dynamic client registration', async () => {
       const response = await request(oauthApp)
         .post('/oauth/register')
@@ -6351,7 +6444,7 @@ describeIfListen('HttpTransport', () => {
       await routingTransport.stop();
     });
 
-    it('serves OpenID configuration aliases for profile routing', async () => {
+    it('does not serve OpenID configuration aliases for profile routing (OIDC discovery unsupported)', async () => {
       const routingTransport = new HttpTransport(
         {
           host: '127.0.0.1',
@@ -6381,10 +6474,8 @@ describeIfListen('HttpTransport', () => {
       const responseProfilePath = await request(routingApp).get('/profile/gitlab/.well-known/openid-configuration');
       const responseSuffixPath = await request(routingApp).get('/.well-known/openid-configuration/profile/gitlab');
 
-      expect(responseProfilePath.status).toBe(200);
-      expect(responseProfilePath.body.issuer).toContain('/profile/gitlab');
-      expect(responseSuffixPath.status).toBe(200);
-      expect(responseSuffixPath.body.issuer).toContain('/profile/gitlab');
+      expect(responseProfilePath.status).toBe(404);
+      expect(responseSuffixPath.status).toBe(404);
 
       await routingTransport.stop();
     });

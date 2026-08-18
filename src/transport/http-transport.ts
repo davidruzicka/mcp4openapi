@@ -1298,7 +1298,38 @@ export class HttpTransport {
     return `${prefix}${normalizedPath}`;
   }
 
-  private getServerOrigin(profileId?: string): string {
+  private isLoopbackHost(host: string): boolean {
+    return host === 'localhost' || host === '127.0.0.1' || host === '::1';
+  }
+
+  private buildFallbackOrigin(): string {
+    if (this.config.host.includes('://')) {
+      return `${this.config.host}:${this.config.port}`;
+    }
+    // RFC 8414 §3.3: never advertise an http:// issuer for a non-loopback host.
+    const scheme = this.isLoopbackHost(this.config.host) ? 'http' : 'https';
+    return `${scheme}://${this.config.host}:${this.config.port}`;
+  }
+
+  private isTrustProxyEnabled(): boolean {
+    const trustProxy = this.config.trustProxy;
+    // Mirror Express: `false`/`0` disable proxy trust; any other set value enables it.
+    return trustProxy !== undefined && trustProxy !== false && trustProxy !== 0;
+  }
+
+  private getServerOrigin(profileId?: string, req?: Request): string {
+    // RFC 8414 §3.3: the advertised issuer must equal the URL clients used to
+    // fetch the metadata. Behind a trusted proxy the public scheme/host only
+    // appear on the forwarded request, so they take precedence over the
+    // redirect-URI origin and the host:port fallback. Forwarded headers are only
+    // honored when proxy trust is enabled, to avoid Host/Forwarded spoofing.
+    if (req && this.isTrustProxyEnabled()) {
+      const forwardedHost = req.get('x-forwarded-host') ?? req.get('host');
+      if (forwardedHost) {
+        return `${req.protocol}://${forwardedHost}`;
+      }
+    }
+
     if (profileId) {
       const state = this.profileStates.get(profileId);
       if (state?.oauthProvider?.redirectUri) {
@@ -1310,13 +1341,11 @@ export class HttpTransport {
       }
     }
 
-    const protocol = this.config.host.includes('://') ? '' : 'http://';
-    const host = this.config.host.includes('://') ? this.config.host : this.config.host;
-    return `${protocol}${host}:${this.config.port}`;
+    return this.buildFallbackOrigin();
   }
 
-  private buildProfileUrl(profileId: string | undefined, path: string, options?: { forceProfilePrefix?: boolean }): string {
-    return `${this.getServerOrigin(profileId)}${this.buildProfilePath(profileId, path, options)}`;
+  private buildProfileUrl(profileId: string | undefined, path: string, options?: { forceProfilePrefix?: boolean }, req?: Request): string {
+    return `${this.getServerOrigin(profileId, req)}${this.buildProfilePath(profileId, path, options)}`;
   }
 
   private normalizeResourcePath(pathname: string): string {
@@ -1522,10 +1551,10 @@ export class HttpTransport {
         ...withProfile((req, res, profileState) => this.handleOAuthAuthorizationServerMetadata(req, res, profileState))
       );
 
-      this.app.get(
-        `${basePath}${OAUTH_PATHS.WELL_KNOWN_OPENID_CONFIGURATION}`,
-        ...withProfile((req, res, profileState) => this.handleOAuthAuthorizationServerMetadata(req, res, profileState))
-      );
+      // OIDC discovery (/.well-known/openid-configuration) is intentionally not
+      // served: this gateway is an OAuth 2.1 authorization server issuing opaque
+      // encrypted tokens, not an OpenID Provider (no id_token, no jwks_uri).
+      // Clients fall back to RFC 8414 oauth-authorization-server metadata.
 
       this.app.post(
         `${basePath}${OAUTH_PATHS.REGISTER}`,
@@ -1629,14 +1658,6 @@ export class HttpTransport {
           withProfileState((req, res, profileState) => this.handleOAuthAuthorizationServerMetadata(req, res, profileState))
         );
 
-        this.app.get(
-          OAUTH_PATHS.WELL_KNOWN_OPENID_CONFIGURATION,
-          attachProfileFromHint,
-          oauthRateLimiter,
-          // lgtm[js/missing-rate-limiting] Rate limiting is applied by oauthRateLimiter middleware above.
-          withProfileState((req, res, profileState) => this.handleOAuthAuthorizationServerMetadata(req, res, profileState))
-        );
-
         this.app.post(
           OAUTH_PATHS.REGISTER,
           attachProfileFromHint,
@@ -1688,13 +1709,6 @@ export class HttpTransport {
         withProfileState((req, res, profileState) => this.handleOAuthAuthorizationServerMetadata(req, res, profileState))
       );
 
-      this.app.get(
-        `${OAUTH_PATHS.WELL_KNOWN_OPENID_CONFIGURATION}/profile/:profileId`,
-        attachProfileId,
-        oauthRateLimiter,
-        // lgtm[js/missing-rate-limiting] Rate limiting is applied by oauthRateLimiter middleware above.
-        withProfileState((req, res, profileState) => this.handleOAuthAuthorizationServerMetadata(req, res, profileState))
-      );
     }
 
     // Security: Rate limiting setup (for MCP endpoints)
@@ -1867,8 +1881,8 @@ export class HttpTransport {
     });
   }
   
-  private getProfileIssuerUrl(profileId: string, options?: { forceProfilePrefix?: boolean }): string {
-    const origin = this.getServerOrigin(profileId);
+  private getProfileIssuerUrl(profileId: string, options?: { forceProfilePrefix?: boolean }, req?: Request): string {
+    const origin = this.getServerOrigin(profileId, req);
     const prefix = this.getProfilePrefix(profileId, options);
     return `${origin}${prefix}`;
   }
@@ -2022,8 +2036,8 @@ export class HttpTransport {
     const isProfileScoped = typeof req.params?.profileId === 'string';
     const forceProfilePrefix = isProfileScoped || (req as McpRequest).forceProfilePrefix === true;
     const urlOptions = forceProfilePrefix ? { forceProfilePrefix: true } : undefined;
-    const serverUrl = new URL(this.buildProfileUrl(profileId, '/mcp', urlOptions));
-    const issuerUrl = this.getProfileIssuerUrl(profileId, urlOptions);
+    const serverUrl = new URL(this.buildProfileUrl(profileId, '/mcp', urlOptions, req));
+    const issuerUrl = this.getProfileIssuerUrl(profileId, urlOptions, req);
 
     const metadata: {
       resource: string;
@@ -2524,15 +2538,18 @@ export class HttpTransport {
       const isProfileScoped = typeof req.params?.profileId === 'string';
       const forceProfilePrefix = isProfileScoped || (req as McpRequest).forceProfilePrefix === true;
       const urlOptions = forceProfilePrefix ? { forceProfilePrefix: true } : undefined;
-      const issuer = this.getProfileIssuerUrl(profileId, urlOptions);
+      const issuer = this.getProfileIssuerUrl(profileId, urlOptions, req);
 
       const metadata = {
         issuer,
-        authorization_endpoint: this.buildProfileUrl(profileId, OAUTH_PATHS.AUTHORIZE, urlOptions),
-        token_endpoint: this.buildProfileUrl(profileId, OAUTH_PATHS.TOKEN, urlOptions),
-        registration_endpoint: this.buildProfileUrl(profileId, OAUTH_PATHS.REGISTER, urlOptions),
+        authorization_endpoint: this.buildProfileUrl(profileId, OAUTH_PATHS.AUTHORIZE, urlOptions, req),
+        token_endpoint: this.buildProfileUrl(profileId, OAUTH_PATHS.TOKEN, urlOptions, req),
+        registration_endpoint: this.buildProfileUrl(profileId, OAUTH_PATHS.REGISTER, urlOptions, req),
         response_types_supported: ['code'],
         code_challenge_methods_supported: ['S256'],
+        // RFC 8414 §2: the token endpoint accepts HTTP Basic, form-body secret,
+        // and the secret-less public/proxy client.
+        token_endpoint_auth_methods_supported: ['client_secret_basic', 'client_secret_post', 'none'],
         grant_types_supported: ['authorization_code', 'refresh_token'],
         scopes_supported: profileState.oauthProvider?.scopes || profileState.context.enterpriseAuthorization?.access_policy?.scopes_supported || ['api'],
       };
