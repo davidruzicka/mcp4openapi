@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 import { ConsentGate } from './consent-gate.js';
-import { ConsentRequiredError } from '../core/errors.js';
+import { ConsentEvidenceStoreError, ConsentRequiredError } from '../core/errors.js';
 import { computeRulesHash } from './consent-rules-hash.js';
 import {
   FileConsentEvidenceStore,
@@ -356,6 +356,24 @@ describe('ConsentGate rules hash', () => {
     await expect(
       gate.assertConsent(makePrincipal('user-1', { issuer: 'https://any-issuer.example.test' })),
     ).resolves.toBeUndefined();
+  });
+});
+
+describe('ConsentGate store failure', () => {
+  it('fails closed with the store error when lookup throws', async () => {
+    // A broken evidence backend must block dispatch, never degrade to
+    // "no consent recorded" or silently allow access.
+    const store: ConsentEvidenceStore = {
+      record: async () => {},
+      revoke: async () => {},
+      lookup: async () => {
+        throw new ConsentEvidenceStoreError('backend unavailable');
+      },
+    };
+    const gate = new ConsentGate('ms365', requiredConfig, store, consentUrlFor, makeLogger(), ISSUER);
+    await expect(gate.assertConsent(makePrincipal('user-1'))).rejects.toBeInstanceOf(
+      ConsentEvidenceStoreError,
+    );
   });
 });
 

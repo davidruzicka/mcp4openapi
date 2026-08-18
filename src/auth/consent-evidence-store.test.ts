@@ -174,7 +174,6 @@ describe('FileConsentEvidenceStore', () => {
     const reopened = new FileConsentEvidenceStore(filePath, logger);
     await expect(reopened.lookup(defaultIdentity, 'ms365', 'v1')).resolves.toMatchObject({
       grant: { granted_at: 5000 },
-      grantRenewedAt: 5000,
     });
   });
 
@@ -204,7 +203,6 @@ describe('FileConsentEvidenceStore', () => {
     const store = new FileConsentEvidenceStore(filePath, logger);
     await expect(store.lookup(defaultIdentity, 'ms365', 'v1')).resolves.toMatchObject({
       grant: { granted_at: 5000 },
-      grantRenewedAt: 5000,
     });
   });
 
@@ -339,7 +337,6 @@ describe('FileConsentEvidenceStore', () => {
     fs.writeFileSync(
       filePath,
       [
-        'not-json',
         // Pre-issuer record.
         JSON.stringify({ sub: 'user-1', profileId: 'ms365', rules_version: 'v1', granted_at: 1000 }),
         // Pre-rules_hash record with no type discriminator.
@@ -405,6 +402,54 @@ describe('FileConsentEvidenceStore', () => {
       grant: { sub: 'user-1' },
     });
   });
+
+  it('appends a revocation even when the file reached its size limit', async () => {
+    const store = new FileConsentEvidenceStore(filePath, logger, 200);
+    await store.record(makeEvidence({ sub: 'user-1' }));
+    await expect(store.record(makeEvidence({ sub: 'user-2' }))).rejects.toMatchObject({
+      name: 'ConsentEvidenceStoreError',
+    });
+    // A revocation is exempt from the cap: rejecting it would keep consent
+    // active (fail open) exactly when an operator needs to revoke.
+    await expect(
+      store.revoke({ ...defaultIdentity, profileId: 'ms365', revoked_at: 2000 }),
+    ).resolves.toBeUndefined();
+    await expect(store.lookup(defaultIdentity, 'ms365', 'v1')).resolves.toMatchObject({
+      revokedAt: 2000,
+    });
+  });
+
+  it('still bounds a single oversized revocation line', async () => {
+    const store = new FileConsentEvidenceStore(filePath, logger, 200);
+    await expect(
+      store.revoke({
+        ...defaultIdentity,
+        profileId: 'ms365',
+        revoked_at: 2000,
+        reason: 'x'.repeat(70_000),
+      }),
+    ).rejects.toMatchObject({
+      name: 'ConsentEvidenceStoreError',
+      code: 'CONSENT_EVIDENCE_STORE_ERROR',
+    });
+    expect(fs.existsSync(filePath)).toBe(false);
+  });
+
+  it('never serves a transient false denial while a record is in flight', async () => {
+    const store = new FileConsentEvidenceStore(filePath, logger);
+    await store.record(makeEvidence({ granted_at: 1000 }));
+    for (let i = 0; i < 25; i += 1) {
+      // Rewrite the file in place so the next read is a full rebuild
+      // (clear-then-reload), the window where an unserialized lookup could
+      // observe the transient empty index and report a false denial.
+      fs.writeFileSync(filePath, grantLine({ granted_at: 1000 + i }), 'utf8');
+      const [, state] = await Promise.all([
+        store.record(makeEvidence({ granted_at: 2000 + i })),
+        store.lookup(defaultIdentity, 'ms365', 'v1'),
+      ]);
+      expect(state.grant).not.toBeNull();
+    }
+  });
 });
 
 describe('FileConsentEvidenceStore malformed input and read failures', () => {
@@ -428,15 +473,31 @@ describe('FileConsentEvidenceStore malformed input and read failures', () => {
     await expect(store.lookup(defaultIdentity, 'ms365', 'v1')).resolves.toMatchObject({ grant: null });
   });
 
-  it('ignores a revocation line that is missing revoked_at', async () => {
+  it('fails closed when a revocation line is missing revoked_at', async () => {
     fs.writeFileSync(
       filePath,
       `${JSON.stringify({ type: 'revocation', ...defaultIdentity, profileId: 'ms365' })}\n`,
       'utf8',
     );
 
+    // Skipping the line would fail open: the revocation would silently stop
+    // applying and consent would stay active.
     const store = new FileConsentEvidenceStore(filePath, logger);
-    await expect(store.lookup(defaultIdentity, 'ms365', 'v1')).resolves.toMatchObject({ revokedAt: null });
+    await expect(store.lookup(defaultIdentity, 'ms365', 'v1')).rejects.toMatchObject({
+      name: 'ConsentEvidenceStoreError',
+      code: 'CONSENT_EVIDENCE_STORE_ERROR',
+    });
+  });
+
+  it('fails closed on a line that is not valid JSON', async () => {
+    // An unparseable line cannot be proven not to be a revocation.
+    fs.writeFileSync(filePath, `not-json\n${grantLine()}`, 'utf8');
+
+    const store = new FileConsentEvidenceStore(filePath, logger);
+    await expect(store.lookup(defaultIdentity, 'ms365', 'v1')).rejects.toMatchObject({
+      name: 'ConsentEvidenceStoreError',
+      code: 'CONSENT_EVIDENCE_STORE_ERROR',
+    });
   });
 
   it('ignores a line whose type is unknown', async () => {

@@ -115,9 +115,14 @@ export class ConsentGate {
     if (state.latestGrant && state.latestGrant.rules_version !== this.config.rules_version) {
       return 'rules_rollback';
     }
-    // Policy uses the most recent acceptance, not the audit record's original
-    // timestamp, so accepting again after a revocation or past the max age works.
-    const acceptedAt = state.grantRenewedAt ?? state.grant.granted_at;
+    // Policy uses the most recent acceptance (the grant a store returns always
+    // carries it), so accepting again after a revocation or past the max age
+    // works. Ordering the revocation against it by these caller-supplied
+    // timestamps assumes reasonably synchronized writer clocks, which holds for
+    // the single-node in-memory/file stores; the multi-replica Postgres store
+    // orders this supersession by insertion order instead and shapes the
+    // `revokedAt` it returns so this comparison reproduces that decision.
+    const acceptedAt = state.grant.granted_at;
     if (state.revokedAt !== null && state.revokedAt >= acceptedAt) return 'revoked';
     if (this.maxAgeMs !== null && Date.now() - acceptedAt > this.maxAgeMs) return 'expired';
 

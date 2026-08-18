@@ -24,8 +24,14 @@ import { ConsentEvidenceStoreError } from '../core/errors.js';
 const EVIDENCE_DIR_MODE = 0o700;
 /** File mode for the evidence file: owner read/write only. */
 const EVIDENCE_FILE_MODE = 0o600;
-/** Hard ceiling for the evidence file. Beyond it, writes fail closed. */
+/** Hard ceiling for the evidence file. Beyond it, grant writes fail closed. */
 export const EVIDENCE_MAX_BYTES = 32 * 1024 * 1024;
+/**
+ * Per-line bound for a revocation append. Revocations are exempt from the
+ * file cap (rejecting one would keep consent active), so this bound is the
+ * only limit on how much a single revocation can grow the file.
+ */
+export const EVIDENCE_MAX_LINE_BYTES = 64 * 1024;
 /**
  * How many bytes at the incremental-read boundary are remembered and verified
  * before a grown file is trusted as append-only (see `reloadIfChanged`).
@@ -79,12 +85,6 @@ export interface ConsentLookupResult {
    * audit history.
    */
   grant: ConsentEvidence | null;
-  /**
-   * Timestamp of the most recent acceptance for the same key. Equals
-   * `grant.granted_at` when a grant exists; kept as an explicit field so
-   * policy code does not need to know how the grant record is selected.
-   */
-  grantRenewedAt: number | null;
   /** Newest grant for this identity and profile regardless of rules version. */
   latestGrant: ConsentEvidence | null;
   /** Timestamp of the newest revocation for this identity and profile, or null. */
@@ -139,6 +139,47 @@ function consentIdentityKey(identity: ConsentIdentityContext, profileId: string)
   return JSON.stringify([identity.sub, identity.issuer, identity.tenantId, profileId]);
 }
 
+/** Which policy-relevant state a new acceptance changes (see `evaluateGrantFold`). */
+export interface ConsentGrantFold {
+  /** The acceptance becomes the newest one for its exact key. */
+  updatesGrant: boolean;
+  /** The acceptance becomes the newest one for the identity and profile. */
+  updatesLatestGrant: boolean;
+}
+
+/**
+ * Decide what a new acceptance changes, given the newest previously stored
+ * acceptance for the same key and for the same identity. This is the single
+ * fold rule shared by every backend (the in-memory/file `ConsentIndex` and the
+ * Postgres record path), so they never disagree about which acceptance is
+ * persisted or which one drives policy.
+ */
+export function evaluateGrantFold(
+  evidence: ConsentEvidence,
+  newestForKey: ConsentEvidence | null,
+  newestForIdentity: ConsentEvidence | null,
+): ConsentGrantFold {
+  // Latest acceptance per key wins and never moves backwards: otherwise a
+  // revocation between two timestamps would silently stop applying. On an
+  // equal timestamp a differing rules hash wins, so a re-acceptance of
+  // changed rules content under the same version is never lost.
+  const updatesGrant =
+    !newestForKey ||
+    evidence.granted_at > newestForKey.granted_at ||
+    (evidence.granted_at === newestForKey.granted_at &&
+      evidence.rules_hash !== newestForKey.rules_hash);
+  // Deterministic tie-break: on an equal granted_at the later applied record
+  // wins, in both the live path and a rebuild (file order), and only when it
+  // actually differs, so an exact replay stays a no-op.
+  const updatesLatestGrant =
+    !newestForIdentity ||
+    evidence.granted_at > newestForIdentity.granted_at ||
+    (evidence.granted_at === newestForIdentity.granted_at &&
+      (evidence.rules_version !== newestForIdentity.rules_version ||
+        evidence.rules_hash !== newestForIdentity.rules_hash));
+  return { updatesGrant, updatesLatestGrant };
+}
+
 /**
  * Accumulates grants and revocations into the values a lookup returns.
  *
@@ -169,38 +210,19 @@ class ConsentIndex {
    */
   apply(evidence: ConsentEvidence): boolean {
     const key = consentEvidenceKey(evidence, evidence.profileId, evidence.rules_version);
-    let changed = false;
-
-    const known = this.grants.get(key);
-    // Latest acceptance per key wins and never moves backwards: otherwise a
-    // revocation between two timestamps would silently stop applying. On an
-    // equal timestamp a differing rules hash wins, so a re-acceptance of
-    // changed rules content under the same version is never lost.
-    if (
-      !known ||
-      evidence.granted_at > known.granted_at ||
-      (evidence.granted_at === known.granted_at && evidence.rules_hash !== known.rules_hash)
-    ) {
-      this.grants.set(key, { ...evidence });
-      changed = true;
-    }
-
     const identityKey = consentIdentityKey(evidence, evidence.profileId);
-    const latest = this.latestGrants.get(identityKey);
-    // Deterministic tie-break: on an equal granted_at the later applied record
-    // wins, in both the live path and a rebuild (file order), and only when it
-    // actually differs, so an exact replay stays a no-op.
-    if (
-      !latest ||
-      evidence.granted_at > latest.granted_at ||
-      (evidence.granted_at === latest.granted_at &&
-        (evidence.rules_version !== latest.rules_version ||
-          evidence.rules_hash !== latest.rules_hash))
-    ) {
-      this.latestGrants.set(identityKey, { ...evidence });
-      changed = true;
+    const fold = evaluateGrantFold(
+      evidence,
+      this.grants.get(key) ?? null,
+      this.latestGrants.get(identityKey) ?? null,
+    );
+    if (fold.updatesGrant) {
+      this.grants.set(key, { ...evidence });
     }
-    return changed;
+    if (fold.updatesLatestGrant) {
+      this.latestGrants.set(identityKey, { ...evidence });
+    }
+    return fold.updatesGrant || fold.updatesLatestGrant;
   }
 
   addRevocation(revocation: ConsentRevocation): void {
@@ -218,10 +240,8 @@ class ConsentIndex {
   ): ConsentLookupResult {
     const identityKey = consentIdentityKey(identity, profileId);
     const key = consentEvidenceKey(identity, profileId, rulesVersion);
-    const grant = this.grants.get(key) ?? null;
     return {
-      grant,
-      grantRenewedAt: grant ? grant.granted_at : null,
+      grant: this.grants.get(key) ?? null,
       latestGrant: this.latestGrants.get(identityKey) ?? null,
       revokedAt: this.revocations.get(identityKey) ?? null,
     };
@@ -263,7 +283,10 @@ export class InMemoryConsentEvidenceStore implements ConsentEvidenceStore {
  * Each grant and each revocation is one JSON line carrying a `type`
  * discriminator. Records from an earlier schema (no `type`, no `rules_hash`)
  * are ignored and cannot satisfy a lookup, so a format change forces
- * re-consent rather than silently accepting an unpinned grant.
+ * re-consent rather than silently accepting an unpinned grant. A line that is
+ * not valid JSON at all, or a `type: 'revocation'` line failing validation,
+ * fails the read closed instead: skipping a grant fails closed, but skipping
+ * a revocation would fail open by leaving revoked consent active.
  *
  * Reads are incremental: the index tracks the last read (size, mtime, dev,
  * ino) and, when the same file object has only grown AND the bytes at the
@@ -314,18 +337,26 @@ export class FileConsentEvidenceStore implements ConsentEvidenceStore {
     profileId: string,
     rulesVersion: string,
   ): Promise<ConsentLookupResult> {
-    await this.writeQueue;
-    await this.reloadIfChanged();
-    return this.index.lookup(identity, profileId, rulesVersion);
+    // Reads share the write queue: `reloadIfChanged`/`loadAll` mutate the index
+    // and the watermark, so a reload racing a write's reload could expose the
+    // transient empty index mid-rebuild (a false denial) or advance the
+    // watermark out of order. Single-flight serialization removes both.
+    return this.enqueue(async () => {
+      await this.reloadIfChanged();
+      return this.index.lookup(identity, profileId, rulesVersion);
+    });
   }
 
   /**
-   * Serialize writes without letting one failure poison the queue: the caller
-   * of a failed write gets the rejection, the queue continues.
+   * Serialize operations without letting one failure poison the queue: the
+   * caller of a failed operation gets the rejection, the queue continues.
    */
-  private enqueue(operation: () => Promise<void>): Promise<void> {
+  private enqueue<T>(operation: () => Promise<T>): Promise<T> {
     const run = this.writeQueue.then(operation);
-    this.writeQueue = run.catch(() => undefined);
+    this.writeQueue = run.then(
+      () => undefined,
+      () => undefined,
+    );
     return run;
   }
 
@@ -369,7 +400,20 @@ export class FileConsentEvidenceStore implements ConsentEvidenceStore {
       }
       await this.enforceFilePermissions();
       // Size accounting is in bytes, not UTF-16 code units.
-      await this.assertSizeAllows(Buffer.byteLength(line, 'utf8'));
+      const lineBytes = Buffer.byteLength(line, 'utf8');
+      if (record.type === 'revocation') {
+        // A revocation is exempt from the file cap: refusing it would keep
+        // consent active (fail open) exactly when an operator needs to revoke.
+        // Only a sane per-line bound applies.
+        if (lineBytes > EVIDENCE_MAX_LINE_BYTES) {
+          throw new ConsentEvidenceStoreError(
+            'Consent revocation record exceeds the per-line size bound',
+            { path: this.filePath, lineBytes, maxLineBytes: EVIDENCE_MAX_LINE_BYTES },
+          );
+        }
+      } else {
+        await this.assertSizeAllows(lineBytes);
+      }
       // O_APPEND makes each small write atomic on POSIX, so concurrent single-node
       // writers do not interleave partial lines (cross-writer dedup is best-effort).
       await appendFile(this.filePath, line, { encoding: 'utf8', mode: EVIDENCE_FILE_MODE });
@@ -608,55 +652,70 @@ export class FileConsentEvidenceStore implements ConsentEvidenceStore {
   }
 
   private parseLine(line: string): StoredRecord | null {
+    let obj: Partial<StoredRecord>;
     try {
-      const obj = JSON.parse(line) as Partial<StoredRecord>;
-      if (obj.type === 'grant') {
-        const grant = obj as Partial<ConsentEvidence> & { type: 'grant' };
-        if (
-          typeof grant.sub === 'string' &&
-          typeof grant.issuer === 'string' &&
-          (typeof grant.tenantId === 'string' || grant.tenantId === null) &&
-          typeof grant.profileId === 'string' &&
-          typeof grant.rules_version === 'string' &&
-          typeof grant.rules_hash === 'string' &&
-          typeof grant.granted_at === 'number'
-        ) {
-          return {
-            type: 'grant',
-            sub: grant.sub,
-            issuer: grant.issuer,
-            tenantId: grant.tenantId,
-            profileId: grant.profileId,
-            rules_version: grant.rules_version,
-            rules_hash: grant.rules_hash,
-            granted_at: grant.granted_at,
-          };
-        }
-        return null;
-      }
-      if (obj.type === 'revocation') {
-        const revocation = obj as Partial<ConsentRevocation> & { type: 'revocation' };
-        if (
-          typeof revocation.sub === 'string' &&
-          typeof revocation.issuer === 'string' &&
-          (typeof revocation.tenantId === 'string' || revocation.tenantId === null) &&
-          typeof revocation.profileId === 'string' &&
-          typeof revocation.revoked_at === 'number'
-        ) {
-          return {
-            type: 'revocation',
-            sub: revocation.sub,
-            issuer: revocation.issuer,
-            tenantId: revocation.tenantId,
-            profileId: revocation.profileId,
-            revoked_at: revocation.revoked_at,
-            reason: typeof revocation.reason === 'string' ? revocation.reason : undefined,
-          };
-        }
-        return null;
-      }
+      obj = JSON.parse(line) as Partial<StoredRecord>;
     } catch {
-      // fallthrough: malformed line
+      // An unparseable line cannot be proven not to be a revocation, and a
+      // skipped revocation fails open (consent stays active), so fail closed
+      // until an operator repairs the file. The line content is not included
+      // in the error: it may carry identity data.
+      throw new ConsentEvidenceStoreError(
+        'Unparseable consent evidence line; repair the evidence file before continuing',
+        { path: this.filePath },
+      );
+    }
+    if (obj.type === 'grant') {
+      const grant = obj as Partial<ConsentEvidence> & { type: 'grant' };
+      if (
+        typeof grant.sub === 'string' &&
+        typeof grant.issuer === 'string' &&
+        (typeof grant.tenantId === 'string' || grant.tenantId === null) &&
+        typeof grant.profileId === 'string' &&
+        typeof grant.rules_version === 'string' &&
+        typeof grant.rules_hash === 'string' &&
+        typeof grant.granted_at === 'number'
+      ) {
+        return {
+          type: 'grant',
+          sub: grant.sub,
+          issuer: grant.issuer,
+          tenantId: grant.tenantId,
+          profileId: grant.profileId,
+          rules_version: grant.rules_version,
+          rules_hash: grant.rules_hash,
+          granted_at: grant.granted_at,
+        };
+      }
+      // Skipping a malformed grant fails closed (it merely cannot satisfy a
+      // lookup), so unlike a revocation it does not block the whole read.
+      return null;
+    }
+    if (obj.type === 'revocation') {
+      const revocation = obj as Partial<ConsentRevocation> & { type: 'revocation' };
+      if (
+        typeof revocation.sub === 'string' &&
+        typeof revocation.issuer === 'string' &&
+        (typeof revocation.tenantId === 'string' || revocation.tenantId === null) &&
+        typeof revocation.profileId === 'string' &&
+        typeof revocation.revoked_at === 'number'
+      ) {
+        return {
+          type: 'revocation',
+          sub: revocation.sub,
+          issuer: revocation.issuer,
+          tenantId: revocation.tenantId,
+          profileId: revocation.profileId,
+          revoked_at: revocation.revoked_at,
+          reason: typeof revocation.reason === 'string' ? revocation.reason : undefined,
+        };
+      }
+      // A revocation that fails validation must not be skipped: it would
+      // silently stop applying and leave consent active (fail open).
+      throw new ConsentEvidenceStoreError(
+        'Malformed consent revocation line; repair the evidence file before continuing',
+        { path: this.filePath },
+      );
     }
     return null;
   }

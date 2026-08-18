@@ -17,6 +17,7 @@
 import { Pool } from 'pg';
 import type { Logger } from '../core/logger.js';
 import { ConsentEvidenceStoreError } from '../core/errors.js';
+import { evaluateGrantFold } from './consent-evidence-store.js';
 import type {
   ConsentEvidence,
   ConsentEvidenceStore,
@@ -50,7 +51,17 @@ const DEFAULT_TABLE = 'consent_evidence';
 /** Table names come from code/config, never from request data; still validated. */
 const TABLE_NAME_PATTERN = /^[a-z_][a-z0-9_]{0,62}$/;
 
+/**
+ * Binds a query to one identity and profile ($1..$4). The tenant comparison is
+ * a portable spelling of IS NOT DISTINCT FROM: an absent tenant matches only
+ * an absent tenant, never a concrete one.
+ */
+const IDENTITY_PREDICATE = `sub = $1 AND issuer = $2
+        AND (tenant_id = $3 OR (tenant_id IS NULL AND $3 IS NULL))
+        AND profile_id = $4`;
+
 interface GrantRow {
+  id: string | number;
   sub: string;
   issuer: string;
   tenant_id: string | null;
@@ -58,6 +69,12 @@ interface GrantRow {
   rules_version: string;
   rules_hash: string;
   granted_at: string | number;
+}
+
+/** Newest-revocation aggregate for one identity and profile. */
+interface RevocationRow {
+  revoked_at: string | number | null;
+  last_id: string | number | null;
 }
 
 export class PostgresConsentEvidenceStore implements ConsentEvidenceStore {
@@ -97,37 +114,33 @@ export class PostgresConsentEvidenceStore implements ConsentEvidenceStore {
 
   async record(evidence: ConsentEvidence): Promise<void> {
     await this.ensureSchema();
-    // Same fold rule as ConsentIndex.apply: persist only when the acceptance
-    // changes policy-relevant state (renewal recency, a differing rules hash at
-    // an equal timestamp, or the latest-per-identity acceptance). An exact
-    // replay or an out-of-order older acceptance stays a no-op so the audit
-    // trail is not flooded by retries.
-    // `(tenant_id = $3 OR (tenant_id IS NULL AND $3 IS NULL))` is a portable
-    // spelling of IS NOT DISTINCT FROM: an absent tenant matches only an
-    // absent tenant, never a concrete one.
+    // Same fold rule as ConsentIndex.apply, evaluated by the shared
+    // `evaluateGrantFold` against the newest stored row per key and per
+    // identity, so every backend persists the same acceptances (for example an
+    // equal-timestamp re-acceptance of an older rules version must flip the
+    // latest grant here exactly as it does in the in-memory/file index).
+    // Read-then-insert is not transactional: two racing writers can at worst
+    // duplicate an audit row, which the append-only design already accepts.
+    const identityParams = [evidence.sub, evidence.issuer, evidence.tenantId, evidence.profileId];
+    const [keyRows, identityRows] = await Promise.all([
+      this.run(
+        'read newest consent grant for key',
+        this.newestGrantQuery(true),
+        [...identityParams, evidence.rules_version],
+      ),
+      this.run('read newest consent grant for identity', this.newestGrantQuery(false), identityParams),
+    ]);
+    const fold = evaluateGrantFold(
+      evidence,
+      toEvidence(keyRows.rows[0] as unknown as GrantRow | undefined),
+      toEvidence(identityRows.rows[0] as unknown as GrantRow | undefined),
+    );
+    if (!fold.updatesGrant && !fold.updatesLatestGrant) return;
     await this.run(
       'record consent grant',
       `INSERT INTO ${this.table}
          (type, sub, issuer, tenant_id, profile_id, rules_version, rules_hash, granted_at)
-       SELECT 'grant', $1, $2, $3, $4, $5, $6, CAST($7 AS BIGINT)
-       WHERE NOT EXISTS (
-           SELECT 1 FROM ${this.table}
-           WHERE type = 'grant'
-             AND sub = $1 AND issuer = $2
-             AND (tenant_id = $3 OR (tenant_id IS NULL AND $3 IS NULL))
-             AND profile_id = $4 AND rules_version = $5
-             AND (granted_at > CAST($7 AS BIGINT)
-                  OR (granted_at = CAST($7 AS BIGINT) AND rules_hash = $6))
-         )
-          OR NOT EXISTS (
-           SELECT 1 FROM ${this.table}
-           WHERE type = 'grant'
-             AND sub = $1 AND issuer = $2
-             AND (tenant_id = $3 OR (tenant_id IS NULL AND $3 IS NULL))
-             AND profile_id = $4
-             AND (granted_at > CAST($7 AS BIGINT)
-                  OR (granted_at = CAST($7 AS BIGINT) AND rules_version = $5 AND rules_hash = $6))
-         )`,
+       VALUES ('grant', $1, $2, $3, $4, $5, $6, CAST($7 AS BIGINT))`,
       [
         evidence.sub,
         evidence.issuer,
@@ -165,47 +178,44 @@ export class PostgresConsentEvidenceStore implements ConsentEvidenceStore {
   ): Promise<ConsentLookupResult> {
     await this.ensureSchema();
     const identityParams = [identity.sub, identity.issuer, identity.tenantId, profileId];
-    const grantColumns =
-      'sub, issuer, tenant_id, profile_id, rules_version, rules_hash, granted_at';
-    const identityPredicate = `sub = $1 AND issuer = $2
-        AND (tenant_id = $3 OR (tenant_id IS NULL AND $3 IS NULL))
-        AND profile_id = $4`;
 
-    // `id DESC` implements the deterministic tie-break the contract requires:
-    // on an equal granted_at the later recorded acceptance wins.
     const [grantRows, latestRows, revocationRows] = await Promise.all([
-      this.run(
-        'look up consent grant',
-        `SELECT ${grantColumns} FROM ${this.table}
-         WHERE type = 'grant' AND ${identityPredicate} AND rules_version = $5
-         ORDER BY granted_at DESC, id DESC
-         LIMIT 1`,
-        [...identityParams, rulesVersion],
-      ),
-      this.run(
-        'look up latest consent grant',
-        `SELECT ${grantColumns} FROM ${this.table}
-         WHERE type = 'grant' AND ${identityPredicate}
-         ORDER BY granted_at DESC, id DESC
-         LIMIT 1`,
-        identityParams,
-      ),
+      this.run('look up consent grant', this.newestGrantQuery(true), [
+        ...identityParams,
+        rulesVersion,
+      ]),
+      this.run('look up latest consent grant', this.newestGrantQuery(false), identityParams),
       this.run(
         'look up consent revocation',
-        `SELECT MAX(revoked_at) AS revoked_at FROM ${this.table}
-         WHERE type = 'revocation' AND ${identityPredicate}`,
+        `SELECT MAX(revoked_at) AS revoked_at, MAX(id) AS last_id FROM ${this.table}
+         WHERE type = 'revocation' AND ${IDENTITY_PREDICATE}`,
         identityParams,
       ),
     ]);
 
-    const grant = toEvidence(grantRows.rows[0] as unknown as GrantRow | undefined);
-    const revokedAt = revocationRows.rows[0]?.revoked_at;
+    const grantRow = grantRows.rows[0] as unknown as GrantRow | undefined;
     return {
-      grant,
-      grantRenewedAt: grant ? grant.granted_at : null,
+      grant: toEvidence(grantRow),
       latestGrant: toEvidence(latestRows.rows[0] as unknown as GrantRow | undefined),
-      revokedAt: revokedAt === null || revokedAt === undefined ? null : Number(revokedAt),
+      revokedAt: effectiveRevokedAt(
+        grantRow,
+        revocationRows.rows[0] as unknown as RevocationRow | undefined,
+      ),
     };
+  }
+
+  /**
+   * Newest acceptance first: `id DESC` implements the deterministic tie-break
+   * the contract requires (on an equal granted_at the later recorded
+   * acceptance wins). Shared by `record` and `lookup` so both fold over the
+   * same newest row.
+   */
+  private newestGrantQuery(perKey: boolean): string {
+    return `SELECT id, sub, issuer, tenant_id, profile_id, rules_version, rules_hash, granted_at
+         FROM ${this.table}
+         WHERE type = 'grant' AND ${IDENTITY_PREDICATE}${perKey ? ' AND rules_version = $5' : ''}
+         ORDER BY granted_at DESC, id DESC
+         LIMIT 1`;
   }
 
   private ensureSchema(): Promise<void> {
@@ -280,4 +290,31 @@ function toEvidence(row: GrantRow | null | undefined): ConsentEvidence | null {
     // and stay far below Number.MAX_SAFE_INTEGER.
     granted_at: Number(row.granted_at),
   };
+}
+
+/** BIGINT arrives as a string from pg; null/undefined means no row matched. */
+function toNumberOrNull(value: string | number | null | undefined): number | null {
+  return value === null || value === undefined ? null : Number(value);
+}
+
+/**
+ * Grant-vs-revocation supersession is ordered by insertion order (monotonic
+ * `id`), not by the caller-supplied timestamps: with multiple replicas, clock
+ * skew could otherwise let a later-stamped grant defeat a revocation recorded
+ * after it (fail open), or a later-stamped revocation defeat a grant recorded
+ * after it. The returned value is shaped so the gate's timestamp comparison
+ * reproduces the insertion-order decision: a revocation recorded after the
+ * newest acceptance always reads as at least as new as the acceptance, and one
+ * superseded by a later-recorded acceptance is dropped entirely.
+ */
+function effectiveRevokedAt(
+  grant: GrantRow | undefined,
+  revocation: RevocationRow | undefined,
+): number | null {
+  const revokedAt = toNumberOrNull(revocation?.revoked_at);
+  if (revokedAt === null) return null;
+  if (!grant) return revokedAt;
+  const lastRevocationId = toNumberOrNull(revocation?.last_id);
+  if (lastRevocationId !== null && Number(grant.id) > lastRevocationId) return null;
+  return Math.max(revokedAt, Number(grant.granted_at));
 }

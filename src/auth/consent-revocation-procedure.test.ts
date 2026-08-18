@@ -145,7 +145,7 @@ describe('operator revocation procedure', () => {
     await expect(gate.assertConsent(principal)).resolves.toBeUndefined();
   });
 
-  it('rejects a malformed revocation line instead of applying it partially', async () => {
+  it('fails closed on a malformed revocation line instead of skipping it', async () => {
     const store = new FileConsentEvidenceStore(filePath, logger);
     const gate = buildGate(store);
 
@@ -159,8 +159,9 @@ describe('operator revocation procedure', () => {
       granted_at: 1_000,
     });
 
-    // Missing revoked_at: skipped as malformed, so consent still stands. The
-    // operator must notice the warning rather than assume the revoke landed.
+    // Missing revoked_at: skipping the line would leave consent active while
+    // the operator believes the revoke landed, so the store blocks every
+    // dispatch until the line is repaired.
     fs.appendFileSync(
       filePath,
       `${JSON.stringify({
@@ -173,10 +174,9 @@ describe('operator revocation procedure', () => {
       'utf8',
     );
 
-    await expect(gate.assertConsent(principal)).resolves.toBeUndefined();
-    expect(vi.mocked(logger.warn)).toHaveBeenCalledWith(
-      'Skipped malformed consent evidence lines',
-      expect.objectContaining({ skipped: 1 }),
-    );
+    await expect(gate.assertConsent(principal)).rejects.toMatchObject({
+      name: 'ConsentEvidenceStoreError',
+      code: 'CONSENT_EVIDENCE_STORE_ERROR',
+    });
   });
 });
