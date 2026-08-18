@@ -8,11 +8,18 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import request from 'supertest';
 import type { Express } from 'express';
 import fs from 'fs';
+import os from 'node:os';
+import path from 'node:path';
 import https from 'https';
 import { HttpTransport } from './http-transport.js';
+import { ReconsentTracker } from './reconsent-tracker.js';
 import type { HttpTransportConfig } from '../types/http-transport.js';
 import { ConsoleLogger, type Logger } from '../core/logger.js';
-import { ValidationError } from '../core/errors.js';
+import { AuthenticationError, ValidationError, ConsentRequiredError } from '../core/errors.js';
+import { ConsentGate } from '../auth/consent-gate.js';
+import { InMemoryConsentEvidenceStore } from '../auth/consent-evidence-store.js';
+import { computeRulesHash } from '../auth/consent-rules-hash.js';
+import { configureObservabilityPseudonym, pseudonymizeSubject } from '../auth/observability-pseudonym.js';
 import { describeIfListen } from '../testing/listen-support.js';
 import { parseSessionToolFilterHeader } from '../tool-filter/index.js';
 
@@ -1671,7 +1678,8 @@ describeIfListen('HttpTransport', () => {
 
   describe('POST - Request with Session', () => {
     it('should require session ID for non-initialization requests', async () => {
-      transport.setMessageHandler(async (_msg) => ({ result: 'ok' }));
+      const messageHandler = vi.fn(async (_msg: unknown) => ({ result: 'ok' }));
+      transport.setMessageHandler(messageHandler);
 
       const response = await request(app)
         .post('/mcp')
@@ -1685,6 +1693,9 @@ describeIfListen('HttpTransport', () => {
       expect(response.status).toBe(400);
       expect(response.body).toHaveProperty('message');
       expect(response.body.message).toContain('Mcp-Session-Id');
+      // The rejection must happen before dispatch, not merely return a 400: this is
+      // what keeps a sessionless request from reaching tool handling at all.
+      expect(messageHandler).not.toHaveBeenCalled();
     });
 
     it('should reject invalid session ID', async () => {
@@ -2703,8 +2714,10 @@ describeIfListen('HttpTransport', () => {
 	  describe('OAuth Authorize Endpoint', () => {
 	    let oauthTransport: HttpTransport;
 	    let oauthApp: any;
+	    let consentEvidenceDir: string;
 
     beforeEach(async () => {
+      consentEvidenceDir = fs.mkdtempSync(path.join(os.tmpdir(), 'consent-authorize-'));
       const oauthConfig = {
         host: '127.0.0.1',
         port: 0,
@@ -2720,6 +2733,10 @@ describeIfListen('HttpTransport', () => {
           redirect_uri: 'https://example.com/oauth/callback',
           scopes: ['read', 'write'],
         },
+        // A consent-gated profile refuses to start without durable evidence
+        // storage and a token key, so both are supplied for these flows.
+        tokenKey: Buffer.alloc(32, 7),
+        consentEvidencePath: path.join(consentEvidenceDir, 'evidence.jsonl'),
       };
 
       oauthTransport = new HttpTransport(oauthConfig, logger);
@@ -2737,6 +2754,231 @@ describeIfListen('HttpTransport', () => {
 
       // Returns 400 with error in body or text
       expect(response.status).toBe(400);
+    });
+
+    it('requires one-time explicit consent before redirecting to the OAuth provider', async () => {
+      const context = (oauthTransport as any).buildDefaultProfileContext();
+      oauthTransport.setProfileContextProvider(async () => ({
+        ...context,
+        consent_gate: {
+          required: true,
+          rules_version: 'v1',
+          rules_summary: 'Accept SharePoint usage rules.',
+          identity_source: 'profile_oauth',
+        },
+      }));
+      const query = {
+        response_type: 'code',
+        client_id: 'test-client',
+        redirect_uri: 'http://localhost:3003/oauth/callback',
+        scope: 'openid read',
+        state: 'client-state',
+        code_challenge: 'challenge',
+        code_challenge_method: 'S256',
+      };
+
+      const consentPage = await request(oauthApp).get('/oauth/authorize').query(query);
+      expect(consentPage.status).toBe(200);
+      expect(consentPage.headers['cache-control']).toBe('no-store');
+      expect(consentPage.headers['content-security-policy']).toContain("form-action 'self'");
+      expect(consentPage.text).toContain('Accept SharePoint usage rules.');
+      // No decorative CSRF token: protection is the request fingerprint + __Host- cookie.
+      expect(consentPage.text).not.toContain('consent_token');
+      const setCookie: string = ([] as string[]).concat(consentPage.headers['set-cookie'] ?? [])[0];
+      expect(setCookie).toMatch(/^__Host-mcp4_consent=/);
+      expect(setCookie).toContain('HttpOnly');
+      expect(setCookie).toContain('Secure');
+      expect(setCookie).toContain('SameSite=Lax');
+      expect(setCookie).toContain('Path=/');
+      const cookie = setCookie.split(';')[0];
+
+      const approved = await request(oauthApp)
+        .post('/oauth/authorize')
+        .type('form')
+        .set('Cookie', cookie)
+        .send({ ...query, consent_accept: 'yes' });
+      expect(approved.status).toBe(302);
+      expect(approved.headers.location).toContain('https://auth.example.com/oauth/authorize');
+
+      const replay = await request(oauthApp)
+        .post('/oauth/authorize')
+        .type('form')
+        .set('Cookie', cookie)
+        .send({ ...query, consent_accept: 'yes' });
+      expect(replay.status).toBe(400);
+      expect(replay.text).toContain('Consent approval expired');
+      // The expired page carries the same CSP as the other consent pages.
+      expect(replay.headers['content-security-policy']).toContain("default-src 'none'");
+      // The dead end is recoverable: the failure page links back into the flow.
+      expect(replay.text).toContain('Start the consent flow again');
+    });
+
+    it('rejects an acknowledgement submitted without the browser cookie', async () => {
+      const context = (oauthTransport as any).buildDefaultProfileContext();
+      oauthTransport.setProfileContextProvider(async () => ({
+        ...context,
+        consent_gate: {
+          required: true,
+          rules_version: 'v1',
+          rules_summary: 'Accept SharePoint usage rules.',
+          identity_source: 'profile_oauth',
+        },
+      }));
+      const query = {
+        response_type: 'code',
+        client_id: 'test-client',
+        redirect_uri: 'http://localhost:3003/oauth/callback',
+        scope: 'openid read',
+        state: 'client-state',
+        code_challenge: 'challenge',
+        code_challenge_method: 'S256',
+      };
+
+      await request(oauthApp).get('/oauth/authorize').query(query);
+
+      const noCookie = await request(oauthApp)
+        .post('/oauth/authorize')
+        .type('form')
+        .send({ ...query, consent_accept: 'yes' });
+      expect(noCookie.status).toBe(400);
+
+      const wrongCookie = await request(oauthApp)
+        .post('/oauth/authorize')
+        .type('form')
+        .set('Cookie', '__Host-mcp4_consent=some-other-browser')
+        .send({ ...query, consent_accept: 'yes' });
+      expect(wrongCookie.status).toBe(400);
+    });
+
+    it('rejects an acknowledgement whose OAuth parameters changed after the rules were shown', async () => {
+      const context = (oauthTransport as any).buildDefaultProfileContext();
+      oauthTransport.setProfileContextProvider(async () => ({
+        ...context,
+        consent_gate: {
+          required: true,
+          rules_version: 'v1',
+          rules_summary: 'Accept SharePoint usage rules.',
+          identity_source: 'profile_oauth',
+        },
+      }));
+      const query = {
+        response_type: 'code',
+        client_id: 'test-client',
+        redirect_uri: 'http://localhost:3003/oauth/callback',
+        scope: 'openid read',
+        state: 'client-state',
+        code_challenge: 'challenge',
+        code_challenge_method: 'S256',
+      };
+
+      const consentPage = await request(oauthApp).get('/oauth/authorize').query(query);
+      const cookie = ([] as string[])
+        .concat(consentPage.headers['set-cookie'] ?? [])[0]
+        .split(';')[0];
+
+      // Same browser, same acknowledgement, different redirect_uri: the approval
+      // is bound to the complete OAuth request, so this must not authorize.
+      const tampered = await request(oauthApp)
+        .post('/oauth/authorize')
+        .type('form')
+        .set('Cookie', cookie)
+        .send({
+          ...query,
+          redirect_uri: 'http://localhost:3003/attacker/callback',
+          consent_accept: 'yes',
+        });
+      expect(tampered.status).toBe(400);
+    });
+
+    it('rejects an acknowledgement after the approval expired', async () => {
+      vi.useFakeTimers();
+      try {
+        const context = (oauthTransport as any).buildDefaultProfileContext();
+        oauthTransport.setProfileContextProvider(async () => ({
+          ...context,
+          consent_gate: {
+            required: true,
+            rules_version: 'v1',
+            rules_summary: 'Accept SharePoint usage rules.',
+            identity_source: 'profile_oauth',
+          },
+        }));
+        const query = {
+          response_type: 'code',
+          client_id: 'test-client',
+          redirect_uri: 'http://localhost:3003/oauth/callback',
+          scope: 'openid read',
+          state: 'client-state',
+          code_challenge: 'challenge',
+          code_challenge_method: 'S256',
+        };
+
+        const consentPage = await request(oauthApp).get('/oauth/authorize').query(query);
+        const cookie = ([] as string[])
+          .concat(consentPage.headers['set-cookie'] ?? [])[0]
+          .split(';')[0];
+
+        vi.setSystemTime(Date.now() + 5 * 60 * 1000 + 1000);
+
+        const expired = await request(oauthApp)
+          .post('/oauth/authorize')
+          .type('form')
+          .set('Cookie', cookie)
+          .send({ ...query, consent_accept: 'yes' });
+        expect(expired.status).toBe(400);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('keys pending approvals by request fingerprint so repeated renders cannot starve the store', async () => {
+      const context = (oauthTransport as any).buildDefaultProfileContext();
+      oauthTransport.setProfileContextProvider(async () => ({
+        ...context,
+        consent_gate: {
+          required: true,
+          rules_version: 'v1',
+          rules_summary: 'Accept SharePoint usage rules.',
+          identity_source: 'profile_oauth',
+        },
+      }));
+      const query = {
+        response_type: 'code',
+        client_id: 'test-client',
+        redirect_uri: 'http://localhost:3003/oauth/callback',
+        scope: 'openid read',
+        state: 'client-state',
+        code_challenge: 'challenge',
+        code_challenge_method: 'S256',
+      };
+
+      for (let i = 0; i < 50; i += 1) {
+        await request(oauthApp).get('/oauth/authorize').query(query);
+      }
+
+      // 50 renders of the same OAuth request occupy exactly one slot, so
+      // unauthenticated traffic cannot evict another user's pending approval.
+      expect((oauthTransport as any).consentController.pendingApprovalCount).toBe(1);
+    });
+
+    it('serves an actionable no-store consent page without granting consent', async () => {
+      const context = (oauthTransport as any).buildDefaultProfileContext();
+      oauthTransport.setProfileContextProvider(async () => ({
+        ...context,
+        consent_gate: {
+          required: true,
+          rules_version: 'v2',
+          rules_summary: 'Updated SharePoint rules.',
+          identity_source: 'profile_oauth',
+        },
+      }));
+
+      const response = await request(oauthApp).get('/consent');
+      expect(response.status).toBe(200);
+      expect(response.headers['cache-control']).toBe('no-store');
+      expect(response.text).toContain('Updated SharePoint rules.');
+      expect(response.text).toContain('Reconnect this MCP server');
+      expect(response.text).not.toContain('<form');
     });
 
 	    it('should reject authorize request without response_type', async () => {
@@ -4178,6 +4420,54 @@ describeIfListen('HttpTransport', () => {
       expect(stored.refreshToken).toBeUndefined();
       expect(stored.expiresAt).toBeUndefined();
     });
+
+    it('non-consent profile without identity falls back to clientId subject (unchanged behaviour)', () => {
+      const profileState = {
+        profileId: 'default',
+        context: { profileId: 'default' },
+        oauthProvider: null,
+        oauthTokensByAccessToken: new Map(),
+        sessions: new Map(),
+      };
+      (transport as any).profileStates.set('default', profileState);
+
+      (transport as any).storeOAuthTokens(
+        profileState,
+        { access_token: 'plain-access-nc' },
+        'client-nc',
+        ['read'],
+      );
+
+      const record = (transport as any).inboundAuthTokenStore.get('plain-access-nc');
+      expect(record).toBeDefined();
+      expect(record.principal.subject).toBe('client-nc');
+    });
+
+    it('consent-gated profile without verified identity omits principal so gate fails closed', () => {
+      const profileState = {
+        profileId: 'default',
+        context: {
+          profileId: 'default',
+          consent_gate: { required: true, rules_version: 'v1', identity_source: 'profile_oauth' },
+        },
+        oauthProvider: null,
+        oauthTokensByAccessToken: new Map(),
+        sessions: new Map(),
+      };
+      (transport as any).profileStates.set('default', profileState);
+
+      (transport as any).storeOAuthTokens(
+        profileState,
+        { access_token: 'plain-access-cg' },
+        'client-cg',
+        ['read'],
+      );
+
+      // OAuth token map is still populated (needed for refresh), but no principal is
+      // stored: a consent-gated session must never bind consent to clientId.
+      expect(profileState.oauthTokensByAccessToken.get('plain-access-cg')).toBeDefined();
+      expect((transport as any).inboundAuthTokenStore.get('plain-access-cg')).toBeUndefined();
+    });
   });
 
   describe('storeOAuthTokens encrypted envelope path', () => {
@@ -4351,7 +4641,8 @@ describeIfListen('HttpTransport', () => {
     };
 
     it('Test J: authorization_code response wraps access_token with mcp4.v1.* envelope when tokenKey set', async () => {
-      const t = await buildOauthTransport(Buffer.from('a'.repeat(64), 'hex'));
+      const key = Buffer.from('a'.repeat(64), 'hex');
+      const t = await buildOauthTransport(key);
       const tApp = (t as any).app;
       // Access profileState and stub OAuth provider methods
       const profileState = (t as any).profileStates.get('default') ?? createProfileState(t as any);
@@ -4396,7 +4687,13 @@ describeIfListen('HttpTransport', () => {
       expect(response.status).toBe(200);
       expect(typeof response.body.access_token).toBe('string');
       expect(response.body.access_token.startsWith('mcp4.v1.')).toBe(true);
-      expect(response.body.refresh_token).toBe('raw-idp-refresh-j');
+      // The refresh token is issued as an identity-bearing mcp4.r1.* envelope so a
+      // direct refresh grant after a restart can rebind the verified human.
+      const { decryptRefreshEnvelope } = await import('../auth/token-envelope.js');
+      expect(response.body.refresh_token.startsWith('mcp4.r1.')).toBe(true);
+      expect(decryptRefreshEnvelope(response.body.refresh_token, key, 'default')).toMatchObject({
+        rt: 'raw-idp-refresh-j',
+      });
       await t.stop();
     });
 
@@ -4602,6 +4899,351 @@ describeIfListen('HttpTransport', () => {
         }),
       );
       await t.stop();
+    });
+
+    it('preserves the verified OAuth principal when cached envelope recovery is initialized again with consent required', async () => {
+      const { encryptTokenPayload } = await import('../auth/token-envelope.js');
+      const key = buildKey();
+      const mockLogger = mkLogger();
+      const t = buildTransport({ tokenKey: key, testLogger: mockLogger });
+      const tApp = (t as any).app;
+      const profileState = (t as any).__test_profileState;
+      const issuer = 'https://issuer.example';
+      const evidenceStore = new InMemoryConsentEvidenceStore();
+      profileState.context.consent_gate = {
+        required: true,
+        rules_version: 'v1',
+        identity_source: 'profile_oauth',
+      };
+      profileState.oauthProvider.issuer = issuer;
+      profileState.consentGate = new ConsentGate(
+        'default',
+        profileState.context.consent_gate,
+        evidenceStore,
+        (profileId) => `https://gateway.example/mcp/${profileId}/consent`,
+        mockLogger,
+        issuer,
+      );
+      await evidenceStore.record({
+        sub: 'person-m',
+        issuer,
+        tenantId: 'tenant-m',
+        profileId: 'default',
+        rules_version: 'v1',
+        rules_hash: computeRulesHash(profileState.context.consent_gate),
+        granted_at: Date.now(),
+      });
+      t.setMessageHandler(async () => ({ protocolVersion: '2025-03-26', serverInfo: { name: 'test' } }));
+
+      const expiresAt = Date.now() + 60_000;
+      const envelope = encryptTokenPayload(
+        {
+          v: 1,
+          at: 'idp-access-m',
+          rt: 'idp-refresh-m',
+          exp: expiresAt,
+          cid: 'client-m',
+          sc: ['read', 'write'],
+          sub: 'person-m',
+          iss: issuer,
+          tid: 'tenant-m',
+          pid: 'default',
+          iat: Date.now(),
+        },
+        key,
+      );
+
+      for (const id of [1, 2]) {
+        const response = await request(tApp)
+          .post('/mcp')
+          .set('Accept', 'application/json, text/event-stream')
+          .set('Authorization', `Bearer ${envelope}`)
+          .send({ jsonrpc: '2.0', id, method: 'initialize', params: {} });
+        expect(response.status).toBe(200);
+      }
+
+      const [secondSessionId, secondSession] = Array.from(profileState.sessions.entries()).at(-1)!;
+      expect(secondSession.clientPrincipal).toEqual({
+        authType: 'oauth',
+        profileId: 'default',
+        subject: 'person-m',
+        issuer,
+        tenantId: 'tenant-m',
+        clientId: 'client-m',
+        scopes: ['read', 'write'],
+        expiresAt,
+      });
+      await expect(t.assertSessionConsent('default', secondSessionId)).resolves.toBeUndefined();
+      await t.stop();
+    });
+
+    it('recovers the verified identity from a refresh envelope after a restart (direct grant)', async () => {
+      const { encryptRefreshEnvelope } = await import('../auth/token-envelope.js');
+      const key = buildKey();
+      const issuer = 'https://issuer.example';
+      // A fresh transport models a restarted gateway: the provider's in-process
+      // refresh-identity map is empty, so the envelope is the only identity source.
+      const t = buildTransport({ tokenKey: key, testLogger: mkLogger() });
+      const state = (t as any).__test_profileState;
+      state.context.consent_gate = {
+        required: true,
+        rules_version: 'v1',
+        identity_source: 'profile_oauth',
+      };
+      const exchangeRefreshToken = vi.fn(async () => ({
+        access_token: 'access-after-restart',
+        refresh_token: 'idp-refresh-rotated',
+        expires_in: 3600,
+        token_type: 'Bearer',
+      }));
+      state.oauthProvider = {
+        issuer,
+        ensureEndpointsInitialized: async () => {},
+        clientsStore: { getClient: async () => undefined, registerClient: async (c: any) => c },
+        getIdentityForAccessToken: () => undefined,
+        exchangeRefreshToken,
+      };
+
+      const envelope = encryptRefreshEnvelope(
+        {
+          v: 1,
+          rt: 'idp-refresh-original',
+          cid: 'client-restart',
+          sub: 'person-restart',
+          iss: issuer,
+          tid: 'tenant-restart',
+          pid: 'default',
+          iat: Date.now(),
+        },
+        key,
+      );
+
+      const grant = (t as any).resolveRefreshGrant(state, envelope, 'client-restart');
+      expect(grant.refreshToken).toBe('idp-refresh-original');
+      expect(grant.identity).toEqual({
+        subject: 'person-restart',
+        issuer,
+        tenantId: 'tenant-restart',
+      });
+      await t.stop();
+    });
+
+    it('refuses a raw refresh token on a consent-gated profile so the client re-runs OAuth', async () => {
+      const t = buildTransport({ tokenKey: buildKey(), testLogger: mkLogger() });
+      const state = (t as any).__test_profileState;
+      state.context.consent_gate = {
+        required: true,
+        rules_version: 'v1',
+        identity_source: 'profile_oauth',
+      };
+
+      expect(() => (t as any).resolveRefreshGrant(state, 'plain-refresh-token', 'client-x')).toThrow(
+        /identity-bearing refresh token/,
+      );
+      await t.stop();
+    });
+
+    it('refuses a refresh envelope that carries no identity on a consent-gated profile', async () => {
+      const { encryptRefreshEnvelope } = await import('../auth/token-envelope.js');
+      const key = buildKey();
+      const t = buildTransport({ tokenKey: key, testLogger: mkLogger() });
+      const state = (t as any).__test_profileState;
+      state.context.consent_gate = {
+        required: true,
+        rules_version: 'v1',
+        identity_source: 'profile_oauth',
+      };
+      const envelope = encryptRefreshEnvelope(
+        { v: 1, rt: 'idp-refresh', cid: 'client-x', pid: 'default', iat: Date.now() },
+        key,
+      );
+
+      expect(() => (t as any).resolveRefreshGrant(state, envelope, 'client-x')).toThrow(
+        /no verified identity/,
+      );
+      await t.stop();
+    });
+
+    it('accepts a plain refresh token on a profile without a consent gate', async () => {
+      const t = buildTransport({ tokenKey: buildKey(), testLogger: mkLogger() });
+      const state = (t as any).__test_profileState;
+
+      expect((t as any).resolveRefreshGrant(state, 'plain-refresh-token', 'client-x')).toEqual({
+        refreshToken: 'plain-refresh-token',
+      });
+      await t.stop();
+    });
+
+    it('issues the refresh token as an identity-bearing envelope', async () => {
+      const { decryptRefreshEnvelope } = await import('../auth/token-envelope.js');
+      const key = buildKey();
+      const issuer = 'https://issuer.example';
+      const t = buildTransport({ tokenKey: key, testLogger: mkLogger() });
+      const state = (t as any).__test_profileState;
+      state.oauthProvider.getIdentityForAccessToken = (token: string) =>
+        token === 'idp-access' ? { subject: 'person-1', issuer, tenantId: 'tenant-1' } : undefined;
+
+      const clientRefreshToken = (t as any).buildClientRefreshToken(
+        state,
+        { access_token: 'idp-access', refresh_token: 'idp-refresh', expires_in: 3600 },
+        'client-1',
+      );
+
+      expect(decryptRefreshEnvelope(clientRefreshToken, key, 'default')).toMatchObject({
+        rt: 'idp-refresh',
+        sub: 'person-1',
+        tid: 'tenant-1',
+      });
+      await t.stop();
+    });
+
+    it('preserves identity through restart recovery, refresh, and a second recovery', async () => {
+      const { decryptTokenPayload, encryptTokenPayload } = await import('../auth/token-envelope.js');
+      const key = buildKey();
+      const issuer = 'https://issuer.example';
+      const principal = {
+        subject: 'person-refresh',
+        issuer,
+        tenantId: 'tenant-refresh',
+      };
+      const evidenceStore = new InMemoryConsentEvidenceStore();
+      const firstTransport = buildTransport({ tokenKey: key, testLogger: mkLogger() });
+      const firstState = (firstTransport as any).__test_profileState;
+      firstState.context.consent_gate = {
+        required: true,
+        rules_version: 'v1',
+        identity_source: 'profile_oauth',
+      };
+      firstState.oauthProvider = {
+        issuer,
+        ensureEndpointsInitialized: async () => {},
+        clientsStore: {
+          getClient: async () => ({
+            client_id: 'client-refresh',
+            scope: 'read write',
+          }),
+          registerClient: async (client: any) => client,
+        },
+        getIdentityForAccessToken: (accessToken: string) =>
+          accessToken === 'access-refreshed' ? principal : undefined,
+        exchangeRefreshToken: vi.fn(async (...args: any[]) => {
+          expect(args[1]).toBe('refresh-initial');
+          expect(args[4]).toEqual(principal);
+          return {
+            access_token: 'access-refreshed',
+            refresh_token: 'refresh-refreshed',
+            expires_in: 3600,
+            token_type: 'Bearer',
+          };
+        }),
+      };
+      firstState.consentGate = new ConsentGate(
+        'default',
+        firstState.context.consent_gate,
+        evidenceStore,
+        (profileId) => `https://gateway.example/mcp/${profileId}/consent`,
+        mkLogger(),
+        issuer,
+      );
+      await evidenceStore.record({
+        sub: principal.subject,
+        issuer,
+        tenantId: principal.tenantId,
+        profileId: 'default',
+        rules_hash: computeRulesHash(firstState.context.consent_gate),
+        rules_version: 'v1',
+        granted_at: Date.now(),
+      });
+      firstTransport.setMessageHandler(async () => ({
+        protocolVersion: '2025-03-26',
+        serverInfo: { name: 'test' },
+      }));
+
+      const initialEnvelope = encryptTokenPayload(
+        {
+          v: 1,
+          at: 'access-initial',
+          rt: 'refresh-initial',
+          exp: Date.now() + 1_000,
+          cid: 'client-refresh',
+          sc: ['read', 'write'],
+          sub: principal.subject,
+          iss: principal.issuer,
+          tid: principal.tenantId,
+          pid: 'default',
+          iat: Date.now(),
+        },
+        key,
+      );
+
+      const firstResponse = await request((firstTransport as any).app)
+        .post('/mcp')
+        .set('Accept', 'application/json, text/event-stream')
+        .set('Authorization', `Bearer ${initialEnvelope}`)
+        .send({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} });
+      expect(firstResponse.status).toBe(200);
+
+      const [firstSessionId, firstSession] = Array.from(firstState.sessions.entries()).at(-1)! as [string, any];
+      expect(firstSession.clientPrincipal).toMatchObject({
+        subject: principal.subject,
+        issuer,
+        tenantId: principal.tenantId,
+      });
+      await expect(firstTransport.assertSessionConsent('default', firstSessionId)).resolves.toBeUndefined();
+
+      firstSession.accessTokenExpiresAt = Date.now() - 1;
+      await expect(firstTransport.ensureValidSessionToken('default', firstSessionId)).resolves.toBe(true);
+      const refreshedEnvelope = firstSession.authToken;
+      expect(refreshedEnvelope).toMatch(/^mcp4\.v1\./);
+      expect(refreshedEnvelope).not.toBe(initialEnvelope);
+      expect(decryptTokenPayload(refreshedEnvelope, key, 'default')).toMatchObject({
+        at: 'access-refreshed',
+        rt: 'refresh-refreshed',
+        sub: principal.subject,
+        iss: issuer,
+        tid: principal.tenantId,
+      });
+      await expect(firstTransport.assertSessionConsent('default', firstSessionId)).resolves.toBeUndefined();
+
+      const secondTransport = buildTransport({ tokenKey: key, testLogger: mkLogger() });
+      const secondState = (secondTransport as any).__test_profileState;
+      secondState.context.consent_gate = firstState.context.consent_gate;
+      secondState.oauthProvider = {
+        issuer,
+        clientsStore: {
+          getClient: async () => ({ client_id: 'client-refresh', scope: 'read write' }),
+          registerClient: async (client: any) => client,
+        },
+      };
+      secondState.consentGate = new ConsentGate(
+        'default',
+        { required: true, rules_version: 'v1' },
+        evidenceStore,
+        (profileId) => `https://gateway.example/mcp/${profileId}/consent`,
+        mkLogger(),
+      );
+      secondTransport.setMessageHandler(async () => ({
+        protocolVersion: '2025-03-26',
+        serverInfo: { name: 'test' },
+      }));
+
+      const secondResponse = await request((secondTransport as any).app)
+        .post('/mcp')
+        .set('Accept', 'application/json, text/event-stream')
+        .set('Authorization', `Bearer ${refreshedEnvelope}`)
+        .send({ jsonrpc: '2.0', id: 2, method: 'initialize', params: {} });
+      expect(secondResponse.status).toBe(200);
+
+      const [secondSessionId, secondSession] = Array.from(secondState.sessions.entries()).at(-1)! as [string, any];
+      expect(secondSession.clientPrincipal).toMatchObject({
+        subject: principal.subject,
+        issuer,
+        tenantId: principal.tenantId,
+      });
+      await expect(secondTransport.assertSessionConsent('default', secondSessionId)).resolves.toBeUndefined();
+
+      await firstTransport.stop();
+      await secondTransport.stop();
     });
 
     it('Test N: envelope with creg invokes registerClient with mapped fields and defaults', async () => {
@@ -6013,6 +6655,655 @@ describeIfListen('HttpTransport', () => {
         sessions: new Map(),
       });
       expect(t.getSessionClientPrincipal('default', 'no-such-session')).toBeUndefined();
+    });
+  });
+
+  describe('assertSessionConsent (store <-> principal binding, real store)', () => {
+    const PROFILE_ID = 'default';
+    const ISSUER = 'https://issuer.example';
+
+    // Wire an HttpTransport profile state with a required ConsentGate backed by a REAL
+    // InMemoryConsentEvidenceStore, an oauthProvider with a known issuer, and one session.
+    const buildTransportWithGate = (options: {
+      rulesVersion: string;
+      session: Record<string, unknown>;
+    }): { transport: HttpTransport; store: InMemoryConsentEvidenceStore; rulesHash: string } => {
+      const t = new HttpTransport(
+        {
+          host: '127.0.0.1',
+          port: 0,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: false,
+          metricsPath: '/metrics',
+        },
+        logger,
+      );
+      const store = new InMemoryConsentEvidenceStore();
+      const gateConfig = {
+        required: true,
+        rules_version: options.rulesVersion,
+        identity_source: 'profile_oauth' as const,
+      };
+      const gate = new ConsentGate(
+        PROFILE_ID,
+        gateConfig,
+        store,
+        (id) => `https://gateway.example/mcp/${id}/consent`,
+        logger,
+        ISSUER,
+      );
+      (t as any).profileStates.set(PROFILE_ID, {
+        profileId: PROFILE_ID,
+        context: { profileId: PROFILE_ID, consent_gate: gateConfig },
+        oauthProvider: { issuer: ISSUER },
+        oauthTokensByAccessToken: new Map(),
+        consentGate: gate,
+        consentEvidenceStore: store,
+        sessions: new Map([['session-1', options.session]]),
+      });
+      return { transport: t, store, rulesHash: computeRulesHash(gateConfig) };
+    };
+
+    it('resolves when recorded consent subject matches the session principal subject and issuer', async () => {
+      const { transport: t, store, rulesHash } = buildTransportWithGate({
+        rulesVersion: 'v1',
+        session: {
+          clientPrincipal: {
+            authType: 'oauth' as const,
+            profileId: PROFILE_ID,
+            subject: 'X',
+            issuer: ISSUER,
+            scopes: ['read'],
+          },
+        },
+      });
+      await store.record({
+        sub: 'X',
+        issuer: ISSUER,
+        tenantId: null,
+        profileId: PROFILE_ID,
+        rules_version: 'v1',
+        rules_hash: rulesHash,
+        granted_at: Date.now(),
+      });
+
+      await expect(t.assertSessionConsent(PROFILE_ID, 'session-1')).resolves.toBeUndefined();
+    });
+
+    it('throws ConsentRequiredError when the principal has no recorded consent', async () => {
+      const { transport: t } = buildTransportWithGate({
+        rulesVersion: 'v1',
+        session: {
+          clientPrincipal: {
+            authType: 'oauth' as const,
+            profileId: PROFILE_ID,
+            subject: 'Y',
+            issuer: ISSUER,
+            scopes: ['read'],
+          },
+        },
+      });
+      // No consent recorded for subject 'Y'.
+      await expect(t.assertSessionConsent(PROFILE_ID, 'session-1')).rejects.toBeInstanceOf(ConsentRequiredError);
+      await expect(t.assertSessionConsent(PROFILE_ID, 'session-1')).rejects.toMatchObject({
+        code: 'CONSENT_REQUIRED',
+      });
+    });
+
+    it('throws ConsentRequiredError for an anonymous session (no clientPrincipal)', async () => {
+      const { transport: t } = buildTransportWithGate({
+        rulesVersion: 'v1',
+        session: {},
+      });
+
+      await expect(t.assertSessionConsent(PROFILE_ID, 'session-1')).rejects.toBeInstanceOf(ConsentRequiredError);
+    });
+
+    it('rejects with issuer_mismatch when the principal issuer does not match the profile OAuth issuer', async () => {
+      const { transport: t, store, rulesHash } = buildTransportWithGate({
+        rulesVersion: 'v1',
+        session: {
+          clientPrincipal: {
+            authType: 'oauth' as const,
+            profileId: PROFILE_ID,
+            subject: 'X',
+            issuer: 'https://evil.example',
+            scopes: ['read'],
+          },
+        },
+      });
+      // Consent for 'X' exists, but the issuer guard must reject before any consent check.
+      await store.record({
+        sub: 'X',
+        issuer: ISSUER,
+        tenantId: null,
+        profileId: PROFILE_ID,
+        rules_version: 'v1',
+        rules_hash: rulesHash,
+        granted_at: Date.now(),
+      });
+
+      await expect(t.assertSessionConsent(PROFILE_ID, 'session-1')).rejects.toMatchObject({
+        name: 'ConsentRequiredError',
+        reason: 'issuer_mismatch',
+      });
+    });
+
+    it('rejects a non-OAuth principal that carries a matching subject and issuer', async () => {
+      const { transport: t, store, rulesHash } = buildTransportWithGate({
+        rulesVersion: 'v1',
+        session: {
+          clientPrincipal: {
+            authType: 'enterprise' as const,
+            profileId: PROFILE_ID,
+            subject: 'X',
+            issuer: ISSUER,
+            scopes: ['read'],
+          },
+        },
+      });
+      await store.record({
+        sub: 'X',
+        issuer: ISSUER,
+        tenantId: null,
+        profileId: PROFILE_ID,
+        rules_version: 'v1',
+        rules_hash: rulesHash,
+        granted_at: Date.now(),
+      });
+
+      await expect(t.assertSessionConsent(PROFILE_ID, 'session-1')).rejects.toMatchObject({
+        name: 'ConsentRequiredError',
+        reason: 'auth_type_mismatch',
+      });
+    });
+
+    it('fails closed when the profile requires consent but no gate was constructed', async () => {
+      const { transport: t } = buildTransportWithGate({
+        rulesVersion: 'v1',
+        session: {},
+      });
+      const state = (t as any).profileStates.get(PROFILE_ID);
+      state.consentGate = undefined;
+
+      await expect(t.assertSessionConsent(PROFILE_ID, 'session-1')).rejects.toMatchObject({
+        name: 'ConsentGateConfigurationError',
+      });
+    });
+
+    it('invalidates the session once per subject and rules version so the client re-runs OAuth', async () => {
+      const { transport: t } = buildTransportWithGate({
+        rulesVersion: 'v1',
+        session: {
+          clientPrincipal: {
+            authType: 'oauth' as const,
+            profileId: PROFILE_ID,
+            subject: 'Y',
+            issuer: ISSUER,
+            scopes: ['read'],
+          },
+        },
+      });
+      const state = (t as any).profileStates.get(PROFILE_ID);
+
+      await expect(t.assertSessionConsent(PROFILE_ID, 'session-1')).rejects.toBeInstanceOf(ConsentRequiredError);
+      expect(state.sessions.has('session-1')).toBe(false);
+
+      // Second denial for the same subject must not invalidate again, otherwise a
+      // client that cannot complete the browser acknowledgement loops through OAuth.
+      state.sessions.set('session-1', {
+        clientPrincipal: {
+          authType: 'oauth' as const,
+          profileId: PROFILE_ID,
+          subject: 'Y',
+          issuer: ISSUER,
+          scopes: ['read'],
+        },
+      });
+      await expect(t.assertSessionConsent(PROFILE_ID, 'session-1')).rejects.toBeInstanceOf(ConsentRequiredError);
+      expect(state.sessions.has('session-1')).toBe(true);
+    });
+
+    it('throws ConsentRequiredError after a rules_version bump forces re-consent', async () => {
+      const { transport: t, store, rulesHash } = buildTransportWithGate({
+        rulesVersion: 'v2',
+        session: {
+          clientPrincipal: {
+            authType: 'oauth' as const,
+            profileId: PROFILE_ID,
+            subject: 'X',
+            issuer: ISSUER,
+            scopes: ['read'],
+          },
+        },
+      });
+      // Consent recorded for the OLD rules_version only.
+      await store.record({
+        sub: 'X',
+        issuer: ISSUER,
+        tenantId: null,
+        profileId: PROFILE_ID,
+        rules_version: 'v1',
+        rules_hash: rulesHash,
+        granted_at: Date.now(),
+      });
+
+      await expect(t.assertSessionConsent(PROFILE_ID, 'session-1')).rejects.toBeInstanceOf(ConsentRequiredError);
+    });
+
+    it('fails closed when the profile state is unknown (I1)', async () => {
+      const t = new HttpTransport(
+        {
+          host: '127.0.0.1',
+          port: 0,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: false,
+          metricsPath: '/metrics',
+        },
+        logger,
+      );
+
+      await expect(t.assertSessionConsent('ghost-profile', 'session-x')).rejects.toMatchObject({
+        name: 'ConsentGateConfigurationError',
+        details: expect.objectContaining({ profileId: 'ghost-profile' }),
+      });
+      await t.stop();
+    });
+  });
+
+  describe('consent gate transport hardening (audit fixes)', () => {
+    const PROFILE_ID = 'default';
+    const ISSUER = 'https://issuer.example';
+    const KEY = Buffer.from('b'.repeat(64), 'hex');
+    const gateConfig = {
+      required: true,
+      rules_version: 'v1',
+      identity_source: 'profile_oauth' as const,
+    };
+
+    const baseConfig = () => ({
+      host: '127.0.0.1',
+      port: 0,
+      sessionTimeoutMs: 1800000,
+      heartbeatEnabled: false,
+      heartbeatIntervalMs: 30000,
+      metricsEnabled: false,
+      metricsPath: '/metrics',
+    });
+
+    // Transport whose default profile carries a REAL consent gate + evidence
+    // store and an envelope-capable token key, exercising the full HTTP init path.
+    const buildGatedTransport = () => {
+      const t = new HttpTransport({ ...baseConfig(), tokenKey: KEY } as any, logger);
+      const store = new InMemoryConsentEvidenceStore();
+      const gate = new ConsentGate(
+        PROFILE_ID,
+        gateConfig,
+        store,
+        (id) => `https://gw.example/mcp/${id}/consent`,
+        logger,
+        ISSUER,
+      );
+      const state: any = {
+        profileId: PROFILE_ID,
+        context: { profileId: PROFILE_ID, consent_gate: gateConfig },
+        oauthProvider: {
+          issuer: ISSUER,
+          clientsStore: { getClient: async () => undefined, registerClient: async (c: any) => c },
+        },
+        oauthTokensByAccessToken: new Map(),
+        sessions: new Map(),
+        consentGate: gate,
+        consentEvidenceStore: store,
+      };
+      (t as any).profileStates.set(PROFILE_ID, state);
+      t.setMessageHandler(async () => ({ protocolVersion: '2025-03-26', serverInfo: { name: 'test' } }));
+      return { t, state, store };
+    };
+
+    const buildEnvelope = async (subject: string) => {
+      const { encryptTokenPayload } = await import('../auth/token-envelope.js');
+      return encryptTokenPayload(
+        {
+          v: 1,
+          at: `idp-access-${subject}`,
+          rt: `idp-refresh-${subject}`,
+          exp: Date.now() + 60_000,
+          cid: 'client-r',
+          sc: ['read'],
+          sub: subject,
+          iss: ISSUER,
+          pid: PROFILE_ID,
+          iat: Date.now(),
+        },
+        KEY,
+      );
+    };
+
+    const initialize = (t: HttpTransport, envelope: string, id: number) =>
+      request((t as any).app)
+        .post('/mcp')
+        .set('Accept', 'application/json, text/event-stream')
+        .set('Authorization', `Bearer ${envelope}`)
+        .send({ jsonrpc: '2.0', id, method: 'initialize', params: {} });
+
+    const lastSessionId = (state: any): string => Array.from(state.sessions.keys()).at(-1) as string;
+
+    it('I2: rejects envelope recovery once with 401 after a consent denial so the client restarts OAuth', async () => {
+      const { t, state } = buildGatedTransport();
+      const envelope = await buildEnvelope('person-i2');
+
+      const first = await initialize(t, envelope, 1);
+      expect(first.status).toBe(200);
+      const sessionId = lastSessionId(state);
+
+      await expect(t.assertSessionConsent(PROFILE_ID, sessionId)).rejects.toBeInstanceOf(ConsentRequiredError);
+      expect(state.sessions.has(sessionId)).toBe(false);
+
+      // The same envelope must NOT silently rebuild a session: the client has to
+      // discard it and restart OAuth, which is the only re-consent mechanism.
+      const second = await initialize(t, envelope, 2);
+      expect(second.status).toBe(401);
+      expect(second.headers['www-authenticate']).toContain('Bearer');
+      expect(state.sessions.size).toBe(0);
+
+      // The flag is one-shot: a later initialize proceeds to the normal
+      // consent-denied behavior instead of an endless 401 wall.
+      const third = await initialize(t, envelope, 3);
+      expect(third.status).toBe(200);
+      await t.stop();
+    });
+
+    it('resets the re-consent invalidation budget after consent succeeds, so a later revocation invalidates again', async () => {
+      const { t, state, store } = buildGatedTransport();
+      const envelope = await buildEnvelope('person-budget');
+
+      // First denial consumes the one-shot invalidation budget for the subject.
+      await initialize(t, envelope, 1);
+      const firstSessionId = lastSessionId(state);
+      await expect(t.assertSessionConsent(PROFILE_ID, firstSessionId)).rejects.toBeInstanceOf(ConsentRequiredError);
+      expect(state.sessions.has(firstSessionId)).toBe(false);
+
+      // Consume the one-time envelope rejection, then rebuild a session.
+      await initialize(t, envelope, 2);
+      await initialize(t, envelope, 3);
+      const secondSessionId = lastSessionId(state);
+
+      // The human grants consent; the next assert succeeds and must reset the budget.
+      await store.record({
+        sub: 'person-budget',
+        issuer: ISSUER,
+        tenantId: null,
+        profileId: PROFILE_ID,
+        rules_version: 'v1',
+        rules_hash: computeRulesHash(gateConfig),
+        granted_at: Date.now(),
+      });
+      await expect(t.assertSessionConsent(PROFILE_ID, secondSessionId)).resolves.toBeUndefined();
+
+      // The grant is revoked later: the denial must invalidate the session again
+      // (a permanent budget entry would leave the client stuck on -32004 forever).
+      await store.revoke({
+        sub: 'person-budget',
+        issuer: ISSUER,
+        tenantId: null,
+        profileId: PROFILE_ID,
+        revoked_at: Date.now() + 1,
+      });
+      await expect(t.assertSessionConsent(PROFILE_ID, secondSessionId)).rejects.toBeInstanceOf(ConsentRequiredError);
+      expect(state.sessions.has(secondSessionId)).toBe(false);
+      await t.stop();
+    });
+
+    it('B1: single-profile mode fails fast when config declares required consent without a token key', async () => {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'consent-b1-'));
+      const t = new HttpTransport(
+        {
+          ...baseConfig(),
+          oauthConfig: {
+            issuer: 'https://auth.example.com',
+            client_id: 'test-client',
+            client_secret: 'test-secret',
+            redirect_uri: 'https://example.com/oauth/callback',
+            scopes: ['read'],
+          },
+          consentEvidencePath: path.join(dir, 'evidence.jsonl'),
+          consent_gate: gateConfig,
+        } as any,
+        logger,
+      );
+
+      await expect((t as any).getProfileState('default')).rejects.toMatchObject({ name: 'ConfigurationError' });
+      await t.stop();
+    });
+
+    it('B1: single-profile mode constructs the consent gate from transport config and enforces it', async () => {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'consent-b1-full-'));
+      const t = new HttpTransport(
+        {
+          ...baseConfig(),
+          tokenKey: KEY,
+          oauthConfig: {
+            issuer: 'https://auth.example.com',
+            client_id: 'test-client',
+            client_secret: 'test-secret',
+            redirect_uri: 'https://example.com/oauth/callback',
+            scopes: ['read'],
+          },
+          consentEvidencePath: path.join(dir, 'evidence.jsonl'),
+          consent_gate: gateConfig,
+        } as any,
+        logger,
+      );
+
+      const state = await (t as any).getProfileState('default');
+      expect(state.consentGate).toBeDefined();
+
+      // Anonymous session on a gated profile must be blocked, not silently allowed.
+      state.sessions.set('session-anon', {});
+      await expect(t.assertSessionConsent('default', 'session-anon')).rejects.toBeInstanceOf(ConsentRequiredError);
+      await t.stop();
+    });
+
+    it('F8: fails the token exchange instead of degrading to a raw refresh token on a consent-gated profile', async () => {
+      // A 16-byte key makes encryptRefreshEnvelope throw (AES-256 needs 32 bytes).
+      const t = new HttpTransport({ ...baseConfig(), tokenKey: Buffer.alloc(16, 1) } as any, logger);
+      const state: any = {
+        profileId: PROFILE_ID,
+        context: { profileId: PROFILE_ID, consent_gate: gateConfig },
+        oauthProvider: { issuer: ISSUER },
+        oauthTokensByAccessToken: new Map(),
+        sessions: new Map(),
+      };
+      (t as any).profileStates.set(PROFILE_ID, state);
+
+      expect(() =>
+        (t as any).buildClientRefreshToken(state, { access_token: 'at', refresh_token: 'rt' }, 'client-1'),
+      ).toThrow(AuthenticationError);
+      await t.stop();
+    });
+
+    it('F8: keeps the raw-refresh-token degrade on profiles without a consent gate', async () => {
+      const t = new HttpTransport({ ...baseConfig(), tokenKey: Buffer.alloc(16, 1) } as any, logger);
+      const state: any = {
+        profileId: PROFILE_ID,
+        context: { profileId: PROFILE_ID },
+        oauthProvider: { issuer: ISSUER },
+        oauthTokensByAccessToken: new Map(),
+        sessions: new Map(),
+      };
+      (t as any).profileStates.set(PROFILE_ID, state);
+
+      expect(
+        (t as any).buildClientRefreshToken(state, { access_token: 'at', refresh_token: 'rt' }, 'client-1'),
+      ).toBe('rt');
+      await t.stop();
+    });
+
+    it('I7: rejects a refresh envelope redeemed by a different client and accepts the issuing client', async () => {
+      const { encryptRefreshEnvelope } = await import('../auth/token-envelope.js');
+      const t = new HttpTransport({ ...baseConfig(), tokenKey: KEY } as any, logger);
+      const state: any = {
+        profileId: PROFILE_ID,
+        context: { profileId: PROFILE_ID },
+        oauthProvider: { issuer: ISSUER },
+        oauthTokensByAccessToken: new Map(),
+        sessions: new Map(),
+      };
+      (t as any).profileStates.set(PROFILE_ID, state);
+      const envelope = encryptRefreshEnvelope(
+        { v: 1, rt: 'idp-rt', cid: 'client-a', sub: 'person-a', iss: ISSUER, pid: PROFILE_ID, iat: Date.now() },
+        KEY,
+      );
+
+      expect(() => (t as any).resolveRefreshGrant(state, envelope, 'client-b')).toThrow(AuthenticationError);
+      expect((t as any).resolveRefreshGrant(state, envelope, 'client-a')).toMatchObject({
+        refreshToken: 'idp-rt',
+      });
+      await t.stop();
+    });
+
+    it('keys observability pseudonyms from the token key at construction', async () => {
+      configureObservabilityPseudonym(undefined);
+      const unkeyed = pseudonymizeSubject('subject-p');
+
+      const keyedTransport = new HttpTransport({ ...baseConfig(), tokenKey: KEY } as any, logger);
+      expect(pseudonymizeSubject('subject-p')).not.toBe(unkeyed);
+      await keyedTransport.stop();
+
+      // A key-less transport restores the unkeyed fallback.
+      const plainTransport = new HttpTransport(baseConfig() as any, logger);
+      expect(pseudonymizeSubject('subject-p')).toBe(unkeyed);
+      await plainTransport.stop();
+    });
+
+    it('rejects an envelope whose identity issuer does not match the profile OAuth issuer with 401', async () => {
+      const { encryptTokenPayload } = await import('../auth/token-envelope.js');
+      const { t, state } = buildGatedTransport();
+      const envelope = encryptTokenPayload(
+        {
+          v: 1,
+          at: 'idp-access-x',
+          rt: 'idp-refresh-x',
+          cid: 'client-x',
+          sub: 'person-x',
+          iss: 'https://other-issuer.example',
+          pid: PROFILE_ID,
+          iat: Date.now(),
+        },
+        KEY,
+      );
+
+      const response = await initialize(t, envelope, 1);
+      expect(response.status).toBe(401);
+      expect(state.sessions.size).toBe(0);
+      await t.stop();
+    });
+
+    it('recovers an envelope when the configured issuer has a trailing slash (issuer normalization)', async () => {
+      const { t, state } = buildGatedTransport();
+      // Config strings commonly carry a trailing slash while the envelope holds
+      // the discovery-document issuer; recovery must not force re-auth (4.4).
+      state.oauthProvider.issuer = `${ISSUER}/`;
+      const envelope = await buildEnvelope('person-slash');
+
+      const response = await initialize(t, envelope, 1);
+      expect(response.status).toBe(200);
+      const sessionId = lastSessionId(state);
+      expect(state.sessions.get(sessionId).clientPrincipal).toMatchObject({
+        subject: 'person-slash',
+        issuer: ISSUER,
+      });
+      await t.stop();
+    });
+
+    it('returns 404 from the consent info page when the profile has no consent gate', async () => {
+      const response = await request(app).get('/consent');
+      expect(response.status).toBe(404);
+    });
+
+    it('recovers no principal from an envelope with sub but missing iss, so the consent gate blocks', async () => {
+      const { encryptTokenPayload } = await import('../auth/token-envelope.js');
+      const { t, state } = buildGatedTransport();
+      // encrypt does not enforce identity coherence; decrypt rejects sub-without-iss,
+      // so this envelope behaves as undecryptable: no metadata, no principal.
+      const envelope = encryptTokenPayload(
+        { v: 1, at: 'idp-access-noiss', sub: 'person-noiss', pid: PROFILE_ID, iat: Date.now() } as any,
+        KEY,
+      );
+
+      const response = await initialize(t, envelope, 1);
+      expect(response.status).toBe(200);
+      const sessionId = lastSessionId(state);
+      expect(state.sessions.get(sessionId).clientPrincipal).toBeUndefined();
+      await expect(t.assertSessionConsent(PROFILE_ID, sessionId)).rejects.toBeInstanceOf(ConsentRequiredError);
+      await t.stop();
+    });
+
+    it('evicts the oldest reconsent invalidation entry at capacity (FIFO)', async () => {
+      const t = new HttpTransport(baseConfig() as any, logger);
+      const tracker = (t as any).reconsentTracker as ReconsentTracker;
+      for (let i = 0; i < 10000; i += 1) tracker.markInvalidated(`filler-${i}`, { pendingEnvelopeReject: false });
+      const state: any = {
+        profileId: PROFILE_ID,
+        context: { profileId: PROFILE_ID, consent_gate: gateConfig },
+        oauthTokensByAccessToken: new Map(),
+        sessions: new Map([['s1', {}]]),
+      };
+      (t as any).profileStates.set(PROFILE_ID, state);
+
+      (t as any).invalidateSessionForReconsent(
+        state,
+        's1',
+        { authType: 'oauth', profileId: PROFILE_ID, subject: 'evictee-test', issuer: ISSUER, scopes: [] },
+        new ConsentRequiredError('denied', {
+          profileId: PROFILE_ID,
+          rules_version: 'v1',
+          consent_url: 'https://gw.example/consent',
+        }),
+      );
+
+      expect(tracker.size).toBe(10000);
+      expect(tracker.isInvalidated('filler-0')).toBe(false);
+      expect(Array.from(tracker.keys()).at(-1)).toContain('evictee-test');
+      await t.stop();
+    });
+
+    it('root-level POST /oauth/authorize redirects to the provider on a non-consent profile', async () => {
+      const t = new HttpTransport(
+        {
+          ...baseConfig(),
+          oauthConfig: {
+            issuer: 'https://auth.example.com',
+            client_id: 'test-client',
+            client_secret: 'test-secret',
+            redirect_uri: 'https://example.com/oauth/callback',
+            scopes: ['read', 'write'],
+          },
+        } as any,
+        logger,
+      );
+
+      const response = await request((t as any).app)
+        .post('/oauth/authorize')
+        .type('form')
+        .send({
+          response_type: 'code',
+          client_id: 'test-client',
+          redirect_uri: 'http://localhost:3003/oauth/callback',
+          scope: 'openid read',
+          state: 'client-state',
+          code_challenge: 'challenge',
+          code_challenge_method: 'S256',
+        });
+
+      expect(response.status).toBe(302);
+      expect(response.headers.location).toContain('https://auth.example.com/oauth/authorize');
+      await t.stop();
     });
   });
 });

@@ -1,0 +1,72 @@
+{
+  "$schema": "../../../profile-schema.json",
+  "profile_name": "Softeria SharePoint Read-Only",
+  "profile_id": "softeria-sharepoint",
+  "profile_aliases": ["ms365-sharepoint"],
+  "description": "Consent-gated proxy to a centrally hosted Softeria Microsoft 365 MCP server, restricted to read-only SharePoint/drive tools and Sites.Selected/Files.Read delegated permissions.",
+  "upstream_pin": {
+    "note": "Test-only metadata (stripped by the profile loader). Must match the upstream-catalog-*.fixture.json in this directory; re-pin with scripts/capture-softeria-catalog.sh.",
+    "package": "@softeria/ms-365-mcp-server",
+    "version": "0.136.0"
+  },
+  "tools": [],
+  "consent_gate": {
+    "required": true,
+    "rules_version": "v1",
+    "rules_summary": "This connection allows the AI assistant to read files and metadata from approved SharePoint sites using your Microsoft 365 identity.",
+    "education_resource": "https://intranet.example/ms365-ai-rules",
+    "identity_source": "profile_oauth"
+  },
+  "interceptors": {
+    "auth": {
+      "type": "oauth",
+      "oauth_config": {
+        "issuer": "${env:SOFTERIA_ENTRA_ISSUER}",
+        "client_id": "${env:SOFTERIA_ENTRA_CLIENT_ID}",
+        "client_secret": "${env:SOFTERIA_ENTRA_CLIENT_SECRET}",
+        "redirect_uri": "${env:SOFTERIA_OAUTH_REDIRECT_URI}",
+        "scopes": ["openid", "Files.Read", "Sites.Selected"]
+      }
+    }
+  },
+  "upstream_mcp": {
+    "name": "softeria",
+    "transport": {
+      "type": "http-streamable",
+      "url": "https://softeria.internal.example/mcp"
+    },
+    "auth": {
+      "type": "bearer"
+    },
+    "tools": {
+      "allow": [
+        "list-drives",
+        "get-drive-delta",
+        "get-drive-root-item",
+        "list-folder-files",
+        "get-drive-item",
+        "list-drive-item-thumbnails",
+        "list-drive-item-permissions",
+        "list-drive-item-versions",
+        "search-onedrive-files",
+        "get-sharepoint-site",
+        "list-sharepoint-site-drives",
+        "get-sharepoint-site-drive-by-id",
+        "list-sharepoint-site-items",
+        "get-sharepoint-site-item",
+        "list-sharepoint-site-lists",
+        "get-sharepoint-site-list",
+        "list-sharepoint-site-list-items",
+        "get-sharepoint-site-list-item",
+        "list-sharepoint-list-columns",
+        "get-sharepoint-list-column",
+        "get-sharepoint-site-by-path",
+        "download-bytes"
+      ]
+    },
+    "timeout_ms": 30000,
+    "html_description_policy": "strip",
+    "tool_description_length_policy": "truncate"
+  },
+  "upstream_mcp_from_env": "SOFTERIA_UPSTREAM_MCP"
+}

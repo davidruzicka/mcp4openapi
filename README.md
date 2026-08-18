@@ -47,6 +47,7 @@ Start with an existing profile in [`profiles/`](./profiles), then adapt only wha
 - **Prompt definitions**: add reusable MCP prompts directly in profiles
 - **MCP Apps resources**: expose static or fetch-backed `resources/list`, `resources/templates/list`, `resources/read`, and template-variable completion from profiles
 - **Upstream MCP provider config**: profiles can declare remote HTTP streamable MCP upstreams (schema and validation first; transport execution follows in later roadmap issues)
+- **Consent-gated upstreams**: required consent is bound to the verified OIDC subject, issuer, tenant, profile, and rules version; local-only profiles cannot enable it
 - **OAuth 2.0**: browser-based auth flow for HTTP transport (see [docs/OAUTH.md](./docs/OAUTH.md))
 - **Enterprise managed authorization**: inbound JWT bearer grant for HTTP transport with profile-driven issuer/JWKS policy and opaque MCP access tokens (see [docs/OAUTH.md](./docs/OAUTH.md))
 - **Multi-auth**: combine multiple auth methods with priority fallback (see [docs/MULTI-AUTH.md](./docs/MULTI-AUTH.md))
@@ -67,7 +68,8 @@ Profiles declare a single `upstream_mcp` object for a remote MCP provider, or re
 - Supported transport in the first iteration: `transport.type: "http-streamable"`
 - Supported upstream auth subset: `bearer`, `query`, `custom-header`
 - Secrets must be referenced with `value_from_env`; inline credentials are rejected
-- If `upstream_mcp_from_env` is set and resolves to non-empty JSON, it overrides the static `upstream_mcp` object
+- If `upstream_mcp_from_env` is set and resolves to non-empty JSON, it overrides the static `upstream_mcp` connection details; a static `tools.allow` or `tools.deny` policy must be preserved and cannot be broadened or removed
+- An unset `upstream_mcp_from_env` variable does not count as an effective upstream for a required consent gate
 - `stdio` upstream providers are intentionally deferred to a later, explicitly gated iteration
 
 Example:
@@ -96,6 +98,8 @@ Example:
 ```
 
 Use the env-backed path when deployment-specific upstreams differ between environments and you do not want to edit the checked-in profile file.
+
+For a required `consent_gate`, the resolved profile must contain an effective upstream MCP provider and must not contain local `tools[]`. Consent evidence is recorded only after OIDC verification and is matched against the verified subject, canonical issuer, tenant context, profile ID, and current `rules_version`.
 
 ## MCP Apps Profiles
 
@@ -249,6 +253,8 @@ Predefined profiles in the `profiles/` directory contains names for easy referen
 
 Profiles are resolved from `./profiles` path by default. If that directory is missing, the bundled npm package profiles are used. Override with `--profiles-dir` or `MCP4_PROFILES_DIR`.
 
+The Softeria SharePoint profile (`softeria-sharepoint`, alias `ms365-sharepoint`) lives in the internal deployment repository; this repo keeps only a reference test fixture at `tests/profiles/softeria-sharepoint/` that exercises consent-gated upstream loading. The Softeria profile requires HTTP transport and profile OAuth. Set a single-tenant Entra issuer, app credentials, callback URI, durable consent evidence path, and deployment-specific upstream object. Run the pinned Softeria version with `--org-mode --read-only` and an anchored exact `--enabled-tools` catalog matching the gateway allow-list. Before rolling out a new upstream version, capture its tool catalog with `--read-only --org-mode --allow-unauthenticated-discovery --http 127.0.0.1:<port>` followed by an MCP `initialize` and `tools/list`, and confirm every allow-list entry is present; `--list-permissions` reports Graph scopes only and lists no tool names. See [Profile Guide](docs/PROFILE-GUIDE.md#validating-the-softeria-sharepoint-tool-catalog) for the full procedure and the committed catalog fixture.
+
 ##### ⚠️ Prerequisites
 
 - `MCP4_API_TOKEN` (or equivalent environment variable name defined in your profile) with access token (Bearer) must be set for stdio transport with authenticated APIs. OAuth authorization flow is supported for HTTP transport only.
@@ -401,6 +407,49 @@ echo 'export NODE_EXTRA_CA_CERTS="$HOME/ca-bundle.pem"' >> $HOME/.bash_profile
   - **Required for stdio** mode with authenticated APIs
   - **Optional for HTTP** mode with per-session tokens sent in HTTP headers
   - When using no profile mode, auth type is auto-detected from OpenAPI `security` schemes if present
+
+### Required for profiles with `consent_gate.required`
+
+A durable evidence backend and `MCP4_OAUTH_KEY` are mandatory for a profile that declares
+`consent_gate.required: true`. Startup fails with a `ConfigurationError` if either is missing;
+there is no degraded mode.
+
+- Evidence backend (one of, Postgres wins when both are set):
+  - `MCP_CONSENTS_DB_HOST`, `MCP_CONSENTS_DB_PORT` (default `5432`), `MCP_CONSENTS_DB_NAME`,
+    `MCP_CONSENTS_DB_USER`, `MCP_CONSENTS_DB_PASSWORD`: PostgreSQL-backed transactional store for
+    multi-replica deployments. Append-only audit table (`consent_evidence`), created on first use.
+    A partial variable set is a hard `ConfigurationError`, never a silent fallback.
+    TLS is on by default (`require` semantics — managed Postgres endpoints expect encrypted
+    connections); set `MCP_CONSENTS_DB_SSL=false` only for local development.
+  - `MCP4_CONSENT_EVIDENCE_PATH`: Absolute writable path of the append-only JSONL consent evidence
+    file (durable single-node/staging store).
+  Missing both -> `Required consent gate needs a durable evidence store: set the MCP_CONSENTS_DB_* variables or MCP4_CONSENT_EVIDENCE_PATH`.
+  The in-memory store is used only when no profile requires consent (dev and tests): volatile storage
+  would drop every grant on restart while still reporting "consent recorded".
+- `MCP4_OAUTH_KEY`: Symmetric key for the encrypted token envelopes. Missing value ->
+  `Required consent gate needs MCP4_OAUTH_KEY so verified identity survives a gateway restart`. Without
+  it the gateway cannot issue `mcp4.r1.*` refresh envelopes, so after a restart every refresh would
+  produce a session with no verified human principal.
+
+A consent-gated profile additionally needs a profile OAuth interceptor with a concrete `issuer`,
+`client_id`, `redirect_uri` and the `openid` scope, an effective `upstream_mcp` provider, and no local
+`tools[]`.
+
+**Consent policy fields** (profile `consent_gate` block, see [Profile Guide](docs/PROFILE-GUIDE.md#consent-gated-upstream-mcp)):
+
+- `rules_version` (required): bumping it invalidates prior consent and forces re-acceptance.
+- `max_age_days` (optional): a grant older than this many days stops satisfying the gate and the user
+  must accept again. Omitted means grants never expire on age.
+- `rules_summary` / `education_resource` (optional): both are covered by `rules_hash`
+  (sha256 over `rules_version` + `rules_summary` + `education_resource`). **Editing either one
+  invalidates every existing grant** even without a `rules_version` bump, because a stored grant no
+  longer matches what the gateway now renders. Plan wording changes as re-consent events.
+- The page behind `education_resource` is **not** pinned. The gateway pins only the link it displayed;
+  it cannot verify remote content, so the linked document can change without invalidating any grant.
+
+Operational constraints (single-node evidence store, sticky sessions for the approval flow, evidence
+file growth and the 32 MiB cap, manual compaction, multi-replica follow-up):
+[docs/HTTP-TRANSPORT.md -> Consent Gate Operations](docs/HTTP-TRANSPORT.md#consent-gate-operations).
 
 ### Optional - Core
 - `MCP4_PROFILE`: Profile ID for resolving profiles from a directory (used by `--profile`)
@@ -567,7 +616,8 @@ export MCP4_TOOLNAME_MAX=30
 - `MCP4_HEARTBEAT_ENABLED`, `MCP4_HEARTBEAT_INTERVAL_MS`: SSE heartbeat settings
 - `MCP4_SERVERINFO_SUFFIX`: Optional suffix appended to MCP `serverInfo.title` at server startup. The title is derived from the loaded profile's `profile_name`, so routed HTTP profiles advertise per-profile names in clients like VS Code while `serverInfo.name` stays `mcp4openapi`.
 - `MCP4_TOKEN_MAX_LENGTH`: Maximum token length in characters (default: `4096`, raised from `1000` in Phase 03.4 to accommodate encrypted token envelopes)
-- `MCP4_OAUTH_KEY`: Optional symmetric key for AES-256-GCM encrypted token envelopes. When set, the gateway issues `mcp4.v1.*` tokens to OAuth clients on `/oauth/token` and rehydrates sessions from them on restart, eliminating the re-authentication round-trip in k8s restart scenarios. Accepts any passphrase (scrypt-derived) or a 64-char hex string (32 raw bytes). Default unset (plain-token mode, backward-compatible). See `docs/HTTP-TRANSPORT.md` -> Encrypted Token Envelopes for details.
+- `MCP4_OAUTH_KEY`: Optional symmetric key for AES-256-GCM encrypted token envelopes. When set, the gateway issues `mcp4.v1.*` tokens to OAuth clients on `/oauth/token` and rehydrates sessions from them on restart, eliminating the re-authentication round-trip in k8s restart scenarios. Accepts any passphrase (scrypt-derived) or a 64-char hex string (32 raw bytes). Default unset (plain-token mode, backward-compatible), except for profiles with `consent_gate.required` where it is mandatory and startup fails without it. See `docs/HTTP-TRANSPORT.md` -> Encrypted Token Envelopes for details.
+- `MCP4_CONSENT_EVIDENCE_PATH`: Absolute path of the durable JSONL consent evidence file. Required for profiles with `consent_gate.required`; see [Required for profiles with `consent_gate.required`](#required-for-profiles-with-consent_gaterequired).
 - `MCP4_FILTER_MAX_VALUES`: Max values per filtering key (default: `10`)
 - `MCP4_HTTP_PROFILE_ROUTING`: Enable profile routing (`/profile/:id/mcp`). If enabled without a default profile, `/mcp` is not registered.
 - `MCP4_HTTP_PROFILE_INDEX`: Enable profile index on `GET /` for routed profiles.

@@ -28,6 +28,11 @@ import type {
 import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
 import type { OAuthConfig } from '../types/profile.js';
 import type { Logger } from '../core/logger.js';
+import type { OidcIdentity, OidcIdentityVerifier } from './oidc-identity-verifier.js';
+import { normalizeIssuer } from './issuer.js';
+import { REFRESH_IDENTITY_TTL_MS } from './token-envelope.js';
+import { AuthenticationError } from '../core/errors.js';
+import { matchEnvRefName, resolveEnvRef } from '../core/env-ref.js';
 import {
   DEFAULT_ALLOWED_REDIRECT_HOSTS,
   DEFAULT_OAUTH_LOOPBACK_CALLBACK_URIS,
@@ -45,7 +50,12 @@ export type { InMemoryClientsStoreOptions } from './client-store/types.js';
 
 // --- OAuth operational-check helpers (module-private + exported) ---
 
-const ENV_REF_PATTERN = /^\$\{env:([^}]+)\}$/;
+// Upper bound on remembered refresh-token identity bindings.
+// Binding TTL: REFRESH_IDENTITY_TTL_MS, shared with the refresh envelope
+// age check (see token-envelope.ts).
+const REFRESH_IDENTITY_MAX = 10000;
+// Capacity-eviction warnings are aggregated to at most one per interval.
+const REFRESH_EVICTION_WARN_INTERVAL_MS = 60 * 1000;
 
 /**
  * Safely resolves a single `${env:VAR}` reference. Returns the env var value
@@ -55,9 +65,7 @@ const ENV_REF_PATTERN = /^\$\{env:([^}]+)\}$/;
  */
 function tryResolveEnvRef(value: string | undefined): string | undefined {
   if (!value) return value;
-  const envVarName = value.match(ENV_REF_PATTERN)?.[1];
-  if (envVarName !== undefined) return process.env[envVarName]; // undefined when var not set
-  return value;
+  return resolveEnvRef(value); // undefined when a referenced var is not set
 }
 
 /** Result returned by isOAuthConfigOperational(). */
@@ -112,6 +120,7 @@ interface AuthorizationState {
   originalState?: string;
   clientId: string;
   scopes?: string[];
+  nonce?: string;
   createdAt: number;
 }
 
@@ -123,6 +132,7 @@ interface AuthorizationCodeData {
   params: AuthorizationParams;
   createdAt: number;
   tokens?: OAuthTokens; // Stored external tokens
+  identity?: OidcIdentity;
 }
 
 /**
@@ -134,6 +144,7 @@ interface AccessTokenData {
   scopes: string[];
   expiresAt?: number;
   resource?: URL;
+  identity?: OidcIdentity;
 }
 
 /**
@@ -144,24 +155,36 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
   private logger: Logger;
   private _clientsStore: InMemoryClientsStore;
   private ssrfValidator: SSRFValidator;
+  private identityVerifier?: OidcIdentityVerifier;
+  private onIdentityVerified?: (identity: OidcIdentity) => Promise<void>;
   
   // In-memory storage
   private authorizationCodes = new Map<string, AuthorizationCodeData>();
   private accessTokens = new Map<string, AccessTokenData>();
+  private refreshTokenIdentities = new Map<string, { identity: OidcIdentity; clientId: string; expiresAt: number }>();
   private stateStore = new Map<string, AuthorizationState>();
   private materializedUnregisteredClientIds = new Set<string>();
 
   private endpointsInitialized: boolean = false;
   private initializationPromise: Promise<void> | null = null;
 
-  constructor(config: OAuthConfig, logger: Logger) {
+  // Aggregation state for the capacity-eviction warn (see storeRefreshTokenIdentity).
+  private refreshEvictionsSinceLastWarn = 0;
+  private lastRefreshEvictionWarnAt = 0;
+
+  constructor(config: OAuthConfig, logger: Logger, identityVerifier?: OidcIdentityVerifier) {
     this.config = config;
     this.logger = logger;
     this.ssrfValidator = new SSRFValidator(logger);
+    this.identityVerifier = identityVerifier;
     this._clientsStore = new InMemoryClientsStore();
     
     // Resolve environment variables in OAuth config
-    this.config = this.resolveEnvVars(config);
+    const resolvedConfig = this.resolveEnvVars(config);
+    this.config = {
+      ...resolvedConfig,
+      issuer: resolvedConfig.issuer ? normalizeIssuer(resolvedConfig.issuer) : undefined,
+    };
     
     // Pre-register mcp-proxy-client for VS Code compatibility.
     // VS Code does not call /oauth/register before /oauth/authorize and uses one
@@ -179,6 +202,22 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
     };
     this._clientsStore.registerClient(proxyClient);
     this.logger.info('Pre-registered mcp-proxy-client for VS Code compatibility');
+  }
+
+  configureIdentityVerification(
+    verifier: OidcIdentityVerifier,
+    onIdentityVerified?: (identity: OidcIdentity) => Promise<void>,
+  ): void {
+    this.identityVerifier = verifier;
+    this.onIdentityVerified = onIdentityVerified;
+  }
+
+  get issuer(): string | undefined {
+    return this.config.issuer;
+  }
+
+  get configuredClientId(): string | undefined {
+    return this.config.client_id;
   }
 
   /**
@@ -399,9 +438,9 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
   private resolveEnvVars(config: OAuthConfig): OAuthConfig {
     const resolve = (value: string | undefined): string | undefined => {
       if (!value) return value;
-      const envVarName = value.match(ENV_REF_PATTERN)?.[1];
+      const envVarName = matchEnvRefName(value);
       if (envVarName !== undefined) {
-        const envValue = process.env[envVarName];
+        const envValue = resolveEnvRef(value);
         if (!envValue) {
           throw new Error(`Environment variable ${envVarName} not found (referenced in OAuth config)`);
         }
@@ -767,14 +806,32 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
       throw new Error('Redirect URI not allowed');
     }
 
+    // Intentional precedence: non-empty configured scopes fully replace
+    // caller-requested scopes so profile-level guarantees (for example the
+    // openid scope required for identity verification) always hold.
+    const effectiveScopes = this.config.scopes?.length
+      ? this.config.scopes
+      : params.scopes;
+    if (
+      this.config.scopes?.length
+      && params.scopes?.length
+      && params.scopes.join(' ') !== this.config.scopes.join(' ')
+    ) {
+      this.logger.debug('Caller-requested OAuth scopes discarded in favor of configured scopes', {
+        requestedScopes: params.scopes,
+        configuredScopes: this.config.scopes,
+      });
+    }
     const stateToken = randomUUID();
     
+    const nonce = this.identityVerifier ? randomUUID() : undefined;
     this.stateStore.set(stateToken, {
       clientRedirectUri: params.redirectUri,
       codeChallenge: params.codeChallenge,
       originalState: params.state,
       clientId: client.client_id,
-      scopes: params.scopes,
+      scopes: effectiveScopes,
+      nonce,
       createdAt: Date.now(),
     });
     this._clientsStore.markAuthStateOpened(client.client_id);
@@ -791,11 +848,10 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
     authUrl.searchParams.set('redirect_uri', callbackUri);
     authUrl.searchParams.set('response_type', 'code');
     authUrl.searchParams.set('state', stateToken);
+    if (nonce) authUrl.searchParams.set('nonce', nonce);
 
-    if (params.scopes && params.scopes.length > 0) {
-      authUrl.searchParams.set('scope', params.scopes.join(' '));
-    } else if (this.config.scopes && this.config.scopes.length > 0) {
-      authUrl.searchParams.set('scope', this.config.scopes.join(' '));
+    if (effectiveScopes && effectiveScopes.length > 0) {
+      authUrl.searchParams.set('scope', effectiveScopes.join(' '));
     }
 
     // NOTE: Do NOT forward PKCE parameters to external provider
@@ -803,10 +859,11 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
     // PKCE is used only between Cursor <-> MCP, not between MCP <-> External Provider
     // If we forwarded code_challenge, we would need code_verifier which only Cursor has
 
+    // Log only origin + pathname: the full URL carries the state token and the
+    // OIDC nonce as query parameters, and neither may ever reach the logs.
     this.logger.info('Redirecting to external OAuth provider', {
-      authUrl: authUrl.toString(),
+      authUrl: authUrl.origin + authUrl.pathname,
       callbackUri,
-      stateToken,
       hasClientSecret: !!this.config.client_secret,
     });
 
@@ -863,25 +920,11 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
             this.config.redirect_uri!
         );
 
-        // Generate Internal Code
-        const internalCode = randomUUID();
-
-        // Store Internal Code -> Tokens mapping
+        const identity = this.identityVerifier
+          ? await this.verifyCallbackIdentity(tokens, storedState.nonce)
+          : undefined;
         const client = await this._clientsStore.getClient(storedState.clientId);
         if (!client) throw new Error('Client not found');
-
-        this.authorizationCodes.set(internalCode, {
-            client,
-            params: {
-                redirectUri: storedState.clientRedirectUri,
-                codeChallenge: storedState.codeChallenge,
-                scopes: storedState.scopes || [],
-                state: storedState.originalState
-            },
-            createdAt: Date.now(),
-            tokens
-        });
-        this._clientsStore.markAuthCodeOpened(client.client_id);
 
         // Re-validate redirect URI policy + registration before redirect (defense-in-depth)
         if (!this.isAllowedClientRedirectUri(client, storedState.clientRedirectUri)) {
@@ -911,6 +954,26 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
             res.status(400).send('Invalid redirect URI');
             return;
         }
+
+        if (identity && this.onIdentityVerified) {
+          await this.onIdentityVerified(identity);
+        }
+
+        const internalCode = randomUUID();
+        this.authorizationCodes.set(internalCode, {
+          client,
+          params: {
+            redirectUri: storedState.clientRedirectUri,
+            codeChallenge: storedState.codeChallenge,
+            scopes: storedState.scopes || [],
+            state: storedState.originalState
+          },
+          createdAt: Date.now(),
+          tokens,
+          identity,
+        });
+        this._clientsStore.markAuthCodeOpened(client.client_id);
+
         clientUrl.searchParams.set('code', internalCode);
         if (storedState.originalState) {
             clientUrl.searchParams.set('state', storedState.originalState);
@@ -926,6 +989,12 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
 
     } catch (err) {
         this.logger.error('Callback handling failed', err as Error);
+        // Identity/verification failures are client-flow errors, not server
+        // faults: surface them as 401 instead of a misleading 500.
+        if (err instanceof AuthenticationError) {
+            res.status(401).send('Authentication failed');
+            return;
+        }
         res.status(500).send('Internal Server Error during token exchange');
     }
   }
@@ -1020,11 +1089,33 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
         ? Date.now() + codeData.tokens.expires_in * 1000 
         : undefined,
       resource,
+      identity: codeData.identity,
     };
     
     this.accessTokens.set(codeData.tokens.access_token, tokenData);
+    if (codeData.tokens.refresh_token && codeData.identity) {
+      this.storeRefreshTokenIdentity(codeData.tokens.refresh_token, codeData.identity, client.client_id);
+    }
 
     return codeData.tokens;
+  }
+
+  getIdentityForAccessToken(token: string): OidcIdentity | undefined {
+    return this.accessTokens.get(token)?.identity;
+  }
+
+  private async verifyCallbackIdentity(tokens: OAuthTokens, nonce?: string): Promise<OidcIdentity> {
+    if (!this.identityVerifier) {
+      throw new AuthenticationError('OIDC identity verifier is not configured');
+    }
+    if (!nonce) {
+      throw new AuthenticationError('Authorization state carries no OIDC nonce (state predates identity verification)');
+    }
+    const idToken = (tokens as OAuthTokens & { id_token?: string }).id_token;
+    if (!idToken) {
+      throw new AuthenticationError('OIDC identity token missing from authorization response');
+    }
+    return this.identityVerifier.verify(idToken, nonce);
   }
 
   /**
@@ -1088,13 +1179,36 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
     client: OAuthClientInformationFull,
     refreshToken: string,
     scopes?: string[],
-    resource?: URL
+    resource?: URL,
+    rehydratedIdentity?: OidcIdentity,
   ): Promise<OAuthTokens> {
     await this.ensureEndpointsInitialized();
     
     this.logger.info('Exchanging refresh token', { clientId: client.client_id });
 
     const tokenUrl = this.config.token_endpoint!;
+    const identityEntry = this.refreshTokenIdentities.get(refreshToken);
+    let cachedIdentity: OidcIdentity | undefined;
+    if (identityEntry) {
+      if (identityEntry.clientId !== client.client_id) {
+        // Identity bindings are client-scoped (mirrors assertRefreshEnvelopeClientBinding):
+        // client B presenting A's refresh token must not inherit A's verified identity.
+        this.refreshTokenIdentities.delete(refreshToken);
+        this.logger.warn('Refresh token identity was bound to a different client - identity dropped', {
+          clientId: client.client_id,
+        });
+      } else if (identityEntry.expiresAt > Date.now()) {
+        cachedIdentity = identityEntry.identity;
+      } else {
+        this.refreshTokenIdentities.delete(refreshToken);
+      }
+    }
+    const identity = rehydratedIdentity
+      ? { ...rehydratedIdentity, issuer: normalizeIssuer(rehydratedIdentity.issuer) }
+      : cachedIdentity;
+    if (identity && this.config.issuer && identity.issuer !== this.config.issuer) {
+      throw new AuthenticationError('Refresh token identity issuer does not match OAuth provider issuer');
+    }
 
     await this.ssrfValidator.validate(tokenUrl, {
       allowPrivateNetwork: process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK === 'true'
@@ -1145,11 +1259,54 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
         ? Date.now() + tokenResponse.expires_in * 1000 
         : undefined,
       resource,
+      identity,
     };
     
     this.accessTokens.set(tokenResponse.access_token, tokenData);
+    if (identity && tokenResponse.refresh_token) {
+      this.refreshTokenIdentities.delete(refreshToken);
+      this.storeRefreshTokenIdentity(tokenResponse.refresh_token, identity, client.client_id);
+    }
 
     return tokenResponse;
+  }
+
+  private storeRefreshTokenIdentity(refreshToken: string, identity: OidcIdentity, clientId: string): void {
+    const now = Date.now();
+    for (const [token, entry] of this.refreshTokenIdentities) {
+      if (entry.expiresAt <= now) this.refreshTokenIdentities.delete(token);
+    }
+    // Every entry gets the same constant TTL, so Map insertion order equals
+    // expiry order: the first key is always the nearest-expiry binding.
+    // Overflow is logged so the cap is observable.
+    let evicted = 0;
+    while (this.refreshTokenIdentities.size >= REFRESH_IDENTITY_MAX) {
+      const nearestToken = this.refreshTokenIdentities.keys().next().value;
+      if (nearestToken === undefined) break;
+      this.refreshTokenIdentities.delete(nearestToken);
+      evicted += 1;
+    }
+    if (evicted > 0) {
+      // Aggregate + rate-limit: at capacity every insert evicts, so warning
+      // per insert would flood the logs.
+      this.refreshEvictionsSinceLastWarn += evicted;
+      if (now - this.lastRefreshEvictionWarnAt >= REFRESH_EVICTION_WARN_INTERVAL_MS) {
+        this.logger.warn('Refresh identity map at capacity - evicted nearest-expiry bindings', {
+          capacity: REFRESH_IDENTITY_MAX,
+          evictedSinceLastWarn: this.refreshEvictionsSinceLastWarn,
+        });
+        this.lastRefreshEvictionWarnAt = now;
+        this.refreshEvictionsSinceLastWarn = 0;
+      }
+    }
+    // Delete-then-set keeps insertion order equal to expiry order even when a
+    // non-rotating IdP returns the same refresh token again.
+    this.refreshTokenIdentities.delete(refreshToken);
+    this.refreshTokenIdentities.set(refreshToken, {
+      identity,
+      clientId,
+      expiresAt: now + REFRESH_IDENTITY_TTL_MS,
+    });
   }
 
   async verifyAccessToken(token: string): Promise<AuthInfo> {
@@ -1302,6 +1459,13 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
     for (const [token, data] of this.accessTokens.entries()) {
       if (data.expiresAt && data.expiresAt < now) {
         this.accessTokens.delete(token);
+      }
+    }
+
+    // 4. Cleanup expired refresh-token identity bindings
+    for (const [token, entry] of this.refreshTokenIdentities.entries()) {
+      if (entry.expiresAt <= now) {
+        this.refreshTokenIdentities.delete(token);
       }
     }
   }

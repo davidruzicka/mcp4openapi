@@ -1,0 +1,61 @@
+{
+  "$schema": "../../../profile-schema.json",
+  "profile_name": "consent-gate",
+  "profile_id": "consent-gate",
+  "description": "Example profile gating an upstream MS365 MCP behind provable human consent bound to profile OAuth.",
+  "tools": [],
+  "consent_gate": {
+    "required": true,
+    "rules_version": "v1",
+    "rules_summary": "Access to MS365 data requires accepting the usage rules.",
+    "education_resource": "https://intranet.example/ms365-ai-rules",
+    "identity_source": "profile_oauth"
+  },
+  "interceptors": {
+    "auth": {
+      "type": "oauth",
+      "oauth_config": {
+        "issuer": "https://login.microsoftonline.com/11111111-1111-1111-1111-111111111111/v2.0",
+        "client_id": "00000000-0000-0000-0000-000000000000",
+        "redirect_uri": "https://mcp.example/oauth/callback",
+        "scopes": ["openid", "User.Read", "Files.Read", "Sites.Selected"]
+      }
+    }
+  },
+  "upstream_mcp": {
+    "name": "ms365-upstream",
+    "transport": {
+      "type": "http-streamable",
+      "url": "https://upstream.example.com/mcp"
+    },
+    "auth": {
+      "type": "bearer"
+    },
+    "tools": {
+      "allow": [
+        "list-drives",
+        "get-drive-delta",
+        "get-drive-root-item",
+        "list-folder-files",
+        "get-drive-item",
+        "list-drive-item-thumbnails",
+        "list-drive-item-permissions",
+        "list-drive-item-versions",
+        "search-onedrive-files",
+        "get-sharepoint-site",
+        "list-sharepoint-site-drives",
+        "get-sharepoint-site-drive-by-id",
+        "list-sharepoint-site-items",
+        "get-sharepoint-site-item",
+        "list-sharepoint-site-lists",
+        "get-sharepoint-site-list",
+        "list-sharepoint-site-list-items",
+        "get-sharepoint-site-list-item",
+        "list-sharepoint-list-columns",
+        "get-sharepoint-list-column",
+        "get-sharepoint-site-by-path",
+        "download-bytes"
+      ]
+    }
+  }
+}

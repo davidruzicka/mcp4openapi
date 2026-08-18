@@ -1,4 +1,5 @@
 import { ValidationError } from '../core/errors.js';
+import type { Logger } from '../core/logger.js';
 import { upstreamMcpServerConfigSchema } from '../generated-schemas.js';
 import type {
   Profile,
@@ -71,6 +72,51 @@ function resolveUpstreamMcpFromEnv(profile: Profile, env: EnvSource): UpstreamMc
   return parseUpstreamMcpJson(rawValue, 'upstream_mcp');
 }
 
+export interface EffectiveUpstreamOrigin {
+  /** Scheme and authority of the effective upstream endpoint, without path or query. */
+  origin: string;
+  /** True when an environment override supplied the endpoint instead of the profile. */
+  fromEnvOverride: boolean;
+  /** Name of the environment variable the profile reads the override from, when declared. */
+  envVarName?: string;
+}
+
+/**
+ * Describe where upstream traffic will actually go, for the startup info log.
+ *
+ * The off-origin override warning is NOT derived from this: it is emitted by
+ * `warnOnOffOriginOverride` during `resolveUpstreamMcpConfig`, where the static
+ * profile endpoint is still available for comparison.
+ */
+export function describeEffectiveUpstreamOrigin(
+  profile: Profile,
+  env: EnvSource = process.env,
+): EffectiveUpstreamOrigin | undefined {
+  const envVarName = getTrimmedEnvReference(profile.upstream_mcp_from_env, 'upstream_mcp_from_env');
+  const fromEnv = resolveUpstreamMcpFromEnv(profile, env);
+  const effective = fromEnv ?? profile.upstream_mcp;
+  if (!effective) return undefined;
+
+  const origin = safeOrigin(effective.transport?.url);
+  if (!origin) return undefined;
+
+  return {
+    origin,
+    fromEnvOverride: fromEnv !== undefined,
+    envVarName: envVarName ?? undefined,
+  };
+}
+
+/** Origin of a URL, or undefined when it is absent or unparseable. */
+function safeOrigin(urlValue: string | undefined): string | undefined {
+  if (!urlValue?.trim()) return undefined;
+  try {
+    return new URL(urlValue.trim()).origin;
+  } catch {
+    return undefined;
+  }
+}
+
 function validateToolPolicyList(values: string[] | undefined, path: string): void {
   if (values === undefined) {
     return;
@@ -94,6 +140,140 @@ function validateToolPolicy(policy: UpstreamMcpToolPolicy | undefined, path: str
 
   validateToolPolicyList(policy.allow, `${path}.allow`);
   validateToolPolicyList(policy.deny, `${path}.deny`);
+}
+
+function validateEnvironmentToolPolicy(
+  staticPolicy: UpstreamMcpToolPolicy | undefined,
+  environmentPolicy: UpstreamMcpToolPolicy | undefined,
+): void {
+  if (!staticPolicy?.allow?.length && !staticPolicy?.deny?.length) {
+    return;
+  }
+
+  if (!environmentPolicy) {
+    throw new ValidationError(
+      'upstream_mcp_from_env cannot broaden the static upstream_mcp.tools policy: tools policy is required',
+      { path: 'upstream_mcp_from_env' },
+    );
+  }
+
+  const staticAllow = new Set(staticPolicy.allow?.map((value) => value.trim()));
+  if (staticAllow.size > 0) {
+    const environmentAllow = environmentPolicy.allow?.map((value) => value.trim());
+    if (!environmentAllow?.length || environmentAllow.some((pattern) => !staticAllow.has(pattern))) {
+      throw new ValidationError(
+        'upstream_mcp_from_env cannot broaden the static upstream_mcp.tools policy: allow patterns must remain within the static allow-list ' +
+        '(exact-string subset: every override allow entry must appear verbatim in the static allow list; semantically narrower globs are not evaluated)',
+        { path: 'upstream_mcp_from_env' },
+      );
+    }
+  }
+
+  const staticDeny = staticPolicy.deny?.map((value) => value.trim()) ?? [];
+  const environmentDeny = new Set(environmentPolicy.deny?.map((value) => value.trim()));
+  if (staticDeny.some((pattern) => !environmentDeny.has(pattern))) {
+    throw new ValidationError(
+      'upstream_mcp_from_env cannot broaden the static upstream_mcp.tools policy: deny patterns must be retained',
+      { path: 'upstream_mcp_from_env' },
+    );
+  }
+}
+
+/**
+ * Description policies default to the strictest value in mcp-server.ts when omitted,
+ * so an omitted override hardens, and any explicit env value weaker than the static
+ * value (per the strictness ranks below) is rejected.
+ */
+const DESCRIPTION_POLICY_DEFAULT = 'drop';
+
+type DescriptionPolicyField = 'html_description_policy' | 'tool_description_length_policy';
+
+/** Higher rank = stricter. An env value with a lower rank than the static value is a downgrade. */
+const DESCRIPTION_POLICY_STRICTNESS: Record<DescriptionPolicyField, Record<string, number>> = {
+  html_description_policy: { drop: 2, strip: 1, allow: 0 },
+  tool_description_length_policy: { drop: 2, truncate: 1, allow: 0 },
+};
+
+function rejectDescriptionPolicyDowngrade(field: DescriptionPolicyField): EnvironmentOverrideCheck {
+  return (staticUpstream, environmentUpstream) => {
+    const environmentValue = environmentUpstream[field];
+    if (environmentValue === undefined) {
+      return;
+    }
+
+    const ranks = DESCRIPTION_POLICY_STRICTNESS[field];
+    const staticValue = staticUpstream?.[field] ?? DESCRIPTION_POLICY_DEFAULT;
+    if (ranks[environmentValue] >= ranks[staticValue]) {
+      return;
+    }
+
+    throw new ValidationError(
+      `upstream_mcp_from_env cannot weaken the static upstream_mcp.${field}: ${environmentValue} is less strict than ${staticValue}`,
+      { path: 'upstream_mcp_from_env' },
+    );
+  };
+}
+
+type EnvironmentOverrideCheck = (
+  staticUpstream: UpstreamMcpServerConfig | undefined,
+  environmentUpstream: UpstreamMcpServerConfig,
+) => void;
+
+/**
+ * Declarative no-weakening rules applied to an environment override.
+ *
+ * Guarded fields: the tools allow/deny policy and both description policies,
+ * because those bound what an upstream can expose to the model. All other
+ * fields (transport/url, auth, timeout_ms, tool_prefix, validation_*) are
+ * intentionally NOT guarded: deployment env vars are set by the administrator
+ * and legitimately vary per environment (staging endpoints, proxies, timeouts).
+ */
+const ENVIRONMENT_OVERRIDE_RULES: readonly EnvironmentOverrideCheck[] = [
+  (staticUpstream, environmentUpstream) => {
+    validateToolPolicy(staticUpstream?.tools, 'upstream_mcp.tools');
+    validateEnvironmentToolPolicy(staticUpstream?.tools, environmentUpstream.tools);
+  },
+  rejectDescriptionPolicyDowngrade('html_description_policy'),
+  rejectDescriptionPolicyDowngrade('tool_description_length_policy'),
+];
+
+function validateEnvironmentOverride(
+  staticUpstream: UpstreamMcpServerConfig | undefined,
+  environmentUpstream: UpstreamMcpServerConfig,
+): void {
+  for (const check of ENVIRONMENT_OVERRIDE_RULES) {
+    check(staticUpstream, environmentUpstream);
+  }
+}
+
+/**
+ * Warn when an environment override points at a different origin than the
+ * static profile endpoint. This must happen at resolution time: the loader
+ * overwrites `profile.upstream_mcp` with the resolved config, so a later
+ * static-vs-effective comparison would compare the override against itself.
+ *
+ * An off-origin override is a legitimate deployment case (staging, an egress
+ * proxy), so it is deliberately NOT rejected. It is surfaced because the
+ * override lives outside git and outside code review: a copied or stale value
+ * would otherwise redirect the connection silently.
+ */
+function warnOnOffOriginOverride(
+  profile: Profile,
+  environmentUpstream: UpstreamMcpServerConfig,
+  logger: Pick<Logger, 'warn'> | undefined,
+): void {
+  if (!logger) return;
+  const staticOrigin = safeOrigin(profile.upstream_mcp?.transport?.url);
+  const overrideOrigin = safeOrigin(environmentUpstream.transport?.url);
+  if (staticOrigin === undefined || overrideOrigin === undefined || staticOrigin === overrideOrigin) {
+    return;
+  }
+  logger.warn('Upstream MCP endpoint overridden to a different origin by the environment', {
+    profile: profile.profile_name,
+    staticOrigin,
+    overrideOrigin,
+    envVarName: profile.upstream_mcp_from_env?.trim(),
+  });
 }
 
 function validateUpstreamAuth(auth: UpstreamMcpAuthConfig | undefined, path: string): void {
@@ -250,8 +430,13 @@ export function hasUpstreamMcpFlag(value: unknown): boolean {
 export function resolveUpstreamMcpConfig(
   profile: Profile,
   env: EnvSource = process.env,
+  logger?: Pick<Logger, 'warn'>,
 ): UpstreamMcpServerConfig | undefined {
   const envResolved = resolveUpstreamMcpFromEnv(profile, env);
+  if (envResolved) {
+    validateEnvironmentOverride(profile.upstream_mcp, envResolved);
+    warnOnOffOriginOverride(profile, envResolved, logger);
+  }
   const provider = envResolved ?? profile.upstream_mcp;
   if (!provider) return undefined;
 

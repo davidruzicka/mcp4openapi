@@ -231,6 +231,84 @@ export function generateProfileSchemaFromTypes() {
   return normalized;
 }
 
+function decodeDefinitionRefName(ref) {
+  const raw = ref.slice('#/definitions/'.length);
+  let decoded = raw;
+  try {
+    decoded = decodeURIComponent(raw);
+  } catch {
+    // Keep the raw pointer when it is not URI-encoded.
+  }
+  return unescapeJsonPointer(decoded);
+}
+
+function collectDefinitionRefs(node, into) {
+  if (Array.isArray(node)) {
+    for (const item of node) {
+      collectDefinitionRefs(item, into);
+    }
+    return;
+  }
+  if (!node || typeof node !== 'object') {
+    return;
+  }
+  if (typeof node.$ref === 'string' && node.$ref.startsWith('#/definitions/')) {
+    into.add(decodeDefinitionRefName(node.$ref));
+  }
+  for (const value of Object.values(node)) {
+    collectDefinitionRefs(value, into);
+  }
+}
+
+/**
+ * Drop definitions that are not reachable via $ref from the schema root.
+ *
+ * Why: the sync process preserves definitions from the current file so manual
+ * metadata survives regeneration. Without pruning, definitions abandoned by a
+ * design change (or stale generator-position-hash Record<...> duplicates)
+ * survive every regen as unreferenced garbage.
+ */
+export function pruneUnreachableDefinitions(schema) {
+  if (!schema || typeof schema !== 'object' || !schema.definitions) {
+    return schema;
+  }
+
+  const reachable = new Set();
+  const frontier = new Set();
+  const { definitions, ...root } = schema;
+  collectDefinitionRefs(root, frontier);
+  while (frontier.size > 0) {
+    const name = frontier.values().next().value;
+    frontier.delete(name);
+    if (reachable.has(name)) {
+      continue;
+    }
+    reachable.add(name);
+    const definition = definitions[name];
+    if (!definition) {
+      continue;
+    }
+    const next = new Set();
+    collectDefinitionRefs(definition, next);
+    for (const candidate of next) {
+      if (!reachable.has(candidate)) {
+        frontier.add(candidate);
+      }
+    }
+  }
+
+  const dropped = Object.keys(definitions).filter((name) => !reachable.has(name));
+  if (dropped.length > 0) {
+    console.warn(
+      `profile-schema.json: dropping ${dropped.length} definition(s) not reachable from the schema root: ${dropped.join(', ')}`,
+    );
+    for (const name of dropped) {
+      delete schema.definitions[name];
+    }
+  }
+  return schema;
+}
+
 export async function readProfileSchemaFile(schemaPath = path.join(PROJECT_ROOT, 'profile-schema.json')) {
   const content = await fs.readFile(schemaPath, 'utf8');
   return JSON.parse(content);
@@ -249,6 +327,10 @@ export async function buildSyncedProfileSchema() {
       }
     }
   }
+
+  // Preserved definitions that nothing references anymore are stale leftovers;
+  // drop them (with a named warning) instead of carrying them across regens.
+  pruneUnreachableDefinitions(generated);
 
   // Preserve top-level metadata for stable IDE references
   generated.$schema = current.$schema || generated.$schema;

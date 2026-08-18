@@ -1,5 +1,12 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { redactAuthPayload, sanitizeAuthErrorMessage, redactString } from './auth-redaction.js';
+import { ExternalOAuthProvider } from './oauth-provider.js';
+import { ConsentGate } from './consent-gate.js';
+import { InMemoryConsentEvidenceStore } from './consent-evidence-store.js';
+import { ConsentRequiredError } from '../core/errors.js';
+import type { AuthorizedPrincipal } from './inbound-auth-principal.js';
+import type { Logger } from '../core/logger.js';
+import type { ConsentGateConfig } from '../types/profile.js';
 
 describe('auth-redaction', () => {
   it('redacts nested auth payload fields', () => {
@@ -107,6 +114,113 @@ describe('auth-redaction', () => {
     it('case-insensitive Bearer matching', () => {
       const result = sanitizeAuthErrorMessage('auth: bearer abcdefghij1234567890xx');
       expect(result).toBe('auth: bearer [REDACTED]...90xx');
+    });
+  });
+
+  describe('consent gate logging never emits raw identity values', () => {
+    const IDENTITY_SENTINELS = {
+      subject: 'SUBJECT-SENTINEL-9f3a2c',
+      issuer: 'https://ISSUER-SENTINEL-9f3a2c.example.test/tenant/v2.0',
+      tenantId: 'TENANT-SENTINEL-9f3a2c',
+      nonce: 'NONCE-SENTINEL-9f3a2c',
+      audience: 'AUDIENCE-SENTINEL-9f3a2c',
+    };
+
+    it('logs only booleans plus a reason when a real ConsentGate denies dispatch', async () => {
+      const calls: unknown[][] = [];
+      const capture = (...args: unknown[]): void => {
+        calls.push(args);
+      };
+      const logger = {
+        debug: vi.fn(capture),
+        info: vi.fn(capture),
+        warn: vi.fn(capture),
+        error: vi.fn(capture),
+      } as unknown as Logger;
+
+      const config: ConsentGateConfig = {
+        required: true,
+        rules_version: 'v1',
+        identity_source: 'profile_oauth',
+      };
+      const gate = new ConsentGate(
+        'ms365',
+        config,
+        new InMemoryConsentEvidenceStore(),
+        (profileId) => `https://mcp.example.test/consent/${profileId}`,
+        logger,
+        IDENTITY_SENTINELS.issuer,
+      );
+
+      // nonce/audience are not part of AuthorizedPrincipal; they are attached
+      // here to prove the gate never spreads an incoming principal into a log.
+      const principal = {
+        authType: 'oauth',
+        profileId: 'ms365',
+        subject: IDENTITY_SENTINELS.subject,
+        issuer: IDENTITY_SENTINELS.issuer,
+        tenantId: IDENTITY_SENTINELS.tenantId,
+        scopes: [],
+        nonce: IDENTITY_SENTINELS.nonce,
+        audience: IDENTITY_SENTINELS.audience,
+      } as AuthorizedPrincipal & { nonce: string; audience: string };
+
+      await expect(gate.assertConsent(principal)).rejects.toBeInstanceOf(ConsentRequiredError);
+
+      const serialized = JSON.stringify(calls);
+      expect(serialized).toContain('no_evidence');
+      for (const [field, value] of Object.entries(IDENTITY_SENTINELS)) {
+        expect(serialized, `raw ${field} leaked into consent logging`).not.toContain(value);
+      }
+      // The sentinel host alone must not leak either, even without the full URL.
+      expect(serialized).not.toContain('ISSUER-SENTINEL-9f3a2c');
+    });
+  });
+
+  describe('OAuth authorize logging never emits state or nonce values', () => {
+    it('keeps the generated state token and OIDC nonce out of every serialized log call', async () => {
+      const calls: unknown[][] = [];
+      const capture = (...args: unknown[]): void => {
+        calls.push(args);
+      };
+      const logger = {
+        debug: vi.fn(capture),
+        info: vi.fn(capture),
+        warn: vi.fn(capture),
+        error: vi.fn(capture),
+      } as unknown as Logger;
+      // An identity verifier makes authorize() attach a nonce to the provider URL.
+      const identityVerifier = { verify: vi.fn() };
+      const provider = new ExternalOAuthProvider({
+        authorization_endpoint: 'https://oauth.example.test/authorize',
+        token_endpoint: 'https://oauth.example.test/token',
+        client_id: 'client-id',
+        client_secret: 'client-secret',
+        scopes: ['openid'],
+        redirect_uri: 'http://localhost:3003/oauth/callback',
+      }, logger, identityVerifier as never);
+      const redirect = vi.fn();
+
+      await provider.authorize({
+        client_id: 'mcp-client',
+        redirect_uris: ['http://localhost:3003/oauth/callback'],
+        grant_types: ['authorization_code'],
+        response_types: ['code'],
+      }, {
+        redirectUri: 'http://localhost:3003/oauth/callback',
+        codeChallenge: 'challenge',
+        scopes: ['openid'],
+      }, { redirect } as never);
+
+      const providerUrl = new URL(redirect.mock.calls[0][0] as string);
+      const stateToken = providerUrl.searchParams.get('state');
+      const nonce = providerUrl.searchParams.get('nonce');
+      expect(stateToken).toBeTruthy();
+      expect(nonce).toBeTruthy();
+
+      const serialized = JSON.stringify(calls);
+      expect(serialized, 'state token leaked into OAuth logging').not.toContain(stateToken as string);
+      expect(serialized, 'OIDC nonce leaked into OAuth logging').not.toContain(nonce as string);
     });
   });
 

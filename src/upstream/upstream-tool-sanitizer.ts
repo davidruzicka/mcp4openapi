@@ -243,10 +243,27 @@ function matchesGlobPattern(pattern: string, name: string): boolean {
  *   - neither set: all tools pass
  *
  * Patterns support `*` as a wildcard (e.g. `github_*`, `admin_*`).
+ *
+ * Availability signal: allow-list entries that match none of the upstream tools
+ * are logged once per invocation. Filtering stays fail-closed (a dead entry
+ * simply exposes nothing), but a tool renamed or removed upstream would
+ * otherwise vanish silently.
  */
-export function applyProviderToolPolicy(tools: Tool[], policy: UpstreamMcpToolPolicy | undefined): Tool[] {
+export function applyProviderToolPolicy(
+  tools: Tool[],
+  policy: UpstreamMcpToolPolicy | undefined,
+  logger?: Pick<Logger, 'warn'>,
+): Tool[] {
   if (!policy) return tools;
   const { allow, deny } = policy;
+  if (logger && allow && allow.length > 0) {
+    const unmatched = allow.filter((pattern) => !tools.some((tool) => matchesGlobPattern(pattern, tool.name)));
+    if (unmatched.length > 0) {
+      logger.warn('Upstream tool allow-list entries matched no upstream tools - they may have been renamed or removed upstream', {
+        unmatchedAllowPatterns: unmatched.map((pattern) => sanitizeLogMessage(truncateName(pattern))),
+      });
+    }
+  }
   return tools.filter((tool) => {
     if (allow && !allow.some(p => matchesGlobPattern(p, tool.name))) return false;
     if (deny && deny.some(p => matchesGlobPattern(p, tool.name))) return false;

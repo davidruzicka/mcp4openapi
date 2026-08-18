@@ -6,12 +6,13 @@
  */
 
 import type { Request as ExpressRequest, Response } from 'express';
-import type { OAuthConfig, AuthInterceptor, EnterpriseAuthorizationConfig, UpstreamMcpServerConfig, ClientAuthGateConfig } from './profile.js';
+import type { OAuthConfig, AuthInterceptor, EnterpriseAuthorizationConfig, UpstreamMcpServerConfig, ClientAuthGateConfig, ConsentGateConfig } from './profile.js';
 import type { HttpTenantIndex } from './http-tenants.js';
 import type { SessionToolFilterRequest, SessionToolFilterCompat as SessionToolFilter } from '../tool-filter/index.js';
 import type { OpenAPIParser } from '../openapi/openapi-parser.js';
 import type { FilteringRules } from '../core/filtering.js';
 import type { AuthorizedPrincipal } from '../auth/inbound-auth-principal.js';
+import type { PostgresConsentDbConfig } from '../auth/postgres-consent-evidence-store.js';
 
 export type { SessionToolFilter, SessionToolFilterRequest };
 
@@ -114,6 +115,18 @@ export interface HttpTransportConfig {
    * KDFs derive identically there) and when tokenKey is unset.
    */
   legacyTokenKey?: Buffer;
+  /**
+   * Absolute path of the durable consent evidence file (`MCP4_CONSENT_EVIDENCE_PATH`).
+   * Required for profiles declaring `consent_gate.required`; without it the
+   * profile fails to start rather than falling back to volatile storage.
+   */
+  consentEvidencePath?: string;
+  /**
+   * Postgres consent evidence store settings (`MCP_CONSENTS_DB_*`).
+   * Takes precedence over `consentEvidencePath`; the transactional
+   * multi-replica backend for consent-gated profiles.
+   */
+  consentDb?: PostgresConsentDbConfig;
   trustProxy?: boolean | number | string; // Express trust proxy setting
   oauthConfig?: OAuthConfig; // OAuth 2.0 configuration (optional)
   baseUrl?: string; // Base URL for API (for token validation)
@@ -131,6 +144,7 @@ export interface HttpTransportConfig {
   globalFiltering?: FilteringRules; // Process-wide baseline parameter filtering
   upstreamMcp?: UpstreamMcpServerConfig; // Upstream MCP provider for this profile
   client_auth_gate?: ClientAuthGateConfig; // Inbound client auth gate (single-profile mode)
+  consent_gate?: ConsentGateConfig; // Human consent gate (single-profile mode)
 }
 
 export interface HttpProfileContext {
@@ -146,6 +160,7 @@ export interface HttpProfileContext {
   parser?: OpenAPIParser;
   upstreamMcp?: UpstreamMcpServerConfig;
   client_auth_gate?: ClientAuthGateConfig;
+  consent_gate?: ConsentGateConfig;
 }
 
 export interface McpRequest extends ExpressRequest {

@@ -77,7 +77,12 @@ export class MCPServerManager {
     if (this.httpTransport) {
       server.attachHttpTransport(this.httpTransport);
     }
-    server.setGetUpstreamClient((s, p, t) => this.upstreamManager.getOrConnect(s, p, t));
+    // Inject the plain connection factory: consent enforcement lives in the
+    // single chokepoint inside MCPServer.setGetUpstreamClient, which wraps this
+    // factory for both manager mode and single-profile runHttp mode.
+    server.setGetUpstreamClient((sessionId, provider, token) =>
+      this.upstreamManager.getOrConnect(sessionId, provider, token),
+    );
     this.upstreamManager.addToolsListChangedHook((s, p) => server.invalidateUpstreamToolCache(s, p));
     return server;
   }

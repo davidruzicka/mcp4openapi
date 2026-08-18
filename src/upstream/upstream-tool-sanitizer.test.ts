@@ -682,6 +682,63 @@ describe('applyProviderToolPolicy', () => {
     const result = applyProviderToolPolicy(mixed, { allow: ['github_*'], deny: ['github_admin'] });
     expect(result.map(t => t.name)).toEqual(['github_create']);
   });
+
+  describe('catalog-drift availability warning', () => {
+    it('warns once naming exactly the allow entries that matched no upstream tool', () => {
+      const warn = vi.fn();
+      const result = applyProviderToolPolicy(
+        [makeTool('alpha'), makeTool('beta')],
+        { allow: ['alpha', 'renamed_upstream_tool'] },
+        { warn },
+      );
+
+      expect(result.map(t => t.name)).toEqual(['alpha']);
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining('allow-list entries matched no upstream tools'),
+        { unmatchedAllowPatterns: ['renamed_upstream_tool'] },
+      );
+    });
+
+    it('does not warn when every allow entry matches at least one tool', () => {
+      const warn = vi.fn();
+      const result = applyProviderToolPolicy(
+        [makeTool('github_create'), makeTool('github_list')],
+        { allow: ['github_*'] },
+        { warn },
+      );
+
+      expect(result).toHaveLength(2);
+      expect(warn).not.toHaveBeenCalled();
+    });
+
+    it('does not warn for a deny-only policy', () => {
+      const warn = vi.fn();
+      applyProviderToolPolicy(
+        [makeTool('alpha')],
+        { deny: ['no_such_tool'] },
+        { warn },
+      );
+
+      expect(warn).not.toHaveBeenCalled();
+    });
+
+    it('does not warn when the allow list is empty', () => {
+      const warn = vi.fn();
+      expect(applyProviderToolPolicy([makeTool('alpha')], { allow: [] }, { warn })).toEqual([]);
+      expect(warn).not.toHaveBeenCalled();
+    });
+
+    it('truncates and sanitizes hostile pattern names in the warning payload', () => {
+      const warn = vi.fn();
+      const hostile = 'x'.repeat(150);
+      applyProviderToolPolicy([makeTool('alpha')], { allow: ['alpha', hostile] }, { warn });
+
+      const payload = warn.mock.calls[0][1] as { unmatchedAllowPatterns: string[] };
+      expect(payload.unmatchedAllowPatterns).toHaveLength(1);
+      expect(payload.unmatchedAllowPatterns[0]).toBe('x'.repeat(100) + '...');
+    });
+  });
 });
 
 describe('isValidUpstreamToolName', () => {

@@ -1,12 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import { createCipheriv as nodeCipheriv, createHash, randomBytes, scryptSync } from 'node:crypto';
-import { ValidationError } from '../core/errors.js';
+import { AuthenticationError, ValidationError } from '../core/errors.js';
 import {
+  assertRefreshEnvelopeClientBinding,
+  decryptRefreshEnvelope,
   decryptTokenPayload,
   deriveLegacySha256TokenKey,
   deriveTokenKey,
+  encryptRefreshEnvelope,
   encryptTokenPayload,
   isEncryptedToken,
+  isRefreshEnvelope,
+  REFRESH_IDENTITY_TTL_MS,
   type TokenEnvelopePayload,
 } from './token-envelope.js';
 
@@ -131,6 +136,37 @@ describe('token-envelope', () => {
     expect(out.cid).toBeUndefined();
     expect(out.sc).toBeUndefined();
     expect(out.creg).toBeUndefined();
+  });
+
+  it.each([
+    { sub: 'subject-1', iss: undefined },
+    { sub: undefined, iss: 'https://issuer.example.test/tenant/v2.0' },
+    { sub: '', iss: 'https://issuer.example.test/tenant/v2.0' },
+    { sub: 'subject-1', iss: '' },
+    { sub: 'subject-1', iss: 'https://issuer.example.test/tenant/v2.0', tid: 42 },
+  ])('returns null for incoherent identity fields: $sub/$iss/$tid', (identity) => {
+    const payload = {
+      ...MINIMAL_PAYLOAD,
+      ...identity,
+    } as unknown as TokenEnvelopePayload;
+    const token = encryptTokenPayload(payload, KEY);
+
+    expect(decryptTokenPayload(token, KEY, PROFILE_ID)).toBeNull();
+  });
+
+  it('canonicalizes a trailing slash on a complete recovered issuer', () => {
+    const token = encryptTokenPayload({
+      ...MINIMAL_PAYLOAD,
+      sub: 'subject-1',
+      iss: 'https://issuer.example.test/tenant/v2.0/',
+      tid: 'tenant-1',
+    }, KEY);
+
+    expect(decryptTokenPayload(token, KEY, PROFILE_ID)).toMatchObject({
+      sub: 'subject-1',
+      iss: 'https://issuer.example.test/tenant/v2.0',
+      tid: 'tenant-1',
+    });
   });
 
   it('returns null when decrypting with the wrong key (no throw)', () => {
@@ -320,3 +356,244 @@ describe('token-envelope', () => {
 
 // Touch unused imports so eslint never trips on tree-shaken helpers in test contexts.
 void TAG_BYTES;
+
+describe('refresh envelope', () => {
+  const payload = {
+    v: 1 as const,
+    rt: 'idp-refresh-token',
+    cid: 'client-1',
+    sub: 'person-1',
+    iss: 'https://issuer.example.test/v2.0',
+    tid: 'tenant-1',
+    pid: PROFILE_ID,
+    iat: Date.now(),
+  };
+
+  it('round-trips the identity bound to the refresh token', () => {
+    const envelope = encryptRefreshEnvelope(payload, KEY);
+    expect(isRefreshEnvelope(envelope)).toBe(true);
+    expect(decryptRefreshEnvelope(envelope, KEY, PROFILE_ID)).toMatchObject({
+      rt: 'idp-refresh-token',
+      sub: 'person-1',
+      tid: 'tenant-1',
+    });
+  });
+
+  it('rejects a refresh envelope presented for another profile', () => {
+    const envelope = encryptRefreshEnvelope(payload, KEY);
+    expect(decryptRefreshEnvelope(envelope, KEY, 'other-profile')).toBeNull();
+  });
+
+  it('rejects a refresh envelope decrypted with the wrong key', () => {
+    const envelope = encryptRefreshEnvelope(payload, KEY);
+    expect(decryptRefreshEnvelope(envelope, OTHER_KEY, PROFILE_ID)).toBeNull();
+  });
+
+  it('cannot be presented as an access token envelope', () => {
+    const envelope = encryptRefreshEnvelope(payload, KEY);
+    expect(isEncryptedToken(envelope)).toBe(false);
+    expect(decryptTokenPayload(envelope, KEY, PROFILE_ID)).toBeNull();
+  });
+
+  it('does not accept an access token envelope as a refresh envelope', () => {
+    const accessEnvelope = encryptTokenPayload(
+      { v: 1, at: 'access', rt: 'refresh', pid: PROFILE_ID, iat: Date.now() },
+      KEY,
+    );
+    expect(isRefreshEnvelope(accessEnvelope)).toBe(false);
+    expect(decryptRefreshEnvelope(accessEnvelope, KEY, PROFILE_ID)).toBeNull();
+  });
+
+  it('rejects an envelope carrying a subject without an issuer', () => {
+    const envelope = encryptRefreshEnvelope({ ...payload, iss: undefined }, KEY);
+    expect(decryptRefreshEnvelope(envelope, KEY, PROFILE_ID)).toBeNull();
+  });
+
+  it('omits identity when the grant had none', () => {
+    const envelope = encryptRefreshEnvelope(
+      { v: 1, rt: 'r', cid: 'c', pid: PROFILE_ID, iat: Date.now() },
+      KEY,
+    );
+    const decrypted = decryptRefreshEnvelope(envelope, KEY, PROFILE_ID);
+    expect(decrypted?.sub).toBeUndefined();
+    expect(decrypted?.rt).toBe('r');
+  });
+
+  it('throws when the refresh token or profile is missing', () => {
+    expect(() => encryptRefreshEnvelope({ ...payload, rt: '' }, KEY)).toThrow(ValidationError);
+    expect(() => encryptRefreshEnvelope({ ...payload, pid: '' }, KEY)).toThrow(ValidationError);
+  });
+});
+
+describe('refresh envelope iat age horizon', () => {
+  const basePayload = { v: 1 as const, rt: 'idp-refresh-token', cid: 'client-1', pid: PROFILE_ID };
+
+  it('rejects an envelope whose iat is older than REFRESH_IDENTITY_TTL_MS', () => {
+    const envelope = encryptRefreshEnvelope(
+      { ...basePayload, iat: Date.now() - REFRESH_IDENTITY_TTL_MS - 1000 },
+      KEY,
+    );
+    expect(decryptRefreshEnvelope(envelope, KEY, PROFILE_ID)).toBeNull();
+  });
+
+  it('accepts an envelope just inside the age horizon', () => {
+    // 5s inside the boundary keeps the assertion stable against test runtime.
+    const envelope = encryptRefreshEnvelope(
+      { ...basePayload, iat: Date.now() - REFRESH_IDENTITY_TTL_MS + 5000 },
+      KEY,
+    );
+    expect(decryptRefreshEnvelope(envelope, KEY, PROFILE_ID)).toMatchObject({
+      rt: 'idp-refresh-token',
+    });
+  });
+
+  it('rejects an envelope future-dated beyond the clock skew allowance', () => {
+    const envelope = encryptRefreshEnvelope({ ...basePayload, iat: Date.now() + 120_000 }, KEY);
+    expect(decryptRefreshEnvelope(envelope, KEY, PROFILE_ID)).toBeNull();
+  });
+
+  it('accepts an envelope future-dated within the clock skew allowance', () => {
+    const envelope = encryptRefreshEnvelope({ ...basePayload, iat: Date.now() + 30_000 }, KEY);
+    expect(decryptRefreshEnvelope(envelope, KEY, PROFILE_ID)).toMatchObject({
+      rt: 'idp-refresh-token',
+    });
+  });
+});
+
+describe('refresh envelope decoder guards', () => {
+  const REFRESH_PAYLOAD = {
+    v: 1,
+    rt: 'idp-refresh',
+    cid: 'client-1',
+    sub: 'person-1',
+    iss: 'https://issuer.example.test/v2.0',
+    tid: 'tenant-1',
+    pid: PROFILE_ID,
+    iat: Date.now(),
+  };
+
+  /** Craft a refresh envelope directly, bypassing encryptRefreshEnvelope validation. */
+  const craftRefresh = (payload: unknown, key: Buffer = KEY, aadProfile = PROFILE_ID): string => {
+    const nonce = randomBytes(NONCE_BYTES);
+    const cipher = nodeCipheriv('aes-256-gcm', key, nonce);
+    cipher.setAAD(Buffer.from(`${aadProfile}:refresh`, 'utf8'));
+    const plain = Buffer.from(JSON.stringify(payload), 'utf8');
+    const ct = Buffer.concat([cipher.update(plain), cipher.final()]);
+    const tag = cipher.getAuthTag();
+    return 'mcp4.r1.' + Buffer.concat([nonce, ct, tag]).toString('base64url');
+  };
+
+  it('retries with the legacy fallback key', () => {
+    // Passphrase deployments predating the scrypt KDF must keep working.
+    const legacyKey = deriveLegacySha256TokenKey('test-passphrase');
+    const envelope = craftRefresh(REFRESH_PAYLOAD, legacyKey);
+
+    expect(decryptRefreshEnvelope(envelope, KEY, PROFILE_ID)).toBeNull();
+    expect(decryptRefreshEnvelope(envelope, KEY, PROFILE_ID, legacyKey)).toMatchObject({
+      rt: 'idp-refresh',
+      sub: 'person-1',
+    });
+  });
+
+  it('returns null for a key of the wrong length', () => {
+    const envelope = encryptRefreshEnvelope(REFRESH_PAYLOAD, KEY);
+    expect(decryptRefreshEnvelope(envelope, Buffer.alloc(16, 1), PROFILE_ID)).toBeNull();
+  });
+
+  it('returns null for a blank profile id', () => {
+    const envelope = encryptRefreshEnvelope(REFRESH_PAYLOAD, KEY);
+    expect(decryptRefreshEnvelope(envelope, KEY, '')).toBeNull();
+  });
+
+  it('returns null for a non-string token', () => {
+    expect(decryptRefreshEnvelope(undefined as unknown as string, KEY, PROFILE_ID)).toBeNull();
+  });
+
+  it('returns null when the plaintext is not a JSON object', () => {
+    expect(decryptRefreshEnvelope(craftRefresh(['not', 'an', 'object']), KEY, PROFILE_ID)).toBeNull();
+    expect(decryptRefreshEnvelope(craftRefresh('a string'), KEY, PROFILE_ID)).toBeNull();
+  });
+
+  it('returns null for an unexpected version', () => {
+    expect(decryptRefreshEnvelope(craftRefresh({ ...REFRESH_PAYLOAD, v: 2 }), KEY, PROFILE_ID)).toBeNull();
+  });
+
+  it('returns null when required fields are missing or malformed', () => {
+    const cases: Record<string, unknown>[] = [
+      { ...REFRESH_PAYLOAD, rt: '' },
+      { ...REFRESH_PAYLOAD, cid: '' },
+      { ...REFRESH_PAYLOAD, iat: 'not-a-number' },
+      // Identity must be all-or-nothing: a subject with no issuer cannot be bound.
+      { ...REFRESH_PAYLOAD, iss: undefined },
+      { ...REFRESH_PAYLOAD, sub: '' },
+      { ...REFRESH_PAYLOAD, iss: '' },
+      { ...REFRESH_PAYLOAD, tid: 42 },
+      { ...REFRESH_PAYLOAD, tid: '' },
+    ];
+
+    for (const payload of cases) {
+      expect(decryptRefreshEnvelope(craftRefresh(payload), KEY, PROFILE_ID)).toBeNull();
+    }
+  });
+
+  it('returns null when the profile in the payload does not match the AAD profile', () => {
+    // AAD binds the envelope to a profile; a mismatching pid is rejected too.
+    const envelope = craftRefresh({ ...REFRESH_PAYLOAD, pid: 'other-profile' });
+    expect(decryptRefreshEnvelope(envelope, KEY, PROFILE_ID)).toBeNull();
+  });
+
+  it('returns null for a tenant id without a subject (parity with the access-token path)', () => {
+    // The access-token decoder rejects tid-without-sub; the refresh decoder
+    // must apply the same identity-coherence rule.
+    const payload = {
+      v: 1,
+      rt: 'idp-refresh',
+      cid: 'client-1',
+      tid: 'tenant-1',
+      pid: PROFILE_ID,
+      iat: Date.now(),
+    };
+    expect(decryptRefreshEnvelope(craftRefresh(payload), KEY, PROFILE_ID)).toBeNull();
+  });
+});
+
+describe('assertRefreshEnvelopeClientBinding', () => {
+  const payload = {
+    v: 1 as const,
+    rt: 'idp-refresh-token',
+    cid: 'client-a',
+    pid: PROFILE_ID,
+    iat: Date.now(),
+  };
+
+  it('passes when the presenting client matches the envelope cid', () => {
+    expect(() => assertRefreshEnvelopeClientBinding(payload, 'client-a')).not.toThrow();
+  });
+
+  it('throws AuthenticationError when another client presents the envelope', () => {
+    expect(() => assertRefreshEnvelopeClientBinding(payload, 'client-b'))
+      .toThrow(AuthenticationError);
+  });
+
+  it('throws AuthenticationError when the presenting client id is empty', () => {
+    expect(() => assertRefreshEnvelopeClientBinding(payload, ''))
+      .toThrow(AuthenticationError);
+  });
+});
+
+describe('refresh envelope truncation guards', () => {
+  it('returns null for a truncated refresh envelope', () => {
+    // Shorter than nonce + tag + one byte of ciphertext: reject instead of
+    // attempting to slice past the buffer.
+    const truncated = 'mcp4.r1.' + randomBytes(NONCE_BYTES + TAG_BYTES - 1).toString('base64url');
+    expect(decryptRefreshEnvelope(truncated, KEY, PROFILE_ID)).toBeNull();
+  });
+
+  it('returns null for a refresh envelope whose body is not valid base64url', () => {
+    expect(decryptRefreshEnvelope('mcp4.r1.not*base64url', KEY, PROFILE_ID)).toBeNull();
+  });
+
+  it('returns null for a refresh envelope with an empty body', () => {
+    expect(decryptRefreshEnvelope('mcp4.r1.', KEY, PROFILE_ID)).toBeNull();
+  });
+});

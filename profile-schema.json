@@ -86,6 +86,9 @@
     "client_auth_gate": {
       "$ref": "#/definitions/ClientAuthGateConfig"
     },
+    "consent_gate": {
+      "$ref": "#/definitions/ConsentGateConfig"
+    },
     "upstream_mcp": {
       "$ref": "#/definitions/UpstreamMcpServerConfig"
     },
@@ -1442,14 +1445,14 @@
           ]
         },
         "overrides": {
-          "$ref": "#/definitions/Record%3Cstring%2Cstructure-1535101595-24341-24377-1535101595-24326-24378-1535101595-24312-24379-1535101595-24241-24381-1535101595-0-24521%3E"
+          "$ref": "#/definitions/Record%3Cstring%2Cstructure-1535101595-26943-26979-1535101595-26928-26980-1535101595-26914-26981-1535101595-26843-26983-1535101595-0-27123%3E"
         }
       },
       "required": [
         "max_requests_per_minute"
       ]
     },
-    "Record<string,structure-1535101595-24341-24377-1535101595-24326-24378-1535101595-24312-24379-1535101595-24241-24381-1535101595-0-24521>": {
+    "Record<string,structure-1535101595-26943-26979-1535101595-26928-26980-1535101595-26914-26981-1535101595-26843-26983-1535101595-0-27123>": {
       "type": "object",
       "additionalProperties": {
         "type": "object",
@@ -1814,7 +1817,7 @@
         "type",
         "keys"
       ],
-      "description": "Backing store for client API keys.\n\nPhase 3 supports only `'inline'` — keys defined directly on the profile and resolved from env vars. Phase 4 will extend the union to include `{ type: 'sasanka'; ... }` for the centralized key service."
+      "description": "Backing store for client API keys.\n\nPhase 3 supports only `'inline'` - keys defined directly on the profile and resolved from env vars. Phase 4 will extend the union to include `{ type: 'sasanka'; ... }` for the centralized key service."
     },
     "InlineApiKeyEntry": {
       "type": "object",
@@ -1840,6 +1843,64 @@
         "subject"
       ],
       "description": "Inline API key entry for the client auth gate.\n\nUsed by `ApiKeyStoreConfig` of type `'inline'`. Each entry references an environment variable that holds the raw API key value (so secrets stay out of profile JSON) and maps that key to a stable subject identity."
+    },
+    "ConsentGateConfig": {
+      "type": "object",
+      "properties": {
+        "required": {
+          "type": "boolean",
+          "description": "When true, upstream MCP tool calls are blocked until consent is recorded for the subject + rules_version."
+        },
+        "rules_version": {
+          "type": "string",
+          "description": "Opaque version of the rules/education content; changing it invalidates prior consent."
+        },
+        "education_resource": {
+          "type": "string",
+          "description": "Optional URL to educational content shown during the consent flow."
+        },
+        "rules_summary": {
+          "type": "string",
+          "description": "Optional short human-readable summary of the rules shown at consent time."
+        },
+        "max_age_days": {
+          "type": "number",
+          "description": "Optional maximum age of a grant in days; an older grant forces re-acceptance."
+        },
+        "identity_source": {
+          "type": "string",
+          "const": "profile_oauth",
+          "description": "Identity source used to bind consent evidence to an authenticated human."
+        },
+        "template_path": {
+          "type": "string",
+          "description": "Optional path (relative to the profile file, or absolute) of a full-page HTML template for the consent screens. Must contain the `{{consent_body}}` placeholder, which the server replaces with the security-owned block (the approval form, the info block, or the expired block). Cosmetic only: the template is deliberately NOT part of the rules hash, so a layout/CSS change does not force re-consent; the consent-meaningful record stays in `rules_version`, `rules_summary`, `education_resource` and `labels`."
+        },
+        "template": {
+          "type": "string",
+          "description": "Resolved template markup. Filled by the profile loader from `template_path`; may also be authored inline. Same `{{consent_body}}` requirement and hashing semantics as `template_path`."
+        },
+        "labels": {
+          "type": "object",
+          "properties": {
+            "accept": {
+              "type": "string",
+              "description": "Checkbox label. Default: `I accept rules version <rules_version>`."
+            },
+            "submit": {
+              "type": "string",
+              "description": "Submit button label. Default: `Continue to sign in`."
+            }
+          },
+          "description": "Consent-meaningful texts rendered inside the approval form. Part of the rules hash: changing them invalidates existing grants, because they define what the subject agreed to. `{{rules_version}}` inside `accept` is substituted at render time."
+        }
+      },
+      "required": [
+        "required",
+        "rules_version",
+        "identity_source"
+      ],
+      "description": "Consent gate configuration.\n\nGates sensitive profiles (e.g. an upstream MS365 MCP) behind a provable, human consent: the user must complete an interactive OAuth login and accept the current rules before any upstream MCP tool call is dispatched. Consent is bound to the authenticated subject and the `rules_version`; bumping `rules_version` invalidates prior consent and forces re-acceptance.\n\nThe gate is deliberately NOT an MCP tool, so an autonomous agent cannot grant consent on the user's behalf."
     },
     "UpstreamMcpServerConfig": {
       "type": "object",
@@ -1970,247 +2031,6 @@
           }
         }
       }
-    },
-    "Record<string,structure-1535101595-24226-24262-1535101595-24211-24263-1535101595-24197-24264-1535101595-24126-24266-1535101595-0-24406>": {
-      "type": "object",
-      "additionalProperties": {
-        "type": "object",
-        "properties": {
-          "max_requests_per_minute": {
-            "type": "number"
-          }
-        },
-        "required": [
-          "max_requests_per_minute"
-        ]
-      }
-    },
-    "Record<string,structure-1535101595-23792-23828-1535101595-23777-23829-1535101595-23763-23830-1535101595-23692-23832-1535101595-0-23972>": {
-      "type": "object",
-      "additionalProperties": {
-        "type": "object",
-        "properties": {
-          "max_requests_per_minute": {
-            "type": "number"
-          }
-        },
-        "required": [
-          "max_requests_per_minute"
-        ]
-      }
-    },
-    "Record<string,structure-1535101595-23568-23604-1535101595-23553-23605-1535101595-23539-23606-1535101595-23468-23608-1535101595-0-23748>": {
-      "type": "object",
-      "additionalProperties": {
-        "type": "object",
-        "properties": {
-          "max_requests_per_minute": {
-            "type": "number"
-          }
-        },
-        "required": [
-          "max_requests_per_minute"
-        ]
-      }
-    },
-    "Record<string,structure-1535101595-22780-22816-1535101595-22765-22817-1535101595-22751-22818-1535101595-22680-22820-1535101595-0-22960>": {
-      "type": "object",
-      "additionalProperties": {
-        "type": "object",
-        "properties": {
-          "max_requests_per_minute": {
-            "type": "number"
-          }
-        },
-        "required": [
-          "max_requests_per_minute"
-        ]
-      }
-    },
-    "Record<string,structure-1535101595-21073-21109-1535101595-21058-21110-1535101595-21044-21111-1535101595-20973-21113-1535101595-0-21253>": {
-      "type": "object",
-      "additionalProperties": {
-        "type": "object",
-        "properties": {
-          "max_requests_per_minute": {
-            "type": "number"
-          }
-        },
-        "required": [
-          "max_requests_per_minute"
-        ]
-      }
-    },
-    "Record<string,structure-1535101595-20918-20954-1535101595-20903-20955-1535101595-20889-20956-1535101595-20818-20958-1535101595-0-21098>": {
-      "type": "object",
-      "additionalProperties": {
-        "type": "object",
-        "properties": {
-          "max_requests_per_minute": {
-            "type": "number"
-          }
-        },
-        "required": [
-          "max_requests_per_minute"
-        ]
-      }
-    },
-    "Record<string,structure-1535101595-20409-20445-1535101595-20394-20446-1535101595-20380-20447-1535101595-20309-20449-1535101595-0-20589>": {
-      "type": "object",
-      "additionalProperties": {
-        "type": "object",
-        "properties": {
-          "max_requests_per_minute": {
-            "type": "number"
-          }
-        },
-        "required": [
-          "max_requests_per_minute"
-        ]
-      }
-    },
-    "Record<string,structure-1535101595-20095-20131-1535101595-20080-20132-1535101595-20066-20133-1535101595-19995-20135-1535101595-0-20275>": {
-      "type": "object",
-      "additionalProperties": {
-        "type": "object",
-        "properties": {
-          "max_requests_per_minute": {
-            "type": "number"
-          }
-        },
-        "required": [
-          "max_requests_per_minute"
-        ]
-      }
-    },
-    "Record<string,structure-1535101595-18530-18566-1535101595-18515-18567-1535101595-18501-18568-1535101595-18430-18570-1535101595-0-18710>": {
-      "type": "object",
-      "additionalProperties": {
-        "type": "object",
-        "properties": {
-          "max_requests_per_minute": {
-            "type": "number"
-          }
-        },
-        "required": [
-          "max_requests_per_minute"
-        ]
-      }
-    },
-    "Record<string,structure-1535101595-16825-16861-1535101595-16810-16862-1535101595-16796-16863-1535101595-16725-16865-1535101595-0-17005>": {
-      "type": "object",
-      "additionalProperties": {
-        "type": "object",
-        "properties": {
-          "max_requests_per_minute": {
-            "type": "number"
-          }
-        },
-        "required": [
-          "max_requests_per_minute"
-        ]
-      }
-    },
-    "Record<string,structure-1535101595-16523-16559-1535101595-16508-16560-1535101595-16494-16561-1535101595-16423-16563-1535101595-0-16703>": {
-      "type": "object",
-      "additionalProperties": {
-        "type": "object",
-        "properties": {
-          "max_requests_per_minute": {
-            "type": "number"
-          }
-        },
-        "required": [
-          "max_requests_per_minute"
-        ]
-      }
-    },
-    "Record<string,structure-1535101595-14836-14872-1535101595-14821-14873-1535101595-14807-14874-1535101595-14736-14876-1535101595-0-15016>": {
-      "type": "object",
-      "additionalProperties": {
-        "type": "object",
-        "properties": {
-          "max_requests_per_minute": {
-            "type": "number"
-          }
-        },
-        "required": [
-          "max_requests_per_minute"
-        ]
-      }
-    },
-    "Record<string,structure-1535101595-14757-14793-1535101595-14742-14794-1535101595-14728-14795-1535101595-14657-14797-1535101595-0-14937>": {
-      "type": "object",
-      "additionalProperties": {
-        "type": "object",
-        "properties": {
-          "max_requests_per_minute": {
-            "type": "number"
-          }
-        },
-        "required": [
-          "max_requests_per_minute"
-        ]
-      }
-    },
-    "Record<string,structure-1535101595-14600-14636-1535101595-14585-14637-1535101595-14571-14638-1535101595-14500-14640-1535101595-0-14780>": {
-      "type": "object",
-      "additionalProperties": {
-        "type": "object",
-        "properties": {
-          "max_requests_per_minute": {
-            "type": "number"
-          }
-        },
-        "required": [
-          "max_requests_per_minute"
-        ]
-      }
-    },
-    "Record<string,structure-1535101595-12347-12383-1535101595-12332-12384-1535101595-12318-12385-1535101595-12247-12387-1535101595-0-12527>": {
-      "type": "object",
-      "additionalProperties": {
-        "type": "object",
-        "properties": {
-          "max_requests_per_minute": {
-            "type": "number"
-          }
-        },
-        "required": [
-          "max_requests_per_minute"
-        ]
-      }
-    },
-    "Record<string,structure-1535101595-12096-12132-1535101595-12081-12133-1535101595-12067-12134-1535101595-11996-12136-1535101595-0-12276>": {
-      "type": "object",
-      "additionalProperties": {
-        "type": "object",
-        "properties": {
-          "max_requests_per_minute": {
-            "type": "number"
-          }
-        },
-        "required": [
-          "max_requests_per_minute"
-        ]
-      }
-    },
-    "Record<string,structure-1535101595-11762-11798-1535101595-11747-11799-1535101595-11733-11800-1535101595-11662-11802-1535101595-0-11942>": {
-      "type": "object",
-      "additionalProperties": {
-        "type": "object",
-        "properties": {
-          "max_requests_per_minute": {
-            "type": "number"
-          }
-        },
-        "required": [
-          "max_requests_per_minute"
-        ]
-      }
-    },
-    "Record<string,{max_requests_per_minute:number;}>": {
-      "type": "object"
     }
   },
   "description": "Configuration schema for MCP from OpenAPI tool profiles",

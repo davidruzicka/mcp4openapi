@@ -25,7 +25,7 @@ export interface InlineApiKeyEntry {
 /**
  * Backing store for client API keys.
  *
- * Phase 3 supports only `'inline'` — keys defined directly on the profile and
+ * Phase 3 supports only `'inline'` - keys defined directly on the profile and
  * resolved from env vars. Phase 4 will extend the union to include
  * `{ type: 'sasanka'; ... }` for the centralized key service.
  */
@@ -49,6 +49,61 @@ export interface ClientAuthGateConfig {
   api_keys?: ApiKeyStoreConfig;
 }
 
+/**
+ * Consent gate configuration.
+ *
+ * Gates sensitive profiles (e.g. an upstream MS365 MCP) behind a provable,
+ * human consent: the user must complete an interactive OAuth login and accept
+ * the current rules before any upstream MCP tool call is dispatched. Consent is bound to the
+ * authenticated subject and the `rules_version`; bumping `rules_version`
+ * invalidates prior consent and forces re-acceptance.
+ *
+ * The gate is deliberately NOT an MCP tool, so an autonomous agent cannot grant
+ * consent on the user's behalf.
+ */
+export interface ConsentGateConfig {
+  /** When true, upstream MCP tool calls are blocked until consent is recorded for the subject + rules_version. */
+  required: boolean;
+  /** Opaque version of the rules/education content; changing it invalidates prior consent. */
+  rules_version: string;
+  /** Optional URL to educational content shown during the consent flow. */
+  education_resource?: string;
+  /** Optional short human-readable summary of the rules shown at consent time. */
+  rules_summary?: string;
+  /** Optional maximum age of a grant in days; an older grant forces re-acceptance. */
+  max_age_days?: number;
+  /** Identity source used to bind consent evidence to an authenticated human. */
+  identity_source: 'profile_oauth';
+  /**
+   * Optional path (relative to the profile file, or absolute) of a full-page
+   * HTML template for the consent screens. Must contain the `{{consent_body}}`
+   * placeholder, which the server replaces with the security-owned block (the
+   * approval form, the info block, or the expired block). Cosmetic only: the
+   * template is deliberately NOT part of the rules hash, so a layout/CSS change
+   * does not force re-consent; the consent-meaningful record stays in
+   * `rules_version`, `rules_summary`, `education_resource` and `labels`.
+   */
+  template_path?: string;
+  /**
+   * Resolved template markup. Filled by the profile loader from
+   * `template_path`; may also be authored inline. Same `{{consent_body}}`
+   * requirement and hashing semantics as `template_path`.
+   */
+  template?: string;
+  /**
+   * Consent-meaningful texts rendered inside the approval form. Part of the
+   * rules hash: changing them invalidates existing grants, because they define
+   * what the subject agreed to. `{{rules_version}}` inside `accept` is
+   * substituted at render time.
+   */
+  labels?: {
+    /** Checkbox label. Default: `I accept rules version <rules_version>`. */
+    accept?: string;
+    /** Submit button label. Default: `Continue to sign in`. */
+    submit?: string;
+  };
+}
+
 export interface Profile {
   profile_name: string;
   profile_id?: string;
@@ -62,6 +117,7 @@ export interface Profile {
   parameter_aliases?: Record<string, string[]>; // e.g., {"id": ["resource_id", "project_id"]}
   enterprise_authorization?: EnterpriseAuthorizationConfig;
   client_auth_gate?: ClientAuthGateConfig;
+  consent_gate?: ConsentGateConfig;
   upstream_mcp?: UpstreamMcpServerConfig;
   upstream_mcp_from_env?: string;
 

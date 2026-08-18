@@ -1,21 +1,41 @@
-import { describe, it, expect, vi } from 'vitest';
-import path from 'path';
+/**
+ * MCPServerManager tests.
+ *
+ * Covers profile-server lifecycle (instance caching, lazy context, session
+ * cleanup self-registration), HTTP routing through the manager, ProfileRegistry
+ * resolution, and the consent chokepoint: enforcement lives in the wrapper
+ * built by `MCPServer.setGetUpstreamClient`, so the manager only injects the
+ * plain connection factory and every upstream dispatch path inherits the guard.
+ */
+import { describe, expect, it, vi } from 'vitest';
+
 import fs from 'node:fs/promises';
 import os from 'node:os';
-import { ConsoleLogger } from '../core/logger.js';
+import path from 'node:path';
+
+import { MCPServerManager } from './mcp-server-manager.js';
 import { ProfileRegistry } from '../profile/profile-registry.js';
+import { ConsentGateConfigurationError } from '../core/errors.js';
+import { ConsoleLogger } from '../core/logger.js';
+import type { Logger } from '../core/logger.js';
 import type { ResolvedProfile } from '../profile/profile-resolver.js';
 import { resolveProfileFromPath } from '../profile/profile-resolver.js';
-import { MCPServerManager } from './mcp-server-manager.js';
 import { HttpTransport } from '../transport/http-transport.js';
+
+const logger = {
+  info: () => {},
+  warn: () => {},
+  error: () => {},
+  debug: () => {},
+} as unknown as Logger;
 
 describe('MCPServerManager', () => {
   it('returns same instance for repeated profile requests', async () => {
-    const logger = new ConsoleLogger();
+    const consoleLogger = new ConsoleLogger();
     const registry = new ProfileRegistry({
       profilesDir: path.join(process.cwd(), 'profiles'),
     });
-    const manager = new MCPServerManager(registry, logger);
+    const manager = new MCPServerManager(registry, consoleLogger);
 
     const serverA = await manager.getServer('gitlab');
     const serverB = await manager.getServer('gitlab');
@@ -24,11 +44,11 @@ describe('MCPServerManager', () => {
   });
 
   it('returns profile context via lazy initialization', async () => {
-    const logger = new ConsoleLogger();
+    const consoleLogger = new ConsoleLogger();
     const registry = new ProfileRegistry({
       profilesDir: path.join(process.cwd(), 'profiles'),
     });
-    const manager = new MCPServerManager(registry, logger);
+    const manager = new MCPServerManager(registry, consoleLogger);
 
     const context = await manager.getProfileContext('gitlab');
     expect(context?.profileId).toBe('gitlab');
@@ -36,7 +56,7 @@ describe('MCPServerManager', () => {
   });
 
   it('self-registers onSessionDestroyed cleanup when httpTransport provided', async () => {
-    const logger = new ConsoleLogger();
+    const consoleLogger = new ConsoleLogger();
     const defaultProfile: ResolvedProfile = {
       profileId: 'default',
       profileName: 'Default Profile',
@@ -53,7 +73,7 @@ describe('MCPServerManager', () => {
       setUpstreamConnectionManager: mockSetUpstreamConnectionManager,
     } as unknown as HttpTransport;
 
-    new MCPServerManager(registry, logger, mockTransport);
+    new MCPServerManager(registry, consoleLogger, mockTransport);
 
     expect(mockOnSessionDestroyed).toHaveBeenCalledTimes(1);
     const handler = mockOnSessionDestroyed.mock.calls[0][0];
@@ -61,7 +81,7 @@ describe('MCPServerManager', () => {
 
     // Wire mock server returned by getServer
     const mockGetServer = vi.fn().mockResolvedValue({ handleSessionDestroyed: mockHandleSessionDestroyed });
-    const manager = new MCPServerManager(registry, logger, mockTransport);
+    const manager = new MCPServerManager(registry, consoleLogger, mockTransport);
     (manager as any).getServer = mockGetServer;
 
     // Fire the handler registered by the second manager
@@ -73,7 +93,7 @@ describe('MCPServerManager', () => {
   });
 
   it('returns default profile id from registry', () => {
-    const logger = new ConsoleLogger();
+    const consoleLogger = new ConsoleLogger();
     const defaultProfile: ResolvedProfile = {
       profileId: 'default',
       profileName: 'Default Profile',
@@ -81,7 +101,7 @@ describe('MCPServerManager', () => {
       specPath: '/tmp/openapi.yaml',
     };
     const registry = new ProfileRegistry({ defaultProfile });
-    const manager = new MCPServerManager(registry, logger);
+    const manager = new MCPServerManager(registry, consoleLogger);
 
     expect(manager.getDefaultProfileId()).toBe('default');
   });
@@ -103,7 +123,7 @@ describe('MCPServerManager', () => {
       tools: [],
     }), 'utf-8');
 
-    const logger = new ConsoleLogger();
+    const consoleLogger = new ConsoleLogger();
     const registry = new ProfileRegistry({ profilesDir: root });
     const httpTransport = new HttpTransport(
       {
@@ -116,9 +136,9 @@ describe('MCPServerManager', () => {
         metricsPath: '/metrics',
         profileRoutingEnabled: true,
       },
-      logger
+      consoleLogger
     );
-    const manager = new MCPServerManager(registry, logger, httpTransport);
+    const manager = new MCPServerManager(registry, consoleLogger, httpTransport);
 
     httpTransport.setProfileContextProvider(async (id) => manager.getProfileContext(id));
     httpTransport.setMessageHandler(async (message, sessionId, profileId) => {
@@ -208,7 +228,7 @@ describe('MCPServerManager', () => {
     }), 'utf-8');
 
     const defaultProfile = await resolveProfileFromPath(profilePath);
-    const logger = new ConsoleLogger();
+    const consoleLogger = new ConsoleLogger();
     const registry = new ProfileRegistry({ defaultProfile });
     const httpTransport = new HttpTransport(
       {
@@ -221,9 +241,9 @@ describe('MCPServerManager', () => {
         metricsPath: '/metrics',
         profileRoutingEnabled: true,
       },
-      logger
+      consoleLogger
     );
-    const manager = new MCPServerManager(registry, logger, httpTransport);
+    const manager = new MCPServerManager(registry, consoleLogger, httpTransport);
 
     httpTransport.setProfileContextProvider(async (id) => manager.getProfileContext(id));
     httpTransport.setMessageHandler(async (message, sessionId, profileId) => {
@@ -352,5 +372,154 @@ describe('ProfileRegistry', () => {
 
     const resolved = await registry.resolveProfile('missing');
     expect(resolved.specPath).toBe(specPath);
+  });
+});
+
+/**
+ * Consent chokepoint through the real `createServer` path.
+ *
+ * The manager injects the PLAIN connection factory; enforcement lives inside
+ * the wrapper `MCPServer.setGetUpstreamClient` builds around it. These tests go
+ * through a real `ProfileRegistry` with a profile on disk, so they fail if
+ * either side of that wiring disappears: if `createServer` stopped calling
+ * `setGetUpstreamClient`, or if the wrapper stopped enforcing consent.
+ */
+describe('MCPServerManager consent enforcement through createServer', () => {
+  const consentProfile = {
+    profile_name: 'consent-wiring',
+    profile_id: 'consent-wiring',
+    tools: [],
+    consent_gate: {
+      required: true,
+      rules_version: 'v1',
+      identity_source: 'profile_oauth',
+    },
+    interceptors: {
+      auth: {
+        type: 'oauth',
+        oauth_config: {
+          issuer: 'https://login.example.test/tenant/v2.0',
+          client_id: 'client-id',
+          redirect_uri: 'https://gateway.example.test/oauth/callback',
+          scopes: ['openid'],
+        },
+      },
+    },
+    upstream_mcp: {
+      name: 'upstream',
+      transport: { type: 'http-streamable', url: 'https://upstream.example.test/mcp' },
+      auth: { type: 'bearer' },
+      tools: { allow: ['list-drives'] },
+    },
+  };
+
+  const localProfile = {
+    profile_name: 'local-wiring',
+    profile_id: 'local-wiring',
+    tools: [],
+    upstream_mcp: {
+      name: 'upstream',
+      transport: { type: 'http-streamable', url: 'https://upstream.example.test/mcp' },
+    },
+  };
+
+  const writeProfiles = async (...profiles: Record<string, unknown>[]): Promise<string> => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'mcp4-wiring-'));
+    const profilesDir = path.join(root, 'profiles');
+    await fs.mkdir(profilesDir, { recursive: true });
+    for (const profile of profiles) {
+      await fs.writeFile(
+        path.join(profilesDir, `${profile.profile_id as string}.json`),
+        JSON.stringify(profile, null, 2),
+        'utf-8',
+      );
+    }
+    return profilesDir;
+  };
+
+  const buildRealManager = async (
+    profilesDir: string,
+    httpTransport?: Record<string, unknown>,
+  ) => {
+    const registry = new ProfileRegistry({ profilesDir });
+    const transport = httpTransport && {
+      setUpstreamConnectionManager: vi.fn(),
+      onSessionDestroyed: vi.fn(),
+      ...httpTransport,
+    };
+    const manager = new MCPServerManager(registry, logger, transport as never);
+    const getOrConnect = vi.fn(async () => ({ listTools: vi.fn(), callTool: vi.fn() }));
+    (manager as any).upstreamManager = { getOrConnect, addToolsListChangedHook: vi.fn() };
+    return { manager, getOrConnect };
+  };
+
+  it('asserts consent before acquiring an upstream client', async () => {
+    const profilesDir = await writeProfiles(consentProfile);
+    const assertSessionConsent = vi.fn(async () => undefined);
+    const { manager, getOrConnect } = await buildRealManager(profilesDir, { assertSessionConsent });
+
+    const server = await manager.getServer('consent-wiring');
+    await (server as any).getUpstreamClientFn('session-1', consentProfile.upstream_mcp, 'token');
+
+    expect(assertSessionConsent).toHaveBeenCalledWith('consent-wiring', 'session-1');
+    expect(assertSessionConsent.mock.invocationCallOrder[0]).toBeLessThan(
+      getOrConnect.mock.invocationCallOrder[0],
+    );
+  });
+
+  it('does not acquire an upstream client when consent is denied', async () => {
+    const profilesDir = await writeProfiles(consentProfile);
+    const assertSessionConsent = vi.fn(async () => {
+      throw new Error('Consent required');
+    });
+    const { manager, getOrConnect } = await buildRealManager(profilesDir, { assertSessionConsent });
+
+    const server = await manager.getServer('consent-wiring');
+    await expect(
+      (server as any).getUpstreamClientFn('session-1', consentProfile.upstream_mcp, 'token'),
+    ).rejects.toThrow('Consent required');
+
+    expect(assertSessionConsent).toHaveBeenCalledWith('consent-wiring', 'session-1');
+    expect(getOrConnect).not.toHaveBeenCalled();
+  });
+
+  it('refuses to dispatch when consent is required but no enforcer is reachable', async () => {
+    // Supported construction: a manager without an HTTP transport still wires
+    // setGetUpstreamClient; a consent-gated profile must refuse rather than
+    // connect upstream ungated.
+    const profilesDir = await writeProfiles(consentProfile);
+    const { manager, getOrConnect } = await buildRealManager(profilesDir);
+
+    const server = await manager.getServer('consent-wiring');
+    const dispatch = (server as any).getUpstreamClientFn;
+    expect(typeof dispatch).toBe('function');
+
+    await expect(dispatch('session-1', consentProfile.upstream_mcp, 'token')).rejects.toBeInstanceOf(
+      ConsentGateConfigurationError,
+    );
+    expect(getOrConnect).not.toHaveBeenCalled();
+  });
+
+  it('refuses to dispatch when the transport cannot enforce consent', async () => {
+    const profilesDir = await writeProfiles(consentProfile);
+    const { manager, getOrConnect } = await buildRealManager(profilesDir, {});
+
+    const server = await manager.getServer('consent-wiring');
+    await expect(
+      (server as any).getUpstreamClientFn('session-1', consentProfile.upstream_mcp, 'token'),
+    ).rejects.toBeInstanceOf(ConsentGateConfigurationError);
+    expect(getOrConnect).not.toHaveBeenCalled();
+  });
+
+  it('does not gate a profile that declares no consent requirement', async () => {
+    const profilesDir = await writeProfiles(localProfile);
+    const assertSessionConsent = vi.fn(async () => undefined);
+    const { manager, getOrConnect } = await buildRealManager(profilesDir, { assertSessionConsent });
+
+    const server = await manager.getServer('local-wiring');
+    await (server as any).getUpstreamClientFn('session-1', localProfile.upstream_mcp, 'token');
+
+    expect(assertSessionConsent).not.toHaveBeenCalled();
+    expect(getOrConnect).toHaveBeenCalledWith('session-1', localProfile.upstream_mcp, 'token');
   });
 });

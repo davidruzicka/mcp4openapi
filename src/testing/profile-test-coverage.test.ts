@@ -6,10 +6,16 @@ import { ProfileLoader } from '../profile/profile-loader.js';
 
 const profilesDir = path.join(process.cwd(), 'profiles');
 
+/**
+ * `*.fixture.json` is reserved for data committed next to a profile that is not
+ * itself a profile (for example a captured upstream tool catalog), so it needs
+ * no profile test definition.
+ */
 function isProfileJsonFile(fileName: string): boolean {
   return (
     fileName.endsWith('.json') &&
     !fileName.endsWith('.test.json') &&
+    !fileName.endsWith('.fixture.json') &&
     !fileName.endsWith('schema.json') &&
     !fileName.endsWith('package.json') &&
     !fileName.endsWith('openapi.json')

@@ -29,6 +29,7 @@ vi.mock('../security/ssrf-validator.js', () => {
 
 import { ExternalOAuthProvider, InMemoryClientsStore, isOAuthConfigOperational } from './oauth-provider.js';
 import type { OAuthOperationalCheck } from './oauth-provider.js';
+import { AuthenticationError } from '../core/errors.js';
 import type { OAuthConfig } from '../types/profile.js';
 import type { Logger } from '../core/logger.js';
 import type { Response } from 'express';
@@ -94,6 +95,15 @@ describe('ExternalOAuthProvider', () => {
       expect(mockLogger.info).toHaveBeenCalledWith(
         'Pre-registered mcp-proxy-client for VS Code compatibility'
       );
+    });
+
+    it('normalizes a trailing slash while preserving the issuer path', () => {
+      provider = new ExternalOAuthProvider({
+        ...config,
+        issuer: 'https://issuer.example.test/tenant/v2.0/',
+      }, mockLogger);
+
+      expect(provider.issuer).toBe('https://issuer.example.test/tenant/v2.0');
     });
 
     describe('host allowlist matching', () => {
@@ -574,6 +584,55 @@ describe('ExternalOAuthProvider', () => {
       expect(mockRes.redirect).toHaveBeenCalledWith(
         expect.stringContaining('state=')
       );
+    });
+
+    it('uses configured scopes instead of caller scopes in the external request and authorization state', async () => {
+      const client: OAuthClientInformationFull = {
+        client_id: 'mcp-client',
+        redirect_uris: ['http://localhost:3003/oauth/callback'],
+        grant_types: ['authorization_code'],
+        response_types: ['code'],
+      };
+      const callerScopes = ['api', 'admin', 'write_repository'];
+
+      await provider.authorize(client, {
+        redirectUri: 'http://localhost:3003/oauth/callback',
+        codeChallenge: 'test-challenge',
+        scopes: callerScopes,
+      }, mockRes as Response);
+
+      const redirectUrl = new URL((mockRes.redirect as any).mock.calls[0][0]);
+      const stateToken = redirectUrl.searchParams.get('state');
+
+      expect(redirectUrl.searchParams.get('scope')).toBe('api read_user');
+      expect((provider as any).stateStore.get(stateToken)?.scopes).toEqual(['api', 'read_user']);
+    });
+
+    it('retains caller scopes when configured scopes are absent or empty', async () => {
+      const client: OAuthClientInformationFull = {
+        client_id: 'mcp-client',
+        redirect_uris: ['http://localhost:3003/oauth/callback'],
+        grant_types: ['authorization_code'],
+        response_types: ['code'],
+      };
+      const callerScopes = ['read_user', 'write_repository'];
+
+      for (const configuredScopes of [undefined, []] as Array<string[] | undefined>) {
+        provider = new ExternalOAuthProvider({ ...config, scopes: configuredScopes }, mockLogger);
+        mockRes = { redirect: vi.fn() };
+
+        await provider.authorize(client, {
+          redirectUri: 'http://localhost:3003/oauth/callback',
+          codeChallenge: 'test-challenge',
+          scopes: callerScopes,
+        }, mockRes as Response);
+
+        const redirectUrl = new URL((mockRes.redirect as any).mock.calls[0][0]);
+        const stateToken = redirectUrl.searchParams.get('state');
+
+        expect(redirectUrl.searchParams.get('scope')).toBe(callerScopes.join(' '));
+        expect((provider as any).stateStore.get(stateToken)?.scopes).toEqual(callerScopes);
+      }
     });
 
     it('should throw error for unregistered redirect URI', async () => {
@@ -1266,6 +1325,112 @@ describe('ExternalOAuthProvider', () => {
       expect(mockRes.send).toHaveBeenCalledWith('Invalid or expired state');
     });
 
+    it('binds a cryptographically verified OIDC identity to the exchanged access token', async () => {
+      const identityVerifier = {
+        verify: vi.fn().mockResolvedValue({
+          subject: 'user-object-id',
+          issuer: 'https://issuer.example.test',
+          tenantId: 'tenant-id',
+        }),
+      };
+      provider = new ExternalOAuthProvider(config, mockLogger, identityVerifier as never);
+      const client: OAuthClientInformationFull = {
+        client_id: 'client-123',
+        redirect_uris: ['http://localhost:3003/callback'],
+        grant_types: ['authorization_code'],
+        response_types: ['code'],
+      };
+      (provider as any)._clientsStore.registerClient(client);
+      (provider as any).stateStore.set('state123', {
+        clientRedirectUri: 'http://localhost:3003/callback',
+        codeChallenge: '',
+        originalState: 'orig',
+        clientId: client.client_id,
+        scopes: ['openid'],
+        nonce: 'nonce-1',
+        createdAt: Date.now(),
+      });
+      (provider as any).exchangeCodeWithProvider = vi.fn().mockResolvedValue({
+        access_token: 'external-access-token',
+        id_token: 'signed-id-token',
+        expires_in: 3600,
+        token_type: 'Bearer',
+      });
+      const response = {
+        status: vi.fn().mockReturnThis(),
+        send: vi.fn(),
+        redirect: vi.fn(),
+      } as any;
+
+      await provider.handleCallback({ query: { code: 'code', state: 'state123' } } as any, response);
+      const redirect = new URL(response.redirect.mock.calls[0][0]);
+      const internalCode = redirect.searchParams.get('code')!;
+      const tokens = await provider.exchangeAuthorizationCode(client, internalCode);
+
+      expect(identityVerifier.verify).toHaveBeenCalledWith('signed-id-token', 'nonce-1');
+      expect(provider.getIdentityForAccessToken(tokens.access_token)).toEqual({
+        subject: 'user-object-id',
+        issuer: 'https://issuer.example.test',
+        tenantId: 'tenant-id',
+      });
+    });
+
+    it('binds an identity verified via configureIdentityVerification to the exchanged access token', async () => {
+      // Production wiring configures the verifier after construction
+      // (http-transport), not through the constructor.
+      const identity = {
+        subject: 'configured-subject',
+        issuer: 'https://issuer.example.test',
+        tenantId: 'configured-tenant',
+      };
+      provider = new ExternalOAuthProvider(config, mockLogger);
+      const identityVerifier = { verify: vi.fn().mockResolvedValue(identity) };
+      const onIdentityVerified = vi.fn().mockResolvedValue(undefined);
+      provider.configureIdentityVerification(identityVerifier as never, onIdentityVerified);
+
+      const client: OAuthClientInformationFull = {
+        client_id: 'client-123',
+        redirect_uris: ['http://localhost:3003/callback'],
+        grant_types: ['authorization_code'],
+        response_types: ['code'],
+      };
+      (provider as any)._clientsStore.registerClient(client);
+      (provider as any).stateStore.set('state123', {
+        clientRedirectUri: 'http://localhost:3003/callback',
+        codeChallenge: '',
+        originalState: 'orig',
+        clientId: client.client_id,
+        scopes: ['openid'],
+        nonce: 'nonce-2',
+        createdAt: Date.now(),
+      });
+      (provider as any).exchangeCodeWithProvider = vi.fn().mockResolvedValue({
+        access_token: 'configured-access-token',
+        id_token: 'signed-id-token',
+        expires_in: 3600,
+        token_type: 'Bearer',
+      });
+      const response = {
+        status: vi.fn().mockReturnThis(),
+        send: vi.fn(),
+        redirect: vi.fn(),
+      } as any;
+
+      await provider.handleCallback({ query: { code: 'code', state: 'state123' } } as any, response);
+      const redirect = new URL(response.redirect.mock.calls[0][0]);
+      const internalCode = redirect.searchParams.get('code')!;
+      const tokens = await provider.exchangeAuthorizationCode(client, internalCode);
+
+      expect(identityVerifier.verify).toHaveBeenCalledWith('signed-id-token', 'nonce-2');
+      expect(onIdentityVerified).toHaveBeenCalledWith(identity);
+      expect(tokens.access_token).toBe('configured-access-token');
+      expect(provider.getIdentityForAccessToken(tokens.access_token)).toEqual({
+        subject: 'configured-subject',
+        issuer: 'https://issuer.example.test',
+        tenantId: 'configured-tenant',
+      });
+    });
+
     it('should return 400 when stored redirect host is disallowed during callback', async () => {
       const configWithAllowedHosts = {
         ...config,
@@ -1462,6 +1627,153 @@ describe('ExternalOAuthProvider', () => {
           method: 'POST',
         })
       );
+    });
+
+    it('preserves verified identity across refresh token rotation', async () => {
+      const identity = { subject: 'user-1', issuer: 'https://issuer.example.test' };
+      (provider as any).refreshTokenIdentities.set('old-refresh', {
+        identity,
+        clientId: 'client',
+        expiresAt: Date.now() + 60_000,
+      });
+      vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response(JSON.stringify({
+        access_token: 'new-access',
+        refresh_token: 'new-refresh',
+        token_type: 'Bearer',
+        expires_in: 3600,
+      }), { status: 200, headers: { 'content-type': 'application/json' } }));
+      (provider as any).ssrfValidator.validate = vi.fn(async () => undefined);
+
+      await provider.exchangeRefreshToken(
+        { client_id: 'client', redirect_uris: [], grant_types: ['refresh_token'], response_types: [] },
+        'old-refresh',
+      );
+
+      expect(provider.getIdentityForAccessToken('new-access')).toEqual(identity);
+      expect((provider as any).refreshTokenIdentities.has('old-refresh')).toBe(false);
+      expect((provider as any).refreshTokenIdentities.get('new-refresh').identity).toEqual(identity);
+    });
+
+    it('rehydrates verified identity when the process-local refresh map is empty', async () => {
+      const identity = {
+        subject: 'user-recovered',
+        issuer: 'https://issuer.example.test/tenant/v2.0',
+        tenantId: 'tenant-1',
+      };
+      vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response(JSON.stringify({
+        access_token: 'recovered-access',
+        refresh_token: 'recovered-refresh',
+        token_type: 'Bearer',
+        expires_in: 3600,
+      }), { status: 200, headers: { 'content-type': 'application/json' } }));
+      (provider as any).ssrfValidator.validate = vi.fn(async () => undefined);
+
+      await provider.exchangeRefreshToken(
+        { client_id: 'client', redirect_uris: [], grant_types: ['refresh_token'], response_types: [] },
+        'recovered-old-refresh',
+        undefined,
+        undefined,
+        identity,
+      );
+
+      expect(provider.getIdentityForAccessToken('recovered-access')).toEqual(identity);
+      expect((provider as any).refreshTokenIdentities.get('recovered-refresh').identity).toEqual(identity);
+    });
+
+    it('sweeps expired identity bindings when storing a new one', () => {
+      const map = (provider as any).refreshTokenIdentities as Map<
+        string,
+        { identity: unknown; clientId: string; expiresAt: number }
+      >;
+      const now = Date.now();
+      map.set('expired', { identity: { subject: 'gone' }, clientId: 'client', expiresAt: now - 1 });
+      map.set('live', { identity: { subject: 'kept' }, clientId: 'client', expiresAt: now + 3600_000 });
+
+      (provider as any).storeRefreshTokenIdentity('new-refresh', {
+        subject: 'newcomer',
+        issuer: 'https://issuer.example.test/tenant/v2.0',
+      }, 'client');
+
+      expect(map.has('expired')).toBe(false);
+      expect(map.has('live')).toBe(true);
+      expect(map.has('new-refresh')).toBe(true);
+    });
+
+    it('stays bounded at capacity by evicting the first (nearest-expiry) binding', () => {
+      const map = (provider as any).refreshTokenIdentities as Map<
+        string,
+        { identity: unknown; clientId: string; expiresAt: number }
+      >;
+      const now = Date.now();
+      // Constant TTL means insertion order equals expiry order, so the first
+      // key is always the nearest-expiry binding.
+      for (let i = 0; i < 10000; i += 1) {
+        map.set(`filler-${i}`, {
+          identity: { subject: `u${i}` },
+          clientId: 'client',
+          expiresAt: now + 20 * 24 * 3600_000 + i,
+        });
+      }
+      expect(map.size).toBe(10000);
+
+      (provider as any).storeRefreshTokenIdentity('fresh-refresh', {
+        subject: 'newcomer',
+        issuer: 'https://issuer.example.test/tenant/v2.0',
+      }, 'client');
+
+      expect(map.size).toBe(10000);
+      expect(map.has('filler-0')).toBe(false);
+      expect(map.has('filler-1')).toBe(true);
+      expect(map.get('fresh-refresh')?.identity).toMatchObject({ subject: 'newcomer' });
+    });
+
+    it('drops an expired identity binding and issues an identity-less access token', async () => {
+      const identity = { subject: 'user-1', issuer: 'https://issuer.example.test' };
+      (provider as any).refreshTokenIdentities.set('stale-refresh', {
+        identity,
+        clientId: 'client',
+        expiresAt: Date.now() - 1,
+      });
+      vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response(JSON.stringify({
+        access_token: 'stale-access',
+        refresh_token: 'stale-next-refresh',
+        token_type: 'Bearer',
+        expires_in: 3600,
+      }), { status: 200, headers: { 'content-type': 'application/json' } }));
+      (provider as any).ssrfValidator.validate = vi.fn(async () => undefined);
+
+      await provider.exchangeRefreshToken(
+        { client_id: 'client', redirect_uris: [], grant_types: ['refresh_token'], response_types: [] },
+        'stale-refresh',
+      );
+
+      expect(provider.getIdentityForAccessToken('stale-access')).toBeUndefined();
+      expect((provider as any).refreshTokenIdentities.has('stale-refresh')).toBe(false);
+    });
+
+    it('does not let a different client inherit the identity bound to a refresh token', async () => {
+      const identity = { subject: 'user-1', issuer: 'https://issuer.example.test' };
+      (provider as any).refreshTokenIdentities.set('bound-refresh', {
+        identity,
+        clientId: 'client-a',
+        expiresAt: Date.now() + 60_000,
+      });
+      vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response(JSON.stringify({
+        access_token: 'foreign-access',
+        refresh_token: 'foreign-next-refresh',
+        token_type: 'Bearer',
+        expires_in: 3600,
+      }), { status: 200, headers: { 'content-type': 'application/json' } }));
+      (provider as any).ssrfValidator.validate = vi.fn(async () => undefined);
+
+      await provider.exchangeRefreshToken(
+        { client_id: 'client-b', redirect_uris: [], grant_types: ['refresh_token'], response_types: [] },
+        'bound-refresh',
+      );
+
+      expect(provider.getIdentityForAccessToken('foreign-access')).toBeUndefined();
+      expect((provider as any).refreshTokenIdentities.has('bound-refresh')).toBe(false);
+      expect((provider as any).refreshTokenIdentities.has('foreign-next-refresh')).toBe(false);
     });
 
     it('should throw on failed refresh', async () => {
@@ -2308,6 +2620,303 @@ describe('ExternalOAuthProvider', () => {
           process.env.MCP4_OAUTH_CLIENT_STORE_MAX_CLIENTS = previousMaxClients;
         }
       }
+    });
+  });
+
+  describe('exchangeRefreshToken issuer comparison uses the normalized issuer', () => {
+    const refreshClient: OAuthClientInformationFull = {
+      client_id: 'test-client',
+      redirect_uris: ['http://localhost:3003/callback'],
+      grant_types: ['refresh_token'],
+      response_types: ['code'],
+    };
+
+    beforeEach(() => {
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          access_token: 'issuer-check-access',
+          token_type: 'Bearer',
+          expires_in: 3600,
+        }),
+      });
+    });
+
+    it('accepts a rehydrated identity when the configured issuer has a trailing slash', async () => {
+      provider = new ExternalOAuthProvider({
+        ...config,
+        issuer: 'https://issuer.example.test/tenant/v2.0/',
+      }, mockLogger);
+      const identity = {
+        subject: 'user-1',
+        issuer: 'https://issuer.example.test/tenant/v2.0',
+        tenantId: 'tenant-1',
+      };
+
+      const tokens = await provider.exchangeRefreshToken(
+        refreshClient,
+        'refresh-token',
+        undefined,
+        undefined,
+        identity,
+      );
+
+      expect(tokens.access_token).toBe('issuer-check-access');
+      expect(provider.getIdentityForAccessToken('issuer-check-access')).toEqual(identity);
+    });
+
+    it('accepts a rehydrated identity whose issuer carries a trailing slash', async () => {
+      provider = new ExternalOAuthProvider({
+        ...config,
+        issuer: 'https://issuer.example.test/tenant/v2.0',
+      }, mockLogger);
+
+      const tokens = await provider.exchangeRefreshToken(
+        refreshClient,
+        'refresh-token',
+        undefined,
+        undefined,
+        { subject: 'user-1', issuer: 'https://issuer.example.test/tenant/v2.0/' },
+      );
+
+      expect(tokens.access_token).toBe('issuer-check-access');
+      expect(provider.getIdentityForAccessToken('issuer-check-access')).toEqual({
+        subject: 'user-1',
+        issuer: 'https://issuer.example.test/tenant/v2.0',
+      });
+    });
+
+    it('rejects a rehydrated identity whose issuer does not match the configured issuer', async () => {
+      provider = new ExternalOAuthProvider({
+        ...config,
+        issuer: 'https://issuer.example.test/tenant/v2.0',
+      }, mockLogger);
+
+      await expect(provider.exchangeRefreshToken(
+        refreshClient,
+        'refresh-token',
+        undefined,
+        undefined,
+        { subject: 'user-1', issuer: 'https://evil.example.test/tenant/v2.0' },
+      )).rejects.toThrow(AuthenticationError);
+    });
+  });
+
+  describe('authorize logging never leaks state or nonce', () => {
+    it('logs only origin and pathname of the provider URL and no state token', async () => {
+      const identityVerifier = { verify: vi.fn() };
+      provider = new ExternalOAuthProvider(config, mockLogger, identityVerifier as never);
+      const client: OAuthClientInformationFull = {
+        client_id: 'mcp-client',
+        redirect_uris: ['http://localhost:3003/oauth/callback'],
+        grant_types: ['authorization_code'],
+        response_types: ['code'],
+      };
+      const mockRes = { redirect: vi.fn() };
+
+      await provider.authorize(client, {
+        redirectUri: 'http://localhost:3003/oauth/callback',
+        codeChallenge: 'test-challenge',
+        scopes: ['api'],
+      }, mockRes as any);
+
+      const redirectUrl = new URL((mockRes.redirect as any).mock.calls[0][0]);
+      const stateToken = redirectUrl.searchParams.get('state')!;
+      const nonce = redirectUrl.searchParams.get('nonce')!;
+      expect(stateToken).toBeTruthy();
+      expect(nonce).toBeTruthy();
+
+      const serializedLogs = JSON.stringify([
+        (mockLogger.info as any).mock.calls,
+        (mockLogger.debug as any).mock.calls,
+        (mockLogger.warn as any).mock.calls,
+        (mockLogger.error as any).mock.calls,
+      ]);
+      expect(serializedLogs).not.toContain(stateToken);
+      expect(serializedLogs).not.toContain(nonce);
+      expect(mockLogger.info).toHaveBeenCalledWith(
+        'Redirecting to external OAuth provider',
+        expect.objectContaining({
+          authUrl: 'https://oauth.example.com/authorize',
+        }),
+      );
+    });
+  });
+
+  describe('scope precedence logging', () => {
+    it('emits a debug log when caller-requested scopes are discarded', async () => {
+      provider = new ExternalOAuthProvider(config, mockLogger);
+      const client: OAuthClientInformationFull = {
+        client_id: 'mcp-client',
+        redirect_uris: ['http://localhost:3003/oauth/callback'],
+        grant_types: ['authorization_code'],
+        response_types: ['code'],
+      };
+
+      await provider.authorize(client, {
+        redirectUri: 'http://localhost:3003/oauth/callback',
+        codeChallenge: 'test-challenge',
+        scopes: ['admin', 'write_repository'],
+      }, { redirect: vi.fn() } as any);
+
+      expect(mockLogger.debug).toHaveBeenCalledWith(
+        'Caller-requested OAuth scopes discarded in favor of configured scopes',
+        expect.objectContaining({
+          requestedScopes: ['admin', 'write_repository'],
+          configuredScopes: ['api', 'read_user'],
+        }),
+      );
+    });
+
+    it('does not emit the discard debug log when caller scopes are retained', async () => {
+      provider = new ExternalOAuthProvider({ ...config, scopes: [] }, mockLogger);
+      const client: OAuthClientInformationFull = {
+        client_id: 'mcp-client',
+        redirect_uris: ['http://localhost:3003/oauth/callback'],
+        grant_types: ['authorization_code'],
+        response_types: ['code'],
+      };
+
+      await provider.authorize(client, {
+        redirectUri: 'http://localhost:3003/oauth/callback',
+        codeChallenge: 'test-challenge',
+        scopes: ['api'],
+      }, { redirect: vi.fn() } as any);
+
+      expect(mockLogger.debug).not.toHaveBeenCalledWith(
+        'Caller-requested OAuth scopes discarded in favor of configured scopes',
+        expect.anything(),
+      );
+    });
+  });
+
+  describe('verifyCallbackIdentity typed errors', () => {
+    const buildCallbackFixture = (tokens: Record<string, unknown>, nonce?: string) => {
+      const identityVerifier = {
+        verify: vi.fn().mockResolvedValue({
+          subject: 'user-object-id',
+          issuer: 'https://issuer.example.test',
+        }),
+      };
+      provider = new ExternalOAuthProvider(config, mockLogger, identityVerifier as never);
+      const client: OAuthClientInformationFull = {
+        client_id: 'client-123',
+        redirect_uris: ['http://localhost:3003/callback'],
+        grant_types: ['authorization_code'],
+        response_types: ['code'],
+      };
+      (provider as any)._clientsStore.registerClient(client);
+      (provider as any).stateStore.set('state123', {
+        clientRedirectUri: 'http://localhost:3003/callback',
+        codeChallenge: '',
+        originalState: 'orig',
+        clientId: client.client_id,
+        scopes: ['openid'],
+        nonce,
+        createdAt: Date.now(),
+      });
+      (provider as any).exchangeCodeWithProvider = vi.fn().mockResolvedValue(tokens);
+      const response = {
+        status: vi.fn().mockReturnThis(),
+        send: vi.fn(),
+        redirect: vi.fn(),
+      } as any;
+      return { response };
+    };
+
+    it('fails closed with 401 when the token response lacks an id_token', async () => {
+      const { response } = buildCallbackFixture({
+        access_token: 'at',
+        token_type: 'Bearer',
+        expires_in: 3600,
+      }, 'nonce-1');
+
+      await provider.handleCallback({ query: { code: 'code', state: 'state123' } } as any, response);
+
+      expect(response.status).toHaveBeenCalledWith(401);
+      expect(response.redirect).not.toHaveBeenCalled();
+      expect(mockLogger.error).toHaveBeenCalledWith(
+        'Callback handling failed',
+        expect.objectContaining({
+          name: 'AuthenticationError',
+          message: 'OIDC identity token missing from authorization response',
+        }),
+      );
+    });
+
+    it('fails closed with 401 and a distinct message when the state carries no nonce', async () => {
+      const { response } = buildCallbackFixture({
+        access_token: 'at',
+        id_token: 'signed-id-token',
+        token_type: 'Bearer',
+      }, undefined);
+
+      await provider.handleCallback({ query: { code: 'code', state: 'state123' } } as any, response);
+
+      expect(response.status).toHaveBeenCalledWith(401);
+      expect(mockLogger.error).toHaveBeenCalledWith(
+        'Callback handling failed',
+        expect.objectContaining({
+          name: 'AuthenticationError',
+          message: expect.stringContaining('nonce'),
+        }),
+      );
+    });
+
+    it('throws a distinct AuthenticationError when the verifier is not configured', async () => {
+      provider = new ExternalOAuthProvider(config, mockLogger);
+
+      await expect(
+        (provider as any).verifyCallbackIdentity({ access_token: 'at', id_token: 'idt' }, 'nonce-1'),
+      ).rejects.toThrow('OIDC identity verifier is not configured');
+      await expect(
+        (provider as any).verifyCallbackIdentity({ access_token: 'at', id_token: 'idt' }, 'nonce-1'),
+      ).rejects.toThrow(AuthenticationError);
+    });
+  });
+
+  describe('refreshTokenIdentities hygiene', () => {
+    beforeEach(() => {
+      provider = new ExternalOAuthProvider(config, mockLogger);
+    });
+
+    it('cleanup() sweeps expired identity bindings', () => {
+      const map = (provider as any).refreshTokenIdentities as Map<
+        string,
+        { identity: unknown; expiresAt: number }
+      >;
+      const now = Date.now();
+      map.set('expired-binding', { identity: { subject: 'gone' }, expiresAt: now - 1 });
+      map.set('live-binding', { identity: { subject: 'kept' }, expiresAt: now + 3600_000 });
+
+      provider.cleanup();
+
+      expect(map.has('expired-binding')).toBe(false);
+      expect(map.has('live-binding')).toBe(true);
+    });
+
+    it('rate-limits the capacity-eviction warn instead of warning per insert', () => {
+      const map = (provider as any).refreshTokenIdentities as Map<
+        string,
+        { identity: unknown; expiresAt: number }
+      >;
+      const now = Date.now();
+      for (let i = 0; i < 10000; i += 1) {
+        map.set(`filler-${i}`, { identity: { subject: `u${i}` }, expiresAt: now + 20 * 24 * 3600_000 });
+      }
+
+      (provider as any).storeRefreshTokenIdentity('first-insert', {
+        subject: 'a',
+        issuer: 'https://issuer.example.test/tenant/v2.0',
+      }, 'client');
+      (provider as any).storeRefreshTokenIdentity('second-insert', {
+        subject: 'b',
+        issuer: 'https://issuer.example.test/tenant/v2.0',
+      }, 'client');
+
+      const capacityWarns = (mockLogger.warn as any).mock.calls
+        .filter(([message]: [string]) => String(message).includes('Refresh identity map at capacity'));
+      expect(capacityWarns.length).toBe(1);
     });
   });
 

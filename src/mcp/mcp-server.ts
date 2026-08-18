@@ -24,6 +24,7 @@ import {
 import { OpenAPIParser } from '../openapi/openapi-parser.js';
 import { createLoadedProfileAppsModel, extractTemplateVariables, getNestedValue, type LoadedProfileAppsModel, type LoadedResourceFetchStrategy, type LoadedTemplateResource, type LoadedCompletionVariable } from '../profile/profile-apps.js';
 import { ProfileLoader } from '../profile/profile-loader.js';
+import { describeEffectiveUpstreamOrigin } from '../profile/upstream-mcp-config.js';
 import { composeToolDescriptor } from '../tooling/tool-app-descriptor.js';
 import { ToolGenerator } from '../tooling/tool-generator.js';
 import { applyParameterDefaults, normalizeArguments } from '../validation/argument-normalizer.js';
@@ -45,6 +46,8 @@ import {
   AuthorizationError,
   RateLimitError,
   NetworkError,
+  ConsentRequiredError,
+  ConsentGateConfigurationError,
   generateCorrelationId
 } from '../core/errors.js';
 import { OAUTH_RATE_LIMIT, INPUT_LIMITS } from '../core/constants.js';
@@ -87,6 +90,7 @@ import type { HttpTransport } from '../transport/http-transport.js';
 import { buildHttpTransportBaseConfig } from '../transport/http-transport-config.js';
 import { renderPrompt } from '../prompt/prompt-renderer.js';
 import type { MetricsCollector, MetricsContextLabels } from '../core/metrics.js';
+import { pseudonymizeSubject } from '../auth/observability-pseudonym.js';
 
 type EnterpriseToolCategory = 'list' | 'read' | 'modify' | 'admin';
 
@@ -163,6 +167,18 @@ function mapUpstreamErrorToMcpError(
           ?.correlationId as string | undefined
       : undefined;
 
+  // Consent denial is raised by the dispatch chokepoint, not by the upstream
+  // server. It carries the actionable consent URL and must reach the client
+  // unchanged for every dispatch path (tools/list and tools/call alike). The
+  // specific denial reason stays server-side.
+  if (error instanceof ConsentRequiredError) {
+    return {
+      code: -32004,
+      message: 'Consent required',
+      data: { ...error.details, correlationId },
+    };
+  }
+
   for (const [ErrorClass, code, messagePrefix] of UPSTREAM_ERROR_MAPPINGS) {
     if (error instanceof ErrorClass) {
       return {
@@ -212,9 +228,15 @@ export class MCPServer {
     patternCounts: Record<string, number>;
   };
 
-  /** Callback injected by HttpTransport to obtain a connected upstream MCP Client. HTTP-only. */
+  /**
+   * Consent-guarded upstream MCP client dispatch. Built by setGetUpstreamClient,
+   * which wraps the injected factory with the consent chokepoint, so every call
+   * through this field is enforced by construction. The optional profileId is
+   * the request-scoped profile id (the id HttpTransport keys its profile state
+   * by, e.g. an alias in routing mode); it falls back to the profile's own id.
+   */
   private getUpstreamClientFn:
-    | ((sessionId: string, provider: UpstreamMcpServerConfig, token: string | undefined) => Promise<Client>)
+    | ((sessionId: string, provider: UpstreamMcpServerConfig, token: string | undefined, profileId?: string) => Promise<Client>)
     | null = null;
 
   /** Prevents the stdio upstream_mcp misconfiguration warning from repeating on every request. */
@@ -576,6 +598,7 @@ export class MCPServer {
         toolCount: this.profile.tools.length,
         resourceCount: this.profile.resources?.length || 0,
       });
+      this.logEffectiveUpstreamOrigin();
     } else {
       this.profile = ProfileLoader.createDefaultProfile('default', this.parser);
       this.logger.info('Using auto-generated default profile', {
@@ -828,6 +851,7 @@ export class MCPServer {
       parser: this.parser,
       upstreamMcp: this.profile.upstream_mcp,
       client_auth_gate: this.profile.client_auth_gate,
+      consent_gate: this.profile.consent_gate,
     };
   }
 
@@ -1523,6 +1547,15 @@ export class MCPServer {
    * Start server with stdio transport
    */
   async runStdio(): Promise<void> {
+    // Fail closed: a consent-gated profile can never satisfy consent over stdio.
+    // There is no OAuth login and no HTTP consent flow, so starting would expose
+    // an unenforceable gate. Refuse to start instead.
+    if (this.isConsentRequired()) {
+      throw new ConsentGateConfigurationError(
+        'consent_gate.required profiles cannot run on the stdio transport: consent can only be granted via the HTTP OAuth flow. Use MCP4_TRANSPORT=http.',
+        { profileId: this.getProfileIdValue() },
+      );
+    }
     const transport = new StdioServerTransport();
     await this.server.connect(transport);
     this.logger.info('MCP server running on stdio');
@@ -1562,6 +1595,7 @@ export class MCPServer {
       parser: profileContext.parser,
       upstreamMcp: profileContext.upstreamMcp,
       client_auth_gate: profileContext.client_auth_gate,
+      consent_gate: profileContext.consent_gate,
       globalFiltering: this.globalFiltering,
     };
 
@@ -1579,10 +1613,12 @@ export class MCPServer {
     this.recordGlobalToolFilterMetrics();
 
     // Wire upstream connection manager so upstream_mcp profiles can proxy tool calls.
-    // TODO(phase-3/auth-gate): upstream proxy is wired unconditionally here; once the client
-    // authentication gate (Phase 3) lands, this wiring must be guarded so that upstream
-    // resources are only reachable after inbound identity has been verified and attached to
-    // the session. See .planning/phases/03-client-authentication-gate/ for the design.
+    // The upstream proxy is wired unconditionally, and that is safe: dispatch is
+    // guarded at the injection seam instead of at wiring time. setGetUpstreamClient
+    // wraps the injected client factory with the consent chokepoint, and the
+    // transport constructed above carries `consent_gate` so assertSessionConsent
+    // can enforce it. A profile declaring `consent_gate.required` refuses to
+    // dispatch when no enforcer is reachable. See setGetUpstreamClient.
     const upstreamManager = new UpstreamConnectionManager({ logger: this.logger });
     this.httpTransport.setUpstreamConnectionManager(upstreamManager);
     this.setGetUpstreamClient((s, p, t) => upstreamManager.getOrConnect(s, p, t));
@@ -1610,13 +1646,54 @@ export class MCPServer {
   }
 
   /**
+   * True when this server's profile requires human consent before upstream
+   * dispatch. Read from the profile, so the dispatch chokepoint can fail closed
+   * without depending on a transport being attached.
+   */
+  public isConsentRequired(): boolean {
+    return this.profile?.consent_gate?.required === true;
+  }
+
+  /**
    * Inject the upstream MCP client factory callback.
-   * Called by runHttp() after wiring the UpstreamConnectionManager.
+   *
+   * This is the consent chokepoint: the injected factory is wrapped so that
+   * EVERY upstream dispatch (tools/list and tools/call, in single-profile and
+   * manager mode alike) first passes the consent guard. Enforcement is applied
+   * by construction rather than by each caller remembering to call it.
+   * Called by runHttp() and MCPServerManager.createServer().
    */
   public setGetUpstreamClient(
     fn: (sessionId: string, provider: UpstreamMcpServerConfig, token: string | undefined) => Promise<Client>,
   ): void {
-    this.getUpstreamClientFn = fn;
+    this.getUpstreamClientFn = async (sessionId, provider, token, profileId) => {
+      await this.assertUpstreamDispatchConsent(sessionId, profileId);
+      return fn(sessionId, provider, token);
+    };
+  }
+
+  /**
+   * Consent guard executed before every upstream dispatch.
+   *
+   * Fails closed: when the profile requires consent and no HTTP transport with
+   * a consent enforcer is reachable (stdio, or a transport double without
+   * `assertSessionConsent`), dispatch is refused. The enforcer is keyed by the
+   * request-scoped profile id when available - the same id HttpTransport keys
+   * `profileStates` by (an alias in routing mode) - falling back to the
+   * profile's canonical id for the single-profile transport.
+   */
+  private async assertUpstreamDispatchConsent(sessionId: string, profileId?: string): Promise<void> {
+    if (!this.isConsentRequired()) {
+      return;
+    }
+    const enforcer = this.httpTransport?.assertSessionConsent?.bind(this.httpTransport);
+    if (!enforcer) {
+      throw new ConsentGateConfigurationError(
+        'Consent-gated profile cannot dispatch upstream: no consent enforcer is reachable',
+        { profileId: profileId ?? this.getProfileIdValue() },
+      );
+    }
+    await enforcer(profileId ?? this.getProfileIdValue(), sessionId);
   }
 
   public handleSessionDestroyed(profileId: string, sessionId: string): void {
@@ -1801,6 +1878,9 @@ export class MCPServer {
           return { jsonrpc: '2.0', id: req.id, error: { code: -32002, message: `Tool '${toolName}' not allowed by X-Mcp4-Tools filter.` } };
         }
       }
+      // Consent is NOT checked here: enforcement lives in the single dispatch
+      // chokepoint built by setGetUpstreamClient, so every upstream path
+      // including tools/list passes through it.
       // Apply enterprise policy - upstream tools don't have OpenAPI operations so default to 'modify'
       if (!this.isToolCategoryAllowedByEnterprisePolicy('modify', sessionId, profileId)) {
         const allowedCategories = this.getEnterpriseAllowedToolCategoriesForSession(sessionId, profileId);
@@ -2019,6 +2099,27 @@ export class MCPServer {
   }
 
   /**
+   * Log where upstream traffic will actually go.
+   *
+   * Informational only: the off-origin override warning is emitted by
+   * ProfileLoader.load() at resolution time, where the static and effective
+   * endpoints can still be compared (the loader overwrites `profile.upstream_mcp`
+   * with the resolved config).
+   */
+  private logEffectiveUpstreamOrigin(): void {
+    if (!this.profile) return;
+    const effective = describeEffectiveUpstreamOrigin(this.profile);
+    if (!effective) return;
+
+    this.logger.info('Effective upstream MCP endpoint', {
+      profile: this.profile.profile_name,
+      origin: effective.origin,
+      fromEnvOverride: effective.fromEnvOverride,
+      envVarName: effective.envVarName,
+    });
+  }
+
+  /**
    * Return upstream_mcp config for the given profileId.
    * For HTTP transport, delegates to HttpTransport accessor.
    * For stdio, reads profile directly and warns when upstream_mcp is configured
@@ -2136,7 +2237,7 @@ export class MCPServer {
       const effectiveAuth = this.getEffectiveUpstreamAuth(provider);
       const effectiveProvider = effectiveAuth !== provider.auth ? { ...provider, auth: effectiveAuth } : provider;
       const token = this.getUpstreamToken(sessionId, profileId, provider, effectiveAuth);
-      const client = await this.getUpstreamClientFn!(sessionId, effectiveProvider, token);
+      const client = await this.getUpstreamClientFn!(sessionId, effectiveProvider, token, profileId);
       const result = await client.listTools();
       if (!result || typeof result !== 'object') {
         throw new UpstreamMalformedResponseError(
@@ -2152,7 +2253,7 @@ export class MCPServer {
       }
       const rawTools = result.tools;
       const sanitized = sanitizeToolList(rawTools, this.logger, provider.html_description_policy ?? 'drop', provider.tool_description_length_policy ?? 'drop');
-      const policyFiltered = applyProviderToolPolicy(sanitized.tools, provider.tools);
+      const policyFiltered = applyProviderToolPolicy(sanitized.tools, provider.tools, this.logger);
       // Cache sanitized+policy-filtered tool names for tools/call gate enforcement.
       // Tools dropped here (bad description/inputSchema) must not be callable via tools/call.
       // sessionId is always defined here: the method throws above when !sessionId.
@@ -2188,6 +2289,16 @@ export class MCPServer {
         result: { tools: enterpriseFiltered },
       };
     } catch (error) {
+      // Consent denials are policy rejections, not upstream failures: count them
+      // under the dedicated ConsentRequired error type so dashboards can separate
+      // "human has not consented yet" from real upstream errors.
+      if (error instanceof ConsentRequiredError) {
+        this.getMetricsCollector()?.recordToolCallError(
+          'tools/list',
+          'ConsentRequired',
+          this.resolveMetricsContext(profileId, sessionId),
+        );
+      }
       const listLogLevel = upstreamErrorLogLevel(error);
       const meta = { provider: provider.name, profileId, sessionId, upstreamErrorType: error instanceof Error ? error.constructor.name : typeof error, correlationId: extractCorrelationId(error) };
       if (listLogLevel === 'error') {
@@ -2250,7 +2361,7 @@ export class MCPServer {
       const effectiveAuth = this.getEffectiveUpstreamAuth(provider);
       const effectiveProvider = effectiveAuth !== provider.auth ? { ...provider, auth: effectiveAuth } : provider;
       const token = this.getUpstreamToken(sessionId, profileId, provider, effectiveAuth);
-      const client = await this.getUpstreamClientFn!(sessionId, effectiveProvider, token);
+      const client = await this.getUpstreamClientFn!(sessionId, effectiveProvider, token, profileId);
       const result = await (provider.timeout_ms !== undefined
         ? client.callTool({ name: toolName, arguments: args }, undefined, { timeout: provider.timeout_ms })
         : client.callTool({ name: toolName, arguments: args }));
@@ -2264,7 +2375,22 @@ export class MCPServer {
     } catch (error) {
       // Prefer correlationId embedded in the upstream error; fall back to the call-scoped ID.
       const correlationId = extractCorrelationId(error) ?? callCorrelationId;
-      this.recordUpstreamOutcome({ outcome: 'error', toolName, sessionId, startTime, metricsContext, upstreamHostForAudit, metricsBundle, correlationId, error });
+      if (error instanceof ConsentRequiredError) {
+        // Consent denial is a policy rejection raised by the dispatch chokepoint,
+        // not an upstream failure: record it as 'rejected' with the dedicated
+        // ConsentRequired error type instead of the generic upstream error path.
+        this.recordUpstreamReject({
+          toolName,
+          errorType: 'ConsentRequired',
+          metrics: metricsBundle?.collector ?? null,
+          startTime,
+          metricsContext: { ...metricsContext, upstreamHost: upstreamHostForAudit },
+          sessionId,
+          correlationId,
+        });
+      } else {
+        this.recordUpstreamOutcome({ outcome: 'error', toolName, sessionId, startTime, metricsContext, upstreamHostForAudit, metricsBundle, correlationId, error });
+      }
       const callLogLevel = upstreamErrorLogLevel(error);
       const meta = { provider: provider.name, profileId, sessionId, toolName, upstreamErrorType: error instanceof Error ? error.constructor.name : typeof error, correlationId };
       if (callLogLevel === 'error') {
@@ -2298,7 +2424,9 @@ export class MCPServer {
       // Sessions without a resolved principal (no client_auth_gate or anonymous mode) fall through to 'anonymous'.
       // Accessor is optional so test doubles without it degrade gracefully.
       const principal = this.httpTransport.getSessionClientPrincipal?.(resolvedProfileId, sessionId);
-      resolvedClientIdentity = principal?.subject;
+      resolvedClientIdentity = principal?.subject
+        ? pseudonymizeSubject(principal.subject)
+        : undefined;
     }
 
     return {
@@ -2338,8 +2466,8 @@ export class MCPServer {
    * and stdio paths - and makes the contract a single grep target for verification.
    *
    * Field shape (stable contract - downstream log consumers depend on it):
-   *   - sessionId: string | undefined - HTTP session id, or 'stdio' sentinel for the stdio path
-   *   - clientPrincipal: string - AuthorizedPrincipal.subject or 'anonymous'
+  *   - sessionId: string | undefined - HTTP session id, or 'stdio' sentinel for the stdio path
+  *   - clientPrincipal: string - pseudonymized AuthorizedPrincipal.subject or 'anonymous'
    *   - tool: string - the requested tool name (may be untrusted - never used as label key)
    *   - upstreamHost: string - host-only (no scheme/path/credentials)
    *   - outcome: 'success' | 'error' | 'rejected'
@@ -2354,13 +2482,13 @@ export class MCPServer {
     durationMs: number;
     correlationId: string;
   }): void {
-    const rawClientIdentity =
+    const clientIdentity =
       typeof args.clientIdentity === 'string' && args.clientIdentity.length > 0
         ? args.clientIdentity
         : 'anonymous';
     this.logger.info('audit:tool_call', {
       sessionId: args.sessionId ?? 'unknown',
-      clientPrincipal: this.truncateWithWarn(rawClientIdentity, INPUT_LIMITS.CLIENT_PRINCIPAL_AUDIT, 'clientPrincipal'),
+      clientPrincipal: this.truncateWithWarn(clientIdentity, INPUT_LIMITS.CLIENT_PRINCIPAL_AUDIT, 'clientPrincipal'),
       tool: this.truncateWithWarn(args.tool, INPUT_LIMITS.TOOL_NAME_AUDIT, 'tool'),
       upstreamHost: args.upstreamHost,
       outcome: args.outcome,
@@ -3285,7 +3413,7 @@ export class MCPServer {
 
   private recordUpstreamReject(args: {
     toolName: string;
-    errorType: 'FilterRejection' | 'PolicyRejection' | 'InvalidToolName' | 'SanitizationRejection';
+    errorType: 'FilterRejection' | 'PolicyRejection' | 'InvalidToolName' | 'SanitizationRejection' | 'ConsentRequired';
     metrics: MetricsCollector | null;
     startTime: number;
     metricsContext: MetricsContextLabels;

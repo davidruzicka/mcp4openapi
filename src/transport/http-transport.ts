@@ -31,13 +31,28 @@ import type { UpstreamConnectionManager } from '../upstream/upstream-connection-
 import { UpstreamAuthError } from '../upstream/upstream-errors.js';
 import type { MetricsContextLabels } from '../core/metrics.js';
 import { ExternalOAuthProvider, isOAuthConfigOperational } from '../auth/oauth-provider.js';
-import { encryptTokenPayload, decryptTokenPayload, isEncryptedToken, type TokenEnvelopePayload } from '../auth/token-envelope.js';
+import {
+  encryptTokenPayload,
+  decryptTokenPayload,
+  isEncryptedToken,
+  type TokenEnvelopePayload,
+} from '../auth/token-envelope.js';
+import { ConsentHttpController } from './consent-http-controller.js';
+import { ReconsentTracker } from './reconsent-tracker.js';
+import * as refreshEnvelope from './refresh-envelope.js';
+import type { AccessTokenIdentityResolver, RefreshEnvelopeContext } from './refresh-envelope.js';
 import { EnterpriseAuthProvider } from '../auth/enterprise-auth-provider.js';
 import { InboundAuthTokenStore } from '../auth/inbound-auth-token-store.js';
 import { EnterpriseReplayStore } from '../auth/enterprise-replay-store.js';
 import { JwksCache } from '../auth/jwks-cache.js';
 import { ClientAuthGate } from '../auth/client-auth-gate.js';
+import { ConsentGate } from '../auth/consent-gate.js';
+import type { ConsentEvidenceStore } from '../auth/consent-evidence-store.js';
+import { createConsentEvidenceStore } from '../auth/consent-evidence-store-factory.js';
+import { OidcIdentityVerifier, type OidcIdentity } from '../auth/oidc-identity-verifier.js';
 import type { AuthorizedPrincipal } from '../auth/inbound-auth-principal.js';
+import { normalizeIssuer } from '../auth/issuer.js';
+import { configureObservabilityPseudonym, pseudonymizeSubject } from '../auth/observability-pseudonym.js';
 import { ClientAuthGateError } from '../core/errors.js';
 import { buildAuthorizationServerMetadata, buildProtectedResourceMetadata } from '../auth/enterprise-metadata.js';
 import { mapAuthError } from '../auth/auth-error-mapper.js';
@@ -62,12 +77,15 @@ import {
   AuthenticationError,
   AuthorizationError,
   ConfigurationError,
+  ConsentGateConfigurationError,
+  ConsentRequiredError,
   OAuthClientStoreCapacityError,
   RateLimitError,
   ValidationError,
   generateCorrelationId,
 } from '../core/errors.js';
 import { mergeFilteringRules, parseFilteringHeader, normalizeFilteringHeaderValue } from '../core/filtering.js';
+import { matchEnvRefName, resolveEnvRef } from '../core/env-ref.js';
 import {
   ToolFilterService,
   EnvConfigParser,
@@ -94,6 +112,8 @@ import type { ProfileIndexSourceProfile, ProfileIndexTenantSummary, SystemNotice
 const DEFAULT_MAX_TOKEN_LENGTH = 4096;
 // Envelopes older than 30 days are rejected during restart-recovery to bound token lifetime at rest.
 const MAX_ENVELOPE_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+// Upper bound on remembered re-consent invalidations (one entry per subject and rules version).
+const RECONSENT_INVALIDATION_MAX = 10000;
 
 interface ProfileRuntimeState {
   profileId: string;
@@ -114,6 +134,8 @@ interface ProfileRuntimeState {
    * widen this gate to cover JWT validation; the field stays the same.
    */
   clientAuthGate?: ClientAuthGate;
+  consentGate?: ConsentGate;
+  consentEvidenceStore?: ConsentEvidenceStore;
   toolFilterService?: ToolFilterService;
   oauthTokensByAccessToken: Map<string, { refreshToken?: string; expiresAt?: number; clientId: string; scopes: string[]; rawAccessToken?: string }>;
   sessions: Map<string, SessionData>;
@@ -135,7 +157,7 @@ interface OAuthRequiredErrorResponse {
 
 export class HttpTransport {
   private static readonly HTTP_ERROR_RESPONSE_RULES: ReadonlyArray<{
-    ctor: new (...args: any[]) => Error;
+    ctor: new (...args: never[]) => Error;
     status: number;
     errorLabel: string;
     messagePrefix: string;
@@ -193,7 +215,20 @@ export class HttpTransport {
   private readonly enterpriseRuntimeConfig: Required<EnterpriseAuthorizationRuntimeConfig>;
   private readonly inboundAuthTokenStore: InboundAuthTokenStore;
   private readonly enterpriseJwksCache: JwksCache;
+  /** Browser-facing consent flow (pages, pending approvals, fingerprint/cookie binding). */
+  private readonly consentController = new ConsentHttpController();
   private readonly enterpriseReplayStore: EnterpriseReplayStore;
+  /**
+   * One-shot re-consent state per profile/subject/rules version: bounds the
+   * re-consent 401 to a single OAuth restart per subject (so a client that
+   * cannot complete the browser acknowledgement cannot loop) and arms the
+   * one-time rejection of the subject's next envelope restart-recovery (so the
+   * client discards its `mcp4.v1.*` envelope and restarts OAuth instead of
+   * silently rebuilding the session). The invalidation budget is cleared when
+   * a consent check succeeds, so a later revocation or expiry can trigger a
+   * fresh invalidation.
+   */
+  private readonly reconsentTracker = new ReconsentTracker(RECONSENT_INVALIDATION_MAX);
   private readonly enterpriseGrantAttemptsByProfile = new Map<string, number[]>();
   private readonly enterpriseGrantConcurrencyByProfile = new Map<string, number>();
   private upstreamConnectionManager: UpstreamConnectionManager | null = null;
@@ -202,6 +237,10 @@ export class HttpTransport {
     // Freeze config to prevent runtime mutation of security-critical settings (allowedOrigins, rate limits, etc.)
     this.config = Object.freeze({ ...config });
     this.logger = logger;
+    // Key observability pseudonyms from the token key material (HMAC derivation
+    // happens inside). Without a key the module falls back to unkeyed SHA-256,
+    // which is dictionary-reversible for guessable subjects.
+    configureObservabilityPseudonym(this.config.tokenKey);
     if (!this.config.tokenKey) {
       this.logger.warn(
         'MCP4_OAUTH_KEY not set - encrypted token envelopes disabled. ' +
@@ -525,6 +564,7 @@ export class HttpTransport {
       parser: this.config.parser,
       upstreamMcp: this.config.upstreamMcp,
       client_auth_gate: this.config.client_auth_gate,
+      consent_gate: this.config.consent_gate,
     };
   }
 
@@ -576,7 +616,7 @@ export class HttpTransport {
             endpoint: oauthProvider.authorizationEndpoint || '(to be derived from issuer)',
             hasIssuer: !!context.oauthConfig.issuer,
           });
-        } catch (err) {
+        } catch {
           // Catches edge cases: env var changed between check and construction, etc.
           // Use a generic message — err.message from resolveEnvVars contains raw env var names.
           oauthDisabledReason = 'OAuth provider construction failed after pre-flight check (env var removed at runtime)';
@@ -616,6 +656,58 @@ export class HttpTransport {
       tenantIndex,
       tenantOAuthProvidersBySessionId: new Map(),
     };
+
+    if (context.consent_gate?.required) {
+      if (!oauthProvider?.issuer || !oauthProvider.configuredClientId) {
+        throw new ConfigurationError('Required consent gate needs profile OAuth issuer and client_id');
+      }
+      // Without a token key there are no encrypted envelopes, so a verified
+      // identity cannot survive a restart and every refresh would silently
+      // produce a principal-less session on a gated profile.
+      if (!this.config.tokenKey) {
+        throw new ConfigurationError(
+          'Required consent gate needs MCP4_OAUTH_KEY so verified identity survives a gateway restart',
+        );
+      }
+      const store = createConsentEvidenceStore({
+        db: this.config.consentDb,
+        evidencePath: this.config.consentEvidencePath,
+        consentRequired: true,
+        logger: this.logger,
+      });
+      const gate = new ConsentGate(
+        profileId,
+        context.consent_gate,
+        store,
+        (id) => this.buildProfileUrl(id, '/consent'),
+        this.logger,
+        oauthProvider.issuer,
+      );
+      const verifier = new OidcIdentityVerifier({
+        issuer: oauthProvider.issuer,
+        audience: oauthProvider.configuredClientId,
+        jwksCache: this.enterpriseJwksCache,
+        logger: this.logger,
+      });
+      oauthProvider.configureIdentityVerification(verifier, async (identity) => {
+        await store.record({
+          sub: identity.subject,
+          issuer: normalizeIssuer(identity.issuer),
+          tenantId: identity.tenantId ?? null,
+          profileId,
+          rules_version: context!.consent_gate!.rules_version,
+          rules_hash: gate.rulesHash,
+          granted_at: Date.now(),
+        });
+        this.logger.info('Consent evidence recorded', {
+          profileId,
+          rulesVersion: context!.consent_gate!.rules_version,
+          subjectHash: pseudonymizeSubject(identity.subject),
+        });
+      });
+      state.consentEvidenceStore = store;
+      state.consentGate = gate;
+    }
 
     if (tenantIndex.enabled) {
       this.logger.info('HTTP tenant configuration enabled', { profileId, tenantCount: tenantIndex.byTenantId.size });
@@ -791,13 +883,12 @@ export class HttpTransport {
   }
 
   private resolveRedirectUriFromEnv(value: string, profileId: string): string | undefined {
-    const match = value.match(/^\$\{env:([^}]+)\}$/);
-    if (!match) {
+    const envVar = matchEnvRefName(value);
+    if (envVar === undefined) {
       return value;
     }
 
-    const envVar = match[1];
-    const envValue = process.env[envVar];
+    const envValue = resolveEnvRef(value);
     if (!envValue || envValue.trim().length === 0) {
       const warningKey = `${profileId}:${envVar}`;
       if (!this.warnedMissingOAuthRedirectEnvVars.has(warningKey)) {
@@ -1396,6 +1487,19 @@ export class HttpTransport {
         ...withProfile((req, res, profileState) => this.handleOAuthAuthorize(req, res, profileState))
       );
 
+      this.app.get(
+        `${basePath}/consent`,
+        ...withProfile((req, res, profileState) => this.handleConsentInfo(res, profileState))
+      );
+
+      this.app.post(
+        `${basePath}${OAUTH_PATHS.AUTHORIZE}`,
+        ...middlewares,
+        oauthRateLimiter,
+        express.urlencoded({ extended: false, limit: '50kb' }),
+        withProfileState((req, res, profileState) => this.handleOAuthAuthorize(req, res, profileState))
+      );
+
       this.app.post(
         `${basePath}${OAUTH_PATHS.TOKEN}`,
         ...middlewares,
@@ -1545,6 +1649,14 @@ export class HttpTransport {
           attachProfileFromHint,
           oauthRateLimiter,
           // codeql[js/missing-rate-limiting] OAuth limiter is explicitly applied above.
+          withProfileState((req, res, profileState) => this.handleOAuthAuthorize(req, res, profileState))
+        );
+
+        this.app.post(
+          OAUTH_PATHS.AUTHORIZE,
+          attachProfileFromHint,
+          oauthRateLimiter,
+          express.urlencoded({ extended: false, limit: '50kb' }),
           withProfileState((req, res, profileState) => this.handleOAuthAuthorize(req, res, profileState))
         );
 
@@ -1952,7 +2064,8 @@ export class HttpTransport {
     try {
       res.setHeader('Cache-Control', 'no-store');
 
-      const { response_type, client_id, redirect_uri, scope, state, code_challenge, code_challenge_method } = req.query;
+      const input = req.method === 'POST' ? req.body as Record<string, unknown> : req.query;
+      const { response_type, client_id, redirect_uri, scope, state, code_challenge, code_challenge_method } = input;
 
       if (!client_id || typeof client_id !== 'string') {
         res.status(HTTP_STATUS.BAD_REQUEST).send('Missing client_id');
@@ -1997,11 +2110,35 @@ export class HttpTransport {
         scopes: scopeStr ? scopeStr.split(' ') : [],
       };
 
+      if (profileState.context.consent_gate?.required) {
+        const gate = profileState.context.consent_gate;
+        const fingerprint = this.consentController.requestFingerprint(profileState.profileId, input);
+        if (req.method !== 'POST') {
+          this.consentController.renderApprovalForm(res, gate, input, fingerprint);
+          return;
+        }
+        if (
+          input.consent_accept !== 'yes' ||
+          !this.consentController.consumeApproval(fingerprint, req.headers.cookie)
+        ) {
+          // Send the user back to a usable starting point instead of a dead end:
+          // behind a non-sticky load balancer the GET and POST can land on
+          // different replicas, which is otherwise unrecoverable for the user.
+          this.consentController.renderApprovalExpired(res, req.originalUrl, gate);
+          return;
+        }
+      }
+
       await profileState.oauthProvider.authorize(client, params, res);
     } catch (error) {
       this.logger.error('OAuth authorize error', error instanceof Error ? error : new Error(String(error)));
       res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).send('OAuth authorization failed');
     }
+  }
+
+  /** Consent info page at `/consent`; delegates to the consent controller. */
+  private handleConsentInfo(res: Response, profileState: ProfileRuntimeState): void {
+    this.consentController.renderConsentInfo(res, profileState.context.consent_gate);
   }
 
   private async handleOAuthToken(
@@ -2059,11 +2196,14 @@ export class HttpTransport {
           // Fetch the registered client so creg can be embedded for restart-resilient session recovery.
           const registeredClient = await profileState.oauthProvider.clientsStore.getClient(client.client_id);
           const clientToken = this.storeOAuthTokens(profileState, tokens, client.client_id, client.scope?.split(' ') || [], registeredClient ?? undefined);
-          response.json(
-            clientToken !== tokens.access_token
-              ? { ...tokens, access_token: clientToken }
-              : tokens,
-          );
+          // Issue the refresh token as an identity-bearing envelope so a later
+          // direct refresh grant still knows which human it belongs to.
+          const clientRefreshToken = this.buildClientRefreshToken(profileState, tokens, client.client_id);
+          response.json({
+            ...tokens,
+            access_token: clientToken,
+            ...(clientRefreshToken ? { refresh_token: clientRefreshToken } : {}),
+          });
         } catch {
           response.status(HTTP_STATUS.BAD_REQUEST).json({ error: 'invalid_grant', error_description: 'Token exchange failed' });
         }
@@ -2084,14 +2224,25 @@ export class HttpTransport {
           if (!client) {
             return;
           }
-          const tokens = await profileState.oauthProvider.exchangeRefreshToken(client, request.body.refresh_token);
+          // Recover the verified identity from the refresh envelope: after a
+          // restart the provider's in-process identity map is empty, so without
+          // this the refreshed token would carry no human principal at all.
+          const grant = this.resolveRefreshGrant(profileState, request.body.refresh_token, client.client_id);
+          const tokens = await profileState.oauthProvider.exchangeRefreshToken(
+            client,
+            grant.refreshToken,
+            undefined,
+            undefined,
+            grant.identity,
+          );
           const registeredClient = await profileState.oauthProvider.clientsStore.getClient(client.client_id);
           const clientToken = this.storeOAuthTokens(profileState, tokens, client.client_id, client.scope?.split(' ') || [], registeredClient ?? undefined);
-          response.json(
-            clientToken !== tokens.access_token
-              ? { ...tokens, access_token: clientToken }
-              : tokens,
-          );
+          const clientRefreshToken = this.buildClientRefreshToken(profileState, tokens, client.client_id);
+          response.json({
+            ...tokens,
+            access_token: clientToken,
+            ...(clientRefreshToken ? { refresh_token: clientRefreshToken } : {}),
+          });
         } catch {
           response.status(HTTP_STATUS.BAD_REQUEST).json({ error: 'invalid_grant', error_description: 'Token exchange failed' });
         }
@@ -3046,7 +3197,7 @@ export class HttpTransport {
           // able to allow anonymous sessions even if authConfigs are present
           // (the gate is the inbound auth authority once configured), so we
           // also bypass that downstream guard when the gate is present.
-          let resolvedClientPrincipal: AuthorizedPrincipal | undefined;
+          let resolvedClientPrincipal: AuthorizedPrincipal | undefined = internalToken?.principal;
           if (profileState.clientAuthGate) {
             try {
               const gatePrincipal = await profileState.clientAuthGate.validate(authInfo.token);
@@ -3313,6 +3464,48 @@ export class HttpTransport {
                   accessTokenExpiresAt = envelope.exp;
                   scopes = envelope.sc;
                   oauthClientId = envelope.cid;
+                  if (envelope.sub) {
+                    // Normalize both sides: the envelope carries the discovery-document
+                    // issuer while the config may include a trailing slash. A raw
+                    // comparison would force re-auth after every restart (finding 4.4).
+                    const configuredIssuer = profileState.oauthProvider?.issuer;
+                    if (
+                      !envelope.iss ||
+                      !configuredIssuer ||
+                      normalizeIssuer(envelope.iss) !== normalizeIssuer(configuredIssuer)
+                    ) {
+                      throw new AuthenticationError('Session token identity issuer does not match profile OAuth issuer');
+                    }
+                    // One-time rejection after a re-consent invalidation: the
+                    // envelope must not silently rebuild the session, otherwise
+                    // the client loops on the consent error and never restarts
+                    // OAuth. 401 + WWW-Authenticate makes it discard the
+                    // envelope and start a fresh OAuth (and consent) flow.
+                    const reconsentKey = this.buildReconsentKey(profileState, envelope.sub);
+                    if (this.reconsentTracker.consumePendingEnvelopeRejection(reconsentKey)) {
+                      this.logger.info('Rejecting envelope restart-recovery once to force OAuth re-consent', {
+                        profileId: profileState.profileId,
+                        subjectHash: pseudonymizeSubject(envelope.sub),
+                      });
+                      const resourceMetadataUrl = this.getOAuthProtectedResourceUrl(requestProfileId);
+                      res.setHeader('WWW-Authenticate', `Bearer resource_metadata="${resourceMetadataUrl}", scope="api"`);
+                      res.status(HTTP_STATUS.UNAUTHORIZED).json({
+                        error: 'Unauthorized',
+                        message: 'Re-consent required, please re-authenticate',
+                      });
+                      return;
+                    }
+                    resolvedClientPrincipal = {
+                      authType: 'oauth',
+                      profileId: profileState.profileId,
+                      subject: envelope.sub,
+                      issuer: envelope.iss,
+                      tenantId: envelope.tid,
+                      clientId: envelope.cid,
+                      scopes: envelope.sc ?? [],
+                      expiresAt: envelope.exp,
+                    };
+                  }
 
                   // Save envelope for post-createSession map population (both stores must be
                   // populated atomically after the session is confirmed created, to avoid leaking
@@ -3395,14 +3588,18 @@ export class HttpTransport {
               scopes: recoveredEnvelope.sc ?? [],
               rawAccessToken: recoveredEnvelope.at,
             });
-            this.inboundAuthTokenStore.store(envelopeToken, {
-              authType: 'oauth',
-              profileId: profileState.profileId,
-              subject: recoveredEnvelope.cid ?? '',
-              clientId: recoveredEnvelope.cid ?? '',
-              scopes: recoveredEnvelope.sc ?? [],
-              expiresAt: recoveredEnvelope.exp,
-            });
+            if (resolvedClientPrincipal) {
+              this.inboundAuthTokenStore.store(envelopeToken, resolvedClientPrincipal);
+            } else if (profileState.context.consent_gate?.required !== true) {
+              this.inboundAuthTokenStore.store(envelopeToken, {
+                authType: 'oauth',
+                profileId: profileState.profileId,
+                subject: recoveredEnvelope.cid ?? '',
+                clientId: recoveredEnvelope.cid ?? '',
+                scopes: recoveredEnvelope.sc ?? [],
+                expiresAt: recoveredEnvelope.exp,
+              });
+            }
           }
         }
 
@@ -4035,10 +4232,10 @@ export class HttpTransport {
       hasAuthToken: !!authToken,
       hasRefreshToken: !!refreshToken,
       hasExpiration: !!accessTokenExpiresAt,
-      // Phase 3 partial AUTH-03: include resolved client identity in
-      // session-creation log entries. Phase 5 (audit log) reads
-      // session.clientPrincipal directly for per-tool-call attribution.
-      clientSubject: clientPrincipal?.subject,
+      // Keep the in-memory principal raw for authorization, but never emit its subject.
+      clientSubject: clientPrincipal?.subject
+        ? pseudonymizeSubject(clientPrincipal.subject)
+        : undefined,
       clientAuthType: clientPrincipal?.authType,
     });
 
@@ -4292,6 +4489,7 @@ export class HttpTransport {
       ? Date.now() + tokens.expires_in * 1000
       : undefined;
 
+    const identity = this.getIdentityResolver(profileState)?.(tokens.access_token);
     let clientToken = tokens.access_token;
     if (this.config.tokenKey && tokens.refresh_token) {
       try {
@@ -4303,6 +4501,9 @@ export class HttpTransport {
             exp: expiresAt,
             cid: clientId,
             sc: scopes,
+            sub: identity?.subject,
+            iss: identity?.issuer,
+            tid: identity?.tenantId,
             pid: profileState.profileId,
             iat: Date.now(),
             creg: registeredClient
@@ -4333,14 +4534,30 @@ export class HttpTransport {
       scopes,
       rawAccessToken: clientToken !== tokens.access_token ? tokens.access_token : undefined,
     });
-    this.inboundAuthTokenStore.store(clientToken, {
-      authType: 'oauth',
-      profileId: profileState.profileId,
-      subject: clientId,
-      clientId,
-      scopes,
-      expiresAt,
-    });
+    // Consent-gated profiles (AIPP-432) require the session principal to be bound to a verified
+    // human OIDC subject. Falling back to the OAuth clientId (a shared, non-human identity) would
+    // silently violate the "provable human consent" invariant. When no verified identity is present
+    // we omit the principal entirely so the consent gate sees a null principal and fails closed
+    // (blocks), rather than binding consent to clientId. Non-consent profiles keep the prior
+    // behaviour (identity subject, else clientId) unchanged.
+    const consentGated = profileState.context.consent_gate?.required === true;
+    if (consentGated && !identity?.subject) {
+      this.logger.warn('Consent-gated profile OAuth token stored without verified identity - principal omitted (consent gate will block)', {
+        profileId: profileState.profileId,
+        clientId,
+      });
+    } else {
+      this.inboundAuthTokenStore.store(clientToken, {
+        authType: 'oauth',
+        profileId: profileState.profileId,
+        subject: identity?.subject ?? clientId,
+        issuer: identity?.issuer,
+        tenantId: identity?.tenantId,
+        clientId,
+        scopes,
+        expiresAt,
+      });
+    }
 
     this.logger.debug('Stored OAuth tokens', {
       profileId: profileState.profileId,
@@ -4353,6 +4570,56 @@ export class HttpTransport {
     });
 
     return clientToken;
+  }
+
+  /**
+   * Typed accessor for the OAuth provider's access-token identity lookup.
+   * Single guard point replacing the former per-call-site duck typing
+   * (test doubles may omit the method; the declared type always has it).
+   */
+  private getIdentityResolver(profileState: ProfileRuntimeState): AccessTokenIdentityResolver | undefined {
+    const provider = profileState.oauthProvider;
+    return provider?.getIdentityForAccessToken
+      ? (accessToken) => provider.getIdentityForAccessToken(accessToken)
+      : undefined;
+  }
+
+  /** Per-profile inputs for the pure refresh envelope functions (see refresh-envelope.ts). */
+  private refreshEnvelopeContext(profileState: ProfileRuntimeState): RefreshEnvelopeContext {
+    return {
+      profileId: profileState.profileId,
+      consentRequired: profileState.context.consent_gate?.required === true,
+      tokenKey: this.config.tokenKey,
+      legacyTokenKey: this.config.legacyTokenKey,
+      logger: this.logger,
+    };
+  }
+
+  /** Issue the client-facing refresh token; see refresh-envelope.ts for the contract. */
+  private buildClientRefreshToken(
+    profileState: ProfileRuntimeState,
+    tokens: OAuthTokens,
+    clientId: string,
+  ): string | undefined {
+    return refreshEnvelope.buildClientRefreshToken(
+      this.refreshEnvelopeContext(profileState),
+      tokens,
+      clientId,
+      this.getIdentityResolver(profileState),
+    );
+  }
+
+  /** Redeem a client-presented refresh token; see refresh-envelope.ts for the contract. */
+  private resolveRefreshGrant(
+    profileState: ProfileRuntimeState,
+    presentedToken: string,
+    presentingClientId: string,
+  ): { refreshToken: string; identity?: OidcIdentity } {
+    return refreshEnvelope.resolveRefreshGrant(
+      this.refreshEnvelopeContext(profileState),
+      presentedToken,
+      presentingClientId,
+    );
   }
 
   /**
@@ -4507,6 +4774,111 @@ export class HttpTransport {
     return this.profileStates.get(profileId)?.sessions.get(sessionId)?.clientPrincipal;
   }
 
+  /**
+   * Enforce consent for a session before upstream dispatch.
+   *
+   * Fails closed: a profile declaring `consent_gate.required` with no gate
+   * constructed is a wiring defect, not a reason to allow the call. Issuer
+   * canonicalization and the identity-source check live in `ConsentGate`, so a
+   * single implementation governs every backend and call path.
+   *
+   * On denial the session is invalidated once per subject and rules version and
+   * the subject's next envelope restart-recovery is rejected once with 401 (see
+   * `reconsentTracker`), so the client discards the envelope
+   * and restarts OAuth, which is the only re-consent mechanism MCP clients
+   * implement. Repeat denials return the consent error without invalidating, so
+   * a client that cannot complete the browser acknowledgement does not loop
+   * through OAuth indefinitely.
+   */
+  public async assertSessionConsent(profileId: string, sessionId: string): Promise<void> {
+    const profileState = this.profileStates.get(profileId);
+    if (!profileState) {
+      // The caller only invokes this because the profile declared consent
+      // required, so an unknown profile state is a wiring defect and must fail
+      // closed rather than silently allow the dispatch.
+      throw new ConsentGateConfigurationError(
+        'Consent gate cannot be enforced: unknown profile state',
+        { profileId },
+      );
+    }
+    if (!profileState.consentGate) {
+      if (profileState.context.consent_gate?.required) {
+        throw new ConsentGateConfigurationError(
+          'Consent gate is required for this profile but was not initialized',
+          { profileId },
+        );
+      }
+      return;
+    }
+    const principal = profileState.sessions.get(sessionId)?.clientPrincipal ?? null;
+    try {
+      await profileState.consentGate.assertConsent(principal);
+    } catch (error) {
+      if (error instanceof ConsentRequiredError) {
+        this.invalidateSessionForReconsent(profileState, sessionId, principal, error);
+      }
+      throw error;
+    }
+    // Satisfied consent resets the one-shot invalidation budget: when the grant
+    // is later revoked or expires, the subject must be invalidated (and sent
+    // through OAuth) again instead of being stuck on the consent error forever.
+    if (principal?.subject) {
+      this.reconsentTracker.clearInvalidation(
+        this.buildReconsentKey(profileState, principal.subject),
+      );
+    }
+  }
+
+  /** Key for the re-consent bookkeeping: one entry per profile, subject, and rules version. */
+  private buildReconsentKey(profileState: ProfileRuntimeState, subject: string): string {
+    const rulesVersion = profileState.context.consent_gate?.rules_version ?? '';
+    return `${profileState.profileId}\n${subject}\n${rulesVersion}`;
+  }
+
+  /**
+   * Drop the session and its token once per subject and rules version, and arm
+   * a one-time 401 for the subject's next envelope restart-recovery, so the
+   * client discards its `mcp4.v1.*` envelope and re-runs OAuth instead of
+   * silently rebuilding the session and looping on the consent error.
+   */
+  private invalidateSessionForReconsent(
+    profileState: ProfileRuntimeState,
+    sessionId: string,
+    principal: AuthorizedPrincipal | null,
+    error: ConsentRequiredError,
+  ): void {
+    const budgetKey = principal?.subject
+      ? this.buildReconsentKey(profileState, principal.subject)
+      : this.buildReconsentKey(profileState, sessionId);
+    if (this.reconsentTracker.isInvalidated(budgetKey)) return;
+    // Bounded FIFO inside the tracker: overflow only costs one extra
+    // invalidation (or silent recovery) for the evicted subject, never a
+    // missed denial. The envelope rejection is only armed for identity-bearing
+    // sessions; anonymous ones have no envelope to reject.
+    this.reconsentTracker.markInvalidated(budgetKey, {
+      pendingEnvelopeReject: Boolean(principal?.subject),
+    });
+    try {
+      this.destroySession(profileState, sessionId);
+    } catch (teardownError) {
+      // Teardown must never mask the denial: the call is blocked either way.
+      this.logger.warn('Session teardown after consent denial failed', {
+        profileId: profileState.profileId,
+        error: teardownError instanceof Error ? teardownError.message : String(teardownError),
+      });
+    } finally {
+      // The session must be gone even if stream/token cleanup failed, otherwise
+      // the client keeps a usable session and never re-runs OAuth.
+      profileState.sessions.delete(sessionId);
+    }
+    this.logger.info('Session invalidated to trigger re-consent', {
+      profileId: profileState.profileId,
+      rulesVersion: profileState.context.consent_gate?.rules_version ?? '',
+      reason: error.reason,
+      clientIdentity: principal?.subject ? pseudonymizeSubject(principal.subject) : 'anonymous',
+    });
+  }
+
   public setSessionToolFilter(profileId: string, sessionId: string, toolFilter: SessionToolFilter): void {
     const session = this.profileStates.get(profileId)?.sessions.get(sessionId);
     if (!session) {
@@ -4624,7 +4996,7 @@ export class HttpTransport {
         const newProvider = new ExternalOAuthProvider(session.tenantOAuthConfig, this.logger);
         providerCache.set(session.id, newProvider);
         return newProvider;
-      } catch (err) {
+      } catch {
         // Catches edge cases: env var changed between check and construction, etc.
         // Generic message — err.message from resolveEnvVars contains raw env var names.
         this.logger.warn('Tenant OAuth provider construction failed - tenant OAuth disabled for session', {
@@ -4698,10 +5070,20 @@ export class HttpTransport {
       }
 
       // Exchange refresh token for new tokens
+      const sessionPrincipal = session.clientPrincipal;
+      const rehydratedIdentity = sessionPrincipal?.subject && sessionPrincipal.issuer
+        ? {
+            subject: sessionPrincipal.subject,
+            issuer: normalizeIssuer(sessionPrincipal.issuer),
+            tenantId: sessionPrincipal.tenantId,
+          }
+        : undefined;
       const tokens = await oauthProvider.exchangeRefreshToken(
         client,
         session.refreshToken,
-        session.scopes
+        session.scopes,
+        undefined,
+        rehydratedIdentity,
       );
 
       // Update session with new tokens

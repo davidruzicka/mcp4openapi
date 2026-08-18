@@ -2,10 +2,12 @@
  * Tests for profile loader
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { ValidationError } from '../core/errors.js';
 import { ProfileLoader } from './profile-loader.js';
 import path from 'path';
+import fs from 'fs/promises';
+import os from 'node:os';
 
 describe('ProfileLoader', () => {
   it('should load valid GitLab profile', async () => {
@@ -2833,6 +2835,104 @@ describe('ProfileLoader', () => {
       }
     });
 
+    it('rejects required consent when the effective upstream MCP environment value is unset', async () => {
+      const loader = new ProfileLoader();
+      const fs = await import('fs/promises');
+      const tmpPath = `/tmp/consent-gate-unset-upstream-${Date.now()}-${Math.random()}.json`;
+      const envVarName = `MCP4_UNSET_CONSENT_UPSTREAM_${Date.now()}`;
+      const previous = process.env[envVarName];
+      delete process.env[envVarName];
+
+      await fs.writeFile(
+        tmpPath,
+        JSON.stringify({
+          profile_name: 'consent-gate-unset-upstream',
+          tools: [],
+          consent_gate: {
+            required: true,
+            rules_version: 'v1',
+            identity_source: 'profile_oauth',
+          },
+          interceptors: {
+            auth: {
+              type: 'oauth',
+              oauth_config: {
+                issuer: 'https://login.example.test',
+                client_id: 'client',
+                redirect_uri: 'https://gateway.example.test/oauth/callback',
+                scopes: ['openid'],
+              },
+            },
+          },
+          upstream_mcp_from_env: envVarName,
+        }),
+        'utf-8',
+      );
+
+      try {
+        await expect(loader.load(tmpPath)).rejects.toThrow(
+          'consent_gate.required=true requires an effective upstream_mcp configuration',
+        );
+      } finally {
+        if (previous === undefined) {
+          delete process.env[envVarName];
+        } else {
+          process.env[envVarName] = previous;
+        }
+        await fs.unlink(tmpPath).catch(() => undefined);
+      }
+    });
+
+    it('rejects required consent when local tools coexist with an upstream MCP source', async () => {
+      const loader = new ProfileLoader();
+      const fs = await import('fs/promises');
+      const tmpPath = `/tmp/consent-gate-local-tools-${Date.now()}-${Math.random()}.json`;
+
+      await fs.writeFile(
+        tmpPath,
+        JSON.stringify({
+          profile_name: 'consent-gate-local-tools',
+          tools: [
+            {
+              name: 'local_tool',
+              description: 'A local tool',
+              parameters: {},
+              operations: { execute: 'localOperation' },
+            },
+          ],
+          consent_gate: {
+            required: true,
+            rules_version: 'v1',
+            identity_source: 'profile_oauth',
+          },
+          interceptors: {
+            auth: {
+              type: 'oauth',
+              oauth_config: {
+                issuer: 'https://login.example.test',
+                client_id: 'client',
+                redirect_uri: 'https://gateway.example.test/oauth/callback',
+                scopes: ['openid'],
+              },
+            },
+          },
+          upstream_mcp: {
+            name: 'upstream',
+            transport: { type: 'http-streamable', url: 'https://upstream.example.test/mcp' },
+          },
+        }),
+        'utf-8',
+      );
+
+      try {
+        await expect(loader.load(tmpPath)).rejects.toThrow(
+          'consent_gate with required=true supports upstream MCP tools only and cannot define local tools',
+        );
+      } finally {
+        await fs.unlink(tmpPath).catch(() => undefined);
+      }
+    });
+
     it('rejects stdio upstream transport in the first iteration', async () => {
       const loader = new ProfileLoader();
       const fs = await import('fs/promises');
@@ -3393,6 +3493,121 @@ paths:
       const profile = await loader.load(tmpPath);
       expect(profile.upstream_mcp).toBeDefined();
       expect(profile.upstream_mcp?.name).toBe('provider-a');
+    });
+  });
+
+  describe('off-origin upstream override warning', () => {
+    const ENV_VAR = 'MCP4_UPSTREAM_MCP_JSON_OFF_ORIGIN_TEST';
+
+    async function writeProfileWithStaticUpstream(): Promise<string> {
+      const fs = await import('fs/promises');
+      const tmpPath = `/tmp/upstream-off-origin-${Date.now()}-${Math.random()}.json`;
+      await fs.writeFile(
+        tmpPath,
+        JSON.stringify({
+          profile_name: 'off-origin-test',
+          tools: [],
+          upstream_mcp_from_env: ENV_VAR,
+          upstream_mcp: {
+            name: 'static',
+            transport: { type: 'http-streamable', url: 'https://static.example.com/mcp' },
+          },
+        }),
+        'utf-8',
+      );
+      return tmpPath;
+    }
+
+    it('warns during load when the env override points at a different origin', async () => {
+      const warn = vi.fn();
+      const loader = new ProfileLoader({ warn });
+      process.env[ENV_VAR] = JSON.stringify({
+        name: 'env',
+        transport: { type: 'http-streamable', url: 'https://proxy.example.net/mcp' },
+      });
+
+      try {
+        const profile = await loader.load(await writeProfileWithStaticUpstream());
+        expect(profile.upstream_mcp?.transport.url).toBe('https://proxy.example.net/mcp');
+        expect(warn).toHaveBeenCalledWith(
+          'Upstream MCP endpoint overridden to a different origin by the environment',
+          {
+            profile: 'off-origin-test',
+            staticOrigin: 'https://static.example.com',
+            overrideOrigin: 'https://proxy.example.net',
+            envVarName: ENV_VAR,
+          },
+        );
+      } finally {
+        delete process.env[ENV_VAR];
+      }
+    });
+
+    it('does not warn during load when the override keeps the static origin', async () => {
+      const warn = vi.fn();
+      const loader = new ProfileLoader({ warn });
+      process.env[ENV_VAR] = JSON.stringify({
+        name: 'env',
+        transport: { type: 'http-streamable', url: 'https://static.example.com/mcp/v2' },
+      });
+
+      try {
+        await loader.load(await writeProfileWithStaticUpstream());
+        expect(warn).not.toHaveBeenCalled();
+      } finally {
+        delete process.env[ENV_VAR];
+      }
+    });
+  });
+
+  describe('consent-gate fixture profile', () => {
+    it('loads tests/profiles/consent-gate/profile.json', async () => {
+      const profile = await new ProfileLoader().load(
+        path.join(process.cwd(), 'tests/profiles/consent-gate/profile.json'),
+      );
+      expect(profile.consent_gate?.required).toBe(true);
+      expect(profile.upstream_mcp?.name).toBe('ms365-upstream');
+    });
+  });
+
+  describe('consent-gate template loading', () => {
+    const fixturePath = path.join(process.cwd(), 'tests/profiles/consent-gate/profile.json');
+
+    const writeTemplatedProfile = async (
+      template: string | null,
+      templatePath = './consent.html',
+    ): Promise<string> => {
+      const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'consent-template-'));
+      const fixture = JSON.parse(await fs.readFile(fixturePath, 'utf8'));
+      fixture.consent_gate.template_path = templatePath;
+      if (template !== null) {
+        await fs.writeFile(path.join(dir, 'consent.html'), template, 'utf8');
+      }
+      const profilePath = path.join(dir, 'profile.json');
+      await fs.writeFile(profilePath, JSON.stringify(fixture), 'utf8');
+      return profilePath;
+    };
+
+    it('loads the template relative to the profile file', async () => {
+      const profilePath = await writeTemplatedProfile(
+        '<html><body><style>b{}</style>{{consent_body}}</body></html>',
+      );
+      const profile = await new ProfileLoader().load(profilePath);
+      expect(profile.consent_gate?.template).toContain('{{consent_body}}');
+    });
+
+    it('fails at load when the template file is missing', async () => {
+      const profilePath = await writeTemplatedProfile(null);
+      await expect(new ProfileLoader().load(profilePath)).rejects.toThrow(
+        "Failed to read consent_gate.template_path './consent.html'",
+      );
+    });
+
+    it('fails at load when the template lacks the consent body placeholder', async () => {
+      const profilePath = await writeTemplatedProfile('<html><body>no placeholder</body></html>');
+      await expect(new ProfileLoader().load(profilePath)).rejects.toThrow(
+        'consent_gate.template must contain the {{consent_body}} placeholder',
+      );
     });
   });
 });

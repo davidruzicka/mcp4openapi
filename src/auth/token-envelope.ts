@@ -31,9 +31,28 @@
  */
 
 import { createCipheriv, createDecipheriv, createHash, randomBytes, scryptSync } from 'node:crypto';
-import { ValidationError } from '../core/errors.js';
+import { AuthenticationError, ValidationError } from '../core/errors.js';
+import { normalizeIssuer } from './issuer.js';
 
 const TOKEN_PREFIX = 'mcp4.v1.';
+/**
+ * Refresh envelopes use their own prefix and AAD suffix. The prefix check is
+ * the first gate - an access-token path rejects `mcp4.r1.` before any crypto
+ * runs. The distinct AAD suffix is defense-in-depth: a relabeled envelope
+ * still fails authenticated decryption instead of relying on a field check.
+ */
+const REFRESH_TOKEN_PREFIX = 'mcp4.r1.';
+const REFRESH_AAD_SUFFIX = ':refresh';
+/**
+ * How long a refresh-token identity binding stays valid before re-auth.
+ * Shared horizon: the in-memory identity map in oauth-provider and the
+ * refresh-envelope `iat` age check below enforce the same limit, so a
+ * client-side envelope cannot rebind the human subject past the horizon
+ * the server-side map enforces.
+ */
+export const REFRESH_IDENTITY_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+// Tolerated forward clock skew when validating a refresh envelope `iat`.
+const IAT_FUTURE_SKEW_MS = 60 * 1000;
 const NONCE_BYTES = 12;
 const TAG_BYTES = 16;
 const HEX_KEY_LENGTH = 64; // 32 bytes encoded as hex
@@ -52,6 +71,9 @@ export interface TokenEnvelopePayload {
   exp?: number; // access token expiry, ms since epoch
   cid?: string; // OAuth client_id
   sc?: string[]; // scopes
+  sub?: string; // verified OIDC subject (Entra oid when available)
+  iss?: string; // verified OIDC issuer
+  tid?: string; // verified OIDC tenant id
   pid: string; // profile_id (REQUIRED - also bound as AAD)
   iat: number; // issued-at, ms since epoch
   creg?: {
@@ -62,6 +84,109 @@ export interface TokenEnvelopePayload {
     sc?: string; // scope (single string, matches OAuth registration shape)
     // NB: secret intentionally absent - DCR public PKCE clients have none.
   };
+}
+
+/**
+ * Refresh envelope payload.
+ *
+ * Carries the verified human identity alongside the IdP refresh token, so a
+ * direct `refresh_token` grant after a gateway restart can rebind the identity
+ * instead of falling back to the process-local map, which is empty then.
+ */
+export interface RefreshEnvelopePayload {
+  v: 1;
+  rt: string; // IdP refresh_token (REQUIRED)
+  cid: string; // OAuth client_id the refresh token was issued to
+  sub?: string; // verified OIDC subject
+  iss?: string; // verified OIDC issuer
+  tid?: string; // verified OIDC tenant id
+  pid: string; // profile_id (REQUIRED - also bound as AAD)
+  iat: number; // issued-at, ms since epoch
+}
+
+/** O(1) format check for `mcp4.r1.` refresh envelopes. Does NOT decrypt. */
+export function isRefreshEnvelope(token: string): boolean {
+  return typeof token === 'string' && token.startsWith(REFRESH_TOKEN_PREFIX);
+}
+
+/** Encrypt a refresh envelope as `mcp4.r1.<base64url(nonce|ciphertext|tag)>`. */
+export function encryptRefreshEnvelope(payload: RefreshEnvelopePayload, key: Buffer): string {
+  if (!payload.pid || !payload.rt || !Buffer.isBuffer(key) || key.length !== KEY_BYTES) {
+    throw new ValidationError(
+      `encryptRefreshEnvelope: payload.pid and payload.rt must be non-empty and key must be a ${KEY_BYTES}-byte Buffer`,
+    );
+  }
+
+  const nonce = randomBytes(NONCE_BYTES);
+  const cipher = createCipheriv(ALGORITHM, key, nonce);
+  cipher.setAAD(Buffer.from(payload.pid + REFRESH_AAD_SUFFIX, 'utf8'));
+
+  const plaintext = Buffer.from(JSON.stringify(payload), 'utf8');
+  const ciphertext = Buffer.concat([cipher.update(plaintext), cipher.final()]);
+  const tag = cipher.getAuthTag();
+
+  return REFRESH_TOKEN_PREFIX + Buffer.concat([nonce, ciphertext, tag]).toString('base64url');
+}
+
+/**
+ * Decrypt a `mcp4.r1.` refresh envelope. Returns null on every failure mode,
+ * including an `iat` older than REFRESH_IDENTITY_TTL_MS or future-dated beyond
+ * IAT_FUTURE_SKEW_MS. Never throws. Retries once with `fallbackKey` for
+ * legacy-KDF deployments.
+ */
+export function decryptRefreshEnvelope(
+  token: string,
+  key: Buffer,
+  profileId: string,
+  fallbackKey?: Buffer,
+): RefreshEnvelopePayload | null {
+  const primary = attemptRefreshDecrypt(token, key, profileId);
+  if (primary !== null) return primary;
+  if (fallbackKey !== undefined) return attemptRefreshDecrypt(token, fallbackKey, profileId);
+  return null;
+}
+
+function attemptRefreshDecrypt(
+  token: string,
+  key: Buffer,
+  profileId: string,
+): RefreshEnvelopePayload | null {
+  if (typeof profileId !== 'string' || profileId.length === 0) return null;
+
+  const candidate = decryptAeadJson(token, REFRESH_TOKEN_PREFIX, key, profileId + REFRESH_AAD_SUFFIX);
+  if (candidate === null) return null;
+
+  if (candidate.v !== 1) return null;
+  if (typeof candidate.rt !== 'string' || candidate.rt.length === 0) return null;
+  if (typeof candidate.cid !== 'string' || candidate.cid.length === 0) return null;
+  if (candidate.pid !== profileId) return null;
+  if (typeof candidate.iat !== 'number') return null;
+  // Age horizon: an identity-bearing envelope must not rebind the subject
+  // indefinitely - enforce the same TTL as the in-memory identity map.
+  const now = Date.now();
+  if (candidate.iat > now + IAT_FUTURE_SKEW_MS) return null;
+  if (now - candidate.iat > REFRESH_IDENTITY_TTL_MS) return null;
+  if (!validateIdentityCoherence(candidate)) return null;
+
+  return candidate as unknown as RefreshEnvelopePayload;
+}
+
+/**
+ * Enforce the envelope-to-client binding: a refresh envelope minted for client
+ * A must never be redeemable by client B, otherwise B would inherit A's
+ * verified identity. Throws AuthenticationError on any mismatch.
+ */
+export function assertRefreshEnvelopeClientBinding(
+  payload: RefreshEnvelopePayload,
+  presentingClientId: string,
+): void {
+  if (
+    typeof presentingClientId !== 'string' ||
+    presentingClientId.length === 0 ||
+    payload.cid !== presentingClientId
+  ) {
+    throw new AuthenticationError('Refresh token envelope was issued to a different client');
+  }
 }
 
 /**
@@ -167,27 +292,54 @@ function attemptDecrypt(
   key: Buffer,
   profileId: string,
 ): TokenEnvelopePayload | null {
+  if (typeof profileId !== 'string' || profileId.length === 0) {
+    return null;
+  }
+
+  const candidate = decryptAeadJson(token, TOKEN_PREFIX, key, profileId);
+  if (candidate === null) {
+    return null;
+  }
+
+  if (candidate.v !== 1) {
+    return null;
+  }
+  if (typeof candidate.at !== 'string' || candidate.at.length === 0) {
+    return null;
+  }
+  if (candidate.pid !== profileId) {
+    return null;
+  }
+  if (typeof candidate.iat !== 'number') {
+    return null;
+  }
+  if (!validateIdentityCoherence(candidate)) {
+    return null;
+  }
+
+  return candidate as unknown as TokenEnvelopePayload;
+}
+
+/**
+ * Shared decode -> decipher -> parse pipeline for both envelope flavors.
+ * Returns the parsed JSON object, or null on every failure mode. Never throws.
+ */
+function decryptAeadJson(
+  token: string,
+  prefix: string,
+  key: Buffer,
+  aad: string,
+): Record<string, unknown> | null {
   try {
-    if (typeof token !== 'string' || !token.startsWith(TOKEN_PREFIX)) {
+    if (typeof token !== 'string' || !token.startsWith(prefix)) {
       return null;
     }
     if (!Buffer.isBuffer(key) || key.length !== KEY_BYTES) {
       return null;
     }
-    if (typeof profileId !== 'string' || profileId.length === 0) {
-      return null;
-    }
 
-    const suffix = token.slice(TOKEN_PREFIX.length);
-    if (suffix.length === 0) {
-      return null;
-    }
-
-    const decoded = decodeBase64UrlStrict(suffix);
-    if (decoded === null) {
-      return null;
-    }
-    if (decoded.length < MIN_ENCODED_BYTES) {
+    const decoded = decodeBase64UrlStrict(token.slice(prefix.length));
+    if (decoded === null || decoded.length < MIN_ENCODED_BYTES) {
       return null;
     }
 
@@ -196,7 +348,7 @@ function attemptDecrypt(
     const ciphertext = decoded.subarray(NONCE_BYTES, decoded.length - TAG_BYTES);
 
     const decipher = createDecipheriv(ALGORITHM, key, nonce, { authTagLength: TAG_BYTES });
-    decipher.setAAD(Buffer.from(profileId, 'utf8'));
+    decipher.setAAD(Buffer.from(aad, 'utf8'));
     decipher.setAuthTag(tag);
 
     const plaintext = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
@@ -205,24 +357,46 @@ function attemptDecrypt(
     if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
       return null;
     }
-    const candidate = parsed as Record<string, unknown>;
-    if (candidate.v !== 1) {
-      return null;
-    }
-    if (typeof candidate.at !== 'string' || candidate.at.length === 0) {
-      return null;
-    }
-    if (candidate.pid !== profileId) {
-      return null;
-    }
-    if (typeof candidate.iat !== 'number') {
-      return null;
-    }
-
-    return candidate as unknown as TokenEnvelopePayload;
+    return parsed as Record<string, unknown>;
   } catch {
     return null;
   }
+}
+
+/**
+ * Shared identity-coherence rule for both envelope flavors:
+ * - `sub` and `iss` are all-or-nothing (a subject without an issuer, or vice
+ *   versa, cannot be bound to an identity),
+ * - `tid` requires `sub` (a tenant without a subject is meaningless),
+ * - present fields must be non-empty strings,
+ * - `iss` is canonicalized via normalizeIssuer in place.
+ */
+function validateIdentityCoherence(candidate: Record<string, unknown>): boolean {
+  const hasSubject = Object.prototype.hasOwnProperty.call(candidate, 'sub');
+  const hasIssuer = Object.prototype.hasOwnProperty.call(candidate, 'iss');
+  const hasTenant = Object.prototype.hasOwnProperty.call(candidate, 'tid');
+  if (hasSubject !== hasIssuer || (hasTenant && !hasSubject)) {
+    return false;
+  }
+  if (hasSubject) {
+    if (
+      typeof candidate.sub !== 'string' ||
+      candidate.sub.length === 0 ||
+      typeof candidate.iss !== 'string' ||
+      candidate.iss.length === 0
+    ) {
+      return false;
+    }
+    const issuer = normalizeIssuer(candidate.iss);
+    if (issuer.length === 0) {
+      return false;
+    }
+    candidate.iss = issuer;
+  }
+  if (hasTenant && (typeof candidate.tid !== 'string' || candidate.tid.length === 0)) {
+    return false;
+  }
+  return true;
 }
 
 /**

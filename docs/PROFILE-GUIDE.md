@@ -82,7 +82,7 @@ This guide explains how to create custom MCP tool profiles for any OpenAPI-compl
 - **`interceptors`** (optional): Auth, rate limiting, retry configuration
 - **`enterprise_authorization`** (optional): HTTP-only inbound authorization policy for enterprise-managed JWT bearer grant exchange
 - **`upstream_mcp`** (optional): Remote upstream MCP provider object for proxy/federation roadmap support (singular — exactly one upstream per profile)
-- **`upstream_mcp_from_env`** (optional): Env var name containing a single JSON object describing the upstream MCP provider; overrides `upstream_mcp` when set to non-empty JSON
+- **`upstream_mcp_from_env`** (optional): Env var name containing a single JSON object describing the upstream MCP provider; overrides `upstream_mcp` when set to non-empty JSON. When the static provider has a tool policy, the resolved env provider must preserve that policy and cannot broaden or remove it.
 
 `enterprise_authorization` supports selective env-backed fields so deployments can override issuer and policy settings without editing the profile file. Supported `*_from_env` fields in the first iteration:
 
@@ -107,7 +107,7 @@ When `enterprise_authorization.mode` is `required`, HTTP initialization accepts 
 - `auth` is **optional**. When omitted, the auth format is inherited from `interceptors.auth` (see below).
 - `auth.type` may be `bearer`, `token`, `query`, or `custom-header`. Set explicitly only when the upstream expects a different format than inbound clients use.
 - `auth.value_from_env` names the env variable holding the credential — **stdio transport only**. On HTTP transport the downstream client's session token is always forwarded directly; `value_from_env` is never read.
-- `upstream_mcp_from_env` must point to a single JSON object and takes precedence over static `upstream_mcp`
+- `upstream_mcp_from_env` must point to a single JSON object and takes precedence over static `upstream_mcp` when it resolves to a non-empty value. An unset value resolves to no provider unless a static `upstream_mcp` is also configured.
 - `stdio` upstream definitions are intentionally rejected in this iteration so the later feature-gated implementation can add process lifecycle hardening separately
 
 #### Auth inheritance from `interceptors.auth`
@@ -703,8 +703,115 @@ Browser-based authentication with PKCE flow (HTTP transport only):
 
 - **Autodiscovery**: `issuer` auto-derives authorization/token endpoints (RFC 8414)
 - **Rate limiting**: Custom rate limits for OAuth endpoints (default: 10 requests per 1 minute)
-- **Scopes**: Optional, API-specific permissions
+- **Scopes**: Optional, API-specific permissions. A non-empty `oauth_config.scopes` list is authoritative for the external authorization request; use a client-requested scope only when the profile list is omitted or empty.
 - See [OAuth Guide](./OAUTH.md) for complete setup
+
+#### Consent-Gated Upstream MCP
+
+`consent_gate` adds explicit human approval before an authenticated user may call an upstream MCP tool. It reuses the profile OAuth flow; do not configure a second OAuth client for consent. Set `consent_gate.required` to `true` only when the loader resolves an effective `upstream_mcp` provider. A required gate cannot protect a local-only `tools[]` profile or a profile that mixes local tools with an upstream. Required gates need a profile OAuth interceptor with the `openid` scope so the gateway can verify and bind evidence to the OIDC `oid`/`sub` claim.
+
+```json
+{
+  "consent_gate": {
+    "required": true,
+    "rules_version": "v1",
+    "rules_summary": "Access to SharePoint requires accepting the usage rules.",
+    "education_resource": "https://intranet.example/ms365-ai-rules",
+    "identity_source": "profile_oauth"
+  },
+  "interceptors": {
+    "auth": {
+      "type": "oauth",
+      "oauth_config": {
+        "issuer": "https://login.microsoftonline.com/<tenant-id>/v2.0",
+        "client_id": "${env:SOFTERIA_ENTRA_CLIENT_ID}",
+        "client_secret": "${env:SOFTERIA_ENTRA_CLIENT_SECRET}",
+        "redirect_uri": "https://gateway.example/profile/softeria-sharepoint/oauth/callback",
+        "scopes": ["openid", "Files.Read", "Sites.Selected"]
+      }
+    }
+  }
+}
+```
+
+Pair this fragment with an `upstream_mcp` or an env-backed configuration that resolves to a valid provider in the same profile. The environment variable name alone is not sufficient.
+
+### Consent page customization
+
+The consent screens (info page, approval form, expired page) can be fully restyled per deployment without touching code:
+
+```json
+{
+  "consent_gate": {
+    "...": "...",
+    "template_path": "./softeria-sharepoint.consent.html",
+    "labels": {
+      "accept": "I accept the usage rules, version {{rules_version}}",
+      "submit": "Confirm consent"
+    }
+  }
+}
+```
+
+- `template_path` (relative to the profile file) points at a full-page HTML template. It MUST contain `{{consent_body}}` - the server replaces it with the security-owned block (the approval form, the info block, or the expired block); a template without it fails profile load. Optional cosmetic placeholders: `{{rules_version}}`, `{{rules_summary}}`, `{{education_resource}}`, `{{title}}` (values are HTML-escaped). Inline CSS is allowed by the page CSP; scripts are not (`script-src` stays `'none'`) - JavaScript on the consent page could submit the form programmatically, which would break the provable-human-consent guarantee.
+- `labels.accept` / `labels.submit` override the checkbox and button texts; `{{rules_version}}` inside `accept` is substituted at render time.
+- **Hashing split**: `labels` are consent-meaningful and part of the rules hash - changing them invalidates existing grants, exactly like `rules_summary`/`education_resource`. The template is deliberately NOT hashed, so layout/CSS/surrounding-copy changes never force org-wide re-consent. Consequence for compliance: the canonical record of what a subject accepted is the hashed material (`rules_version`, `rules_summary`, `education_resource`, `labels`), not the rendered page.
+- The form mechanics (hidden OAuth fields, one-time token, `__Host-` cookie binding, required checkbox, POST target) and the security headers (CSP, `Cache-Control: no-store`) are always server-owned; a template cannot alter them.
+- Tunables: `MCP4_CONSENT_APPROVAL_TTL_MS` (default 5 minutes) and `MCP4_CONSENT_PENDING_MAX` (default 10000) bound the pending-approval store.
+- Preview locally with `scripts/demo-consent-screen.sh`.
+
+The browser first displays the rules and requires an explicit checkbox submission. The approval token is one-time, expires after five minutes, and is bound to the complete OAuth request. The subsequent ID token is verified against OIDC discovery/JWKS, issuer, audience, signature, expiry, and nonce before evidence is recorded. The identity verifier requires the discovered `jwks_uri` to share the issuer's origin (Entra-style); split-host IdPs whose JWKS lives on a different host (e.g. Google) are intentionally rejected. A `rules_version` change forces re-acceptance. Consent evidence is bound to the verified subject, canonical issuer, tenant context, profile ID, and rules version. Authorization, consent evidence, and in-memory principals retain the raw verified subject. Logs and audit identity fields instead use a stable, one-way SHA-256-derived pseudonym for each nonempty subject.
+
+When an encrypted OAuth envelope is recovered after restart, its verified OIDC identity is retained through subsequent initialization so consent-gated reconnects remain valid. A direct `refresh_token` grant on a consent-gated profile is rejected unless it presents an identity-bearing `mcp4.r1.*` envelope, so a refresh can never mint a session with an unknown principal.
+
+Both `MCP4_CONSENT_EVIDENCE_PATH` (absolute writable path for durable single-node JSONL evidence) and `MCP4_OAUTH_KEY` are required when `consent_gate.required` is `true`; the gateway refuses to start without either. The in-memory store applies only to profiles that do not require consent and is intended for tests. Operational constraints - single-node evidence store, sticky sessions for the approval flow, evidence file growth with a 32 MiB cap and manual compaction, and the multi-replica backend tracked in `TODO.md` - are collected in [HTTP Transport -> Consent Gate Operations](./HTTP-TRANSPORT.md#consent-gate-operations).
+
+Optional policy fields:
+
+- `max_age_days`: a grant older than this many days no longer satisfies the gate and the user must accept again. Omitted means grants do not expire on age.
+- `rules_summary` and `education_resource` are both folded into `rules_hash` (sha256 over `rules_version` + `rules_summary` + `education_resource`), which every grant stores. Editing either one invalidates all existing grants even without a `rules_version` bump, because a stored grant no longer matches the rules the gateway now renders. The content of the page behind `education_resource` is not pinned: the gateway pins only the link it displayed and cannot verify remote content.
+
+Enforcement happens at the single upstream-dispatch chokepoint, so `tools/list` and `tools/call` behave identically. A denied call returns JSON-RPC `-32004` with `consent_url`; the denial reason is logged, not returned. See [HTTP Transport -> Consent Gate](./HTTP-TRANSPORT.md#consent-gate).
+
+##### Validating the Softeria SharePoint tool catalog
+
+Validate the gateway allow-list against the tool catalog the pinned upstream version actually exposes. Do not use `--list-permissions` for this: it emits only Graph permission strings (`permissions`, `toolPermissions`, `effectivePermissions`, `disabledTools`, `missingAllowedScopesForTools`) and no tool names, and combined with `--http` it prints its report and exits without serving. Capture the catalog over MCP instead. No tenant, credentials, or browser are required.
+
+```bash
+# 1. Start the pinned server in read-only discovery mode.
+#    Do not pass --enabled-tools here: it would filter the catalog you are trying to observe.
+npx -y @softeria/ms-365-mcp-server@0.136.0 \
+  --read-only \
+  --org-mode \
+  --allow-unauthenticated-discovery \
+  --http 127.0.0.1:39117 &
+
+# 2. Initialize an MCP session.
+curl -s -X POST http://127.0.0.1:39117/mcp \
+  -H 'Content-Type: application/json' \
+  -H 'Accept: application/json, text/event-stream' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"catalog-capture","version":"1.0.0"}}}'
+
+# 3. List tools and extract the names.
+curl -s -X POST http://127.0.0.1:39117/mcp \
+  -H 'Content-Type: application/json' \
+  -H 'Accept: application/json, text/event-stream' \
+  -H 'mcp-protocol-version: 2025-03-26' \
+  -d '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}' \
+  | sed -n 's/^data: //p' | jq -r '.result.tools[].name' | sort
+```
+
+The captured v0.136.0 read-only catalog (163 tools, captured 2026-08-12) is committed as `tests/profiles/softeria-sharepoint/upstream-catalog-0.136.0.fixture.json`. `src/profile/softeria-profile.test.ts` asserts that every `upstream_mcp.tools.allow` entry exists in that fixture, so an allow-list entry that upstream does not expose fails CI. When you move to a different upstream version, recapture the fixture with the steps above and update its `upstream_version` and `captured_at` metadata in the same commit.
+
+`--list-permissions` remains useful for the separate question of which Graph scopes the enabled tool set requires, but it cannot confirm which tools exist.
+
+The reference profile `tests/profiles/softeria-sharepoint/profile.json` (kept here as a test fixture; the production copy lives in the internal deployment repository) pins the read-only catalog by exact tool name. Do not replace it with substring globs such as `*site*` or `*drive*`: similarly named mutation tools would match. The gateway list is defense in depth; pin the upstream server version and keep its own read-only configuration enabled. Deployment env overrides may change the endpoint and auth details, but the static tool policy must remain compatible. An override that points at a different origin than the profile is allowed on purpose (staging, an egress proxy) and is not rejected; it is logged instead. At profile load the gateway logs the effective upstream endpoint, and logs a warning (`Upstream MCP endpoint overridden to a different origin by the environment`) when the override leaves the profile's origin, so a copied or stale value is visible in startup logs rather than silently redirecting traffic. The runnable test profile is `tests/profiles/consent-gate/profile.json`.
+
+**Downloads stay mediated: `get-download-url` is deliberately excluded.** Upstream describes it as resolving "a short-lived, pre-authenticated download URL" whose bytes stream "with NO Authorization header". That URL points at Microsoft Graph, not at the upstream MCP server, so blocking client access to the upstream server does not contain it: anyone holding the string can fetch the content, and those bytes never traverse the gateway, the consent gate, the `tools.allow` policy, or the audit trail until the URL expires.
+
+`download-bytes` is allowed instead. It returns content as base64 through the gateway, so every byte stays inside the gate and the audit trail. The trade-off is real: upstream recommends the URL for anything above a few kB because base64 passes through the agent context. A gateway-mediated streaming proxy that would restore large-file efficiency without the out-of-band URL is tracked as a candidate in `TODO.md`.
+
+`src/profile/softeria-profile.test.ts` asserts that `get-download-url` is absent from the allow-list and that an environment override cannot re-add it.
 
 ### Base URL
 
