@@ -31,7 +31,7 @@ import type { Logger } from '../core/logger.js';
 import type { OidcIdentity, OidcIdentityVerifier } from './oidc-identity-verifier.js';
 import { normalizeIssuer } from './issuer.js';
 import { REFRESH_IDENTITY_TTL_MS } from './token-envelope.js';
-import { AuthenticationError } from '../core/errors.js';
+import { AuthenticationError, ValidationError } from '../core/errors.js';
 import { matchEnvRefName, resolveEnvRef } from '../core/env-ref.js';
 import {
   DEFAULT_ALLOWED_REDIRECT_HOSTS,
@@ -112,11 +112,19 @@ export function isOAuthConfigOperational(config: OAuthConfig): OAuthOperationalC
 }
 
 /**
+ * RFC 7636 4.1: a PKCE code_verifier is 43-128 chars from the unreserved set
+ * [A-Z / a-z / 0-9 / "-" / "." / "_" / "~"]. Enforced before the S256 compare
+ * so malformed verifiers are rejected as invalid_request, not invalid_grant.
+ */
+const PKCE_CODE_VERIFIER_PATTERN = /^[A-Za-z0-9\-._~]{43,128}$/;
+
+/**
  * State preserved across the redirect to external provider
  */
 interface AuthorizationState {
   clientRedirectUri: string;
   codeChallenge: string;
+  codeChallengeMethod: string;
   originalState?: string;
   clientId: string;
   scopes?: string[];
@@ -775,11 +783,22 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
    */
   async authorize(
     client: OAuthClientInformationFull,
-    params: AuthorizationParams,
+    params: AuthorizationParams & { codeChallengeMethod?: string },
     res: Response
   ): Promise<void> {
     await this.ensureEndpointsInitialized();
-    
+
+    // RFC 7636 / OAuth 2.1: PKCE is mandatory. The HTTP layer already rejects
+    // requests without an S256 challenge; this is a defense-in-depth guard so a
+    // code can never be issued without a bound S256 challenge.
+    if (!params.codeChallenge) {
+      throw new ValidationError('code_challenge is required (PKCE)');
+    }
+    const codeChallengeMethod = params.codeChallengeMethod ?? 'S256';
+    if (codeChallengeMethod !== 'S256') {
+      throw new ValidationError('code_challenge_method must be S256');
+    }
+
     this.logger.info('Starting OAuth authorization', {
       clientId: client.client_id,
       scopes: params.scopes,
@@ -828,6 +847,7 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
     this.stateStore.set(stateToken, {
       clientRedirectUri: params.redirectUri,
       codeChallenge: params.codeChallenge,
+      codeChallengeMethod,
       originalState: params.state,
       clientId: client.client_id,
       scopes: effectiveScopes,
@@ -1054,22 +1074,36 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
       throw new Error('Authorization code expired');
     }
 
-    // Validate PKCE if code challenge was provided
-    if (codeData.params.codeChallenge) {
-      if (!codeVerifier) {
-        throw new Error('code_verifier is required for PKCE');
-      }
-      
-      // Verify code challenge (S256 method)
-      const hash = createHash('sha256').update(codeVerifier).digest('base64url');
+    // PKCE is mandatory (RFC 7636 / OAuth 2.1): every issued code carries an
+    // S256 challenge, so verification is always required. Any failure consumes
+    // the single-use code before throwing so a wrong verifier cannot be retried.
+    const consumeCode = (): void => {
+      this.authorizationCodes.delete(authorizationCode);
+      this._clientsStore.markAuthCodeClosed(codeData.client.client_id);
+    };
 
-      // Use constant-time comparison to prevent timing attacks
-      const hashBuffer = Buffer.from(hash);
-      const challengeBuffer = Buffer.from(codeData.params.codeChallenge);
+    // Defensive: a code without a bound challenge must never exist now.
+    if (!codeData.params.codeChallenge) {
+      consumeCode();
+      throw new Error('Authorization code has no bound PKCE challenge');
+    }
+    if (!codeVerifier) {
+      consumeCode();
+      throw new Error('code_verifier is required for PKCE');
+    }
+    if (!PKCE_CODE_VERIFIER_PATTERN.test(codeVerifier)) {
+      consumeCode();
+      throw new ValidationError('code_verifier does not meet RFC 7636 length/charset requirements');
+    }
 
-      if (hashBuffer.length !== challengeBuffer.length || !timingSafeEqual(hashBuffer, challengeBuffer)) {
-        throw new Error('Invalid code_verifier');
-      }
+    // Verify code challenge (S256 method) with constant-time comparison.
+    const hash = createHash('sha256').update(codeVerifier).digest('base64url');
+    const hashBuffer = Buffer.from(hash);
+    const challengeBuffer = Buffer.from(codeData.params.codeChallenge);
+
+    if (hashBuffer.length !== challengeBuffer.length || !timingSafeEqual(hashBuffer, challengeBuffer)) {
+      consumeCode();
+      throw new Error('Invalid code_verifier');
     }
 
     if (!codeData.tokens) {

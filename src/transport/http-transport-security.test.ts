@@ -559,6 +559,8 @@ describe('HttpTransport security behavior (no listen)', () => {
         response_type: 'code',
         client_id: 'unknown-client',
         redirect_uri: 'http://localhost/cb',
+        code_challenge: 'challenge',
+        code_challenge_method: 'S256',
       },
       headers: {},
     };
@@ -691,12 +693,127 @@ describe('HttpTransport security behavior (no listen)', () => {
 
     const app = (transport as any).app;
     const handler = getExpressRouteHandler(app, 'get', '/oauth/authorize');
-    const req: any = { query: { response_type: 'code', client_id: 'test-client', redirect_uri: 'http://localhost/cb' }, headers: {} };
+    const req: any = { query: { response_type: 'code', client_id: 'test-client', redirect_uri: 'http://localhost/cb', code_challenge: 'challenge', code_challenge_method: 'S256' }, headers: {} };
     const res = createMockResponse();
     await handler(req, res);
 
     expect(res.statusCode).toBe(500);
     expect(String(res.body)).toContain('OAuth authorization failed');
+
+    await transport.stop();
+  });
+
+  it('rejects /oauth/authorize without a PKCE code_challenge (invalid_request)', async () => {
+    const transport = createTransport({
+      oauthConfig: { issuer: 'https://auth.example.com', client_id: 'test-client', client_secret: 'test-secret', scopes: ['read'] },
+    });
+    const authorize = vi.fn(async () => {});
+    createProfileState(transport as any).oauthProvider = {
+      ensureEndpointsInitialized: async () => {},
+      clientsStore: { getClient: async () => ({ client_id: 'test-client' }) },
+      authorize,
+    };
+
+    const app = (transport as any).app;
+    const handler = getExpressRouteHandler(app, 'get', '/oauth/authorize');
+    const req: any = { query: { response_type: 'code', client_id: 'test-client', redirect_uri: 'http://localhost/cb' }, headers: {} };
+    const res = createMockResponse();
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(400);
+    expect(res.body).toMatchObject({ error: 'invalid_request' });
+    expect(authorize).not.toHaveBeenCalled();
+
+    await transport.stop();
+  });
+
+  it('rejects /oauth/authorize with a non-S256 code_challenge_method (invalid_request)', async () => {
+    const transport = createTransport({
+      oauthConfig: { issuer: 'https://auth.example.com', client_id: 'test-client', client_secret: 'test-secret', scopes: ['read'] },
+    });
+    const authorize = vi.fn(async () => {});
+    createProfileState(transport as any).oauthProvider = {
+      ensureEndpointsInitialized: async () => {},
+      clientsStore: { getClient: async () => ({ client_id: 'test-client' }) },
+      authorize,
+    };
+
+    const app = (transport as any).app;
+    const handler = getExpressRouteHandler(app, 'get', '/oauth/authorize');
+    const req: any = {
+      query: { response_type: 'code', client_id: 'test-client', redirect_uri: 'http://localhost/cb', code_challenge: 'challenge', code_challenge_method: 'plain' },
+      headers: {},
+    };
+    const res = createMockResponse();
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(400);
+    expect(res.body).toMatchObject({ error: 'invalid_request' });
+    expect(authorize).not.toHaveBeenCalled();
+
+    await transport.stop();
+  });
+
+  it('maps a malformed code_verifier to invalid_request at /oauth/token', async () => {
+    const transport = createTransport({
+      oauthConfig: { issuer: 'https://auth.example.com', client_id: 'test-client', client_secret: 'test-secret', scopes: ['read'] },
+    });
+    createProfileState(transport as any).oauthProvider = {
+      ensureEndpointsInitialized: async () => {},
+      clientsStore: { getClient: async () => ({ client_id: 'test-client', client_secret: 'server-secret', scope: 'read' }) },
+      exchangeAuthorizationCode: async () => {
+        throw new ValidationError('code_verifier does not meet RFC 7636 length/charset requirements');
+      },
+    };
+
+    const app = (transport as any).app;
+    const handler = getExpressRouteHandler(app, 'post', '/oauth/token');
+    const req: any = {
+      body: { grant_type: 'authorization_code', code: 'abc', client_id: 'test-client', client_secret: 'server-secret', code_verifier: 'short' },
+      headers: {},
+    };
+    const res = createMockResponse();
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(400);
+    expect(res.body).toMatchObject({ error: 'invalid_request' });
+
+    await transport.stop();
+  });
+
+  it('fails closed with 401 invalid_token + WWW-Authenticate when a session token is expired and cannot refresh', async () => {
+    const transport = createTransport();
+    transport.setMessageHandler(async () => ({ result: 'ok' }));
+    const profileState = createProfileState(transport as any);
+    // Expired access token, no refresh token available -> refresh cannot succeed.
+    profileState.sessions.set('expired-1', {
+      id: 'expired-1',
+      createdAt: Date.now(),
+      lastActivityAt: Date.now(),
+      sseStreams: new Map(),
+      authToken: 'stale-access',
+      accessTokenExpiresAt: Date.now() - 60_000,
+      replayQueue: [],
+      nextEventId: 0,
+    });
+
+    const app = (transport as any).app;
+    const handler = getExpressRouteHandler(app, 'post', '/mcp');
+    const req: any = {
+      method: 'POST',
+      path: '/mcp',
+      url: '/mcp',
+      sessionId: 'expired-1',
+      headers: { accept: 'application/json', host: 'localhost' },
+      body: { jsonrpc: '2.0', id: 1, method: 'tools/list' },
+    };
+    const res = createMockResponse();
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(401);
+    expect(res.body).toMatchObject({ error: 'invalid_token' });
+    expect(String(res.headers['www-authenticate'])).toContain('error="invalid_token"');
+    expect(String(res.headers['www-authenticate'])).toContain('resource_metadata=');
 
     await transport.stop();
   });

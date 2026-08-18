@@ -295,8 +295,10 @@ describeIfListen('OAuth Security Issues - Proof Tests', () => {
           'http://localhost:3000/callback'
         )
       ).rejects.toThrow('code_verifier');
-      
-      // This test VERIFIES the fix: PKCE validation is now present
+
+      // This test VERIFIES the fix: PKCE validation is now present, and a failed
+      // PKCE attempt consumes the single-use code (no retry/guessing).
+      expect((provider as any).authorizationCodes.has(code)).toBe(false);
     });
   });
 });

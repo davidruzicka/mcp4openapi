@@ -2087,6 +2087,25 @@ export class HttpTransport {
         return;
       }
 
+      // RFC 7636 / OAuth 2.1: PKCE is mandatory. Require an S256 code_challenge;
+      // reject a missing challenge, method "plain", or any unknown method with
+      // invalid_request semantics (proper error-redirect handling is tracked
+      // separately, so this stays a direct 400 like the checks above).
+      if (!code_challenge || typeof code_challenge !== 'string') {
+        res.status(HTTP_STATUS.BAD_REQUEST).json({
+          error: 'invalid_request',
+          error_description: 'code_challenge is required (PKCE)',
+        });
+        return;
+      }
+      if (code_challenge_method !== 'S256') {
+        res.status(HTTP_STATUS.BAD_REQUEST).json({
+          error: 'invalid_request',
+          error_description: 'code_challenge_method must be S256',
+        });
+        return;
+      }
+
       await profileState.oauthProvider.ensureEndpointsInitialized();
       const client = await this.resolveOAuthClientForRequest(profileState, client_id, redirect_uri);
       if (!client) {
@@ -2204,7 +2223,13 @@ export class HttpTransport {
             access_token: clientToken,
             ...(clientRefreshToken ? { refresh_token: clientRefreshToken } : {}),
           });
-        } catch {
+        } catch (error) {
+          // A malformed code_verifier (RFC 7636 charset/length) is a request
+          // error, not a grant error: let it reach mapAuthError as
+          // invalid_request. Everything else collapses to invalid_grant.
+          if (error instanceof ValidationError) {
+            throw error;
+          }
           response.status(HTTP_STATUS.BAD_REQUEST).json({ error: 'invalid_grant', error_description: 'Token exchange failed' });
         }
       },
@@ -3114,6 +3139,22 @@ export class HttpTransport {
             });
           }
         }
+
+        // RFC 6750 3.1: the resource server must fail closed when the access
+        // token is expired and cannot be refreshed. Enforce access-token expiry
+        // on every request (not only at restart-recovery): ensureValidSessionToken
+        // refreshes when possible and returns false when the token is expired and
+        // no refresh is available/succeeds.
+        const tokenStillValid = await this.ensureValidSessionToken(profileState.profileId, sessionId);
+        if (!tokenStillValid) {
+          const resourceMetadataUrl = this.getOAuthProtectedResourceUrl(requestProfileId);
+          res.setHeader('WWW-Authenticate', `Bearer error="invalid_token", resource_metadata="${resourceMetadataUrl}"`);
+          res.status(HTTP_STATUS.UNAUTHORIZED).json({
+            error: 'invalid_token',
+            error_description: 'Access token expired and could not be refreshed',
+          });
+          return;
+        }
       } else if (!isInitialization && !sessionId) {
         this.logger.debug('Session validation failed: non-init request without sessionId');
         res.status(HTTP_STATUS.BAD_REQUEST).json({ error: 'Bad Request', message: 'Mcp-Session-Id header required (except for initialization)' });
@@ -3454,6 +3495,8 @@ export class HttpTransport {
                     ageMs: Date.now() - envelope.iat,
                     maxAgeMs: MAX_ENVELOPE_AGE_MS,
                   });
+                  const resourceMetadataUrl = this.getOAuthProtectedResourceUrl(requestProfileId);
+                  res.setHeader('WWW-Authenticate', `Bearer error="invalid_token", resource_metadata="${resourceMetadataUrl}"`);
                   res.status(HTTP_STATUS.UNAUTHORIZED).json({
                     error: 'Unauthorized',
                     message: 'Session token expired, please re-authenticate',
