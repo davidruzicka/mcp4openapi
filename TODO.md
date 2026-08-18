@@ -6,8 +6,6 @@
 
 ## Contents
 
-- [P1: Important](#p1-important)
-  - [1. Add a transactional multi-replica consent evidence backend](#1-add-a-transactional-multi-replica-consent-evidence-backend)
 - [P3: Optional](#p3-optional)
   - [17. Eager SSRF validation for SasankaApiKeyStore at profile load](#17-eager-ssrf-validation-for-sasankaapikeystore-at-profile-load)
   - [18. Remove legacy SHA-256 token envelope KDF fallback](#18-remove-legacy-sha-256-token-envelope-kdf-fallback)
@@ -27,17 +25,6 @@
   - [14. Consider strict OAuth redirect scheme allowlist](#14-consider-strict-oauth-redirect-scheme-allowlist)
   - [15. Replace JSON fingerprint auth comparison for tenant collisions](#15-replace-json-fingerprint-auth-comparison-for-tenant-collisions)
   - [16. Extract tenant session lifecycle from HttpTransport](#16-extract-tenant-session-lifecycle-from-httptransport)
-
-## P1: Important
-
-### 1. Add a transactional multi-replica consent evidence backend
-**Goal** (AIPP-432): Replace the single-node append-only file backend with a transactional store shared by all HTTP replicas. The current `FileConsentEvidenceStore` is durable and reloads external writes, but concurrent grants across multiple writers are not transactionally deduplicated.
-
-**Implementation**:
-- Add a database/managed-store implementation behind `ConsentEvidenceStore` with a unique key on subject + canonical issuer + tenant + profile + rules version, and persist revocation records alongside grants.
-- Preserve the original `granted_at` on idempotent replays and expose storage failures as fail-closed typed errors.
-- Keep policy out of the backend: TTL, revocation, rules pinning and rules-version rollback are evaluated in `ConsentGate`, so a backend only implements `record`, `revoke` and `lookup`. Reuse `src/testing/consent-store-contract.ts` as the conformance suite.
-- Add concurrency, restart, partial-outage, and multi-replica tests.
 
 ## P2: Nice-to-Have
 
