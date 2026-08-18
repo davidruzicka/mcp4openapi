@@ -56,7 +56,7 @@ import { configureObservabilityPseudonym, pseudonymizeSubject } from '../auth/ob
 import { ClientAuthGateError } from '../core/errors.js';
 import { buildAuthorizationServerMetadata, buildProtectedResourceMetadata } from '../auth/enterprise-metadata.js';
 import { mapAuthError } from '../auth/auth-error-mapper.js';
-import { redactAuthPayload } from '../auth/auth-redaction.js';
+import { redactAuthPayload, sanitizeAuthErrorMessage } from '../auth/auth-redaction.js';
 import { OAuthGrantRouter } from './oauth-grant-router.js';
 import { SSRFValidator } from '../security/ssrf-validator.js';
 import type { AuthInterceptor, OAuthConfig, UpstreamMcpServerConfig } from '../types/profile.js';
@@ -3052,7 +3052,7 @@ export class HttpTransport {
       }
       const trimmed = authHeader.trim();
 
-      const bearerMatch = trimmed.match(/^Bearer\s+(.+)$/);
+      const bearerMatch = trimmed.match(/^Bearer\s+(.+)$/i);
       if (bearerMatch) {
         const token = bearerMatch[1].trim();
         this.validateToken(token, 'Authorization token');
@@ -3255,6 +3255,36 @@ export class HttpTransport {
         if (authInfo.token && authInfo.type !== 'oauth') {
           const previousToken = session.authToken;
           if (!previousToken || previousToken !== authInfo.token) {
+            // AIPP-572 item 5: a replacement token was previously accepted with no
+            // validation (the upstream check ran only at init). Re-run the same
+            // validation before swapping the session credential; reject on failure.
+            if (previousToken) {
+              const baseUrl = session.tenantBaseUrl || profileState.context.baseUrl || '';
+              if (baseUrl) {
+                const swapResult = await this.validateClientTokenAgainstConfig(
+                  effectiveAuthContext.authConfigs || [],
+                  authInfo.type,
+                  authInfo.token,
+                  baseUrl,
+                  false,
+                  profileState,
+                );
+                if (!swapResult.skipped && !swapResult.validated) {
+                  this.logger.warn('Rejected mid-session auth token replacement (validation failed)', {
+                    profileId: profileState.profileId,
+                    sessionId,
+                    authType: authInfo.type,
+                  });
+                  this.sendMcpAuthChallenge(
+                    res,
+                    requestProfileId,
+                    'invalid_token',
+                    'Replacement authentication token is invalid or expired',
+                  );
+                  return;
+                }
+              }
+            }
             session.authToken = authInfo.token;
             this.logger.info('Session auth token updated', {
               profileId: profileState.profileId,
@@ -3272,12 +3302,12 @@ export class HttpTransport {
         // no refresh is available/succeeds.
         const tokenStillValid = await this.ensureValidSessionToken(profileState.profileId, sessionId);
         if (!tokenStillValid) {
-          const resourceMetadataUrl = this.getOAuthProtectedResourceUrl(requestProfileId);
-          res.setHeader('WWW-Authenticate', `Bearer error="invalid_token", resource_metadata="${resourceMetadataUrl}"`);
-          res.status(HTTP_STATUS.UNAUTHORIZED).json({
-            error: 'invalid_token',
-            error_description: 'Access token expired and could not be refreshed',
-          });
+          this.sendMcpAuthChallenge(
+            res,
+            requestProfileId,
+            'invalid_token',
+            'Access token expired and could not be refreshed',
+          );
           return;
         }
       } else if (!isInitialization && !sessionId) {
@@ -3332,25 +3362,18 @@ export class HttpTransport {
             isOAuthConfigOperational(effectiveAuthContext.oauthConfig).operational;
           if (oauthActive && !authInfo.token) {
             this.logger.debug('OAuth configured but no token provided, triggering OAuth flow');
-            const resourceMetadataUrl = this.getOAuthProtectedResourceUrl(requestProfileId);
-            const scopeValue = effectiveAuthContext.oauthConfig?.scopes?.join(' ') || 'api';
-            res.setHeader('WWW-Authenticate', `Bearer resource_metadata="${resourceMetadataUrl}", scope="${scopeValue}"`);
-            res.status(HTTP_STATUS.UNAUTHORIZED).json({
-              error: 'Unauthorized',
-              message: 'Authentication required for OAuth'
-            });
+            this.sendMcpAuthChallenge(res, requestProfileId, 'invalid_request', 'Authentication required for OAuth');
             return;
           }
 
           if (effectiveAuthContext.enterpriseAuthorization?.enabled && effectiveAuthContext.enterpriseAuthorization.mode === 'required') {
             if (!this.hasTrustedEnterpriseToken(requestProfileId, authInfo.token, resolvedTenant?.tenantId)) {
-              const resourceMetadataUrl = this.getOAuthProtectedResourceUrl(requestProfileId);
-              const scopeValue = effectiveAuthContext.enterpriseAuthorization.access_policy?.scopes_supported?.join(' ') || 'api';
-              res.setHeader('WWW-Authenticate', `Bearer resource_metadata="${resourceMetadataUrl}", scope="${scopeValue}"`);
-              res.status(HTTP_STATUS.UNAUTHORIZED).json({
-                error: 'Unauthorized',
-                message: 'Enterprise authorization required'
-              });
+              this.sendMcpAuthChallenge(
+                res,
+                requestProfileId,
+                authInfo.token ? 'invalid_token' : 'invalid_request',
+                'Enterprise authorization required',
+              );
               return;
             }
           }
@@ -3378,12 +3401,41 @@ export class HttpTransport {
                 errorType: isClientAuthGateError ? 'ClientAuthGateError' : 'unknown',
                 ...(isClientAuthGateError ? {} : { errorStack: err instanceof Error ? err.stack : undefined }),
               });
-              res.status(HTTP_STATUS.UNAUTHORIZED).json({
-                error: 'Unauthorized',
-                message: 'Client authentication failed',
-              });
+              this.sendMcpAuthChallenge(
+                res,
+                requestProfileId,
+                authInfo.token ? 'invalid_token' : 'invalid_request',
+                'Client authentication failed',
+              );
               return;
             }
+          }
+
+          // AIPP-572 item 3: on an OAuth-required profile a non-OAuth credential
+          // (X-API-Token / DRF Token / custom-header) must not shadow OAuth by
+          // creating an unvalidated session. Only OAuth bearer/access tokens may
+          // establish a session here. Consent/JWT-gated profiles are already
+          // handled by the client auth gate above; enterprise tokens
+          // (internalToken) gate earlier. Reject everything else with a challenge.
+          if (
+            oauthActive &&
+            !profileState.clientAuthGate &&
+            !internalToken &&
+            authInfo.token &&
+            authInfo.type !== 'bearer' &&
+            authInfo.type !== 'oauth'
+          ) {
+            this.logger.warn('Rejected non-OAuth credential on OAuth-required profile', {
+              profileId: requestProfileId,
+              authType: authInfo.type,
+            });
+            this.sendMcpAuthChallenge(
+              res,
+              requestProfileId,
+              'invalid_token',
+              'OAuth authentication required; non-OAuth credential rejected',
+            );
+            return;
           }
 
           // Require a client token only when auth is configured and server env fallback is unavailable.
@@ -3395,75 +3447,48 @@ export class HttpTransport {
               profileId: requestProfileId,
               authConfigsCount: authConfigs.length
             });
-            res.status(HTTP_STATUS.UNAUTHORIZED).json({
-              error: 'Unauthorized',
-              message: 'Authentication required'
-            });
+            this.sendMcpAuthChallenge(res, requestProfileId, 'invalid_request', 'Authentication required');
             return;
           }
 
-          // Validate token if auth is configured and token is provided
+          // Validate token if auth is configured and token is provided.
+          // The config selection + envelope decrypt + upstream validation is shared
+          // with the mid-session token-swap path (validateClientTokenAgainstConfig):
+          // when oauth is active, bearer tokens may be OAuth access tokens (Cursor/VS
+          // Code send them via Authorization on initialize) so the oauth config takes
+          // priority; otherwise an exact type match wins.
           if (!profileState.clientAuthGate && authInfo && authInfo.token && !internalToken && authConfigs.length > 0 && (resolvedTenant?.tenantBaseUrl || profileState.context.baseUrl)) {
-            // Find exact type match and oauth fallback in one pass.
-            // When oauth is active, bearer tokens may be OAuth access tokens (Cursor/VS Code
-            // send them via Authorization header on initialize) — oauth config takes priority.
-            // When oauth is not active, exact type match wins so PATs use the bearer config's
-            // endpoint (may require fewer scopes); oauth config is still the fallback when no
-            // bearer config exists.
-            const isAuthBearer = authInfo.type === 'bearer';
-            let exactMatch: AuthInterceptor | undefined;
-            let oauthFallback: AuthInterceptor | undefined;
-            for (const c of authConfigs) {
-              if (c.type === authInfo.type) exactMatch ??= c;
-              else if (isAuthBearer && c.type === 'oauth') oauthFallback ??= c;
-              if (exactMatch && oauthFallback) break;
-            }
-            const authConfig = oauthActive ? (oauthFallback ?? exactMatch) : (exactMatch ?? oauthFallback);
-            
-            if (authConfig && authConfig.validation_endpoint) {
-              // When the client presents an envelope token (mcp4.v1.*), decrypt it first and
-              // validate the inner access_token against the upstream endpoint. Sending the raw
-              // envelope string would fail because the IdP only knows its own token format.
-              // Plain tokens pass through unchanged. Decrypt failure falls through to the raw
-              // envelope string, which the IdP will reject — correct rejection behavior.
-              let tokenToValidate = authInfo.token;
-              const tokenShape = isEncryptedToken(authInfo.token) ? 'envelope' : 'plain';
-              if (this.config.tokenKey && isEncryptedToken(authInfo.token)) {
-                const envelope = decryptTokenPayload(
-                  authInfo.token,
-                  this.config.tokenKey,
-                  profileState.profileId,
-                  this.config.legacyTokenKey,
-                );
-                if (envelope) {
-                  tokenToValidate = envelope.at;
-                }
-              }
+            const validationBaseUrl = resolvedTenant?.tenantBaseUrl || profileState.context.baseUrl || '';
+            const validation = await this.validateClientTokenAgainstConfig(
+              authConfigs,
+              authInfo.type,
+              authInfo.token,
+              validationBaseUrl,
+              oauthActive,
+              profileState,
+            );
 
+            if (!validation.skipped) {
               this.logger.info('Validating auth token during initialization', {
-                authType: authConfig.type,
-                endpoint: authConfig.validation_endpoint,
-                tokenShape,
+                authType: authInfo.type,
+                tokenShape: validation.tokenShape,
               });
 
-              const isValid = await this.validateAuthToken(authConfig, tokenToValidate, resolvedTenant?.tenantBaseUrl || profileState.context.baseUrl || '');
-
-              if (!isValid) {
+              if (!validation.validated) {
                 this.logger.warn('Auth token validation failed during initialization', {
                   authType: authInfo.type,
-                  tokenShape,
+                  tokenShape: validation.tokenShape,
                 });
                 // When OAuth is active, return HTTP 401 with WWW-Authenticate so OAuth-aware
                 // clients (e.g. Cursor) trigger re-auth automatically instead of surfacing a
                 // generic error. Without OAuth, fall back to the JSON-RPC error form.
                 if (oauthActive) {
-                  const resourceMetadataUrl = this.getOAuthProtectedResourceUrl(requestProfileId);
-                  const scopeValue = effectiveAuthContext.oauthConfig?.scopes?.join(' ') || 'api';
-                  res.setHeader('WWW-Authenticate', `Bearer resource_metadata="${resourceMetadataUrl}", scope="${scopeValue}"`);
-                  res.status(HTTP_STATUS.UNAUTHORIZED).json({
-                    error: 'Unauthorized',
-                    message: 'Supplied authentication token is invalid or expired',
-                  });
+                  this.sendMcpAuthChallenge(
+                    res,
+                    requestProfileId,
+                    'invalid_token',
+                    'Supplied authentication token is invalid or expired',
+                  );
                 } else {
                   this.sendInitializeJsonRpcError(
                     res,
@@ -3474,7 +3499,7 @@ export class HttpTransport {
                 return;
               }
 
-              this.logger.info('Auth token validation successful', { tokenShape });
+              this.logger.info('Auth token validation successful', { tokenShape: validation.tokenShape });
             }
           }
 
@@ -3544,10 +3569,7 @@ export class HttpTransport {
                 error: error instanceof Error ? error.message : String(error),
               });
               if (error instanceof UpstreamAuthError) {
-                res.status(HTTP_STATUS.UNAUTHORIZED).json({
-                  error: 'Unauthorized',
-                  message: 'Upstream authentication failed',
-                });
+                this.sendMcpAuthChallenge(res, requestProfileId, 'invalid_token', 'Upstream authentication failed');
                 return;
               }
               // SSRF, timeout, or connection errors - return 502 Bad Gateway
@@ -3620,12 +3642,7 @@ export class HttpTransport {
                     ageMs: Date.now() - envelope.iat,
                     maxAgeMs: MAX_ENVELOPE_AGE_MS,
                   });
-                  const resourceMetadataUrl = this.getOAuthProtectedResourceUrl(requestProfileId);
-                  res.setHeader('WWW-Authenticate', `Bearer error="invalid_token", resource_metadata="${resourceMetadataUrl}"`);
-                  res.status(HTTP_STATUS.UNAUTHORIZED).json({
-                    error: 'Unauthorized',
-                    message: 'Session token expired, please re-authenticate',
-                  });
+                  this.sendMcpAuthChallenge(res, requestProfileId, 'invalid_token', 'Session token expired, please re-authenticate');
                   return;
                 } else {
                   refreshToken = envelope.rt;
@@ -3655,12 +3672,7 @@ export class HttpTransport {
                         profileId: profileState.profileId,
                         subjectHash: pseudonymizeSubject(envelope.sub),
                       });
-                      const resourceMetadataUrl = this.getOAuthProtectedResourceUrl(requestProfileId);
-                      res.setHeader('WWW-Authenticate', `Bearer resource_metadata="${resourceMetadataUrl}", scope="api"`);
-                      res.status(HTTP_STATUS.UNAUTHORIZED).json({
-                        error: 'Unauthorized',
-                        message: 'Re-consent required, please re-authenticate',
-                      });
+                      this.sendMcpAuthChallenge(res, requestProfileId, 'invalid_token', 'Re-consent required, please re-authenticate');
                       return;
                     }
                     resolvedClientPrincipal = {
@@ -3784,10 +3796,11 @@ export class HttpTransport {
         });
 
 
-        // Check if response contains OAuth error and add WWW-Authenticate header
+        // Check if response contains OAuth error and add WWW-Authenticate header.
+        // Body stays the JSON-RPC oauth_required response; only the challenge
+        // header + 401 status are added (RFC 6750 §3).
         if (responseObj.error && responseObj.error.data && responseObj.error.data.oauth_required) {
-          const resourceMetadataUrl = this.getOAuthProtectedResourceUrl(requestProfileId);
-          res.setHeader('WWW-Authenticate', `Bearer resource_metadata="${resourceMetadataUrl}", scope="api"`);
+          this.setMcpAuthChallengeHeader(res, requestProfileId, 'invalid_token');
           res.status(HTTP_STATUS.UNAUTHORIZED); // Set 401 status for OAuth errors
         }
 
@@ -3821,11 +3834,13 @@ export class HttpTransport {
     } catch (error) {
       const correlationId = generateCorrelationId();
       this.logger.error('POST request error', error as Error, { correlationId });
-      res.setHeader('Cache-Control', 'no-store');
-      const { status, errorLabel, message } = this.buildHttpErrorResponse(error, correlationId);
+      const status = this.emitHttpErrorResponse(
+        res,
+        error,
+        correlationId,
+        req.profileId ?? metricsProfileState?.profileId,
+      );
 
-      res.status(status).json({ error: errorLabel, message, correlationId });
-      
       // Record error metrics
       if (this.metrics) {
         const duration = (Date.now() - startTime) / 1000;
@@ -3915,17 +3930,13 @@ export class HttpTransport {
     } catch (error) {
       const correlationId = generateCorrelationId();
       this.logger.error('GET request error', error as Error, { correlationId });
-      const { status, errorLabel, message } = this.buildHttpErrorResponse(error, correlationId);
+      const status = this.emitHttpErrorResponse(
+        res,
+        error,
+        correlationId,
+        req.profileId ?? metricsProfileState?.profileId,
+      );
 
-      if (!res.headersSent) {
-        res.setHeader('Cache-Control', 'no-store');
-        res.status(status).json({
-          error: errorLabel,
-          message,
-          correlationId
-        });
-      }
-      
       // Record error metrics
       if (this.metrics) {
         const duration = (Date.now() - startTime) / 1000;
@@ -4018,12 +4029,12 @@ export class HttpTransport {
     } catch (error) {
       const correlationId = generateCorrelationId();
       this.logger.error('DELETE request error', error as Error, { correlationId });
-      const { status, errorLabel, message } = this.buildHttpErrorResponse(error, correlationId);
-
-      if (!res.headersSent) {
-        res.setHeader('Cache-Control', 'no-store');
-        res.status(status).json({ error: errorLabel, message, correlationId });
-      }
+      const status = this.emitHttpErrorResponse(
+        res,
+        error,
+        correlationId,
+        req.profileId ?? metricsProfileState?.profileId,
+      );
 
       if (this.metrics) {
         const duration = (Date.now() - startTime) / 1000;
@@ -4276,10 +4287,12 @@ export class HttpTransport {
   ): { status: number; errorLabel: string; message: string } {
     for (const rule of HttpTransport.HTTP_ERROR_RESPONSE_RULES) {
       if (error instanceof rule.ctor) {
+        // Route the message through sanitizeAuthErrorMessage so a future
+        // credential-bearing error message cannot reach the client verbatim.
         return {
           status: rule.status,
           errorLabel: rule.errorLabel,
-          message: `${rule.messagePrefix}: ${error.message} (correlation ID: ${correlationId})`,
+          message: `${rule.messagePrefix}: ${sanitizeAuthErrorMessage(error.message)} (correlation ID: ${correlationId})`,
         };
       }
     }
@@ -4289,6 +4302,124 @@ export class HttpTransport {
       errorLabel: 'Internal Server Error',
       message: `Internal error (correlation ID: ${correlationId})`,
     };
+  }
+
+  /**
+   * RFC 6750 §3: set a `WWW-Authenticate: Bearer` challenge with an RFC error
+   * code and the RFC 9728 `resource_metadata` pointer. Centralized so every
+   * /mcp resource-server 401 carries a consistent, discoverable challenge.
+   *
+   * The `scope` attribute is intentionally not advertised: nothing on the
+   * resource-server request path enforces a per-request scope, so advertising a
+   * "required" scope in the challenge would be misleading (see AIPP-572 item 8).
+   */
+  private setMcpAuthChallengeHeader(
+    res: Response,
+    profileId: string | undefined,
+    errorCode: 'invalid_token' | 'invalid_request',
+  ): void {
+    const resourceMetadataUrl = this.getOAuthProtectedResourceUrl(profileId);
+    res.setHeader('WWW-Authenticate', `Bearer error="${errorCode}", resource_metadata="${resourceMetadataUrl}"`);
+  }
+
+  /**
+   * Emit a 401 for the /mcp resource-server path with the RFC 6750 challenge
+   * header and an RFC-conformant JSON body. `message` is preserved alongside
+   * `error_description` for backward-compatible clients.
+   */
+  private sendMcpAuthChallenge(
+    res: Response,
+    profileId: string | undefined,
+    errorCode: 'invalid_token' | 'invalid_request',
+    message: string,
+    extra?: Record<string, unknown>,
+  ): void {
+    this.setMcpAuthChallengeHeader(res, profileId, errorCode);
+    res.status(HTTP_STATUS.UNAUTHORIZED).json({
+      error: errorCode,
+      error_description: message,
+      message,
+      ...(extra ?? {}),
+    });
+  }
+
+  /**
+   * Shared error-response emitter for the POST/GET/DELETE /mcp catch blocks.
+   * When the mapped status is 401 it attaches the RFC 6750 Bearer challenge and
+   * emits an RFC error code (`invalid_token`) instead of an ad-hoc
+   * `{error:'Unauthorized'}` body. Returns the resolved HTTP status so callers
+   * can record metrics. No-ops if the response was already sent.
+   */
+  private emitHttpErrorResponse(
+    res: Response,
+    error: unknown,
+    correlationId: string,
+    profileId: string | undefined,
+  ): number {
+    const { status, errorLabel, message } = this.buildHttpErrorResponse(error, correlationId);
+    if (res.headersSent) {
+      return status;
+    }
+    res.setHeader('Cache-Control', 'no-store');
+    if (status === HTTP_STATUS.UNAUTHORIZED) {
+      this.setMcpAuthChallengeHeader(res, profileId, 'invalid_token');
+      res.status(status).json({ error: 'invalid_token', error_description: message, message, correlationId });
+    } else {
+      res.status(status).json({ error: errorLabel, message, correlationId });
+    }
+    return status;
+  }
+
+  /**
+   * Resolve the auth config that should validate a client-presented token and,
+   * when it declares a `validation_endpoint`, validate the token against the
+   * upstream (decrypting an encrypted envelope first when a token key is set).
+   *
+   * Returns `skipped: true` when no matching config declares a
+   * `validation_endpoint` (validation is not possible / not configured);
+   * otherwise `validated` reflects the upstream result. Shared by session
+   * initialization and mid-session token replacement so both apply the same
+   * check (AIPP-572 item 5: mid-session swap previously bypassed validation).
+   */
+  private async validateClientTokenAgainstConfig(
+    authConfigs: AuthInterceptor[],
+    authType: 'bearer' | 'token' | 'oauth' | 'api-token' | 'none',
+    token: string,
+    baseUrl: string,
+    oauthActive: boolean,
+    profileState: ProfileRuntimeState,
+  ): Promise<{ validated: boolean; skipped: boolean; tokenShape: 'plain' | 'envelope' }> {
+    const isAuthBearer = authType === 'bearer';
+    let exactMatch: AuthInterceptor | undefined;
+    let oauthFallback: AuthInterceptor | undefined;
+    for (const c of authConfigs) {
+      if (c.type === authType) exactMatch ??= c;
+      else if (isAuthBearer && c.type === 'oauth') oauthFallback ??= c;
+      if (exactMatch && oauthFallback) break;
+    }
+    const authConfig = oauthActive ? (oauthFallback ?? exactMatch) : (exactMatch ?? oauthFallback);
+    const tokenShape = isEncryptedToken(token) ? 'envelope' : 'plain';
+    if (!authConfig || !authConfig.validation_endpoint) {
+      return { validated: false, skipped: true, tokenShape };
+    }
+
+    // Envelope tokens (mcp4.v1.*) must be decrypted so the inner access token is
+    // what the upstream endpoint validates; the raw envelope would be rejected.
+    let tokenToValidate = token;
+    if (this.config.tokenKey && isEncryptedToken(token)) {
+      const envelope = decryptTokenPayload(
+        token,
+        this.config.tokenKey,
+        profileState.profileId,
+        this.config.legacyTokenKey,
+      );
+      if (envelope) {
+        tokenToValidate = envelope.at;
+      }
+    }
+
+    const validated = await this.validateAuthToken(authConfig, tokenToValidate, baseUrl);
+    return { validated, skipped: false, tokenShape };
   }
 
 

@@ -340,9 +340,9 @@ describeIfListen('HTTP Transport Multi-Auth Integration', () => {
           },
         });
 
-      // Should reject with 401 Unauthorized
+      // Should reject with 401 (RFC 6750 invalid_request: no credential presented)
       expect(response.status).toBe(401);
-      expect(response.body.error).toBe('Unauthorized');
+      expect(response.body.error).toBe('invalid_request');
       expect(response.body.message).toContain('Authentication required');
     });
 

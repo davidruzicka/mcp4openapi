@@ -88,7 +88,7 @@ describe('Auth Bypass Reproduction', () => {
     await (transport as any).handlePost(req, res);
 
     expect(res.statusCode).toBe(401);
-    expect(res.body).toEqual(expect.objectContaining({ error: 'Unauthorized' }));
+    expect(res.body).toEqual(expect.objectContaining({ error: 'invalid_request' }));
   });
 
   it('should allow initialization without client token when env fallback token exists', async () => {
@@ -356,7 +356,7 @@ describe('Auth Bypass Reproduction', () => {
       await (transport as any).handlePost(req, res);
 
       expect(res.statusCode).toBe(401);
-      expect(res.body).toEqual(expect.objectContaining({ error: 'Unauthorized' }));
+      expect(res.body).toEqual(expect.objectContaining({ error: 'invalid_request' }));
     } finally {
       if (previousUsername === undefined) {
         delete process.env[usernameEnvVarName];

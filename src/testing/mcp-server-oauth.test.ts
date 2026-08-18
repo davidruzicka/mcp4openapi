@@ -57,7 +57,7 @@ describeIfListen('MCPServer OAuth Integration', () => {
 
     expect(response.status).toBe(401);
     expect(response.headers['www-authenticate']).toBeDefined();
-    expect(response.body.error).toBe('Unauthorized');
+    expect(response.body.error).toBe('invalid_request');
     expect(response.body.message).toContain('Authentication required');
   });
 });

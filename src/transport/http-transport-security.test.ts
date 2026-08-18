@@ -244,8 +244,11 @@ describe('HttpTransport security behavior (no listen)', () => {
     await (transport as any).handlePost(req, res);
 
     expect(res.statusCode).toBe(401);
-    expect(res.body).toHaveProperty('error', 'Unauthorized');
+    // AIPP-572: catch-path 401s now emit an RFC 6750 code + Bearer challenge.
+    expect(res.body).toHaveProperty('error', 'invalid_token');
     expect(res.body).toHaveProperty('correlationId');
+    expect(String(res.headers['www-authenticate'])).toContain('Bearer');
+    expect(String(res.headers['www-authenticate'])).toContain('resource_metadata=');
     await transport.stop();
   });
 
@@ -2886,5 +2889,185 @@ describe('HttpTransport security behavior (no listen)', () => {
       if (originalKey === undefined) delete process.env.MCP4_SSL_KEY_FILE;
       else process.env.MCP4_SSL_KEY_FILE = originalKey;
     }
+  });
+});
+
+describe('HttpTransport RFC 6750 resource-server hardening (AIPP-572)', () => {
+  const OAUTH_CONFIG = {
+    authorization_endpoint: 'https://auth.example.com/oauth/authorize',
+    token_endpoint: 'https://auth.example.com/oauth/token',
+    redirect_uri: 'https://example.com/oauth/callback',
+    scopes: ['api'],
+  };
+
+  function initReq(headers: Record<string, string> = {}) {
+    return {
+      method: 'POST',
+      path: '/mcp',
+      url: '/mcp',
+      headers: { accept: 'application/json', host: 'localhost', ...headers },
+      body: {
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'initialize',
+        params: { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 't', version: '1' } },
+      },
+      get: () => undefined,
+    } as any;
+  }
+
+  it('item 1: generic Authentication required 401 carries a Bearer challenge with invalid_request', async () => {
+    const transport = createTransport({
+      baseUrl: 'https://api.example.com',
+      authConfigs: [{ type: 'custom-header', header_name: 'X-API-Key' }],
+    });
+    transport.setMessageHandler(async () => ({ result: 'ok' }));
+    const req = initReq();
+    const res = createMockResponse();
+    await (transport as any).handlePost(req, res);
+
+    expect(res.statusCode).toBe(401);
+    expect(res.body).toMatchObject({ error: 'invalid_request' });
+    expect(String(res.headers['www-authenticate'])).toContain('Bearer');
+    expect(String(res.headers['www-authenticate'])).toContain('error="invalid_request"');
+    expect(String(res.headers['www-authenticate'])).toContain('resource_metadata=');
+    await transport.stop();
+  });
+
+  it('item 3: rejects a non-OAuth X-API-Token on an OAuth-required profile (no shadow session)', async () => {
+    const transport = createTransport({
+      baseUrl: 'https://api.example.com',
+      oauthConfig: OAUTH_CONFIG,
+      authConfigs: [{ type: 'oauth' }],
+    });
+    transport.setMessageHandler(async () => ({ result: { ok: true } }));
+    const req = initReq({ 'x-api-token': 'garbage-token-123' });
+    const res = createMockResponse();
+    await (transport as any).handlePost(req, res);
+
+    expect(res.statusCode).toBe(401);
+    expect(res.body).toMatchObject({ error: 'invalid_token' });
+    expect(String(res.headers['www-authenticate'])).toContain('Bearer');
+    expect(String(res.headers['www-authenticate'])).toContain('resource_metadata=');
+    // No session must be materialized for the shadow credential.
+    expect(res.headers['mcp-session-id']).toBeUndefined();
+    await transport.stop();
+  });
+
+  it('item 4: an expired session token is not served from cache when no Authorization header is present', async () => {
+    const transport = createTransport();
+    transport.setMessageHandler(async () => ({ result: 'ok' }));
+    const profileState = createProfileState(transport as any);
+    profileState.sessions.set('sess-exp', {
+      id: 'sess-exp',
+      createdAt: Date.now(),
+      lastActivityAt: Date.now(),
+      sseStreams: new Map(),
+      authToken: 'cached-access',
+      accessTokenExpiresAt: Date.now() - 60_000,
+      replayQueue: [],
+      nextEventId: 0,
+    });
+    const req = {
+      method: 'POST',
+      path: '/mcp',
+      url: '/mcp',
+      sessionId: 'sess-exp',
+      headers: { accept: 'application/json', host: 'localhost' },
+      body: { jsonrpc: '2.0', id: 1, method: 'tools/list' },
+      get: () => undefined,
+    } as any;
+    const res = createMockResponse();
+    await (transport as any).handlePost(req, res);
+
+    expect(res.statusCode).toBe(401);
+    expect(res.body).toMatchObject({ error: 'invalid_token' });
+    expect(String(res.headers['www-authenticate'])).toContain('resource_metadata=');
+    await transport.stop();
+  });
+
+  it('item 5: rejects a mid-session replacement token that fails validation', async () => {
+    const transport = createTransport({
+      baseUrl: 'https://api.example.com',
+      authConfigs: [{ type: 'bearer', validation_endpoint: '/validate' }],
+    });
+    transport.setMessageHandler(async () => ({ result: 'ok' }));
+    const profileState = createProfileState(transport as any);
+    profileState.context = {
+      profileId: 'default',
+      authConfigs: [{ type: 'bearer', validation_endpoint: '/validate' }],
+      baseUrl: 'https://api.example.com',
+    };
+    profileState.sessions.set('sess-swap', {
+      id: 'sess-swap',
+      createdAt: Date.now(),
+      lastActivityAt: Date.now(),
+      sseStreams: new Map(),
+      authToken: 'original-token',
+      replayQueue: [],
+      nextEventId: 0,
+    });
+
+    const origFetch = global.fetch;
+    global.fetch = vi.fn(async () => ({ status: 401 }) as any);
+    try {
+      const req = {
+        method: 'POST',
+        path: '/mcp',
+        url: '/mcp',
+        sessionId: 'sess-swap',
+        headers: { accept: 'application/json', host: 'localhost', authorization: 'Bearer replacement-invalid-token' },
+        body: { jsonrpc: '2.0', id: 1, method: 'tools/list' },
+        get: () => undefined,
+      } as any;
+      const res = createMockResponse();
+      await (transport as any).handlePost(req, res);
+
+      expect(res.statusCode).toBe(401);
+      expect(res.body).toMatchObject({ error: 'invalid_token' });
+      expect(String(res.headers['www-authenticate'])).toContain('resource_metadata=');
+      // The rejected replacement must not overwrite the established session token.
+      expect((profileState.sessions.get('sess-swap') as any).authToken).toBe('original-token');
+    } finally {
+      global.fetch = origFetch;
+      await transport.stop();
+    }
+  });
+
+  it('item 6: matches the Bearer scheme case-insensitively', () => {
+    const transport = createTransport();
+    const profileState = createProfileState(transport as any);
+    const result = (transport as any).extractAuthToken(
+      { headers: { authorization: 'bearer abc123def' } },
+      profileState,
+      [],
+    );
+    expect(result).toEqual({ type: 'bearer', token: 'abc123def' });
+  });
+
+  it('item 7: redacts credential-like content in buildHttpErrorResponse messages', () => {
+    const transport = createTransport();
+    const jwt = 'aaaaaaaa.bbbbbbbb.cccccccc';
+    const out = (transport as any).buildHttpErrorResponse(new ValidationError(`bad token ${jwt}`), 'cid-1');
+    expect(out.message).not.toContain(jwt);
+    expect(out.message).toContain('[REDACTED_JWT]');
+  });
+
+  it('item 8: does not advertise an unenforced scope in the OAuth /mcp challenge', async () => {
+    const transport = createTransport({
+      baseUrl: 'https://api.example.com',
+      oauthConfig: OAUTH_CONFIG,
+      authConfigs: [{ type: 'oauth' }],
+    });
+    transport.setMessageHandler(async () => ({ result: 'ok' }));
+    const req = initReq();
+    const res = createMockResponse();
+    await (transport as any).handlePost(req, res);
+
+    expect(res.statusCode).toBe(401);
+    expect(res.body).toMatchObject({ error: 'invalid_request' });
+    expect(String(res.headers['www-authenticate'])).toContain('resource_metadata=');
+    expect(String(res.headers['www-authenticate'])).not.toContain('scope=');
+    await transport.stop();
   });
 });

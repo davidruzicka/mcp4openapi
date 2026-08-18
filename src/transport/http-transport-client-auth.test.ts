@@ -170,7 +170,7 @@ describe('Client auth gate (Phase 3) — session init integration', () => {
     await (transport as unknown as { handlePost: (r: unknown, s: unknown) => Promise<void> }).handlePost(req, res);
 
     expect(res.statusCode).toBe(401);
-    expect(res.body).toEqual(expect.objectContaining({ error: 'Unauthorized' }));
+    expect(res.body).toEqual(expect.objectContaining({ error: 'invalid_token' }));
     // No Mcp-Session-Id was set on rejection.
     expect(res.headers['Mcp-Session-Id']).toBeUndefined();
   });
@@ -233,7 +233,7 @@ describe('Client auth gate (Phase 3) — session init integration', () => {
     await (transport as unknown as { handlePost: (r: unknown, s: unknown) => Promise<void> }).handlePost(req, res);
 
     expect(res.statusCode).toBe(401);
-    expect(res.body).toEqual(expect.objectContaining({ error: 'Unauthorized', message: 'Client authentication failed' }));
+    expect(res.body).toEqual(expect.objectContaining({ error: 'invalid_request', message: 'Client authentication failed' }));
     expect(warnSpy).toHaveBeenCalledWith(
       'Client auth gate rejected session init',
       expect.objectContaining({ errorType: 'ClientAuthGateError', profileId: 'default' }),
@@ -294,7 +294,7 @@ describe('Client auth gate (Phase 3) — session init integration', () => {
     await (transport as unknown as { handlePost: (r: unknown, s: unknown) => Promise<void> }).handlePost(req, res);
 
     expect(res.statusCode).toBe(401);
-    expect(res.body).toEqual(expect.objectContaining({ error: 'Unauthorized', message: 'Client authentication failed' }));
+    expect(res.body).toEqual(expect.objectContaining({ error: 'invalid_request', message: 'Client authentication failed' }));
     expect(warnSpy).toHaveBeenCalledWith(
       'Client auth gate rejected session init',
       expect.objectContaining({ errorType: 'ClientAuthGateError', profileId: 'default' }),
@@ -364,7 +364,7 @@ describe('Client auth gate (Phase 3) — session init integration', () => {
     await (transport as unknown as { handlePost: (r: unknown, s: unknown) => Promise<void> }).handlePost(req, res);
 
     expect(res.statusCode).toBe(401);
-    expect(res.body).toEqual(expect.objectContaining({ error: 'Unauthorized', message: 'Client authentication failed' }));
+    expect(res.body).toEqual(expect.objectContaining({ error: 'invalid_token', message: 'Client authentication failed' }));
     expect(warnSpy).toHaveBeenCalledWith(
       'Client auth gate rejected session init',
       expect.objectContaining({
@@ -399,7 +399,7 @@ describe('Client auth gate (Phase 3) — session init integration', () => {
     await (transport as unknown as { handlePost: (r: unknown, s: unknown) => Promise<void> }).handlePost(req, res);
 
     expect(res.statusCode).toBe(401);
-    expect(res.body).toEqual(expect.objectContaining({ error: 'Unauthorized', message: 'Client authentication failed' }));
+    expect(res.body).toEqual(expect.objectContaining({ error: 'invalid_token', message: 'Client authentication failed' }));
     expect(warnSpy).toHaveBeenCalledWith(
       'Client auth gate rejected session init',
       expect.objectContaining({
