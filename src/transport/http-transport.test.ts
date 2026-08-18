@@ -12,6 +12,7 @@ import os from 'node:os';
 import path from 'node:path';
 import https from 'https';
 import { HttpTransport } from './http-transport.js';
+import { ReconsentTracker } from './reconsent-tracker.js';
 import type { HttpTransportConfig } from '../types/http-transport.js';
 import { ConsoleLogger, type Logger } from '../core/logger.js';
 import { AuthenticationError, ValidationError, ConsentRequiredError } from '../core/errors.js';
@@ -7203,6 +7204,23 @@ describeIfListen('HttpTransport', () => {
       await t.stop();
     });
 
+    it('recovers an envelope when the configured issuer has a trailing slash (issuer normalization)', async () => {
+      const { t, state } = buildGatedTransport();
+      // Config strings commonly carry a trailing slash while the envelope holds
+      // the discovery-document issuer; recovery must not force re-auth (4.4).
+      state.oauthProvider.issuer = `${ISSUER}/`;
+      const envelope = await buildEnvelope('person-slash');
+
+      const response = await initialize(t, envelope, 1);
+      expect(response.status).toBe(200);
+      const sessionId = lastSessionId(state);
+      expect(state.sessions.get(sessionId).clientPrincipal).toMatchObject({
+        subject: 'person-slash',
+        issuer: ISSUER,
+      });
+      await t.stop();
+    });
+
     it('returns 404 from the consent info page when the profile has no consent gate', async () => {
       const response = await request(app).get('/consent');
       expect(response.status).toBe(404);
@@ -7228,8 +7246,8 @@ describeIfListen('HttpTransport', () => {
 
     it('evicts the oldest reconsent invalidation entry at capacity (FIFO)', async () => {
       const t = new HttpTransport(baseConfig() as any, logger);
-      const invalidations = (t as any).reconsentInvalidations as Set<string>;
-      for (let i = 0; i < 10000; i += 1) invalidations.add(`filler-${i}`);
+      const tracker = (t as any).reconsentTracker as ReconsentTracker;
+      for (let i = 0; i < 10000; i += 1) tracker.markInvalidated(`filler-${i}`, { pendingEnvelopeReject: false });
       const state: any = {
         profileId: PROFILE_ID,
         context: { profileId: PROFILE_ID, consent_gate: gateConfig },
@@ -7249,9 +7267,9 @@ describeIfListen('HttpTransport', () => {
         }),
       );
 
-      expect(invalidations.size).toBe(10000);
-      expect(invalidations.has('filler-0')).toBe(false);
-      expect(Array.from(invalidations).at(-1)).toContain('evictee-test');
+      expect(tracker.size).toBe(10000);
+      expect(tracker.isInvalidated('filler-0')).toBe(false);
+      expect(Array.from(tracker.keys()).at(-1)).toContain('evictee-test');
       await t.stop();
     });
 

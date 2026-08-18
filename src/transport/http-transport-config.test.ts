@@ -307,6 +307,21 @@ describe('parseConsentDbEnv', () => {
     expect(() => parseConsentDbEnv({ MCP_CONSENTS_DB_PORT: '5432' })).toThrow(ConfigurationError);
   });
 
+  it('fails loudly when only MCP_CONSENTS_DB_SSL is set', () => {
+    expect(() => parseConsentDbEnv({ MCP_CONSENTS_DB_SSL: 'true' })).toThrow(ConfigurationError);
+  });
+
+  it('fails loudly when MCP_CONSENTS_DB_SSL accompanies a partial variable set', () => {
+    const { MCP_CONSENTS_DB_PASSWORD: _omitted, ...rest } = FULL_ENV;
+    expect(() => parseConsentDbEnv({ ...rest, MCP_CONSENTS_DB_SSL: 'false' })).toThrow(
+      'MCP_CONSENTS_DB_PASSWORD',
+    );
+  });
+
+  it('rejects an invalid MCP_CONSENTS_DB_SSL value even when it is the only variable set', () => {
+    expect(() => parseConsentDbEnv({ MCP_CONSENTS_DB_SSL: 'yes' })).toThrow(ConfigurationError);
+  });
+
   it('rejects a non-numeric port', () => {
     expect(() => parseConsentDbEnv({ ...FULL_ENV, MCP_CONSENTS_DB_PORT: 'not-a-port' })).toThrow(
       ConfigurationError,

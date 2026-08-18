@@ -38,6 +38,7 @@ import {
   type TokenEnvelopePayload,
 } from '../auth/token-envelope.js';
 import { ConsentHttpController } from './consent-http-controller.js';
+import { ReconsentTracker } from './reconsent-tracker.js';
 import * as refreshEnvelope from './refresh-envelope.js';
 import type { AccessTokenIdentityResolver, RefreshEnvelopeContext } from './refresh-envelope.js';
 import { EnterpriseAuthProvider } from '../auth/enterprise-auth-provider.js';
@@ -217,21 +218,16 @@ export class HttpTransport {
   private readonly consentController = new ConsentHttpController();
   private readonly enterpriseReplayStore: EnterpriseReplayStore;
   /**
-   * Subjects already invalidated once for the current rules version. Bounds the
-   * re-consent 401 to a single OAuth restart per subject, so a client that
-   * cannot complete the browser acknowledgement cannot loop. Cleared for a
-   * subject when its consent check succeeds, so a later revocation or expiry
-   * can trigger a fresh invalidation.
+   * One-shot re-consent state per profile/subject/rules version: bounds the
+   * re-consent 401 to a single OAuth restart per subject (so a client that
+   * cannot complete the browser acknowledgement cannot loop) and arms the
+   * one-time rejection of the subject's next envelope restart-recovery (so the
+   * client discards its `mcp4.v1.*` envelope and restarts OAuth instead of
+   * silently rebuilding the session). The invalidation budget is cleared when
+   * a consent check succeeds, so a later revocation or expiry can trigger a
+   * fresh invalidation.
    */
-  private readonly reconsentInvalidations = new Set<string>();
-  /**
-   * Subjects whose NEXT envelope restart-recovery must be rejected once with
-   * 401. Without this, a client holding a `mcp4.v1.*` envelope re-initializes
-   * after the re-consent invalidation, the recovery path silently rebuilds the
-   * session, and the client loops on the consent error instead of restarting
-   * OAuth. Keys match `reconsentInvalidations`; entries are consumed on use.
-   */
-  private readonly pendingReconsentEnvelopeRejections = new Set<string>();
+  private readonly reconsentTracker = new ReconsentTracker(RECONSENT_INVALIDATION_MAX);
   private readonly enterpriseGrantAttemptsByProfile = new Map<string, number[]>();
   private readonly enterpriseGrantConcurrencyByProfile = new Map<string, number>();
   private upstreamConnectionManager: UpstreamConnectionManager | null = null;
@@ -3469,7 +3465,15 @@ export class HttpTransport {
                   scopes = envelope.sc;
                   oauthClientId = envelope.cid;
                   if (envelope.sub) {
-                    if (!envelope.iss || envelope.iss !== profileState.oauthProvider?.issuer) {
+                    // Normalize both sides: the envelope carries the discovery-document
+                    // issuer while the config may include a trailing slash. A raw
+                    // comparison would force re-auth after every restart (finding 4.4).
+                    const configuredIssuer = profileState.oauthProvider?.issuer;
+                    if (
+                      !envelope.iss ||
+                      !configuredIssuer ||
+                      normalizeIssuer(envelope.iss) !== normalizeIssuer(configuredIssuer)
+                    ) {
                       throw new AuthenticationError('Session token identity issuer does not match profile OAuth issuer');
                     }
                     // One-time rejection after a re-consent invalidation: the
@@ -3478,7 +3482,7 @@ export class HttpTransport {
                     // OAuth. 401 + WWW-Authenticate makes it discard the
                     // envelope and start a fresh OAuth (and consent) flow.
                     const reconsentKey = this.buildReconsentKey(profileState, envelope.sub);
-                    if (this.pendingReconsentEnvelopeRejections.delete(reconsentKey)) {
+                    if (this.reconsentTracker.consumePendingEnvelopeRejection(reconsentKey)) {
                       this.logger.info('Rejecting envelope restart-recovery once to force OAuth re-consent', {
                         profileId: profileState.profileId,
                         subjectHash: pseudonymizeSubject(envelope.sub),
@@ -4780,7 +4784,7 @@ export class HttpTransport {
    *
    * On denial the session is invalidated once per subject and rules version and
    * the subject's next envelope restart-recovery is rejected once with 401 (see
-   * `pendingReconsentEnvelopeRejections`), so the client discards the envelope
+   * `reconsentTracker`), so the client discards the envelope
    * and restarts OAuth, which is the only re-consent mechanism MCP clients
    * implement. Repeat denials return the consent error without invalidating, so
    * a client that cannot complete the browser acknowledgement does not loop
@@ -4819,7 +4823,7 @@ export class HttpTransport {
     // is later revoked or expires, the subject must be invalidated (and sent
     // through OAuth) again instead of being stuck on the consent error forever.
     if (principal?.subject) {
-      this.reconsentInvalidations.delete(
+      this.reconsentTracker.clearInvalidation(
         this.buildReconsentKey(profileState, principal.subject),
       );
     }
@@ -4846,23 +4850,14 @@ export class HttpTransport {
     const budgetKey = principal?.subject
       ? this.buildReconsentKey(profileState, principal.subject)
       : this.buildReconsentKey(profileState, sessionId);
-    if (this.reconsentInvalidations.has(budgetKey)) return;
-    // Bounded: overflow only costs one extra invalidation for the evicted
-    // subject, never a missed denial.
-    if (this.reconsentInvalidations.size >= RECONSENT_INVALIDATION_MAX) {
-      const oldest = this.reconsentInvalidations.values().next().value;
-      if (oldest !== undefined) this.reconsentInvalidations.delete(oldest);
-    }
-    this.reconsentInvalidations.add(budgetKey);
-    if (principal?.subject) {
-      // Same bound as the budget set; an evicted entry only costs one extra
-      // silent recovery for the evicted subject, never a missed denial.
-      if (this.pendingReconsentEnvelopeRejections.size >= RECONSENT_INVALIDATION_MAX) {
-        const oldest = this.pendingReconsentEnvelopeRejections.values().next().value;
-        if (oldest !== undefined) this.pendingReconsentEnvelopeRejections.delete(oldest);
-      }
-      this.pendingReconsentEnvelopeRejections.add(budgetKey);
-    }
+    if (this.reconsentTracker.isInvalidated(budgetKey)) return;
+    // Bounded FIFO inside the tracker: overflow only costs one extra
+    // invalidation (or silent recovery) for the evicted subject, never a
+    // missed denial. The envelope rejection is only armed for identity-bearing
+    // sessions; anonymous ones have no envelope to reject.
+    this.reconsentTracker.markInvalidated(budgetKey, {
+      pendingEnvelopeReject: Boolean(principal?.subject),
+    });
     try {
       this.destroySession(profileState, sessionId);
     } catch (teardownError) {

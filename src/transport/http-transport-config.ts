@@ -58,10 +58,13 @@ export function parseConsentDbEnv(
     password: env.MCP_CONSENTS_DB_PASSWORD?.trim(),
   };
   const port = env.MCP_CONSENTS_DB_PORT?.trim();
+  const sslRaw = env.MCP_CONSENTS_DB_SSL?.trim();
   const missing = Object.entries(values)
     .filter(([, value]) => !value)
     .map(([key]) => key);
-  if (missing.length === 4 && !port) return undefined;
+  // Optional vars participate in the partial-set detection: SSL-only (or
+  // SSL+partial) must fail startup loudly instead of being silently ignored.
+  if (missing.length === 4 && !port && !sslRaw) return undefined;
   if (missing.length > 0) {
     throw new ConfigurationError(
       `Incomplete MCP_CONSENTS_DB_* configuration: missing ${missing
@@ -73,7 +76,6 @@ export function parseConsentDbEnv(
   if (!Number.isInteger(parsedPort) || parsedPort <= 0 || parsedPort > 65535 || (port && String(parsedPort) !== port)) {
     throw new ConfigurationError('Invalid MCP_CONSENTS_DB_PORT: expected a TCP port number');
   }
-  const sslRaw = env.MCP_CONSENTS_DB_SSL?.trim();
   if (sslRaw !== undefined && sslRaw !== 'true' && sslRaw !== 'false') {
     throw new ConfigurationError("Invalid MCP_CONSENTS_DB_SSL: expected 'true' or 'false'");
   }
