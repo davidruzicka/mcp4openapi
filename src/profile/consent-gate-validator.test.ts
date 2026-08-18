@@ -59,12 +59,6 @@ describe('resolveConsentGateConfig', () => {
     ).toThrow(ConsentGateConfigurationError);
   });
 
-  it('rejects an unsupported identity source', () => {
-    expect(() =>
-      resolveConsentGateConfig({ required: true, rules_version: 'v1', identity_source: 'other' as 'profile_oauth' }),
-    ).toThrow(ConsentGateConfigurationError);
-  });
-
   it('accepts max_age_days=1 as the smallest valid expiry window', () => {
     const result = resolveConsentGateConfig({
       required: true,
@@ -246,21 +240,9 @@ describe('consent gate validation failure paths', () => {
     },
   };
 
-  it('rejects a non-boolean required flag', () => {
-    expect(() =>
-      resolveConsentGateConfig({
-        required: 'yes',
-        rules_version: 'v1',
-        identity_source: 'profile_oauth',
-      } as never),
-    ).toThrow('consent_gate.required must be a boolean');
-  });
-
-  it('rejects a missing required flag', () => {
-    expect(() =>
-      resolveConsentGateConfig({ rules_version: 'v1', identity_source: 'profile_oauth' } as never),
-    ).toThrow('consent_gate.required must be a boolean');
-  });
+  // Field types (required boolean, rules_version string, identity_source literal)
+  // are enforced by the generated Zod profileSchema before this validator runs;
+  // resolveConsentGateConfig no longer re-checks them.
 
   it('returns a non-required gate without demanding OAuth or an upstream', () => {
     // required=false is the short-circuit branch: a profile may declare the block
@@ -373,6 +355,92 @@ describe('consent gate OAuth env references', () => {
     expect(() => validateConsentGateProfile(envRefProfile())).toThrow(
       `profile OAuth ${field} references env var '${envVar}' which is not set`,
     );
+  });
+});
+
+describe('consent gate https endpoint contract', () => {
+  const httpsProfile = (
+    oauthOverrides: Record<string, unknown> = {},
+    consentOverrides: Record<string, unknown> = {},
+  ): Profile =>
+    createProfile({
+      consent_gate: {
+        required: true,
+        rules_version: 'v1',
+        identity_source: 'profile_oauth',
+        ...consentOverrides,
+      },
+      interceptors: {
+        auth: {
+          type: 'oauth',
+          oauth_config: {
+            issuer: 'https://login.example.test',
+            client_id: 'client',
+            redirect_uri: 'https://gateway.example.test/oauth/callback',
+            scopes: ['openid'],
+            ...oauthOverrides,
+          },
+        },
+      },
+      upstream_mcp: {
+        name: 'upstream',
+        transport: { type: 'http-streamable', url: 'https://upstream.example.test/mcp' },
+      },
+    } as Partial<Profile>);
+
+  it.each(['issuer', 'redirect_uri'] as const)(
+    'rejects a literal http %s with no localhost exception',
+    (field) => {
+      const profile = httpsProfile({ [field]: 'http://localhost:3000/oauth' });
+      expect(() => validateConsentGateProfile(profile)).toThrow(ConsentGateConfigurationError);
+      expect(() => validateConsentGateProfile(profile)).toThrow(
+        `profile OAuth ${field} must use https when consent_gate is enabled`,
+      );
+    },
+  );
+
+  it.each(['issuer', 'redirect_uri'] as const)(
+    'rejects a %s that does not parse as an absolute URL',
+    (field) => {
+      const profile = httpsProfile({ [field]: 'not a url' });
+      expect(() => validateConsentGateProfile(profile)).toThrow(
+        `profile OAuth ${field} must be a valid absolute https URL when consent_gate is enabled`,
+      );
+    },
+  );
+
+  it('rejects an env-resolved redirect_uri whose value is http', () => {
+    process.env.CONSENT_HTTPS_TEST_REDIRECT = 'http://gateway.example.test/oauth/callback';
+    try {
+      const profile = httpsProfile({ redirect_uri: '${env:CONSENT_HTTPS_TEST_REDIRECT}' });
+      expect(() => validateConsentGateProfile(profile)).toThrow(
+        'profile OAuth redirect_uri must use https when consent_gate is enabled',
+      );
+    } finally {
+      delete process.env.CONSENT_HTTPS_TEST_REDIRECT;
+    }
+  });
+
+  it('accepts an env-resolved issuer whose value is https', () => {
+    process.env.CONSENT_HTTPS_TEST_ISSUER = 'https://login.example.test/tenant/v2.0';
+    try {
+      const profile = httpsProfile({ issuer: '${env:CONSENT_HTTPS_TEST_ISSUER}' });
+      expect(validateConsentGateProfile(profile)?.required).toBe(true);
+    } finally {
+      delete process.env.CONSENT_HTTPS_TEST_ISSUER;
+    }
+  });
+
+  it('rejects an http education_resource', () => {
+    const profile = httpsProfile({}, { education_resource: 'http://intranet.example/rules' });
+    expect(() => validateConsentGateProfile(profile)).toThrow(
+      'consent_gate.education_resource must use https when consent_gate is enabled',
+    );
+  });
+
+  it('accepts an https education_resource', () => {
+    const profile = httpsProfile({}, { education_resource: 'https://intranet.example/rules' });
+    expect(validateConsentGateProfile(profile)?.education_resource).toBe('https://intranet.example/rules');
   });
 });
 

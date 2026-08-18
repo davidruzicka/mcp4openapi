@@ -4,11 +4,35 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ProfileLoader } from './profile-loader.js';
 import { isToolAllowedByProviderPolicy } from '../upstream/upstream-tool-sanitizer.js';
 
-const PROFILE_PATH = path.join(process.cwd(), 'tests/profiles/softeria-sharepoint/profile.json');
-const CATALOG_PATH = path.join(
-  process.cwd(),
-  'tests/profiles/softeria-sharepoint/upstream-catalog-0.136.0.fixture.json',
-);
+const FIXTURE_DIR = path.join(process.cwd(), 'tests/profiles/softeria-sharepoint');
+const PROFILE_PATH = path.join(FIXTURE_DIR, 'profile.json');
+const CAPTURE_SCRIPT = 'scripts/capture-softeria-catalog.sh';
+
+interface UpstreamCatalogFixture {
+  upstream_package: string;
+  upstream_version: string;
+  captured_at: string;
+  capture_command: string;
+  tool_count: number;
+  tools: string[];
+}
+
+/**
+ * The fixture's `upstream_version` is the single source of truth for the pin.
+ * Discover the catalog file instead of hardcoding its name so a re-pin that
+ * renames the fixture cannot leave a stale path behind.
+ */
+function readUpstreamCatalog(): { fileName: string; catalog: UpstreamCatalogFixture } {
+  const fileNames = fs
+    .readdirSync(FIXTURE_DIR)
+    .filter((name) => /^upstream-catalog-.+\.fixture\.json$/.test(name));
+  expect(fileNames, `expected exactly one upstream catalog fixture in ${FIXTURE_DIR}; regenerate with ${CAPTURE_SCRIPT}`).toHaveLength(1);
+  const fileName = fileNames[0];
+  const catalog = JSON.parse(
+    fs.readFileSync(path.join(FIXTURE_DIR, fileName), 'utf-8'),
+  ) as UpstreamCatalogFixture;
+  return { fileName, catalog };
+}
 
 const SOFTERIA_READ_ONLY_TOOLS = [
   'list-drives',
@@ -130,26 +154,36 @@ describe('Softeria SharePoint profile', () => {
     expect(isToolAllowedByProviderPolicy('upload-file-content', policy)).toBe(false);
   });
 
-  it('allows only tools that exist in the captured upstream catalog', async () => {
-    const catalog = JSON.parse(fs.readFileSync(CATALOG_PATH, 'utf-8')) as {
-      upstream_package: string;
-      upstream_version: string;
-      captured_at: string;
-      tool_count: number;
-      tools: string[];
-    };
+  it('pins one upstream version consistently across profile, fixture name, and catalog metadata', () => {
+    const { fileName, catalog } = readUpstreamCatalog();
+    const version = catalog.upstream_version;
+    const drift = `version drift detected; re-pin all sites together with ${CAPTURE_SCRIPT}`;
 
-    expect(catalog.upstream_package).toBe('@softeria/ms-365-mcp-server');
-    expect(catalog.upstream_version).toBe('0.136.0');
-    expect(catalog.captured_at).toBe('2026-08-12');
-    expect(catalog.tools).toHaveLength(catalog.tool_count);
+    expect(catalog.upstream_package, drift).toBe('@softeria/ms-365-mcp-server');
+    expect(fileName, drift).toBe(`upstream-catalog-${version}.fixture.json`);
+    expect(catalog.capture_command, drift).toContain(`${catalog.upstream_package}@${version}`);
+
+    const rawProfile = JSON.parse(fs.readFileSync(PROFILE_PATH, 'utf-8')) as {
+      upstream_pin?: { package: string; version: string };
+    };
+    expect(rawProfile.upstream_pin?.package, drift).toBe(catalog.upstream_package);
+    expect(rawProfile.upstream_pin?.version, drift).toBe(version);
+  });
+
+  it('allows only tools that exist in the captured upstream catalog', async () => {
+    const { catalog } = readUpstreamCatalog();
+    const stale = `catalog does not match its own metadata; recapture with ${CAPTURE_SCRIPT}`;
+    expect(catalog.tools, stale).toHaveLength(catalog.tool_count);
 
     const profile = await new ProfileLoader().load(PROFILE_PATH);
     const allow = profile.upstream_mcp?.tools?.allow ?? [];
     expect(allow.length).toBeGreaterThan(0);
 
     const upstreamTools = new Set(catalog.tools);
-    expect(allow.filter(tool => !upstreamTools.has(tool))).toEqual([]);
+    expect(
+      allow.filter(tool => !upstreamTools.has(tool)),
+      `allow-list entries missing from the captured upstream catalog; recapture with ${CAPTURE_SCRIPT}`,
+    ).toEqual([]);
   });
 
   it('excludes permission-mutating near-misses while keeping the read-only permission reader', async () => {

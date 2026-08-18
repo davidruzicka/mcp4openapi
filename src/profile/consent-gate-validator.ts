@@ -5,13 +5,14 @@
  * of a silent runtime failure. Mirrors the two-level shape of
  * `client-auth-gate-validator`:
  *
- * - `resolveConsentGateConfig` - config-level: validates `rules_version`,
- *   `identity_source`, and `max_age_days`. Safe to call from any construction
- *   site (no Profile required).
+ * - `resolveConsentGateConfig` - config-level: applies the refinements the
+ *   generated Zod `profileSchema` cannot express (non-empty strings, positive
+ *   `max_age_days`, the `{{consent_body}}` placeholder). Safe to call from any
+ *   construction site (no Profile required).
  * - `validateConsentGateProfile` - profile-level: reads `profile.consent_gate`,
- *   validates the OAuth login block including `${env:...}` references, the
- *   upstream MCP requirement, and tenant OAuth compatibility. Called by the
- *   profile loader.
+ *   validates the OAuth login block including `${env:...}` references and the
+ *   https endpoint contract, the upstream MCP requirement, and tenant OAuth
+ *   compatibility. Called by the profile loader.
  */
 
 import { ConsentGateConfigurationError } from '../core/errors.js';
@@ -28,6 +29,8 @@ export const CONSENT_BODY_PLACEHOLDER = '{{consent_body}}';
 const REQUIRED_OAUTH_FIELDS = ['issuer', 'client_id', 'redirect_uri'] as const;
 /** Optional OAuth fields whose `${env:...}` reference must still resolve when declared. */
 const OPTIONAL_OAUTH_FIELDS = ['client_secret'] as const;
+/** OAuth endpoint fields that must resolve to well-formed https URLs. */
+const HTTPS_OAUTH_FIELDS = ['issuer', 'redirect_uri'] as const;
 
 function getProfileOAuth(profile: Profile): AuthInterceptor | undefined {
   const auth = profile.interceptors?.auth;
@@ -38,28 +41,17 @@ function getProfileOAuth(profile: Profile): AuthInterceptor | undefined {
 /**
  * Validate and normalize a raw `ConsentGateConfig`.
  *
- * Checks: `required` boolean, `rules_version` non-empty, `identity_source`
- * supported, `max_age_days` a positive integer when set.
+ * Field types (`required` boolean, `rules_version` string, `identity_source`
+ * literal) are already guaranteed by the generated Zod `profileSchema`; this
+ * only applies refinements Zod cannot express: non-empty strings,
+ * `max_age_days` a positive integer when set, and the `{{consent_body}}`
+ * template placeholder.
  */
 export function resolveConsentGateConfig(config: ConsentGateConfig): ConsentGateConfig {
-  if (typeof config.required !== 'boolean') {
-    throw new ConsentGateConfigurationError(
-      "consent_gate.required must be a boolean",
-      { path: 'consent_gate.required', value: config.required },
-    );
-  }
-
-  if (typeof config.rules_version !== 'string' || !config.rules_version.trim()) {
+  if (!config.rules_version.trim()) {
     throw new ConsentGateConfigurationError(
       'consent_gate.rules_version is required and must be a non-empty string',
       { path: 'consent_gate.rules_version' },
-    );
-  }
-
-  if (config.identity_source !== 'profile_oauth') {
-    throw new ConsentGateConfigurationError(
-      "consent_gate.identity_source must be 'profile_oauth'",
-      { path: 'consent_gate.identity_source' },
     );
   }
 
@@ -77,7 +69,7 @@ export function resolveConsentGateConfig(config: ConsentGateConfig): ConsentGate
 
   for (const key of ['accept', 'submit'] as const) {
     const label = config.labels?.[key];
-    if (label !== undefined && (typeof label !== 'string' || !label.trim())) {
+    if (label !== undefined && !label.trim()) {
       throw new ConsentGateConfigurationError(
         `consent_gate.labels.${key} must be a non-empty string when set`,
         { path: `consent_gate.labels.${key}` },
@@ -85,7 +77,7 @@ export function resolveConsentGateConfig(config: ConsentGateConfig): ConsentGate
     }
   }
 
-  if (config.template_path !== undefined && (typeof config.template_path !== 'string' || !config.template_path.trim())) {
+  if (config.template_path !== undefined && !config.template_path.trim()) {
     throw new ConsentGateConfigurationError(
       'consent_gate.template_path must be a non-empty string when set',
       { path: 'consent_gate.template_path' },
@@ -127,6 +119,66 @@ function assertOAuthEnvRefsResolvable(
         { path: `interceptors.auth.oauth_config.${field}`, envVar: envVarName },
       );
     }
+  }
+}
+
+/** Resolve an exact-match `${env:VAR}` reference to its env value; literals pass through. */
+function resolveOAuthFieldValue(value: string): string {
+  const envVarName = value.match(ENV_REF_PATTERN)?.[1];
+  return envVarName !== undefined ? (process.env[envVarName] ?? '') : value;
+}
+
+/**
+ * The consent login flow contract is "https endpoints + valid redirect_uri":
+ * the value must parse as an absolute URL and use https, whether written
+ * literally or resolved from a `${env:VAR}` reference. There is deliberately
+ * no localhost/http exception - dev deployments must terminate TLS too.
+ */
+function assertHttpsUrl(value: string, field: string, path: string): void {
+  let parsed: URL | undefined;
+  try {
+    parsed = new URL(value.trim());
+  } catch {
+    parsed = undefined;
+  }
+  if (!parsed) {
+    throw new ConsentGateConfigurationError(
+      `${field} must be a valid absolute https URL when consent_gate is enabled`,
+      { path },
+    );
+  }
+  if (parsed.protocol !== 'https:') {
+    throw new ConsentGateConfigurationError(
+      `${field} must use https when consent_gate is enabled`,
+      { path, protocol: parsed.protocol },
+    );
+  }
+}
+
+/**
+ * Enforce the https endpoint contract on the OAuth login block and the
+ * consent education URL: `HTTPS_OAUTH_FIELDS` after `${env:VAR}` resolution,
+ * `education_resource` as declared.
+ */
+function assertConsentEndpointsHttps(
+  oauthConfig: Record<string, unknown>,
+  resolved: ConsentGateConfig,
+): void {
+  for (const field of HTTPS_OAUTH_FIELDS) {
+    const value = oauthConfig[field];
+    if (typeof value !== 'string') continue;
+    assertHttpsUrl(
+      resolveOAuthFieldValue(value),
+      `profile OAuth ${field}`,
+      `interceptors.auth.oauth_config.${field}`,
+    );
+  }
+  if (resolved.education_resource !== undefined) {
+    assertHttpsUrl(
+      resolved.education_resource,
+      'consent_gate.education_resource',
+      'consent_gate.education_resource',
+    );
   }
 }
 
@@ -193,6 +245,7 @@ export function validateConsentGateProfile(profile: Profile): ConsentGateConfig 
     oauth.oauth_config as unknown as Record<string, unknown>,
     [...REQUIRED_OAUTH_FIELDS, ...OPTIONAL_OAUTH_FIELDS],
   );
+  assertConsentEndpointsHttps(oauth.oauth_config as unknown as Record<string, unknown>, resolved);
 
   assertNoTenantOAuthOverrides(profile);
 

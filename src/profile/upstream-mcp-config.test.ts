@@ -452,11 +452,32 @@ describe('validateEnvironmentOverride - env override may only harden the static 
     )).toThrow('upstream_mcp_from_env cannot broaden the static upstream_mcp.tools policy');
   });
 
-  it('validates the env override even when the static profile declares no tools policy', () => {
+  it('rejects a tools-only env override that leaves the static allow-list', () => {
+    expect(() => resolveUpstreamMcpConfig(
+      makeEnvProfile(staticWithToolPolicy),
+      envWith({ tools: { allow: ['anything'], deny: ['write_tool'] } }),
+    )).toThrow(
+      'upstream_mcp_from_env cannot broaden the static upstream_mcp.tools policy: allow patterns must remain within the static allow-list',
+    );
+  });
+
+  it('rejects a description-policy downgrade even when the static profile declares no tools policy', () => {
     expect(() => resolveUpstreamMcpConfig(
       makeEnvProfile(staticWithoutToolPolicy),
       envWith({ html_description_policy: 'allow', tools: { allow: ['anything'] } }),
-    )).toThrow(ValidationError);
+    )).toThrow(/cannot weaken the static upstream_mcp\.html_description_policy/);
+  });
+
+  it('accepts an env allow list that is a strict subset of the static allow list', () => {
+    const staticWithWiderAllow = {
+      ...staticWithoutToolPolicy,
+      tools: { allow: ['read_tool', 'list_tool'], deny: ['write_tool'] },
+    };
+    const resolved = resolveUpstreamMcpConfig(
+      makeEnvProfile(staticWithWiderAllow),
+      envWith({ tools: { allow: ['read_tool'], deny: ['write_tool'] } }),
+    );
+    expect(resolved?.tools).toEqual({ allow: ['read_tool'], deny: ['write_tool'] });
   });
 
   it('accepts an env override that sets allow when the static policy is already allow', () => {

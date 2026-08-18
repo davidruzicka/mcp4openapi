@@ -4,6 +4,11 @@
   "profile_id": "softeria-sharepoint",
   "profile_aliases": ["ms365-sharepoint"],
   "description": "Consent-gated proxy to a centrally hosted Softeria Microsoft 365 MCP server, restricted to read-only SharePoint/drive tools and Sites.Selected/Files.Read delegated permissions.",
+  "upstream_pin": {
+    "note": "Test-only metadata (stripped by the profile loader). Must match the upstream-catalog-*.fixture.json in this directory; re-pin with scripts/capture-softeria-catalog.sh.",
+    "package": "@softeria/ms-365-mcp-server",
+    "version": "0.136.0"
+  },
   "tools": [],
   "consent_gate": {
     "required": true,

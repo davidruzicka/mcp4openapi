@@ -162,7 +162,8 @@ function validateEnvironmentToolPolicy(
     const environmentAllow = environmentPolicy.allow?.map((value) => value.trim());
     if (!environmentAllow?.length || environmentAllow.some((pattern) => !staticAllow.has(pattern))) {
       throw new ValidationError(
-        'upstream_mcp_from_env cannot broaden the static upstream_mcp.tools policy: allow patterns must remain within the static allow-list',
+        'upstream_mcp_from_env cannot broaden the static upstream_mcp.tools policy: allow patterns must remain within the static allow-list ' +
+        '(exact-string subset: every override allow entry must appear verbatim in the static allow list; semantically narrower globs are not evaluated)',
         { path: 'upstream_mcp_from_env' },
       );
     }
