@@ -1,265 +1,121 @@
 /**
- * Multi-auth support tests
- * 
- * Tests:
- * - Profile with single auth config (backward compatibility)
- * - Profile with multiple auth configs
- * - Auth config priority handling
- * - OAuth + Bearer token fallback
+ * Multi-auth precedence resolution (unit).
+ *
+ * These tests exercise the real resolver that decides which configured auth method
+ * applies to an inbound request (`HttpTransport.extractAuthToken`), rather than
+ * asserting the shape of hand-built config objects. They prove that priority
+ * ordering (not array order) drives selection and that the Authorization header
+ * outranks lower-priority custom headers.
+ *
+ * Transport-boundary enforcement (OAuth-required profiles rejecting weaker methods)
+ * is covered in http-transport-auth-enforcement.test.ts.
  */
 
-import { describe, it, expect } from 'vitest';
-import type { AuthInterceptor, InterceptorConfig } from '../types/profile.js';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { HttpTransport } from '../transport/http-transport.js';
+import { ConsoleLogger } from '../core/logger.js';
+import type { AuthInterceptor } from '../types/profile.js';
 
-describe('Multi-Auth Support', () => {
-  describe('Auth Config Array', () => {
-    it('should support single auth config (backward compatibility)', () => {
-      const config: InterceptorConfig = {
-        auth: {
-          type: 'bearer',
-          value_from_env: 'MCP4_API_TOKEN',
-        },
-      };
+describe('Multi-Auth precedence resolution', () => {
+  let transport: HttpTransport;
 
-      expect(config.auth).toBeDefined();
-      expect(Array.isArray(config.auth)).toBe(false);
-      expect((config.auth as AuthInterceptor).type).toBe('bearer');
-    });
-
-    it('should support multiple auth configs as array', () => {
-      const config: InterceptorConfig = {
-        auth: [
-          {
-            type: 'oauth',
-            priority: 0,
-            oauth_config: {
-              authorization_endpoint: 'https://example.com/oauth/authorize',
-              token_endpoint: 'https://example.com/oauth/token',
-              scopes: ['api'],
-            },
-          },
-          {
-            type: 'bearer',
-            priority: 1,
-            value_from_env: 'MCP4_API_TOKEN',
-          },
-        ],
-      };
-
-      expect(config.auth).toBeDefined();
-      expect(Array.isArray(config.auth)).toBe(true);
-      expect((config.auth as AuthInterceptor[]).length).toBe(2);
-    });
-
-    it('should have priority field on each auth config', () => {
-      const authConfigs: AuthInterceptor[] = [
-        {
-          type: 'oauth',
-          priority: 0,
-          oauth_config: {
-            authorization_endpoint: 'https://example.com/oauth/authorize',
-            token_endpoint: 'https://example.com/oauth/token',
-            scopes: ['api'],
-          },
-        },
-        {
-          type: 'bearer',
-          priority: 1,
-          value_from_env: 'MCP4_API_TOKEN',
-        },
-      ];
-
-      expect(authConfigs[0].priority).toBe(0);
-      expect(authConfigs[1].priority).toBe(1);
-    });
+  beforeEach(() => {
+    transport = new HttpTransport(
+      {
+        host: '127.0.0.1',
+        port: 0,
+        sessionTimeoutMs: 1800000,
+        heartbeatEnabled: false,
+        metricsEnabled: false,
+        defaultProfileId: 'default',
+      },
+      new ConsoleLogger(),
+    );
   });
 
-  describe('Auth Config Priority', () => {
-    it('should sort by priority (lower = higher priority)', () => {
-      const configs: AuthInterceptor[] = [
-        {
-          type: 'bearer',
-          priority: 2,
-          value_from_env: 'TOKEN_3',
-        },
-        {
-          type: 'oauth',
-          priority: 0,
-          oauth_config: {
-            authorization_endpoint: 'https://example.com/oauth/authorize',
-            token_endpoint: 'https://example.com/oauth/token',
-            scopes: ['api'],
-          },
-        },
-        {
-          type: 'bearer',
-          priority: 1,
-          value_from_env: 'TOKEN_2',
-        },
-      ];
-
-      const sorted = configs.sort((a, b) => (a.priority || 0) - (b.priority || 0));
-
-      expect(sorted[0].type).toBe('oauth');
-      expect(sorted[0].priority).toBe(0);
-      expect(sorted[1].priority).toBe(1);
-      expect(sorted[2].priority).toBe(2);
-    });
-
-    it('should default priority to 0 if not specified', () => {
-      const config: AuthInterceptor = {
-        type: 'bearer',
-        value_from_env: 'MCP4_API_TOKEN',
-      };
-
-      const priority = config.priority || 0;
-      expect(priority).toBe(0);
-    });
-
-    it('should handle configs with same priority', () => {
-      const configs: AuthInterceptor[] = [
-        {
-          type: 'bearer',
-          priority: 0,
-          value_from_env: 'TOKEN_1',
-        },
-        {
-          type: 'bearer',
-          priority: 0,
-          value_from_env: 'TOKEN_2',
-        },
-      ];
-
-      const sorted = configs.sort((a, b) => (a.priority || 0) - (b.priority || 0));
-
-      // Both have priority 0, order is preserved or stable
-      expect(sorted.length).toBe(2);
-      expect(sorted[0].priority).toBe(0);
-      expect(sorted[1].priority).toBe(0);
-    });
+  afterEach(async () => {
+    await transport.stop();
   });
 
-  describe('OAuth + Bearer Fallback', () => {
-    it('should have OAuth as primary (priority 0) and Bearer as fallback (priority 1)', () => {
-      const config: InterceptorConfig = {
-        auth: [
-          {
-            type: 'oauth',
-            priority: 0,
-            oauth_config: {
-              authorization_endpoint: 'https://www.gitlab.com/oauth/authorize',
-              token_endpoint: 'https://www.gitlab.com/oauth/token',
-              scopes: ['api'],
-            },
-          },
-          {
-            type: 'bearer',
-            priority: 1,
-            value_from_env: 'CI_API_TOKEN',
-          },
-        ],
-      };
+  const resolve = (headers: Record<string, unknown>, configs: AuthInterceptor[]) =>
+    (transport as any).extractAuthToken({ headers }, { sessions: new Map() }, configs);
 
-      expect(Array.isArray(config.auth)).toBe(true);
-      const authArray = config.auth as AuthInterceptor[];
-      
-      const sorted = authArray.sort((a, b) => (a.priority || 0) - (b.priority || 0));
-      expect(sorted[0].type).toBe('oauth');
-      expect(sorted[1].type).toBe('bearer');
-    });
-
-    it('should allow OAuth without value_from_env', () => {
-      const config: AuthInterceptor = {
-        type: 'oauth',
-        oauth_config: {
-          authorization_endpoint: 'https://example.com/oauth/authorize',
-          token_endpoint: 'https://example.com/oauth/token',
-          scopes: ['api'],
-        },
-      };
-
-      expect(config.type).toBe('oauth');
-      expect(config.value_from_env).toBeUndefined();
-      expect(config.oauth_config).toBeDefined();
-    });
-
-    it('should require value_from_env for bearer', () => {
-      const config: AuthInterceptor = {
-        type: 'bearer',
-        value_from_env: 'MCP4_API_TOKEN',
-      };
-
-      expect(config.type).toBe('bearer');
-      expect(config.value_from_env).toBeDefined();
-      expect(config.value_from_env).toBe('MCP4_API_TOKEN');
-    });
+  const oauthInterceptor = (priority?: number): AuthInterceptor => ({
+    type: 'oauth',
+    ...(priority !== undefined ? { priority } : {}),
+    oauth_config: {
+      authorization_endpoint: 'https://example.com/oauth/authorize',
+      token_endpoint: 'https://example.com/oauth/token',
+      scopes: ['api'],
+    },
   });
 
-  describe('Multi-Auth Use Cases', () => {
-    it('should support OAuth for users + Bearer for CI/CD', () => {
-      const config: InterceptorConfig = {
-        auth: [
-          {
-            type: 'oauth',
-            priority: 0,
-            oauth_config: {
-              authorization_endpoint: 'https://www.gitlab.com/oauth/authorize',
-              token_endpoint: 'https://www.gitlab.com/oauth/token',
-              client_id: 'client-id',
-              client_secret: 'client-secret',
-              scopes: ['api', 'read_repository'],
-              redirect_uri: 'https://mcp-gitlab.ai.iszn.cz/oauth/callback',
-            },
-          },
-          {
-            type: 'bearer',
-            priority: 1,
-            value_from_env: 'CI_API_TOKEN',
-          },
-        ],
-      };
+  it('selects the highest-priority (lowest number) custom-header config', () => {
+    const configs: AuthInterceptor[] = [
+      { type: 'custom-header', header_name: 'X-Secondary', priority: 1 },
+      { type: 'custom-header', header_name: 'X-Primary', priority: 0 },
+    ];
 
-      expect(Array.isArray(config.auth)).toBe(true);
-      const authArray = config.auth as AuthInterceptor[];
-      expect(authArray.length).toBe(2);
-      
-      const oauthConfig = authArray.find(a => a.type === 'oauth');
-      const bearerConfig = authArray.find(a => a.type === 'bearer');
-      
-      expect(oauthConfig).toBeDefined();
-      expect(oauthConfig!.priority).toBe(0);
-      expect(oauthConfig!.oauth_config?.scopes).toEqual(['api', 'read_repository']);
-      
-      expect(bearerConfig).toBeDefined();
-      expect(bearerConfig!.priority).toBe(1);
-      expect(bearerConfig!.value_from_env).toBe('CI_API_TOKEN');
-    });
+    const result = resolve(
+      { 'x-primary': 'primary-token', 'x-secondary': 'secondary-token' },
+      configs,
+    );
 
-    it('should support custom-header + bearer fallback', () => {
-      const config: InterceptorConfig = {
-        auth: [
-          {
-            type: 'custom-header',
-            priority: 0,
-            header_name: 'X-API-Key',
-            value_from_env: 'API_KEY',
-          },
-          {
-            type: 'bearer',
-            priority: 1,
-            value_from_env: 'MCP4_API_TOKEN',
-          },
-        ],
-      };
+    expect(result).toEqual({ type: 'api-token', token: 'primary-token' });
+  });
 
-      expect(Array.isArray(config.auth)).toBe(true);
-      const authArray = config.auth as AuthInterceptor[];
-      expect(authArray.length).toBe(2);
-      
-      expect(authArray[0].type).toBe('custom-header');
-      expect(authArray[0].header_name).toBe('X-API-Key');
-      expect(authArray[1].type).toBe('bearer');
-    });
+  it('reorders selection when priorities change, not by array position', () => {
+    const configs: AuthInterceptor[] = [
+      { type: 'custom-header', header_name: 'X-Secondary', priority: 0 },
+      { type: 'custom-header', header_name: 'X-Primary', priority: 1 },
+    ];
+
+    const result = resolve(
+      { 'x-primary': 'primary-token', 'x-secondary': 'secondary-token' },
+      configs,
+    );
+
+    // Same array order as the previous test, only priorities swapped: the resolver
+    // now picks X-Secondary, proving priority (not position) drives selection.
+    expect(result).toEqual({ type: 'api-token', token: 'secondary-token' });
+  });
+
+  it('prefers an Authorization Bearer over a lower-priority custom header', () => {
+    const configs: AuthInterceptor[] = [
+      oauthInterceptor(0),
+      { type: 'custom-header', header_name: 'X-API-Key', priority: 1 },
+    ];
+
+    const result = resolve(
+      { authorization: 'Bearer oauth-access-token', 'x-api-key': 'weak-token' },
+      configs,
+    );
+
+    expect(result.type).toBe('bearer');
+    expect(result.token).toBe('oauth-access-token');
+  });
+
+  it('classifies a session-fallback token as oauth when an oauth config is present', () => {
+    const sessions = new Map<string, { authToken: string }>([['sid', { authToken: 'sess-token' }]]);
+
+    const result = (transport as any).extractAuthToken(
+      { headers: { 'mcp-session-id': 'sid' } },
+      { sessions },
+      [oauthInterceptor()],
+    );
+
+    expect(result).toEqual({ type: 'oauth', token: 'sess-token', sessionId: 'sid' });
+  });
+
+  it('classifies a session-fallback token as api-token when no oauth config is present', () => {
+    const sessions = new Map<string, { authToken: string }>([['sid', { authToken: 'sess-token' }]]);
+
+    const result = (transport as any).extractAuthToken(
+      { headers: { 'mcp-session-id': 'sid' } },
+      { sessions },
+      [{ type: 'custom-header', header_name: 'X-API-Key', priority: 0 }],
+    );
+
+    expect(result).toEqual({ type: 'api-token', token: 'sess-token', sessionId: 'sid' });
   });
 });
-

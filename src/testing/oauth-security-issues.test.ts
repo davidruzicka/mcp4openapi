@@ -1,8 +1,8 @@
 /**
- * Tests to demonstrate security issues found in PR review
- * 
- * These tests prove that the issues exist before fixing them.
- * After fixes are implemented, these tests should pass.
+ * Regression tests for OAuth security issues found in PR review.
+ *
+ * Each test asserts the fixed behavior unconditionally: the fixes are in place,
+ * so these tests fail if any fix regresses.
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
@@ -14,7 +14,7 @@ import type { OAuthConfig } from '../types/profile.js';
 import { ExternalOAuthProvider } from '../auth/oauth-provider.js';
 import { describeIfListen } from './listen-support.js';
 
-describeIfListen('OAuth Security Issues - Proof Tests', () => {
+describeIfListen('OAuth Security Issues - Fixed Behavior', () => {
   let transport: HttpTransport;
   let app: Express;
   let oauthConfig: OAuthConfig;
@@ -115,19 +115,19 @@ describeIfListen('OAuth Security Issues - Proof Tests', () => {
       // This test VERIFIES the fix: XSS payload is now sanitized
     });
 
-    it('should return unsanitized error in oauth-provider callback (PROVES ISSUE)', async () => {
+    it('should HTML-escape the reflected error in oauth-provider callback (AFTER FIX)', async () => {
       const provider = new ExternalOAuthProvider(oauthConfig, new ConsoleLogger());
       await provider.ensureEndpointsInitialized();
-      
+
       const xssPayload = '<img src=x onerror=alert(1)>';
-      
+
       // Mock request with XSS payload
       const mockReq = {
         query: {
           error: xssPayload,
         },
       } as any;
-      
+
       const mockRes = {
         status: vi.fn().mockReturnThis(),
         send: vi.fn(),
@@ -135,15 +135,17 @@ describeIfListen('OAuth Security Issues - Proof Tests', () => {
       } as any;
 
       await provider.handleCallback(mockReq, mockRes);
-      
-      // Check if XSS payload was sanitized
+
+      // The callback error path must respond 400 with a JSON body whose reflected
+      // provider error is HTML-escaped, so no raw markup can be rendered by a client.
+      expect(mockRes.status).toHaveBeenCalledWith(400);
       const sentData = mockRes.json.mock.calls[0]?.[0];
-      
-      if (sentData && typeof sentData === 'object') {
-        expect(sentData.error).toContain('&lt;img');
-        expect(sentData.error).not.toContain('<img');
-        // This test VERIFIES the fix: XSS payload is now sanitized
-      }
+      expect(sentData).toBeDefined();
+      expect(typeof sentData).toBe('object');
+      expect(sentData.error).toContain('&lt;img');
+      expect(sentData.error).not.toContain('<img');
+      expect(sentData.error_description).toContain('&lt;img');
+      expect(sentData.error_description).not.toContain('<img');
     });
   });
 
@@ -169,52 +171,49 @@ describeIfListen('OAuth Security Issues - Proof Tests', () => {
     });
   });
 
-  describe('Issue #4: Client Validation Before Provider Initialization', () => {
-    it('should fail client validation for configured client_id before ensureEndpointsInitialized (PROVES ISSUE)', async () => {
-      // Create provider with a specific client_id in config
-      // This client_id should be registered in ensureEndpointsInitialized()
+  describe('Issue #4: Client Validation After Provider Initialization (AFTER FIX)', () => {
+    it('resolves the configured client_id once ensureEndpointsInitialized has run', async () => {
+      // The configured client_id is registered during initialization; the transport
+      // now awaits ensureEndpointsInitialized() before looking a client up, so a
+      // configured client is always resolvable at validation time.
       const configWithClientId: OAuthConfig = {
         ...oauthConfig,
-        client_id: 'my-custom-client-id', // This will be registered in ensureEndpointsInitialized
+        client_id: 'my-custom-client-id',
       };
-      
+
       const provider = new ExternalOAuthProvider(configWithClientId, new ConsoleLogger());
-      
-      // Try to get the configured client BEFORE initialization
-      // This client should NOT be available yet (only mcp-proxy-client is pre-registered)
-      const clientBeforeInit = await provider.clientsStore.getClient('my-custom-client-id');
-      
-      // Client should be undefined before initialization
-      expect(clientBeforeInit).toBeUndefined();
-      
-      // Now initialize - this registers the configured client_id
+
       await provider.ensureEndpointsInitialized();
-      
-      // After initialization, client should be available
-      const clientAfterInit = await provider.clientsStore.getClient('my-custom-client-id');
-      expect(clientAfterInit).toBeDefined();
-      expect(clientAfterInit?.client_id).toBe('my-custom-client-id');
-      
-      // This test PROVES the issue: client validation in http-transport.ts happens
-      // before ensureEndpointsInitialized(), so configured client_id will be rejected
+
+      const client = await provider.clientsStore.getClient('my-custom-client-id');
+      expect(client).toBeDefined();
+      expect(client?.client_id).toBe('my-custom-client-id');
     });
 
-    it('should reject valid client_id in authorize endpoint before init (PROVES ISSUE)', async () => {
-      // Make request immediately after transport creation
-      // Provider might not be initialized yet
-      const response = await request(app)
-        .get('/oauth/authorize')
-        .query({
-          client_id: 'mcp-proxy-client', // This should be valid after init
-          redirect_uri: 'http://localhost:3000/callback',
-        });
+    it('retries initialization after a config-time failure instead of permanently wedging', async () => {
+      const provider = new ExternalOAuthProvider(oauthConfig, new ConsoleLogger());
 
-      // If we get 400 with "Invalid client_id", it means validation happened before init
-      // This is the bug - client should be available after ensureEndpointsInitialized
-      if (response.status === 400 && response.text.includes('Invalid client_id')) {
-        // This PROVES the issue exists
-        expect(true).toBe(true);
-      }
+      // Force the first initialization attempt to fail.
+      const deriveSpy = vi
+        .spyOn(provider as any, 'deriveEndpointsFromIssuer')
+        .mockRejectedValueOnce(new Error('transient init failure'));
+
+      await expect(provider.ensureEndpointsInitialized()).rejects.toThrow('transient init failure');
+
+      // The memoized promise must be cleared on rejection so a later request retries
+      // rather than every OAuth endpoint 500-ing forever after one config-time error.
+      expect((provider as any).initializationPromise).toBeNull();
+      expect((provider as any).endpointsInitialized).toBe(false);
+
+      // A subsequent attempt succeeds (spy now falls through to the real derivation).
+      deriveSpy.mockImplementation(async (cfg: any) => cfg);
+      await expect(provider.ensureEndpointsInitialized()).resolves.toBeUndefined();
+      expect((provider as any).endpointsInitialized).toBe(true);
+
+      // And the configured client is resolvable after the successful retry.
+      const client = await provider.clientsStore.getClient('test-client-id');
+      expect(client).toBeDefined();
+      expect(client?.client_id).toBe('test-client-id');
     });
   });
 
