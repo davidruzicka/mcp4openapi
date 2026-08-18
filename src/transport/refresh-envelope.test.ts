@@ -8,8 +8,9 @@
 
 import { describe, expect, it, vi } from 'vitest';
 import type { Logger } from '../core/logger.js';
-import { AuthenticationError } from '../core/errors.js';
+import { AuthenticationError, OAuthInvalidGrantError } from '../core/errors.js';
 import { decryptRefreshEnvelope, encryptRefreshEnvelope } from '../auth/token-envelope.js';
+import { RefreshRotationStore } from '../auth/refresh-rotation-store.js';
 import {
   buildClientRefreshToken,
   resolveRefreshGrant,
@@ -116,5 +117,115 @@ describe('resolveRefreshGrant', () => {
     expect(resolveRefreshGrant(mkContext({ tokenKey: undefined }), 'plain-refresh', 'client-a')).toEqual({
       refreshToken: 'plain-refresh',
     });
+  });
+});
+
+describe('refresh token rotation (OAuth 2.1 §4.3.1)', () => {
+  const identityResolver = (accessToken: string) =>
+    accessToken === 'idp-access' ? { subject: 'person-1', issuer: ISSUER, tenantId: 't1' } : undefined;
+
+  const rotationContext = () => {
+    const recordRotation = vi.fn();
+    const context = mkContext({ rotationStore: new RefreshRotationStore(), recordRotation });
+    return { context, recordRotation };
+  };
+
+  it('issues a rotated refresh token that differs from the input and carries fid/jti', () => {
+    const { context, recordRotation } = rotationContext();
+    const token1 = buildClientRefreshToken(
+      context,
+      { access_token: 'idp-access', refresh_token: 'idp-refresh-1' },
+      'client-a',
+      identityResolver,
+    )!;
+
+    const grant = resolveRefreshGrant(context, token1, 'client-a');
+    expect(grant.family?.fid).toBeDefined();
+
+    const token2 = buildClientRefreshToken(
+      context,
+      { access_token: 'idp-access', refresh_token: 'idp-refresh-2' },
+      'client-a',
+      identityResolver,
+      grant.family,
+    )!;
+
+    expect(token2).not.toBe(token1);
+    const p1 = decryptRefreshEnvelope(token1, KEY, 'default')!;
+    const p2 = decryptRefreshEnvelope(token2, KEY, 'default')!;
+    expect(p2.fid).toBe(p1.fid); // same family
+    expect(p2.jti).not.toBe(p1.jti); // rotated token id
+    expect(recordRotation).toHaveBeenCalledWith('rotated');
+  });
+
+  it('rejects the superseded token after rotation and revokes the whole family', () => {
+    const { context, recordRotation } = rotationContext();
+    const token1 = buildClientRefreshToken(
+      context,
+      { access_token: 'idp-access', refresh_token: 'idp-refresh-1' },
+      'client-a',
+      identityResolver,
+    )!;
+    const grant = resolveRefreshGrant(context, token1, 'client-a');
+    const token2 = buildClientRefreshToken(
+      context,
+      { access_token: 'idp-access', refresh_token: 'idp-refresh-2' },
+      'client-a',
+      identityResolver,
+      grant.family,
+    )!;
+
+    // Replaying the superseded token1 is reuse -> invalid_grant + family revoked.
+    expect(() => resolveRefreshGrant(context, token1, 'client-a')).toThrow(OAuthInvalidGrantError);
+    expect(recordRotation).toHaveBeenCalledWith('reuse_detected');
+    // The still-active token2 is now dead too (family revoked).
+    expect(() => resolveRefreshGrant(context, token2, 'client-a')).toThrow(OAuthInvalidGrantError);
+  });
+
+  it('accepts the freshly rotated token on the next legitimate refresh', () => {
+    const { context } = rotationContext();
+    const token1 = buildClientRefreshToken(
+      context,
+      { access_token: 'idp-access', refresh_token: 'idp-refresh-1' },
+      'client-a',
+      identityResolver,
+    )!;
+    const grant1 = resolveRefreshGrant(context, token1, 'client-a');
+    const token2 = buildClientRefreshToken(
+      context,
+      { access_token: 'idp-access', refresh_token: 'idp-refresh-2' },
+      'client-a',
+      identityResolver,
+      grant1.family,
+    )!;
+    // The rotated token is the active one and redeems cleanly.
+    expect(() => resolveRefreshGrant(context, token2, 'client-a')).not.toThrow();
+  });
+
+  it('client binding and 30-day TTL still enforced on rotated envelopes', () => {
+    const { context } = rotationContext();
+    const token1 = buildClientRefreshToken(
+      context,
+      { access_token: 'idp-access', refresh_token: 'idp-refresh-1' },
+      'client-a',
+      identityResolver,
+    )!;
+    // A different client cannot redeem the rotated envelope.
+    expect(() => resolveRefreshGrant(context, token1, 'client-b')).toThrow(AuthenticationError);
+
+    // An envelope past the 30-day identity TTL no longer decrypts.
+    const stale = encryptRefreshEnvelope(
+      {
+        v: 1,
+        rt: 'idp-refresh',
+        cid: 'client-a',
+        pid: 'default',
+        iat: Date.now() - 31 * 24 * 60 * 60 * 1000,
+        fid: 'fam-x',
+        jti: 'jti-x',
+      },
+      KEY,
+    );
+    expect(() => resolveRefreshGrant(context, stale, 'client-a')).toThrow(/could not be verified/);
   });
 });

@@ -4986,6 +4986,83 @@ describeIfListen('HttpTransport', () => {
       expect(response.body.refresh_token).toBe('raw-idp-refresh-k');
       await t.stop();
     });
+
+    it('Test M: refresh_token grant rotates the client refresh token and rejects reuse of the old one', async () => {
+      const key = Buffer.from('a'.repeat(64), 'hex');
+      const t = await buildOauthTransport(key);
+      const tApp = (t as any).app;
+      const profileState = (t as any).profileStates.get('default') ?? createProfileState(t as any);
+      profileState.oauthProvider = {
+        ensureEndpointsInitialized: async () => {},
+        clientsStore: {
+          getClient: async () => ({
+            client_id: 'test-client',
+            redirect_uris: ['https://example.com/cb'],
+            grant_types: ['authorization_code', 'refresh_token'],
+            response_types: ['code'],
+            scope: 'read write',
+          }),
+          registerClient: async (c: any) => c,
+        },
+        getIdentityForAccessToken: () => undefined,
+        exchangeAuthorizationCode: async () => ({
+          access_token: 'idp-access-m0',
+          refresh_token: 'idp-refresh-m0',
+          expires_in: 3600,
+          token_type: 'Bearer',
+        }),
+        exchangeRefreshToken: async () => ({
+          access_token: 'idp-access-m1',
+          refresh_token: 'idp-refresh-m1',
+          expires_in: 3600,
+          token_type: 'Bearer',
+        }),
+      };
+      (t as any).validateOAuthClientCredentials = async () => ({
+        client_id: 'test-client',
+        scope: 'read write',
+      });
+
+      const initial = await request(tApp).post('/oauth/token').send({
+        grant_type: 'authorization_code',
+        client_id: 'test-client',
+        code: 'auth-code-m',
+        code_verifier: 'verifier-m',
+        redirect_uri: 'https://example.com/cb',
+      });
+      expect(initial.status).toBe(200);
+      const r0 = initial.body.refresh_token as string;
+      expect(r0.startsWith('mcp4.r1.')).toBe(true);
+
+      const refreshed = await request(tApp).post('/oauth/token').send({
+        grant_type: 'refresh_token',
+        client_id: 'test-client',
+        refresh_token: r0,
+      });
+      expect(refreshed.status).toBe(200);
+      const r1 = refreshed.body.refresh_token as string;
+      expect(r1.startsWith('mcp4.r1.')).toBe(true);
+      expect(r1).not.toBe(r0); // rotated
+
+      // Replaying the superseded r0 is reuse -> 400 invalid_grant.
+      const reuse = await request(tApp).post('/oauth/token').send({
+        grant_type: 'refresh_token',
+        client_id: 'test-client',
+        refresh_token: r0,
+      });
+      expect(reuse.status).toBe(400);
+      expect(reuse.body.error).toBe('invalid_grant');
+
+      // The family is revoked: the rotated r1 is dead too.
+      const afterRevoke = await request(tApp).post('/oauth/token').send({
+        grant_type: 'refresh_token',
+        client_id: 'test-client',
+        refresh_token: r1,
+      });
+      expect(afterRevoke.status).toBe(400);
+      expect(afterRevoke.body.error).toBe('invalid_grant');
+      await t.stop();
+    });
   });
 
   describe('refreshAccessToken envelope assignment', () => {

@@ -24,6 +24,14 @@
  * with the now-stale `rt`. Re-auth is required (same as today). For non-rotating refresh
  * tokens, zero-reauth across arbitrary restarts is supported.
  *
+ * Rotation note: client-facing refresh envelopes carry a `fid` (family) and
+ * `jti` (per-token) so the gateway can rotate them and detect reuse (see
+ * refresh-rotation-store.ts). The rotation state is process-local, so a restart
+ * resets it: a client's latest envelope is accepted on first use and re-anchors
+ * its family, preserving restart-recovery; a pre-restart superseded token is
+ * accepted once after a restart. Legacy envelopes without `fid`/`jti` decrypt
+ * unchanged and age out on the next refresh.
+ *
  * Phase 5 (Upstream OAuth Proxy) will reuse this module unchanged. The TokenEnvelopePayload
  * interface intentionally has no `upstreamAt` / `upstreamRt` fields yet - they will be added
  * additively in Phase 5 without breaking on-disk format compatibility (decrypt is forward-tolerant
@@ -102,6 +110,10 @@ export interface RefreshEnvelopePayload {
   tid?: string; // verified OIDC tenant id
   pid: string; // profile_id (REQUIRED - also bound as AAD)
   iat: number; // issued-at, ms since epoch
+  // Rotation (OAuth 2.1 §4.3.1). OPTIONAL for backward compatibility: envelopes
+  // issued before rotation landed omit both and age out on first refresh.
+  fid?: string; // rotation family id (stable across a chain)
+  jti?: string; // this token's unique id within the family (rotated each refresh)
 }
 
 /** O(1) format check for `mcp4.r1.` refresh envelopes. Does NOT decrypt. */
@@ -166,6 +178,10 @@ function attemptRefreshDecrypt(
   const now = Date.now();
   if (candidate.iat > now + IAT_FUTURE_SKEW_MS) return null;
   if (now - candidate.iat > REFRESH_IDENTITY_TTL_MS) return null;
+  // Rotation ids are optional (legacy envelopes omit them), but when present
+  // they must be non-empty strings - a blank id could not track a chain.
+  if (candidate.fid !== undefined && (typeof candidate.fid !== 'string' || candidate.fid.length === 0)) return null;
+  if (candidate.jti !== undefined && (typeof candidate.jti !== 'string' || candidate.jti.length === 0)) return null;
   if (!validateIdentityCoherence(candidate)) return null;
 
   return candidate as unknown as RefreshEnvelopePayload;

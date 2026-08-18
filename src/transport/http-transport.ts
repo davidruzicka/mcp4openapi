@@ -40,7 +40,8 @@ import {
 import { ConsentHttpController } from './consent-http-controller.js';
 import { ReconsentTracker } from './reconsent-tracker.js';
 import * as refreshEnvelope from './refresh-envelope.js';
-import type { AccessTokenIdentityResolver, RefreshEnvelopeContext } from './refresh-envelope.js';
+import type { AccessTokenIdentityResolver, RefreshEnvelopeContext, RefreshFamily } from './refresh-envelope.js';
+import { RefreshRotationStore } from '../auth/refresh-rotation-store.js';
 import { EnterpriseAuthProvider } from '../auth/enterprise-auth-provider.js';
 import { InboundAuthTokenStore } from '../auth/inbound-auth-token-store.js';
 import { EnterpriseReplayStore } from '../auth/enterprise-replay-store.js';
@@ -220,6 +221,11 @@ export class HttpTransport {
   /** Browser-facing consent flow (pages, pending approvals, fingerprint/cookie binding). */
   private readonly consentController = new ConsentHttpController();
   private readonly enterpriseReplayStore: EnterpriseReplayStore;
+  /**
+   * Bounded rotation state for client-facing refresh tokens (OAuth 2.1 §4.3.1).
+   * Process-local and shared across profiles; keys are namespaced by profile id.
+   */
+  private readonly refreshRotationStore = new RefreshRotationStore();
   /**
    * One-shot re-consent state per profile/subject/rules version: bounds the
    * re-consent 401 to a single OAuth restart per subject (so a client that
@@ -2324,7 +2330,9 @@ export class HttpTransport {
         );
         const registeredClient = await profileState.oauthProvider.clientsStore.getClient(client.client_id);
         const clientToken = this.storeOAuthTokens(profileState, tokens, client.client_id, client.scope?.split(' ') || [], registeredClient ?? undefined);
-        const clientRefreshToken = this.buildClientRefreshToken(profileState, tokens, client.client_id);
+        // Rotate the client-facing refresh token: reuse the redeemed family so the
+        // new token supersedes the presented one (OAuth 2.1 §4.3.1).
+        const clientRefreshToken = this.buildClientRefreshToken(profileState, tokens, client.client_id, grant.family);
         response.json({
           ...tokens,
           access_token: clientToken,
@@ -4890,6 +4898,9 @@ export class HttpTransport {
       consentRequired: profileState.context.consent_gate?.required === true,
       tokenKey: this.config.tokenKey,
       legacyTokenKey: this.config.legacyTokenKey,
+      rotationStore: this.refreshRotationStore,
+      recordRotation: (event) =>
+        this.metrics?.recordRefreshRotation(event, { profileId: profileState.profileId }),
       logger: this.logger,
     };
   }
@@ -4899,12 +4910,14 @@ export class HttpTransport {
     profileState: ProfileRuntimeState,
     tokens: OAuthTokens,
     clientId: string,
+    previousFamily?: RefreshFamily,
   ): string | undefined {
     return refreshEnvelope.buildClientRefreshToken(
       this.refreshEnvelopeContext(profileState),
       tokens,
       clientId,
       this.getIdentityResolver(profileState),
+      previousFamily,
     );
   }
 
@@ -4913,7 +4926,7 @@ export class HttpTransport {
     profileState: ProfileRuntimeState,
     presentedToken: string,
     presentingClientId: string,
-  ): { refreshToken: string; identity?: OidcIdentity } {
+  ): { refreshToken: string; identity?: OidcIdentity; family?: RefreshFamily } {
     return refreshEnvelope.resolveRefreshGrant(
       this.refreshEnvelopeContext(profileState),
       presentedToken,

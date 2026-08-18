@@ -7,10 +7,13 @@
  * testable without a transport instance.
  */
 
+import { randomUUID } from 'node:crypto';
 import type { OAuthTokens } from '@modelcontextprotocol/sdk/shared/auth.js';
 import type { Logger } from '../core/logger.js';
 import type { OidcIdentity } from '../auth/oidc-identity-verifier.js';
-import { AuthenticationError } from '../core/errors.js';
+import { AuthenticationError, OAuthInvalidGrantError } from '../core/errors.js';
+import { pseudonymizeSubject } from '../auth/observability-pseudonym.js';
+import type { RefreshRotationStore } from '../auth/refresh-rotation-store.js';
 import {
   assertRefreshEnvelopeClientBinding,
   decryptRefreshEnvelope,
@@ -25,6 +28,14 @@ import {
  */
 export type AccessTokenIdentityResolver = (accessToken: string) => OidcIdentity | undefined;
 
+/** Observable rotation events (fed to metrics/logging). */
+export type RefreshRotationEvent = 'rotated' | 'reuse_detected';
+
+/** A rotation chain reference threaded from redemption to re-issuance. */
+export interface RefreshFamily {
+  fid: string;
+}
+
 /** Per-profile inputs both refresh envelope directions depend on. */
 export interface RefreshEnvelopeContext {
   profileId: string;
@@ -34,7 +45,20 @@ export interface RefreshEnvelopeContext {
   tokenKey?: Buffer;
   /** Legacy SHA-256 KDF fallback key for pre-scrypt envelopes. */
   legacyTokenKey?: Buffer;
+  /**
+   * Bounded rotation state (OAuth 2.1 §4.3.1). Undefined disables rotation
+   * tracking (plain-token mode / tests) - envelopes are still issued, just not
+   * reuse-tracked.
+   */
+  rotationStore?: RefreshRotationStore;
+  /** Observability sink; invoked on rotation and reuse detection. */
+  recordRotation?: (event: RefreshRotationEvent) => void;
   logger: Logger;
+}
+
+/** Namespaced rotation-store key: fid is random, profileId keeps chains disjoint. */
+function familyKey(profileId: string, fid: string): string {
+  return `${profileId}:${fid}`;
 }
 
 /**
@@ -56,6 +80,7 @@ export function buildClientRefreshToken(
   tokens: OAuthTokens,
   clientId: string,
   resolveIdentity: AccessTokenIdentityResolver | undefined,
+  previousFamily?: RefreshFamily,
 ): string | undefined {
   if (!tokens.refresh_token) return undefined;
   if (!context.tokenKey) return tokens.refresh_token;
@@ -64,8 +89,13 @@ export function buildClientRefreshToken(
     ? resolveIdentity(tokens.access_token)
     : undefined;
 
+  // Rotation (OAuth 2.1 §4.3.1): every issuance mints a fresh jti; the family id
+  // is inherited across a refresh chain and freshly minted on initial issuance.
+  const fid = previousFamily?.fid ?? randomUUID();
+  const jti = randomUUID();
+
   try {
-    return encryptRefreshEnvelope(
+    const envelope = encryptRefreshEnvelope(
       {
         v: 1,
         rt: tokens.refresh_token,
@@ -75,10 +105,23 @@ export function buildClientRefreshToken(
         tid: identity?.tenantId,
         pid: context.profileId,
         iat: Date.now(),
+        fid,
+        jti,
       },
       context.tokenKey,
     );
+    // Commit the rotation only after the envelope was minted. rotate() throws
+    // (OAuthInvalidGrantError) when the family was revoked by a concurrent reuse,
+    // which fails the exchange closed rather than resurrecting a dead chain.
+    context.rotationStore?.rotate(familyKey(context.profileId, fid), jti);
+    context.recordRotation?.('rotated');
+    context.logger.info('Client refresh token rotated', {
+      profileId: context.profileId,
+      subjectHash: identity?.subject ? pseudonymizeSubject(identity.subject) : undefined,
+    });
+    return envelope;
   } catch (err) {
+    if (err instanceof OAuthInvalidGrantError) throw err;
     if (context.consentRequired) {
       // A raw IdP refresh token carries no identity binding: on a consent-gated
       // profile resolveRefreshGrant would deterministically reject it later,
@@ -116,7 +159,7 @@ export function resolveRefreshGrant(
   context: RefreshEnvelopeContext,
   presentedToken: string,
   presentingClientId: string,
-): { refreshToken: string; identity?: OidcIdentity } {
+): { refreshToken: string; identity?: OidcIdentity; family?: RefreshFamily } {
   if (context.tokenKey && isRefreshEnvelope(presentedToken)) {
     const payload = decryptRefreshEnvelope(
       presentedToken,
@@ -134,7 +177,23 @@ export function resolveRefreshGrant(
     if (context.consentRequired && !identity) {
       throw new AuthenticationError('Refresh token carries no verified identity for a consent-gated profile');
     }
-    return { refreshToken: payload.rt, identity };
+    // Reuse detection (OAuth 2.1 §4.3.1). Only rotation-tagged envelopes are
+    // tracked; legacy envelopes (no fid/jti) pass through and are reissued as
+    // rotating ones. The check runs before the upstream call so a replayed token
+    // never reaches the IdP, and it fails closed (invalid_grant) on reuse.
+    const family = payload.fid && payload.jti ? { fid: payload.fid } : undefined;
+    if (family && payload.jti && context.rotationStore) {
+      const status = context.rotationStore.redeem(familyKey(context.profileId, family.fid), payload.jti);
+      if (status === 'reuse') {
+        context.recordRotation?.('reuse_detected');
+        context.logger.warn('Refresh token reuse detected - rotation chain revoked', {
+          profileId: context.profileId,
+          subjectHash: payload.sub ? pseudonymizeSubject(payload.sub) : undefined,
+        });
+        throw new OAuthInvalidGrantError('Refresh token has been superseded (reuse detected)');
+      }
+    }
+    return { refreshToken: payload.rt, identity, ...(family ? { family } : {}) };
   }
 
   if (context.consentRequired) {
