@@ -84,6 +84,9 @@ export class JwksCache {
     const response = await fetch(jwksUri, {
       headers: { accept: 'application/json' },
       signal: AbortSignal.timeout(this.options.refreshTimeoutMs),
+      // No redirect following: SSRF validation applies to jwksUri only, so a
+      // redirect must fail instead of bypassing it.
+      redirect: 'error',
     });
     if (!response.ok) {
       throw new EnterpriseIssuerDiscoveryError('Failed to fetch enterprise JWKS', { issuer, status: response.status });

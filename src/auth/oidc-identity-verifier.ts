@@ -130,6 +130,9 @@ export class OidcIdentityVerifier {
     const response = await this.fetchFn(discoveryUrl, {
       headers: { accept: 'application/json' },
       signal: AbortSignal.timeout(5000),
+      // No redirect following: the SSRF validation and same-origin JWKS pin
+      // apply to this URL only, so a redirect must fail instead of bypassing them.
+      redirect: 'error',
     });
     if (!response.ok) {
       throw new AuthenticationError('OIDC discovery failed');

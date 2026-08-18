@@ -43,6 +43,16 @@ const TOKEN_PREFIX = 'mcp4.v1.';
  */
 const REFRESH_TOKEN_PREFIX = 'mcp4.r1.';
 const REFRESH_AAD_SUFFIX = ':refresh';
+/**
+ * How long a refresh-token identity binding stays valid before re-auth.
+ * Shared horizon: the in-memory identity map in oauth-provider and the
+ * refresh-envelope `iat` age check below enforce the same limit, so a
+ * client-side envelope cannot rebind the human subject past the horizon
+ * the server-side map enforces.
+ */
+export const REFRESH_IDENTITY_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+// Tolerated forward clock skew when validating a refresh envelope `iat`.
+const IAT_FUTURE_SKEW_MS = 60 * 1000;
 const NONCE_BYTES = 12;
 const TAG_BYTES = 16;
 const HEX_KEY_LENGTH = 64; // 32 bytes encoded as hex
@@ -120,7 +130,9 @@ export function encryptRefreshEnvelope(payload: RefreshEnvelopePayload, key: Buf
 
 /**
  * Decrypt a `mcp4.r1.` refresh envelope. Returns null on every failure mode,
- * never throws. Retries once with `fallbackKey` for legacy-KDF deployments.
+ * including an `iat` older than REFRESH_IDENTITY_TTL_MS or future-dated beyond
+ * IAT_FUTURE_SKEW_MS. Never throws. Retries once with `fallbackKey` for
+ * legacy-KDF deployments.
  */
 export function decryptRefreshEnvelope(
   token: string,
@@ -149,6 +161,11 @@ function attemptRefreshDecrypt(
   if (typeof candidate.cid !== 'string' || candidate.cid.length === 0) return null;
   if (candidate.pid !== profileId) return null;
   if (typeof candidate.iat !== 'number') return null;
+  // Age horizon: an identity-bearing envelope must not rebind the subject
+  // indefinitely - enforce the same TTL as the in-memory identity map.
+  const now = Date.now();
+  if (candidate.iat > now + IAT_FUTURE_SKEW_MS) return null;
+  if (now - candidate.iat > REFRESH_IDENTITY_TTL_MS) return null;
   if (!validateIdentityCoherence(candidate)) return null;
 
   return candidate as unknown as RefreshEnvelopePayload;

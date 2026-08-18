@@ -2,6 +2,7 @@ import { createLocalJWKSet, exportJWK, generateKeyPair, SignJWT } from 'jose';
 import { describe, expect, it, vi } from 'vitest';
 import { OidcIdentityVerifier } from './oidc-identity-verifier.js';
 import { JwksCache } from './jwks-cache.js';
+import { EnterpriseIssuerDiscoveryError } from '../core/errors.js';
 import type { Logger } from '../core/logger.js';
 
 const logger = {
@@ -60,7 +61,7 @@ async function fixture() {
     .setIssuedAt()
     .setExpirationTime('5m')
     .sign(privateKey);
-  return { verifier, sign, privateKey, issuer, audience, fetchFn, jwk };
+  return { verifier, sign, privateKey, issuer, audience, fetchFn, jwk, ssrfValidator };
 }
 
 describe('OidcIdentityVerifier', () => {
@@ -439,5 +440,99 @@ describe('OidcIdentityVerifier failure observability', () => {
     expect(serialized).not.toContain(token);
     expect(serialized).not.toContain('nonce-1');
     expect(serialized).not.toContain('subject-1');
+  });
+});
+
+describe('OidcIdentityVerifier discovery hardening', () => {
+  it('SSRF-validates both the discovery URL and the pinned jwks_uri', async () => {
+    const { verifier, sign, issuer, ssrfValidator } = await fixture();
+
+    await verifier.verify(await sign({ nonce: 'nonce-1' }), 'nonce-1');
+
+    expect(ssrfValidator.validate).toHaveBeenCalledWith(
+      `${issuer}/.well-known/openid-configuration`,
+      expect.anything(),
+    );
+    expect(ssrfValidator.validate).toHaveBeenCalledWith(`${issuer}/jwks`, expect.anything());
+  });
+
+  it('fetches discovery metadata without following redirects', async () => {
+    const { verifier, sign, fetchFn } = await fixture();
+
+    await verifier.verify(await sign({ nonce: 'nonce-1' }), 'nonce-1');
+
+    const discoveryCall = vi.mocked(fetchFn).mock.calls
+      .find(([input]) => String(input).endsWith('/.well-known/openid-configuration'));
+    expect(discoveryCall?.[1]).toMatchObject({ redirect: 'error' });
+  });
+
+  it('rejects a same-origin jwks_uri that downgrades to http', async () => {
+    const { verifier, token } = await discoveryFixture({
+      discoveryBody: {
+        issuer: 'https://issuer.example.test/tenant/v2.0',
+        jwks_uri: 'http://issuer.example.test/tenant/v2.0/jwks',
+      },
+    });
+
+    await expect(verifier.verify(token, 'nonce-1')).rejects.toThrow('JWKS endpoint is not trusted');
+  });
+
+  it('maps a JWKS kid-not-found failure to the generic identity error', async () => {
+    const issuer = 'https://issuer.example.test/tenant/v2.0';
+    const audience = 'client-id';
+    const { privateKey } = await generateKeyPair('RS256');
+    const fetchFn = vi.fn(async () =>
+      new Response(JSON.stringify({ issuer, jwks_uri: `${issuer}/jwks` }), { status: 200 }),
+    ) as typeof fetch;
+    const jwksCache = {
+      getResolver: vi.fn(async () => {
+        throw new EnterpriseIssuerDiscoveryError('JWKS does not contain the requested key id', {
+          issuer,
+          kid: 'key-1',
+        });
+      }),
+    } as unknown as JwksCache;
+    const verifier = new OidcIdentityVerifier({
+      issuer,
+      audience,
+      jwksCache,
+      logger,
+      fetchFn,
+      ssrfValidator: { validate: vi.fn(async () => undefined) } as never,
+    });
+    const token = await signWith(privateKey, issuer, audience, { nonce: 'nonce-1' });
+
+    const error = await verifier.verify(token, 'nonce-1').catch((err: unknown) => err as Error);
+    expect(error.message).toBe('OIDC identity validation failed');
+    expect(error.message).not.toContain('key id');
+  });
+});
+
+describe('OidcIdentityVerifier expiry clock tolerance', () => {
+  it('rejects a token expired beyond the 30s tolerance and accepts one within it', async () => {
+    vi.useFakeTimers();
+    try {
+      const base = Date.parse('2026-08-18T12:00:00Z');
+      vi.setSystemTime(base);
+      const { verifier, privateKey, issuer, audience } = await fixture();
+      const nowSec = Math.floor(base / 1000);
+      const signWithExp = (exp: number) => new SignJWT({ nonce: 'nonce-1' })
+        .setProtectedHeader({ alg: 'RS256', kid: 'key-1' })
+        .setIssuer(issuer)
+        .setAudience(audience)
+        .setSubject('subject-1')
+        .setIssuedAt(nowSec - 300)
+        .setExpirationTime(exp)
+        .sign(privateKey);
+
+      // 31s past expiry: outside the 30s clockTolerance window.
+      await expect(verifier.verify(await signWithExp(nowSec - 31), 'nonce-1'))
+        .rejects.toThrow('OIDC ID token validation failed');
+      // 29s past expiry: still inside the tolerance window.
+      await expect(verifier.verify(await signWithExp(nowSec - 29), 'nonce-1'))
+        .resolves.toMatchObject({ subject: 'subject-1' });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

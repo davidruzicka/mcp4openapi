@@ -1633,6 +1633,7 @@ describe('ExternalOAuthProvider', () => {
       const identity = { subject: 'user-1', issuer: 'https://issuer.example.test' };
       (provider as any).refreshTokenIdentities.set('old-refresh', {
         identity,
+        clientId: 'client',
         expiresAt: Date.now() + 60_000,
       });
       vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response(JSON.stringify({
@@ -1682,45 +1683,97 @@ describe('ExternalOAuthProvider', () => {
     it('sweeps expired identity bindings when storing a new one', () => {
       const map = (provider as any).refreshTokenIdentities as Map<
         string,
-        { identity: unknown; expiresAt: number }
+        { identity: unknown; clientId: string; expiresAt: number }
       >;
       const now = Date.now();
-      map.set('expired', { identity: { subject: 'gone' }, expiresAt: now - 1 });
-      map.set('live', { identity: { subject: 'kept' }, expiresAt: now + 3600_000 });
+      map.set('expired', { identity: { subject: 'gone' }, clientId: 'client', expiresAt: now - 1 });
+      map.set('live', { identity: { subject: 'kept' }, clientId: 'client', expiresAt: now + 3600_000 });
 
       (provider as any).storeRefreshTokenIdentity('new-refresh', {
         subject: 'newcomer',
         issuer: 'https://issuer.example.test/tenant/v2.0',
-      });
+      }, 'client');
 
       expect(map.has('expired')).toBe(false);
       expect(map.has('live')).toBe(true);
       expect(map.has('new-refresh')).toBe(true);
     });
 
-    it('evicts the nearest-expiry identity binding at capacity, not the oldest inserted one', () => {
+    it('stays bounded at capacity by evicting the first (nearest-expiry) binding', () => {
       const map = (provider as any).refreshTokenIdentities as Map<
         string,
-        { identity: unknown; expiresAt: number }
+        { identity: unknown; clientId: string; expiresAt: number }
       >;
       const now = Date.now();
-      // Oldest inserted but longest-lived: FIFO eviction would drop this one and
-      // silently force that user to re-consent.
-      map.set('long-lived', { identity: { subject: 'keep' }, expiresAt: now + 30 * 24 * 3600_000 });
-      for (let i = 0; i < 9998; i += 1) {
-        map.set(`filler-${i}`, { identity: { subject: `u${i}` }, expiresAt: now + 20 * 24 * 3600_000 });
+      // Constant TTL means insertion order equals expiry order, so the first
+      // key is always the nearest-expiry binding.
+      for (let i = 0; i < 10000; i += 1) {
+        map.set(`filler-${i}`, {
+          identity: { subject: `u${i}` },
+          clientId: 'client',
+          expiresAt: now + 20 * 24 * 3600_000 + i,
+        });
       }
-      map.set('expires-soonest', { identity: { subject: 'drop' }, expiresAt: now + 60_000 });
       expect(map.size).toBe(10000);
 
       (provider as any).storeRefreshTokenIdentity('fresh-refresh', {
         subject: 'newcomer',
         issuer: 'https://issuer.example.test/tenant/v2.0',
-      });
+      }, 'client');
 
-      expect(map.has('expires-soonest')).toBe(false);
-      expect(map.has('long-lived')).toBe(true);
+      expect(map.size).toBe(10000);
+      expect(map.has('filler-0')).toBe(false);
+      expect(map.has('filler-1')).toBe(true);
       expect(map.get('fresh-refresh')?.identity).toMatchObject({ subject: 'newcomer' });
+    });
+
+    it('drops an expired identity binding and issues an identity-less access token', async () => {
+      const identity = { subject: 'user-1', issuer: 'https://issuer.example.test' };
+      (provider as any).refreshTokenIdentities.set('stale-refresh', {
+        identity,
+        clientId: 'client',
+        expiresAt: Date.now() - 1,
+      });
+      vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response(JSON.stringify({
+        access_token: 'stale-access',
+        refresh_token: 'stale-next-refresh',
+        token_type: 'Bearer',
+        expires_in: 3600,
+      }), { status: 200, headers: { 'content-type': 'application/json' } }));
+      (provider as any).ssrfValidator.validate = vi.fn(async () => undefined);
+
+      await provider.exchangeRefreshToken(
+        { client_id: 'client', redirect_uris: [], grant_types: ['refresh_token'], response_types: [] },
+        'stale-refresh',
+      );
+
+      expect(provider.getIdentityForAccessToken('stale-access')).toBeUndefined();
+      expect((provider as any).refreshTokenIdentities.has('stale-refresh')).toBe(false);
+    });
+
+    it('does not let a different client inherit the identity bound to a refresh token', async () => {
+      const identity = { subject: 'user-1', issuer: 'https://issuer.example.test' };
+      (provider as any).refreshTokenIdentities.set('bound-refresh', {
+        identity,
+        clientId: 'client-a',
+        expiresAt: Date.now() + 60_000,
+      });
+      vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response(JSON.stringify({
+        access_token: 'foreign-access',
+        refresh_token: 'foreign-next-refresh',
+        token_type: 'Bearer',
+        expires_in: 3600,
+      }), { status: 200, headers: { 'content-type': 'application/json' } }));
+      (provider as any).ssrfValidator.validate = vi.fn(async () => undefined);
+
+      await provider.exchangeRefreshToken(
+        { client_id: 'client-b', redirect_uris: [], grant_types: ['refresh_token'], response_types: [] },
+        'bound-refresh',
+      );
+
+      expect(provider.getIdentityForAccessToken('foreign-access')).toBeUndefined();
+      expect((provider as any).refreshTokenIdentities.has('bound-refresh')).toBe(false);
+      expect((provider as any).refreshTokenIdentities.has('foreign-next-refresh')).toBe(false);
     });
 
     it('should throw on failed refresh', async () => {
@@ -2855,11 +2908,11 @@ describe('ExternalOAuthProvider', () => {
       (provider as any).storeRefreshTokenIdentity('first-insert', {
         subject: 'a',
         issuer: 'https://issuer.example.test/tenant/v2.0',
-      });
+      }, 'client');
       (provider as any).storeRefreshTokenIdentity('second-insert', {
         subject: 'b',
         issuer: 'https://issuer.example.test/tenant/v2.0',
-      });
+      }, 'client');
 
       const capacityWarns = (mockLogger.warn as any).mock.calls
         .filter(([message]: [string]) => String(message).includes('Refresh identity map at capacity'));

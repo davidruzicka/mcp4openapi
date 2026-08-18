@@ -11,6 +11,7 @@ import {
   encryptTokenPayload,
   isEncryptedToken,
   isRefreshEnvelope,
+  REFRESH_IDENTITY_TTL_MS,
   type TokenEnvelopePayload,
 } from './token-envelope.js';
 
@@ -421,6 +422,41 @@ describe('refresh envelope', () => {
   it('throws when the refresh token or profile is missing', () => {
     expect(() => encryptRefreshEnvelope({ ...payload, rt: '' }, KEY)).toThrow(ValidationError);
     expect(() => encryptRefreshEnvelope({ ...payload, pid: '' }, KEY)).toThrow(ValidationError);
+  });
+});
+
+describe('refresh envelope iat age horizon', () => {
+  const basePayload = { v: 1 as const, rt: 'idp-refresh-token', cid: 'client-1', pid: PROFILE_ID };
+
+  it('rejects an envelope whose iat is older than REFRESH_IDENTITY_TTL_MS', () => {
+    const envelope = encryptRefreshEnvelope(
+      { ...basePayload, iat: Date.now() - REFRESH_IDENTITY_TTL_MS - 1000 },
+      KEY,
+    );
+    expect(decryptRefreshEnvelope(envelope, KEY, PROFILE_ID)).toBeNull();
+  });
+
+  it('accepts an envelope just inside the age horizon', () => {
+    // 5s inside the boundary keeps the assertion stable against test runtime.
+    const envelope = encryptRefreshEnvelope(
+      { ...basePayload, iat: Date.now() - REFRESH_IDENTITY_TTL_MS + 5000 },
+      KEY,
+    );
+    expect(decryptRefreshEnvelope(envelope, KEY, PROFILE_ID)).toMatchObject({
+      rt: 'idp-refresh-token',
+    });
+  });
+
+  it('rejects an envelope future-dated beyond the clock skew allowance', () => {
+    const envelope = encryptRefreshEnvelope({ ...basePayload, iat: Date.now() + 120_000 }, KEY);
+    expect(decryptRefreshEnvelope(envelope, KEY, PROFILE_ID)).toBeNull();
+  });
+
+  it('accepts an envelope future-dated within the clock skew allowance', () => {
+    const envelope = encryptRefreshEnvelope({ ...basePayload, iat: Date.now() + 30_000 }, KEY);
+    expect(decryptRefreshEnvelope(envelope, KEY, PROFILE_ID)).toMatchObject({
+      rt: 'idp-refresh-token',
+    });
   });
 });
 

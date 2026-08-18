@@ -30,6 +30,7 @@ import type { OAuthConfig } from '../types/profile.js';
 import type { Logger } from '../core/logger.js';
 import type { OidcIdentity, OidcIdentityVerifier } from './oidc-identity-verifier.js';
 import { normalizeIssuer } from './issuer.js';
+import { REFRESH_IDENTITY_TTL_MS } from './token-envelope.js';
 import { AuthenticationError } from '../core/errors.js';
 import {
   DEFAULT_ALLOWED_REDIRECT_HOSTS,
@@ -50,9 +51,9 @@ export type { InMemoryClientsStoreOptions } from './client-store/types.js';
 
 const ENV_REF_PATTERN = /^\$\{env:([^}]+)\}$/;
 // Upper bound on remembered refresh-token identity bindings.
+// Binding TTL: REFRESH_IDENTITY_TTL_MS, shared with the refresh envelope
+// age check (see token-envelope.ts).
 const REFRESH_IDENTITY_MAX = 10000;
-// How long a refresh-token identity binding stays valid before re-auth.
-const REFRESH_IDENTITY_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 // Capacity-eviction warnings are aggregated to at most one per interval.
 const REFRESH_EVICTION_WARN_INTERVAL_MS = 60 * 1000;
 
@@ -162,7 +163,7 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
   // In-memory storage
   private authorizationCodes = new Map<string, AuthorizationCodeData>();
   private accessTokens = new Map<string, AccessTokenData>();
-  private refreshTokenIdentities = new Map<string, { identity: OidcIdentity; expiresAt: number }>();
+  private refreshTokenIdentities = new Map<string, { identity: OidcIdentity; clientId: string; expiresAt: number }>();
   private stateStore = new Map<string, AuthorizationState>();
   private materializedUnregisteredClientIds = new Set<string>();
 
@@ -1095,7 +1096,7 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
     
     this.accessTokens.set(codeData.tokens.access_token, tokenData);
     if (codeData.tokens.refresh_token && codeData.identity) {
-      this.storeRefreshTokenIdentity(codeData.tokens.refresh_token, codeData.identity);
+      this.storeRefreshTokenIdentity(codeData.tokens.refresh_token, codeData.identity, client.client_id);
     }
 
     return codeData.tokens;
@@ -1189,10 +1190,21 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
 
     const tokenUrl = this.config.token_endpoint!;
     const identityEntry = this.refreshTokenIdentities.get(refreshToken);
-    const cachedIdentity = identityEntry && identityEntry.expiresAt > Date.now()
-      ? identityEntry.identity
-      : undefined;
-    if (identityEntry && !cachedIdentity) this.refreshTokenIdentities.delete(refreshToken);
+    let cachedIdentity: OidcIdentity | undefined;
+    if (identityEntry) {
+      if (identityEntry.clientId !== client.client_id) {
+        // Identity bindings are client-scoped (mirrors assertRefreshEnvelopeClientBinding):
+        // client B presenting A's refresh token must not inherit A's verified identity.
+        this.refreshTokenIdentities.delete(refreshToken);
+        this.logger.warn('Refresh token identity was bound to a different client - identity dropped', {
+          clientId: client.client_id,
+        });
+      } else if (identityEntry.expiresAt > Date.now()) {
+        cachedIdentity = identityEntry.identity;
+      } else {
+        this.refreshTokenIdentities.delete(refreshToken);
+      }
+    }
     const identity = rehydratedIdentity
       ? { ...rehydratedIdentity, issuer: normalizeIssuer(rehydratedIdentity.issuer) }
       : cachedIdentity;
@@ -1255,32 +1267,24 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
     this.accessTokens.set(tokenResponse.access_token, tokenData);
     if (identity && tokenResponse.refresh_token) {
       this.refreshTokenIdentities.delete(refreshToken);
-      this.storeRefreshTokenIdentity(tokenResponse.refresh_token, identity);
+      this.storeRefreshTokenIdentity(tokenResponse.refresh_token, identity, client.client_id);
     }
 
     return tokenResponse;
   }
 
-  private storeRefreshTokenIdentity(refreshToken: string, identity: OidcIdentity): void {
+  private storeRefreshTokenIdentity(refreshToken: string, identity: OidcIdentity, clientId: string): void {
     const now = Date.now();
     for (const [token, entry] of this.refreshTokenIdentities) {
       if (entry.expiresAt <= now) this.refreshTokenIdentities.delete(token);
     }
-    // Evict the entry that expires soonest rather than the oldest inserted one:
-    // insertion-order eviction silently drops a live identity binding and forces
-    // that user to re-consent, while the evicted entry may have been the
-    // longest-lived. Overflow is logged so the cap is observable.
+    // Every entry gets the same constant TTL, so Map insertion order equals
+    // expiry order: the first key is always the nearest-expiry binding.
+    // Overflow is logged so the cap is observable.
     let evicted = 0;
     while (this.refreshTokenIdentities.size >= REFRESH_IDENTITY_MAX) {
-      let nearestToken: string | undefined;
-      let nearestExpiry = Number.POSITIVE_INFINITY;
-      for (const [token, entry] of this.refreshTokenIdentities) {
-        if (entry.expiresAt < nearestExpiry) {
-          nearestExpiry = entry.expiresAt;
-          nearestToken = token;
-        }
-      }
-      if (!nearestToken) break;
+      const nearestToken = this.refreshTokenIdentities.keys().next().value;
+      if (nearestToken === undefined) break;
       this.refreshTokenIdentities.delete(nearestToken);
       evicted += 1;
     }
@@ -1297,8 +1301,12 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
         this.refreshEvictionsSinceLastWarn = 0;
       }
     }
+    // Delete-then-set keeps insertion order equal to expiry order even when a
+    // non-rotating IdP returns the same refresh token again.
+    this.refreshTokenIdentities.delete(refreshToken);
     this.refreshTokenIdentities.set(refreshToken, {
       identity,
+      clientId,
       expiresAt: now + REFRESH_IDENTITY_TTL_MS,
     });
   }

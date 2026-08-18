@@ -1,10 +1,11 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { configureObservabilityPseudonym, pseudonymizeSubject } from './observability-pseudonym.js';
 
 const OIDC_SUBJECT = 'oidc-subject:https://issuer.example.test/00u123456789abcdefghijklmnop';
 
-// Module-level key state must never leak between tests.
-afterEach(() => configureObservabilityPseudonym(undefined));
+// Module-level key state must never leak between tests. The no-op logger keeps
+// the unkeyed-fallback warning out of the test output.
+beforeEach(() => configureObservabilityPseudonym(undefined, { warn: () => undefined }));
 
 describe('pseudonymizeSubject', () => {
   it('returns the same pseudonym for the same subject', () => {
@@ -65,5 +66,27 @@ describe('configureObservabilityPseudonym (keyed HMAC mode)', () => {
     expect(pseudonymizeSubject(OIDC_SUBJECT)).not.toBe(unkeyed);
     configureObservabilityPseudonym(undefined);
     expect(pseudonymizeSubject(OIDC_SUBJECT)).toBe(unkeyed);
+  });
+});
+
+describe('unkeyed fallback warning', () => {
+  it('warns on the first unkeyed use, and only once', () => {
+    const warn = vi.fn();
+    configureObservabilityPseudonym(undefined, { warn });
+
+    pseudonymizeSubject(OIDC_SUBJECT);
+    pseudonymizeSubject(OIDC_SUBJECT);
+
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(String(warn.mock.calls[0][0])).toContain('unkeyed');
+  });
+
+  it('does not warn when key material is configured', () => {
+    const warn = vi.fn();
+    configureObservabilityPseudonym('token-key-material', { warn });
+
+    pseudonymizeSubject(OIDC_SUBJECT);
+
+    expect(warn).not.toHaveBeenCalled();
   });
 });
