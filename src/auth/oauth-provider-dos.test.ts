@@ -2,7 +2,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { InMemoryClientsStore } from './oauth-provider.js';
 import type { OAuthClientInformationFull } from '@modelcontextprotocol/sdk/shared/auth.js';
-import { OAuthClientStoreCapacityError } from '../core/errors.js';
+import { InvalidRedirectUriError, OAuthClientStoreCapacityError } from '../core/errors.js';
 
 describe('InMemoryClientsStore DoS Protection', () => {
   let store: InMemoryClientsStore;
@@ -262,6 +262,35 @@ describe('InMemoryClientsStore DoS Protection', () => {
     const client = createClient('mcp-client-no-array');
     (client as any).redirect_uris = 'http://localhost';
     await expect(store.registerClient(client)).rejects.toThrow('redirect_uris must be an array');
+  });
+
+  it('should reject redirect validation failures with a typed InvalidRedirectUriError', async () => {
+    const client = createClient('mcp-client-bad-scheme', ['http://ok', 123 as any]);
+    await expect(store.registerClient(client)).rejects.toBeInstanceOf(InvalidRedirectUriError);
+  });
+
+  it('should reject dangerous and plain remote redirect schemes at registration', async () => {
+    await expect(
+      store.registerClient(createClient('mcp-client-js', ['javascript:alert(1)']))
+    ).rejects.toThrow('redirect_uri scheme not allowed');
+    await expect(
+      store.registerClient(createClient('mcp-client-remote-http', ['http://remote.example.com/cb']))
+    ).rejects.toThrow('redirect_uri scheme not allowed');
+    await expect(
+      store.registerClient(createClient('mcp-client-fragment', ['https://ok.example.com/cb#frag']))
+    ).rejects.toThrow('redirect_uri scheme not allowed');
+  });
+
+  it('should accept https, loopback http, and custom scheme redirect URIs at registration', async () => {
+    await store.registerClient(
+      createClient('mcp-client-conformant', [
+        'https://app.example.com/cb',
+        'http://127.0.0.1:8080/cb',
+        'http://[::1]:8080/cb',
+        'cursor://anysphere.cursor-mcp/oauth/callback',
+      ])
+    );
+    expect(await store.getClient('mcp-client-conformant')).toBeDefined();
   });
 
   it('should skip validation for pre-registered clients (non-dynamic)', async () => {

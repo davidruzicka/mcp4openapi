@@ -21,6 +21,34 @@ export function isApprovedUnregisteredClientRedirectUri(
   return approvedRedirects.some((rule) => matchesApprovedRedirectRule(candidate, rule, logger));
 }
 
+/**
+ * RFC 7591 3.2.2 / RFC 8252 7.1 redirect URI shape check for dynamic client
+ * registration. Reuses the shared dangerous-scheme blocklist and loopback set
+ * (via {@link parseSafeRedirectUri}) so the registration path does not
+ * duplicate the policy: https is allowed, http only for loopback hosts,
+ * private-use (custom/native app) schemes are allowed, and javascript:/plain
+ * remote http/fragments/credentials/wildcards are rejected.
+ */
+export function isConformantRegistrationRedirectUri(redirectUri: string): boolean {
+  const parsed = parseSafeRedirectUri(redirectUri);
+  if (!parsed) {
+    return false;
+  }
+
+  const protocol = parsed.protocol.toLowerCase();
+  if (protocol === 'https:') {
+    return true;
+  }
+
+  if (protocol === 'http:') {
+    const host = parsed.hostname.toLowerCase().replace(/^\[|\]$/g, '');
+    return LOOPBACK_HOSTS.has(host);
+  }
+
+  // Private-use / custom native app scheme (e.g. cursor://, com.example.app:).
+  return true;
+}
+
 function matchesApprovedRedirectRule(candidate: URL, rule: string, logger: Logger): boolean {
   const schemeOnly = SCHEME_ONLY_RULE.exec(rule);
   if (schemeOnly) {

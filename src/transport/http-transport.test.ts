@@ -3206,6 +3206,153 @@ describeIfListen('HttpTransport', () => {
       expect(response.body.client_id).toBeDefined();
     });
 
+    it('should include client_secret_expires_at and client_id_issued_at when a secret is issued', async () => {
+      const response = await request(oauthApp)
+        .post('/oauth/register')
+        .send({ redirect_uris: ['https://app.example.com/callback'] });
+
+      expect(response.status).toBe(201);
+      expect(response.body.client_secret).toBeDefined();
+      expect(response.body.client_secret_expires_at).toBe(0);
+      expect(typeof response.body.client_id_issued_at).toBe('number');
+      expect(response.body.token_endpoint_auth_method).toBe('client_secret_post');
+    });
+
+    it('should register a public client without a secret for token_endpoint_auth_method none', async () => {
+      const response = await request(oauthApp)
+        .post('/oauth/register')
+        .send({
+          redirect_uris: ['https://app.example.com/callback'],
+          token_endpoint_auth_method: 'none',
+        });
+
+      expect(response.status).toBe(201);
+      expect(response.body.client_id).toBeDefined();
+      expect(response.body.token_endpoint_auth_method).toBe('none');
+      expect(response.body).not.toHaveProperty('client_secret');
+      expect(response.body).not.toHaveProperty('client_secret_expires_at');
+    });
+
+    it('should reject missing redirect_uris with 400 invalid_redirect_uri', async () => {
+      const response = await request(oauthApp)
+        .post('/oauth/register')
+        .send({ scope: 'read' });
+
+      expect(response.status).toBe(400);
+      expect(response.body.error).toBe('invalid_redirect_uri');
+    });
+
+    it('should reject empty redirect_uris with 400 invalid_redirect_uri', async () => {
+      const response = await request(oauthApp)
+        .post('/oauth/register')
+        .send({ redirect_uris: [] });
+
+      expect(response.status).toBe(400);
+      expect(response.body.error).toBe('invalid_redirect_uri');
+    });
+
+    it('should reject non-array redirect_uris with 400 invalid_redirect_uri', async () => {
+      const response = await request(oauthApp)
+        .post('/oauth/register')
+        .send({ redirect_uris: 'https://app.example.com/callback' });
+
+      expect(response.status).toBe(400);
+      expect(response.body.error).toBe('invalid_redirect_uri');
+    });
+
+    it('should map too-many redirect_uris to 400 invalid_redirect_uri (not 500)', async () => {
+      const response = await request(oauthApp)
+        .post('/oauth/register')
+        .send({ redirect_uris: Array(50).fill('https://app.example.com/callback') });
+
+      expect(response.status).toBe(400);
+      expect(response.body.error).toBe('invalid_redirect_uri');
+    });
+
+    it('should map over-length redirect_uri to 400 invalid_redirect_uri (not 500)', async () => {
+      const response = await request(oauthApp)
+        .post('/oauth/register')
+        .send({ redirect_uris: ['https://app.example.com/' + 'a'.repeat(400)] });
+
+      expect(response.status).toBe(400);
+      expect(response.body.error).toBe('invalid_redirect_uri');
+    });
+
+    it('should map non-string redirect_uri to 400 invalid_redirect_uri (not 500)', async () => {
+      const response = await request(oauthApp)
+        .post('/oauth/register')
+        .send({ redirect_uris: [12345] });
+
+      expect(response.status).toBe(400);
+      expect(response.body.error).toBe('invalid_redirect_uri');
+    });
+
+    it('should reject javascript: redirect_uri with 400 invalid_redirect_uri', async () => {
+      const response = await request(oauthApp)
+        .post('/oauth/register')
+        .send({ redirect_uris: ['javascript:alert(1)'] });
+
+      expect(response.status).toBe(400);
+      expect(response.body.error).toBe('invalid_redirect_uri');
+    });
+
+    it('should reject plain remote http redirect_uri with 400 invalid_redirect_uri', async () => {
+      const response = await request(oauthApp)
+        .post('/oauth/register')
+        .send({ redirect_uris: ['http://remote.example.com/callback'] });
+
+      expect(response.status).toBe(400);
+      expect(response.body.error).toBe('invalid_redirect_uri');
+    });
+
+    it('should reject redirect_uri with a fragment with 400 invalid_redirect_uri', async () => {
+      const response = await request(oauthApp)
+        .post('/oauth/register')
+        .send({ redirect_uris: ['https://app.example.com/callback#frag'] });
+
+      expect(response.status).toBe(400);
+      expect(response.body.error).toBe('invalid_redirect_uri');
+    });
+
+    it('should accept https, loopback http, and custom scheme redirect_uris', async () => {
+      const response = await request(oauthApp)
+        .post('/oauth/register')
+        .send({
+          redirect_uris: [
+            'https://app.example.com/callback',
+            'http://127.0.0.1:8080/callback',
+            'http://[::1]:8080/callback',
+            'cursor://anysphere.cursor-mcp/oauth/callback',
+          ],
+        });
+
+      expect(response.status).toBe(201);
+      expect(response.body.client_id).toBeDefined();
+    });
+
+    it('should reject inconsistent grant_types/response_types with 400 invalid_client_metadata', async () => {
+      const response = await request(oauthApp)
+        .post('/oauth/register')
+        .send({
+          redirect_uris: ['https://app.example.com/callback'],
+          grant_types: ['authorization_code'],
+          response_types: [],
+        });
+
+      expect(response.status).toBe(400);
+      expect(response.body.error).toBe('invalid_client_metadata');
+    });
+
+    it('should reject a non-JSON body with 400 invalid_client_metadata (not 500)', async () => {
+      const response = await request(oauthApp)
+        .post('/oauth/register')
+        .set('Content-Type', 'text/plain')
+        .send('this is not json');
+
+      expect(response.status).toBe(400);
+      expect(response.body.error).toBe('invalid_client_metadata');
+    });
+
     it('should omit optional protected resource metadata fields when not configured', async () => {
       await oauthTransport.stop();
 

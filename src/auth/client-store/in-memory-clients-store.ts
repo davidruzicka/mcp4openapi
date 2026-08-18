@@ -1,6 +1,7 @@
 import type { OAuthRegisteredClientsStore } from '@modelcontextprotocol/sdk/server/auth/clients.js';
 import type { OAuthClientInformationFull } from '@modelcontextprotocol/sdk/shared/auth.js';
-import { OAuthClientStoreCapacityError, ValidationError } from '../../core/errors.js';
+import { InvalidRedirectUriError, OAuthClientStoreCapacityError } from '../../core/errors.js';
+import { isConformantRegistrationRedirectUri } from '../unregistered-client-redirect-policy.js';
 import { chooseEvictionDecision } from './policy.js';
 import {
   CLIENT_ID_DYNAMIC_PREFIX,
@@ -209,19 +210,30 @@ export class InMemoryClientsStore implements OAuthRegisteredClientsStore {
 
   private validateClientMetadata(client: OAuthClientInformationFull): void {
     if (!client.redirect_uris || !Array.isArray(client.redirect_uris)) {
-      throw new ValidationError('redirect_uris must be an array');
+      throw new InvalidRedirectUriError('redirect_uris must be an array');
     }
 
     if (client.redirect_uris.length > this.limits.maxRedirectUris) {
-      throw new ValidationError(`Too many redirect_uris (max ${this.limits.maxRedirectUris})`);
+      throw new InvalidRedirectUriError(`Too many redirect_uris (max ${this.limits.maxRedirectUris})`);
+    }
+
+    // Type and length precede scheme so structural failures win over the
+    // RFC 8252 shape check even when a bad-scheme URI sits earlier in the list.
+    for (const uri of client.redirect_uris) {
+      if (typeof uri !== 'string') {
+        throw new InvalidRedirectUriError('redirect_uri must be a string');
+      }
     }
 
     for (const uri of client.redirect_uris) {
-      if (typeof uri !== 'string') {
-        throw new ValidationError('redirect_uri must be a string');
-      }
       if (uri.length > this.limits.maxRedirectUriLength) {
-        throw new ValidationError(`redirect_uri too long (max ${this.limits.maxRedirectUriLength} chars)`);
+        throw new InvalidRedirectUriError(`redirect_uri too long (max ${this.limits.maxRedirectUriLength} chars)`);
+      }
+    }
+
+    for (const uri of client.redirect_uris) {
+      if (!isConformantRegistrationRedirectUri(uri)) {
+        throw new InvalidRedirectUriError(`redirect_uri scheme not allowed: ${uri}`);
       }
     }
   }

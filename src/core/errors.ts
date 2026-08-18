@@ -117,6 +117,33 @@ export class OAuthClientStoreCapacityError extends MCPError {
   }
 }
 
+/**
+ * RFC 7591 3.2.2 dynamic client registration error. `oauthError` carries the
+ * verbatim registration error code returned to the client (`error` field),
+ * while `code` stays in the uppercase MCP taxonomy for internal handling.
+ */
+export class InvalidRedirectUriError extends MCPError {
+  readonly oauthError = 'invalid_redirect_uri';
+
+  constructor(message: string, details?: Record<string, unknown>) {
+    super(message, 'INVALID_REDIRECT_URI', details);
+    this.name = 'InvalidRedirectUriError';
+  }
+}
+
+/**
+ * RFC 7591 3.2.2 dynamic client registration error for malformed or
+ * inconsistent client metadata that is not specific to a redirect URI.
+ */
+export class InvalidClientMetadataError extends MCPError {
+  readonly oauthError = 'invalid_client_metadata';
+
+  constructor(message: string, details?: Record<string, unknown>) {
+    super(message, 'INVALID_CLIENT_METADATA', details);
+    this.name = 'InvalidClientMetadataError';
+  }
+}
+
 export class EnterpriseAuthorizationConfigurationError extends MCPError {
   constructor(message: string, details?: Record<string, unknown>) {
     super(message, 'ENTERPRISE_AUTHORIZATION_CONFIGURATION_ERROR', details);

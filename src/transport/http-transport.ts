@@ -79,6 +79,8 @@ import {
   ConfigurationError,
   ConsentGateConfigurationError,
   ConsentRequiredError,
+  InvalidClientMetadataError,
+  InvalidRedirectUriError,
   OAuthClientStoreCapacityError,
   RateLimitError,
   ValidationError,
@@ -2552,22 +2554,54 @@ export class HttpTransport {
     }
 
     try {
-      const { redirect_uris } = req.body;
+      // RFC 7591 3.2.2: a missing/non-JSON body must not crash with a 500; a
+      // non-object body carries no usable client metadata.
+      const body = req.body;
+      if (body === null || typeof body !== 'object' || Array.isArray(body)) {
+        throw new InvalidClientMetadataError('Request body must be a JSON object');
+      }
+
+      const { redirect_uris, token_endpoint_auth_method, grant_types, response_types } = body;
       this.logger.info('Dynamic client registration request', {
         profileId: profileState.profileId,
         redirect_uris,
+        token_endpoint_auth_method,
       });
 
+      // RFC 7591 2: authorization_code clients must supply at least one redirect URI.
+      if (!Array.isArray(redirect_uris) || redirect_uris.length === 0) {
+        throw new InvalidRedirectUriError('redirect_uris is required and must be a non-empty array');
+      }
+
+      // RFC 7591 2: keep grant_types and response_types consistent when both are
+      // supplied (authorization_code pairs with the code response type).
+      if (Array.isArray(grant_types) && Array.isArray(response_types)) {
+        const wantsAuthCode = grant_types.includes('authorization_code');
+        const wantsCode = response_types.includes('code');
+        if (wantsAuthCode !== wantsCode) {
+          throw new InvalidClientMetadataError('grant_types and response_types are inconsistent');
+        }
+      }
+
+      // RFC 7591 2 / RFC 6749 2.1: token_endpoint_auth_method "none" registers a
+      // public client with no client_secret; anything else stays confidential.
+      const isPublicClient = token_endpoint_auth_method === 'none';
       const clientId = `mcp-client-${crypto.randomUUID()}`;
-      const clientSecret = crypto.randomBytes(32).toString('base64url');
+      const clientSecret = isPublicClient ? undefined : crypto.randomBytes(32).toString('base64url');
+      const clientIdIssuedAt = Math.floor(Date.now() / 1000);
+      const scope = (profileState.oauthProvider.scopes || []).join(' ');
 
       const client = {
         client_id: clientId,
-        client_secret: clientSecret,
-        redirect_uris: redirect_uris || [],
+        ...(clientSecret ? { client_secret: clientSecret } : {}),
+        redirect_uris,
         grant_types: ['authorization_code', 'refresh_token'],
         response_types: ['code'],
-        scope: (profileState.oauthProvider.scopes || []).join(' '),
+        scope,
+        token_endpoint_auth_method: isPublicClient ? 'none' : 'client_secret_post',
+        client_id_issued_at: clientIdIssuedAt,
+        // RFC 7591 3.2.1: 0 signals a secret that never expires.
+        ...(clientSecret ? { client_secret_expires_at: 0 } : {}),
       };
 
       const registerClient = profileState.oauthProvider.clientsStore.registerClient?.bind(
@@ -2578,15 +2612,7 @@ export class HttpTransport {
       }
       await registerClient(client);
 
-      res.status(HTTP_STATUS.CREATED).json({
-        client_id: clientId,
-        client_secret: clientSecret,
-        redirect_uris: redirect_uris,
-        grant_types: ['authorization_code', 'refresh_token'],
-        response_types: ['code'],
-        scope: (profileState.oauthProvider.scopes || []).join(' '),
-        token_endpoint_auth_method: 'client_secret_post',
-      });
+      res.status(HTTP_STATUS.CREATED).json(client);
     } catch (error) {
       if (error instanceof OAuthClientStoreCapacityError) {
         const correlationId = generateCorrelationId();
@@ -2599,6 +2625,20 @@ export class HttpTransport {
           error: 'temporarily_unavailable',
           error_description: error.message,
           correlationId,
+        });
+        return;
+      }
+
+      // RFC 7591 3.2.2: validation failures are client errors (400), not 500s.
+      if (error instanceof InvalidRedirectUriError || error instanceof InvalidClientMetadataError) {
+        this.logger.warn('Client registration rejected: invalid client metadata', {
+          profileId: profileState.profileId,
+          error: error.oauthError,
+          message: error.message,
+        });
+        res.status(HTTP_STATUS.BAD_REQUEST).json({
+          error: error.oauthError,
+          error_description: error.message,
         });
         return;
       }
