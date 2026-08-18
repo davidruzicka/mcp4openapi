@@ -10,6 +10,7 @@ import {
   AuthenticationError,
   AuthorizationError,
   OAuthClientStoreCapacityError,
+  OAuthInvalidGrantError,
   RateLimitError,
   ValidationError,
 } from '../core/errors.js';
@@ -85,6 +86,17 @@ function createMockResponse() {
     }),
     send: vi.fn((body?: unknown) => {
       res.body = body;
+      res.headersSent = true;
+      return res;
+    }),
+    redirect: vi.fn((arg1: number | string, arg2?: string) => {
+      if (typeof arg1 === 'number') {
+        res.statusCode = arg1;
+        res.headers['location'] = arg2 as string;
+      } else {
+        res.statusCode = 302;
+        res.headers['location'] = arg1;
+      }
       res.headersSent = true;
       return res;
     }),
@@ -597,6 +609,7 @@ describe('HttpTransport security behavior (no listen)', () => {
     createProfileState(transport as any).oauthProvider = {
       ensureEndpointsInitialized: async () => {},
       clientsStore: { getClient: async () => ({ client_id: 'test-client', scope: 'read write' }) },
+      isRedirectUriAllowedForClient: () => true,
       authorize,
     };
 
@@ -686,6 +699,7 @@ describe('HttpTransport security behavior (no listen)', () => {
     createProfileState(transport as any).oauthProvider = {
       ensureEndpointsInitialized: async () => {},
       clientsStore: { getClient: async () => ({ client_id: 'test-client' }) },
+      isRedirectUriAllowedForClient: () => true,
       authorize: async () => {
         throw new Error('boom');
       },
@@ -711,17 +725,22 @@ describe('HttpTransport security behavior (no listen)', () => {
     createProfileState(transport as any).oauthProvider = {
       ensureEndpointsInitialized: async () => {},
       clientsStore: { getClient: async () => ({ client_id: 'test-client' }) },
+      isRedirectUriAllowedForClient: () => true,
       authorize,
     };
 
     const app = (transport as any).app;
     const handler = getExpressRouteHandler(app, 'get', '/oauth/authorize');
-    const req: any = { query: { response_type: 'code', client_id: 'test-client', redirect_uri: 'http://localhost/cb' }, headers: {} };
+    const req: any = { query: { response_type: 'code', client_id: 'test-client', redirect_uri: 'http://localhost/cb', state: 's1' }, headers: {} };
     const res = createMockResponse();
     await handler(req, res);
 
-    expect(res.statusCode).toBe(400);
-    expect(res.body).toMatchObject({ error: 'invalid_request' });
+    // RFC 6749 4.1.2.1: with a valid redirect_uri, a PKCE (authorize-time) error
+    // is delivered as a 302 redirect carrying error + state, not a direct 400.
+    expect(res.statusCode).toBe(302);
+    const location = new URL(res.headers['location']);
+    expect(location.searchParams.get('error')).toBe('invalid_request');
+    expect(location.searchParams.get('state')).toBe('s1');
     expect(authorize).not.toHaveBeenCalled();
 
     await transport.stop();
@@ -735,20 +754,23 @@ describe('HttpTransport security behavior (no listen)', () => {
     createProfileState(transport as any).oauthProvider = {
       ensureEndpointsInitialized: async () => {},
       clientsStore: { getClient: async () => ({ client_id: 'test-client' }) },
+      isRedirectUriAllowedForClient: () => true,
       authorize,
     };
 
     const app = (transport as any).app;
     const handler = getExpressRouteHandler(app, 'get', '/oauth/authorize');
     const req: any = {
-      query: { response_type: 'code', client_id: 'test-client', redirect_uri: 'http://localhost/cb', code_challenge: 'challenge', code_challenge_method: 'plain' },
+      query: { response_type: 'code', client_id: 'test-client', redirect_uri: 'http://localhost/cb', code_challenge: 'challenge', code_challenge_method: 'plain', state: 's2' },
       headers: {},
     };
     const res = createMockResponse();
     await handler(req, res);
 
-    expect(res.statusCode).toBe(400);
-    expect(res.body).toMatchObject({ error: 'invalid_request' });
+    expect(res.statusCode).toBe(302);
+    const location = new URL(res.headers['location']);
+    expect(location.searchParams.get('error')).toBe('invalid_request');
+    expect(location.searchParams.get('state')).toBe('s2');
     expect(authorize).not.toHaveBeenCalled();
 
     await transport.stop();
@@ -1337,7 +1359,7 @@ describe('HttpTransport security behavior (no listen)', () => {
         }),
       },
       exchangeAuthorizationCode: async () => {
-        throw new Error('bad code');
+        throw new OAuthInvalidGrantError('bad code');
       },
     };
 
@@ -1357,8 +1379,8 @@ describe('HttpTransport security behavior (no listen)', () => {
 
     expect(res.statusCode).toBe(400);
     expect(res.body).toMatchObject({ error: 'invalid_grant' });
-    // Error message is sanitized
-    expect(String(res.body.error_description)).toBe('Token exchange failed');
+    // Error message is sanitized (RFC 6749 §5.2 grant failure)
+    expect(String(res.body.error_description)).toBe('bad code');
 
     await transport.stop();
   });
@@ -1393,7 +1415,7 @@ describe('HttpTransport security behavior (no listen)', () => {
         }),
       },
       exchangeRefreshToken: async () => {
-        throw new Error('bad refresh');
+        throw new OAuthInvalidGrantError('bad refresh');
       },
     };
 
@@ -1413,8 +1435,159 @@ describe('HttpTransport security behavior (no listen)', () => {
 
     expect(res.statusCode).toBe(400);
     expect(res.body).toMatchObject({ error: 'invalid_grant' });
-    // Error message is sanitized
-    expect(String(res.body.error_description)).toBe('Token exchange failed');
+    // Error message is sanitized (RFC 6749 §5.2 grant failure)
+    expect(String(res.body.error_description)).toBe('bad refresh');
+
+    await transport.stop();
+  });
+
+  it('keeps an invalid/unregistered redirect_uri a direct 400 at /oauth/authorize (no redirect)', async () => {
+    const transport = createTransport({
+      oauthConfig: { issuer: 'https://auth.example.com', client_id: 'test-client', client_secret: 'test-secret', scopes: ['read'] },
+    });
+    const authorize = vi.fn(async () => {});
+    createProfileState(transport as any).oauthProvider = {
+      ensureEndpointsInitialized: async () => {},
+      clientsStore: { getClient: async () => ({ client_id: 'test-client' }) },
+      isRedirectUriAllowedForClient: () => false,
+      authorize,
+    };
+
+    const app = (transport as any).app;
+    const handler = getExpressRouteHandler(app, 'get', '/oauth/authorize');
+    const req: any = { query: { response_type: 'code', client_id: 'test-client', redirect_uri: 'http://evil.example/cb', state: 's' }, headers: {} };
+    const res = createMockResponse();
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(400);
+    expect(res.headers['location']).toBeUndefined();
+    expect(authorize).not.toHaveBeenCalled();
+
+    await transport.stop();
+  });
+
+  it('redirects an unsupported response_type to the validated redirect_uri with error + state', async () => {
+    const transport = createTransport({
+      oauthConfig: { issuer: 'https://auth.example.com', client_id: 'test-client', client_secret: 'test-secret', scopes: ['read'] },
+    });
+    const authorize = vi.fn(async () => {});
+    createProfileState(transport as any).oauthProvider = {
+      ensureEndpointsInitialized: async () => {},
+      clientsStore: { getClient: async () => ({ client_id: 'test-client' }) },
+      isRedirectUriAllowedForClient: () => true,
+      authorize,
+    };
+
+    const app = (transport as any).app;
+    const handler = getExpressRouteHandler(app, 'get', '/oauth/authorize');
+    const req: any = { query: { response_type: 'token', client_id: 'test-client', redirect_uri: 'http://localhost/cb', state: 'xyz' }, headers: {} };
+    const res = createMockResponse();
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(302);
+    const location = new URL(res.headers['location']);
+    expect(location.searchParams.get('error')).toBe('unsupported_response_type');
+    expect(location.searchParams.get('state')).toBe('xyz');
+    expect(authorize).not.toHaveBeenCalled();
+
+    await transport.stop();
+  });
+
+  it('sets Cache-Control: no-store on an early /oauth/authorize error', async () => {
+    const transport = createTransport({
+      oauthConfig: { issuer: 'https://auth.example.com', client_id: 'test-client', client_secret: 'test-secret', scopes: ['read'] },
+    });
+    createProfileState(transport as any).oauthProvider = {
+      ensureEndpointsInitialized: async () => {},
+      clientsStore: { getClient: async () => ({ client_id: 'test-client' }) },
+      isRedirectUriAllowedForClient: () => true,
+    };
+
+    const app = (transport as any).app;
+    const handler = getExpressRouteHandler(app, 'get', '/oauth/authorize');
+    // Missing client_id -> earliest direct 400.
+    const res = createMockResponse();
+    await handler({ query: { response_type: 'code' }, headers: {} } as any, res);
+
+    expect(res.statusCode).toBe(400);
+    expect(res.headers['cache-control']).toBe('no-store');
+
+    await transport.stop();
+  });
+
+  it('returns 401 invalid_client with WWW-Authenticate: Basic when Basic auth fails (RFC 6749 5.2)', async () => {
+    const transport = createTransport({
+      oauthConfig: { issuer: 'https://auth.example.com', client_id: 'test-client', client_secret: 'test-secret', scopes: ['read'] },
+    });
+    createProfileState(transport as any).oauthProvider = {
+      ensureEndpointsInitialized: async () => {},
+      clientsStore: { getClient: async () => undefined },
+    };
+
+    const app = (transport as any).app;
+    const handler = getExpressRouteHandler(app, 'post', '/oauth/token');
+    const basicAuth = Buffer.from('unknown-client:wrong-secret', 'utf8').toString('base64');
+    const req: any = {
+      body: { grant_type: 'authorization_code', code: 'abc' },
+      headers: { authorization: `Basic ${basicAuth}` },
+    };
+    const res = createMockResponse();
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(401);
+    expect(res.body).toMatchObject({ error: 'invalid_client' });
+    expect(String(res.headers['www-authenticate'])).toContain('Basic');
+
+    await transport.stop();
+  });
+
+  it('keeps invalid_client a 400 without a Basic challenge for body-based client auth', async () => {
+    const transport = createTransport({
+      oauthConfig: { issuer: 'https://auth.example.com', client_id: 'test-client', client_secret: 'test-secret', scopes: ['read'] },
+    });
+    createProfileState(transport as any).oauthProvider = {
+      ensureEndpointsInitialized: async () => {},
+      clientsStore: { getClient: async () => undefined },
+    };
+
+    const app = (transport as any).app;
+    const handler = getExpressRouteHandler(app, 'post', '/oauth/token');
+    const req: any = {
+      body: { grant_type: 'authorization_code', code: 'abc', client_id: 'unknown-client', client_secret: 'wrong' },
+      headers: {},
+    };
+    const res = createMockResponse();
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(400);
+    expect(res.body).toMatchObject({ error: 'invalid_client' });
+    expect(res.headers['www-authenticate']).toBeUndefined();
+
+    await transport.stop();
+  });
+
+  it('defaults token_type to Bearer and normalizes casing (RFC 6749 5.1)', async () => {
+    const transport = createTransport({
+      oauthConfig: { issuer: 'https://auth.example.com', client_id: 'test-client', client_secret: 'test-secret', scopes: ['read'] },
+    });
+    createProfileState(transport as any).oauthProvider = {
+      ensureEndpointsInitialized: async () => {},
+      clientsStore: { getClient: async () => ({ client_id: 'test-client', client_secret: 'server-secret', scope: 'read' }) },
+      // Upstream omits token_type entirely.
+      exchangeAuthorizationCode: async () => ({ access_token: 'access', expires_in: 3600 }),
+    };
+
+    const app = (transport as any).app;
+    const handler = getExpressRouteHandler(app, 'post', '/oauth/token');
+    const req: any = {
+      body: { grant_type: 'authorization_code', code: 'abc', client_id: 'test-client', client_secret: 'server-secret' },
+      headers: {},
+    };
+    const res = createMockResponse();
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body.token_type).toBe('Bearer');
 
     await transport.stop();
   });

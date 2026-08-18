@@ -31,7 +31,7 @@ import type { Logger } from '../core/logger.js';
 import type { OidcIdentity, OidcIdentityVerifier } from './oidc-identity-verifier.js';
 import { normalizeIssuer } from './issuer.js';
 import { REFRESH_IDENTITY_TTL_MS } from './token-envelope.js';
-import { AuthenticationError, ValidationError } from '../core/errors.js';
+import { AuthenticationError, OAuthInvalidGrantError, OAuthUpstreamError, ValidationError } from '../core/errors.js';
 import { matchEnvRefName, resolveEnvRef } from '../core/env-ref.js';
 import {
   DEFAULT_ALLOWED_REDIRECT_HOSTS,
@@ -119,6 +119,17 @@ export function isOAuthConfigOperational(config: OAuthConfig): OAuthOperationalC
 const PKCE_CODE_VERIFIER_PATTERN = /^[A-Za-z0-9\-._~]{43,128}$/;
 
 /**
+ * How long a consumed authorization code is remembered so a replay can revoke
+ * the tokens issued during its first redemption (RFC 6749 §4.1.2). Matches the
+ * 5 min authorization-code TTL: a code cannot be replayed after it would have
+ * expired anyway.
+ */
+const CONSUMED_CODE_TOMBSTONE_TTL_MS = 5 * 60 * 1000;
+
+/** Loopback hosts that may use plain http redirect_uris (RFC 8252). */
+const LOOPBACK_REDIRECT_HOSTS = new Set(['localhost', '127.0.0.1', '::1']);
+
+/**
  * State preserved across the redirect to external provider
  */
 interface AuthorizationState {
@@ -172,6 +183,9 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
   private refreshTokenIdentities = new Map<string, { identity: OidcIdentity; clientId: string; expiresAt: number }>();
   private stateStore = new Map<string, AuthorizationState>();
   private materializedUnregisteredClientIds = new Set<string>();
+  // RFC 6749 §4.1.2: short-lived record of tokens issued from a now-consumed
+  // authorization code, so a replay of that code can revoke them.
+  private consumedCodeTombstones = new Map<string, { accessToken: string; refreshToken?: string; clientId: string; expiresAt: number }>();
 
   private endpointsInitialized: boolean = false;
   private initializationPromise: Promise<void> | null = null;
@@ -242,7 +256,7 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
       return this.initializationPromise;
     }
 
-    this.initializationPromise = (async () => {
+    const initialization = (async () => {
       // Register default client BEFORE deriving endpoints
       // This ensures the client is available immediately, even if endpoint derivation fails
       // The client_id from config should be registered as soon as possible to avoid
@@ -289,6 +303,14 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
       this.endpointsInitialized = true;
     })();
 
+    // Reset the memoized promise on failure so a later request retries
+    // initialization instead of permanently 500-ing every OAuth endpoint after
+    // a single config-time error.
+    initialization.catch(() => {
+      this.initializationPromise = null;
+    });
+
+    this.initializationPromise = initialization;
     return this.initializationPromise;
   }
 
@@ -560,11 +582,53 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
     );
   }
 
+  /**
+   * Redirect_uri policy for the shared/empty-redirect_uris client (e.g. the
+   * VS Code proxy compatibility client). RFC 6749 §3.1.2.3 / OAuth 2.1 §4.1.3:
+   * without a per-install registration record, tighten the host-only match to
+   * scheme in {http for loopback, https} on an allowlisted host, and reject
+   * custom/arbitrary schemes. RFC 8252 loopback port variance is preserved
+   * (any port on a loopback host is accepted).
+   */
+  private isAllowedSharedClientRedirectUri(redirectUri: string): boolean {
+    let url: URL;
+    try {
+      url = new URL(redirectUri);
+    } catch {
+      return false;
+    }
+
+    const scheme = url.protocol.toLowerCase();
+    if (scheme !== 'http:' && scheme !== 'https:') {
+      return false;
+    }
+
+    if (!this.isAllowedRedirectHost(redirectUri)) {
+      return false;
+    }
+
+    const hostname = this.stripIpv6Brackets(url.hostname).toLowerCase();
+    if (scheme === 'http:' && !LOOPBACK_REDIRECT_HOSTS.has(hostname)) {
+      // Plain http is only acceptable for RFC 8252 loopback clients.
+      return false;
+    }
+
+    return true;
+  }
+
   private isAllowedClientRedirectUri(
     client: OAuthClientInformationFull,
     redirectUri: string,
   ): boolean {
-    if (this.isAllowedRedirectHost(redirectUri)) {
+    const hasRegisteredUris = !!(client.redirect_uris && client.redirect_uris.length > 0);
+    if (hasRegisteredUris) {
+      // Registered clients: exact registration match is enforced by the caller;
+      // here only the host/scheme allowlist is confirmed.
+      if (this.isAllowedRedirectHost(redirectUri)) {
+        return true;
+      }
+    } else if (this.isAllowedSharedClientRedirectUri(redirectUri)) {
+      // Shared client with no registration record: tightened scheme/host policy.
       return true;
     }
 
@@ -577,6 +641,26 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
     }
 
     return this.isApprovedUnregisteredClientRedirectUri(redirectUri);
+  }
+
+  /**
+   * Whether a redirect_uri is registered (exact match for registered clients)
+   * and passes the redirect policy. Public so the HTTP layer can decide between
+   * a direct 400 (invalid/unregistered redirect_uri) and a 302 error redirect
+   * (RFC 6749 §4.1.2.1) before other authorization-request errors are surfaced.
+   */
+  public isRedirectUriAllowedForClient(
+    client: OAuthClientInformationFull,
+    redirectUri: string,
+  ): boolean {
+    if (
+      client.redirect_uris
+      && client.redirect_uris.length > 0
+      && !client.redirect_uris.includes(redirectUri)
+    ) {
+      return false;
+    }
+    return this.isAllowedClientRedirectUri(client, redirectUri);
   }
 
   /**
@@ -900,7 +984,8 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
     const { code, state, error } = req.query;
 
     if (error) {
-        this.logger.error('OAuth callback error', undefined, { error, state });
+        // Do not log `state`: it is a live authorization-flow secret.
+        this.logger.error('OAuth callback error', undefined, { error });
         
         // Sanitize error messages to prevent XSS
         const safeError = escapeHtmlSafe(error as string);
@@ -999,9 +1084,10 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
             clientUrl.searchParams.set('state', storedState.originalState);
         }
 
+        // Log only origin + pathname: the full URL carries the internal code and
+        // echoed state as query parameters, and neither may reach the logs.
         this.logger.info('Redirecting to client with internal code', {
-            clientUrl: clientUrl.toString(),
-            internalCode
+            clientUrl: clientUrl.origin + clientUrl.pathname,
         });
 
         // nosemgrep: javascript.express.open-redirect-deepsemgrep.open-redirect-deepsemgrep, javascript.express.web.tainted-redirect-express.tainted-redirect-express
@@ -1056,13 +1142,16 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
     });
 
     const codeData = this.authorizationCodes.get(authorizationCode);
-    
+
     if (!codeData) {
-      throw new Error('Invalid authorization code');
+      // RFC 6749 §4.1.2: replay of an already-consumed code must revoke the
+      // tokens issued during its first redemption.
+      this.revokeTokensForConsumedCode(authorizationCode);
+      throw new OAuthInvalidGrantError('Invalid authorization code');
     }
-    
+
     if (codeData.client.client_id !== client.client_id) {
-      throw new Error('Authorization code was not issued to this client');
+      throw new OAuthInvalidGrantError('Authorization code was not issued to this client');
     }
 
     // Validate expiration (5 minutes)
@@ -1071,7 +1160,7 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
     if (codeAge > EXPIRATION_MS) {
       this.authorizationCodes.delete(authorizationCode);
       this._clientsStore.markAuthCodeClosed(codeData.client.client_id);
-      throw new Error('Authorization code expired');
+      throw new OAuthInvalidGrantError('Authorization code expired');
     }
 
     // PKCE is mandatory (RFC 7636 / OAuth 2.1): every issued code carries an
@@ -1082,14 +1171,23 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
       this._clientsStore.markAuthCodeClosed(codeData.client.client_id);
     };
 
+    // RFC 6749 §4.1.3: the token request redirect_uri must be identical to the
+    // one used at authorize. A redirect_uri is always bound at authorize in this
+    // flow, so it must be present and equal at token.
+    const boundRedirectUri = codeData.params.redirectUri;
+    if (boundRedirectUri && redirectUri !== boundRedirectUri) {
+      consumeCode();
+      throw new OAuthInvalidGrantError('redirect_uri does not match the authorization request');
+    }
+
     // Defensive: a code without a bound challenge must never exist now.
     if (!codeData.params.codeChallenge) {
       consumeCode();
-      throw new Error('Authorization code has no bound PKCE challenge');
+      throw new OAuthInvalidGrantError('Authorization code has no bound PKCE challenge');
     }
     if (!codeVerifier) {
       consumeCode();
-      throw new Error('code_verifier is required for PKCE');
+      throw new OAuthInvalidGrantError('code_verifier is required for PKCE');
     }
     if (!PKCE_CODE_VERIFIER_PATTERN.test(codeVerifier)) {
       consumeCode();
@@ -1103,16 +1201,18 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
 
     if (hashBuffer.length !== challengeBuffer.length || !timingSafeEqual(hashBuffer, challengeBuffer)) {
       consumeCode();
-      throw new Error('Invalid code_verifier');
+      throw new OAuthInvalidGrantError('Invalid code_verifier');
     }
 
     if (!codeData.tokens) {
         throw new Error('No tokens associated with this code');
     }
 
-    // Delete authorization code (single use)
+    // Delete authorization code (single use) and remember the issued tokens so a
+    // later replay of this code can revoke them.
     this.authorizationCodes.delete(authorizationCode);
     this._clientsStore.markAuthCodeClosed(codeData.client.client_id);
+    this.recordConsumedCodeTombstone(authorizationCode, codeData.tokens, client.client_id);
 
     // Store access token for validation
     const tokenData: AccessTokenData = {
@@ -1132,6 +1232,37 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
     }
 
     return codeData.tokens;
+  }
+
+  /**
+   * Remember the tokens issued from a consumed authorization code so a replay
+   * of that code can revoke them (RFC 6749 §4.1.2).
+   */
+  private recordConsumedCodeTombstone(code: string, tokens: OAuthTokens, clientId: string): void {
+    this.consumedCodeTombstones.set(code, {
+      accessToken: tokens.access_token,
+      refreshToken: tokens.refresh_token,
+      clientId,
+      expiresAt: Date.now() + CONSUMED_CODE_TOMBSTONE_TTL_MS,
+    });
+  }
+
+  /**
+   * Revoke the tokens issued from a code's first redemption when that code is
+   * replayed. No-op when the code was never redeemed (genuinely unknown code).
+   */
+  private revokeTokensForConsumedCode(code: string): void {
+    const tombstone = this.consumedCodeTombstones.get(code);
+    if (!tombstone) {
+      return;
+    }
+    this.accessTokens.delete(tombstone.accessToken);
+    if (tombstone.refreshToken) {
+      this.refreshTokenIdentities.delete(tombstone.refreshToken);
+    }
+    this.logger.warn('Authorization code replay detected - revoked tokens issued from first redemption', {
+      clientId: tombstone.clientId,
+    });
   }
 
   getIdentityForAccessToken(token: string): OidcIdentity | undefined {
@@ -1201,7 +1332,7 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
         httpStatus: response.status,
         errorMessage: errorText,
       });
-      throw new Error(`Token exchange failed: ${response.status} ${errorText}`);
+      throw new OAuthUpstreamError(`Token exchange failed: ${response.status}`);
     }
 
     const tokenResponse = await response.json() as OAuthTokens;
@@ -1280,7 +1411,7 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
         httpStatus: response.status,
         errorMessage: errorText,
       });
-      throw new Error(`Refresh token exchange failed: ${response.status}`);
+      throw new OAuthUpstreamError(`Refresh token exchange failed: ${response.status}`);
     }
 
     const tokenResponse = await response.json() as OAuthTokens;
@@ -1500,6 +1631,13 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
     for (const [token, entry] of this.refreshTokenIdentities.entries()) {
       if (entry.expiresAt <= now) {
         this.refreshTokenIdentities.delete(token);
+      }
+    }
+
+    // 5. Cleanup expired consumed-code replay tombstones
+    for (const [code, tombstone] of this.consumedCodeTombstones.entries()) {
+      if (tombstone.expiresAt <= now) {
+        this.consumedCodeTombstones.delete(code);
       }
     }
   }

@@ -2072,53 +2072,28 @@ export class HttpTransport {
     res: Response,
     profileState: ProfileRuntimeState
   ): Promise<void> {
+    // RFC 6749: no-store at handler entry so it is present on early errors too.
+    res.setHeader('Cache-Control', 'no-store');
+
     if (!profileState.oauthProvider) {
       res.status(HTTP_STATUS.NOT_FOUND).send('OAuth not configured for this profile');
       return;
     }
 
     try {
-      res.setHeader('Cache-Control', 'no-store');
-
       const input = req.method === 'POST' ? req.body as Record<string, unknown> : req.query;
       const { response_type, client_id, redirect_uri, scope, state, code_challenge, code_challenge_method } = input;
 
+      // client_id and redirect_uri are validated first and, if invalid, MUST
+      // produce a direct 400 (RFC 6749 §4.1.2.1): the server must not redirect
+      // to an unverified redirect_uri.
       if (!client_id || typeof client_id !== 'string') {
         res.status(HTTP_STATUS.BAD_REQUEST).send('Missing client_id');
         return;
       }
 
-      if (!response_type || typeof response_type !== 'string') {
-        res.status(HTTP_STATUS.BAD_REQUEST).send('Missing response_type');
-        return;
-      }
-
-      if (response_type !== 'code') {
-        res.status(HTTP_STATUS.BAD_REQUEST).send('Unsupported response_type');
-        return;
-      }
-
       if (!redirect_uri || typeof redirect_uri !== 'string') {
         res.status(HTTP_STATUS.BAD_REQUEST).send('Missing redirect_uri');
-        return;
-      }
-
-      // RFC 7636 / OAuth 2.1: PKCE is mandatory. Require an S256 code_challenge;
-      // reject a missing challenge, method "plain", or any unknown method with
-      // invalid_request semantics (proper error-redirect handling is tracked
-      // separately, so this stays a direct 400 like the checks above).
-      if (!code_challenge || typeof code_challenge !== 'string') {
-        res.status(HTTP_STATUS.BAD_REQUEST).json({
-          error: 'invalid_request',
-          error_description: 'code_challenge is required (PKCE)',
-        });
-        return;
-      }
-      if (code_challenge_method !== 'S256') {
-        res.status(HTTP_STATUS.BAD_REQUEST).json({
-          error: 'invalid_request',
-          error_description: 'code_challenge_method must be S256',
-        });
         return;
       }
 
@@ -2130,6 +2105,43 @@ export class HttpTransport {
           client_id,
         });
         res.status(HTTP_STATUS.BAD_REQUEST).send('Invalid client_id');
+        return;
+      }
+
+      // Unregistered/invalid redirect_uri stays a direct 400 (no redirect).
+      if (!profileState.oauthProvider.isRedirectUriAllowedForClient(client, redirect_uri)) {
+        this.logger.warn('OAuth authorize rejected invalid redirect_uri', {
+          profileId: profileState.profileId,
+          client_id,
+        });
+        res.status(HTTP_STATUS.BAD_REQUEST).send('Invalid redirect_uri');
+        return;
+      }
+
+      // redirect_uri is now validated: remaining authorization-request errors are
+      // delivered as a 302 to the redirect_uri with error + echoed state
+      // (RFC 6749 §4.1.2.1).
+      const echoState = typeof state === 'string' ? state : undefined;
+
+      if (!response_type || typeof response_type !== 'string') {
+        this.redirectOAuthAuthorizeError(res, redirect_uri, 'invalid_request', 'Missing response_type', echoState);
+        return;
+      }
+
+      if (response_type !== 'code') {
+        this.redirectOAuthAuthorizeError(res, redirect_uri, 'unsupported_response_type', 'Unsupported response_type', echoState);
+        return;
+      }
+
+      // RFC 7636 / OAuth 2.1: PKCE is mandatory. Missing challenge, method
+      // "plain", or any unknown method are authorize-time errors: route them
+      // through the same redirect-error path now that redirect_uri is valid.
+      if (!code_challenge || typeof code_challenge !== 'string') {
+        this.redirectOAuthAuthorizeError(res, redirect_uri, 'invalid_request', 'code_challenge is required (PKCE)', echoState);
+        return;
+      }
+      if (code_challenge_method !== 'S256') {
+        this.redirectOAuthAuthorizeError(res, redirect_uri, 'invalid_request', 'code_challenge_method must be S256', echoState);
         return;
       }
 
@@ -2171,6 +2183,34 @@ export class HttpTransport {
     }
   }
 
+  /**
+   * Deliver an authorization-endpoint error as a 302 to the (already validated)
+   * redirect_uri with `error`, `error_description`, and the echoed `state`
+   * (RFC 6749 §4.1.2.1). Falls back to a direct 400 if the redirect_uri cannot
+   * be parsed (should not happen after validation).
+   */
+  private redirectOAuthAuthorizeError(
+    res: Response,
+    redirectUri: string,
+    error: string,
+    errorDescription: string,
+    state?: string,
+  ): void {
+    let url: URL;
+    try {
+      url = new URL(redirectUri);
+    } catch {
+      res.status(HTTP_STATUS.BAD_REQUEST).json({ error, error_description: errorDescription });
+      return;
+    }
+    url.searchParams.set('error', error);
+    url.searchParams.set('error_description', errorDescription);
+    if (state !== undefined) {
+      url.searchParams.set('state', state);
+    }
+    res.redirect(HTTP_STATUS.FOUND, url.toString());
+  }
+
   /** Consent info page at `/consent`; delegates to the consent controller. */
   private handleConsentInfo(res: Response, profileState: ProfileRuntimeState): void {
     this.consentController.renderConsentInfo(res, profileState.context.consent_gate);
@@ -2181,11 +2221,21 @@ export class HttpTransport {
     res: Response,
     profileState: ProfileRuntimeState
   ): Promise<void> {
+    // RFC 6749: no-store at handler entry so it is present on early errors too.
+    res.setHeader('Cache-Control', 'no-store');
+
     const enterpriseEnabled = profileState.context.enterpriseAuthorization?.enabled === true;
     if (!profileState.oauthProvider && !enterpriseEnabled) {
       res.status(HTTP_STATUS.NOT_FOUND).json({ error: 'server_error', error_description: 'OAuth provider not initialized' });
       return;
     }
+
+    // RFC 6749 §5.2: track whether the client authenticated via the HTTP Basic
+    // Authorization header so an invalid_client failure can return 401 with a
+    // matching WWW-Authenticate challenge.
+    const rawAuthHeader = req.headers['authorization'];
+    const authHeaderValue = Array.isArray(rawAuthHeader) ? rawAuthHeader[0] : rawAuthHeader;
+    const usedBasicAuth = typeof authHeaderValue === 'string' && authHeaderValue.toLowerCase().startsWith('basic ');
 
     // RFC 6749 §2.3.1: confidential/public clients may authenticate via HTTP Basic
     // auth on the token endpoint instead of putting client_id/client_secret in the
@@ -2221,33 +2271,27 @@ export class HttpTransport {
           response.status(HTTP_STATUS.NOT_FOUND).json({ error: 'server_error', error_description: 'OAuth provider not initialized' });
           return;
         }
-        try {
-          await profileState.oauthProvider.ensureEndpointsInitialized();
-          const client = await this.validateOAuthClientCredentials(profileState, request.body.client_id, request.body.client_secret, response);
-          if (!client) {
-            return;
-          }
-          const tokens = await profileState.oauthProvider.exchangeAuthorizationCode(client, request.body.code, request.body.code_verifier, request.body.redirect_uri);
-          // Fetch the registered client so creg can be embedded for restart-resilient session recovery.
-          const registeredClient = await profileState.oauthProvider.clientsStore.getClient(client.client_id);
-          const clientToken = this.storeOAuthTokens(profileState, tokens, client.client_id, client.scope?.split(' ') || [], registeredClient ?? undefined);
-          // Issue the refresh token as an identity-bearing envelope so a later
-          // direct refresh grant still knows which human it belongs to.
-          const clientRefreshToken = this.buildClientRefreshToken(profileState, tokens, client.client_id);
-          response.json({
-            ...tokens,
-            access_token: clientToken,
-            ...(clientRefreshToken ? { refresh_token: clientRefreshToken } : {}),
-          });
-        } catch (error) {
-          // A malformed code_verifier (RFC 7636 charset/length) is a request
-          // error, not a grant error: let it reach mapAuthError as
-          // invalid_request. Everything else collapses to invalid_grant.
-          if (error instanceof ValidationError) {
-            throw error;
-          }
-          response.status(HTTP_STATUS.BAD_REQUEST).json({ error: 'invalid_grant', error_description: 'Token exchange failed' });
+        await profileState.oauthProvider.ensureEndpointsInitialized();
+        const client = await this.validateOAuthClientCredentials(profileState, request.body.client_id, request.body.client_secret, response, usedBasicAuth);
+        if (!client) {
+          return;
         }
+        // Errors propagate to the outer handler and are mapped by mapAuthError
+        // (ValidationError -> invalid_request, OAuthInvalidGrantError -> invalid_grant,
+        // OAuthUpstreamError -> server_error), per RFC 6749 §5.2.
+        const tokens = await profileState.oauthProvider.exchangeAuthorizationCode(client, request.body.code, request.body.code_verifier, request.body.redirect_uri);
+        // Fetch the registered client so creg can be embedded for restart-resilient session recovery.
+        const registeredClient = await profileState.oauthProvider.clientsStore.getClient(client.client_id);
+        const clientToken = this.storeOAuthTokens(profileState, tokens, client.client_id, client.scope?.split(' ') || [], registeredClient ?? undefined);
+        // Issue the refresh token as an identity-bearing envelope so a later
+        // direct refresh grant still knows which human it belongs to.
+        const clientRefreshToken = this.buildClientRefreshToken(profileState, tokens, client.client_id);
+        response.json({
+          ...tokens,
+          access_token: clientToken,
+          token_type: this.normalizeOAuthTokenType(tokens.token_type),
+          ...(clientRefreshToken ? { refresh_token: clientRefreshToken } : {}),
+        });
       },
     });
 
@@ -2259,34 +2303,34 @@ export class HttpTransport {
           response.status(HTTP_STATUS.NOT_FOUND).json({ error: 'server_error', error_description: 'OAuth provider not initialized' });
           return;
         }
-        try {
-          await profileState.oauthProvider.ensureEndpointsInitialized();
-          const client = await this.validateOAuthClientCredentials(profileState, request.body.client_id, request.body.client_secret, response);
-          if (!client) {
-            return;
-          }
-          // Recover the verified identity from the refresh envelope: after a
-          // restart the provider's in-process identity map is empty, so without
-          // this the refreshed token would carry no human principal at all.
-          const grant = this.resolveRefreshGrant(profileState, request.body.refresh_token, client.client_id);
-          const tokens = await profileState.oauthProvider.exchangeRefreshToken(
-            client,
-            grant.refreshToken,
-            undefined,
-            undefined,
-            grant.identity,
-          );
-          const registeredClient = await profileState.oauthProvider.clientsStore.getClient(client.client_id);
-          const clientToken = this.storeOAuthTokens(profileState, tokens, client.client_id, client.scope?.split(' ') || [], registeredClient ?? undefined);
-          const clientRefreshToken = this.buildClientRefreshToken(profileState, tokens, client.client_id);
-          response.json({
-            ...tokens,
-            access_token: clientToken,
-            ...(clientRefreshToken ? { refresh_token: clientRefreshToken } : {}),
-          });
-        } catch {
-          response.status(HTTP_STATUS.BAD_REQUEST).json({ error: 'invalid_grant', error_description: 'Token exchange failed' });
+        await profileState.oauthProvider.ensureEndpointsInitialized();
+        const client = await this.validateOAuthClientCredentials(profileState, request.body.client_id, request.body.client_secret, response, usedBasicAuth);
+        if (!client) {
+          return;
         }
+        // Recover the verified identity from the refresh envelope: after a
+        // restart the provider's in-process identity map is empty, so without
+        // this the refreshed token would carry no human principal at all.
+        // Errors propagate to the outer handler for RFC 6749 §5.2 mapping:
+        // AuthenticationError/OAuthInvalidGrantError -> invalid_grant,
+        // OAuthUpstreamError -> server_error.
+        const grant = this.resolveRefreshGrant(profileState, request.body.refresh_token, client.client_id);
+        const tokens = await profileState.oauthProvider.exchangeRefreshToken(
+          client,
+          grant.refreshToken,
+          undefined,
+          undefined,
+          grant.identity,
+        );
+        const registeredClient = await profileState.oauthProvider.clientsStore.getClient(client.client_id);
+        const clientToken = this.storeOAuthTokens(profileState, tokens, client.client_id, client.scope?.split(' ') || [], registeredClient ?? undefined);
+        const clientRefreshToken = this.buildClientRefreshToken(profileState, tokens, client.client_id);
+        response.json({
+          ...tokens,
+          access_token: clientToken,
+          token_type: this.normalizeOAuthTokenType(tokens.token_type),
+          ...(clientRefreshToken ? { refresh_token: clientRefreshToken } : {}),
+        });
       },
     });
 
@@ -2440,21 +2484,35 @@ export class HttpTransport {
     return undefined;
   }
 
+  /**
+   * RFC 6749 §5.2: emit an invalid_client error. When the client authenticated
+   * via the HTTP Basic Authorization header, respond 401 with a matching
+   * WWW-Authenticate: Basic challenge; otherwise a plain 400.
+   */
+  private sendInvalidClient(res: Response, viaBasic: boolean): null {
+    if (viaBasic) {
+      res.setHeader('WWW-Authenticate', 'Basic realm="OAuth"');
+      res.status(HTTP_STATUS.UNAUTHORIZED).json({ error: 'invalid_client' });
+    } else {
+      res.status(HTTP_STATUS.BAD_REQUEST).json({ error: 'invalid_client' });
+    }
+    return null;
+  }
+
   private async validateOAuthClientCredentials(
     profileState: ProfileRuntimeState,
     clientId: unknown,
     clientSecret: unknown,
-    res: Response
+    res: Response,
+    viaBasic: boolean = false,
   ): Promise<OAuthClientInformationFull | null> {
     if (!profileState.oauthProvider || typeof clientId !== 'string' || clientId.trim().length === 0) {
-      res.status(HTTP_STATUS.BAD_REQUEST).json({ error: 'invalid_client' });
-      return null;
+      return this.sendInvalidClient(res, viaBasic);
     }
 
     const client = await this.resolveOAuthClientForRequest(profileState, clientId);
     if (!client) {
-      res.status(HTTP_STATUS.BAD_REQUEST).json({ error: 'invalid_client' });
-      return null;
+      return this.sendInvalidClient(res, viaBasic);
     }
 
     // Keep VS Code proxy compatibility client public for token exchange.
@@ -2465,16 +2523,26 @@ export class HttpTransport {
     // Confidential clients must present matching client_secret.
     if (typeof client.client_secret === 'string' && client.client_secret.length > 0) {
       if (typeof clientSecret !== 'string' || clientSecret.length === 0) {
-        res.status(HTTP_STATUS.BAD_REQUEST).json({ error: 'invalid_client' });
-        return null;
+        return this.sendInvalidClient(res, viaBasic);
       }
       if (!this.compareSecretsConstantTime(client.client_secret, clientSecret)) {
-        res.status(HTTP_STATUS.BAD_REQUEST).json({ error: 'invalid_client' });
-        return null;
+        return this.sendInvalidClient(res, viaBasic);
       }
     }
 
     return client;
+  }
+
+  /**
+   * RFC 6749 §5.1: default token_type to Bearer when the upstream response omits
+   * it, and normalize casing (e.g. "bearer" -> "Bearer"). Unknown token types
+   * are preserved verbatim.
+   */
+  private normalizeOAuthTokenType(raw: unknown): string {
+    if (typeof raw === 'string' && raw.trim().length > 0) {
+      return raw.toLowerCase() === 'bearer' ? 'Bearer' : raw;
+    }
+    return 'Bearer';
   }
 
   private async handleOAuthCallback(
