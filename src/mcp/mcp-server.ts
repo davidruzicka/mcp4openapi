@@ -1318,8 +1318,7 @@ export class MCPServer {
    * to be URL-encoded when used in URL path.
    */
   private encodePathSegment(value: unknown): string {
-    const val = String(value);
-    return val.includes('/') ? encodeURIComponent(val) : val;
+    return encodeURIComponent(String(value)).replace(/\./g, '%2E');
   }
 
   /**
