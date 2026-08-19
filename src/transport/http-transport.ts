@@ -2320,25 +2320,36 @@ export class HttpTransport {
         // Errors propagate to the outer handler for RFC 6749 §5.2 mapping:
         // AuthenticationError/OAuthInvalidGrantError -> invalid_grant,
         // OAuthUpstreamError -> server_error.
-        const grant = this.resolveRefreshGrant(profileState, request.body.refresh_token, client.client_id);
-        const tokens = await profileState.oauthProvider.exchangeRefreshToken(
-          client,
-          grant.refreshToken,
-          undefined,
-          undefined,
-          grant.identity,
+        // Single-flight, idempotent rotation: a concurrent or grace-window retry
+        // of the same token replays the leader's result instead of running a
+        // second upstream exchange or revoking the family (OAuth 2.1 §4.3.1).
+        const body = await this.rotateRefreshGrant(
+          profileState,
+          request.body.refresh_token,
+          client.client_id,
+          async ({ refreshToken, identity, family, newJti }) => {
+            const tokens = await profileState.oauthProvider!.exchangeRefreshToken(
+              client,
+              refreshToken,
+              undefined,
+              undefined,
+              identity,
+            );
+            const registeredClient = await profileState.oauthProvider!.clientsStore.getClient(client.client_id);
+            const clientToken = this.storeOAuthTokens(profileState, tokens, client.client_id, client.scope?.split(' ') || [], registeredClient ?? undefined);
+            // Rotate the client-facing refresh token: reuse the redeemed family so
+            // the new token supersedes the presented one. newJti is assigned by the
+            // rotation lease so the store advances the family to the same id.
+            const clientRefreshToken = this.buildClientRefreshToken(profileState, tokens, client.client_id, family, newJti);
+            return {
+              ...tokens,
+              access_token: clientToken,
+              token_type: this.normalizeOAuthTokenType(tokens.token_type),
+              ...(clientRefreshToken ? { refresh_token: clientRefreshToken } : {}),
+            };
+          },
         );
-        const registeredClient = await profileState.oauthProvider.clientsStore.getClient(client.client_id);
-        const clientToken = this.storeOAuthTokens(profileState, tokens, client.client_id, client.scope?.split(' ') || [], registeredClient ?? undefined);
-        // Rotate the client-facing refresh token: reuse the redeemed family so the
-        // new token supersedes the presented one (OAuth 2.1 §4.3.1).
-        const clientRefreshToken = this.buildClientRefreshToken(profileState, tokens, client.client_id, grant.family);
-        response.json({
-          ...tokens,
-          access_token: clientToken,
-          token_type: this.normalizeOAuthTokenType(tokens.token_type),
-          ...(clientRefreshToken ? { refresh_token: clientRefreshToken } : {}),
-        });
+        response.json(body);
       },
     });
 
@@ -4922,6 +4933,7 @@ export class HttpTransport {
     tokens: OAuthTokens,
     clientId: string,
     previousFamily?: RefreshFamily,
+    jtiOverride?: string,
   ): string | undefined {
     return refreshEnvelope.buildClientRefreshToken(
       this.refreshEnvelopeContext(profileState),
@@ -4929,6 +4941,22 @@ export class HttpTransport {
       clientId,
       this.getIdentityResolver(profileState),
       previousFamily,
+      jtiOverride,
+    );
+  }
+
+  /** Orchestrate a rotating refresh grant with single-flight; see refresh-envelope.ts. */
+  private rotateRefreshGrant<T>(
+    profileState: ProfileRuntimeState,
+    presentedToken: string,
+    presentingClientId: string,
+    perform: (grant: refreshEnvelope.ResolvedRefreshGrant & { newJti?: string }) => Promise<T>,
+  ): Promise<T> {
+    return refreshEnvelope.rotateRefreshGrant(
+      this.refreshEnvelopeContext(profileState),
+      presentedToken,
+      presentingClientId,
+      perform,
     );
   }
 
@@ -5353,6 +5381,39 @@ export class HttpTransport {
       return false;
     }
 
+    // Per-session single-flight: ensureValidSessionToken runs on every /mcp
+    // request, so two concurrent requests near the refresh threshold would each
+    // exchange the same refresh token. If the IdP rotates refresh tokens the
+    // loser gets invalid_grant and flaps a spurious 401. Concurrent callers
+    // await the same in-flight refresh instead; a failed refresh never clobbers
+    // session.refreshToken (the catch leaves it intact), so retries stay safe.
+    if (session.refreshInFlight) {
+      return session.refreshInFlight;
+    }
+    const inFlight = this.performTokenRefresh(profileState, session, profileId, sessionId)
+      .finally(() => {
+        if (session.refreshInFlight === inFlight) {
+          session.refreshInFlight = undefined;
+        }
+      });
+    session.refreshInFlight = inFlight;
+    return inFlight;
+  }
+
+  /**
+   * Perform the actual refresh-token exchange and session update. Serialized per
+   * session by refreshAccessToken's single-flight guard.
+   */
+  private async performTokenRefresh(
+    profileState: ProfileRuntimeState,
+    session: SessionData,
+    profileId: string,
+    sessionId: string,
+  ): Promise<boolean> {
+    const refreshToken = session.refreshToken;
+    if (!refreshToken) {
+      return false;
+    }
     try {
       const oauthProvider = this.getOAuthProviderForSession(profileState, session);
       if (!oauthProvider) {
@@ -5403,7 +5464,7 @@ export class HttpTransport {
         : undefined;
       const tokens = await oauthProvider.exchangeRefreshToken(
         client,
-        session.refreshToken,
+        refreshToken,
         session.scopes,
         undefined,
         rehydratedIdentity,

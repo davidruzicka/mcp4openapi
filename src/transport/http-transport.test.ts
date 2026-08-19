@@ -15,7 +15,7 @@ import { HttpTransport } from './http-transport.js';
 import { ReconsentTracker } from './reconsent-tracker.js';
 import type { HttpTransportConfig } from '../types/http-transport.js';
 import { ConsoleLogger, type Logger } from '../core/logger.js';
-import { AuthenticationError, ValidationError, ConsentRequiredError } from '../core/errors.js';
+import { AuthenticationError, ValidationError, ConsentRequiredError, OAuthInvalidGrantError } from '../core/errors.js';
 import { ConsentGate } from '../auth/consent-gate.js';
 import { InMemoryConsentEvidenceStore } from '../auth/consent-evidence-store.js';
 import { computeRulesHash } from '../auth/consent-rules-hash.js';
@@ -4617,6 +4617,69 @@ describeIfListen('HttpTransport', () => {
 
       await oauthTransport.stop();
     });
+
+    it('single-flights concurrent refreshes so the IdP refresh token is exchanged once (I1)', async () => {
+      const oauthTransport = new HttpTransport(
+        {
+          host: '127.0.0.1',
+          port: 0,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: false,
+          metricsPath: '/metrics',
+          oauthConfig: {
+            issuer: 'https://auth.example.com',
+            client_id: 'test-client',
+            client_secret: 'test-secret',
+            scopes: ['api'],
+          },
+        },
+        logger,
+      );
+
+      const profileState = createProfileState(oauthTransport as any);
+      const sessionId = (oauthTransport as any).createSession(profileState, 'old-access', 'refresh-token-0');
+      const session = profileState.sessions.get(sessionId);
+      session.oauthClientId = 'test-client';
+
+      let exchangeCalls = 0;
+      profileState.oauthProvider = {
+        ensureEndpointsInitialized: async () => {},
+        clientsStore: {
+          getClient: async () => ({ client_id: 'test-client', scope: 'api' }),
+        },
+        exchangeRefreshToken: async (_client: any, presentedRefreshToken: string) => {
+          exchangeCalls += 1;
+          // Simulate an IdP that rotates refresh tokens and rejects a stale one:
+          // without single-flight the second concurrent caller would send the
+          // already-consumed token and get invalid_grant (spurious 401 flap).
+          if (presentedRefreshToken !== 'refresh-token-0') {
+            throw new OAuthInvalidGrantError('invalid_grant');
+          }
+          await new Promise((resolve) => setTimeout(resolve, 10)); // keep the exchange in-flight
+          return {
+            access_token: 'new-access',
+            refresh_token: 'refresh-token-1',
+            expires_in: 3600,
+            token_type: 'Bearer',
+          };
+        },
+      };
+
+      const [a, b] = await Promise.all([
+        (oauthTransport as any).refreshAccessToken('default', sessionId),
+        (oauthTransport as any).refreshAccessToken('default', sessionId),
+      ]);
+
+      expect(a).toBe(true);
+      expect(b).toBe(true);
+      expect(exchangeCalls).toBe(1); // single upstream exchange, no invalid_grant flap
+      expect(session.refreshToken).toBe('refresh-token-1');
+      expect(session.refreshInFlight).toBeUndefined(); // cleared on settle
+
+      await oauthTransport.stop();
+    });
   });
 
   describe('storeOAuthTokens', () => {
@@ -5045,7 +5108,29 @@ describeIfListen('HttpTransport', () => {
       expect(r1.startsWith('mcp4.r1.')).toBe(true);
       expect(r1).not.toBe(r0); // rotated
 
-      // Replaying the superseded r0 is reuse -> 400 invalid_grant.
+      // Replaying the just-superseded r0 within the grace window is idempotent
+      // (lost-response / real-client retry): it returns the already-minted r1,
+      // NOT a family revocation.
+      const graceReplay = await request(tApp).post('/oauth/token').send({
+        grant_type: 'refresh_token',
+        client_id: 'test-client',
+        refresh_token: r0,
+      });
+      expect(graceReplay.status).toBe(200);
+      expect(graceReplay.body.refresh_token).toBe(r1);
+
+      // A second legitimate rotation advances the family past r0's grace window.
+      const refreshed2 = await request(tApp).post('/oauth/token').send({
+        grant_type: 'refresh_token',
+        client_id: 'test-client',
+        refresh_token: r1,
+      });
+      expect(refreshed2.status).toBe(200);
+      const r2 = refreshed2.body.refresh_token as string;
+      expect(r2).not.toBe(r1);
+
+      // Replaying the now-older r0 (past grace, no longer just-superseded) is
+      // genuine reuse -> 400 invalid_grant + whole-family revocation.
       const reuse = await request(tApp).post('/oauth/token').send({
         grant_type: 'refresh_token',
         client_id: 'test-client',
@@ -5054,11 +5139,11 @@ describeIfListen('HttpTransport', () => {
       expect(reuse.status).toBe(400);
       expect(reuse.body.error).toBe('invalid_grant');
 
-      // The family is revoked: the rotated r1 is dead too.
+      // The family is revoked: the rotated r2 is dead too.
       const afterRevoke = await request(tApp).post('/oauth/token').send({
         grant_type: 'refresh_token',
         client_id: 'test-client',
-        refresh_token: r1,
+        refresh_token: r2,
       });
       expect(afterRevoke.status).toBe(400);
       expect(afterRevoke.body.error).toBe('invalid_grant');

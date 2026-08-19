@@ -29,6 +29,13 @@ export interface SessionData {
   authToken?: string;
   refreshToken?: string; // OAuth refresh token for automatic token renewal
   accessTokenExpiresAt?: number; // Access token expiration timestamp in ms
+  /**
+   * In-flight token refresh, if any. Per-session single-flight guard so
+   * concurrent /mcp requests share one refresh exchange instead of each
+   * redeeming the same refresh token (avoids spurious invalid_grant / 401
+   * flapping when the IdP rotates refresh tokens). Runtime-only, never persisted.
+   */
+  refreshInFlight?: Promise<boolean>;
   scopes?: string[]; // OAuth scopes for debugging/validation
   oauthClientId?: string; // OAuth client ID for debugging/validation
   filtering?: Record<string, string[]>;
