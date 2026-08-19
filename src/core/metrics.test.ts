@@ -291,6 +291,19 @@ describe('MetricsCollector', () => {
     });
   });
 
+  describe('OAuth Metrics', () => {
+    it('records refresh-token rotation and reuse events', async () => {
+      metrics.recordRefreshRotation('rotated', { profileId: 'gitlab', tenantId: 'none' });
+      metrics.recordRefreshRotation('reuse_detected', { profileId: 'gitlab', tenantId: 'none' });
+
+      const output = await metrics.getMetrics();
+      expect(output).toContain('test_oauth_refresh_rotations_total');
+      expect(output).toContain('event="rotated"');
+      expect(output).toContain('event="reuse_detected"');
+      expect(output).toContain('profile_id="gitlab"');
+    });
+  });
+
   describe('Tool filter metrics', () => {
     it('records and clears per-session tool counts', async () => {
       metrics.recordToolsSession('s1', 10);

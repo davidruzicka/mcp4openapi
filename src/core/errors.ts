@@ -117,6 +117,61 @@ export class OAuthClientStoreCapacityError extends MCPError {
   }
 }
 
+/**
+ * RFC 7591 3.2.2 dynamic client registration error. `oauthError` carries the
+ * verbatim registration error code returned to the client (`error` field),
+ * while `code` stays in the uppercase MCP taxonomy for internal handling.
+ */
+export class InvalidRedirectUriError extends MCPError {
+  readonly oauthError = 'invalid_redirect_uri';
+
+  constructor(message: string, details?: Record<string, unknown>) {
+    super(message, 'INVALID_REDIRECT_URI', details);
+    this.name = 'InvalidRedirectUriError';
+  }
+}
+
+/**
+ * RFC 7591 3.2.2 dynamic client registration error for malformed or
+ * inconsistent client metadata that is not specific to a redirect URI.
+ */
+export class InvalidClientMetadataError extends MCPError {
+  readonly oauthError = 'invalid_client_metadata';
+
+  constructor(message: string, details?: Record<string, unknown>) {
+    super(message, 'INVALID_CLIENT_METADATA', details);
+    this.name = 'InvalidClientMetadataError';
+  }
+}
+
+/**
+ * RFC 6749 §5.2 token-endpoint grant failure (`invalid_grant`). Covers unknown
+ * or already-consumed codes, expiry, PKCE mismatch, and redirect_uri binding
+ * mismatch. Distinct from ValidationError (which maps to `invalid_request`).
+ */
+export class OAuthInvalidGrantError extends MCPError {
+  readonly oauthError = 'invalid_grant';
+
+  constructor(message: string, details?: Record<string, unknown>) {
+    super(message, 'OAUTH_INVALID_GRANT', details);
+    this.name = 'OAuthInvalidGrantError';
+  }
+}
+
+/**
+ * RFC 6749 §5.2 upstream failure at the token endpoint: the gateway could not
+ * complete the exchange with the external authorization server. Maps to
+ * `server_error` (HTTP 502) rather than collapsing to `invalid_grant`.
+ */
+export class OAuthUpstreamError extends MCPError {
+  readonly oauthError = 'server_error';
+
+  constructor(message: string, details?: Record<string, unknown>) {
+    super(message, 'OAUTH_UPSTREAM_ERROR', details);
+    this.name = 'OAuthUpstreamError';
+  }
+}
+
 export class EnterpriseAuthorizationConfigurationError extends MCPError {
   constructor(message: string, details?: Record<string, unknown>) {
     super(message, 'ENTERPRISE_AUTHORIZATION_CONFIGURATION_ERROR', details);

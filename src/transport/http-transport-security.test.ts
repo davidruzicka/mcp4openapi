@@ -10,6 +10,7 @@ import {
   AuthenticationError,
   AuthorizationError,
   OAuthClientStoreCapacityError,
+  OAuthInvalidGrantError,
   RateLimitError,
   ValidationError,
 } from '../core/errors.js';
@@ -85,6 +86,17 @@ function createMockResponse() {
     }),
     send: vi.fn((body?: unknown) => {
       res.body = body;
+      res.headersSent = true;
+      return res;
+    }),
+    redirect: vi.fn((arg1: number | string, arg2?: string) => {
+      if (typeof arg1 === 'number') {
+        res.statusCode = arg1;
+        res.headers['location'] = arg2 as string;
+      } else {
+        res.statusCode = 302;
+        res.headers['location'] = arg1;
+      }
       res.headersSent = true;
       return res;
     }),
@@ -232,8 +244,11 @@ describe('HttpTransport security behavior (no listen)', () => {
     await (transport as any).handlePost(req, res);
 
     expect(res.statusCode).toBe(401);
-    expect(res.body).toHaveProperty('error', 'Unauthorized');
+    // AIPP-572: catch-path 401s now emit an RFC 6750 code + Bearer challenge.
+    expect(res.body).toHaveProperty('error', 'invalid_token');
     expect(res.body).toHaveProperty('correlationId');
+    expect(String(res.headers['www-authenticate'])).toContain('Bearer');
+    expect(String(res.headers['www-authenticate'])).toContain('resource_metadata=');
     await transport.stop();
   });
 
@@ -559,6 +574,8 @@ describe('HttpTransport security behavior (no listen)', () => {
         response_type: 'code',
         client_id: 'unknown-client',
         redirect_uri: 'http://localhost/cb',
+        code_challenge: 'challenge',
+        code_challenge_method: 'S256',
       },
       headers: {},
     };
@@ -595,6 +612,7 @@ describe('HttpTransport security behavior (no listen)', () => {
     createProfileState(transport as any).oauthProvider = {
       ensureEndpointsInitialized: async () => {},
       clientsStore: { getClient: async () => ({ client_id: 'test-client', scope: 'read write' }) },
+      isRedirectUriAllowedForClient: () => true,
       authorize,
     };
 
@@ -684,6 +702,7 @@ describe('HttpTransport security behavior (no listen)', () => {
     createProfileState(transport as any).oauthProvider = {
       ensureEndpointsInitialized: async () => {},
       clientsStore: { getClient: async () => ({ client_id: 'test-client' }) },
+      isRedirectUriAllowedForClient: () => true,
       authorize: async () => {
         throw new Error('boom');
       },
@@ -691,12 +710,135 @@ describe('HttpTransport security behavior (no listen)', () => {
 
     const app = (transport as any).app;
     const handler = getExpressRouteHandler(app, 'get', '/oauth/authorize');
-    const req: any = { query: { response_type: 'code', client_id: 'test-client', redirect_uri: 'http://localhost/cb' }, headers: {} };
+    const req: any = { query: { response_type: 'code', client_id: 'test-client', redirect_uri: 'http://localhost/cb', code_challenge: 'challenge', code_challenge_method: 'S256' }, headers: {} };
     const res = createMockResponse();
     await handler(req, res);
 
     expect(res.statusCode).toBe(500);
     expect(String(res.body)).toContain('OAuth authorization failed');
+
+    await transport.stop();
+  });
+
+  it('rejects /oauth/authorize without a PKCE code_challenge (invalid_request)', async () => {
+    const transport = createTransport({
+      oauthConfig: { issuer: 'https://auth.example.com', client_id: 'test-client', client_secret: 'test-secret', scopes: ['read'] },
+    });
+    const authorize = vi.fn(async () => {});
+    createProfileState(transport as any).oauthProvider = {
+      ensureEndpointsInitialized: async () => {},
+      clientsStore: { getClient: async () => ({ client_id: 'test-client' }) },
+      isRedirectUriAllowedForClient: () => true,
+      authorize,
+    };
+
+    const app = (transport as any).app;
+    const handler = getExpressRouteHandler(app, 'get', '/oauth/authorize');
+    const req: any = { query: { response_type: 'code', client_id: 'test-client', redirect_uri: 'http://localhost/cb', state: 's1' }, headers: {} };
+    const res = createMockResponse();
+    await handler(req, res);
+
+    // RFC 6749 4.1.2.1: with a valid redirect_uri, a PKCE (authorize-time) error
+    // is delivered as a 302 redirect carrying error + state, not a direct 400.
+    expect(res.statusCode).toBe(302);
+    const location = new URL(res.headers['location']);
+    expect(location.searchParams.get('error')).toBe('invalid_request');
+    expect(location.searchParams.get('state')).toBe('s1');
+    expect(authorize).not.toHaveBeenCalled();
+
+    await transport.stop();
+  });
+
+  it('rejects /oauth/authorize with a non-S256 code_challenge_method (invalid_request)', async () => {
+    const transport = createTransport({
+      oauthConfig: { issuer: 'https://auth.example.com', client_id: 'test-client', client_secret: 'test-secret', scopes: ['read'] },
+    });
+    const authorize = vi.fn(async () => {});
+    createProfileState(transport as any).oauthProvider = {
+      ensureEndpointsInitialized: async () => {},
+      clientsStore: { getClient: async () => ({ client_id: 'test-client' }) },
+      isRedirectUriAllowedForClient: () => true,
+      authorize,
+    };
+
+    const app = (transport as any).app;
+    const handler = getExpressRouteHandler(app, 'get', '/oauth/authorize');
+    const req: any = {
+      query: { response_type: 'code', client_id: 'test-client', redirect_uri: 'http://localhost/cb', code_challenge: 'challenge', code_challenge_method: 'plain', state: 's2' },
+      headers: {},
+    };
+    const res = createMockResponse();
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(302);
+    const location = new URL(res.headers['location']);
+    expect(location.searchParams.get('error')).toBe('invalid_request');
+    expect(location.searchParams.get('state')).toBe('s2');
+    expect(authorize).not.toHaveBeenCalled();
+
+    await transport.stop();
+  });
+
+  it('maps a malformed code_verifier to invalid_request at /oauth/token', async () => {
+    const transport = createTransport({
+      oauthConfig: { issuer: 'https://auth.example.com', client_id: 'test-client', client_secret: 'test-secret', scopes: ['read'] },
+    });
+    createProfileState(transport as any).oauthProvider = {
+      ensureEndpointsInitialized: async () => {},
+      clientsStore: { getClient: async () => ({ client_id: 'test-client', client_secret: 'server-secret', scope: 'read' }) },
+      exchangeAuthorizationCode: async () => {
+        throw new ValidationError('code_verifier does not meet RFC 7636 length/charset requirements');
+      },
+    };
+
+    const app = (transport as any).app;
+    const handler = getExpressRouteHandler(app, 'post', '/oauth/token');
+    const req: any = {
+      body: { grant_type: 'authorization_code', code: 'abc', client_id: 'test-client', client_secret: 'server-secret', code_verifier: 'short' },
+      headers: {},
+    };
+    const res = createMockResponse();
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(400);
+    expect(res.body).toMatchObject({ error: 'invalid_request' });
+
+    await transport.stop();
+  });
+
+  it('fails closed with 401 invalid_token + WWW-Authenticate when a session token is expired and cannot refresh', async () => {
+    const transport = createTransport();
+    transport.setMessageHandler(async () => ({ result: 'ok' }));
+    const profileState = createProfileState(transport as any);
+    // Expired access token, no refresh token available -> refresh cannot succeed.
+    profileState.sessions.set('expired-1', {
+      id: 'expired-1',
+      createdAt: Date.now(),
+      lastActivityAt: Date.now(),
+      sseStreams: new Map(),
+      authToken: 'stale-access',
+      accessTokenExpiresAt: Date.now() - 60_000,
+      replayQueue: [],
+      nextEventId: 0,
+    });
+
+    const app = (transport as any).app;
+    const handler = getExpressRouteHandler(app, 'post', '/mcp');
+    const req: any = {
+      method: 'POST',
+      path: '/mcp',
+      url: '/mcp',
+      sessionId: 'expired-1',
+      headers: { accept: 'application/json', host: 'localhost' },
+      body: { jsonrpc: '2.0', id: 1, method: 'tools/list' },
+    };
+    const res = createMockResponse();
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(401);
+    expect(res.body).toMatchObject({ error: 'invalid_token' });
+    expect(String(res.headers['www-authenticate'])).toContain('error="invalid_token"');
+    expect(String(res.headers['www-authenticate'])).toContain('resource_metadata=');
 
     await transport.stop();
   });
@@ -1220,7 +1362,7 @@ describe('HttpTransport security behavior (no listen)', () => {
         }),
       },
       exchangeAuthorizationCode: async () => {
-        throw new Error('bad code');
+        throw new OAuthInvalidGrantError('bad code');
       },
     };
 
@@ -1240,8 +1382,8 @@ describe('HttpTransport security behavior (no listen)', () => {
 
     expect(res.statusCode).toBe(400);
     expect(res.body).toMatchObject({ error: 'invalid_grant' });
-    // Error message is sanitized
-    expect(String(res.body.error_description)).toBe('Token exchange failed');
+    // Error message is sanitized (RFC 6749 §5.2 grant failure)
+    expect(String(res.body.error_description)).toBe('bad code');
 
     await transport.stop();
   });
@@ -1276,7 +1418,7 @@ describe('HttpTransport security behavior (no listen)', () => {
         }),
       },
       exchangeRefreshToken: async () => {
-        throw new Error('bad refresh');
+        throw new OAuthInvalidGrantError('bad refresh');
       },
     };
 
@@ -1296,8 +1438,159 @@ describe('HttpTransport security behavior (no listen)', () => {
 
     expect(res.statusCode).toBe(400);
     expect(res.body).toMatchObject({ error: 'invalid_grant' });
-    // Error message is sanitized
-    expect(String(res.body.error_description)).toBe('Token exchange failed');
+    // Error message is sanitized (RFC 6749 §5.2 grant failure)
+    expect(String(res.body.error_description)).toBe('bad refresh');
+
+    await transport.stop();
+  });
+
+  it('keeps an invalid/unregistered redirect_uri a direct 400 at /oauth/authorize (no redirect)', async () => {
+    const transport = createTransport({
+      oauthConfig: { issuer: 'https://auth.example.com', client_id: 'test-client', client_secret: 'test-secret', scopes: ['read'] },
+    });
+    const authorize = vi.fn(async () => {});
+    createProfileState(transport as any).oauthProvider = {
+      ensureEndpointsInitialized: async () => {},
+      clientsStore: { getClient: async () => ({ client_id: 'test-client' }) },
+      isRedirectUriAllowedForClient: () => false,
+      authorize,
+    };
+
+    const app = (transport as any).app;
+    const handler = getExpressRouteHandler(app, 'get', '/oauth/authorize');
+    const req: any = { query: { response_type: 'code', client_id: 'test-client', redirect_uri: 'http://evil.example/cb', state: 's' }, headers: {} };
+    const res = createMockResponse();
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(400);
+    expect(res.headers['location']).toBeUndefined();
+    expect(authorize).not.toHaveBeenCalled();
+
+    await transport.stop();
+  });
+
+  it('redirects an unsupported response_type to the validated redirect_uri with error + state', async () => {
+    const transport = createTransport({
+      oauthConfig: { issuer: 'https://auth.example.com', client_id: 'test-client', client_secret: 'test-secret', scopes: ['read'] },
+    });
+    const authorize = vi.fn(async () => {});
+    createProfileState(transport as any).oauthProvider = {
+      ensureEndpointsInitialized: async () => {},
+      clientsStore: { getClient: async () => ({ client_id: 'test-client' }) },
+      isRedirectUriAllowedForClient: () => true,
+      authorize,
+    };
+
+    const app = (transport as any).app;
+    const handler = getExpressRouteHandler(app, 'get', '/oauth/authorize');
+    const req: any = { query: { response_type: 'token', client_id: 'test-client', redirect_uri: 'http://localhost/cb', state: 'xyz' }, headers: {} };
+    const res = createMockResponse();
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(302);
+    const location = new URL(res.headers['location']);
+    expect(location.searchParams.get('error')).toBe('unsupported_response_type');
+    expect(location.searchParams.get('state')).toBe('xyz');
+    expect(authorize).not.toHaveBeenCalled();
+
+    await transport.stop();
+  });
+
+  it('sets Cache-Control: no-store on an early /oauth/authorize error', async () => {
+    const transport = createTransport({
+      oauthConfig: { issuer: 'https://auth.example.com', client_id: 'test-client', client_secret: 'test-secret', scopes: ['read'] },
+    });
+    createProfileState(transport as any).oauthProvider = {
+      ensureEndpointsInitialized: async () => {},
+      clientsStore: { getClient: async () => ({ client_id: 'test-client' }) },
+      isRedirectUriAllowedForClient: () => true,
+    };
+
+    const app = (transport as any).app;
+    const handler = getExpressRouteHandler(app, 'get', '/oauth/authorize');
+    // Missing client_id -> earliest direct 400.
+    const res = createMockResponse();
+    await handler({ query: { response_type: 'code' }, headers: {} } as any, res);
+
+    expect(res.statusCode).toBe(400);
+    expect(res.headers['cache-control']).toBe('no-store');
+
+    await transport.stop();
+  });
+
+  it('returns 401 invalid_client with WWW-Authenticate: Basic when Basic auth fails (RFC 6749 5.2)', async () => {
+    const transport = createTransport({
+      oauthConfig: { issuer: 'https://auth.example.com', client_id: 'test-client', client_secret: 'test-secret', scopes: ['read'] },
+    });
+    createProfileState(transport as any).oauthProvider = {
+      ensureEndpointsInitialized: async () => {},
+      clientsStore: { getClient: async () => undefined },
+    };
+
+    const app = (transport as any).app;
+    const handler = getExpressRouteHandler(app, 'post', '/oauth/token');
+    const basicAuth = Buffer.from('unknown-client:wrong-secret', 'utf8').toString('base64');
+    const req: any = {
+      body: { grant_type: 'authorization_code', code: 'abc' },
+      headers: { authorization: `Basic ${basicAuth}` },
+    };
+    const res = createMockResponse();
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(401);
+    expect(res.body).toMatchObject({ error: 'invalid_client' });
+    expect(String(res.headers['www-authenticate'])).toContain('Basic');
+
+    await transport.stop();
+  });
+
+  it('keeps invalid_client a 400 without a Basic challenge for body-based client auth', async () => {
+    const transport = createTransport({
+      oauthConfig: { issuer: 'https://auth.example.com', client_id: 'test-client', client_secret: 'test-secret', scopes: ['read'] },
+    });
+    createProfileState(transport as any).oauthProvider = {
+      ensureEndpointsInitialized: async () => {},
+      clientsStore: { getClient: async () => undefined },
+    };
+
+    const app = (transport as any).app;
+    const handler = getExpressRouteHandler(app, 'post', '/oauth/token');
+    const req: any = {
+      body: { grant_type: 'authorization_code', code: 'abc', client_id: 'unknown-client', client_secret: 'wrong' },
+      headers: {},
+    };
+    const res = createMockResponse();
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(400);
+    expect(res.body).toMatchObject({ error: 'invalid_client' });
+    expect(res.headers['www-authenticate']).toBeUndefined();
+
+    await transport.stop();
+  });
+
+  it('defaults token_type to Bearer and normalizes casing (RFC 6749 5.1)', async () => {
+    const transport = createTransport({
+      oauthConfig: { issuer: 'https://auth.example.com', client_id: 'test-client', client_secret: 'test-secret', scopes: ['read'] },
+    });
+    createProfileState(transport as any).oauthProvider = {
+      ensureEndpointsInitialized: async () => {},
+      clientsStore: { getClient: async () => ({ client_id: 'test-client', client_secret: 'server-secret', scope: 'read' }) },
+      // Upstream omits token_type entirely.
+      exchangeAuthorizationCode: async () => ({ access_token: 'access', expires_in: 3600 }),
+    };
+
+    const app = (transport as any).app;
+    const handler = getExpressRouteHandler(app, 'post', '/oauth/token');
+    const req: any = {
+      body: { grant_type: 'authorization_code', code: 'abc', client_id: 'test-client', client_secret: 'server-secret' },
+      headers: {},
+    };
+    const res = createMockResponse();
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body.token_type).toBe('Bearer');
 
     await transport.stop();
   });
@@ -2596,5 +2889,321 @@ describe('HttpTransport security behavior (no listen)', () => {
       if (originalKey === undefined) delete process.env.MCP4_SSL_KEY_FILE;
       else process.env.MCP4_SSL_KEY_FILE = originalKey;
     }
+  });
+});
+
+describe('HttpTransport RFC 6750 resource-server hardening (AIPP-572)', () => {
+  const OAUTH_CONFIG = {
+    authorization_endpoint: 'https://auth.example.com/oauth/authorize',
+    token_endpoint: 'https://auth.example.com/oauth/token',
+    redirect_uri: 'https://example.com/oauth/callback',
+    scopes: ['api'],
+  };
+
+  function initReq(headers: Record<string, string> = {}) {
+    return {
+      method: 'POST',
+      path: '/mcp',
+      url: '/mcp',
+      headers: { accept: 'application/json', host: 'localhost', ...headers },
+      body: {
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'initialize',
+        params: { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 't', version: '1' } },
+      },
+      get: () => undefined,
+    } as any;
+  }
+
+  it('item 1: non-OAuth Authentication required 401 does not advertise an OAuth challenge', async () => {
+    const transport = createTransport({
+      baseUrl: 'https://api.example.com',
+      authConfigs: [{ type: 'custom-header', header_name: 'X-API-Key' }],
+    });
+    transport.setMessageHandler(async () => ({ result: 'ok' }));
+    const req = initReq();
+    const res = createMockResponse();
+    await (transport as any).handlePost(req, res);
+
+    // Non-OAuth token-auth profile: the RFC 6750 Bearer/resource_metadata
+    // challenge must NOT be emitted (would lure clients into an uncompletable
+    // OAuth/DCR loop). Prior client-compatible plain 401 shape is preserved.
+    expect(res.statusCode).toBe(401);
+    expect(res.body).toMatchObject({ error: 'Unauthorized', message: 'Authentication required' });
+    expect(res.headers['www-authenticate']).toBeUndefined();
+    await transport.stop();
+  });
+
+  it('item 3: rejects a non-OAuth X-API-Token on an OAuth-required profile (no shadow session)', async () => {
+    const transport = createTransport({
+      baseUrl: 'https://api.example.com',
+      oauthConfig: OAUTH_CONFIG,
+      authConfigs: [{ type: 'oauth' }],
+    });
+    transport.setMessageHandler(async () => ({ result: { ok: true } }));
+    const req = initReq({ 'x-api-token': 'garbage-token-123' });
+    const res = createMockResponse();
+    await (transport as any).handlePost(req, res);
+
+    expect(res.statusCode).toBe(401);
+    expect(res.body).toMatchObject({ error: 'invalid_token' });
+    expect(String(res.headers['www-authenticate'])).toContain('Bearer');
+    expect(String(res.headers['www-authenticate'])).toContain('resource_metadata=');
+    // No session must be materialized for the shadow credential.
+    expect(res.headers['mcp-session-id']).toBeUndefined();
+    await transport.stop();
+  });
+
+  it('item 4: an expired session token is not served from cache when no Authorization header is present', async () => {
+    const transport = createTransport();
+    transport.setMessageHandler(async () => ({ result: 'ok' }));
+    const profileState = createProfileState(transport as any);
+    profileState.sessions.set('sess-exp', {
+      id: 'sess-exp',
+      createdAt: Date.now(),
+      lastActivityAt: Date.now(),
+      sseStreams: new Map(),
+      authToken: 'cached-access',
+      accessTokenExpiresAt: Date.now() - 60_000,
+      replayQueue: [],
+      nextEventId: 0,
+    });
+    const req = {
+      method: 'POST',
+      path: '/mcp',
+      url: '/mcp',
+      sessionId: 'sess-exp',
+      headers: { accept: 'application/json', host: 'localhost' },
+      body: { jsonrpc: '2.0', id: 1, method: 'tools/list' },
+      get: () => undefined,
+    } as any;
+    const res = createMockResponse();
+    await (transport as any).handlePost(req, res);
+
+    expect(res.statusCode).toBe(401);
+    expect(res.body).toMatchObject({ error: 'invalid_token' });
+    expect(String(res.headers['www-authenticate'])).toContain('resource_metadata=');
+    await transport.stop();
+  });
+
+  it('item 5: rejects a mid-session replacement token that fails validation', async () => {
+    const transport = createTransport({
+      baseUrl: 'https://api.example.com',
+      authConfigs: [{ type: 'bearer', validation_endpoint: '/validate' }],
+    });
+    transport.setMessageHandler(async () => ({ result: 'ok' }));
+    const profileState = createProfileState(transport as any);
+    profileState.context = {
+      profileId: 'default',
+      authConfigs: [{ type: 'bearer', validation_endpoint: '/validate' }],
+      baseUrl: 'https://api.example.com',
+    };
+    profileState.sessions.set('sess-swap', {
+      id: 'sess-swap',
+      createdAt: Date.now(),
+      lastActivityAt: Date.now(),
+      sseStreams: new Map(),
+      authToken: 'original-token',
+      replayQueue: [],
+      nextEventId: 0,
+    });
+
+    const origFetch = global.fetch;
+    global.fetch = vi.fn(async () => ({ status: 401 }) as any);
+    try {
+      const req = {
+        method: 'POST',
+        path: '/mcp',
+        url: '/mcp',
+        sessionId: 'sess-swap',
+        headers: { accept: 'application/json', host: 'localhost', authorization: 'Bearer replacement-invalid-token' },
+        body: { jsonrpc: '2.0', id: 1, method: 'tools/list' },
+        get: () => undefined,
+      } as any;
+      const res = createMockResponse();
+      await (transport as any).handlePost(req, res);
+
+      expect(res.statusCode).toBe(401);
+      expect(res.body).toMatchObject({ error: 'invalid_token' });
+      expect(String(res.headers['www-authenticate'])).toContain('resource_metadata=');
+      // The rejected replacement must not overwrite the established session token.
+      expect((profileState.sessions.get('sess-swap') as any).authToken).toBe('original-token');
+    } finally {
+      global.fetch = origFetch;
+      await transport.stop();
+    }
+  });
+
+  it('item 5 (I3): a mid-session bearer swap validates against the same config as init on an OAuth-active profile (reject path)', async () => {
+    const authConfigs = [
+      { type: 'oauth', validation_endpoint: '/oauth-validate' },
+      { type: 'bearer', validation_endpoint: '/bearer-validate' },
+    ];
+    const transport = createTransport({
+      baseUrl: 'https://api.example.com',
+      oauthConfig: OAUTH_CONFIG,
+      authConfigs,
+    });
+    transport.setMessageHandler(async () => ({ result: 'ok' }));
+    const profileState = createProfileState(transport as any);
+    profileState.context = {
+      profileId: 'default',
+      authConfigs,
+      oauthConfig: OAUTH_CONFIG,
+      baseUrl: 'https://api.example.com',
+    };
+
+    // Spy on the upstream check to capture which auth config is selected without
+    // making a network call (SSRF validation blocks the mock host anyway).
+    const validatedEndpoints: (string | undefined)[] = [];
+    vi.spyOn(transport as any, 'validateAuthToken').mockImplementation(
+      async (...args: unknown[]) => {
+        const authConfig = args[0] as { validation_endpoint?: string };
+        validatedEndpoints.push(authConfig.validation_endpoint);
+        return false;
+      },
+    );
+
+    try {
+      // Init with a bearer token: on an OAuth-active profile the OAuth config
+      // takes priority, so init validates the bearer token against /oauth-validate.
+      const initRes = createMockResponse();
+      await (transport as any).handlePost(initReq({ authorization: 'Bearer init-bearer-token' }), initRes);
+      const initTarget = validatedEndpoints.at(-1);
+      expect(initTarget).toBe('/oauth-validate');
+
+      // Establish a session, then swap the bearer credential.
+      profileState.sessions.set('sess-swap', {
+        id: 'sess-swap',
+        createdAt: Date.now(),
+        lastActivityAt: Date.now(),
+        sseStreams: new Map(),
+        authToken: 'original-token',
+        replayQueue: [],
+        nextEventId: 0,
+      });
+      validatedEndpoints.length = 0;
+      const swapReq = {
+        method: 'POST',
+        path: '/mcp',
+        url: '/mcp',
+        sessionId: 'sess-swap',
+        headers: { accept: 'application/json', host: 'localhost', authorization: 'Bearer replacement-invalid' },
+        body: { jsonrpc: '2.0', id: 1, method: 'tools/list' },
+        get: () => undefined,
+      } as any;
+      const swapRes = createMockResponse();
+      await (transport as any).handlePost(swapReq, swapRes);
+
+      // The swap must validate against the SAME config/endpoint init used (the
+      // OAuth config), not the bearer config, so mid-session behaviour matches init.
+      expect(validatedEndpoints.at(-1)).toBe('/oauth-validate');
+      expect(validatedEndpoints.at(-1)).toBe(initTarget);
+      expect(swapRes.statusCode).toBe(401);
+      expect(swapRes.body).toMatchObject({ error: 'invalid_token' });
+      expect((profileState.sessions.get('sess-swap') as any).authToken).toBe('original-token');
+    } finally {
+      vi.restoreAllMocks();
+      await transport.stop();
+    }
+  });
+
+  it('item 5 (I3): a mid-session bearer swap validates against the same config as init on an OAuth-active profile (accept path)', async () => {
+    const authConfigs = [
+      { type: 'oauth', validation_endpoint: '/oauth-validate' },
+      { type: 'bearer', validation_endpoint: '/bearer-validate' },
+    ];
+    const transport = createTransport({
+      baseUrl: 'https://api.example.com',
+      oauthConfig: OAUTH_CONFIG,
+      authConfigs,
+    });
+    transport.setMessageHandler(async () => ({ result: 'ok' }));
+    const profileState = createProfileState(transport as any);
+    profileState.context = {
+      profileId: 'default',
+      authConfigs,
+      oauthConfig: OAUTH_CONFIG,
+      baseUrl: 'https://api.example.com',
+    };
+    profileState.sessions.set('sess-swap', {
+      id: 'sess-swap',
+      createdAt: Date.now(),
+      lastActivityAt: Date.now(),
+      sseStreams: new Map(),
+      authToken: 'original-token',
+      replayQueue: [],
+      nextEventId: 0,
+    });
+
+    const validatedEndpoints: (string | undefined)[] = [];
+    vi.spyOn(transport as any, 'validateAuthToken').mockImplementation(
+      async (...args: unknown[]) => {
+        const authConfig = args[0] as { validation_endpoint?: string };
+        validatedEndpoints.push(authConfig.validation_endpoint);
+        return true;
+      },
+    );
+
+    try {
+      const swapReq = {
+        method: 'POST',
+        path: '/mcp',
+        url: '/mcp',
+        sessionId: 'sess-swap',
+        headers: { accept: 'application/json', host: 'localhost', authorization: 'Bearer replacement-valid' },
+        body: { jsonrpc: '2.0', id: 1, method: 'tools/list' },
+        get: () => undefined,
+      } as any;
+      const swapRes = createMockResponse();
+      await (transport as any).handlePost(swapReq, swapRes);
+
+      // Accepted swap validates against the OAuth config (matching init) and
+      // replaces the session credential.
+      expect(validatedEndpoints).toContain('/oauth-validate');
+      expect(validatedEndpoints).not.toContain('/bearer-validate');
+      expect((profileState.sessions.get('sess-swap') as any).authToken).toBe('replacement-valid');
+    } finally {
+      vi.restoreAllMocks();
+      await transport.stop();
+    }
+  });
+
+  it('item 6: matches the Bearer scheme case-insensitively', () => {
+    const transport = createTransport();
+    const profileState = createProfileState(transport as any);
+    const result = (transport as any).extractAuthToken(
+      { headers: { authorization: 'bearer abc123def' } },
+      profileState,
+      [],
+    );
+    expect(result).toEqual({ type: 'bearer', token: 'abc123def' });
+  });
+
+  it('item 7: redacts credential-like content in buildHttpErrorResponse messages', () => {
+    const transport = createTransport();
+    const jwt = 'aaaaaaaa.bbbbbbbb.cccccccc';
+    const out = (transport as any).buildHttpErrorResponse(new ValidationError(`bad token ${jwt}`), 'cid-1');
+    expect(out.message).not.toContain(jwt);
+    expect(out.message).toContain('[REDACTED_JWT]');
+  });
+
+  it('item 8: does not advertise an unenforced scope in the OAuth /mcp challenge', async () => {
+    const transport = createTransport({
+      baseUrl: 'https://api.example.com',
+      oauthConfig: OAUTH_CONFIG,
+      authConfigs: [{ type: 'oauth' }],
+    });
+    transport.setMessageHandler(async () => ({ result: 'ok' }));
+    const req = initReq();
+    const res = createMockResponse();
+    await (transport as any).handlePost(req, res);
+
+    expect(res.statusCode).toBe(401);
+    expect(res.body).toMatchObject({ error: 'invalid_request' });
+    expect(String(res.headers['www-authenticate'])).toContain('resource_metadata=');
+    expect(String(res.headers['www-authenticate'])).not.toContain('scope=');
+    await transport.stop();
   });
 });

@@ -55,7 +55,8 @@ describe('OAuth PKCE Security', () => {
     };
 
     // 1. Setup stored code with challenge
-    const verifier = 'test-verifier-string-must-be-long-enough';
+    // RFC 7636 code_verifier: 43-128 chars from the unreserved set.
+    const verifier = 'test_verifier_0123456789_ABCDEFGHIJKLMNOPQRS';
     // Calculate expected challenge
     const challenge = createHash('sha256').update(verifier).digest('base64url');
     const code = 'auth-code';
@@ -93,7 +94,7 @@ describe('OAuth PKCE Security', () => {
       response_types: ['code'],
     };
 
-    const verifier = 'test-verifier-string-must-be-long-enough';
+    const verifier = 'test_verifier_0123456789_ABCDEFGHIJKLMNOPQRS';
     const challenge = createHash('sha256').update(verifier).digest('base64url');
     const code = 'auth-code-invalid';
 
@@ -112,7 +113,7 @@ describe('OAuth PKCE Security', () => {
         provider.exchangeAuthorizationCode(
             client as any,
             code,
-            'wrong-verifier',
+            'wrong_verifier_0123456789_ABCDEFGHIJKLMNOPQR',
             'http://localhost:3003/callback'
         )
     ).rejects.toThrow('Invalid code_verifier');

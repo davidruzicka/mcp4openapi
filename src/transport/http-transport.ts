@@ -40,7 +40,8 @@ import {
 import { ConsentHttpController } from './consent-http-controller.js';
 import { ReconsentTracker } from './reconsent-tracker.js';
 import * as refreshEnvelope from './refresh-envelope.js';
-import type { AccessTokenIdentityResolver, RefreshEnvelopeContext } from './refresh-envelope.js';
+import type { AccessTokenIdentityResolver, RefreshEnvelopeContext, RefreshFamily } from './refresh-envelope.js';
+import { RefreshRotationStore } from '../auth/refresh-rotation-store.js';
 import { EnterpriseAuthProvider } from '../auth/enterprise-auth-provider.js';
 import { InboundAuthTokenStore } from '../auth/inbound-auth-token-store.js';
 import { EnterpriseReplayStore } from '../auth/enterprise-replay-store.js';
@@ -56,7 +57,7 @@ import { configureObservabilityPseudonym, pseudonymizeSubject } from '../auth/ob
 import { ClientAuthGateError } from '../core/errors.js';
 import { buildAuthorizationServerMetadata, buildProtectedResourceMetadata } from '../auth/enterprise-metadata.js';
 import { mapAuthError } from '../auth/auth-error-mapper.js';
-import { redactAuthPayload } from '../auth/auth-redaction.js';
+import { redactAuthPayload, sanitizeAuthErrorMessage } from '../auth/auth-redaction.js';
 import { OAuthGrantRouter } from './oauth-grant-router.js';
 import { SSRFValidator } from '../security/ssrf-validator.js';
 import type { AuthInterceptor, OAuthConfig, UpstreamMcpServerConfig } from '../types/profile.js';
@@ -79,6 +80,8 @@ import {
   ConfigurationError,
   ConsentGateConfigurationError,
   ConsentRequiredError,
+  InvalidClientMetadataError,
+  InvalidRedirectUriError,
   OAuthClientStoreCapacityError,
   RateLimitError,
   ValidationError,
@@ -218,6 +221,11 @@ export class HttpTransport {
   /** Browser-facing consent flow (pages, pending approvals, fingerprint/cookie binding). */
   private readonly consentController = new ConsentHttpController();
   private readonly enterpriseReplayStore: EnterpriseReplayStore;
+  /**
+   * Bounded rotation state for client-facing refresh tokens (OAuth 2.1 §4.3.1).
+   * Process-local and shared across profiles; keys are namespaced by profile id.
+   */
+  private readonly refreshRotationStore = new RefreshRotationStore();
   /**
    * One-shot re-consent state per profile/subject/rules version: bounds the
    * re-consent 401 to a single OAuth restart per subject (so a client that
@@ -1296,7 +1304,58 @@ export class HttpTransport {
     return `${prefix}${normalizedPath}`;
   }
 
-  private getServerOrigin(profileId?: string): string {
+  private isLoopbackHost(host: string): boolean {
+    return host === 'localhost' || host === '127.0.0.1' || host === '::1';
+  }
+
+  private buildFallbackOrigin(): string {
+    if (this.config.host.includes('://')) {
+      return `${this.config.host}:${this.config.port}`;
+    }
+    // RFC 8414 §3.3: never advertise an http:// issuer for a non-loopback host.
+    const scheme = this.isLoopbackHost(this.config.host) ? 'http' : 'https';
+    return `${scheme}://${this.config.host}:${this.config.port}`;
+  }
+
+  private isTrustProxyEnabled(): boolean {
+    const trustProxy = this.config.trustProxy;
+    // Mirror Express: `false`/`0` disable proxy trust; any other set value enables it.
+    return trustProxy !== undefined && trustProxy !== false && trustProxy !== 0;
+  }
+
+  /**
+   * Take the first value of a possibly comma-separated forwarded header (chained
+   * proxies append their own entry) and trim it, mirroring how Express derives
+   * req.hostname. Returns undefined when the header is absent or empty.
+   */
+  private firstForwardedValue(headerValue: string | undefined): string | undefined {
+    if (!headerValue) {
+      return undefined;
+    }
+    const first = headerValue.split(',')[0]?.trim();
+    return first ? first : undefined;
+  }
+
+  private getServerOrigin(profileId?: string, req?: Request): string {
+    // RFC 8414 §3.3: the advertised issuer must equal the URL clients used to
+    // fetch the metadata. Behind a trusted proxy the public scheme/host only
+    // appear on the forwarded request, so they take precedence over the
+    // redirect-URI origin and the host:port fallback. Forwarded headers are only
+    // honored when proxy trust is enabled, to avoid Host/Forwarded spoofing (a
+    // client-controlled X-Forwarded-Host must never inject the issuer origin).
+    // Deployment requirement: the fronting proxy MUST set/overwrite both Host and
+    // X-Forwarded-Host so clients cannot spoof them.
+    if (req && this.isTrustProxyEnabled()) {
+      // X-Forwarded-Host can be a comma-separated list behind chained proxies;
+      // use the first (client-facing) value, as Express does for req.hostname.
+      // req.protocol already applies the same first-value handling to
+      // X-Forwarded-Proto when trust proxy is enabled.
+      const forwardedHost = this.firstForwardedValue(req.get('x-forwarded-host')) ?? req.get('host');
+      if (forwardedHost) {
+        return `${req.protocol}://${forwardedHost}`;
+      }
+    }
+
     if (profileId) {
       const state = this.profileStates.get(profileId);
       if (state?.oauthProvider?.redirectUri) {
@@ -1308,13 +1367,11 @@ export class HttpTransport {
       }
     }
 
-    const protocol = this.config.host.includes('://') ? '' : 'http://';
-    const host = this.config.host.includes('://') ? this.config.host : this.config.host;
-    return `${protocol}${host}:${this.config.port}`;
+    return this.buildFallbackOrigin();
   }
 
-  private buildProfileUrl(profileId: string | undefined, path: string, options?: { forceProfilePrefix?: boolean }): string {
-    return `${this.getServerOrigin(profileId)}${this.buildProfilePath(profileId, path, options)}`;
+  private buildProfileUrl(profileId: string | undefined, path: string, options?: { forceProfilePrefix?: boolean }, req?: Request): string {
+    return `${this.getServerOrigin(profileId, req)}${this.buildProfilePath(profileId, path, options)}`;
   }
 
   private normalizeResourcePath(pathname: string): string {
@@ -1520,10 +1577,10 @@ export class HttpTransport {
         ...withProfile((req, res, profileState) => this.handleOAuthAuthorizationServerMetadata(req, res, profileState))
       );
 
-      this.app.get(
-        `${basePath}${OAUTH_PATHS.WELL_KNOWN_OPENID_CONFIGURATION}`,
-        ...withProfile((req, res, profileState) => this.handleOAuthAuthorizationServerMetadata(req, res, profileState))
-      );
+      // OIDC discovery (/.well-known/openid-configuration) is intentionally not
+      // served: this gateway is an OAuth 2.1 authorization server issuing opaque
+      // encrypted tokens, not an OpenID Provider (no id_token, no jwks_uri).
+      // Clients fall back to RFC 8414 oauth-authorization-server metadata.
 
       this.app.post(
         `${basePath}${OAUTH_PATHS.REGISTER}`,
@@ -1627,14 +1684,6 @@ export class HttpTransport {
           withProfileState((req, res, profileState) => this.handleOAuthAuthorizationServerMetadata(req, res, profileState))
         );
 
-        this.app.get(
-          OAUTH_PATHS.WELL_KNOWN_OPENID_CONFIGURATION,
-          attachProfileFromHint,
-          oauthRateLimiter,
-          // lgtm[js/missing-rate-limiting] Rate limiting is applied by oauthRateLimiter middleware above.
-          withProfileState((req, res, profileState) => this.handleOAuthAuthorizationServerMetadata(req, res, profileState))
-        );
-
         this.app.post(
           OAUTH_PATHS.REGISTER,
           attachProfileFromHint,
@@ -1686,13 +1735,6 @@ export class HttpTransport {
         withProfileState((req, res, profileState) => this.handleOAuthAuthorizationServerMetadata(req, res, profileState))
       );
 
-      this.app.get(
-        `${OAUTH_PATHS.WELL_KNOWN_OPENID_CONFIGURATION}/profile/:profileId`,
-        attachProfileId,
-        oauthRateLimiter,
-        // lgtm[js/missing-rate-limiting] Rate limiting is applied by oauthRateLimiter middleware above.
-        withProfileState((req, res, profileState) => this.handleOAuthAuthorizationServerMetadata(req, res, profileState))
-      );
     }
 
     // Security: Rate limiting setup (for MCP endpoints)
@@ -1865,8 +1907,8 @@ export class HttpTransport {
     });
   }
   
-  private getProfileIssuerUrl(profileId: string, options?: { forceProfilePrefix?: boolean }): string {
-    const origin = this.getServerOrigin(profileId);
+  private getProfileIssuerUrl(profileId: string, options?: { forceProfilePrefix?: boolean }, req?: Request): string {
+    const origin = this.getServerOrigin(profileId, req);
     const prefix = this.getProfilePrefix(profileId, options);
     return `${origin}${prefix}`;
   }
@@ -2020,8 +2062,8 @@ export class HttpTransport {
     const isProfileScoped = typeof req.params?.profileId === 'string';
     const forceProfilePrefix = isProfileScoped || (req as McpRequest).forceProfilePrefix === true;
     const urlOptions = forceProfilePrefix ? { forceProfilePrefix: true } : undefined;
-    const serverUrl = new URL(this.buildProfileUrl(profileId, '/mcp', urlOptions));
-    const issuerUrl = this.getProfileIssuerUrl(profileId, urlOptions);
+    const serverUrl = new URL(this.buildProfileUrl(profileId, '/mcp', urlOptions, req));
+    const issuerUrl = this.getProfileIssuerUrl(profileId, urlOptions, req);
 
     const metadata: {
       resource: string;
@@ -2056,29 +2098,23 @@ export class HttpTransport {
     res: Response,
     profileState: ProfileRuntimeState
   ): Promise<void> {
+    // RFC 6749: no-store at handler entry so it is present on early errors too.
+    res.setHeader('Cache-Control', 'no-store');
+
     if (!profileState.oauthProvider) {
       res.status(HTTP_STATUS.NOT_FOUND).send('OAuth not configured for this profile');
       return;
     }
 
     try {
-      res.setHeader('Cache-Control', 'no-store');
-
       const input = req.method === 'POST' ? req.body as Record<string, unknown> : req.query;
       const { response_type, client_id, redirect_uri, scope, state, code_challenge, code_challenge_method } = input;
 
+      // client_id and redirect_uri are validated first and, if invalid, MUST
+      // produce a direct 400 (RFC 6749 §4.1.2.1): the server must not redirect
+      // to an unverified redirect_uri.
       if (!client_id || typeof client_id !== 'string') {
         res.status(HTTP_STATUS.BAD_REQUEST).send('Missing client_id');
-        return;
-      }
-
-      if (!response_type || typeof response_type !== 'string') {
-        res.status(HTTP_STATUS.BAD_REQUEST).send('Missing response_type');
-        return;
-      }
-
-      if (response_type !== 'code') {
-        res.status(HTTP_STATUS.BAD_REQUEST).send('Unsupported response_type');
         return;
       }
 
@@ -2095,6 +2131,43 @@ export class HttpTransport {
           client_id,
         });
         res.status(HTTP_STATUS.BAD_REQUEST).send('Invalid client_id');
+        return;
+      }
+
+      // Unregistered/invalid redirect_uri stays a direct 400 (no redirect).
+      if (!profileState.oauthProvider.isRedirectUriAllowedForClient(client, redirect_uri)) {
+        this.logger.warn('OAuth authorize rejected invalid redirect_uri', {
+          profileId: profileState.profileId,
+          client_id,
+        });
+        res.status(HTTP_STATUS.BAD_REQUEST).send('Invalid redirect_uri');
+        return;
+      }
+
+      // redirect_uri is now validated: remaining authorization-request errors are
+      // delivered as a 302 to the redirect_uri with error + echoed state
+      // (RFC 6749 §4.1.2.1).
+      const echoState = typeof state === 'string' ? state : undefined;
+
+      if (!response_type || typeof response_type !== 'string') {
+        this.redirectOAuthAuthorizeError(res, redirect_uri, 'invalid_request', 'Missing response_type', echoState);
+        return;
+      }
+
+      if (response_type !== 'code') {
+        this.redirectOAuthAuthorizeError(res, redirect_uri, 'unsupported_response_type', 'Unsupported response_type', echoState);
+        return;
+      }
+
+      // RFC 7636 / OAuth 2.1: PKCE is mandatory. Missing challenge, method
+      // "plain", or any unknown method are authorize-time errors: route them
+      // through the same redirect-error path now that redirect_uri is valid.
+      if (!code_challenge || typeof code_challenge !== 'string') {
+        this.redirectOAuthAuthorizeError(res, redirect_uri, 'invalid_request', 'code_challenge is required (PKCE)', echoState);
+        return;
+      }
+      if (code_challenge_method !== 'S256') {
+        this.redirectOAuthAuthorizeError(res, redirect_uri, 'invalid_request', 'code_challenge_method must be S256', echoState);
         return;
       }
 
@@ -2136,6 +2209,34 @@ export class HttpTransport {
     }
   }
 
+  /**
+   * Deliver an authorization-endpoint error as a 302 to the (already validated)
+   * redirect_uri with `error`, `error_description`, and the echoed `state`
+   * (RFC 6749 §4.1.2.1). Falls back to a direct 400 if the redirect_uri cannot
+   * be parsed (should not happen after validation).
+   */
+  private redirectOAuthAuthorizeError(
+    res: Response,
+    redirectUri: string,
+    error: string,
+    errorDescription: string,
+    state?: string,
+  ): void {
+    let url: URL;
+    try {
+      url = new URL(redirectUri);
+    } catch {
+      res.status(HTTP_STATUS.BAD_REQUEST).json({ error, error_description: errorDescription });
+      return;
+    }
+    url.searchParams.set('error', error);
+    url.searchParams.set('error_description', errorDescription);
+    if (state !== undefined) {
+      url.searchParams.set('state', state);
+    }
+    res.redirect(HTTP_STATUS.FOUND, url.toString());
+  }
+
   /** Consent info page at `/consent`; delegates to the consent controller. */
   private handleConsentInfo(res: Response, profileState: ProfileRuntimeState): void {
     this.consentController.renderConsentInfo(res, profileState.context.consent_gate);
@@ -2146,11 +2247,21 @@ export class HttpTransport {
     res: Response,
     profileState: ProfileRuntimeState
   ): Promise<void> {
+    // RFC 6749: no-store at handler entry so it is present on early errors too.
+    res.setHeader('Cache-Control', 'no-store');
+
     const enterpriseEnabled = profileState.context.enterpriseAuthorization?.enabled === true;
     if (!profileState.oauthProvider && !enterpriseEnabled) {
       res.status(HTTP_STATUS.NOT_FOUND).json({ error: 'server_error', error_description: 'OAuth provider not initialized' });
       return;
     }
+
+    // RFC 6749 §5.2: track whether the client authenticated via the HTTP Basic
+    // Authorization header so an invalid_client failure can return 401 with a
+    // matching WWW-Authenticate challenge.
+    const rawAuthHeader = req.headers['authorization'];
+    const authHeaderValue = Array.isArray(rawAuthHeader) ? rawAuthHeader[0] : rawAuthHeader;
+    const usedBasicAuth = typeof authHeaderValue === 'string' && authHeaderValue.toLowerCase().startsWith('basic ');
 
     // RFC 6749 §2.3.1: confidential/public clients may authenticate via HTTP Basic
     // auth on the token endpoint instead of putting client_id/client_secret in the
@@ -2186,27 +2297,27 @@ export class HttpTransport {
           response.status(HTTP_STATUS.NOT_FOUND).json({ error: 'server_error', error_description: 'OAuth provider not initialized' });
           return;
         }
-        try {
-          await profileState.oauthProvider.ensureEndpointsInitialized();
-          const client = await this.validateOAuthClientCredentials(profileState, request.body.client_id, request.body.client_secret, response);
-          if (!client) {
-            return;
-          }
-          const tokens = await profileState.oauthProvider.exchangeAuthorizationCode(client, request.body.code, request.body.code_verifier, request.body.redirect_uri);
-          // Fetch the registered client so creg can be embedded for restart-resilient session recovery.
-          const registeredClient = await profileState.oauthProvider.clientsStore.getClient(client.client_id);
-          const clientToken = this.storeOAuthTokens(profileState, tokens, client.client_id, client.scope?.split(' ') || [], registeredClient ?? undefined);
-          // Issue the refresh token as an identity-bearing envelope so a later
-          // direct refresh grant still knows which human it belongs to.
-          const clientRefreshToken = this.buildClientRefreshToken(profileState, tokens, client.client_id);
-          response.json({
-            ...tokens,
-            access_token: clientToken,
-            ...(clientRefreshToken ? { refresh_token: clientRefreshToken } : {}),
-          });
-        } catch {
-          response.status(HTTP_STATUS.BAD_REQUEST).json({ error: 'invalid_grant', error_description: 'Token exchange failed' });
+        await profileState.oauthProvider.ensureEndpointsInitialized();
+        const client = await this.validateOAuthClientCredentials(profileState, request.body.client_id, request.body.client_secret, response, usedBasicAuth);
+        if (!client) {
+          return;
         }
+        // Errors propagate to the outer handler and are mapped by mapAuthError
+        // (ValidationError -> invalid_request, OAuthInvalidGrantError -> invalid_grant,
+        // OAuthUpstreamError -> server_error), per RFC 6749 §5.2.
+        const tokens = await profileState.oauthProvider.exchangeAuthorizationCode(client, request.body.code, request.body.code_verifier, request.body.redirect_uri);
+        // Fetch the registered client so creg can be embedded for restart-resilient session recovery.
+        const registeredClient = await profileState.oauthProvider.clientsStore.getClient(client.client_id);
+        const clientToken = this.storeOAuthTokens(profileState, tokens, client.client_id, client.scope?.split(' ') || [], registeredClient ?? undefined);
+        // Issue the refresh token as an identity-bearing envelope so a later
+        // direct refresh grant still knows which human it belongs to.
+        const clientRefreshToken = this.buildClientRefreshToken(profileState, tokens, client.client_id);
+        response.json({
+          ...tokens,
+          access_token: clientToken,
+          token_type: this.normalizeOAuthTokenType(tokens.token_type),
+          ...(clientRefreshToken ? { refresh_token: clientRefreshToken } : {}),
+        });
       },
     });
 
@@ -2218,34 +2329,47 @@ export class HttpTransport {
           response.status(HTTP_STATUS.NOT_FOUND).json({ error: 'server_error', error_description: 'OAuth provider not initialized' });
           return;
         }
-        try {
-          await profileState.oauthProvider.ensureEndpointsInitialized();
-          const client = await this.validateOAuthClientCredentials(profileState, request.body.client_id, request.body.client_secret, response);
-          if (!client) {
-            return;
-          }
-          // Recover the verified identity from the refresh envelope: after a
-          // restart the provider's in-process identity map is empty, so without
-          // this the refreshed token would carry no human principal at all.
-          const grant = this.resolveRefreshGrant(profileState, request.body.refresh_token, client.client_id);
-          const tokens = await profileState.oauthProvider.exchangeRefreshToken(
-            client,
-            grant.refreshToken,
-            undefined,
-            undefined,
-            grant.identity,
-          );
-          const registeredClient = await profileState.oauthProvider.clientsStore.getClient(client.client_id);
-          const clientToken = this.storeOAuthTokens(profileState, tokens, client.client_id, client.scope?.split(' ') || [], registeredClient ?? undefined);
-          const clientRefreshToken = this.buildClientRefreshToken(profileState, tokens, client.client_id);
-          response.json({
-            ...tokens,
-            access_token: clientToken,
-            ...(clientRefreshToken ? { refresh_token: clientRefreshToken } : {}),
-          });
-        } catch {
-          response.status(HTTP_STATUS.BAD_REQUEST).json({ error: 'invalid_grant', error_description: 'Token exchange failed' });
+        await profileState.oauthProvider.ensureEndpointsInitialized();
+        const client = await this.validateOAuthClientCredentials(profileState, request.body.client_id, request.body.client_secret, response, usedBasicAuth);
+        if (!client) {
+          return;
         }
+        // Recover the verified identity from the refresh envelope: after a
+        // restart the provider's in-process identity map is empty, so without
+        // this the refreshed token would carry no human principal at all.
+        // Errors propagate to the outer handler for RFC 6749 §5.2 mapping:
+        // AuthenticationError/OAuthInvalidGrantError -> invalid_grant,
+        // OAuthUpstreamError -> server_error.
+        // Single-flight, idempotent rotation: a concurrent or grace-window retry
+        // of the same token replays the leader's result instead of running a
+        // second upstream exchange or revoking the family (OAuth 2.1 §4.3.1).
+        const body = await this.rotateRefreshGrant(
+          profileState,
+          request.body.refresh_token,
+          client.client_id,
+          async ({ refreshToken, identity, family, newJti }) => {
+            const tokens = await profileState.oauthProvider!.exchangeRefreshToken(
+              client,
+              refreshToken,
+              undefined,
+              undefined,
+              identity,
+            );
+            const registeredClient = await profileState.oauthProvider!.clientsStore.getClient(client.client_id);
+            const clientToken = this.storeOAuthTokens(profileState, tokens, client.client_id, client.scope?.split(' ') || [], registeredClient ?? undefined);
+            // Rotate the client-facing refresh token: reuse the redeemed family so
+            // the new token supersedes the presented one. newJti is assigned by the
+            // rotation lease so the store advances the family to the same id.
+            const clientRefreshToken = this.buildClientRefreshToken(profileState, tokens, client.client_id, family, newJti);
+            return {
+              ...tokens,
+              access_token: clientToken,
+              token_type: this.normalizeOAuthTokenType(tokens.token_type),
+              ...(clientRefreshToken ? { refresh_token: clientRefreshToken } : {}),
+            };
+          },
+        );
+        response.json(body);
       },
     });
 
@@ -2399,21 +2523,35 @@ export class HttpTransport {
     return undefined;
   }
 
+  /**
+   * RFC 6749 §5.2: emit an invalid_client error. When the client authenticated
+   * via the HTTP Basic Authorization header, respond 401 with a matching
+   * WWW-Authenticate: Basic challenge; otherwise a plain 400.
+   */
+  private sendInvalidClient(res: Response, viaBasic: boolean): null {
+    if (viaBasic) {
+      res.setHeader('WWW-Authenticate', 'Basic realm="OAuth"');
+      res.status(HTTP_STATUS.UNAUTHORIZED).json({ error: 'invalid_client' });
+    } else {
+      res.status(HTTP_STATUS.BAD_REQUEST).json({ error: 'invalid_client' });
+    }
+    return null;
+  }
+
   private async validateOAuthClientCredentials(
     profileState: ProfileRuntimeState,
     clientId: unknown,
     clientSecret: unknown,
-    res: Response
+    res: Response,
+    viaBasic: boolean = false,
   ): Promise<OAuthClientInformationFull | null> {
     if (!profileState.oauthProvider || typeof clientId !== 'string' || clientId.trim().length === 0) {
-      res.status(HTTP_STATUS.BAD_REQUEST).json({ error: 'invalid_client' });
-      return null;
+      return this.sendInvalidClient(res, viaBasic);
     }
 
     const client = await this.resolveOAuthClientForRequest(profileState, clientId);
     if (!client) {
-      res.status(HTTP_STATUS.BAD_REQUEST).json({ error: 'invalid_client' });
-      return null;
+      return this.sendInvalidClient(res, viaBasic);
     }
 
     // Keep VS Code proxy compatibility client public for token exchange.
@@ -2424,16 +2562,26 @@ export class HttpTransport {
     // Confidential clients must present matching client_secret.
     if (typeof client.client_secret === 'string' && client.client_secret.length > 0) {
       if (typeof clientSecret !== 'string' || clientSecret.length === 0) {
-        res.status(HTTP_STATUS.BAD_REQUEST).json({ error: 'invalid_client' });
-        return null;
+        return this.sendInvalidClient(res, viaBasic);
       }
       if (!this.compareSecretsConstantTime(client.client_secret, clientSecret)) {
-        res.status(HTTP_STATUS.BAD_REQUEST).json({ error: 'invalid_client' });
-        return null;
+        return this.sendInvalidClient(res, viaBasic);
       }
     }
 
     return client;
+  }
+
+  /**
+   * RFC 6749 §5.1: default token_type to Bearer when the upstream response omits
+   * it, and normalize casing (e.g. "bearer" -> "Bearer"). Unknown token types
+   * are preserved verbatim.
+   */
+  private normalizeOAuthTokenType(raw: unknown): string {
+    if (typeof raw === 'string' && raw.trim().length > 0) {
+      return raw.toLowerCase() === 'bearer' ? 'Bearer' : raw;
+    }
+    return 'Bearer';
   }
 
   private async handleOAuthCallback(
@@ -2497,15 +2645,18 @@ export class HttpTransport {
       const isProfileScoped = typeof req.params?.profileId === 'string';
       const forceProfilePrefix = isProfileScoped || (req as McpRequest).forceProfilePrefix === true;
       const urlOptions = forceProfilePrefix ? { forceProfilePrefix: true } : undefined;
-      const issuer = this.getProfileIssuerUrl(profileId, urlOptions);
+      const issuer = this.getProfileIssuerUrl(profileId, urlOptions, req);
 
       const metadata = {
         issuer,
-        authorization_endpoint: this.buildProfileUrl(profileId, OAUTH_PATHS.AUTHORIZE, urlOptions),
-        token_endpoint: this.buildProfileUrl(profileId, OAUTH_PATHS.TOKEN, urlOptions),
-        registration_endpoint: this.buildProfileUrl(profileId, OAUTH_PATHS.REGISTER, urlOptions),
+        authorization_endpoint: this.buildProfileUrl(profileId, OAUTH_PATHS.AUTHORIZE, urlOptions, req),
+        token_endpoint: this.buildProfileUrl(profileId, OAUTH_PATHS.TOKEN, urlOptions, req),
+        registration_endpoint: this.buildProfileUrl(profileId, OAUTH_PATHS.REGISTER, urlOptions, req),
         response_types_supported: ['code'],
         code_challenge_methods_supported: ['S256'],
+        // RFC 8414 §2: the token endpoint accepts HTTP Basic, form-body secret,
+        // and the secret-less public/proxy client.
+        token_endpoint_auth_methods_supported: ['client_secret_basic', 'client_secret_post', 'none'],
         grant_types_supported: ['authorization_code', 'refresh_token'],
         scopes_supported: profileState.oauthProvider?.scopes || profileState.context.enterpriseAuthorization?.access_policy?.scopes_supported || ['api'],
       };
@@ -2527,22 +2678,54 @@ export class HttpTransport {
     }
 
     try {
-      const { redirect_uris } = req.body;
+      // RFC 7591 3.2.2: a missing/non-JSON body must not crash with a 500; a
+      // non-object body carries no usable client metadata.
+      const body = req.body;
+      if (body === null || typeof body !== 'object' || Array.isArray(body)) {
+        throw new InvalidClientMetadataError('Request body must be a JSON object');
+      }
+
+      const { redirect_uris, token_endpoint_auth_method, grant_types, response_types } = body;
       this.logger.info('Dynamic client registration request', {
         profileId: profileState.profileId,
         redirect_uris,
+        token_endpoint_auth_method,
       });
 
+      // RFC 7591 2: authorization_code clients must supply at least one redirect URI.
+      if (!Array.isArray(redirect_uris) || redirect_uris.length === 0) {
+        throw new InvalidRedirectUriError('redirect_uris is required and must be a non-empty array');
+      }
+
+      // RFC 7591 2: keep grant_types and response_types consistent when both are
+      // supplied (authorization_code pairs with the code response type).
+      if (Array.isArray(grant_types) && Array.isArray(response_types)) {
+        const wantsAuthCode = grant_types.includes('authorization_code');
+        const wantsCode = response_types.includes('code');
+        if (wantsAuthCode !== wantsCode) {
+          throw new InvalidClientMetadataError('grant_types and response_types are inconsistent');
+        }
+      }
+
+      // RFC 7591 2 / RFC 6749 2.1: token_endpoint_auth_method "none" registers a
+      // public client with no client_secret; anything else stays confidential.
+      const isPublicClient = token_endpoint_auth_method === 'none';
       const clientId = `mcp-client-${crypto.randomUUID()}`;
-      const clientSecret = crypto.randomBytes(32).toString('base64url');
+      const clientSecret = isPublicClient ? undefined : crypto.randomBytes(32).toString('base64url');
+      const clientIdIssuedAt = Math.floor(Date.now() / 1000);
+      const scope = (profileState.oauthProvider.scopes || []).join(' ');
 
       const client = {
         client_id: clientId,
-        client_secret: clientSecret,
-        redirect_uris: redirect_uris || [],
+        ...(clientSecret ? { client_secret: clientSecret } : {}),
+        redirect_uris,
         grant_types: ['authorization_code', 'refresh_token'],
         response_types: ['code'],
-        scope: (profileState.oauthProvider.scopes || []).join(' '),
+        scope,
+        token_endpoint_auth_method: isPublicClient ? 'none' : 'client_secret_post',
+        client_id_issued_at: clientIdIssuedAt,
+        // RFC 7591 3.2.1: 0 signals a secret that never expires.
+        ...(clientSecret ? { client_secret_expires_at: 0 } : {}),
       };
 
       const registerClient = profileState.oauthProvider.clientsStore.registerClient?.bind(
@@ -2553,15 +2736,7 @@ export class HttpTransport {
       }
       await registerClient(client);
 
-      res.status(HTTP_STATUS.CREATED).json({
-        client_id: clientId,
-        client_secret: clientSecret,
-        redirect_uris: redirect_uris,
-        grant_types: ['authorization_code', 'refresh_token'],
-        response_types: ['code'],
-        scope: (profileState.oauthProvider.scopes || []).join(' '),
-        token_endpoint_auth_method: 'client_secret_post',
-      });
+      res.status(HTTP_STATUS.CREATED).json(client);
     } catch (error) {
       if (error instanceof OAuthClientStoreCapacityError) {
         const correlationId = generateCorrelationId();
@@ -2574,6 +2749,20 @@ export class HttpTransport {
           error: 'temporarily_unavailable',
           error_description: error.message,
           correlationId,
+        });
+        return;
+      }
+
+      // RFC 7591 3.2.2: validation failures are client errors (400), not 500s.
+      if (error instanceof InvalidRedirectUriError || error instanceof InvalidClientMetadataError) {
+        this.logger.warn('Client registration rejected: invalid client metadata', {
+          profileId: profileState.profileId,
+          error: error.oauthError,
+          message: error.message,
+        });
+        res.status(HTTP_STATUS.BAD_REQUEST).json({
+          error: error.oauthError,
+          error_description: error.message,
         });
         return;
       }
@@ -2847,6 +3036,23 @@ export class HttpTransport {
     };
   }
 
+  /**
+   * Whether OAuth is "active" for a request: a config is present, not disabled at
+   * the profile level, and operationally usable. This flag drives auth-config
+   * selection in validateClientTokenAgainstConfig (OAuth config over an exact
+   * bearer match), so session init and the mid-session token swap MUST derive it
+   * identically - otherwise a bearer token validated against the OAuth config at
+   * init would be validated against a different config at swap.
+   */
+  private isOAuthActiveForRequest(
+    profileState: ProfileRuntimeState,
+    effectiveAuthContext: { oauthConfig?: OAuthConfig },
+  ): boolean {
+    return !!effectiveAuthContext.oauthConfig &&
+      !profileState.oauthDisabledReason &&
+      isOAuthConfigOperational(effectiveAuthContext.oauthConfig).operational;
+  }
+
   private getTenantIndex(profileState: ProfileRuntimeState): HttpTenantIndex {
     if (profileState.tenantIndex) {
       return profileState.tenantIndex;
@@ -2902,7 +3108,7 @@ export class HttpTransport {
       }
       const trimmed = authHeader.trim();
 
-      const bearerMatch = trimmed.match(/^Bearer\s+(.+)$/);
+      const bearerMatch = trimmed.match(/^Bearer\s+(.+)$/i);
       if (bearerMatch) {
         const token = bearerMatch[1].trim();
         this.validateToken(token, 'Authorization token');
@@ -3105,6 +3311,39 @@ export class HttpTransport {
         if (authInfo.token && authInfo.type !== 'oauth') {
           const previousToken = session.authToken;
           if (!previousToken || previousToken !== authInfo.token) {
+            // AIPP-572 item 5: a replacement token was previously accepted with no
+            // validation (the upstream check ran only at init). Re-run the same
+            // validation before swapping the session credential; reject on failure.
+            if (previousToken) {
+              const baseUrl = session.tenantBaseUrl || profileState.context.baseUrl || '';
+              if (baseUrl) {
+                // Derive oauthActive the same way session init does so the swap
+                // selects the same auth config/endpoint init validated against.
+                const swapOauthActive = this.isOAuthActiveForRequest(profileState, effectiveAuthContext);
+                const swapResult = await this.validateClientTokenAgainstConfig(
+                  effectiveAuthContext.authConfigs || [],
+                  authInfo.type,
+                  authInfo.token,
+                  baseUrl,
+                  swapOauthActive,
+                  profileState,
+                );
+                if (!swapResult.skipped && !swapResult.validated) {
+                  this.logger.warn('Rejected mid-session auth token replacement (validation failed)', {
+                    profileId: profileState.profileId,
+                    sessionId,
+                    authType: authInfo.type,
+                  });
+                  this.sendMcpAuthChallenge(
+                    res,
+                    requestProfileId,
+                    'invalid_token',
+                    'Replacement authentication token is invalid or expired',
+                  );
+                  return;
+                }
+              }
+            }
             session.authToken = authInfo.token;
             this.logger.info('Session auth token updated', {
               profileId: profileState.profileId,
@@ -3113,6 +3352,22 @@ export class HttpTransport {
               replaced: !!previousToken,
             });
           }
+        }
+
+        // RFC 6750 3.1: the resource server must fail closed when the access
+        // token is expired and cannot be refreshed. Enforce access-token expiry
+        // on every request (not only at restart-recovery): ensureValidSessionToken
+        // refreshes when possible and returns false when the token is expired and
+        // no refresh is available/succeeds.
+        const tokenStillValid = await this.ensureValidSessionToken(profileState.profileId, sessionId);
+        if (!tokenStillValid) {
+          this.sendMcpAuthChallenge(
+            res,
+            requestProfileId,
+            'invalid_token',
+            'Access token expired and could not be refreshed',
+          );
+          return;
         }
       } else if (!isInitialization && !sessionId) {
         this.logger.debug('Session validation failed: non-init request without sessionId');
@@ -3161,30 +3416,21 @@ export class HttpTransport {
           // Two-part operational check: profile-level uses cached oauthDisabledReason;
           // effectiveAuthContext.oauthConfig may be a tenant-specific config (different object
           // from profile-level), so run isOAuthConfigOperational on it directly.
-          const oauthActive = !!effectiveAuthContext.oauthConfig &&
-            !profileState.oauthDisabledReason &&
-            isOAuthConfigOperational(effectiveAuthContext.oauthConfig).operational;
+          const oauthActive = this.isOAuthActiveForRequest(profileState, effectiveAuthContext);
           if (oauthActive && !authInfo.token) {
             this.logger.debug('OAuth configured but no token provided, triggering OAuth flow');
-            const resourceMetadataUrl = this.getOAuthProtectedResourceUrl(requestProfileId);
-            const scopeValue = effectiveAuthContext.oauthConfig?.scopes?.join(' ') || 'api';
-            res.setHeader('WWW-Authenticate', `Bearer resource_metadata="${resourceMetadataUrl}", scope="${scopeValue}"`);
-            res.status(HTTP_STATUS.UNAUTHORIZED).json({
-              error: 'Unauthorized',
-              message: 'Authentication required for OAuth'
-            });
+            this.sendMcpAuthChallenge(res, requestProfileId, 'invalid_request', 'Authentication required for OAuth');
             return;
           }
 
           if (effectiveAuthContext.enterpriseAuthorization?.enabled && effectiveAuthContext.enterpriseAuthorization.mode === 'required') {
             if (!this.hasTrustedEnterpriseToken(requestProfileId, authInfo.token, resolvedTenant?.tenantId)) {
-              const resourceMetadataUrl = this.getOAuthProtectedResourceUrl(requestProfileId);
-              const scopeValue = effectiveAuthContext.enterpriseAuthorization.access_policy?.scopes_supported?.join(' ') || 'api';
-              res.setHeader('WWW-Authenticate', `Bearer resource_metadata="${resourceMetadataUrl}", scope="${scopeValue}"`);
-              res.status(HTTP_STATUS.UNAUTHORIZED).json({
-                error: 'Unauthorized',
-                message: 'Enterprise authorization required'
-              });
+              this.sendMcpAuthChallenge(
+                res,
+                requestProfileId,
+                authInfo.token ? 'invalid_token' : 'invalid_request',
+                'Enterprise authorization required',
+              );
               return;
             }
           }
@@ -3212,12 +3458,41 @@ export class HttpTransport {
                 errorType: isClientAuthGateError ? 'ClientAuthGateError' : 'unknown',
                 ...(isClientAuthGateError ? {} : { errorStack: err instanceof Error ? err.stack : undefined }),
               });
-              res.status(HTTP_STATUS.UNAUTHORIZED).json({
-                error: 'Unauthorized',
-                message: 'Client authentication failed',
-              });
+              this.sendMcpAuthChallenge(
+                res,
+                requestProfileId,
+                authInfo.token ? 'invalid_token' : 'invalid_request',
+                'Client authentication failed',
+              );
               return;
             }
+          }
+
+          // AIPP-572 item 3: on an OAuth-required profile a non-OAuth credential
+          // (X-API-Token / DRF Token / custom-header) must not shadow OAuth by
+          // creating an unvalidated session. Only OAuth bearer/access tokens may
+          // establish a session here. Consent/JWT-gated profiles are already
+          // handled by the client auth gate above; enterprise tokens
+          // (internalToken) gate earlier. Reject everything else with a challenge.
+          if (
+            oauthActive &&
+            !profileState.clientAuthGate &&
+            !internalToken &&
+            authInfo.token &&
+            authInfo.type !== 'bearer' &&
+            authInfo.type !== 'oauth'
+          ) {
+            this.logger.warn('Rejected non-OAuth credential on OAuth-required profile', {
+              profileId: requestProfileId,
+              authType: authInfo.type,
+            });
+            this.sendMcpAuthChallenge(
+              res,
+              requestProfileId,
+              'invalid_token',
+              'OAuth authentication required; non-OAuth credential rejected',
+            );
+            return;
           }
 
           // Require a client token only when auth is configured and server env fallback is unavailable.
@@ -3229,75 +3504,59 @@ export class HttpTransport {
               profileId: requestProfileId,
               authConfigsCount: authConfigs.length
             });
+            // The RFC 6750 Bearer/resource_metadata challenge is scoped to
+            // OAuth-active requests: the oauthActive && no-token case already
+            // returned above with the challenge, so reaching here means OAuth is
+            // not active/operational for this request (non-OAuth token-auth
+            // profile or degraded/inoperational tenant OAuth config). Emitting an
+            // OAuth discovery challenge on those paths lures VS Code/Cursor into
+            // an uncompletable OAuth/DCR loop (AIPP-572 / dbda5d3), so return a
+            // plain 401 without a WWW-Authenticate challenge.
             res.status(HTTP_STATUS.UNAUTHORIZED).json({
               error: 'Unauthorized',
-              message: 'Authentication required'
+              message: 'Authentication required',
             });
             return;
           }
 
-          // Validate token if auth is configured and token is provided
+          // Validate token if auth is configured and token is provided.
+          // The config selection + envelope decrypt + upstream validation is shared
+          // with the mid-session token-swap path (validateClientTokenAgainstConfig):
+          // when oauth is active, bearer tokens may be OAuth access tokens (Cursor/VS
+          // Code send them via Authorization on initialize) so the oauth config takes
+          // priority; otherwise an exact type match wins.
           if (!profileState.clientAuthGate && authInfo && authInfo.token && !internalToken && authConfigs.length > 0 && (resolvedTenant?.tenantBaseUrl || profileState.context.baseUrl)) {
-            // Find exact type match and oauth fallback in one pass.
-            // When oauth is active, bearer tokens may be OAuth access tokens (Cursor/VS Code
-            // send them via Authorization header on initialize) — oauth config takes priority.
-            // When oauth is not active, exact type match wins so PATs use the bearer config's
-            // endpoint (may require fewer scopes); oauth config is still the fallback when no
-            // bearer config exists.
-            const isAuthBearer = authInfo.type === 'bearer';
-            let exactMatch: AuthInterceptor | undefined;
-            let oauthFallback: AuthInterceptor | undefined;
-            for (const c of authConfigs) {
-              if (c.type === authInfo.type) exactMatch ??= c;
-              else if (isAuthBearer && c.type === 'oauth') oauthFallback ??= c;
-              if (exactMatch && oauthFallback) break;
-            }
-            const authConfig = oauthActive ? (oauthFallback ?? exactMatch) : (exactMatch ?? oauthFallback);
-            
-            if (authConfig && authConfig.validation_endpoint) {
-              // When the client presents an envelope token (mcp4.v1.*), decrypt it first and
-              // validate the inner access_token against the upstream endpoint. Sending the raw
-              // envelope string would fail because the IdP only knows its own token format.
-              // Plain tokens pass through unchanged. Decrypt failure falls through to the raw
-              // envelope string, which the IdP will reject — correct rejection behavior.
-              let tokenToValidate = authInfo.token;
-              const tokenShape = isEncryptedToken(authInfo.token) ? 'envelope' : 'plain';
-              if (this.config.tokenKey && isEncryptedToken(authInfo.token)) {
-                const envelope = decryptTokenPayload(
-                  authInfo.token,
-                  this.config.tokenKey,
-                  profileState.profileId,
-                  this.config.legacyTokenKey,
-                );
-                if (envelope) {
-                  tokenToValidate = envelope.at;
-                }
-              }
+            const validationBaseUrl = resolvedTenant?.tenantBaseUrl || profileState.context.baseUrl || '';
+            const validation = await this.validateClientTokenAgainstConfig(
+              authConfigs,
+              authInfo.type,
+              authInfo.token,
+              validationBaseUrl,
+              oauthActive,
+              profileState,
+            );
 
+            if (!validation.skipped) {
               this.logger.info('Validating auth token during initialization', {
-                authType: authConfig.type,
-                endpoint: authConfig.validation_endpoint,
-                tokenShape,
+                authType: authInfo.type,
+                tokenShape: validation.tokenShape,
               });
 
-              const isValid = await this.validateAuthToken(authConfig, tokenToValidate, resolvedTenant?.tenantBaseUrl || profileState.context.baseUrl || '');
-
-              if (!isValid) {
+              if (!validation.validated) {
                 this.logger.warn('Auth token validation failed during initialization', {
                   authType: authInfo.type,
-                  tokenShape,
+                  tokenShape: validation.tokenShape,
                 });
                 // When OAuth is active, return HTTP 401 with WWW-Authenticate so OAuth-aware
                 // clients (e.g. Cursor) trigger re-auth automatically instead of surfacing a
                 // generic error. Without OAuth, fall back to the JSON-RPC error form.
                 if (oauthActive) {
-                  const resourceMetadataUrl = this.getOAuthProtectedResourceUrl(requestProfileId);
-                  const scopeValue = effectiveAuthContext.oauthConfig?.scopes?.join(' ') || 'api';
-                  res.setHeader('WWW-Authenticate', `Bearer resource_metadata="${resourceMetadataUrl}", scope="${scopeValue}"`);
-                  res.status(HTTP_STATUS.UNAUTHORIZED).json({
-                    error: 'Unauthorized',
-                    message: 'Supplied authentication token is invalid or expired',
-                  });
+                  this.sendMcpAuthChallenge(
+                    res,
+                    requestProfileId,
+                    'invalid_token',
+                    'Supplied authentication token is invalid or expired',
+                  );
                 } else {
                   this.sendInitializeJsonRpcError(
                     res,
@@ -3308,7 +3567,7 @@ export class HttpTransport {
                 return;
               }
 
-              this.logger.info('Auth token validation successful', { tokenShape });
+              this.logger.info('Auth token validation successful', { tokenShape: validation.tokenShape });
             }
           }
 
@@ -3378,10 +3637,7 @@ export class HttpTransport {
                 error: error instanceof Error ? error.message : String(error),
               });
               if (error instanceof UpstreamAuthError) {
-                res.status(HTTP_STATUS.UNAUTHORIZED).json({
-                  error: 'Unauthorized',
-                  message: 'Upstream authentication failed',
-                });
+                this.sendMcpAuthChallenge(res, requestProfileId, 'invalid_token', 'Upstream authentication failed');
                 return;
               }
               // SSRF, timeout, or connection errors - return 502 Bad Gateway
@@ -3454,10 +3710,7 @@ export class HttpTransport {
                     ageMs: Date.now() - envelope.iat,
                     maxAgeMs: MAX_ENVELOPE_AGE_MS,
                   });
-                  res.status(HTTP_STATUS.UNAUTHORIZED).json({
-                    error: 'Unauthorized',
-                    message: 'Session token expired, please re-authenticate',
-                  });
+                  this.sendMcpAuthChallenge(res, requestProfileId, 'invalid_token', 'Session token expired, please re-authenticate');
                   return;
                 } else {
                   refreshToken = envelope.rt;
@@ -3487,12 +3740,7 @@ export class HttpTransport {
                         profileId: profileState.profileId,
                         subjectHash: pseudonymizeSubject(envelope.sub),
                       });
-                      const resourceMetadataUrl = this.getOAuthProtectedResourceUrl(requestProfileId);
-                      res.setHeader('WWW-Authenticate', `Bearer resource_metadata="${resourceMetadataUrl}", scope="api"`);
-                      res.status(HTTP_STATUS.UNAUTHORIZED).json({
-                        error: 'Unauthorized',
-                        message: 'Re-consent required, please re-authenticate',
-                      });
+                      this.sendMcpAuthChallenge(res, requestProfileId, 'invalid_token', 'Re-consent required, please re-authenticate');
                       return;
                     }
                     resolvedClientPrincipal = {
@@ -3616,10 +3864,11 @@ export class HttpTransport {
         });
 
 
-        // Check if response contains OAuth error and add WWW-Authenticate header
+        // Check if response contains OAuth error and add WWW-Authenticate header.
+        // Body stays the JSON-RPC oauth_required response; only the challenge
+        // header + 401 status are added (RFC 6750 §3).
         if (responseObj.error && responseObj.error.data && responseObj.error.data.oauth_required) {
-          const resourceMetadataUrl = this.getOAuthProtectedResourceUrl(requestProfileId);
-          res.setHeader('WWW-Authenticate', `Bearer resource_metadata="${resourceMetadataUrl}", scope="api"`);
+          this.setMcpAuthChallengeHeader(res, requestProfileId, 'invalid_token');
           res.status(HTTP_STATUS.UNAUTHORIZED); // Set 401 status for OAuth errors
         }
 
@@ -3653,11 +3902,13 @@ export class HttpTransport {
     } catch (error) {
       const correlationId = generateCorrelationId();
       this.logger.error('POST request error', error as Error, { correlationId });
-      res.setHeader('Cache-Control', 'no-store');
-      const { status, errorLabel, message } = this.buildHttpErrorResponse(error, correlationId);
+      const status = this.emitHttpErrorResponse(
+        res,
+        error,
+        correlationId,
+        req.profileId ?? metricsProfileState?.profileId,
+      );
 
-      res.status(status).json({ error: errorLabel, message, correlationId });
-      
       // Record error metrics
       if (this.metrics) {
         const duration = (Date.now() - startTime) / 1000;
@@ -3747,17 +3998,13 @@ export class HttpTransport {
     } catch (error) {
       const correlationId = generateCorrelationId();
       this.logger.error('GET request error', error as Error, { correlationId });
-      const { status, errorLabel, message } = this.buildHttpErrorResponse(error, correlationId);
+      const status = this.emitHttpErrorResponse(
+        res,
+        error,
+        correlationId,
+        req.profileId ?? metricsProfileState?.profileId,
+      );
 
-      if (!res.headersSent) {
-        res.setHeader('Cache-Control', 'no-store');
-        res.status(status).json({
-          error: errorLabel,
-          message,
-          correlationId
-        });
-      }
-      
       // Record error metrics
       if (this.metrics) {
         const duration = (Date.now() - startTime) / 1000;
@@ -3850,12 +4097,12 @@ export class HttpTransport {
     } catch (error) {
       const correlationId = generateCorrelationId();
       this.logger.error('DELETE request error', error as Error, { correlationId });
-      const { status, errorLabel, message } = this.buildHttpErrorResponse(error, correlationId);
-
-      if (!res.headersSent) {
-        res.setHeader('Cache-Control', 'no-store');
-        res.status(status).json({ error: errorLabel, message, correlationId });
-      }
+      const status = this.emitHttpErrorResponse(
+        res,
+        error,
+        correlationId,
+        req.profileId ?? metricsProfileState?.profileId,
+      );
 
       if (this.metrics) {
         const duration = (Date.now() - startTime) / 1000;
@@ -4108,10 +4355,12 @@ export class HttpTransport {
   ): { status: number; errorLabel: string; message: string } {
     for (const rule of HttpTransport.HTTP_ERROR_RESPONSE_RULES) {
       if (error instanceof rule.ctor) {
+        // Route the message through sanitizeAuthErrorMessage so a future
+        // credential-bearing error message cannot reach the client verbatim.
         return {
           status: rule.status,
           errorLabel: rule.errorLabel,
-          message: `${rule.messagePrefix}: ${error.message} (correlation ID: ${correlationId})`,
+          message: `${rule.messagePrefix}: ${sanitizeAuthErrorMessage(error.message)} (correlation ID: ${correlationId})`,
         };
       }
     }
@@ -4121,6 +4370,124 @@ export class HttpTransport {
       errorLabel: 'Internal Server Error',
       message: `Internal error (correlation ID: ${correlationId})`,
     };
+  }
+
+  /**
+   * RFC 6750 §3: set a `WWW-Authenticate: Bearer` challenge with an RFC error
+   * code and the RFC 9728 `resource_metadata` pointer. Centralized so every
+   * /mcp resource-server 401 carries a consistent, discoverable challenge.
+   *
+   * The `scope` attribute is intentionally not advertised: nothing on the
+   * resource-server request path enforces a per-request scope, so advertising a
+   * "required" scope in the challenge would be misleading (see AIPP-572 item 8).
+   */
+  private setMcpAuthChallengeHeader(
+    res: Response,
+    profileId: string | undefined,
+    errorCode: 'invalid_token' | 'invalid_request',
+  ): void {
+    const resourceMetadataUrl = this.getOAuthProtectedResourceUrl(profileId);
+    res.setHeader('WWW-Authenticate', `Bearer error="${errorCode}", resource_metadata="${resourceMetadataUrl}"`);
+  }
+
+  /**
+   * Emit a 401 for the /mcp resource-server path with the RFC 6750 challenge
+   * header and an RFC-conformant JSON body. `message` is preserved alongside
+   * `error_description` for backward-compatible clients.
+   */
+  private sendMcpAuthChallenge(
+    res: Response,
+    profileId: string | undefined,
+    errorCode: 'invalid_token' | 'invalid_request',
+    message: string,
+    extra?: Record<string, unknown>,
+  ): void {
+    this.setMcpAuthChallengeHeader(res, profileId, errorCode);
+    res.status(HTTP_STATUS.UNAUTHORIZED).json({
+      error: errorCode,
+      error_description: message,
+      message,
+      ...(extra ?? {}),
+    });
+  }
+
+  /**
+   * Shared error-response emitter for the POST/GET/DELETE /mcp catch blocks.
+   * When the mapped status is 401 it attaches the RFC 6750 Bearer challenge and
+   * emits an RFC error code (`invalid_token`) instead of an ad-hoc
+   * `{error:'Unauthorized'}` body. Returns the resolved HTTP status so callers
+   * can record metrics. No-ops if the response was already sent.
+   */
+  private emitHttpErrorResponse(
+    res: Response,
+    error: unknown,
+    correlationId: string,
+    profileId: string | undefined,
+  ): number {
+    const { status, errorLabel, message } = this.buildHttpErrorResponse(error, correlationId);
+    if (res.headersSent) {
+      return status;
+    }
+    res.setHeader('Cache-Control', 'no-store');
+    if (status === HTTP_STATUS.UNAUTHORIZED) {
+      this.setMcpAuthChallengeHeader(res, profileId, 'invalid_token');
+      res.status(status).json({ error: 'invalid_token', error_description: message, message, correlationId });
+    } else {
+      res.status(status).json({ error: errorLabel, message, correlationId });
+    }
+    return status;
+  }
+
+  /**
+   * Resolve the auth config that should validate a client-presented token and,
+   * when it declares a `validation_endpoint`, validate the token against the
+   * upstream (decrypting an encrypted envelope first when a token key is set).
+   *
+   * Returns `skipped: true` when no matching config declares a
+   * `validation_endpoint` (validation is not possible / not configured);
+   * otherwise `validated` reflects the upstream result. Shared by session
+   * initialization and mid-session token replacement so both apply the same
+   * check (AIPP-572 item 5: mid-session swap previously bypassed validation).
+   */
+  private async validateClientTokenAgainstConfig(
+    authConfigs: AuthInterceptor[],
+    authType: 'bearer' | 'token' | 'oauth' | 'api-token' | 'none',
+    token: string,
+    baseUrl: string,
+    oauthActive: boolean,
+    profileState: ProfileRuntimeState,
+  ): Promise<{ validated: boolean; skipped: boolean; tokenShape: 'plain' | 'envelope' }> {
+    const isAuthBearer = authType === 'bearer';
+    let exactMatch: AuthInterceptor | undefined;
+    let oauthFallback: AuthInterceptor | undefined;
+    for (const c of authConfigs) {
+      if (c.type === authType) exactMatch ??= c;
+      else if (isAuthBearer && c.type === 'oauth') oauthFallback ??= c;
+      if (exactMatch && oauthFallback) break;
+    }
+    const authConfig = oauthActive ? (oauthFallback ?? exactMatch) : (exactMatch ?? oauthFallback);
+    const tokenShape = isEncryptedToken(token) ? 'envelope' : 'plain';
+    if (!authConfig || !authConfig.validation_endpoint) {
+      return { validated: false, skipped: true, tokenShape };
+    }
+
+    // Envelope tokens (mcp4.v1.*) must be decrypted so the inner access token is
+    // what the upstream endpoint validates; the raw envelope would be rejected.
+    let tokenToValidate = token;
+    if (this.config.tokenKey && isEncryptedToken(token)) {
+      const envelope = decryptTokenPayload(
+        token,
+        this.config.tokenKey,
+        profileState.profileId,
+        this.config.legacyTokenKey,
+      );
+      if (envelope) {
+        tokenToValidate = envelope.at;
+      }
+    }
+
+    const validated = await this.validateAuthToken(authConfig, tokenToValidate, baseUrl);
+    return { validated, skipped: false, tokenShape };
   }
 
 
@@ -4591,6 +4958,9 @@ export class HttpTransport {
       consentRequired: profileState.context.consent_gate?.required === true,
       tokenKey: this.config.tokenKey,
       legacyTokenKey: this.config.legacyTokenKey,
+      rotationStore: this.refreshRotationStore,
+      recordRotation: (event) =>
+        this.metrics?.recordRefreshRotation(event, { profileId: profileState.profileId }),
       logger: this.logger,
     };
   }
@@ -4600,12 +4970,31 @@ export class HttpTransport {
     profileState: ProfileRuntimeState,
     tokens: OAuthTokens,
     clientId: string,
+    previousFamily?: RefreshFamily,
+    jtiOverride?: string,
   ): string | undefined {
     return refreshEnvelope.buildClientRefreshToken(
       this.refreshEnvelopeContext(profileState),
       tokens,
       clientId,
       this.getIdentityResolver(profileState),
+      previousFamily,
+      jtiOverride,
+    );
+  }
+
+  /** Orchestrate a rotating refresh grant with single-flight; see refresh-envelope.ts. */
+  private rotateRefreshGrant<T>(
+    profileState: ProfileRuntimeState,
+    presentedToken: string,
+    presentingClientId: string,
+    perform: (grant: refreshEnvelope.ResolvedRefreshGrant & { newJti?: string }) => Promise<T>,
+  ): Promise<T> {
+    return refreshEnvelope.rotateRefreshGrant(
+      this.refreshEnvelopeContext(profileState),
+      presentedToken,
+      presentingClientId,
+      perform,
     );
   }
 
@@ -4614,7 +5003,7 @@ export class HttpTransport {
     profileState: ProfileRuntimeState,
     presentedToken: string,
     presentingClientId: string,
-  ): { refreshToken: string; identity?: OidcIdentity } {
+  ): { refreshToken: string; identity?: OidcIdentity; family?: RefreshFamily } {
     return refreshEnvelope.resolveRefreshGrant(
       this.refreshEnvelopeContext(profileState),
       presentedToken,
@@ -5030,6 +5419,39 @@ export class HttpTransport {
       return false;
     }
 
+    // Per-session single-flight: ensureValidSessionToken runs on every /mcp
+    // request, so two concurrent requests near the refresh threshold would each
+    // exchange the same refresh token. If the IdP rotates refresh tokens the
+    // loser gets invalid_grant and flaps a spurious 401. Concurrent callers
+    // await the same in-flight refresh instead; a failed refresh never clobbers
+    // session.refreshToken (the catch leaves it intact), so retries stay safe.
+    if (session.refreshInFlight) {
+      return session.refreshInFlight;
+    }
+    const inFlight = this.performTokenRefresh(profileState, session, profileId, sessionId)
+      .finally(() => {
+        if (session.refreshInFlight === inFlight) {
+          session.refreshInFlight = undefined;
+        }
+      });
+    session.refreshInFlight = inFlight;
+    return inFlight;
+  }
+
+  /**
+   * Perform the actual refresh-token exchange and session update. Serialized per
+   * session by refreshAccessToken's single-flight guard.
+   */
+  private async performTokenRefresh(
+    profileState: ProfileRuntimeState,
+    session: SessionData,
+    profileId: string,
+    sessionId: string,
+  ): Promise<boolean> {
+    const refreshToken = session.refreshToken;
+    if (!refreshToken) {
+      return false;
+    }
     try {
       const oauthProvider = this.getOAuthProviderForSession(profileState, session);
       if (!oauthProvider) {
@@ -5080,7 +5502,7 @@ export class HttpTransport {
         : undefined;
       const tokens = await oauthProvider.exchangeRefreshToken(
         client,
-        session.refreshToken,
+        refreshToken,
         session.scopes,
         undefined,
         rehydratedIdentity,

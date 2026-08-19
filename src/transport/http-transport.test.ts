@@ -15,7 +15,7 @@ import { HttpTransport } from './http-transport.js';
 import { ReconsentTracker } from './reconsent-tracker.js';
 import type { HttpTransportConfig } from '../types/http-transport.js';
 import { ConsoleLogger, type Logger } from '../core/logger.js';
-import { AuthenticationError, ValidationError, ConsentRequiredError } from '../core/errors.js';
+import { AuthenticationError, ValidationError, ConsentRequiredError, OAuthInvalidGrantError } from '../core/errors.js';
 import { ConsentGate } from '../auth/consent-gate.js';
 import { InMemoryConsentEvidenceStore } from '../auth/consent-evidence-store.js';
 import { computeRulesHash } from '../auth/consent-rules-hash.js';
@@ -589,8 +589,11 @@ describeIfListen('HttpTransport', () => {
         .send({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} });
 
       expect(response.status).toBe(401);
+      // Non-OAuth (token auth_mode) tenant: no OAuth discovery challenge is
+      // advertised, otherwise clients are lured into an uncompletable OAuth loop.
       expect(response.headers['www-authenticate']).toBeUndefined();
       expect(response.body.message).toBe('Authentication required');
+      expect(response.body.error).toBe('Unauthorized');
 
       await tenantTransport.stop();
     });
@@ -3197,6 +3200,183 @@ describeIfListen('HttpTransport', () => {
       expect(response.body.code_challenge_methods_supported).toContain('S256');
     });
 
+    it('advertises token_endpoint_auth_methods_supported with basic, post and none (RFC 8414 §2)', async () => {
+      const response = await request(oauthApp)
+        .get('/.well-known/oauth-authorization-server');
+
+      expect(response.status).toBe(200);
+      expect(response.body.token_endpoint_auth_methods_supported).toEqual(
+        expect.arrayContaining(['client_secret_basic', 'client_secret_post', 'none'])
+      );
+    });
+
+    it('does not serve the openid-configuration alias (OIDC discovery unsupported, RFC 8414)', async () => {
+      const response = await request(oauthApp)
+        .get('/.well-known/openid-configuration');
+
+      expect(response.status).toBe(404);
+    });
+
+    it('derives the issuer from forwarded headers behind a trusted proxy (RFC 8414 §3.3)', async () => {
+      const proxiedTransport = new HttpTransport(
+        {
+          host: '127.0.0.1',
+          port: 0,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: false,
+          metricsPath: '/metrics',
+          trustProxy: true,
+          oauthConfig: {
+            issuer: 'https://auth.example.com',
+            client_id: 'test-client',
+            client_secret: 'test-secret',
+            redirect_uri: 'https://example.com/oauth/callback',
+            scopes: ['api'],
+          },
+        },
+        logger
+      );
+      const proxiedApp = (proxiedTransport as any).app;
+
+      try {
+        const response = await request(proxiedApp)
+          .get('/.well-known/oauth-authorization-server')
+          .set('X-Forwarded-Proto', 'https')
+          .set('X-Forwarded-Host', 'gateway.example.com');
+
+        expect(response.status).toBe(200);
+        expect(response.body.issuer).toBe('https://gateway.example.com');
+        expect(response.body.authorization_endpoint).toBe('https://gateway.example.com/oauth/authorize');
+        expect(response.body.token_endpoint).toBe('https://gateway.example.com/oauth/token');
+      } finally {
+        await proxiedTransport.stop();
+      }
+    });
+
+    it('uses only the first x-forwarded-host value behind a trusted proxy (chained proxies, RFC 8414 §3.3)', async () => {
+      const proxiedTransport = new HttpTransport(
+        {
+          host: '127.0.0.1',
+          port: 0,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: false,
+          metricsPath: '/metrics',
+          trustProxy: true,
+          oauthConfig: {
+            issuer: 'https://auth.example.com',
+            client_id: 'test-client',
+            client_secret: 'test-secret',
+            redirect_uri: 'https://example.com/oauth/callback',
+            scopes: ['api'],
+          },
+        },
+        logger
+      );
+      const proxiedApp = (proxiedTransport as any).app;
+
+      try {
+        const response = await request(proxiedApp)
+          .get('/.well-known/oauth-authorization-server')
+          .set('X-Forwarded-Proto', 'https')
+          .set('X-Forwarded-Host', 'a.example.com, b.example.com');
+
+        expect(response.status).toBe(200);
+        // Only the first (client-facing) forwarded host is used; the issuer must
+        // be well-formed, never the raw comma-separated list.
+        expect(response.body.issuer).toBe('https://a.example.com');
+        expect(response.body.authorization_endpoint).toBe('https://a.example.com/oauth/authorize');
+        expect(response.body.token_endpoint).toBe('https://a.example.com/oauth/token');
+      } finally {
+        await proxiedTransport.stop();
+      }
+    });
+
+    it('ignores spoofed forwarded/host headers when trust proxy is disabled (issuer-injection protection, RFC 8414 §3.3)', async () => {
+      const untrustedTransport = new HttpTransport(
+        {
+          host: 'mcp.example.com',
+          port: 443,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: false,
+          metricsPath: '/metrics',
+          // trustProxy omitted -> disabled: forwarded headers must not be honored.
+          oauthConfig: {
+            issuer: 'https://auth.example.com',
+            client_id: 'test-client',
+            client_secret: 'test-secret',
+            scopes: ['api'],
+          },
+        },
+        logger
+      );
+      // Force the host:port fallback so the configured host is the issuer source.
+      createProfileState(untrustedTransport as any).oauthProvider = {
+        redirectUri: 'not-a-valid-url',
+        scopes: ['api'],
+      };
+      const untrustedApp = (untrustedTransport as any).app;
+
+      try {
+        const response = await request(untrustedApp)
+          .get('/.well-known/oauth-authorization-server')
+          .set('X-Forwarded-Proto', 'http')
+          .set('X-Forwarded-Host', 'evil.example.com')
+          .set('Host', 'evil.example.com');
+
+        expect(response.status).toBe(200);
+        // Spoofed client-controlled headers must be ignored; issuer stays the
+        // configured host.
+        expect(response.body.issuer).toBe('https://mcp.example.com:443');
+        expect(response.body.issuer).not.toContain('evil.example.com');
+      } finally {
+        await untrustedTransport.stop();
+      }
+    });
+
+    it('advertises an https issuer for a non-loopback configured host without leaking http:// (RFC 8414 §3.3)', async () => {
+      const publicHostTransport = new HttpTransport(
+        {
+          host: 'mcp.example.com',
+          port: 443,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: false,
+          metricsPath: '/metrics',
+          oauthConfig: {
+            issuer: 'https://auth.example.com',
+            client_id: 'test-client',
+            client_secret: 'test-secret',
+            scopes: ['api'],
+          },
+        },
+        logger
+      );
+      // Force the host:port fallback by giving the provider an unusable redirect URI.
+      createProfileState(publicHostTransport as any).oauthProvider = {
+        redirectUri: 'not-a-valid-url',
+        scopes: ['api'],
+      };
+      const publicHostApp = (publicHostTransport as any).app;
+
+      try {
+        const response = await request(publicHostApp)
+          .get('/.well-known/oauth-authorization-server');
+
+        expect(response.status).toBe(200);
+        expect(response.body.issuer).toBe('https://mcp.example.com:443');
+        expect(response.body.issuer.startsWith('http://')).toBe(false);
+      } finally {
+        await publicHostTransport.stop();
+      }
+    });
+
     it('should handle dynamic client registration', async () => {
       const response = await request(oauthApp)
         .post('/oauth/register')
@@ -3204,6 +3384,153 @@ describeIfListen('HttpTransport', () => {
 
       expect(response.status).toBe(201);
       expect(response.body.client_id).toBeDefined();
+    });
+
+    it('should include client_secret_expires_at and client_id_issued_at when a secret is issued', async () => {
+      const response = await request(oauthApp)
+        .post('/oauth/register')
+        .send({ redirect_uris: ['https://app.example.com/callback'] });
+
+      expect(response.status).toBe(201);
+      expect(response.body.client_secret).toBeDefined();
+      expect(response.body.client_secret_expires_at).toBe(0);
+      expect(typeof response.body.client_id_issued_at).toBe('number');
+      expect(response.body.token_endpoint_auth_method).toBe('client_secret_post');
+    });
+
+    it('should register a public client without a secret for token_endpoint_auth_method none', async () => {
+      const response = await request(oauthApp)
+        .post('/oauth/register')
+        .send({
+          redirect_uris: ['https://app.example.com/callback'],
+          token_endpoint_auth_method: 'none',
+        });
+
+      expect(response.status).toBe(201);
+      expect(response.body.client_id).toBeDefined();
+      expect(response.body.token_endpoint_auth_method).toBe('none');
+      expect(response.body).not.toHaveProperty('client_secret');
+      expect(response.body).not.toHaveProperty('client_secret_expires_at');
+    });
+
+    it('should reject missing redirect_uris with 400 invalid_redirect_uri', async () => {
+      const response = await request(oauthApp)
+        .post('/oauth/register')
+        .send({ scope: 'read' });
+
+      expect(response.status).toBe(400);
+      expect(response.body.error).toBe('invalid_redirect_uri');
+    });
+
+    it('should reject empty redirect_uris with 400 invalid_redirect_uri', async () => {
+      const response = await request(oauthApp)
+        .post('/oauth/register')
+        .send({ redirect_uris: [] });
+
+      expect(response.status).toBe(400);
+      expect(response.body.error).toBe('invalid_redirect_uri');
+    });
+
+    it('should reject non-array redirect_uris with 400 invalid_redirect_uri', async () => {
+      const response = await request(oauthApp)
+        .post('/oauth/register')
+        .send({ redirect_uris: 'https://app.example.com/callback' });
+
+      expect(response.status).toBe(400);
+      expect(response.body.error).toBe('invalid_redirect_uri');
+    });
+
+    it('should map too-many redirect_uris to 400 invalid_redirect_uri (not 500)', async () => {
+      const response = await request(oauthApp)
+        .post('/oauth/register')
+        .send({ redirect_uris: Array(50).fill('https://app.example.com/callback') });
+
+      expect(response.status).toBe(400);
+      expect(response.body.error).toBe('invalid_redirect_uri');
+    });
+
+    it('should map over-length redirect_uri to 400 invalid_redirect_uri (not 500)', async () => {
+      const response = await request(oauthApp)
+        .post('/oauth/register')
+        .send({ redirect_uris: ['https://app.example.com/' + 'a'.repeat(400)] });
+
+      expect(response.status).toBe(400);
+      expect(response.body.error).toBe('invalid_redirect_uri');
+    });
+
+    it('should map non-string redirect_uri to 400 invalid_redirect_uri (not 500)', async () => {
+      const response = await request(oauthApp)
+        .post('/oauth/register')
+        .send({ redirect_uris: [12345] });
+
+      expect(response.status).toBe(400);
+      expect(response.body.error).toBe('invalid_redirect_uri');
+    });
+
+    it('should reject javascript: redirect_uri with 400 invalid_redirect_uri', async () => {
+      const response = await request(oauthApp)
+        .post('/oauth/register')
+        .send({ redirect_uris: ['javascript:alert(1)'] });
+
+      expect(response.status).toBe(400);
+      expect(response.body.error).toBe('invalid_redirect_uri');
+    });
+
+    it('should reject plain remote http redirect_uri with 400 invalid_redirect_uri', async () => {
+      const response = await request(oauthApp)
+        .post('/oauth/register')
+        .send({ redirect_uris: ['http://remote.example.com/callback'] });
+
+      expect(response.status).toBe(400);
+      expect(response.body.error).toBe('invalid_redirect_uri');
+    });
+
+    it('should reject redirect_uri with a fragment with 400 invalid_redirect_uri', async () => {
+      const response = await request(oauthApp)
+        .post('/oauth/register')
+        .send({ redirect_uris: ['https://app.example.com/callback#frag'] });
+
+      expect(response.status).toBe(400);
+      expect(response.body.error).toBe('invalid_redirect_uri');
+    });
+
+    it('should accept https, loopback http, and custom scheme redirect_uris', async () => {
+      const response = await request(oauthApp)
+        .post('/oauth/register')
+        .send({
+          redirect_uris: [
+            'https://app.example.com/callback',
+            'http://127.0.0.1:8080/callback',
+            'http://[::1]:8080/callback',
+            'cursor://anysphere.cursor-mcp/oauth/callback',
+          ],
+        });
+
+      expect(response.status).toBe(201);
+      expect(response.body.client_id).toBeDefined();
+    });
+
+    it('should reject inconsistent grant_types/response_types with 400 invalid_client_metadata', async () => {
+      const response = await request(oauthApp)
+        .post('/oauth/register')
+        .send({
+          redirect_uris: ['https://app.example.com/callback'],
+          grant_types: ['authorization_code'],
+          response_types: [],
+        });
+
+      expect(response.status).toBe(400);
+      expect(response.body.error).toBe('invalid_client_metadata');
+    });
+
+    it('should reject a non-JSON body with 400 invalid_client_metadata (not 500)', async () => {
+      const response = await request(oauthApp)
+        .post('/oauth/register')
+        .set('Content-Type', 'text/plain')
+        .send('this is not json');
+
+      expect(response.status).toBe(400);
+      expect(response.body.error).toBe('invalid_client_metadata');
     });
 
     it('should omit optional protected resource metadata fields when not configured', async () => {
@@ -4087,9 +4414,11 @@ describeIfListen('HttpTransport', () => {
           params: { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 'test', version: '0.0.1' } },
         });
 
-      // OAuth-specific challenge must NOT be sent (no WWW-Authenticate header)
+      // The degraded tenant must not surface the OAuth-specific "no token" flow:
+      // oauthActive is false, so no OAuth Bearer/resource_metadata challenge is
+      // advertised (dbda5d3 intent). A generic 401 from the authConfigs guard may
+      // still fire, but it must not be the OAuth trigger.
       expect(response.headers['www-authenticate']).toBeUndefined();
-      // If 401 occurs it must be the general auth guard, not an OAuth challenge
       if (response.status === 401) {
         expect(response.body.message).not.toBe('Authentication required for OAuth');
       }
@@ -4369,6 +4698,69 @@ describeIfListen('HttpTransport', () => {
 
       const result = await (oauthTransport as any).refreshAccessToken('default', sessionId);
       expect(result).toBe(false);
+
+      await oauthTransport.stop();
+    });
+
+    it('single-flights concurrent refreshes so the IdP refresh token is exchanged once (I1)', async () => {
+      const oauthTransport = new HttpTransport(
+        {
+          host: '127.0.0.1',
+          port: 0,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: false,
+          metricsPath: '/metrics',
+          oauthConfig: {
+            issuer: 'https://auth.example.com',
+            client_id: 'test-client',
+            client_secret: 'test-secret',
+            scopes: ['api'],
+          },
+        },
+        logger,
+      );
+
+      const profileState = createProfileState(oauthTransport as any);
+      const sessionId = (oauthTransport as any).createSession(profileState, 'old-access', 'refresh-token-0');
+      const session = profileState.sessions.get(sessionId);
+      session.oauthClientId = 'test-client';
+
+      let exchangeCalls = 0;
+      profileState.oauthProvider = {
+        ensureEndpointsInitialized: async () => {},
+        clientsStore: {
+          getClient: async () => ({ client_id: 'test-client', scope: 'api' }),
+        },
+        exchangeRefreshToken: async (_client: any, presentedRefreshToken: string) => {
+          exchangeCalls += 1;
+          // Simulate an IdP that rotates refresh tokens and rejects a stale one:
+          // without single-flight the second concurrent caller would send the
+          // already-consumed token and get invalid_grant (spurious 401 flap).
+          if (presentedRefreshToken !== 'refresh-token-0') {
+            throw new OAuthInvalidGrantError('invalid_grant');
+          }
+          await new Promise((resolve) => setTimeout(resolve, 10)); // keep the exchange in-flight
+          return {
+            access_token: 'new-access',
+            refresh_token: 'refresh-token-1',
+            expires_in: 3600,
+            token_type: 'Bearer',
+          };
+        },
+      };
+
+      const [a, b] = await Promise.all([
+        (oauthTransport as any).refreshAccessToken('default', sessionId),
+        (oauthTransport as any).refreshAccessToken('default', sessionId),
+      ]);
+
+      expect(a).toBe(true);
+      expect(b).toBe(true);
+      expect(exchangeCalls).toBe(1); // single upstream exchange, no invalid_grant flap
+      expect(session.refreshToken).toBe('refresh-token-1');
+      expect(session.refreshInFlight).toBeUndefined(); // cleared on settle
 
       await oauthTransport.stop();
     });
@@ -4740,6 +5132,105 @@ describeIfListen('HttpTransport', () => {
       expect(response.status).toBe(200);
       expect(response.body.access_token).toBe('raw-idp-access-k');
       expect(response.body.refresh_token).toBe('raw-idp-refresh-k');
+      await t.stop();
+    });
+
+    it('Test M: refresh_token grant rotates the client refresh token and rejects reuse of the old one', async () => {
+      const key = Buffer.from('a'.repeat(64), 'hex');
+      const t = await buildOauthTransport(key);
+      const tApp = (t as any).app;
+      const profileState = (t as any).profileStates.get('default') ?? createProfileState(t as any);
+      profileState.oauthProvider = {
+        ensureEndpointsInitialized: async () => {},
+        clientsStore: {
+          getClient: async () => ({
+            client_id: 'test-client',
+            redirect_uris: ['https://example.com/cb'],
+            grant_types: ['authorization_code', 'refresh_token'],
+            response_types: ['code'],
+            scope: 'read write',
+          }),
+          registerClient: async (c: any) => c,
+        },
+        getIdentityForAccessToken: () => undefined,
+        exchangeAuthorizationCode: async () => ({
+          access_token: 'idp-access-m0',
+          refresh_token: 'idp-refresh-m0',
+          expires_in: 3600,
+          token_type: 'Bearer',
+        }),
+        exchangeRefreshToken: async () => ({
+          access_token: 'idp-access-m1',
+          refresh_token: 'idp-refresh-m1',
+          expires_in: 3600,
+          token_type: 'Bearer',
+        }),
+      };
+      (t as any).validateOAuthClientCredentials = async () => ({
+        client_id: 'test-client',
+        scope: 'read write',
+      });
+
+      const initial = await request(tApp).post('/oauth/token').send({
+        grant_type: 'authorization_code',
+        client_id: 'test-client',
+        code: 'auth-code-m',
+        code_verifier: 'verifier-m',
+        redirect_uri: 'https://example.com/cb',
+      });
+      expect(initial.status).toBe(200);
+      const r0 = initial.body.refresh_token as string;
+      expect(r0.startsWith('mcp4.r1.')).toBe(true);
+
+      const refreshed = await request(tApp).post('/oauth/token').send({
+        grant_type: 'refresh_token',
+        client_id: 'test-client',
+        refresh_token: r0,
+      });
+      expect(refreshed.status).toBe(200);
+      const r1 = refreshed.body.refresh_token as string;
+      expect(r1.startsWith('mcp4.r1.')).toBe(true);
+      expect(r1).not.toBe(r0); // rotated
+
+      // Replaying the just-superseded r0 within the grace window is idempotent
+      // (lost-response / real-client retry): it returns the already-minted r1,
+      // NOT a family revocation.
+      const graceReplay = await request(tApp).post('/oauth/token').send({
+        grant_type: 'refresh_token',
+        client_id: 'test-client',
+        refresh_token: r0,
+      });
+      expect(graceReplay.status).toBe(200);
+      expect(graceReplay.body.refresh_token).toBe(r1);
+
+      // A second legitimate rotation advances the family past r0's grace window.
+      const refreshed2 = await request(tApp).post('/oauth/token').send({
+        grant_type: 'refresh_token',
+        client_id: 'test-client',
+        refresh_token: r1,
+      });
+      expect(refreshed2.status).toBe(200);
+      const r2 = refreshed2.body.refresh_token as string;
+      expect(r2).not.toBe(r1);
+
+      // Replaying the now-older r0 (past grace, no longer just-superseded) is
+      // genuine reuse -> 400 invalid_grant + whole-family revocation.
+      const reuse = await request(tApp).post('/oauth/token').send({
+        grant_type: 'refresh_token',
+        client_id: 'test-client',
+        refresh_token: r0,
+      });
+      expect(reuse.status).toBe(400);
+      expect(reuse.body.error).toBe('invalid_grant');
+
+      // The family is revoked: the rotated r2 is dead too.
+      const afterRevoke = await request(tApp).post('/oauth/token').send({
+        grant_type: 'refresh_token',
+        client_id: 'test-client',
+        refresh_token: r2,
+      });
+      expect(afterRevoke.status).toBe(400);
+      expect(afterRevoke.body.error).toBe('invalid_grant');
       await t.stop();
     });
   });
@@ -6204,7 +6695,7 @@ describeIfListen('HttpTransport', () => {
       await routingTransport.stop();
     });
 
-    it('serves OpenID configuration aliases for profile routing', async () => {
+    it('does not serve OpenID configuration aliases for profile routing (OIDC discovery unsupported)', async () => {
       const routingTransport = new HttpTransport(
         {
           host: '127.0.0.1',
@@ -6234,10 +6725,8 @@ describeIfListen('HttpTransport', () => {
       const responseProfilePath = await request(routingApp).get('/profile/gitlab/.well-known/openid-configuration');
       const responseSuffixPath = await request(routingApp).get('/.well-known/openid-configuration/profile/gitlab');
 
-      expect(responseProfilePath.status).toBe(200);
-      expect(responseProfilePath.body.issuer).toContain('/profile/gitlab');
-      expect(responseSuffixPath.status).toBe(200);
-      expect(responseSuffixPath.body.issuer).toContain('/profile/gitlab');
+      expect(responseProfilePath.status).toBe(404);
+      expect(responseSuffixPath.status).toBe(404);
 
       await routingTransport.stop();
     });

@@ -9,9 +9,15 @@
 - [P3: Optional](#p3-optional)
   - [17. Eager SSRF validation for SasankaApiKeyStore at profile load](#17-eager-ssrf-validation-for-sasankaapikeystore-at-profile-load)
   - [18. Remove legacy SHA-256 token envelope KDF fallback](#18-remove-legacy-sha-256-token-envelope-kdf-fallback)
+  - [21. Revoke the refresh rotation family on authorization-code replay](#21-revoke-the-refresh-rotation-family-on-authorization-code-replay)
+  - [22. Align code_challenge_method validation between transport and provider](#22-align-code_challenge_method-validation-between-transport-and-provider)
+  - [24. Consolidate loopback/IPv6 redirect helpers and drop the orphaned openid-configuration constant](#24-consolidate-loopbackipv6-redirect-helpers-and-drop-the-orphaned-openid-configuration-constant)
+  - [25. Close remaining OAuth test gaps from the AIPP-572 recheck](#25-close-remaining-oauth-test-gaps-from-the-aipp-572-recheck)
+  - [26. Bound consumed-code tombstones and amortize the rotation-store expiry sweep](#26-bound-consumed-code-tombstones-and-amortize-the-rotation-store-expiry-sweep)
 - [P2: Nice-to-Have](#p2-nice-to-have)
   - [19. Gateway-mediated download proxy for upstream binary content](#19-gateway-mediated-download-proxy-for-upstream-binary-content)
   - [20. Remaining ConsentHttpController hardening (AIPP-522)](#20-remaining-consenthttpcontroller-hardening-aipp-522)
+  - [23. Reconcile DCR custom-scheme registration with authorize-time redirect policy](#23-reconcile-dcr-custom-scheme-registration-with-authorize-time-redirect-policy)
   - [2. Export Profile Command](#2-export-profile-command)
   - [3. OpenAPI Operation Filter for Default Profile](#3-openapi-operation-filter-for-default-profile)
   - [4. Harden query parameter redaction canonicalization](#4-harden-query-parameter-redaction-canonicalization)
@@ -55,6 +61,19 @@
 - CSP polish: tighten the approval-page Content-Security-Policy beyond the current restrictive baseline (`default-src 'none'`, `form-action 'self'`, `frame-ancestors 'none'`).
 
 **Estimated effort**: 2-4 hours after the controller extraction is merged
+
+### 23. Reconcile DCR custom-scheme registration with authorize-time redirect policy
+
+**Background** (AIPP-572 recheck): `POST /oauth/register` accepts private-use native-app schemes (e.g. `cursor://...`) per RFC 8252, but the authorize-time check (`isAllowedRedirectHost` in `src/auth/oauth-provider.ts`) still rejects custom schemes unless `allowed_redirect_hosts`/approved-redirect rules are configured. A client can register a custom-scheme redirect URI successfully and then fail mid-flow at `/oauth/authorize`. The authorize logic predates the DCR hardening; the gap just became more reachable.
+
+**Goal**: A redirect URI accepted at registration must be usable at authorize (or be rejected at registration), so clients never hit a mid-flow dead end.
+
+**Implementation**:
+- For registered clients, let exact membership in the client's `redirect_uris` satisfy the authorize-time check for custom schemes (registration already validated the scheme shape).
+- Alternatively, reject custom schemes at registration unless the deployment enables them; pick one contract and document it in docs/OAUTH.md.
+- Tests: register a `cursor://` URI, complete authorize with it; unregistered custom scheme still rejected.
+
+**Estimated effort**: 1-2 hours
 
 ### 2. Export Profile Command
 
@@ -423,3 +442,66 @@ export DEFAULT_PROFILE_EXCLUDE_TAGS="admin,system"
 - Tests: `src/auth/token-envelope.test.ts`, `src/transport/http-transport-config.test.ts`
 
 **Estimated effort**: 30 minutes
+
+### 21. Revoke the refresh rotation family on authorization-code replay
+
+**Background** (AIPP-572 recheck): `revokeTokensForConsumedCode()` (`src/auth/oauth-provider.ts`) deletes the access token and the `refreshTokenIdentities` entry issued from a replayed authorization code, but does not revoke the client-facing refresh rotation family minted from that redemption. The rotating `mcp4.r1.*` envelope chain therefore survives a detected code replay, so the "replay revokes the tokens from the first redemption" guarantee is only partial. Severity is low: mandatory PKCE means a code replay also requires the code_verifier.
+
+**Goal**: A detected authorization-code replay revokes everything issued from the first redemption, including the refresh rotation family.
+
+**Implementation**:
+- Record the rotation family id (`fid`) in the consumed-code tombstone when the first redemption mints a rotating refresh envelope.
+- In `revokeTokensForConsumedCode()`, also call `RefreshRotationStore.revokeFamily()` for that fid.
+- Test: redeem a code, replay it, assert the refresh token from the first redemption now fails with `invalid_grant`.
+
+**Estimated effort**: 1-2 hours
+
+### 22. Align code_challenge_method validation between transport and provider
+
+**Background** (AIPP-572 recheck): the HTTP authorize handler rejects anything but an explicit `S256` (`src/transport/http-transport.ts`), while `ExternalOAuthProvider.authorize()` defaults a missing method to `S256` (`src/auth/oauth-provider.ts`). The HTTP guard runs first so there is no runtime bug, but the two layers encode different contracts and a future direct caller of the provider would get the looser one.
+
+**Goal**: One PKCE method contract in one place; the provider should enforce the same explicit-`S256` rule as the transport (or the shared rule should live in a single helper both use).
+
+**Implementation**:
+- Make the provider reject a missing/non-`S256` `code_challenge_method` instead of defaulting, or extract a shared `assertS256CodeChallenge()` used by both layers.
+- Test: provider-level authorize without an explicit method is rejected.
+
+**Estimated effort**: 30 minutes
+
+### 24. Consolidate loopback/IPv6 redirect helpers and drop the orphaned openid-configuration constant
+
+**Background** (AIPP-572 recheck): the loopback host set is defined three times (`LOOPBACK_REDIRECT_HOSTS` in `src/auth/oauth-provider.ts`, `isLoopbackHost` in `src/transport/http-transport.ts`, `LOOPBACK_HOSTS` in `src/auth/unregistered-client-redirect-policy.ts`) and IPv6 bracket stripping exists in two variants (`stripIpv6Brackets` vs an inline regex). `WELL_KNOWN_OPENID_CONFIGURATION` in `src/core/constants.ts` is dead in production code since the openid-configuration routes were removed.
+
+**Goal**: One shared loopback/IPv6 helper module; no dead constants.
+
+**Implementation**:
+- Export a single loopback-host set + `stripIpv6Brackets` helper (natural home: `src/auth/unregistered-client-redirect-policy.ts` or a small `src/core/net.ts`) and use it from all three sites.
+- Remove `WELL_KNOWN_OPENID_CONFIGURATION` and its remaining references (tests only).
+
+**Estimated effort**: 1 hour
+
+### 25. Close remaining OAuth test gaps from the AIPP-572 recheck
+
+**Background**: the recheck test-coverage review found minor untested branches left after the AIPP-572 hardening; none guard a currently-broken behavior, but regressions there would be invisible.
+
+**Missing tests**:
+- `token_type` casing normalization: upstream returns `token_type: 'bearer'` -> response says `Bearer`; unknown type (e.g. `DPoP`) passes through verbatim (`normalizeOAuthTokenType`, `src/transport/http-transport.ts`). The existing test only covers the omitted-field fallback despite its title.
+- `code_verifier` charset rejection: a 43+ char verifier containing a disallowed char (`+`, `/`, space) is rejected and consumes the code; the existing "length/charset" test only exercises length.
+- Consumed-code tombstone TTL: advance fake timers past `CONSUMED_CODE_TOMBSTONE_TTL_MS`, run `cleanup()`, assert the tombstone is gone.
+- Legacy refresh envelope (no `fid`/`jti`) passthrough: resolves without a family and without spurious reuse revocation; empty-string `fid`/`jti` in an envelope is rejected at decrypt.
+- `OAuthUpstreamError` -> 502 `server_error` end-to-end at `/oauth/token` (only the unit mapping and the `invalid_grant` path are covered).
+- Defensive no-bound-challenge branch in `exchangeAuthorizationCode` (stored code with empty `codeChallenge` -> `OAuthInvalidGrantError` + code consumed).
+
+**Estimated effort**: 2-3 hours
+
+### 26. Bound consumed-code tombstones and amortize the rotation-store expiry sweep
+
+**Background** (AIPP-572 recheck, performance): `consumedCodeTombstones` (`src/auth/oauth-provider.ts`) is bounded only by its 5-minute TTL via periodic `cleanup()`, with no hard size cap, unlike its siblings (`refreshTokenIdentities` and `RefreshRotationStore` both cap at 10,000). `RefreshRotationStore` runs a full O(n) `evictExpired` sweep on every redemption; the looked-up key is already expiry-checked per key, so the sweep only reclaims untouched entries. Neither is material today (both sit on the rate-limited token endpoint, not the per-request path); this is symmetry/defense-in-depth.
+
+**Goal**: Consistent hard bounds on all OAuth in-memory stores; no full-map sweep per redemption.
+
+**Implementation**:
+- Add a size cap + FIFO/LRU eviction to `consumedCodeTombstones` matching the sibling stores.
+- Amortize `evictExpired` (sweep every K calls or with a per-call budget).
+
+**Estimated effort**: 1 hour

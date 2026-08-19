@@ -70,6 +70,9 @@ export class MetricsCollector {
   private apiCallErrors: Counter;
   private apiCacheEventsTotal: Counter;
 
+  // OAuth metrics
+  private oauthRefreshRotationsTotal: Counter;
+
   constructor(config: MetricsCollectorConfig) {
     this.enabled = config.enabled;
     this.registry = new Registry();
@@ -200,6 +203,14 @@ export class MetricsCollector {
       name: `${prefix}api_cache_events_total`,
       help: 'Total number of API cache events',
       labelNames: ['operation', 'event', 'profile_id', 'tenant_id'],
+      registers: [this.registry],
+    });
+
+    // OAuth metrics
+    this.oauthRefreshRotationsTotal = new Counter({
+      name: `${prefix}oauth_refresh_rotations_total`,
+      help: 'OAuth client refresh-token rotation events (rotated vs reuse detected)',
+      labelNames: ['event', 'profile_id'],
       registers: [this.registry],
     });
   }
@@ -381,6 +392,17 @@ export class MetricsCollector {
       profile_id: labels.profile_id,
       tenant_id: labels.tenant_id,
     });
+  }
+
+  /**
+   * Record an OAuth client refresh-token rotation event.
+   * `event` is 'rotated' on a successful rotation or 'reuse_detected' when a
+   * superseded token was replayed (OAuth 2.1 §4.3.1).
+   */
+  recordRefreshRotation(event: 'rotated' | 'reuse_detected', context?: MetricsContextLabels): void {
+    if (!this.enabled) return;
+    const labels = this.resolveContextLabels(context);
+    this.oauthRefreshRotationsTotal.inc({ event, profile_id: labels.profile_id });
   }
 
   recordApiCacheEvent(operation: string, event: string, context?: MetricsContextLabels): void {

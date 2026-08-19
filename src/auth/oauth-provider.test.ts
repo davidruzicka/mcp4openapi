@@ -3,6 +3,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { createHash } from 'node:crypto';
 
 // Mock DNS lookup to bypass SSRF validation for test domains
 // Must be hoisted before imports
@@ -29,7 +30,7 @@ vi.mock('../security/ssrf-validator.js', () => {
 
 import { ExternalOAuthProvider, InMemoryClientsStore, isOAuthConfigOperational } from './oauth-provider.js';
 import type { OAuthOperationalCheck } from './oauth-provider.js';
-import { AuthenticationError } from '../core/errors.js';
+import { AuthenticationError, OAuthInvalidGrantError } from '../core/errors.js';
 import type { OAuthConfig } from '../types/profile.js';
 import type { Logger } from '../core/logger.js';
 import type { Response } from 'express';
@@ -1341,9 +1342,11 @@ describe('ExternalOAuthProvider', () => {
         response_types: ['code'],
       };
       (provider as any)._clientsStore.registerClient(client);
+      const pkceVerifier = 'identity_verifier_0123456789_ABCDEFGHIJKLMNO';
+      const pkceChallenge = createHash('sha256').update(pkceVerifier).digest('base64url');
       (provider as any).stateStore.set('state123', {
         clientRedirectUri: 'http://localhost:3003/callback',
-        codeChallenge: '',
+        codeChallenge: pkceChallenge,
         originalState: 'orig',
         clientId: client.client_id,
         scopes: ['openid'],
@@ -1365,7 +1368,8 @@ describe('ExternalOAuthProvider', () => {
       await provider.handleCallback({ query: { code: 'code', state: 'state123' } } as any, response);
       const redirect = new URL(response.redirect.mock.calls[0][0]);
       const internalCode = redirect.searchParams.get('code')!;
-      const tokens = await provider.exchangeAuthorizationCode(client, internalCode);
+      // RFC 6749 4.1.3: the bound redirect_uri must be presented at token.
+      const tokens = await provider.exchangeAuthorizationCode(client, internalCode, pkceVerifier, 'http://localhost:3003/callback');
 
       expect(identityVerifier.verify).toHaveBeenCalledWith('signed-id-token', 'nonce-1');
       expect(provider.getIdentityForAccessToken(tokens.access_token)).toEqual({
@@ -1395,9 +1399,11 @@ describe('ExternalOAuthProvider', () => {
         response_types: ['code'],
       };
       (provider as any)._clientsStore.registerClient(client);
+      const pkceVerifier = 'identity_verifier_0123456789_ABCDEFGHIJKLMNO';
+      const pkceChallenge = createHash('sha256').update(pkceVerifier).digest('base64url');
       (provider as any).stateStore.set('state123', {
         clientRedirectUri: 'http://localhost:3003/callback',
-        codeChallenge: '',
+        codeChallenge: pkceChallenge,
         originalState: 'orig',
         clientId: client.client_id,
         scopes: ['openid'],
@@ -1419,7 +1425,8 @@ describe('ExternalOAuthProvider', () => {
       await provider.handleCallback({ query: { code: 'code', state: 'state123' } } as any, response);
       const redirect = new URL(response.redirect.mock.calls[0][0]);
       const internalCode = redirect.searchParams.get('code')!;
-      const tokens = await provider.exchangeAuthorizationCode(client, internalCode);
+      // RFC 6749 4.1.3: the bound redirect_uri must be presented at token.
+      const tokens = await provider.exchangeAuthorizationCode(client, internalCode, pkceVerifier, 'http://localhost:3003/callback');
 
       expect(identityVerifier.verify).toHaveBeenCalledWith('signed-id-token', 'nonce-2');
       expect(onIdentityVerified).toHaveBeenCalledWith(identity);
@@ -2053,8 +2060,10 @@ describe('ExternalOAuthProvider', () => {
         tokens: { access_token: 'token' },
       });
 
+      // A well-formed but non-matching verifier reaches the S256 compare and
+      // is rejected as an invalid verifier (distinct from a malformed one).
       await expect(
-        provider.exchangeAuthorizationCode(client, code, 'wrong-verifier', 'http://localhost:3003/callback')
+        provider.exchangeAuthorizationCode(client, code, 'wrong_verifier_0123456789_ABCDEFGHIJKLMNOPQR', 'http://localhost:3003/callback')
       ).rejects.toThrow('Invalid code_verifier');
     });
 
@@ -2068,10 +2077,15 @@ describe('ExternalOAuthProvider', () => {
       };
 
       const code = 'code-no-tokens';
+      // PKCE is now mandatory, so the code must carry a challenge and the
+      // request a matching verifier to reach the no-tokens check.
+      const verifier = 'no_tokens_verifier_0123456789_ABCDEFGHIJKLMN';
+      const challenge = createHash('sha256').update(verifier).digest('base64url');
       (provider as any).authorizationCodes.set(code, {
         client,
         params: {
           redirectUri: 'http://localhost:3003/callback',
+          codeChallenge: challenge,
           scopes: [],
         },
         createdAt: Date.now(),
@@ -2079,8 +2093,109 @@ describe('ExternalOAuthProvider', () => {
       });
 
       await expect(
-        provider.exchangeAuthorizationCode(client, code, undefined, 'http://localhost:3003/callback')
+        provider.exchangeAuthorizationCode(client, code, verifier, 'http://localhost:3003/callback')
       ).rejects.toThrow('No tokens associated with this code');
+    });
+  });
+
+  describe('PKCE hardening (RFC 7636 / OAuth 2.1)', () => {
+    const pkceClient: OAuthClientInformationFull = {
+      client_id: 'test-client',
+      redirect_uris: ['http://localhost:3003/callback'],
+      grant_types: ['authorization_code'],
+      response_types: ['code'],
+    };
+
+    beforeEach(() => {
+      provider = new ExternalOAuthProvider(config, mockLogger);
+    });
+
+    it('authorize rejects a request without code_challenge', async () => {
+      const mockRes = { redirect: vi.fn() } as any;
+      await expect(
+        provider.authorize(pkceClient, { redirectUri: 'http://localhost:3003/callback', scopes: ['api'] } as any, mockRes)
+      ).rejects.toThrow('code_challenge is required');
+      expect(mockRes.redirect).not.toHaveBeenCalled();
+    });
+
+    it('authorize rejects a plain code_challenge_method', async () => {
+      const mockRes = { redirect: vi.fn() } as any;
+      await expect(
+        provider.authorize(
+          pkceClient,
+          { redirectUri: 'http://localhost:3003/callback', codeChallenge: 'challenge', codeChallengeMethod: 'plain', scopes: ['api'] } as any,
+          mockRes,
+        )
+      ).rejects.toThrow('code_challenge_method must be S256');
+      expect(mockRes.redirect).not.toHaveBeenCalled();
+    });
+
+    it('authorize accepts an S256 challenge and persists challenge + method in state', async () => {
+      const mockRes = { redirect: vi.fn() } as any;
+      await provider.authorize(
+        pkceClient,
+        { redirectUri: 'http://localhost:3003/callback', codeChallenge: 'the-challenge', codeChallengeMethod: 'S256', scopes: ['api'] } as any,
+        mockRes,
+      );
+      expect(mockRes.redirect).toHaveBeenCalled();
+      const states = [...(provider as any).stateStore.values()];
+      expect(states).toHaveLength(1);
+      expect(states[0]).toMatchObject({ codeChallenge: 'the-challenge', codeChallengeMethod: 'S256' });
+    });
+
+    it('token exchange rejects a code_verifier with invalid length/charset and consumes the code', async () => {
+      const code = 'code-bad-verifier';
+      const verifier = 'valid_verifier_0123456789_ABCDEFGHIJKLMNOPQR';
+      const challenge = createHash('sha256').update(verifier).digest('base64url');
+      (provider as any).authorizationCodes.set(code, {
+        client: pkceClient,
+        params: { redirectUri: 'http://localhost:3003/callback', codeChallenge: challenge, scopes: [] },
+        createdAt: Date.now(),
+        tokens: { access_token: 'token' },
+      });
+
+      // "short" fails the 43-128 length rule.
+      await expect(
+        provider.exchangeAuthorizationCode(pkceClient, code, 'short', 'http://localhost:3003/callback')
+      ).rejects.toThrow('RFC 7636');
+      expect((provider as any).authorizationCodes.has(code)).toBe(false);
+    });
+
+    it('token exchange accepts a valid code_verifier', async () => {
+      const code = 'code-good-verifier';
+      const verifier = 'valid_verifier_0123456789_ABCDEFGHIJKLMNOPQR';
+      const challenge = createHash('sha256').update(verifier).digest('base64url');
+      (provider as any).authorizationCodes.set(code, {
+        client: pkceClient,
+        params: { redirectUri: 'http://localhost:3003/callback', codeChallenge: challenge, scopes: [] },
+        createdAt: Date.now(),
+        tokens: { access_token: 'the-access-token', token_type: 'Bearer' },
+      });
+
+      const tokens = await provider.exchangeAuthorizationCode(pkceClient, code, verifier, 'http://localhost:3003/callback');
+      expect(tokens.access_token).toBe('the-access-token');
+    });
+
+    it('a failed PKCE verification consumes the code so a later correct verifier cannot reuse it', async () => {
+      const code = 'code-single-use';
+      const verifier = 'valid_verifier_0123456789_ABCDEFGHIJKLMNOPQR';
+      const challenge = createHash('sha256').update(verifier).digest('base64url');
+      (provider as any).authorizationCodes.set(code, {
+        client: pkceClient,
+        params: { redirectUri: 'http://localhost:3003/callback', codeChallenge: challenge, scopes: [] },
+        createdAt: Date.now(),
+        tokens: { access_token: 'token' },
+      });
+
+      // First attempt: well-formed but wrong verifier -> rejected AND code consumed.
+      await expect(
+        provider.exchangeAuthorizationCode(pkceClient, code, 'wrong_verifier_0123456789_ABCDEFGHIJKLMNOPQR', 'http://localhost:3003/callback')
+      ).rejects.toThrow('Invalid code_verifier');
+
+      // Second attempt with the correct verifier: the code is already gone.
+      await expect(
+        provider.exchangeAuthorizationCode(pkceClient, code, verifier, 'http://localhost:3003/callback')
+      ).rejects.toThrow('Invalid authorization code');
     });
   });
 
@@ -2917,6 +3032,168 @@ describe('ExternalOAuthProvider', () => {
       const capacityWarns = (mockLogger.warn as any).mock.calls
         .filter(([message]: [string]) => String(message).includes('Refresh identity map at capacity'));
       expect(capacityWarns.length).toBe(1);
+    });
+  });
+
+  describe('AIPP-572 RFC conformance hardening', () => {
+    const pkceVerifier = 'a'.repeat(43);
+    const pkceChallenge = createHash('sha256').update(pkceVerifier).digest('base64url');
+    const boundRedirectUri = 'http://localhost:3003/callback';
+
+    const buildClient = (): OAuthClientInformationFull => ({
+      client_id: 'client-572',
+      redirect_uris: [boundRedirectUri],
+      grant_types: ['authorization_code', 'refresh_token'],
+      response_types: ['code'],
+    });
+
+    // Drive an internal authorization code into existence via the callback leg.
+    const issueInternalCode = async (
+      p: ExternalOAuthProvider,
+      client: OAuthClientInformationFull,
+      tokens: Record<string, unknown> = { access_token: 'ext-at', refresh_token: 'ext-rt', expires_in: 3600, token_type: 'Bearer' },
+    ): Promise<string> => {
+      (p as any)._clientsStore.registerClient(client);
+      (p as any).stateStore.set('state-572', {
+        clientRedirectUri: boundRedirectUri,
+        codeChallenge: pkceChallenge,
+        originalState: 'orig-state',
+        clientId: client.client_id,
+        scopes: [],
+        createdAt: Date.now(),
+      });
+      (p as any).exchangeCodeWithProvider = vi.fn().mockResolvedValue(tokens);
+      const response = { status: vi.fn().mockReturnThis(), send: vi.fn(), redirect: vi.fn() } as any;
+      await p.handleCallback({ query: { code: 'ext-code', state: 'state-572' } } as any, response);
+      return new URL(response.redirect.mock.calls[0][0]).searchParams.get('code')!;
+    };
+
+    beforeEach(() => {
+      provider = new ExternalOAuthProvider(config, mockLogger);
+    });
+
+    it('rejects a token redirect_uri that does not match the authorization request (RFC 6749 4.1.3)', async () => {
+      const client = buildClient();
+      const internalCode = await issueInternalCode(provider, client);
+
+      await expect(
+        provider.exchangeAuthorizationCode(client, internalCode, pkceVerifier, 'http://localhost:3003/other'),
+      ).rejects.toBeInstanceOf(OAuthInvalidGrantError);
+    });
+
+    it('rejects a token request that omits the bound redirect_uri', async () => {
+      const client = buildClient();
+      const internalCode = await issueInternalCode(provider, client);
+
+      await expect(
+        provider.exchangeAuthorizationCode(client, internalCode, pkceVerifier, undefined),
+      ).rejects.toBeInstanceOf(OAuthInvalidGrantError);
+    });
+
+    it('accepts a token request that presents the matching redirect_uri', async () => {
+      const client = buildClient();
+      const internalCode = await issueInternalCode(provider, client);
+
+      const tokens = await provider.exchangeAuthorizationCode(client, internalCode, pkceVerifier, boundRedirectUri);
+      expect(tokens.access_token).toBe('ext-at');
+    });
+
+    it('revokes tokens issued from the first redemption when the code is replayed (RFC 6749 4.1.2)', async () => {
+      const client = buildClient();
+      const internalCode = await issueInternalCode(provider, client);
+
+      const tokens = await provider.exchangeAuthorizationCode(client, internalCode, pkceVerifier, boundRedirectUri);
+      // First redemption issued a usable access token.
+      await expect(provider.verifyAccessToken(tokens.access_token)).resolves.toMatchObject({
+        clientId: client.client_id,
+      });
+
+      // Replay of the same code must fail and revoke the first-issued token.
+      await expect(
+        provider.exchangeAuthorizationCode(client, internalCode, pkceVerifier, boundRedirectUri),
+      ).rejects.toBeInstanceOf(OAuthInvalidGrantError);
+      await expect(provider.verifyAccessToken(tokens.access_token)).rejects.toThrow();
+    });
+
+    it('does not log the internal code or state on the success redirect (security)', async () => {
+      const client = buildClient();
+      const internalCode = await issueInternalCode(provider, client);
+
+      const call = (mockLogger.info as any).mock.calls.find(
+        ([message]: [string]) => message === 'Redirecting to client with internal code',
+      );
+      expect(call).toBeDefined();
+      expect(call[1].internalCode).toBeUndefined();
+      expect(call[1].clientUrl).toBe(boundRedirectUri);
+      expect(JSON.stringify(call)).not.toContain(internalCode);
+      expect(JSON.stringify(call)).not.toContain('orig-state');
+    });
+
+    it('does not log state on the callback error path (security)', async () => {
+      const response = { status: vi.fn().mockReturnThis(), send: vi.fn(), json: vi.fn() } as any;
+      await provider.handleCallback(
+        { query: { error: 'access_denied', state: 'live-state-secret' } } as any,
+        response,
+      );
+
+      const call = (mockLogger.error as any).mock.calls.find(
+        ([message]: [string]) => message === 'OAuth callback error',
+      );
+      expect(call).toBeDefined();
+      expect(JSON.stringify(call)).not.toContain('live-state-secret');
+    });
+
+    it('retries endpoint initialization after a config-time failure (does not permanently 500)', async () => {
+      const issuerProvider = new ExternalOAuthProvider(
+        { issuer: 'https://issuer.example.com', client_id: 'c', client_secret: 's', redirect_uri: boundRedirectUri },
+        mockLogger,
+      );
+      const spy = vi
+        .spyOn(issuerProvider as any, 'deriveEndpointsFromIssuer')
+        .mockRejectedValueOnce(new Error('transient config failure'))
+        .mockImplementation(async (cfg: any) => ({
+          ...cfg,
+          authorization_endpoint: 'https://issuer.example.com/authorize',
+          token_endpoint: 'https://issuer.example.com/token',
+        }));
+
+      await expect(issuerProvider.ensureEndpointsInitialized()).rejects.toThrow('transient config failure');
+      // The memoized promise was reset, so a later request retries instead of
+      // being permanently stuck on the first failure.
+      await expect(issuerProvider.ensureEndpointsInitialized()).resolves.toBeUndefined();
+      expect((issuerProvider as any).endpointsInitialized).toBe(true);
+      expect(spy).toHaveBeenCalledTimes(2);
+    });
+
+    describe('shared-client redirect_uri policy (RFC 6749 3.1.2.3 / OAuth 2.1 4.1.3)', () => {
+      const sharedClient: OAuthClientInformationFull = {
+        client_id: 'mcp-proxy-client',
+        redirect_uris: [],
+        grant_types: ['authorization_code', 'refresh_token'],
+        response_types: ['code'],
+      };
+
+      it('allows loopback http on any port and https, but rejects custom schemes', () => {
+        const allow = (uri: string): boolean => (provider as any).isAllowedClientRedirectUri(sharedClient, uri);
+        // RFC 8252: any loopback port over http.
+        expect(allow('http://127.0.0.1:54123/callback')).toBe(true);
+        expect(allow('http://localhost:9999/callback')).toBe(true);
+        // https loopback is fine too.
+        expect(allow('https://localhost:8443/callback')).toBe(true);
+        // Custom/arbitrary schemes are rejected for the shared client.
+        expect(allow('vscode://callback')).toBe(false);
+        expect(allow('ftp://localhost/callback')).toBe(false);
+      });
+
+      it('rejects plain http on a non-loopback host but allows https there', () => {
+        const hostProvider = new ExternalOAuthProvider(
+          { ...config, allowed_redirect_hosts: ['localhost', '127.0.0.1', 'app.example.com'] },
+          mockLogger,
+        );
+        const allow = (uri: string): boolean => (hostProvider as any).isAllowedClientRedirectUri(sharedClient, uri);
+        expect(allow('http://app.example.com/callback')).toBe(false);
+        expect(allow('https://app.example.com/callback')).toBe(true);
+      });
     });
   });
 
