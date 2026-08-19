@@ -3255,6 +3255,90 @@ describeIfListen('HttpTransport', () => {
       }
     });
 
+    it('uses only the first x-forwarded-host value behind a trusted proxy (chained proxies, RFC 8414 §3.3)', async () => {
+      const proxiedTransport = new HttpTransport(
+        {
+          host: '127.0.0.1',
+          port: 0,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: false,
+          metricsPath: '/metrics',
+          trustProxy: true,
+          oauthConfig: {
+            issuer: 'https://auth.example.com',
+            client_id: 'test-client',
+            client_secret: 'test-secret',
+            redirect_uri: 'https://example.com/oauth/callback',
+            scopes: ['api'],
+          },
+        },
+        logger
+      );
+      const proxiedApp = (proxiedTransport as any).app;
+
+      try {
+        const response = await request(proxiedApp)
+          .get('/.well-known/oauth-authorization-server')
+          .set('X-Forwarded-Proto', 'https')
+          .set('X-Forwarded-Host', 'a.example.com, b.example.com');
+
+        expect(response.status).toBe(200);
+        // Only the first (client-facing) forwarded host is used; the issuer must
+        // be well-formed, never the raw comma-separated list.
+        expect(response.body.issuer).toBe('https://a.example.com');
+        expect(response.body.authorization_endpoint).toBe('https://a.example.com/oauth/authorize');
+        expect(response.body.token_endpoint).toBe('https://a.example.com/oauth/token');
+      } finally {
+        await proxiedTransport.stop();
+      }
+    });
+
+    it('ignores spoofed forwarded/host headers when trust proxy is disabled (issuer-injection protection, RFC 8414 §3.3)', async () => {
+      const untrustedTransport = new HttpTransport(
+        {
+          host: 'mcp.example.com',
+          port: 443,
+          sessionTimeoutMs: 1800000,
+          heartbeatEnabled: false,
+          heartbeatIntervalMs: 30000,
+          metricsEnabled: false,
+          metricsPath: '/metrics',
+          // trustProxy omitted -> disabled: forwarded headers must not be honored.
+          oauthConfig: {
+            issuer: 'https://auth.example.com',
+            client_id: 'test-client',
+            client_secret: 'test-secret',
+            scopes: ['api'],
+          },
+        },
+        logger
+      );
+      // Force the host:port fallback so the configured host is the issuer source.
+      createProfileState(untrustedTransport as any).oauthProvider = {
+        redirectUri: 'not-a-valid-url',
+        scopes: ['api'],
+      };
+      const untrustedApp = (untrustedTransport as any).app;
+
+      try {
+        const response = await request(untrustedApp)
+          .get('/.well-known/oauth-authorization-server')
+          .set('X-Forwarded-Proto', 'http')
+          .set('X-Forwarded-Host', 'evil.example.com')
+          .set('Host', 'evil.example.com');
+
+        expect(response.status).toBe(200);
+        // Spoofed client-controlled headers must be ignored; issuer stays the
+        // configured host.
+        expect(response.body.issuer).toBe('https://mcp.example.com:443');
+        expect(response.body.issuer).not.toContain('evil.example.com');
+      } finally {
+        await untrustedTransport.stop();
+      }
+    });
+
     it('advertises an https issuer for a non-loopback configured host without leaking http:// (RFC 8414 §3.3)', async () => {
       const publicHostTransport = new HttpTransport(
         {

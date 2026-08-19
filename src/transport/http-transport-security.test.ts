@@ -3035,6 +3035,141 @@ describe('HttpTransport RFC 6750 resource-server hardening (AIPP-572)', () => {
     }
   });
 
+  it('item 5 (I3): a mid-session bearer swap validates against the same config as init on an OAuth-active profile (reject path)', async () => {
+    const authConfigs = [
+      { type: 'oauth', validation_endpoint: '/oauth-validate' },
+      { type: 'bearer', validation_endpoint: '/bearer-validate' },
+    ];
+    const transport = createTransport({
+      baseUrl: 'https://api.example.com',
+      oauthConfig: OAUTH_CONFIG,
+      authConfigs,
+    });
+    transport.setMessageHandler(async () => ({ result: 'ok' }));
+    const profileState = createProfileState(transport as any);
+    profileState.context = {
+      profileId: 'default',
+      authConfigs,
+      oauthConfig: OAUTH_CONFIG,
+      baseUrl: 'https://api.example.com',
+    };
+
+    // Spy on the upstream check to capture which auth config is selected without
+    // making a network call (SSRF validation blocks the mock host anyway).
+    const validatedEndpoints: (string | undefined)[] = [];
+    vi.spyOn(transport as any, 'validateAuthToken').mockImplementation(
+      async (...args: unknown[]) => {
+        const authConfig = args[0] as { validation_endpoint?: string };
+        validatedEndpoints.push(authConfig.validation_endpoint);
+        return false;
+      },
+    );
+
+    try {
+      // Init with a bearer token: on an OAuth-active profile the OAuth config
+      // takes priority, so init validates the bearer token against /oauth-validate.
+      const initRes = createMockResponse();
+      await (transport as any).handlePost(initReq({ authorization: 'Bearer init-bearer-token' }), initRes);
+      const initTarget = validatedEndpoints.at(-1);
+      expect(initTarget).toBe('/oauth-validate');
+
+      // Establish a session, then swap the bearer credential.
+      profileState.sessions.set('sess-swap', {
+        id: 'sess-swap',
+        createdAt: Date.now(),
+        lastActivityAt: Date.now(),
+        sseStreams: new Map(),
+        authToken: 'original-token',
+        replayQueue: [],
+        nextEventId: 0,
+      });
+      validatedEndpoints.length = 0;
+      const swapReq = {
+        method: 'POST',
+        path: '/mcp',
+        url: '/mcp',
+        sessionId: 'sess-swap',
+        headers: { accept: 'application/json', host: 'localhost', authorization: 'Bearer replacement-invalid' },
+        body: { jsonrpc: '2.0', id: 1, method: 'tools/list' },
+        get: () => undefined,
+      } as any;
+      const swapRes = createMockResponse();
+      await (transport as any).handlePost(swapReq, swapRes);
+
+      // The swap must validate against the SAME config/endpoint init used (the
+      // OAuth config), not the bearer config, so mid-session behaviour matches init.
+      expect(validatedEndpoints.at(-1)).toBe('/oauth-validate');
+      expect(validatedEndpoints.at(-1)).toBe(initTarget);
+      expect(swapRes.statusCode).toBe(401);
+      expect(swapRes.body).toMatchObject({ error: 'invalid_token' });
+      expect((profileState.sessions.get('sess-swap') as any).authToken).toBe('original-token');
+    } finally {
+      vi.restoreAllMocks();
+      await transport.stop();
+    }
+  });
+
+  it('item 5 (I3): a mid-session bearer swap validates against the same config as init on an OAuth-active profile (accept path)', async () => {
+    const authConfigs = [
+      { type: 'oauth', validation_endpoint: '/oauth-validate' },
+      { type: 'bearer', validation_endpoint: '/bearer-validate' },
+    ];
+    const transport = createTransport({
+      baseUrl: 'https://api.example.com',
+      oauthConfig: OAUTH_CONFIG,
+      authConfigs,
+    });
+    transport.setMessageHandler(async () => ({ result: 'ok' }));
+    const profileState = createProfileState(transport as any);
+    profileState.context = {
+      profileId: 'default',
+      authConfigs,
+      oauthConfig: OAUTH_CONFIG,
+      baseUrl: 'https://api.example.com',
+    };
+    profileState.sessions.set('sess-swap', {
+      id: 'sess-swap',
+      createdAt: Date.now(),
+      lastActivityAt: Date.now(),
+      sseStreams: new Map(),
+      authToken: 'original-token',
+      replayQueue: [],
+      nextEventId: 0,
+    });
+
+    const validatedEndpoints: (string | undefined)[] = [];
+    vi.spyOn(transport as any, 'validateAuthToken').mockImplementation(
+      async (...args: unknown[]) => {
+        const authConfig = args[0] as { validation_endpoint?: string };
+        validatedEndpoints.push(authConfig.validation_endpoint);
+        return true;
+      },
+    );
+
+    try {
+      const swapReq = {
+        method: 'POST',
+        path: '/mcp',
+        url: '/mcp',
+        sessionId: 'sess-swap',
+        headers: { accept: 'application/json', host: 'localhost', authorization: 'Bearer replacement-valid' },
+        body: { jsonrpc: '2.0', id: 1, method: 'tools/list' },
+        get: () => undefined,
+      } as any;
+      const swapRes = createMockResponse();
+      await (transport as any).handlePost(swapReq, swapRes);
+
+      // Accepted swap validates against the OAuth config (matching init) and
+      // replaces the session credential.
+      expect(validatedEndpoints).toContain('/oauth-validate');
+      expect(validatedEndpoints).not.toContain('/bearer-validate');
+      expect((profileState.sessions.get('sess-swap') as any).authToken).toBe('replacement-valid');
+    } finally {
+      vi.restoreAllMocks();
+      await transport.stop();
+    }
+  });
+
   it('item 6: matches the Bearer scheme case-insensitively', () => {
     const transport = createTransport();
     const profileState = createProfileState(transport as any);

@@ -1323,14 +1323,34 @@ export class HttpTransport {
     return trustProxy !== undefined && trustProxy !== false && trustProxy !== 0;
   }
 
+  /**
+   * Take the first value of a possibly comma-separated forwarded header (chained
+   * proxies append their own entry) and trim it, mirroring how Express derives
+   * req.hostname. Returns undefined when the header is absent or empty.
+   */
+  private firstForwardedValue(headerValue: string | undefined): string | undefined {
+    if (!headerValue) {
+      return undefined;
+    }
+    const first = headerValue.split(',')[0]?.trim();
+    return first ? first : undefined;
+  }
+
   private getServerOrigin(profileId?: string, req?: Request): string {
     // RFC 8414 §3.3: the advertised issuer must equal the URL clients used to
     // fetch the metadata. Behind a trusted proxy the public scheme/host only
     // appear on the forwarded request, so they take precedence over the
     // redirect-URI origin and the host:port fallback. Forwarded headers are only
-    // honored when proxy trust is enabled, to avoid Host/Forwarded spoofing.
+    // honored when proxy trust is enabled, to avoid Host/Forwarded spoofing (a
+    // client-controlled X-Forwarded-Host must never inject the issuer origin).
+    // Deployment requirement: the fronting proxy MUST set/overwrite both Host and
+    // X-Forwarded-Host so clients cannot spoof them.
     if (req && this.isTrustProxyEnabled()) {
-      const forwardedHost = req.get('x-forwarded-host') ?? req.get('host');
+      // X-Forwarded-Host can be a comma-separated list behind chained proxies;
+      // use the first (client-facing) value, as Express does for req.hostname.
+      // req.protocol already applies the same first-value handling to
+      // X-Forwarded-Proto when trust proxy is enabled.
+      const forwardedHost = this.firstForwardedValue(req.get('x-forwarded-host')) ?? req.get('host');
       if (forwardedHost) {
         return `${req.protocol}://${forwardedHost}`;
       }
@@ -3016,6 +3036,23 @@ export class HttpTransport {
     };
   }
 
+  /**
+   * Whether OAuth is "active" for a request: a config is present, not disabled at
+   * the profile level, and operationally usable. This flag drives auth-config
+   * selection in validateClientTokenAgainstConfig (OAuth config over an exact
+   * bearer match), so session init and the mid-session token swap MUST derive it
+   * identically - otherwise a bearer token validated against the OAuth config at
+   * init would be validated against a different config at swap.
+   */
+  private isOAuthActiveForRequest(
+    profileState: ProfileRuntimeState,
+    effectiveAuthContext: { oauthConfig?: OAuthConfig },
+  ): boolean {
+    return !!effectiveAuthContext.oauthConfig &&
+      !profileState.oauthDisabledReason &&
+      isOAuthConfigOperational(effectiveAuthContext.oauthConfig).operational;
+  }
+
   private getTenantIndex(profileState: ProfileRuntimeState): HttpTenantIndex {
     if (profileState.tenantIndex) {
       return profileState.tenantIndex;
@@ -3280,12 +3317,15 @@ export class HttpTransport {
             if (previousToken) {
               const baseUrl = session.tenantBaseUrl || profileState.context.baseUrl || '';
               if (baseUrl) {
+                // Derive oauthActive the same way session init does so the swap
+                // selects the same auth config/endpoint init validated against.
+                const swapOauthActive = this.isOAuthActiveForRequest(profileState, effectiveAuthContext);
                 const swapResult = await this.validateClientTokenAgainstConfig(
                   effectiveAuthContext.authConfigs || [],
                   authInfo.type,
                   authInfo.token,
                   baseUrl,
-                  false,
+                  swapOauthActive,
                   profileState,
                 );
                 if (!swapResult.skipped && !swapResult.validated) {
@@ -3376,9 +3416,7 @@ export class HttpTransport {
           // Two-part operational check: profile-level uses cached oauthDisabledReason;
           // effectiveAuthContext.oauthConfig may be a tenant-specific config (different object
           // from profile-level), so run isOAuthConfigOperational on it directly.
-          const oauthActive = !!effectiveAuthContext.oauthConfig &&
-            !profileState.oauthDisabledReason &&
-            isOAuthConfigOperational(effectiveAuthContext.oauthConfig).operational;
+          const oauthActive = this.isOAuthActiveForRequest(profileState, effectiveAuthContext);
           if (oauthActive && !authInfo.token) {
             this.logger.debug('OAuth configured but no token provided, triggering OAuth flow');
             this.sendMcpAuthChallenge(res, requestProfileId, 'invalid_request', 'Authentication required for OAuth');
