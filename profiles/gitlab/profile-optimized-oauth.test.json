@@ -352,6 +352,138 @@
       }
     },
     {
+      "name": "Merge Requests - List forwards branch and filter params",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "list_merge_requests",
+        "project_id": "{{projectId}}",
+        "state": "all",
+        "source_branch": "feature-x",
+        "target_branch": "main",
+        "labels": "bug,urgent",
+        "author_username": "dev1",
+        "scope": "all",
+        "search": "fix",
+        "wip": "no",
+        "order_by": "updated_at",
+        "sort": "asc",
+        "milestone": "v1.0",
+        "updated_after": "2024-01-01T00:00:00Z"
+      },
+      "mocks": [
+        {
+          "operationId": "getApiV4ProjectsIdMergeRequests",
+          "response": {
+            "body": [{"id": 3, "iid": 3, "title": "MR3"}]
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "request": {
+          "method": "GET",
+          "path": "/projects/{{projectId}}/merge_requests",
+          "query": {
+            "state": "all",
+            "source_branch": "feature-x",
+            "target_branch": "main",
+            "labels": "bug,urgent",
+            "author_username": "dev1",
+            "scope": "all",
+            "search": "fix",
+            "wip": "no",
+            "order_by": "updated_at",
+            "sort": "asc",
+            "milestone": "v1.0",
+            "updated_after": "2024-01-01T00:00:00Z"
+          }
+        }
+      }
+    },
+    {
+      "name": "Issues - List forwards filter params",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "list_issues",
+        "project_id": "{{projectId}}",
+        "state": "opened",
+        "assignee_username": "dev2",
+        "milestone": "v1.0",
+        "scope": "all",
+        "search": "crash",
+        "in": "title",
+        "order_by": "updated_at",
+        "sort": "desc",
+        "confidential": false,
+        "created_after": "2024-01-01T00:00:00Z"
+      },
+      "mocks": [
+        {
+          "operationId": "getApiV4ProjectsIdIssues",
+          "response": {
+            "body": [{"id": 4, "iid": 4, "title": "Issue4"}]
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "request": {
+          "method": "GET",
+          "path": "/projects/{{projectId}}/issues",
+          "query": {
+            "state": "opened",
+            "assignee_username": "dev2",
+            "milestone": "v1.0",
+            "scope": "all",
+            "search": "crash",
+            "in": "title",
+            "order_by": "updated_at",
+            "sort": "desc",
+            "confidential": "false",
+            "created_after": "2024-01-01T00:00:00Z"
+          }
+        }
+      }
+    },
+    {
+      "name": "Issues - Global list forwards filter params",
+      "tool": "retrieve_content",
+      "arguments": {
+        "action": "list_issues_global",
+        "state": "opened",
+        "author_username": "dev3",
+        "order_by": "created_at",
+        "sort": "asc",
+        "in": "title,description",
+        "updated_after": "2024-02-01T00:00:00Z",
+        "non_archived": true
+      },
+      "mocks": [
+        {
+          "operationId": "getApiV4Issues",
+          "response": {
+            "body": [{"id": 5, "iid": 5, "title": "Issue5"}]
+          }
+        }
+      ],
+      "expect": {
+        "success": true,
+        "request": {
+          "method": "GET",
+          "path": "/issues",
+          "query": {
+            "state": "opened",
+            "author_username": "dev3",
+            "order_by": "created_at",
+            "sort": "asc",
+            "in": "title,description",
+            "updated_after": "2024-02-01T00:00:00Z",
+            "non_archived": "true"
+          }
+        }
+      }
+    },
+    {
       "name": "Merge Requests - Get",
       "tool": "retrieve_content",
       "arguments": {
