@@ -18,6 +18,7 @@ import { HTTP_STATUS } from '../core/constants.js';
 import { ConfigurationError } from '../core/errors.js';
 import { escapeHtmlSafe } from '../validation/validation-utils.js';
 import { CONSENT_BODY_PLACEHOLDER } from '../profile/consent-gate-validator.js';
+import { DANGEROUS_REDIRECT_SCHEMES } from '../auth/unregistered-client-redirect-policy.js';
 
 /** Positive-integer env override with a default; an invalid value fails startup. */
 function envInt(name: string, fallback: number): number {
@@ -50,6 +51,27 @@ function safeHttpsOrigin(urlValue: string | undefined): string | undefined {
   try {
     const url = new URL(urlValue);
     return url.protocol === 'https:' ? url.origin : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Translate an ALREADY-VALIDATED OAuth client redirect_uri into a CSP
+ * form-action source expression. The redirect policy itself lives in the
+ * OAuth layer (client registration / the unregistered-client allowlist) and
+ * runs before the approval form renders; this function only maps the value
+ * to CSP syntax: http(s) URLs become their origin, custom native-app schemes
+ * (cursor://, vscode://, ...) become a scheme source. Dangerous schemes are
+ * never reflected, as a cheap second line behind the OAuth-layer validation.
+ */
+function clientRedirectFormActionSource(urlValue: unknown): string | undefined {
+  if (typeof urlValue !== 'string' || !urlValue) return undefined;
+  try {
+    const url = new URL(urlValue);
+    if (DANGEROUS_REDIRECT_SCHEMES.has(url.protocol)) return undefined;
+    if (url.protocol === 'http:' || url.protocol === 'https:') return url.origin;
+    return url.protocol;
   } catch {
     return undefined;
   }
@@ -241,13 +263,19 @@ export class ConsentHttpController {
     // CSRF protection: the POST must reproduce the exact request fingerprint the
     // form was rendered for AND present the __Host- cookie set above
     // (consumeApproval checks both). No separate form token is needed.
-    // Chrome enforces form-action against the redirect chain of the form
-    // submission: the accepted POST answers 302 to the IdP, so a bare
-    // form-action 'self' blocks the consent flow at the submit button. Allow
-    // the upstream authorize origin (https only) alongside 'self'.
-    const idpOrigin = safeHttpsOrigin(upstreamAuthorizeUrl);
-    const csp = idpOrigin
-      ? CONSENT_FORM_CSP.replace("form-action 'self'", `form-action 'self' ${idpOrigin}`)
+    // Chrome enforces form-action against EVERY hop of the form submission's
+    // redirect chain: the accepted POST answers 302 to the IdP, and after the
+    // login callback the chain ends with a redirect back to the OAuth client
+    // (e.g. a VS Code loopback listener). A bare form-action 'self' silently
+    // aborts the chain in the browser, so allow the upstream authorize origin
+    // (https only) and the client redirect origin (https, or loopback http)
+    // alongside 'self'.
+    const extraOrigins = [
+      safeHttpsOrigin(upstreamAuthorizeUrl),
+      clientRedirectFormActionSource(input.redirect_uri),
+    ].filter((origin): origin is string => origin !== undefined);
+    const csp = extraOrigins.length > 0
+      ? CONSENT_FORM_CSP.replace("form-action 'self'", `form-action 'self' ${extraOrigins.join(' ')}`)
       : CONSENT_FORM_CSP;
     renderConsentPage(res, {
       status: HTTP_STATUS.OK,
