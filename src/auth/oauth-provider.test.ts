@@ -209,6 +209,34 @@ describe('ExternalOAuthProvider', () => {
         expect(mockLogger.info).toHaveBeenCalledWith('Successfully discovered OAuth endpoints', metadata);
       });
 
+      it('discovers endpoints for an issuer with a path via RFC 8414 insertion, then OIDC discovery', async () => {
+        // Entra-style issuer: the tenant lives in the issuer path. Resolving
+        // the well-known suffix as an absolute URL used to drop that path,
+        // query the host root, and fall back to the wrong ${issuer}/oauth/*
+        // guesses (broken live: /{tenant}/v2.0/oauth/authorize -> 404).
+        const tenantIssuer = 'https://login.example.com/tenant-id/v2.0';
+        const metadata = {
+          authorization_endpoint: 'https://login.example.com/tenant-id/oauth2/v2.0/authorize',
+          token_endpoint: 'https://login.example.com/tenant-id/oauth2/v2.0/token',
+        };
+        const seen: string[] = [];
+        global.fetch = vi.fn(async (url: unknown) => {
+          const u = String(url);
+          seen.push(u);
+          if (u === 'https://login.example.com/tenant-id/v2.0/.well-known/openid-configuration') {
+            return { ok: true, json: async () => metadata } as Response;
+          }
+          return { ok: false } as Response;
+        }) as unknown as typeof fetch;
+
+        const derived = await (provider as any).deriveEndpointsFromIssuer({ issuer: tenantIssuer });
+
+        expect(derived.authorization_endpoint).toBe(metadata.authorization_endpoint);
+        expect(derived.token_endpoint).toBe(metadata.token_endpoint);
+        expect(seen[0]).toBe('https://login.example.com/.well-known/oauth-authorization-server/tenant-id/v2.0');
+        expect(seen[1]).toBe('https://login.example.com/tenant-id/v2.0/.well-known/openid-configuration');
+      });
+
       it('falls back to standard paths when metadata response is not ok', async () => {
         global.fetch = vi.fn().mockResolvedValue({ ok: false });
 
