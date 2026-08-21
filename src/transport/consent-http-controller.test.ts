@@ -208,6 +208,12 @@ describe('ConsentHttpController', () => {
         expect(res.headers['Cache-Control']).toBe('no-store');
         expect(res.headers['Content-Security-Policy']).toContain("default-src 'none'");
         expect(res.headers['Content-Security-Policy']).toContain("frame-ancestors 'none'");
+        // Must override the transport-wide no-referrer: with no-referrer the
+        // browser serializes the approval form POST's Origin header as "null",
+        // which the origin validation rejects and the consent flow dies with
+        // 403 "Origin not allowed". same-origin keeps the referrer internal
+        // while letting the browser send the real Origin.
+        expect(res.headers['Referrer-Policy']).toBe('same-origin');
       }
       expect(form.headers['Content-Security-Policy']).toContain("form-action 'self'");
       expect(expired.statusCode).toBe(400);
