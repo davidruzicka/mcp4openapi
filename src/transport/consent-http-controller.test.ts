@@ -220,6 +220,31 @@ describe('ConsentHttpController', () => {
       expect(expired.body).toContain('Start the consent flow again');
     });
 
+    it('extends form-action with the upstream authorize origin so the post-accept redirect survives Chrome CSP', () => {
+      // Chrome enforces form-action against the redirect chain of the form
+      // submission: the accepted POST answers 302 to the IdP, so a bare
+      // form-action 'self' blocks the whole consent flow at the button.
+      const controller = new ConsentHttpController();
+
+      const withOrigin = makeRes();
+      controller.renderApprovalForm(asResponse(withOrigin), gate, oauthInput(), 'fp-fa1',
+        'https://login.microsoftonline.com/tenant/oauth2/v2.0/authorize');
+      expect(withOrigin.headers['Content-Security-Policy'])
+        .toContain("form-action 'self' https://login.microsoftonline.com");
+
+      const noOrigin = makeRes();
+      controller.renderApprovalForm(asResponse(noOrigin), gate, oauthInput(), 'fp-fa2');
+      expect(noOrigin.headers['Content-Security-Policy']).toContain("form-action 'self';");
+
+      const malformed = makeRes();
+      controller.renderApprovalForm(asResponse(malformed), gate, oauthInput(), 'fp-fa3', 'not a url');
+      expect(malformed.headers['Content-Security-Policy']).toContain("form-action 'self';");
+
+      const insecure = makeRes();
+      controller.renderApprovalForm(asResponse(insecure), gate, oauthInput(), 'fp-fa4', 'http://idp.example/authorize');
+      expect(insecure.headers['Content-Security-Policy']).toContain("form-action 'self';");
+    });
+
     it('escapes the retry URL on the expired page', () => {
       const controller = new ConsentHttpController();
       const res = makeRes();
