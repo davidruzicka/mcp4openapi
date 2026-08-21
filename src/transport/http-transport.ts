@@ -2187,7 +2187,13 @@ export class HttpTransport {
         const gate = profileState.context.consent_gate;
         const fingerprint = this.consentController.requestFingerprint(profileState.profileId, input);
         if (req.method !== 'POST') {
-          this.consentController.renderApprovalForm(res, gate, input, fingerprint);
+          this.consentController.renderApprovalForm(
+            res,
+            gate,
+            input,
+            fingerprint,
+            profileState.oauthProvider.authorizationEndpoint,
+          );
           return;
         }
         if (

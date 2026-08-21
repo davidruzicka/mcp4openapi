@@ -44,6 +44,17 @@ export const CONSENT_COOKIE_NAME = '__Host-mcp4_consent';
 const CONSENT_PAGE_CSP = "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'";
 const CONSENT_FORM_CSP = "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'";
 
+/** Origin of an https URL, or undefined for anything absent, malformed, or non-https. */
+function safeHttpsOrigin(urlValue: string | undefined): string | undefined {
+  if (!urlValue) return undefined;
+  try {
+    const url = new URL(urlValue);
+    return url.protocol === 'https:' ? url.origin : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 // OAuth request fields the fingerprint and the re-submitted form are bound to.
 const OAUTH_REQUEST_FIELDS = [
   'response_type',
@@ -194,6 +205,7 @@ export class ConsentHttpController {
     gate: ConsentGateConfig,
     input: Record<string, unknown>,
     fingerprint: string,
+    upstreamAuthorizeUrl?: string,
   ): void {
     const now = Date.now();
     for (const [key, pending] of this.pendingApprovals) {
@@ -229,11 +241,19 @@ export class ConsentHttpController {
     // CSRF protection: the POST must reproduce the exact request fingerprint the
     // form was rendered for AND present the __Host- cookie set above
     // (consumeApproval checks both). No separate form token is needed.
+    // Chrome enforces form-action against the redirect chain of the form
+    // submission: the accepted POST answers 302 to the IdP, so a bare
+    // form-action 'self' blocks the consent flow at the submit button. Allow
+    // the upstream authorize origin (https only) alongside 'self'.
+    const idpOrigin = safeHttpsOrigin(upstreamAuthorizeUrl);
+    const csp = idpOrigin
+      ? CONSENT_FORM_CSP.replace("form-action 'self'", `form-action 'self' ${idpOrigin}`)
+      : CONSENT_FORM_CSP;
     renderConsentPage(res, {
       status: HTTP_STATUS.OK,
       title: 'Consent required',
       body: `<h1>Consent required</h1><p>${rulesSummary(gate)}</p>${educationLink(gate)}<form method="post">${hiddenFields}<label><input type="checkbox" name="consent_accept" value="yes" required> ${acceptLabel}</label><p><button type="submit">${submitLabel}</button></p></form>`,
-      csp: CONSENT_FORM_CSP,
+      csp,
       gate,
     });
   }

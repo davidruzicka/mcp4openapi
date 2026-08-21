@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Fixed
+- The consent approval form's CSP `form-action` now also allows the upstream authorization endpoint origin (https only). Chrome enforces `form-action` against the redirect chain of the form submission, so with a bare `'self'` the accepted POST's 302 to the IdP was blocked in the browser and the consent flow died at the submit button.
 - Consent pages now send `Referrer-Policy: same-origin` instead of inheriting the transport-wide `no-referrer`. Under `no-referrer` the browser serializes the consent approval form POST's `Origin` header as `null`, origin validation rejects it, and the flow dies with 403 `Origin not allowed` after the user accepts; `same-origin` keeps the referrer internal to the gateway while the real `Origin` accompanies the form submission.
 
 ### Security
