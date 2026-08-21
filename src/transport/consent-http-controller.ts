@@ -108,6 +108,12 @@ function renderConsentPage(
 ): void {
   res.setHeader('Cache-Control', 'no-store');
   res.setHeader('Content-Security-Policy', options.csp);
+  // Override the transport-wide `no-referrer`: under no-referrer the browser
+  // serializes the approval form POST's Origin header as "null", which origin
+  // validation rejects (403 "Origin not allowed") and the consent flow cannot
+  // complete. same-origin keeps the referrer internal to the gateway while
+  // letting the browser send the real Origin with the form submission.
+  res.setHeader('Referrer-Policy', 'same-origin');
   const template = options.gate?.template;
   // Cosmetic placeholders are substituted over the trusted template FIRST; the
   // consent body (which embeds escaped, user-influenced OAuth values) is
