@@ -4374,6 +4374,54 @@ paths:
         expect(JSON.stringify(response)).not.toContain('issuer_mismatch');
       });
 
+      it('marks a no_principal denial as oauth_required so the transport answers 401 and OAuth clients re-authenticate', async () => {
+        // After a gateway restart a pre-restart access token creates a session
+        // with no resolvable identity. That is an authentication problem, not a
+        // consent decision: without the oauth_required flag the transport keeps
+        // HTTP 200, the client never refreshes its identity-bearing envelope,
+        // and a user with valid persisted consent is stuck in a -32004 loop.
+        mockGetUpstreamClient.mockRejectedValueOnce(
+          new ConsentRequiredError('Consent required', {
+            profileId: 'upstream-profile',
+            rules_version: 'v1',
+            consent_url: 'https://gateway.example/consent',
+          }, 'no_principal'),
+        );
+
+        const response = await (upstreamServer as any).handleToolCall(
+          {
+            jsonrpc: '2.0',
+            id: 'consent-no-principal',
+            method: 'tools/call',
+            params: { name: 'safe_tool', arguments: {} },
+          },
+          'session-123',
+          'upstream-profile',
+        ) as any;
+
+        expect(response.error.code).toBe(-32004);
+        expect(response.error.data.oauth_required).toBe(true);
+        expect(JSON.stringify(response)).not.toContain('no_principal');
+      });
+
+      it('does not mark evidence-based denials as oauth_required (human consent is required, not re-auth)', async () => {
+        mockGetUpstreamClient.mockRejectedValueOnce(consentDenied());
+
+        const response = await (upstreamServer as any).handleToolCall(
+          {
+            jsonrpc: '2.0',
+            id: 'consent-evidence',
+            method: 'tools/call',
+            params: { name: 'safe_tool', arguments: {} },
+          },
+          'session-123',
+          'upstream-profile',
+        ) as any;
+
+        expect(response.error.code).toBe(-32004);
+        expect(response.error.data.oauth_required).toBeUndefined();
+      });
+
       it('forwards call to upstream client with correct name and arguments', async () => {
         const response = await (upstreamServer as any).handleToolCall(
           {

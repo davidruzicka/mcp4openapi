@@ -172,10 +172,18 @@ function mapUpstreamErrorToMcpError(
   // unchanged for every dispatch path (tools/list and tools/call alike). The
   // specific denial reason stays server-side.
   if (error instanceof ConsentRequiredError) {
+    // no_principal is an authentication problem, not a consent decision: the
+    // session's bearer carries no resolvable identity (typically a pre-restart
+    // access token). The oauth_required flag makes the HTTP transport answer
+    // 401 with a Bearer challenge, so a standard OAuth client silently
+    // re-authenticates with its identity-bearing refresh envelope and a user
+    // with valid persisted consent is not sent back to the consent screen.
+    // Evidence-based denials stay plain -32004: only a human can fix those.
+    const authRequired = error.reason === 'no_principal' ? { oauth_required: true } : undefined;
     return {
       code: -32004,
       message: 'Consent required',
-      data: { ...error.details, correlationId },
+      data: { ...error.details, ...authRequired, correlationId },
     };
   }
 
