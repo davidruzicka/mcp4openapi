@@ -5056,6 +5056,101 @@ paths:
           description: Return merge requests created on or before the given time (ISO 8601)
           schema:
             type: string
+        - name: source_branch
+          in: query
+          description: Return merge requests with the given source branch
+          schema:
+            type: string
+        - name: target_branch
+          in: query
+          description: Return merge requests with the given target branch
+          schema:
+            type: string
+        - name: labels
+          in: query
+          description: Comma-separated list of label names; merge requests must have all listed labels
+          schema:
+            type: string
+        - name: with_labels_details
+          in: query
+          description: If true, response returns more details for each label
+          schema:
+            type: boolean
+        - name: milestone
+          in: query
+          description: Return merge requests for a specific milestone
+          schema:
+            type: string
+        - name: view
+          in: query
+          description: If simple, returns the iid, URL, title, description, and basic state
+          schema:
+            type: string
+        - name: order_by
+          in: query
+          description: Return requests ordered by created_at, title or updated_at (default created_at)
+          schema:
+            type: string
+        - name: sort
+          in: query
+          description: Return requests sorted in asc or desc order (default desc)
+          schema:
+            type: string
+        - name: scope
+          in: query
+          description: Return merge requests for the given scope (created_by_me, assigned_to_me, all)
+          schema:
+            type: string
+        - name: author_id
+          in: query
+          description: Return merge requests created by the given user id
+          schema:
+            type: integer
+        - name: author_username
+          in: query
+          description: Return merge requests created by the given username
+          schema:
+            type: string
+        - name: assignee_id
+          in: query
+          description: Return merge requests assigned to the given user id
+          schema:
+            type: integer
+        - name: reviewer_username
+          in: query
+          description: Return merge requests with the given user as reviewer
+          schema:
+            type: string
+        - name: my_reaction_emoji
+          in: query
+          description: Return merge requests reacted to by the authenticated user with the given emoji
+          schema:
+            type: string
+        - name: search
+          in: query
+          description: Search merge requests against their title and description
+          schema:
+            type: string
+        - name: in
+          in: query
+          description: Modify the scope of the search attribute (title, description, or both)
+          schema:
+            type: string
+        - name: wip
+          in: query
+          description: Filter merge requests against their wip status (yes or no)
+          schema:
+            type: string
+        - name: updated_after
+          in: query
+          description: Return merge requests updated on or after the given time (ISO 8601)
+          schema:
+            type: string
+        - name: updated_before
+          in: query
+          description: Return merge requests updated on or before the given time (ISO 8601)
+          schema:
+            type: string
         - name: page
           in: query
           description: Page number
@@ -7250,6 +7345,61 @@ paths:
               - created_by_me
               - assigned_to_me
               - all
+        - name: author_username
+          in: query
+          description: Return issues created by the given username
+          schema:
+            type: string
+        - name: my_reaction_emoji
+          in: query
+          description: Return issues reacted to by the authenticated user with the given emoji
+          schema:
+            type: string
+        - name: order_by
+          in: query
+          description: Return issues ordered by the given field (default created_at)
+          schema:
+            type: string
+        - name: sort
+          in: query
+          description: Return issues sorted in asc or desc order (default desc)
+          schema:
+            type: string
+        - name: in
+          in: query
+          description: Modify the scope of the search attribute (title, description, or both)
+          schema:
+            type: string
+        - name: created_after
+          in: query
+          description: Return issues created on or after the given time (ISO 8601)
+          schema:
+            type: string
+        - name: created_before
+          in: query
+          description: Return issues created on or before the given time (ISO 8601)
+          schema:
+            type: string
+        - name: updated_after
+          in: query
+          description: Return issues updated on or after the given time (ISO 8601)
+          schema:
+            type: string
+        - name: updated_before
+          in: query
+          description: Return issues updated on or before the given time (ISO 8601)
+          schema:
+            type: string
+        - name: confidential
+          in: query
+          description: Filter confidential or public issues
+          schema:
+            type: boolean
+        - name: non_archived
+          in: query
+          description: Return issues only from non-archived projects
+          schema:
+            type: boolean
         - name: page
           in: query
           description: Page number
@@ -7304,6 +7454,91 @@ paths:
           description: Return issues updated on or after the given time (ISO 8601)
           schema:
             type: string
+        - name: with_labels_details
+          in: query
+          description: If true, response returns more details for each label
+          schema:
+            type: boolean
+        - name: milestone_id
+          in: query
+          description: Return issues assigned to milestones with the given timebox value (None, Any, Upcoming, Started)
+          schema:
+            type: string
+        - name: milestone
+          in: query
+          description: Return issues for a specific milestone title
+          schema:
+            type: string
+        - name: scope
+          in: query
+          description: Return issues for the given scope (created_by_me, assigned_to_me, all)
+          schema:
+            type: string
+        - name: author_id
+          in: query
+          description: Return issues created by the given user id
+          schema:
+            type: integer
+        - name: author_username
+          in: query
+          description: Return issues created by the given username
+          schema:
+            type: string
+        - name: assignee_id
+          in: query
+          description: Return issues assigned to the given user id
+          schema:
+            type: integer
+        - name: assignee_username
+          in: query
+          description: Return issues assigned to the given username
+          schema:
+            type: string
+        - name: my_reaction_emoji
+          in: query
+          description: Return issues reacted to by the authenticated user with the given emoji
+          schema:
+            type: string
+        - name: order_by
+          in: query
+          description: Return issues ordered by the given field (default created_at)
+          schema:
+            type: string
+        - name: sort
+          in: query
+          description: Return issues sorted in asc or desc order (default desc)
+          schema:
+            type: string
+        - name: search
+          in: query
+          description: Search issues against their title and description
+          schema:
+            type: string
+        - name: in
+          in: query
+          description: Modify the scope of the search attribute (title, description, or both)
+          schema:
+            type: string
+        - name: created_after
+          in: query
+          description: Return issues created on or after the given time (ISO 8601)
+          schema:
+            type: string
+        - name: created_before
+          in: query
+          description: Return issues created on or before the given time (ISO 8601)
+          schema:
+            type: string
+        - name: updated_before
+          in: query
+          description: Return issues updated on or before the given time (ISO 8601)
+          schema:
+            type: string
+        - name: confidential
+          in: query
+          description: Filter confidential or public issues
+          schema:
+            type: boolean
         - name: page
           in: query
           description: Page number
