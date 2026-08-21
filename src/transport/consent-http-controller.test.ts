@@ -234,15 +234,54 @@ describe('ConsentHttpController', () => {
 
       const noOrigin = makeRes();
       controller.renderApprovalForm(asResponse(noOrigin), gate, oauthInput(), 'fp-fa2');
-      expect(noOrigin.headers['Content-Security-Policy']).toContain("form-action 'self';");
+      expect(noOrigin.headers['Content-Security-Policy']).not.toContain('login.microsoftonline.com');
 
       const malformed = makeRes();
       controller.renderApprovalForm(asResponse(malformed), gate, oauthInput(), 'fp-fa3', 'not a url');
-      expect(malformed.headers['Content-Security-Policy']).toContain("form-action 'self';");
+      expect(malformed.headers['Content-Security-Policy']).not.toContain('login.microsoftonline.com');
 
       const insecure = makeRes();
       controller.renderApprovalForm(asResponse(insecure), gate, oauthInput(), 'fp-fa4', 'http://idp.example/authorize');
-      expect(insecure.headers['Content-Security-Policy']).toContain("form-action 'self';");
+      expect(insecure.headers['Content-Security-Policy']).not.toContain('idp.example');
+    });
+
+    it('extends form-action with the client redirect origin so the final loopback hop survives Chrome CSP', () => {
+      // Chrome checks form-action on EVERY hop of the form submission's
+      // redirect chain, including the last one back to the OAuth client
+      // (e.g. the VS Code loopback listener). Without the client origin the
+      // browser silently aborts the final navigation and the client never
+      // receives the authorization code.
+      const controller = new ConsentHttpController();
+      const idp = 'https://login.microsoftonline.com/tenant/oauth2/v2.0/authorize';
+
+      const loopback = makeRes();
+      controller.renderApprovalForm(asResponse(loopback), gate,
+        oauthInput({ redirect_uri: 'http://127.0.0.1:39721/' }), 'fp-cr1', idp);
+      expect(loopback.headers['Content-Security-Policy'])
+        .toContain("form-action 'self' https://login.microsoftonline.com http://127.0.0.1:39721");
+
+      const localhost = makeRes();
+      controller.renderApprovalForm(asResponse(localhost), gate,
+        oauthInput({ redirect_uri: 'http://localhost:8080/cb' }), 'fp-cr2', idp);
+      expect(localhost.headers['Content-Security-Policy'])
+        .toContain('http://localhost:8080');
+
+      const httpsClient = makeRes();
+      controller.renderApprovalForm(asResponse(httpsClient), gate,
+        oauthInput({ redirect_uri: 'https://client.example/cb' }), 'fp-cr3', idp);
+      expect(httpsClient.headers['Content-Security-Policy'])
+        .toContain('https://client.example');
+
+      const remoteHttp = makeRes();
+      controller.renderApprovalForm(asResponse(remoteHttp), gate,
+        oauthInput({ redirect_uri: 'http://evil.example/cb' }), 'fp-cr4', idp);
+      expect(remoteHttp.headers['Content-Security-Policy']).not.toContain('evil.example');
+
+      const garbage = makeRes();
+      controller.renderApprovalForm(asResponse(garbage), gate,
+        oauthInput({ redirect_uri: 'not a url' }), 'fp-cr5', idp);
+      expect(garbage.headers['Content-Security-Policy'])
+        .toContain("form-action 'self' https://login.microsoftonline.com;");
     });
 
     it('escapes the retry URL on the expired page', () => {

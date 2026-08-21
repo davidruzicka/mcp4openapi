@@ -55,6 +55,25 @@ function safeHttpsOrigin(urlValue: string | undefined): string | undefined {
   }
 }
 
+const LOOPBACK_HOSTNAMES = new Set(['127.0.0.1', 'localhost', '[::1]', '::1']);
+
+/**
+ * Origin of an OAuth client redirect_uri usable as a CSP form-action source:
+ * https always, http only for loopback hosts (RFC 8252 native-app listeners).
+ * Anything else (absent, malformed, remote http, custom schemes) is undefined.
+ */
+function safeClientRedirectOrigin(urlValue: unknown): string | undefined {
+  if (typeof urlValue !== 'string' || !urlValue) return undefined;
+  try {
+    const url = new URL(urlValue);
+    if (url.protocol === 'https:') return url.origin;
+    if (url.protocol === 'http:' && LOOPBACK_HOSTNAMES.has(url.hostname)) return url.origin;
+    return undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 // OAuth request fields the fingerprint and the re-submitted form are bound to.
 const OAUTH_REQUEST_FIELDS = [
   'response_type',
@@ -241,13 +260,19 @@ export class ConsentHttpController {
     // CSRF protection: the POST must reproduce the exact request fingerprint the
     // form was rendered for AND present the __Host- cookie set above
     // (consumeApproval checks both). No separate form token is needed.
-    // Chrome enforces form-action against the redirect chain of the form
-    // submission: the accepted POST answers 302 to the IdP, so a bare
-    // form-action 'self' blocks the consent flow at the submit button. Allow
-    // the upstream authorize origin (https only) alongside 'self'.
-    const idpOrigin = safeHttpsOrigin(upstreamAuthorizeUrl);
-    const csp = idpOrigin
-      ? CONSENT_FORM_CSP.replace("form-action 'self'", `form-action 'self' ${idpOrigin}`)
+    // Chrome enforces form-action against EVERY hop of the form submission's
+    // redirect chain: the accepted POST answers 302 to the IdP, and after the
+    // login callback the chain ends with a redirect back to the OAuth client
+    // (e.g. a VS Code loopback listener). A bare form-action 'self' silently
+    // aborts the chain in the browser, so allow the upstream authorize origin
+    // (https only) and the client redirect origin (https, or loopback http)
+    // alongside 'self'.
+    const extraOrigins = [
+      safeHttpsOrigin(upstreamAuthorizeUrl),
+      safeClientRedirectOrigin(input.redirect_uri),
+    ].filter((origin): origin is string => origin !== undefined);
+    const csp = extraOrigins.length > 0
+      ? CONSENT_FORM_CSP.replace("form-action 'self'", `form-action 'self' ${extraOrigins.join(' ')}`)
       : CONSENT_FORM_CSP;
     renderConsentPage(res, {
       status: HTTP_STATUS.OK,
