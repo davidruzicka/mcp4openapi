@@ -438,28 +438,48 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
    * Fetch OAuth Authorization Server Metadata (RFC 8414)
    */
   private async fetchOAuthMetadata(issuerUrl: string): Promise<{ authorization_endpoint: string; token_endpoint: string } | null> {
+    // An issuer may carry a path component (Entra: https://host/{tenant}/v2.0).
+    // Resolving the well-known suffix as an absolute URL would drop that path
+    // and query the host root, so build both standard locations explicitly:
+    // RFC 8414 inserts the well-known segment between host and issuer path;
+    // OIDC Discovery appends it to the issuer (the only form Entra serves).
+    let candidates: string[];
     try {
-      // Use URL constructor to properly handle trailing slashes
-      const metadataUrl = new URL(OAUTH_PATHS.WELL_KNOWN_AUTHORIZATION_SERVER, issuerUrl).toString();
-
-      await this.ssrfValidator.validate(metadataUrl, {
-        allowPrivateNetwork: process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK === 'true'
-      });
-
-      const response = await fetch(metadataUrl, {
-        headers: { 'Accept': 'application/json' },
-        signal: AbortSignal.timeout(5000), // 5 second timeout
-      });
-      
-      if (!response.ok) {
-        return null;
-      }
-      
-      return parseOAuthMetadataEndpoints(await response.json());
+      const base = new URL(issuerUrl);
+      const path = base.pathname.replace(/\/$/, '');
+      candidates = [
+        `${base.origin}${OAUTH_PATHS.WELL_KNOWN_AUTHORIZATION_SERVER}${path}`,
+        `${base.origin}${path}${OAUTH_PATHS.WELL_KNOWN_OPENID_CONFIGURATION}`,
+      ];
     } catch (error) {
       this.logger.debug('OAuth metadata fetch failed', { issuerUrl, error });
       return null;
     }
+
+    for (const metadataUrl of candidates) {
+      try {
+        await this.ssrfValidator.validate(metadataUrl, {
+          allowPrivateNetwork: process.env.MCP4_SSRF_ALLOW_PRIVATE_NETWORK === 'true'
+        });
+
+        const response = await fetch(metadataUrl, {
+          headers: { 'Accept': 'application/json' },
+          signal: AbortSignal.timeout(5000), // 5 second timeout
+        });
+
+        if (!response.ok) {
+          continue;
+        }
+
+        const endpoints = parseOAuthMetadataEndpoints(await response.json());
+        if (endpoints) {
+          return endpoints;
+        }
+      } catch (error) {
+        this.logger.debug('OAuth metadata fetch failed', { issuerUrl, metadataUrl, error });
+      }
+    }
+    return null;
   }
 
   /**
