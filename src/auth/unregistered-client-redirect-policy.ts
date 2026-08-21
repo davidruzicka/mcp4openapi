@@ -1,6 +1,6 @@
 import type { Logger } from '../core/logger.js';
 
-const DANGEROUS_REDIRECT_SCHEMES = new Set(['javascript:', 'data:', 'vbscript:', 'file:', 'blob:', 'about:']);
+export const DANGEROUS_REDIRECT_SCHEMES = new Set(['javascript:', 'data:', 'vbscript:', 'file:', 'blob:', 'about:']);
 const SCHEME_ONLY_RULE = /^([a-zA-Z][a-zA-Z0-9+.-]*):\/\/$/;
 const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '::1']);
 

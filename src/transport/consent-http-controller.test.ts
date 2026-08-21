@@ -272,14 +272,23 @@ describe('ConsentHttpController', () => {
       expect(httpsClient.headers['Content-Security-Policy'])
         .toContain('https://client.example');
 
-      const remoteHttp = makeRes();
-      controller.renderApprovalForm(asResponse(remoteHttp), gate,
-        oauthInput({ redirect_uri: 'http://evil.example/cb' }), 'fp-cr4', idp);
-      expect(remoteHttp.headers['Content-Security-Policy']).not.toContain('evil.example');
+      // Custom native-app schemes (Cursor, VS Code protocol handlers) become a
+      // CSP scheme source. The redirect policy itself is enforced by the OAuth
+      // layer before the form renders; this only translates the validated value.
+      const customScheme = makeRes();
+      controller.renderApprovalForm(asResponse(customScheme), gate,
+        oauthInput({ redirect_uri: 'cursor://anysphere.cursor-mcp/oauth/callback' }), 'fp-cr4', idp);
+      expect(customScheme.headers['Content-Security-Policy'])
+        .toContain("form-action 'self' https://login.microsoftonline.com cursor:;");
+
+      const dangerous = makeRes();
+      controller.renderApprovalForm(asResponse(dangerous), gate,
+        oauthInput({ redirect_uri: 'javascript:alert(1)' }), 'fp-cr5', idp);
+      expect(dangerous.headers['Content-Security-Policy']).not.toContain('javascript');
 
       const garbage = makeRes();
       controller.renderApprovalForm(asResponse(garbage), gate,
-        oauthInput({ redirect_uri: 'not a url' }), 'fp-cr5', idp);
+        oauthInput({ redirect_uri: 'not a url' }), 'fp-cr6', idp);
       expect(garbage.headers['Content-Security-Policy'])
         .toContain("form-action 'self' https://login.microsoftonline.com;");
     });

@@ -18,6 +18,7 @@ import { HTTP_STATUS } from '../core/constants.js';
 import { ConfigurationError } from '../core/errors.js';
 import { escapeHtmlSafe } from '../validation/validation-utils.js';
 import { CONSENT_BODY_PLACEHOLDER } from '../profile/consent-gate-validator.js';
+import { DANGEROUS_REDIRECT_SCHEMES } from '../auth/unregistered-client-redirect-policy.js';
 
 /** Positive-integer env override with a default; an invalid value fails startup. */
 function envInt(name: string, fallback: number): number {
@@ -55,20 +56,22 @@ function safeHttpsOrigin(urlValue: string | undefined): string | undefined {
   }
 }
 
-const LOOPBACK_HOSTNAMES = new Set(['127.0.0.1', 'localhost', '[::1]', '::1']);
-
 /**
- * Origin of an OAuth client redirect_uri usable as a CSP form-action source:
- * https always, http only for loopback hosts (RFC 8252 native-app listeners).
- * Anything else (absent, malformed, remote http, custom schemes) is undefined.
+ * Translate an ALREADY-VALIDATED OAuth client redirect_uri into a CSP
+ * form-action source expression. The redirect policy itself lives in the
+ * OAuth layer (client registration / the unregistered-client allowlist) and
+ * runs before the approval form renders; this function only maps the value
+ * to CSP syntax: http(s) URLs become their origin, custom native-app schemes
+ * (cursor://, vscode://, ...) become a scheme source. Dangerous schemes are
+ * never reflected, as a cheap second line behind the OAuth-layer validation.
  */
-function safeClientRedirectOrigin(urlValue: unknown): string | undefined {
+function clientRedirectFormActionSource(urlValue: unknown): string | undefined {
   if (typeof urlValue !== 'string' || !urlValue) return undefined;
   try {
     const url = new URL(urlValue);
-    if (url.protocol === 'https:') return url.origin;
-    if (url.protocol === 'http:' && LOOPBACK_HOSTNAMES.has(url.hostname)) return url.origin;
-    return undefined;
+    if (DANGEROUS_REDIRECT_SCHEMES.has(url.protocol)) return undefined;
+    if (url.protocol === 'http:' || url.protocol === 'https:') return url.origin;
+    return url.protocol;
   } catch {
     return undefined;
   }
@@ -269,7 +272,7 @@ export class ConsentHttpController {
     // alongside 'self'.
     const extraOrigins = [
       safeHttpsOrigin(upstreamAuthorizeUrl),
-      safeClientRedirectOrigin(input.redirect_uri),
+      clientRedirectFormActionSource(input.redirect_uri),
     ].filter((origin): origin is string => origin !== undefined);
     const csp = extraOrigins.length > 0
       ? CONSENT_FORM_CSP.replace("form-action 'self'", `form-action 'self' ${extraOrigins.join(' ')}`)
