@@ -2,7 +2,7 @@
  * Unit tests for the browser-facing consent flow controller.
  *
  * Uses a minimal Express-Response double, so page rendering, fingerprint and
- * cookie binding, replay/expiry handling, and the pending-approval bound are
+ * cookie binding, replay/expiry handling, and the consumed-approval bound are
  * all testable without supertest or a listening server.
  */
 
@@ -12,7 +12,7 @@ import {
   ConsentHttpController,
   CONSENT_APPROVAL_TTL_MS,
   CONSENT_COOKIE_NAME,
-  PENDING_CONSENT_MAX,
+  CONSUMED_APPROVAL_MAX,
 } from './consent-http-controller.js';
 import type { ConsentGateConfig } from '../types/profile.js';
 
@@ -73,6 +73,12 @@ const cookieFromRender = (res: MockResponse): string => {
   return setCookie.split(';')[0];
 };
 
+const tokenFromRender = (res: MockResponse): string => {
+  const match = res.body.match(/name="consent_token" value="([^"]+)"/);
+  expect(match).not.toBeNull();
+  return match![1];
+};
+
 describe('ConsentHttpController', () => {
   describe('requestFingerprint', () => {
     it('is stable for identical input and distinct per field value and profile', () => {
@@ -95,77 +101,144 @@ describe('ConsentHttpController', () => {
     });
   });
 
-  describe('approval lifecycle', () => {
-    it('accepts a submission bound to the same fingerprint and browser cookie', () => {
-      const controller = new ConsentHttpController();
+  describe('approval lifecycle (stateless HMAC token)', () => {
+    const key = Buffer.alloc(32, 7);
+
+    const renderAndCapture = (controller: ConsentHttpController) => {
       const fingerprint = controller.requestFingerprint('p1', oauthInput());
       const res = makeRes();
       controller.renderApprovalForm(asResponse(res), gate, oauthInput(), fingerprint);
+      return { fingerprint, cookie: cookieFromRender(res), token: tokenFromRender(res) };
+    };
 
-      expect(controller.consumeApproval(fingerprint, cookieFromRender(res))).toBe(true);
+    it('accepts a submission bound to the same fingerprint, browser cookie, and form token', () => {
+      const controller = new ConsentHttpController();
+      const { fingerprint, cookie, token } = renderAndCapture(controller);
+
+      expect(controller.consumeApproval(fingerprint, cookie, token)).toBe(true);
     });
 
-    it('rejects a replayed approval (one-time consumption)', () => {
-      const controller = new ConsentHttpController();
-      const fingerprint = controller.requestFingerprint('p1', oauthInput());
-      const res = makeRes();
-      controller.renderApprovalForm(asResponse(res), gate, oauthInput(), fingerprint);
-      const cookie = cookieFromRender(res);
+    it('survives an instance replacement with the same key (gateway restart, other replica)', () => {
+      // The Friday failure mode: the form is rendered by one pod, a deploy
+      // replaces it, and the POST lands on a fresh pod. With the approval
+      // carried in a signed form token, the fresh instance must accept it.
+      const before = new ConsentHttpController(key);
+      const { fingerprint, cookie, token } = renderAndCapture(before);
 
-      expect(controller.consumeApproval(fingerprint, cookie)).toBe(true);
-      expect(controller.consumeApproval(fingerprint, cookie)).toBe(false);
+      const after = new ConsentHttpController(key);
+      expect(after.consumeApproval(fingerprint, cookie, token)).toBe(true);
+    });
+
+    it('rejects a token issued under a different key', () => {
+      const before = new ConsentHttpController(key);
+      const { fingerprint, cookie, token } = renderAndCapture(before);
+
+      const other = new ConsentHttpController(Buffer.alloc(32, 9));
+      expect(other.consumeApproval(fingerprint, cookie, token)).toBe(false);
+    });
+
+    it('rejects a tampered, malformed, or missing token', () => {
+      const controller = new ConsentHttpController();
+      const { fingerprint, cookie, token } = renderAndCapture(controller);
+      const [version, payload, sig] = token.split('.');
+
+      expect(controller.consumeApproval(fingerprint, cookie, `${version}.${payload}x.${sig}`)).toBe(false);
+      expect(controller.consumeApproval(fingerprint, cookie, `${version}.${payload}.${sig.slice(0, -2)}aa`)).toBe(false);
+      expect(controller.consumeApproval(fingerprint, cookie, 'not-a-token')).toBe(false);
+      expect(controller.consumeApproval(fingerprint, cookie, undefined)).toBe(false);
+      expect(controller.consumeApproval(fingerprint, cookie, 42 as unknown as string)).toBe(false);
+    });
+
+    it('rejects a replayed approval within one instance (one-time consumption)', () => {
+      const controller = new ConsentHttpController();
+      const { fingerprint, cookie, token } = renderAndCapture(controller);
+
+      expect(controller.consumeApproval(fingerprint, cookie, token)).toBe(true);
+      expect(controller.consumeApproval(fingerprint, cookie, token)).toBe(false);
     });
 
     it('rejects a submission for a different fingerprint or with a wrong/missing cookie', () => {
       const controller = new ConsentHttpController();
-      const fingerprint = controller.requestFingerprint('p1', oauthInput());
-      const res = makeRes();
-      controller.renderApprovalForm(asResponse(res), gate, oauthInput(), fingerprint);
+      const { fingerprint, cookie, token } = renderAndCapture(controller);
 
-      expect(controller.consumeApproval('other-fingerprint', cookieFromRender(res))).toBe(false);
-      // The pending entry for `other-fingerprint` does not exist, the real one is untouched:
-      expect(controller.consumeApproval(fingerprint, `${CONSENT_COOKIE_NAME}=wrong-browser`)).toBe(false);
-
-      const res2 = makeRes();
-      controller.renderApprovalForm(asResponse(res2), gate, oauthInput(), fingerprint);
-      expect(controller.consumeApproval(fingerprint, undefined)).toBe(false);
+      expect(controller.consumeApproval('other-fingerprint', cookie, token)).toBe(false);
+      expect(controller.consumeApproval(fingerprint, `${CONSENT_COOKIE_NAME}=wrong-browser`, token)).toBe(false);
+      expect(controller.consumeApproval(fingerprint, undefined, token)).toBe(false);
+      // None of the rejections consumed the approval:
+      expect(controller.consumeApproval(fingerprint, cookie, token)).toBe(true);
     });
 
     it('rejects an approval after its TTL expired', () => {
       vi.useFakeTimers();
       try {
         const controller = new ConsentHttpController();
-        const fingerprint = controller.requestFingerprint('p1', oauthInput());
-        const res = makeRes();
-        controller.renderApprovalForm(asResponse(res), gate, oauthInput(), fingerprint);
-        const cookie = cookieFromRender(res);
+        const { fingerprint, cookie, token } = renderAndCapture(controller);
 
         vi.setSystemTime(Date.now() + CONSENT_APPROVAL_TTL_MS + 1000);
-        expect(controller.consumeApproval(fingerprint, cookie)).toBe(false);
+        expect(controller.consumeApproval(fingerprint, cookie, token)).toBe(false);
       } finally {
         vi.useRealTimers();
       }
     });
 
-    it('evicts the oldest pending approval at PENDING_CONSENT_MAX instead of growing unbounded', () => {
+    it('bounds the consumed-approval replay guard at CONSUMED_APPROVAL_MAX', () => {
       const controller = new ConsentHttpController();
-      const pending = (controller as unknown as { pendingApprovals: Map<string, unknown> }).pendingApprovals;
+      const consumed = (controller as unknown as { consumedApprovals: Map<string, number> }).consumedApprovals;
       const farFuture = Date.now() + CONSENT_APPROVAL_TTL_MS;
-      for (let i = 0; i < PENDING_CONSENT_MAX; i += 1) {
-        pending.set(`filler-${i}`, { browserId: 'b', expiresAt: farFuture });
+      for (let i = 0; i < CONSUMED_APPROVAL_MAX; i += 1) {
+        consumed.set(`filler-${i}`, farFuture);
       }
 
-      const fingerprint = controller.requestFingerprint('p1', oauthInput());
-      controller.renderApprovalForm(asResponse(makeRes()), gate, oauthInput(), fingerprint);
+      const { fingerprint, cookie, token } = renderAndCapture(controller);
+      expect(controller.consumeApproval(fingerprint, cookie, token)).toBe(true);
+      expect(consumed.size).toBe(CONSUMED_APPROVAL_MAX);
+      expect(consumed.has('filler-0')).toBe(false);
+    });
 
-      expect(controller.pendingApprovalCount).toBe(PENDING_CONSENT_MAX);
-      expect(pending.has('filler-0')).toBe(false);
-      expect(pending.has(fingerprint)).toBe(true);
+    it('does not disclose the cookie value in the token: a cookie forged from the decoded payload is rejected', () => {
+      const controller = new ConsentHttpController();
+      const { fingerprint, token } = renderAndCapture(controller);
 
-      // Re-rendering the same request reuses its slot and evicts nothing else.
-      controller.renderApprovalForm(asResponse(makeRes()), gate, oauthInput(), fingerprint);
-      expect(controller.pendingApprovalCount).toBe(PENDING_CONSENT_MAX);
-      expect(pending.has('filler-1')).toBe(true);
+      // An attacker who obtained the rendered HTML can decode the payload,
+      // but `b` is a digest of the browser id, not the id itself.
+      const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString('utf8'));
+      expect(typeof payload.b).toBe('string');
+      const forgedCookie = `${CONSENT_COOKIE_NAME}=${payload.b}`;
+      expect(controller.consumeApproval(fingerprint, forgedCookie, token)).toBe(false);
+    });
+
+    it('accepts a cross-instance replay of a consumed token (documented best-effort contract)', () => {
+      // One-time consumption is exact only within an instance. A token
+      // consumed on replica A is still accepted by replica B within its TTL:
+      // the replay stays bound to one browser, one OAuth request, and the
+      // short TTL, so it can only re-run that client's own authorization.
+      // See SECURITY.md ("Cross-instance approval replay").
+      const a = new ConsentHttpController(key);
+      const b = new ConsentHttpController(key);
+      const { fingerprint, cookie, token } = renderAndCapture(a);
+
+      expect(a.consumeApproval(fingerprint, cookie, token)).toBe(true);
+      expect(a.consumeApproval(fingerprint, cookie, token)).toBe(false);
+      expect(b.consumeApproval(fingerprint, cookie, token)).toBe(true);
+    });
+
+    it('prunes expired signatures from the consumed-approval guard on the next consume', () => {
+      vi.useFakeTimers();
+      try {
+        const controller = new ConsentHttpController();
+        const consumed = (controller as unknown as { consumedApprovals: Map<string, number> }).consumedApprovals;
+        const first = renderAndCapture(controller);
+        expect(controller.consumeApproval(first.fingerprint, first.cookie, first.token)).toBe(true);
+        expect(consumed.size).toBe(1);
+
+        vi.setSystemTime(Date.now() + CONSENT_APPROVAL_TTL_MS + 1000);
+        const second = renderAndCapture(controller);
+        expect(controller.consumeApproval(second.fingerprint, second.cookie, second.token)).toBe(true);
+        // The first signature expired with its token and was swept.
+        expect(consumed.size).toBe(1);
+      } finally {
+        vi.useRealTimers();
+      }
     });
   });
 
@@ -190,8 +263,9 @@ describe('ConsentHttpController', () => {
       expect(res.body).not.toContain('<script>');
       expect(res.body).toContain('&lt;script&gt;');
       expect(res.body).not.toContain('"onmouseover=');
-      // No decorative CSRF token: protection is the fingerprint + __Host- cookie.
-      expect(res.body).not.toContain('consent_token');
+      // The signed approval token rides in the form; it must be present and
+      // must not break out of its attribute (it is base64url + dots only).
+      expect(res.body).toMatch(/name="consent_token" value="v1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+"/);
     });
 
     it('sets no-store and a restrictive CSP on every consent page, form-action only on the form', () => {

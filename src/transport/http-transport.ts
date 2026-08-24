@@ -218,8 +218,8 @@ export class HttpTransport {
   private readonly enterpriseRuntimeConfig: Required<EnterpriseAuthorizationRuntimeConfig>;
   private readonly inboundAuthTokenStore: InboundAuthTokenStore;
   private readonly enterpriseJwksCache: JwksCache;
-  /** Browser-facing consent flow (pages, pending approvals, fingerprint/cookie binding). */
-  private readonly consentController = new ConsentHttpController();
+  /** Browser-facing consent flow (pages, stateless approval tokens, fingerprint/cookie binding). */
+  private readonly consentController: ConsentHttpController;
   private readonly enterpriseReplayStore: EnterpriseReplayStore;
   /**
    * Bounded rotation state for client-facing refresh tokens (OAuth 2.1 §4.3.1).
@@ -264,6 +264,10 @@ export class HttpTransport {
         );
       }
     }
+    // Keyed with the shared token key so consent approvals (signed form
+    // tokens) survive restarts and work across replicas; without a key the
+    // controller falls back to per-instance approvals.
+    this.consentController = new ConsentHttpController(this.config.tokenKey);
     this.ssrfValidator = new SSRFValidator(logger);
     this.rawTenantConfig = loadRawTenantsConfigFromEnv();
     this.enterpriseRuntimeConfig = this.resolveEnterpriseRuntimeConfig(config.enterpriseAuthorizationRuntimeConfig);
@@ -2198,7 +2202,7 @@ export class HttpTransport {
         }
         if (
           input.consent_accept !== 'yes' ||
-          !this.consentController.consumeApproval(fingerprint, req.headers.cookie)
+          !this.consentController.consumeApproval(fingerprint, req.headers.cookie, input.consent_token)
         ) {
           // Send the user back to a usable starting point instead of a dead end:
           // behind a non-sticky load balancer the GET and POST can land on
