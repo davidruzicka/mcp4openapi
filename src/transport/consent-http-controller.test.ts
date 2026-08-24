@@ -2,7 +2,7 @@
  * Unit tests for the browser-facing consent flow controller.
  *
  * Uses a minimal Express-Response double, so page rendering, fingerprint and
- * cookie binding, replay/expiry handling, and the pending-approval bound are
+ * cookie binding, replay/expiry handling, and the consumed-approval bound are
  * all testable without supertest or a listening server.
  */
 
@@ -12,7 +12,7 @@ import {
   ConsentHttpController,
   CONSENT_APPROVAL_TTL_MS,
   CONSENT_COOKIE_NAME,
-  PENDING_CONSENT_MAX,
+  CONSUMED_APPROVAL_MAX,
 } from './consent-http-controller.js';
 import type { ConsentGateConfig } from '../types/profile.js';
 
@@ -181,18 +181,64 @@ describe('ConsentHttpController', () => {
       }
     });
 
-    it('bounds the consumed-approval replay guard at PENDING_CONSENT_MAX', () => {
+    it('bounds the consumed-approval replay guard at CONSUMED_APPROVAL_MAX', () => {
       const controller = new ConsentHttpController();
       const consumed = (controller as unknown as { consumedApprovals: Map<string, number> }).consumedApprovals;
       const farFuture = Date.now() + CONSENT_APPROVAL_TTL_MS;
-      for (let i = 0; i < PENDING_CONSENT_MAX; i += 1) {
+      for (let i = 0; i < CONSUMED_APPROVAL_MAX; i += 1) {
         consumed.set(`filler-${i}`, farFuture);
       }
 
       const { fingerprint, cookie, token } = renderAndCapture(controller);
       expect(controller.consumeApproval(fingerprint, cookie, token)).toBe(true);
-      expect(consumed.size).toBe(PENDING_CONSENT_MAX);
+      expect(consumed.size).toBe(CONSUMED_APPROVAL_MAX);
       expect(consumed.has('filler-0')).toBe(false);
+    });
+
+    it('does not disclose the cookie value in the token: a cookie forged from the decoded payload is rejected', () => {
+      const controller = new ConsentHttpController();
+      const { fingerprint, token } = renderAndCapture(controller);
+
+      // An attacker who obtained the rendered HTML can decode the payload,
+      // but `b` is a digest of the browser id, not the id itself.
+      const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString('utf8'));
+      expect(typeof payload.b).toBe('string');
+      const forgedCookie = `${CONSENT_COOKIE_NAME}=${payload.b}`;
+      expect(controller.consumeApproval(fingerprint, forgedCookie, token)).toBe(false);
+    });
+
+    it('accepts a cross-instance replay of a consumed token (documented best-effort contract)', () => {
+      // One-time consumption is exact only within an instance. A token
+      // consumed on replica A is still accepted by replica B within its TTL:
+      // the replay stays bound to one browser, one OAuth request, and the
+      // short TTL, so it can only re-run that client's own authorization.
+      // See SECURITY.md ("Cross-instance approval replay").
+      const a = new ConsentHttpController(key);
+      const b = new ConsentHttpController(key);
+      const { fingerprint, cookie, token } = renderAndCapture(a);
+
+      expect(a.consumeApproval(fingerprint, cookie, token)).toBe(true);
+      expect(a.consumeApproval(fingerprint, cookie, token)).toBe(false);
+      expect(b.consumeApproval(fingerprint, cookie, token)).toBe(true);
+    });
+
+    it('prunes expired signatures from the consumed-approval guard on the next consume', () => {
+      vi.useFakeTimers();
+      try {
+        const controller = new ConsentHttpController();
+        const consumed = (controller as unknown as { consumedApprovals: Map<string, number> }).consumedApprovals;
+        const first = renderAndCapture(controller);
+        expect(controller.consumeApproval(first.fingerprint, first.cookie, first.token)).toBe(true);
+        expect(consumed.size).toBe(1);
+
+        vi.setSystemTime(Date.now() + CONSENT_APPROVAL_TTL_MS + 1000);
+        const second = renderAndCapture(controller);
+        expect(controller.consumeApproval(second.fingerprint, second.cookie, second.token)).toBe(true);
+        // The first signature expired with its token and was swept.
+        expect(consumed.size).toBe(1);
+      } finally {
+        vi.useRealTimers();
+      }
     });
   });
 

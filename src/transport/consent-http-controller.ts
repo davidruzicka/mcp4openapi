@@ -35,7 +35,7 @@ function envInt(name: string, fallback: number): number {
 // Tunable via MCP4_CONSENT_APPROVAL_TTL_MS for load shaping; defaults preserved.
 export const CONSENT_APPROVAL_TTL_MS = envInt('MCP4_CONSENT_APPROVAL_TTL_MS', 5 * 60 * 1000);
 // Upper bound on remembered consumed-approval signatures (same-instance replay guard).
-export const PENDING_CONSENT_MAX = envInt('MCP4_CONSENT_PENDING_MAX', 10000);
+export const CONSUMED_APPROVAL_MAX = envInt('MCP4_CONSENT_CONSUMED_MAX', 10000);
 // `__Host-` prefix: browsers only accept it over HTTPS, with Path=/ and no Domain.
 export const CONSENT_COOKIE_NAME = '__Host-mcp4_consent';
 
@@ -101,6 +101,18 @@ function parseCookieValue(header: string | undefined, name: string): string | un
     return part.slice(separator + 1).trim();
   }
   return undefined;
+}
+
+/**
+ * Digest of the browser id as embedded in the approval token payload. The
+ * token must not disclose the cookie value: anyone who sees the rendered
+ * form HTML (response-body logs, a saved page) would otherwise be able to
+ * forge the Cookie header and the cookie would stop being an independent
+ * factor. Only the digest travels; consumption hashes the presented cookie
+ * and compares digests.
+ */
+function browserIdDigest(browserId: string): string {
+  return crypto.createHash('sha256').update(browserId, 'utf8').digest('base64url');
 }
 
 /**
@@ -199,8 +211,9 @@ export class ConsentHttpController {
   }
 
   private issueApprovalToken(fingerprint: string, browserId: string, expiresAt: number): string {
+    // `b` is a digest, never the raw browser id (see browserIdDigest).
     const payloadB64 = Buffer
-      .from(JSON.stringify({ f: fingerprint, b: browserId, e: expiresAt }))
+      .from(JSON.stringify({ f: fingerprint, b: browserIdDigest(browserId), e: expiresAt }))
       .toString('base64url');
     return `${APPROVAL_TOKEN_VERSION}.${payloadB64}.${this.signApprovalPayload(payloadB64)}`;
   }
@@ -314,7 +327,8 @@ export class ConsentHttpController {
    * Consume an approval token submitted with the acknowledgement form.
    *
    * Expiry-bound and bound to BOTH the complete OAuth request (fingerprint)
-   * and the browser that was shown the rules (cookie); the HMAC signature
+   * and the browser that was shown the rules (cookie, compared by digest so
+   * the token itself never discloses the cookie value); the HMAC signature
    * proves the form was rendered by a gateway holding the shared key, so the
    * approval survives restarts and works across replicas. One-time
    * consumption is enforced exactly within this instance (see
@@ -335,18 +349,20 @@ export class ConsentHttpController {
       return false;
     }
     if (typeof payload.f !== 'string' || typeof payload.b !== 'string' || typeof payload.e !== 'number') return false;
-    if (payload.e <= Date.now()) return false;
+    const now = Date.now();
+    if (payload.e <= now) return false;
     if (payload.f !== fingerprint) return false;
     const presented = parseCookieValue(cookieHeader, CONSENT_COOKIE_NAME);
-    if (!presented || !timingSafeEqualString(presented, payload.b)) return false;
+    if (!presented || !timingSafeEqualString(browserIdDigest(presented), payload.b)) return false;
 
     for (const [sig, expiresAt] of this.consumedApprovals) {
-      if (expiresAt <= Date.now()) this.consumedApprovals.delete(sig);
+      if (expiresAt <= now) this.consumedApprovals.delete(sig);
     }
     if (this.consumedApprovals.has(signature)) return false;
     // Bounded: overflow evicts the oldest consumed marker; its token is
     // already past its one legitimate use and still TTL/cookie-bound.
-    if (this.consumedApprovals.size >= PENDING_CONSENT_MAX) {
+    // Residual risk documented in SECURITY.md ("Consumed-approval eviction").
+    if (this.consumedApprovals.size >= CONSUMED_APPROVAL_MAX) {
       const oldest = this.consumedApprovals.keys().next().value;
       if (oldest !== undefined) this.consumedApprovals.delete(oldest);
     }
