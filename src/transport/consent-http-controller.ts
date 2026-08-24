@@ -34,7 +34,7 @@ function envInt(name: string, fallback: number): number {
 // Lifetime of a rendered consent approval and of its browser-binding cookie.
 // Tunable via MCP4_CONSENT_APPROVAL_TTL_MS for load shaping; defaults preserved.
 export const CONSENT_APPROVAL_TTL_MS = envInt('MCP4_CONSENT_APPROVAL_TTL_MS', 5 * 60 * 1000);
-// Upper bound on concurrently pending consent approvals (distinct OAuth request fingerprints).
+// Upper bound on remembered consumed-approval signatures (same-instance replay guard).
 export const PENDING_CONSENT_MAX = envInt('MCP4_CONSENT_PENDING_MAX', 10000);
 // `__Host-` prefix: browsers only accept it over HTTPS, with Path=/ and no Domain.
 export const CONSENT_COOKIE_NAME = '__Host-mcp4_consent';
@@ -88,18 +88,8 @@ const OAUTH_REQUEST_FIELDS = [
   'code_challenge_method',
 ] as const;
 
-/**
- * Pending browser approval, keyed by the OAuth request fingerprint.
- *
- * Fingerprint keying is self-limiting: repeated GETs for the same OAuth request
- * overwrite one entry instead of each adding a new one, so unauthenticated
- * traffic cannot evict legitimate pending approvals from a global FIFO.
- */
-interface PendingConsentApproval {
-  /** Random id echoed in the __Host- cookie; ties the GET and the POST to one user agent. */
-  browserId: string;
-  expiresAt: number;
-}
+// Version prefix of the stateless approval token embedded in the form.
+const APPROVAL_TOKEN_VERSION = 'v1';
 
 /** Extract one cookie value from a raw Cookie header. Returns undefined when absent. */
 function parseCookieValue(header: string | undefined, name: string): string | undefined {
@@ -179,11 +169,40 @@ function rulesSummary(gate: ConsentGateConfig): string {
 }
 
 export class ConsentHttpController {
-  private readonly pendingApprovals = new Map<string, PendingConsentApproval>();
+  /** HMAC key for stateless approval tokens; domain-separated from token envelopes. */
+  private readonly approvalHmacKey: Buffer;
 
-  /** Number of pending approvals; exposed for tests and observability. */
-  get pendingApprovalCount(): number {
-    return this.pendingApprovals.size;
+  /**
+   * Signatures of approvals already consumed by THIS instance (value =
+   * payload expiry, for pruning). One-time consumption is exact within an
+   * instance and best effort across restarts/replicas: a token that outlives
+   * its issuing pod stays bound to one browser (cookie), one OAuth request
+   * (fingerprint), and a short TTL, so a cross-instance replay only re-runs
+   * the same client's own authorization.
+   */
+  private readonly consumedApprovals = new Map<string, number>();
+
+  constructor(approvalKey?: Buffer) {
+    // Derive a purpose-bound subkey so consent approvals can never be
+    // confused with token envelopes built from the same MCP4_OAUTH_KEY.
+    // Without shared key material, fall back to a per-instance random key:
+    // approvals then only survive within this instance, mirroring the
+    // pre-existing MCP4_OAUTH_KEY warning about restart resilience.
+    this.approvalHmacKey = crypto
+      .createHmac('sha256', approvalKey ?? crypto.randomBytes(32))
+      .update('mcp4openapi:consent-approval:v1')
+      .digest();
+  }
+
+  private signApprovalPayload(payloadB64: string): string {
+    return crypto.createHmac('sha256', this.approvalHmacKey).update(payloadB64).digest('base64url');
+  }
+
+  private issueApprovalToken(fingerprint: string, browserId: string, expiresAt: number): string {
+    const payloadB64 = Buffer
+      .from(JSON.stringify({ f: fingerprint, b: browserId, e: expiresAt }))
+      .toString('base64url');
+    return `${APPROVAL_TOKEN_VERSION}.${payloadB64}.${this.signApprovalPayload(payloadB64)}`;
   }
 
   /** Digest binding an approval to the complete OAuth request and profile. */
@@ -215,12 +234,13 @@ export class ConsentHttpController {
   /**
    * Render the rules acknowledgement form.
    *
-   * The pending entry is keyed by the request fingerprint, so a flood of
-   * unauthenticated GETs for distinct OAuth requests is bounded by expiry (and
-   * the global cap) rather than by evicting other users' pending approvals. A
-   * random browser id is set as a `__Host-` cookie and must come back with the
-   * POST, so the acknowledgement and the submission demonstrably come from one
-   * user agent.
+   * The approval is carried STATELESSLY: a signed token (fingerprint,
+   * browser id, expiry) is embedded as a hidden form field, so the POST can
+   * be consumed by any replica and survives a gateway restart between the
+   * form render and the click. A random browser id is set as a `__Host-`
+   * cookie and must come back with the POST, so the acknowledgement and the
+   * submission demonstrably come from one user agent. Unauthenticated GET
+   * floods allocate no server state at all.
    */
   renderApprovalForm(
     res: Response,
@@ -229,21 +249,8 @@ export class ConsentHttpController {
     fingerprint: string,
     upstreamAuthorizeUrl?: string,
   ): void {
-    const now = Date.now();
-    for (const [key, pending] of this.pendingApprovals) {
-      if (pending.expiresAt <= now) this.pendingApprovals.delete(key);
-    }
-    // Bounded: overflow evicts the oldest pending approval, whose user simply
-    // restarts the consent flow. Mirrors RECONSENT_INVALIDATION_MAX.
-    if (this.pendingApprovals.size >= PENDING_CONSENT_MAX && !this.pendingApprovals.has(fingerprint)) {
-      const oldest = this.pendingApprovals.keys().next().value;
-      if (oldest !== undefined) this.pendingApprovals.delete(oldest);
-    }
     const browserId = crypto.randomBytes(32).toString('base64url');
-    this.pendingApprovals.set(fingerprint, {
-      browserId,
-      expiresAt: now + CONSENT_APPROVAL_TTL_MS,
-    });
+    const approvalToken = this.issueApprovalToken(fingerprint, browserId, Date.now() + CONSENT_APPROVAL_TTL_MS);
     res.setHeader(
       'Set-Cookie',
       `${CONSENT_COOKIE_NAME}=${browserId}; Path=/; Max-Age=${CONSENT_APPROVAL_TTL_MS / 1000}; HttpOnly; Secure; SameSite=Lax`,
@@ -252,7 +259,9 @@ export class ConsentHttpController {
     const hiddenFields = OAUTH_REQUEST_FIELDS
       .filter((field) => typeof input[field] === 'string')
       .map((field) => `<input type="hidden" name="${field}" value="${escapeHtmlSafe(input[field] as string)}">`)
-      .join('');
+      .join('')
+      // consent_token is deliberately NOT part of the fingerprint fields.
+      + `<input type="hidden" name="consent_token" value="${escapeHtmlSafe(approvalToken)}">`;
     // Consent-meaningful texts: part of the rules hash (consent-rules-hash.ts),
     // so editing them invalidates existing grants. `{{rules_version}}` inside
     // the accept label is substituted after escaping.
@@ -302,20 +311,46 @@ export class ConsentHttpController {
   }
 
   /**
-   * Consume a pending approval.
+   * Consume an approval token submitted with the acknowledgement form.
    *
-   * One-time, expiry-bound, and bound to BOTH the complete OAuth request
-   * (fingerprint) and the browser that was shown the rules (cookie). The
-   * acknowledgement proves neither human presence nor who the user is: identity
-   * comes from the OIDC login that follows.
+   * Expiry-bound and bound to BOTH the complete OAuth request (fingerprint)
+   * and the browser that was shown the rules (cookie); the HMAC signature
+   * proves the form was rendered by a gateway holding the shared key, so the
+   * approval survives restarts and works across replicas. One-time
+   * consumption is enforced exactly within this instance (see
+   * `consumedApprovals`). The acknowledgement proves neither human presence
+   * nor who the user is: identity comes from the OIDC login that follows.
    */
-  consumeApproval(fingerprint: string, cookieHeader: string | undefined): boolean {
-    const pending = this.pendingApprovals.get(fingerprint);
-    if (!pending) return false;
-    this.pendingApprovals.delete(fingerprint);
-    if (pending.expiresAt <= Date.now()) return false;
+  consumeApproval(fingerprint: string, cookieHeader: string | undefined, approvalToken: unknown): boolean {
+    if (typeof approvalToken !== 'string') return false;
+    const parts = approvalToken.split('.');
+    if (parts.length !== 3 || parts[0] !== APPROVAL_TOKEN_VERSION) return false;
+    const [, payloadB64, signature] = parts;
+    if (!timingSafeEqualString(signature, this.signApprovalPayload(payloadB64))) return false;
+
+    let payload: { f?: unknown; b?: unknown; e?: unknown };
+    try {
+      payload = JSON.parse(Buffer.from(payloadB64, 'base64url').toString('utf8'));
+    } catch {
+      return false;
+    }
+    if (typeof payload.f !== 'string' || typeof payload.b !== 'string' || typeof payload.e !== 'number') return false;
+    if (payload.e <= Date.now()) return false;
+    if (payload.f !== fingerprint) return false;
     const presented = parseCookieValue(cookieHeader, CONSENT_COOKIE_NAME);
-    if (!presented) return false;
-    return timingSafeEqualString(presented, pending.browserId);
+    if (!presented || !timingSafeEqualString(presented, payload.b)) return false;
+
+    for (const [sig, expiresAt] of this.consumedApprovals) {
+      if (expiresAt <= Date.now()) this.consumedApprovals.delete(sig);
+    }
+    if (this.consumedApprovals.has(signature)) return false;
+    // Bounded: overflow evicts the oldest consumed marker; its token is
+    // already past its one legitimate use and still TTL/cookie-bound.
+    if (this.consumedApprovals.size >= PENDING_CONSENT_MAX) {
+      const oldest = this.consumedApprovals.keys().next().value;
+      if (oldest !== undefined) this.consumedApprovals.delete(oldest);
+    }
+    this.consumedApprovals.set(signature, payload.e);
+    return true;
   }
 }

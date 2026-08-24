@@ -2785,8 +2785,10 @@ describeIfListen('HttpTransport', () => {
       expect(consentPage.headers['cache-control']).toBe('no-store');
       expect(consentPage.headers['content-security-policy']).toContain("form-action 'self'");
       expect(consentPage.text).toContain('Accept SharePoint usage rules.');
-      // No decorative CSRF token: protection is the request fingerprint + __Host- cookie.
-      expect(consentPage.text).not.toContain('consent_token');
+      // Stateless approval: a signed token rides in the form next to the
+      // request fingerprint + __Host- cookie bindings.
+      const consent_token = consentPage.text.match(/name="consent_token" value="([^"]+)"/)?.[1];
+      expect(consent_token).toBeTruthy();
       const setCookie: string = ([] as string[]).concat(consentPage.headers['set-cookie'] ?? [])[0];
       expect(setCookie).toMatch(/^__Host-mcp4_consent=/);
       expect(setCookie).toContain('HttpOnly');
@@ -2799,7 +2801,7 @@ describeIfListen('HttpTransport', () => {
         .post('/oauth/authorize')
         .type('form')
         .set('Cookie', cookie)
-        .send({ ...query, consent_accept: 'yes' });
+        .send({ ...query, consent_accept: 'yes', consent_token });
       expect(approved.status).toBe(302);
       expect(approved.headers.location).toContain('https://auth.example.com/oauth/authorize');
 
@@ -2807,7 +2809,7 @@ describeIfListen('HttpTransport', () => {
         .post('/oauth/authorize')
         .type('form')
         .set('Cookie', cookie)
-        .send({ ...query, consent_accept: 'yes' });
+        .send({ ...query, consent_accept: 'yes', consent_token });
       expect(replay.status).toBe(400);
       expect(replay.text).toContain('Consent approval expired');
       // The expired page carries the same CSP as the other consent pages.
@@ -2837,19 +2839,20 @@ describeIfListen('HttpTransport', () => {
         code_challenge_method: 'S256',
       };
 
-      await request(oauthApp).get('/oauth/authorize').query(query);
+      const consentPage = await request(oauthApp).get('/oauth/authorize').query(query);
+      const consent_token = consentPage.text.match(/name="consent_token" value="([^"]+)"/)?.[1];
 
       const noCookie = await request(oauthApp)
         .post('/oauth/authorize')
         .type('form')
-        .send({ ...query, consent_accept: 'yes' });
+        .send({ ...query, consent_accept: 'yes', consent_token });
       expect(noCookie.status).toBe(400);
 
       const wrongCookie = await request(oauthApp)
         .post('/oauth/authorize')
         .type('form')
         .set('Cookie', '__Host-mcp4_consent=some-other-browser')
-        .send({ ...query, consent_accept: 'yes' });
+        .send({ ...query, consent_accept: 'yes', consent_token });
       expect(wrongCookie.status).toBe(400);
     });
 
@@ -2878,9 +2881,10 @@ describeIfListen('HttpTransport', () => {
       const cookie = ([] as string[])
         .concat(consentPage.headers['set-cookie'] ?? [])[0]
         .split(';')[0];
+      const consent_token = consentPage.text.match(/name="consent_token" value="([^"]+)"/)?.[1];
 
-      // Same browser, same acknowledgement, different redirect_uri: the approval
-      // is bound to the complete OAuth request, so this must not authorize.
+      // Same browser, same acknowledgement token, different redirect_uri: the
+      // approval is bound to the complete OAuth request, so this must not authorize.
       const tampered = await request(oauthApp)
         .post('/oauth/authorize')
         .type('form')
@@ -2889,6 +2893,7 @@ describeIfListen('HttpTransport', () => {
           ...query,
           redirect_uri: 'http://localhost:3003/attacker/callback',
           consent_accept: 'yes',
+          consent_token,
         });
       expect(tampered.status).toBe(400);
     });
@@ -2920,6 +2925,7 @@ describeIfListen('HttpTransport', () => {
         const cookie = ([] as string[])
           .concat(consentPage.headers['set-cookie'] ?? [])[0]
           .split(';')[0];
+        const consent_token = consentPage.text.match(/name="consent_token" value="([^"]+)"/)?.[1];
 
         vi.setSystemTime(Date.now() + 5 * 60 * 1000 + 1000);
 
@@ -2927,14 +2933,14 @@ describeIfListen('HttpTransport', () => {
           .post('/oauth/authorize')
           .type('form')
           .set('Cookie', cookie)
-          .send({ ...query, consent_accept: 'yes' });
+          .send({ ...query, consent_accept: 'yes', consent_token });
         expect(expired.status).toBe(400);
       } finally {
         vi.useRealTimers();
       }
     });
 
-    it('keys pending approvals by request fingerprint so repeated renders cannot starve the store', async () => {
+    it('allocates no server state for approval renders (stateless signed token)', async () => {
       const context = (oauthTransport as any).buildDefaultProfileContext();
       oauthTransport.setProfileContextProvider(async () => ({
         ...context,
@@ -2959,9 +2965,10 @@ describeIfListen('HttpTransport', () => {
         await request(oauthApp).get('/oauth/authorize').query(query);
       }
 
-      // 50 renders of the same OAuth request occupy exactly one slot, so
-      // unauthenticated traffic cannot evict another user's pending approval.
-      expect((oauthTransport as any).consentController.pendingApprovalCount).toBe(1);
+      // The approval is stateless (signed form token), so 50 renders allocate
+      // zero server-side state: unauthenticated traffic cannot exhaust or
+      // evict anything.
+      expect((oauthTransport as any).consentController.consumedApprovals.size).toBe(0);
     });
 
     it('serves an actionable no-store consent page without granting consent', async () => {
