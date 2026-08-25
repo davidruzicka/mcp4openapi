@@ -91,6 +91,10 @@ const OAUTH_REQUEST_FIELDS = [
 // Version prefix of the stateless approval token embedded in the form.
 const APPROVAL_TOKEN_VERSION = 'v1';
 
+// Exact shape of a self-issued browser id (32 random bytes, base64url).
+// Anything else presented in the cookie is ignored and a fresh id is minted.
+const BROWSER_ID_SHAPE = /^[A-Za-z0-9_-]{43}$/;
+
 /** Extract one cookie value from a raw Cookie header. Returns undefined when absent. */
 function parseCookieValue(header: string | undefined, name: string): string | undefined {
   if (!header) return undefined;
@@ -254,6 +258,13 @@ export class ConsentHttpController {
    * cookie and must come back with the POST, so the acknowledgement and the
    * submission demonstrably come from one user agent. Unauthenticated GET
    * floods allocate no server state at all.
+   *
+   * A valid presented cookie is REUSED, not rotated: browser extensions
+   * (e.g. Robot Exclusion Checker) re-fetch the current URL from content
+   * scripts, and a rotating cookie would orphan the token of the form the
+   * human actually sees. Reuse keeps every render of one browser bound to
+   * one id; the binding strength is unchanged (the id stays random,
+   * HttpOnly, and `__Host-`-scoped).
    */
   renderApprovalForm(
     res: Response,
@@ -261,8 +272,12 @@ export class ConsentHttpController {
     input: Record<string, unknown>,
     fingerprint: string,
     upstreamAuthorizeUrl?: string,
+    cookieHeader?: string,
   ): void {
-    const browserId = crypto.randomBytes(32).toString('base64url');
+    const presented = parseCookieValue(cookieHeader, CONSENT_COOKIE_NAME);
+    const browserId = presented && BROWSER_ID_SHAPE.test(presented)
+      ? presented
+      : crypto.randomBytes(32).toString('base64url');
     const approvalToken = this.issueApprovalToken(fingerprint, browserId, Date.now() + CONSENT_APPROVAL_TTL_MS);
     res.setHeader(
       'Set-Cookie',

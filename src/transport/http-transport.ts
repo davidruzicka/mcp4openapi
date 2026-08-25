@@ -2197,6 +2197,7 @@ export class HttpTransport {
             input,
             fingerprint,
             profileState.oauthProvider.authorizationEndpoint,
+            req.headers.cookie,
           );
           return;
         }
