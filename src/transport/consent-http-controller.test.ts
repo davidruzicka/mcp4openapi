@@ -222,6 +222,62 @@ describe('ConsentHttpController', () => {
       expect(b.consumeApproval(fingerprint, cookie, token)).toBe(true);
     });
 
+    it('reuses a valid presented consent cookie instead of rotating it', () => {
+      const controller = new ConsentHttpController();
+      const first = renderAndCapture(controller);
+
+      const res = makeRes();
+      controller.renderApprovalForm(
+        asResponse(res), gate, oauthInput(),
+        controller.requestFingerprint('p1', oauthInput()),
+        undefined,
+        first.cookie,
+      );
+      expect(cookieFromRender(res)).toBe(first.cookie);
+      // The re-render's token is bound to the SAME browser id, so it is
+      // consumable with the original cookie.
+      expect(controller.consumeApproval(first.fingerprint, first.cookie, tokenFromRender(res))).toBe(true);
+    });
+
+    it('keeps the visible form valid when a background fetch re-renders the page (extension scenario)', () => {
+      // Robot Exclusion Checker-style content scripts re-fetch the current
+      // URL on every navigation. Such a background render must not orphan
+      // the token of the form the human actually sees.
+      const controller = new ConsentHttpController();
+      const visible = renderAndCapture(controller);
+
+      const background = makeRes();
+      controller.renderApprovalForm(
+        asResponse(background), gate, oauthInput(),
+        controller.requestFingerprint('p1', oauthInput()),
+        undefined,
+        visible.cookie,
+      );
+
+      expect(controller.consumeApproval(visible.fingerprint, visible.cookie, visible.token)).toBe(true);
+    });
+
+    it('rotates the cookie when none is presented or the presented one is malformed', () => {
+      const controller = new ConsentHttpController();
+      const first = renderAndCapture(controller);
+
+      const malformed = makeRes();
+      controller.renderApprovalForm(
+        asResponse(malformed), gate, oauthInput(),
+        controller.requestFingerprint('p1', oauthInput()),
+        undefined,
+        `${CONSENT_COOKIE_NAME}=not!valid`,
+      );
+      expect(cookieFromRender(malformed)).not.toBe(`${CONSENT_COOKIE_NAME}=not!valid`);
+
+      const absent = makeRes();
+      controller.renderApprovalForm(
+        asResponse(absent), gate, oauthInput(),
+        controller.requestFingerprint('p1', oauthInput()),
+      );
+      expect(cookieFromRender(absent)).not.toBe(first.cookie);
+    });
+
     it('prunes expired signatures from the consumed-approval guard on the next consume', () => {
       vi.useFakeTimers();
       try {

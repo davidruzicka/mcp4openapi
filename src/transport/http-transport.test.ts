@@ -2856,6 +2856,46 @@ describeIfListen('HttpTransport', () => {
       expect(wrongCookie.status).toBe(400);
     });
 
+    it('survives a background re-render of the form (extension fetch): original form still submits', async () => {
+      const context = (oauthTransport as any).buildDefaultProfileContext();
+      oauthTransport.setProfileContextProvider(async () => ({
+        ...context,
+        consent_gate: {
+          required: true,
+          rules_version: 'v1',
+          rules_summary: 'Accept SharePoint usage rules.',
+          identity_source: 'profile_oauth',
+        },
+      }));
+      const query = {
+        response_type: 'code',
+        client_id: 'test-client',
+        redirect_uri: 'http://localhost:3003/oauth/callback',
+        scope: 'openid read',
+        state: 'client-state',
+        code_challenge: 'challenge',
+        code_challenge_method: 'S256',
+      };
+
+      const visible = await request(oauthApp).get('/oauth/authorize').query(query);
+      const cookie = ([] as string[]).concat(visible.headers['set-cookie'] ?? [])[0].split(';')[0];
+      const consent_token = visible.text.match(/name="consent_token" value="([^"]+)"/)?.[1];
+
+      // A content-script fetch (e.g. Robot Exclusion Checker) re-renders the
+      // page with the browser's cookie. The cookie must be reused, not rotated.
+      const background = await request(oauthApp).get('/oauth/authorize').set('Cookie', cookie).query(query);
+      const backgroundCookie = ([] as string[]).concat(background.headers['set-cookie'] ?? [])[0].split(';')[0];
+      expect(backgroundCookie).toBe(cookie);
+
+      const approved = await request(oauthApp)
+        .post('/oauth/authorize')
+        .type('form')
+        .set('Cookie', cookie)
+        .send({ ...query, consent_accept: 'yes', consent_token });
+      expect(approved.status).toBe(302);
+      expect(approved.headers.location).toContain('https://auth.example.com/oauth/authorize');
+    });
+
     it('rejects an acknowledgement whose OAuth parameters changed after the rules were shown', async () => {
       const context = (oauthTransport as any).buildDefaultProfileContext();
       oauthTransport.setProfileContextProvider(async () => ({
