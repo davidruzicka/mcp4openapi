@@ -112,7 +112,14 @@ import {
   renderProfileIndexHtml,
 } from './profile-index.js';
 import type { ProfileIndexSourceProfile, ProfileIndexTenantSummary, SystemNotice } from './profile-index.js';
-const DEFAULT_MAX_TOKEN_LENGTH = 4096;
+// Must fit the gateway's OWN encrypted access-token envelopes: an Entra
+// access token issued with openid+offline_access+Files.Read.All+Sites.Read.All
+// wrapped in the mcp4.v1 AES-GCM+base64url envelope exceeds 4k, so the old
+// 4096 default rejected self-issued tokens with "Authorization header too
+// long". Verified against the dev ingress (labrador/envoy): headers up to
+// 16k reach the gateway, 431 above ~16k total. 12288 leaves room for the
+// remaining request headers. Tunable via MCP4_TOKEN_MAX_LENGTH.
+const DEFAULT_MAX_TOKEN_LENGTH = 12288;
 // Envelopes older than 30 days are rejected during restart-recovery to bound token lifetime at rest.
 const MAX_ENVELOPE_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 // Upper bound on remembered re-consent invalidations (one entry per subject and rules version).

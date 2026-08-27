@@ -365,7 +365,7 @@ describeIfListen('HTTP Transport Multi-Auth Integration', () => {
 
   describe('Token Validation', () => {
     it('should reject Bearer token that is too long', async () => {
-      const longToken = 'x'.repeat(10000); // Exceeds max length
+      const longToken = 'x'.repeat(13000); // Exceeds DEFAULT_MAX_TOKEN_LENGTH (12288)
       
       const response = await request(app)
         .post('/mcp')

@@ -106,7 +106,7 @@ export interface HttpTransportConfig {
   rateLimitMetricsMax?: number; // Max requests for /metrics (default: 10)
   rateLimitOAuthMax?: number; // Max OAuth requests per window (default: 10)
   rateLimitOAuthWindowMs?: number; // OAuth rate limit window in ms (default: 1 minute)
-  maxTokenLength?: number; // Maximum token length in characters (default: 1000)
+  maxTokenLength?: number; // Maximum token length in characters (default: 12288)
   /**
    * 32-byte symmetric key used to encrypt/decrypt token envelopes (mcp4.v1.* tokens).
    * Derived from `MCP4_OAUTH_KEY` env var by `deriveTokenKey()`:
