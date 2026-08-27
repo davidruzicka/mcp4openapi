@@ -3675,7 +3675,7 @@ describeIfListen('HttpTransport', () => {
     });
   });
 
-  describe('MCP4_OAUTH_KEY startup warn and DEFAULT_MAX_TOKEN_LENGTH = 4096', () => {
+  describe('MCP4_OAUTH_KEY startup warn and DEFAULT_MAX_TOKEN_LENGTH = 12288', () => {
     interface MockLogger extends Logger {
       debug: ReturnType<typeof vi.fn>;
       info: ReturnType<typeof vi.fn>;
@@ -3738,11 +3738,11 @@ describeIfListen('HttpTransport', () => {
       await t.stop();
     });
 
-    it('accepts a 4096-char token at the new DEFAULT_MAX_TOKEN_LENGTH boundary', async () => {
+    it('accepts a 12288-char token at the DEFAULT_MAX_TOKEN_LENGTH boundary (fits self-issued encrypted envelopes)', async () => {
       const t = new HttpTransport({ ...baseConfig }, logger);
       const tApp = (t as any).app;
       t.setMessageHandler(async () => ({ result: 'ok' }));
-      const validToken = 'Bearer ' + 'a'.repeat(4096);
+      const validToken = 'Bearer ' + 'a'.repeat(12288);
       const response = await request(tApp)
         .post('/mcp')
         .set('Accept', 'application/json, text/event-stream')
@@ -3753,11 +3753,11 @@ describeIfListen('HttpTransport', () => {
       await t.stop();
     });
 
-    it('rejects a 4097-char token with too long (max 4096 characters)', async () => {
+    it('rejects a 12289-char token with too long (max 12288 characters)', async () => {
       const t = new HttpTransport({ ...baseConfig }, logger);
       const tApp = (t as any).app;
       t.setMessageHandler(async () => ({ result: 'ok' }));
-      const tooLongToken = 'Bearer ' + 'a'.repeat(4097);
+      const tooLongToken = 'Bearer ' + 'a'.repeat(12289);
       const response = await request(tApp)
         .post('/mcp')
         .set('Accept', 'application/json, text/event-stream')
@@ -3766,7 +3766,7 @@ describeIfListen('HttpTransport', () => {
         .send({ jsonrpc: '2.0', id: 1, method: 'initialize' });
       expect(response.status).toBe(400);
       const bodyText = JSON.stringify(response.body);
-      expect(bodyText).toContain('too long (max 4096 characters)');
+      expect(bodyText).toContain('too long (max 12288 characters)');
       await t.stop();
     });
   });
