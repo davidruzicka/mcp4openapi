@@ -1,9 +1,9 @@
 {
   "$schema": "../../../profile-schema.json",
-  "profile_name": "Softeria SharePoint Read-Only",
-  "profile_id": "softeria-sharepoint",
+  "profile_name": "Microsoft 365 SharePoint Read-Only",
+  "profile_id": "seznam-sharepoint",
   "profile_aliases": ["ms365-sharepoint"],
-  "description": "Consent-gated proxy to a centrally hosted Softeria Microsoft 365 MCP server, restricted to read-only SharePoint/drive tools and Sites.Selected/Files.Read delegated permissions.",
+  "description": "Consent-gated proxy to a centrally hosted Microsoft 365 MCP server, restricted to read-only SharePoint/drive tools and Sites.Selected/Files.Read delegated permissions.",
   "upstream_pin": {
     "note": "Test-only metadata (stripped by the profile loader). Must match the upstream-catalog-*.fixture.json in this directory; re-pin with scripts/capture-softeria-catalog.sh.",
     "package": "@softeria/ms-365-mcp-server",
@@ -30,7 +30,7 @@
     }
   },
   "upstream_mcp": {
-    "name": "softeria",
+    "name": "ms365",
     "transport": {
       "type": "http-streamable",
       "url": "https://softeria.internal.example/mcp"
