@@ -34,6 +34,7 @@
     "generate-schemas": "node scripts/generate-schemas.js",
     "sync-profile-schema": "node scripts/sync-profile-schema.js",
     "check-schema-sync": "node scripts/check-profile-schema-sync.js",
+    "review": "bash tools/claim-gate/review_diff.sh",
     "validate": "npm run build && node dist/scripts/validate-profile.js",
     "validate:schema": "npm run build && node dist/scripts/validate-schema.js",
     "agent:feedback-template": "npm run build && node dist/scripts/render-agent-feedback-template.js",

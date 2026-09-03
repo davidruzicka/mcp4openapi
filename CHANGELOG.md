@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
+- Claim gate tooling (`tools/claim-gate/`, `npm run review`, CI `claim-gate` jobs): pre-commit diff review against the target branch plus a deterministic checker of instruction-file claims (paths, npm scripts, orphaned references, conflict markers).
 - Consent gate localization (AIPP-639): `rules_summary`, `education_resource` and `labels.accept/submit` accept locale maps (`{"en": ..., "cs": ...}`, `en` entry required), consent pages negotiate cs/en from `Accept-Language` with English fallback, and the rules hash covers the whole multilingual bundle so the display language never affects evidence while editing any variant forces re-consent; plain-string profiles keep their exact pre-i18n hash.
 
 ### Fixed
