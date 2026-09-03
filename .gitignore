@@ -11,3 +11,4 @@ tmp/
 .claude/worktrees/
 .lean-ctx/
 .playwright-mcp/
+__pycache__/

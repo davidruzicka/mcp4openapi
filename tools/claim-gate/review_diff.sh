@@ -71,9 +71,11 @@ warn_on_pure_deletions() {
             [ -z "$start" ] && continue
             count=${count:-1}
             [ "$count" -eq 0 ] && continue
-            foreign=$((foreign + $(git blame --porcelain -L "$start,+$count" "$base" -- "$file" 2>/dev/null \
-                | grep -c "^author-mail <\(.*\)>" || true)))
-            foreign=$((foreign - $(git blame --porcelain -L "$start,+$count" "$base" -- "$file" 2>/dev/null \
+            # --line-porcelain repeats the full header for EVERY line; plain
+            # --porcelain emits it once per commit group and undercounts.
+            foreign=$((foreign + $(git blame --line-porcelain -L "$start,+$count" "$base" -- "$file" 2>/dev/null \
+                | grep -c '^author-mail ' || true)))
+            foreign=$((foreign - $(git blame --line-porcelain -L "$start,+$count" "$base" -- "$file" 2>/dev/null \
                 | grep -c "^author-mail <$me>" || true)))
         done <<< "$ranges"
 
@@ -139,7 +141,7 @@ check_conflict_markers() {
     # A bare ======= is deliberately excluded; it is a common heading underline.
     # The extension list lives here once for both the local run and the CI job, which
     # calls this check via --check; two copies would diverge and then disagree.
-    hits=$(git grep -nE '^(<{7} |>{7} )' -- '*.ts' '*.tsx' '*.js' '*.mjs' '*.cjs' '*.py' '*.html' '*.sql' '*.yml' '*.yaml')
+    hits=$(git grep -nE '^(<{7} |>{7} |\|{7} )' -- '*.ts' '*.tsx' '*.js' '*.mjs' '*.cjs' '*.py' '*.html' '*.sql' '*.yml' '*.yaml')
     if [ -n "$hits" ]; then
         centered_text "Conflict markers in source files"
         echo "$hits"

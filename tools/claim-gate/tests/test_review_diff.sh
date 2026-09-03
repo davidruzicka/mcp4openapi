@@ -145,6 +145,25 @@ printf 'export const nothing = 0;\n' > "$repo/pkg/a.ts"
 expect_exit 1 "$(cd "$repo/pkg" && "$GATE" --target baseline >/dev/null 2>&1; echo $?)" 'run from a subdirectory finds the same'
 rm -rf "$repo"
 
+# The foreign-deletion warning must count LINES, not blame commit groups: one
+# foreign commit adding three lines is three deleted lines, and the author's own
+# single-line commit must not cancel out a multi-line foreign group.
+repo=$(new_repo)
+git -C "$repo" config user.email other@example.com
+printf 'alpha\nbeta\ngamma\n' > "$repo/pkg/foreign.txt.ts"
+git -C "$repo" add -A && git -C "$repo" commit -qm 'foreign lines'
+git -C "$repo" config user.email test@example.com
+printf 'mine\n' >> "$repo/pkg/foreign.txt.ts"
+git -C "$repo" add -A && git -C "$repo" commit -qm 'own line'
+git -C "$repo" branch -qf baseline
+rm "$repo/pkg/foreign.txt.ts"
+out=$(cd "$repo" && "$GATE" --target baseline 2>&1) || true
+case "$out" in
+    *'-3 lines written by someone else'*) report ok 'foreign-deletion warning counts lines, not commits' ;;
+    *) report fail "foreign-deletion warning miscounts: $(printf '%s' "$out" | grep 'someone else' || echo 'no warning emitted')" ;;
+esac
+rm -rf "$repo"
+
 printf '\n'
 if [ "$failures" -gt 0 ]; then
     printf 'Failed checks: %s\n' "$failures"
