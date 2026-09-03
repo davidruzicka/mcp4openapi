@@ -20,14 +20,16 @@ import { escapeHtmlSafe } from '../validation/validation-utils.js';
 import { CONSENT_BODY_PLACEHOLDER } from '../profile/consent-gate-validator.js';
 import { DANGEROUS_REDIRECT_SCHEMES } from '../auth/unregistered-client-redirect-policy.js';
 import { resolveConsentText } from '../auth/consent-text.js';
+import type { ProfileIndexLocale } from './profile-index.js';
 
 /**
- * Display language of the consent pages. Mirrors the profile-index locales;
- * negotiation happens in the transport (Accept-Language), the controller only
- * renders. The locale NEVER affects consent evidence - the rules hash covers
- * the whole multilingual bundle (see consent-rules-hash.ts).
+ * Display language of the consent pages. The same locales as the profile
+ * index (one shared negotiation via parseAcceptLanguage); negotiation happens
+ * in the transport (Accept-Language), the controller only renders. The locale
+ * NEVER affects consent evidence - the rules hash covers the whole
+ * multilingual bundle (see consent-rules-hash.ts).
  */
-export type ConsentPageLocale = 'en' | 'cs';
+export type ConsentPageLocale = ProfileIndexLocale;
 
 /** Server-owned page strings; profile-authored texts come from the gate config. */
 const CONSENT_PAGE_I18N: Record<ConsentPageLocale, {

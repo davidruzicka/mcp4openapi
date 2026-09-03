@@ -39,6 +39,20 @@ describe('computeRulesHash', () => {
     expect(computeRulesHash({ ...base, rules_summary: { ...bundle, de: 'Regeln akzeptieren.' } })).not.toBe(original);
   });
 
+  it('pins the canonical wire format of a localized map (evidence format must not drift)', () => {
+    const pinned = createHash('sha256')
+      .update(JSON.stringify([
+        'v1',
+        [['cs', 'Přijměte pravidla.'], ['en', 'Accept the rules.']],
+        'https://kb.example.test/rules',
+      ]))
+      .digest('base64url');
+    expect(computeRulesHash({
+      ...base,
+      rules_summary: { en: 'Accept the rules.', cs: 'Přijměte pravidla.' },
+    })).toBe(pinned);
+  });
+
   it('never collides a localized map with an equal-looking plain string', () => {
     const asMap = computeRulesHash({ ...base, rules_summary: { en: 'Accept the rules.' } });
     expect(asMap).not.toBe(computeRulesHash(base));
