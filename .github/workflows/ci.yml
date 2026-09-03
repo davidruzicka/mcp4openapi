@@ -8,6 +8,30 @@ on:
     branches: [main]
 
 jobs:
+  claim-gate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Conflict markers
+        run: tools/claim-gate/review_diff.sh --check conflict-markers
+
+      - name: Instruction file claims
+        run: tools/claim-gate/review_diff.sh --check agents-claims
+
+      - name: Gate self-tests (shell)
+        run: tools/claim-gate/tests/test_review_diff.sh
+
+      - name: Gate self-tests (python)
+        run: |
+          python3 -m pip install --quiet pytest
+          python3 -m pytest tools/claim-gate/tests/test_check_agents_claims.py -q
+
   test:
     runs-on: ubuntu-latest
     permissions:
