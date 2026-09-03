@@ -26,6 +26,40 @@ describe('computeRulesHash', () => {
     expect(computeRulesHash({ ...base, labels: { accept: 'Souhlasím', submit: 'Potvrdit' } })).not.toBe(withLabels);
   });
 
+  it('hashes localized maps independently of key insertion order', () => {
+    const csFirst = computeRulesHash({ ...base, rules_summary: { cs: 'Přijměte pravidla.', en: 'Accept the rules.' } });
+    const enFirst = computeRulesHash({ ...base, rules_summary: { en: 'Accept the rules.', cs: 'Přijměte pravidla.' } });
+    expect(csFirst).toBe(enFirst);
+  });
+
+  it('changes when any language variant changes (the whole bundle is consent-meaningful)', () => {
+    const bundle = { en: 'Accept the rules.', cs: 'Přijměte pravidla.' };
+    const original = computeRulesHash({ ...base, rules_summary: bundle });
+    expect(computeRulesHash({ ...base, rules_summary: { ...bundle, cs: 'Přijměte nová pravidla.' } })).not.toBe(original);
+    expect(computeRulesHash({ ...base, rules_summary: { ...bundle, de: 'Regeln akzeptieren.' } })).not.toBe(original);
+  });
+
+  it('never collides a localized map with an equal-looking plain string', () => {
+    const asMap = computeRulesHash({ ...base, rules_summary: { en: 'Accept the rules.' } });
+    expect(asMap).not.toBe(computeRulesHash(base));
+    // A string spelling out the map's own serialization must still differ.
+    expect(asMap).not.toBe(computeRulesHash({ ...base, rules_summary: '[["en","Accept the rules."]]' }));
+  });
+
+  it('localizes labels and education_resource into the hash too', () => {
+    const localized = computeRulesHash({
+      ...base,
+      education_resource: { en: 'https://kb.example.test/rules', cs: 'https://kb.example.test/cs/rules' },
+      labels: { accept: { en: 'I accept', cs: 'Souhlasím' } },
+    });
+    expect(localized).not.toBe(computeRulesHash(base));
+    expect(computeRulesHash({
+      ...base,
+      education_resource: { en: 'https://kb.example.test/rules', cs: 'https://kb.example.test/cs/rules' },
+      labels: { accept: { en: 'I accept', cs: 'Souhlasím JINAK' } },
+    })).not.toBe(localized);
+  });
+
   it('ignores the page template (cosmetic changes never force re-consent)', () => {
     const withTemplate = computeRulesHash({
       ...base,

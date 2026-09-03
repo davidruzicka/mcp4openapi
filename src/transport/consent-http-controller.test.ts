@@ -517,4 +517,70 @@ describe('ConsentHttpController', () => {
       expect(form.body).toContain('Continue to sign in');
     });
   });
+
+  describe('localization', () => {
+    const localizedGate: ConsentGateConfig = {
+      required: true,
+      rules_version: 'v2',
+      rules_summary: { en: 'Accept the usage rules.', cs: 'Přijměte pravidla používání.' },
+      education_resource: { en: 'https://rules.example/en', cs: 'https://rules.example/cs' },
+      labels: {
+        accept: { en: 'I accept rules {{rules_version}}', cs: 'Přijímám pravidla {{rules_version}}' },
+        submit: { en: 'Continue', cs: 'Pokračovat' },
+      },
+      identity_source: 'profile_oauth',
+    };
+
+    it('renders the cs variants and Czech server-owned strings for the cs locale', () => {
+      const controller = new ConsentHttpController();
+      const res = makeRes();
+      controller.renderConsentInfo(asResponse(res), localizedGate, 'cs');
+      expect(res.body).toContain('lang="cs"');
+      expect(res.body).toContain('Přijměte pravidla používání.');
+      expect(res.body).toContain('https://rules.example/cs');
+      expect(res.body).toContain('Vyžadován souhlas');
+      expect(res.body).not.toContain('Accept the usage rules.');
+
+      const form = makeRes();
+      controller.renderApprovalForm(asResponse(form), localizedGate, oauthInput(), 'fp-1', undefined, undefined, 'cs');
+      expect(form.body).toContain('Přijímám pravidla v2');
+      expect(form.body).toContain('<button type="submit">Pokračovat</button>');
+    });
+
+    it('defaults to English and keeps the en fallback when a variant is missing', () => {
+      const controller = new ConsentHttpController();
+      const res = makeRes();
+      controller.renderConsentInfo(asResponse(res), localizedGate);
+      expect(res.body).toContain('lang="en"');
+      expect(res.body).toContain('Accept the usage rules.');
+      expect(res.body).toContain('Consent required');
+
+      const enOnly: ConsentGateConfig = { ...localizedGate, rules_summary: { en: 'English only.' } };
+      const csRes = makeRes();
+      controller.renderConsentInfo(asResponse(csRes), enOnly, 'cs');
+      expect(csRes.body).toContain('English only.');
+      expect(csRes.body).toContain('lang="cs"');
+    });
+
+    it('renders the expired page in the negotiated locale', () => {
+      const controller = new ConsentHttpController();
+      const res = makeRes();
+      controller.renderApprovalExpired(asResponse(res), '/retry', localizedGate, 'cs');
+      expect(res.body).toContain('Platnost potvrzení souhlasu vypršela');
+      expect(res.body).toContain('Spustit souhlas znovu');
+    });
+
+    it('substitutes the localized summary and {{lang}} into a custom template', () => {
+      const controller = new ConsentHttpController();
+      const templated: ConsentGateConfig = {
+        ...localizedGate,
+        template: '<html lang="{{lang}}"><body><p id="s">{{rules_summary}}</p><a href="{{education_resource}}">x</a>{{consent_body}}</body></html>',
+      };
+      const res = makeRes();
+      controller.renderConsentInfo(asResponse(res), templated, 'cs');
+      expect(res.body).toContain('<html lang="cs">');
+      expect(res.body).toContain('Přijměte pravidla používání.');
+      expect(res.body).toContain('href="https://rules.example/cs"');
+    });
+  });
 });

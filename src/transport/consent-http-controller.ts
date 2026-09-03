@@ -19,6 +19,54 @@ import { ConfigurationError } from '../core/errors.js';
 import { escapeHtmlSafe } from '../validation/validation-utils.js';
 import { CONSENT_BODY_PLACEHOLDER } from '../profile/consent-gate-validator.js';
 import { DANGEROUS_REDIRECT_SCHEMES } from '../auth/unregistered-client-redirect-policy.js';
+import { resolveConsentText } from '../auth/consent-text.js';
+
+/**
+ * Display language of the consent pages. Mirrors the profile-index locales;
+ * negotiation happens in the transport (Accept-Language), the controller only
+ * renders. The locale NEVER affects consent evidence - the rules hash covers
+ * the whole multilingual bundle (see consent-rules-hash.ts).
+ */
+export type ConsentPageLocale = 'en' | 'cs';
+
+/** Server-owned page strings; profile-authored texts come from the gate config. */
+const CONSENT_PAGE_I18N: Record<ConsentPageLocale, {
+  consentRequired: string;
+  defaultSummary: string;
+  readRules: string;
+  reconnect: (rulesVersion: string) => string;
+  acceptDefault: (rulesVersion: string) => string;
+  submitDefault: string;
+  expiredTitle: string;
+  expiredBody: string;
+  retry: string;
+  notConfigured: string;
+}> = {
+  en: {
+    consentRequired: 'Consent required',
+    defaultSummary: 'Access requires accepting the current usage rules.',
+    readRules: 'Read the usage rules',
+    reconnect: (rulesVersion) => `Reconnect this MCP server in your client to start the secure sign-in and consent flow for rules version ${rulesVersion}.`,
+    acceptDefault: (rulesVersion) => `I accept rules version ${rulesVersion}`,
+    submitDefault: 'Continue to sign in',
+    expiredTitle: 'Consent approval expired',
+    expiredBody: 'The approval was already used, expired, or was started in a different browser session.',
+    retry: 'Start the consent flow again',
+    notConfigured: 'Consent is not configured for this profile',
+  },
+  cs: {
+    consentRequired: 'Vyžadován souhlas',
+    defaultSummary: 'Přístup vyžaduje přijetí aktuálních pravidel používání.',
+    readRules: 'Přečíst pravidla používání',
+    reconnect: (rulesVersion) => `Znovu připojte tento MCP server ve svém klientovi a spusťte tak zabezpečené přihlášení a souhlas s pravidly verze ${rulesVersion}.`,
+    acceptDefault: (rulesVersion) => `Přijímám pravidla verze ${rulesVersion}`,
+    submitDefault: 'Pokračovat k přihlášení',
+    expiredTitle: 'Platnost potvrzení souhlasu vypršela',
+    expiredBody: 'Potvrzení už bylo použito, vypršelo, nebo bylo zahájeno v jiné relaci prohlížeče.',
+    retry: 'Spustit souhlas znovu',
+    notConfigured: 'Souhlas není pro tento profil nakonfigurován',
+  },
+};
 
 /** Positive-integer env override with a default; an invalid value fails startup. */
 function envInt(name: string, fallback: number): number {
@@ -143,7 +191,7 @@ function timingSafeEqualString(a: string, b: string): boolean {
  */
 function renderConsentPage(
   res: Response,
-  options: { status: number; title: string; body: string; csp: string; gate?: ConsentGateConfig },
+  options: { status: number; title: string; body: string; csp: string; gate?: ConsentGateConfig; locale: ConsentPageLocale },
 ): void {
   res.setHeader('Cache-Control', 'no-store');
   res.setHeader('Content-Security-Policy', options.csp);
@@ -164,24 +212,26 @@ function renderConsentPage(
   let html: string;
   if (template) {
     html = substitute(template, '{{rules_version}}', escapeHtmlSafe(options.gate?.rules_version ?? ''));
-    html = substitute(html, '{{rules_summary}}', rulesSummary(options.gate as ConsentGateConfig));
-    html = substitute(html, '{{education_resource}}', escapeHtmlSafe(options.gate?.education_resource ?? ''));
+    html = substitute(html, '{{rules_summary}}', rulesSummary(options.gate as ConsentGateConfig, options.locale));
+    html = substitute(html, '{{education_resource}}', escapeHtmlSafe(resolveConsentText(options.gate?.education_resource, options.locale) ?? ''));
+    html = substitute(html, '{{lang}}', options.locale);
     html = substitute(html, '{{title}}', options.title);
     html = substitute(html, CONSENT_BODY_PLACEHOLDER, `<!-- server-owned consent block -->${options.body}`);
   } else {
-    html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>${options.title}</title></head><body><main>${options.body}</main></body></html>`;
+    html = `<!doctype html><html lang="${options.locale}"><head><meta charset="utf-8"><title>${options.title}</title></head><body><main>${options.body}</main></body></html>`;
   }
   res.status(options.status).type('html').send(html);
 }
 
-function educationLink(gate: ConsentGateConfig): string {
-  return gate.education_resource
-    ? `<p><a href="${escapeHtmlSafe(gate.education_resource)}" rel="noopener noreferrer" target="_blank">Read the usage rules</a></p>`
+function educationLink(gate: ConsentGateConfig, locale: ConsentPageLocale): string {
+  const url = resolveConsentText(gate.education_resource, locale);
+  return url
+    ? `<p><a href="${escapeHtmlSafe(url)}" rel="noopener noreferrer" target="_blank">${escapeHtmlSafe(CONSENT_PAGE_I18N[locale].readRules)}</a></p>`
     : '';
 }
 
-function rulesSummary(gate: ConsentGateConfig): string {
-  return escapeHtmlSafe(gate.rules_summary ?? 'Access requires accepting the current usage rules.');
+function rulesSummary(gate: ConsentGateConfig, locale: ConsentPageLocale): string {
+  return escapeHtmlSafe(resolveConsentText(gate.rules_summary, locale) ?? CONSENT_PAGE_I18N[locale].defaultSummary);
 }
 
 export class ConsentHttpController {
@@ -234,17 +284,19 @@ export class ConsentHttpController {
   }
 
   /** Human-facing info page served at `/consent`; 404 when the profile is not gated. */
-  renderConsentInfo(res: Response, gate: ConsentGateConfig | undefined): void {
+  renderConsentInfo(res: Response, gate: ConsentGateConfig | undefined, locale: ConsentPageLocale = 'en'): void {
+    const i18n = CONSENT_PAGE_I18N[locale];
     if (!gate?.required) {
-      res.status(HTTP_STATUS.NOT_FOUND).send('Consent is not configured for this profile');
+      res.status(HTTP_STATUS.NOT_FOUND).send(i18n.notConfigured);
       return;
     }
     renderConsentPage(res, {
       status: HTTP_STATUS.OK,
-      title: 'Consent required',
-      body: `<h1>Consent required</h1><p>${rulesSummary(gate)}</p>${educationLink(gate)}<p>Reconnect this MCP server in your client to start the secure sign-in and consent flow for rules version ${escapeHtmlSafe(gate.rules_version)}.</p>`,
+      title: escapeHtmlSafe(i18n.consentRequired),
+      body: `<h1>${escapeHtmlSafe(i18n.consentRequired)}</h1><p>${rulesSummary(gate, locale)}</p>${educationLink(gate, locale)}<p>${escapeHtmlSafe(i18n.reconnect(gate.rules_version))}</p>`,
       csp: CONSENT_PAGE_CSP,
       gate,
+      locale,
     });
   }
 
@@ -273,6 +325,7 @@ export class ConsentHttpController {
     fingerprint: string,
     upstreamAuthorizeUrl?: string,
     cookieHeader?: string,
+    locale: ConsentPageLocale = 'en',
   ): void {
     const presented = parseCookieValue(cookieHeader, CONSENT_COOKIE_NAME);
     const browserId = presented && BROWSER_ID_SHAPE.test(presented)
@@ -293,10 +346,12 @@ export class ConsentHttpController {
     // Consent-meaningful texts: part of the rules hash (consent-rules-hash.ts),
     // so editing them invalidates existing grants. `{{rules_version}}` inside
     // the accept label is substituted after escaping.
-    const acceptLabel = (gate.labels?.accept
-      ? escapeHtmlSafe(gate.labels.accept).split('{{rules_version}}').join(escapeHtmlSafe(gate.rules_version))
-      : `I accept rules version ${escapeHtmlSafe(gate.rules_version)}`);
-    const submitLabel = escapeHtmlSafe(gate.labels?.submit ?? 'Continue to sign in');
+    const i18n = CONSENT_PAGE_I18N[locale];
+    const acceptText = resolveConsentText(gate.labels?.accept, locale);
+    const acceptLabel = (acceptText
+      ? escapeHtmlSafe(acceptText).split('{{rules_version}}').join(escapeHtmlSafe(gate.rules_version))
+      : escapeHtmlSafe(i18n.acceptDefault(gate.rules_version)));
+    const submitLabel = escapeHtmlSafe(resolveConsentText(gate.labels?.submit, locale) ?? i18n.submitDefault);
     // CSRF protection: the POST must reproduce the exact request fingerprint the
     // form was rendered for AND present the __Host- cookie set above
     // (consumeApproval checks both). No separate form token is needed.
@@ -316,10 +371,11 @@ export class ConsentHttpController {
       : CONSENT_FORM_CSP;
     renderConsentPage(res, {
       status: HTTP_STATUS.OK,
-      title: 'Consent required',
-      body: `<h1>Consent required</h1><p>${rulesSummary(gate)}</p>${educationLink(gate)}<form method="post">${hiddenFields}<label><input type="checkbox" name="consent_accept" value="yes" required> ${acceptLabel}</label><p><button type="submit">${submitLabel}</button></p></form>`,
+      title: escapeHtmlSafe(i18n.consentRequired),
+      body: `<h1>${escapeHtmlSafe(i18n.consentRequired)}</h1><p>${rulesSummary(gate, locale)}</p>${educationLink(gate, locale)}<form method="post">${hiddenFields}<label><input type="checkbox" name="consent_accept" value="yes" required> ${acceptLabel}</label><p><button type="submit">${submitLabel}</button></p></form>`,
       csp,
       gate,
+      locale,
     });
   }
 
@@ -328,13 +384,15 @@ export class ConsentHttpController {
    * behind a non-sticky load balancer the GET and POST can land on different
    * replicas, so the page links back into the flow instead of stranding the user.
    */
-  renderApprovalExpired(res: Response, retryUrl: string, gate?: ConsentGateConfig): void {
+  renderApprovalExpired(res: Response, retryUrl: string, gate?: ConsentGateConfig, locale: ConsentPageLocale = 'en'): void {
+    const i18n = CONSENT_PAGE_I18N[locale];
     renderConsentPage(res, {
       status: HTTP_STATUS.BAD_REQUEST,
-      title: 'Consent approval expired',
-      body: `<h1>Consent approval expired</h1><p>The approval was already used, expired, or was started in a different browser session.</p><p><a href="${escapeHtmlSafe(retryUrl)}">Start the consent flow again</a></p>`,
+      title: escapeHtmlSafe(i18n.expiredTitle),
+      body: `<h1>${escapeHtmlSafe(i18n.expiredTitle)}</h1><p>${escapeHtmlSafe(i18n.expiredBody)}</p><p><a href="${escapeHtmlSafe(retryUrl)}">${escapeHtmlSafe(i18n.retry)}</a></p>`,
       csp: CONSENT_PAGE_CSP,
       gate,
+      locale,
     });
   }
 

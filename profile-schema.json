@@ -1445,14 +1445,14 @@
           ]
         },
         "overrides": {
-          "$ref": "#/definitions/Record%3Cstring%2Cstructure-1535101595-26943-26979-1535101595-26928-26980-1535101595-26914-26981-1535101595-26843-26983-1535101595-0-27123%3E"
+          "$ref": "#/definitions/Record%3Cstring%2Cstructure-1535101595-27559-27595-1535101595-27544-27596-1535101595-27530-27597-1535101595-27459-27599-1535101595-0-27739%3E"
         }
       },
       "required": [
         "max_requests_per_minute"
       ]
     },
-    "Record<string,structure-1535101595-26943-26979-1535101595-26928-26980-1535101595-26914-26981-1535101595-26843-26983-1535101595-0-27123>": {
+    "Record<string,structure-1535101595-27559-27595-1535101595-27544-27596-1535101595-27530-27597-1535101595-27459-27599-1535101595-0-27739>": {
       "type": "object",
       "additionalProperties": {
         "type": "object",
@@ -1856,11 +1856,11 @@
           "description": "Opaque version of the rules/education content; changing it invalidates prior consent."
         },
         "education_resource": {
-          "type": "string",
+          "$ref": "#/definitions/LocalizedConsentText",
           "description": "Optional URL to educational content shown during the consent flow."
         },
         "rules_summary": {
-          "type": "string",
+          "$ref": "#/definitions/LocalizedConsentText",
           "description": "Optional short human-readable summary of the rules shown at consent time."
         },
         "max_age_days": {
@@ -1884,11 +1884,11 @@
           "type": "object",
           "properties": {
             "accept": {
-              "type": "string",
+              "$ref": "#/definitions/LocalizedConsentText",
               "description": "Checkbox label. Default: `I accept rules version <rules_version>`."
             },
             "submit": {
-              "type": "string",
+              "$ref": "#/definitions/LocalizedConsentText",
               "description": "Submit button label. Default: `Continue to sign in`."
             }
           },
@@ -1901,6 +1901,17 @@
         "identity_source"
       ],
       "description": "Consent gate configuration.\n\nGates sensitive profiles (e.g. an upstream MS365 MCP) behind a provable, human consent: the user must complete an interactive OAuth login and accept the current rules before any upstream MCP tool call is dispatched. Consent is bound to the authenticated subject and the `rules_version`; bumping `rules_version` invalidates prior consent and forces re-acceptance.\n\nThe gate is deliberately NOT an MCP tool, so an autonomous agent cannot grant consent on the user's behalf."
+    },
+    "LocalizedConsentText": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "$ref": "#/definitions/Record%3Cstring%2Cstring%3E"
+        }
+      ],
+      "description": "Consent text in one language (plain string) or several (locale -> text map, e.g. `{ \"en\": \"...\", \"cs\": \"...\" }`). A map must contain an `en` entry: it is the negotiation fallback. The subject consents to the WHOLE bundle - every language variant is part of the rules hash, so editing any variant invalidates existing grants, while the language a page happens to render in does not."
     },
     "UpstreamMcpServerConfig": {
       "type": "object",

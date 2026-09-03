@@ -18,18 +18,20 @@ export const clientAuthGateConfigSchema = z.object({
     api_keys: apiKeyStoreConfigSchema.optional()
 });
 
+export const localizedConsentTextSchema = z.union([z.string(), z.record(z.string(), z.string())]);
+
 export const consentGateConfigSchema = z.object({
     required: z.boolean(),
     rules_version: z.string(),
-    education_resource: z.string().optional(),
-    rules_summary: z.string().optional(),
+    education_resource: localizedConsentTextSchema.optional(),
+    rules_summary: localizedConsentTextSchema.optional(),
     max_age_days: z.number().optional(),
     identity_source: z.literal("profile_oauth"),
     template_path: z.string().optional(),
     template: z.string().optional(),
     labels: z.object({
-        accept: z.string().optional(),
-        submit: z.string().optional()
+        accept: localizedConsentTextSchema.optional(),
+        submit: localizedConsentTextSchema.optional()
     }).optional()
 });
 

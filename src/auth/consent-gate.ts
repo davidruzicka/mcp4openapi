@@ -6,6 +6,7 @@ import type { ConsentDenialReason } from '../core/errors.js';
 import { ConsentRequiredError } from '../core/errors.js';
 import { normalizeIssuer } from './issuer.js';
 import { computeRulesHash } from './consent-rules-hash.js';
+import { CONSENT_FALLBACK_LOCALE, resolveConsentText } from './consent-text.js';
 
 /**
  * Consent gate enforcement.
@@ -84,7 +85,9 @@ export class ConsentGate {
         profileId: this.profileId,
         rules_version: this.config.rules_version,
         consent_url: this.consentUrlFor(this.profileId),
-        education_resource: this.config.education_resource,
+        // Machine-readable payload with no language negotiation: the `en`
+        // fallback variant. The consent page itself negotiates per request.
+        education_resource: resolveConsentText(this.config.education_resource, CONSENT_FALLBACK_LOCALE),
       },
       denial,
     );

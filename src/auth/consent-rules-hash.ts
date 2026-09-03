@@ -11,6 +11,7 @@
  * `token-envelope.ts` replaced SHA-256 only for passphrase derivation.
  */
 import { createHash } from 'node:crypto';
+import { canonicalizeConsentText, type CanonicalConsentText } from './consent-text.js';
 import type { ConsentGateConfig } from '../types/profile.js';
 
 export type ConsentRulesMaterial = Pick<
@@ -28,15 +29,20 @@ export type ConsentRulesMaterial = Pick<
  * the approval-form labels.
  */
 export function computeRulesHash(material: ConsentRulesMaterial): string {
-  const parts: (string | null)[] = [
+  // Localized maps canonicalize to sorted entry arrays (structurally distinct
+  // from strings in the JSON serialization); plain strings pass through
+  // unchanged so pre-i18n profiles keep their exact hash. The WHOLE
+  // multilingual bundle is hashed - the grant does not depend on which
+  // language the page rendered in, and editing any variant invalidates it.
+  const parts: CanonicalConsentText[] = [
     material.rules_version,
-    material.rules_summary ?? null,
-    material.education_resource ?? null,
+    canonicalizeConsentText(material.rules_summary),
+    canonicalizeConsentText(material.education_resource),
   ];
   // Appended only when labels are configured, so profiles without labels keep
   // their pre-labels hash and existing grants stay valid across the upgrade.
   if (material.labels && (material.labels.accept !== undefined || material.labels.submit !== undefined)) {
-    parts.push(material.labels.accept ?? null, material.labels.submit ?? null);
+    parts.push(canonicalizeConsentText(material.labels.accept), canonicalizeConsentText(material.labels.submit));
   }
   return createHash('sha256').update(JSON.stringify(parts)).digest('base64url');
 }
