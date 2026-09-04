@@ -733,9 +733,9 @@ A denied dispatch returns a JSON-RPC error:
     "code": -32004,
     "message": "Consent required",
     "data": {
-      "profileId": "softeria-sharepoint",
+      "profileId": "seznam-sharepoint",
       "rules_version": "v1",
-      "consent_url": "https://gateway.example/profile/softeria-sharepoint/consent",
+      "consent_url": "https://gateway.example/profile/seznam-sharepoint/consent",
       "education_resource": "https://intranet.example/ms365-ai-rules",
       "correlationId": "..."
     }
@@ -833,7 +833,7 @@ next dispatch because consent results are never cached.
 ```bash
 # Values must match the grant exactly: sub, issuer (canonical form) and tenantId.
 # tenantId is null when the issuer provided none. revoked_at is epoch milliseconds.
-printf '%s\n' '{"type":"revocation","sub":"<oid>","issuer":"https://login.microsoftonline.com/<tid>/v2.0","tenantId":"<tid>","profileId":"softeria-sharepoint","revoked_at":'"$(date +%s000)"',"reason":"offboarded"}' \
+printf '%s\n' '{"type":"revocation","sub":"<oid>","issuer":"https://login.microsoftonline.com/<tid>/v2.0","tenantId":"<tid>","profileId":"seznam-sharepoint","revoked_at":'"$(date +%s000)"',"reason":"offboarded"}' \
   >> "$MCP4_CONSENT_EVIDENCE_PATH"
 ```
 

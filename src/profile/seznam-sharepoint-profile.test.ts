@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ProfileLoader } from './profile-loader.js';
 import { isToolAllowedByProviderPolicy } from '../upstream/upstream-tool-sanitizer.js';
 
-const FIXTURE_DIR = path.join(process.cwd(), 'tests/profiles/softeria-sharepoint');
+const FIXTURE_DIR = path.join(process.cwd(), 'tests/profiles/seznam-sharepoint');
 const PROFILE_PATH = path.join(FIXTURE_DIR, 'profile.json');
 const CAPTURE_SCRIPT = 'scripts/capture-softeria-catalog.sh';
 
@@ -63,10 +63,10 @@ const ENV = {
   SOFTERIA_ENTRA_ISSUER: 'https://login.microsoftonline.com/11111111-1111-1111-1111-111111111111/v2.0',
   SOFTERIA_ENTRA_CLIENT_ID: 'client-id',
   SOFTERIA_ENTRA_CLIENT_SECRET: 'test-secret',
-  SOFTERIA_OAUTH_REDIRECT_URI: 'https://gateway.example/profile/softeria-sharepoint/oauth/callback',
+  SOFTERIA_OAUTH_REDIRECT_URI: 'https://gateway.example/profile/seznam-sharepoint/oauth/callback',
 };
 
-describe('Softeria SharePoint profile', () => {
+describe('Seznam SharePoint (MS365) profile', () => {
   beforeEach(() => {
     Object.assign(process.env, ENV);
     delete process.env.SOFTERIA_UPSTREAM_MCP;
@@ -79,7 +79,7 @@ describe('Softeria SharePoint profile', () => {
 
   it('loads with strict OIDC consent and read-only SharePoint tool boundaries', async () => {
     const profile = await new ProfileLoader().load(
-      path.join(process.cwd(), 'tests/profiles/softeria-sharepoint/profile.json'),
+      path.join(process.cwd(), 'tests/profiles/seznam-sharepoint/profile.json'),
     );
     const auth = Array.isArray(profile.interceptors?.auth)
       ? profile.interceptors.auth[0]
@@ -103,14 +103,14 @@ describe('Softeria SharePoint profile', () => {
 
   it('accepts a deployment-specific upstream endpoint with the same restrictive policy', async () => {
     process.env.SOFTERIA_UPSTREAM_MCP = JSON.stringify({
-      name: 'softeria',
+      name: 'ms365',
       transport: { type: 'http-streamable', url: 'https://softeria.prod.example/mcp' },
       auth: { type: 'bearer' },
       tools: { allow: [...SOFTERIA_READ_ONLY_TOOLS] },
     });
 
     const profile = await new ProfileLoader().load(
-      path.join(process.cwd(), 'tests/profiles/softeria-sharepoint/profile.json'),
+      path.join(process.cwd(), 'tests/profiles/seznam-sharepoint/profile.json'),
     );
     expect(profile.upstream_mcp?.transport.url).toBe('https://softeria.prod.example/mcp');
     expect(profile.upstream_mcp?.tools?.allow).toEqual(SOFTERIA_READ_ONLY_TOOLS);
@@ -118,32 +118,32 @@ describe('Softeria SharePoint profile', () => {
 
   it('rejects a deployment policy that broadens the static read-only boundary', async () => {
     process.env.SOFTERIA_UPSTREAM_MCP = JSON.stringify({
-      name: 'softeria',
+      name: 'ms365',
       transport: { type: 'http-streamable', url: 'https://softeria.prod.example/mcp' },
       auth: { type: 'bearer' },
       tools: { allow: ['*site*'] },
     });
 
     await expect(new ProfileLoader().load(
-      path.join(process.cwd(), 'tests/profiles/softeria-sharepoint/profile.json'),
+      path.join(process.cwd(), 'tests/profiles/seznam-sharepoint/profile.json'),
     )).rejects.toThrow('upstream_mcp_from_env cannot broaden the static upstream_mcp.tools policy');
   });
 
   it('rejects a deployment policy that removes the static read-only boundary', async () => {
     process.env.SOFTERIA_UPSTREAM_MCP = JSON.stringify({
-      name: 'softeria',
+      name: 'ms365',
       transport: { type: 'http-streamable', url: 'https://softeria.prod.example/mcp' },
       auth: { type: 'bearer' },
     });
 
     await expect(new ProfileLoader().load(
-      path.join(process.cwd(), 'tests/profiles/softeria-sharepoint/profile.json'),
+      path.join(process.cwd(), 'tests/profiles/seznam-sharepoint/profile.json'),
     )).rejects.toThrow('upstream_mcp_from_env cannot broaden the static upstream_mcp.tools policy');
   });
 
   it('does not allow mutating-looking names that merely contain SharePoint keywords', async () => {
     const profile = await new ProfileLoader().load(
-      path.join(process.cwd(), 'tests/profiles/softeria-sharepoint/profile.json'),
+      path.join(process.cwd(), 'tests/profiles/seznam-sharepoint/profile.json'),
     );
     const policy = profile.upstream_mcp?.tools;
 
@@ -221,7 +221,7 @@ describe('Softeria SharePoint profile', () => {
 
   it('rejects an environment override that re-adds the unmediated download tool', () => {
     process.env.SOFTERIA_UPSTREAM_MCP = JSON.stringify({
-      name: 'softeria',
+      name: 'ms365',
       transport: { type: 'http-streamable', url: 'https://softeria.internal.example/mcp' },
       auth: { type: 'bearer' },
       tools: { allow: [...SOFTERIA_READ_ONLY_TOOLS, 'get-download-url'] },

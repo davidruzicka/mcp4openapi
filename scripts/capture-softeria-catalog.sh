@@ -1,21 +1,21 @@
 #!/usr/bin/env bash
 # Recapture the Softeria upstream tool catalog fixture for a new pinned version.
 #
-# Regenerates tests/profiles/softeria-sharepoint/upstream-catalog-<version>.fixture.json
+# Regenerates tests/profiles/seznam-sharepoint/upstream-catalog-<version>.fixture.json
 # from a locally started @softeria/ms-365-mcp-server in read-only discovery mode.
 # No tenant, credentials, or browser are required.
 #
 # The fixture's upstream_version is the single source of truth for the pin:
-# src/profile/softeria-profile.test.ts asserts that the fixture file name, the
+# src/profile/seznam-sharepoint-profile.test.ts asserts that the fixture file name, the
 # fixture's capture_command, and profile.json's upstream_pin all agree with it,
 # and that every upstream_mcp.tools.allow entry exists in the captured catalog.
 #
 # Re-pin procedure:
 #   1. scripts/capture-softeria-catalog.sh <new-version>
 #   2. delete the old upstream-catalog-*.fixture.json (exactly one may remain)
-#   3. update upstream_pin.version in tests/profiles/softeria-sharepoint/profile.json
+#   3. update upstream_pin.version in tests/profiles/seznam-sharepoint/profile.json
 #   4. review the allow-list against the new catalog, then run
-#      npx vitest run src/profile/softeria-profile.test.ts
+#      npx vitest run src/profile/seznam-sharepoint-profile.test.ts
 #
 # See docs/PROFILE-GUIDE.md "Validating the Softeria SharePoint tool catalog"
 # for the manual variant of this capture and why --list-permissions is unusable.
@@ -30,7 +30,7 @@ VERSION="${1:?usage: scripts/capture-softeria-catalog.sh <version> (e.g. 0.136.0
 PORT="${PORT:-39117}"
 BASE="http://127.0.0.1:${PORT}/mcp"
 PACKAGE="@softeria/ms-365-mcp-server"
-FIXTURE="tests/profiles/softeria-sharepoint/upstream-catalog-${VERSION}.fixture.json"
+FIXTURE="tests/profiles/seznam-sharepoint/upstream-catalog-${VERSION}.fixture.json"
 CAPTURE_COMMAND="npx -y ${PACKAGE}@${VERSION} --read-only --org-mode --allow-unauthenticated-discovery --http 127.0.0.1:${PORT}"
 
 cleanup() {
@@ -77,12 +77,12 @@ jq -n \
     captured_at: $captured_at,
     capture_command: $capture_command,
     capture_procedure: "MCP initialize followed by tools/list over Streamable HTTP at POST /mcp; tool names taken from result.tools[].name (single page, no nextCursor).",
-    note: "Read-only catalog of the pinned upstream version. Used by src/profile/softeria-profile.test.ts to assert every upstream_mcp.tools.allow entry exists upstream.",
+    note: "Read-only catalog of the pinned upstream version. Used by src/profile/seznam-sharepoint-profile.test.ts to assert every upstream_mcp.tools.allow entry exists upstream.",
     tool_count: ($tools | length),
     tools: $tools
   }' > "$FIXTURE"
 
 echo "Wrote ${FIXTURE} ($(jq -r '.tool_count' "$FIXTURE") tools)."
 echo "Next: remove any old upstream-catalog-*.fixture.json, set upstream_pin.version"
-echo "in tests/profiles/softeria-sharepoint/profile.json to ${VERSION}, then run:"
-echo "  npx vitest run src/profile/softeria-profile.test.ts"
+echo "in tests/profiles/seznam-sharepoint/profile.json to ${VERSION}, then run:"
+echo "  npx vitest run src/profile/seznam-sharepoint-profile.test.ts"
