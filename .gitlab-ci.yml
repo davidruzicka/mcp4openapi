@@ -40,3 +40,15 @@ npm-run-test-e2e:
   stage: test
   variables:
     SCRIPT: test:e2e
+
+claim-gate:
+  stage: test
+  needs: []
+  image: python:3.11
+  before_script:
+    - pip install --quiet pytest
+  script:
+    - tools/claim-gate/review_diff.sh --check conflict-markers
+    - tools/claim-gate/review_diff.sh --check agents-claims
+    - tools/claim-gate/tests/test_review_diff.sh
+    - python3 -m pytest tools/claim-gate/tests/test_check_agents_claims.py -q

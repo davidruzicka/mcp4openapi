@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- Claim gate tooling (`tools/claim-gate/`, `npm run review`, CI `claim-gate` jobs): pre-commit diff review against the target branch plus a deterministic checker of instruction-file claims (paths, npm scripts, orphaned references, conflict markers).
+- Consent gate localization (AIPP-639): `rules_summary`, `education_resource` and `labels.accept/submit` accept locale maps (`{"en": ..., "cs": ...}`, `en` entry required), consent pages negotiate cs/en from `Accept-Language` with English fallback, and the rules hash covers the whole multilingual bundle so the display language never affects evidence while editing any variant forces re-consent; plain-string profiles keep their exact pre-i18n hash.
+
 ### Fixed
 - `MCP4_TOKEN_MAX_LENGTH` default raised 4096 -> 12288: the gateway's own encrypted access-token envelope (Entra token with `openid offline_access Files.Read.All Sites.Read.All` inside the `mcp4.v1` wrapper) exceeded 4k, so clients got 400 "Authorization header too long" for a token the gateway itself had just issued. Verified against the dev ingress that headers up to 16k pass; 12288 leaves headroom for the remaining request headers.
 - The consent approval form no longer rotates the `__Host-` browser cookie on every render: a valid presented cookie is reused, so background same-origin re-fetches of the page (browser extensions such as Robot Exclusion Checker re-fetch the current URL from content scripts) can no longer orphan the form the human actually sees, which failed with "Consent approval expired" in Chrome. Binding strength is unchanged (random, HttpOnly, `__Host-`-scoped id; malformed or missing cookies still mint a fresh one).

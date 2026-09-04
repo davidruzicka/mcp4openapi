@@ -61,15 +61,26 @@ export interface ClientAuthGateConfig {
  * The gate is deliberately NOT an MCP tool, so an autonomous agent cannot grant
  * consent on the user's behalf.
  */
+
+/**
+ * Consent text in one language (plain string) or several (locale -> text map,
+ * e.g. `{ "en": "...", "cs": "..." }`). A map must contain an `en` entry: it is
+ * the negotiation fallback. The subject consents to the WHOLE bundle - every
+ * language variant is part of the rules hash, so editing any variant
+ * invalidates existing grants, while the language a page happens to render in
+ * does not.
+ */
+export type LocalizedConsentText = string | Record<string, string>;
+
 export interface ConsentGateConfig {
   /** When true, upstream MCP tool calls are blocked until consent is recorded for the subject + rules_version. */
   required: boolean;
   /** Opaque version of the rules/education content; changing it invalidates prior consent. */
   rules_version: string;
-  /** Optional URL to educational content shown during the consent flow. */
-  education_resource?: string;
-  /** Optional short human-readable summary of the rules shown at consent time. */
-  rules_summary?: string;
+  /** Optional URL (or locale -> URL map) to educational content shown during the consent flow. */
+  education_resource?: LocalizedConsentText;
+  /** Optional short human-readable summary (or locale -> summary map) of the rules shown at consent time. */
+  rules_summary?: LocalizedConsentText;
   /** Optional maximum age of a grant in days; an older grant forces re-acceptance. */
   max_age_days?: number;
   /** Identity source used to bind consent evidence to an authenticated human. */
@@ -97,10 +108,10 @@ export interface ConsentGateConfig {
    * substituted at render time.
    */
   labels?: {
-    /** Checkbox label. Default: `I accept rules version <rules_version>`. */
-    accept?: string;
-    /** Submit button label. Default: `Continue to sign in`. */
-    submit?: string;
+    /** Checkbox label (or locale map). Default: `I accept rules version <rules_version>`. */
+    accept?: LocalizedConsentText;
+    /** Submit button label (or locale map). Default: `Continue to sign in`. */
+    submit?: LocalizedConsentText;
   };
 }
 

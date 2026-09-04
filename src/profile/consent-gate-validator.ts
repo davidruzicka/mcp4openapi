@@ -18,7 +18,8 @@
 import { matchEnvRefName, resolveEnvRef, type EnvSource } from '../core/env-ref.js';
 import { ConsentGateConfigurationError } from '../core/errors.js';
 import { loadRawTenantsConfigFromEnv } from '../transport/http-tenant-config.js';
-import type { AuthInterceptor, ConsentGateConfig, Profile } from '../types/profile.js';
+import { CONSENT_FALLBACK_LOCALE } from '../auth/consent-text.js';
+import type { AuthInterceptor, ConsentGateConfig, LocalizedConsentText, Profile } from '../types/profile.js';
 
 /** Mandatory template placeholder replaced with the server-owned consent block. */
 export const CONSENT_BODY_PLACEHOLDER = '{{consent_body}}';
@@ -34,6 +35,38 @@ function getProfileOAuth(profile: Profile): AuthInterceptor | undefined {
   const auth = profile.interceptors?.auth;
   const configs = auth ? (Array.isArray(auth) ? auth : [auth]) : [];
   return configs.find((config) => config.type === 'oauth');
+}
+
+/**
+ * Refinements for the locale-map form of a consent text: non-empty map, every
+ * variant non-empty, and an `en` entry present - `en` anchors the display
+ * fallback chain (see consent-text.ts), so a map without it could render an
+ * arbitrary language to a non-matching browser. Plain strings are validated by
+ * their field-specific rules, not here.
+ */
+function assertLocalizedMap(value: LocalizedConsentText | undefined, path: string): void {
+  if (value === undefined || typeof value === 'string') return;
+  const entries = Object.entries(value);
+  if (entries.length === 0) {
+    throw new ConsentGateConfigurationError(
+      `${path} locale map must not be empty`,
+      { path },
+    );
+  }
+  if (!(CONSENT_FALLBACK_LOCALE in value)) {
+    throw new ConsentGateConfigurationError(
+      `${path} locale map must contain an '${CONSENT_FALLBACK_LOCALE}' entry (display fallback)`,
+      { path },
+    );
+  }
+  for (const [locale, text] of entries) {
+    if (!locale.trim() || !text.trim()) {
+      throw new ConsentGateConfigurationError(
+        `${path} locale map entries must have non-empty locale keys and texts`,
+        { path: `${path}.${locale}` },
+      );
+    }
+  }
 }
 
 /**
@@ -67,13 +100,16 @@ export function resolveConsentGateConfig(config: ConsentGateConfig): ConsentGate
 
   for (const key of ['accept', 'submit'] as const) {
     const label = config.labels?.[key];
-    if (label !== undefined && !label.trim()) {
+    if (typeof label === 'string' && !label.trim()) {
       throw new ConsentGateConfigurationError(
         `consent_gate.labels.${key} must be a non-empty string when set`,
         { path: `consent_gate.labels.${key}` },
       );
     }
+    assertLocalizedMap(label, `consent_gate.labels.${key}`);
   }
+  assertLocalizedMap(config.rules_summary, 'consent_gate.rules_summary');
+  assertLocalizedMap(config.education_resource, 'consent_gate.education_resource');
 
   if (config.template_path !== undefined && !config.template_path.trim()) {
     throw new ConsentGateConfigurationError(
@@ -173,11 +209,17 @@ function assertConsentEndpointsHttps(
     );
   }
   if (resolved.education_resource !== undefined) {
-    assertHttpsUrl(
-      resolved.education_resource,
-      'consent_gate.education_resource',
-      'consent_gate.education_resource',
-    );
+    const variants: [string, string][] = typeof resolved.education_resource === 'string'
+      ? [['', resolved.education_resource]]
+      : Object.entries(resolved.education_resource);
+    for (const [locale, url] of variants) {
+      const suffix = locale ? `.${locale}` : '';
+      assertHttpsUrl(
+        url,
+        `consent_gate.education_resource${suffix}`,
+        `consent_gate.education_resource${suffix}`,
+      );
+    }
   }
 }
 

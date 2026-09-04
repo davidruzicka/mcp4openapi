@@ -1557,7 +1557,7 @@ export class HttpTransport {
 
       this.app.get(
         `${basePath}/consent`,
-        ...withProfile((req, res, profileState) => this.handleConsentInfo(res, profileState))
+        ...withProfile((req, res, profileState) => this.handleConsentInfo(req, res, profileState))
       );
 
       this.app.post(
@@ -2205,6 +2205,7 @@ export class HttpTransport {
             fingerprint,
             profileState.oauthProvider.authorizationEndpoint,
             req.headers.cookie,
+            parseAcceptLanguage(req.headers['accept-language'] as string | undefined),
           );
           return;
         }
@@ -2215,7 +2216,12 @@ export class HttpTransport {
           // Send the user back to a usable starting point instead of a dead end:
           // behind a non-sticky load balancer the GET and POST can land on
           // different replicas, which is otherwise unrecoverable for the user.
-          this.consentController.renderApprovalExpired(res, req.originalUrl, gate);
+          this.consentController.renderApprovalExpired(
+            res,
+            req.originalUrl,
+            gate,
+            parseAcceptLanguage(req.headers['accept-language'] as string | undefined),
+          );
           return;
         }
       }
@@ -2256,8 +2262,12 @@ export class HttpTransport {
   }
 
   /** Consent info page at `/consent`; delegates to the consent controller. */
-  private handleConsentInfo(res: Response, profileState: ProfileRuntimeState): void {
-    this.consentController.renderConsentInfo(res, profileState.context.consent_gate);
+  private handleConsentInfo(req: Request, res: Response, profileState: ProfileRuntimeState): void {
+    this.consentController.renderConsentInfo(
+      res,
+      profileState.context.consent_gate,
+      parseAcceptLanguage(req.headers['accept-language'] as string | undefined),
+    );
   }
 
   private async handleOAuthToken(

@@ -105,6 +105,48 @@ describe('resolveConsentGateConfig', () => {
     ).toThrow(`consent_gate.labels.${key} must be a non-empty string when set`);
   });
 
+  it('accepts localized maps with an en fallback for texts, labels and education links', () => {
+    const result = resolveConsentGateConfig({
+      required: true,
+      rules_version: 'v1',
+      identity_source: 'profile_oauth',
+      rules_summary: { en: 'Accept the rules.', cs: 'Přijměte pravidla.' },
+      education_resource: { en: 'https://kb.example.test/rules', cs: 'https://kb.example.test/cs' },
+      labels: { accept: { en: 'I accept {{rules_version}}', cs: 'Přijímám {{rules_version}}' } },
+    });
+    expect(result.rules_summary).toEqual({ en: 'Accept the rules.', cs: 'Přijměte pravidla.' });
+  });
+
+  it('rejects a locale map without the en fallback entry', () => {
+    expect(() =>
+      resolveConsentGateConfig({
+        required: true,
+        rules_version: 'v1',
+        identity_source: 'profile_oauth',
+        rules_summary: { cs: 'Přijměte pravidla.' },
+      }),
+    ).toThrow("consent_gate.rules_summary locale map must contain an 'en' entry");
+  });
+
+  it('rejects empty locale maps and blank variants', () => {
+    expect(() =>
+      resolveConsentGateConfig({
+        required: true,
+        rules_version: 'v1',
+        identity_source: 'profile_oauth',
+        labels: { accept: {} },
+      }),
+    ).toThrow('consent_gate.labels.accept locale map must not be empty');
+    expect(() =>
+      resolveConsentGateConfig({
+        required: true,
+        rules_version: 'v1',
+        identity_source: 'profile_oauth',
+        rules_summary: { en: 'ok', cs: '   ' },
+      }),
+    ).toThrow('consent_gate.rules_summary locale map entries must have non-empty locale keys and texts');
+  });
+
   it('rejects a blank template_path', () => {
     expect(() =>
       resolveConsentGateConfig({
@@ -436,6 +478,25 @@ describe('consent gate https endpoint contract', () => {
     expect(() => validateConsentGateProfile(profile)).toThrow(
       'consent_gate.education_resource must use https when consent_gate is enabled',
     );
+  });
+
+  it('rejects a localized education_resource with one http variant', () => {
+    const profile = httpsProfile({}, {
+      education_resource: { en: 'https://intranet.example/rules', cs: 'http://intranet.example/cs' },
+    });
+    expect(() => validateConsentGateProfile(profile)).toThrow(
+      'consent_gate.education_resource.cs must use https when consent_gate is enabled',
+    );
+  });
+
+  it('accepts a localized education_resource with all-https variants', () => {
+    const profile = httpsProfile({}, {
+      education_resource: { en: 'https://intranet.example/rules', cs: 'https://intranet.example/cs' },
+    });
+    expect(validateConsentGateProfile(profile)?.education_resource).toEqual({
+      en: 'https://intranet.example/rules',
+      cs: 'https://intranet.example/cs',
+    });
   });
 
   it('accepts an https education_resource', () => {

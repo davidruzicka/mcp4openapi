@@ -2818,6 +2818,43 @@ describeIfListen('HttpTransport', () => {
       expect(replay.text).toContain('Start the consent flow again');
     });
 
+    it('negotiates the consent form language from Accept-Language', async () => {
+      const context = (oauthTransport as any).buildDefaultProfileContext();
+      oauthTransport.setProfileContextProvider(async () => ({
+        ...context,
+        consent_gate: {
+          required: true,
+          rules_version: 'v1',
+          rules_summary: { en: 'Accept SharePoint usage rules.', cs: 'Přijměte pravidla používání SharePointu.' },
+          identity_source: 'profile_oauth',
+        },
+      }));
+      const query = {
+        response_type: 'code',
+        client_id: 'test-client',
+        redirect_uri: 'http://localhost:3003/oauth/callback',
+        scope: 'openid read',
+        state: 'client-state',
+        code_challenge: 'challenge',
+        code_challenge_method: 'S256',
+      };
+
+      const czech = await request(oauthApp)
+        .get('/oauth/authorize')
+        .set('Accept-Language', 'cs-CZ,cs;q=0.9,en;q=0.8')
+        .query(query);
+      expect(czech.status).toBe(200);
+      expect(czech.text).toContain('lang="cs"');
+      expect(czech.text).toContain('Přijměte pravidla používání SharePointu.');
+      expect(czech.text).toContain('Přijímám pravidla verze v1');
+
+      // No header -> English fallback; the en bundle variant renders.
+      const english = await request(oauthApp).get('/oauth/authorize').query(query);
+      expect(english.text).toContain('lang="en"');
+      expect(english.text).toContain('Accept SharePoint usage rules.');
+      expect(english.text).toContain('I accept rules version v1');
+    });
+
     it('rejects an acknowledgement submitted without the browser cookie', async () => {
       const context = (oauthTransport as any).buildDefaultProfileContext();
       oauthTransport.setProfileContextProvider(async () => ({
