@@ -747,6 +747,14 @@ A denied dispatch returns a JSON-RPC error:
 explaining that the user must reconnect the MCP server in the client to start the sign-in and consent
 flow; the page never grants consent by itself.
 
+The consent form itself is rendered AFTER the IdP login, at
+`GET/POST /profile/<id>/consent/pending/<pending-id>`: the OAuth callback checks the evidence store
+for a valid grant (silent pass) and otherwise parks the completion in the pending-consent store and
+redirects there. See [docs/OAUTH.md](./OAUTH.md#consent-after-identity-callback-time-flow) for the
+full flow, deny semantics (`error=access_denied`), and the pending-store security posture. The
+metrics `mcp_consent_flow_events_total{event="form_shown"|"form_skipped_existing_grant"}` make the
+silent path observable.
+
 The specific denial reason (`no_principal`, `auth_type_mismatch`, `issuer_mismatch`, `no_evidence`,
 `rules_changed`, `rules_rollback`, `expired`, `revoked`) is deliberately not in `data`. It is written to
 the server log only, because telling an unauthenticated caller that its issuer did not match leaks

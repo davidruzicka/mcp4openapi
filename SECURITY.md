@@ -37,6 +37,31 @@ consumptions (each needs a validly fingerprinted, registered OAuth request),
 and the replay still requires the victim's token plus cookie within the TTL.
 The bound exists to cap memory, mirroring the sibling OAuth stores.
 
+### Pending-consent store holds upstream tokens at rest (consent after identity)
+
+The consent-after-identity flow (`src/auth/pending-consent-store.ts`) parks the
+OAuth callback completion, including the upstream IdP access and refresh
+tokens, between the login and the consent form POST. This is a new class of
+secret at rest in the consents database (previously it held only pseudonymized
+evidence rows).
+
+Why accepted, and the mitigations: the payload is AEAD-encrypted
+(AES-256-GCM) under a purpose-bound subkey of `MCP4_OAUTH_KEY` with the
+pending id and profile as AAD, so a database operator or dump never sees
+token material and a row cannot be re-keyed to another flow; the store
+persists only the SHA-256 hash of the 256-bit pending id, so a database read
+cannot be replayed against the form URL; entries expire after 10 minutes,
+are deleted on (atomic, one-time) consumption, and expired rows are swept on
+every flow start; a decryption failure surfaces as a fail-closed
+`PendingConsentStoreError`, never as "absent". Residual: whoever holds both a
+live pending URL and the browser cookie within the TTL can complete or deny
+that one flow for its already-verified identity - the same trust the browser
+session itself has.
+
+Covered by tests: `pending-consent-store.test.ts` (ciphertext-only rows,
+AAD binding, tamper fail-closed, one-time cross-instance consumption) and the
+`Consent-after-identity flow (AIPP-625)` suite in `http-transport.test.ts`.
+
 ## Open hardening items (tracked in TODO.md)
 
 Security-relevant subset; numbers reference [TODO.md](TODO.md) sections.

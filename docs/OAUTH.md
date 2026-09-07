@@ -518,6 +518,37 @@ For a consent-gated profile the authorize endpoint gains one hop before the IdP 
 
 Every other authorize precondition is unchanged; the acknowledgement is inserted, not substituted.
 
+### Consent after identity (callback-time flow)
+
+The callback decides consent AFTER the IdP login, so a user whose grant is still valid never sees
+the form again (previously every gateway pod replacement re-prompted everyone, because the
+authorize-time form runs before the gateway knows who the user is):
+
+1. `GET /profile/<id>/oauth/callback` verifies the OIDC identity and consults the evidence store
+   with the exact dispatch-time policy (`ConsentGate.isGranted`): rules pinning, version rollback,
+   revocation, max age. A valid grant completes the authorization silently.
+2. Without a valid grant the completion state (upstream tokens, verified identity, client
+   authorization parameters) is parked in the pending-consent store and the browser is redirected
+   (303) to `GET /profile/<id>/consent/pending/<pending-id>`. The form URL is its own resource, so
+   a browser refresh re-renders the form and never replays the consumed callback.
+3. `POST` of that form is the only place consent evidence is recorded. Accept consumes the HMAC
+   approval token (its fingerprint binds the one-time pending id AND the current rules hash, so a
+   rules bump between render and click re-renders the form instead of recording), atomically
+   consumes the pending entry (a parallel tab loses and gets the recoverable expired page), records
+   the grant for the verified identity stored in the entry (the form carries no identity fields),
+   and completes the authorization; the client redirect URI is re-validated at this moment. An
+   explicit Deny consumes the entry, records nothing, and redirects to the client with
+   `error=access_denied` (RFC 6749 4.1.2.1) so a waiting MCP client unblocks cleanly.
+
+The pending entry lives at most 10 minutes. Its payload (which contains the upstream tokens) is
+AEAD-encrypted under a purpose-bound `MCP4_OAUTH_KEY` subkey and the store persists only a SHA-256
+hash of the pending id; see SECURITY.md. Pending-store or evidence-store failures answer 503 and
+never fall back to rendering the form: an outage must not manufacture re-consents.
+
+During the current rollout phase the authorize-time acknowledgement above still runs as well, so a
+first-time user confirms twice; it will be removed once all replicas run the callback-time flow
+(a mixed fleet must never complete a login without any form).
+
 ### `__Host-mcp4_consent` cookie binding
 
 Rendering the form stores a pending approval keyed by a SHA-256 fingerprint of the profile id plus the
