@@ -72,7 +72,7 @@ import { mapAuthError } from '../auth/auth-error-mapper.js';
 import { redactAuthPayload, sanitizeAuthErrorMessage } from '../auth/auth-redaction.js';
 import { OAuthGrantRouter } from './oauth-grant-router.js';
 import { SSRFValidator } from '../security/ssrf-validator.js';
-import type { AuthInterceptor, OAuthConfig, UpstreamMcpServerConfig } from '../types/profile.js';
+import type { AuthInterceptor, ConsentGateConfig, OAuthConfig, UpstreamMcpServerConfig } from '../types/profile.js';
 import { resolveClientAuthGateConfig } from '../profile/client-auth-gate-validator.js';
 import {
   DEFAULT_ALLOWED_REDIRECT_HOSTS,
@@ -2383,27 +2383,46 @@ export class HttpTransport {
         );
         return;
       }
-      // The accepted POST ends with a redirect to the OAuth client, so the
-      // client redirect origin must be present in the form-action CSP.
-      const fingerprint = this.consentController.requestFingerprint(
-        profileState.profileId,
-        {},
-        { pending: pendingId, rules_hash: gate.rulesHash },
-      );
-      this.metrics?.recordConsentFlow('form_shown', { profileId: profileState.profileId });
-      this.consentController.renderApprovalForm(
-        res,
-        gateConfig,
-        { redirect_uri: payload.auth.clientRedirectUri },
-        fingerprint,
-        undefined,
-        req.headers.cookie,
-        locale,
-        { extraHiddenFields: { pending: pendingId }, postIdentity: true },
-      );
+      this.renderPendingConsentForm(res, req, profileState, gateConfig, gate, pendingId, payload, locale, 'form_shown');
     } catch (error) {
       this.failPendingConsentClosed(res, profileState.profileId, 'render', error);
     }
+  }
+
+  /**
+   * Single render path for the consent-after-identity form (initial GET and
+   * the POST re-render after an approval mismatch), so the fingerprint
+   * material, hidden fields and CSP derivation cannot drift between the two.
+   * The accepted POST ends with a redirect to the OAuth client, so the client
+   * redirect origin must be present in the form-action CSP.
+   */
+  private renderPendingConsentForm(
+    res: Response,
+    req: Request,
+    profileState: ProfileRuntimeState,
+    gateConfig: ConsentGateConfig,
+    gate: ConsentGate,
+    pendingId: string,
+    payload: PendingConsentPayload,
+    locale: ReturnType<typeof parseAcceptLanguage>,
+    event: 'form_shown' | 'form_rerendered',
+  ): void {
+    const fingerprint = this.consentController.requestFingerprint(
+      profileState.profileId,
+      {},
+      { pending: pendingId, rules_hash: gate.rulesHash },
+    );
+    this.metrics?.recordConsentFlow(event, { profileId: profileState.profileId });
+    this.consentController.renderApprovalForm(
+      res,
+      gateConfig,
+      { redirect_uri: payload.auth.clientRedirectUri },
+      fingerprint,
+      undefined,
+      req.headers.cookie,
+      locale,
+      { extraHiddenFields: { pending: pendingId }, postIdentity: true },
+    );
   }
 
   /**
@@ -2499,25 +2518,10 @@ export class HttpTransport {
       ) {
         // Expired/replayed token, foreign browser, or a rules bump between
         // render and click (the fingerprint carries the CURRENT rules hash).
-        // When the entry is still live, re-render the form for the current
-        // rules so the human confirms what is actually in force; recording
-        // under unseen rules is never an option.
-        const stillPending = await pendingStore.peek(pendingId, profileState.profileId);
-        if (stillPending) {
-          this.metrics?.recordConsentFlow('form_shown', { profileId: profileState.profileId });
-          this.consentController.renderApprovalForm(
-            res,
-            gateConfig,
-            { redirect_uri: stillPending.auth.clientRedirectUri },
-            fingerprint,
-            undefined,
-            req.headers.cookie,
-            locale,
-            { extraHiddenFields: { pending: pendingId }, postIdentity: true },
-          );
-        } else {
-          this.consentController.renderApprovalExpired(res, retryUrl, gateConfig, locale);
-        }
+        // The entry is live (`bound` was just read under the binding gate):
+        // re-render the form for the current rules so the human confirms what
+        // is actually in force; recording under unseen rules is never an option.
+        this.renderPendingConsentForm(res, req, profileState, gateConfig, gate, pendingId, bound, locale, 'form_rerendered');
         return;
       }
 

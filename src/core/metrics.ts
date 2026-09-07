@@ -418,10 +418,14 @@ export class MetricsCollector {
 
   /**
    * Record a consent-after-identity flow event: the form was shown to a
-   * verified identity without a valid grant, or it was skipped because a
+   * verified identity without a valid grant, re-rendered after an approval
+   * mismatch (expired token or a rules bump mid-flow), or skipped because a
    * valid grant already existed (the silent path is otherwise invisible).
    */
-  recordConsentFlow(event: 'form_shown' | 'form_skipped_existing_grant', context?: MetricsContextLabels): void {
+  recordConsentFlow(
+    event: 'form_shown' | 'form_rerendered' | 'form_skipped_existing_grant',
+    context?: MetricsContextLabels,
+  ): void {
     if (!this.enabled) return;
     const labels = this.resolveContextLabels(context);
     this.consentFlowEventsTotal.inc({ event, profile_id: labels.profile_id });

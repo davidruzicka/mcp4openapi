@@ -449,4 +449,19 @@ describe('MetricsCollector', () => {
       expect(output).not.toContain('status="100"');
     });
   });
+
+  describe('Consent flow metrics', () => {
+    it('counts shown, re-rendered and skipped form events separately', async () => {
+      metrics.recordConsentFlow('form_shown', { profileId: 'p1' });
+      metrics.recordConsentFlow('form_rerendered', { profileId: 'p1' });
+      metrics.recordConsentFlow('form_rerendered', { profileId: 'p1' });
+      metrics.recordConsentFlow('form_skipped_existing_grant', { profileId: 'p1' });
+
+      const output = await metrics.getMetrics();
+
+      expect(output).toContain('test_consent_flow_events_total{event="form_shown",profile_id="p1"} 1');
+      expect(output).toContain('test_consent_flow_events_total{event="form_rerendered",profile_id="p1"} 2');
+      expect(output).toContain('test_consent_flow_events_total{event="form_skipped_existing_grant",profile_id="p1"} 1');
+    });
+  });
 });
