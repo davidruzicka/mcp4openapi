@@ -2367,9 +2367,9 @@ export class HttpTransport {
     }
     try {
       const pendingId = String(req.params.pendingId ?? '');
-      // The binding cookie gate runs before any store access: a browser that
-      // never completed the IdP login gets the recoverable page without
-      // costing a database read.
+      // The binding cookie gate runs before any store access: a browser
+      // presenting no cookie at all gets the recoverable page without costing
+      // a database read (a wrong-valued cookie still costs one peek).
       const binding = parseCookieValue(req.headers.cookie, PENDING_BINDING_COOKIE);
       const payload = binding && isPendingIdShape(pendingId)
         ? await pendingStore.peek(pendingId, profileState.profileId)

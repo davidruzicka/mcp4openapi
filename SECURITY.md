@@ -60,7 +60,11 @@ form, accept, or deny - a leaked pending URL alone renders nothing and decides
 nothing. Residual: whoever holds both a live pending URL and that binding
 cookie within the TTL can complete or deny that one flow for its
 already-verified identity - the same trust the browser session itself has; a
-deny records nothing and its worst case is a single-flow restart.
+deny records nothing and its worst case is a single-flow restart. The cookie
+name is host-wide, so a browser carries at most one pending consent flow at a
+time: starting a second flow overwrites the first one's binding and the older
+open form falls back to the recoverable expired page - a deliberate,
+availability-only trade-off.
 
 Covered by tests: `pending-consent-store.test.ts` (ciphertext-only rows,
 AAD binding, tamper fail-closed, one-time cross-instance consumption) and the
