@@ -39,6 +39,10 @@ const CONSENT_PAGE_I18N: Record<ConsentPageLocale, {
   reconnect: (rulesVersion: string) => string;
   acceptDefault: (rulesVersion: string) => string;
   submitDefault: string;
+  submitAfterIdentity: string;
+  deny: string;
+  deniedTitle: string;
+  deniedBody: string;
   expiredTitle: string;
   expiredBody: string;
   retry: string;
@@ -51,6 +55,10 @@ const CONSENT_PAGE_I18N: Record<ConsentPageLocale, {
     reconnect: (rulesVersion) => `Reconnect this MCP server in your client to start the secure sign-in and consent flow for rules version ${rulesVersion}.`,
     acceptDefault: (rulesVersion) => `I accept rules version ${rulesVersion}`,
     submitDefault: 'Continue to sign in',
+    submitAfterIdentity: 'Confirm and continue',
+    deny: 'Decline',
+    deniedTitle: 'Consent declined',
+    deniedBody: 'Nothing was recorded and the connection was not authorized. You can close this page.',
     expiredTitle: 'Consent approval expired',
     expiredBody: 'The approval was already used, expired, or was started in a different browser session.',
     retry: 'Start the consent flow again',
@@ -63,6 +71,10 @@ const CONSENT_PAGE_I18N: Record<ConsentPageLocale, {
     reconnect: (rulesVersion) => `Znovu připojte tento MCP server ve svém klientovi a spusťte tak zabezpečené přihlášení a souhlas s pravidly verze ${rulesVersion}.`,
     acceptDefault: (rulesVersion) => `Přijímám pravidla verze ${rulesVersion}`,
     submitDefault: 'Pokračovat k přihlášení',
+    submitAfterIdentity: 'Potvrdit a pokračovat',
+    deny: 'Odmítnout',
+    deniedTitle: 'Souhlas odmítnut',
+    deniedBody: 'Nic nebylo zaznamenáno a připojení nebylo autorizováno. Tuto stránku můžete zavřít.',
     expiredTitle: 'Platnost potvrzení souhlasu vypršela',
     expiredBody: 'Potvrzení už bylo použito, vypršelo, nebo bylo zahájeno v jiné relaci prohlížeče.',
     retry: 'Spustit souhlas znovu',
@@ -274,13 +286,30 @@ export class ConsentHttpController {
     return `${APPROVAL_TOKEN_VERSION}.${payloadB64}.${this.signApprovalPayload(payloadB64)}`;
   }
 
-  /** Digest binding an approval to the complete OAuth request and profile. */
-  requestFingerprint(profileId: string, input: Record<string, unknown>): string {
+  /**
+   * Digest binding an approval to the complete OAuth request and profile.
+   *
+   * `extras` carries additional server-side binding material for the
+   * post-identity flow (the one-time pending id and the current rules hash).
+   * Entries are key-sorted and appended as [key, value] pairs, so the digest
+   * is order-independent and, because the canonical array grows past the
+   * fixed request-field length, it can never collide with a plain-request
+   * fingerprint.
+   */
+  requestFingerprint(
+    profileId: string,
+    input: Record<string, unknown>,
+    extras?: Record<string, string>,
+  ): string {
     // JSON array encoding is canonical and unambiguous (fields are length-delimited),
     // so no crafted field value can shift another field's boundary.
+    const extraEntries = extras
+      ? Object.entries(extras).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).flat()
+      : [];
     const canonical = JSON.stringify([
       profileId,
       ...OAUTH_REQUEST_FIELDS.map((field) => (typeof input[field] === 'string' ? input[field] : '')),
+      ...extraEntries,
     ]);
     return crypto.createHash('sha256').update(canonical).digest('base64url');
   }
@@ -328,6 +357,21 @@ export class ConsentHttpController {
     upstreamAuthorizeUrl?: string,
     cookieHeader?: string,
     locale: ConsentPageLocale = 'en',
+    options?: {
+      /**
+       * Additional hidden fields the POST must carry (post-identity flow: the
+       * one-time pending id). Values are attacker-visible; binding strength
+       * comes from the fingerprint inside the HMAC approval token.
+       */
+      extraHiddenFields?: Record<string, string>;
+      /**
+       * Post-identity variant: the IdP login already happened. Omits the
+       * OAuth request hidden fields (the form carries no request or identity
+       * data), relabels the submit button, and offers an explicit deny that
+       * completes the protocol with access_denied.
+       */
+      postIdentity?: boolean;
+    },
   ): void {
     const presented = parseCookieValue(cookieHeader, CONSENT_COOKIE_NAME);
     const browserId = presented && BROWSER_ID_SHAPE.test(presented)
@@ -339,10 +383,17 @@ export class ConsentHttpController {
       `${CONSENT_COOKIE_NAME}=${browserId}; Path=/; Max-Age=${CONSENT_APPROVAL_TTL_MS / 1000}; HttpOnly; Secure; SameSite=Lax`,
     );
 
-    const hiddenFields = OAUTH_REQUEST_FIELDS
-      .filter((field) => typeof input[field] === 'string')
-      .map((field) => `<input type="hidden" name="${field}" value="${escapeHtmlSafe(input[field] as string)}">`)
-      .join('')
+    const requestHiddenFields = options?.postIdentity
+      ? ''
+      : OAUTH_REQUEST_FIELDS
+          .filter((field) => typeof input[field] === 'string')
+          .map((field) => `<input type="hidden" name="${field}" value="${escapeHtmlSafe(input[field] as string)}">`)
+          .join('');
+    const extraHiddenFields = Object.entries(options?.extraHiddenFields ?? {})
+      .map(([name, value]) => `<input type="hidden" name="${escapeHtmlSafe(name)}" value="${escapeHtmlSafe(value)}">`)
+      .join('');
+    const hiddenFields = requestHiddenFields
+      + extraHiddenFields
       // consent_token is deliberately NOT part of the fingerprint fields.
       + `<input type="hidden" name="consent_token" value="${escapeHtmlSafe(approvalToken)}">`;
     // Consent-meaningful texts: part of the rules hash (consent-rules-hash.ts),
@@ -364,18 +415,41 @@ export class ConsentHttpController {
     // aborts the chain in the browser, so allow the upstream authorize origin
     // (https only) and the client redirect origin (https, or loopback http)
     // alongside 'self'.
+    // Post-identity: the IdP hop already happened, so only the final redirect
+    // back to the OAuth client remains in the submission chain.
     const extraOrigins = [
-      safeHttpsOrigin(upstreamAuthorizeUrl),
+      options?.postIdentity ? undefined : safeHttpsOrigin(upstreamAuthorizeUrl),
       clientRedirectFormActionSource(input.redirect_uri),
     ].filter((origin): origin is string => origin !== undefined);
     const csp = extraOrigins.length > 0
       ? CONSENT_FORM_CSP.replace("form-action 'self'", `form-action 'self' ${extraOrigins.join(' ')}`)
       : CONSENT_FORM_CSP;
+    const effectiveSubmitLabel = options?.postIdentity
+      ? escapeHtmlSafe(resolveConsentText(gate.labels?.submit, locale) ?? i18n.submitAfterIdentity)
+      : submitLabel;
+    // Deny is a plain submit (no checkbox requirement): declining must always
+    // be possible, and the handler completes the protocol with access_denied.
+    const denyButton = options?.postIdentity
+      ? `<p><button type="submit" name="consent_decision" value="deny" formnovalidate>${escapeHtmlSafe(i18n.deny)}</button></p>`
+      : '';
     renderConsentPage(res, {
       status: HTTP_STATUS.OK,
       title: escapeHtmlSafe(i18n.consentRequired),
-      body: `<h1>${escapeHtmlSafe(i18n.consentRequired)}</h1><p>${rulesSummary(gate, locale)}</p>${educationLink(gate, locale)}<form method="post">${hiddenFields}<label><input type="checkbox" name="consent_accept" value="yes" required> ${acceptLabel}</label><p><button type="submit">${submitLabel}</button></p></form>`,
+      body: `<h1>${escapeHtmlSafe(i18n.consentRequired)}</h1><p>${rulesSummary(gate, locale)}</p>${educationLink(gate, locale)}<form method="post">${hiddenFields}<label><input type="checkbox" name="consent_accept" value="yes" required> ${acceptLabel}</label><p><button type="submit">${effectiveSubmitLabel}</button></p>${denyButton}</form>`,
       csp,
+      gate,
+      locale,
+    });
+  }
+
+  /** Terminal page after an explicit deny: nothing was recorded. */
+  renderConsentDenied(res: Response, gate: ConsentGateConfig | undefined, locale: ConsentPageLocale = 'en'): void {
+    const i18n = CONSENT_PAGE_I18N[locale];
+    renderConsentPage(res, {
+      status: HTTP_STATUS.OK,
+      title: escapeHtmlSafe(i18n.deniedTitle),
+      body: `<h1>${escapeHtmlSafe(i18n.deniedTitle)}</h1><p>${escapeHtmlSafe(i18n.deniedBody)}</p>`,
+      csp: CONSENT_PAGE_CSP,
       gate,
       locale,
     });
