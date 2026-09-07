@@ -1040,7 +1040,7 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
     try {
         // Exchange External Code for Tokens
         const tokens = await this.exchangeCodeWithProvider(
-            code, 
+            code,
             undefined,
             this.config.redirect_uri!
         );
@@ -1048,70 +1048,19 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
         const identity = this.identityVerifier
           ? await this.verifyCallbackIdentity(tokens, storedState.nonce)
           : undefined;
-        const client = await this._clientsStore.getClient(storedState.clientId);
-        if (!client) throw new Error('Client not found');
 
-        // Re-validate redirect URI policy + registration before redirect (defense-in-depth)
-        if (!this.isAllowedClientRedirectUri(client, storedState.clientRedirectUri)) {
-            this.logger.error('Redirect URI not allowed (callback)', undefined, {
-                storedUri: storedState.clientRedirectUri,
-                allowedHosts: this.config.allowed_redirect_hosts || [...DEFAULT_ALLOWED_REDIRECT_HOSTS],
-                allowedUnregisteredRedirectUris: this.config.allowed_unregistered_redirect_uris,
-            });
-            res.status(400).send('Redirect URI not allowed');
-            return;
-        }
-        if (client.redirect_uris && client.redirect_uris.length > 0 && !client.redirect_uris.includes(storedState.clientRedirectUri)) {
-            this.logger.error('Stored redirect URI no longer registered', undefined, {
-                storedUri: storedState.clientRedirectUri,
-                registeredUris: client.redirect_uris,
-            });
-            res.status(400).send('Unregistered redirect_uri');
-            return;
-        }
-
-        // Redirect to Client
-        let clientUrl: URL;
-        try {
-            // Allow custom schemes (e.g., vscode://, cursor://) as long as the host was validated above
-            clientUrl = new URL(storedState.clientRedirectUri);
-        } catch {
-            res.status(400).send('Invalid redirect URI');
-            return;
-        }
-
-        if (identity && this.onIdentityVerified) {
-          await this.onIdentityVerified(identity);
-        }
-
-        const internalCode = randomUUID();
-        this.authorizationCodes.set(internalCode, {
-          client,
-          params: {
-            redirectUri: storedState.clientRedirectUri,
+        await this.completeAuthorization(
+          {
+            clientId: storedState.clientId,
+            clientRedirectUri: storedState.clientRedirectUri,
             codeChallenge: storedState.codeChallenge,
+            originalState: storedState.originalState,
             scopes: storedState.scopes || [],
-            state: storedState.originalState
+            tokens,
+            identity,
           },
-          createdAt: Date.now(),
-          tokens,
-          identity,
-        });
-        this._clientsStore.markAuthCodeOpened(client.client_id);
-
-        clientUrl.searchParams.set('code', internalCode);
-        if (storedState.originalState) {
-            clientUrl.searchParams.set('state', storedState.originalState);
-        }
-
-        // Log only origin + pathname: the full URL carries the internal code and
-        // echoed state as query parameters, and neither may reach the logs.
-        this.logger.info('Redirecting to client with internal code', {
-            clientUrl: clientUrl.origin + clientUrl.pathname,
-        });
-
-        // nosemgrep: javascript.express.open-redirect-deepsemgrep.open-redirect-deepsemgrep, javascript.express.web.tainted-redirect-express.tainted-redirect-express
-        res.redirect(clientUrl.toString());
+          res,
+        );
 
     } catch (err) {
         this.logger.error('Callback handling failed', err as Error);
@@ -1123,6 +1072,94 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
         }
         res.status(500).send('Internal Server Error during token exchange');
     }
+  }
+
+  /**
+   * Finish an authorization for which upstream tokens (and, when configured,
+   * a verified identity) are already in hand: re-validate the client redirect
+   * URI against CURRENT policy and registration, run the identity hook, mint
+   * the internal authorization code, and redirect the browser to the client.
+   *
+   * Extracted from `handleCallback` so the consent-after-identity flow can
+   * defer this step to the consent form POST; the re-validation therefore
+   * runs at completion time, never at form render time.
+   */
+  async completeAuthorization(
+    request: {
+      clientId: string;
+      clientRedirectUri: string;
+      codeChallenge: string;
+      originalState?: string;
+      scopes: string[];
+      tokens: OAuthTokens;
+      identity?: OidcIdentity;
+    },
+    res: Response,
+  ): Promise<void> {
+    const client = await this._clientsStore.getClient(request.clientId);
+    if (!client) throw new Error('Client not found');
+
+    // Re-validate redirect URI policy + registration before redirect (defense-in-depth)
+    if (!this.isAllowedClientRedirectUri(client, request.clientRedirectUri)) {
+        this.logger.error('Redirect URI not allowed (callback)', undefined, {
+            storedUri: request.clientRedirectUri,
+            allowedHosts: this.config.allowed_redirect_hosts || [...DEFAULT_ALLOWED_REDIRECT_HOSTS],
+            allowedUnregisteredRedirectUris: this.config.allowed_unregistered_redirect_uris,
+        });
+        res.status(400).send('Redirect URI not allowed');
+        return;
+    }
+    if (client.redirect_uris && client.redirect_uris.length > 0 && !client.redirect_uris.includes(request.clientRedirectUri)) {
+        this.logger.error('Stored redirect URI no longer registered', undefined, {
+            storedUri: request.clientRedirectUri,
+            registeredUris: client.redirect_uris,
+        });
+        res.status(400).send('Unregistered redirect_uri');
+        return;
+    }
+
+    // Redirect to Client
+    let clientUrl: URL;
+    try {
+        // Allow custom schemes (e.g., vscode://, cursor://) as long as the host was validated above
+        clientUrl = new URL(request.clientRedirectUri);
+    } catch {
+        res.status(400).send('Invalid redirect URI');
+        return;
+    }
+
+    if (request.identity && this.onIdentityVerified) {
+      await this.onIdentityVerified(request.identity);
+    }
+
+    const internalCode = randomUUID();
+    this.authorizationCodes.set(internalCode, {
+      client,
+      params: {
+        redirectUri: request.clientRedirectUri,
+        codeChallenge: request.codeChallenge,
+        scopes: request.scopes,
+        state: request.originalState
+      },
+      createdAt: Date.now(),
+      tokens: request.tokens,
+      identity: request.identity,
+    });
+    this._clientsStore.markAuthCodeOpened(client.client_id);
+
+    clientUrl.searchParams.set('code', internalCode);
+    if (request.originalState) {
+        clientUrl.searchParams.set('state', request.originalState);
+    }
+
+    // Log only origin + pathname: the full URL carries the internal code and
+    // echoed state as query parameters, and neither may reach the logs.
+    this.logger.info('Redirecting to client with internal code', {
+        clientUrl: clientUrl.origin + clientUrl.pathname,
+    });
+
+    // nosemgrep: javascript.express.open-redirect-deepsemgrep.open-redirect-deepsemgrep, javascript.express.web.tainted-redirect-express.tainted-redirect-express
+    res.redirect(clientUrl.toString());
   }
 
   /**
