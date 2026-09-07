@@ -8105,6 +8105,37 @@ describe('Consent-after-identity flow (AIPP-625)', () => {
     expect(after.status).toBe(400);
   });
 
+  it('deny after the client registration changed renders the denied page instead of redirecting', async () => {
+    const state = await profileState();
+    const { location } = await runDecider(state);
+    const { cookie, pendingId } = await renderForm(location!);
+
+    // The registration changes between authorize and the deny click: the
+    // stored redirect URI is no longer registered for the client.
+    state.oauthProvider.clientsStore.registerClient({
+      client_id: 'e2e-mcp-client',
+      redirect_uris: ['http://localhost:3003/oauth/other-callback'],
+      grant_types: ['authorization_code'],
+      response_types: ['code'],
+    });
+
+    const denied = await request(app)
+      .post(asPath(location!))
+      .type('form')
+      .set('Cookie', cookie)
+      .send({ pending: pendingId, consent_decision: 'deny' });
+
+    // Same re-validation the accept path gets: no redirect to the stale URI.
+    expect(denied.status).toBe(200);
+    expect(denied.headers.location).toBeUndefined();
+    expect(denied.text.toLowerCase()).toContain('declined');
+    expect(evidenceLines().filter((line) => line.includes('"grant"'))).toHaveLength(0);
+
+    // The entry is burned either way.
+    const after = await request(app).get(asPath(location!));
+    expect(after.status).toBe(400);
+  });
+
   it('parallel tabs: the losing accept gets the expired page and evidence is recorded once', async () => {
     const state = await profileState();
     const { location } = await runDecider(state);

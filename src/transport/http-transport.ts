@@ -2435,6 +2435,17 @@ export class HttpTransport {
           subjectHash: pseudonymizeSubject(denied.identity.subject),
           pendingIdRef: pendingIdLogRef(pendingId),
         });
+        // Same redirect re-validation the accept path gets inside
+        // completeAuthorization: registration can change between authorize
+        // and this click, and the two branches must apply the same control.
+        const target = await oauthProvider.resolveCompletionClient(
+          denied.auth.clientId,
+          denied.auth.clientRedirectUri,
+        );
+        if (!target.ok) {
+          this.consentController.renderConsentDenied(res, gateConfig, locale);
+          return;
+        }
         // Complete the protocol so the waiting MCP client unblocks with a
         // clean error instead of timing out.
         this.redirectOAuthAuthorizeError(

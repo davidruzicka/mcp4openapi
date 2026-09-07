@@ -1124,28 +1124,54 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
    * defer this step to the consent form POST; the re-validation therefore
    * runs at completion time, never at form render time.
    */
-  async completeAuthorization(request: AuthorizationCompletion, res: Response): Promise<void> {
-    const client = await this._clientsStore.getClient(request.clientId);
+  /**
+   * Re-validate a stored client redirect target against CURRENT policy and
+   * registration. Shared by the deferred completion (accept) and the deny
+   * redirect, so both branches of the consent form apply the same control at
+   * the same moment. Throws on an unknown client; logs on validation failure.
+   */
+  async resolveCompletionClient(
+    clientId: string,
+    clientRedirectUri: string,
+  ): Promise<
+    | { ok: true; client: OAuthClientInformationFull }
+    | { ok: false; reason: 'policy' | 'registration' }
+  > {
+    const client = await this._clientsStore.getClient(clientId);
     if (!client) throw new Error('Client not found');
 
     // Re-validate redirect URI policy + registration before redirect (defense-in-depth)
-    if (!this.isAllowedClientRedirectUri(client, request.clientRedirectUri)) {
-        this.logger.error('Redirect URI not allowed (callback)', undefined, {
-            storedUri: request.clientRedirectUri,
-            allowedHosts: this.config.allowed_redirect_hosts || [...DEFAULT_ALLOWED_REDIRECT_HOSTS],
-            allowedUnregisteredRedirectUris: this.config.allowed_unregistered_redirect_uris,
-        });
-        res.status(400).send('Redirect URI not allowed');
+    if (!this.isAllowedClientRedirectUri(client, clientRedirectUri)) {
+      this.logger.error('Redirect URI not allowed (callback)', undefined, {
+        storedUri: clientRedirectUri,
+        allowedHosts: this.config.allowed_redirect_hosts || [...DEFAULT_ALLOWED_REDIRECT_HOSTS],
+        allowedUnregisteredRedirectUris: this.config.allowed_unregistered_redirect_uris,
+      });
+      return { ok: false, reason: 'policy' };
+    }
+    if (
+      client.redirect_uris &&
+      client.redirect_uris.length > 0 &&
+      !client.redirect_uris.includes(clientRedirectUri)
+    ) {
+      this.logger.error('Stored redirect URI no longer registered', undefined, {
+        storedUri: clientRedirectUri,
+        registeredUris: client.redirect_uris,
+      });
+      return { ok: false, reason: 'registration' };
+    }
+    return { ok: true, client };
+  }
+
+  async completeAuthorization(request: AuthorizationCompletion, res: Response): Promise<void> {
+    const validated = await this.resolveCompletionClient(request.clientId, request.clientRedirectUri);
+    if (!validated.ok) {
+        res.status(400).send(
+            validated.reason === 'registration' ? 'Unregistered redirect_uri' : 'Redirect URI not allowed',
+        );
         return;
     }
-    if (client.redirect_uris && client.redirect_uris.length > 0 && !client.redirect_uris.includes(request.clientRedirectUri)) {
-        this.logger.error('Stored redirect URI no longer registered', undefined, {
-            storedUri: request.clientRedirectUri,
-            registeredUris: client.redirect_uris,
-        });
-        res.status(400).send('Unregistered redirect_uri');
-        return;
-    }
+    const client = validated.client;
 
     // Redirect to Client
     let clientUrl: URL;
