@@ -72,8 +72,12 @@ export interface PendingConsentStore {
    * generated here so no caller can supply a low-entropy value.
    */
   create(payload: PendingConsentPayload): Promise<string>;
-  /** Whether a live (unexpired, unconsumed) entry exists for this id and profile. */
-  exists(pendingId: string, profileId: string): Promise<boolean>;
+  /**
+   * Read a live (unexpired, unconsumed) entry without consuming it. The form
+   * GET uses it to render (and re-render on refresh) and to derive the CSP
+   * form-action origin from the stored client redirect URI.
+   */
+  peek(pendingId: string, profileId: string): Promise<PendingConsentPayload | null>;
   /**
    * Atomically remove and return the payload, or null when the entry is
    * missing, expired, or already consumed. At most one caller ever receives
@@ -181,9 +185,11 @@ abstract class BasePendingConsentStore implements PendingConsentStore {
     return pendingId;
   }
 
-  async exists(pendingId: string, profileId: string): Promise<boolean> {
-    if (!isPendingIdShape(pendingId)) return false;
-    return this.rowExists(hashPendingId(pendingId), profileId, this.now());
+  async peek(pendingId: string, profileId: string): Promise<PendingConsentPayload | null> {
+    if (!isPendingIdShape(pendingId)) return null;
+    const ciphertext = await this.read(hashPendingId(pendingId), profileId, this.now());
+    if (ciphertext === null) return null;
+    return decryptPayload(this.key, pendingId, profileId, ciphertext);
   }
 
   async consume(pendingId: string, profileId: string): Promise<PendingConsentPayload | null> {
@@ -199,7 +205,7 @@ abstract class BasePendingConsentStore implements PendingConsentStore {
     ciphertext: string,
     expiresAt: number,
   ): Promise<void>;
-  protected abstract rowExists(idHash: string, profileId: string, now: number): Promise<boolean>;
+  protected abstract read(idHash: string, profileId: string, now: number): Promise<string | null>;
   protected abstract take(idHash: string, profileId: string, now: number): Promise<string | null>;
 }
 
@@ -222,9 +228,10 @@ export class InMemoryPendingConsentStore extends BasePendingConsentStore {
     this.rows.set(idHash, { profileId, ciphertext, expiresAt });
   }
 
-  protected async rowExists(idHash: string, profileId: string, now: number): Promise<boolean> {
+  protected async read(idHash: string, profileId: string, now: number): Promise<string | null> {
     const row = this.rows.get(idHash);
-    return row !== undefined && row.profileId === profileId && row.expiresAt > now;
+    if (!row || row.profileId !== profileId || row.expiresAt <= now) return null;
+    return row.ciphertext;
   }
 
   protected async take(idHash: string, profileId: string, now: number): Promise<string | null> {
@@ -303,14 +310,15 @@ export class PostgresPendingConsentStore extends BasePendingConsentStore {
     );
   }
 
-  protected async rowExists(idHash: string, profileId: string, now: number): Promise<boolean> {
+  protected async read(idHash: string, profileId: string, now: number): Promise<string | null> {
     await this.ensureSchema();
     const result = await this.run(
-      'check pending consent',
-      `SELECT 1 FROM ${this.table} WHERE id_hash = $1 AND profile_id = $2 AND expires_at > $3`,
+      'read pending consent',
+      `SELECT ciphertext FROM ${this.table} WHERE id_hash = $1 AND profile_id = $2 AND expires_at > $3`,
       [idHash, profileId, now],
     );
-    return result.rows.length > 0;
+    const row = result.rows[0] as { ciphertext?: unknown } | undefined;
+    return typeof row?.ciphertext === 'string' ? row.ciphertext : null;
   }
 
   protected async take(idHash: string, profileId: string, now: number): Promise<string | null> {

@@ -73,6 +73,9 @@ export class MetricsCollector {
   // OAuth metrics
   private oauthRefreshRotationsTotal: Counter;
 
+  // Consent flow metrics
+  private consentFlowEventsTotal: Counter;
+
   constructor(config: MetricsCollectorConfig) {
     this.enabled = config.enabled;
     this.registry = new Registry();
@@ -210,6 +213,14 @@ export class MetricsCollector {
     this.oauthRefreshRotationsTotal = new Counter({
       name: `${prefix}oauth_refresh_rotations_total`,
       help: 'OAuth client refresh-token rotation events (rotated vs reuse detected)',
+      labelNames: ['event', 'profile_id'],
+      registers: [this.registry],
+    });
+
+    // Consent flow metrics
+    this.consentFlowEventsTotal = new Counter({
+      name: `${prefix}consent_flow_events_total`,
+      help: 'Consent-after-identity flow events (form shown vs skipped for an existing grant)',
       labelNames: ['event', 'profile_id'],
       registers: [this.registry],
     });
@@ -403,6 +414,17 @@ export class MetricsCollector {
     if (!this.enabled) return;
     const labels = this.resolveContextLabels(context);
     this.oauthRefreshRotationsTotal.inc({ event, profile_id: labels.profile_id });
+  }
+
+  /**
+   * Record a consent-after-identity flow event: the form was shown to a
+   * verified identity without a valid grant, or it was skipped because a
+   * valid grant already existed (the silent path is otherwise invisible).
+   */
+  recordConsentFlow(event: 'form_shown' | 'form_skipped_existing_grant', context?: MetricsContextLabels): void {
+    if (!this.enabled) return;
+    const labels = this.resolveContextLabels(context);
+    this.consentFlowEventsTotal.inc({ event, profile_id: labels.profile_id });
   }
 
   recordApiCacheEvent(operation: string, event: string, context?: MetricsContextLabels): void {

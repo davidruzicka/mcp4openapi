@@ -132,6 +132,24 @@ const LOOPBACK_REDIRECT_HOSTS = new Set(['localhost', '127.0.0.1', '::1']);
 /**
  * State preserved across the redirect to external provider
  */
+/** Everything a deferred (consent-gated) completion needs; see completeAuthorization. */
+export interface AuthorizationCompletion {
+  clientId: string;
+  clientRedirectUri: string;
+  codeChallenge: string;
+  originalState?: string;
+  scopes: string[];
+  tokens: OAuthTokens;
+  identity?: OidcIdentity;
+}
+
+/** Context handed to the consent-after-identity decision point. */
+export interface CallbackConsentContext {
+  identity: OidcIdentity;
+  tokens: OAuthTokens;
+  auth: AuthorizationCompletion;
+}
+
 interface AuthorizationState {
   clientRedirectUri: string;
   codeChallenge: string;
@@ -176,6 +194,7 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
   private ssrfValidator: SSRFValidator;
   private identityVerifier?: OidcIdentityVerifier;
   private onIdentityVerified?: (identity: OidcIdentity) => Promise<void>;
+  private callbackConsent?: (context: CallbackConsentContext, res: Response) => Promise<boolean>;
   
   // In-memory storage
   private authorizationCodes = new Map<string, AuthorizationCodeData>();
@@ -232,6 +251,20 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
   ): void {
     this.identityVerifier = verifier;
     this.onIdentityVerified = onIdentityVerified;
+  }
+
+  /**
+   * Install the consent-after-identity decision point (AIPP-625). Invoked in
+   * `handleCallback` after the identity is verified and BEFORE the internal
+   * authorization code is minted. Returning true means the decider handled
+   * the response (typically a 303 to the consent form); returning false lets
+   * the callback complete the authorization silently. Errors propagate and
+   * fail the callback closed.
+   */
+  configureCallbackConsent(
+    decider: (context: CallbackConsentContext, res: Response) => Promise<boolean>,
+  ): void {
+    this.callbackConsent = decider;
   }
 
   get issuer(): string | undefined {
@@ -1049,18 +1082,25 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
           ? await this.verifyCallbackIdentity(tokens, storedState.nonce)
           : undefined;
 
-        await this.completeAuthorization(
-          {
-            clientId: storedState.clientId,
-            clientRedirectUri: storedState.clientRedirectUri,
-            codeChallenge: storedState.codeChallenge,
-            originalState: storedState.originalState,
-            scopes: storedState.scopes || [],
-            tokens,
-            identity,
-          },
-          res,
-        );
+        const completion = {
+          clientId: storedState.clientId,
+          clientRedirectUri: storedState.clientRedirectUri,
+          codeChallenge: storedState.codeChallenge,
+          originalState: storedState.originalState,
+          scopes: storedState.scopes || [],
+          tokens,
+          identity,
+        };
+
+        // Consent-after-identity decision point: with a verified identity and
+        // a configured decider, the flow may divert to the consent form
+        // instead of completing. Errors propagate (fail closed below).
+        if (identity && this.callbackConsent) {
+          const handled = await this.callbackConsent({ identity, tokens, auth: completion }, res);
+          if (handled) return;
+        }
+
+        await this.completeAuthorization(completion, res);
 
     } catch (err) {
         this.logger.error('Callback handling failed', err as Error);
@@ -1084,18 +1124,7 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
    * defer this step to the consent form POST; the re-validation therefore
    * runs at completion time, never at form render time.
    */
-  async completeAuthorization(
-    request: {
-      clientId: string;
-      clientRedirectUri: string;
-      codeChallenge: string;
-      originalState?: string;
-      scopes: string[];
-      tokens: OAuthTokens;
-      identity?: OidcIdentity;
-    },
-    res: Response,
-  ): Promise<void> {
+  async completeAuthorization(request: AuthorizationCompletion, res: Response): Promise<void> {
     const client = await this._clientsStore.getClient(request.clientId);
     if (!client) throw new Error('Client not found');
 

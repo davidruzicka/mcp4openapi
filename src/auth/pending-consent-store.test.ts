@@ -92,22 +92,23 @@ describe.each(backendCases)('$name contract', ({ make }) => {
     const pendingId = await store.create(payload);
 
     expect(isPendingIdShape(pendingId)).toBe(true);
-    await expect(store.exists(pendingId, 'ms365')).resolves.toBe(true);
+    await expect(store.peek(pendingId, 'ms365')).resolves.toEqual(payload);
 
     const consumed = await store.consume(pendingId, 'ms365');
     expect(consumed).toEqual(payload);
     // Second consume must lose: entry is gone.
     await expect(store.consume(pendingId, 'ms365')).resolves.toBeNull();
-    await expect(store.exists(pendingId, 'ms365')).resolves.toBe(false);
+    await expect(store.peek(pendingId, 'ms365')).resolves.toBeNull();
   });
 
   it('scopes entries to the profile they were created for', async () => {
     const store = make();
-    const pendingId = await store.create(makePayload());
-    await expect(store.exists(pendingId, 'other-profile')).resolves.toBe(false);
+    const payload = makePayload();
+    const pendingId = await store.create(payload);
+    await expect(store.peek(pendingId, 'other-profile')).resolves.toBeNull();
     await expect(store.consume(pendingId, 'other-profile')).resolves.toBeNull();
     // The mismatched consume must not have burned the entry for the right profile.
-    await expect(store.exists(pendingId, 'ms365')).resolves.toBe(true);
+    await expect(store.peek(pendingId, 'ms365')).resolves.toEqual(payload);
   });
 
   it('treats expired entries as absent', async () => {
@@ -115,14 +116,14 @@ describe.each(backendCases)('$name contract', ({ make }) => {
     const store = make(() => clock);
     const pendingId = await store.create(makePayload());
     clock += PENDING_CONSENT_TTL_MS + 1;
-    await expect(store.exists(pendingId, 'ms365')).resolves.toBe(false);
+    await expect(store.peek(pendingId, 'ms365')).resolves.toBeNull();
     await expect(store.consume(pendingId, 'ms365')).resolves.toBeNull();
   });
 
   it('rejects malformed pending ids without touching storage', async () => {
     const store = make();
     await expect(store.consume('short', 'ms365')).resolves.toBeNull();
-    await expect(store.exists('../../etc/passwd', 'ms365')).resolves.toBe(false);
+    await expect(store.peek('../../etc/passwd', 'ms365')).resolves.toBeNull();
   });
 });
 

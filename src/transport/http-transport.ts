@@ -50,6 +50,12 @@ import { ClientAuthGate } from '../auth/client-auth-gate.js';
 import { ConsentGate } from '../auth/consent-gate.js';
 import type { ConsentEvidenceStore } from '../auth/consent-evidence-store.js';
 import { createConsentEvidenceStore } from '../auth/consent-evidence-store-factory.js';
+import {
+  createPendingConsentStore,
+  isPendingIdShape,
+  pendingIdLogRef,
+  type PendingConsentStore,
+} from '../auth/pending-consent-store.js';
 import { OidcIdentityVerifier, type OidcIdentity } from '../auth/oidc-identity-verifier.js';
 import type { AuthorizedPrincipal } from '../auth/inbound-auth-principal.js';
 import { normalizeIssuer } from '../auth/issuer.js';
@@ -146,6 +152,8 @@ interface ProfileRuntimeState {
   clientAuthGate?: ClientAuthGate;
   consentGate?: ConsentGate;
   consentEvidenceStore?: ConsentEvidenceStore;
+  /** Parked callback completions awaiting the consent form POST (AIPP-625). */
+  pendingConsentStore?: PendingConsentStore;
   toolFilterService?: ToolFilterService;
   oauthTokensByAccessToken: Map<string, { refreshToken?: string; expiresAt?: number; clientId: string; scopes: string[]; rawAccessToken?: string }>;
   sessions: Map<string, SessionData>;
@@ -683,7 +691,8 @@ export class HttpTransport {
       // Without a token key there are no encrypted envelopes, so a verified
       // identity cannot survive a restart and every refresh would silently
       // produce a principal-less session on a gated profile.
-      if (!this.config.tokenKey) {
+      const consentTokenKey = this.config.tokenKey;
+      if (!consentTokenKey) {
         throw new ConfigurationError(
           'Required consent gate needs MCP4_OAUTH_KEY so verified identity survives a gateway restart',
         );
@@ -708,24 +717,55 @@ export class HttpTransport {
         jwksCache: this.enterpriseJwksCache,
         logger: this.logger,
       });
-      oauthProvider.configureIdentityVerification(verifier, async (identity) => {
-        await store.record({
-          sub: identity.subject,
-          issuer: normalizeIssuer(identity.issuer),
-          tenantId: identity.tenantId ?? null,
+      oauthProvider.configureIdentityVerification(verifier);
+      const pendingStore = createPendingConsentStore({
+        db: this.config.consentDb,
+        masterKey: consentTokenKey,
+        logger: this.logger,
+      });
+      // Consent-after-identity (AIPP-625): after the OIDC login the callback
+      // consults the evidence store. A valid grant passes silently; otherwise
+      // the completion state is parked in the pending store and the browser is
+      // sent to the consent form (PRG: the form lives on its own URL, so a
+      // refresh never replays the consumed callback). Evidence is recorded
+      // only by the form POST handler, never here. Store errors propagate and
+      // fail the callback closed - an outage must not manufacture re-consents.
+      oauthProvider.configureCallbackConsent(async (ctx, res) => {
+        const granted = await gate.isGranted(ctx.identity);
+        if (granted) {
+          this.metrics?.recordConsentFlow('form_skipped_existing_grant', { profileId });
+          this.logger.debug('Consent grant found at callback: silent pass', {
+            profileId,
+            subjectHash: pseudonymizeSubject(ctx.identity.subject),
+          });
+          return false;
+        }
+        const pendingId = await pendingStore.create({
           profileId,
-          rules_version: context!.consent_gate!.rules_version,
-          rules_hash: gate.rulesHash,
-          granted_at: Date.now(),
+          identity: {
+            subject: ctx.identity.subject,
+            issuer: ctx.identity.issuer,
+            tenantId: ctx.identity.tenantId,
+          },
+          tokens: ctx.tokens,
+          auth: ctx.auth,
+          rulesHash: gate.rulesHash,
+          createdAt: Date.now(),
         });
-        this.logger.info('Consent evidence recorded', {
+        this.logger.info('Consent required at callback: parked pending completion', {
           profileId,
-          rulesVersion: context!.consent_gate!.rules_version,
-          subjectHash: pseudonymizeSubject(identity.subject),
+          subjectHash: pseudonymizeSubject(ctx.identity.subject),
+          pendingIdRef: pendingIdLogRef(pendingId),
         });
+        res.redirect(
+          HTTP_STATUS.SEE_OTHER,
+          this.buildProfileUrl(profileId, `/consent/pending/${pendingId}`),
+        );
+        return true;
       });
       state.consentEvidenceStore = store;
       state.consentGate = gate;
+      state.pendingConsentStore = pendingStore;
     }
 
     if (tenantIndex.enabled) {
@@ -1560,6 +1600,25 @@ export class HttpTransport {
         ...withProfile((req, res, profileState) => this.handleConsentInfo(req, res, profileState))
       );
 
+      // Consent-after-identity form (AIPP-625). Canonical, profile-scoped URL:
+      // the callback 303s here regardless of which callback route variant ran,
+      // so a browser refresh re-renders the form instead of replaying the
+      // consumed OAuth callback.
+      this.app.get(
+        `${basePath}/consent/pending/:pendingId`,
+        ...middlewares,
+        oauthRateLimiter,
+        withProfileState((req, res, profileState) => this.handlePendingConsentGet(req, res, profileState))
+      );
+
+      this.app.post(
+        `${basePath}/consent/pending/:pendingId`,
+        ...middlewares,
+        oauthRateLimiter,
+        express.urlencoded({ extended: false, limit: '50kb' }),
+        withProfileState((req, res, profileState) => this.handlePendingConsentPost(req, res, profileState))
+      );
+
       this.app.post(
         `${basePath}${OAUTH_PATHS.AUTHORIZE}`,
         ...middlewares,
@@ -2268,6 +2327,207 @@ export class HttpTransport {
       profileState.context.consent_gate,
       parseAcceptLanguage(req.headers['accept-language'] as string | undefined),
     );
+  }
+
+  /**
+   * GET of the consent-after-identity form (AIPP-625). The pending id in the
+   * URL references a parked callback completion; the form is re-renderable
+   * (refresh-safe) because rendering never consumes anything. A missing,
+   * expired, or consumed entry gets the recoverable expired page. Pending
+   * store failures (including AEAD authentication failures) propagate to the
+   * catch and fail closed: an outage must never be answered with a consent
+   * form.
+   */
+  private async handlePendingConsentGet(
+    req: Request,
+    res: Response,
+    profileState: ProfileRuntimeState,
+  ): Promise<void> {
+    const locale = parseAcceptLanguage(req.headers['accept-language'] as string | undefined);
+    const gateConfig = profileState.context.consent_gate;
+    const gate = profileState.consentGate;
+    const pendingStore = profileState.pendingConsentStore;
+    if (!gateConfig?.required || !gate || !pendingStore) {
+      this.consentController.renderConsentInfo(res, gateConfig, locale);
+      return;
+    }
+    try {
+      const pendingId = String(req.params.pendingId ?? '');
+      const payload = isPendingIdShape(pendingId)
+        ? await pendingStore.peek(pendingId, profileState.profileId)
+        : null;
+      if (!payload) {
+        this.consentController.renderApprovalExpired(
+          res,
+          this.buildProfileUrl(profileState.profileId, '/consent'),
+          gateConfig,
+          locale,
+        );
+        return;
+      }
+      // The accepted POST ends with a redirect to the OAuth client, so the
+      // client redirect origin must be present in the form-action CSP.
+      const fingerprint = this.consentController.requestFingerprint(
+        profileState.profileId,
+        {},
+        { pending: pendingId, rules_hash: gate.rulesHash },
+      );
+      this.metrics?.recordConsentFlow('form_shown', { profileId: profileState.profileId });
+      this.consentController.renderApprovalForm(
+        res,
+        gateConfig,
+        { redirect_uri: payload.auth.clientRedirectUri },
+        fingerprint,
+        undefined,
+        req.headers.cookie,
+        locale,
+        { extraHiddenFields: { pending: pendingId }, postIdentity: true },
+      );
+    } catch (error) {
+      this.failPendingConsentClosed(res, profileState.profileId, 'render', error);
+    }
+  }
+
+  /**
+   * POST of the consent-after-identity form: the only place consent evidence
+   * is recorded. Accept consumes the HMAC approval token (fingerprint binds
+   * the pending id AND the current rules hash, so a rules bump between render
+   * and click re-renders instead of recording), atomically consumes the
+   * pending entry (a parallel tab loses and gets the expired page), records
+   * the grant for the VERIFIED identity stored in the entry (the form carries
+   * no identity fields), and completes the authorization with redirect-URI
+   * re-validation at this moment. An explicit deny consumes the entry,
+   * records nothing, and completes the protocol with access_denied
+   * (RFC 6749 4.1.2.1).
+   */
+  private async handlePendingConsentPost(
+    req: Request,
+    res: Response,
+    profileState: ProfileRuntimeState,
+  ): Promise<void> {
+    const locale = parseAcceptLanguage(req.headers['accept-language'] as string | undefined);
+    const gateConfig = profileState.context.consent_gate;
+    const gate = profileState.consentGate;
+    const pendingStore = profileState.pendingConsentStore;
+    const evidenceStore = profileState.consentEvidenceStore;
+    const oauthProvider = profileState.oauthProvider;
+    if (!gateConfig?.required || !gate || !pendingStore || !evidenceStore || !oauthProvider) {
+      this.consentController.renderConsentInfo(res, gateConfig, locale);
+      return;
+    }
+    const retryUrl = this.buildProfileUrl(profileState.profileId, '/consent');
+    const input = (req.body ?? {}) as Record<string, unknown>;
+    const pendingId = String(req.params.pendingId ?? '');
+    try {
+      if (!isPendingIdShape(pendingId) || input.pending !== pendingId) {
+        this.consentController.renderApprovalExpired(res, retryUrl, gateConfig, locale);
+        return;
+      }
+
+      if (input.consent_decision === 'deny') {
+        const denied = await pendingStore.consume(pendingId, profileState.profileId);
+        if (!denied) {
+          this.consentController.renderApprovalExpired(res, retryUrl, gateConfig, locale);
+          return;
+        }
+        this.logger.info('Consent explicitly denied: nothing recorded', {
+          profileId: profileState.profileId,
+          subjectHash: pseudonymizeSubject(denied.identity.subject),
+          pendingIdRef: pendingIdLogRef(pendingId),
+        });
+        // Complete the protocol so the waiting MCP client unblocks with a
+        // clean error instead of timing out.
+        this.redirectOAuthAuthorizeError(
+          res,
+          denied.auth.clientRedirectUri,
+          'access_denied',
+          'The user declined consent',
+          denied.auth.originalState,
+        );
+        return;
+      }
+
+      const fingerprint = this.consentController.requestFingerprint(
+        profileState.profileId,
+        {},
+        { pending: pendingId, rules_hash: gate.rulesHash },
+      );
+      if (
+        input.consent_accept !== 'yes' ||
+        !this.consentController.consumeApproval(fingerprint, req.headers.cookie, input.consent_token)
+      ) {
+        // Expired/replayed token, foreign browser, or a rules bump between
+        // render and click (the fingerprint carries the CURRENT rules hash).
+        // When the entry is still live, re-render the form for the current
+        // rules so the human confirms what is actually in force; recording
+        // under unseen rules is never an option.
+        const stillPending = await pendingStore.peek(pendingId, profileState.profileId);
+        if (stillPending) {
+          this.metrics?.recordConsentFlow('form_shown', { profileId: profileState.profileId });
+          this.consentController.renderApprovalForm(
+            res,
+            gateConfig,
+            { redirect_uri: stillPending.auth.clientRedirectUri },
+            fingerprint,
+            undefined,
+            req.headers.cookie,
+            locale,
+            { extraHiddenFields: { pending: pendingId }, postIdentity: true },
+          );
+        } else {
+          this.consentController.renderApprovalExpired(res, retryUrl, gateConfig, locale);
+        }
+        return;
+      }
+
+      const payload = await pendingStore.consume(pendingId, profileState.profileId);
+      if (!payload) {
+        // A parallel tab won the atomic consume; evidence is recorded once.
+        this.consentController.renderApprovalExpired(res, retryUrl, gateConfig, locale);
+        return;
+      }
+
+      await evidenceStore.record({
+        sub: payload.identity.subject,
+        issuer: normalizeIssuer(payload.identity.issuer),
+        tenantId: payload.identity.tenantId ?? null,
+        profileId: profileState.profileId,
+        rules_version: gateConfig.rules_version,
+        rules_hash: gate.rulesHash,
+        granted_at: Date.now(),
+      });
+      this.logger.info('Consent evidence recorded', {
+        profileId: profileState.profileId,
+        rulesVersion: gateConfig.rules_version,
+        subjectHash: pseudonymizeSubject(payload.identity.subject),
+      });
+
+      await oauthProvider.completeAuthorization(
+        { ...payload.auth, tokens: payload.tokens as OAuthTokens, identity: payload.identity },
+        res,
+      );
+    } catch (error) {
+      this.failPendingConsentClosed(res, profileState.profileId, 'completion', error);
+    }
+  }
+
+  /** Fail-closed terminal response for pending-consent storage/crypto failures. */
+  private failPendingConsentClosed(
+    res: Response,
+    profileId: string,
+    stage: 'render' | 'completion',
+    error: unknown,
+  ): void {
+    this.logger.error(
+      `Pending consent ${stage} failed`,
+      error instanceof Error ? error : new Error(String(error)),
+      { profileId },
+    );
+    if (!res.headersSent) {
+      res
+        .status(HTTP_STATUS.SERVICE_UNAVAILABLE)
+        .send('Consent processing is temporarily unavailable');
+    }
   }
 
   private async handleOAuthToken(
