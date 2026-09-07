@@ -37,7 +37,7 @@ import {
   isEncryptedToken,
   type TokenEnvelopePayload,
 } from '../auth/token-envelope.js';
-import { ConsentHttpController } from './consent-http-controller.js';
+import { ConsentHttpController, parseCookieValue } from './consent-http-controller.js';
 import { ReconsentTracker } from './reconsent-tracker.js';
 import * as refreshEnvelope from './refresh-envelope.js';
 import type { AccessTokenIdentityResolver, RefreshEnvelopeContext, RefreshFamily } from './refresh-envelope.js';
@@ -53,7 +53,13 @@ import { createConsentEvidenceStore } from '../auth/consent-evidence-store-facto
 import {
   createPendingConsentStore,
   isPendingIdShape,
+  matchesPendingBinding,
+  newPendingBindingValue,
+  PENDING_BINDING_COOKIE,
+  PENDING_CONSENT_TTL_MS,
+  pendingBindingDigest,
   pendingIdLogRef,
+  type PendingConsentPayload,
   type PendingConsentStore,
 } from '../auth/pending-consent-store.js';
 import { OidcIdentityVerifier, type OidcIdentity } from '../auth/oidc-identity-verifier.js';
@@ -740,6 +746,10 @@ export class HttpTransport {
           });
           return false;
         }
+        // Bind the pending flow to THIS browser: only the user agent that
+        // completed the IdP login receives the cookie, so a leaked pending
+        // URL alone can neither show the form nor answer the question.
+        const bindingValue = newPendingBindingValue();
         const pendingId = await pendingStore.create({
           profileId,
           identity: {
@@ -750,6 +760,7 @@ export class HttpTransport {
           tokens: ctx.tokens,
           auth: ctx.auth,
           rulesHash: gate.rulesHash,
+          bindingDigest: pendingBindingDigest(bindingValue),
           createdAt: Date.now(),
         });
         this.logger.info('Consent required at callback: parked pending completion', {
@@ -757,6 +768,9 @@ export class HttpTransport {
           subjectHash: pseudonymizeSubject(ctx.identity.subject),
           pendingIdRef: pendingIdLogRef(pendingId),
         });
+        res.setHeader('Set-Cookie', [
+          `${PENDING_BINDING_COOKIE}=${bindingValue}; Path=/; Max-Age=${PENDING_CONSENT_TTL_MS / 1000}; HttpOnly; Secure; SameSite=Lax`,
+        ]);
         res.redirect(
           HTTP_STATUS.SEE_OTHER,
           this.buildProfileUrl(profileId, `/consent/pending/${pendingId}`),
@@ -2353,10 +2367,14 @@ export class HttpTransport {
     }
     try {
       const pendingId = String(req.params.pendingId ?? '');
-      const payload = isPendingIdShape(pendingId)
+      // The binding cookie gate runs before any store access: a browser that
+      // never completed the IdP login gets the recoverable page without
+      // costing a database read.
+      const binding = parseCookieValue(req.headers.cookie, PENDING_BINDING_COOKIE);
+      const payload = binding && isPendingIdShape(pendingId)
         ? await pendingStore.peek(pendingId, profileState.profileId)
         : null;
-      if (!payload) {
+      if (!payload || !matchesPendingBinding(binding, payload.bindingDigest)) {
         this.consentController.renderApprovalExpired(
           res,
           this.buildProfileUrl(profileState.profileId, '/consent'),
@@ -2420,6 +2438,18 @@ export class HttpTransport {
     const pendingId = String(req.params.pendingId ?? '');
     try {
       if (!isPendingIdShape(pendingId) || input.pending !== pendingId) {
+        this.consentController.renderApprovalExpired(res, retryUrl, gateConfig, locale);
+        return;
+      }
+
+      // Binding gate for BOTH decisions: only the browser that completed the
+      // IdP login (and thus holds the __Host- binding cookie from the 303)
+      // may accept or deny. A leaked pending URL fails here, unconsumed.
+      const binding = parseCookieValue(req.headers.cookie, PENDING_BINDING_COOKIE);
+      const bound = binding
+        ? await pendingStore.peek(pendingId, profileState.profileId)
+        : null;
+      if (!bound || !matchesPendingBinding(binding, bound.bindingDigest)) {
         this.consentController.renderApprovalExpired(res, retryUrl, gateConfig, locale);
         return;
       }

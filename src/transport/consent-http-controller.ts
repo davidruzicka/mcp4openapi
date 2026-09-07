@@ -158,7 +158,7 @@ const APPROVAL_TOKEN_VERSION = 'v1';
 const BROWSER_ID_SHAPE = /^[A-Za-z0-9_-]{43}$/;
 
 /** Extract one cookie value from a raw Cookie header. Returns undefined when absent. */
-function parseCookieValue(header: string | undefined, name: string): string | undefined {
+export function parseCookieValue(header: string | undefined, name: string): string | undefined {
   if (!header) return undefined;
   for (const part of header.split(';')) {
     const separator = part.indexOf('=');

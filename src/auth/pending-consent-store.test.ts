@@ -9,6 +9,9 @@ import {
   PENDING_CONSENT_TTL_MS,
   createPendingConsentStore,
   isPendingIdShape,
+  matchesPendingBinding,
+  newPendingBindingValue,
+  pendingBindingDigest,
   pendingIdLogRef,
   type PendingConsentPayload,
   type PendingConsentStore,
@@ -45,6 +48,7 @@ const makePayload = (over: Partial<PendingConsentPayload> = {}): PendingConsentP
     scopes: ['openid'],
   },
   rulesHash: 'rules-hash-1',
+  bindingDigest: pendingBindingDigest('B'.repeat(43)),
   createdAt: Date.now(),
   ...over,
 });
@@ -256,5 +260,21 @@ describe('InMemoryPendingConsentStore sweep', () => {
     await store.create(makePayload());
     const rows = (store as unknown as { rows: Map<string, unknown> }).rows;
     expect(rows.size).toBe(1);
+  });
+});
+
+describe('pending binding cookie helpers', () => {
+  it('matches only the exact minted value, timing-safe over digests', () => {
+    const value = newPendingBindingValue();
+    const digest = pendingBindingDigest(value);
+    expect(matchesPendingBinding(value, digest)).toBe(true);
+    expect(matchesPendingBinding(newPendingBindingValue(), digest)).toBe(false);
+  });
+
+  it('rejects absent or malformed cookie values without matching', () => {
+    const digest = pendingBindingDigest(newPendingBindingValue());
+    expect(matchesPendingBinding(undefined, digest)).toBe(false);
+    expect(matchesPendingBinding('', digest)).toBe(false);
+    expect(matchesPendingBinding('not-a-valid-shape', digest)).toBe(false);
   });
 });

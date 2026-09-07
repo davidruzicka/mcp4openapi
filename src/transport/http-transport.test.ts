@@ -7963,6 +7963,10 @@ describe('Consent-after-identity flow (AIPP-625)', () => {
     };
     const res: any = {
       redirected: undefined as string | undefined,
+      headers: {} as Record<string, unknown>,
+      setHeader(name: string, value: unknown) {
+        this.headers[name.toLowerCase()] = value;
+      },
       redirect(status: number, url: string) {
         this.redirected = url;
         expect(status).toBe(303);
@@ -7972,7 +7976,13 @@ describe('Consent-after-identity flow (AIPP-625)', () => {
       { identity, tokens: TOKENS, auth },
       res,
     );
-    return { handled, location: res.redirected };
+    // The 303 sets the __Host- binding cookie tying the pending flow to the
+    // browser that completed the IdP login.
+    const setCookie = ([] as string[]).concat((res.headers['set-cookie'] as string[]) ?? []);
+    const binding = setCookie
+      .map((line) => line.split(';')[0])
+      .find((pair) => pair.startsWith('__Host-mcp4_pending='));
+    return { handled, location: res.redirected, binding };
   };
 
   const grantFor = async (state: any, identity = IDENTITY): Promise<void> => {
@@ -8003,12 +8013,23 @@ describe('Consent-after-identity flow (AIPP-625)', () => {
     }
   };
 
-  const renderForm = async (location: string): Promise<{ cookie: string; token: string; pendingId: string }> => {
-    const page = await request(app).get(asPath(location));
+  /** GET the form as the browser that owns the binding cookie from the 303. */
+  const renderForm = async (
+    location: string,
+    binding?: string,
+  ): Promise<{ cookie: string; token: string; pendingId: string }> => {
+    const get = request(app).get(asPath(location));
+    if (binding) get.set('Cookie', binding);
+    const page = await get;
     expect(page.status).toBe(200);
     const token = page.text.match(/name="consent_token" value="([^"]+)"/)![1];
     const pendingId = page.text.match(/name="pending" value="([^"]+)"/)![1];
-    const cookie = ([] as string[]).concat(page.headers['set-cookie'] ?? [])[0].split(';')[0];
+    const approval = ([] as string[])
+      .concat(page.headers['set-cookie'] ?? [])[0]
+      .split(';')[0];
+    // Subsequent POSTs must present both cookies: the pending binding and the
+    // approval browser id.
+    const cookie = binding ? `${binding}; ${approval}` : approval;
     return { cookie, token, pendingId };
   };
 
@@ -8026,13 +8047,14 @@ describe('Consent-after-identity flow (AIPP-625)', () => {
 
   it('parks the completion and redirects to the form when no grant exists; accept records once and completes', async () => {
     const state = await profileState();
-    const { handled, location } = await runDecider(state);
+    const { handled, location, binding } = await runDecider(state);
     expect(handled).toBe(true);
     expect(location).toContain('/consent/pending/');
+    expect(binding).toBeDefined();
 
     // PRG: the form URL is refresh-safe and renders repeatedly.
-    const first = await renderForm(location!);
-    const second = await renderForm(location!);
+    const first = await renderForm(location!, binding);
+    const second = await renderForm(location!, binding);
     expect(second.pendingId).toBe(first.pendingId);
     // The form carries no identity or OAuth request fields.
     const page = await request(app).get(asPath(location!));
@@ -8064,8 +8086,8 @@ describe('Consent-after-identity flow (AIPP-625)', () => {
 
   it('the form POST cannot bind the grant to a submitted identity (server-side subject only)', async () => {
     const state = await profileState();
-    const { location } = await runDecider(state);
-    const { cookie, token, pendingId } = await renderForm(location!);
+    const { location, binding } = await runDecider(state);
+    const { cookie, token, pendingId } = await renderForm(location!, binding);
 
     await request(app)
       .post(asPath(location!))
@@ -8086,8 +8108,8 @@ describe('Consent-after-identity flow (AIPP-625)', () => {
 
   it('explicit deny records nothing and completes the protocol with access_denied', async () => {
     const state = await profileState();
-    const { location } = await runDecider(state);
-    const { cookie, pendingId } = await renderForm(location!);
+    const { location, binding } = await runDecider(state);
+    const { cookie, pendingId } = await renderForm(location!, binding);
 
     const denied = await request(app)
       .post(asPath(location!))
@@ -8107,8 +8129,8 @@ describe('Consent-after-identity flow (AIPP-625)', () => {
 
   it('deny after the client registration changed renders the denied page instead of redirecting', async () => {
     const state = await profileState();
-    const { location } = await runDecider(state);
-    const { cookie, pendingId } = await renderForm(location!);
+    const { location, binding } = await runDecider(state);
+    const { cookie, pendingId } = await renderForm(location!, binding);
 
     // The registration changes between authorize and the deny click: the
     // stored redirect URI is no longer registered for the client.
@@ -8138,9 +8160,9 @@ describe('Consent-after-identity flow (AIPP-625)', () => {
 
   it('parallel tabs: the losing accept gets the expired page and evidence is recorded once', async () => {
     const state = await profileState();
-    const { location } = await runDecider(state);
-    const tabA = await renderForm(location!);
-    const tabB = await renderForm(location!);
+    const { location, binding } = await runDecider(state);
+    const tabA = await renderForm(location!, binding);
+    const tabB = await renderForm(location!, binding);
 
     const firstPost = await request(app)
       .post(asPath(location!))
@@ -8187,14 +8209,49 @@ describe('Consent-after-identity flow (AIPP-625)', () => {
 
   it('fails closed with 503 when the pending store is unavailable (never renders the form)', async () => {
     const state = await profileState();
-    const { location } = await runDecider(state);
+    const { location, binding } = await runDecider(state);
     state.pendingConsentStore.peek = async () => {
       throw new (await import('../core/errors.js')).PendingConsentStoreError('db down');
     };
 
-    const page = await request(app).get(asPath(location!));
+    const page = await request(app).get(asPath(location!)).set('Cookie', binding!);
     expect(page.status).toBe(503);
     expect(page.text).not.toContain('consent_token');
+  });
+
+  it('a browser without the binding cookie can neither see the form nor decide', async () => {
+    const state = await profileState();
+    const { location, binding } = await runDecider(state);
+    // The victim's browser renders the form normally.
+    const victim = await renderForm(location!, binding);
+
+    // An attacker who only learned the pending URL: no binding cookie.
+    const foreignGet = await request(app).get(asPath(location!));
+    expect(foreignGet.status).toBe(400);
+    expect(foreignGet.text).not.toContain('consent_token');
+
+    // Even with a form rendered into a foreign browser context (stolen HTML),
+    // accept and deny are refused without the victim's binding cookie.
+    const foreignAccept = await request(app)
+      .post(asPath(location!))
+      .type('form')
+      .send({ pending: victim.pendingId, consent_accept: 'yes', consent_token: victim.token });
+    expect(foreignAccept.status).toBe(400);
+    const foreignDeny = await request(app)
+      .post(asPath(location!))
+      .type('form')
+      .send({ pending: victim.pendingId, consent_decision: 'deny' });
+    expect(foreignDeny.status).toBe(400);
+    expect(evidenceLines().filter((line) => line.includes('"grant"'))).toHaveLength(0);
+
+    // The original browser still completes.
+    const accepted = await request(app)
+      .post(asPath(location!))
+      .type('form')
+      .set('Cookie', victim.cookie)
+      .send({ pending: victim.pendingId, consent_accept: 'yes', consent_token: victim.token });
+    expect(accepted.status).toBe(302);
+    expect(accepted.headers.location).toContain('code=');
   });
 
   it('logs only a hash reference of the pending id, never the raw value', async () => {
@@ -8236,7 +8293,10 @@ describe('Consent-after-identity flow (AIPP-625)', () => {
           grant_types: ['authorization_code'],
           response_types: ['code'],
         });
-        const res: any = { redirect(_s: number, url: string) { this.redirected = url; } };
+        const res: any = {
+          setHeader() {},
+          redirect(_s: number, url: string) { this.redirected = url; },
+        };
         await state.oauthProvider.callbackConsent(
           {
             identity: IDENTITY,

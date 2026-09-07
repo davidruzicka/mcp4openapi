@@ -61,8 +61,21 @@ export interface PendingConsentPayload {
   identity: PendingConsentIdentity;
   tokens: unknown;
   auth: PendingConsentAuthState;
-  /** Digest of the rules the form will present; re-checked at POST time. */
+  /**
+   * Informational audit copy of the rules digest at park time. Enforcement
+   * happens via the approval-token fingerprint, which carries the CURRENT
+   * gate rules hash at both render and consume time; this field is for
+   * debugging a rules bump mid-flow, never compared by the handlers.
+   */
   rulesHash: string;
+  /**
+   * SHA-256 digest (base64url) of the `__Host-` binding cookie minted with
+   * the 303 to the form. The form GET and POST must present the cookie whose
+   * digest matches, so only the browser that completed the IdP login can see
+   * the form or answer the consent question (a leaked pending URL alone is
+   * not enough). Stored only inside the AEAD ciphertext.
+   */
+  bindingDigest: string;
   createdAt: number;
 }
 
@@ -101,6 +114,34 @@ export function pendingIdLogRef(pendingId: string): string {
 
 function hashPendingId(pendingId: string): string {
   return crypto.createHash('sha256').update(pendingId).digest('base64url');
+}
+
+/** Cookie binding the pending flow to the browser that completed the IdP login. */
+export const PENDING_BINDING_COOKIE = '__Host-mcp4_pending';
+
+/** Mint a fresh binding cookie value (256-bit CSPRNG, same shape as ids). */
+export function newPendingBindingValue(): string {
+  return crypto.randomBytes(PENDING_ID_BYTES).toString('base64url');
+}
+
+/**
+ * Digest stored in the AEAD payload; the cookie value itself never leaves the
+ * Set-Cookie header, so a database or payload leak cannot forge the cookie.
+ */
+export function pendingBindingDigest(value: string): string {
+  return crypto.createHash('sha256').update(value, 'utf8').digest('base64url');
+}
+
+/**
+ * Timing-safe check of a presented binding cookie against the stored digest.
+ * Absent or malformed cookies fail without touching crypto.
+ */
+export function matchesPendingBinding(presented: string | undefined, storedDigest: string): boolean {
+  if (!presented || !PENDING_ID_SHAPE.test(presented)) return false;
+  const left = Buffer.from(pendingBindingDigest(presented), 'utf8');
+  const right = Buffer.from(storedDigest, 'utf8');
+  if (left.length !== right.length) return false;
+  return crypto.timingSafeEqual(left, right);
 }
 
 /**
