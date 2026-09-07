@@ -7880,3 +7880,298 @@ describeIfListen('HttpTransport', () => {
     });
   });
 });
+
+describe('Consent-after-identity flow (AIPP-625)', () => {
+  const logger = new ConsoleLogger();
+  let transport: HttpTransport;
+  let app: Express;
+  let evidenceDir: string;
+
+  const IDENTITY = { subject: 'human-1', issuer: 'https://auth.example.com', tenantId: 'tenant-1' };
+  const TOKENS = { access_token: 'upstream-at', refresh_token: 'upstream-rt', token_type: 'bearer' };
+
+  const gateContext = (context: Record<string, unknown>): Record<string, unknown> => ({
+    ...context,
+    consent_gate: {
+      required: true,
+      rules_version: 'v1',
+      rules_summary: 'Accept SharePoint usage rules.',
+      identity_source: 'profile_oauth',
+    },
+  });
+
+  beforeEach(() => {
+    evidenceDir = fs.mkdtempSync(path.join(os.tmpdir(), 'consent-after-identity-'));
+    transport = new HttpTransport(
+      {
+        host: '127.0.0.1',
+        port: 0,
+        sessionTimeoutMs: 1800000,
+        heartbeatEnabled: false,
+        heartbeatIntervalMs: 30000,
+        metricsEnabled: false,
+        metricsPath: '/metrics',
+        oauthConfig: {
+          issuer: 'https://auth.example.com',
+          client_id: 'test-client',
+          client_secret: 'test-secret',
+          redirect_uri: 'https://example.com/oauth/callback',
+          scopes: ['read', 'write'],
+        },
+        tokenKey: Buffer.alloc(32, 7),
+        consentEvidencePath: path.join(evidenceDir, 'evidence.jsonl'),
+      },
+      logger,
+    );
+    const context = (transport as any).buildDefaultProfileContext();
+    transport.setProfileContextProvider(async () => gateContext(context));
+    app = (transport as any).app;
+  });
+
+  afterEach(async () => {
+    await transport.stop();
+    fs.rmSync(evidenceDir, { recursive: true, force: true });
+  });
+
+  /** Runtime state of the gated default profile, with the internals the tests need. */
+  const profileState = async (): Promise<any> => (transport as any).getProfileState('default');
+
+  /** Register an OAuth client the deferred completion can re-validate against. */
+  const registerClient = async (state: any): Promise<{ clientId: string; redirectUri: string }> => {
+    const redirectUri = 'http://localhost:3003/oauth/callback';
+    state.oauthProvider.clientsStore.registerClient({
+      client_id: 'e2e-mcp-client',
+      redirect_uris: [redirectUri],
+      grant_types: ['authorization_code'],
+      response_types: ['code'],
+    });
+    return { clientId: 'e2e-mcp-client', redirectUri };
+  };
+
+  /** Drive the callback-time consent decision exactly as handleCallback does. */
+  const runDecider = async (
+    state: any,
+    identity: Record<string, unknown> = IDENTITY,
+  ): Promise<{ handled: boolean; location?: string }> => {
+    const { clientId, redirectUri } = await registerClient(state);
+    const auth = {
+      clientId,
+      clientRedirectUri: redirectUri,
+      codeChallenge: 'challenge',
+      originalState: 'client-state',
+      scopes: ['openid'],
+    };
+    const res: any = {
+      redirected: undefined as string | undefined,
+      redirect(status: number, url: string) {
+        this.redirected = url;
+        expect(status).toBe(303);
+      },
+    };
+    const handled = await state.oauthProvider.callbackConsent(
+      { identity, tokens: TOKENS, auth },
+      res,
+    );
+    return { handled, location: res.redirected };
+  };
+
+  const grantFor = async (state: any, identity = IDENTITY): Promise<void> => {
+    await state.consentEvidenceStore.record({
+      sub: identity.subject,
+      issuer: identity.issuer,
+      tenantId: identity.tenantId ?? null,
+      profileId: 'default',
+      rules_version: 'v1',
+      rules_hash: state.consentGate.rulesHash,
+      granted_at: Date.now(),
+    });
+  };
+
+  const evidenceLines = (): string[] => {
+    const file = path.join(evidenceDir, 'evidence.jsonl');
+    // No file means nothing was ever recorded (the deny path must keep it so).
+    if (!fs.existsSync(file)) return [];
+    return fs.readFileSync(file, 'utf8').split('\n').filter((line) => line.trim().length > 0);
+  };
+
+  /** The 303 Location is absolute (buildProfileUrl); supertest needs the path. */
+  const asPath = (location: string): string => {
+    try {
+      return new URL(location).pathname;
+    } catch {
+      return location;
+    }
+  };
+
+  const renderForm = async (location: string): Promise<{ cookie: string; token: string; pendingId: string }> => {
+    const page = await request(app).get(asPath(location));
+    expect(page.status).toBe(200);
+    const token = page.text.match(/name="consent_token" value="([^"]+)"/)![1];
+    const pendingId = page.text.match(/name="pending" value="([^"]+)"/)![1];
+    const cookie = ([] as string[]).concat(page.headers['set-cookie'] ?? [])[0].split(';')[0];
+    return { cookie, token, pendingId };
+  };
+
+  it('passes silently when a valid grant exists (no form, no duplicate evidence)', async () => {
+    const state = await profileState();
+    await grantFor(state);
+    const before = evidenceLines().length;
+
+    const { handled, location } = await runDecider(state);
+
+    expect(handled).toBe(false);
+    expect(location).toBeUndefined();
+    expect(evidenceLines().length).toBe(before);
+  });
+
+  it('parks the completion and redirects to the form when no grant exists; accept records once and completes', async () => {
+    const state = await profileState();
+    const { handled, location } = await runDecider(state);
+    expect(handled).toBe(true);
+    expect(location).toContain('/consent/pending/');
+
+    // PRG: the form URL is refresh-safe and renders repeatedly.
+    const first = await renderForm(location!);
+    const second = await renderForm(location!);
+    expect(second.pendingId).toBe(first.pendingId);
+    // The form carries no identity or OAuth request fields.
+    const page = await request(app).get(asPath(location!));
+    expect(page.text).not.toContain('client_id');
+    expect(page.text).not.toContain(IDENTITY.subject);
+
+    const accepted = await request(app)
+      .post(asPath(location!))
+      .type('form')
+      .set('Cookie', second.cookie)
+      .send({ pending: second.pendingId, consent_accept: 'yes', consent_token: second.token });
+
+    expect(accepted.status).toBe(302);
+    expect(accepted.headers.location).toContain('http://localhost:3003/oauth/callback');
+    expect(accepted.headers.location).toContain('code=');
+    expect(accepted.headers.location).toContain('state=client-state');
+
+    // Evidence recorded exactly once, for the verified subject from the pending entry.
+    const grants = evidenceLines().map((line) => JSON.parse(line)).filter((row) => row.type === 'grant');
+    expect(grants).toHaveLength(1);
+    expect(grants[0].sub).toBe(IDENTITY.subject);
+    expect(grants[0].rules_hash).toBe(state.consentGate.rulesHash);
+
+    // The consumed entry is gone: the form URL now shows the recoverable expired page.
+    const replayPage = await request(app).get(asPath(location!));
+    expect(replayPage.status).toBe(400);
+    expect(replayPage.text).toContain('expired');
+  });
+
+  it('the form POST cannot bind the grant to a submitted identity (server-side subject only)', async () => {
+    const state = await profileState();
+    const { location } = await runDecider(state);
+    const { cookie, token, pendingId } = await renderForm(location!);
+
+    await request(app)
+      .post(asPath(location!))
+      .type('form')
+      .set('Cookie', cookie)
+      .send({
+        pending: pendingId,
+        consent_accept: 'yes',
+        consent_token: token,
+        sub: 'attacker',
+        subject: 'attacker',
+      });
+
+    const grants = evidenceLines().map((line) => JSON.parse(line)).filter((row) => row.type === 'grant');
+    expect(grants).toHaveLength(1);
+    expect(grants[0].sub).toBe(IDENTITY.subject);
+  });
+
+  it('explicit deny records nothing and completes the protocol with access_denied', async () => {
+    const state = await profileState();
+    const { location } = await runDecider(state);
+    const { cookie, pendingId } = await renderForm(location!);
+
+    const denied = await request(app)
+      .post(asPath(location!))
+      .type('form')
+      .set('Cookie', cookie)
+      .send({ pending: pendingId, consent_decision: 'deny' });
+
+    expect(denied.status).toBe(302);
+    expect(denied.headers.location).toContain('error=access_denied');
+    expect(denied.headers.location).toContain('state=client-state');
+    expect(evidenceLines().filter((line) => line.includes('"grant"'))).toHaveLength(0);
+
+    // The entry is burned: a follow-up accept has nothing to complete.
+    const after = await request(app).get(asPath(location!));
+    expect(after.status).toBe(400);
+  });
+
+  it('parallel tabs: the losing accept gets the expired page and evidence is recorded once', async () => {
+    const state = await profileState();
+    const { location } = await runDecider(state);
+    const tabA = await renderForm(location!);
+    const tabB = await renderForm(location!);
+
+    const firstPost = await request(app)
+      .post(asPath(location!))
+      .type('form')
+      .set('Cookie', tabA.cookie)
+      .send({ pending: tabA.pendingId, consent_accept: 'yes', consent_token: tabA.token });
+    expect(firstPost.status).toBe(302);
+
+    const secondPost = await request(app)
+      .post(asPath(location!))
+      .type('form')
+      .set('Cookie', tabB.cookie)
+      .send({ pending: tabB.pendingId, consent_accept: 'yes', consent_token: tabB.token });
+    expect(secondPost.status).toBe(400);
+    expect(secondPost.text).toContain('expired');
+
+    const grants = evidenceLines().map((line) => JSON.parse(line)).filter((row) => row.type === 'grant');
+    expect(grants).toHaveLength(1);
+  });
+
+  it('a revoked grant is not a silent pass: the flow ends in the form again', async () => {
+    const state = await profileState();
+    await grantFor(state);
+    await state.consentEvidenceStore.revoke({
+      sub: IDENTITY.subject,
+      issuer: IDENTITY.issuer,
+      tenantId: IDENTITY.tenantId,
+      profileId: 'default',
+      revoked_at: Date.now() + 1,
+    });
+
+    const { handled, location } = await runDecider(state);
+    expect(handled).toBe(true);
+    expect(location).toContain('/consent/pending/');
+  });
+
+  it('an unknown or expired pending id renders the recoverable expired page', async () => {
+    const missing = 'A'.repeat(43);
+    const page = await request(app).get(`/consent/pending/${missing}`);
+    expect(page.status).toBe(400);
+    expect(page.text).toContain('expired');
+    expect(page.text).toContain('/consent');
+  });
+
+  it('fails closed with 503 when the pending store is unavailable (never renders the form)', async () => {
+    const state = await profileState();
+    const { location } = await runDecider(state);
+    state.pendingConsentStore.peek = async () => {
+      throw new (await import('../core/errors.js')).PendingConsentStoreError('db down');
+    };
+
+    const page = await request(app).get(asPath(location!));
+    expect(page.status).toBe(503);
+    expect(page.text).not.toContain('consent_token');
+  });
+
+  it('a profile without a consent gate answers the pending URL with the not-configured page', async () => {
+    const context = (transport as any).buildDefaultProfileContext();
+    transport.setProfileContextProvider(async () => context);
+    (transport as any).profileStates?.clear?.();
+
+    const page = await request(app).get(`/consent/pending/${'A'.repeat(43)}`);
+    expect(page.status).toBe(404);
+  });
+});
