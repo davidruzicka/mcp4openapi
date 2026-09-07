@@ -3226,3 +3226,109 @@ describe('ExternalOAuthProvider', () => {
   });
 
 });
+
+describe('completeAuthorization (deferred consent completion, AIPP-625)', () => {
+  const mockLogger = {
+    debug: vi.fn(),
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+  } as unknown as Logger;
+
+  const makeProvider = (): ExternalOAuthProvider =>
+    new ExternalOAuthProvider(
+      {
+        authorization_endpoint: 'https://oauth.example.com/authorize',
+        token_endpoint: 'https://oauth.example.com/token',
+        client_id: 'test-client-id',
+        client_secret: 'test-client-secret',
+        scopes: ['api'],
+        redirect_uri: 'http://localhost:3003/oauth/callback',
+      },
+      mockLogger,
+    );
+
+  const makeRes = () => {
+    const res = {
+      statusCode: 0,
+      sent: undefined as unknown,
+      redirected: undefined as string | undefined,
+      status(code: number) {
+        this.statusCode = code;
+        return this;
+      },
+      send(body: unknown) {
+        this.sent = body;
+        return this;
+      },
+      redirect(url: string) {
+        this.redirected = url;
+      },
+    };
+    return res;
+  };
+
+  const TOKENS = { access_token: 'at', token_type: 'bearer' } as const;
+
+  it('throws for an unknown client (deferred completion cannot invent one)', async () => {
+    const provider = makeProvider();
+    await expect(
+      provider.completeAuthorization(
+        {
+          clientId: 'ghost-client',
+          clientRedirectUri: 'http://localhost:3003/cb',
+          codeChallenge: 'c',
+          scopes: [],
+          tokens: TOKENS,
+        },
+        makeRes() as never,
+      ),
+    ).rejects.toThrow('Client not found');
+  });
+
+  it('re-validates registration at completion time: a deregistered redirect URI gets 400', async () => {
+    const provider = makeProvider();
+    (provider as any)._clientsStore.registerClient({
+      client_id: 'client-a',
+      redirect_uris: ['http://localhost:3003/registered'],
+      grant_types: ['authorization_code'],
+      response_types: ['code'],
+    });
+    const res = makeRes();
+    await provider.completeAuthorization(
+      {
+        clientId: 'client-a',
+        clientRedirectUri: 'http://localhost:3003/other',
+        codeChallenge: 'c',
+        scopes: [],
+        tokens: TOKENS,
+      },
+      res as never,
+    );
+    expect(res.statusCode).toBe(400);
+    expect(res.redirected).toBeUndefined();
+  });
+
+  it('completes without a state parameter when the client sent none', async () => {
+    const provider = makeProvider();
+    (provider as any)._clientsStore.registerClient({
+      client_id: 'client-b',
+      redirect_uris: ['http://localhost:3003/cb'],
+      grant_types: ['authorization_code'],
+      response_types: ['code'],
+    });
+    const res = makeRes();
+    await provider.completeAuthorization(
+      {
+        clientId: 'client-b',
+        clientRedirectUri: 'http://localhost:3003/cb',
+        codeChallenge: 'c',
+        scopes: ['openid'],
+        tokens: TOKENS,
+      },
+      res as never,
+    );
+    expect(res.redirected).toContain('code=');
+    expect(res.redirected).not.toContain('state=');
+  });
+});

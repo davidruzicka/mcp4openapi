@@ -246,3 +246,15 @@ describe('pendingIdLogRef', () => {
     expect(id).not.toContain(ref);
   });
 });
+
+describe('InMemoryPendingConsentStore sweep', () => {
+  it('drops expired rows when a new flow starts', async () => {
+    let clock = 1_000_000;
+    const store = new InMemoryPendingConsentStore(MASTER_KEY, () => clock);
+    await store.create(makePayload());
+    clock += PENDING_CONSENT_TTL_MS + 1;
+    await store.create(makePayload());
+    const rows = (store as unknown as { rows: Map<string, unknown> }).rows;
+    expect(rows.size).toBe(1);
+  });
+});
