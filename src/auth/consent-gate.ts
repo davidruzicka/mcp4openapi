@@ -93,6 +93,31 @@ export class ConsentGate {
     );
   }
 
+  /**
+   * Whether a freshly OIDC-verified identity already satisfies this gate.
+   *
+   * Used by the consent-after-identity OAuth callback to decide between a
+   * silent pass and rendering the consent form. Reuses the exact dispatch-time
+   * policy via `evaluate` (rules pinning, rollback, revocation, max age,
+   * issuer check), so the two paths can never diverge. The adapter marks the
+   * principal as `authType: 'oauth'` because the identity comes from the
+   * profile OAuth login the callback just verified.
+   *
+   * Store failures propagate: the caller must fail closed, never treat an
+   * outage as "no grant" (that would let a DB outage manufacture re-consents).
+   */
+  async isGranted(identity: { subject: string; issuer: string; tenantId?: string | null }): Promise<boolean> {
+    const principal: AuthorizedPrincipal = {
+      authType: 'oauth',
+      profileId: this.profileId,
+      subject: identity.subject,
+      issuer: identity.issuer,
+      tenantId: identity.tenantId ?? undefined,
+      scopes: [],
+    };
+    return (await this.evaluate(principal)) === null;
+  }
+
   /** Returns the denial reason, or null when the principal may dispatch. */
   private async evaluate(principal: AuthorizedPrincipal | null): Promise<ConsentDenialReason | null> {
     if (!principal?.subject || !principal.issuer) return 'no_principal';
