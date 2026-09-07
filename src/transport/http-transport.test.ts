@@ -8166,6 +8166,76 @@ describe('Consent-after-identity flow (AIPP-625)', () => {
     expect(page.text).not.toContain('consent_token');
   });
 
+  it('logs only a hash reference of the pending id, never the raw value', async () => {
+    const spyLogger = {
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+      debug: vi.fn(),
+    } as unknown as Logger;
+    const spied = new HttpTransport(
+      {
+        host: '127.0.0.1',
+        port: 0,
+        sessionTimeoutMs: 1800000,
+        heartbeatEnabled: false,
+        heartbeatIntervalMs: 30000,
+        metricsEnabled: false,
+        metricsPath: '/metrics',
+        oauthConfig: {
+          issuer: 'https://auth.example.com',
+          client_id: 'test-client',
+          client_secret: 'test-secret',
+          redirect_uri: 'https://example.com/oauth/callback',
+          scopes: ['read', 'write'],
+        },
+        tokenKey: Buffer.alloc(32, 7),
+        consentEvidencePath: path.join(evidenceDir, 'evidence-spied.jsonl'),
+      },
+      spyLogger,
+    );
+    try {
+      const context = (spied as any).buildDefaultProfileContext();
+      spied.setProfileContextProvider(async () => gateContext(context));
+      const state = await (spied as any).getProfileState('default');
+      const { location } = await (async () => {
+        state.oauthProvider.clientsStore.registerClient({
+          client_id: 'e2e-mcp-client',
+          redirect_uris: ['http://localhost:3003/oauth/callback'],
+          grant_types: ['authorization_code'],
+          response_types: ['code'],
+        });
+        const res: any = { redirect(_s: number, url: string) { this.redirected = url; } };
+        await state.oauthProvider.callbackConsent(
+          {
+            identity: IDENTITY,
+            tokens: TOKENS,
+            auth: {
+              clientId: 'e2e-mcp-client',
+              clientRedirectUri: 'http://localhost:3003/oauth/callback',
+              codeChallenge: 'challenge',
+              scopes: ['openid'],
+            },
+          },
+          res,
+        );
+        return { location: res.redirected as string };
+      })();
+      const pendingId = asPath(location).split('/').pop()!;
+      const logged = JSON.stringify([
+        ...(spyLogger.info as any).mock.calls,
+        ...(spyLogger.debug as any).mock.calls,
+        ...(spyLogger.warn as any).mock.calls,
+        ...(spyLogger.error as any).mock.calls,
+      ]);
+      expect(logged).not.toContain(pendingId);
+      expect(logged).not.toContain(IDENTITY.subject);
+      expect(logged).toContain('pendingIdRef');
+    } finally {
+      await spied.stop();
+    }
+  });
+
   it('a profile without a consent gate answers the pending URL with the not-configured page', async () => {
     const context = (transport as any).buildDefaultProfileContext();
     transport.setProfileContextProvider(async () => context);
