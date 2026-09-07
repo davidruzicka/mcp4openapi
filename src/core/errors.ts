@@ -276,6 +276,20 @@ export class ConsentEvidenceStoreError extends MCPError {
   }
 }
 
+/**
+ * Raised when the pending-consent store (consent-after-identity flow) cannot
+ * store, read, or authenticate a pending entry: storage failures and AEAD
+ * authentication failures (tampering or key mismatch). Callers fail closed. A
+ * missing, expired, or already-consumed entry is NOT an error (the store
+ * reports it as absent and the flow renders the recoverable expired page).
+ */
+export class PendingConsentStoreError extends MCPError {
+  constructor(message: string, details?: Record<string, unknown>) {
+    super(message, 'PENDING_CONSENT_STORE_ERROR', details);
+    this.name = 'PendingConsentStoreError';
+  }
+}
+
 export class EnterprisePolicyViolationError extends MCPError {
   constructor(message: string, details?: Record<string, unknown>) {
     super(message, 'ENTERPRISE_POLICY_VIOLATION_ERROR', details);
