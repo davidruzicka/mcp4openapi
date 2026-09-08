@@ -186,10 +186,14 @@ function decryptPayload(
     throw new PendingConsentStoreError('Pending consent ciphertext is malformed');
   }
   try {
+    // authTagLength pins the full 16-byte GCM tag: without it Node accepts
+    // shorter tags, which enables truncated-tag forgery (semgrep
+    // gcm-no-tag-length; token-envelope.ts applies the same option).
     const decipher = crypto.createDecipheriv(
       'aes-256-gcm',
       key,
       Buffer.from(envelope.iv, 'base64url'),
+      { authTagLength: 16 },
     );
     decipher.setAAD(Buffer.from(JSON.stringify([pendingId, profileId])));
     decipher.setAuthTag(Buffer.from(envelope.tag, 'base64url'));
@@ -322,6 +326,10 @@ export class PostgresPendingConsentStore extends BasePendingConsentStore {
         database: config.database,
         user: config.user,
         password: config.password,
+        // TLS in "require" semantics (encrypted, no CA verification): matches
+        // the consent evidence store and how internal pgaas consumers connect;
+        // documented in SECURITY.md. Not a debug bypass.
+        // nosemgrep: problem-based-packs.insecure-transport.js-node.bypass-tls-verification.bypass-tls-verification
         ssl: config.ssl ? { rejectUnauthorized: false } : undefined,
         connectionTimeoutMillis: 5000,
       });

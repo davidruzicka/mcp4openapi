@@ -156,6 +156,19 @@ describe('payload protection', () => {
     await expect(store.consume(pendingId, 'ms365')).rejects.toBeInstanceOf(PendingConsentStoreError);
   });
 
+  it('rejects a truncated authentication tag (no downgrade below 16 bytes)', async () => {
+    const store = new InMemoryPendingConsentStore(MASTER_KEY);
+    const pendingId = await store.create(makePayload());
+    const rows = (store as unknown as { rows: Map<string, { ciphertext: string }> }).rows;
+    for (const row of rows.values()) {
+      const envelope = JSON.parse(row.ciphertext) as { tag: string };
+      const truncated = Buffer.from(envelope.tag, 'base64url').subarray(0, 12);
+      envelope.tag = truncated.toString('base64url');
+      row.ciphertext = JSON.stringify(envelope);
+    }
+    await expect(store.consume(pendingId, 'ms365')).rejects.toBeInstanceOf(PendingConsentStoreError);
+  });
+
   it('binds the ciphertext to the pending id via AAD (a swapped row fails authentication)', async () => {
     const store = new InMemoryPendingConsentStore(MASTER_KEY);
     const idA = await store.create(makePayload());
