@@ -584,3 +584,78 @@ describe('ConsentHttpController', () => {
     });
   });
 });
+
+describe('post-identity approval form (pending consent, AIPP-625)', () => {
+  const PENDING_ID = 'p'.repeat(43);
+
+  it('folds extra fields into the fingerprint (order-independent, collision-safe)', () => {
+    const controller = new ConsentHttpController();
+    const base = controller.requestFingerprint('p1', {}, { pending: PENDING_ID, rules_hash: 'h1' });
+
+    expect(controller.requestFingerprint('p1', {}, { rules_hash: 'h1', pending: PENDING_ID })).toBe(base);
+    expect(controller.requestFingerprint('p1', {}, { pending: PENDING_ID, rules_hash: 'h2' })).not.toBe(base);
+    expect(controller.requestFingerprint('p1', {}, { pending: 'x'.repeat(43), rules_hash: 'h1' })).not.toBe(base);
+    // Extras must not collide with the plain-request fingerprint space.
+    expect(controller.requestFingerprint('p1', {})).not.toBe(base);
+  });
+
+  it('renders the pending form with only the pending hidden field and a deny button', () => {
+    const controller = new ConsentHttpController();
+    const res = makeRes();
+    controller.renderApprovalForm(asResponse(res), gate, {}, 'fp', undefined, undefined, 'en', {
+      extraHiddenFields: { pending: PENDING_ID },
+      postIdentity: true,
+    });
+
+    expect(res.body).toContain(`name="pending" value="${PENDING_ID}"`);
+    // The post-identity form must not echo any OAuth request or identity fields.
+    expect(res.body).not.toContain('name="client_id"');
+    expect(res.body).not.toContain('name="redirect_uri"');
+    // Explicit deny completes the protocol with access_denied.
+    expect(res.body).toMatch(/name="consent_decision" value="deny"/);
+    // The rules hash is fingerprint material, never a form field.
+    expect(res.body).not.toContain('rules_hash');
+  });
+
+  it('binds the approval token to the extras so a swapped pending id fails consumption', () => {
+    const controller = new ConsentHttpController();
+    const res = makeRes();
+    const fingerprint = controller.requestFingerprint('p1', {}, { pending: PENDING_ID, rules_hash: 'h1' });
+    controller.renderApprovalForm(asResponse(res), gate, {}, fingerprint, undefined, undefined, 'en', {
+      extraHiddenFields: { pending: PENDING_ID },
+      postIdentity: true,
+    });
+    const cookie = cookieFromRender(res);
+    const token = tokenFromRender(res);
+
+    const swapped = controller.requestFingerprint('p1', {}, { pending: 'x'.repeat(43), rules_hash: 'h1' });
+    expect(controller.consumeApproval(swapped, cookie, token)).toBe(false);
+    expect(controller.consumeApproval(fingerprint, cookie, token)).toBe(true);
+  });
+
+  it('keeps the CSP form-action limited to self and the client redirect origin', () => {
+    const controller = new ConsentHttpController();
+    const res = makeRes();
+    controller.renderApprovalForm(
+      asResponse(res),
+      gate,
+      { redirect_uri: 'https://client.example/cb' },
+      'fp',
+      undefined,
+      undefined,
+      'en',
+      { extraHiddenFields: { pending: PENDING_ID }, postIdentity: true },
+    );
+    const csp = res.headers['Content-Security-Policy'];
+    expect(csp).toContain("form-action 'self' https://client.example");
+    expect(csp).not.toContain('login.microsoftonline.com');
+  });
+
+  it('renders the declined page without recording anything', () => {
+    const controller = new ConsentHttpController();
+    const res = makeRes();
+    controller.renderConsentDenied(asResponse(res), gate, 'en');
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toContain('Consent declined');
+  });
+});

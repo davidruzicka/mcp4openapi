@@ -306,6 +306,15 @@ an autonomous agent cannot grant consent on the user's behalf.
   fail-closed `ConsentEvidenceStoreError` on any I/O failure). `consent-evidence-store-factory.ts` makes
   required consent without `MCP4_CONSENT_EVIDENCE_PATH` a hard startup failure, so a "consent recorded"
   claim can never silently mean volatile state.
+- **Consent after identity - `src/auth/pending-consent-store.ts` + the callback decision point.** The
+  OAuth callback (after OIDC verification) asks `ConsentGate.isGranted()` (the same `evaluate()` the
+  dispatch path uses, so the two can never diverge): a valid grant completes silently; otherwise the
+  completion state is AEAD-encrypted into the pending store (Postgres when `MCP_CONSENTS_DB_*` is set,
+  in-memory otherwise; ids stored as SHA-256 hashes, 10 min TTL, atomic one-time consumption) and the
+  browser is 303-redirected to `GET /profile/<id>/consent/pending/<id>` (PRG: refresh-safe). Evidence
+  is recorded exclusively by that form's POST, for the verified identity inside the pending entry.
+  `ExternalOAuthProvider.completeAuthorization()` is the shared tail (redirect re-validation, code
+  mint, client redirect) used by both the immediate and the deferred path.
 - **Enforcement - `src/mcp/mcp-server-manager.ts` `buildUpstreamDispatch()`.** The gate is applied at the
   `setGetUpstreamClient()` seam, the single point where an upstream client is acquired. `tools/list` and
   `tools/call` therefore cannot diverge, and a future dispatch path inherits the check. A consent-gated

@@ -428,3 +428,76 @@ describe('ConsentGate error payload', () => {
     expect(serialized).not.toContain('tenant-1');
   });
 });
+
+describe('ConsentGate.isGranted', () => {
+  const makeIdentity = (subject = 'user-1') => ({
+    subject,
+    issuer: ISSUER,
+    tenantId: 'tenant-1',
+  });
+
+  const gateWith = (store: ConsentEvidenceStore, config: ConsentGateConfig = requiredConfig): ConsentGate =>
+    new ConsentGate('ms365', config, store, consentUrlFor, makeLogger(), ISSUER);
+
+  it('returns true for a verified identity with a valid grant', async () => {
+    const store = new InMemoryConsentEvidenceStore();
+    await store.record(makeEvidence());
+    await expect(gateWith(store).isGranted(makeIdentity())).resolves.toBe(true);
+  });
+
+  it('returns false when no grant exists', async () => {
+    await expect(gateWith(new InMemoryConsentEvidenceStore()).isGranted(makeIdentity())).resolves.toBe(false);
+  });
+
+  it('returns false after a rules bump (stored hash no longer matches)', async () => {
+    const store = new InMemoryConsentEvidenceStore();
+    await store.record(makeEvidence({ rules_hash: 'stale-hash' }));
+    await expect(gateWith(store).isGranted(makeIdentity())).resolves.toBe(false);
+  });
+
+  it('returns false for a rules_version rollback', async () => {
+    const store = new InMemoryConsentEvidenceStore();
+    await store.record(makeEvidence());
+    await store.record(makeEvidence({ rules_version: 'v2', rules_hash: 'v2-hash', granted_at: Date.now() + 1 }));
+    await expect(gateWith(store).isGranted(makeIdentity())).resolves.toBe(false);
+  });
+
+  it('returns false when the newest revocation supersedes the grant', async () => {
+    const store = new InMemoryConsentEvidenceStore();
+    const grantedAt = Date.now() - 1000;
+    await store.record(makeEvidence({ granted_at: grantedAt }));
+    await store.revoke({
+      sub: 'user-1',
+      issuer: ISSUER,
+      tenantId: 'tenant-1',
+      profileId: 'ms365',
+      revoked_at: grantedAt + 1,
+    });
+    await expect(gateWith(store).isGranted(makeIdentity())).resolves.toBe(false);
+  });
+
+  it('returns false when the grant is older than max_age_days', async () => {
+    const store = new InMemoryConsentEvidenceStore();
+    const config: ConsentGateConfig = { ...requiredConfig, max_age_days: 1 };
+    const staleHash = computeRulesHash(config);
+    await store.record(makeEvidence({ rules_hash: staleHash, granted_at: Date.now() - 2 * 24 * 60 * 60 * 1000 }));
+    await expect(gateWith(store, config).isGranted(makeIdentity())).resolves.toBe(false);
+  });
+
+  it('returns false for an identity from an unexpected issuer', async () => {
+    const store = new InMemoryConsentEvidenceStore();
+    await store.record(makeEvidence());
+    await expect(
+      gateWith(store).isGranted({ subject: 'user-1', issuer: 'https://evil.example.test', tenantId: 'tenant-1' }),
+    ).resolves.toBe(false);
+  });
+
+  it('propagates store failures instead of answering (fail closed at the caller)', async () => {
+    const store: ConsentEvidenceStore = {
+      record: vi.fn(),
+      revoke: vi.fn(),
+      lookup: vi.fn().mockRejectedValue(new ConsentEvidenceStoreError('db down')),
+    };
+    await expect(gateWith(store).isGranted(makeIdentity())).rejects.toBeInstanceOf(ConsentEvidenceStoreError);
+  });
+});
