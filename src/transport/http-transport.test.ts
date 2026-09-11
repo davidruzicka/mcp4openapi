@@ -8286,7 +8286,7 @@ describe('Consent-after-identity flow (AIPP-625)', () => {
       const context = (spied as any).buildDefaultProfileContext();
       spied.setProfileContextProvider(async () => gateContext(context));
       const state = await (spied as any).getProfileState('default');
-      const { location } = await (async () => {
+      const { location, binding } = await (async () => {
         state.oauthProvider.clientsStore.registerClient({
           client_id: 'e2e-mcp-client',
           redirect_uris: ['http://localhost:3003/oauth/callback'],
@@ -8294,7 +8294,8 @@ describe('Consent-after-identity flow (AIPP-625)', () => {
           response_types: ['code'],
         });
         const res: any = {
-          setHeader() {},
+          headers: {} as Record<string, unknown>,
+          setHeader(name: string, value: unknown) { this.headers[name.toLowerCase()] = value; },
           redirect(_s: number, url: string) { this.redirected = url; },
         };
         await state.oauthProvider.callbackConsent(
@@ -8310,9 +8311,26 @@ describe('Consent-after-identity flow (AIPP-625)', () => {
           },
           res,
         );
-        return { location: res.redirected as string };
+        const setCookie = ([] as string[]).concat((res.headers['set-cookie'] as string[]) ?? []);
+        const binding = setCookie
+          .map((line) => line.split(';')[0])
+          .find((pair) => pair.startsWith('__Host-mcp4_pending='))!;
+        return { location: res.redirected as string, binding };
       })();
       const pendingId = asPath(location).split('/').pop()!;
+
+      // Drive the real request pipeline: the request-logging middleware sees
+      // the raw `/consent/pending/:id` URL before any handler runs.
+      const spiedApp = (spied as any).app;
+      const page = await request(spiedApp).get(asPath(location)).set('Cookie', binding);
+      expect(page.status).toBe(200);
+      const denied = await request(spiedApp)
+        .post(asPath(location))
+        .type('form')
+        .set('Cookie', binding)
+        .send({ pending: pendingId, consent_decision: 'deny' });
+      expect(denied.status).toBe(302);
+
       const logged = JSON.stringify([
         ...(spyLogger.info as any).mock.calls,
         ...(spyLogger.debug as any).mock.calls,

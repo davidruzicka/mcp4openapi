@@ -13,6 +13,7 @@ import {
   newPendingBindingValue,
   pendingBindingDigest,
   pendingIdLogRef,
+  redactPendingConsentUrl,
   type PendingConsentPayload,
   type PendingConsentStore,
 } from './pending-consent-store.js';
@@ -88,6 +89,23 @@ const backendCases: StoreCase[] = [
     },
   },
 ];
+
+describe('redactPendingConsentUrl', () => {
+  const id = 'A'.repeat(43);
+
+  it('replaces the pending id in a path with its log reference', () => {
+    const redacted = redactPendingConsentUrl(`/profile/p/consent/pending/${id}`);
+    expect(redacted).toBe(`/profile/p/consent/pending/[ref:${pendingIdLogRef(id)}]`);
+  });
+
+  it('keeps the query string and leaves other URLs alone', () => {
+    expect(redactPendingConsentUrl(`/consent/pending/${id}?x=1`)).toBe(
+      `/consent/pending/[ref:${pendingIdLogRef(id)}]?x=1`,
+    );
+    expect(redactPendingConsentUrl('/consent/pending/not-an-id')).toBe('/consent/pending/not-an-id');
+    expect(redactPendingConsentUrl('/mcp')).toBe('/mcp');
+  });
+});
 
 describe.each(backendCases)('$name contract', ({ make }) => {
   it('round-trips a payload and consumes it exactly once', async () => {

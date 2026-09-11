@@ -59,6 +59,7 @@ import {
   PENDING_CONSENT_TTL_MS,
   pendingBindingDigest,
   pendingIdLogRef,
+  redactPendingConsentUrl,
   type PendingConsentPayload,
   type PendingConsentStore,
 } from '../auth/pending-consent-store.js';
@@ -408,8 +409,8 @@ export class HttpTransport {
     this.app.use((req: Request, res: Response, next: NextFunction) => {
       this.logger.debug('Request received', {
         method: req.method,
-        url: req.url,
-        path: req.path,
+        url: redactPendingConsentUrl(req.url),
+        path: redactPendingConsentUrl(req.path),
         userAgent: req.get('user-agent'),
         ip: req.ip,
       });
@@ -454,7 +455,7 @@ export class HttpTransport {
       res.send = function(body: unknown) {
         logger.debug('Outgoing response', {
           method: req.method,
-          url: req.url,
+          url: redactPendingConsentUrl(req.url),
           status: res.statusCode,
           contentType: res.get('content-type'),
           bodyLength: typeof body === 'string'
@@ -470,7 +471,7 @@ export class HttpTransport {
       res.json = function(body: unknown) {
         logger.debug('Outgoing JSON response', {
           method: req.method,
-          url: req.url,
+          url: redactPendingConsentUrl(req.url),
           status: res.statusCode,
           body: redactAuthPayload(body)
         });
@@ -484,8 +485,8 @@ export class HttpTransport {
     this.app.use((req: Request, res: Response, next: NextFunction) => {
       this.logger.debug('Incoming request', {
         method: req.method,
-        url: req.url,
-        path: req.path,
+        url: redactPendingConsentUrl(req.url),
+        path: redactPendingConsentUrl(req.path),
         headers: {
           'user-agent': req.headers['user-agent'],
           'accept': req.headers.accept,
@@ -1327,7 +1328,7 @@ export class HttpTransport {
         }).rateLimit;
         this.logger.warn(options.logMessage, {
           ip: req.ip,
-          path: req.path,
+          path: redactPendingConsentUrl(req.path),
           method: req.method,
           limit: rateInfo?.limit,
           current: rateInfo?.current,
@@ -1563,7 +1564,7 @@ export class HttpTransport {
         }).rateLimit;
         this.logger.debug('OAuth rate limit state', {
           profileId: profileState.profileId,
-          path: req.path,
+          path: redactPendingConsentUrl(req.path),
           method: req.method,
           limit: rateInfo?.limit,
           current: rateInfo?.current,
@@ -1979,8 +1980,8 @@ export class HttpTransport {
     this.app.use((req: Request, res: Response) => {
       this.logger.warn('Unhandled request (404)', {
         method: req.method,
-        url: req.url,
-        path: req.path,
+        url: redactPendingConsentUrl(req.url),
+        path: redactPendingConsentUrl(req.path),
         headers: req.headers,
         ip: req.ip
       });

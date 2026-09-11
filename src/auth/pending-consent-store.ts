@@ -112,6 +112,17 @@ export function pendingIdLogRef(pendingId: string): string {
   return crypto.createHash('sha256').update(pendingId).digest('hex').slice(0, 12);
 }
 
+const PENDING_URL_ID = /(\/consent\/pending\/)([A-Za-z0-9_-]{43})(?=[/?#]|$)/g;
+
+/**
+ * Replace the pending id in a request URL or path with its log reference.
+ * Request logging sees the raw `GET /consent/pending/:id` before any handler,
+ * so this is what keeps the id out of debug logs.
+ */
+export function redactPendingConsentUrl(url: string): string {
+  return url.replace(PENDING_URL_ID, (_m, prefix: string, id: string) => `${prefix}[ref:${pendingIdLogRef(id)}]`);
+}
+
 function hashPendingId(pendingId: string): string {
   return crypto.createHash('sha256').update(pendingId).digest('base64url');
 }
