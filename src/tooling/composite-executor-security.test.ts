@@ -67,7 +67,7 @@ describe('CompositeExecutor Security', () => {
     // Fixed behavior: path contains encoded "%2E%2E"
     // Note: encodeURIComponent('../admin/secrets') => ..%2Fadmin%2Fsecrets
     // The slashes inside the injected value are encoded, preventing directory traversal
-    const expectedFixedPath = '/users/..%2Fadmin%2Fsecrets/profile';
+    const expectedFixedPath = '/users/%2E%2E%2Fadmin%2Fsecrets/profile';
 
     expect(capturedPaths[0]).toBe(expectedFixedPath);
   });

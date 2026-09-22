@@ -171,14 +171,14 @@ export class CompositeExecutor {
     return template.replace(/\{(\w+)\}/g, (_, key) => {
       // Try direct match first
       if (args[key] !== undefined) {
-        return encodeURIComponent(String(args[key]));
+        return encodeURIComponent(String(args[key])).replace(/\./g, '%2E');
       }
 
       // Try aliases from profile
       const possibleAliases = this.parameterAliases[key] || [];
       for (const alias of possibleAliases) {
         if (args[alias] !== undefined) {
-          return encodeURIComponent(String(args[alias]));
+          return encodeURIComponent(String(args[alias])).replace(/\./g, '%2E');
         }
       }
 
