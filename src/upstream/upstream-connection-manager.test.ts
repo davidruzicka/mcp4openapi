@@ -599,6 +599,41 @@ describe('UpstreamConnectionManager', () => {
         .rejects.toThrow(UpstreamAuthError);
     });
 
+    it('throws UpstreamAuthError when the SDK StreamableHTTPError carries a 401 in code with an empty body', async () => {
+      const provider = createProvider();
+
+      // MCP SDK StreamableHTTPError exposes the HTTP status as `code`, not `statusCode`,
+      // and an upstream that answers 401 with an empty body yields no message to pattern-match.
+      const authError = new Error('Streamable HTTP error: Error POSTing to endpoint: ');
+      (authError as Record<string, unknown>).code = 401;
+      mockClient.connect.mockRejectedValue(authError);
+
+      await expect(manager.getOrConnect('session-1', provider, 'token'))
+        .rejects.toThrow(UpstreamAuthError);
+    });
+
+    it('throws UpstreamAuthError when the SDK StreamableHTTPError carries a 403 in code', async () => {
+      const provider = createProvider();
+
+      const authError = new Error('Streamable HTTP error: Error POSTing to endpoint: ');
+      (authError as Record<string, unknown>).code = 403;
+      mockClient.connect.mockRejectedValue(authError);
+
+      await expect(manager.getOrConnect('session-1', provider, 'token'))
+        .rejects.toThrow(UpstreamAuthError);
+    });
+
+    it('does not treat a non-auth numeric code as an auth failure', async () => {
+      const provider = createProvider();
+
+      const serverError = new Error('Streamable HTTP error: Error POSTing to endpoint: ');
+      (serverError as Record<string, unknown>).code = 502;
+      mockClient.connect.mockRejectedValue(serverError);
+
+      await expect(manager.getOrConnect('session-1', provider, 'token'))
+        .rejects.toThrow(UpstreamConnectionError);
+    });
+
     it('throws UpstreamAuthError on connect failure with auth error message pattern', async () => {
       const provider = createProvider();
 
