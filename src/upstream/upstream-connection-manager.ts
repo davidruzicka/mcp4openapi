@@ -30,14 +30,16 @@ import type { HeartbeatConfig } from './upstream-heartbeat.js';
 /** Auth-related HTTP status codes */
 const AUTH_STATUS_CODES = new Set([401, 403]);
 
-/** Type guard for MCP SDK errors that carry an HTTP status code */
-function hasMcpStatusCode(e: unknown): e is { statusCode: number } {
-  return (
-    typeof e === 'object' &&
-    e !== null &&
-    'statusCode' in e &&
-    typeof (e as Record<string, unknown>).statusCode === 'number'
-  );
+/**
+ * Extract the HTTP status from MCP SDK errors. StreamableHTTPError stores it in `code`;
+ * other SDK/fetch error shapes use `statusCode`.
+ */
+function getMcpStatusCode(e: unknown): number | undefined {
+  if (typeof e !== 'object' || e === null) return undefined;
+  const { statusCode, code } = e as Record<string, unknown>;
+  if (typeof statusCode === 'number') return statusCode;
+  if (typeof code === 'number') return code;
+  return undefined;
 }
 
 /** Patterns in error messages that indicate authentication failure */
@@ -544,7 +546,7 @@ export class UpstreamConnectionManager {
     strategy = createAuthStrategy(provider.auth),
   ): Error {
     const err = error instanceof Error ? error : new Error(String(error));
-    const statusCode = hasMcpStatusCode(error) ? error.statusCode : undefined;
+    const statusCode = getMcpStatusCode(error);
 
     // Auth errors: 401/403 or message pattern match
     if (statusCode && AUTH_STATUS_CODES.has(statusCode)) {
