@@ -65,10 +65,19 @@ describe('CompositeExecutor Security', () => {
 
     // Vulnerable behavior: path contains raw ".."
     // Fixed behavior: path contains encoded "%2E%2E"
-    // Note: encodeURIComponent('../admin/secrets') => ..%2Fadmin%2Fsecrets
+    // Note: encodeURIComponent('../admin/secrets').replace(/\./g, '%2E') => %2E%2E%2Fadmin%2Fsecrets
     // The slashes inside the injected value are encoded, preventing directory traversal
-    const expectedFixedPath = '/users/..%2Fadmin%2Fsecrets/profile';
+    const expectedFixedPath = '/users/%2E%2E%2Fadmin%2Fsecrets/profile';
 
     expect(capturedPaths[0]).toBe(expectedFixedPath);
+  });
+
+  it('vulnerability: exact path traversal string', async () => {
+    const steps: CompositeStep[] = [
+      { call: 'GET /users/{id}/profile', store_as: 'result' },
+    ];
+
+    await expect(executor.execute(steps, { id: '..' })).rejects.toThrow('Path traversal detected: Invalid path segment \'..\'');
+    await expect(executor.execute(steps, { id: '.' })).rejects.toThrow('Path traversal detected: Invalid path segment \'.\'');
   });
 });

@@ -1168,6 +1168,31 @@ paths:
 
       expect(result).toBe('/projects/group%2Fmcp%2Fapp');
     });
+
+    it('rejects path traversal strings and replaces unencoded dots', () => {
+      const localServer = new MCPServer();
+      (localServer as any).profile = {
+        profile_name: 'test',
+        description: 'test profile',
+        tools: [],
+        interceptors: { auth: [] },
+        parameter_aliases: { id: ['project_id'] },
+      };
+
+      expect(() => {
+        (localServer as any).resolvePath('/projects/{id}', { project_id: '..' });
+      }).toThrow('Path traversal detected');
+
+      expect(() => {
+        (localServer as any).resolvePath('/projects/{id}', { project_id: '.' });
+      }).toThrow('Path traversal detected');
+
+      const result = (localServer as any).resolvePath(
+        '/projects/{id}',
+        { project_id: '../admin' }
+      );
+      expect(result).toBe('/projects/%2E%2E%2Fadmin');
+    });
   });
 
   describe('executeProxyDownload wiring', () => {

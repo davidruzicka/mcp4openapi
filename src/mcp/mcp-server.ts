@@ -1351,7 +1351,14 @@ export class MCPServer {
    */
   private encodePathSegment(value: unknown): string {
     const val = String(value);
-    return val.includes('/') ? encodeURIComponent(val) : val;
+
+    // Prevent path traversal vulnerabilities by enforcing encoding of path traversal sequences
+    if (val === '.' || val === '..') {
+      throw new ValidationError(`Path traversal detected: Invalid path segment '${val}'`);
+    }
+
+    // Use replace(/\./g, '%2E') to encode dots, as encodeURIComponent leaves them unencoded
+    return encodeURIComponent(val).replace(/\./g, '%2E');
   }
 
   /**
