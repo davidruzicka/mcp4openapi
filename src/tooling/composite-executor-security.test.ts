@@ -71,4 +71,13 @@ describe('CompositeExecutor Security', () => {
 
     expect(capturedPaths[0]).toBe(expectedFixedPath);
   });
+
+  it('vulnerability: exact path traversal string', async () => {
+    const steps: CompositeStep[] = [
+      { call: 'GET /users/{id}/profile', store_as: 'result' },
+    ];
+
+    await expect(executor.execute(steps, { id: '..' })).rejects.toThrow('Path traversal detected: Invalid path segment \'..\'');
+    await expect(executor.execute(steps, { id: '.' })).rejects.toThrow('Path traversal detected: Invalid path segment \'.\'');
+  });
 });
