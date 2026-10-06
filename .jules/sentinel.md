@@ -126,3 +126,15 @@ Error messages should never include raw values from sensitive sources like envir
 **Prevention:**
 1.  Avoid including raw values in error messages when the source is potentially sensitive (env vars, auth headers).
 2.  Use generic error messages for validation failures of sensitive data.
+
+## 2026-10-06 - [CRITICAL] Path Traversal via Unencoded Dots in Path Segments
+
+**Vulnerability:**
+The `encodePathSegment` utility in `mcp-server.ts` and the path parameter resolution logic in `composite-executor.ts` either bypassed encoding entirely for segments without slashes or relied on standard `encodeURIComponent`, which does not encode dot (`.`) characters. This allowed attackers to inject exactly `..` or leading dots like `../admin` into path parameters, successfully performing a path traversal on the resulting resolved URL.
+
+**Learning:**
+Standard URL encoding (`encodeURIComponent`) intentionally leaves `-`, `_`, `.`, `!`, `~`, `*`, `'`, `(`, and `)` unencoded. While this is fine for most uses, leaving `.` unencoded enables directory traversal (`..` remains `..`) when user input is directly mapped to a path segment in a REST API or local file resolution logic.
+
+**Prevention:**
+1. Explicitly reject precise path traversal attempts (exact `.` or `..` strings) by throwing an error securely.
+2. Supplement `encodeURIComponent` by explicitly replacing `.` with its percent-encoded equivalent (`%2E`) for all path segments to ensure no hidden `..` structures survive in complex strings (e.g., `encodeURIComponent(val).replace(/\./g, '%2E')`).
