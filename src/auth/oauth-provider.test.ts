@@ -2227,6 +2227,66 @@ describe('ExternalOAuthProvider', () => {
     });
   });
 
+
+  describe('consumedCodeTombstones capacity', () => {
+    beforeEach(() => {
+      provider = new ExternalOAuthProvider(config, mockLogger);
+    });
+
+    it('should evict oldest consumed code tombstones when reaching capacity', () => {
+      // 10005 iterations
+      for (let i = 0; i < 10005; i++) {
+        (provider as any).recordConsumedCodeTombstone(`code-${i}`, { access_token: `access-${i}`, refresh_token: `refresh-${i}` }, 'client-1');
+      }
+
+      // Check capacity eviction
+      expect((provider as any).consumedCodeTombstones.size).toBe(10000);
+
+      // The first 5 should be evicted
+      expect((provider as any).consumedCodeTombstones.has('code-0')).toBe(false);
+      expect((provider as any).consumedCodeTombstones.has('code-4')).toBe(false);
+
+      // The last one should be present
+      expect((provider as any).consumedCodeTombstones.has('code-10004')).toBe(true);
+
+      // Check that warn was called
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        'Consumed code tombstone map at capacity - evicted oldest entries',
+        expect.objectContaining({ capacity: 10000, evictedSinceLastWarn: 1 })
+      );
+    });
+
+    it('should respect rate limit for eviction warnings', () => {
+      vi.useFakeTimers();
+
+      // First eviction triggers warning
+      for (let i = 0; i < 10001; i++) {
+        (provider as any).recordConsumedCodeTombstone(`code-${i}`, { access_token: `access-${i}`, refresh_token: `refresh-${i}` }, 'client-1');
+      }
+      expect(mockLogger.warn).toHaveBeenCalledTimes(1);
+
+      // Advance time by less than interval (30s)
+      vi.advanceTimersByTime(30000);
+
+      // Add another 1
+      (provider as any).recordConsumedCodeTombstone('code-10001', { access_token: 'access', refresh_token: 'refresh' }, 'client-1');
+
+      // Should not warn again yet
+      expect(mockLogger.warn).toHaveBeenCalledTimes(1);
+
+      // Advance past interval
+      vi.advanceTimersByTime(35000);
+
+      // Add another
+      (provider as any).recordConsumedCodeTombstone('code-10002', { access_token: 'access', refresh_token: 'refresh' }, 'client-1');
+
+      // Warning count should increase
+      expect(mockLogger.warn).toHaveBeenCalledTimes(2);
+
+      vi.useRealTimers();
+    });
+  });
+
   describe('cleanup', () => {
     beforeEach(() => {
       provider = new ExternalOAuthProvider(config, mockLogger);
@@ -2321,6 +2381,29 @@ describe('ExternalOAuthProvider', () => {
       expect((provider as any).accessTokens.has(expiredToken)).toBe(false);
       expect((provider as any).accessTokens.has(validToken)).toBe(true);
       expect((provider as any).accessTokens.has(noExpiryToken)).toBe(true);
+    });
+
+    it('should remove expired consumed-code replay tombstones', () => {
+      // Add expired tombstone
+      const expiredCode = 'expired-code';
+      (provider as any).consumedCodeTombstones.set(expiredCode, {
+        accessToken: 'access-1',
+        clientId: 'client-1',
+        expiresAt: Date.now() - 1000,
+      });
+
+      // Add valid tombstone
+      const validCode = 'valid-code';
+      (provider as any).consumedCodeTombstones.set(validCode, {
+        accessToken: 'access-2',
+        clientId: 'client-2',
+        expiresAt: Date.now() + 1000,
+      });
+
+      provider.cleanup();
+
+      expect((provider as any).consumedCodeTombstones.has(expiredCode)).toBe(false);
+      expect((provider as any).consumedCodeTombstones.has(validCode)).toBe(true);
     });
   });
 

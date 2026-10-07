@@ -57,6 +57,9 @@ const REFRESH_IDENTITY_MAX = 10000;
 // Capacity-eviction warnings are aggregated to at most one per interval.
 const REFRESH_EVICTION_WARN_INTERVAL_MS = 60 * 1000;
 
+const CONSUMED_CODE_TOMBSTONE_MAX = 10000;
+const CONSUMED_CODE_EVICTION_WARN_INTERVAL_MS = 60 * 1000;
+
 /**
  * Safely resolves a single `${env:VAR}` reference. Returns the env var value
  * when the var is set, undefined when unset, or the literal value when no
@@ -212,6 +215,10 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
   // Aggregation state for the capacity-eviction warn (see storeRefreshTokenIdentity).
   private refreshEvictionsSinceLastWarn = 0;
   private lastRefreshEvictionWarnAt = 0;
+
+  // Aggregation state for consumed code capacity-eviction warn.
+  private consumedCodeEvictionsSinceLastWarn = 0;
+  private lastConsumedCodeEvictionWarnAt = 0;
 
   constructor(config: OAuthConfig, logger: Logger, identityVerifier?: OidcIdentityVerifier) {
     this.config = config;
@@ -1351,11 +1358,32 @@ export class ExternalOAuthProvider implements OAuthServerProvider {
    * of that code can revoke them (RFC 6749 §4.1.2).
    */
   private recordConsumedCodeTombstone(code: string, tokens: OAuthTokens, clientId: string): void {
+    const now = Date.now();
+    let evicted = 0;
+    while (this.consumedCodeTombstones.size >= CONSUMED_CODE_TOMBSTONE_MAX) {
+      const nearestCode = this.consumedCodeTombstones.keys().next().value;
+      if (nearestCode === undefined) break;
+      this.consumedCodeTombstones.delete(nearestCode);
+      evicted += 1;
+    }
+
+    if (evicted > 0) {
+      this.consumedCodeEvictionsSinceLastWarn += evicted;
+      if (now - this.lastConsumedCodeEvictionWarnAt >= CONSUMED_CODE_EVICTION_WARN_INTERVAL_MS) {
+        this.logger.warn('Consumed code tombstone map at capacity - evicted oldest entries', {
+          capacity: CONSUMED_CODE_TOMBSTONE_MAX,
+          evictedSinceLastWarn: this.consumedCodeEvictionsSinceLastWarn,
+        });
+        this.lastConsumedCodeEvictionWarnAt = now;
+        this.consumedCodeEvictionsSinceLastWarn = 0;
+      }
+    }
+
     this.consumedCodeTombstones.set(code, {
       accessToken: tokens.access_token,
       refreshToken: tokens.refresh_token,
       clientId,
-      expiresAt: Date.now() + CONSUMED_CODE_TOMBSTONE_TTL_MS,
+      expiresAt: now + CONSUMED_CODE_TOMBSTONE_TTL_MS,
     });
   }
 
