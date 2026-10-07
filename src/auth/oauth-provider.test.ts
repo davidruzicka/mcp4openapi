@@ -2322,6 +2322,29 @@ describe('ExternalOAuthProvider', () => {
       expect((provider as any).accessTokens.has(validToken)).toBe(true);
       expect((provider as any).accessTokens.has(noExpiryToken)).toBe(true);
     });
+
+    it('should remove expired consumed-code replay tombstones', () => {
+      // Add expired tombstone
+      const expiredCode = 'expired-code';
+      (provider as any).consumedCodeTombstones.set(expiredCode, {
+        accessToken: 'access-1',
+        clientId: 'client-1',
+        expiresAt: Date.now() - 1000,
+      });
+
+      // Add valid tombstone
+      const validCode = 'valid-code';
+      (provider as any).consumedCodeTombstones.set(validCode, {
+        accessToken: 'access-2',
+        clientId: 'client-2',
+        expiresAt: Date.now() + 1000,
+      });
+
+      provider.cleanup();
+
+      expect((provider as any).consumedCodeTombstones.has(expiredCode)).toBe(false);
+      expect((provider as any).consumedCodeTombstones.has(validCode)).toBe(true);
+    });
   });
 
   describe('handleCallback edge cases', () => {
