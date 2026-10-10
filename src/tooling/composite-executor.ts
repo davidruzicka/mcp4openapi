@@ -11,6 +11,7 @@ import type { OperationInfo } from '../types/openapi.js';
 import { OpenAPIParser } from '../openapi/openapi-parser.js';
 import { DAGExecutor } from './dag-executor.js';
 import { isSafePropertyName } from '../validation/validation-utils.js';
+import { ValidationError } from '../core/errors.js';
 
 export interface CompositeResult {
   data: Record<string, unknown>;
@@ -162,6 +163,17 @@ export class CompositeExecutor {
   }
 
   /**
+   * Encode path segment to prevent path traversal
+   */
+  private encodePathSegment(value: unknown): string {
+    const val = String(value);
+    if (val === '.' || val === '..') {
+      throw new ValidationError('Path traversal detected');
+    }
+    return encodeURIComponent(val).replace(/\./g, '%2E');
+  }
+
+  /**
    * Resolve path template with actual values
    * 
    * Example: "/projects/{id}" + {id: "123"} => "/projects/123"
@@ -171,14 +183,14 @@ export class CompositeExecutor {
     return template.replace(/\{(\w+)\}/g, (_, key) => {
       // Try direct match first
       if (args[key] !== undefined) {
-        return encodeURIComponent(String(args[key]));
+        return this.encodePathSegment(args[key]);
       }
 
       // Try aliases from profile
       const possibleAliases = this.parameterAliases[key] || [];
       for (const alias of possibleAliases) {
         if (args[alias] !== undefined) {
-          return encodeURIComponent(String(args[alias]));
+          return this.encodePathSegment(args[alias]);
         }
       }
 
