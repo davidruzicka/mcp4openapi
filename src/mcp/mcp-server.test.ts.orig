@@ -654,11 +654,11 @@ paths:
           throw new AuthorizationError('Forbidden');
         }
       };
-      
+
       // Find a composite tool
       const compositeTool = (server as any).profile.tools.find((t: any) => t.composite);
       if (!compositeTool) return; // Skip if no composite tools
-      
+
       const response = asToolCallResponse(await server.callToolRpc(compositeTool.name, {}, 'test-session', '1'));
       const error = response.error as { code?: number };
       expect(error.code).toBe(-32002);
@@ -1130,13 +1130,6 @@ paths:
       expect(config.maxTokenLength).toBe(2048);
       expect(config.oauthConfig?.allowed_redirect_hosts).toEqual(['*.allowed.test']);
     });
-
-    describe('Path Traversal protection', () => {
-      it('should reject exact . and .. in path segment encoding', () => {
-        expect(() => (server as any).encodePathSegment('.')).toThrow('Path traversal detected');
-        expect(() => (server as any).encodePathSegment('..')).toThrow('Path traversal detected');
-      });
-    });
   });
 
   describe('resolvePath encoding', () => {
@@ -1251,9 +1244,9 @@ paths:
       const server = new MCPServer();
       const error = new AuthenticationError('Token is expired');
       const correlationId = 'test-correlation-id';
-      
+
       const formatted = (server as any).formatErrorForClient(error, correlationId);
-      
+
       expect(formatted).toContain('Authentication failed');
       expect(formatted).toContain('Token is expired');
       expect(formatted).toContain(correlationId);
@@ -1263,9 +1256,9 @@ paths:
       const server = new MCPServer();
       const error = new AuthorizationError('Insufficient permissions');
       const correlationId = 'test-correlation-id';
-      
+
       const formatted = (server as any).formatErrorForClient(error, correlationId);
-      
+
       expect(formatted).toContain('Authorization failed');
       expect(formatted).toContain('Insufficient permissions');
       expect(formatted).toContain(correlationId);
@@ -1275,9 +1268,9 @@ paths:
       const server = new MCPServer();
       const error = new RateLimitError('Too many requests', 60);
       const correlationId = 'test-correlation-id';
-      
+
       const formatted = (server as any).formatErrorForClient(error, correlationId);
-      
+
       expect(formatted).toContain('Rate limit exceeded');
       expect(formatted).toContain('Retry after 60 seconds');
       expect(formatted).toContain(correlationId);
@@ -1287,9 +1280,9 @@ paths:
       const server = new MCPServer();
       const error = new NetworkError('Not found', 404);
       const correlationId = 'test-correlation-id';
-      
+
       const formatted = (server as any).formatErrorForClient(error, correlationId);
-      
+
       expect(formatted).toContain('Request failed');
       expect(formatted).toContain('Not found');
       expect(formatted).toContain(correlationId);
@@ -1301,9 +1294,9 @@ paths:
         body: { sensitiveData: 'should not be exposed' }
       });
       const correlationId = 'test-correlation-id';
-      
+
       const formatted = (server as any).formatErrorForClient(error, correlationId);
-      
+
       expect(formatted).toContain('Internal error');
       expect(formatted).toContain(correlationId);
       expect(formatted).not.toContain('sensitiveData');
@@ -1314,9 +1307,9 @@ paths:
       const server = new MCPServer();
       const error = new ValidationError('Invalid parameter format');
       const correlationId = 'test-correlation-id';
-      
+
       const formatted = (server as any).formatErrorForClient(error, correlationId);
-      
+
       expect(formatted).toContain('Validation error');
       expect(formatted).toContain('Invalid parameter format');
       expect(formatted).toContain(correlationId);
@@ -1326,9 +1319,9 @@ paths:
       const server = new MCPServer();
       const error = new Error('Some internal error');
       const correlationId = 'test-correlation-id';
-      
+
       const formatted = (server as any).formatErrorForClient(error, correlationId);
-      
+
       expect(formatted).toBe(`Internal error (correlation ID: ${correlationId})`);
       expect(formatted).not.toContain('Some internal error');
     });
@@ -1707,7 +1700,7 @@ paths:
       };
 
       const response = await (server as any).handleOtherRequest(message, 'test-session');
-      
+
       expect(response.jsonrpc).toBe('2.0');
       expect(response.id).toBe('1');
       expect(response.result).toBeDefined();
@@ -1724,7 +1717,7 @@ paths:
       };
 
       const response = await (server as any).handleOtherRequest(message, 'test-session');
-      
+
       expect(response.jsonrpc).toBe('2.0');
       expect(response.id).toBe('2');
       expect(response.error).toBeDefined();
@@ -3156,7 +3149,7 @@ paths:
       };
 
       const response = (server as any).handleInitialize(message, 'test-session');
-      
+
       expect(response.jsonrpc).toBe('2.0');
       expect(response.id).toBe('1');
       expect(response.result.protocolVersion).toBe('2025-03-26');
@@ -3207,7 +3200,7 @@ paths:
       };
 
       const response = (server as any).handleInitialize(message, undefined);
-      
+
       expect(response.result.sessionId).toBeUndefined();
     });
 
@@ -3385,9 +3378,9 @@ paths:
       const server = new MCPServer();
       const error = new OperationNotFoundError('unknown_operation');
       const correlationId = 'test-correlation-id';
-      
+
       const formatted = (server as any).formatErrorForClient(error, correlationId);
-      
+
       expect(formatted).toContain('Operation not found');
       expect(formatted).toContain(correlationId);
     });
@@ -3411,9 +3404,9 @@ paths:
       const server = new MCPServer();
       const error = new ConfigurationError('Missing API key');
       const correlationId = 'test-correlation-id';
-      
+
       const formatted = (server as any).formatErrorForClient(error, correlationId);
-      
+
       expect(formatted).toContain('Configuration error');
       expect(formatted).toContain('Missing API key');
       expect(formatted).toContain(correlationId);
@@ -3425,9 +3418,9 @@ paths:
       const server = new MCPServer();
       const error = new RateLimitError('Too many requests');
       const correlationId = 'test-correlation-id';
-      
+
       const formatted = (server as any).formatErrorForClient(error, correlationId);
-      
+
       expect(formatted).toContain('Rate limit exceeded');
       expect(formatted).not.toContain('Retry after');
       expect(formatted).toContain(correlationId);
@@ -3439,10 +3432,10 @@ paths:
       const server = new MCPServer();
       const specPath = path.join(process.cwd(), 'profiles/gitlab/openapi.yaml');
       await server.initialize(specPath);
-      
+
       // Modify profile to remove auth
       (server as any).profile.interceptors = undefined;
-      
+
       const configs = (server as any).getAuthConfigs();
       expect(configs).toEqual([]);
     });
@@ -3451,11 +3444,11 @@ paths:
       const server = new MCPServer();
       const specPath = path.join(process.cwd(), 'profiles/gitlab/openapi.yaml');
       await server.initialize(specPath);
-      
+
       (server as any).profile.interceptors = {
         auth: { type: 'bearer', value_from_env: 'TEST_TOKEN' }
       };
-      
+
       const configs = (server as any).getAuthConfigs();
       expect(configs).toHaveLength(1);
       expect(configs[0].type).toBe('bearer');
@@ -3467,9 +3460,9 @@ paths:
       const server = new MCPServer();
       const error = new AuthorizationError('Insufficient permissions');
       const correlationId = 'test-correlation-id';
-      
+
       const formatted = (server as any).formatErrorForClient(error, correlationId);
-      
+
       expect(formatted).toContain('Authorization failed');
       expect(formatted).toContain(correlationId);
     });
@@ -3480,9 +3473,9 @@ paths:
       const server = new MCPServer();
       const error = new ValidationError('Invalid input');
       const correlationId = 'test-correlation-id';
-      
+
       const formatted = (server as any).formatErrorForClient(error, correlationId);
-      
+
       expect(formatted).toContain('Invalid input');
       expect(formatted).toContain(correlationId);
     });
@@ -3493,11 +3486,11 @@ paths:
       const server = new MCPServer();
       const specPath = path.join(process.cwd(), 'profiles/gitlab/openapi.yaml');
       await server.initialize(specPath);
-      
+
       (server as any).profile.interceptors = {
         auth: [{ type: 'oauth', oauth: { issuer: 'https://example.com' } }]
       };
-      
+
       const config = (server as any).getEnvBackedAuthConfig();
       expect(config).toBeUndefined();
     });
@@ -3507,18 +3500,18 @@ paths:
     it('should throw ConfigurationError when no global client and no sessionId', async () => {
       const server = new MCPServer();
       const specPath = path.join(process.cwd(), 'profiles/gitlab/openapi.yaml');
-      
+
       // Don't set MCP4_API_TOKEN to prevent global client creation
       delete process.env.MCP4_API_TOKEN;
-      
+
       await server.initialize(specPath);
-      
+
       // Ensure no global client
-      (server as any).httpClientFactory = { 
+      (server as any).httpClientFactory = {
         hasGlobalClient: () => false,
         getGlobalClient: () => { throw new Error('No client'); }
       };
-      
+
       await expect((server as any).getHttpClientForSession()).rejects.toThrow('HTTP client not initialized');
     });
 
@@ -3544,15 +3537,15 @@ paths:
 
     it('should throw ConfigurationError when profile not initialized', async () => {
       const server = new MCPServer();
-      
+
       // Call without initializing profile
       (server as any).profile = undefined;
-      (server as any).httpClientFactory = { 
+      (server as any).httpClientFactory = {
         hasGlobalClient: () => false,
         getGlobalClient: () => { throw new Error('No client'); },
         getOrCreateSessionClient: () => ({})
       };
-      
+
       await expect((server as any).getHttpClientForSession('some-session-id')).rejects.toThrow('Profile not initialized');
     });
   });
@@ -3937,21 +3930,21 @@ paths:
       const server = new MCPServer();
       const specPath = path.join(process.cwd(), 'profiles/gitlab/openapi.yaml');
       await server.initialize(specPath);
-      
+
       // Mock httpTransport with OAuth
       (server as any).httpTransport = {
         hasOAuthProvider: (_profileId?: string) => true,
         getOAuthProtectedResourceUrl: (_profileId?: string) => 'https://example.com/.well-known/oauth-protected-resource/mcp',
       };
-      
+
       // Mock getAuthTokenFromSession to return undefined
       (server as any).getAuthTokenFromSession = async () => undefined;
-      
+
       const response = await (server as any).handleOtherRequest(
         { jsonrpc: '2.0', id: 1, method: 'tools/list' },
         'test-session'
       );
-      
+
       expect(response.error.code).toBe(-32600);
       expect(response.error.data.oauth_required).toBe(true);
     });
@@ -4017,18 +4010,18 @@ paths:
       const server = new MCPServer();
       const specPath = path.join(process.cwd(), 'profiles/gitlab/openapi.yaml');
       await server.initialize(specPath);
-      
+
       // Mock httpTransport with OAuth
       (server as any).httpTransport = {
         hasOAuthProvider: (_profileId?: string) => true,
         getOAuthProtectedResourceUrl: (_profileId?: string) => 'https://example.com/.well-known/oauth-protected-resource/mcp',
       };
-      
+
       // Mock getAuthTokenFromSession to return undefined
       (server as any).getAuthTokenFromSession = async () => undefined;
-      
+
       const response = asToolCallResponse(await server.callToolRpc('some_tool', {}, 'test-session', 1));
-      
+
       const error = response.error as { code?: number; data?: { oauth_required?: boolean } };
       expect(error.code).toBe(-32600);
       expect(error.data?.oauth_required).toBe(true);

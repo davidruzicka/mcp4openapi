@@ -71,17 +71,4 @@ describe('CompositeExecutor Security', () => {
 
     expect(capturedPaths[0]).toBe(expectedFixedPath);
   });
-
-  it('vulnerability: path traversal exact match rejection', async () => {
-    const steps: CompositeStep[] = [
-      { call: 'GET /users/{id}/profile', store_as: 'result' },
-    ];
-
-    await expect(executor.execute(steps, { id: '.' })).rejects.toThrow('Path traversal detected');
-    await expect(executor.execute(steps, { id: '..' })).rejects.toThrow('Path traversal detected');
-
-    // Aliases
-    executor = new CompositeExecutor(parser, httpClient, { id: ['user_id'] });
-    await expect(executor.execute(steps, { user_id: '..' })).rejects.toThrow('Path traversal detected');
-  });
 });
