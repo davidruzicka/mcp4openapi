@@ -1,0 +1,15 @@
+--- src/mcp/mcp-server.test.ts
++++ src/mcp/mcp-server.test.ts
+@@ -1029,5 +1029,12 @@
+         expect(logger.info).toHaveBeenCalledWith('Handled GET /mcp request', expect.any(Object));
+       });
+     });
++
++    describe('Path Traversal protection', () => {
++      it('should reject exact . and .. in path segment encoding', () => {
++        expect(() => (server as any).encodePathSegment('.')).toThrow('Path traversal detected');
++        expect(() => (server as any).encodePathSegment('..')).toThrow('Path traversal detected');
++      });
++    });
+   });
+ });

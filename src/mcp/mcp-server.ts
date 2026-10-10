@@ -1345,13 +1345,17 @@ export class MCPServer {
 
   /**
    * Encode path segment if it contains special characters (like slashes)
+   * and prevent path traversal vulnerabilities.
    *
    * Why: GitLab and other APIs require path parameters (like project paths)
    * to be URL-encoded when used in URL path.
    */
   private encodePathSegment(value: unknown): string {
     const val = String(value);
-    return val.includes('/') ? encodeURIComponent(val) : val;
+    if (val === '.' || val === '..') {
+      throw new ValidationError('Path traversal detected');
+    }
+    return encodeURIComponent(val).replace(/\./g, '%2E');
   }
 
   /**
