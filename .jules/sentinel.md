@@ -126,3 +126,15 @@ Error messages should never include raw values from sensitive sources like envir
 **Prevention:**
 1.  Avoid including raw values in error messages when the source is potentially sensitive (env vars, auth headers).
 2.  Use generic error messages for validation failures of sensitive data.
+
+## 2026-08-05 - [HIGH] Un-cleared Timeout in Promise.race
+
+**Vulnerability:**
+Both `MCPServer.executeAppsFetch` and `SSRFValidator.lookupAllIpAddresses` were using `Promise.race()` to enforce a timeout on an async operation using a nested `setTimeout`. If the main async operation completed before the timeout, the `setTimeout` was left running in the event loop until it fired.
+
+**Learning:**
+Leaving an un-cleared timeout function inside `Promise.race()` can cause memory leaks and Denial of Service (DoS). The hanging timeout delays garbage collection for the objects within the promise closure and stops the Node.js process from exiting gracefully, which can be critical for serverless environments.
+
+**Prevention:**
+1.  Always capture the `timeoutId` when setting timeouts inside `Promise.race()`.
+2.  Clear the timeout using `clearTimeout(timeoutId)` inside a `finally` block or when the promise resolves.
