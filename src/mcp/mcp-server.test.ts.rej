@@ -1,0 +1,20 @@
+--- src/mcp/mcp-server.test.ts
++++ src/mcp/mcp-server.test.ts
+@@ -1026,6 +1026,17 @@
+       });
+     });
+
++    it('should throw ValidationError on exact match of . or ..', async () => {
++      await expect(server.handleToolCall('get_api_v4_projects_id', { id: '.' }))
++        .rejects.toThrow(/Invalid path parameter/);
++
++      await expect(server.handleToolCall('get_api_v4_projects_id', { id: '..' }))
++        .rejects.toThrow(/Invalid path parameter/);
++
++      const validResult = await server.handleToolCall('get_api_v4_projects_id', { id: '..legit' });
++      expect(validResult).toBeDefined();
++    });
++
+     describe('HTTP handleToolCall Client Message/Stack Handling', () => {
+       it('should return user-friendly error message with correlation ID from HTTP handleToolCall', async () => {
+         // Force an unexpected error inside the internal HTTP client setup

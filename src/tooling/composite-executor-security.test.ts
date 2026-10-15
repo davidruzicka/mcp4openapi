@@ -71,4 +71,18 @@ describe('CompositeExecutor Security', () => {
 
     expect(capturedPaths[0]).toBe(expectedFixedPath);
   });
+
+  it('vulnerability: path traversal exact match . or .. throws error', async () => {
+    const steps: CompositeStep[] = [
+      { call: 'GET /users/{id}/profile', store_as: 'result' },
+    ];
+
+    // Exact match for . and ..
+    await expect(executor.execute(steps, { id: '.' })).rejects.toThrow('Invalid path parameter: exact match for \'.\' or \'..\' is not allowed');
+    await expect(executor.execute(steps, { id: '..' })).rejects.toThrow('Invalid path parameter: exact match for \'.\' or \'..\' is not allowed');
+
+    // It works with other strings
+    await executor.execute(steps, { id: 'legitimate' });
+    expect(capturedPaths[0]).toBe('/users/legitimate/profile');
+  });
 });
