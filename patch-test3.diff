@@ -1,0 +1,19 @@
+--- src/mcp/mcp-server.test.ts
++++ src/mcp/mcp-server.test.ts
+@@ -630,6 +630,17 @@
+       expect(parsed).toEqual({ id: 1, name: 'test' });
+     });
+
++    it('should throw ValidationError on exact match of . or ..', async () => {
++      const specPath = path.join(process.cwd(), 'profiles/gitlab/openapi.yaml');
++      await server.initialize(specPath);
++      await expect(server.handleToolCall('get_api_v4_projects_id', { id: '.' }))
++        .rejects.toThrow(/Invalid path parameter/);
++
++      await expect(server.handleToolCall('get_api_v4_projects_id', { id: '..' }))
++        .rejects.toThrow(/Invalid path parameter/);
++    });
++
+     it('should return user-friendly error message with correlation ID from HTTP handleToolCall', async () => {
+       const specPath = path.join(process.cwd(), 'profiles/gitlab/openapi.yaml');
+       await server.initialize(specPath);
